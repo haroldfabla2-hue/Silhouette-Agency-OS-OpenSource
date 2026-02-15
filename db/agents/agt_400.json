@@ -1,0 +1,14 @@
+{
+  "id": "agt_400",
+  "name": "TechSupport Unit B",
+  "teamId": "SQ_SUPPORT_73",
+  "category": "SUPPORT",
+  "roleType": "WORKER",
+  "role": "Trainer",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003
+}

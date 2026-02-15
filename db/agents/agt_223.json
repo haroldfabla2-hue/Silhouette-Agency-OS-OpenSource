@@ -1,0 +1,14 @@
+{
+  "id": "agt_223",
+  "name": "PWA Unit B",
+  "teamId": "SQ_DEV_14",
+  "category": "DEV",
+  "roleType": "WORKER",
+  "role": "Architect",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799002
+}

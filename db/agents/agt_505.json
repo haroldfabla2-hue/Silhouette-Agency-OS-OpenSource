@@ -1,0 +1,14 @@
+{
+  "id": "agt_505",
+  "name": "LeanMfg Unit B",
+  "teamId": "SQ_MFG_108",
+  "category": "MFG",
+  "roleType": "WORKER",
+  "role": "Safety Officer",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003
+}

@@ -1,0 +1,16 @@
+# Chatterbox Voice Engine for Silhouette
+# GPU-accelerated local text-to-speech with voice cloning
+# Migrated from Coqui XTTS v2 to Chatterbox Multilingual (faster, less VRAM)
+
+chatterbox-tts
+torch>=2.0.0
+torchaudio>=2.0.0
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart
+
+# Audio Preprocessing for Voice Cloning
+librosa>=0.10.0
+soundfile>=0.12.0
+noisereduce>=3.0.0
+pydub>=0.25.0

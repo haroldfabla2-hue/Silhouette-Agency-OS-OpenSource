@@ -1,0 +1,14 @@
+{
+  "id": "agt_514",
+  "name": "Assembly Unit B",
+  "teamId": "SQ_MFG_111",
+  "category": "MFG",
+  "roleType": "WORKER",
+  "role": "Safety Officer",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003
+}

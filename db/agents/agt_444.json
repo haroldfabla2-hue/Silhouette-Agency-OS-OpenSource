@@ -1,0 +1,14 @@
+{
+  "id": "agt_444",
+  "name": "FinTech Unit A",
+  "teamId": "SQ_FINANCE_88",
+  "category": "FINANCE",
+  "roleType": "WORKER",
+  "role": "Trader",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003
+}

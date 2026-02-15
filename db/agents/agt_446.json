@@ -1,0 +1,15 @@
+{
+  "id": "agt_446",
+  "name": "Investment Lead",
+  "teamId": "SQ_FINANCE_89",
+  "category": "FINANCE",
+  "roleType": "LEADER",
+  "role": "Lead Financial Analyst",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003,
+  "port": 8088
+}

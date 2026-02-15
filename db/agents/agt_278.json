@@ -1,0 +1,15 @@
+{
+  "id": "agt_278",
+  "name": "DataQuality Lead",
+  "teamId": "SQ_DATA_33",
+  "category": "DATA",
+  "roleType": "LEADER",
+  "role": "Lead Data Scientist",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003,
+  "port": 8032
+}

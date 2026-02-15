@@ -1,0 +1,15 @@
+{
+  "id": "agt_533",
+  "name": "RedTeam Lead",
+  "teamId": "SQ_CYBERSEC_118",
+  "category": "CYBERSEC",
+  "roleType": "LEADER",
+  "role": "Lead Security Analyst",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003,
+  "port": 8117
+}

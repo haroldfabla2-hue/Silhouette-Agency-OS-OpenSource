@@ -1,0 +1,15 @@
+{
+  "id": "agt_362",
+  "name": "Procurement Lead",
+  "teamId": "SQ_OPS_61",
+  "category": "OPS",
+  "roleType": "LEADER",
+  "role": "Lead Ops Manager",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656806401,
+  "port": 8060
+}

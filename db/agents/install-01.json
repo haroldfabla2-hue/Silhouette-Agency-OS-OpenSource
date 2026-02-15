@@ -1,0 +1,14 @@
+{
+  "id": "install-01",
+  "name": "Code_Scanner",
+  "teamId": "TEAM_INSTALL",
+  "category": "INSTALL",
+  "roleType": "LEADER",
+  "role": "System Architect",
+  "status": "OFFLINE",
+  "enabled": false,
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656798887,
+  "memoryLocation": "VRAM"
+}

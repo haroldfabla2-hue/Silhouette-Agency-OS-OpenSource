@@ -1,0 +1,15 @@
+{
+  "id": "agt_224",
+  "name": "DevOps Lead",
+  "teamId": "SQ_DEV_15",
+  "category": "DEV",
+  "roleType": "LEADER",
+  "role": "Lead Senior Engineer",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799002,
+  "port": 8014
+}

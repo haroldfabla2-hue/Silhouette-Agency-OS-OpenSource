@@ -1,0 +1,14 @@
+{
+  "id": "agt_531",
+  "name": "Solar Unit A",
+  "teamId": "SQ_ENERGY_117",
+  "category": "ENERGY",
+  "roleType": "WORKER",
+  "role": "Grid Analyst",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003
+}

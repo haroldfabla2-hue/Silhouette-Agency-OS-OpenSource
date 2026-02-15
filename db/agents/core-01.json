@@ -1,0 +1,14 @@
+{
+  "id": "core-01",
+  "name": "Orchestrator_Prime",
+  "teamId": "TEAM_CORE",
+  "category": "CORE",
+  "roleType": "LEADER",
+  "role": "System Controller",
+  "status": "OFFLINE",
+  "enabled": true,
+  "cpuUsage": 12,
+  "ramUsage": 150,
+  "lastActive": 1764656807836,
+  "memoryLocation": "VRAM"
+}

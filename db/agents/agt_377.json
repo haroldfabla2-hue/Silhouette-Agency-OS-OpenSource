@@ -1,0 +1,15 @@
+{
+  "id": "agt_377",
+  "name": "Quality Lead",
+  "teamId": "SQ_OPS_66",
+  "category": "OPS",
+  "roleType": "LEADER",
+  "role": "Lead Ops Manager",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656808177,
+  "port": 8065
+}

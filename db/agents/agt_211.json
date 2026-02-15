@@ -1,0 +1,14 @@
+{
+  "id": "agt_211",
+  "name": "Mobile Unit B",
+  "teamId": "SQ_DEV_10",
+  "category": "DEV",
+  "roleType": "WORKER",
+  "role": "Architect",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799002
+}

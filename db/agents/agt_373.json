@@ -1,0 +1,14 @@
+{
+  "id": "agt_373",
+  "name": "Audit Unit B",
+  "teamId": "SQ_OPS_64",
+  "category": "OPS",
+  "roleType": "WORKER",
+  "role": "Process Engineer",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656810094
+}

@@ -1,0 +1,15 @@
+{
+  "id": "agt_518",
+  "name": "SmartGrid Lead",
+  "teamId": "SQ_ENERGY_113",
+  "category": "ENERGY",
+  "roleType": "LEADER",
+  "role": "Lead Energy Consultant",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003,
+  "port": 8112
+}

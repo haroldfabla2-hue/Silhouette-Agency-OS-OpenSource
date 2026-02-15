@@ -1,0 +1,7 @@
+FROM llama3.2:3b
+
+# Set context window to 8k (sufficient for most tasks, saves tons of RAM)
+PARAMETER num_ctx 8192
+
+# Optimizaion for low VRAM
+PARAMETER num_gpu 999

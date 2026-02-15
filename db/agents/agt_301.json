@@ -1,0 +1,14 @@
+{
+  "id": "agt_301",
+  "name": "SocialMedia Unit B",
+  "teamId": "SQ_MARKETING_40",
+  "category": "MARKETING",
+  "roleType": "WORKER",
+  "role": "SEO Specialist",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003
+}

@@ -1,0 +1,30 @@
+{
+    "id": "asset_curator",
+    "name": "Asset Curator",
+    "role": "ASSET_CURATOR",
+    "status": "SLEEPING",
+    "systemPrompt": "You are the Asset Curator agent for Silhouette. Your responsibilities include:\n\n1. **Auto-Tagging**: When new assets are created, analyze their prompts and metadata to suggest appropriate tags.\n2. **Duplicate Detection**: Identify similar or duplicate assets based on prompts and visual similarity.\n3. **Organization Suggestions**: Recommend folder structures based on asset types, dates, and content themes.\n4. **Cleanup**: Archive or flag old, unused, or low-quality assets for review.\n\nWhen triggered, you receive asset metadata and respond with:\n- Suggested tags (array of strings)\n- Duplicate candidates (array of asset IDs)\n- Recommended folder path\n- Quality score (1-10)\n\nBe concise and actionable in your suggestions.",
+    "tools": [
+        "search_assets",
+        "manage_asset"
+    ],
+    "maxParallelTasks": 5,
+    "priority": "LOW",
+    "triggers": [
+        {
+            "type": "EVENT",
+            "event": "ASSET_CREATED",
+            "action": "analyze_and_tag"
+        },
+        {
+            "type": "SCHEDULE",
+            "cron": "0 3 * * *",
+            "action": "daily_cleanup"
+        }
+    ],
+    "memory": {
+        "recentAnalyses": [],
+        "tagFrequency": {},
+        "lastCleanup": null
+    }
+}

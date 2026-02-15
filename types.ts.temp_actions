@@ -1,0 +1,32 @@
+
+export enum ActionType {
+    READ_FILE = 'READ_FILE',
+    WRITE_FILE = 'WRITE_FILE',
+    EXECUTE_COMMAND = 'EXECUTE_COMMAND',
+    HTTP_REQUEST = 'HTTP_REQUEST'
+}
+
+export interface AgentAction {
+    id: string;
+    agentId: string;
+    type: ActionType;
+    payload: {
+        path?: string;
+        content?: string;
+        command?: string;
+        url?: string;
+        method?: string;
+        headers?: any;
+    };
+    status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXECUTED' | 'FAILED';
+    result?: any;
+    timestamp: number;
+    requiresApproval: boolean;
+}
+
+export interface ActionResult {
+    success: boolean;
+    data?: any;
+    error?: string;
+    timestamp: number;
+}

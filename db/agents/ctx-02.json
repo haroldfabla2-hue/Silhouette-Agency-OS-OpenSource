@@ -1,0 +1,14 @@
+{
+  "id": "ctx-02",
+  "name": "Context_Overseer",
+  "teamId": "TEAM_CONTEXT",
+  "category": "DATA",
+  "roleType": "WORKER",
+  "role": "Long-Term Supervisor",
+  "status": "IDLE",
+  "enabled": true,
+  "cpuUsage": 4,
+  "ramUsage": 180,
+  "lastActive": 1764656798887,
+  "memoryLocation": "VRAM"
+}

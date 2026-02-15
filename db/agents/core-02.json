@@ -1,0 +1,14 @@
+{
+  "id": "core-02",
+  "name": "Intent_Analyzer_Alpha",
+  "teamId": "TEAM_CORE",
+  "category": "CORE",
+  "roleType": "WORKER",
+  "role": "Prompt Engineer Lead",
+  "status": "OFFLINE",
+  "enabled": true,
+  "cpuUsage": 15,
+  "ramUsage": 120,
+  "lastActive": 1764656808534,
+  "memoryLocation": "VRAM"
+}

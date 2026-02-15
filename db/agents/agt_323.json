@@ -1,0 +1,15 @@
+{
+  "id": "agt_323",
+  "name": "Brand Lead",
+  "teamId": "SQ_MARKETING_48",
+  "category": "MARKETING",
+  "roleType": "LEADER",
+  "role": "Lead Copywriter",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003,
+  "port": 8047
+}

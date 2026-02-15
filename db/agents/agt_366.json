@@ -1,0 +1,14 @@
+{
+  "id": "agt_366",
+  "name": "Agile Unit A",
+  "teamId": "SQ_OPS_62",
+  "category": "OPS",
+  "roleType": "WORKER",
+  "role": "Process Engineer",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656812979
+}

@@ -1,0 +1,14 @@
+{
+  "id": "mkt-lead",
+  "name": "Creative_Director",
+  "teamId": "TEAM_MKT",
+  "category": "MARKETING",
+  "roleType": "LEADER",
+  "role": "Brand Director",
+  "status": "IDLE",
+  "enabled": true,
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656798887,
+  "memoryLocation": "VRAM"
+}

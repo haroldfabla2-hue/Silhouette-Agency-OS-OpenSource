@@ -1,0 +1,14 @@
+{
+  "id": "agt_534",
+  "name": "RedTeam Unit A",
+  "teamId": "SQ_CYBERSEC_118",
+  "category": "CYBERSEC",
+  "roleType": "WORKER",
+  "role": "Ethical Hacker",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003
+}

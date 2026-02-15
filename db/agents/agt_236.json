@@ -1,0 +1,15 @@
+{
+  "id": "agt_236",
+  "name": "Frontend Lead",
+  "teamId": "SQ_DEV_19",
+  "category": "DEV",
+  "roleType": "LEADER",
+  "role": "Lead Senior Engineer",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003,
+  "port": 8018
+}

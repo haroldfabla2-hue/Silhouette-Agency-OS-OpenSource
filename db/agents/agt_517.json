@@ -1,0 +1,14 @@
+{
+  "id": "agt_517",
+  "name": "Renewable Unit B",
+  "teamId": "SQ_ENERGY_112",
+  "category": "ENERGY",
+  "roleType": "WORKER",
+  "role": "Grid Analyst",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003
+}

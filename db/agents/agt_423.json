@@ -1,0 +1,14 @@
+{
+  "id": "agt_423",
+  "name": "HelpDesk Unit A",
+  "teamId": "SQ_SUPPORT_81",
+  "category": "SUPPORT",
+  "roleType": "WORKER",
+  "role": "Trainer",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003
+}

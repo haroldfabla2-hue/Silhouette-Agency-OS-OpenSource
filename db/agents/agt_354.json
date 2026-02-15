@@ -1,0 +1,14 @@
+{
+  "id": "agt_354",
+  "name": "Quality Unit A",
+  "teamId": "SQ_OPS_58",
+  "category": "OPS",
+  "roleType": "WORKER",
+  "role": "Process Engineer",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656806548
+}

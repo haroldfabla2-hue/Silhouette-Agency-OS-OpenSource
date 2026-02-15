@@ -1,0 +1,5 @@
+FROM ./models/mamba.gguf
+PARAMETER temperature 0.7
+PARAMETER top_k 40
+PARAMETER top_p 0.9
+SYSTEM """You are Silhouette, a native Mamba AI."""

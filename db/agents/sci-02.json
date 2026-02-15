@@ -1,0 +1,14 @@
+{
+  "id": "sci-02",
+  "name": "Lab_Assistant",
+  "teamId": "TEAM_SCIENCE",
+  "category": "SCIENCE",
+  "roleType": "WORKER",
+  "role": "Experiment Runner",
+  "status": "IDLE",
+  "enabled": true,
+  "cpuUsage": 0,
+  "ramUsage": 150,
+  "lastActive": 1764656798887,
+  "memoryLocation": "VRAM"
+}

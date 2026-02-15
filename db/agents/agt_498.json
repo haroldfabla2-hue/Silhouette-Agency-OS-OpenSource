@@ -1,0 +1,14 @@
+{
+  "id": "agt_498",
+  "name": "IndustrialIoT Unit A",
+  "teamId": "SQ_MFG_106",
+  "category": "MFG",
+  "roleType": "WORKER",
+  "role": "Safety Officer",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003
+}

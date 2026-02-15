@@ -1,0 +1,7 @@
+FROM glm4:latest
+
+# Set context window to 4k (GLM-4 is heavier, so we need to be more aggressive to fit in RAM/VRAM)
+PARAMETER num_ctx 4096
+
+# Optimizaion for low VRAM
+PARAMETER num_gpu 999

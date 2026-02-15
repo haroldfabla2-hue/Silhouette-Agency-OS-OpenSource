@@ -1,0 +1,14 @@
+{
+  "id": "agt_304",
+  "name": "Email Unit B",
+  "teamId": "SQ_MARKETING_41",
+  "category": "MARKETING",
+  "roleType": "WORKER",
+  "role": "SEO Specialist",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003
+}

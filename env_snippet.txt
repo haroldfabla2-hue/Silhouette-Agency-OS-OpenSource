@@ -1,0 +1,4 @@
+# MINIMAX PRIME (The Brain)
+# Get your key from: https://platform.minimaxi.com/
+MINIMAX_API_KEY=your_sk_key_here
+MINIMAX_GROUP_ID=your_group_id_here_if_applicable

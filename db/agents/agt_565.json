@@ -1,0 +1,14 @@
+{
+  "id": "agt_565",
+  "name": "Contract Unit B",
+  "teamId": "SQ_LEGAL_128",
+  "category": "LEGAL",
+  "roleType": "WORKER",
+  "role": "Compliance Officer",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003
+}

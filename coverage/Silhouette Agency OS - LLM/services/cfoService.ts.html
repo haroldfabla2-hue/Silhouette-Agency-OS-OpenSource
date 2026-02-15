@@ -1,0 +1,664 @@
+
+<!doctype html>
+<html lang="en">
+
+<head>
+    <title>Code coverage report for Silhouette Agency OS - LLM/services/cfoService.ts</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../../prettify.css" />
+    <link rel="stylesheet" href="../../base.css" />
+    <link rel="shortcut icon" type="image/x-icon" href="../../favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style type='text/css'>
+        .coverage-summary .sorter {
+            background-image: url(../../sort-arrow-sprite.png);
+        }
+    </style>
+</head>
+    
+<body>
+<div class='wrapper'>
+    <div class='pad1'>
+        <h1><a href="../../index.html">All files</a> / <a href="index.html">Silhouette Agency OS - LLM/services</a> cfoService.ts</h1>
+        <div class='clearfix'>
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">8.95% </span>
+                <span class="quiet">Statements</span>
+                <span class='fraction'>6/67</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">1.42% </span>
+                <span class="quiet">Branches</span>
+                <span class='fraction'>1/70</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">18.18% </span>
+                <span class="quiet">Functions</span>
+                <span class='fraction'>2/11</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">9.52% </span>
+                <span class="quiet">Lines</span>
+                <span class='fraction'>6/63</span>
+            </div>
+        
+            
+        </div>
+        <p class="quiet">
+            Press <em>n</em> or <em>j</em> to go to the next uncovered block, <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
+        </p>
+        <template id="filterTemplate">
+            <div class="quiet">
+                Filter:
+                <input type="search" id="fileSearch">
+            </div>
+        </template>
+    </div>
+    <div class='status-line low'></div>
+    <pre><table class="coverage">
+<tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
+<a name='L2'></a><a href='#L2'>2</a>
+<a name='L3'></a><a href='#L3'>3</a>
+<a name='L4'></a><a href='#L4'>4</a>
+<a name='L5'></a><a href='#L5'>5</a>
+<a name='L6'></a><a href='#L6'>6</a>
+<a name='L7'></a><a href='#L7'>7</a>
+<a name='L8'></a><a href='#L8'>8</a>
+<a name='L9'></a><a href='#L9'>9</a>
+<a name='L10'></a><a href='#L10'>10</a>
+<a name='L11'></a><a href='#L11'>11</a>
+<a name='L12'></a><a href='#L12'>12</a>
+<a name='L13'></a><a href='#L13'>13</a>
+<a name='L14'></a><a href='#L14'>14</a>
+<a name='L15'></a><a href='#L15'>15</a>
+<a name='L16'></a><a href='#L16'>16</a>
+<a name='L17'></a><a href='#L17'>17</a>
+<a name='L18'></a><a href='#L18'>18</a>
+<a name='L19'></a><a href='#L19'>19</a>
+<a name='L20'></a><a href='#L20'>20</a>
+<a name='L21'></a><a href='#L21'>21</a>
+<a name='L22'></a><a href='#L22'>22</a>
+<a name='L23'></a><a href='#L23'>23</a>
+<a name='L24'></a><a href='#L24'>24</a>
+<a name='L25'></a><a href='#L25'>25</a>
+<a name='L26'></a><a href='#L26'>26</a>
+<a name='L27'></a><a href='#L27'>27</a>
+<a name='L28'></a><a href='#L28'>28</a>
+<a name='L29'></a><a href='#L29'>29</a>
+<a name='L30'></a><a href='#L30'>30</a>
+<a name='L31'></a><a href='#L31'>31</a>
+<a name='L32'></a><a href='#L32'>32</a>
+<a name='L33'></a><a href='#L33'>33</a>
+<a name='L34'></a><a href='#L34'>34</a>
+<a name='L35'></a><a href='#L35'>35</a>
+<a name='L36'></a><a href='#L36'>36</a>
+<a name='L37'></a><a href='#L37'>37</a>
+<a name='L38'></a><a href='#L38'>38</a>
+<a name='L39'></a><a href='#L39'>39</a>
+<a name='L40'></a><a href='#L40'>40</a>
+<a name='L41'></a><a href='#L41'>41</a>
+<a name='L42'></a><a href='#L42'>42</a>
+<a name='L43'></a><a href='#L43'>43</a>
+<a name='L44'></a><a href='#L44'>44</a>
+<a name='L45'></a><a href='#L45'>45</a>
+<a name='L46'></a><a href='#L46'>46</a>
+<a name='L47'></a><a href='#L47'>47</a>
+<a name='L48'></a><a href='#L48'>48</a>
+<a name='L49'></a><a href='#L49'>49</a>
+<a name='L50'></a><a href='#L50'>50</a>
+<a name='L51'></a><a href='#L51'>51</a>
+<a name='L52'></a><a href='#L52'>52</a>
+<a name='L53'></a><a href='#L53'>53</a>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a>
+<a name='L70'></a><a href='#L70'>70</a>
+<a name='L71'></a><a href='#L71'>71</a>
+<a name='L72'></a><a href='#L72'>72</a>
+<a name='L73'></a><a href='#L73'>73</a>
+<a name='L74'></a><a href='#L74'>74</a>
+<a name='L75'></a><a href='#L75'>75</a>
+<a name='L76'></a><a href='#L76'>76</a>
+<a name='L77'></a><a href='#L77'>77</a>
+<a name='L78'></a><a href='#L78'>78</a>
+<a name='L79'></a><a href='#L79'>79</a>
+<a name='L80'></a><a href='#L80'>80</a>
+<a name='L81'></a><a href='#L81'>81</a>
+<a name='L82'></a><a href='#L82'>82</a>
+<a name='L83'></a><a href='#L83'>83</a>
+<a name='L84'></a><a href='#L84'>84</a>
+<a name='L85'></a><a href='#L85'>85</a>
+<a name='L86'></a><a href='#L86'>86</a>
+<a name='L87'></a><a href='#L87'>87</a>
+<a name='L88'></a><a href='#L88'>88</a>
+<a name='L89'></a><a href='#L89'>89</a>
+<a name='L90'></a><a href='#L90'>90</a>
+<a name='L91'></a><a href='#L91'>91</a>
+<a name='L92'></a><a href='#L92'>92</a>
+<a name='L93'></a><a href='#L93'>93</a>
+<a name='L94'></a><a href='#L94'>94</a>
+<a name='L95'></a><a href='#L95'>95</a>
+<a name='L96'></a><a href='#L96'>96</a>
+<a name='L97'></a><a href='#L97'>97</a>
+<a name='L98'></a><a href='#L98'>98</a>
+<a name='L99'></a><a href='#L99'>99</a>
+<a name='L100'></a><a href='#L100'>100</a>
+<a name='L101'></a><a href='#L101'>101</a>
+<a name='L102'></a><a href='#L102'>102</a>
+<a name='L103'></a><a href='#L103'>103</a>
+<a name='L104'></a><a href='#L104'>104</a>
+<a name='L105'></a><a href='#L105'>105</a>
+<a name='L106'></a><a href='#L106'>106</a>
+<a name='L107'></a><a href='#L107'>107</a>
+<a name='L108'></a><a href='#L108'>108</a>
+<a name='L109'></a><a href='#L109'>109</a>
+<a name='L110'></a><a href='#L110'>110</a>
+<a name='L111'></a><a href='#L111'>111</a>
+<a name='L112'></a><a href='#L112'>112</a>
+<a name='L113'></a><a href='#L113'>113</a>
+<a name='L114'></a><a href='#L114'>114</a>
+<a name='L115'></a><a href='#L115'>115</a>
+<a name='L116'></a><a href='#L116'>116</a>
+<a name='L117'></a><a href='#L117'>117</a>
+<a name='L118'></a><a href='#L118'>118</a>
+<a name='L119'></a><a href='#L119'>119</a>
+<a name='L120'></a><a href='#L120'>120</a>
+<a name='L121'></a><a href='#L121'>121</a>
+<a name='L122'></a><a href='#L122'>122</a>
+<a name='L123'></a><a href='#L123'>123</a>
+<a name='L124'></a><a href='#L124'>124</a>
+<a name='L125'></a><a href='#L125'>125</a>
+<a name='L126'></a><a href='#L126'>126</a>
+<a name='L127'></a><a href='#L127'>127</a>
+<a name='L128'></a><a href='#L128'>128</a>
+<a name='L129'></a><a href='#L129'>129</a>
+<a name='L130'></a><a href='#L130'>130</a>
+<a name='L131'></a><a href='#L131'>131</a>
+<a name='L132'></a><a href='#L132'>132</a>
+<a name='L133'></a><a href='#L133'>133</a>
+<a name='L134'></a><a href='#L134'>134</a>
+<a name='L135'></a><a href='#L135'>135</a>
+<a name='L136'></a><a href='#L136'>136</a>
+<a name='L137'></a><a href='#L137'>137</a>
+<a name='L138'></a><a href='#L138'>138</a>
+<a name='L139'></a><a href='#L139'>139</a>
+<a name='L140'></a><a href='#L140'>140</a>
+<a name='L141'></a><a href='#L141'>141</a>
+<a name='L142'></a><a href='#L142'>142</a>
+<a name='L143'></a><a href='#L143'>143</a>
+<a name='L144'></a><a href='#L144'>144</a>
+<a name='L145'></a><a href='#L145'>145</a>
+<a name='L146'></a><a href='#L146'>146</a>
+<a name='L147'></a><a href='#L147'>147</a>
+<a name='L148'></a><a href='#L148'>148</a>
+<a name='L149'></a><a href='#L149'>149</a>
+<a name='L150'></a><a href='#L150'>150</a>
+<a name='L151'></a><a href='#L151'>151</a>
+<a name='L152'></a><a href='#L152'>152</a>
+<a name='L153'></a><a href='#L153'>153</a>
+<a name='L154'></a><a href='#L154'>154</a>
+<a name='L155'></a><a href='#L155'>155</a>
+<a name='L156'></a><a href='#L156'>156</a>
+<a name='L157'></a><a href='#L157'>157</a>
+<a name='L158'></a><a href='#L158'>158</a>
+<a name='L159'></a><a href='#L159'>159</a>
+<a name='L160'></a><a href='#L160'>160</a>
+<a name='L161'></a><a href='#L161'>161</a>
+<a name='L162'></a><a href='#L162'>162</a>
+<a name='L163'></a><a href='#L163'>163</a>
+<a name='L164'></a><a href='#L164'>164</a>
+<a name='L165'></a><a href='#L165'>165</a>
+<a name='L166'></a><a href='#L166'>166</a>
+<a name='L167'></a><a href='#L167'>167</a>
+<a name='L168'></a><a href='#L168'>168</a>
+<a name='L169'></a><a href='#L169'>169</a>
+<a name='L170'></a><a href='#L170'>170</a>
+<a name='L171'></a><a href='#L171'>171</a>
+<a name='L172'></a><a href='#L172'>172</a>
+<a name='L173'></a><a href='#L173'>173</a>
+<a name='L174'></a><a href='#L174'>174</a>
+<a name='L175'></a><a href='#L175'>175</a>
+<a name='L176'></a><a href='#L176'>176</a>
+<a name='L177'></a><a href='#L177'>177</a>
+<a name='L178'></a><a href='#L178'>178</a>
+<a name='L179'></a><a href='#L179'>179</a>
+<a name='L180'></a><a href='#L180'>180</a>
+<a name='L181'></a><a href='#L181'>181</a>
+<a name='L182'></a><a href='#L182'>182</a>
+<a name='L183'></a><a href='#L183'>183</a>
+<a name='L184'></a><a href='#L184'>184</a>
+<a name='L185'></a><a href='#L185'>185</a>
+<a name='L186'></a><a href='#L186'>186</a>
+<a name='L187'></a><a href='#L187'>187</a>
+<a name='L188'></a><a href='#L188'>188</a>
+<a name='L189'></a><a href='#L189'>189</a>
+<a name='L190'></a><a href='#L190'>190</a>
+<a name='L191'></a><a href='#L191'>191</a>
+<a name='L192'></a><a href='#L192'>192</a>
+<a name='L193'></a><a href='#L193'>193</a>
+<a name='L194'></a><a href='#L194'>194</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { costEstimator } from "./costEstimator";
+import { SystemProtocol } from "../types";
+import { systemBus } from "./systemBus";
+import { settingsManager } from "./settingsManager";
+&nbsp;
+// --- CFO AGENT (Chief Financial Officer) ---
+// The Guardian of the Wallet.
+// Active Role: Negotiates models, enforces budgets, and detects anomalies.
+&nbsp;
+export interface BudgetConfig {
+    maxDailyCost: number;
+    maxSessionCost: number;
+    requireApprovalThreshold: number; // Cost per request that triggers manual approval
+}
+&nbsp;
+export class CFOAgent {
+    private static instance: CFOAgent;
+    private config: BudgetConfig = {
+        maxDailyCost: 50.00, // $50/day limit
+        maxSessionCost: 10.00, // $10/session limit
+        requireApprovalThreshold: 0.50 // Ask if request &gt; $0.50
+    };
+&nbsp;
+    private constructor() {
+        console.log("[CFO] Guardian Active. Monitoring Wallet.");
+    }
+&nbsp;
+    public static getInstance(): CFOAgent {
+        <span class="missing-if-branch" title="else path not taken" >E</span>if (!CFOAgent.instance) {
+            CFOAgent.instance = new CFOAgent();
+        }
+        return CFOAgent.instance;
+    }
+&nbsp;
+    public <span class="fstat-no" title="function not covered" >updateConfig(n</span>ewConfig: Partial&lt;BudgetConfig&gt;) {
+<span class="cstat-no" title="statement not covered" >        this.config = { ...this.config, ...newConfig };</span>
+    }
+&nbsp;
+    /**
+     * INTELLIGENT NEGOTIATION V2
+     * Decides which model to use based on:
+     * - Agent category (DEV agents → MiniMax M2.1 via OpenRouter)
+     * - Prompt complexity and type
+     * - Cost efficiency
+     * - Available APIs with fallback chain
+     * 
+     * Fallback Chain for CODE: MiniMax → DeepSeek → Gemini → ZhipuAI → Ollama
+     */
+    public <span class="fstat-no" title="function not covered" >negotiateModel(p</span>rompt: string, preferredModel: string, context: any): string {
+        const metrics = <span class="cstat-no" title="statement not covered" >costEstimator.getMetrics();</span>
+        const settings = <span class="cstat-no" title="statement not covered" >settingsManager.getSettings();</span>
+        const agentCategory = <span class="cstat-no" title="statement not covered" >context?.category;</span>
+        const agentName = <span class="cstat-no" title="statement not covered" >context?.agentName || 'unknown';</span>
+&nbsp;
+        // 1. BUDGET CHECK
+<span class="cstat-no" title="statement not covered" >        if (metrics.sessionCost &gt; this.config.maxSessionCost) {</span>
+<span class="cstat-no" title="statement not covered" >            throw new Error(`[CFO] 🛑 Session Budget Exceeded ($${this.config.maxSessionCost}). Operation Halted.`);</span>
+        }
+&nbsp;
+        // 2. API AVAILABILITY CHECK
+        const hasOpenAI = <span class="cstat-no" title="statement not covered" >settings.registeredIntegrations.find(<span class="fstat-no" title="function not covered" >i =&gt; <span class="cstat-no" title="statement not covered" >i</span>.id === 'openai')</span>?.isConnected;</span>
+        const hasAnthropic = <span class="cstat-no" title="statement not covered" >settings.registeredIntegrations.find(<span class="fstat-no" title="function not covered" >i =&gt; <span class="cstat-no" title="statement not covered" >i</span>.id === 'anthropic')</span>?.isConnected;</span>
+        const hasOpenRouter = <span class="cstat-no" title="statement not covered" >!!process.env.OPENROUTER_API_KEY;  // For MiniMax M2.1</span>
+        const hasDeepSeek = <span class="cstat-no" title="statement not covered" >!!process.env.DEEPSEEK_API_KEY;      // Fallback</span>
+        const hasZhipuAI = <span class="cstat-no" title="statement not covered" >!!process.env.ZHIPU_API_KEY || !!process.env.ZHIPUAI_API_KEY;  // Free tier</span>
+        const hasOllama = <span class="cstat-no" title="statement not covered" >!!process.env.OLLAMA_BASE_URL || true; // Assume local Ollama available</span>
+&nbsp;
+        // 3. COMPLEXITY &amp; TYPE ANALYSIS
+        const isCode = <span class="cstat-no" title="statement not covered" >/code|function|class|import|bug|fix|refactor|typescript|javascript|python|implement/i.test(prompt);</span>
+        const isCreative = <span class="cstat-no" title="statement not covered" >/story|poem|creative|design|imagine/i.test(prompt);</span>
+        const isComplex = <span class="cstat-no" title="statement not covered" >prompt.length &gt; 1000 || isCode || isCreative;</span>
+        const isDevAgent = <span class="cstat-no" title="statement not covered" >agentCategory === 'DEV' || agentCategory === 'INTEGRATION';</span>
+&nbsp;
+        // 4. MODEL SELECTION STRATEGY FOR CODE TASKS
+&nbsp;
+        // === CASE A: DEV AGENT OR CODE TASK → MINIMAX M2.1 (via OpenRouter) ===
+<span class="cstat-no" title="statement not covered" >        if ((isDevAgent || isCode) &amp;&amp; hasOpenRouter) {</span>
+<span class="cstat-no" title="statement not covered" >            console.log(`[CFO] 🎯 Code task detected${isDevAgent ? ` (Agent: ${agentName}, Category: ${agentCategory})` : ''}. Using MiniMax M2.1.`);</span>
+<span class="cstat-no" title="statement not covered" >            return 'minimax/minimax-m2.1';</span>
+        }
+&nbsp;
+        // === MINIMAX FALLBACK → DEEPSEEK ===
+<span class="cstat-no" title="statement not covered" >        if ((isDevAgent || isCode) &amp;&amp; hasDeepSeek) {</span>
+<span class="cstat-no" title="statement not covered" >            console.log(`[CFO] ⚠️ OpenRouter unavailable. Fallback to DeepSeek.`);</span>
+<span class="cstat-no" title="statement not covered" >            return 'deepseek-coder';</span>
+        }
+&nbsp;
+        // === DEEPSEEK FALLBACK → ZHIPUAI (FREE) ===
+<span class="cstat-no" title="statement not covered" >        if ((isDevAgent || isCode) &amp;&amp; hasZhipuAI) {</span>
+<span class="cstat-no" title="statement not covered" >            console.log(`[CFO] ⚠️ DeepSeek unavailable. Fallback to ZhipuAI (FREE).`);</span>
+<span class="cstat-no" title="statement not covered" >            return 'glm-4.5-flash';</span>
+        }
+&nbsp;
+        // === ZHIPUAI FALLBACK → GEMINI (FREE) ===
+<span class="cstat-no" title="statement not covered" >        if (isDevAgent || isCode) {</span>
+<span class="cstat-no" title="statement not covered" >            console.log(`[CFO] ⚠️ ZhipuAI unavailable. Fallback to Gemini.`);</span>
+<span class="cstat-no" title="statement not covered" >            if (isComplex) <span class="cstat-no" title="statement not covered" >return 'gemini-1.5-pro';</span></span>
+<span class="cstat-no" title="statement not covered" >            return 'gemini-2.5-flash';</span>
+        }
+&nbsp;
+        // Note: Ollama is last resort handled by geminiService when all cloud fails
+&nbsp;
+        // === CASE B: High-End Request (GPT-4 / Opus) ===
+<span class="cstat-no" title="statement not covered" >        if (preferredModel.includes('gpt-4') || preferredModel.includes('opus')) {</span>
+<span class="cstat-no" title="statement not covered" >            if (preferredModel.includes('gpt-4') &amp;&amp; !hasOpenAI) {</span>
+<span class="cstat-no" title="statement not covered" >                console.warn("[CFO] ⚠️ GPT-4 requested but OpenAI offline. Fallback to Gemini Pro.");</span>
+<span class="cstat-no" title="statement not covered" >                return 'gemini-1.5-pro';</span>
+            }
+<span class="cstat-no" title="statement not covered" >            if (preferredModel.includes('opus') &amp;&amp; !hasAnthropic) {</span>
+<span class="cstat-no" title="statement not covered" >                console.warn("[CFO] ⚠️ Claude Opus requested but Anthropic offline. Fallback to Gemini Pro.");</span>
+<span class="cstat-no" title="statement not covered" >                return 'gemini-1.5-pro';</span>
+            }
+&nbsp;
+            // Downgrade trivial tasks (Cost Saving)
+<span class="cstat-no" title="statement not covered" >            if (!isComplex &amp;&amp; prompt.length &lt; 200) {</span>
+<span class="cstat-no" title="statement not covered" >                console.log("[CFO] 📉 Downgrading model for simple task (Cost Saving).");</span>
+<span class="cstat-no" title="statement not covered" >                return 'gemini-2.5-flash';</span>
+            }
+        }
+&nbsp;
+&nbsp;
+        // === CASE C: Auto / Default ===
+        const finalModel = (<span class="cstat-no" title="statement not covered" >!preferredModel || preferredModel === 'auto')</span>
+            ? (isComplex ? 'gemini-1.5-pro' : 'gemini-2.5-flash')
+            : preferredModel;
+&nbsp;
+        // [RESOURCE OPTIMIZATION] Management of VRAM
+        // Fire-and-forget: Switch TTS state based on model locality
+<span class="cstat-no" title="statement not covered" >        this.optimizeResourcesForModel(finalModel).catch(<span class="fstat-no" title="function not covered" >err =&gt; <span class="cstat-no" title="statement not covered" >c</span>onsole.error("[CFO] Resource optimization failed:", err))</span>;</span>
+&nbsp;
+<span class="cstat-no" title="statement not covered" >        return finalModel;</span>
+    }
+&nbsp;
+    /**
+     * VRAM ARBITRATION
+     * Manages conflict between Local LLM (Ollama) and Local TTS (Coqui).
+     * Both need VRAM. If we run Ollama, we sleep TTS.
+     */
+    private async <span class="fstat-no" title="function not covered" >optimizeResourcesForModel(m</span>odelId: string) {
+        // dynamic import to avoid cycles
+        const { ttsService } = <span class="cstat-no" title="statement not covered" >await import('./ttsService');</span>
+&nbsp;
+        const isLocalLLM = <span class="cstat-no" title="statement not covered" >modelId.includes('ollama') || modelId.includes('local');</span>
+&nbsp;
+<span class="cstat-no" title="statement not covered" >        if (isLocalLLM) {</span>
+<span class="cstat-no" title="statement not covered" >            console.log(`[CFO] 💾 Local LLM selected (${modelId}). Signaling TTS to SLEEP to free VRAM.`);</span>
+<span class="cstat-no" title="statement not covered" >            await ttsService.sleep();</span>
+        } else {
+            // If Cloud LLM, we likely have VRAM available for TTS
+            // We wake it up preemptively so it's ready for the response
+            // console.log(`[CFO] ☁️ Cloud LLM selected. Signaling TTS to WAKE.`);
+<span class="cstat-no" title="statement not covered" >            await ttsService.wake();</span>
+        }
+    }
+&nbsp;
+    /**
+     * Get the fallback chain for a model type
+     */
+    public <span class="fstat-no" title="function not covered" >getFallbackChain(t</span>askType: 'CODE' | 'CREATIVE' | 'GENERAL'): string[] {
+<span class="cstat-no" title="statement not covered" >        switch (taskType) {</span>
+            case 'CODE':
+                // MiniMax M2.1 (OpenRouter) → DeepSeek → Gemini → ZhipuAI → Ollama
+<span class="cstat-no" title="statement not covered" >                return ['minimax/minimax-m2.1', 'deepseek-coder', 'gemini-1.5-pro', 'glm-4.5-flash', 'ollama-llama3.2'];</span>
+            case 'CREATIVE':
+<span class="cstat-no" title="statement not covered" >                return ['gemini-1.5-pro', 'glm-4.5-flash', 'ollama-llama3.2'];</span>
+            case 'GENERAL':
+            default:
+<span class="cstat-no" title="statement not covered" >                return ['glm-4.5-flash', 'gemini-2.5-flash', 'ollama-llama3.2'];</span>
+        }
+    }
+&nbsp;
+    /**
+     * COST SPIKE DETECTOR
+     * Checks if an agent is burning money too fast (Infinite Loop).
+     */
+    public <span class="fstat-no" title="function not covered" >checkAnomalies(a</span>gentId: string, recentCost: number) {
+        // If a single agent spends &gt; $1.00 in 1 minute, flag it.
+<span class="cstat-no" title="statement not covered" >        if (recentCost &gt; 2.00) {</span>
+<span class="cstat-no" title="statement not covered" >            console.warn(`[CFO] ⚠️ High Cost Alert! Agent ${agentId} spent $${recentCost.toFixed(2)} recently.`);</span>
+<span class="cstat-no" title="statement not covered" >            systemBus.emit(SystemProtocol.COST_ANOMALY, { agentId, cost: recentCost }, 'CFO');</span>
+        }
+    }
+&nbsp;
+    /**
+     * APPROVAL GATE
+     * Returns true if the operation requires explicit user approval.
+     */
+    public <span class="fstat-no" title="function not covered" >requiresApproval(e</span>stimatedCost: number): boolean {
+<span class="cstat-no" title="statement not covered" >        return estimatedCost &gt; this.config.requireApprovalThreshold;</span>
+    }
+}
+&nbsp;
+export const cfo = CFOAgent.getInstance();
+&nbsp;</pre></td></tr></table></pre>
+
+                <div class='push'></div><!-- for sticky footer -->
+            </div><!-- /wrapper -->
+            <div class='footer quiet pad2 space-top1 center small'>
+                Code coverage generated by
+                <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
+                at 2026-01-10T00:52:38.915Z
+            </div>
+        <script src="../../prettify.js"></script>
+        <script>
+            window.onload = function () {
+                prettyPrint();
+            };
+        </script>
+        <script src="../../sorter.js"></script>
+        <script src="../../block-navigation.js"></script>
+    </body>
+</html>
+    

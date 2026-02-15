@@ -1,0 +1,15 @@
+{
+  "id": "agt_419",
+  "name": "TechSupport Lead",
+  "teamId": "SQ_SUPPORT_80",
+  "category": "SUPPORT",
+  "roleType": "LEADER",
+  "role": "Lead Support Agent",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003,
+  "port": 8079
+}

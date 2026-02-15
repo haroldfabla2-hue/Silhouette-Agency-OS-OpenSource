@@ -1,0 +1,14 @@
+{
+  "id": "agt_451",
+  "name": "RiskAssess Unit B",
+  "teamId": "SQ_FINANCE_90",
+  "category": "FINANCE",
+  "roleType": "WORKER",
+  "role": "Trader",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003
+}

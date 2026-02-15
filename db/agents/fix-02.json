@@ -1,0 +1,14 @@
+{
+  "id": "fix-02",
+  "name": "Debug_Drone",
+  "teamId": "TEAM_FIX",
+  "category": "DEV",
+  "roleType": "WORKER",
+  "role": "Stack Tracer",
+  "status": "IDLE",
+  "enabled": true,
+  "cpuUsage": 0,
+  "ramUsage": 80,
+  "lastActive": 1764656798887,
+  "memoryLocation": "VRAM"
+}

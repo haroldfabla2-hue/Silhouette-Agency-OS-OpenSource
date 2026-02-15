@@ -1,0 +1,38 @@
+{
+    "compilerOptions": {
+        "target": "ES2022",
+        "module": "ESNext",
+        "moduleResolution": "node",
+        "lib": [
+            "ES2022",
+            "DOM",
+            "DOM.Iterable"
+        ],
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true,
+        "downlevelIteration": true,
+        "skipLibCheck": true,
+        "strict": false,
+        "noEmit": true,
+        "allowJs": true,
+        "resolveJsonModule": true,
+        "isolatedModules": true,
+        "types": [
+            "node"
+        ],
+        "jsx": "react-jsx",
+        "experimentalDecorators": true,
+        "useDefineForClassFields": false
+    },
+    "include": [
+        "services/**/*.ts",
+        "server/**/*.ts",
+        "utils/**/*.ts"
+    ],
+    "exclude": [
+        "node_modules",
+        "dist",
+        "ComfyUI",
+        "training_engine"
+    ]
+}

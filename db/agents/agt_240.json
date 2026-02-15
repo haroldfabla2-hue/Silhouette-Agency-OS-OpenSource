@@ -1,0 +1,14 @@
+{
+  "id": "agt_240",
+  "name": "Backend Unit A",
+  "teamId": "SQ_DEV_20",
+  "category": "DEV",
+  "roleType": "WORKER",
+  "role": "Architect",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003
+}

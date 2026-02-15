@@ -1,0 +1,14 @@
+{
+  "id": "agt_361",
+  "name": "Logistics Unit B",
+  "teamId": "SQ_OPS_60",
+  "category": "OPS",
+  "roleType": "WORKER",
+  "role": "Process Engineer",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656806090
+}

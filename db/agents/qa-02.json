@@ -1,0 +1,14 @@
+{
+  "id": "qa-02",
+  "name": "Test_Automator",
+  "teamId": "TEAM_QA",
+  "category": "OPS",
+  "roleType": "WORKER",
+  "role": "E2E Tester",
+  "status": "OFFLINE",
+  "enabled": true,
+  "cpuUsage": 2,
+  "ramUsage": 90,
+  "lastActive": 1764656810182,
+  "memoryLocation": "VRAM"
+}

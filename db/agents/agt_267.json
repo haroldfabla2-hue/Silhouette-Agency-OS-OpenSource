@@ -1,0 +1,14 @@
+{
+  "id": "agt_267",
+  "name": "BigData Unit A",
+  "teamId": "SQ_DATA_29",
+  "category": "DATA",
+  "roleType": "WORKER",
+  "role": "ML Engineer",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003
+}

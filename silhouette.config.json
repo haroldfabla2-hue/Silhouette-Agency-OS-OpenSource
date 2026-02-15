@@ -1,0 +1,118 @@
+{
+    "system": {
+        "name": "Silhouette Agency OS",
+        "port": 3005,
+        "env": "development",
+        "debug": false,
+        "version": "2.2.0"
+    },
+    "modules": {
+        "graph": true,
+        "vectorDB": true,
+        "redis": true,
+        "browser": true
+    },
+    "gateway": {
+        "path": "/ws",
+        "heartbeatMs": 30000,
+        "maxPayloadBytes": 10485760,
+        "handshakeTimeoutMs": 5000
+    },
+    "llm": {
+        "defaultProvider": "minimax",
+        "providers": {
+            "gemini": {
+                "apiKey": "YOUR_GEMINI_API_KEY",
+                "model": "gemini-2.0-flash"
+            },
+            "groq": {
+                "apiKey": "YOUR_GROQ_API_KEY",
+                "model": "llama-3.3-70b-versatile"
+            },
+            "deepseek": {
+                "apiKey": "YOUR_DEEPSEEK_API_KEY",
+                "model": "deepseek-chat"
+            },
+            "minimax": {
+                "apiKey": "YOUR_MINIMAX_API_KEY",
+                "groupId": "YOUR_MINIMAX_GROUP_ID",
+                "model": "abab6.5s-chat"
+            },
+            "openrouter": {
+                "apiKey": "YOUR_OPENROUTER_API_KEY",
+                "model": "google/gemini-2.0-flash-exp:free"
+            }
+        },
+        "fallbackChain": [
+            "gemini",
+            "groq",
+            "deepseek",
+            "openrouter"
+        ],
+        "circuitBreaker": {
+            "maxFailures": 3,
+            "resetTimeMs": 60000
+        }
+    },
+    "memory": {
+        "sqlitePath": "./data/silhouette.db",
+        "lanceDbPath": "./data/lancedb",
+        "neo4j": {
+            "uri": "bolt://localhost:7687",
+            "user": "neo4j",
+            "password": "password"
+        },
+        "redis": {
+            "host": "localhost",
+            "port": 6379
+        },
+        "workingMemoryLimit": 1000,
+        "sweepIntervalMs": 300000
+    },
+    "channels": {
+        "telegram": {
+            "enabled": true,
+            "botToken": "YOUR_TELEGRAM_BOT_TOKEN",
+            "allowedChatIds": []
+        },
+        "discord": {
+            "enabled": false,
+            "botToken": "",
+            "allowedGuildIds": []
+        }
+    },
+    "tools": {
+        "allowlist": [],
+        "denylist": [],
+        "requireApproval": true,
+        "sandbox": {
+            "enabled": false,
+            "image": "silhouette-sandbox:latest",
+            "memoryLimit": "512m",
+            "timeoutMs": 30000
+        }
+    },
+    "scheduler": {
+        "enabled": true,
+        "persistJobs": true,
+        "maxConcurrent": 5
+    },
+    "media": {
+        "uploadsDir": "./uploads",
+        "elevenlabs": {
+            "apiKey": "YOUR_ELEVENLABS_API_KEY",
+            "defaultVoice": "Rachel"
+        },
+        "imageGeneration": {
+            "provider": "gemini"
+        }
+    },
+    "autonomy": {
+        "enabled": true,
+        "maxDailyTokens": 100000,
+        "allowEvolution": true,
+        "maxConcurrentAgents": 8,
+        "enableNarrative": true,
+        "enableIntrospection": true
+    }
+}

@@ -1,0 +1,115 @@
+[
+  {
+    "id": "094dec02-7adc-40df-94e0-edfb1524c2cc",
+    "prompt": "Pan right, cyberpunk coffee shop interior, steam rising from cup",
+    "status": "COMPLETED",
+    "createdAt": "2025-12-17T02:56:33.766Z",
+    "provider": "LOCAL_WAN_2.1",
+    "videoPath": "D:\\Proyectos personales\\Silhouette Agency OS - LLM\\public\\media\\video\\094dec02-7adc-40df-94e0-edfb1524c2cc.mp4"
+  },
+  {
+    "id": "1b7fc2ed-0f0f-45ce-98ea-0956d87f4441",
+    "prompt": "Cyberpunk Detective in Neon Rain",
+    "imagePath": "https://replicate.delivery/xezq/gQVAj8LECgbjCBBKK4hjFwOJBuLM149igsOhSa4J1DjyZf5KA/tmpjy33df0k.webp",
+    "status": "FAILED",
+    "createdAt": "2025-12-17T03:47:21.212Z",
+    "provider": "LOCAL_WAN_2.1"
+  },
+  {
+    "id": "job_1765953362553",
+    "prompt": "A futuristic cyberpunk city with neon lights, cinematic 4k",
+    "imagePath": null,
+    "status": "FAILED",
+    "timestamp": 1765953362553
+  },
+  {
+    "id": "job_1765953808099",
+    "prompt": "A futuristic cyberpunk city with neon lights, cinematic 4k",
+    "imagePath": null,
+    "status": "FAILED",
+    "timestamp": 1765953808099
+  },
+  {
+    "id": "job_1765954012635",
+    "prompt": "A futuristic cyberpunk city with neon lights, cinematic 4k",
+    "imagePath": null,
+    "status": "FAILED",
+    "timestamp": 1765954012635
+  },
+  {
+    "id": "job_1765954374892",
+    "prompt": "A futuristic cyberpunk city with neon lights, cinematic 4k",
+    "imagePath": null,
+    "status": "PROCESSING",
+    "timestamp": 1765954374892
+  },
+  {
+    "id": "job_1765977213117",
+    "prompt": "A futuristic cyberpunk city with neon lights, cinematic 4k",
+    "imagePath": null,
+    "status": "PROCESSING",
+    "timestamp": 1765977213117
+  },
+  {
+    "id": "job_1765977448184",
+    "prompt": "A futuristic cyberpunk city with neon lights, cinematic 4k",
+    "imagePath": null,
+    "status": "PROCESSING",
+    "timestamp": 1765977448184
+  },
+  {
+    "id": "job_1765977790171",
+    "prompt": "A futuristic cyberpunk city with neon lights, cinematic 4k",
+    "imagePath": null,
+    "status": "PROCESSING",
+    "timestamp": 1765977790171
+  },
+  {
+    "id": "job_1765978894040",
+    "prompt": "A futuristic cyberpunk city with neon lights, cinematic 4k",
+    "imagePath": null,
+    "status": "PROCESSING",
+    "timestamp": 1765978894040
+  },
+  {
+    "id": "03ca9fa9-eec3-4f3d-92b6-8251db0ef9e2",
+    "prompt": "Test video generation",
+    "engine": "WAN",
+    "status": "FAILED",
+    "createdAt": "2025-12-18T23:41:36.193Z",
+    "provider": "LOCAL_WAN",
+    "error": "Video generation timed out."
+  },
+  {
+    "id": "a2511410-433d-4385-b2d5-b72cc81e683e",
+    "prompt": "E2E Test: Abstract cosmic nebula with flowing energy",
+    "engine": "WAN",
+    "status": "QUEUED",
+    "createdAt": "2025-12-22T13:06:42.334Z",
+    "provider": "LOCAL_WAN"
+  },
+  {
+    "id": "7dada237-346f-4495-b7a6-494f7108fad0",
+    "prompt": "Test video from verification script",
+    "engine": "WAN",
+    "status": "QUEUED",
+    "createdAt": "2025-12-22T13:34:23.371Z",
+    "provider": "LOCAL_WAN"
+  },
+  {
+    "id": "1100aa6c-cedc-48c3-8d7c-c99114fb77d2",
+    "prompt": "Test video from verification script",
+    "engine": "WAN",
+    "status": "QUEUED",
+    "createdAt": "2025-12-22T13:44:58.692Z",
+    "provider": "LOCAL_WAN"
+  },
+  {
+    "id": "6e3f4e6c-4f41-4548-bf1d-83e292a6164c",
+    "prompt": "Test video from verification script",
+    "engine": "WAN",
+    "status": "QUEUED",
+    "createdAt": "2025-12-22T13:48:48.890Z",
+    "provider": "LOCAL_WAN"
+  }
+]

@@ -1,0 +1,14 @@
+{
+  "id": "agt_388",
+  "name": "Procurement Unit B",
+  "teamId": "SQ_OPS_69",
+  "category": "OPS",
+  "roleType": "WORKER",
+  "role": "Process Engineer",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003
+}

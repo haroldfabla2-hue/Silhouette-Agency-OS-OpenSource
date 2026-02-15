@@ -1,0 +1,14 @@
+{
+  "id": "agt_288",
+  "name": "Analytics Unit A",
+  "teamId": "SQ_DATA_36",
+  "category": "DATA",
+  "roleType": "WORKER",
+  "role": "ML Engineer",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003
+}

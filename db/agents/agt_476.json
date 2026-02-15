@@ -1,0 +1,15 @@
+{
+  "id": "agt_476",
+  "name": "Merch Lead",
+  "teamId": "SQ_RETAIL_99",
+  "category": "RETAIL",
+  "roleType": "LEADER",
+  "role": "Lead Retail Strategist",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003,
+  "port": 8098
+}

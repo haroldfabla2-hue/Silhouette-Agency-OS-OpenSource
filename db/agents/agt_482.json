@@ -1,0 +1,15 @@
+{
+  "id": "agt_482",
+  "name": "E-learning Lead",
+  "teamId": "SQ_EDU_101",
+  "category": "EDU",
+  "roleType": "LEADER",
+  "role": "Lead Instructional Designer",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003,
+  "port": 8100
+}

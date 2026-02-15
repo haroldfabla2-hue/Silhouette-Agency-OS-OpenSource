@@ -1,0 +1,14 @@
+{
+  "id": "fix-01",
+  "name": "Patch_Commander",
+  "teamId": "TEAM_FIX",
+  "category": "DEV",
+  "roleType": "LEADER",
+  "role": "Hotfix Lead",
+  "status": "IDLE",
+  "enabled": true,
+  "cpuUsage": 0,
+  "ramUsage": 100,
+  "lastActive": 1764656798887,
+  "memoryLocation": "VRAM"
+}

@@ -1,0 +1,14 @@
+{
+  "id": "agt_567",
+  "name": "Ethics Unit A",
+  "teamId": "SQ_LEGAL_129",
+  "category": "LEGAL",
+  "roleType": "WORKER",
+  "role": "Compliance Officer",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003
+}

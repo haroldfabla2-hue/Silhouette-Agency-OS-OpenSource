@@ -1,0 +1,17 @@
+{
+    "plugins": {
+        "core-filesystem": {
+            "enabled": true,
+            "auto_disable_on_load": false
+        },
+        "comfy-ui-local": {
+            "enabled": false,
+            "auto_disable_on_load": true
+        },
+        "local-tts": {
+            "enabled": false,
+            "auto_disable_on_load": true
+        }
+    },
+    "auto_disable_threshold_cpu": 80
+}

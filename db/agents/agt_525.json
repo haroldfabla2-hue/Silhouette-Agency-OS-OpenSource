@@ -1,0 +1,14 @@
+{
+  "id": "agt_525",
+  "name": "Sustainability Unit A",
+  "teamId": "SQ_ENERGY_115",
+  "category": "ENERGY",
+  "roleType": "WORKER",
+  "role": "Grid Analyst",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003
+}

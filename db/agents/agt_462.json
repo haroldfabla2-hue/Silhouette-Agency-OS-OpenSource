@@ -1,0 +1,14 @@
+{
+  "id": "agt_462",
+  "name": "Ecommerce Unit A",
+  "teamId": "SQ_RETAIL_94",
+  "category": "RETAIL",
+  "roleType": "WORKER",
+  "role": "Inventory Mgr",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003
+}

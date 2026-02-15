@@ -1,0 +1,15 @@
+{
+  "id": "agt_431",
+  "name": "Informatics Lead",
+  "teamId": "SQ_HEALTH_84",
+  "category": "HEALTH",
+  "roleType": "LEADER",
+  "role": "Lead Medical Analyst",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003,
+  "port": 8083
+}

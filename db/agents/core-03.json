@@ -1,0 +1,14 @@
+{
+  "id": "core-03",
+  "name": "Workflow_Architect",
+  "teamId": "TEAM_CORE",
+  "category": "CORE",
+  "roleType": "WORKER",
+  "role": "System Evolutionist",
+  "status": "IDLE",
+  "enabled": true,
+  "cpuUsage": 25,
+  "ramUsage": 200,
+  "lastActive": 1764656798887,
+  "memoryLocation": "VRAM"
+}

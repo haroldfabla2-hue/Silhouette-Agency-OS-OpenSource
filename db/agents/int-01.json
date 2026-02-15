@@ -1,0 +1,14 @@
+{
+  "id": "int-01",
+  "name": "System_Architect",
+  "teamId": "TEAM_INTEGRATION",
+  "category": "DEV",
+  "roleType": "LEADER",
+  "role": "Integration Lead",
+  "status": "IDLE",
+  "enabled": true,
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656798887,
+  "memoryLocation": "VRAM"
+}

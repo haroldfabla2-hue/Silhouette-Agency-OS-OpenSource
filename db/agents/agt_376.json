@@ -1,0 +1,14 @@
+{
+  "id": "agt_376",
+  "name": "Process Unit B",
+  "teamId": "SQ_OPS_65",
+  "category": "OPS",
+  "roleType": "WORKER",
+  "role": "Process Engineer",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656808731
+}

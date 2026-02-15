@@ -1,0 +1,14 @@
+{
+  "id": "ctx-01",
+  "name": "The_Librarian",
+  "teamId": "TEAM_CONTEXT",
+  "category": "DATA",
+  "roleType": "LEADER",
+  "role": "Context Keeper",
+  "status": "WORKING",
+  "enabled": true,
+  "cpuUsage": 8,
+  "ramUsage": 350,
+  "lastActive": 1764656798887,
+  "memoryLocation": "VRAM"
+}

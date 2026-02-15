@@ -1,0 +1,75 @@
+version: '3.8'
+services:
+  redis:
+    image: redis:alpine
+    container_name: silhouette-llm-redis
+    ports:
+      - "6499:6379"
+    volumes:
+      - redis_data_llm:/data
+    restart: always
+
+  qdrant:
+    image: qdrant/qdrant
+    container_name: silhouette-llm-qdrant
+    ports:
+      - "6444:6333"
+    volumes:
+      - qdrant_data_llm:/qdrant/storage
+    restart: always
+
+  reasoning-engine:
+    build: ./reasoning_engine
+    container_name: silhouette-reasoning-engine
+    ports:
+      - "8000:8000"
+    environment:
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=silhouette_graph_2035
+    depends_on:
+      - neo4j
+    restart: always
+
+  neo4j:
+    image: neo4j:5.15.0-community
+    container_name: silhouette-llm-neo4j
+    ports:
+      - "7574:7474" # HTTP
+      - "7787:7687" # Bolt
+    environment:
+      NEO4J_AUTH: neo4j/silhouette_graph_2035
+      NEO4J_apoc_export_file_enabled: "true"
+      NEO4J_apoc_import_file_enabled: "true"
+      NEO4J_apoc_import_file_use__neo4j__config: "true"
+      NEO4J_PLUGINS: '["apoc"]'
+    volumes:
+      - neo4j_data_llm:/data
+      - neo4j_plugins_llm:/plugins
+    restart: always
+
+  bot:
+    build: .
+    container_name: silhouette-bot
+    ports:
+      - "3005:3005"
+    env_file:
+      - .env.local
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - silhouette_data:/app/data
+      - silhouette_db:/app/db
+    depends_on:
+      - redis
+      - qdrant
+      - neo4j
+    restart: always
+
+volumes:
+  redis_data_llm:
+  qdrant_data_llm:
+  neo4j_data_llm:
+  neo4j_plugins_llm:
+  silhouette_data:
+  silhouette_db:

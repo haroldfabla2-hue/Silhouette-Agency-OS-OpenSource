@@ -1,0 +1,14 @@
+{
+  "id": "agt_435",
+  "name": "Clinical Unit A",
+  "teamId": "SQ_HEALTH_85",
+  "category": "HEALTH",
+  "roleType": "WORKER",
+  "role": "Bio Researcher",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003
+}

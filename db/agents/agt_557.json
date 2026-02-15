@@ -1,0 +1,15 @@
+{
+  "id": "agt_557",
+  "name": "Compliance Lead",
+  "teamId": "SQ_LEGAL_126",
+  "category": "LEGAL",
+  "roleType": "LEADER",
+  "role": "Lead Legal Counsel",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003,
+  "port": 8125
+}

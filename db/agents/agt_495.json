@@ -1,0 +1,14 @@
+{
+  "id": "agt_495",
+  "name": "Pedagogy Unit A",
+  "teamId": "SQ_EDU_105",
+  "category": "EDU",
+  "roleType": "WORKER",
+  "role": "Edu Data Analyst",
+  "status": "OFFLINE",
+  "enabled": false,
+  "memoryLocation": "VRAM",
+  "cpuUsage": 0,
+  "ramUsage": 0,
+  "lastActive": 1764656799003
+}
