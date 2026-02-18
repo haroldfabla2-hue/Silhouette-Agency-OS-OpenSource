@@ -20,7 +20,7 @@
     "personalize": "tsx scripts/personalize.ts",
     "build": "vite build",
     "preview": "vite preview",
-    "server": "node --env-file=.env.local --import tsx/esm server/index.ts",
+    "server": "node --import tsx/esm server/index.ts",
     "demo:learning": "tsx scripts/demo_autodidactic.ts",
     "render-video": "tsx scripts/process_video_queue.ts",
     "list-models": "tsx scripts/list_models.ts",
