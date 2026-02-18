@@ -1,12 +1,12 @@
 import { Bot, Context, InputFile } from 'grammy';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
-import { Orchestrator } from '../orchestrator';
+import { orchestrator } from '../orchestrator';
 
 export class TelegramService {
     private bot: Bot;
     private allowedUserId: number | null = null;
-    private orchestrator?: Orchestrator;
+    private swarm = orchestrator;
 
     constructor() {
         const token = env.TELEGRAM_BOT_TOKEN;
@@ -24,8 +24,8 @@ export class TelegramService {
         this.initializeMiddleware();
     }
 
-    public setOrchestrator(orchestrator: Orchestrator) {
-        this.orchestrator = orchestrator;
+    public setOrchestrator(swarm: typeof orchestrator) {
+        this.swarm = orchestrator;
     }
 
     private initializeMiddleware() {
@@ -48,7 +48,7 @@ export class TelegramService {
 
             logger.info(`[Telegram] Message from ${userId}: ${text}`);
 
-            if (this.orchestrator) {
+            if (this.swarm) {
                 // Determine chat ID for routing
                 const chatId = ctx.chat.id.toString();
 
@@ -56,7 +56,7 @@ export class TelegramService {
                 await ctx.replyWithChatAction('typing');
 
                 // Send to Orchestrator (which uses logic to call tools/LLM)
-                await this.orchestrator.handleUserMessage({
+                await this.swarm.handleUserMessage({
                     userId,
                     chatId,
                     text,

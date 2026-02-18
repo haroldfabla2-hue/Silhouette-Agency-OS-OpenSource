@@ -328,6 +328,9 @@ class ContextAssembler {
         // Calculate total tokens used
         let totalTokensUsed = prioritizedItems.reduce((sum, item) => sum + item.tokenEstimate, 0);
 
+        // Get available budget for strict enforcement
+        const availableBudget = this.tokenBudget.totalBudget - this.tokenBudget.reservedForResponse;
+
         // [STRICT ENFORCEMENT] If total exceeds budget, trim from lowest priority
         if (totalTokensUsed > availableBudget) {
             console.warn(`[CONTEXT] ⚠️ Total budget exceeded (${totalTokensUsed}/${availableBudget} tokens). Trimming from lowest priority...`);

@@ -119,6 +119,8 @@ export enum SystemProtocol {
   NARRATIVE_UPDATE = 'PROTOCOL_NARRATIVE_UPDATE', // NEW: Unified Stream Emission
   CANVAS_OPERATION = 'PROTOCOL_CANVAS_OPERATION', // NEW: Agent -> Visual Cortex Control
   LEARNING_UPDATE = 'PROTOCOL_LEARNING_UPDATE', // Self-Evolution: Learning Loop insights
+  DIAGNOSTICS_DATA = 'PROTOCOL_DIAGNOSTICS_DATA', // NEW: System diagnostics data
+  SECURITY_ALERT = 'PROTOCOL_SECURITY_ALERT', // NEW: Security alerts
   TOOL_EVOLUTION = 'PROTOCOL_TOOL_EVOLUTION', // Self-Evolution: Tool optimization
 
   // Voice System Events (PA-008)
@@ -271,9 +273,11 @@ export enum MemoryTier {
   LONG = 'LONG',            // LanceDB - archived
   DEEP = 'DEEP',            // Qdrant - semantic vectors
 
-  // === DEPRECATED (Backward Compatibility) ===
-  // These are kept for existing code that references them
-  // New code should use WORKING instead
+  // === LEGACY TIERS (Mapped to new tiers for compatibility) ===
+  /** @deprecated Use WORKING instead */
+  EPISODIC = 'WORKING',     // Legacy: session-based episodic memory
+  /** @deprecated Use DEEP instead */
+  SEMANTIC = 'DEEP',        // Legacy: vector-based semantic memory
   /** @deprecated Use WORKING instead */
   ULTRA_SHORT = 'WORKING',  // Maps to WORKING for compatibility
   /** @deprecated Use WORKING instead */
@@ -683,8 +687,8 @@ export interface MemoryNode {
   tags: string[];
   accessCount: number;
   lastAccess: number;
-  decayHealth: number;
-  compressionLevel: number;
+  decayHealth?: number;
+  compressionLevel?: number;
   embeddingVector?: Float32Array;
   ownerId?: string; // NEW: Agent-Specific Ownership
   nestingLevel?: number; // NEW: 1=Raw, 2=Thought, 3=Episode, 4=Fact, 5=Identity

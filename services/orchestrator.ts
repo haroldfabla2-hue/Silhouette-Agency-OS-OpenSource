@@ -757,7 +757,7 @@ Format each gap as:
     /**
      * Handles incoming user messages from ChannelRouter
      */
-    private async handleUserMessage(payload: any) {
+    public async handleUserMessage(payload: any) {
         // payload: { sessionId, message, channel, chatId, senderId, senderName ... }
         console.log(`[ORCHESTRATOR] 📩 Processing User Message from ${payload.channel} (${payload.senderName || payload.senderId})`);
 

@@ -69,11 +69,14 @@ export class SemanticMemoryService {
                 const batch = currentLevelNodes.slice(i, i + batchSize);
                 const summary = await this.summarizeBatch(batch, title, currentLevel + 1);
 
+                // Extract entities from summary using LLM
+                const entities = await this.extractEntitiesFromSummary(summary);
+                
                 const parentNode: SemanticInsight = {
                     id: uuidv4(),
                     type: 'RAPTOR_NODE',
                     content: summary,
-                    entities: [], // TODO: Extract entities from summary
+                    entities,
                     confidence: 1.0,
                     sourceNodeId: 'raptor_synthesis',
                     timestamp: Date.now(),
@@ -132,6 +135,50 @@ export class SemanticMemoryService {
         );
 
         return `[${title}][L${level}]: ${response.output}`;
+    }
+
+    /**
+     * Extract entities from a summary using LLM
+     * Handles the TODO: Extract entities from summary
+     */
+    private async extractEntitiesFromSummary(summary: string): Promise<string[]> {
+        try {
+            const prompt = `
+TASK: Extract named entities (people, places, organizations, concepts, technologies) from this text.
+Return ONLY a JSON array of entity names, nothing else.
+
+TEXT:
+${summary.replace(/^\[.*?\]: /, '')}
+
+OUTPUT FORMAT: ["entity1", "entity2", "entity3"]
+`;
+
+            const response = await generateAgentResponse(
+                "Entity_Extractor",
+                "Editor",
+                "CORE",
+                prompt,
+                null,
+                undefined,
+                undefined,
+                { useWebSearch: false },
+                {},
+                [],
+                CommunicationLevel.TECHNICAL,
+                'gemini-1.5-flash'
+            );
+
+            // Parse JSON array from response
+            const match = response.output.match(/\[[\s\S]*\]/);
+            if (match) {
+                const entities = JSON.parse(match[0]);
+                return entities.filter((e: string) => typeof e === 'string' && e.length > 0);
+            }
+            return [];
+        } catch (error) {
+            console.warn('[SEMANTIC] Failed to extract entities:', error);
+            return [];
+        }
     }
 
     // --- LEGACY DIGESTION (Kept for compatibility) ---

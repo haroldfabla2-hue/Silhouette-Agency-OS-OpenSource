@@ -213,6 +213,12 @@ Write or modify source code.
             [AgentCapability.INNOVATION]: '',
             [AgentCapability.DEPLOYMENT]: '',
             [AgentCapability.DATABASE_MANAGEMENT]: '',
+            [AgentCapability.TOOL_SYSTEM_CONTROL]: `
+### system_control
+Control desktop and system-level operations.
+- **When to use**: File system operations, process management, system monitoring.
+- **When NOT to use**: Web requests, data processing, external API calls.
+            `.trim(),
         };
 
         const strategyAdvice = capabilities
