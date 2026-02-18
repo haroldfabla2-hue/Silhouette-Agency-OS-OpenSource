@@ -7,8 +7,12 @@ import path from 'path';
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+
+// Security Middleware
+import { authMiddleware } from './middleware/authMiddleware';
+import { globalLimiter, chatLimiter, adminLimiter } from './middleware/rateLimiter';
 
 // Routes
 import systemRoutes from './routes/v1/system.routes';
@@ -40,15 +44,39 @@ import { initServer } from './loaders';
 
 export const app = express();
 
-// --- MIDDLEWARE ---
-app.use(cors());
-app.use(express.json({ limit: '50mb' }));
+// ─── SECURITY MIDDLEWARE ─────────────────────────────────────────────────────
 
-// --- STATIC FILES ---
+// CORS: Restrict to configured origins (default: localhost dev server)
+const allowedOrigins = (process.env.SILHOUETTE_CORS_ORIGIN || 'http://localhost:5173')
+    .split(',')
+    .map(o => o.trim());
+
+app.use(cors({
+    origin: (origin, callback) => {
+        // Allow requests with no origin (server-to-server, curl, etc.)
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+            return callback(null, true);
+        }
+        callback(new Error(`CORS: Origin ${origin} not allowed`));
+    },
+    credentials: true,
+}));
+
+// Body parser with reasonable limit
+app.use(express.json({ limit: '10mb' }));
+
+// Global rate limiter
+app.use(globalLimiter);
+
+// Authentication: Bearer token validation
+app.use(authMiddleware);
+
+// ─── STATIC FILES ────────────────────────────────────────────────────────────
 // Serving uploads for media access
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
-// --- ROUTES ---
+// ─── ROUTES ──────────────────────────────────────────────────────────────────
 app.use('/v1/system', systemRoutes); // [FIX] Add /system prefix
 app.use('/v1/system', doctorRouter); // [DOCTOR] System Diagnostics at /v1/system/doctor
 app.use('/v1/orchestrator', orchestratorRoutes);
@@ -58,19 +86,19 @@ app.use('/v1/introspection', introspectionRoutes); // [NEURO-UPDATE]
 app.use('/v1/media', mediaRoutes); // [PA-047] Media Cortex API
 app.use('/v1/graph', graphRoutes);
 app.use('/v1/training', trainingRoutes);
-app.use('/v1/chat', chatRoutes); // [NEW]
+app.use('/v1/chat', chatLimiter, chatRoutes); // [NEW] + chat rate limit
 app.use('/v1/memory', memoryRoutes); // [NEW] Memory System
 app.use('/v1/inbox', inboxRoutes); // [DASHBOARD] Mission Control
 app.use('/v1/voices', voiceRoutes); // [VOICE] Voice Library & Cloning
 app.use('/v1/context', contextRoutes); // [PA-041] Context Priority System
-app.use('/v1/self-evolution', selfEvolutionRoutes); // [CI/CD] Self-Modification Review
+app.use('/v1/self-evolution', adminLimiter, selfEvolutionRoutes); // [CI/CD] + admin rate limit
 app.use('/v1/drive', driveRoutes); // [DRIVE] Google Drive Integration
 app.use('/v1/identity', identityRoutes); // [IDENTITY] User Auth & Device Recognition
 app.use('/v1/gmail', gmailRoutes); // [GMAIL] Email Integration
 app.use('/v1/autonomy', autonomyRoutes); // [AUTONOMY] Goals, Scheduler, Confirmations
 app.use('/v1/production', productionRoutes); // [PRODUCTION] Long-form Video Pipeline
 app.use('/v1/squads', squadsRoutes); // [SQUADS] Manual Squad Control
-app.use('/v1/admin/api-keys', apikeysRoutes); // [SECURITY] Admin-only API Key Management
+app.use('/v1/admin/api-keys', adminLimiter, apikeysRoutes); // [SECURITY] Admin-only API Key Management
 app.use('/v1', legacyRoutes);
 
 // --- INTEGRATION HUB WEBHOOKS ---
@@ -85,12 +113,30 @@ app.use('/v1', legacyRoutes);
     }
 })();
 
-// --- 404 HANDLER ---
-app.use((req, res) => {
+// ─── 404 HANDLER ─────────────────────────────────────────────────────────────
+app.use((req: Request, res: Response) => {
     res.status(404).json({ error: "Endpoint not found" });
 });
 
-// --- INITIALIZATION ---
+// ─── GLOBAL ERROR HANDLER ────────────────────────────────────────────────────
+app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
+    console.error('[APP] Unhandled error:', err.message);
+
+    // CORS errors
+    if (err.message.startsWith('CORS:')) {
+        res.status(403).json({ error: err.message });
+        return;
+    }
+
+    // Generic error
+    res.status(500).json({
+        error: process.env.NODE_ENV === 'production'
+            ? 'Internal server error'
+            : err.message,
+    });
+});
+
+// ─── INITIALIZATION ──────────────────────────────────────────────────────────
 // Trigger system loaders (async) but don't block export
 initServer().then(async () => {
     // [SKILLS] Load dynamic skills from universalprompts + managed + workspace
@@ -125,13 +171,7 @@ initServer().then(async () => {
         console.warn('[APP] Cron scheduler not available:', e);
     }
 
-    // [CHANNELS] Initialize messaging channels (WhatsApp, Telegram, Discord)
-    try {
-        const { initializeChannels } = await import('./channels');
-        await initializeChannels();
-    } catch (e) {
-        console.warn('[APP] Channel initialization not available:', e);
-    }
+    // NOTE: Channels are initialized in server/index.ts to avoid double initialization.
 }).catch(err => {
     console.error("FATAL: Failed to initialize server", err);
     process.exit(1);

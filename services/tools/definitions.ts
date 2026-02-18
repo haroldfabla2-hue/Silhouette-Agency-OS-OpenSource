@@ -684,7 +684,7 @@ export const CREATE_SKILL: FunctionDeclaration = {
     }
 };
 
-// ==================== SYSTEM CONTROL TOOLS (OpenClaw Parity) ====================
+// ==================== SYSTEM CONTROL TOOLS ====================
 
 export const SYSTEM_EXECUTE_COMMAND_TOOL: FunctionDeclaration = {
     name: "system_execute_command",

@@ -183,6 +183,20 @@ The knowledge graph implements **scale-free network** principles:
 - **Synaptic Pruning**: Weak, unused connections decay over time
 - **Watts-Strogatz Shortcuts**: Dream cycles create long-range bridges
 
+### 3.7 Per-Agent File System (PAFS)
+Agents are no longer just database entries. Each agent possesses a rich identity stored in specific markdown files (`IDENTITY.md`, `SOUL.md`, `MEMORY.md`, etc.), allowing for deep personalization and persistent context that survives upgrades.
+
+### 3.8 Bilateral Hierarchical Communication
+Agents communicate using a strict hierarchy (Core → Leader → Specialist → Worker) via a session-based protocol (`agentConversation`). This supports:
+- **Direct Messaging**: One-on-one inter-agent chats
+- **Group Sessions**: Multi-agent collaborative war rooms
+- **Delegation**: Structured task hand-off with reporting
+
+### 3.9 Genesis Protocol V2
+A sophisticated 5-phase "birth" process for new agents:
+`SEED` → `BOOTSTRAP` → `HANDSHAKE` → `TEACHING` → `VALIDATION`.
+This ensures every agent is fully cognizant of its role, tools, and team before accepting tasks.
+
 ---
 
 ## 4. Capabilities
@@ -238,38 +252,42 @@ This system demonstrates:
 
 ---
 
-## 6. Installation
-
-### Prerequisites
-- Node.js 18+
-- Python 3.10+ (for training/video engines)
-- Ollama (optional, for local models)
-- Neo4j (for knowledge graph)
-- Redis (for caching and persistence)
+## 6. Installation & Usage
 
 ### Setup
+**One-Command Setup:**
+```bash
+npm run setup:intelligent
+```
 
-Please refer to the **[INSTALL.md](INSTALL.md)** for detailed local and Docker setup instructions.
-
-### Required API Keys
-
-| Service | Purpose | Required |
-|---------|---------|----------|
-| `GEMINI_API_KEY` | Primary LLM | Yes |
-| `OPENROUTER_API_KEY` | Fallback LLM | Recommended |
-| `GROQ_API_KEY` | Fast inference | Recommended |
-| `DEEPSEEK_API_KEY` | Code generation | Optional |
-| `GITHUB_TOKEN` | Self-modification | For evolution |
-
----
-
-## 7. Usage
+**Personalize:**
+```bash
+npm run personalize
+```
 
 ### Starting the System
 
+**Option A: Full Stack (Local)**
+```bash
+npm run start:stack
+```
+*Starts Databases (Docker), Backend, Frontend, Voice Engine, and Visual Cortex. Best for development.*
+
+**Option B: Production (Docker)**
+```bash
+npm run docker:prod
+```
+*Runs the entire stack in isolated containers with persistent data. Best for deployment.*
+
+**Option C: Frontend Only**
 ```bash
 npm run dev
 ```
+*Starts only the React UI (requires backend running separately).*
+
+For detailed architecture, see **[ARCHITECTURE.md](ARCHITECTURE.md)**.
+For production deployment, see **[docker-compose.prod.yml](docker-compose.prod.yml)**.
+For installation guide, see **[INSTALL.md](INSTALL.md)**.
 
 This starts:
 - Frontend (React) on `http://localhost:5173`

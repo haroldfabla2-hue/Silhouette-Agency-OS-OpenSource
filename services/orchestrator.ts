@@ -27,6 +27,12 @@ import { enhancedCapabilityRegistry } from "./enhancedCapabilityRegistry"; // Un
 import { CapabilityResult, CapabilityContext, CapabilityExecutor } from "../types/capabilities"; // Unified Types
 // Note: Video jobs are handled via schedulerService, not a separate worker
 
+// [EVOLUTION] New services from Silhouette Evolution
+import { continuousMemory } from "./memory/continuousMemory";
+import { genesisV2 } from "./genesis/genesisV2";
+import { agentConversation } from "./communication/agentConversation";
+import { agentFileSystem } from "./agents/agentFileSystem";
+
 // The "Swarm" Manager V5.0 (Actor Model Architecture)
 // Manages persistent, asynchronous agents that hydrate/dehydrate based on demand.
 // [PA-041] Enhanced with Message Tagging & Full Observability
@@ -756,6 +762,13 @@ Format each gap as:
         console.log(`[ORCHESTRATOR] 📩 Processing User Message from ${payload.channel} (${payload.senderName || payload.senderId})`);
 
         try {
+            // [EVOLUTION] WAL: Log BEFORE processing for crash recovery
+            const walId = continuousMemory.logBeforeProcessing(
+                'core-01',
+                'MESSAGE_RECEIVED',
+                { input: payload.message, sessionId: payload.sessionId }
+            );
+
             // 1. Initial "Thinking" feedback for improved UX
             const { channelRouter } = await import('../server/channels/channelRouter');
             const thinkingMessageId = `think-${Date.now()}`;
@@ -801,10 +814,20 @@ Format each gap as:
             const historyText = history.slice(-12).map((m: any) => `${m.role.toUpperCase()}: ${m.content}`).join('\n');
 
             // Build full prompt with documentation context
-            // [BIOMIMETIC] Add agent-specific identity if it's a spawned worker
-            const identityContext = agent.tier === AgentTier.WORKER
-                ? `\n--- YOUR CURRENT IDENTITY ---\nYou are: ${agent.name}\nRole: ${agent.role}\nDirectives: ${agent.directives?.join(', ') || 'Execute the task efficiently.'}\nOpinion: ${agent.opinion}\n`
-                : '';
+            // [EVOLUTION] Use per-agent file system for rich identity (SOUL, IDENTITY, TOOLS)
+            const richIdentity = agentFileSystem.buildSystemPrompt(agentId, {
+                includeMemory: true,
+                includeHeartbeat: false,
+                includeUser: true,
+                maxMemoryLines: 30
+            });
+
+            // Fallback to basic identity if no file system context
+            const identityContext = richIdentity
+                ? `\n--- YOUR IDENTITY ---\n${richIdentity}\n`
+                : (agent.tier === AgentTier.WORKER
+                    ? `\n--- YOUR CURRENT IDENTITY ---\nYou are: ${agent.name}\nRole: ${agent.role}\nDirectives: ${agent.directives?.join(', ') || 'Execute the task efficiently.'}\nOpinion: ${agent.opinion}\n`
+                    : '');
 
             const fullPrompt = `
 ${docContext}
@@ -865,6 +888,9 @@ ${payload.message}
             });
 
             console.log(`[ORCHESTRATOR] 📤 Sent reply to ${payload.channel}`);
+
+            // [EVOLUTION] WAL: Commit after successful processing
+            continuousMemory.commitEntry(walId, finalOutput);
 
         } catch (error: any) {
             console.error(`[ORCHESTRATOR] ❌ Message handling error:`, error);
@@ -972,29 +998,55 @@ JSON ONLY:
             console.log(`[ORCHESTRATOR] Loaded ${config.length} active categories from DB.`);
         }
 
-        // 1. Check if DB exists, if not, migrate from constants
+        // [EVOLUTION] Initialize Continuous Memory (WAL + crash recovery)
+        try {
+            continuousMemory.initialize();
+        } catch (err) {
+            console.error('[ORCHESTRATOR] Continuous Memory init failed (non-fatal):', err);
+        }
+
+        // 1. Check if DB exists, if not, use Genesis V2
         const existingIds = agentPersistence.getAllAgentIds();
 
         if (existingIds.length === 0) {
-            console.log("[ORCHESTRATOR] First Run: Migrating Agents to Persistence Layer...");
-            this.generateInitialAgents();
+            console.log("[ORCHESTRATOR] First Run: Executing Genesis V2 Protocol...");
+            // Genesis V2 is async but we fire-and-forget here since it doesn't block
+            genesisV2.execute().then(report => {
+                if (report.success) {
+                    console.log(`[ORCHESTRATOR] Genesis V2 complete: ${report.agentsCreated.length} agents born.`);
+                    this.knownAgentIds = agentPersistence.getAllAgentIds();
+                    this.generateSquadsStructureOnly();
+                } else {
+                    console.error('[ORCHESTRATOR] Genesis V2 had failures, falling back to legacy...');
+                    this.generateInitialAgents();
+                }
+            }).catch(() => {
+                console.error('[ORCHESTRATOR] Genesis V2 crashed, falling back to legacy...');
+                this.generateInitialAgents();
+            });
         } else {
             console.log(`[ORCHESTRATOR] Loaded ${existingIds.length} persistent agents from disk.`);
-
-            // PHASE 21: BIOMIMETIC EVOLUTION (ON-DEMAND GROWTH)
-            // We no longer expand to a fixed size of 132.
-            // The swarm grows dynamically based on task complexity.
             this.knownAgentIds = existingIds;
+
+            // [EVOLUTION] Migrate existing agents to per-agent file system (idempotent)
+            try {
+                agentPersistence.migrateAllToFileSystem();
+            } catch (err) {
+                console.error('[ORCHESTRATOR] File system migration failed (non-fatal):', err);
+            }
         }
 
         // [CRITICAL FIX] Always reconstruct squads, even after Genesis
-        // This ensures dynamic squads (SQ_XXX) are added to the in-memory registry
         this.generateSquadsStructureOnly();
 
         // [DCR] Re-register capabilities from loaded agents
+        // [EVOLUTION] Also register agents in conversation system
         this.knownAgentIds.forEach(id => {
             const agent = agentPersistence.loadAgent(id);
-            if (agent) capabilityRegistry.registerAgent(agent);
+            if (agent) {
+                capabilityRegistry.registerAgent(agent);
+                agentConversation.registerAgent(agent);
+            }
         });
     }
 
@@ -1480,7 +1532,9 @@ JSON ONLY:
             agent.lastActive = Date.now();
             agent.memoryLocation = agent.tier === AgentTier.CORE ? 'VRAM' : 'RAM';
             this.activeActors.set(agentId, agent);
-            // console.log(`[ORCHESTRATOR] Woke up agent: ${ agent.name } `);
+
+            // [EVOLUTION] Register with conversation system on hydration
+            agentConversation.registerAgent(agent);
         }
     }
 
@@ -1530,10 +1584,11 @@ JSON ONLY:
             agent.ramUsage = 0;
             agentPersistence.saveAgent(agent);
             this.activeActors.delete(agentId);
-            // console.log(`[ORCHESTRATOR] Agent sleeping: ${ agent.name } `);
+
+            // [EVOLUTION] Unregister from conversation system on dehydration
+            agentConversation.unregisterAgent(agentId);
         }
     }
-
 
 
 

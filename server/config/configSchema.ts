@@ -1,6 +1,6 @@
 // =============================================================================
 // SILHOUETTE CENTRALIZED CONFIGURATION SCHEMA
-// Inspired by OpenClaw's JSON-based config. Defines the full config tree
+// Centralized configuration management. Defines the full config tree
 // with defaults, validation, and environment variable overrides.
 // =============================================================================
 
@@ -99,16 +99,19 @@ export interface SilhouetteConfig {
         whatsapp?: {
             enabled: boolean;
             sessionPath: string;
+            accessMode: 'open' | 'allowlist';
             allowFrom?: string[];  // Allowed phone numbers
         };
         telegram?: {
             enabled: boolean;
             botToken: string;
+            accessMode: 'open' | 'allowlist';
             allowedChatIds?: number[];
         };
         discord?: {
             enabled: boolean;
             botToken: string;
+            accessMode: 'open' | 'allowlist';
             allowedGuildIds?: string[];
         };
     };
@@ -210,7 +213,7 @@ export const DEFAULT_CONFIG: SilhouetteConfig = {
         neo4j: {
             uri: 'bolt://localhost:7687',
             user: 'neo4j',
-            password: 'password',
+            password: '',
         },
         redis: {
             host: 'localhost',
@@ -310,12 +313,12 @@ function applyEnvOverrides(config: SilhouetteConfig): void {
         'REDIS_PORT': (v) => config.memory.redis.port = parseInt(v, 10),
         // Channels
         'TELEGRAM_BOT_TOKEN': (v) => {
-            if (!config.channels.telegram) config.channels.telegram = { enabled: true, botToken: '' };
+            if (!config.channels.telegram) config.channels.telegram = { enabled: true, botToken: '', accessMode: 'allowlist' };
             config.channels.telegram.botToken = v;
             config.channels.telegram.enabled = true;
         },
         'DISCORD_BOT_TOKEN': (v) => {
-            if (!config.channels.discord) config.channels.discord = { enabled: true, botToken: '' };
+            if (!config.channels.discord) config.channels.discord = { enabled: true, botToken: '', accessMode: 'allowlist' };
             config.channels.discord.botToken = v;
             config.channels.discord.enabled = true;
         },

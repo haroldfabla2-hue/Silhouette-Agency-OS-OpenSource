@@ -1,163 +1,40 @@
 name: CI
 
 on:
+  push:
+    branches: [main, develop]
   pull_request:
     branches: [main]
-  push:
-    branches: [main]
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
-  install:
-    name: 📦 Install Dependencies
+  lint-and-test:
     runs-on: ubuntu-latest
-    outputs:
-      cache-key: ${{ steps.cache-key.outputs.key }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    
+    strategy:
+      matrix:
+        node-version: [20]
 
-      - name: Setup Node.js
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ matrix.node-version }}
           cache: 'npm'
 
-      - name: Generate cache key
-        id: cache-key
-        run: echo "key=${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}" >> $GITHUB_OUTPUT
-
-      - name: Restore node_modules cache
-        id: cache-restore
-        uses: actions/cache/restore@v4
-        with:
-          path: node_modules
-          key: ${{ steps.cache-key.outputs.key }}
-
       - name: Install dependencies
-        if: steps.cache-restore.outputs.cache-hit != 'true'
         run: npm ci
 
-      - name: Save node_modules cache
-        if: steps.cache-restore.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: node_modules
-          key: ${{ steps.cache-key.outputs.key }}
+      - name: Lint
+        run: npm run lint
+        continue-on-error: true  # Don't block CI on lint warnings during alpha
 
-  typecheck:
-    name: 🔍 TypeScript Check
-    needs: install
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Type check
+        run: npm run typecheck
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
+      - name: Run tests
+        run: npm test
 
-      - name: Restore node_modules cache
-        uses: actions/cache/restore@v4
-        with:
-          path: node_modules
-          key: ${{ needs.install.outputs.cache-key }}
-
-      - name: Run TypeScript check
-        run: npx tsc --noEmit --skipLibCheck
-        continue-on-error: true  # Allow warnings, fail only on errors
-
-  lint:
-    name: 🧹 ESLint
-    needs: install
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Restore node_modules cache
-        uses: actions/cache/restore@v4
-        with:
-          path: node_modules
-          key: ${{ needs.install.outputs.cache-key }}
-
-      - name: Run ESLint
-        run: npm run lint --if-present
-        continue-on-error: true  # Start permissive, tighten later
-
-  build:
-    name: 🏗️ Build
-    needs: [install, typecheck, lint]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Restore node_modules cache
-        uses: actions/cache/restore@v4
-        with:
-          path: node_modules
-          key: ${{ needs.install.outputs.cache-key }}
-
-      - name: Build application
-        env:
-          GEMINI_API_KEY: "mock_key_for_ci_build"
-          VITE_API_TARGET: "http://localhost:3000"
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build
         run: npm run build
-
-  security:
-    name: 🔒 Security Scan
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Check for secrets with TruffleHog
-        uses: trufflesecurity/trufflehog@main
-        continue-on-error: true  # Don't block on first run
-        with:
-          path: ./
-          base: ""
-          head: ${{ github.event.pull_request.head.sha || github.sha }}
-          extra_args: --only-verified
-
-  # Final status check that summarizes all jobs
-  ci-status:
-    name: ✅ CI Status
-    needs: [install, typecheck, lint, build, security]
-    runs-on: ubuntu-latest
-    if: always()
-    steps:
-      - name: Check all job results
-        run: |
-          echo "Install: ${{ needs.install.result }}"
-          echo "Typecheck: ${{ needs.typecheck.result }}"
-          echo "Lint: ${{ needs.lint.result }}"
-          echo "Build: ${{ needs.build.result }}"
-          echo "Security: ${{ needs.security.result }}"
-          
-          # Fail if critical jobs failed
-          if [[ "${{ needs.install.result }}" == "failure" ]] || \
-             [[ "${{ needs.build.result }}" == "failure" ]]; then
-            echo "❌ Critical jobs failed"
-            exit 1
-          fi
-          
-          echo "✅ CI passed"

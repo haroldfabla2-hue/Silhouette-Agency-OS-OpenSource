@@ -13,6 +13,8 @@
  *   const stream = llmGateway.stream("Your prompt here");
  */
 
+import { modelCatalog, ModelCatalogEntry, getModelById } from './modelCatalog';
+
 // Provider status for circuit breaker
 interface ProviderStatus {
     name: string;
@@ -21,6 +23,7 @@ interface ProviderStatus {
     circuitOpen: boolean;
     totalCalls: number;
     totalLatencyMs: number;
+    currentModel?: string; // NEW: Track currently active model for this provider
 }
 
 // Completion options
@@ -64,12 +67,12 @@ class LLMGatewayService {
     };
 
     private providers: Map<string, ProviderStatus> = new Map([
-        ['GEMINI', { name: 'GEMINI', failures: 0, lastFailure: 0, circuitOpen: false, totalCalls: 0, totalLatencyMs: 0 }],
-        ['GROQ', { name: 'GROQ', failures: 0, lastFailure: 0, circuitOpen: false, totalCalls: 0, totalLatencyMs: 0 }],
-        ['DEEPSEEK', { name: 'DEEPSEEK', failures: 0, lastFailure: 0, circuitOpen: false, totalCalls: 0, totalLatencyMs: 0 }],
-        ['DEEPSEEK', { name: 'DEEPSEEK', failures: 0, lastFailure: 0, circuitOpen: false, totalCalls: 0, totalLatencyMs: 0 }],
-        ['OLLAMA', { name: 'OLLAMA', failures: 0, lastFailure: 0, circuitOpen: false, totalCalls: 0, totalLatencyMs: 0 }],
-        ['MINIMAX', { name: 'MINIMAX', failures: 0, lastFailure: 0, circuitOpen: false, totalCalls: 0, totalLatencyMs: 0 }]
+        ['GEMINI', { name: 'GEMINI', failures: 0, lastFailure: 0, circuitOpen: false, totalCalls: 0, totalLatencyMs: 0, currentModel: 'gemini-2.0-flash' }],
+        ['GROQ', { name: 'GROQ', failures: 0, lastFailure: 0, circuitOpen: false, totalCalls: 0, totalLatencyMs: 0, currentModel: 'llama-3.3-70b-versatile' }],
+        ['DEEPSEEK', { name: 'DEEPSEEK', failures: 0, lastFailure: 0, circuitOpen: false, totalCalls: 0, totalLatencyMs: 0, currentModel: 'deepseek-chat' }],
+        ['OLLAMA', { name: 'OLLAMA', failures: 0, lastFailure: 0, circuitOpen: false, totalCalls: 0, totalLatencyMs: 0, currentModel: 'qwen2.5-coder:7b' }],
+        ['MINIMAX', { name: 'MINIMAX', failures: 0, lastFailure: 0, circuitOpen: false, totalCalls: 0, totalLatencyMs: 0, currentModel: 'abab6.5s-chat' }],
+        ['ZHIPUAI', { name: 'ZHIPUAI', failures: 0, lastFailure: 0, circuitOpen: false, totalCalls: 0, totalLatencyMs: 0, currentModel: 'glm-4-flash' }]
     ]);
 
     private readonly FALLBACK_ORDER = ['MINIMAX', 'GEMINI', 'GROQ', 'DEEPSEEK', 'OLLAMA'];
@@ -188,6 +191,8 @@ class LLMGatewayService {
         const startTime = Date.now();
         const systemPrompt = options.systemPrompt || 'You are a helpful AI assistant.';
         const temperature = options.temperature ?? 0.7;
+        const providerStatus = this.providers.get(providerName);
+        const modelId = providerStatus?.currentModel || 'default';
 
         let text: string;
         let usage: any;
@@ -195,12 +200,14 @@ class LLMGatewayService {
         switch (providerName) {
             case 'GEMINI': {
                 const { geminiService } = await import('./geminiService');
-                text = await geminiService.generateText(`${systemPrompt}\n\n${prompt}`);
+                text = await geminiService.generateText(`${systemPrompt}\n\n${prompt}`, {
+                    model: modelId
+                });
                 break;
             }
 
             case 'GROQ': {
-                const response = await this.callGroqDirect(systemPrompt, prompt, temperature);
+                const response = await this.callGroqDirect(systemPrompt, prompt, temperature, modelId);
                 text = response.text;
                 usage = response.usage;
                 break;
@@ -211,22 +218,30 @@ class LLMGatewayService {
                 text = await deepSeekService.chat([
                     { role: 'system', content: systemPrompt },
                     { role: 'user', content: prompt }
-                ], { temperature });
+                ], { temperature, model: modelId });
                 break;
             }
 
             case 'OLLAMA': {
                 const { ollamaService } = await import('./ollamaService');
-                text = await ollamaService.generateCompletion(`${systemPrompt}\n\n${prompt}`);
+                // Pass model as 5th argument: generateCompletion(prompt, stop, tier, priority, model)
+                text = await ollamaService.generateCompletion(`${systemPrompt}\n\n${prompt}`, undefined, 'fast', 0, modelId);
                 break;
             }
 
             case 'MINIMAX': {
                 const { minimaxService } = await import('./minimaxService');
                 text = await minimaxService.generateCompletion(prompt, {
-                    // Inject system prompt via Minimax's chat interface inside the service, 
-                    // but we can also pass it if we refactored generateCompletion. 
-                    // For now, minimaxService.chat handles system prompt injection.
+                    // System prompt handled inside service
+                });
+                break;
+            }
+
+            case 'ZHIPUAI': {
+                const { zhipuService } = await import('./zhipuService');
+                text = await zhipuService.generateCompletion(prompt, {
+                    temperature,
+                    model: modelId
                 });
                 break;
             }
@@ -249,7 +264,8 @@ class LLMGatewayService {
     private async callGroqDirect(
         systemPrompt: string,
         userMessage: string,
-        temperature: number
+        temperature: number,
+        modelId: string = 'llama-3.1-70b-versatile'
     ): Promise<{ text: string; usage: any }> {
         const GROQ_API_KEY = process.env.GROQ_API_KEY;
         if (!GROQ_API_KEY) throw new Error('GROQ_API_KEY not configured');
@@ -261,7 +277,7 @@ class LLMGatewayService {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: 'llama-3.1-70b-versatile',
+                model: modelId,
                 messages: [
                     { role: 'system', content: systemPrompt },
                     { role: 'user', content: userMessage }

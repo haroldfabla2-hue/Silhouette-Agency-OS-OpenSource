@@ -1,7 +1,7 @@
 // =============================================================================
 // DOCTOR ENDPOINT
 // System diagnostics REST API endpoint.
-// Inspired by OpenClaw's `doctor` command.
+// Implementation of comprehensive system health checks.
 // =============================================================================
 
 import { Router, Request, Response } from 'express';

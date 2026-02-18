@@ -1,0 +1,110 @@
+version: '3.8'
+
+services:
+  # 1. GRAPH DATABASE (Long-term Memory)
+  neo4j:
+    image: neo4j:5.15.0-community
+    container_name: silhouette-prod-neo4j
+    ports:
+      - "7474:7474" # HTTP
+      - "7687:7687" # Bolt
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-silhouette_graph_2025}
+      NEO4J_apoc_export_file_enabled: "true"
+      NEO4J_apoc_import_file_enabled: "true"
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_memory_heap_initial__size: "512m"
+      NEO4J_dbms_memory_heap_max__size: "2G"
+    volumes:
+      - ./data/neo4j/data:/data
+      - ./data/neo4j/plugins:/plugins
+    restart: unless-stopped
+    networks:
+      - silhouette-net
+
+  # 2. CACHE & PUBSUB (Short-term Memory)
+  redis:
+    image: redis:alpine
+    container_name: silhouette-prod-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis:/data
+    restart: unless-stopped
+    networks:
+      - silhouette-net
+
+  # 3. VECTOR DATABASE (Embeddings)
+  qdrant:
+    image: qdrant/qdrant
+    container_name: silhouette-prod-qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - ./data/qdrant:/qdrant/storage
+    restart: unless-stopped
+    networks:
+      - silhouette-net
+
+  # 4. REASONING ENGINE (Python Microservice)
+  reasoning-engine:
+    build: ./reasoning_engine
+    container_name: silhouette-prod-reasoning
+    ports:
+      - "8000:8000"
+    environment:
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-silhouette_graph_2025}
+    depends_on:
+      - neo4j
+    restart: unless-stopped
+    networks:
+      - silhouette-net
+
+  # 5. CORE AGENT (Node.js)
+  bot:
+    build: .
+    container_name: silhouette-prod-core
+    ports:
+      - "3005:3005"
+      # Map additional ports if running local web servers via tools
+      - "8080-8090:8080-8090"
+    env_file:
+      - .env.local
+    environment:
+      - NODE_ENV=production
+      - NEO4J_URI=bolt://neo4j:7687
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      # PERSISTENCE BIND MOUNTS
+      # 1. Agent Identity & Memory (The Soul)
+      - ./data:/app/data
+      # 2. Local Models (Large files)
+      - ./models:/app/models
+      # 3. Sandbox (Code Execution Output)
+      - ./sandbox:/app/sandbox
+      # 4. Logs
+      - ./logs:/app/logs
+      # 5. Configs
+      - ./silhouette.config.json:/app/silhouette.config.json
+    depends_on:
+      - redis
+      - qdrant
+      - neo4j
+      - reasoning-engine
+    restart: unless-stopped
+    networks:
+      - silhouette-net
+    # GPU Support (Uncomment if using local models in the container)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+networks:
+  silhouette-net:
+    driver: bridge

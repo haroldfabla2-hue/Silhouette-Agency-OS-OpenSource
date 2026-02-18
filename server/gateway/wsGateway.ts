@@ -1,6 +1,6 @@
 // =============================================================================
 // SILHOUETTE WEBSOCKET GATEWAY
-// Central WebSocket control plane inspired by OpenClaw's Gateway architecture.
+// Central WebSocket control plane.
 // Bridges the existing SystemBus with typed WS connections to clients.
 // =============================================================================
 

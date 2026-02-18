@@ -22,7 +22,7 @@ interface DeepSeekMessage {
 }
 
 interface DeepSeekOptions {
-    model?: 'deepseek-chat' | 'deepseek-coder' | 'deepseek-reasoner';
+    model?: 'deepseek-chat' | 'deepseek-coder' | 'deepseek-reasoner' | string;
     maxTokens?: number;
     temperature?: number;
     stream?: boolean;

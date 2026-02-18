@@ -5,7 +5,7 @@
  * [PA-041] Context Compaction Service
  * ===================================
  * Intelligent history reduction to fit within Token Budget.
- * Inspired by OpenClaw's compaction logic.
+ * Optimized compaction logic for long-running cognitive sessions.
  */
 
 export interface CompactionConfig {

@@ -1065,8 +1065,9 @@ export const generateEmbedding = async (text: string): Promise<number[] | null> 
     }
 };
 
-export const generateText = async (prompt: string): Promise<string> => {
+export const generateText = async (prompt: string, options: { model?: string } = {}): Promise<string> => {
     ensureClient();
+    const modelToUse = options.model || 'gemini-2.5-flash';
 
     // === PRIMARY: ZHIPUAI (FREE, 12 concurrent) ===
     try {
@@ -1091,7 +1092,7 @@ export const generateText = async (prompt: string): Promise<string> => {
         try {
             console.log("[GeminiService] 📡 Trying Gemini (secondary)...");
             const result = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
+                model: modelToUse,
                 contents: [{ parts: [{ text: prompt }] }]
             });
 
@@ -1215,6 +1216,7 @@ export const createCompletion = async (
         communicationLevel?: CommunicationLevel;
         images?: string[]; // Base64 strings
         temperature?: number;
+        model?: string;
     } = {}
 ): Promise<string> => {
     ensureClient();
@@ -1238,7 +1240,7 @@ export const createCompletion = async (
         }
 
         const result = await ai.models.generateContent({
-            model: 'gemini-2.5-flash', // Fast for visual analysis
+            model: options.model || 'gemini-2.5-flash', // Fast for visual analysis
             contents: [{ role: 'user', parts }],
             config: {
                 temperature: options.temperature || 0.2

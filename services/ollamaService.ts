@@ -200,18 +200,18 @@ export class OllamaService {
         prompt: string,
         stopSequences: string[] = ["User:", "System:"],
         tier: 'fast' | 'smart' | 'legacy' = 'fast',
-        priority: number = 0  // Default: highest priority (for chat/interactive)
+        priority: number = 0,
+        model: string = 'glm4:light'
     ): Promise<string> {
-        // UNIFIED: All tiers use GLM-4 Light for consistency and VRAM savings
-        // When Silhouette is trained, AGI tasks will route there instead
-        const model = 'glm4:light';
+        // [MODIFIED] Support dynamic model selection, defaulting to GLM-4 Light
+        const modelToUse = model || 'glm4:light';
 
         const job = await this.queue.add('generate', {
             type: 'generate',
             payload: {
                 prompt,
                 stop: stopSequences,
-                model: model
+                model: modelToUse
             }
         }, {
             priority: priority  // BullMQ: lower number = higher priority

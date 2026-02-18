@@ -190,7 +190,7 @@ export const DEFAULT_API_CONFIG = {
   enabled: true,
   apiKey: process.env.VITE_API_KEY ||
     ((import.meta as any).env?.VITE_API_KEY) ||
-    'sk-silhouette-default-dev-key',
+    '',
   port: 3005
 };
 

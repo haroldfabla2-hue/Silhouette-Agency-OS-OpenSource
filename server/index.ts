@@ -89,6 +89,13 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
 process.on('SIGTERM', async () => {
     console.log('SIGTERM signal received: shutting down gracefully...');
 
+    // [EVOLUTION] Flush all pending memory entries before shutdown
+    try {
+        const { continuousMemory } = await import('../services/memory/continuousMemory');
+        continuousMemory.shutdown();
+        console.log('[SHUTDOWN] ✅ Continuous Memory flushed');
+    } catch { /* ignore if not initialized */ }
+
     // Shutdown WS Gateway first (notify clients)
     try {
         const { gateway } = await import('./gateway');

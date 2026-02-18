@@ -569,7 +569,7 @@ export interface Agent {
   port?: number;
   hibernated?: boolean;
   capabilities?: AgentCapability[]; // [DCR] New Field
-  // [PHASE 17] Agent Standardization (OpenClaw Style)
+  // [PHASE 17] Agent Standardization (Modular Architecture)
   memoryId?: string; // Partition ID for private memory (defaults to agent.id)
   directives?: string[]; // Evolving specific instructions/biases
   opinion?: string; // Summary of worldview/state

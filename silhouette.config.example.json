@@ -1,0 +1,93 @@
+{
+    "system": {
+        "name": "Silhouette Agency OS",
+        "port": 3005,
+        "env": "development",
+        "debug": false
+    },
+    "llm": {
+        "providers": {
+            "gemini": {
+                "model": "gemini-1.5-pro-latest"
+            },
+            "groq": {
+                "model": "llama3-70b-8192"
+            }
+        },
+        "fallbackChain": [
+            "gemini",
+            "groq",
+            "ollama"
+        ],
+        "circuitBreaker": {
+            "maxFailures": 3,
+            "resetTimeMs": 60000
+        }
+    },
+    "channels": {
+        "telegram": {
+            "enabled": false,
+            "botToken": "YOUR_BOT_TOKEN",
+            "accessMode": "allowlist",
+            "allowedChatIds": [
+                123456789
+            ]
+        },
+        "whatsapp": {
+            "enabled": false,
+            "sessionPath": "./data/whatsapp_session",
+            "accessMode": "allowlist",
+            "allowFrom": [
+                "1234567890"
+            ]
+        },
+        "discord": {
+            "enabled": false,
+            "botToken": "YOUR_DISCORD_TOKEN",
+            "accessMode": "allowlist",
+            "allowedGuildIds": [
+                "YOUR_GUILD_ID"
+            ]
+        }
+    },
+    "tools": {
+        "allowlist": [
+            "web_search",
+            "memory_write"
+        ],
+        "denylist": [
+            "rm -rf",
+            "shutdown"
+        ],
+        "requireApproval": true,
+        "sandbox": {
+            "enabled": true,
+            "image": "silhouette-sandbox:latest",
+            "memoryLimit": "512m",
+            "timeoutMs": 30000
+        }
+    },
+    "memory": {
+        "sqlitePath": "./db/silhouette.sqlite",
+        "lanceDbPath": "./db/lancedb",
+        "neo4j": {
+            "uri": "bolt://localhost:7687",
+            "user": "neo4j",
+            "password": "your_neo4j_password"
+        },
+        "redis": {
+            "host": "localhost",
+            "port": 6379
+        },
+        "workingMemoryLimit": 20,
+        "sweepIntervalMs": 300000
+    },
+    "autonomy": {
+        "enabled": false,
+        "maxDailyTokens": 100000,
+        "allowEvolution": false,
+        "maxConcurrentAgents": 10,
+        "enableNarrative": false,
+        "enableIntrospection": true
+    }
+}

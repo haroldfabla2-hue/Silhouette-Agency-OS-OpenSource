@@ -24,12 +24,14 @@ class WhatsAppChannel implements IChannel {
     private config: {
         sessionPath: string;
         allowFrom?: string[];
+        accessMode?: 'open' | 'allowlist';
     };
 
-    constructor(config?: { sessionPath?: string; allowFrom?: string[] }) {
+    constructor(config?: { sessionPath?: string; allowFrom?: string[]; accessMode?: 'open' | 'allowlist' }) {
         this.config = {
             sessionPath: config?.sessionPath ?? './data/whatsapp-session',
             allowFrom: config?.allowFrom,
+            accessMode: config?.accessMode,
         };
     }
 
@@ -78,10 +80,15 @@ class WhatsAppChannel implements IChannel {
                     if (msg.key.remoteJid === 'status@broadcast') continue;
                     if (msg.key.fromMe) continue;
 
-                    // Filter by allowlist if configured
+                    // Filter by allowlist if configured (unless in OPEN mode)
                     const sender = msg.key.participant ?? msg.key.remoteJid ?? '';
-                    if (this.config.allowFrom && this.config.allowFrom.length > 0) {
-                        if (!this.config.allowFrom.some(n => sender.includes(n))) continue;
+
+                    if (this.config.accessMode !== 'open') {
+                        // Strict allowlist enforcement
+                        if (!this.config.allowFrom || !this.config.allowFrom.some(n => sender.includes(n))) {
+                            console.warn(`[WhatsApp] ⛔ Blocked unauthorized sender: ${sender}`);
+                            continue;
+                        }
                     }
 
                     const text = msg.message?.conversation

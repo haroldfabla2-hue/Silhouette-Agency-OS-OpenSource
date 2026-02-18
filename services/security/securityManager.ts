@@ -1,7 +1,7 @@
 // =============================================================================
 // SECURITY MANAGER
 // Centralized tool security: allowlists, denylists, exec approvals.
-// Inspired by OpenClaw's security model.
+// Comprehensive security model for autonomous agents.
 // =============================================================================
 
 import { systemBus } from '../systemBus';

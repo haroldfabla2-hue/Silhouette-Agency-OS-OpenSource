@@ -26,16 +26,22 @@ cd Silhouette-Agency-OS-v2
 npm install
 ```
 
-### 3. Configure Environment Variables
-Copy the example environment file and fill in your API keys and service URLs:
+### 3. Run the Intelligent Setup
+We've streamlined everything into a single command that handles dependencies, env vars, and Docker:
 ```bash
-cp .env.example .env.local
+npm run setup:intelligent
 ```
-> [!IMPORTANT]
-> At minimum, you need a `GEMINI_API_KEY`. See `CONFIGURATION.md` for more details on optional providers.
+> [!TIP]
+> This wizard will detect your OS, offer to start Docker, and guide you through selecting LLM providers.
 
-### 4. Initialize Database
-Run the following script to set up necessary Neo4j indexes and constraints:
+### 4. Personalize Your Agent
+Give your AGI a name and personality:
+```bash
+npm run personalize
+```
+
+### 5. Initialize Database (Optional)
+If the setup script didn't already do it:
 ```bash
 npx tsx scripts/init_neo4j_indexes.ts
 ```

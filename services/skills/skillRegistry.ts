@@ -1,6 +1,6 @@
 // =============================================================================
 // SILHOUETTE SKILLS SYSTEM
-// Dynamic skill loader inspired by OpenClaw's skills platform.
+// Dynamic skill loader.
 // Loads SKILL.md files from multiple locations with precedence.
 // =============================================================================
 

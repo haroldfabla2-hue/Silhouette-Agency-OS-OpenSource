@@ -60,7 +60,7 @@
         "neo4j": {
             "uri": "bolt://localhost:7687",
             "user": "neo4j",
-            "password": "password"
+            "password": ""
         },
         "redis": {
             "host": "localhost",

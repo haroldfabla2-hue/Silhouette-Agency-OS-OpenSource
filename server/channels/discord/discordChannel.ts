@@ -23,9 +23,10 @@ class DiscordChannel implements IChannel {
         botToken: string;
         allowedGuildIds?: string[];
         allowedChannelIds?: string[];
+        accessMode?: 'open' | 'allowlist';
     };
 
-    constructor(config: { botToken: string; allowedGuildIds?: string[]; allowedChannelIds?: string[] }) {
+    constructor(config: { botToken: string; allowedGuildIds?: string[]; allowedChannelIds?: string[]; accessMode?: 'open' | 'allowlist' }) {
         this.config = config;
     }
 
@@ -52,14 +53,37 @@ class DiscordChannel implements IChannel {
                 // Ignore bot's own messages
                 if (msg.author.bot) return;
 
-                // Filter by guild if configured
-                if (this.config.allowedGuildIds && this.config.allowedGuildIds.length > 0) {
-                    if (msg.guild && !this.config.allowedGuildIds.includes(msg.guild.id)) return;
-                }
+                const accessMode = this.config.accessMode;
 
-                // Filter by channel if configured
-                if (this.config.allowedChannelIds && this.config.allowedChannelIds.length > 0) {
-                    if (!this.config.allowedChannelIds.includes(msg.channel.id)) return;
+                // 1. OPEN MODE: Skip filters
+                if (accessMode !== 'open') {
+                    // 2. ALLOWLIST MODE (Strict)
+                    // If allowedGuildIds is configured, must match
+                    if (this.config.allowedGuildIds && this.config.allowedGuildIds.length > 0) {
+                        if (msg.guild && !this.config.allowedGuildIds.includes(msg.guild.id)) return;
+                    }
+
+                    // If allowedChannelIds is configured, must match
+                    if (this.config.allowedChannelIds && this.config.allowedChannelIds.length > 0) {
+                        if (!this.config.allowedChannelIds.includes(msg.channel.id)) return;
+                    }
+
+                    // IF NO ALLOWLISTS CONFIGURED AT ALL IN ALLOWLIST MODE -> BLOCK EVERYTHING?
+                    // To follow the pattern of other channels: Yes, secure by default.
+                    // But for Discord, maybe we only block DMs if guilds are specified?
+                    // Let's keep it simple: if allowlist mode and checklists exist, enforce them. 
+                    // If NO checklists exist, maybe we should warn? 
+                    // For now, let's just stick to "if list exists, enforce it".
+                    // The other channels block if list is empty. Here we have TWO lists.
+                    // Let's implement strict blocking if NO whitelist is present in allowlist mode.
+
+                    if (
+                        (!this.config.allowedGuildIds || this.config.allowedGuildIds.length === 0) &&
+                        (!this.config.allowedChannelIds || this.config.allowedChannelIds.length === 0)
+                    ) {
+                        console.warn(`[Discord] ⛔ Blocked message (Secure Mode): Configure allowedGuildIds or allowedChannelIds, or set accessMode: 'open'.`);
+                        return;
+                    }
                 }
 
                 // Build media attachments

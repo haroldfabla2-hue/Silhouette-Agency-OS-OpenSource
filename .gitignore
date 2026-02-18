@@ -42,6 +42,11 @@ secrets/
 *.key
 client_secret_*.json
 
+# Data storage (User Identity & Memory)
+data/
+data/agents/
+
+
 # Data files (user-specific)
 silhouette_*.json
 cost_metrics.json

@@ -1,6 +1,6 @@
 // =============================================================================
 // SILHOUETTE GATEWAY PROTOCOL
-// Typed WebSocket protocol inspired by OpenClaw's wire protocol.
+// Typed WebSocket protocol for Silhouette AGI.
 // All client↔server communication uses JSON frames over WebSocket.
 // =============================================================================
 

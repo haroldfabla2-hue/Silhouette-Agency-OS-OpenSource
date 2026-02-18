@@ -15,10 +15,8 @@ export default defineConfig(({ mode }) => {
       }
     },
     plugins: [react()],
-    define: {
-      'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
-    },
+    // NOTE: API keys are intentionally NOT injected into the frontend bundle.
+    // All LLM calls must go through the backend proxy at /v1/*.
     build: {
       chunkSizeWarningLimit: 1300, // Increased for vendor libs (three.js ~1.2MB)
       rollupOptions: {

@@ -4,6 +4,7 @@ import { geminiService } from "./geminiService";
 import { systemBus } from "./systemBus";
 import { introspection } from "./introspectionEngine";
 import { IntrospectionLayer, WorkflowStage } from "../types";
+import { agentFileSystem } from "./agents/agentFileSystem";
 
 /**
  * AGENT STREAM SERVICE
@@ -35,10 +36,18 @@ export class AgentStreamService {
         let fullText = "";
 
         try {
+            // [EVOLUTION] Inject per-agent file system context (SOUL, IDENTITY, TOOLS)
+            const agentSystemPrompt = agentFileSystem.buildSystemPrompt(agent.id, {
+                includeMemory: true,
+                includeHeartbeat: false,
+                includeUser: !!context?.isUserFacing,
+                maxMemoryLines: 50
+            });
+
             const stream = geminiService.generateAgentResponseStream(
                 `${agent.name}_Stream`,
                 "Orchestrator", // Sender
-                agent.role, // Persona
+                agentSystemPrompt || agent.role, // Use rich prompt if available, fallback to role
                 task,
                 null,
                 IntrospectionLayer.DEEP, // Sub-agents are deep thinkers
@@ -83,6 +92,14 @@ export class AgentStreamService {
                 originalContext: context // Pass back context for correlation
             }, 'AGENT_STREAM');
 
+            // [EVOLUTION] Log task completion to agent's MEMORY.md
+            try {
+                const summary = fullText.length > 500 ? fullText.substring(0, 500) + '...' : fullText;
+                agentFileSystem.appendMemory(agent.id, `**Task Completed**\nTask: ${task.substring(0, 200)}\nResult Summary: ${summary}`);
+            } catch (memErr) {
+                // Non-critical — don't let memory failures break the flow
+            }
+
         } catch (e) {
             console.error(`[AGENT_STREAM] 💥 Thread Crash for ${agent.name}:`, e);
         } finally {
@@ -101,20 +118,29 @@ export class AgentStreamService {
         const sender = message.senderId;
         const content = JSON.stringify(message.payload);
         const type = message.protocol || 'MESSAGE';
+        const sessionId = message.sessionId || null;
 
         const prompt = `
          [INCOMING COMMUNICATION]
          SENDER: ${sender}
          TYPE: ${type}
+         ${sessionId ? `SESSION: ${sessionId}` : ''}
          CONTENT: ${content}
          
          INSTRUCTIONS:
-         1. Read the message.
-         2. If it requires action, execute it.
-         3. If it requires a reply, use your tools to send a response.
+         1. Read the message carefully, considering the sender's role and authority.
+         2. If it requires action, execute it within your permissions.
+         3. If it requires a reply, formulate a response.
+         4. If you need help, you may request it by mentioning the relevant agent.
+         5. If this is a delegation from a superior, acknowledge and begin work.
+         6. If you cannot fulfill the request, explain why honestly.
          `;
 
-        await this.spawnAgentStream(agent, prompt, { sourceMsg: message });
+        await this.spawnAgentStream(agent, prompt, {
+            sourceMsg: message,
+            sessionId,
+            isUserFacing: type === 'USER_MESSAGE'
+        });
     }
 }
 

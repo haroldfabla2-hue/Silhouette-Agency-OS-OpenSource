@@ -24,9 +24,10 @@ export class TelegramChannel implements IChannel {
     private config: {
         botToken: string;
         allowedChatIds?: number[];
+        accessMode?: 'open' | 'allowlist';
     };
 
-    constructor(config: { botToken: string; allowedChatIds?: number[] }) {
+    constructor(config: { botToken: string; allowedChatIds?: number[]; accessMode?: 'open' | 'allowlist' }) {
         this.config = config;
     }
 
@@ -40,14 +41,24 @@ export class TelegramChannel implements IChannel {
                 if (!ctx.from) return;
                 const userId = ctx.from.id;
 
-                // Allow if whitelist is empty (public bot) OR user is in whitelist
-                if (this.config.allowedChatIds && this.config.allowedChatIds.length > 0) {
-                    if (!this.config.allowedChatIds.includes(userId)) {
-                        logger.warn(`[Telegram] Unauthorized access attempt from: ${userId} (@${ctx.from.username})`);
-                        return; // Silent drop
-                    }
+                // 1. OPEN MODE: Everyone is allowed
+                if (this.config.accessMode === 'open') {
+                    await next();
+                    return;
                 }
-                await next();
+
+                // 2. ALLOWLIST MODE (Default/Secure)
+                // Must be explicitly in the allowedChatIds list
+                if (this.config.allowedChatIds && this.config.allowedChatIds.includes(userId)) {
+                    await next();
+                    return;
+                }
+
+                // 3. BLOCKED
+                logger.warn(`[Telegram] ⛔ Unauthorized access blocked: ${userId} (@${ctx.from.username})`);
+                // Optional: Reply to user saying they are not authorized? 
+                // Better to be silent to avoid spam/scanning.
+                return;
             });
 
             // ERROR HANDLER
