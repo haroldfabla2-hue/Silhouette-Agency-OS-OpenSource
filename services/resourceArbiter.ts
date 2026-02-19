@@ -125,20 +125,94 @@ class ResourceArbiter {
 
 
 
-    // Helper to fetch VRAM from nvidia-smi
-    private async getGpuMetrics(): Promise<{ used: number; total: number }> {
+    private detectedGpuVendor: string | null = null;
+
+    // Detect GPU vendor once, then use the right tool for VRAM queries
+    private async detectGpuVendor(): Promise<string> {
+        if (this.detectedGpuVendor) return this.detectedGpuVendor;
+
+        // Try NVIDIA first
         try {
-            // Returns "961, 4096"
-            const { stdout } = await execAsync('nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits');
-            const [usedStr, totalStr] = stdout.trim().split(',').map(s => s.trim());
-            return {
-                used: parseInt(usedStr) || 0,
-                total: parseInt(totalStr) || 4096
-            };
-        } catch (error) {
-            // console.warn("[ARBITER] nvidia-smi failed, using fallback:", error);
-            return { used: 0, total: 4096 };
+            await execAsync('nvidia-smi --query-gpu=name --format=csv,noheader', { timeout: 5000 });
+            this.detectedGpuVendor = 'nvidia';
+            console.log('[ARBITER] GPU detected: NVIDIA');
+            return 'nvidia';
+        } catch {}
+
+        // Try AMD ROCm
+        try {
+            await execAsync('rocm-smi --showproductname', { timeout: 5000 });
+            this.detectedGpuVendor = 'amd';
+            console.log('[ARBITER] GPU detected: AMD (ROCm)');
+            return 'amd';
+        } catch {}
+
+        // Try Intel (via lspci on Linux)
+        try {
+            const { stdout } = await execAsync('lspci | grep -i "vga\\|3d\\|display"', { timeout: 5000 });
+            if (stdout.toLowerCase().includes('intel')) {
+                this.detectedGpuVendor = 'intel';
+                console.log('[ARBITER] GPU detected: Intel (no VRAM monitoring)');
+                return 'intel';
+            }
+        } catch {}
+
+        this.detectedGpuVendor = 'none';
+        console.log('[ARBITER] No discrete GPU detected, running CPU-only');
+        return 'none';
+    }
+
+    // Helper to fetch VRAM - supports NVIDIA (nvidia-smi) and AMD (rocm-smi)
+    private async getGpuMetrics(): Promise<{ used: number; total: number }> {
+        const vendor = await this.detectGpuVendor();
+
+        if (vendor === 'nvidia') {
+            try {
+                const { stdout } = await execAsync('nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits');
+                const [usedStr, totalStr] = stdout.trim().split(',').map(s => s.trim());
+                return {
+                    used: parseInt(usedStr) || 0,
+                    total: parseInt(totalStr) || 4096
+                };
+            } catch {
+                return { used: 0, total: 0 };
+            }
         }
+
+        if (vendor === 'amd') {
+            try {
+                const { stdout } = await execAsync('rocm-smi --showmemuse --json', { timeout: 5000 });
+                const data = JSON.parse(stdout);
+                // rocm-smi JSON output varies by version, try common formats
+                const card = data?.card0 || Object.values(data)[0] as any;
+                if (card) {
+                    return {
+                        used: parseInt(card['VRAM Use (MB)'] || card['vram_used'] || '0'),
+                        total: parseInt(card['VRAM Total (MB)'] || card['vram_total'] || '0')
+                    };
+                }
+            } catch {}
+            // Fallback: try parsing text output
+            try {
+                const { stdout } = await execAsync('rocm-smi --showmeminfo vram');
+                let used = 0, total = 0;
+                for (const line of stdout.split('\n')) {
+                    if (line.includes('Total')) {
+                        const match = line.match(/(\d+)/);
+                        if (match) total = Math.round(parseInt(match[1]) / (1024 * 1024)); // bytes to MB
+                    }
+                    if (line.includes('Used')) {
+                        const match = line.match(/(\d+)/);
+                        if (match) used = Math.round(parseInt(match[1]) / (1024 * 1024));
+                    }
+                }
+                if (total > 0) return { used, total };
+            } catch {}
+            return { used: 0, total: 0 };
+        }
+
+        // Intel or no GPU - no VRAM to monitor
+        return { used: 0, total: 0 };
     }
 
     public async getRealMetrics(): Promise<ResourceMetrics> {
