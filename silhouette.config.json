@@ -19,27 +19,27 @@
         "handshakeTimeoutMs": 5000
     },
     "llm": {
-        "defaultProvider": "minimax",
+        "defaultProvider": "gemini",
         "providers": {
             "gemini": {
-                "apiKey": "YOUR_GEMINI_API_KEY",
+                "apiKey": "",
                 "model": "gemini-2.0-flash"
             },
             "groq": {
-                "apiKey": "YOUR_GROQ_API_KEY",
+                "apiKey": "",
                 "model": "llama-3.3-70b-versatile"
             },
             "deepseek": {
-                "apiKey": "YOUR_DEEPSEEK_API_KEY",
+                "apiKey": "",
                 "model": "deepseek-chat"
             },
             "minimax": {
-                "apiKey": "YOUR_MINIMAX_API_KEY",
-                "groupId": "YOUR_MINIMAX_GROUP_ID",
+                "apiKey": "",
+                "groupId": "",
                 "model": "abab6.5s-chat"
             },
             "openrouter": {
-                "apiKey": "YOUR_OPENROUTER_API_KEY",
+                "apiKey": "",
                 "model": "google/gemini-2.0-flash-exp:free"
             }
         },
@@ -71,8 +71,8 @@
     },
     "channels": {
         "telegram": {
-            "enabled": true,
-            "botToken": "YOUR_TELEGRAM_BOT_TOKEN",
+            "enabled": false,
+            "botToken": "",
             "allowedChatIds": []
         },
         "discord": {
@@ -100,7 +100,7 @@
     "media": {
         "uploadsDir": "./uploads",
         "elevenlabs": {
-            "apiKey": "YOUR_ELEVENLABS_API_KEY",
+            "apiKey": "",
             "defaultVoice": "Rachel"
         },
         "imageGeneration": {
