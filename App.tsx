@@ -172,74 +172,88 @@ const App: React.FC = () => {
   }, []); // [NEURO-UPDATE] SSE BRIDGE (Server -> Client Bus)
 
   useEffect(() => {
-    console.log("🔌 [SSE] Connecting to Neural Uplink...");
-    const evtSource = new EventSource(`/v1/factory/stream?apiKey=${DEFAULT_API_CONFIG.apiKey}`);
+    let evtSource: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectDelay = 1000; // Start at 1s, exponential backoff up to 30s
+    let isCancelled = false;
 
-    evtSource.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        if (data.type === 'bus_event') {
-          // [PA-045] Unwrap Server Bus Events so components hear the actual protocol
-          // Server sends: { type: 'bus_event', payload: { type: 'PROTOCOL_VISUAL_REQUEST', payload: {} } }
-          const innerEvent = data.payload;
-          if (innerEvent && innerEvent.type) {
-            systemBus.emit(innerEvent.type, innerEvent.payload, 'SERVER_BRIDGE');
-          }
-        } else if (data.type) {
-          // Legacy direct events or Logs
-          systemBus.emit(data.type, data.payload, 'SERVER_BRIDGE');
-          // ... existing logic ...
+    function connectSSE() {
+      if (isCancelled) return;
 
-          // Special Handlers for UI state caching
-          if (data.type === SystemProtocol.TASK_COMPLETION) {
-            console.log("✅ [SSE] Task Completed:", data.payload);
-          }
+      console.log("[SSE] Connecting to Neural Uplink...");
+      evtSource = new EventSource(`/v1/factory/stream?apiKey=${DEFAULT_API_CONFIG.apiKey}`);
 
-          // [UI CONTROL] Handle navigation and UI action commands from Silhouette
-          if (data.type === SystemProtocol.UI_REFRESH && data.payload?.uiCommand) {
-            const cmd = data.payload.uiCommand;
-            console.log("🎮 [SSE] UI Command received:", cmd);
+      evtSource.onopen = () => {
+        console.log("[SSE] Connected.");
+        reconnectDelay = 1000; // Reset backoff on successful connection
+      };
 
-            if (cmd.type === 'NAVIGATE') {
-              // Navigate to tab
-              setActiveTab(cmd.destination);
-              if (cmd.message) {
-                console.log(`📍 Navigation message: ${cmd.message}`);
-              }
-            } else if (cmd.type === 'ACTION') {
-              // Handle UI actions
-              if (cmd.action === 'open_panel') {
-                if (cmd.panel === 'drive') setDriveOpen(true);
-                else if (cmd.panel === 'email') setEmailOpen(true);
-              } else if (cmd.action === 'close_panel') {
-                if (cmd.panel === 'drive') setDriveOpen(false);
-                else if (cmd.panel === 'email') setEmailOpen(false);
-              } else if (cmd.action === 'highlight' && cmd.target) {
-                // Highlight element with visual effect
-                const el = document.querySelector(cmd.target);
-                if (el) {
-                  el.classList.add('silhouette-highlight');
-                  setTimeout(() => el.classList.remove('silhouette-highlight'), cmd.durationMs || 3000);
+      evtSource.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.type === 'bus_event') {
+            const innerEvent = data.payload;
+            if (innerEvent && innerEvent.type) {
+              systemBus.emit(innerEvent.type, innerEvent.payload, 'SERVER_BRIDGE');
+            }
+          } else if (data.type) {
+            systemBus.emit(data.type, data.payload, 'SERVER_BRIDGE');
+
+            if (data.type === SystemProtocol.TASK_COMPLETION) {
+              console.log("[SSE] Task Completed:", data.payload);
+            }
+
+            if (data.type === SystemProtocol.UI_REFRESH && data.payload?.uiCommand) {
+              const cmd = data.payload.uiCommand;
+
+              if (cmd.type === 'NAVIGATE') {
+                setActiveTab(cmd.destination);
+              } else if (cmd.type === 'ACTION') {
+                if (cmd.action === 'open_panel') {
+                  if (cmd.panel === 'drive') setDriveOpen(true);
+                  else if (cmd.panel === 'email') setEmailOpen(true);
+                } else if (cmd.action === 'close_panel') {
+                  if (cmd.panel === 'drive') setDriveOpen(false);
+                  else if (cmd.panel === 'email') setEmailOpen(false);
+                } else if (cmd.action === 'highlight' && cmd.target) {
+                  const el = document.querySelector(cmd.target);
+                  if (el) {
+                    el.classList.add('silhouette-highlight');
+                    setTimeout(() => el.classList.remove('silhouette-highlight'), cmd.durationMs || 3000);
+                  }
                 }
               }
             }
           }
+        } catch (err) {
+          // Ignore parse errors for heartbeat/keepalive messages
         }
-      } catch (err) {
-        // console.error("SSE Parse Error", err);
-      }
-    };
+      };
+
+      evtSource.onerror = () => {
+        if (isCancelled) return;
+        console.warn(`[SSE] Connection lost. Reconnecting in ${reconnectDelay / 1000}s...`);
+        evtSource?.close();
+        evtSource = null;
+        reconnectTimer = setTimeout(() => {
+          reconnectDelay = Math.min(reconnectDelay * 2, 30000); // Exponential backoff, max 30s
+          connectSSE();
+        }, reconnectDelay);
+      };
+    }
+
+    connectSSE();
 
     return () => {
-      evtSource.close();
+      isCancelled = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      evtSource?.close();
     };
   }, []);
 
   const handleModeChange = (mode: SystemMode) => {
     setMetrics(prev => ({ ...prev, currentMode: mode }));
     localStorage.setItem('silhouette_power_mode', mode);
-    // Sync with server
-    // Sync with server
     api.post('/v1/system/mode', { mode }).catch(console.error);
   };
 

@@ -203,8 +203,27 @@ export const REPLICATE_CONFIG = {
   }
 };
 
-export const REDIS_CONFIG = {
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT || '6499'),
-  password: process.env.REDIS_PASSWORD
+// Redis config: supports REDIS_URL (Docker prod) or individual host/port (dev)
+// Dev docker-compose maps 6499:6379, prod uses standard 6379
+const parseRedisUrl = (): { host: string; port: number; password?: string } => {
+  const url = process.env.REDIS_URL;
+  if (url) {
+    try {
+      const parsed = new URL(url);
+      return {
+        host: parsed.hostname,
+        port: parseInt(parsed.port) || 6379,
+        password: parsed.password || undefined,
+      };
+    } catch {
+      console.warn('[CONFIG] Invalid REDIS_URL, falling back to individual vars');
+    }
+  }
+  return {
+    host: process.env.REDIS_HOST || 'localhost',
+    port: parseInt(process.env.REDIS_PORT || '6499'),
+    password: process.env.REDIS_PASSWORD,
+  };
 };
+
+export const REDIS_CONFIG = parseRedisUrl();

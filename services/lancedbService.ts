@@ -17,13 +17,19 @@ export class LanceDbService {
     private initialized = false;
 
     constructor() {
-        // [MOD] Manual init for better control
-        // this.init(); 
+        // Lazy initialization - called explicitly from dbLoader or on first use
+    }
+
+    /** Explicit initialization (called from dbLoader at startup) */
+    public async ensureInitialized(): Promise<void> {
+        if (this.initialized) return;
+        await this.init();
     }
 
     private async init() {
+        if (this.initialized) return;
         try {
-            console.log(`[LANCEDB DEBUG] Connecting to: ${DB_PATH}`);
+            console.log(`[LANCEDB] Connecting to: ${DB_PATH}`);
             this.db = await lancedb.connect(DB_PATH);
             const tableNames = await this.db.tableNames();
 

@@ -43,7 +43,7 @@ class GraphService {
                 process.env.NEO4J_URI || 'bolt://127.0.0.1:7787',
                 neo4j.auth.basic(
                     process.env.NEO4J_USER || 'neo4j',
-                    process.env.NEO4J_PASSWORD || 'silhouette_graph_2035'
+                    process.env.NEO4J_PASSWORD || 'changeme_on_first_run'
                 ),
                 {
                     maxConnectionLifetime: 30 * 60 * 1000,
