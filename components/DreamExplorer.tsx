@@ -65,8 +65,8 @@ export const DreamExplorer: React.FC = () => {
                     </div>
                 )}
 
-                {dreams.map((dream, idx) => (
-                    <div key={idx} style={{
+                {dreams.map((dream) => (
+                    <div key={`${dream.timestamp}-${dream.content.substring(0, 30)}`} style={{
                         marginBottom: '10px',
                         padding: '10px',
                         background: '#1a1a20',

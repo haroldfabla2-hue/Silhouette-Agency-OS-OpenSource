@@ -297,7 +297,20 @@ export const nervousSystem = new ConnectionNervousSystem();
 export async function initializeNervousSystem(): Promise<void> {
     console.log("[NERVOUS] 🔌 Registering default connections...");
 
-    // Neo4j Graph Database - Removed Initial Registration (Now Handled by GraphService on First Connect)
+    // 1. Neo4j Graph Database - register for health monitoring
+    try {
+        const { graph } = await import('./graphService');
+        nervousSystem.register({
+            id: 'neo4j',
+            name: 'Neo4j Graph',
+            type: 'DATABASE',
+            isRequired: false,
+            checkHealth: async () => graph.isConnected(),
+            reconnect: async () => graph.connect()
+        });
+    } catch (e) {
+        console.warn("[NERVOUS] Neo4j service not available for monitoring");
+    }
 
     // 2. Ollama Local LLM
     nervousSystem.register({
@@ -346,8 +359,8 @@ export async function initializeNervousSystem(): Promise<void> {
                 return driveService.isAuthenticated();
             }
         });
-    } catch (e) {
-        console.warn("[NERVOUS] Google Drive service not available for monitoring");
+    } catch (e: any) {
+        console.warn("[NERVOUS] Google Drive service not available for monitoring:", e.message);
     }
 
     // Start monitoring

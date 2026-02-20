@@ -48,6 +48,9 @@ export const LoginGate: React.FC<LoginGateProps> = ({ children }) => {
     // Listen for OAuth popup success
     useEffect(() => {
         const handleMessage = (event: MessageEvent) => {
+            // Validate origin to prevent cross-origin message injection
+            if (event.origin !== window.location.origin) return;
+
             if (event.data?.type === 'GOOGLE_AUTH_SUCCESS') {
                 setAuth({
                     checking: false,

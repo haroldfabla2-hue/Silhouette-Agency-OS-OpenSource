@@ -18,6 +18,8 @@ const getEnvUrl = (): string => {
 };
 export const API_BASE_URL = getEnvUrl();
 
+const REQUEST_TIMEOUT_MS = 30000; // 30s default timeout
+
 const getHeaders = () => {
     return {
         'Content-Type': 'application/json',
@@ -25,13 +27,29 @@ const getHeaders = () => {
     };
 };
 
+/** Parse error response body for detailed error messages */
+async function parseErrorResponse(res: Response): Promise<string> {
+    try {
+        const body = await res.json();
+        return body?.error || body?.message || body?.detail || res.statusText;
+    } catch {
+        return res.statusText || `HTTP ${res.status}`;
+    }
+}
+
+/** Create an AbortSignal with timeout */
+function withTimeout(timeoutMs: number = REQUEST_TIMEOUT_MS): AbortSignal {
+    return AbortSignal.timeout(timeoutMs);
+}
+
 export const api = {
     get: async <T>(endpoint: string): Promise<T> => {
         const res = await fetch(`${API_BASE_URL}${endpoint}`, {
             method: 'GET',
-            headers: getHeaders()
+            headers: getHeaders(),
+            signal: withTimeout()
         });
-        if (!res.ok) throw new Error(`API Error: ${res.statusText}`);
+        if (!res.ok) throw new Error(await parseErrorResponse(res));
         return res.json();
     },
 
@@ -39,9 +57,10 @@ export const api = {
         const res = await fetch(`${API_BASE_URL}${endpoint}`, {
             method: 'POST',
             headers: getHeaders(),
-            body: JSON.stringify(body)
+            body: JSON.stringify(body),
+            signal: withTimeout()
         });
-        if (!res.ok) throw new Error(`API Error: ${res.statusText}`);
+        if (!res.ok) throw new Error(await parseErrorResponse(res));
         return res.json();
     },
 
@@ -49,9 +68,10 @@ export const api = {
         const res = await fetch(`${API_BASE_URL}${endpoint}`, {
             method: 'PUT',
             headers: getHeaders(),
-            body: JSON.stringify(body)
+            body: JSON.stringify(body),
+            signal: withTimeout()
         });
-        if (!res.ok) throw new Error(`API Error: ${res.statusText}`);
+        if (!res.ok) throw new Error(await parseErrorResponse(res));
         return res.json();
     },
 
@@ -59,18 +79,20 @@ export const api = {
         const res = await fetch(`${API_BASE_URL}${endpoint}`, {
             method: 'PATCH',
             headers: getHeaders(),
-            body: JSON.stringify(body)
+            body: JSON.stringify(body),
+            signal: withTimeout()
         });
-        if (!res.ok) throw new Error(`API Error: ${res.statusText}`);
+        if (!res.ok) throw new Error(await parseErrorResponse(res));
         return res.json();
     },
 
     delete: async <T>(endpoint: string): Promise<T> => {
         const res = await fetch(`${API_BASE_URL}${endpoint}`, {
             method: 'DELETE',
-            headers: getHeaders()
+            headers: getHeaders(),
+            signal: withTimeout()
         });
-        if (!res.ok) throw new Error(`API Error: ${res.statusText}`);
+        if (!res.ok) throw new Error(await parseErrorResponse(res));
         return res.json();
     },
 
@@ -84,7 +106,8 @@ export const api = {
 
         return fetch(`${API_BASE_URL}${endpoint}`, {
             ...options,
-            headers
+            headers,
+            signal: options.signal || withTimeout(60000) // 60s for raw fetch (uploads, streams)
         });
     }
 };

@@ -840,6 +840,13 @@ export class SqliteService {
         const stmt = this.db.prepare('SELECT * FROM voice_clone_sessions WHERE voice_id = ? ORDER BY created_at DESC');
         return stmt.all(voiceId);
     }
+
+    /** Close the database connection (for graceful shutdown) */
+    public close(): void {
+        try {
+            this.db.close();
+        } catch { /* ignore if already closed */ }
+    }
 }
 
 export const sqliteService = new SqliteService();

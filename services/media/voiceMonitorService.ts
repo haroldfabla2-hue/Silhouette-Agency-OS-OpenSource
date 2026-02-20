@@ -327,23 +327,46 @@ class VoiceMonitorService {
             let args: string[];
 
             if (isWindows) {
-                // Try conda first, fallback to venv
-                const condaPath = 'C:\\Users\\usuario\\miniconda3\\condabin\\activate.bat';
                 const fs = await import('fs');
+                const os = await import('os');
 
-                if (fs.existsSync(condaPath)) {
-                    // Use conda - call Scripts\activate.bat directly with env path
-                    const condaEnvPath = 'C:\\Users\\usuario\\miniconda3\\envs\\silhouette-tts';
+                // Check for conda env via CONDA_PREFIX or well-known paths
+                const condaPrefix = process.env.CONDA_PREFIX;
+                const userHome = os.homedir();
+                const condaCandidates = [
+                    condaPrefix ? path.join(condaPrefix, '..', 'silhouette-tts') : '',
+                    path.join(userHome, 'miniconda3', 'envs', 'silhouette-tts'),
+                    path.join(userHome, 'anaconda3', 'envs', 'silhouette-tts'),
+                ].filter(Boolean);
+
+                let condaEnvPath = '';
+                for (const candidate of condaCandidates) {
+                    if (candidate && fs.existsSync(path.join(candidate, 'Scripts', 'activate.bat'))) {
+                        condaEnvPath = candidate;
+                        break;
+                    }
+                }
+
+                if (condaEnvPath) {
                     cmd = 'cmd.exe';
                     args = ['/c', `call "${condaEnvPath}\\Scripts\\activate.bat" && cd /d "${voiceEnginePath}" && python -m uvicorn main:app --host 0.0.0.0 --port 8100`];
                 } else {
-                    // Use local venv
+                    // Fallback to local venv
                     cmd = 'cmd.exe';
                     args = ['/c', `cd /d "${voiceEnginePath}" && venv\\Scripts\\activate && python -m uvicorn main:app --host 0.0.0.0 --port 8100`];
                 }
             } else {
-                cmd = '/bin/bash';
-                args = ['-c', `cd "${voiceEnginePath}" && source venv/bin/activate && python -m uvicorn main:app --host 0.0.0.0 --port 8100`];
+                // Linux/macOS: try venv first, fallback to system python
+                const fs = await import('fs');
+                const venvActivate = path.join(voiceEnginePath, 'venv', 'bin', 'activate');
+
+                if (fs.existsSync(venvActivate)) {
+                    cmd = '/bin/bash';
+                    args = ['-c', `cd "${voiceEnginePath}" && source venv/bin/activate && python -m uvicorn main:app --host 0.0.0.0 --port 8100`];
+                } else {
+                    cmd = '/bin/bash';
+                    args = ['-c', `cd "${voiceEnginePath}" && python3 -m uvicorn main:app --host 0.0.0.0 --port 8100`];
+                }
             }
 
             console.log(`[VoiceMonitor] Spawning voice engine: ${cmd} ${args.join(' ')}`);

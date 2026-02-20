@@ -1,5 +1,7 @@
 import { REDIS_CONFIG } from '../constants';
 
+const MOCK_STORE_MAX_SIZE = 10000; // Eviction threshold for in-memory fallback
+
 class RedisService {
     private client: any;
     private isConnected: boolean = false;
@@ -8,6 +10,11 @@ class RedisService {
 
     constructor() {
         // Client is initialized lazily in connect()
+    }
+
+    /** Returns true if running in mock (in-memory) mode */
+    public isMockMode(): boolean {
+        return this.isMock;
     }
 
     public async connect() {
@@ -21,9 +28,14 @@ class RedisService {
                 const redisModule = await import('redis');
                 const createClient = redisModule.createClient;
 
+                const redisUrl = `redis://${REDIS_CONFIG.host}:${REDIS_CONFIG.port}`;
+                console.log(`[REDIS] Connecting to ${REDIS_CONFIG.host}:${REDIS_CONFIG.port}...`);
+
                 this.client = createClient({
-                    url: `redis://${REDIS_CONFIG.host}:${REDIS_CONFIG.port}`,
+                    url: redisUrl,
+                    password: REDIS_CONFIG.password || undefined,
                     socket: {
+                        connectTimeout: 5000,
                         reconnectStrategy: (retries: number) => {
                             if (retries > 3) {
                                 console.warn('[REDIS] Max retries reached. Switching to In-Memory Fallback.');
@@ -36,24 +48,44 @@ class RedisService {
 
                 this.client.on('error', (err: any) => {
                     // Only log if not already in mock mode to avoid spam
-                    if (!this.isMock) console.error('❌ Redis Client Error', err.message);
+                    if (!this.isMock) console.error('[REDIS] Client Error:', err.message);
                 });
 
                 this.client.on('connect', () => {
-                    console.log('✅ Redis Connected (Warm Persistence Active)');
+                    console.log('[REDIS] Connected (Warm Persistence Active)');
                     this.isConnected = true;
                 });
 
                 await this.client.connect();
-            } catch (e) {
-                console.warn("⚠️ Redis Connection Failed. Switching to In-Memory Storage (Session Only).");
+            } catch (e: any) {
+                console.warn(`[REDIS] Connection Failed: ${e.message || e}. Using In-Memory Fallback (data lost on restart).`);
                 if (this.client) {
                     try { await this.client.disconnect(); } catch (err) { }
-                    this.client = null; // Ensure we don't try to use it
+                    this.client = null;
                 }
                 this.isMock = true;
-                this.isConnected = true; // Technically "connected" to the mock
+                this.isConnected = true;
             }
+        }
+    }
+
+    public async disconnect() {
+        if (this.client) {
+            try {
+                await this.client.disconnect();
+                console.log('[REDIS] Disconnected.');
+            } catch { }
+            this.client = null;
+        }
+        this.isConnected = false;
+    }
+
+    /** Evict oldest entries when mock store exceeds max size */
+    private evictMockStore() {
+        if (this.mockStore.size <= MOCK_STORE_MAX_SIZE) return;
+        const keysToDelete = Array.from(this.mockStore.keys()).slice(0, Math.floor(MOCK_STORE_MAX_SIZE * 0.2));
+        for (const key of keysToDelete) {
+            this.mockStore.delete(key);
         }
     }
 
@@ -62,6 +94,7 @@ class RedisService {
 
         if (this.isMock) {
             this.mockStore.set(key, value);
+            this.evictMockStore();
             return;
         }
 
@@ -99,8 +132,9 @@ class RedisService {
         if (!this.isConnected) return [];
 
         if (this.isMock) {
-            // Simple regex match for mock keys
-            const regex = new RegExp(pattern.replace('*', '.*'));
+            // Proper glob-to-regex: escape special chars, convert * to .*
+            const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+            const regex = new RegExp('^' + escaped + '$');
             return Array.from(this.mockStore.keys()).filter(k => regex.test(k));
         }
 
