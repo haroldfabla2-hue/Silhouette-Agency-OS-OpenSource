@@ -35,19 +35,33 @@ const NotificationCenter: React.FC = () => {
 
     // Subscribe to actionable protocols
     useEffect(() => {
-        const unsubscribers = ACTIONABLE_PROTOCOLS.map(protocol => {
-            return systemBus.subscribe(protocol as any, (payload: any) => {
-                const notification = mapProtocolToNotification(protocol, payload);
-                if (notification) {
-                    setNotifications(prev => {
-                        const updated = [notification, ...prev].slice(0, MAX_NOTIFICATIONS);
-                        return updated;
-                    });
+        const unsubscribers: Array<() => void> = [];
+
+        ACTIONABLE_PROTOCOLS.forEach(protocol => {
+            try {
+                const unsub = systemBus.subscribe(protocol as any, (payload: any) => {
+                    try {
+                        const notification = mapProtocolToNotification(protocol, payload);
+                        if (notification) {
+                            setNotifications(prev => [notification, ...prev].slice(0, MAX_NOTIFICATIONS));
+                        }
+                    } catch (e) {
+                        console.error(`[NotificationCenter] Error processing ${protocol}:`, e);
+                    }
+                });
+                if (typeof unsub === 'function') {
+                    unsubscribers.push(unsub);
                 }
-            });
+            } catch (e) {
+                console.error(`[NotificationCenter] Failed to subscribe to ${protocol}:`, e);
+            }
         });
 
-        return () => unsubscribers.forEach(unsub => unsub());
+        return () => {
+            unsubscribers.forEach(unsub => {
+                try { unsub(); } catch { /* cleanup best-effort */ }
+            });
+        };
     }, []);
 
     const unreadCount = notifications.filter(n => !n.read).length;

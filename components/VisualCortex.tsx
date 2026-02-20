@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import html2canvas from 'html2canvas';
 import { systemBus } from '../services/systemBus';
 import { SystemProtocol } from '../types';
+import { api } from '../utils/api';
 
 /**
  * VisualCortex V2 (Professional Visual Processing)
@@ -124,13 +125,11 @@ export const VisualCortex: React.FC = () => {
                 console.log(`[VisualCortex] Captured via ${method.toUpperCase()}. Size: ${Math.round(image.length / 1024)}KB`);
 
                 // Send to Introspection Engine via API Bridge
-                import('../utils/api').then(({ api }) => {
-                    api.post('/v1/introspection/eye', {
-                        timestamp: Date.now(),
-                        image,
-                        captureMethod: method
-                    }).catch(err => console.error("[VisualCortex] Bridge Failed:", err));
-                });
+                api.post('/v1/introspection/eye', {
+                    timestamp: Date.now(),
+                    image,
+                    captureMethod: method
+                }).catch(err => console.error("[VisualCortex] Bridge Failed:", err));
 
                 // Emit locally for frontend debuggers/visualizers
                 systemBus.emit(SystemProtocol.VISUAL_SNAPSHOT, {

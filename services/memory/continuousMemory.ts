@@ -62,6 +62,7 @@ export class ContinuousMemoryService {
         lastConsolidation: Date.now()
     };
     private consolidationInterval: ReturnType<typeof setInterval> | null = null;
+    private walWritePending = false;
 
     /**
      * Initialize the service. Call on system startup.
@@ -280,11 +281,16 @@ export class ContinuousMemoryService {
     }
 
     private persistWAL(): void {
-        try {
-            fs.writeFileSync(WAL_FILE, JSON.stringify(this.wal, null, 2), 'utf-8');
-        } catch (error) {
-            console.error('[CONTINUOUS_MEM] ⚠️ Failed to persist WAL:', error);
-        }
+        if (this.walWritePending) return; // Coalesce rapid writes
+        this.walWritePending = true;
+        queueMicrotask(() => {
+            this.walWritePending = false;
+            try {
+                fs.writeFileSync(WAL_FILE, JSON.stringify(this.wal, null, 2), 'utf-8');
+            } catch (error) {
+                console.error('[CONTINUOUS_MEM] Failed to persist WAL:', error);
+            }
+        });
     }
 
     // ───────────────────────────────────────────────────────────

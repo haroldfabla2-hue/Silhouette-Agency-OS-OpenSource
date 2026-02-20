@@ -81,7 +81,7 @@ export default function MediaStudio() {
                 const status = await api.get<any>('/v1/media/vram-status');
                 setVramStatus(status);
             } catch (e) {
-                // Silent fail
+                console.warn("[MediaStudio] VRAM status fetch failed:", e);
             }
         };
         fetchVram();
@@ -89,45 +89,35 @@ export default function MediaStudio() {
         return () => clearInterval(interval);
     }, []);
 
-    // --- POLLING EFFECT ---
+    // --- POLLING EFFECT for active video jobs ---
     useEffect(() => {
-        let interval: NodeJS.Timeout;
+        if (!videoJob || videoJob.status === 'COMPLETED' || videoJob.status === 'FAILED') return;
 
-        if (videoJob && videoJob.status !== 'COMPLETED' && videoJob.status !== 'FAILED') {
-            interval = setInterval(async () => {
-                try {
-                    // Poll the specific job status (or the queue and filter)
-                    // Currently backend returns active queue. We can fetch and find ours.
-                    const queue = await api.get<VideoJob[]>('/v1/media/queue');
-                    const myJob = queue.find(j => j.id === videoJob.id);
+        const jobId = videoJob.id; // Capture ID to avoid stale closure
+        const interval = setInterval(async () => {
+            try {
+                const queue = await api.get<VideoJob[]>('/v1/media/queue');
+                const myJob = queue.find(j => j.id === jobId);
 
-                    if (myJob) {
-                        setVideoJob(myJob);
-                        if (myJob.status === 'COMPLETED' && myJob.videoPath) {
-                            // Backend path might be local file path, we need to map to URL if served statically.
-                            // Assuming backend updates videoPath to a web-accessible URL or we need a proxy.
-                            // For now, let's assume raw path needs adjustment or provided url.
-                            // Actually, localVideoService updates path.
-                            // Let's assume server serves data/outputs/video via static.
-                            // We might need to construct valid URL.
-                            setVideoResult(myJob.videoPath); // May need fix
-                            setIsAnimating(false);
-                        } else if (myJob.status === 'FAILED') {
-                            setIsAnimating(false);
-                            alert("Video Generation Failed");
-                        }
-                    } else {
-                        // Job disappeared?
-                        console.warn("Job lost from queue:", videoJob.id);
+                if (myJob) {
+                    setVideoJob(myJob);
+                    if (myJob.status === 'COMPLETED' && myJob.videoPath) {
+                        setVideoResult(myJob.videoPath);
+                        setIsAnimating(false);
+                    } else if (myJob.status === 'FAILED') {
+                        setIsAnimating(false);
+                        alert("Video Generation Failed");
                     }
-                } catch (e) {
-                    console.error("Polling error", e);
+                } else {
+                    console.warn("Job lost from queue:", jobId);
                 }
-            }, 3000); // 3s polling
-        }
+            } catch (e) {
+                console.error("Polling error", e);
+            }
+        }, 3000);
 
         return () => clearInterval(interval);
-    }, [videoJob]);
+    }, [videoJob?.id, videoJob?.status]); // Only re-create when job identity/status changes
 
     // DELIVERY STATE (THE ARCHIVE)
     const [upscaledResult, setUpscaledResult] = useState<string | null>(null);
