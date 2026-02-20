@@ -47,7 +47,25 @@ export const initDatabases = async () => {
 
     await Promise.allSettled(initPromises);
 
-    // 6. Sync Asset Catalog - DEFERRED to background after server is ready
+    // 6. Initialize Qdrant Vector Memory (non-blocking, optional)
+    try {
+        const { vectorMemory } = await import('../../services/vectorMemoryService');
+        await vectorMemory.connect();
+        console.log('[LOADER] VectorMemory (Qdrant) Ready.');
+    } catch (e: any) {
+        console.warn('[LOADER] VectorMemory (Qdrant) optional:', e.message);
+    }
+
+    // 7. Initialize Continuous Memory WAL (crash recovery + periodic consolidation)
+    try {
+        const { continuousMemory } = await import('../../services/memory/continuousMemory');
+        continuousMemory.initialize();
+        console.log('[LOADER] ContinuousMemory WAL Ready.');
+    } catch (e: any) {
+        console.warn('[LOADER] ContinuousMemory initialization failed:', e.message);
+    }
+
+    // 8. Sync Asset Catalog - DEFERRED to background after server is ready
     setImmediate(async () => {
         try {
             const { assetCatalog } = await import('../../services/assetCatalog');

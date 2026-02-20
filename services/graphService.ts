@@ -21,6 +21,17 @@ class GraphService {
         // Lazy initialization - connection managed by NervousSystem
     }
 
+    /** Check if Neo4j is connected. Used by health check endpoint. */
+    public async isConnected(): Promise<boolean> {
+        if (!this.driver) return false;
+        try {
+            await this.driver.verifyConnectivity();
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
     /**
      * Simple connection - no retry logic here.
      * All resilience is handled by ConnectionNervousSystem.

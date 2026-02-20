@@ -57,25 +57,19 @@ const SystemControl: React.FC<SystemControlProps> = ({ metrics, setMode, autonom
     const categories: AgentCategory[] = ['DEV', 'MARKETING', 'DATA', 'CYBERSEC', 'LEGAL', 'FINANCE', 'SCIENCE', 'OPS', 'HEALTH', 'RETAIL', 'MFG', 'ENERGY', 'EDU'];
 
     useEffect(() => {
+        // Consolidated polling - single interval for all data + heartbeat
         const interval = setInterval(() => {
-            // Poll for updates
             fetchGenesisProjects();
             fetchOrchestratorState();
             fetchNeuroLinkNodes();
             fetchCostMetrics();
+            api.get<{ status: string, services: ServiceStatus[] }>('/v1/system/status')
+                .then(res => {
+                    setIsConnected(true);
+                    if (res.services) setCoreServices(res.services);
+                })
+                .catch(() => setIsConnected(false));
         }, 5000);
-
-        // Heartbeat Check
-        const checkConnection = async () => {
-            try {
-                const res = await api.get<{ status: string, services: ServiceStatus[] }>('/v1/system/status');
-                setIsConnected(true);
-                if (res.services) setCoreServices(res.services);
-            } catch (e) {
-                setIsConnected(false);
-            }
-        };
-        const heartbeat = setInterval(checkConnection, 5000);
 
         // SSE Connection for Real-time Logs
         const eventSource = new EventSource(`${API_BASE_URL}/v1/factory/stream`);
@@ -83,14 +77,16 @@ const SystemControl: React.FC<SystemControlProps> = ({ metrics, setMode, autonom
             try {
                 const data = JSON.parse(event.data);
                 if (data.type === 'LOG') {
-                    setGenesisLogs(prev => [...prev, data.message]);
+                    setGenesisLogs(prev => [...prev, data.message].slice(-500));
                 }
             } catch (e) { }
+        };
+        eventSource.onerror = () => {
+            // EventSource auto-reconnects by default
         };
 
         return () => {
             clearInterval(interval);
-            clearInterval(heartbeat);
             eventSource.close();
         };
     }, []);

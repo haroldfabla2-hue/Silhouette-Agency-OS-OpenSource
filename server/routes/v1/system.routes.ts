@@ -90,4 +90,64 @@ router.post('/power-mode', async (req, res) => {
     }
 });
 
+// Route: /v1/system/health - Unified health check for all subsystems
+router.get('/health', async (req, res) => {
+    const health: Record<string, { status: string; details?: string }> = {};
+
+    // SQLite
+    try {
+        const { sqliteService } = await import('../../../services/sqliteService');
+        sqliteService.getLogs(1); // Quick read test
+        health.sqlite = { status: 'ok' };
+    } catch (e: any) {
+        health.sqlite = { status: 'error', details: e.message };
+    }
+
+    // Redis
+    try {
+        const { redisClient } = await import('../../../services/redisClient');
+        if (redisClient.isMockMode()) {
+            health.redis = { status: 'mock', details: 'Running in-memory fallback (data not persistent)' };
+        } else {
+            await redisClient.set('__health_check__', 'ok', 5);
+            health.redis = { status: 'ok' };
+        }
+    } catch (e: any) {
+        health.redis = { status: 'error', details: e.message };
+    }
+
+    // Neo4j
+    try {
+        const { graph } = await import('../../../services/graphService');
+        const connected = await graph.isConnected();
+        health.neo4j = { status: connected ? 'ok' : 'disconnected' };
+    } catch (e: any) {
+        health.neo4j = { status: 'error', details: e.message };
+    }
+
+    // LanceDB
+    try {
+        const { lancedbService } = await import('../../../services/lancedbService');
+        await lancedbService.ensureInitialized();
+        health.lancedb = { status: 'ok' };
+    } catch (e: any) {
+        health.lancedb = { status: 'error', details: e.message };
+    }
+
+    // Qdrant
+    try {
+        const { vectorMemory } = await import('../../../services/vectorMemoryService');
+        health.qdrant = { status: vectorMemory.isReady() ? 'ok' : 'disconnected' };
+    } catch (e: any) {
+        health.qdrant = { status: 'error', details: e.message };
+    }
+
+    const allOk = Object.values(health).every(h => h.status === 'ok' || h.status === 'mock');
+    res.json({
+        status: allOk ? 'healthy' : 'degraded',
+        subsystems: health,
+        timestamp: new Date().toISOString()
+    });
+});
+
 export default router;
