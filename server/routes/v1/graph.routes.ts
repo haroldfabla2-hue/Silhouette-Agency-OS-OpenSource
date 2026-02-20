@@ -22,22 +22,28 @@ router.get('/visualize', controller.getGraphVisualization.bind(controller));
 // GET /v1/graph/nodes - List nodes with pagination
 router.get('/nodes', async (req, res) => {
     try {
-        const limit = parseInt(req.query.limit as string) || 100;
-        const offset = parseInt(req.query.offset as string) || 0;
+        const limit = Math.max(1, Math.min(parseInt(req.query.limit as string) || 100, 1000));
+        const offset = Math.max(0, parseInt(req.query.offset as string) || 0);
         const label = req.query.label as string;
 
         let query: string;
+        let params: Record<string, any> = { skip: offset, limit };
+
         if (label) {
-            query = `MATCH (n:${label}) RETURN n SKIP ${offset} LIMIT ${limit}`;
+            // Sanitize label: only allow alphanumeric + underscore (valid Neo4j label chars)
+            if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(label)) {
+                return res.status(400).json({ error: 'Invalid label format. Only alphanumeric characters and underscores are allowed.' });
+            }
+            query = `MATCH (n:\`${label}\`) RETURN n SKIP $skip LIMIT $limit`;
         } else {
-            query = `MATCH (n) RETURN n SKIP ${offset} LIMIT ${limit}`;
+            query = `MATCH (n) RETURN n SKIP $skip LIMIT $limit`;
         }
 
-        const result = await graph.runQuery(query);
+        const result = await graph.runQuery(query, params);
         const nodes = result.map((r: any) => ({
-            id: r.n.properties?.id,
-            labels: r.n.labels,
-            ...r.n.properties
+            id: r.n?.properties?.id,
+            labels: r.n?.labels || [],
+            ...(r.n?.properties || {})
         }));
 
         res.json({ nodes, count: nodes.length, offset, limit });
@@ -119,8 +125,8 @@ router.get('/communities', async (req, res) => {
         const result = await graph.runQuery(query);
         const communities = result.map((r: any) => ({
             id: r.community,
-            members: r.members,
-            size: r.members.length
+            members: r.members || [],
+            size: r.members?.length || 0
         }));
 
         res.json({ communities, count: communities.length });
@@ -134,7 +140,7 @@ router.get('/communities', async (req, res) => {
 router.get('/neighbors/:nodeId', async (req, res) => {
     try {
         const { nodeId } = req.params;
-        const depth = parseInt(req.query.depth as string) || 1;
+        const depth = Math.max(1, Math.min(parseInt(req.query.depth as string) || 1, 5));
 
         const query = `
             MATCH (n {id: $nodeId})-[r*1..${depth}]-(m)
@@ -145,8 +151,8 @@ router.get('/neighbors/:nodeId', async (req, res) => {
         const result = await graph.runQuery(query, { nodeId });
         const neighbors = result.map((r: any) => ({
             id: r.nodeId,
-            labels: r.labels,
-            ...r.node.properties
+            labels: r.labels || [],
+            ...(r.node?.properties || {})
         }));
 
         res.json({ nodeId, neighbors, count: neighbors.length, depth });
@@ -211,7 +217,7 @@ router.get('/health', async (req, res) => {
 // GET /v1/graph/hubs - Get top hub nodes
 router.get('/hubs', async (req, res) => {
     try {
-        const limit = parseInt(req.query.limit as string) || 20;
+        const limit = Math.max(1, Math.min(parseInt(req.query.limit as string) || 20, 100));
         const hubs = await graph.getHubs(limit);
 
         res.json({

@@ -7,6 +7,16 @@ import { Router, Request, Response } from 'express';
 
 const router = Router();
 
+/** Escape HTML entities to prevent XSS in template strings */
+function escapeHtml(str: string): string {
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 // ==================== OAUTH FLOW ====================
 
 // GET /v1/drive/auth - Start OAuth flow (redirect to Google)
@@ -62,18 +72,19 @@ router.get('/callback', async (req: Request, res: Response) => {
             const isCreator = identityService.isCreator();
 
             // Redirect to frontend with success message
+            const safeEmail = escapeHtml(result.email || '');
             return res.send(`
                 <!DOCTYPE html>
                 <html>
                 <head><title>Google Drive Connected</title></head>
                 <body style="background:#1a1a2e;color:#fff;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;">
                     <div style="text-align:center;padding:2rem;background:#16213e;border-radius:1rem;box-shadow:0 0 20px rgba(0,255,255,0.2);">
-                        <h1 style="color:#00ffff;">✅ Connected!</h1>
-                        <p>Google Drive linked as <strong>${result.email}</strong></p>
-                        ${isCreator ? '<p style="color:#ffd700;">👑 Creator Mode Active</p>' : ''}
+                        <h1 style="color:#00ffff;">Connected!</h1>
+                        <p>Google Drive linked as <strong>${safeEmail}</strong></p>
+                        ${isCreator ? '<p style="color:#ffd700;">Creator Mode Active</p>' : ''}
                         <p style="color:#888;font-size:0.9rem;">You can close this window.</p>
                         <script>
-                            window.opener?.postMessage({ type: 'GOOGLE_AUTH_SUCCESS', email: '${result.email}', isCreator: ${isCreator} }, '*');
+                            window.opener?.postMessage({ type: 'GOOGLE_AUTH_SUCCESS', email: ${JSON.stringify(safeEmail)}, isCreator: ${!!isCreator} }, window.location.origin);
                             setTimeout(() => window.close(), 2000);
                         </script>
                     </div>
@@ -81,14 +92,15 @@ router.get('/callback', async (req: Request, res: Response) => {
                 </html>
             `);
         } else {
+            const safeError = escapeHtml(result.error || 'Unknown error');
             return res.status(500).send(`
                 <!DOCTYPE html>
                 <html>
                 <head><title>Connection Failed</title></head>
                 <body style="background:#1a1a2e;color:#fff;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;">
                     <div style="text-align:center;padding:2rem;background:#16213e;border-radius:1rem;">
-                        <h1 style="color:#ff4444;">❌ Failed</h1>
-                        <p>${result.error}</p>
+                        <h1 style="color:#ff4444;">Failed</h1>
+                        <p>${safeError}</p>
                     </div>
                 </body>
                 </html>

@@ -100,7 +100,7 @@ router.post('/cycle', async (req, res) => {
 // GET /v1/workflow/thoughts - Get recent workflow thoughts
 router.get('/thoughts', (req, res) => {
     try {
-        const limit = parseInt(req.query.limit as string) || 20;
+        const limit = Math.max(1, Math.min(parseInt(req.query.limit as string) || 20, 500));
         const thoughts = workflowEngine.getLastThoughts().slice(-limit);
 
         res.json({
