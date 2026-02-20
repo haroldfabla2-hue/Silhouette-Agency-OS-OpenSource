@@ -1,4 +1,4 @@
-import { modelCatalog } from '../services/modelCatalog';
+import { modelCatalog, getModelsByProvider, getModelsByCapability } from '../services/modelCatalog';
 import { llmGateway } from '../services/llmGateway';
 import dotenv from 'dotenv';
 
@@ -8,10 +8,10 @@ async function testCatalog() {
     console.log("🔍 Testing Model Catalog & Gateway Integration...\n");
 
     // 1. List some models
-    const geminiModels = modelCatalog.getModelsByProvider('GEMINI');
+    const geminiModels = getModelsByProvider('GEMINI');
     console.log(`✅ Found ${geminiModels.length} Gemini models in catalog.`);
 
-    const reasoningModels = modelCatalog.getModelsByCapability('reasoning');
+    const reasoningModels = getModelsByCapability('reasoning');
     console.log(`✅ Found ${reasoningModels.length} models with reasoning capability.`);
 
     // 2. Test Gateway Model Selection
@@ -26,11 +26,11 @@ async function testCatalog() {
         // We can't easily force the model via public API of gateway yet without changing defaults, 
         // but we can check if it initializes with catalog defaults.
 
-        const response = await llmGateway.generateText(prompt, {
-            provider: 'GEMINI'
+        const response = await llmGateway.complete(prompt, {
+            preferredProvider: 'GEMINI'
         });
 
-        console.log(`\nResponse: ${response}`);
+        console.log(`\nResponse: ${response.text}`);
         console.log("\n✅ Integration Test Passed (Logic verification).");
 
     } catch (e: any) {

@@ -125,6 +125,7 @@ export class ConfigLoader {
             config.channels.telegram = {
                 enabled: true,
                 botToken: process.env.TELEGRAM_BOT_TOKEN,
+                accessMode: 'allowlist',
                 allowedChatIds: []
             };
         }
@@ -132,7 +133,8 @@ export class ConfigLoader {
         if (process.env.DISCORD_BOT_TOKEN) {
             config.channels.discord = {
                 enabled: true,
-                botToken: process.env.DISCORD_BOT_TOKEN
+                botToken: process.env.DISCORD_BOT_TOKEN,
+                accessMode: 'allowlist'
             };
         }
 
