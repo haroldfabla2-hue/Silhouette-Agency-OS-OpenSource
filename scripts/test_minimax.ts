@@ -6,7 +6,7 @@ async function testMinimax() {
     const config = configLoader.getConfig();
 
     try {
-        const response = await minimaxService.chatCompletion([
+        const response = await minimaxService.chat([
             { role: 'user', content: 'Hello, are you online?' }
         ]);
         console.log('Response:', response);
