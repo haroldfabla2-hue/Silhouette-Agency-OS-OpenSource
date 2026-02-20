@@ -1,7 +1,7 @@
 import fetch from 'node-fetch';
 
 const API_URL = 'http://localhost:3000/v1/memory/state';
-const API_KEY = 'sk-silhouette-default'; // Default dev key
+const API_KEY = process.env.API_KEY || ''; // Default dev key
 
 async function verifyMemory() {
     try {

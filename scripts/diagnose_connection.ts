@@ -1,6 +1,6 @@
 
 const API_URL = 'http://localhost:3001/v1/orchestrator/state';
-const API_KEY = 'sk-silhouette-default';
+const API_KEY = process.env.API_KEY || '';
 
 async function testConnection() {
     console.log(`Testing connection to ${API_URL}...`);

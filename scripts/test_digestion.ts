@@ -1,7 +1,7 @@
 import { DEFAULT_API_CONFIG } from '../constants';
 
 const API_URL = `http://localhost:${DEFAULT_API_CONFIG.port}/v1`;
-const API_KEY = 'sk-silhouette-default';
+const API_KEY = process.env.API_KEY || '';
 
 async function runTest() {
     console.log("🧪 --- STARTING DIGESTION PROTOCOL TEST ---");

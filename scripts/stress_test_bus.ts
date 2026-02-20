@@ -1,6 +1,6 @@
 
 const API_URL = 'http://127.0.0.1:3001/v1/system/stress-test';
-const API_KEY = 'sk-silhouette-default-dev-key';
+const API_KEY = process.env.API_KEY || '';
 
 async function runStressTest() {
     console.log("🚀 Initiating Zero-Cost Stress Test (Fetch Mode)...");
