@@ -4,6 +4,7 @@
 // =============================================================================
 
 import { Router, Request, Response } from 'express';
+import path from 'path';
 
 const router = Router();
 
@@ -174,8 +175,15 @@ router.post('/upload', async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Missing name or filePath' });
         }
 
+        // Prevent path traversal: resolve and verify the path stays within allowed directories
+        const allowedBase = path.resolve(process.cwd(), 'uploads');
+        const resolvedPath = path.resolve(filePath);
+        if (!resolvedPath.startsWith(allowedBase + path.sep) && resolvedPath !== allowedBase) {
+            return res.status(403).json({ error: 'Access denied: file path outside allowed directory' });
+        }
+
         // Read file content from disk
-        const content = await fs.readFile(filePath);
+        const content = await fs.readFile(resolvedPath);
 
         const file = await driveService.uploadContent(
             content,
