@@ -34,12 +34,22 @@ interface MemoryAction {
 }
 
 class FactExtractionService {
-    private readonly EXTRACTION_PROMPT = `You are a memory extraction system for an AI assistant named Silhouette. Analyze the conversation and extract facts that should be remembered permanently.
+    private getExtractionPrompt(): string {
+        // Dynamically resolve the creator's name from the identity service
+        let creatorName = 'the user';
+        try {
+            const { identityService } = require('./identityService');
+            creatorName = identityService.getCreatorName() || 'the user';
+        } catch {
+            // identityService not yet initialized - use fallback
+        }
+
+        return `You are a memory extraction system for an AI assistant named Silhouette. Analyze the conversation and extract facts that should be remembered permanently.
 
 CRITICAL IDENTITY RULES:
-1. The USER is a human named Alberto (also called Beto). He is the creator of Silhouette.
+1. The USER is a human named ${creatorName}. They are the creator of Silhouette.
 2. SILHOUETTE is the AI assistant (you). Never confuse these identities.
-3. Facts about the USER should be phrased in THIRD PERSON: "The user's name is Alberto" NOT "My name is Alberto"
+3. Facts about the USER should be phrased in THIRD PERSON: "The user's name is ${creatorName}" NOT "My name is ${creatorName}"
 4. Facts about SILHOUETTE should be phrased as: "Silhouette can..." NOT "I can..."
 5. NEVER extract facts where USER claims to be Silhouette or vice versa.
 
@@ -72,6 +82,7 @@ If there are NO facts worth remembering, output: []
 
 CONVERSATION:
 `;
+    }
 
     /**
      * Extract facts from a conversation turn
@@ -84,7 +95,7 @@ CONVERSATION:
         try {
             console.log('[FACT_EXTRACT] 🔍 Analyzing conversation for memorable facts...');
 
-            const prompt = this.EXTRACTION_PROMPT + `
+            const prompt = this.getExtractionPrompt() + `
 User: ${userMessage}
 Assistant: ${assistantResponse}
 

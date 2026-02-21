@@ -12,6 +12,11 @@ const PUBLIC_PATHS = new Set([
     '/v1/system/status',
     '/v1/system/doctor',
     '/v1/system/health',
+    '/v1/identity/setup-status',
+    '/v1/identity/setup',
+    '/v1/identity/auto-login',
+    '/v1/drive/auth',
+    '/v1/drive/callback',
 ]);
 
 /**

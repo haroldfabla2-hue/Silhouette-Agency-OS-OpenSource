@@ -26,8 +26,10 @@ router.get('/auth', async (req: Request, res: Response) => {
         const { driveService } = await import('../../../services/driveService');
         await driveService.init();
 
-        // Pass fingerprint from state param to preserve through OAuth flow
-        const state = req.query.state as string | undefined;
+        // Encode fingerprint + mode into state to preserve through OAuth flow
+        const fingerprint = req.query.state as string | undefined;
+        const mode = req.query.mode as string | undefined; // 'link' = link to existing user
+        const state = JSON.stringify({ fingerprint, mode: mode || 'login' });
         const authUrl = driveService.getAuthUrl(state);
         return res.redirect(authUrl);
     } catch (error: any) {
@@ -41,36 +43,61 @@ router.get('/callback', async (req: Request, res: Response) => {
         const { driveService } = await import('../../../services/driveService');
         const { identityService } = await import('../../../services/identityService');
         const code = req.query.code as string;
-        const fingerprint = req.query.state as string; // Pass fingerprint via state param
+        const rawState = req.query.state as string;
 
         if (!code) {
             return res.status(400).send('Missing authorization code');
         }
 
+        // Parse state - supports both new JSON format and legacy plain fingerprint
+        let fingerprint: string | undefined;
+        let mode: string = 'login';
+        try {
+            const parsed = JSON.parse(rawState);
+            fingerprint = parsed.fingerprint;
+            mode = parsed.mode || 'login';
+        } catch {
+            // Legacy: state was just the fingerprint string
+            fingerprint = rawState;
+        }
+
         const result = await driveService.handleCallback(code);
 
         if (result.success && result.email) {
-            // Initialize identity service and create/update user
             await identityService.init();
 
-            const user = await identityService.upsertUser({
-                email: result.email,
-                name: result.email.split('@')[0], // Use email prefix as name
-                avatarUrl: undefined
-            });
+            let user;
+            const currentUser = identityService.getCurrentUser();
+
+            if (mode === 'link' && currentUser) {
+                // Link mode: attach Google to existing authenticated user
+                user = identityService.linkGoogleAccount(
+                    currentUser.id,
+                    result.email,
+                    result.email.split('@')[0]
+                );
+            } else {
+                // Login mode: create or find user by Google email
+                user = await identityService.upsertUser({
+                    email: result.email,
+                    name: result.email.split('@')[0],
+                    avatarUrl: undefined
+                });
+            }
 
             // If fingerprint provided, register device
             if (fingerprint) {
                 const device = identityService.registerDevice(
                     user.id,
                     fingerprint,
-                    'Browser', // Default name, can be updated later
+                    'Browser',
                     true
                 );
                 identityService.createSession(user.id, device.id);
             }
 
             const isCreator = identityService.isCreator();
+            const safeName = escapeHtml(user.name || '');
 
             // Redirect to frontend with success message
             const safeEmail = escapeHtml(result.email || '');
@@ -85,7 +112,7 @@ router.get('/callback', async (req: Request, res: Response) => {
                         ${isCreator ? '<p style="color:#ffd700;">Creator Mode Active</p>' : ''}
                         <p style="color:#888;font-size:0.9rem;">You can close this window.</p>
                         <script>
-                            window.opener?.postMessage({ type: 'GOOGLE_AUTH_SUCCESS', email: ${JSON.stringify(safeEmail)}, isCreator: ${!!isCreator} }, window.location.origin);
+                            window.opener?.postMessage({ type: 'GOOGLE_AUTH_SUCCESS', email: ${JSON.stringify(safeEmail)}, name: ${JSON.stringify(safeName)}, isCreator: ${!!isCreator} }, window.location.origin);
                             setTimeout(() => window.close(), 2000);
                         </script>
                     </div>
