@@ -22,6 +22,7 @@ import { agentFileSystem } from '../agents/agentFileSystem';
 
 const WAL_DIR = path.resolve(process.cwd(), 'data', 'wal');
 const WAL_FILE = path.join(WAL_DIR, 'memory_wal.json');
+const WAL_MAX_ENTRIES = 500; // [FIX 2026-02] Hard cap to prevent unbounded WAL growth
 
 // ═══════════════════════════════════════════════════════════════
 // TYPES
@@ -128,6 +129,17 @@ export class ContinuousMemoryService {
         };
 
         this.wal.push(entry);
+
+        // [FIX 2026-02] Enforce WAL size cap — evict oldest committed entries first
+        if (this.wal.length > WAL_MAX_ENTRIES) {
+            const committed = this.wal.filter(e => e.status === 'COMMITTED');
+            if (committed.length > 0) {
+                const toRemove = committed.slice(0, this.wal.length - WAL_MAX_ENTRIES);
+                const removeIds = new Set(toRemove.map(e => e.id));
+                this.wal = this.wal.filter(e => !removeIds.has(e.id));
+            }
+        }
+
         this.persistWAL();
 
         return entry.id;

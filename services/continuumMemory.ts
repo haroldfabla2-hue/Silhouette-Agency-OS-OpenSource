@@ -68,7 +68,7 @@ class ContinuumMemorySystem {
     private async tickMedium(now: number) {
         // L2 -> L3 (LanceDB)
         // Only promote if it's old enough (15m) OR very critical
-        const toPromote = this.short.filter(node => {
+        const toPromote = this.working.filter(node => {
             const ageMs = now - node.timestamp;
             const isOldEnough = ageMs > 900000; // 15 Minutes
             return isOldEnough || node.accessCount > 10 || node.importance >= 0.95;
@@ -76,16 +76,13 @@ class ContinuumMemorySystem {
 
         for (const node of toPromote) {
             try {
-                // Promote to Persistent Storage
-                // We create a copy with the new tier to store, but keep the original in RAM until confirmed
                 const promotedNode = { ...node, tier: MemoryTier.MEDIUM };
                 await lancedbService.store(promotedNode);
 
                 // Success: Remove from RAM
-                this.short = this.short.filter(n => n.id !== node.id);
+                this.working = this.working.filter(n => n.id !== node.id);
             } catch (e) {
                 console.error(`[CONTINUUM] Failed to promote node ${node.id} to MEDIUM`, e);
-                // Keep in SHORT for retry
             }
         }
     }
@@ -98,6 +95,7 @@ class ContinuumMemorySystem {
     // Configuration
     private readonly HIPPOCAMPUS_CAPACITY = 50; // Trigger dream when full
     private readonly CACHE_TTL = 30000; // 30 Seconds
+    private readonly RAM_HARD_CAP = 600; // [FIX 2026-02] Hard limit — force-consolidate above this
 
     constructor() {
         // No hydration needed for LanceDB, it's always on disk.
@@ -211,17 +209,11 @@ class ContinuumMemorySystem {
 
     // --- FULL SESSION CHAT HISTORY (INFINITE CONTEXT) ---
     public getSessionHistory(limit: number = 1000): { role: string; content: string }[] {
-        // Filter Ultra-Short memory for conversation turns
-        // We look for tags 'USER_MESSAGE' and 'AGENT_RESPONSE'
-        // Sorted by timestamp ascending (oldest first)
-
-        // Combine UltraShort and Short to ensure we capture the whole session even if it gets promoted
-        const allRam = [...this.short, ...this.ultraShort];
-
-        const history = allRam
+        // [FIX 2026-02] Use unified working array directly (ultraShort/short are aliases to working)
+        const history = this.working
             .filter(n => n.tags.includes('USER_MESSAGE') || n.tags.includes('AGENT_RESPONSE'))
             .sort((a, b) => a.timestamp - b.timestamp)
-            .slice(-limit) // Take last N (default 1000 is effectively infinite for a day)
+            .slice(-limit)
             .map(n => ({
                 role: n.tags.includes('USER_MESSAGE') ? 'user' : 'model',
                 content: n.content
@@ -233,7 +225,7 @@ class ContinuumMemorySystem {
     // --- PUBLIC API ---
 
     public getShortTermMemory(): MemoryNode[] {
-        return this.short;
+        return this.working;
     }
 
     public getHippocampus(): MemoryNode[] {
@@ -295,16 +287,14 @@ class ContinuumMemorySystem {
     }
 
     public async deleteNode(nodeId: string) {
-        // 1. Remove from RAM tiers
-        const originalLen = this.ultraShort.length + this.short.length;
-        this.ultraShort = this.ultraShort.filter(n => n.id !== nodeId);
-        this.short = this.short.filter(n => n.id !== nodeId);
+        // [FIX 2026-02] Use working directly (ultraShort/short are aliases)
+        const originalLen = this.working.length;
+        this.working = this.working.filter(n => n.id !== nodeId);
 
         // 2. Remove from Hippocampus
         this.hippocampus = this.hippocampus.filter(n => n.id !== nodeId);
 
-        const newLen = this.ultraShort.length + this.short.length;
-        if (originalLen !== newLen) {
+        if (originalLen !== this.working.length) {
             console.log(`[CONTINUUM] 🗑️ Deleted node ${nodeId} from RAM.`);
             this.isDirty = true;
         }
@@ -394,10 +384,20 @@ class ContinuumMemorySystem {
         }
 
         // L1: RAM Storage (Unified WORKING tier)
-        // Note: ULTRA_SHORT and SHORT now map to WORKING for backward compatibility
         // Cast to string for flexible comparison (handles both enum values and legacy strings)
         const tierStr = String(node.tier);
         if (tierStr === 'WORKING' || tierStr === 'ULTRA_SHORT' || tierStr === 'SHORT') {
+            // [FIX 2026-02] Backpressure: if RAM is at hard cap, promote oldest to LanceDB first
+            if (this.working.length >= this.RAM_HARD_CAP) {
+                console.warn(`[CONTINUUM] ⚠️ RAM at hard cap (${this.RAM_HARD_CAP}). Evicting oldest node to LanceDB.`);
+                const evicted = this.working.shift(); // Remove oldest (front of array)
+                if (evicted) {
+                    const promoted = { ...evicted, tier: MemoryTier.MEDIUM, tags: [...evicted.tags, 'EVICTED'] };
+                    lancedbService.store(promoted).catch(e =>
+                        console.error('[CONTINUUM] Failed to evict node to LanceDB:', e)
+                    );
+                }
+            }
             this.working.push(node as MemoryNode);
             this.isDirty = true;
         }
@@ -539,20 +539,25 @@ class ContinuumMemorySystem {
     }
 
     private tickFast(now: number) {
-        // L1 -> L2
-        this.ultraShort = this.ultraShort.filter(node => {
+        // [FIX 2026-02] Since ultraShort/short are aliases to working, "promoting" between them
+        // was silently dropping nodes. Now we just update the tier in-place for frequently
+        // accessed nodes and move expired nodes to hippocampus.
+        const toKeep: MemoryNode[] = [];
+        for (const node of this.working) {
             const age = (now - node.timestamp) / 1000;
-            if (node.accessCount >= 2 || node.importance >= 0.8) {
-                this.promoteToRam(node, MemoryTier.SHORT);
-                this.isDirty = true; // RAM Changed
-                return false;
-            }
-            if (age > 900) { // 15 Minutes (Conversation Window)
+            if (age > 900) { // 15 Minutes (Conversation Window) — move to hippocampus
                 this.moveToHippocampus(node);
-                return false;
+                this.isDirty = true;
+            } else if (node.accessCount >= 2 || node.importance >= 0.8) {
+                // Mark as promoted (tier upgrade) but keep in working memory
+                node.tier = MemoryTier.WORKING;
+                toKeep.push(node);
+                this.isDirty = true;
+            } else {
+                toKeep.push(node);
             }
-            return true;
-        });
+        }
+        this.working = toKeep;
     }
 
     // ...
@@ -750,13 +755,17 @@ class ContinuumMemorySystem {
         const mediumCount = dbNodes.filter(n => n.tier === MemoryTier.MEDIUM || !n.tier).length;
         const longCount = dbNodes.filter(n => n.tier === MemoryTier.LONG).length;
 
+        // [FIX 2026-02] Use working.length directly (ultraShort/short are aliases — was double-counting)
+        const workingCount = this.working.length;
         this.cachedStats = {
-            ultra: this.ultraShort.length,
-            short: this.short.length,
+            working: workingCount,
+            // Legacy fields (kept for backward compat, both report the unified count)
+            ultra: workingCount,
+            short: 0,
             medium: mediumCount,
             long: longCount,
             deep: vectorStats.count,
-            total: this.ultraShort.length + this.short.length + mediumCount + longCount + vectorStats.count,
+            total: workingCount + mediumCount + longCount + vectorStats.count,
             avgHealth: 100,
             archivedNodes: longCount
         };
@@ -785,14 +794,14 @@ class ContinuumMemorySystem {
     }
 
     public debug_ageNode(nodeId: string, ageMs: number = 3600000) {
-        const node = this.ultraShort.find(n => n.id === nodeId) || this.short.find(n => n.id === nodeId);
+        const node = this.working.find(n => n.id === nodeId);
         if (node) {
             node.timestamp -= ageMs;
         }
     }
 
     public debug_boostNode(nodeId: string, importance: number = 1.0, accessCount: number = 10, addTag: boolean = false) {
-        const node = this.ultraShort.find(n => n.id === nodeId) || this.short.find(n => n.id === nodeId);
+        const node = this.working.find(n => n.id === nodeId);
         if (node) {
             node.importance = importance;
             node.accessCount += accessCount;
@@ -807,8 +816,8 @@ class ContinuumMemorySystem {
 
         const queryLower = query.toLowerCase();
 
-        // 1. Search RAM (Exact Match / Simple Filter) - Always fast
-        const ramResults = [...this.ultraShort, ...this.short].filter(n => (n.content || "").toLowerCase().includes(queryLower));
+        // [FIX 2026-02] Use working directly (ultraShort/short are aliases to same array)
+        const ramResults = this.working.filter(n => (n.content || "").toLowerCase().includes(queryLower));
         results.push(...ramResults);
 
         try {
@@ -865,23 +874,15 @@ class ContinuumMemorySystem {
         console.log("[CONTINUUM] 🌪️ FORCE CONSOLIDATION INITIATED");
         let count = 0;
 
-        // 1. Promote ALL Ultra-Short to Medium
-        for (const node of this.ultraShort) {
+        // [FIX 2026-02] Use working directly (ultraShort/short are aliases — was double-iterating)
+        for (const node of this.working) {
             const promoted = { ...node, tier: MemoryTier.MEDIUM, tags: [...node.tags, 'CONSOLIDATED'] };
             await lancedbService.store(promoted);
             count++;
         }
-        this.ultraShort = [];
+        this.working = [];
 
-        // 2. Promote ALL Short to Medium
-        for (const node of this.short) {
-            const promoted = { ...node, tier: MemoryTier.MEDIUM, tags: [...node.tags, 'CONSOLIDATED'] };
-            await lancedbService.store(promoted);
-            count++;
-        }
-        this.short = [];
-
-        this.isDirty = true; // Ram cleared, need to save snapshot (empty)
+        this.isDirty = true;
         await this.saveSnapshot();
 
         console.log(`[CONTINUUM] 🌪️ Consolidated ${count} memories to L3 (LanceDB). RAM is empty.`);
