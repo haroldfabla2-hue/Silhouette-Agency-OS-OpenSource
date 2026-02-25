@@ -9,10 +9,10 @@ on:
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
-    
+
     strategy:
       matrix:
-        node-version: [20]
+        node-version: [20, 22]
 
     steps:
       - uses: actions/checkout@v4
@@ -25,14 +25,15 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
 
       - name: Lint
         run: npm run lint
-        continue-on-error: true  # Don't block CI on lint warnings during alpha
 
       - name: Type check
         run: npm run typecheck
-        continue-on-error: true  # TypeScript errors are pre-existing, allow CI to pass
+
       - name: Run tests
         run: npm test
 
