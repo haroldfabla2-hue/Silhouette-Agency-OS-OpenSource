@@ -58,8 +58,9 @@ export class LanceDbService {
         if (!this.table) await this.init();
         if (!this.table) return false;
         try {
-            await this.table.delete(`id = '${id}'`);
-            // console.debug(`[LANCEDB] Deleted node ${nodeId}`);
+            // [FIX 2026-02] Sanitize ID to prevent SQL injection
+            const safeId = id.replace(/'/g, "''");
+            await this.table.delete(`id = '${safeId}'`);
             return true;
         } catch (e) {
             console.error(`[LANCEDB] Failed to delete node ${id}`, e);
@@ -106,11 +107,10 @@ export class LanceDbService {
 
             // Upsert logic: Delete existing record with same ID to prevent duplicates
             try {
-                await this.table.delete(`id = '${node.id}'`);
-                // console.log(`[LANCEDB] Deleted old version of ${node.id}`);
+                const safeId = node.id.replace(/'/g, "''");
+                await this.table.delete(`id = '${safeId}'`);
             } catch (delError) {
                 // Ignore delete error (e.g. if table doesn't support delete or record not found)
-                console.warn("[LANCEDB] Delete failed (might be new record)", delError);
             }
 
             await this.table.add([record]);
@@ -148,8 +148,9 @@ export class LanceDbService {
 
         try {
             // 1. Get the vector of the source node
+            const safeNodeId = nodeId.replace(/'/g, "''");
             const sourceRecord = await this.table.query()
-                .where(`id = '${nodeId}'`)
+                .where(`id = '${safeNodeId}'`)
                 .limit(1)
                 .toArray();
 
@@ -267,11 +268,11 @@ export class LanceDbService {
         if (!this.table) await this.init();
         if (!this.table) return [];
         try {
-            // Use SQL-like filter for efficiency if supported, or fetch and filter
-            // LanceDB JS 'where' string syntax: "tier = 'MEDIUM'"
+            // [FIX 2026-02] Sanitize tier to prevent SQL injection
+            const safeTier = String(tier).replace(/'/g, "''");
             const results = await this.table.query()
-                .where(`tier = '${tier}'`)
-                .limit(Math.max(limit * 5, 1000)) // Fetch more to allow effective in-memory sorting
+                .where(`tier = '${safeTier}'`)
+                .limit(Math.max(limit * 5, 1000))
                 .toArray();
 
             return results
@@ -313,7 +314,8 @@ export class LanceDbService {
 
             // Upsert
             try {
-                await this.knowledgeTable.delete(`id = '${item.id}'`);
+                const safeId = String(item.id).replace(/'/g, "''");
+                await this.knowledgeTable.delete(`id = '${safeId}'`);
             } catch (e) { } // Ignore if not found
 
             await this.knowledgeTable.add([item]);
