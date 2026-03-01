@@ -91,12 +91,14 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
         console.error('[PLUGINS] Failed to initialize plugin system:', error);
     }
 
-    // [EVOLUTION] Start Proactive Self-Evolution Scheduler
+    // [EVOLUTION] Proactive Self-Evolution is now handled by Unified Daemon
+
+    // [COGNITIVE] Start 4-Tier Memory Cognitive Engines & Evolution (Unified Daemon)
     try {
-        const { evolutionScheduler } = await import('../services/evolution/evolutionScheduler');
-        evolutionScheduler.start();
+        const { unifiedDaemon } = await import('../services/daemon/unifiedDaemon');
+        unifiedDaemon.start();
     } catch (error) {
-        console.error('[EVOLUTION] Failed to start evolution scheduler:', error);
+        console.error('[DAEMON] Failed to start unified daemon:', error);
     }
 });
 
@@ -146,7 +148,14 @@ async function gracefulShutdown(signal: string) {
         console.log('[SHUTDOWN] SQLite closed');
     } catch { /* ignore if not initialized */ }
 
-    // 6. Close HTTP server
+    // 6. Stop Unified Daemon
+    try {
+        const { unifiedDaemon } = await import('../services/daemon/unifiedDaemon');
+        unifiedDaemon.stop();
+        console.log('[SHUTDOWN] Unified Daemon stopped');
+    } catch { /* ignore if not initialized */ }
+
+    // 7. Close HTTP server
     server.close(() => {
         console.log('[SHUTDOWN] HTTP server closed');
         process.exit(0);

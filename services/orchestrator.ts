@@ -32,6 +32,7 @@ import { continuousMemory } from "./memory/continuousMemory";
 import { genesisV2 } from "./genesis/genesisV2";
 import { agentConversation } from "./communication/agentConversation";
 import { agentFileSystem } from "./agents/agentFileSystem";
+import { StandardAgent } from "./agents/StandardAgent";
 
 // The "Swarm" Manager V5.0 (Actor Model Architecture)
 // Manages persistent, asynchronous agents that hydrate/dehydrate based on demand.
@@ -63,7 +64,7 @@ interface ActiveTask {
 class AgentSwarmOrchestrator {
     // Active Actors in RAM (The "Stage")
     // OPTIMIZED: LRU Cache Implementation
-    private activeActors: Map<string, Agent> = new Map();
+    private activeActors: Map<string, StandardAgent> = new Map();
 
     // Metadata for all known agents (The "Casting Sheet")
     private knownAgentIds: string[] = [];
@@ -1144,7 +1145,7 @@ JSON ONLY:
     public getAgent(agentId: string): Agent | undefined {
         // First check active actors
         if (this.activeActors.has(agentId)) {
-            return this.activeActors.get(agentId);
+            return this.activeActors.get(agentId)?.toMetadata();
         }
         // Then check cache
         if (this.agentCache.has(agentId)) {
@@ -1163,7 +1164,7 @@ JSON ONLY:
      * Used when creating new agents to prevent race conditions.
      */
     public registerAgent(agent: Agent): void {
-        this.activeActors.set(agent.id, agent);
+        this.activeActors.set(agent.id, new StandardAgent(agent));
 
         // Also add to cache for persistence
         if (!this.agentCache.has(agent.id)) {
@@ -1248,6 +1249,39 @@ JSON ONLY:
             }
 
             // ═══════════════════════════════════════════════════════════════
+            // ROUTE 0: INTERNAL ORCHESTRATOR SKILLS (Agent Management)
+            // ═══════════════════════════════════════════════════════════════
+            if (capabilityName === 'wake_agent') {
+                const targetAgentId = Array.isArray(args) ? args[0] : args.agentId;
+                if (!targetAgentId) throw new Error("wake_agent requires an agentId argument.");
+
+                await this.hydrateAgent(targetAgentId);
+                const wakeResult: CapabilityResult = {
+                    success: true,
+                    data: `Agent ${targetAgentId} has been successfully hydrated and is now ACTIVE in RAM.`,
+                    executedBy: 'ORCHESTRATOR',
+                    executionTimeMs: Date.now() - startTime
+                };
+                this.emitCapabilityResult(capabilityName, wakeResult, requesterId);
+                return wakeResult;
+            }
+
+            if (capabilityName === 'sleep_agent') {
+                const targetAgentId = Array.isArray(args) ? args[0] : args.agentId;
+                if (!targetAgentId) throw new Error("sleep_agent requires an agentId argument.");
+
+                this.dehydrateAgent(targetAgentId);
+                const sleepResult: CapabilityResult = {
+                    success: true,
+                    data: `Agent ${targetAgentId} has been suspended to DISK. Memory freed.`,
+                    executedBy: 'ORCHESTRATOR',
+                    executionTimeMs: Date.now() - startTime
+                };
+                this.emitCapabilityResult(capabilityName, sleepResult, requesterId);
+                return sleepResult;
+            }
+
+            // ═══════════════════════════════════════════════════════════════
             // ROUTE 1: Check if it's a registered tool
             // ═══════════════════════════════════════════════════════════════
             if (toolRegistry.hasTool(capabilityName)) {
@@ -1288,30 +1322,23 @@ JSON ONLY:
                     // Hydrate the agent
                     await this.hydrateAgent(agentId);
 
-                    // Generate response using the agent
-                    const response = await generateAgentResponse(
-                        agent.name,
-                        agent.role,
-                        agent.category || 'OPS',
-                        `Execute capability "${capabilityName}" with arguments: ${JSON.stringify(args)} `,
-                        null,
-                        undefined,
-                        undefined,
-                        {},
-                        {},
-                        agent.capabilities || [],
-                        CommunicationLevel.TECHNICAL
-                    );
+                    // Access the StandardAgent instance
+                    const standardAgent = this.activeActors.get(agentId);
+                    if (!standardAgent) {
+                        throw new Error(`Failed to hydrate agent ${agentId} into activeActors pool`);
+                    }
+
+                    // Execute the task using the new internal cognitive loop
+                    const finalOutput = await standardAgent.executeTask(`Execute capability "${capabilityName}" with arguments: ${JSON.stringify(args)} `);
 
                     const result: CapabilityResult = {
                         success: true,
-                        data: response.output,
+                        data: finalOutput,
                         executedBy: 'AGENT',
                         executionTimeMs: Date.now() - startTime,
                         metadata: {
                             agentId: agentId,
-                            agentName: agent.name,
-                            tokensUsed: response.usage
+                            agentName: agent.name
                         }
                     };
 
@@ -1528,13 +1555,14 @@ JSON ONLY:
                 }
             }
 
-            agent.status = AgentStatus.IDLE;
-            agent.lastActive = Date.now();
-            agent.memoryLocation = agent.tier === AgentTier.CORE ? 'VRAM' : 'RAM';
-            this.activeActors.set(agentId, agent);
+            const standardAgent = new StandardAgent(agent);
+            standardAgent.status = AgentStatus.IDLE;
+            standardAgent.lastActive = Date.now();
+            standardAgent.memoryLocation = agent.tier === AgentTier.CORE ? 'VRAM' : 'RAM';
+            this.activeActors.set(agentId, standardAgent);
 
             // [EVOLUTION] Register with conversation system on hydration
-            agentConversation.registerAgent(agent);
+            agentConversation.registerAgent(standardAgent.toMetadata());
         }
     }
 
@@ -1582,7 +1610,7 @@ JSON ONLY:
             agent.memoryLocation = 'DISK'; // Symbolizes "Disk/Cold Storage"
             agent.cpuUsage = 0;
             agent.ramUsage = 0;
-            agentPersistence.saveAgent(agent);
+            agentPersistence.saveAgent(agent.toMetadata());
             this.activeActors.delete(agentId);
 
             // [EVOLUTION] Unregister from conversation system on dehydration
@@ -1613,7 +1641,7 @@ JSON ONLY:
         // Construct the full view for the UI
         const fullSwarm: Agent[] = this.knownAgentIds.map(id => {
             if (this.activeActors.has(id)) {
-                return this.activeActors.get(id)!;
+                return this.activeActors.get(id)!.toMetadata();
             } else {
                 // Return a lightweight "Ghost" representation
                 // In a real optimized app, we wouldn't load from disk every frame.
@@ -1628,6 +1656,13 @@ JSON ONLY:
             }
         });
         return fullSwarm;
+    }
+
+    /**
+     * Exposes active StandardAgents for internal cognitive loops like the Daemon Heartbeat
+     */
+    public getActiveActors(): StandardAgent[] {
+        return Array.from(this.activeActors.values());
     }
 
     private agentCache: Map<string, Agent> = new Map();
@@ -2138,7 +2173,7 @@ OBJECTIVES:
 
     public reassignAgent(agentId: string, targetSquadId: string) {
         // 1. Get Agent (Active or Disk)
-        let agent = this.activeActors.get(agentId);
+        let agent: any = this.activeActors.get(agentId);
 
         if (!agent) {
             agent = agentPersistence.loadAgent(agentId);

@@ -505,7 +505,9 @@ class ZhipuService {
                         data.usage.completion_tokens || 0,
                         model
                     );
-                } catch (e) { }
+                } catch (e) {
+                    console.error("[ZHIPU] Cost estimating failed:", e);
+                }
                 console.log(`[ZHIPU] ✅ ${model} | Tokens: ${data.usage.total_tokens} | Key #${keyIndex}`);
             }
 

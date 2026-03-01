@@ -98,6 +98,7 @@ export enum SystemProtocol {
   VISUAL_REQUEST = 'PROTOCOL_VISUAL_REQUEST',
   UI_COMMAND = 'PROTOCOL_UI_COMMAND', // NEW: Backend -> Frontend UI commands (popups, modals)
   VISUAL_SNAPSHOT = 'PROTOCOL_VISUAL_SNAPSHOT',
+  WEBHOOK_RECEIVED = 'PROTOCOL_WEBHOOK_RECEIVED', // External network events
   INCIDENT_REPORT = 'PROTOCOL_INCIDENT_REPORT', // NEW: Remediation -> Research
   ARCHITECTURAL_RFC = 'PROTOCOL_ARCHITECTURAL_RFC', // NEW: Research -> User
   INTUITION_CONSOLIDATED = 'PROTOCOL_INTUITION_CONSOLIDATED', // NEW: Dreamer -> NeuroSynapse
@@ -561,7 +562,7 @@ export interface Agent {
   role: string;
   status: AgentStatus;
   enabled: boolean;
-  preferredMemory: 'VRAM' | 'RAM'; // NEW: Hardware Preference
+  preferredMemory: 'VRAM' | 'RAM' | 'DISK'; // Hardware Preference (DISK = hibernated)
   systemInstruction?: string; // [PA-038] Dynamic definition
   metadata?: Record<string, any>; // [PA-045] Flexible storage for Squads/Genesis
   memoryLocation: 'VRAM' | 'RAM' | 'DISK';
@@ -628,6 +629,10 @@ export interface SystemMetrics {
   realCpu?: number;
   providerHealth?: Record<string, ProviderState>; // NEW: Circuit Breaker Status
   mediaQueue?: VideoJob[]; // NEW: Render Queue Status
+  brain?: {
+    workingMemoryItems: number;
+    latestNarrative?: string;
+  }; // NEW: Silhouette Brain telemetry
 }
 
 // --- NEW: ROBUST TELEMETRY TYPES ---

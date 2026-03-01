@@ -1,6 +1,6 @@
 import { Bot, Context, InputFile } from 'grammy';
-import { env } from '../config/env';
-import { logger } from '../utils/logger';
+import { configLoader } from '../../server/config/configLoader';
+import { logger } from '../../services/logger';
 import { orchestrator } from '../orchestrator';
 
 export class TelegramService {
@@ -9,7 +9,7 @@ export class TelegramService {
     private swarm = orchestrator;
 
     constructor() {
-        const token = env.TELEGRAM_BOT_TOKEN;
+        const token = process.env.TELEGRAM_BOT_TOKEN;
         if (!token) {
             throw new Error('Telegram Bot Token not found in environment');
         }
@@ -34,7 +34,7 @@ export class TelegramService {
             if (!ctx.from) return;
 
             if (this.allowedUserId && ctx.from.id !== this.allowedUserId) {
-                logger.warn(`[Telegram] Unauthorized access attempt from: ${ctx.from.id} (@${ctx.from.username})`);
+                logger.warn({ id: ctx.from.id, user: ctx.from.username }, `[Telegram] Unauthorized access attempt`);
                 // Silent drop or generic reply
                 return;
             }
@@ -46,7 +46,7 @@ export class TelegramService {
             const userId = ctx.from.id.toString();
             const text = ctx.message.text;
 
-            logger.info(`[Telegram] Message from ${userId}: ${text}`);
+            logger.info({ userId, text }, `[Telegram] Message received`);
 
             if (this.swarm) {
                 // Determine chat ID for routing
@@ -70,15 +70,15 @@ export class TelegramService {
 
         // ERROR HANDLER
         this.bot.catch((err) => {
-            logger.error(`[Telegram] Bot Erorr: ${err.message}`, err);
+            logger.error({ error: err.message || err }, `[Telegram] Bot ERROR`);
         });
     }
 
     public async launch() {
-        logger.info('[Telegram] Launching Bot...');
+        logger.info({}, '[Telegram] Launching Bot...');
         await this.bot.start({
             onStart: (botInfo) => {
-                logger.info(`[Telegram] Bot @${botInfo.username} is connected and polling.`);
+                logger.info({ username: botInfo.username }, `[Telegram] Bot @${botInfo.username} is connected and polling.`);
             }
         });
     }
@@ -86,24 +86,24 @@ export class TelegramService {
     public async sendMessage(chatId: string, text: string) {
         try {
             await this.bot.api.sendMessage(chatId, text, { parse_mode: 'Markdown' });
-        } catch (error) {
-            logger.error(`[Telegram] Failed to send message to ${chatId}:`, error);
+        } catch (error: any) {
+            logger.error({ error: error.message || error, chatId }, `[Telegram] Failed to send message`);
         }
     }
 
     public async sendPhoto(chatId: string, url: string, caption?: string) {
         try {
             await this.bot.api.sendPhoto(chatId, url, { caption });
-        } catch (error) {
-            logger.error(`[Telegram] Failed to send photo to ${chatId}:`, error);
+        } catch (error: any) {
+            logger.error({ error: error.message || error, chatId }, `[Telegram] Failed to send photo`);
         }
     }
 
     public async sendVideo(chatId: string, url: string, caption?: string) {
         try {
             await this.bot.api.sendVideo(chatId, url, { caption });
-        } catch (error) {
-            logger.error(`[Telegram] Failed to send video to ${chatId}:`, error);
+        } catch (error: any) {
+            logger.error({ error: error.message || error, chatId }, `[Telegram] Failed to send video`);
         }
     }
 }

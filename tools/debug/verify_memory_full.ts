@@ -1,8 +1,8 @@
 
-import { continuumMemory } from './services/continuumMemory';
-import { discoveryJournal } from './services/discoveryJournal';
-import { synthesisService } from './services/synthesisService';
-import { SystemProtocol } from './types';
+import { continuum as continuumMemory } from '../../services/continuumMemory';
+import { discoveryJournal } from '../../services/discoveryJournal';
+import { synthesisService } from '../../services/synthesisService';
+import { SystemProtocol } from '../../types';
 
 async function verifySystem() {
     console.log("🔍 STARTING SYSTEM VERIFICATION...");

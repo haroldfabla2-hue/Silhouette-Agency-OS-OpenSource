@@ -167,20 +167,23 @@ class ContinuumMemorySystem {
             // [REFACTOR 2026-01-07] Handle both V5.0 and legacy formats
             // V5.0 format has 'working' key
             // Legacy format has 'ultraShort' and 'short' keys
+            const existingIds = new Set(this.working.map(n => n.id));
+
             if (snapshot.working && Array.isArray(snapshot.working)) {
-                // New V5.0 format
-                this.working = snapshot.working;
-                console.log(`[CONTINUUM] Restored Memory from ${source} (V5.0 format): ${this.working.length} WORKING nodes`);
+                // New V5.0 format - MERGE instead of overwrite to prevent race conditions during boot
+                const snapshotNodes = snapshot.working.filter((n: any) => !existingIds.has(n.id));
+                this.working.push(...snapshotNodes);
+                console.log(`[CONTINUUM] Restored Memory from ${source} (V5.0 format): ${snapshotNodes.length} merged into WORKING tier`);
             } else {
                 // Legacy format - merge ultraShort + short into working
                 const legacyNodes: MemoryNode[] = [];
                 if (snapshot.ultraShort && Array.isArray(snapshot.ultraShort)) {
-                    legacyNodes.push(...snapshot.ultraShort);
+                    legacyNodes.push(...snapshot.ultraShort.filter((n: any) => !existingIds.has(n.id)));
                 }
                 if (snapshot.short && Array.isArray(snapshot.short)) {
-                    legacyNodes.push(...snapshot.short);
+                    legacyNodes.push(...snapshot.short.filter((n: any) => !existingIds.has(n.id)));
                 }
-                this.working = legacyNodes;
+                this.working.push(...legacyNodes);
                 console.log(`[CONTINUUM] 🔄 MIGRATED Legacy Snapshot from ${source}: ${legacyNodes.length} nodes merged into WORKING tier`);
             }
         } catch (error: any) {

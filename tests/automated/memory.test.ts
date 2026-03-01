@@ -12,8 +12,8 @@ describe('Memory System', () => {
                 const module = await import('../../services/continuumMemory');
                 expect(module.continuum).toBeDefined();
             } catch (e: any) {
-                console.warn('[TEST SKIP] Continuum init failed:', e.message);
-                expect(true).toBe(true);
+                console.error('[TEST FATAL] Continuum init failed:', e.message);
+                expect.fail('Continuum init failed: ' + e.message);
             }
         });
 
@@ -22,8 +22,8 @@ describe('Memory System', () => {
                 const { continuum } = await import('../../services/continuumMemory');
                 expect(typeof continuum.store).toBe('function');
             } catch (e: any) {
-                console.warn('[TEST SKIP] Continuum not available');
-                expect(true).toBe(true);
+                console.error('[TEST FATAL] Continuum not available:', e.message);
+                expect.fail('Continuum not available: ' + e.message);
             }
         });
 
@@ -33,8 +33,8 @@ describe('Memory System', () => {
                 // Check that continuum has expected properties
                 expect(continuum).toBeDefined();
             } catch (e: any) {
-                console.warn('[TEST SKIP] Continuum not available');
-                expect(true).toBe(true);
+                console.error('[TEST FATAL] Continuum not available:', e.message);
+                expect.fail('Continuum not available: ' + e.message);
             }
         });
 
@@ -43,8 +43,8 @@ describe('Memory System', () => {
                 const { continuum } = await import('../../services/continuumMemory');
                 expect(typeof continuum.getStats).toBe('function');
             } catch (e: any) {
-                console.warn('[TEST SKIP] Continuum not available');
-                expect(true).toBe(true);
+                console.error('[TEST FATAL] Continuum not available:', e.message);
+                expect.fail('Continuum not available: ' + e.message);
             }
         });
     });
@@ -55,8 +55,8 @@ describe('Memory System', () => {
                 const module = await import('../../services/experienceBuffer');
                 expect(module.experienceBuffer).toBeDefined();
             } catch (e: any) {
-                console.warn('[TEST SKIP] ExperienceBuffer not available');
-                expect(true).toBe(true);
+                console.error('[TEST FATAL] ExperienceBuffer not available:', e.message);
+                expect.fail('ExperienceBuffer not available: ' + e.message);
             }
         });
     });

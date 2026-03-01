@@ -11,7 +11,7 @@
  * This replaces the simple migration that just copied Agent objects to SQLite.
  */
 
-import { Agent, AgentTier, AgentRoleType, AgentStatus, AgentCategory } from '../../types';
+import { Agent, AgentTier, AgentRoleType, AgentStatus, AgentCategory, SystemProtocol } from '../../types';
 import { KERNEL_HEROS } from '../../constants';
 import { agentPersistence } from '../agentPersistence';
 import { agentFileSystem } from '../agents/agentFileSystem';
@@ -251,7 +251,7 @@ export class GenesisV2 {
                 agentConversation.registerAgent(agent);
 
                 // Emit handshake event
-                systemBus.emit('AGENT_HANDSHAKE', {
+                systemBus.emit('AGENT_HANDSHAKE' as SystemProtocol, {
                     agentId: agent.id,
                     name: agent.name,
                     role: agent.role,

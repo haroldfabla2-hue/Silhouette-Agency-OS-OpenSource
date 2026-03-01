@@ -60,7 +60,9 @@ class RedisService {
             } catch (e: any) {
                 console.warn(`[REDIS] Connection Failed: ${e.message || e}. Using In-Memory Fallback (data lost on restart).`);
                 if (this.client) {
-                    try { await this.client.disconnect(); } catch (err) { }
+                    try { await this.client.disconnect(); } catch (err) {
+                        console.error("[REDIS] Failed to disconnect during fallback:", err);
+                    }
                     this.client = null;
                 }
                 this.isMock = true;
@@ -74,7 +76,9 @@ class RedisService {
             try {
                 await this.client.disconnect();
                 console.log('[REDIS] Disconnected.');
-            } catch { }
+            } catch (err) {
+                console.error("[REDIS] Failed to disconnect:", err);
+            }
             this.client = null;
         }
         this.isConnected = false;
@@ -139,6 +143,55 @@ class RedisService {
         }
 
         return this.client ? await this.client.keys(pattern) : [];
+    }
+
+    // ── Distributed Locks ──
+    /**
+     * Tries to acquire a distributed lock using Redis SET NX.
+     * @param lockKey The unique key for the lock
+     * @param ttlMs Time to live in milliseconds (avoids deadlocks)
+     * @returns boolean True if lock acquired, false if already locked
+     */
+    public async acquireLock(lockKey: string, ttlMs: number): Promise<boolean> {
+        if (!this.isConnected) return true; // Fallback to allowing execution if no redis
+
+        if (this.isMock) {
+            // Mock implementation of SET NX EX
+            if (this.mockStore.has(lockKey)) return false;
+            this.mockStore.set(lockKey, 'locked');
+            setTimeout(() => this.mockStore.delete(lockKey), ttlMs);
+            return true;
+        }
+
+        try {
+            // SET key value NX PX ttl
+            const result = await this.client.set(lockKey, 'locked', {
+                NX: true,
+                PX: ttlMs
+            });
+            return result === 'OK';
+        } catch (e) {
+            console.error('[REDIS] Error acquiring lock:', e);
+            return false;
+        }
+    }
+
+    /**
+     * Releases a distributed lock.
+     */
+    public async releaseLock(lockKey: string): Promise<void> {
+        if (!this.isConnected) return;
+
+        if (this.isMock) {
+            this.mockStore.delete(lockKey);
+            return;
+        }
+
+        try {
+            await this.client.del(lockKey);
+        } catch (e) {
+            console.error('[REDIS] Error releasing lock:', e);
+        }
     }
 }
 
