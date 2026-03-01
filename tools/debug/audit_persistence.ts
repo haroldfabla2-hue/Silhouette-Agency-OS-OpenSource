@@ -1,8 +1,8 @@
 
 import 'dotenv/config'; // Load env vars
-import { lancedbService } from './services/lancedbService';
-import { vectorMemory } from './services/vectorMemoryService';
-import { MemoryTier } from './types';
+import { lancedbService } from '../../services/lancedbService';
+import { vectorMemory } from '../../services/vectorMemoryService';
+import { MemoryTier } from '../../types';
 
 async function audit() {
     console.log("🔍 STARTING DEEP PERSISTENCE AUDIT...");

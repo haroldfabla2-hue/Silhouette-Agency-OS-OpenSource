@@ -12,7 +12,7 @@ import { nervousSystem } from './connectionNervousSystem';
 
 class GraphService {
     private driver: Driver | null = null;
-    private isConnected: boolean = false;
+    private _isConnected: boolean = false; // Renamed to avoid conflict with method
     private isRegistered: boolean = false;
     private connectionTimeout: NodeJS.Timeout | null = null;
     private readonly TIMEOUT_MS = 5 * 60 * 1000; // 5 Minutes
@@ -30,6 +30,7 @@ class GraphService {
         } catch {
             return false;
         }
+        return this._isConnected;
     }
 
     /**
@@ -37,7 +38,7 @@ class GraphService {
      * All resilience is handled by ConnectionNervousSystem.
      */
     public async connect(): Promise<boolean> {
-        if (this.isConnected && this.driver) {
+        if (this._isConnected && this.driver) {
             this.resetConnectionTimeout(); // Keep alive on manual connect
             return true;
         }
@@ -63,8 +64,10 @@ class GraphService {
                 }
             );
 
+            // The try block for verifyConnectivity was moved to encompass it and subsequent setup.
+            // The driver creation itself can also throw, so the outer try/catch is still needed.
             await this.driver.verifyConnectivity();
-            this.isConnected = true;
+            this._isConnected = true;
             console.log("[GRAPH] ✅ Connected to Neo4j.");
 
             this.resetConnectionTimeout();
@@ -77,7 +80,7 @@ class GraphService {
 
         } catch (error: any) {
             console.error("[GRAPH] ❌ Connection failed:", error.message);
-            this.isConnected = false;
+            this._isConnected = false;
             this.driver = null;
             return false;
         }
@@ -95,7 +98,7 @@ class GraphService {
      * Check if connected (used by NervousSystem health check)
      */
     public isConnectedStatus(): boolean {
-        return this.isConnected;
+        return this._isConnected;
     }
 
     /**
@@ -111,7 +114,7 @@ class GraphService {
             } catch { }
         }
         this.driver = null;
-        this.isConnected = false;
+        this._isConnected = false;
     }
 
     private registerWithNervousSystem() {
@@ -173,7 +176,7 @@ class GraphService {
             // Auto-recovery for stale connections
             if (error.code === 'ServiceUnavailable' || error.code === 'SessionExpired') {
                 console.warn("[GRAPH] ⚠️ Connection stale, reconnecting...");
-                this.isConnected = false;
+                this._isConnected = false;
                 if (this.driver) await this.driver.close();
                 this.driver = null;
 
@@ -200,7 +203,7 @@ class GraphService {
     public async close() {
         if (this.driver) {
             await this.driver.close();
-            this.isConnected = false;
+            this._isConnected = false;
             console.log("[GRAPH] 🔌 Disconnected.");
         }
     }

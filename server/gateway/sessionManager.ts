@@ -165,6 +165,13 @@ class SessionManager {
             this.compactSession(sessionId);
         }
 
+        // [COGNITIVE] Thought Narrator Entity Extraction (Brain Port)
+        if (message.role === 'user' && message.content) {
+            import('../../services/cognitive/thoughtNarrator').then(({ thoughtNarrator }) => {
+                thoughtNarrator.extractAndConnectToGraph(message.content, sessionId).catch((e: any) => console.error('[NARRATOR] Hook error:', e));
+            }).catch(e => console.error('[NARRATOR] Failed to load module:', e));
+        }
+
         return fullMessage;
     }
 

@@ -1,5 +1,5 @@
-import { contextResolver } from './services/contextResolver';
-import { visualCortex } from './services/visualCortex';
+import { contextResolver } from '../../services/contextResolver';
+import { visualCortex } from '../../services/visualCortex';
 
 async function verify() {
     console.log("Verifying Universal Asset Pipeline...");

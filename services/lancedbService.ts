@@ -110,7 +110,7 @@ export class LanceDbService {
                 const safeId = node.id.replace(/'/g, "''");
                 await this.table.delete(`id = '${safeId}'`);
             } catch (delError) {
-                // Ignore delete error (e.g. if table doesn't support delete or record not found)
+                console.error("[LANCEDB] Upsert deletion ignored:", delError);
             }
 
             await this.table.add([record]);
@@ -316,7 +316,9 @@ export class LanceDbService {
             try {
                 const safeId = String(item.id).replace(/'/g, "''");
                 await this.knowledgeTable.delete(`id = '${safeId}'`);
-            } catch (e) { } // Ignore if not found
+            } catch (e) {
+                console.error("[LANCEDB] Knowledge Upsert deletion ignored:", e);
+            }
 
             await this.knowledgeTable.add([item]);
             // console.log(`[LANCEDB] Stored Knowledge: ${item.path}`);

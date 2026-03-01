@@ -12,8 +12,8 @@ describe('LLM Gateway', () => {
                 const { llmGateway } = await import('../../services/llmGateway');
                 expect(llmGateway).toBeDefined();
             } catch (e: any) {
-                console.warn('[TEST SKIP] LLM Gateway init failed:', e.message);
-                expect(true).toBe(true);
+                console.error('[TEST FATAL] LLM Gateway init failed:', e.message);
+                expect.fail('LLM Gateway init failed: ' + e.message);
             }
         });
 
@@ -23,8 +23,8 @@ describe('LLM Gateway', () => {
                 // Check that the gateway has expected methods
                 expect(typeof llmGateway.complete).toBe('function');
             } catch (e: any) {
-                console.warn('[TEST SKIP] LLM Gateway stats failed:', e.message);
-                expect(true).toBe(true);
+                console.error('[TEST FATAL] LLM Gateway stats failed:', e.message);
+                expect.fail('LLM Gateway stats failed: ' + e.message);
             }
         });
     });
@@ -35,8 +35,8 @@ describe('LLM Gateway', () => {
                 const { backgroundLLM } = await import('../../services/backgroundLLMService');
                 expect(backgroundLLM).toBeDefined();
             } catch (e: any) {
-                console.warn('[TEST SKIP] BackgroundLLM init failed:', e.message);
-                expect(true).toBe(true);
+                console.error('[TEST FATAL] BackgroundLLM init failed:', e.message);
+                expect.fail('BackgroundLLM init failed: ' + e.message);
             }
         });
     });
@@ -47,8 +47,9 @@ describe('LLM Gateway', () => {
             if (apiKey) {
                 expect(apiKey.length).toBeGreaterThan(10);
             } else {
-                console.warn('[TEST] No Gemini API key configured');
-                expect(true).toBe(true);
+                console.warn('[TEST] No Gemini API key configured, cannot fully test connection');
+                // Could fail here depending on strictness requirements, but leaving as skipped test
+                expect(apiKey).toBeUndefined(); // Verify it's actually undefined
             }
         });
     });
@@ -63,8 +64,8 @@ describe('Tool System', () => {
                 const tools = toolRegistry.getAllTools();
                 expect(Array.isArray(tools)).toBe(true);
             } catch (e: any) {
-                console.warn('[TEST SKIP] Tool registry failed:', e.message);
-                expect(true).toBe(true);
+                console.error('[TEST FATAL] Tool registry failed:', e.message);
+                expect.fail('Tool registry failed: ' + e.message);
             }
         });
 
@@ -75,8 +76,8 @@ describe('Tool System', () => {
                 const hasTool = toolRegistry.hasTool('web_search');
                 expect(hasTool).toBe(true);
             } catch (e: any) {
-                console.warn('[TEST SKIP] Tool lookup failed:', e.message);
-                expect(true).toBe(true);
+                console.error('[TEST FATAL] Tool lookup failed:', e.message);
+                expect.fail('Tool lookup failed: ' + e.message);
             }
         });
     });

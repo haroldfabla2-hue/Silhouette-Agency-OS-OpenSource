@@ -79,7 +79,9 @@ const SystemControl: React.FC<SystemControlProps> = ({ metrics, setMode, autonom
                 if (data.type === 'LOG') {
                     setGenesisLogs(prev => [...prev, data.message].slice(-500));
                 }
-            } catch (e) { }
+            } catch (e) {
+                console.error("[SystemControl] SSE parse error:", e);
+            }
         };
         eventSource.onerror = () => {
             // EventSource auto-reconnects by default
@@ -96,21 +98,27 @@ const SystemControl: React.FC<SystemControlProps> = ({ metrics, setMode, autonom
             const data = await api.get<any>('/v1/orchestrator/state');
             setOrchestratorState(data);
             setActiveCats(data.activeCategories || []);
-        } catch (e) { }
+        } catch (e) {
+            console.error("[SystemControl] Failed to fetch Orchestrator State:", e);
+        }
     };
 
     const fetchNeuroLinkNodes = async () => {
         try {
             const data = await api.get<NeuroLinkNode[]>('/v1/neurolink/nodes');
             setActiveNodes(data || []);
-        } catch (e) { }
+        } catch (e) {
+            console.error("[SystemControl] Failed to fetch NeuroLink Nodes:", e);
+        }
     };
 
     const fetchCostMetrics = async () => {
         try {
             const data = await api.get<CostMetrics>('/v1/system/costs');
             setCostMetrics(data);
-        } catch (e) { }
+        } catch (e) {
+            console.error("[SystemControl] Failed to fetch Cost Metrics:", e);
+        }
     };
 
     const applyConfig = () => {
@@ -123,7 +131,9 @@ const SystemControl: React.FC<SystemControlProps> = ({ metrics, setMode, autonom
         try {
             const projects = await api.get<GenesisProject[]>('/v1/factory/list');
             setGenesisProjects(projects);
-        } catch (e) { }
+        } catch (e) {
+            console.error("[SystemControl] Failed to fetch Genesis Projects:", e);
+        }
     };
 
     const spawnProject = async () => {
@@ -374,6 +384,36 @@ const SystemControl: React.FC<SystemControlProps> = ({ metrics, setMode, autonom
                                     className="h-full bg-green-500 transition-all duration-500"
                                     style={{ width: `${Math.min(metrics.vramUsage || 0, 100)}%` }}
                                 />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Real-time Cognitive State (Silhouette Brain) */}
+                <div className="glass-panel rounded-xl p-6 border border-purple-500/30 bg-purple-900/10">
+                    <h2 className="text-xl font-bold text-white flex items-center gap-3 mb-4">
+                        <Activity className="text-purple-400" /> Cognitive State (Unified Daemon)
+                    </h2>
+                    <div className="flex flex-col md:flex-row gap-4">
+                        <div className="bg-black/40 p-4 rounded border border-slate-800 w-full md:w-1/3 text-center">
+                            <div className="text-xs text-slate-400 mb-2 uppercase tracking-widest font-bold">Working Memory</div>
+                            <div className="text-3xl font-mono text-cyan-400">
+                                {metrics.brain?.workingMemoryItems || 0}
+                            </div>
+                            <div className="text-[10px] text-slate-500 mt-2">Active Concepts in RAM</div>
+                        </div>
+
+                        <div className="bg-black/40 p-4 rounded border border-slate-800 w-full md:w-2/3">
+                            <div className="text-xs text-slate-400 mb-2 flex items-center gap-2 uppercase tracking-widest font-bold">
+                                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                                Thought Narrator Stream
+                            </div>
+                            <div className="text-xs font-mono text-green-400 h-20 overflow-y-auto custom-scrollbar border-l-2 border-green-500/30 pl-3">
+                                {metrics.brain?.latestNarrative ? (
+                                    <span dangerouslySetInnerHTML={{ __html: metrics.brain.latestNarrative.replace(/\n/g, '<br/>') }} />
+                                ) : (
+                                    <span className="text-slate-600 italic">Waiting for next consciousness cycle...</span>
+                                )}
                             </div>
                         </div>
                     </div>

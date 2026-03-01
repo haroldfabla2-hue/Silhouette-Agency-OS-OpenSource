@@ -34,7 +34,7 @@ function copyRecursiveSync(src, dest) {
     } else {
         try {
             fs.copyFileSync(src, dest);
-        } catch (e) {
+        } catch (e: any) {
             console.log(`[SKIP] Error copying ${src}: ${e.message}`);
         }
     }
@@ -62,7 +62,9 @@ for (const file of safeFiles) {
     const d = path.join(targetRoot, file);
     if (fs.existsSync(s)) {
         console.log(`Copiando archivo raíz: ${file}`);
-        try { fs.copyFileSync(s, d); } catch (e) { }
+        try { fs.copyFileSync(s, d); } catch (e: any) {
+            console.error(`[SKIP] Error copying file ${file}:`, e.message);
+        }
     }
 }
 
@@ -70,7 +72,9 @@ for (const file of safeFiles) {
 fs.readdirSync(sourceRoot).forEach(f => {
     if (f.startsWith('Modelfile_')) {
         console.log(`Copiando Modelfile: ${f}`);
-        try { fs.copyFileSync(path.join(sourceRoot, f), path.join(targetRoot, f)); } catch (e) { }
+        try { fs.copyFileSync(path.join(sourceRoot, f), path.join(targetRoot, f)); } catch (e: any) {
+            console.error(`[SKIP] Error copying Modelfile ${f}:`, e.message);
+        }
     }
 });
 

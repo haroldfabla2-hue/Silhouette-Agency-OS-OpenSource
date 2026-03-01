@@ -3,7 +3,119 @@ import { Request, Response } from 'express';
 import { configureGenAI } from '../../services/geminiService';
 import { sqliteService } from '../../services/sqliteService';
 
+// Prefix used for all secrets in the system_config table
+const SECRETS_PREFIX = 'secretsVault_';
+
 export class SystemController {
+
+    // ═══════════════════════════════════════════════════════════
+    // SECRETS VAULT — Server-side credential storage
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Save credentials for a specific service (e.g., gemini, openai, google_drive).
+     * POST /v1/system/secrets/:serviceId
+     * Body: { credentials: { apiKey: "...", orgId: "..." } }
+     */
+    public async saveSecret(req: Request, res: Response) {
+        try {
+            const { serviceId } = req.params;
+            const { credentials } = req.body;
+
+            if (!serviceId || !credentials || typeof credentials !== 'object') {
+                return res.status(400).json({ error: 'Missing serviceId or credentials object' });
+            }
+
+            const key = `${SECRETS_PREFIX}${serviceId}`;
+            sqliteService.setConfig(key, credentials);
+
+            // Hot-reload side effects for known services
+            if (serviceId === 'gemini' && credentials.apiKey) {
+                configureGenAI(credentials.apiKey);
+                sqliteService.setConfig('systemApiKey', credentials.apiKey);
+            }
+            if (serviceId === 'media') {
+                try {
+                    const { mediaService } = await import('../../services/mediaService');
+                    mediaService.updateConfig(credentials);
+                    sqliteService.setConfig('mediaConfig', credentials);
+                } catch (e) { /* mediaService may not be loaded yet */ }
+            }
+
+            console.log(`[SECRETS] Saved credentials for service: ${serviceId}`);
+            res.json({ success: true, serviceId });
+        } catch (e: any) {
+            console.error('[SECRETS] Save failed:', e.message);
+            res.status(500).json({ error: 'Failed to save secret', details: e.message });
+        }
+    }
+
+    /**
+     * List which services have stored credentials (NEVER returns raw values).
+     * GET /v1/system/secrets
+     * Returns: { services: [{ id: "gemini", hasCredentials: true, keys: ["apiKey"] }] }
+     */
+    public async listSecrets(req: Request, res: Response) {
+        try {
+            const allConfig = sqliteService.getAllConfig();
+            const services = Object.entries(allConfig)
+                .filter(([key]) => key.startsWith(SECRETS_PREFIX))
+                .map(([key, value]) => ({
+                    id: key.replace(SECRETS_PREFIX, ''),
+                    hasCredentials: true,
+                    keys: typeof value === 'object' && value !== null ? Object.keys(value) : [],
+                    maskedPreview: typeof value === 'object' && value !== null
+                        ? Object.fromEntries(
+                            Object.entries(value).map(([k, v]) => [
+                                k,
+                                typeof v === 'string' && v.length > 4
+                                    ? `${v.substring(0, 4)}${'•'.repeat(Math.min(v.length - 4, 12))}`
+                                    : '••••'
+                            ])
+                        )
+                        : {}
+                }));
+
+            res.json({ services });
+        } catch (e: any) {
+            console.error('[SECRETS] List failed:', e.message);
+            res.status(500).json({ error: 'Failed to list secrets', details: e.message });
+        }
+    }
+
+    /**
+     * Get raw secret for a specific service (for internal agent/service use).
+     * GET /v1/system/secrets/:serviceId
+     * Returns raw credentials — should be behind auth middleware.
+     */
+    public async getSecret(req: Request, res: Response) {
+        try {
+            const { serviceId } = req.params;
+            const key = `${SECRETS_PREFIX}${serviceId}`;
+            const value = sqliteService.getConfig(key);
+
+            if (!value) {
+                return res.status(404).json({ error: `No credentials found for ${serviceId}` });
+            }
+
+            res.json({ serviceId, credentials: value });
+        } catch (e: any) {
+            console.error('[SECRETS] Get failed:', e.message);
+            res.status(500).json({ error: 'Failed to get secret', details: e.message });
+        }
+    }
+
+    /**
+     * Static helper for programmatic access from other backend services.
+     * Usage: SystemController.getSecretInternal('gemini') => { apiKey: '...' }
+     */
+    public static getSecretInternal(serviceId: string): Record<string, any> | null {
+        return sqliteService.getConfig(`${SECRETS_PREFIX}${serviceId}`);
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // CONFIG (existing)
+    // ═══════════════════════════════════════════════════════════
 
     public async getConfig(req: Request, res: Response) {
         // Fetch fresh config from SQLite + Env merger logic if needed
@@ -139,6 +251,21 @@ export class SystemController {
             const { orchestrator } = await import('../../services/orchestrator');
             const { sqliteService } = await import('../../services/sqliteService');
 
+            // Generate or fetch Brain Telemetry
+            let brainStats = null;
+            try {
+                const { continuum } = await import('../../services/continuumMemory');
+                const { thoughtNarrator } = await import('../../services/cognitive/thoughtNarrator');
+                const memStats = await continuum.getStats();
+                const narrative = await thoughtNarrator.generateNarrative();
+                brainStats = {
+                    workingMemoryItems: memStats.workingMemoryItems,
+                    latestNarrative: narrative
+                };
+            } catch (e) {
+                console.warn("[SYSTEM] Failed to fetch brain telemetry", e);
+            }
+
             // Get media queue status for Visual Cortex Queue display
             let mediaQueue: any[] = [];
             try {
@@ -165,7 +292,8 @@ export class SystemController {
                 telemetry: {
                     ...telemetry, // This has cpu, ram, gpu, providerHealth
                     agentCount: orchestrator.getActiveCount(),
-                    mediaQueue // Add media queue to telemetry
+                    mediaQueue, // Add media queue to telemetry
+                    brain: brainStats // Emits cognitive data straight to frontend
                 },
                 orchestrator: {
                     agents: orchestrator.getAgents(), // This returns full list (mixed active/offline)
