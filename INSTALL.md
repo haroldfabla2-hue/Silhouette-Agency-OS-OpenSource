@@ -66,11 +66,15 @@ DEEPSEEK_API_KEY=your_key_here
 
 > **Tip:** Gemini and Groq both offer free tiers — no billing required to start.
 
-### 4. Start the backend (orchestrator)
+## Starting the System
+
+Once configured, boot the Cognitive Kernel and its interfaces with a single command:
 
 ```bash
-npm run server
+npm run boot
 ```
+
+*This unified bootloader will spin up both the Kernel (Backend) and the UI (Frontend) in the same terminal, coloring their logs for easy reading. To safely shut down all processes without leaving zombie ports, simply press `Ctrl+C`.*
 
 The system starts on `http://localhost:3005`. The orchestrator is now alive and thinking.
 
@@ -78,7 +82,6 @@ The system starts on `http://localhost:3005`. The orchestrator is now alive and 
 - **WebSocket**: `ws://localhost:3005/ws`
 - **Health**: `http://localhost:3005/v1/system/health`
 
-### 5. (Optional) Start the frontend UI
 
 In a second terminal:
 
@@ -108,11 +111,15 @@ Frontend: `http://localhost:5173`
 
 ## Interactive Setup Wizard (Alternative to manual setup)
 
-The wizard handles provider selection, port detection, and Docker startup automatically:
+The multi-step CLI and web wizard automatically handles backend API provider selection, `.env` file generation, and Docker startup:
 
 ```bash
 npm run setup:intelligent
 ```
+
+**Hardware Profiling:** The setup now includes an intelligent hardware check (`/v1/system/diagnostics`).
+- **Heavy Local (>= 16GB RAM):** Recommends spinning up Neo4j via Docker locally for maximum data privacy.
+- **Cloud Lightweight (< 16GB RAM):** Recommends using the free **Neo4j Aura Cloud** tier to save local resources, guiding you through the correct `.env` configuration.
 
 ---
 

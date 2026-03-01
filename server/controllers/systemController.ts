@@ -448,6 +448,38 @@ export class SystemController {
             });
         }
     }
+
+    /**
+     * Diagnostics for hardware evaluation during setup
+     */
+    async getDiagnostics(req: Request, res: Response) {
+        try {
+            const os = await import('os');
+            const totalMemory = os.totalmem();
+            const freeMemory = os.freemem();
+            const cpus = os.cpus();
+
+            res.json({
+                ram: {
+                    totalBytes: totalMemory,
+                    totalGB: Math.round(totalMemory / (1024 * 1024 * 1024)),
+                    freeBytes: freeMemory,
+                    freeGB: Math.round(freeMemory / (1024 * 1024 * 1024))
+                },
+                cpu: {
+                    cores: cpus.length,
+                    model: cpus[0]?.model
+                },
+                os: {
+                    platform: os.platform(),
+                    release: os.release()
+                }
+            });
+        } catch (error: any) {
+            console.error('[SYSTEM] getDiagnostics failed:', error.message);
+            res.status(500).json({ error: error.message });
+        }
+    }
 }
 
 export const systemController = new SystemController();

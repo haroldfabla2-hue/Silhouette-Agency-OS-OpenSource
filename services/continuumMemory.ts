@@ -492,6 +492,74 @@ class ContinuumMemorySystem {
         return candidates.sort((a, b) => b.timestamp - a.timestamp).slice(0, 500);
     }
 
+    /**
+     * [BRAIN INTEGRATION] Unified Context Retrieval
+     * Combines recent episodic memory with semantic deep memory.
+     * This is the recommended query method for Agents to build their context windows.
+     */
+    public async getCombinedContext(
+        query: string,
+        semanticLimit: number = 5,
+        recentLimit: number = 5,
+        hours: number = 2
+    ): Promise<{ semantic: MemoryNode[], recent: MemoryNode[] }> {
+        // 1. Semantic Search (DEEP memory via VectorStore)
+        let semantic: MemoryNode[] = [];
+        try {
+            const { vectorMemory } = await import('./vectorMemoryService');
+            // Assuming vectorMemory has query() mapped to semantic search
+            // If not, we fallback to generalized search
+            if (typeof (vectorMemory as any).searchByContent === 'function') {
+                const vectors = await (vectorMemory as any).searchByContent(query, semanticLimit);
+                semantic = vectors.map(v => ({
+                    id: v.id,
+                    content: v.payload?.content || v.content,
+                    tier: MemoryTier.DEEP,
+                    timestamp: v.payload?.timestamp || Date.now(),
+                    tags: v.payload?.tags || [],
+                    importance: v.payload?.importance || 0.5,
+                    accessCount: 1,
+                    lastAccess: Date.now(),
+                    decayHealth: 100,
+                    compressionLevel: 0
+                }));
+            } else {
+                // Fallback: use built-in search and filter for DEEP
+                const allSearchResults = await this.search(query);
+                semantic = allSearchResults.filter(n => n.tier === MemoryTier.DEEP).slice(0, semanticLimit);
+            }
+        } catch (e) {
+            console.warn('[CONTINUUM] Semantic context retrieval failed, using fallback:', e);
+            const allSearchResults = await this.search(query);
+            semantic = allSearchResults.filter(n => n.tier === MemoryTier.DEEP).slice(0, semanticLimit);
+        }
+
+        // 2. Recent Episodic (WORKING / MEDIUM)
+        const cutoff = Date.now() - (hours * 3600 * 1000);
+
+        // From RAM
+        let recentRam = this.working.filter(n => n.timestamp >= cutoff);
+
+        // From LanceDB (Medium)
+        let recentDb: MemoryNode[] = [];
+        try {
+            const dbNodes = await lancedbService.getAllNodes();
+            recentDb = dbNodes.filter(n =>
+                (n.tier === MemoryTier.MEDIUM || n.tier === undefined) &&
+                n.timestamp >= cutoff
+            );
+        } catch (e) {
+            console.error("[CONTINUUM] Failed to fetch recent DB nodes", e);
+        }
+
+        // Merge, sort, and slice recent
+        const allRecent = [...recentRam, ...recentDb]
+            .sort((a, b) => b.timestamp - a.timestamp) // Descending
+            .slice(0, recentLimit);
+
+        return { semantic, recent: allRecent };
+    }
+
     public async getIdentityNodes(): Promise<MemoryNode[]> {
         // Fetch from LanceDB where tags include IDENTITY
         const allDb = await lancedbService.getAllNodes();

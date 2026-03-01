@@ -55,19 +55,85 @@ export class CognitiveScheduler {
     }
 
     /**
-     * 🧹 Janitor Engine
-     * Cleans up Medium Memory and resolves contradictions.
-     * @deprecated Called by unifiedDaemon now.
+     * 🧹 Janitor Engine (Truth Evaluation)
+     * Reads recent Medium Memory from LanceDB, groups episodic facts,
+     * detects contradictions using LLM, and resolves them into meta-memories.
      */
     public async runJanitor() {
-        console.log('[COGNITIVE: JANITOR] 🧹 Cleaning up memories...');
+        console.log('[COGNITIVE: JANITOR] 🧹 Analyzing Medium Memories for contradictions...');
         try {
-            // In a full port, this would read SQLite (Medium Memory) and look for conflicting facts
-            // For now, it cleans up decayed memory in LanceDB
             const stats = await continuum.getStats();
-            console.log(`[COGNITIVE: JANITOR] Analyzed ${stats.workingMemoryItems} working items.`);
+            console.log(`[COGNITIVE: JANITOR] Working Memory size: ${stats.workingMemoryItems}. Checking LanceDB for cleanup...`);
+
+            // Fetch recent episodic nodes from LanceDB (last 24h)
+            const recentNodes = await lancedbService.getAllNodes();
+            const last24h = Date.now() - (24 * 60 * 60 * 1000);
+            const mediumToAnalyze = recentNodes.filter(n =>
+                (n.tier === 'MEDIUM' || n.tier === undefined) &&
+                n.timestamp >= last24h &&
+                !n.tags?.includes('SYNTHESIZED') // Skip already processed
+            );
+
+            if (mediumToAnalyze.length < 5) {
+                console.log('[COGNITIVE: JANITOR] Not enough new context to require synthesis.');
+                return;
+            }
+
+            // Extract content to prompt LLM for contradiction check
+            const factsText = mediumToAnalyze.map(n => `- [ID:${n.id}] ${n.content}`).join('\n');
+            const { generateText } = await import('../geminiService');
+
+            const prompt = `You are the Janitor Cognitive Engine. 
+            Analyze the following memory strings. 
+            Your goal is to find CONTRADICTIONS (e.g., "User likes coffee" vs "User hates coffee").
+            If you find a contradiction, resolve it based on the most recent or most emotionally intense statement, 
+            and output ONLY a JSON array of resolved facts.
+            If NO contradictions exist, output an empty array [].
+            
+            Format: [{ "resolved_fact": "...", "obsoletes_ids": ["id1", "id2"] }]
+            
+            MEMORIES:
+            ${factsText}`;
+
+            let responseText = await generateText(prompt, { model: 'gemini-2.5-flash' }); // Fast model 
+            responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+
+            try {
+                const results = JSON.parse(responseText);
+                if (Array.isArray(results) && results.length > 0) {
+                    console.log(`[COGNITIVE: JANITOR] Found ${results.length} contradictions. Resolving...`);
+                    for (const res of results) {
+                        if (!res.resolved_fact || !res.obsoletes_ids) continue;
+
+                        // 1. Store the new synthesized truth in LanceDB
+                        await lancedbService.store({
+                            id: crypto.randomUUID(),
+                            content: `[SYNTHESIZED TRUTH] ${res.resolved_fact}`,
+                            timestamp: Date.now(),
+                            tier: 'MEDIUM',
+                            importance: 0.8,
+                            tags: ['SYNTHESIZED', 'TRUTH_EVALUATION'],
+                            accessCount: 1,
+                            lastAccess: Date.now(),
+                            decayHealth: 100,
+                            compressionLevel: 0
+                        } as any);
+
+                        // 2. Mark old conflicting nodes as obsolete or delete them
+                        for (const oldId of res.obsoletes_ids) {
+                            console.log(`[COGNITIVE: JANITOR] Marking node ${oldId} as obsolete.`);
+                            await lancedbService.deleteNode(oldId);
+                        }
+                    }
+                } else {
+                    console.log('[COGNITIVE: JANITOR] No contradictions found. Memories are narratively stable.');
+                }
+            } catch (e: any) {
+                console.warn('[COGNITIVE: JANITOR] Failed to parse LLM synthesis result:', e.message);
+            }
+
         } catch (e: any) {
-            console.error('[COGNITIVE: JANITOR] Failed:', e.message);
+            console.error('[COGNITIVE: JANITOR] Engine failed:', e.message);
         }
     }
 
