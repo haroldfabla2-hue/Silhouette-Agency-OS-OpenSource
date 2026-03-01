@@ -17,6 +17,7 @@
     "setup": "tsx scripts/bootstrap.ts",
     "setup:v2": "tsx scripts/bootstrap_v2.ts",
     "setup:intelligent": "tsx scripts/setup.ts",
+    "boot": "tsx scripts/boot.ts",
     "personalize": "tsx scripts/personalize.ts",
     "build": "vite build",
     "preview": "vite preview",

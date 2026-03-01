@@ -66,11 +66,15 @@ DEEPSEEK_API_KEY=your_key_here
 
 > **Tip:** Gemini and Groq both offer free tiers — no billing required to start.
 
-### 4. Start the backend (orchestrator)
+## Starting the System
+
+Once configured, boot the Cognitive Kernel and its interfaces with a single command:
 
 ```bash
-npm run server
+npm run boot
 ```
+
+*This unified bootloader will spin up both the Kernel (Backend) and the UI (Frontend) in the same terminal, coloring their logs for easy reading. To safely shut down all processes without leaving zombie ports, simply press `Ctrl+C`.*
 
 The system starts on `http://localhost:3005`. The orchestrator is now alive and thinking.
 
@@ -78,7 +82,6 @@ The system starts on `http://localhost:3005`. The orchestrator is now alive and 
 - **WebSocket**: `ws://localhost:3005/ws`
 - **Health**: `http://localhost:3005/v1/system/health`
 
-### 5. (Optional) Start the frontend UI
 
 In a second terminal:
 
