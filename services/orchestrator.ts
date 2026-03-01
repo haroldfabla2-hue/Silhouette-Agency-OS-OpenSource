@@ -716,7 +716,7 @@ Format each gap as:
             const { synthesisService } = await import('./synthesisService');
 
             // Get insight by ID or use most recent
-            let insight = payload.insightId
+            const insight = payload.insightId
                 ? synthesisService.getInsight(payload.insightId)
                 : synthesisService.getInsightsForPaper(0.7)[0];
 
@@ -885,7 +885,7 @@ ${payload.message}
 
             // 5. Process Tool Calls and Parallel Operations
             let finalOutput = response.output;
-            let outboundMedia: any[] = [];
+            const outboundMedia: any[] = [];
 
             if (chatToolIntegration.hasToolCalls(finalOutput)) {
                 console.log(`[ORCHESTRATOR] 🛠️ Executing specialized tools...`);
@@ -1993,7 +1993,7 @@ OBJECTIVES:
         }
 
         // [OMNISCIENT] Inject semantic memory context for the agent
-        let enrichedContext = { ...context };
+        const enrichedContext = { ...context };
         try {
             const { continuum } = await import('./continuumMemory');
             const taskDescription = `${taskType}: ${JSON.stringify(context).substring(0, 200)} `;

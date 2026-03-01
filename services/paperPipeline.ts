@@ -89,7 +89,7 @@ class PaperPipeline {
 
         // Step 3: Generate figures
         let figures: Figure[] = [];
-        let tables: Table[] = [];
+        const tables: Table[] = [];
         if (generateFigures) {
             console.log(`[PIPELINE] Step 3/7: Generating figures...`);
             figureGenerator.resetCounter();

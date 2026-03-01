@@ -75,7 +75,7 @@ class ToolArchitect {
         const embedding = await geminiService.generateEmbedding(query);
 
         let expertKnowledge = "";
-        let sources: string[] = [];
+        const sources: string[] = [];
 
         if (embedding) {
             const results = await lancedbService.searchKnowledge(embedding, 5);

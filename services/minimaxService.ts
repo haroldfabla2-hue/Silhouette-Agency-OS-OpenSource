@@ -186,7 +186,7 @@ Be introspective, deep, and analytical.`
             // Success! Consume Quota.
             this.consumeQuota();
 
-            let content = data.choices?.[0]?.message?.content || '';
+            const content = data.choices?.[0]?.message?.content || '';
 
             // --- LANGUAGE CHECK ---
             if (this.hasChineseChars(content)) {

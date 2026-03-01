@@ -183,7 +183,7 @@ async function main() {
         path.join(process.cwd(), 'memories.db'),
     ];
 
-    let totalCorrupted: CorruptedMemory[] = [];
+    const totalCorrupted: CorruptedMemory[] = [];
 
     for (const dbPath of dbPaths) {
         console.log(`\n📂 Scanning: ${dbPath}`);

@@ -16,9 +16,9 @@ async function testSwarm() {
     console.log("🐝 STARTING CURIOSITY SWARM SIMULATION...");
 
     // 1. Setup Listeners
-    let gapDetected = false;
-    let councilDispatched = 0;
-    let loopClosed = false;
+    const gapDetected = false;
+    const councilDispatched = 0;
+    const loopClosed = false;
 
     // Spy on Task Assignment (which Orchestrator uses internally via hydrate, but Streamer uses)
     // Actually, Streamer emits THOUGHT_EMISSION and TASK_COMPLETION

@@ -410,7 +410,7 @@ export class ActionExecutor {
 
         // RESOLUTION LOGIC UPDATE:
         // We determine targetPath first.
-        let targetPath = path.resolve(filePath);
+        const targetPath = path.resolve(filePath);
 
         // Check Sandboxing
         const isSandbox = targetPath.startsWith(this.sandboxRoot);
@@ -508,7 +508,7 @@ export class ActionExecutor {
     }
 
     private resolvePath(targetPath: string): string | null {
-        let resolvedAndNormalized = path.resolve(targetPath);
+        const resolvedAndNormalized = path.resolve(targetPath);
 
         // Allow Sandbox always
         if (resolvedAndNormalized.startsWith(this.sandboxRoot)) return resolvedAndNormalized;

@@ -18,7 +18,7 @@ import { toolHandler } from "./tools/toolHandler"; // [PA-038] Import Tool Handl
 
 // [ROBUST] Lazy initialization - don't read env at module level
 // Environment might not be loaded yet when this module is first imported
-let apiKeys: string[] = [];
+const apiKeys: string[] = [];
 let currentKeyIndex = 0;
 let apiKey: string | null = null;
 let ai: GoogleGenAI | null = null;
@@ -598,7 +598,7 @@ export const generateAgentResponse = async (
                             // ... (Logic extracted slightly to support rotation or kept here?)
                             // We duplicate the generation call inside this loop to keep it simple context-wise
 
-                            let currentContents = [...contents];
+                            const currentContents = [...contents];
                             let finalResponseText = "";
                             let toolSteps = 0;
                             const MAX_TOOL_STEPS = 5;
