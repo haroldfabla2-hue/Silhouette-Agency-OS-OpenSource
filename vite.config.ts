@@ -62,11 +62,11 @@ export default defineConfig(({ mode }) => {
 
         // MOCK BACKEND SERVICES - REGEX TO CATCH ALL RELATIVE/ABSOLUTE IMPORTS
         // Matches: ./continuumMemory, ../services/continuumMemory, @/services/continuumMemory, etc.
-        { find: /^(.*[\\\/])?lancedbService(\.ts)?$/, replacement: path.resolve(__dirname, './mocks/lancedbService.ts') },
-        { find: /^(.*[\\\/])?continuumMemory(\.ts)?$/, replacement: path.resolve(__dirname, './mocks/continuumMemory.ts') },
-        { find: /^(.*[\\\/])?geminiService(\.ts)?$/, replacement: path.resolve(__dirname, './mocks/geminiService.ts') },
-        { find: /^(.*[\\\/])?redisClient(\.ts)?$/, replacement: path.resolve(__dirname, './mocks/redisClient.ts') },
-        { find: /^(.*[\\\/])?ollamaService(\.ts)?$/, replacement: path.resolve(__dirname, './mocks/ollamaService.ts') },
+        { find: /^(.*[\/])?lancedbService(\.ts)?$/, replacement: path.resolve(__dirname, './mocks/lancedbService.ts') },
+        { find: /^(.*[\/])?continuumMemory(\.ts)?$/, replacement: path.resolve(__dirname, './mocks/continuumMemory.ts') },
+        { find: /^(.*[\/])?geminiService(\.ts)?$/, replacement: path.resolve(__dirname, './mocks/geminiService.ts') },
+        { find: /^(.*[\/])?redisClient(\.ts)?$/, replacement: path.resolve(__dirname, './mocks/redisClient.ts') },
+        { find: /^(.*[\/])?ollamaService(\.ts)?$/, replacement: path.resolve(__dirname, './mocks/ollamaService.ts') },
 
         // MOCK HEAVY NODE PACKAGES
         { find: 'redis', replacement: path.resolve(__dirname, './mocks/redis.ts') },

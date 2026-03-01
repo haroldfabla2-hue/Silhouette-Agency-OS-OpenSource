@@ -59,7 +59,7 @@ const getFileCategory = (filePath: string, mimeType?: string): 'image' | 'video'
 const getAssetUrl = (filePath: string): string => {
     // Handle both absolute and relative paths
     if (filePath.startsWith('http')) return filePath;
-    const relativePath = filePath.replace(/.*uploads[\\\/]/, 'uploads/').replace(/\\/g, '/');
+    const relativePath = filePath.replace(/.*uploads\//, 'uploads/').replace(/\\/g, '/');
     return `/${relativePath}`;
 };
 
