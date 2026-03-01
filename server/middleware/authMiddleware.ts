@@ -1,7 +1,7 @@
 // =============================================================================
 // AUTHENTICATION MIDDLEWARE
 // Validates Bearer token on all API requests.
-// Token is configured via SILHOUETTE_API_TOKEN env variable.
+// Token is configured via SILHOUETTE_API_KEY env variable.
 // =============================================================================
 
 import { Request, Response, NextFunction } from 'express';
@@ -41,12 +41,12 @@ let _cachedToken: string | null = null;
  */
 function getToken(): string | null {
     if (_cachedToken !== null) return _cachedToken;
-    _cachedToken = process.env.SILHOUETTE_API_TOKEN || '';
+    _cachedToken = process.env.SILHOUETTE_API_KEY || process.env.SILHOUETTE_API_TOKEN || '';
 
     // [SECURITY HARDENING] Fail fast in production if token is missing
     if (!_cachedToken && process.env.NODE_ENV === 'production') {
-        console.error('[FATAL SECURITY EXCEPTION] SILHOUETTE_API_TOKEN is NOT set in production environment.');
-        console.error('Refusing to start in open mode. Please set an API token.');
+        console.error('[FATAL SECURITY EXCEPTION] SILHOUETTE_API_KEY is NOT set in production environment.');
+        console.error('Refusing to start in open mode. Please set an API key.');
         process.exit(1);
     }
 
