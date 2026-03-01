@@ -26,31 +26,59 @@ export class LanceDbService {
         await this.init();
     }
 
-    private async init() {
+    private async init(retries = 3, delayMs = 1000) {
         if (this.initialized) return;
+
+        let attempt = 0;
+        while (attempt < retries) {
+            try {
+                if (attempt > 0) {
+                    console.log(`[LANCEDB] 🔄 Retry attempt ${attempt + 1}/${retries}...`);
+                    await new Promise(r => setTimeout(r, delayMs * Math.pow(2, attempt - 1)));
+                } else {
+                    console.log(`[LANCEDB] Connecting to: ${DB_PATH}`);
+                }
+
+                this.db = await lancedb.connect(DB_PATH);
+                const tableNames = await this.db.tableNames();
+
+                // 1. Memory Table
+                if (tableNames.includes('memory')) {
+                    this.table = await this.db.openTable('memory');
+                } else {
+                    console.log("[LANCEDB] Table 'memory' not found. It will be created on first insert.");
+                }
+
+                // 2. Universal Knowledge Table
+                if (tableNames.includes('universal_knowledge')) {
+                    this.knowledgeTable = await this.db.openTable('universal_knowledge');
+                } else {
+                    console.log("[LANCEDB] Table 'universal_knowledge' not found. Will be created on ingest.");
+                }
+
+                this.initialized = true;
+                console.log("[LANCEDB] Connected.");
+                return;
+
+            } catch (e: any) {
+                console.error(`[LANCEDB] Initialization Failed (Attempt ${attempt + 1}/${retries}):`, e.message);
+                attempt++;
+            }
+        }
+
+        // Exhausted retries
+        console.error("[LANCEDB] 🚨 FATAL: LanceDB connection completely failed after retries.");
         try {
-            console.log(`[LANCEDB] Connecting to: ${DB_PATH}`);
-            this.db = await lancedb.connect(DB_PATH);
-            const tableNames = await this.db.tableNames();
-
-            // 1. Memory Table
-            if (tableNames.includes('memory')) {
-                this.table = await this.db.openTable('memory');
-            } else {
-                console.log("[LANCEDB] Table 'memory' not found. It will be created on first insert.");
-            }
-
-            // 2. Universal Knowledge Table
-            if (tableNames.includes('universal_knowledge')) {
-                this.knowledgeTable = await this.db.openTable('universal_knowledge');
-            } else {
-                console.log("[LANCEDB] Table 'universal_knowledge' not found. Will be created on ingest.");
-            }
-
-            this.initialized = true;
-            console.log("[LANCEDB] Connected.");
+            const { systemBus } = await import('./systemBus');
+            systemBus.emit('PROTOCOL_SYSTEM_ALERT' as any, {
+                component: 'LanceDB',
+                error: 'Connection Exhaustion',
+                severity: 'CRITICAL',
+                message: 'LanceDB vector database failed to initialize. Storage may be locked or corrupted.',
+                timestamp: Date.now()
+            }, 'system-kernel');
         } catch (e) {
-            console.error("[LANCEDB] Initialization Failed", e);
+            console.error("[LANCEDB] Could not emit SYSTEM_ALERT:", e);
         }
     }
 

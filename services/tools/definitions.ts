@@ -747,6 +747,39 @@ export const SYSTEM_GET_INFO_TOOL: FunctionDeclaration = {
     }
 };
 
+// ==================== CODE EXECUTION TOOL ====================
+
+export interface ExecuteCodeArgs {
+    language: 'python' | 'javascript' | 'typescript' | 'bash';
+    code: string;
+    timeout?: number;
+    purpose?: string;  // Optional: Describe what the code should do (for security review)
+}
+
+export const EXECUTE_CODE_TOOL: FunctionDeclaration = {
+    name: "execute_code",
+    description: "Execute code in a sandboxed environment. Use for testing, data processing, or automation. Safety limits apply.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            language: {
+                type: Type.STRING,
+                description: "Programming language.",
+                enum: ["python", "javascript", "typescript", "bash"]
+            },
+            code: {
+                type: Type.STRING,
+                description: "The code to execute."
+            },
+            timeout: {
+                type: Type.NUMBER,
+                description: "Maximum execution time in seconds. Default: 30."
+            }
+        },
+        required: ["language", "code"]
+    }
+};
+
 export const ARCHITECT_AUDIT_TOOL: FunctionDeclaration = {
     name: "architect_audit",
     description: "Perform a self-audit of the system architecture, documentation sync, and structural alignment. Use this to verify the health of the Agency OS code and documentation.",
@@ -788,6 +821,8 @@ export const AGENT_TOOLS = [
     SYSTEM_OPEN_APP_TOOL,
     SYSTEM_GET_SCREENSHOT_TOOL,
     SYSTEM_GET_INFO_TOOL,
+    // Code Execution
+    EXECUTE_CODE_TOOL,
     // Architectural Self-Awareness
     ARCHITECT_AUDIT_TOOL
 ];
@@ -1070,38 +1105,7 @@ export const WORKSPACE_SEARCH_TOOL: FunctionDeclaration = {
     }
 };
 
-// ==================== CODE EXECUTION TOOL ====================
 
-export interface ExecuteCodeArgs {
-    language: 'python' | 'javascript' | 'typescript' | 'bash';
-    code: string;
-    timeout?: number;
-    purpose?: string;  // Optional: Describe what the code should do (for security review)
-}
-
-export const EXECUTE_CODE_TOOL: FunctionDeclaration = {
-    name: "execute_code",
-    description: "Execute code in a sandboxed environment. Use for testing, data processing, or automation. Safety limits apply.",
-    parameters: {
-        type: Type.OBJECT,
-        properties: {
-            language: {
-                type: Type.STRING,
-                description: "Programming language.",
-                enum: ["python", "javascript", "typescript", "bash"]
-            },
-            code: {
-                type: Type.STRING,
-                description: "The code to execute."
-            },
-            timeout: {
-                type: Type.NUMBER,
-                description: "Maximum execution time in seconds. Default: 30."
-            }
-        },
-        required: ["language", "code"]
-    }
-};
 
 // ==================== COMPLETE TOOLS EXPORT ====================
 

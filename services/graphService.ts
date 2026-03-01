@@ -34,10 +34,10 @@ class GraphService {
     }
 
     /**
-     * Simple connection - no retry logic here.
-     * All resilience is handled by ConnectionNervousSystem.
+     * Connects to Neo4j with Exponential Backoff Retry.
+     * Fires a SYSTEM_ALERT if all retries fail so the Swarm can self-heal.
      */
-    public async connect(): Promise<boolean> {
+    public async connect(retries = 3, delayMs = 2000): Promise<boolean> {
         if (this._isConnected && this.driver) {
             this.resetConnectionTimeout(); // Keep alive on manual connect
             return true;
@@ -49,41 +49,65 @@ class GraphService {
             return false;
         }
 
-        try {
-            console.log("[GRAPH] 🔗 Connecting to Neo4j...");
-            this.driver = neo4j.driver(
-                process.env.NEO4J_URI || 'bolt://127.0.0.1:7787',
-                neo4j.auth.basic(
-                    process.env.NEO4J_USER || 'neo4j',
-                    process.env.NEO4J_PASSWORD || 'changeme_on_first_run'
-                ),
-                {
-                    maxConnectionLifetime: 30 * 60 * 1000,
-                    maxConnectionPoolSize: 50,
-                    connectionAcquisitionTimeout: 5000
+        let attempt = 0;
+        while (attempt < retries) {
+            try {
+                if (attempt > 0) {
+                    console.log(`[GRAPH] 🔄 Reconnection attempt ${attempt + 1}/${retries}...`);
+                    await new Promise(r => setTimeout(r, delayMs * Math.pow(2, attempt - 1)));
+                } else {
+                    console.log("[GRAPH] 🔗 Connecting to Neo4j...");
                 }
-            );
 
-            // The try block for verifyConnectivity was moved to encompass it and subsequent setup.
-            // The driver creation itself can also throw, so the outer try/catch is still needed.
-            await this.driver.verifyConnectivity();
-            this._isConnected = true;
-            console.log("[GRAPH] ✅ Connected to Neo4j.");
+                this.driver = neo4j.driver(
+                    process.env.NEO4J_URI || 'bolt://127.0.0.1:7787',
+                    neo4j.auth.basic(
+                        process.env.NEO4J_USER || 'neo4j',
+                        process.env.NEO4J_PASSWORD || 'changeme_on_first_run'
+                    ),
+                    {
+                        maxConnectionLifetime: 30 * 60 * 1000,
+                        maxConnectionPoolSize: 50,
+                        connectionAcquisitionTimeout: 5000
+                    }
+                );
 
-            this.resetConnectionTimeout();
-            this.registerWithNervousSystem();
+                await this.driver.verifyConnectivity();
+                this._isConnected = true;
+                console.log("[GRAPH] ✅ Connected to Neo4j.");
 
-            // Initialize schema in background
-            setImmediate(() => this.initializeSchema().catch(() => { }));
+                this.resetConnectionTimeout();
+                this.registerWithNervousSystem();
 
-            return true;
+                // Initialize schema in background
+                setImmediate(() => this.initializeSchema().catch(() => { }));
 
-        } catch (error: any) {
-            console.error("[GRAPH] ❌ Connection failed:", error.message);
-            this._isConnected = false;
-            this.driver = null;
-            return false;
+                return true;
+
+            } catch (error: any) {
+                console.error(`[GRAPH] ❌ Connection failed (Attempt ${attempt + 1}/${retries}):`, error.message);
+                this._isConnected = false;
+                this.driver = null;
+                attempt++;
+            }
         }
+
+        // Exhausted retries
+        console.error("[GRAPH] 🚨 FATAL: Neo4j connection completely failed after retries.");
+        try {
+            const { systemBus } = await import('./systemBus');
+            systemBus.emit('PROTOCOL_SYSTEM_ALERT' as any, {
+                component: 'Neo4j',
+                error: 'Connection Exhaustion',
+                severity: 'CRITICAL',
+                message: 'Neo4j database failed to connect after multiple exponential backoff retries. Recommend deploying Remediation Agent.',
+                timestamp: Date.now()
+            }, 'system-kernel');
+        } catch (e) {
+            console.error("[GRAPH] Could not emit SYSTEM_ALERT:", e);
+        }
+
+        return false;
     }
 
     private resetConnectionTimeout() {

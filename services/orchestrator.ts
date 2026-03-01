@@ -830,9 +830,33 @@ Format each gap as:
                     ? `\n--- YOUR CURRENT IDENTITY ---\nYou are: ${agent.name}\nRole: ${agent.role}\nDirectives: ${agent.directives?.join(', ') || 'Execute the task efficiently.'}\nOpinion: ${agent.opinion}\n`
                     : '');
 
+            // Get Cognitive Context (Deep Memory Integration)
+            let cognitiveContext = '';
+            try {
+                // Fetch relevant memories across short-term, episodic, and semantic layers
+                const { continuum } = await import('./continuumMemory');
+                const memoryResult = await continuum.getCombinedContext(payload.message);
+
+                let formattedMemory = '';
+                if (memoryResult.recent && memoryResult.recent.length > 0) {
+                    formattedMemory += '\n--- RECENT MEMORY ---\n' + memoryResult.recent.map((m: any) => `- [${new Date(m.timestamp).toLocaleTimeString()}] ${m.content}`).join('\n');
+                }
+                if (memoryResult.semantic && memoryResult.semantic.length > 0) {
+                    formattedMemory += '\n--- DEEP KNOWLEDGE ---\n' + memoryResult.semantic.map((m: any) => `- ${m.content}`).join('\n');
+                }
+
+                if (formattedMemory) {
+                    cognitiveContext = `\n[SYSTEM: Retrieved Cognitive Context]${formattedMemory}\n`;
+                }
+            } catch (err) {
+                console.warn('[ORCHESTRATOR] ⚠️ Failed to retrieve cognitive context:', err);
+            }
+
             const fullPrompt = `
 ${docContext}
 ${identityContext}
+
+${cognitiveContext}
 
 --- CONVERSATION HISTORY ---
 ${historyText}
