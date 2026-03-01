@@ -258,13 +258,54 @@ class GraphService {
 
 
     public async createRelationship(fromId: string, toId: string, type: string, properties: any = {}) {
+        if (!this.isConnectedStatus()) return;
         const query = `
             MATCH (a {id: $fromId}), (b {id: $toId})
             MERGE (a)-[r:${type}]->(b)
-            SET r += $props, r.lastUpdated = timestamp()
-            RETURN r
+            SET r += $properties
         `;
-        return this.runQuery(query, { fromId, toId, props: properties });
+        await this.runQuery(query, { fromId, toId, properties });
+    }
+
+    /**
+     * [HEBBIAN LEARNING] Strengthen association between two nodes when accessed together.
+     * "Neurons that fire together, wire together."
+     */
+    public async strengthenAssociation(nodeAId: string, nodeBId: string, delta: number = 0.1): Promise<void> {
+        if (!this.isConnectedStatus()) return;
+        const query = `
+            MATCH (a {id: $nodeAId}), (b {id: $nodeBId})
+            MERGE (a)-[r:ASSOCIATES_WITH]->(b)
+            ON CREATE SET r.weight = $delta, r.createdAt = timestamp()
+            ON MATCH SET r.weight = r.weight + $delta, r.lastAccessedAt = timestamp()
+        `;
+        try {
+            await this.runQuery(query, { nodeAId, nodeBId, delta });
+        } catch (e) {
+            console.warn('[GRAPH] Failed to strengthen association:', e);
+        }
+    }
+
+    /**
+     * [HEBBIAN LEARNING] Synaptic pruning. Decay all associations slightly over time.
+     * Weak connections (weight <= 0) are deleted.
+     */
+    public async decayAssociations(decayAmount: number = 0.05): Promise<number> {
+        if (!this.isConnectedStatus()) return 0;
+        const query = `
+            MATCH ()-[r:ASSOCIATES_WITH]->()
+            SET r.weight = coalesce(r.weight, 1.0) - $decayAmount
+            WITH r WHERE r.weight <= 0
+            DELETE r
+            RETURN count(r) as prunedCount
+        `;
+        try {
+            const results = await this.runQuery(query, { decayAmount });
+            return results[0]?.prunedCount || 0;
+        } catch (e) {
+            console.warn('[GRAPH] Failed to decay associations:', e);
+            return 0;
+        }
     }
 
     public async createDiscoveryRelationship(fromId: string, toId: string, type: 'CAUSES' | 'INHIBITS' | 'IMPLIES', confidence: number, source: string) {

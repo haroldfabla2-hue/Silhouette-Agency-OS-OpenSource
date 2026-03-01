@@ -330,9 +330,9 @@ Silhouette: [Analyzes codebase, proposes PR with enhancements]
 - [x] LLM fallback gateway
 - [x] Autonomous curiosity system
 - [x] **Academic Paper Generation**: Automated pipeline for research, writing, LaTeX formatting, and peer review simulation (`services/paperPipeline.ts`).
-- [ ] **Reasoning Verification v2**: Integration with symbolic logic provers (Current: Introspection Engine).
-- [ ] **Extended Modality**: Haptics & Olfactory (Current: Vision, Audio, 3D Canvas).
-- [ ] **Federated Memory**: P2P knowledge sharing between distinct Silhouette instances.
+- [x] **Reasoning Verification v2**: Integration with symbolic logic provers (Z3 Solver & Introspection Engine).
+- [x] **Extended Modality**: Haptics & Olfactory (Software drivers implemented via `hapticsDriver.ts` and `olfactoryDriver.ts`).
+- [x] **Federated Memory**: P2P knowledge sharing between distinct Silhouette instances (`federatedMemory.ts`).
 
 ---
 

@@ -557,6 +557,24 @@ class ContinuumMemorySystem {
             .sort((a, b) => b.timestamp - a.timestamp) // Descending
             .slice(0, recentLimit);
 
+        // 3. [HEBBIAN LEARNING] Strengthen synapses between retrieved semantic nodes
+        if (semantic.length > 1) {
+            import('./graphService').then(({ graph }) => {
+                if (graph.isConnectedStatus()) {
+                    // Strengthen association between the top semantic node and the next few
+                    const topNodeId = semantic[0].id;
+                    const maxSynapses = Math.min(semantic.length, 3);
+                    for (let i = 1; i < maxSynapses; i++) {
+                        if (topNodeId && semantic[i].id) {
+                            // Weight delta decreases for lower ranked results
+                            const delta = 0.1 / i;
+                            graph.strengthenAssociation(topNodeId, semantic[i].id, delta).catch(() => { });
+                        }
+                    }
+                }
+            });
+        }
+
         return { semantic, recent: allRecent };
     }
 
@@ -601,7 +619,13 @@ class ContinuumMemorySystem {
             }
             if (now % 60000 < 1000) await this.tickMedium(now);
             if (now % 300000 < 1000) await this.tickLong(now); // Check every 5 mins for archival
-            if (now % 600000 < 1000) await this.tickDeep(now); // Check every 10 mins for Deep Sleep
+            if (now % 600000 < 1000) {
+                await this.tickDeep(now); // Check every 10 mins for Deep Sleep
+                // [HEBBIAN LEARNING] Prune weak synapses
+                import('./graphService').then(({ graph }) => {
+                    if (graph.isConnectedStatus()) graph.decayAssociations(0.05).catch(() => { });
+                });
+            }
         } catch (e) {
             console.error("[CONTINUUM] Maintenance Error", e);
         } finally {

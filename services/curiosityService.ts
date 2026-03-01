@@ -111,9 +111,11 @@ class CuriosityService {
         this.isExploring = true;
 
         try {
-            // 1. Detect new knowledge gaps
-            const newGaps = await this.detectKnowledgeGaps();
-            logger.info(`Detected ${newGaps.length} new knowledge gaps`);
+            // 1. Detect new knowledge gaps (Frequency & Structural)
+            const freqGaps = await this.detectKnowledgeGaps();
+            const graphGaps = await this.findAdvancedKnowledgeGaps();
+            const totalNew = freqGaps.length + graphGaps.length;
+            if (totalNew > 0) logger.info(`Detected ${totalNew} new knowledge gaps`);
 
             // 2. Process pending gaps (research during idle)
             const pendingGaps = this.knowledgeGaps.filter(g => g.status === 'PENDING');
@@ -216,6 +218,61 @@ class CuriosityService {
             }
         }
 
+        return newGaps;
+    }
+
+    /**
+     * Identify structural knowledge gaps using Watts-Strogatz theory (Small-World networks).
+     * Finds nodes that act as "bridges" between clusters but lack deep local connections (high entropy).
+     */
+    private async findAdvancedKnowledgeGaps(): Promise<KnowledgeGap[]> {
+        const newGaps: KnowledgeGap[] = [];
+        try {
+            const { graph } = await import('./graphService');
+            if (!graph.isConnectedStatus()) return [];
+
+            // Cypher query to calculate Local Clustering Coefficient (Watts-Strogatz)
+            // Finds nodes with high degree but low clustering (potential structural gaps)
+            const query = `
+                MATCH (n)
+                WHERE size((n)--()) > 2 AND n.label IS NOT NULL
+                MATCH (n)--(m)
+                WITH n, collect(id(m)) as neighbors, size((n)--()) as degree
+                MATCH (m1)--(m2)
+                WHERE id(m1) IN neighbors AND id(m2) IN neighbors AND id(m1) < id(m2)
+                WITH n, degree, toFloat(degree * (degree - 1)) / 2.0 as max_possible, count(*) as actual_triangles
+                WITH n, degree, toFloat(actual_triangles) / CASE WHEN max_possible = 0 THEN 1.0 ELSE max_possible END as clustering_coeff
+                WHERE clustering_coeff < 0.3
+                RETURN n.label as topic, clustering_coeff, degree
+                ORDER BY degree DESC, clustering_coeff ASC
+                LIMIT 5
+            `;
+
+            const results = await graph.runQuery(query);
+
+            for (const row of results) {
+                const topic = row.topic || 'Unknown Entity';
+
+                // Avoid duplicating existing gaps
+                if (this.knowledgeGaps.find(g => g.topic === topic && g.status !== 'RESOLVED')) continue;
+
+                if (this.knowledgeGaps.length < this.CONFIG.MAX_PENDING_GAPS) {
+                    const gap: KnowledgeGap = {
+                        topic,
+                        question: await this.generateResearchQuestion(topic),
+                        priority: 0.8, // Structural gaps are high priority
+                        detectedAt: Date.now(),
+                        status: 'PENDING',
+                        attempts: 0
+                    };
+                    this.knowledgeGaps.push(gap);
+                    newGaps.push(gap);
+                    logger.info(`New Structural Gap (Watts-Strogatz): "${topic}" (Clustering: ${row.clustering_coeff.toFixed(2)})`);
+                }
+            }
+        } catch (e) {
+            logger.warn('Failed to find advanced gaps:', e);
+        }
         return newGaps;
     }
 

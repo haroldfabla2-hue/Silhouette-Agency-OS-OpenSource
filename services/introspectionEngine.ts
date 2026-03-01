@@ -601,6 +601,20 @@ export class IntrospectionEngine {
             });
         });
 
+        // [V2 REASONING] Mathematical Verification (Z3 Prover)
+        if (thoughts.length > 0) {
+            import('./symbolicProver').then(({ symbolicProver }) => {
+                symbolicProver.checkConsistency(thoughts).then(result => {
+                    if (!result.isConsistent) {
+                        const correction = `[Z3 PROVER WARNING] Fundamental logical contradiction detected in previous reasoning. ${result.contradiction}`;
+                        this.processThought(correction);
+                        console.warn(correction);
+                        // The warning is now in the thought stream, agent will auto-correct next cycle.
+                    }
+                }).catch(() => { });
+            });
+        }
+
         // Heuristic fallback for immediate display
         const usesMemory = thoughts.some(t => t.toLowerCase().includes('memory') || t.toLowerCase().includes('context'));
         const coherence = usesMemory ? 0.95 : 0.7;
