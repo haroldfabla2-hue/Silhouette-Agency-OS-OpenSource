@@ -116,7 +116,10 @@ enum CognitivePhase {
 }
 ```
 
-### 3.2 Continuum Memory
+### 3.2 Truth Evaluation (Janitor Engine)
+A critical part of cognition is resolving conflicting information. The **Janitor Engine** continuously scans working and episodic memory (last 24h) in the background. If it detects logical or narrative contradictions (e.g., "User prefers X" vs "User prefers Y"), it uses an LLM synthesis pass to resolve the conflict, generating a singular **Meta-Truth** and pruning the obsolete fragmented memories.
+
+### 3.3 Continuum Memory
 
 A multi-tier memory system inspired by human cognition:
 
@@ -127,9 +130,10 @@ A multi-tier memory system inspired by human cognition:
 | **Episodic** | Days | Recent experiences and outcomes |
 | **Semantic** | Permanent | Facts, skills, learned patterns |
 
-Memory is indexed using vector embeddings (LanceDB) with graph-based relationship tracking.
+Memory is indexed using vector embeddings (LanceDB) with graph-based relationship tracking. 
+**Recent Enhancement (Brain Integration):** Silhouette features a unified `getCombinedContext` retrieval pipeline that fuses Semantic (Deep) and Episodic (Medium) memories in a single, token-optimized call, significantly improving the agent's contextual awareness without overwhelming the LLM context window.
 
-### 3.3 Self-Evolution System
+### 3.4 Self-Evolution System
 
 Silhouette can propose modifications to its own codebase through:
 

@@ -108,11 +108,15 @@ Frontend: `http://localhost:5173`
 
 ## Interactive Setup Wizard (Alternative to manual setup)
 
-The wizard handles provider selection, port detection, and Docker startup automatically:
+The multi-step CLI and web wizard automatically handles backend API provider selection, `.env` file generation, and Docker startup:
 
 ```bash
 npm run setup:intelligent
 ```
+
+**Hardware Profiling:** The setup now includes an intelligent hardware check (`/v1/system/diagnostics`).
+- **Heavy Local (>= 16GB RAM):** Recommends spinning up Neo4j via Docker locally for maximum data privacy.
+- **Cloud Lightweight (< 16GB RAM):** Recommends using the free **Neo4j Aura Cloud** tier to save local resources, guiding you through the correct `.env` configuration.
 
 ---
 
