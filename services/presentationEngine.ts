@@ -340,7 +340,7 @@ RULES:
             );
 
             // Generate image if needed
-            let slideAssets: SlideAsset[] = [];
+            const slideAssets: SlideAsset[] = [];
             if (request.generateImages && slideOutline.needsImage) {
                 try {
                     const { imageFactory } = await import('./media/imageFactory');

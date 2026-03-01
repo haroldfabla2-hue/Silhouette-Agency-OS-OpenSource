@@ -107,7 +107,7 @@ const RuntimeApp: React.FC<{ code: string }> = ({ code }) => {
         try {
             // 1. TRANSFORM IMPORTS TO DESTRUCTURING
             // This allows 'import { LineChart } from "recharts"' to work with our injected object
-            let cleanCode = code
+            const cleanCode = code
                 // Handle React imports
                 .replace(/import\s+React,?\s*{([^}]*)}\s+from\s+['"]react['"];?/g, 'const {$1} = React;')
                 .replace(/import\s+React\s+from\s+['"]react['"];?/g, '') // Remove plain import if handled
@@ -449,7 +449,7 @@ const DynamicWorkspace: React.FC<DynamicWorkspaceProps> = ({ initialProjectId })
     // --- TERMINAL LOGIC ---
     const getPathString = (nodeId: string): string => {
         if (!activeProject || nodeId === activeProject.rootFolderId) return '~';
-        let parts = [];
+        const parts = [];
         let curr = vfs.getNode(nodeId);
         while (curr && curr.id !== activeProject.rootFolderId) {
             parts.unshift(curr.name);

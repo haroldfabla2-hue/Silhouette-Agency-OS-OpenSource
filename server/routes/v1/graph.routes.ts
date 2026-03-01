@@ -27,7 +27,7 @@ router.get('/nodes', async (req, res) => {
         const label = req.query.label as string;
 
         let query: string;
-        let params: Record<string, any> = { skip: offset, limit };
+        const params: Record<string, any> = { skip: offset, limit };
 
         if (label) {
             // Sanitize label: only allow alphanumeric + underscore (valid Neo4j label chars)

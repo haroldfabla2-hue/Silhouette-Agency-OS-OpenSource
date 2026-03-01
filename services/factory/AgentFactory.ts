@@ -109,7 +109,7 @@ BEST PRACTICES FOR NEW AGENTS:
         const embedding = await geminiService.generateEmbedding(query);
 
         let expertContext = "";
-        let sources: string[] = [];
+        const sources: string[] = [];
 
         if (embedding) {
             const results = await lancedbService.searchKnowledge(embedding, 5);

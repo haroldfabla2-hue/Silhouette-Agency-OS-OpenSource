@@ -81,7 +81,7 @@ router.delete('/project/:id', async (req: Request, res: Response) => {
         const { id } = req.params;
         const { sqliteService } = await import('../../../services/sqliteService');
 
-        let projects = sqliteService.getConfig('genesisProjects') || [];
+        const projects = sqliteService.getConfig('genesisProjects') || [];
         const projectIndex = projects.findIndex((p: any) => p.id === id);
 
         if (projectIndex === -1) {
