@@ -61,6 +61,9 @@ router.get('/full-state', (req, res) => systemController.getFullState(req, res))
 // Route: /v1/system/resources - Resource metrics for Canvas VRAM optimization
 router.get('/resources', (req, res) => systemController.getResources(req, res));
 
+// Route: /v1/system/diagnostics - Hardware evaluation for setup wizard
+router.get('/diagnostics', (req, res) => systemController.getDiagnostics(req, res));
+
 // Route: /v1/system/llm-health - LLM Gateway provider health
 router.get('/llm-health', async (req, res) => {
     try {
