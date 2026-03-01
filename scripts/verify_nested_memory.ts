@@ -39,7 +39,7 @@ async function verifyNestedMemory() {
 
     // 2. Verify L1 Presence
     let state = await callApi('/memory/state');
-    let l1Count = state.nodes[MemoryTier.ULTRA_SHORT].length;
+    const l1Count = state.nodes[MemoryTier.ULTRA_SHORT].length;
     console.log(`📊 Current L1 Count: ${l1Count}`);
 
     if (l1Count === 0) console.warn("⚠️ L1 Node not found immediately (might have been promoted or failed).");

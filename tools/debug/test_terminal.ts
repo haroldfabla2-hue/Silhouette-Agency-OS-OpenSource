@@ -1,4 +1,4 @@
-import { TerminalService } from './services/system/terminalService';
+import { TerminalService } from '../../services/system/terminalService';
 
 const service = TerminalService.getInstance();
 const sessionId = 'test-session-1';

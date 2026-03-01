@@ -8,6 +8,11 @@ const router = Router();
 router.get('/config', (req, res) => systemController.getConfig(req, res));
 router.post('/config', (req, res) => systemController.updateConfig(req, res));
 
+// Route: /v1/system/secrets — Server-side credential vault
+router.get('/secrets', (req, res) => systemController.listSecrets(req, res));
+router.get('/secrets/:serviceId', (req, res) => systemController.getSecret(req, res));
+router.post('/secrets/:serviceId', (req, res) => systemController.saveSecret(req, res));
+
 // Route: /v1/system/scan
 router.post('/scan', (req, res) => systemController.scanSystem(req, res));
 
@@ -23,6 +28,28 @@ router.get('/costs', (req, res) => systemController.getCosts(req, res));
 // Route: /v1/system/telemetry
 router.get('/telemetry', (req, res) => systemController.getTelemetry(req, res));
 
+// Route: /v1/system/skills - List dynamic markdown agent skills
+router.get('/skills', async (req, res) => {
+    try {
+        const { skillRegistry } = await import('../../../services/skills/skillRegistry');
+
+        // On demand load incase skills changed on disk during runtime
+        skillRegistry.loadAll();
+
+        res.json({
+            status: 'ok',
+            skills: skillRegistry.list(),
+            stats: skillRegistry.getStats(),
+            timestamp: new Date().toISOString()
+        });
+    } catch (error: any) {
+        res.status(500).json({
+            status: 'error',
+            error: error.message
+        });
+    }
+});
+
 // Route: /v1/system/full-state (UNIFIED - combines telemetry, agents, introspection)
 router.get('/full-state', (req, res) => systemController.getFullState(req, res));
 
@@ -33,6 +60,9 @@ router.get('/full-state', (req, res) => systemController.getFullState(req, res))
 
 // Route: /v1/system/resources - Resource metrics for Canvas VRAM optimization
 router.get('/resources', (req, res) => systemController.getResources(req, res));
+
+// Route: /v1/system/diagnostics - Hardware evaluation for setup wizard
+router.get('/diagnostics', (req, res) => systemController.getDiagnostics(req, res));
 
 // Route: /v1/system/llm-health - LLM Gateway provider health
 router.get('/llm-health', async (req, res) => {
@@ -119,7 +149,7 @@ router.get('/health', async (req, res) => {
     // Neo4j
     try {
         const { graph } = await import('../../../services/graphService');
-        const connected = await graph.isConnected();
+        const connected = (typeof graph.isConnected === 'function') ? await graph.isConnected() : false;
         health.neo4j = { status: connected ? 'ok' : 'disconnected' };
     } catch (e: any) {
         health.neo4j = { status: 'error', details: e.message };
@@ -148,6 +178,28 @@ router.get('/health', async (req, res) => {
         subsystems: health,
         timestamp: new Date().toISOString()
     });
+});
+
+// Route: /v1/system/webhooks/:source - External Event Injection
+router.post('/webhooks/:source', async (req, res) => {
+    try {
+        const { source } = req.params;
+        const payload = req.body;
+
+        // 1. Emit to SystemBus
+        const { systemBus } = await import('../../../services/systemBus');
+        const { SystemProtocol } = await import('../../../types');
+
+        systemBus.emit(SystemProtocol.WEBHOOK_RECEIVED, { source, data: payload }, 'WEBHOOK_GATEWAY');
+
+        res.json({
+            status: 'received',
+            source,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
 });
 
 export default router;

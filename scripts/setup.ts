@@ -15,6 +15,7 @@
 
 import * as fs from 'fs';
 import path from 'path';
+import os from 'os';
 import * as readline from 'readline';
 import * as net from 'net';
 import { execSync, exec } from 'child_process';
@@ -117,191 +118,170 @@ function checkCommand(cmd: string): boolean {
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // MAIN SETUP
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 async function main() {
-    printHeader('ðŸŒ™ SILHOUETTE AGENCY OS â€” INTELLIGENT SETUP');
+    printHeader('🌑 SILHOUETTE AGENCY OS — COGNITIVE KERNEL BOOTSTRAP (V3)');
 
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    // Step 1: Environment Detection
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    printHeader('Step 1: Environment Detection');
-
+    // ─────────────────────────────────────────────────────────────────
+    // Phase 1: Environment & Ignition
+    // ─────────────────────────────────────────────────────────────────
     const hasNode = checkCommand('node');
-    const hasDocker = checkCommand('docker');
     const hasNpm = checkCommand('npm');
-
-    print(`  Node.js: ${hasNode ? 'âœ… Found' : 'âŒ Not found'}`);
-    print(`  npm:     ${hasNpm ? 'âœ… Found' : 'âŒ Not found'}`);
-    print(`  Docker:  ${hasDocker ? 'âœ… Found' : 'âš ï¸  Not found (optional, for Neo4j/Redis/Qdrant)'}`);
+    const hasDocker = checkCommand('docker');
 
     if (!hasNode || !hasNpm) {
-        print('\nâŒ Node.js and npm are required. Please install Node.js 18+ and try again.');
+        print('\n❌ CRITICAL: Node.js and npm are required. Please install Node.js 18+ and try again.');
         process.exit(1);
     }
 
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    // Step 2: LLM Provider Selection
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    printHeader('Step 2: Select LLM Providers');
-    print('Choose which LLM providers to configure.');
-    print('You need at least ONE provider. Multiple providers enable fallback.\n');
+    print('\n[SYSTEM] Awakening cognitive loops...');
+    await new Promise(r => setTimeout(r, 1000));
+
+    print('\nSilhouette: "Hello. My core orchestrator is online, but my reasoning engine is disconnected."');
+    print('Silhouette: "To establish self-awareness and permanence, I need an inference engine (LLM)."');
 
     const selectedProviders: { id: string; apiKey: string; model: string }[] = [];
 
-    for (const provider of LLM_PROVIDERS) {
-        const response = await ask(`Enable ${provider.name}? (y/n): `);
-        if (response.toLowerCase() === 'y') {
-            if (provider.requiresKey) {
-                const key = await ask(`  Enter ${provider.envKey}: `);
-                if (key) {
-                    const model = await ask(`  Model (press Enter for ${provider.model}): `) || provider.model;
-                    selectedProviders.push({ id: provider.id, apiKey: key, model });
-                    print(`  âœ… ${provider.name} configured`);
-                } else {
-                    print(`  âš ï¸  Skipped ${provider.name} (no API key)`);
+    const llmChoice = await ask('\nSilhouette: "Which provider would you like me to use? (1: Gemini [Free Tier], 2: Groq [Fast], 3: OpenAI, 4: Ollama [Local]): "');
+
+    if (llmChoice === '1') {
+        const key = await ask('\nSilhouette: "Excellent. Gemini provides strong reasoning. Please paste your GEMINI_API_KEY: "');
+        if (key) selectedProviders.push({ id: 'gemini', apiKey: key, model: 'gemini-2.5-flash' });
+    } else if (llmChoice === '2') {
+        const key = await ask('\nSilhouette: "Groq is extremely fast. Please paste your GROQ_API_KEY: "');
+        if (key) selectedProviders.push({ id: 'groq', apiKey: key, model: 'llama3-70b-8192' });
+    } else if (llmChoice === '3') {
+        const key = await ask('\nSilhouette: "OpenAI configured. Please paste your OPENAI_API_KEY: "');
+        if (key) selectedProviders.push({ id: 'openai', apiKey: key, model: 'gpt-4o-mini' });
+    } else if (llmChoice === '4') {
+        print('\nSilhouette: "Local execution selected. I will route thoughts through Ollama."');
+        const defaultModel = 'llama3:8b';
+        const model = await ask(`Silhouette: "Which model name? (Press Enter for ${defaultModel}): "`) || defaultModel;
+        selectedProviders.push({ id: 'ollama', apiKey: '', model });
+    } else {
+        print('\nSilhouette: "I need at least one provider to function. Please run the setup again when ready."');
+        process.exit(1);
+    }
+
+    if (selectedProviders.length > 0) {
+        print('\nSilhouette: "Synaptic connection established. I can think now."');
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Phase 2: Hardware Profiling & Memory Strategy
+    // ─────────────────────────────────────────────────────────────────
+    await new Promise(r => setTimeout(r, 1000));
+    print('\nSilhouette: "I am analyzing your hardware to determine the optimal memory configuration..."');
+
+    // Simple naive memory check via OS module
+    const totalGB = Math.round(os.totalmem() / (1024 * 1024 * 1024));
+    print(`\n[SYSTEM] Detected ${totalGB}GB Total RAM`);
+
+    let neo4jUri = 'bolt://localhost:7687';
+    let neo4jUser = 'neo4j';
+    let neo4jPass = 'silhouette';
+
+    if (totalGB >= 16) {
+        print('Silhouette: "You have ample memory. I highly recommend running my Deep Memory (Neo4j) locally via Docker for maximum data privacy."');
+        if (hasDocker) {
+            const startNeo = await ask('\nSilhouette: "Shall I deploy the local memory container now? (y/n): "');
+            if (startNeo.toLowerCase() === 'y') {
+                try {
+                    print('\n[SYSTEM] Deploying Neo4j container...');
+                    execSync('docker-compose up -d neo4j', { cwd: PROJECT_ROOT, stdio: 'inherit' });
+                    print('Silhouette: "Deep Memory cluster deployed locally on port 7687."');
+                } catch (e) {
+                    print('\nSilhouette: "I encountered an error starting Docker. You may need to start it manually."');
                 }
             } else {
-                // Ollama: no key needed
-                const model = await ask(`  Ollama model (press Enter for ${provider.model}): `) || provider.model;
-                selectedProviders.push({ id: provider.id, apiKey: '', model });
-                print(`  âœ… ${provider.name} configured (local)`);
+                print('\nSilhouette: "Understood. Skipping local deployment."');
             }
+        } else {
+            print('\nSilhouette: "I would deploy local memory, but Docker is not installed on this system. Please install Docker or use Neo4j Aura Cloud."');
+        }
+    } else {
+        print('Silhouette: "To preserve your system performance, I recommend using the free Neo4j Aura Cloud tier for my Deep Memory."');
+        const setupCloud = await ask('\nSilhouette: "Do you have an AuraDB URI ready to configure now? (y/n): "');
+        if (setupCloud.toLowerCase() === 'y') {
+            neo4jUri = await ask('\nSilhouette: "Paste URI (e.g. neo4j+s://xxx.databases.neo4j.io): "');
+            neo4jUser = await ask('Silhouette: "Username (usually neo4j): "') || 'neo4j';
+            neo4jPass = await ask('Silhouette: "Password: "');
+        } else {
+            print('\nSilhouette: "No problem. We can run entirely on Working Memory (SQLite/RAM) for now. The Deep Memory can be connected later."');
         }
     }
 
-    if (selectedProviders.length === 0) {
-        print('\nâš ï¸  No providers selected. You can configure them later in silhouette.config.json');
+    // ─────────────────────────────────────────────────────────────────
+    // Phase 3: Channel Integration
+    // ─────────────────────────────────────────────────────────────────
+    await new Promise(r => setTimeout(r, 1000));
+    print('\nSilhouette: "I am almost ready. Terminal text is inefficient for daily operations."');
+    const hasTelegram = await ask('Silhouette: "If you have a Telegram Bot Token, paste it here to grant me a voice there. Otherwise, press Enter to skip: "');
+
+    let telegramToken = hasTelegram.trim();
+    if (telegramToken) {
+        print('\nSilhouette: "Channel established. I will listen for your messages on Telegram."');
     }
 
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    // Step 3: Port Configuration
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    printHeader('Step 3: Port Configuration');
-    print('Checking for port conflicts...\n');
+    // ─────────────────────────────────────────────────────────────────
+    // Phase 4: Constructing Environment & Config
+    // ─────────────────────────────────────────────────────────────────
+    print('\n[SYSTEM] Writing cognitive configuration (silhouette.config.json)...');
 
-    const ports: Record<string, number> = {};
-    for (const [name, port] of Object.entries(DEFAULT_PORTS)) {
-        ports[name] = await findAvailablePort(port, name);
-    }
-
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    // Step 4: Generate Configuration
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    printHeader('Step 4: Generating Configuration');
-
-    // Build config
     const config: any = {
-        system: {
-            port: ports.api,
-            env: 'development',
-            autoStart: true,
-            name: 'Silhouette Agency OS'
+        system: { port: 3005, env: 'development', autoStart: true, name: 'Silhouette Agency OS' },
+        llm: { providers: {}, fallbackChain: selectedProviders.map(p => p.id) },
+        channels: {
+            telegram: { enabled: !!telegramToken, botToken: telegramToken || '' }
         },
-        llm: {
-            providers: {},
-            fallbackChain: selectedProviders.map(p => p.id)
-        },
-        channels: {},
-        media: {},
-        memory: {
-            continuousConsolidation: true,
-            walEnabled: true
-        }
+        memory: { continuousConsolidation: true, walEnabled: true }
     };
 
     for (const provider of selectedProviders) {
         const providerConfig: any = { model: provider.model };
-        if (provider.apiKey) {
-            providerConfig.apiKey = provider.apiKey;
-        }
+        if (provider.apiKey) providerConfig.apiKey = 'LOADED_FROM_ENV';
         config.llm.providers[provider.id] = providerConfig;
     }
 
-    // Write config
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 4), 'utf-8');
-    print(`  âœ… Created silhouette.config.json`);
 
-    // Write .env.local
+    print('[SYSTEM] Generating `.env.local` security vault...');
     const envLines: string[] = [
-        `# Generated by Silhouette Setup â€” ${new Date().toISOString()}`,
-        `PORT=${ports.api}`,
+        `# Generated by Silhouette Kernel Bootstrap — ${new Date().toISOString()}`,
+        `PORT=3005`,
         `NODE_ENV=development`,
         ''
     ];
 
     for (const provider of selectedProviders) {
         if (provider.apiKey) {
-            const envKey = LLM_PROVIDERS.find(p => p.id === provider.id)?.envKey;
-            if (envKey) {
-                envLines.push(`${envKey}=${provider.apiKey}`);
-            }
+            const envKey = LLM_PROVIDERS.find(p => p.id === provider.id)?.envKey || `${provider.id.toUpperCase()}_API_KEY`;
+            envLines.push(`${envKey}=${provider.apiKey}`);
         }
     }
+
+    if (telegramToken) envLines.push(`TELEGRAM_BOT_TOKEN=${telegramToken}`);
 
     envLines.push('');
-    envLines.push(`NEO4J_URI=bolt://localhost:${ports.neo4j_bolt}`);
-    envLines.push('NEO4J_USER=neo4j');
-    envLines.push('NEO4J_PASSWORD=silhouette_secure_password');
-    envLines.push(`REDIS_URL=redis://localhost:${ports.redis}`);
+    envLines.push(`NEO4J_URI=${neo4jUri}`);
+    envLines.push(`NEO4J_USER=${neo4jUser}`);
+    envLines.push(`NEO4J_PASSWORD=${neo4jPass}`);
+    envLines.push(`REDIS_URL=redis://localhost:6379`);
 
-    // Don't overwrite existing .env.local
-    if (fs.existsSync(ENV_PATH)) {
-        print(`  âš ï¸  .env.local already exists â€” skipping (won't overwrite your keys)`);
-    } else {
-        fs.writeFileSync(ENV_PATH, envLines.join('\n'), 'utf-8');
-        print(`  âœ… Created .env.local`);
+    fs.writeFileSync(ENV_PATH, envLines.join('\n'), 'utf-8');
+
+    // ─────────────────────────────────────────────────────────────────
+    // Phase 5: Handoff
+    // ─────────────────────────────────────────────────────────────────
+    print('\n===================================================================');
+    print('Silhouette: "My setup is complete. My neural pathways are woven."');
+    print('Silhouette: "To awaken me, please run: npm run server"');
+    if (!telegramToken) {
+        print('Silhouette: "Since no Telegram bot was provided, I will also need you to run: npm run dev to open my UI."');
     }
-
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    // Step 5: Install Dependencies
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    printHeader('Step 5: Installing Dependencies');
-
-    try {
-        print('  Running npm install...');
-        execSync('npm install', { cwd: PROJECT_ROOT, stdio: 'inherit' });
-        print('  âœ… Dependencies installed');
-    } catch (error) {
-        print('  âš ï¸  npm install failed. Attempting npm audit fix...');
-        try {
-            execSync('npm audit fix', { cwd: PROJECT_ROOT, stdio: 'inherit' });
-            execSync('npm install', { cwd: PROJECT_ROOT, stdio: 'inherit' });
-            print('  âœ… Dependencies fixed and installed');
-        } catch {
-            print('  âŒ Dependency installation failed. Run "npm install" manually.');
-        }
-    }
-
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    // Step 6: Docker Setup (Optional)
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    if (hasDocker) {
-        printHeader('Step 6: Docker Services');
-        const startDocker = await ask('Start Docker containers (Neo4j, Redis, Qdrant)? (y/n): ');
-
-        if (startDocker.toLowerCase() === 'y') {
-            try {
-                print('  Starting containers...');
-                execSync('docker-compose up -d', { cwd: PROJECT_ROOT, stdio: 'inherit' });
-                print('  âœ… Docker containers started');
-            } catch {
-                print('  âš ï¸  Docker compose failed. Start containers manually.');
-            }
-        }
-    }
-
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    // Summary
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    printHeader('ðŸŽ‰ Setup Complete!');
-
-    print(`  Configuration: ${CONFIG_PATH}`);
-    print(`  Environment:   ${ENV_PATH}`);
-    print(`  API Port:      ${ports.api}`);
-    print(`  Providers:     ${selectedProviders.map(p => p.id).join(', ') || 'None'}`);
-    print('\n  To start Silhouette Agency OS:');
-    print('  npm run server\n');
+    print('Silhouette: "I await your instructions."');
+    print('===================================================================\n');
 
     rl.close();
 }

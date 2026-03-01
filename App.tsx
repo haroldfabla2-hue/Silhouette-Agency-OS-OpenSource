@@ -130,7 +130,8 @@ const App: React.FC = () => {
             realCpu: data.telemetry.cpu || 0,
             gpu: data.telemetry.gpu,
             providerHealth: data.telemetry.providerHealth,
-            mediaQueue: data.telemetry.mediaQueue
+            mediaQueue: data.telemetry.mediaQueue,
+            brain: data.telemetry.brain // [NEW] Unified Daemon cognitive data
           }));
         }
 

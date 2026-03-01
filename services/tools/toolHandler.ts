@@ -1126,62 +1126,78 @@ export class ToolHandler {
         }
 
         try {
+            const useSandbox = process.env.SANDBOX_MODE === 'true';
+
             // ==================== JAVASCRIPT/TYPESCRIPT ====================
             if (language === 'javascript' || language === 'typescript') {
-                const vm = await import('vm');
-                const outputs: string[] = [];
-                const sandbox = {
-                    console: {
-                        log: (...logArgs: any[]) => outputs.push(logArgs.join(' ')),
-                        error: (...logArgs: any[]) => outputs.push('[ERROR] ' + logArgs.join(' ')),
-                        warn: (...logArgs: any[]) => outputs.push('[WARN] ' + logArgs.join(' ')),
-                        info: (...logArgs: any[]) => outputs.push('[INFO] ' + logArgs.join(' '))
-                    },
-                    Math, Date, JSON, Array, Object, String, Number, Boolean,
-                    setTimeout: undefined, setInterval: undefined, // Block async
-                    fetch: undefined, require: undefined,          // Block network/modules
-                    result: undefined as any
-                };
+                if (useSandbox) {
+                    return await this.executeInDocker('node:18-alpine', ['node', '-e', code], timeout);
+                } else {
+                    const vm = await import('vm');
+                    const outputs: string[] = [];
+                    const sandbox = {
+                        console: {
+                            log: (...logArgs: any[]) => outputs.push(logArgs.join(' ')),
+                            error: (...logArgs: any[]) => outputs.push('[ERROR] ' + logArgs.join(' ')),
+                            warn: (...logArgs: any[]) => outputs.push('[WARN] ' + logArgs.join(' ')),
+                            info: (...logArgs: any[]) => outputs.push('[INFO] ' + logArgs.join(' '))
+                        },
+                        Math, Date, JSON, Array, Object, String, Number, Boolean,
+                        setTimeout: undefined, setInterval: undefined, // Block async
+                        fetch: undefined, require: undefined,          // Block network/modules
+                        result: undefined as any
+                    };
 
-                const context = vm.createContext(sandbox);
-                const script = new vm.Script(code);
-                const startTime = Date.now();
-                const result = script.runInContext(context, {
-                    timeout: timeout * 1000
-                });
+                    const context = vm.createContext(sandbox);
+                    const script = new vm.Script(code);
+                    const startTime = Date.now();
+                    const result = script.runInContext(context, {
+                        timeout: timeout * 1000
+                    });
 
-                return {
-                    status: 'success',
-                    language,
-                    result: result !== undefined ? String(result) : sandbox.result,
-                    output: outputs.join('\n'),
-                    executionTimeMs: Date.now() - startTime
-                };
+                    return {
+                        status: 'success',
+                        language,
+                        result: result !== undefined ? String(result) : sandbox.result,
+                        output: outputs.join('\n'),
+                        executionTimeMs: Date.now() - startTime,
+                        sandbox: false
+                    };
+                }
             }
 
             // ==================== PYTHON ====================
             if (language === 'python') {
-                return await this.executeWithSpawn('python', ['-c', code], timeout);
+                if (useSandbox) {
+                    return await this.executeInDocker('python:3.10-slim', ['python', '-c', code], timeout);
+                } else {
+                    return await this.executeWithSpawn('python', ['-c', code], timeout);
+                }
             }
 
             // ==================== BASH ====================
             if (language === 'bash') {
-                // Additional bash-specific safety
-                const bashDangerous = [
-                    /sudo\s/i,
-                    /su\s+-/i,
-                    />\s*\/etc\//i,
-                    /source\s+~?\//i,
-                    /\.\s+~?\//i
-                ];
-                for (const pattern of bashDangerous) {
-                    if (pattern.test(code)) {
-                        return { error: 'Bash execution blocked: elevated privilege or system file access', blocked: true };
+                if (useSandbox) {
+                    return await this.executeInDocker('ubuntu:latest', ['bash', '-c', code], timeout);
+                } else {
+                    // Additional bash-specific safety
+                    const bashDangerous = [
+                        /sudo\s/i,
+                        /su\s+-/i,
+                        />\s*\/etc\//i,
+                        /source\s+~?\//i,
+                        /\.\s+~?\//i
+                    ];
+                    for (const pattern of bashDangerous) {
+                        if (pattern.test(code)) {
+                            return { error: 'Bash execution blocked: elevated privilege or system file access', blocked: true };
+                        }
                     }
+                    const shell = process.platform === 'win32' ? 'cmd' : 'bash';
+                    const shellArgs = process.platform === 'win32' ? ['/c', code] : ['-c', code];
+                    const result = await this.executeWithSpawn(shell, shellArgs, timeout);
+                    return { ...result, sandbox: false };
                 }
-                const shell = process.platform === 'win32' ? 'cmd' : 'bash';
-                const shellArgs = process.platform === 'win32' ? ['/c', code] : ['-c', code];
-                return await this.executeWithSpawn(shell, shellArgs, timeout);
             }
 
             return {
@@ -1249,6 +1265,80 @@ export class ToolHandler {
                 resolve({
                     status: 'error',
                     error: `Failed to start process: ${err.message}`
+                });
+            });
+        });
+    }
+
+    /**
+     * Execute code within an ephemeral Docker sandbox container
+     */
+    private async executeInDocker(image: string, cmdArgs: string[], timeoutSec: number): Promise<any> {
+        return new Promise(async (resolve) => {
+            const { spawn } = await import('child_process');
+
+            // Run docker via child_process
+            // --rm removes container after exit
+            // -i interactive (needed to pass stdin sometimes, but we are passing via cmd args here)
+            // --network none disables networking for safety
+            const dockerArgs = [
+                'run',
+                '--rm',
+                '-i',
+                '--network', 'none',
+                '--memory', '512m',
+                '--cpus', '1.0',
+                image,
+                ...cmdArgs
+            ];
+
+            const startTime = Date.now();
+            let stdout = '';
+            let stderr = '';
+            let killed = false;
+
+            const proc = spawn('docker', dockerArgs, {
+                timeout: timeoutSec * 1000,
+                windowsHide: true,
+                env: { ...process.env, PATH: process.env.PATH }
+            });
+
+            const timer = setTimeout(() => {
+                killed = true;
+                proc.kill('SIGTERM');
+            }, timeoutSec * 1000);
+
+            proc.stdout?.on('data', (data) => {
+                stdout += data.toString();
+                if (stdout.length > 500000) { // 500KB limit
+                    killed = true;
+                    proc.kill('SIGTERM');
+                }
+            });
+
+            proc.stderr?.on('data', (data) => {
+                stderr += data.toString();
+            });
+
+            proc.on('close', (exitCode) => {
+                clearTimeout(timer);
+                resolve({
+                    status: killed ? 'timeout' : (exitCode === 0 ? 'success' : 'error'),
+                    exitCode,
+                    output: stdout.trim(),
+                    error: stderr.trim() || undefined,
+                    sandbox: true,
+                    executionTimeMs: Date.now() - startTime,
+                    killed
+                });
+            });
+
+            proc.on('error', (err) => {
+                clearTimeout(timer);
+                resolve({
+                    status: 'error',
+                    error: `Failed to start docker sandbox: ${err.message}. Ensure Docker is installed and running.`,
+                    sandbox: true
                 });
             });
         });

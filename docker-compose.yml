@@ -8,6 +8,11 @@ services:
     volumes:
       - redis_data_llm:/data
     restart: always
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   qdrant:
     image: qdrant/qdrant
@@ -17,6 +22,11 @@ services:
     volumes:
       - qdrant_data_llm:/qdrant/storage
     restart: always
+    healthcheck:
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:6333/healthz" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   reasoning-engine:
     build: ./reasoning_engine
@@ -28,7 +38,8 @@ services:
       - NEO4J_USER=neo4j
       - NEO4J_PASSWORD=${NEO4J_PASSWORD:-changeme_on_first_run}
     depends_on:
-      - neo4j
+      neo4j:
+        condition: service_healthy
     restart: always
 
   neo4j:
@@ -47,6 +58,11 @@ services:
       - neo4j_data_llm:/data
       - neo4j_plugins_llm:/plugins
     restart: always
+    healthcheck:
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:7474/db/neo4j/tx" ]
+      interval: 10s
+      timeout: 10s
+      retries: 10
 
   bot:
     build: .
@@ -61,9 +77,27 @@ services:
       - silhouette_data:/app/data
       - silhouette_db:/app/db
     depends_on:
-      - redis
-      - qdrant
-      - neo4j
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    restart: always
+
+  caddy:
+    image: caddy:admin
+    container_name: silhouette-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./dist:/usr/share/caddy
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - bot
     restart: always
 
 volumes:
@@ -73,3 +107,5 @@ volumes:
   neo4j_plugins_llm:
   silhouette_data:
   silhouette_db:
+  caddy_data:
+  caddy_config:

@@ -264,13 +264,13 @@ export const AssetManagerTab: React.FC<AssetManagerTabProps> = ({
                                 <div className="aspect-square bg-slate-700 flex items-center justify-center">
                                     {asset.type === 'image' && asset.filePath ? (
                                         <img
-                                            src={`/uploads/${asset.filePath.replace(/^.*uploads[\\\/]/, '').replace(/\\/g, '/')}`}
+                                            src={`/uploads/${asset.filePath.replace(/^.*uploads\//, '').replace(/\\/g, '/')}`}
                                             alt={asset.name}
                                             className="w-full h-full object-cover"
                                         />
                                     ) : asset.type === 'video' && asset.filePath ? (
                                         <video
-                                            src={`/uploads/${asset.filePath.replace(/^.*uploads[\\\/]/, '').replace(/\\/g, '/')}`}
+                                            src={`/uploads/${asset.filePath.replace(/^.*uploads\//, '').replace(/\\/g, '/')}`}
                                             className="w-full h-full object-cover"
                                             muted
                                         />

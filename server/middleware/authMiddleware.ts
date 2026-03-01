@@ -1,7 +1,7 @@
 // =============================================================================
 // AUTHENTICATION MIDDLEWARE
 // Validates Bearer token on all API requests.
-// Token is configured via SILHOUETTE_API_TOKEN env variable.
+// Token is configured via SILHOUETTE_API_KEY env variable.
 // =============================================================================
 
 import { Request, Response, NextFunction } from 'express';
@@ -12,9 +12,12 @@ const PUBLIC_PATHS = new Set([
     '/v1/system/status',
     '/v1/system/doctor',
     '/v1/system/health',
+    // Identity - Setup and Auth
     '/v1/identity/setup-status',
     '/v1/identity/setup',
     '/v1/identity/auto-login',
+    '/v1/identity/is-setup',
+    '/v1/identity/login',
     '/v1/drive/auth',
     '/v1/drive/callback',
 ]);
@@ -42,7 +45,15 @@ let _cachedToken: string | null = null;
  */
 function getToken(): string | null {
     if (_cachedToken !== null) return _cachedToken;
-    _cachedToken = process.env.SILHOUETTE_API_TOKEN || '';
+    _cachedToken = process.env.SILHOUETTE_API_KEY || process.env.SILHOUETTE_API_TOKEN || '';
+
+    // [SECURITY HARDENING] Fail fast in production if token is missing
+    if (!_cachedToken && process.env.NODE_ENV === 'production') {
+        console.error('[FATAL SECURITY EXCEPTION] SILHOUETTE_API_KEY is NOT set in production environment.');
+        console.error('Refusing to start in open mode. Please set an API key.');
+        process.exit(1);
+    }
+
     return _cachedToken;
 }
 
@@ -56,13 +67,14 @@ export function resetTokenCache(): void {
 // ─── Middleware ──────────────────────────────────────────────────────────────
 
 /**
- * Express middleware that enforces Bearer token authentication.
+ * Express middleware that enforces authentication.
  *
- * - If no SILHOUETTE_API_TOKEN is set, auth is DISABLED (dev mode).
- * - Public paths (health checks) are always allowed.
- * - All other requests require: `Authorization: Bearer <token>`
+ * It checks three authentication methods:
+ * 1. Bearer Token (SILHOUETTE_API_TOKEN for system-to-system)
+ * 2. x-session-id Header (Local login session)
+ * 3. Empty database (Allows setup)
  */
-export function authMiddleware(req: Request, res: Response, next: NextFunction): void {
+export async function authMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
     // 1. Skip auth for public endpoints
     if (isPublicPath(req.path)) {
         next();
@@ -78,10 +90,45 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
 
     // 3. Extract Bearer token from Authorization header
     const authHeader = req.headers.authorization;
+
+    // NEW: Check for session ID from local login
+    const sessionId = req.headers['x-session-id'] as string;
+
+    if (sessionId) {
+        // Validate local session
+        try {
+            const { identityService } = await import('../../services/identityService');
+            // Check if session is valid by resolving current active session
+            // For real security this should do a DB check for the session ID. 
+            // For alpha we trust the active singleton if headers match, or implement a real check on identityService.
+            // Let's implement a real check for the session token.
+            const sessionValid = identityService.validateSession(sessionId);
+
+            if (sessionValid) {
+                next();
+                return;
+            }
+        } catch (e) {
+            console.error('[AUTH] Failed to validate session', e);
+        }
+    }
+
     if (!authHeader) {
+        // Check if database is completely empty (first time setup allowed)
+        try {
+            const { identityService } = await import('../../services/identityService');
+            if (!identityService.hasAnyUser()) {
+                console.log('[AUTH] 🚦 Database empty. Permitting access for First-Time Setup.');
+                next();
+                return;
+            }
+        } catch (e) {
+            // ignore
+        }
+
         res.status(401).json({
             error: 'Authentication required',
-            hint: 'Set Authorization: Bearer <SILHOUETTE_API_TOKEN> header',
+            hint: 'Set Authorization: Bearer <token> or login via /v1/identity/login',
         });
         return;
     }
@@ -98,13 +145,13 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
 
     // 5. Compare tokens (constant-time comparison for security)
     const clientToken = parts[1];
-    if (!timingSafeEqual(clientToken, serverToken)) {
-        res.status(403).json({ error: 'Invalid API token' });
+    if (serverToken && timingSafeEqual(clientToken, serverToken)) {
+        // 6. Authenticated via API token — proceed
+        next();
         return;
     }
 
-    // 6. Authenticated — proceed
-    next();
+    res.status(403).json({ error: 'Invalid API token or Session' });
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

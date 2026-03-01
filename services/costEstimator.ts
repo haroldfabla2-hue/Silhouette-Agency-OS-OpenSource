@@ -117,7 +117,7 @@ export class CostEstimator {
         let total = 0;
         let images = 0;
         let seconds = 0;
-        let requests = 0;
+        const requests = 0;
 
         if (pricing.perImage) {
             total = quantity * pricing.perImage;

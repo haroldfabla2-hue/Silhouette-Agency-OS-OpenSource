@@ -27,6 +27,7 @@ export enum UserRole {
 export interface User {
     id: string;
     email: string | null;
+    passwordHash?: string; // [NEW] Added for local auth
     name: string;
     avatarUrl?: string;
     role: UserRole;
@@ -91,6 +92,7 @@ class IdentityService {
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         email TEXT UNIQUE,
+        password_hash TEXT,
         name TEXT NOT NULL,
         avatar_url TEXT,
         role TEXT NOT NULL DEFAULT 'USER',
@@ -393,6 +395,7 @@ class IdentityService {
         return {
             id: row.id,
             email: row.email,
+            passwordHash: row.password_hash,
             name: row.name,
             avatarUrl: row.avatar_url,
             role: row.role as UserRole,
@@ -413,6 +416,73 @@ class IdentityService {
         ).get() as any;
 
         return row?.name || null;
+    }
+
+    // ─── Local Auth (main branch methods) ───────────────────────
+
+    /**
+     * Check if ANY user exists in the database
+     */
+    hasAnyUser(): boolean {
+        if (!this.db) return false;
+        const row = this.db.prepare('SELECT COUNT(*) as count FROM users').get() as any;
+        return row && row.count > 0;
+    }
+
+    /**
+     * Register the initial admin user (Local Auth)
+     */
+    async registerInitialAdmin(email: string, passwordHash: string, name: string): Promise<User> {
+        if (!this.db) throw new Error('IdentityService not initialized');
+
+        if (this.hasAnyUser()) {
+            throw new Error('Initial setup already completed. Cannot register another initial admin.');
+        }
+
+        const now = Date.now();
+        const id = crypto.randomUUID();
+        const role = UserRole.CREATOR; // First ever user is CREATOR
+
+        this.db.prepare(`
+          INSERT INTO users (id, email, password_hash, name, role, created_at, last_login)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(id, email, passwordHash, name, role, now, now);
+
+        const user: User = {
+            id,
+            email,
+            passwordHash,
+            name,
+            role,
+            googleLinked: false,
+            createdAt: now,
+            lastLogin: now
+        };
+
+        this.currentUser = user;
+        console.log(`[IdentityService] 👑 Initial Admin Created: ${email}`);
+        return user;
+    }
+
+    /**
+     * Authenticate local user by password hash
+     */
+    async loginLocal(email: string, passwordHash: string): Promise<User | null> {
+        if (!this.db) return null;
+
+        const user = this.getUserByEmail(email);
+        if (!user || user.passwordHash !== passwordHash) {
+            return null;
+        }
+
+        const now = Date.now();
+        this.db.prepare('UPDATE users SET last_login = ? WHERE id = ?').run(now, user.id);
+
+        user.lastLogin = now;
+        this.currentUser = user;
+
+        console.log(`[IdentityService] 🔓 Local login: ${email}`);
+        return user;
     }
 
     // ─── Devices ────────────────────────────────────────────────
@@ -587,6 +657,18 @@ class IdentityService {
     isAdmin(): boolean {
         return this.currentUser?.role === UserRole.CREATOR ||
             this.currentUser?.role === UserRole.ADMIN;
+    }
+
+    /**
+     * Validate an existing session ID
+     */
+    validateSession(sessionId: string): boolean {
+        if (!this.db) return false;
+
+        const now = Date.now();
+        const row = this.db.prepare('SELECT * FROM sessions WHERE id = ? AND expires_at > ?').get(sessionId, now);
+
+        return !!row;
     }
 
     /**

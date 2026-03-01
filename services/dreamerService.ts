@@ -450,7 +450,7 @@ export class DreamerService {
 
             if (!antiSeed) return this.fallbackMix(all);
 
-            let nodes = [seed, antiSeed];
+            const nodes = [seed, antiSeed];
             // ENRICHMENT: Get Neighbors
             return await this.enrichWithNeighbors(nodes);
 

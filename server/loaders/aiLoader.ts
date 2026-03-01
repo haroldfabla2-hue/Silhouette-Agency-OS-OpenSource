@@ -15,6 +15,34 @@ import { toolRegistry } from '../../services/tools/toolRegistry';
 export const initAIServices = async () => {
     console.log("[LOADER] 🧠 Initializing AI Services...");
 
+    // ─── Minimum Viable Config Check ─────────────────────────────────────────
+    // Verify at least one LLM provider key is configured before proceeding.
+    const knownKeys = [
+        process.env.GEMINI_API_KEY,
+        process.env.GROQ_API_KEY,
+        process.env.DEEPSEEK_API_KEY,
+        process.env.OPENROUTER_API_KEY,
+        process.env.MINIMAX_API_KEY,
+    ];
+    const hasProvider = knownKeys.some(k => k && k.trim().length > 0 && !k.startsWith('YOUR_'));
+    if (!hasProvider) {
+        console.warn(`
+╔══════════════════════════════════════════════════════════╗
+║            ⚠️  NO LLM PROVIDER CONFIGURED               ║
+╠══════════════════════════════════════════════════════════╣
+║  The orchestrator cannot think without an AI provider.   ║
+║                                                          ║
+║  Add at least ONE key to your .env.local:               ║
+║    GEMINI_API_KEY=your_key     (recommended - free tier) ║
+║    GROQ_API_KEY=your_key       (fast, free tier)         ║
+║    OPENROUTER_API_KEY=your_key (multi-model access)      ║
+║    DEEPSEEK_API_KEY=your_key   (coding specialist)       ║
+║                                                          ║
+║  Or run the setup wizard:  npm run setup:intelligent     ║
+╚══════════════════════════════════════════════════════════╝
+        `);
+    }
+
     // 1. Vector Memory
     try {
         await vectorMemory.connect();

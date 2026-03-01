@@ -1,7 +1,7 @@
 
-import { lancedbService } from './services/lancedbService';
-import { vectorMemory } from './services/vectorMemoryService';
-import { MemoryTier } from './types';
+import { lancedbService } from '../../services/lancedbService';
+import { vectorMemory } from '../../services/vectorMemoryService';
+import { MemoryTier } from '../../types';
 
 async function checkMemory() {
     console.log("Checking LanceDB...");

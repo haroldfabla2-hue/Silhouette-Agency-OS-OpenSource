@@ -239,7 +239,7 @@ class ContextAssembler {
 
         // 1. HARDWARE (Real-time) - FAST PATH using 'os'
         // We avoid 'systeminformation' here as it's too slow for chat loop (adds ~500ms+ on Windows)
-        let metrics = {
+        const metrics = {
             realCpu: 0,
             jsHeapSize: 0,
             vramUsage: 0,

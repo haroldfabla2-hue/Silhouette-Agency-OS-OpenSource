@@ -21,10 +21,18 @@ export const API_BASE_URL = getEnvUrl();
 const REQUEST_TIMEOUT_MS = 30000; // 30s default timeout
 
 const getHeaders = () => {
-    return {
+    const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${DEFAULT_API_CONFIG.apiKey}`
     };
+
+    // Attach Local Auth Session ID if present
+    const sessionId = localStorage.getItem('silhouette_session_id');
+    if (sessionId) {
+        headers['x-session-id'] = sessionId;
+    }
+
+    return headers;
 };
 
 /** Parse error response body for detailed error messages */
@@ -100,8 +108,17 @@ export const api = {
     // For FormData uploads, DO NOT set Content-Type - browser will set multipart/form-data with boundary
     fetch: async (endpoint: string, options: RequestInit = {}) => {
         const isFormData = options.body instanceof FormData;
+
+        const baseHeaders: Record<string, string> = {
+            'Authorization': `Bearer ${DEFAULT_API_CONFIG.apiKey}`
+        };
+        const sessionId = localStorage.getItem('silhouette_session_id');
+        if (sessionId) {
+            baseHeaders['x-session-id'] = sessionId;
+        }
+
         const headers = isFormData
-            ? { 'Authorization': `Bearer ${DEFAULT_API_CONFIG.apiKey}`, ...options.headers }
+            ? { ...baseHeaders, ...options.headers }
             : { ...getHeaders(), ...options.headers };
 
         return fetch(`${API_BASE_URL}${endpoint}`, {

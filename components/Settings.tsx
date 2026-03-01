@@ -62,8 +62,8 @@ const Settings: React.FC = () => {
         refreshSettings(); // Re-fetch logic-processed state
     };
 
-    const handleIntegrationSave = (schemaId: string) => {
-        settingsManager.saveCredential(schemaId, tempCredentials);
+    const handleIntegrationSave = async (schemaId: string) => {
+        await settingsManager.saveCredential(schemaId, tempCredentials);
         setEditingIntegration(null);
         setTempCredentials({});
         refreshSettings();
@@ -114,27 +114,27 @@ const Settings: React.FC = () => {
         }
     });
 
-    const handleSaveApiKey = (serviceId: string) => {
+    const handleSaveApiKey = async (serviceId: string) => {
         if (serviceId === 'gemini') {
-            settingsManager.saveCredential('gemini', { apiKey: apiKeys.gemini });
-            alert("Gemini Key Saved & Synced");
+            await settingsManager.saveCredential('gemini', { apiKey: apiKeys.gemini });
+            alert("Gemini Key Saved & Synced to Server Vault");
         } else if (serviceId === 'unsplash') {
-            api.post('/v1/system/config', { unsplashKey: apiKeys.unsplash })
-                .then(() => alert("Unsplash Key Saved & Persisted"));
+            await settingsManager.saveCredential('unsplash', { accessKey: apiKeys.unsplash });
+            alert("Unsplash Key Saved & Persisted");
         } else if (serviceId === 'media') {
-            // Sync Media Keys to Backend
-            api.post('/v1/system/config', {
-                mediaConfig: {
-                    openaiKey: apiKeys.openai,
-                    elevenLabsKey: apiKeys.elevenlabs,
-                    replicateKey: apiKeys.replicate,
-                    imagineArtKey: apiKeys.imagineArt,
-                    veoModelId: apiKeys.veoModelId,
-                    nanoBananaModelId: apiKeys.nanoBananaModelId,
-                    providers: apiKeys.providers
-                }
-            }).then(() => alert("Media Cortex Updated"));
+            // Sync all Media Keys to Server Vault
+            await settingsManager.saveCredential('media', {
+                openaiKey: apiKeys.openai,
+                elevenLabsKey: apiKeys.elevenlabs,
+                replicateKey: apiKeys.replicate,
+                imagineArtKey: apiKeys.imagineArt,
+                veoModelId: apiKeys.veoModelId,
+                nanoBananaModelId: apiKeys.nanoBananaModelId,
+                providers: JSON.stringify(apiKeys.providers)
+            });
+            alert("Media Cortex Updated (Server Vault)");
         }
+        refreshSettings();
     };
 
     const handleFactoryReset = () => {
@@ -144,17 +144,45 @@ const Settings: React.FC = () => {
         }
     };
 
-    const startOAuthFlow = (schema: IntegrationSchema) => {
+    const startOAuthFlow = async (schema: IntegrationSchema) => {
         if (schema.authConfig?.authorizationUrl) {
-            // Real OAuth2 Logic Placeholder
             const redirectUri = `${window.location.origin}/oauth/callback`;
             const clientId = schema.authConfig.clientId;
             const scope = schema.authConfig.scopes?.join(' ') || '';
-            const authUrl = `${schema.authConfig.authorizationUrl}?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}&response_type=code`;
 
-            // Open popup or redirect
+            // Encode state so the callback route knows which service this is
+            const state = btoa(JSON.stringify({ serviceId: schema.id, redirectUri }));
+
+            // Pre-save OAuth config so the server can do the token exchange
+            try {
+                await api.post(`/v1/system/secrets/${schema.id}`, {
+                    credentials: {
+                        tokenUrl: (schema.authConfig as any).tokenUrl || '',
+                        clientId: schema.authConfig.clientId || '',
+                        clientSecret: (schema.authConfig as any).clientSecret || '',
+                        redirectUri,
+                    }
+                });
+            } catch (e) { console.warn('[OAUTH] Pre-save config failed:', e); }
+
+            const authUrl = `${schema.authConfig.authorizationUrl}?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}&response_type=code&state=${encodeURIComponent(state)}`;
+
             window.open(authUrl, 'oauth_popup', 'width=600,height=700');
-            console.log(`[OAUTH] Starting flow for ${schema.name} at ${authUrl}`);
+            console.log(`[OAUTH] Starting flow for ${schema.name}`);
+
+            // Listen for postMessage from the callback popup
+            const handleMessage = (event: MessageEvent) => {
+                if (event.data?.type === 'OAUTH_CALLBACK') {
+                    window.removeEventListener('message', handleMessage);
+                    if (event.data.success) {
+                        const target = settings.registeredIntegrations.find(i => i.id === schema.id);
+                        if (target) { target.isConnected = true; target.lastSync = Date.now(); }
+                        refreshSettings();
+                    }
+                    alert(event.data.message || (event.data.success ? 'Connected!' : 'Connection failed'));
+                }
+            };
+            window.addEventListener('message', handleMessage);
         } else {
             alert("OAuth configuration missing for this provider.");
         }
