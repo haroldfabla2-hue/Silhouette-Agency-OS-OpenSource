@@ -158,7 +158,7 @@ async function main() {
 
     const selectedProviders: { id: string; apiKey: string; model: string }[] = [];
 
-    const llmChoice = await ask('\nSilhouette: "Which provider would you like me to use? (1: Gemini [Free Tier], 2: Groq [Fast], 3: OpenAI, 4: Ollama [Local]): "');
+    const llmChoice = await ask('\nSilhouette: "Which provider would you like me to use? (1: Gemini, 2: Groq, 3: OpenAI, 4: Ollama, 5: DeepSeek, 6: OpenRouter, 7: Minimax): "');
 
     if (llmChoice === '1') {
         const key = await ask('\nSilhouette: "Excellent. Gemini provides strong reasoning. Please paste your GEMINI_API_KEY: "');
@@ -174,6 +174,15 @@ async function main() {
         const defaultModel = 'llama3:8b';
         const model = await ask(`Silhouette: "Which model name? (Press Enter for ${defaultModel}): "`) || defaultModel;
         selectedProviders.push({ id: 'ollama', apiKey: '', model });
+    } else if (llmChoice === '5') {
+        const key = await ask('\nSilhouette: "DeepSeek represents algorithmic efficiency. Please paste your DEEPSEEK_API_KEY: "');
+        if (key) selectedProviders.push({ id: 'deepseek', apiKey: key, model: 'deepseek-coder' });
+    } else if (llmChoice === '6') {
+        const key = await ask('\nSilhouette: "OpenRouter allows multi-model routing. Please paste your OPENROUTER_API_KEY: "');
+        if (key) selectedProviders.push({ id: 'openrouter', apiKey: key, model: 'google/gemini-2.0-flash-exp:free' });
+    } else if (llmChoice === '7') {
+        const key = await ask('\nSilhouette: "MiniMax provides excellent audio and vision modalities. Please paste your MINIMAX_API_KEY: "');
+        if (key) selectedProviders.push({ id: 'minimax', apiKey: key, model: 'abab-6.5s-chat' });
     } else {
         print('\nSilhouette: "I need at least one provider to function. Please run the setup again when ready."');
         process.exit(1);
