@@ -86,6 +86,7 @@
     "ws": "^8.19.0",
     "xterm": "^5.3.0",
     "xterm-addon-fit": "^0.8.0",
+    "z3-solver": "^4.16.0",
     "zustand": "^5.0.9"
   },
   "devDependencies": {

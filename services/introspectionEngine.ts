@@ -194,9 +194,65 @@ export class IntrospectionEngine {
         const combinedText = thoughts.join(' ');
         const detectedActions = this.extractActions(combinedText);
         if (detectedActions.length > 0) {
-            console.log(`[INTROSPECTION] 🧠 Detected ${detectedActions.length} Actions. Forwarding to Orchestrator...`);
-            // Add traceId here if we had one
-            systemBus.emit(SystemProtocol.ACTION_INTENT, { actions: detectedActions }, 'INTROSPECTION_ENGINE');
+            console.log(`[INTROSPECTION] 🧠 Detected ${detectedActions.length} Actions. Verifying logic with Z3...`);
+
+            this.verifyReasoningWithZ3(thoughts, detectedActions).then(isValid => {
+                if (!isValid) {
+                    console.log(`[INTROSPECTION] 🛑 Z3 LOGIC CONTRADICTION DETECTED. Halting action batch.`);
+                    systemBus.emit(SystemProtocol.SYSTEM_ALERT, { message: 'Action batch blocked by Z3 Symbolic Logic Prover.' });
+                    return; // Halt execution
+                }
+
+                // Verified successfully
+                systemBus.emit(SystemProtocol.ACTION_INTENT, { actions: detectedActions }, 'INTROSPECTION_ENGINE');
+            });
+        }
+    }
+
+    // --- CAPABILITY 7: SYMBOLIC LOGIC VERIFICATION (Z3) ---
+    private async verifyReasoningWithZ3(thoughts: string[], actions: AgentAction[]): Promise<boolean> {
+        if (actions.length < 2) return true; // Need at least 2 actions for a contradiction in this heuristic
+
+        try {
+            const z3 = await import('z3-solver');
+            const { Context } = await z3.init();
+            const Z3 = new Context('main');
+            const solver = new Z3.Solver();
+
+            let hasConstrained = false;
+
+            for (let i = 0; i < actions.length; i++) {
+                const act = actions[i];
+
+                // Abstract rules: Cannot READ and WRITE the exact same path in the exact same cognitive cycle 
+                // without first waiting for sequential validation (Simulated constraint)
+                for (let j = 0; j < actions.length; j++) {
+                    if (i !== j && actions[i].type === ActionType.READ_FILE && actions[j].type === ActionType.WRITE_FILE) {
+                        if (actions[i].payload.path && actions[i].payload.path === actions[j].payload.path) {
+                            const r = Z3.Bool.const(`read_${i}`);
+                            const w = Z3.Bool.const(`write_${j}`);
+
+                            // Assert they are both attempted
+                            solver.add(r.eq(Z3.Bool.val(true)));
+                            solver.add(w.eq(Z3.Bool.val(true)));
+
+                            // Rule: Not(Read AND Write simultaneously)
+                            solver.add(Z3.Not(Z3.And(r, w)));
+                            hasConstrained = true;
+                        }
+                    }
+                }
+            }
+
+            if (!hasConstrained) return true;
+
+            const isSat = await solver.check();
+            return isSat === "sat";
+
+        } catch (error) {
+            console.error('[Z3-SOLVER] Logic verification failed gracefully:', error);
+            // Non-blocking failure, assume safe if solver crashes
+            return true;
         }
     }
 

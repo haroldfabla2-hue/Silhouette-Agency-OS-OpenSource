@@ -733,6 +733,7 @@ export interface IntrospectionResult {
     safetyScore: number;
     groundingScore?: number; // NEW: Semantic Alignment
     internalityVerified?: boolean; // NEW: Injection Detection
+    logicVerified?: boolean; // NEW: Z3 Symbolic Prover validation
   };
   activeCapabilities: IntrospectionCapability[];
   lastThreat?: string;
