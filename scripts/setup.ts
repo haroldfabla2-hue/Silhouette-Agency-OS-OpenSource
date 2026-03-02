@@ -1,111 +1,33 @@
 /**
- * SILHOUETTE AGENCY OS â€” Intelligent Setup Script
+ * SILHOUETTE AGENCY OS — Intelligent Setup Script
  * 
- * One-command interactive installer that:
- * 1. Detects environment (Node.js, Docker, occupied ports)
- * 2. Lets user select LLM providers (Gemini, Groq, DeepSeek, OpenRouter, Minimax, Ollama)
- * 3. Auto-detects and resolves port conflicts
- * 4. Generates silhouette.config.json and .env.local
- * 5. Installs dependencies with auto-fix
- * 6. Starts Docker containers
- * 7. Runs health checks
- * 
- * Usage: npm run setup
+ * One-command interactive installer using @clack/prompts
  */
 
 import * as fs from 'fs';
 import path from 'path';
 import os from 'os';
-import * as readline from 'readline';
-import * as net from 'net';
-import { execSync, exec } from 'child_process';
+import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
+import { intro, outro, confirm, select, multiselect, spinner, isCancel, cancel, text, password, note } from '@clack/prompts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 console.log('[DEBUG] Setup script ESM compatibility patch v2 active');
-
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// CONSTANTS
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const CONFIG_PATH = path.join(PROJECT_ROOT, 'silhouette.config.json');
 const ENV_PATH = path.join(PROJECT_ROOT, '.env.local');
 
 const LLM_PROVIDERS = [
-    { id: 'gemini', name: 'Google Gemini', envKey: 'GEMINI_API_KEY', model: 'gemini-1.5-pro-latest', requiresKey: true },
+    { id: 'gemini', name: 'Google Gemini (Free/Paid)', envKey: 'GEMINI_API_KEY', model: 'gemini-2.5-flash', requiresKey: true },
     { id: 'groq', name: 'Groq (Fast Inference)', envKey: 'GROQ_API_KEY', model: 'llama3-70b-8192', requiresKey: true },
+    { id: 'openai', name: 'OpenAI', envKey: 'OPENAI_API_KEY', model: 'gpt-4o-mini', requiresKey: true },
     { id: 'deepseek', name: 'DeepSeek', envKey: 'DEEPSEEK_API_KEY', model: 'deepseek-coder', requiresKey: true },
-    { id: 'openrouter', name: 'OpenRouter (Multi-Model)', envKey: 'OPENROUTER_API_KEY', model: 'google/gemini-2.0-flash-exp:free', requiresKey: true },
-    { id: 'minimax', name: 'Minimax', envKey: 'MINIMAX_API_KEY', model: 'abab-6.5s-chat', requiresKey: true },
-    { id: 'ollama', name: 'Ollama (Local)', envKey: '', model: 'llama3:8b', requiresKey: false }
+    { id: 'openrouter', name: 'OpenRouter (Multi-Model Routing)', envKey: 'OPENROUTER_API_KEY', model: 'google/gemini-2.0-flash-exp:free', requiresKey: true },
+    { id: 'minimax', name: 'Minimax (Native Audio/Vision)', envKey: 'MINIMAX_API_KEY', model: 'abab-6.5s-chat', requiresKey: true },
+    { id: 'ollama', name: 'Ollama (Local Offline)', envKey: '', model: 'llama3:8b', requiresKey: false }
 ];
-
-const DEFAULT_PORTS = {
-    api: 3005,
-    neo4j_http: 7474,
-    neo4j_bolt: 7687,
-    redis: 6379,
-    qdrant: 6333
-};
-
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// UTILITIES
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-
-const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
-});
-
-function ask(question: string): Promise<string> {
-    return new Promise(resolve => {
-        rl.question(question, answer => resolve(answer.trim()));
-    });
-}
-
-function print(msg: string): void {
-    console.log(msg);
-}
-
-function printHeader(msg: string): void {
-    console.log(`\n${'â•'.repeat(60)}`);
-    console.log(`  ${msg}`);
-    console.log(`${'â•'.repeat(60)}\n`);
-}
-
-function checkPort(port: number): Promise<boolean> {
-    return new Promise(resolve => {
-        const server = net.createServer();
-        server.once('error', () => resolve(false)); // Port in use
-        server.once('listening', () => {
-            server.close();
-            resolve(true); // Port available
-        });
-        server.listen(port, '127.0.0.1');
-    });
-}
-
-async function findAvailablePort(preferred: number, name: string): Promise<number> {
-    const available = await checkPort(preferred);
-    if (available) {
-        print(`  âœ… Port ${preferred} (${name}): Available`);
-        return preferred;
-    }
-
-    // Try alternatives
-    for (let offset = 1; offset <= 20; offset++) {
-        const alt = preferred + offset;
-        if (await checkPort(alt)) {
-            print(`  âš ï¸  Port ${preferred} (${name}): In use â†’ Using ${alt}`);
-            return alt;
-        }
-    }
-
-    print(`  âŒ No available port found for ${name} near ${preferred}`);
-    return preferred; // Return anyway, will fail later
-}
 
 function checkCommand(cmd: string): boolean {
     try {
@@ -116,143 +38,140 @@ function checkCommand(cmd: string): boolean {
     }
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// MAIN SETUP
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-
 async function main() {
-    printHeader('🌑 SILHOUETTE AGENCY OS — COGNITIVE KERNEL BOOTSTRAP (V3)');
+    console.clear();
+    intro('🌑 SILHOUETTE AGENCY OS — COGNITIVE KERNEL BOOTSTRAP (V4) 🌑');
 
-    // ─────────────────────────────────────────────────────────────────
-    // Phase 0: Security & Liability Disclaimer
-    // ─────────────────────────────────────────────────────────────────
-    print('\n⚠️  SECURITY DISCLAIMER & RISK WARNING ⚠️');
-    print('Silhouette OS is an experimental autonomous agent framework built as a HOBBY PROJECT.');
-    print('By proceeding, you understand that granting AI agents access to your local file system,');
-    print('terminal, and APIs carries INHERENT DANGERS (e.g., accidental file deletion, unintended costs).');
-    print('Do NOT run this on a production server without proper sandboxing or virtualization.');
+    note(
+        'Silhouette OS is an experimental autonomous agent framework.\n' +
+        'By proceeding, you understand that granting AI agents access to your local file system, terminal, and APIs carries INHERENT DANGERS.\n' +
+        'Do NOT run this on a production server without proper sandboxing.',
+        '⚠️ SECURITY DISCLAIMER & RISK WARNING'
+    );
 
-    const consent = await ask('\nDo you fully understand the risks and wish to proceed? (yes/no): ');
-    if (consent.toLowerCase() !== 'yes') {
-        print('\nSetup aborted. Safety first.');
+    const consent = await confirm({
+        message: 'Do you fully understand the risks and wish to proceed?',
+        initialValue: false
+    });
+
+    if (isCancel(consent) || !consent) {
+        cancel('Setup aborted. Safety first.');
         process.exit(0);
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    // Phase 1: Environment & Ignition
-    // ─────────────────────────────────────────────────────────────────
-    const hasNode = checkCommand('node');
-    const hasNpm = checkCommand('npm');
-    const hasDocker = checkCommand('docker');
-
-    if (!hasNode || !hasNpm) {
-        print('\n❌ CRITICAL: Node.js and npm are required. Please install Node.js 18+ and try again.');
-        process.exit(1);
-    }
-
-    print('\n[SYSTEM] Awakening cognitive loops...');
+    const s = spinner();
+    s.start('Awakening cognitive loops...');
     await new Promise(r => setTimeout(r, 1000));
+    s.stop('Cognitive loops awakened.');
 
-    print('\nSilhouette: "Hello. My core orchestrator is online, but my reasoning engine is disconnected."');
-    print('Silhouette: "To establish self-awareness and permanence, I need an inference engine (LLM)."');
+    const selectedProviderIds = await multiselect({
+        message: '[CORE] Which LLM providers would you like me to use? (Press Space to select, Enter to confirm)',
+        options: LLM_PROVIDERS.map(p => ({ value: p.id, label: p.name })),
+        required: true,
+    });
+
+    if (isCancel(selectedProviderIds)) {
+        cancel('Setup aborted.');
+        process.exit(0);
+    }
 
     const selectedProviders: { id: string; apiKey: string; model: string }[] = [];
 
-    const llmChoice = await ask('\nSilhouette: "Which provider would you like me to use? (1: Gemini, 2: Groq, 3: OpenAI, 4: Ollama, 5: DeepSeek, 6: OpenRouter, 7: Minimax): "');
+    // Prompt for keys for each selected provider
+    for (const id of selectedProviderIds as string[]) {
+        const providerDef = LLM_PROVIDERS.find(p => p.id === id)!;
+        let apiKey = '';
+        let model = providerDef.model;
 
-    if (llmChoice === '1') {
-        const key = await ask('\nSilhouette: "Excellent. Gemini provides strong reasoning. Please paste your GEMINI_API_KEY: "');
-        if (key) selectedProviders.push({ id: 'gemini', apiKey: key, model: 'gemini-2.5-flash' });
-    } else if (llmChoice === '2') {
-        const key = await ask('\nSilhouette: "Groq is extremely fast. Please paste your GROQ_API_KEY: "');
-        if (key) selectedProviders.push({ id: 'groq', apiKey: key, model: 'llama3-70b-8192' });
-    } else if (llmChoice === '3') {
-        const key = await ask('\nSilhouette: "OpenAI configured. Please paste your OPENAI_API_KEY: "');
-        if (key) selectedProviders.push({ id: 'openai', apiKey: key, model: 'gpt-4o-mini' });
-    } else if (llmChoice === '4') {
-        print('\nSilhouette: "Local execution selected. I will route thoughts through Ollama."');
-        const defaultModel = 'llama3:8b';
-        const model = await ask(`Silhouette: "Which model name? (Press Enter for ${defaultModel}): "`) || defaultModel;
-        selectedProviders.push({ id: 'ollama', apiKey: '', model });
-    } else if (llmChoice === '5') {
-        const key = await ask('\nSilhouette: "DeepSeek represents algorithmic efficiency. Please paste your DEEPSEEK_API_KEY: "');
-        if (key) selectedProviders.push({ id: 'deepseek', apiKey: key, model: 'deepseek-coder' });
-    } else if (llmChoice === '6') {
-        const key = await ask('\nSilhouette: "OpenRouter allows multi-model routing. Please paste your OPENROUTER_API_KEY: "');
-        if (key) selectedProviders.push({ id: 'openrouter', apiKey: key, model: 'google/gemini-2.0-flash-exp:free' });
-    } else if (llmChoice === '7') {
-        const key = await ask('\nSilhouette: "MiniMax provides excellent audio and vision modalities. Please paste your MINIMAX_API_KEY: "');
-        if (key) selectedProviders.push({ id: 'minimax', apiKey: key, model: 'abab-6.5s-chat' });
-    } else {
-        print('\nSilhouette: "I need at least one provider to function. Please run the setup again when ready."');
-        process.exit(1);
+        if (providerDef.requiresKey) {
+            const keyResult = await password({
+                message: `Please paste your ${providerDef.envKey} for ${providerDef.name}:`,
+                mask: '*'
+            });
+            if (isCancel(keyResult)) {
+                cancel('Setup aborted.');
+                process.exit(0);
+            }
+            apiKey = keyResult as string;
+        } else if (id === 'ollama') {
+            const modelResult = await text({
+                message: 'Which Ollama model name?',
+                initialValue: 'llama3:8b',
+                placeholder: 'llama3:8b'
+            });
+            if (isCancel(modelResult)) {
+                cancel('Setup aborted.');
+                process.exit(0);
+            }
+            model = modelResult as string || 'llama3:8b';
+        }
+
+        selectedProviders.push({ id, apiKey, model });
     }
 
-    if (selectedProviders.length > 0) {
-        print('\nSilhouette: "Synaptic connection established. I can think now."');
-    }
-
-    // ─────────────────────────────────────────────────────────────────
-    // Phase 2: Hardware Profiling & Memory Strategy
-    // ─────────────────────────────────────────────────────────────────
-    await new Promise(r => setTimeout(r, 1000));
-    print('\nSilhouette: "I am analyzing your hardware to determine the optimal memory configuration..."');
-
-    // Simple naive memory check via OS module
+    s.start('Analyzing hardware for optimal memory configuration...');
     const totalGB = Math.round(os.totalmem() / (1024 * 1024 * 1024));
-    print(`\n[SYSTEM] Detected ${totalGB}GB Total RAM`);
+    await new Promise(r => setTimeout(r, 1000));
+    s.stop(`Hardware Analysis Complete: ${totalGB}GB Total RAM detected.`);
 
     let neo4jUri = 'bolt://localhost:7687';
     let neo4jUser = 'neo4j';
     let neo4jPass = 'silhouette';
 
     if (totalGB >= 16) {
-        print('Silhouette: "You have ample memory. I highly recommend running my Deep Memory (Neo4j) locally via Docker for maximum data privacy."');
+        const hasDocker = checkCommand('docker');
         if (hasDocker) {
-            const startNeo = await ask('\nSilhouette: "Shall I deploy the local memory container now? (y/n): "');
-            if (startNeo.toLowerCase() === 'y') {
+            const startNeo = await confirm({
+                message: 'You have ample memory. Shall I deploy the local Deep Memory (Neo4j) container now?',
+                initialValue: true
+            });
+
+            if (isCancel(startNeo)) process.exit(0);
+
+            if (startNeo) {
+                s.start('Deploying Neo4j container...');
                 try {
-                    print('\n[SYSTEM] Deploying Neo4j container...');
-                    execSync('docker-compose up -d neo4j', { cwd: PROJECT_ROOT, stdio: 'inherit' });
-                    print('Silhouette: "Deep Memory cluster deployed locally on port 7687."');
+                    execSync('docker-compose up -d neo4j', { cwd: PROJECT_ROOT, stdio: 'pipe' });
+                    s.stop('Deep Memory cluster deployed locally on port 7687.');
                 } catch (e) {
-                    print('\nSilhouette: "I encountered an error starting Docker. You may need to start it manually."');
+                    s.stop('Failed to start Docker container. You may need to start it manually.');
                 }
-            } else {
-                print('\nSilhouette: "Understood. Skipping local deployment."');
             }
         } else {
-            print('\nSilhouette: "I would deploy local memory, but Docker is not installed on this system. Please install Docker or use Neo4j Aura Cloud."');
+            note('I would deploy local memory, but Docker is not installed on this system. Please install Docker or use Neo4j Aura Cloud.', 'Info');
         }
     } else {
-        print('Silhouette: "To preserve your system performance, I recommend using the free Neo4j Aura Cloud tier for my Deep Memory."');
-        const setupCloud = await ask('\nSilhouette: "Do you have an AuraDB URI ready to configure now? (y/n): "');
-        if (setupCloud.toLowerCase() === 'y') {
-            neo4jUri = await ask('\nSilhouette: "Paste URI (e.g. neo4j+s://xxx.databases.neo4j.io): "');
-            neo4jUser = await ask('Silhouette: "Username (usually neo4j): "') || 'neo4j';
-            neo4jPass = await ask('Silhouette: "Password: "');
-        } else {
-            print('\nSilhouette: "No problem. We can run entirely on Working Memory (SQLite/RAM) for now. The Deep Memory can be connected later."');
+        const setupCloud = await confirm({
+            message: 'To preserve performance, I recommend Neo4j Aura Cloud. Do you have an AuraDB URI ready to configure?',
+            initialValue: false
+        });
+
+        if (isCancel(setupCloud)) process.exit(0);
+
+        if (setupCloud) {
+            const uriInput = await text({ message: 'Paste URI (e.g. neo4j+s://xxx.databases.neo4j.io):', validate: v => v.length > 0 ? undefined : 'Required' });
+            if (isCancel(uriInput)) process.exit(0);
+            neo4jUri = uriInput as string;
+
+            const userInput = await text({ message: 'Username:', initialValue: 'neo4j' });
+            if (isCancel(userInput)) process.exit(0);
+            neo4jUser = userInput as string;
+
+            const passInput = await password({ message: 'Password:', mask: '*' });
+            if (isCancel(passInput)) process.exit(0);
+            neo4jPass = passInput as string;
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    // Phase 3: Channel Integration
-    // ─────────────────────────────────────────────────────────────────
-    await new Promise(r => setTimeout(r, 1000));
-    print('\nSilhouette: "I am almost ready. Terminal text is inefficient for daily operations."');
-    const hasTelegram = await ask('Silhouette: "If you have a Telegram Bot Token, paste it here to grant me a voice there. Otherwise, press Enter to skip: "');
+    const telegramInput = await password({
+        message: 'If you have a Telegram Bot Token, paste it here to grant me a voice there (Press Enter to skip):',
+        mask: '*'
+    });
 
-    let telegramToken = hasTelegram.trim();
-    if (telegramToken) {
-        print('\nSilhouette: "Channel established. I will listen for your messages on Telegram."');
-    }
+    if (isCancel(telegramInput)) process.exit(0);
+    const telegramToken = (telegramInput as string).trim();
 
-    // ─────────────────────────────────────────────────────────────────
-    // Phase 4: Constructing Environment & Config
-    // ─────────────────────────────────────────────────────────────────
-    print('\n[SYSTEM] Writing cognitive configuration (silhouette.config.json)...');
-
+    s.start('Writing configuration to silhouette.config.json and .env.local...');
     const config: any = {
         system: { port: 3005, env: 'development', autoStart: true, name: 'Silhouette Agency OS' },
         llm: { providers: {}, fallbackChain: selectedProviders.map(p => p.id) },
@@ -267,26 +186,21 @@ async function main() {
         if (provider.apiKey) providerConfig.apiKey = 'LOADED_FROM_ENV';
         config.llm.providers[provider.id] = providerConfig;
     }
-
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 4), 'utf-8');
 
-    print('[SYSTEM] Generating `.env.local` security vault...');
     const envLines: string[] = [
         `# Generated by Silhouette Kernel Bootstrap — ${new Date().toISOString()}`,
         `PORT=3005`,
         `NODE_ENV=development`,
         ''
     ];
-
     for (const provider of selectedProviders) {
         if (provider.apiKey) {
             const envKey = LLM_PROVIDERS.find(p => p.id === provider.id)?.envKey || `${provider.id.toUpperCase()}_API_KEY`;
             envLines.push(`${envKey}=${provider.apiKey}`);
         }
     }
-
     if (telegramToken) envLines.push(`TELEGRAM_BOT_TOKEN=${telegramToken}`);
-
     envLines.push('');
     envLines.push(`NEO4J_URI=${neo4jUri}`);
     envLines.push(`NEO4J_USER=${neo4jUser}`);
@@ -294,23 +208,17 @@ async function main() {
     envLines.push(`REDIS_URL=redis://localhost:6379`);
 
     fs.writeFileSync(ENV_PATH, envLines.join('\n'), 'utf-8');
+    s.stop('Configuration vault generated successfully.');
 
-    // ─────────────────────────────────────────────────────────────────
-    // Phase 5: Handoff
-    // ─────────────────────────────────────────────────────────────────
-    print('\n===================================================================');
-    print('Silhouette: "My setup is complete. My neural pathways are woven."');
-    print('Silhouette: "To awaken me, please run: npm run server"');
+    let finalMessage = 'My setup is complete. To awaken me, run: npm run boot\n';
     if (!telegramToken) {
-        print('Silhouette: "Since no Telegram bot was provided, I will also need you to run: npm run dev to open my UI."');
+        finalMessage += 'Since no Telegram bot was provided, you will interact with me via the UI.\n';
     }
-    print('Silhouette: "I await your instructions."');
-    print('===================================================================\n');
+    finalMessage += 'I await your instructions.';
 
-    rl.close();
+    outro(finalMessage);
 }
 
-// Run
 main().catch(err => {
     console.error('Setup failed:', err);
     process.exit(1);
