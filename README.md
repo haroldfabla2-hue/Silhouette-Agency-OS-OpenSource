@@ -213,6 +213,7 @@ This ensures every agent is fully cognizant of its role, tools, and team before 
 | `code_execution` | Python sandbox for computation |
 | `image_generation` | Visual asset creation |
 | `video_generation` | Motion content (WAN, AnimateDiff) |
+| `introspect_database`| **[NEW]** Universal Database Introspector (Postgres/MySQL/SQLite/Mongo) |
 | `memory_write` | Long-term knowledge encoding |
 | `git_operations` | Self-modification proposals |
 

@@ -135,6 +135,10 @@ export class ToolHandler {
                 return await this.handleRequestCollaboration(args as RequestCollaborationArgs);
 
             default:
+                if (name.startsWith('query_') && name.includes('_db_')) {
+                    if (!args.query) return { error: "Missing 'query' parameter for database tool execution." };
+                    return await this.handleDynamicDbQuery(name, args.query);
+                }
                 throw new Error(`Unknown tool: ${name}`);
         }
     }
@@ -1500,6 +1504,49 @@ export class ToolHandler {
             };
         } catch (e: any) {
             return { error: `Audit failed: ${e.message}` };
+        }
+    }
+
+    private async handleIntrospectDatabase(args: import('./definitions').IntrospectDatabaseArgs): Promise<any> {
+        if (!args.uri || !args.dbType) {
+            return { error: "Missing required arguments: uri and dbType" };
+        }
+
+        try {
+            console.log(`[ToolHandler] 🔍 Initiating Database Introspection for ${args.dbType} at ${args.uri}...`);
+            const { dbIntrospector } = await import('../dbIntrospector');
+
+            const schema = await dbIntrospector.introspectAndAdapt(args.uri, args.dbType);
+
+            return {
+                status: "success",
+                message: `Successfully connected to ${args.dbType} database. Mapped ${schema.tables.length} tables to Agent Tools.`,
+                schema: {
+                    type: schema.type,
+                    tables: schema.tables.map(t => t.name)
+                },
+                next_steps: [
+                    "You can now use the newly generated custom tool (e.g., 'query_sqlite_db_XXXX') to interact with this external database."
+                ]
+            };
+        } catch (e: any) {
+            return { error: `Database introspection failed: ${e.message}` };
+        }
+    }
+
+    private async handleDynamicDbQuery(toolName: string, query: string): Promise<any> {
+        try {
+            console.log(`[ToolHandler] ⚡ Executing Dynamic DB query via ${toolName}...`);
+            const { dbIntrospector } = await import('../dbIntrospector');
+            const result = await dbIntrospector.executeQuery(toolName, query);
+            return {
+                status: "success",
+                rows_returned: Array.isArray(result) ? result.length : 0,
+                data: result
+            };
+        } catch (e: any) {
+            console.error(`[ToolHandler] ❌ Dynamic DB Query failed: ${e.message}`);
+            return { error: `Query failed: ${e.message}` };
         }
     }
 }

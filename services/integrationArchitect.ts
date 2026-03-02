@@ -142,8 +142,8 @@ Current available integrations: GitHub, Gmail, Slack, Google Calendar, Google Dr
 Respond with JSON:
 {
     "needsIntegration": true/false,
-    "integrationType": "MESSAGING|EMAIL|CALENDAR|STORAGE|SOCIAL|DEV|CUSTOM" or null,
-    "platform": "whatsapp|telegram|discord|notion|etc" or null,
+    "integrationType": "MESSAGING|EMAIL|CALENDAR|STORAGE|SOCIAL|DEV|DATABASE|CUSTOM" or null,
+    "platform": "whatsapp|telegram|discord|notion|postgres|mysql|sqlite|etc" or null,
     "capabilities": ["send_message", "receive_message", "read_data", etc] or [],
     "existingIntegration": "name of existing integration if applicable" or null,
     "reasoning": "brief explanation"
@@ -603,6 +603,9 @@ return handler(args);
         }
         if (['github', 'gitlab', 'bitbucket', 'jira'].some(p => lower.includes(p))) {
             return 'DEV';
+        }
+        if (['postgres', 'mysql', 'sqlite', 'mongodb', 'database', 'db'].some(p => lower.includes(p))) {
+            return 'CUSTOM'; // Will be handled heavily by DB Introspector
         }
         return 'CUSTOM';
     }

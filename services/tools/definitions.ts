@@ -789,6 +789,24 @@ export const ARCHITECT_AUDIT_TOOL: FunctionDeclaration = {
     }
 };
 
+export interface IntrospectDatabaseArgs {
+    uri: string;
+    dbType: 'sqlite' | 'postgres' | 'mysql' | 'mongo';
+}
+
+export const INTROSPECT_DATABASE_TOOL: FunctionDeclaration = {
+    name: "introspect_database",
+    description: "Introspects an external database schema based on a connection URI. Automatically adapts Silhouette OS by generating new Database Query Tools. Use this when the user wants to connect the system to an external database to make the system independent and universally adaptable.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            uri: { type: Type.STRING, description: 'The absolute file path (for SQLite) or connection string (for Postgres/MySQL)' },
+            dbType: { type: Type.STRING, description: 'Type of database: sqlite, postgres, mysql, mongo', enum: ['sqlite', 'postgres', 'mysql', 'mongo'] }
+        },
+        required: ['uri', 'dbType']
+    }
+};
+
 export const AGENT_TOOLS = [
     GENERATE_VIDEO_TOOL,
     GENERATE_IMAGE_TOOL,
