@@ -32,6 +32,9 @@ class ToolPersistence {
 
         try {
             this.db = new Database(DB_PATH);
+            this.db.pragma('journal_mode = WAL');
+            this.db.pragma('synchronous = NORMAL');
+            this.db.pragma('busy_timeout = 5000');
             this.createSchema();
             this.initialized = true;
             console.log('[ToolPersistence] ✅ Database initialized');

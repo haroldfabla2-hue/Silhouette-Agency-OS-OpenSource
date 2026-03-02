@@ -103,8 +103,14 @@ class DriveService {
      * Initialize SQLite for token storage
      */
     private async initDb(): Promise<void> {
-        await fs.mkdir(path.dirname(DB_PATH), { recursive: true });
+        const DB_DIR = path.dirname(DB_PATH);
+        await fs.mkdir(DB_DIR, { recursive: true });
         this.db = new Database(DB_PATH);
+
+        // Add pragmas for concurrency
+        this.db.pragma('journal_mode = WAL');
+        this.db.pragma('synchronous = NORMAL');
+        this.db.pragma('busy_timeout = 5000');
 
         // Create tokens table if not exists
         this.db.exec(`
