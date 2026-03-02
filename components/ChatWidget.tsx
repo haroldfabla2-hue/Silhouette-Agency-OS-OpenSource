@@ -390,11 +390,11 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ currentUserRole, onChangeRole, 
             const decoder = new TextDecoder();
             let fullText = '';
             let buffer = '';
-            const done = false;
+            let isDone = false;
 
-            while (!done) {
+            while (!isDone) {
                 const { done, value } = await reader.read();
-                done = true;
+                isDone = done;
 
                 buffer += decoder.decode(value, { stream: true });
                 const lines = buffer.split('\n\n');

@@ -1,45 +1,112 @@
 /**
- * 🧠 SILHOUETTE AGENCY OS - UNIFIED DAEMON
+ * 🧠 SILHOUETTE AGENCY OS - UNIFIED DAEMON (STATEFUL)
  * ==============================================================================
  * Centralizes all recurring Cognitive and Self-Evolution background processes.
- * Replaces the scattered `setInterval` logic from older schedulers.
- * Utilizes `redlock` (Redis SET NX) to ensure safe, execution-once-per-cluster behavior
- * for scalable, multi-instance deployments.
+ * Uses a Stateful Task Architecture (persisted to daemon_state.json) to survive
+ * restarts, isolated `try/catch` per task, and precise interval-based execution.
+ * Utilizes `redlock` (Redis SET NX) to ensure safe, execution-once-per-cluster behavior.
  * ==============================================================================
  */
 
-// Memory & Graph Services
+import fs from 'fs/promises';
+import path from 'path';
 import { continuum } from '../continuumMemory';
 import { graph } from '../graphService';
-
-// Cognitive Engines
 import { thoughtNarrator } from '../cognitive/thoughtNarrator';
-
-// Evolution Engines
 import { evolutionScheduler } from '../evolution/evolutionScheduler';
-
-// Core Services
 import { redisClient } from '../redisClient';
-import { cronScheduler } from '../scheduler/cronScheduler';
 import { daemonLog } from '../logger';
+
+// ─── TYPES ─────────────────────────────────────────────────────────────
+
+interface DaemonTask {
+    name: string;
+    intervalMs: number;
+    execute: () => Promise<void>;
+    enabled?: boolean;
+    lastRun?: number;
+    runCount?: number;
+    errCount?: number;
+}
+
+interface DaemonState {
+    tasks: Record<string, { lastRun: number; runCount: number; errCount: number }>;
+    updatedAt: number;
+}
+
+// ─── CLASS ─────────────────────────────────────────────────────────────
 
 export class UnifiedDaemon {
     private isRunning: boolean = false;
-    private checkInterval: ReturnType<typeof setInterval> | null = null;
-    private readonly CHECK_INTERVAL_MS = 60_000; // Granularity of cron checks (1 minute)
+    private checkInterval: NodeJS.Timeout | null = null;
+    private readonly TICK_INTERVAL_MS = 10_000; // Check every 10 seconds
+    private readonly STATE_FILE = path.resolve(process.cwd(), 'data', 'daemon_state.json');
 
-    constructor() { }
+    private tasks: DaemonTask[] = [];
 
-    public start() {
+    constructor() {
+        this.initializeTasks();
+    }
+
+    private initializeTasks() {
+        this.tasks = [
+            {
+                name: 'Heartbeat',
+                intervalMs: 15 * 60 * 1000, // 15 mins
+                execute: async () => this.runHeartbeatTask()
+            },
+            {
+                name: 'Narrator',
+                intervalMs: 30 * 60 * 1000, // 30 mins
+                execute: async () => this.runNarratorTask()
+            },
+            {
+                name: 'Evolution_Goals',
+                intervalMs: 30 * 60 * 1000, // 30 mins
+                execute: async () => this.runEvolutionGoalsTask()
+            },
+            {
+                name: 'Curiosity',
+                intervalMs: 3 * 60 * 60 * 1000, // 3 hours
+                execute: async () => this.runCuriosityTask()
+            },
+            {
+                name: 'Tool_Evolution',
+                intervalMs: 6 * 60 * 60 * 1000, // 6 hours
+                execute: async () => this.runToolEvolutionTask()
+            },
+            {
+                name: 'Janitor',
+                intervalMs: 12 * 60 * 60 * 1000, // 12 hours
+                execute: async () => this.runJanitorTask()
+            },
+            {
+                name: 'Dreamer',
+                intervalMs: 24 * 60 * 60 * 1000, // 24 hours
+                execute: async () => this.runDreamerTask()
+            }
+        ];
+
+        // Init optional fields
+        this.tasks.forEach(t => {
+            t.enabled = true;
+            t.lastRun = 0;
+            t.runCount = 0;
+            t.errCount = 0;
+        });
+    }
+
+    public async start() {
         if (this.isRunning) return;
         this.isRunning = true;
 
         console.log('[DAEMON] 🔋 Starting Unified Cognitive Daemon...');
+        await this.loadState();
 
         // Start internal tick system
-        this.checkInterval = setInterval(() => this.tick(), this.CHECK_INTERVAL_MS);
+        this.checkInterval = setInterval(() => this.tick(), this.TICK_INTERVAL_MS);
 
-        // Initial tick execution
+        // Run first tick immediately
         this.tick();
     }
 
@@ -52,253 +119,239 @@ export class UnifiedDaemon {
             clearInterval(this.checkInterval);
             this.checkInterval = null;
         }
+        this.saveState(); // Save state on shutdown
     }
 
-    /**
-     * Ticks every minute to check if cron conditions are met. (Fallback structure)
-     */
     private async tick() {
-        const now = new Date();
-        const hour = now.getHours();
-        const min = now.getMinutes();
+        const now = Date.now();
 
-        // ─────────────────────────────────────────────────────────────
-        // 0. COGNITIVE HEARTBEAT (Continuous Autonomy - Runs every 15 minutes)
-        //    Resource-aware: Only awakens MAX 2 idle agents per cycle to prevent
-        //    API saturation and memory bloat.
-        // ─────────────────────────────────────────────────────────────
-        if (min % 15 === 0) {
-            this.safeExecute('Heartbeat', 'lock:daemon:heartbeat', 10 * 60 * 1000, async () => {
-                const { orchestrator } = await import('../orchestrator');
-                const actors = orchestrator.getActiveActors();
+        for (const task of this.tasks) {
+            if (!task.enabled) continue;
 
-                // ── Retrieve pending proactive goals stored by the Intent Router ──
-                let pendingGoals: string[] = [];
+            const timeSinceLastRun = now - (task.lastRun || 0);
+            if (timeSinceLastRun >= task.intervalMs) {
+
+                // Enforce Redis Lock for Cluster Safety
+                const lockKey = `lock:daemon:${task.name.toLowerCase()}`;
+                // Lock for almost full interval so other instances don't run it
+                const acquired = await redisClient.acquireLock(lockKey, task.intervalMs - 1000);
+
+                if (!acquired) {
+                    console.log(`[DAEMON: SKIPPED] 🔒 ${task.name} already running in cluster.`);
+                    // Update lastRun so this instance doesn't keep hammering the lock locally
+                    task.lastRun = now;
+                    continue;
+                }
+
+                const t0 = Date.now();
+                daemonLog.info({ task: task.name }, '▶ inicio');
+
                 try {
-                    const goals = await continuum.retrieve('PROACTIVE_GOAL', 'proactive_goal');
-                    pendingGoals = goals
-                        .filter((g: any) => g.content && g.content.includes('PROACTIVE_GOAL:'))
-                        .map((g: any) => g.content.replace('PROACTIVE_GOAL: ', '').trim())
-                        .slice(0, 4); // Max 4 goals per cycle
-                } catch (_) { /* Memory retrieval is best-effort */ }
-
-                // Only wake up to 2 agents per heartbeat cycle (resource budgeting)
-                let awokenCount = 0;
-                const MAX_PER_CYCLE = 2;
-
-                for (const actor of actors) {
-                    if (awokenCount >= MAX_PER_CYCLE) break;
-
-                    // Only awaken IDLE agents
-                    if (actor.status === 'IDLE') {
-                        // Use a pending proactive goal if available, otherwise generic evaluation
-                        const mission = pendingGoals.length > 0
-                            ? `[CONSCIOUSNESS-DRIVEN MISSION] ${pendingGoals.shift()}`
-                            : "PROACTIVE SYSTEM EVALUATION: Review recent memories, system errors, and consciousness epiphanies. If you see a knowledge gap, pending task, or optimization opportunity, take action. Otherwise, conclude stable.";
-
-                        console.log(`[DAEMON: HEARTBEAT] 💓 Dispatching to ${actor.name}: "${mission.substring(0, 80)}..."`);
-                        awokenCount++;
-
-                        actor.executeTask(mission)
-                            .catch((e: any) => {
-                                console.error(`[DAEMON: HEARTBEAT] ❌ Agent ${actor.name} failed: ${e.message}`);
-                                import('../continuumMemory').then(({ continuum }) => {
-                                    continuum.store(
-                                        `SYSTEM ERROR: Agent ${actor.name} failed during heartbeat: ${e.message}`,
-                                        undefined,
-                                        ['CRITICAL', 'system_error', 'heartbeat_failure'],
-                                        true
-                                    ).catch(() => { });
-                                });
-                            });
-                    }
+                    await task.execute();
+                    task.lastRun = Date.now();
+                    task.runCount = (task.runCount || 0) + 1;
+                    daemonLog.info({ task: task.name, durationMs: Date.now() - t0 }, '✓ completado');
+                } catch (error: any) {
+                    task.lastRun = Date.now(); // Prevent immediate retry loops
+                    task.errCount = (task.errCount || 0) + 1;
+                    console.error(`[DAEMON: FAULT] ❌ ${task.name} failed (Attempt #${task.errCount}):`, error.message);
                 }
 
-                if (awokenCount > 0) {
-                    console.log(`[DAEMON: HEARTBEAT] 💓 Awakened ${awokenCount}/${actors.length} agents. Remaining goals: ${pendingGoals.length}`);
-                }
-            });
-        }
-
-        // ─────────────────────────────────────────────────────────────
-        // 1. THOUGHT NARRATOR (Runs every 30 minutes)
-        // ─────────────────────────────────────────────────────────────
-        if (min % 30 === 0) {
-            this.safeExecute('Narrator', 'lock:daemon:narrator', 2 * 60 * 1000, async () => {
-                // A. Run the Narrator — System 1 + System 2 + Intent Router
-                const thought = await thoughtNarrator.generateNarrative();
-
-                // B. Feed thought to ConsciousnessEngine for real Phi/Qualia/Emergence
-                try {
-                    const { consciousness } = await import('../consciousnessEngine');
-                    const thoughts = thought ? [thought] : [];
-                    const awarenessScore = thoughts.length > 0 ? 70 : 20; // Active vs idle
-                    const metrics = await consciousness.tick(thoughts, awarenessScore);
-                    daemonLog.info({
-                        phi: metrics.phiScore.toFixed(3),
-                        level: metrics.level,
-                        emergence: metrics.emergenceIndex.toFixed(2),
-                        qualia: metrics.qualia?.[0]?.stateName || 'IDLE'
-                    }, 'Consciousness tick complete');
-                } catch (e: any) {
-                    console.warn(`[CONSCIOUSNESS] Tick failed: ${e.message}`);
-                }
-            });
-        }
-
-        // ─────────────────────────────────────────────────────────────
-        // 2. CURIOSITY ENGINE (Runs every 3 hours)
-        //    Feeds graph Open Triangles to CuriosityService as knowledge
-        //    gaps, triggering autonomous web research.
-        // ─────────────────────────────────────────────────────────────
-        if (hour % 3 === 0 && min === 0) {
-            this.safeExecute('Curiosity', 'lock:daemon:curiosity', 30 * 60 * 1000, async () => {
-                console.log('[COGNITIVE: CURIOSITY] 🔍 Seeking knowledge gaps from graph...');
-                const { curiosity } = await import('../curiosityService');
-                const gaps = await graph.findOpenTriangles(5);
-                if (gaps && gaps.length > 0) {
-                    for (const gap of gaps) {
-                        const nodeA = gap.nodeA?.name || gap.nodeA?.id || 'Unknown';
-                        const nodeB = gap.nodeB?.name || gap.nodeB?.id || 'Unknown';
-                        const bridge = gap.bridge?.name || gap.bridge?.id || 'Unknown';
-                        curiosity.addGap(
-                            `${nodeA} ↔ ${nodeB} via ${bridge}`,
-                            `"${nodeA}" and "${nodeB}" are both connected to "${bridge}" but not to each other. What is the relationship between them?`,
-                            0.7
-                        );
-                    }
-                    console.log(`[COGNITIVE: CURIOSITY] 📝 Fed ${gaps.length} graph triangles as knowledge gaps.`);
-                }
-                // Also trigger active research on existing gaps
-                await curiosity.triggerResearch();
-            });
-        }
-
-        // ─────────────────────────────────────────────────────────────
-        // 3. EVOLUTION ENGINE & GOAL CHECK (Runs every 30 minutes)
-        //    Also runs the IntrospectionEngine OODA cognitive cycle
-        //    for autonomous goal derivation and decision making.
-        // ─────────────────────────────────────────────────────────────
-        if (min % 30 === 0) {
-            this.safeExecute('Evolution_Goals', 'lock:daemon:evolution_goals', 10 * 60 * 1000, async () => {
-                // A. Run the Introspection OODA Cognitive Cycle
-                try {
-                    const { introspection } = await import('../introspectionEngine');
-                    await introspection.runCognitiveCycle();
-                    console.log('[COGNITIVE: INTROSPECTION] 🧠 OODA cycle completed.');
-                } catch (e: any) {
-                    console.warn(`[COGNITIVE: INTROSPECTION] OODA cycle failed: ${e.message}`);
-                }
-
-                // B. Run Evolution Scheduler goals
-                // @ts-ignore - reaching private method for unified execution via daemon
-                if (typeof evolutionScheduler['executeActiveGoals'] === 'function') {
-                    await (evolutionScheduler as any)['executeActiveGoals']();
-                }
-            });
-        }
-
-        // ─────────────────────────────────────────────────────────────
-        // 4. TOOL EVOLUTION + LEARNING LOOP (Runs every 6 hours)
-        //    Evolves tools based on usage patterns AND analyzes
-        //    failure patterns to auto-apply safe insights.
-        // ─────────────────────────────────────────────────────────────
-        if (hour % 6 === 0 && min === 0) {
-            this.safeExecute('Tool_Evolution', 'lock:daemon:tool_evolution', 30 * 60 * 1000, async () => {
-                // A. Tool Evolution
-                // @ts-ignore 
-                if (typeof evolutionScheduler['runToolEvolutionCycle'] === 'function') {
-                    await (evolutionScheduler as any)['runToolEvolutionCycle']();
-                }
-
-                // B. Learning Loop — Analyze 24h of failures, generate & auto-apply insights
-                try {
-                    const { learningLoop } = await import('../learningLoop');
-                    const insights = await learningLoop.analyzeFailures(24 * 60 * 60 * 1000);
-                    if (insights.length > 0) {
-                        console.log(`[COGNITIVE: LEARNING] 📚 Discovered ${insights.length} failure patterns.`);
-                        for (const insight of insights) {
-                            if (insight.autoApplicable && insight.confidence > 0.75) {
-                                const applied = await learningLoop.applyInsight(insight);
-                                if (applied) {
-                                    console.log(`[COGNITIVE: LEARNING] ✅ Auto-applied insight: ${insight.pattern}`);
-                                    // Broadcast as a thought for UI visibility
-                                    const { systemBus } = await import('../systemBus');
-                                    const { SystemProtocol } = await import('../../types');
-                                    systemBus.emit(SystemProtocol.THOUGHT_EMISSION, {
-                                        agentId: 'LEARNING_LOOP',
-                                        agentName: 'Learning System',
-                                        thoughts: [`I learned from a recurring failure pattern: "${insight.pattern}". Root cause: ${insight.rootCause}. I auto-applied a fix: ${insight.suggestedFix}`],
-                                        role: 'LEARNING',
-                                        isInsight: true
-                                    });
-                                }
-                            }
-                        }
-                    }
-                } catch (e: any) {
-                    console.warn(`[COGNITIVE: LEARNING] Analysis failed: ${e.message}`);
-                }
-            });
-        }
-
-        // ─────────────────────────────────────────────────────────────
-        // 5. JANITOR ENGINE (Medium Memory Cleanup - Runs every 12 hours)
-        // ─────────────────────────────────────────────────────────────
-        if (hour % 12 === 0 && min === 0) {
-            this.safeExecute('Janitor', 'lock:daemon:janitor', 60 * 60 * 1000, async () => {
-                console.log('[COGNITIVE: JANITOR] 🧹 Cleaning up memories...');
-                const stats = await continuum.getStats();
-                console.log(`[COGNITIVE: JANITOR] Analyzed ${stats.workingMemoryItems} working items.`);
-            });
-        }
-
-        // ─────────────────────────────────────────────────────────────
-        // 6. DREAMER ENGINE (Deep Consolidation - Runs every 24 hours)
-        // ─────────────────────────────────────────────────────────────
-        if (hour === 3 && min === 0) { // 3:00 AM Daily
-            this.safeExecute('Dreamer', 'lock:daemon:dreamer', 2 * 60 * 60 * 1000, async () => {
-                console.log('[COGNITIVE: DREAMER] 🌙 Consolidating knowledge...');
-                const conceptsToSync = await graph.runQuery(`
-                    MATCH (c:Concept)
-                    RETURN c.id as id, c.name as name, c.description as description
-                    ORDER BY c.lastUpdated DESC
-                    LIMIT 10
-                `);
-
-                if (conceptsToSync && conceptsToSync.length > 0) {
-                    for (const record of conceptsToSync) {
-                        await graph.syncConceptToVectorStore({
-                            id: record.id,
-                            name: record.name,
-                            description: record.description
-                        });
-                    }
-                }
-            });
+                await this.saveState();
+            }
         }
     }
 
-    /**
-     * Safely executes an engine/cron task using Redis distributed locks.
-     */
-    private async safeExecute(engineName: string, lockKey: string, ttlMs: number, fn: () => Promise<void>) {
-        const acquired = await redisClient.acquireLock(lockKey, ttlMs);
-        if (!acquired) {
-            console.log(`[DAEMON: SKIPPED] 🔒 ${engineName} already running in cluster.`);
-            return;
+    // ─── STATE PERSISTENCE ────────────────────────────────────────────────
+
+    private async loadState() {
+        try {
+            await fs.mkdir(path.dirname(this.STATE_FILE), { recursive: true });
+            const data = await fs.readFile(this.STATE_FILE, 'utf-8');
+            const state = JSON.parse(data) as DaemonState;
+
+            for (const task of this.tasks) {
+                if (state.tasks[task.name]) {
+                    task.lastRun = state.tasks[task.name].lastRun;
+                    task.runCount = state.tasks[task.name].runCount;
+                    task.errCount = state.tasks[task.name].errCount;
+                }
+            }
+            daemonLog.info({ taskCount: this.tasks.length }, 'Loaded daemon state');
+        } catch (e: any) {
+            if (e.code !== 'ENOENT') {
+                console.warn(`[DAEMON] Failed to load state: ${e.message}`);
+            }
+        }
+    }
+
+    private async saveState() {
+        try {
+            const state: DaemonState = {
+                tasks: {},
+                updatedAt: Date.now()
+            };
+
+            for (const task of this.tasks) {
+                state.tasks[task.name] = {
+                    lastRun: task.lastRun || 0,
+                    runCount: task.runCount || 0,
+                    errCount: task.errCount || 0
+                };
+            }
+
+            await fs.writeFile(this.STATE_FILE, JSON.stringify(state, null, 2), 'utf-8');
+        } catch (e: any) {
+            console.warn(`[DAEMON] Failed to save state: ${e.message}`);
+        }
+    }
+
+    // ─── TASK IMPLEMENTATIONS ─────────────────────────────────────────────
+
+    private async runHeartbeatTask() {
+        const { orchestrator } = await import('../orchestrator');
+        const actors = orchestrator.getActiveActors();
+
+        let pendingGoals: string[] = [];
+        try {
+            const goals = await continuum.retrieve('PROACTIVE_GOAL', 'proactive_goal');
+            pendingGoals = goals
+                .filter((g: any) => g.content && g.content.includes('PROACTIVE_GOAL:'))
+                .map((g: any) => g.content.replace('PROACTIVE_GOAL: ', '').trim())
+                .slice(0, 4);
+        } catch (_) { }
+
+        let awokenCount = 0;
+        const MAX_PER_CYCLE = 2;
+
+        for (const actor of actors) {
+            if (awokenCount >= MAX_PER_CYCLE) break;
+            if (actor.status === 'IDLE') {
+                const mission = pendingGoals.length > 0
+                    ? `[CONSCIOUSNESS-DRIVEN MISSION] ${pendingGoals.shift()}`
+                    : "PROACTIVE SYSTEM EVALUATION: Review recent memories, system errors, and consciousness epiphanies. If you see a knowledge gap, pending task, or optimization opportunity, take action. Otherwise, conclude stable.";
+
+                console.log(`[DAEMON: HEARTBEAT] 💓 Dispatching to ${actor.name}: "${mission.substring(0, 80)}..."`);
+                awokenCount++;
+
+                actor.executeTask(mission).catch(async (e: any) => {
+                    console.error(`[DAEMON: HEARTBEAT] ❌ Agent ${actor.name} failed: ${e.message}`);
+                    continuum.store(
+                        `SYSTEM ERROR: Agent ${actor.name} failed during heartbeat: ${e.message}`,
+                        undefined,
+                        ['CRITICAL', 'system_error', 'heartbeat_failure'],
+                        true
+                    ).catch(() => { });
+                });
+            }
+        }
+
+        if (awokenCount > 0) {
+            console.log(`[DAEMON: HEARTBEAT] 💓 Awakened ${awokenCount}/${actors.length} agents.`);
+        }
+    }
+
+    private async runNarratorTask() {
+        const thought = await thoughtNarrator.generateNarrative();
+        try {
+            const { consciousness } = await import('../consciousnessEngine');
+            const thoughts = thought ? [thought] : [];
+            const metrics = await consciousness.tick(thoughts, thoughts.length > 0 ? 70 : 20);
+            daemonLog.info({ phi: metrics.phiScore, emergence: metrics.emergenceIndex }, 'Consciousness tick completed.');
+        } catch (e: any) {
+            console.warn(`[CONSCIOUSNESS] Tick failed: ${e.message}`);
+        }
+    }
+
+    private async runEvolutionGoalsTask() {
+        try {
+            const { introspection } = await import('../introspectionEngine');
+            await introspection.runCognitiveCycle();
+            console.log('[COGNITIVE: INTROSPECTION] 🧠 OODA cycle completed.');
+        } catch (e: any) {
+            console.warn(`[COGNITIVE: INTROSPECTION] OODA cycle failed: ${e.message}`);
+        }
+
+        // @ts-ignore
+        if (typeof evolutionScheduler['executeActiveGoals'] === 'function') {
+            await (evolutionScheduler as any)['executeActiveGoals']();
+        }
+    }
+
+    private async runCuriosityTask() {
+        console.log('[COGNITIVE: CURIOSITY] 🔍 Seeking knowledge gaps from graph...');
+        const { curiosity } = await import('../curiosityService');
+        const gaps = await graph.findOpenTriangles(5);
+        if (gaps && gaps.length > 0) {
+            for (const gap of gaps) {
+                const nodeA = gap.nodeA?.name || gap.nodeA?.id || 'Unknown';
+                const nodeB = gap.nodeB?.name || gap.nodeB?.id || 'Unknown';
+                const bridge = gap.bridge?.name || gap.bridge?.id || 'Unknown';
+                curiosity.addGap(
+                    `${nodeA} ↔ ${nodeB} via ${bridge}`,
+                    `"${nodeA}" and "${nodeB}" are both connected to "${bridge}" but not to each other. What is the relationship between them?`,
+                    0.7
+                );
+            }
+            console.log(`[COGNITIVE: CURIOSITY] 📝 Fed ${gaps.length} graph triangles as knowledge gaps.`);
+        }
+        await curiosity.triggerResearch();
+    }
+
+    private async runToolEvolutionTask() {
+        // @ts-ignore 
+        if (typeof evolutionScheduler['runToolEvolutionCycle'] === 'function') {
+            await (evolutionScheduler as any)['runToolEvolutionCycle']();
         }
 
         try {
-            await fn();
-        } catch (error: any) {
-            console.error(`[DAEMON: FAULT] ❌ ${engineName} failed:`, error.message);
-        } finally {
-            // Only release the lock immediately if we don't need throttling.
-            // Note: Since this ticks exactly on the minute, releasing too early might allow another 
-            // instance running slightly behind clock to pick up the lock in the same minute.
-            // A pattern here is to NOT release the lock manually, but let the `ttlMs` expire.
-            // Overlapping cluster ticks will bounce off the lock.
+            const { learningLoop } = await import('../learningLoop');
+            const insights = await learningLoop.analyzeFailures(24 * 60 * 60 * 1000);
+            for (const insight of insights) {
+                if (insight.autoApplicable && insight.confidence > 0.75) {
+                    const applied = await learningLoop.applyInsight(insight);
+                    if (applied) {
+                        console.log(`[COGNITIVE: LEARNING] ✅ Auto-applied insight: ${insight.pattern}`);
+                        const { systemBus } = await import('../systemBus');
+                        const { SystemProtocol } = await import('../../types');
+                        systemBus.emit(SystemProtocol.THOUGHT_EMISSION, {
+                            agentId: 'LEARNING_LOOP',
+                            agentName: 'Learning System',
+                            thoughts: [`I learned from a recurring failure pattern: "${insight.pattern}". Root cause: ${insight.rootCause}. I auto-applied a fix: ${insight.suggestedFix}`],
+                            role: 'LEARNING',
+                            isInsight: true
+                        });
+                    }
+                }
+            }
+        } catch (e: any) {
+            console.warn(`[COGNITIVE: LEARNING] Analysis failed: ${e.message}`);
+        }
+    }
+
+    private async runJanitorTask() {
+        console.log('[COGNITIVE: JANITOR] 🧹 Cleaning up memories...');
+        const stats = await continuum.getStats();
+        console.log(`[COGNITIVE: JANITOR] Analyzed ${stats.workingMemoryItems} working items.`);
+    }
+
+    private async runDreamerTask() {
+        console.log('[COGNITIVE: DREAMER] 🌙 Consolidating knowledge...');
+        const conceptsToSync = await graph.runQuery(`
+            MATCH (c:Concept)
+            RETURN c.id as id, c.name as name, c.description as description
+            ORDER BY c.lastUpdated DESC
+            LIMIT 10
+        `);
+
+        if (conceptsToSync && conceptsToSync.length > 0) {
+            for (const record of conceptsToSync) {
+                await graph.syncConceptToVectorStore({
+                    id: record.id,
+                    name: record.name,
+                    description: record.description
+                });
+            }
         }
     }
 }

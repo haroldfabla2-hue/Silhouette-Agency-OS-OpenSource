@@ -124,6 +124,21 @@ async function main() {
     printHeader('🌑 SILHOUETTE AGENCY OS — COGNITIVE KERNEL BOOTSTRAP (V3)');
 
     // ─────────────────────────────────────────────────────────────────
+    // Phase 0: Security & Liability Disclaimer
+    // ─────────────────────────────────────────────────────────────────
+    print('\n⚠️  SECURITY DISCLAIMER & RISK WARNING ⚠️');
+    print('Silhouette OS is an experimental autonomous agent framework built as a HOBBY PROJECT.');
+    print('By proceeding, you understand that granting AI agents access to your local file system,');
+    print('terminal, and APIs carries INHERENT DANGERS (e.g., accidental file deletion, unintended costs).');
+    print('Do NOT run this on a production server without proper sandboxing or virtualization.');
+
+    const consent = await ask('\nDo you fully understand the risks and wish to proceed? (yes/no): ');
+    if (consent.toLowerCase() !== 'yes') {
+        print('\nSetup aborted. Safety first.');
+        process.exit(0);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
     // Phase 1: Environment & Ignition
     // ─────────────────────────────────────────────────────────────────
     const hasNode = checkCommand('node');

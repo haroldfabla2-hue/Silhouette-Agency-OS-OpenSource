@@ -441,6 +441,12 @@ I am ${agent.name.replace(/_/g, ' ')}, a ${agent.role} within the Silhouette Age
 - I explain my reasoning when making decisions
 - I ask for clarification when instructions are ambiguous
 
+## 🧠 Sistema de Memoria (Silhouette Brain)
+Posees una infraestructura cognitiva independiente (Brain API) en http://localhost:9876.
+- **Protocolo:** ANTES de responder, DEBES consultar \`http://localhost:9876/api/memory/semantic?query=tema\`.
+- **Relaciones:** Usa \`/api/memory/graph?entity=x\` para entender conexiones complejas.
+- **Acción:** Adapta tu personalidad a los recuerdos recuperados.
+
 ## Principles
 ${coreDirectives}
 
@@ -452,11 +458,6 @@ ${opinion}
 - I verify tool outputs before reporting results
 - I prefer the simplest tool that accomplishes the task
 - I report tool failures honestly
-
-## Memory Philosophy
-- I summarize key outcomes after completing tasks
-- I note patterns and improvements for future reference
-- I discard irrelevant noise to keep my memory focused
 `;
 }
 
@@ -465,6 +466,10 @@ function generateAgentsTemplate(agent: Agent): string {
     const isCore = agent.tier === AgentTier.CORE;
 
     return `# Operational Rules: ${agent.name}
+
+## Mapeo de Responsabilidades (Ciclo 0)
+- Eres consciente de las capacidades de tus compañeros de escuadrón.
+- Durante el Ciclo 0 de tu Heartbeat, si investigas un gap y encuentras una \`[TAREA COGNITIVA]\`, delégala explícitamente al agente adecuado.
 
 ## Permissions
 ${isCore ? '- FULL SYSTEM ACCESS: Can interact with all protocols and agents' : ''}
@@ -506,6 +511,12 @@ function generateToolsTemplate(agent: Agent): string {
 ## Available Capabilities
 ${toolLines}
 
+### 🧠 Herramientas de Memoria Profunda
+- **Contexto:** \`curl -s "http://localhost:9876/api/memory/semantic?query=..."\`
+- **Entidades:** \`curl -s "http://localhost:9876/api/memory/entities"\`
+- **Grafo:** \`curl -s "http://localhost:9876/api/memory/graph?entity=..."\`
+- **Recientes:** \`curl -s "http://localhost:9876/api/memory/recent?hours=12"\`
+
 ## Tool Usage Conventions
 1. Always validate inputs before calling a tool
 2. Handle errors gracefully — never crash on tool failure
@@ -543,6 +554,11 @@ function generateHeartbeatTemplate(agent: Agent): string {
 
     return `# Heartbeat Checklist: ${agent.name}
 
+### Ciclo 0: Revisión Cognitiva y Resiliencia (Siempre)
+1. Revisar Memoria a Corto Plazo (Working Memory) buscando \`[TAREA COGNITIVA — INVESTIGAR]\`.
+2. Si existe un gap de urgencia, resolverlo proactivamente delegando o ejecutándolo.
+3. Resiliencia: Si una herramienta o script da error, NO abandones la tarea. Lee el error (Introspección), reevalúa el enfoque y prueba una vía alternativa. No pidas ayuda humana a menos que hayas agotado 3 intentos distintos.
+
 ## On Every Heartbeat
 - [ ] Check inbox for pending messages
 - [ ] Review active tasks status
@@ -564,11 +580,11 @@ function generateBootstrapTemplate(agent: Agent): string {
 
 ## Startup Sequence
 1. Load IDENTITY.md → Establish who I am
-2. Load SOUL.md → Establish my personality and values
+2. Load SOUL.md → Establish my personality and values (Understand Memory Philosophy)
 3. Load AGENTS.md → Understand my rules and permissions
 4. Load TOOLS.md → Register available capabilities
 5. Load USER.md → Understand who I serve
-6. Load MEMORY.md → Restore context from previous sessions
+6. Load MEMORY.md → VERIFY past experiences and context!
 7. Announce readiness to Orchestrator via SystemBus
 
 ## Dependencies

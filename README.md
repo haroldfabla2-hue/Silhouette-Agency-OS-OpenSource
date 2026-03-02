@@ -258,7 +258,24 @@ This system demonstrates:
 
 ## 6. Installation & Usage
 
-### Setup
+> [!CAUTION]
+> **SECURITY DISCLAIMER:** This is a hobbyist research project. It grants autonomous LLMs access to your file system and terminal. Run this inside a sandbox, VM, or strictly controlled environment. The creator is not responsible for accidental data loss or API costs.
+
+### Phase 1: Silhouette Brain Cluster (Python Backend)
+Silhouette OS relies on the Python Cognitive Engine to handle advanced vector processing, Neo4j graphs, and semantic memory.
+1. Clone the `silhouette-brain` repository.
+2. Initialize the Neo4j Deep Memory Database:
+   ```bash
+   docker-compose up -d
+   ```
+3. Start the Unified Cognitive Daemon via PM2:
+   ```bash
+   pm2 start ecosystem.config.js
+   pm2 save
+   ```
+
+### Phase 2: Silhouette Agency OS (Node Frontend/Backend)
+**Interactive Intelligent Setup:**
 **One-Command Setup:**
 ```bash
 npm run setup:intelligent
