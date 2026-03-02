@@ -134,6 +134,14 @@ export class ToolHandler {
             case 'request_collaboration':
                 return await this.handleRequestCollaboration(args as RequestCollaborationArgs);
 
+            // ==================== SELF-CONFIGURATION TOOLS Phase 17 ====================
+            case 'get_system_config':
+                return await this.handleGetSystemConfig(args as any);
+            case 'update_system_config':
+                return await this.handleUpdateSystemConfig(args as any);
+            case 'read_architecture':
+                return await this.handleReadArchitecture();
+
             default:
                 if (name.startsWith('query_') && name.includes('_db_')) {
                     if (!args.query) return { error: "Missing 'query' parameter for database tool execution." };
@@ -1547,6 +1555,136 @@ export class ToolHandler {
         } catch (e: any) {
             console.error(`[ToolHandler] ❌ Dynamic DB Query failed: ${e.message}`);
             return { error: `Query failed: ${e.message}` };
+        }
+    }
+
+    // ==================== SELF-CONFIGURATION TOOL HANDLERS Phase 17 ====================
+
+    private async handleGetSystemConfig(args: any): Promise<any> {
+        try {
+            const fs = await import('fs/promises');
+            const path = await import('path');
+
+            const envPath = path.resolve(process.cwd(), '.env.local');
+            const configPath = path.resolve(process.cwd(), 'silhouette.config.json');
+
+            let envContent = '';
+            let configJson = {};
+
+            try { envContent = await fs.readFile(envPath, 'utf8'); } catch (e) { }
+            try { configJson = JSON.parse(await fs.readFile(configPath, 'utf8')); } catch (e) { }
+
+            const envLines = envContent.split('\n');
+            const envMap: Record<string, string> = {};
+            envLines.forEach(line => {
+                if (line.trim() && !line.startsWith('#')) {
+                    const idx = line.indexOf('=');
+                    if (idx > 0) {
+                        const k = line.slice(0, idx).trim();
+                        let v = line.slice(idx + 1).trim();
+                        if (v.startsWith('"') && v.endsWith('"')) v = v.slice(1, -1);
+                        else if (v.startsWith("'") && v.endsWith("'")) v = v.slice(1, -1);
+                        envMap[k] = v;
+                    }
+                }
+            });
+
+            let result: Record<string, any> = {};
+
+            if (args.keys && args.keys.length > 0) {
+                args.keys.forEach((k: string) => {
+                    if (envMap[k] !== undefined) result[k] = envMap[k];
+                    else if ((configJson as any)[k] !== undefined) result[k] = (configJson as any)[k];
+                });
+            } else {
+                result = { ...envMap, ...configJson };
+                // Hide sensitive keys if returning ALL without explicit request
+                Object.keys(result).forEach(k => {
+                    if (k.toLowerCase().includes('key') || k.toLowerCase().includes('token') || k.toLowerCase().includes('password')) {
+                        result[k] = '********';
+                    }
+                });
+            }
+
+            return {
+                status: "success",
+                config: result
+            };
+        } catch (e: any) {
+            return { error: `Failed to read system config: ${e.message}` };
+        }
+    }
+
+    private async handleUpdateSystemConfig(args: any): Promise<any> {
+        try {
+            const fs = await import('fs/promises');
+            const path = await import('path');
+
+            const envPath = path.resolve(process.cwd(), '.env.local');
+            let envContent = '';
+            try { envContent = await fs.readFile(envPath, 'utf8'); } catch (e) { }
+
+            let lines = envContent.split('\n');
+            const updates = args.updates || {};
+            let changedCount = 0;
+
+            for (const [k, v] of Object.entries(updates)) {
+                let found = false;
+                for (let i = 0; i < lines.length; i++) {
+                    if (lines[i].startsWith(`${k}=`) || lines[i].startsWith(`export ${k}=`)) {
+                        // Quote the value if it has spaces
+                        const stringVal = String(v);
+                        const writeVal = stringVal.includes(' ') && !stringVal.startsWith('"') ? `"${stringVal}"` : stringVal;
+                        lines[i] = `${k}=${writeVal}`;
+                        found = true;
+                        changedCount++;
+                        break;
+                    }
+                }
+                if (!found) {
+                    const stringVal = String(v);
+                    const writeVal = stringVal.includes(' ') && !stringVal.startsWith('"') ? `"${stringVal}"` : stringVal;
+                    lines.push(`${k}=${writeVal}`);
+                    changedCount++;
+                }
+            }
+
+            await fs.writeFile(envPath, lines.join('\n'));
+
+            console.log(`[ToolHandler] ⚙️ System config updated (${changedCount} keys). Reason: ${args.reason}`);
+
+
+
+            return {
+                status: "success",
+                message: `Successfully updated ${changedCount} configuration keys in .env.local`,
+                reason_logged: args.reason,
+                requires_restart: true // Safe assumption, though we try to hot-reload
+            };
+        } catch (e: any) {
+            return { error: `Failed to update system config: ${e.message}` };
+        }
+    }
+
+    private async handleReadArchitecture(): Promise<any> {
+        try {
+            const fs = await import('fs/promises');
+            const path = await import('path');
+
+            const archPath = path.resolve(process.cwd(), 'ARCHITECTURE.md');
+            let archContent = '';
+            try {
+                archContent = await fs.readFile(archPath, 'utf8');
+            } catch (e) {
+                return { error: "ARCHITECTURE.md not found. Project root might be incorrect." };
+            }
+
+            return {
+                status: "success",
+                content: archContent
+            };
+        } catch (e: any) {
+            return { error: `Failed to read architecture: ${e.message}` };
         }
     }
 }

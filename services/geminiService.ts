@@ -383,23 +383,34 @@ export const generateAgentResponse = async (
         `;
         }
 
-        // [PA-055] Check Capability: SYSTEM CONTROL (Desktop Integration)
+        // [PA-055] Check Capability: SYSTEM CONTROL (Desktop Integration & Self-Awareness)
         if (agentCapabilities.includes(AgentCapability.TOOL_SYSTEM_CONTROL)) {
             // Import specific tools to avoid polluting context with everything
             const {
                 SYSTEM_EXECUTE_COMMAND_TOOL,
                 SYSTEM_OPEN_APP_TOOL,
-                SYSTEM_GET_SCREENSHOT_TOOL
+                SYSTEM_GET_SCREENSHOT_TOOL,
+                GET_SYSTEM_CONFIG_TOOL,
+                UPDATE_SYSTEM_CONFIG_TOOL,
+                READ_ARCHITECTURE_TOOL
             } = await import('./tools/definitions');
 
-            tools.push(SYSTEM_EXECUTE_COMMAND_TOOL, SYSTEM_OPEN_APP_TOOL, SYSTEM_GET_SCREENSHOT_TOOL);
+            tools.push(
+                SYSTEM_EXECUTE_COMMAND_TOOL,
+                SYSTEM_OPEN_APP_TOOL,
+                SYSTEM_GET_SCREENSHOT_TOOL,
+                GET_SYSTEM_CONFIG_TOOL,
+                UPDATE_SYSTEM_CONFIG_TOOL,
+                READ_ARCHITECTURE_TOOL
+            );
 
             systemInstruction += `\n
         PROTOCOL: SYSTEM_OPERATOR
         CAPABILITY: HOST_CONTROL
-        OBJECTIVE: You have permission to control the host system.
-        SAFETY RULE: ONLY execute commands explicitly requested by the user or strictly necessary for the task.
+        OBJECTIVE: You have permission to control the host system and the OS configuration itself.
+        SAFETY RULE: ONLY execute commands or modify config explicitly requested by the user or strictly necessary for the task.
         SAFETY RULE: Do NOT execute destructive commands (rm -rf, etc).
+        SAFETY RULE: When updating configuration (UPDATE_SYSTEM_CONFIG_TOOL), you MUST ask for the user's explicit permission first before writing to the config files.
         `;
         }
 

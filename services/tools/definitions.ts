@@ -747,6 +747,51 @@ export const SYSTEM_GET_INFO_TOOL: FunctionDeclaration = {
     }
 };
 
+// ==================== SELF-CONFIGURATION TOOLS (Phase 17) ====================
+
+export const GET_SYSTEM_CONFIG_TOOL: FunctionDeclaration = {
+    name: "get_system_config",
+    description: "Read configuration values from .env.local or silhouette.config.json. Use this to check your current mode, channel states, or API keys.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            keys: {
+                type: Type.ARRAY,
+                description: "Array of keys to retrieve (e.g., ['WHATSAPP_RESPONSE_MODE', 'TELEGRAM_ACCESS_MODE', 'PORT']). Pass an empty array to read the entire public config.",
+                items: { type: Type.STRING }
+            }
+        }
+    }
+};
+
+export const UPDATE_SYSTEM_CONFIG_TOOL: FunctionDeclaration = {
+    name: "update_system_config",
+    description: "Modify configuration values in .env.local or silhouette.config.json. CRITICAL SECURITY RULE: You MUST ask the user for explicit permission BEFORE calling this tool. NEVER invoke this tool unless the user has confirmed the exact change.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            updates: {
+                type: Type.OBJECT,
+                description: "Key-value pairs to update (e.g., { 'WHATSAPP_RESPONSE_MODE': 'auto-reply', 'TELEGRAM_ACCESS_MODE': 'allowlist' })"
+            },
+            reason: {
+                type: Type.STRING,
+                description: "A brief explanation of why this configuration is being changed, for the audit log."
+            }
+        },
+        required: ["updates", "reason"]
+    }
+};
+
+export const READ_ARCHITECTURE_TOOL: FunctionDeclaration = {
+    name: "read_architecture",
+    description: "Read the ARCHITECTURE.md file of Silhouette Agency OS. Use this when you need absolute clarity on how your subsystems, orchestrator, tools, and agents interoperate.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {}
+    }
+};
+
 // ==================== CODE EXECUTION TOOL ====================
 
 export interface ExecuteCodeArgs {

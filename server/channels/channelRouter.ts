@@ -104,6 +104,7 @@ class ChannelRouter {
                 isGroup: msg.isGroup,
                 media: msg.media,
                 timestamp: msg.timestamp,
+                isReadOnly: msg.isReadOnly,
             }, `channel:${msg.channel}`);
 
             // 4. Notify WS clients about the channel message

@@ -770,6 +770,12 @@ Format each gap as:
                 { input: payload.message, sessionId: payload.sessionId }
             );
 
+            // [PHASE 16: READ-ONLY OVERRIDE]
+            if (payload.isReadOnly) {
+                console.log(`[ORCHESTRATOR] 👁️ Channel ${payload.channel} is in Read-Only mode. Message ingested but skipping LLM response.`);
+                return;
+            }
+
             // 1. Initial "Thinking" feedback for improved UX
             const { channelRouter } = await import('../server/channels/channelRouter');
             const thinkingMessageId = `think-${Date.now()}`;

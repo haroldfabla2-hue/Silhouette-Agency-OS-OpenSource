@@ -24,9 +24,10 @@ class DiscordChannel implements IChannel {
         allowedGuildIds?: string[];
         allowedChannelIds?: string[];
         accessMode?: 'open' | 'allowlist';
+        responseMode?: 'auto-reply' | 'read-only';
     };
 
-    constructor(config: { botToken: string; allowedGuildIds?: string[]; allowedChannelIds?: string[]; accessMode?: 'open' | 'allowlist' }) {
+    constructor(config: { botToken: string; allowedGuildIds?: string[]; allowedChannelIds?: string[]; accessMode?: 'open' | 'allowlist'; responseMode?: 'auto-reply' | 'read-only' }) {
         this.config = config;
     }
 
@@ -111,6 +112,7 @@ class DiscordChannel implements IChannel {
                     replyTo: msg.reference?.messageId,
                     media,
                     raw: msg,
+                    isReadOnly: this.config.responseMode === 'read-only'
                 };
 
                 if (!incoming.text && !media?.length) return; // Skip empty messages

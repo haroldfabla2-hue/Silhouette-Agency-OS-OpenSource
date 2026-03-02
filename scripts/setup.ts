@@ -114,27 +114,30 @@ async function main() {
     await new Promise(r => setTimeout(r, 1000));
     s.stop(`Hardware Analysis Complete: ${totalGB}GB Total RAM detected.`);
 
-    let neo4jUri = 'bolt://localhost:7687';
+    let neo4jUri = 'bolt://127.0.0.1:7787'; // [ROBUSTNESS]: Changed from 7687 to 7787 to match Docker exposed bolt port, and explicitly use 127.0.0.1 for IPv4
     let neo4jUser = 'neo4j';
     let neo4jPass = 'silhouette';
 
     if (totalGB >= 16) {
         const hasDocker = checkCommand('docker');
         if (hasDocker) {
-            const startNeo = await confirm({
-                message: 'You have ample memory. Shall I deploy the local Deep Memory (Neo4j) container now?',
+            const startLocal = await confirm({
+                message: 'You have ample memory. Shall I deploy the local Deep Memory (Neo4j) and Event Bus (Redis) containers now?',
                 initialValue: true
             });
 
-            if (isCancel(startNeo)) process.exit(0);
+            if (isCancel(startLocal)) process.exit(0);
 
-            if (startNeo) {
-                s.start('Deploying Neo4j container...');
+            if (startLocal) {
+                s.start('Deploying Deep Memory (Neo4j) and Event Bus (Redis) clusters via Docker...');
                 try {
-                    execSync('docker-compose up -d neo4j', { cwd: PROJECT_ROOT, stdio: 'pipe' });
-                    s.stop('Deep Memory cluster deployed locally on port 7687.');
-                } catch (e) {
-                    s.stop('Failed to start Docker container. You may need to start it manually.');
+                    // [ROBUSTNESS]: Redis is strictly required for BullMQ and PubSub, started natively now.
+                    // Pass .env.local to docker-compose so NEO4J_PASSWORD is substituted without injecting all vars into the container.
+                    execSync('docker-compose --env-file .env.local up -d neo4j redis', { cwd: PROJECT_ROOT, stdio: 'pipe' });
+                    s.stop('Clusters deployed locally (Neo4j: 7687, Redis: 6499).');
+                } catch (e: any) {
+                    s.stop('⚠️ Failed to start Docker auto-magically.');
+                    note(`Please run this manually:\ndocker-compose --env-file .env.local up -d neo4j redis\nError details: ${e.message}`, 'error');
                 }
             }
         } else {
@@ -163,20 +166,219 @@ async function main() {
         }
     }
 
-    const telegramInput = await password({
-        message: 'If you have a Telegram Bot Token, paste it here to grant me a voice there (Press Enter to skip):',
-        mask: '*'
+    let telegramToken = '';
+    let telegramAccessMode = 'allowlist';
+    let telegramResponseMode = 'auto-reply';
+    let telegramAllowedIds = '';
+
+    const setupTelegram = await confirm({
+        message: 'Do you want to configure a Telegram Bot to communicate with Silhouette from your phone?',
+        initialValue: false
     });
 
-    if (isCancel(telegramInput)) process.exit(0);
-    const telegramToken = (telegramInput as string).trim();
+    if (isCancel(setupTelegram)) process.exit(0);
+
+    if (setupTelegram) {
+        telegramToken = await text({
+            message: 'Provide your Telegram Bot Token (from @BotFather):',
+            placeholder: '123456789:ABCdefGHIjklmNOPqrsTUVwxyz',
+            validate(value) {
+                if (value.length === 0) return 'Token is required. Leave blank to skip in the previous step.';
+            },
+        }) as string;
+
+        if (isCancel(telegramToken)) process.exit(0);
+
+        if (telegramToken && telegramToken.length > 10) {
+            const securityMode = await select({
+                message: 'Choose your Telegram Bot Security Mode (Access):',
+                options: [
+                    { value: 'auto-trust', label: 'Auto-Trust (Recommended)', hint: 'Binds forever to the first human who messages it.' },
+                    { value: 'strict-allowlist', label: 'Strict Allowlist', hint: 'Manually enter your numeric Telegram ID.' },
+                    { value: 'open', label: 'Open Access (Insecure)', hint: 'Anyone can use your bot.' }
+                ]
+            }) as string;
+
+            if (isCancel(securityMode)) process.exit(0);
+
+            if (securityMode === 'strict-allowlist') {
+                note('Tip: You can use @userinfobot on Telegram to securely find your numeric ID.');
+                telegramAllowedIds = await text({
+                    message: 'Enter your numeric Telegram ID (comma-separated if multiple):',
+                    placeholder: '123456789',
+                    validate(value) {
+                        if (value.length === 0) return 'ID is required for Strict Allowlist.';
+                    }
+                }) as string;
+                if (isCancel(telegramAllowedIds)) process.exit(0);
+                telegramAccessMode = 'allowlist';
+            } else if (securityMode === 'auto-trust') {
+                telegramAccessMode = 'allowlist';
+                telegramAllowedIds = ''; // Handled dynamically on first boot
+            } else if (securityMode === 'open') {
+                telegramAccessMode = 'open';
+                telegramAllowedIds = '';
+            }
+
+            telegramResponseMode = await select({
+                message: 'Should the agent automatically reply in Telegram?',
+                options: [
+                    { value: 'auto-reply', label: 'Auto-Reply', hint: 'Agent actively talks back.' },
+                    { value: 'read-only', label: 'Read-Only', hint: 'Agent logs messages silently without responding.' }
+                ]
+            }) as string;
+
+            if (isCancel(telegramResponseMode)) process.exit(0);
+        }
+    }
+
+    // --- WHATSAPP CONFIGURATION ---
+    let whatsappEnabled = false;
+    let whatsappAccessMode = 'allowlist';
+    let whatsappResponseMode = 'auto-reply';
+    let whatsappAllowedIds = '';
+
+    const setupWhatsapp = await confirm({
+        message: 'Do you want to configure WhatsApp (Free Web/QR Mode via Baileys)?',
+        initialValue: false
+    });
+
+    if (isCancel(setupWhatsapp)) process.exit(0);
+
+    if (setupWhatsapp) {
+        whatsappEnabled = true;
+
+        const securityMode = await select({
+            message: 'Choose your WhatsApp Security Mode (Access):',
+            options: [
+                { value: 'auto-trust', label: 'Auto-Trust (Recommended)', hint: 'Binds forever to the first human who messages it.' },
+                { value: 'strict-allowlist', label: 'Strict Allowlist', hint: 'Manually enter allowed phone numbers.' },
+                { value: 'open', label: 'Open Access (Insecure)', hint: 'Anyone can use your bot.' }
+            ]
+        }) as string;
+
+        if (isCancel(securityMode)) process.exit(0);
+
+        if (securityMode === 'strict-allowlist') {
+            whatsappAllowedIds = await text({
+                message: 'Enter allowed phone numbers, including country code (comma-separated):',
+                placeholder: '1234567890, 0987654321',
+                validate(value) {
+                    if (value.length === 0) return 'Number is required for Strict Allowlist.';
+                }
+            }) as string;
+            if (isCancel(whatsappAllowedIds)) process.exit(0);
+            whatsappAccessMode = 'allowlist';
+        } else if (securityMode === 'auto-trust') {
+            whatsappAccessMode = 'allowlist';
+            whatsappAllowedIds = '';
+        } else if (securityMode === 'open') {
+            whatsappAccessMode = 'open';
+            whatsappAllowedIds = '';
+        }
+
+        whatsappResponseMode = await select({
+            message: 'Should the agent automatically reply in WhatsApp?',
+            options: [
+                { value: 'auto-reply', label: 'Auto-Reply', hint: 'Agent actively talks back.' },
+                { value: 'read-only', label: 'Read-Only', hint: 'Agent logs messages silently without responding.' }
+            ]
+        }) as string;
+
+        if (isCancel(whatsappResponseMode)) process.exit(0);
+    }
+
+    // --- DISCORD CONFIGURATION ---
+    let discordToken = '';
+    let discordAccessMode = 'allowlist';
+    let discordResponseMode = 'auto-reply';
+    let discordAllowedGuilds = '';
+    let discordAllowedChannels = '';
+
+    const setupDiscord = await confirm({
+        message: 'Do you want to configure a Discord Bot?',
+        initialValue: false
+    });
+
+    if (isCancel(setupDiscord)) process.exit(0);
+
+    if (setupDiscord) {
+        discordToken = await text({
+            message: 'Provide your Discord Bot Token:',
+            validate(value) {
+                if (value.length === 0) return 'Token is required. Leave blank to skip in the previous step.';
+            },
+        }) as string;
+
+        if (isCancel(discordToken)) process.exit(0);
+
+        if (discordToken && discordToken.length > 10) {
+            const securityMode = await select({
+                message: 'Choose your Discord Bot Security Mode (Access):',
+                options: [
+                    { value: 'strict-allowlist', label: 'Strict Allowlist', hint: 'Restrict by specific Servers (Guilds) or Channels.' },
+                    { value: 'open', label: 'Open Access (Insecure)', hint: 'Anyone in any server the bot is in can interact.' }
+                ]
+            }) as string;
+
+            if (isCancel(securityMode)) process.exit(0);
+
+            if (securityMode === 'strict-allowlist') {
+                discordAllowedGuilds = await text({
+                    message: 'Enter allowed Guild IDs (comma-separated, leave blank for any if channel restricted):',
+                }) as string;
+                if (isCancel(discordAllowedGuilds)) process.exit(0);
+
+                discordAllowedChannels = await text({
+                    message: 'Enter allowed Channel IDs (comma-separated, leave blank for any if guild restricted):',
+                }) as string;
+                if (isCancel(discordAllowedChannels)) process.exit(0);
+
+                discordAccessMode = 'allowlist';
+            } else if (securityMode === 'open') {
+                discordAccessMode = 'open';
+            }
+
+            discordResponseMode = await select({
+                message: 'Should the agent automatically reply in Discord?',
+                options: [
+                    { value: 'auto-reply', label: 'Auto-Reply', hint: 'Agent actively talks back.' },
+                    { value: 'read-only', label: 'Read-Only', hint: 'Agent logs messages silently without responding.' }
+                ]
+            }) as string;
+
+            if (isCancel(discordResponseMode)) process.exit(0);
+        }
+    }
+
 
     s.start('Writing configuration to silhouette.config.json and .env.local...');
     const config: any = {
         system: { port: 3005, env: 'development', autoStart: true, name: 'Silhouette Agency OS' },
         llm: { providers: {}, fallbackChain: selectedProviders.map(p => p.id) },
         channels: {
-            telegram: { enabled: !!telegramToken, botToken: telegramToken || '' }
+            telegram: {
+                enabled: !!telegramToken,
+                botToken: telegramToken || '',
+                accessMode: telegramAccessMode,
+                responseMode: telegramResponseMode,
+                allowedIds: telegramAllowedIds ? telegramAllowedIds.split(',').map(id => id.trim()) : []
+            },
+            whatsapp: {
+                enabled: whatsappEnabled,
+                sessionPath: './data/whatsapp-session',
+                accessMode: whatsappAccessMode,
+                responseMode: whatsappResponseMode,
+                allowFrom: whatsappAllowedIds ? whatsappAllowedIds.split(',').map(id => id.trim()) : []
+            },
+            discord: {
+                enabled: !!discordToken,
+                botToken: discordToken || '',
+                accessMode: discordAccessMode,
+                responseMode: discordResponseMode,
+                allowedGuildIds: discordAllowedGuilds ? discordAllowedGuilds.split(',').map(id => id.trim()) : [],
+                allowedChannelIds: discordAllowedChannels ? discordAllowedChannels.split(',').map(id => id.trim()) : []
+            }
         },
         memory: { continuousConsolidation: true, walEnabled: true }
     };
@@ -200,12 +402,44 @@ async function main() {
             envLines.push(`${envKey}=${provider.apiKey}`);
         }
     }
-    if (telegramToken) envLines.push(`TELEGRAM_BOT_TOKEN=${telegramToken}`);
+
+    // Write Telegram ENV
+    if (telegramToken && telegramToken.length > 10) {
+        envLines.push(`TELEGRAM_BOT_TOKEN=${telegramToken}`);
+        envLines.push(`TELEGRAM_ACCESS_MODE=${telegramAccessMode}`);
+        envLines.push(`TELEGRAM_RESPONSE_MODE=${telegramResponseMode}`);
+        if (telegramAllowedIds) {
+            envLines.push(`TELEGRAM_ALLOWED_IDS=${telegramAllowedIds}`);
+        }
+    }
+
+    // Write WhatsApp ENV
+    envLines.push(`WHATSAPP_ENABLED=${whatsappEnabled}`);
+    if (whatsappEnabled) {
+        envLines.push(`WHATSAPP_ACCESS_MODE=${whatsappAccessMode}`);
+        envLines.push(`WHATSAPP_RESPONSE_MODE=${whatsappResponseMode}`);
+        if (whatsappAllowedIds) {
+            envLines.push(`WHATSAPP_ALLOWED_IDS=${whatsappAllowedIds}`);
+        }
+    }
+
+    // Write Discord ENV
+    if (discordToken && discordToken.length > 10) {
+        envLines.push(`DISCORD_BOT_TOKEN=${discordToken}`);
+        envLines.push(`DISCORD_ACCESS_MODE=${discordAccessMode}`);
+        envLines.push(`DISCORD_RESPONSE_MODE=${discordResponseMode}`);
+        if (discordAllowedGuilds) {
+            envLines.push(`DISCORD_ALLOWED_GUILDS=${discordAllowedGuilds}`);
+        }
+        if (discordAllowedChannels) {
+            envLines.push(`DISCORD_ALLOWED_CHANNELS=${discordAllowedChannels}`);
+        }
+    }
     envLines.push('');
     envLines.push(`NEO4J_URI=${neo4jUri}`);
     envLines.push(`NEO4J_USER=${neo4jUser}`);
     envLines.push(`NEO4J_PASSWORD=${neo4jPass}`);
-    envLines.push(`REDIS_URL=redis://localhost:6379`);
+    envLines.push(`REDIS_URL=redis://127.0.0.1:6499`);
 
     fs.writeFileSync(ENV_PATH, envLines.join('\n'), 'utf-8');
     s.stop('Configuration vault generated successfully.');

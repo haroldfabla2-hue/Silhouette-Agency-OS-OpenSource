@@ -25,13 +25,15 @@ class WhatsAppChannel implements IChannel {
         sessionPath: string;
         allowFrom?: string[];
         accessMode?: 'open' | 'allowlist';
+        responseMode?: 'auto-reply' | 'read-only';
     };
 
-    constructor(config?: { sessionPath?: string; allowFrom?: string[]; accessMode?: 'open' | 'allowlist' }) {
+    constructor(config?: { sessionPath?: string; allowFrom?: string[]; accessMode?: 'open' | 'allowlist'; responseMode?: 'auto-reply' | 'read-only' }) {
         this.config = {
             sessionPath: config?.sessionPath ?? './data/whatsapp-session',
             allowFrom: config?.allowFrom,
-            accessMode: config?.accessMode,
+            accessMode: config?.accessMode ?? 'allowlist',
+            responseMode: config?.responseMode ?? 'auto-reply',
         };
     }
 
@@ -84,8 +86,30 @@ class WhatsAppChannel implements IChannel {
                     const sender = msg.key.participant ?? msg.key.remoteJid ?? '';
 
                     if (this.config.accessMode !== 'open') {
-                        // Strict allowlist enforcement
-                        if (!this.config.allowFrom || !this.config.allowFrom.some(n => sender.includes(n))) {
+                        // First-Contact Auto-Trust
+                        if (!this.config.allowFrom || this.config.allowFrom.length === 0) {
+                            const cleanSenderId = sender.replace(/@.*$/, '');
+                            console.log(`[WhatsApp] 🛡️ First-contact secured! Trusting user ${cleanSenderId} as Primary Admin.`);
+                            this.config.allowFrom = [cleanSenderId];
+
+                            try {
+                                const fs = await import('fs');
+                                const path = await import('path');
+                                const envPath = path.join(process.cwd(), '.env.local');
+                                if (fs.existsSync(envPath)) {
+                                    let envContent = fs.readFileSync(envPath, 'utf8');
+                                    if (envContent.includes('WHATSAPP_ALLOWED_IDS=')) {
+                                        envContent = envContent.replace(/WHATSAPP_ALLOWED_IDS=.*/g, `WHATSAPP_ALLOWED_IDS=${cleanSenderId}`);
+                                    } else {
+                                        envContent += `\nWHATSAPP_ALLOWED_IDS=${cleanSenderId}\n`;
+                                    }
+                                    fs.writeFileSync(envPath, envContent, 'utf8');
+                                    console.log(`[WhatsApp] 🔒 Allowed ID ${cleanSenderId} permanently saved to .env.local`);
+                                }
+                            } catch (e) {
+                                console.warn(`[WhatsApp] Failed to persist ID to .env.local:`, e);
+                            }
+                        } else if (!this.config.allowFrom.some((n: string) => sender.includes(n))) {
                             console.warn(`[WhatsApp] ⛔ Blocked unauthorized sender: ${sender}`);
                             continue;
                         }
@@ -108,6 +132,7 @@ class WhatsAppChannel implements IChannel {
                         isGroup: msg.key.remoteJid?.endsWith('@g.us') ?? false,
                         replyTo: msg.message?.extendedTextMessage?.contextInfo?.stanzaId,
                         raw: msg,
+                        isReadOnly: this.config.responseMode === 'read-only'
                     };
 
                     this.lastMessageTime = Date.now();

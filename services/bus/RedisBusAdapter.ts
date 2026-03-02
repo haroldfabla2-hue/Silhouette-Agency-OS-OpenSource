@@ -10,11 +10,27 @@ export class RedisBusAdapter implements IBusAdapter {
 
     constructor(url?: string) {
         const redisUrl = url || process.env.REDIS_URL || 'redis://localhost:6379';
-        this.pubClient = createClient({ url: redisUrl });
-        this.subClient = createClient({ url: redisUrl });
 
-        this.pubClient.on('error', (err) => console.error('[REDIS PUB ERROR]', err));
-        this.subClient.on('error', (err) => console.error('[REDIS SUB ERROR]', err));
+        const redisOptions = {
+            url: redisUrl,
+            socket: {
+                reconnectStrategy: (retries: number) => {
+                    if (retries > 3) return new Error('Max retries reached');
+                    return Math.min(retries * 50, 500);
+                }
+            }
+        };
+
+        this.pubClient = createClient(redisOptions);
+        this.subClient = createClient(redisOptions);
+
+        this.pubClient.on('error', (err) => {
+            // Uncomment to debug detailed Redis connection errors
+            // console.error('[REDIS PUB ERROR]', err.message)
+        });
+        this.subClient.on('error', (err) => {
+            // console.error('[REDIS SUB ERROR]', err.message)
+        });
     }
 
     async connect(): Promise<void> {

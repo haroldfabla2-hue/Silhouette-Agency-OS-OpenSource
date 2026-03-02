@@ -1,39 +1,5 @@
 {
-  "working": [
-    {
-      "id": "1bd2b347-c58e-4a89-94a5-0abbdb6fa285",
-      "content": "[INTROSPECTION] Injected Concept Vector: Ethical Alignment (Str: 1.5)",
-      "originalContent": "[INTROSPECTION] Injected Concept Vector: Ethical Alignment (Str: 1.5)",
-      "timestamp": 1772423322529,
-      "tier": "WORKING",
-      "importance": 0.5,
-      "tags": [
-        "system",
-        "concept-vector"
-      ],
-      "accessCount": 1,
-      "lastAccess": 1772423322529,
-      "decayHealth": 100,
-      "compressionLevel": 0
-    }
-  ],
-  "ultraShort": [
-    {
-      "id": "1bd2b347-c58e-4a89-94a5-0abbdb6fa285",
-      "content": "[INTROSPECTION] Injected Concept Vector: Ethical Alignment (Str: 1.5)",
-      "originalContent": "[INTROSPECTION] Injected Concept Vector: Ethical Alignment (Str: 1.5)",
-      "timestamp": 1772423322529,
-      "tier": "WORKING",
-      "importance": 0.5,
-      "tags": [
-        "system",
-        "concept-vector"
-      ],
-      "accessCount": 1,
-      "lastAccess": 1772423322529,
-      "decayHealth": 100,
-      "compressionLevel": 0
-    }
-  ],
+  "working": [],
+  "ultraShort": [],
   "short": []
 }

@@ -6,6 +6,8 @@
 import { IChannel, IncomingMessage, OutgoingMessage, ChannelStatus, MessageHandler } from '../channelInterface';
 import { Bot, Context, InputFile } from 'grammy';
 import { geminiService } from '../../../services/geminiService';
+import fs from 'fs';
+import path from 'path';
 
 const logger = {
     info: (msg: string, ...args: any[]) => console.log(`[Telegram] ℹ️ ${msg}`, ...args),
@@ -25,9 +27,10 @@ export class TelegramChannel implements IChannel {
         botToken: string;
         allowedChatIds?: number[];
         accessMode?: 'open' | 'allowlist';
+        responseMode?: 'auto-reply' | 'read-only';
     };
 
-    constructor(config: { botToken: string; allowedChatIds?: number[]; accessMode?: 'open' | 'allowlist' }) {
+    constructor(config: { botToken: string; allowedChatIds?: number[]; accessMode?: 'open' | 'allowlist'; responseMode?: 'auto-reply' | 'read-only' }) {
         this.config = config;
     }
 
@@ -54,8 +57,35 @@ export class TelegramChannel implements IChannel {
                     return;
                 }
 
+                // 2.5 FIRST-CONTACT AUTO-TRUST
+                // If the allowlist is strictly empty, we bind the bot to the very first human that messages it.
+                if (!this.config.allowedChatIds || this.config.allowedChatIds.length === 0) {
+                    logger.info(`🛡️ First-contact secured! Trusting user ${userId} (@${ctx.from.username || 'unknown'}) as Primary Admin.`);
+                    this.config.allowedChatIds = [userId];
+
+                    // Persist to .env.local to survive reboots
+                    try {
+                        const envPath = path.join(process.cwd(), '.env.local');
+                        if (fs.existsSync(envPath)) {
+                            let envContent = fs.readFileSync(envPath, 'utf8');
+                            if (envContent.includes('TELEGRAM_ALLOWED_IDS=')) {
+                                envContent = envContent.replace(/TELEGRAM_ALLOWED_IDS=.*/g, `TELEGRAM_ALLOWED_IDS=${userId}`);
+                            } else {
+                                envContent += `\nTELEGRAM_ALLOWED_IDS=${userId}\n`;
+                            }
+                            fs.writeFileSync(envPath, envContent, 'utf8');
+                            logger.info(`🔒 Allowed ID ${userId} permanently saved to .env.local`);
+                        }
+                    } catch (e) {
+                        logger.warn(`Failed to persist ID to .env.local:`, e);
+                    }
+
+                    await next();
+                    return;
+                }
+
                 // 3. BLOCKED
-                logger.warn(`[Telegram] ⛔ Unauthorized access blocked: ${userId} (@${ctx.from.username})`);
+                logger.warn(`⛔ Unauthorized access blocked: ${userId} (@${ctx.from.username || 'unknown'})`);
                 // Optional: Reply to user saying they are not authorized? 
                 // Better to be silent to avoid spam/scanning.
                 return;
@@ -121,6 +151,7 @@ export class TelegramChannel implements IChannel {
             text: ctx.message.text || '',
             timestamp: ctx.message.date * 1000,
             isGroup: ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup',
+            isReadOnly: this.config.responseMode === 'read-only'
         };
 
         this.lastMessageTime = Date.now();

@@ -54,6 +54,7 @@ class MinimaxService {
     // Standard OpenAI compatible endpoint for international/commercial keys
     private apiBase = 'https://api.minimax.chat/v1';
     private apiKey: string = '';
+    private voiceApiKey: string = '';
     private groupId: string = '';
     private defaultModel: string = 'abab-6.5s-chat';
     private isInitialized = false;
@@ -76,6 +77,8 @@ class MinimaxService {
 
         if (mmConfig && mmConfig.apiKey) {
             this.apiKey = mmConfig.apiKey;
+            // Support explicit environment split for voice security; fallback to unified key
+            this.voiceApiKey = process.env.MINIMAX_VOICE_API_KEY || mmConfig.apiKey;
             this.groupId = mmConfig.groupId || '';
             this.defaultModel = mmConfig.model || 'abab6.5s-chat';
             this.isInitialized = true;
@@ -396,7 +399,7 @@ Be introspective, deep, and analytical.`
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${this.apiKey}`
+                    'Authorization': `Bearer ${this.voiceApiKey}`
                 },
                 body: JSON.stringify({
                     model: "speech-01-turbo", // typical speech model
