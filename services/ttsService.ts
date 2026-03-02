@@ -5,12 +5,14 @@ import path from 'path';
 import { resourceArbiter } from './resourceArbiter';
 import { systemBus } from './systemBus';
 import { SystemProtocol } from '../types';
+import { minimaxService } from './minimaxService'; // Inject Minimax TTS
 
 export interface VoiceConfig {
     enabled: boolean;
     autoSpeak: boolean;
     voiceId?: string;
     volume: number;
+    provider: 'local' | 'minimax'; // NEW PROXY
 }
 
 export class TTSService {
@@ -22,7 +24,8 @@ export class TTSService {
     private config: VoiceConfig = {
         enabled: true,
         autoSpeak: false,
-        volume: 1.0
+        volume: 1.0,
+        provider: 'minimax' // Set Minimax as default provider to save VRAM
     };
 
     private constructor() {
@@ -96,11 +99,27 @@ export class TTSService {
         const cleanText = this.cleanForSpeech(text);
         if (!cleanText || cleanText.length < 2) return null;
 
-        console.log(`[TTS] 🗣️ Request: "${cleanText.substring(0, 30)}..." (Voice: ${this.config.voiceId || 'Default'})`);
+        console.log(`[TTS] 🗣️ Request: "${cleanText.substring(0, 30)}..." (Provider: ${this.config.provider})`);
 
+        // --- MINIMAX CLOUD AUDIO ---
+        if (this.config.provider === 'minimax') {
+            try {
+                const audioUrl = await minimaxService.generateSpeech(cleanText, this.config.voiceId);
+                if (audioUrl) {
+                    return audioUrl;
+                }
+                console.warn('[TTS] ⚠️ Minimax Audio Engine returned null. Falling back to Local Python Engine...');
+            } catch (error) {
+                console.warn('[TTS] ⚠️ Minimax Audio Engine failed. Falling back to Local Python Engine...', error);
+            }
+            // Temporarily set provider to 'local' for this run if minimax failed entirely? 
+            // Better to just let it fallback gracefully below.
+        }
+
+        // --- LOCAL PYTHON ENGINE ---
         // Auto-wake if engine is sleeping
         if (!this.isEngineAwake) {
-            console.log('[TTS] ⚡ Engine sleeping - attempting to wake...');
+            console.log('[TTS] ⚡ Local engine sleeping - attempting to wake...');
             await this.wake();
             // Wait a bit for model to load
             await new Promise(resolve => setTimeout(resolve, 2000));
@@ -147,7 +166,7 @@ export class TTSService {
             }
         }
 
-        return null; // Fallback currently not implemented
+        return null; // Fallback completely failed
     }
 
     public async getVoices(): Promise<{ default_models: string[], cloned_voices: string[] }> {

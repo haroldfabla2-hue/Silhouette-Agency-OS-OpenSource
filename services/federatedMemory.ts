@@ -32,7 +32,7 @@ export class FederatedMemoryService {
         console.log(`[FEDERATED_MEMORY] Initializing P2P Sync Protocol. Instance ID: ${this.instanceId}`);
         // In a real network, this would scan mDNS or use WebRTC for peer discovery.
 
-        systemBus.on(SystemProtocol.HIVE_MIND_SYNC, this.handleIncomingSync.bind(this));
+        systemBus.subscribe(SystemProtocol.HIVE_MIND_SYNC, this.handleIncomingSync.bind(this));
     }
 
     public getPeers(): SyncPeer[] {

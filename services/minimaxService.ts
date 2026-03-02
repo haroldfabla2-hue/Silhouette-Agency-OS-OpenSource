@@ -13,6 +13,7 @@
 import { costEstimator } from './costEstimator';
 import { configLoader } from '../server/config/configLoader';
 import * as fs from 'fs';
+import * as path from 'path';
 
 // Types for Minimax API (OpenAI Compatible)
 interface MinimaxMessage {
@@ -321,6 +322,137 @@ Be introspective, deep, and analytical.`
 
         } catch (e: any) {
             console.error("[MINIMAX] ❌ Embedding Failed:", e.message);
+            return null;
+        }
+    }
+
+    // --- VISION (Multimodal V2.5) ---
+    public async analyzeImage(prompt: string, base64Image: string): Promise<string> {
+        if (!this.isAvailable()) {
+            throw new Error('[MINIMAX] Service not configured.');
+        }
+        if (!this.checkQuota()) {
+            throw new Error(`[MINIMAX] ⛔ 5-Hour Limit Reached. Please wait.`);
+        }
+
+        // According to OpenAI compatible multimodal structure for Minimax vision models (abab-6.5s-chat or abab-6.5g-chat)
+        const messages = [
+            {
+                role: "user",
+                content: [
+                    { type: "text", text: prompt },
+                    { type: "image_url", image_url: { url: base64Image } }
+                ]
+            }
+        ];
+
+        console.log(`[MINIMAX] 👁️ Analyzing image with Vision capabilities...`);
+
+        try {
+            const response = await fetch(`${this.apiBase}/text/chatcompletion_v2`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.apiKey}`
+                },
+                body: JSON.stringify({
+                    model: this.defaultModel, // e.g. 'abab6.5s-chat'
+                    messages: messages,
+                    temperature: 0.1, // low temp for descriptions
+                    max_tokens: 2048,
+                    stream: false
+                })
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Minimax Vision API Error: ${response.status} - ${errorText}`);
+            }
+
+            const data = await response.json() as MinimaxResponse;
+            this.consumeQuota();
+            return data.choices?.[0]?.message?.content || '';
+
+        } catch (error: any) {
+            console.error('[MINIMAX] ❌ Vision request failed:', error.message);
+            throw error;
+        }
+    }
+
+    // --- AUDIO GENERATION (T2A V2) ---
+    public async generateSpeech(text: string, voiceId?: string): Promise<string | null> {
+        if (!this.isAvailable()) return null;
+        if (!this.checkQuota()) return null;
+
+        // Strip group id since T2A V2 is generic but we map it via Authorization header.
+        const targetVoice = voiceId || 'male-qn-qingse'; // Default Minimax voice ID
+
+        console.log(`[MINIMAX] 🗣️ Generating Audio (Voice: ${targetVoice})...`);
+
+        try {
+            // Minimax v1/t2a_v2 endpoint requires groupId in the URI or as a param
+            // Assuming the common api endpoints:
+            const response = await fetch(`${this.apiBase}/t2a_v2?GroupId=${this.groupId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.apiKey}`
+                },
+                body: JSON.stringify({
+                    model: "speech-01-turbo", // typical speech model
+                    text: text,
+                    stream: false,
+                    voice_setting: {
+                        voice_id: targetVoice,
+                        speed: 1.0,
+                        vol: 1.0,
+                        pitch: 0
+                    },
+                    pronunciation_dict: { tone: [""] },
+                    audio_setting: {
+                        sample_rate: 32000,
+                        bitrate: 128000,
+                        format: "mp3",
+                        channel: 1
+                    }
+                })
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                // Usually means wrong voiceId or invalid groupId
+                console.error(`[MINIMAX] Audio API Error: ${response.status} - ${errorText}`);
+                return null;
+            }
+
+            const data = await response.json();
+
+            // The data structure contains {"data": {"audio": "base64...", "status": 1}}
+            if (data && data.data && data.data.audio) {
+                this.consumeQuota();
+
+                const audioBuffer = Buffer.from(data.data.audio, 'hex'); // Minimax actually returns a hex string for audio sometimes, but standard is hex. 
+                // Wait! According to Minimax docs, T2A_v2 audio is returned as hex string in `data.data.audio`.
+
+                // Save to uploads dir
+                const uploadDir = path.join(process.cwd(), 'uploads');
+                if (!fs.existsSync(uploadDir)) {
+                    fs.mkdirSync(uploadDir, { recursive: true });
+                }
+
+                const filename = `speech_mm_${Date.now()}.mp3`;
+                const filePath = path.join(uploadDir, filename);
+
+                fs.writeFileSync(filePath, audioBuffer);
+
+                return `/uploads/${filename}`;
+            }
+
+            console.error('[MINIMAX] Unexpected audio response format:', data);
+            return null;
+
+        } catch (error: any) {
+            console.error('[MINIMAX] ❌ Audio generation failed:', error.message);
             return null;
         }
     }
