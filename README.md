@@ -338,18 +338,38 @@ Silhouette: [Analyzes codebase, proposes PR with enhancements]
 | `/v1/system/llm-health` | GET | LLM provider status |
 | `/v1/system/status` | GET | System status |
 
+## 8. V5 Advanced Features & Implementation
+
+### 8.1 Genesis V2 Protocol (Agent Factory)
+Genesis V2 is the intelligent birth protocol that scaffolds new cognitive entities automatically. It runs automatically when the OS detects a missing or uninitialized agent roster.
+- **How it works:** It uses a 5-step lifecycle (`SEED` → `BOOTSTRAP` → `HANDSHAKE` → `TEACHING` → `VALIDATION`). It generates the underlying `AGENT_TPL` files (Soul, Heartbeat, Tools, Memory), forces the agent to read the Orchestrator's operational manual via the `SystemBus`, and validates their logical consistency.
+- **Triggering Genesis:** Genesis runs autonomously via `npm run setup:intelligent` or when an unresolved Core agent is invoked. 
+
+### 8.2 Reasoning Verification v2 (Z3 Symbolic Logic)
+Located in `services/introspectionEngine.ts`. The kernel intercepts the agent's proposed `AgentAction`s and mathematically proves they do not violate universal invariants (e.g., trying to modify and delete the same resource simultaneously). 
+- **Usage:** This runs silently on every single cognitive cycle. If a logical contradiction is found, the system halts the loop and emits a `SYSTEM_ALERT`.
+
+### 8.3 Extended Modalities (Haptics & Olfactory)
+Software-level drivers located in `services/sensory/hapticsDriver.ts` and `olfactoryDriver.ts`.
+- **Usage:** Though primarily software abstraction layers for missing physical hardware, these drivers broadcast sensory states (like `HEARTBEAT` haptic pulses or `OZONE` chemical emulation) to the UI's `SENSORY_SNAPSHOT` bus to allow testing immersive biometric hardware setups.
+
+### 8.4 P2P Federated Memory Sync
+Agents can sync Generalized knowledge (`DEEP` tier vectors) with other Silhouette instances on different subnets.
+- **Usage:** Handled autonomously in `services/federatedMemory.ts`. The instance will broadcast generalized learnings on the `HIVE_MIND_SYNC` channel dynamically.
+
 ---
 
-## 8. Future Work
+## 9. Future Work
 
 - [x] Multi-agent swarm coordination
 - [x] Scale-free network topology
 - [x] LLM fallback gateway
 - [x] Autonomous curiosity system
 - [x] **Academic Paper Generation**: Automated pipeline for research, writing, LaTeX formatting, and peer review simulation (`services/paperPipeline.ts`).
-- [ ] **Reasoning Verification v2**: Integration with symbolic logic provers (Current: Introspection Engine).
-- [ ] **Extended Modality**: Haptics & Olfactory (Current: Vision, Audio, 3D Canvas).
-- [ ] **Federated Memory**: P2P knowledge sharing between distinct Silhouette instances.
+- [x] **Reasoning Verification v2**: Integration with symbolic logic provers via `z3-solver`.
+- [x] **Extended Modality**: Software drivers for Haptics & Olfactory.
+- [x] **Federated Memory**: P2P knowledge sharing between distinct Silhouette instances.
+- [x] **Minimax Core Integration**: Native TTS and Visual-Cortex multimodal support mapping to API.
 
 ---
 
