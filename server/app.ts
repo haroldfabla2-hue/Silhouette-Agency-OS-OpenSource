@@ -41,6 +41,7 @@ import squadsRoutes from './routes/v1/squads.routes'; // [SQUADS] Manual Squad C
 import apikeysRoutes from './routes/v1/apikeys.routes'; // [SECURITY] API Key Management
 import doctorRouter from './routes/doctorRoute'; // [DOCTOR] System Diagnostics
 import assetsRoutes from './routes/v1/assets.routes'; // [ASSETS] General file upload
+import googleAuthRoutes from './routes/v1/google-auth.routes'; // [GOOGLE] OAuth2 Initiation
 
 
 // Loaders
@@ -113,6 +114,7 @@ app.use('/v1/production', productionRoutes); // [PRODUCTION] Long-form Video Pip
 app.use('/v1/squads', squadsRoutes); // [SQUADS] Manual Squad Control
 app.use('/v1/admin/api-keys', adminLimiter, apikeysRoutes); // [SECURITY] Admin-only API Key Management
 app.use('/v1/assets', assetsRoutes); // [ASSETS] General file upload
+app.use('/v1/google-auth', googleAuthRoutes); // [GOOGLE] OAuth2 Flow
 app.use('/v1', legacyRoutes);
 
 // --- INTEGRATION HUB WEBHOOKS ---
