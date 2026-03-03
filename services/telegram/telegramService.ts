@@ -76,8 +76,10 @@ export class TelegramService {
         this.bot = new Bot(token);
 
         // Parse whitelist
-        if (process.env.TELEGRAM_ALLOWED_USER_ID) {
-            this.allowedUserId = parseInt(process.env.TELEGRAM_ALLOWED_USER_ID, 10);
+        const allowedIdsEnv = process.env.TELEGRAM_ALLOWED_IDS || process.env.TELEGRAM_ALLOWED_USER_ID;
+        if (allowedIdsEnv) {
+            // Take the first ID if it's a comma-separated list
+            this.allowedUserId = parseInt(allowedIdsEnv.split(',')[0].trim(), 10);
         }
 
         this.initializeMiddleware();

@@ -31,44 +31,8 @@ router.get('/setup-status', async (_req: Request, res: Response) => {
     }
 });
 
-// POST /v1/identity/setup - First-time setup (creates CREATOR user)
-router.post('/setup', async (req: Request, res: Response) => {
-    try {
-        const { identityService } = await import('../../../services/identityService');
-        await identityService.init();
-
-        const { name, fingerprint, deviceName } = req.body;
-
-        if (!name || !name.trim()) {
-            return res.status(400).json({ error: 'Name is required' });
-        }
-
-        if (!fingerprint) {
-            return res.status(400).json({ error: 'Device fingerprint is required' });
-        }
-
-        if (identityService.hasAnyUsers()) {
-            return res.status(409).json({ error: 'Setup already completed' });
-        }
-
-        const result = identityService.setupFirstUser(
-            name.trim(),
-            fingerprint,
-            deviceName || 'Browser'
-        );
-
-        return res.json({
-            success: true,
-            user: result.user,
-            device: result.device,
-            session: result.session,
-            isCreator: true,
-            googleLinked: false
-        });
-    } catch (error: any) {
-        return res.status(500).json({ error: error.message });
-    }
-});
+// NOTE: The POST /setup route with email/password/name is defined below (line ~96)
+// The fingerprint-based setup was legacy and has been removed to avoid shadowing.
 
 // GET /v1/identity/status - Get current auth status
 router.get('/status', async (_req: Request, res: Response) => {

@@ -151,6 +151,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
         return;
     }
 
+    console.log(`[AUTH DEBUG] Returning 403 for path: ${req.path}, OriginalUrl: ${req.originalUrl}, isPublic: ${isPublicPath(req.path)}`);
     res.status(403).json({ error: 'Invalid API token or Session' });
 }
 

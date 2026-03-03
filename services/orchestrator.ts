@@ -184,7 +184,10 @@ class AgentSwarmOrchestrator {
         // --- UNIFIED MESSAGING HANDLER (CHANNELS) ---
         // Handles messages from Telegram, WhatsApp, Discord via ChannelRouter
         systemBus.subscribe(SystemProtocol.USER_MESSAGE, (event) => {
-            this.handleUserMessage(event.payload);
+            console.log('[ORCHESTRATOR] 🔔 USER_MESSAGE event received from systemBus');
+            this.handleUserMessage(event.payload).catch((err: any) => {
+                console.error('[ORCHESTRATOR] ❌ handleUserMessage FAILED:', err?.message || err);
+            });
         });
 
         // ... (existing code)
