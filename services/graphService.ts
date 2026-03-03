@@ -301,7 +301,7 @@ class GraphService {
             ORDER BY degree DESC
             LIMIT $limit
         `;
-        return this.runQuery(query, { limit });
+        return this.runQuery(query, { limit: neo4j.int(limit) });
     }
 
     /**

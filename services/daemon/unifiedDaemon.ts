@@ -334,7 +334,7 @@ export class UnifiedDaemon {
     private async runJanitorTask() {
         console.log('[COGNITIVE: JANITOR] 🧹 Cleaning up memories...');
         const stats = await continuum.getStats();
-        console.log(`[COGNITIVE: JANITOR] Analyzed ${stats.workingMemoryItems} working items.`);
+        console.log(`[COGNITIVE: JANITOR] Analyzed ${stats.working} working items.`);
     }
 
     private async runDreamerTask() {

@@ -1044,7 +1044,7 @@ export const analyzeImage = async (
 export const generateEmbedding = async (text: string): Promise<number[] | null> => {
     const client = ensureClient();
     if (!client) {
-        console.warn("[GeminiService] ⚠️ Embedding skipped: No API Key available.");
+        // Silently skip if no API key is available (relies on local embeddings/text search fallback)
         return null;
     }
 
