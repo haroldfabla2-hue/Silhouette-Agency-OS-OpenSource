@@ -86,7 +86,7 @@ services:
     restart: always
 
   caddy:
-    image: caddy:admin
+    image: caddy:latest
     container_name: silhouette-caddy
     ports:
       - "80:80"
