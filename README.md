@@ -7,8 +7,8 @@
 **Created by Harold Fabla**
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.1-blue.svg)](#)
-[![Status](https://img.shields.io/badge/Status-Active%20Development-green.svg)](#)
+[![Version](https://img.shields.io/badge/Version-3.0-blue.svg)](#)
+[![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen.svg)](#)
 
 </div>
 
@@ -23,6 +23,8 @@ Unlike traditional AI assistants, Silhouette operates as a persistent cognitive 
 - **Long-term memory** with semantic indexing and graph-based knowledge representation
 - **Self-evolution** through controlled GitHub-based code modifications
 - **Multi-modal perception** including visual, audio, and textual processing
+- **Multi-channel communication** via Telegram, WhatsApp, and Discord
+- **Production-grade deployment** with auto-SSL, Docker, and VPS support
 
 > [!WARNING]
 > **This is an experimental hobby project.** Silhouette began as a personal assistant and evolved into an autonomous, self-improving system. While powerful, it executes code and modifies files. **Use with caution and review all actions.** See [SECURITY.md](SECURITY.md) for more details.
@@ -58,7 +60,7 @@ The emergence of Large Language Models (LLMs) has created new possibilities for 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                     PRESENTATION LAYER                          │
-│                    (React/TypeScript UI)                        │
+│           React UI  ·  Telegram  ·  WhatsApp  ·  Discord        │
 ├─────────────────────────────────────────────────────────────────┤
 │                   ORCHESTRATION LAYER                           │
 │     ┌─────────────────────────────────────────────────────┐     │
@@ -75,25 +77,35 @@ The emergence of Large Language Models (LLMs) has created new possibilities for 
 ├─────────────────────────────────────────────────────────────────┤
 │                    CAPABILITY LAYER                             │
 │     ToolExecutor: web_search, code_execution, image_gen,       │
-│                   video_gen, memory_write, git_operations      │
+│                   video_gen, memory_write, git_operations       │
+├─────────────────────────────────────────────────────────────────┤
+│              COMMUNICATION CHANNELS                             │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐           │
+│  │ Telegram │ │ WhatsApp │ │ Discord  │ │  Web UI  │           │
+│  │(Grammy)  │ │(Baileys) │ │(discordjs│ │ (React)  │           │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘           │
 ├─────────────────────────────────────────────────────────────────┤
 │                    DATA & STATE LAYER                           │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐           │
-│  │ LanceDB  │ │ SQLite   │ │  Redis   │ │ GitHub   │           │
-│  │(Vectors) │ │(Persist) │ │ (Cache)  │ │(Version) │           │
+│  │ LanceDB  │ │ SQLite   │ │  Redis   │ │ Neo4j    │           │
+│  │(Vectors) │ │(Persist) │ │ (Cache)  │ │ (Graph)  │           │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘           │
+├─────────────────────────────────────────────────────────────────┤
+│                  PRODUCTION LAYER                               │
+│  Janus V2 Supervisor · Caddy (SSL) · Docker · CI/CD            │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 2.1 Five-Layer Architecture
+### 2.1 Six-Layer Architecture
 
 | Layer | Component | Responsibility |
 |-------|-----------|----------------|
-| **Presentation** | WPF/React UI | User interaction, visualization |
+| **Presentation** | React UI + Messaging Channels | User interaction, visualization |
 | **Orchestration** | ManagerAgent | Cognitive loop coordination |
-| **Specialists** | Agent Pool | Domain-specific task execution |
+| **Specialists** | Agent Pool (500+) | Domain-specific task execution |
 | **Capabilities** | ToolExecutor | External world interaction |
-| **Data/State** | Multi-DB | Persistence and memory |
+| **Communication** | Telegram, WhatsApp, Discord | Multi-channel messaging |
+| **Production** | Janus, Caddy, Docker, CI | Supervision, SSL, deployment |
 
 ---
 
@@ -145,7 +157,29 @@ Silhouette can propose modifications to its own codebase through:
 Silhouette → Proposes PR → Human Reviews → Approve/Reject → Merge
 ```
 
-### 3.4 Multi-LLM Orchestration
+### 3.5 Multi-Channel Communication
+
+All channels share the same Brain, memory, and session context:
+
+| Channel | Library | UX Features |
+|---------|---------|-------------|
+| **Telegram** | Grammy | Continuous typing (4s), Markdown fallback, message chunking (4000 char) |
+| **WhatsApp** | Baileys | Composing presence, auto-trust first contact, QR login |
+| **Discord** | discord.js | Typing (9s), 1950 char chunking, guild/channel allowlists |
+| **Web UI** | React + WebSocket | Real-time dashboard, introspection hub |
+
+**Security:** Each channel supports `open`, `allowlist`, and `auto-trust` access modes. Internal thoughts are filtered (10 patterns) to prevent LLM reasoning from leaking to users.
+
+### 3.6 Janus V2 — Intelligent Supervisor
+
+The Janus process supervisor goes beyond simple restarts:
+
+- **Crash Analysis**: Captures stderr, computes crash signatures
+- **Exponential Backoff**: 1s → 2s → 4s → ... → 30s max
+- **LLM Repair**: After 3 crashes with same signature, invokes Gemini API for root-cause analysis
+- **Learning Loop**: Feeds crash reports to self-evolution system
+
+### 3.7 Multi-LLM Orchestration
 
 The system implements a resilient multi-provider architecture via the **LLM Gateway**:
 
@@ -162,44 +196,30 @@ The system implements a resilient multi-provider architecture via the **LLM Gate
 └─────────────────────────────────────────────────────┘
 ```
 
-Each provider is monitored by a **Circuit Breaker** pattern that:
-- Tracks success/failure rates
-- Suspends failing providers temporarily
-- Automatically recovers after cooldown
-- Provides health metrics via `/v1/system/llm-health`
+### 3.8 Google Workspace Integration
 
-### 3.5 Autonomous Exploration (CuriosityService)
+Unified plugin with per-service activation:
 
-Silhouette proactively expands its knowledge through:
+| Service | Capabilities |
+|---------|-------------|
+| Calendar | List, create, update events |
+| Drive | Upload, search, share files |
+| Gmail | Read, send, search emails |
+| Docs | Create, read documents |
+| Sheets | Read, write, create spreadsheets |
+| Slides, Forms, Meet, Places | Full integration |
 
-1. **Topic Tracking**: Monitors frequently mentioned subjects
-2. **Gap Detection**: Identifies topics lacking depth in the knowledge graph
-3. **Question Generation**: Creates research questions using LLM
-4. **Web Research**: Searches for answers during idle time
-5. **Integration**: Stores discoveries in memory and graph
+OAuth2 flow: `GET /v1/google-auth/start?services=calendar,drive`
 
-### 3.6 Scale-Free Knowledge Network
+### 3.9 Production Security
 
-The knowledge graph implements **scale-free network** principles:
-
-- **Hebbian Learning**: "Neurons that fire together, wire together"
-- **Hub Formation**: Frequently accessed nodes become highly connected
-- **Synaptic Pruning**: Weak, unused connections decay over time
-- **Watts-Strogatz Shortcuts**: Dream cycles create long-range bridges
-
-### 3.7 Per-Agent File System (PAFS)
-Agents are no longer just database entries. Each agent possesses a rich identity stored in specific markdown files (`IDENTITY.md`, `SOUL.md`, `MEMORY.md`, etc.), allowing for deep personalization and persistent context that survives upgrades.
-
-### 3.8 Bilateral Hierarchical Communication
-Agents communicate using a strict hierarchy (Core → Leader → Specialist → Worker) via a session-based protocol (`agentConversation`). This supports:
-- **Direct Messaging**: One-on-one inter-agent chats
-- **Group Sessions**: Multi-agent collaborative war rooms
-- **Delegation**: Structured task hand-off with reporting
-
-### 3.9 Genesis Protocol V2
-A sophisticated 5-phase "birth" process for new agents:
-`SEED` → `BOOTSTRAP` → `HANDSHAKE` → `TEACHING` → `VALIDATION`.
-This ensures every agent is fully cognizant of its role, tools, and team before accepting tasks.
+| Layer | Implementation |
+|-------|---------------|
+| **Auth** | JWT middleware on all API routes |
+| **Rate Limiting** | Global, chat, and admin limiters |
+| **Prompt Sanitization** | 14 injection patterns neutralized |
+| **CORS** | Configurable origin whitelist |
+| **Secrets** | `.env.local` + SQLite secrets vault |
 
 ---
 
@@ -213,7 +233,7 @@ This ensures every agent is fully cognizant of its role, tools, and team before 
 | `code_execution` | Python sandbox for computation |
 | `image_generation` | Visual asset creation |
 | `video_generation` | Motion content (WAN, AnimateDiff) |
-| `introspect_database`| **[NEW]** Universal Database Introspector (Postgres/MySQL/SQLite/Mongo) |
+| `introspect_database`| Universal Database Introspector (Postgres/MySQL/SQLite/Mongo) |
 | `memory_write` | Long-term knowledge encoding |
 | `git_operations` | Self-modification proposals |
 
@@ -235,81 +255,43 @@ Integrated visual and audio processing:
 
 ---
 
-## 5. Novel Contributions
-
-### 5.1 Architectural Innovations
-
-1. **Cognitive Loop Integration**: Unlike chain-of-thought, implements a persistent introspection cycle
-2. **Memory Continuum**: Unified memory across sessions with decay and consolidation
-3. **Controlled Self-Evolution**: Safe self-modification through version control
-4. **Dynamic Capability Injection**: Runtime tool loading based on task requirements
-5. **Autonomous Curiosity**: Proactive knowledge gap filling during idle time
-6. **Scale-Free Knowledge Network**: Hub-based topology with Hebbian learning
-
-### 5.2 Research Implications
-
-This system demonstrates:
-- Feasibility of persistent AI identity
-- Practical implementation of cognitive architectures
-- Human-AI collaborative evolution patterns
-- Multi-modal agency in creative domains
-- Autonomous knowledge acquisition patterns
-
----
-
-## 6. Installation & Usage
+## 5. Installation & Deployment
 
 > [!CAUTION]
 > **SECURITY DISCLAIMER:** This is a hobbyist research project. It grants autonomous LLMs access to your file system and terminal. Run this inside a sandbox, VM, or strictly controlled environment. The creator is not responsible for accidental data loss or API costs.
 
-### Phase 1: Silhouette Brain Cluster (Python Backend)
-Silhouette OS relies on the Python Cognitive Engine to handle advanced vector processing, Neo4j graphs, and semantic memory.
-1. Clone the `silhouette-brain` repository.
-2. Initialize the Neo4j Deep Memory Database:
-   ```bash
-   docker-compose up -d
-   ```
-3. Start the Unified Cognitive Daemon via PM2:
-   ```bash
-   pm2 start ecosystem.config.js
-   pm2 save
-   ```
+### Interactive Setup (Recommended)
 
-### Phase 2: Silhouette Agency OS (Node Frontend/Backend)
-**Interactive Intelligent Setup:**
-**One-Command Setup:**
 ```bash
-npm run setup:intelligent
+# Clone the repository
+git clone https://github.com/haroldfabla2-hue/Silhouette-Agency-OS-OpenSource.git
+cd Silhouette-Agency-OS-OpenSource
+
+# Install dependencies
+npm install
+
+# Run interactive setup wizard
+npx tsx scripts/setup.ts
 ```
 
-**Personalize:**
-```bash
-npm run personalize
-```
+The wizard guides you through:
+1. **LLM Providers** — Gemini, OpenAI, Groq, DeepSeek, Ollama
+2. **Messaging Channels** — Telegram, WhatsApp, Discord
+3. **Deployment Mode** — Local, Docker, VPS, Coolify
+4. **Domain & SSL** — Auto-provisioned via Caddy + Let's Encrypt
+5. **Google Workspace** — OAuth2 credentials
 
 ### Starting the System
 
-**Option A: Full Stack (Local)**
-```bash
-npm run start:stack
-```
-*Starts Databases (Docker), Backend, Frontend, Voice Engine, and Visual Cortex. Best for development.*
+| Mode | Command | Use Case |
+|------|---------|----------|
+| **Local** | `npm run boot` | Development (Janus supervisor) |
+| **Docker** | `docker-compose -f docker-compose.prod.yml up -d` | Production |
+| **VPS** | Setup wizard + Docker | Remote server with SSL |
+| **Coolify** | Git push | Managed deployment |
 
-**Option B: Production (Docker)**
-```bash
-npm run docker:prod
-```
-*Runs the entire stack in isolated containers with persistent data. Best for deployment.*
-
-**Option C: Frontend Only**
-```bash
-npm run dev
-```
-*Starts only the React UI (requires backend running separately).*
-
-For detailed architecture, see **[ARCHITECTURE.md](ARCHITECTURE.md)**.
-For production deployment, see **[docker-compose.prod.yml](docker-compose.prod.yml)**.
-For installation guide, see **[INSTALL.md](INSTALL.md)**.
+For detailed deployment instructions, see **[DEPLOY.md](DEPLOY.md)**.
+For architecture details, see **[ARCHITECTURE.md](ARCHITECTURE.md)**.
 
 This starts:
 - Frontend (React) on `http://localhost:5173`
