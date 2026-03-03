@@ -13,6 +13,7 @@ import { chronos } from "./chronosService";
 import { cfo } from "./cfoService";
 import { contextAssembler } from "./contextAssembler";
 import { toolHandler } from "./tools/toolHandler"; // [PA-038] Import Tool Handler for Fallback
+import { localEmbeddingService } from "./localEmbeddingService";
 
 
 
@@ -1044,8 +1045,9 @@ export const analyzeImage = async (
 export const generateEmbedding = async (text: string): Promise<number[] | null> => {
     const client = ensureClient();
     if (!client) {
-        // Silently skip if no API key is available (relies on local embeddings/text search fallback)
-        return null;
+        // Fallback to local Transformers.js embedding (all-MiniLM-L6-v2)
+        console.log("[GeminiService] 🔌 Using Local Embedding Fallback for:", text.substring(0, 30));
+        return await localEmbeddingService.getEmbedding(text);
     }
 
     try {

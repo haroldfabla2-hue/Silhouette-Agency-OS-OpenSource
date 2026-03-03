@@ -455,35 +455,8 @@ class GraphService {
         try {
             const content = `${concept.name}: ${concept.description || 'No description'}`;
 
-            // Generate embedding (try Gemini first, fallback handled internally)
+            // Generate embedding (try Gemini first, falls back to Local xenova/transformers)
             let embedding = await geminiEmbed(content);
-
-            // Fallback to direct Ollama HTTP call if Gemini fails
-            if (!embedding) {
-                try {
-                    console.log("[GRAPH] 🔄 Trying Ollama embeddings via HTTP...");
-                    const response = await fetch('http://localhost:11434/api/embeddings', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            model: 'nomic-embed-text',
-                            prompt: content
-                        })
-                    });
-
-                    if (response.ok) {
-                        const data = await response.json();
-                        if (data.embedding && Array.isArray(data.embedding)) {
-                            embedding = data.embedding;
-                            console.log(`[GRAPH] ✅ Ollama embedding generated (${embedding.length} dims)`);
-                        }
-                    } else {
-                        console.warn("[GRAPH] Ollama embedding request failed:", response.status);
-                    }
-                } catch (ollamaError: any) {
-                    console.warn("[GRAPH] Ollama embedding fallback failed:", ollamaError.message);
-                }
-            }
 
             if (!embedding) {
                 console.warn(`[GRAPH] ⚠️ No embedding generated for concept: ${concept.id}`);
