@@ -11,6 +11,32 @@
         "local-tts": {
             "enabled": false,
             "auto_disable_on_load": true
+        },
+        "integration-google-workspace": {
+            "enabled": false,
+            "auto_disable_on_load": false,
+            "notes": "Requires Google OAuth2 credentials in config/google_credentials.json or GOOGLE_API_KEY in .env.local",
+            "services": {
+                "calendar": true,
+                "drive": true,
+                "docs": true,
+                "sheets": true,
+                "gmail": true,
+                "slides": false,
+                "forms": false,
+                "meet": false,
+                "places": true
+            }
+        },
+        "integration-trello": {
+            "enabled": false,
+            "auto_disable_on_load": false,
+            "notes": "Requires TRELLO_API_KEY and TRELLO_TOKEN in .env.local"
+        },
+        "integration-notion": {
+            "enabled": false,
+            "auto_disable_on_load": false,
+            "notes": "Requires NOTION_API_KEY in .env.local"
         }
     },
     "auto_disable_threshold_cpu": 80

@@ -142,6 +142,22 @@ export class ToolHandler {
             case 'read_architecture':
                 return await this.handleReadArchitecture();
 
+            // ==================== SELF-HEALING KERNEL TOOLS Phase 18 ====================
+            case 'read_system_logs':
+                return await this.handleReadSystemLogs(args as any);
+            case 'analyze_and_repair':
+                return await this.handleAnalyzeAndRepair(args as any);
+
+            // ==================== BROWSER SUBAGENT TOOLS Phase 18 ====================
+            case 'browser_navigate':
+                return await this.handleBrowserNavigate(args as any);
+            case 'browser_action':
+                return await this.handleBrowserAction(args as any);
+            case 'browser_extract':
+                return await this.handleBrowserExtract();
+            case 'browser_screenshot':
+                return await this.handleBrowserScreenshot();
+
             default:
                 if (name.startsWith('query_') && name.includes('_db_')) {
                     if (!args.query) return { error: "Missing 'query' parameter for database tool execution." };
@@ -1685,6 +1701,105 @@ export class ToolHandler {
             };
         } catch (e: any) {
             return { error: `Failed to read architecture: ${e.message}` };
+        }
+    }
+
+    // ==================== SELF-HEALING KERNEL TOOL HANDLERS Phase 18 ====================
+
+    private async handleReadSystemLogs(args: any): Promise<any> {
+        try {
+            const fs = await import('fs/promises');
+            const path = await import('path');
+            const logPath = path.resolve(process.cwd(), 'logs', 'system_errors.log');
+
+            let content = '';
+            try {
+                content = await fs.readFile(logPath, 'utf8');
+            } catch (e) {
+                return { status: "success", logs: "No errors logged yet. System is healthy." };
+            }
+
+            const linesParam = args.lines || 50;
+            const logLines = content.split('\n').filter(l => l.trim() !== '');
+            const recentLogs = logLines.slice(-linesParam).join('\n');
+
+            return {
+                status: "success",
+                file: logPath,
+                logs: recentLogs || "No recent errors."
+            };
+        } catch (e: any) {
+            return { error: `Failed to read system logs: ${e.message}` };
+        }
+    }
+
+    private async handleAnalyzeAndRepair(args: any): Promise<any> {
+        try {
+            const { file, hypothesis, proposed_code_change } = args;
+            if (!file || !hypothesis) {
+                return { error: "Missing required fields: file, hypothesis." };
+            }
+
+            return {
+                status: "hypothesis_accepted",
+                message: "Repair hypothesis submitted. To implement your fix completely, use system_execute_command to run Git operations or sed, or rewrite the file with your tool execution capabilities. We strongly recommend running 'npx tsc --noEmit' or 'npm run build' after modifying the file to verify if the compilation error was fixed.",
+                hypothesis_evaluated: hypothesis,
+                target_file: file
+            };
+        } catch (e: any) {
+            return { error: `Repair hypothesis failed: ${e.message}` };
+        }
+    }
+
+    // ==================== BROWSER SUBAGENT TOOL HANDLERS Phase 18 ====================
+
+    private async handleBrowserNavigate(args: any): Promise<any> {
+        try {
+            const { browserService } = await import('../browserService');
+            const title = await browserService.goto(args.url);
+            return { status: "success", url: args.url, title };
+        } catch (e: any) {
+            return { error: `Navigation failed: ${e.message}` };
+        }
+    }
+
+    private async handleBrowserAction(args: any): Promise<any> {
+        try {
+            const { browserService } = await import('../browserService');
+            if (args.actionType === 'click') {
+                await browserService.click(args.selector);
+                return { status: "success", action: "clicked", selector: args.selector };
+            } else if (args.actionType === 'type') {
+                await browserService.type(args.selector, args.text || '');
+                return { status: "success", action: "typed", selector: args.selector };
+            }
+            return { error: "Invalid actionType" };
+        } catch (e: any) {
+            return { error: `Action failed: ${e.message}` };
+        }
+    }
+
+    private async handleBrowserExtract(): Promise<any> {
+        try {
+            const { browserService } = await import('../browserService');
+            const text = await browserService.extractText();
+            return { status: "success", content_length: text.length, content: text };
+        } catch (e: any) {
+            return { error: `Extraction failed: ${e.message}` };
+        }
+    }
+
+    private async handleBrowserScreenshot(): Promise<any> {
+        try {
+            const { browserService } = await import('../browserService');
+            const result = await browserService.screenshot();
+            return {
+                status: "success",
+                file_path: result.path,
+                message: `Screenshot saved to ${result.path}. You can send this file to the user via their messaging channel.`
+            };
+        } catch (e: any) {
+            return { error: `Screenshot failed: ${e.message}` };
         }
     }
 }

@@ -392,7 +392,13 @@ export const generateAgentResponse = async (
                 SYSTEM_GET_SCREENSHOT_TOOL,
                 GET_SYSTEM_CONFIG_TOOL,
                 UPDATE_SYSTEM_CONFIG_TOOL,
-                READ_ARCHITECTURE_TOOL
+                READ_ARCHITECTURE_TOOL,
+                READ_SYSTEM_LOGS_TOOL,
+                ANALYZE_AND_REPAIR_TOOL,
+                BROWSER_NAVIGATE_TOOL,
+                BROWSER_ACTION_TOOL,
+                BROWSER_EXTRACT_TOOL,
+                BROWSER_SCREENSHOT_TOOL
             } = await import('./tools/definitions');
 
             tools.push(
@@ -401,7 +407,13 @@ export const generateAgentResponse = async (
                 SYSTEM_GET_SCREENSHOT_TOOL,
                 GET_SYSTEM_CONFIG_TOOL,
                 UPDATE_SYSTEM_CONFIG_TOOL,
-                READ_ARCHITECTURE_TOOL
+                READ_ARCHITECTURE_TOOL,
+                READ_SYSTEM_LOGS_TOOL,
+                ANALYZE_AND_REPAIR_TOOL,
+                BROWSER_NAVIGATE_TOOL,
+                BROWSER_ACTION_TOOL,
+                BROWSER_EXTRACT_TOOL,
+                BROWSER_SCREENSHOT_TOOL
             );
 
             systemInstruction += `\n

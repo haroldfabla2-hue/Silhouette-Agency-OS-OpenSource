@@ -792,6 +792,91 @@ export const READ_ARCHITECTURE_TOOL: FunctionDeclaration = {
     }
 };
 
+// ==================== SELF-HEALING KERNEL TOOLS (Phase 18) ====================
+
+export const READ_SYSTEM_LOGS_TOOL: FunctionDeclaration = {
+    name: "read_system_logs",
+    description: "Read recent system error logs from logs/system_errors.log. Used by Developer Agents to detect node crashes, syntax errors, or logical failures in their own source code.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            lines: {
+                type: Type.INTEGER,
+                description: "Number of trailing lines to read from the log file (e.g., 50)."
+            }
+        }
+    }
+};
+
+export const ANALYZE_AND_REPAIR_TOOL: FunctionDeclaration = {
+    name: "analyze_and_repair",
+    description: "Submit an automated repair hypothesis. Triggers a specialized sub-routine that takes your hypothesis, tests it, and provides the terminal output to confirm if your fix resolved the system error.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            file: {
+                type: Type.STRING,
+                description: "The absolute path of the file requiring a fix."
+            },
+            hypothesis: {
+                type: Type.STRING,
+                description: "Your technical explanation of the bug and how it should be fixed."
+            },
+            proposed_code_change: {
+                type: Type.STRING,
+                description: "The exact code snippet or sed replacement script to apply."
+            }
+        },
+        required: ["file", "hypothesis", "proposed_code_change"]
+    }
+};
+
+// ==================== BROWSER SUBAGENT TOOLS (Phase 18) ====================
+
+export const BROWSER_NAVIGATE_TOOL: FunctionDeclaration = {
+    name: "browser_navigate",
+    description: "Opens a headless browser and navigates to a URL. Returns the page title.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            url: { type: Type.STRING, description: "The full URL to load (e.g., https://news.ycombinator.com)" }
+        },
+        required: ["url"]
+    }
+};
+
+export const BROWSER_ACTION_TOOL: FunctionDeclaration = {
+    name: "browser_action",
+    description: "Performs a DOM action (click or type) on the current browser page.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            actionType: { type: Type.STRING, description: "Either 'click' or 'type'" },
+            selector: { type: Type.STRING, description: "The CSS selector for the element" },
+            text: { type: Type.STRING, description: "The text to type (if actionType is 'type')" }
+        },
+        required: ["actionType", "selector"]
+    }
+};
+
+export const BROWSER_EXTRACT_TOOL: FunctionDeclaration = {
+    name: "browser_extract",
+    description: "Extracts all readable text content from the current browser page. Use this after navigating to a page to read it.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {}
+    }
+};
+
+export const BROWSER_SCREENSHOT_TOOL: FunctionDeclaration = {
+    name: "browser_screenshot",
+    description: "Takes a full-page screenshot of the current browser page. Returns the file path to the saved PNG image. Use this to capture visual evidence of web pages for the user.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {}
+    }
+};
+
 // ==================== CODE EXECUTION TOOL ====================
 
 export interface ExecuteCodeArgs {

@@ -15,6 +15,9 @@
  * ══════════════════════════════════════════════════════════════
  */
 
+import fs from 'fs';
+import path from 'path';
+
 type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'fatal';
 
 interface LogContext {
@@ -105,8 +108,32 @@ class ConsoleStructuredLogger implements Logger {
     debug(ctx: LogContext, msg: string): void { this.log('debug', ctx, msg); }
     info(ctx: LogContext, msg: string): void { this.log('info', ctx, msg); }
     warn(ctx: LogContext, msg: string): void { this.log('warn', ctx, msg); }
-    error(ctx: LogContext, msg: string): void { this.log('error', ctx, msg); }
-    fatal(ctx: LogContext, msg: string): void { this.log('fatal', ctx, msg); }
+    error(ctx: LogContext, msg: string): void {
+        this.log('error', ctx, msg);
+        this.writeErrorToFile('error', ctx, msg);
+    }
+    fatal(ctx: LogContext, msg: string): void {
+        this.log('fatal', ctx, msg);
+        this.writeErrorToFile('fatal', ctx, msg);
+    }
+
+    private writeErrorToFile(level: LogLevel, ctx: LogContext, msg: string) {
+        try {
+            const logsDir = path.resolve(process.cwd(), 'logs');
+            if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
+
+            const logEntry = JSON.stringify({
+                time: new Date().toISOString(),
+                level,
+                msg,
+                ...this.bindings,
+                ...ctx
+            }) + '\n';
+            fs.appendFileSync(path.join(logsDir, 'system_errors.log'), logEntry);
+        } catch (e) {
+            console.error('[LOGGER] Failed to write error log to disk', e);
+        }
+    }
 
     child(bindings: LogContext): Logger {
         return new ConsoleStructuredLogger({ ...this.bindings, ...bindings });
@@ -118,15 +145,51 @@ function createLogger(): Logger {
     try {
         // Dynamic require to avoid build-time dependency
         const pino = require('pino');
-        return pino({
+        const pinoLogger = pino({
             level: getMinLevel(),
             transport: typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production'
                 ? { target: 'pino-pretty', options: { colorize: true } }
                 : undefined
         });
+
+        // Wrap pino to also pipe errors to file
+        return {
+            debug: (ctx: LogContext, msg: string) => pinoLogger.debug(ctx, msg),
+            info: (ctx: LogContext, msg: string) => pinoLogger.info(ctx, msg),
+            warn: (ctx: LogContext, msg: string) => pinoLogger.warn(ctx, msg),
+            error: (ctx: LogContext, msg: string) => {
+                pinoLogger.error(ctx, msg);
+                writeErrorToFileSync('error', ctx, msg);
+            },
+            fatal: (ctx: LogContext, msg: string) => {
+                pinoLogger.fatal(ctx, msg);
+                writeErrorToFileSync('fatal', ctx, msg);
+            },
+            child: (bindings: LogContext) => {
+                const childPino = pinoLogger.child(bindings);
+                // Child wrapper (simplified)
+                return {
+                    ...childPino,
+                    error: (ctx: LogContext, msg: string) => { childPino.error(ctx, msg); writeErrorToFileSync('error', { ...bindings, ...ctx }, msg); },
+                    fatal: (ctx: LogContext, msg: string) => { childPino.fatal(ctx, msg); writeErrorToFileSync('fatal', { ...bindings, ...ctx }, msg); }
+                } as any;
+            }
+        };
     } catch {
         // Pino not installed — use structured console fallback
         return new ConsoleStructuredLogger();
+    }
+}
+
+function writeErrorToFileSync(level: string, ctx: LogContext, msg: string) {
+    try {
+        const logsDir = path.resolve(process.cwd(), 'logs');
+        if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
+
+        const logEntry = JSON.stringify({ time: new Date().toISOString(), level, msg, ...ctx }) + '\n';
+        fs.appendFileSync(path.join(logsDir, 'system_errors.log'), logEntry);
+    } catch (e) {
+        console.error('[LOGGER] Failed to write error log to disk', e);
     }
 }
 

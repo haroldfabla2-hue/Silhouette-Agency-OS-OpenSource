@@ -12,6 +12,7 @@ import cors from 'cors';
 
 // Security Middleware
 import { authMiddleware } from './middleware/authMiddleware';
+import { promptSanitizerMiddleware } from './middleware/promptSanitizer';
 import { globalLimiter, chatLimiter, adminLimiter } from './middleware/rateLimiter';
 
 // Routes
@@ -98,7 +99,7 @@ app.use('/v1/media', mediaRoutes); // [PA-047] Media Cortex API
 app.use('/v1/graph', graphRoutes);
 app.use('/v1/training', trainingRoutes);
 app.use('/v1/telemetry', telemetryRouter); // [TELEMETRY] Brain Observability
-app.use('/v1/chat', chatLimiter, chatRoutes); // [NEW] + chat rate limit
+app.use('/v1/chat', chatLimiter, promptSanitizerMiddleware, chatRoutes); // [NEW] + chat rate limit + prompt sanitizer
 app.use('/v1/memory', memoryRoutes); // [NEW] Memory System
 app.use('/v1/inbox', inboxRoutes); // [DASHBOARD] Mission Control
 app.use('/v1/voices', voiceRoutes); // [VOICE] Voice Library & Cloning

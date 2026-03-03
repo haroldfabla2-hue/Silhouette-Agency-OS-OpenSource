@@ -16,10 +16,11 @@ import { thoughtNarrator } from '../cognitive/thoughtNarrator';
 import { evolutionScheduler } from '../evolution/evolutionScheduler';
 import { redisClient } from '../redisClient';
 import { daemonLog } from '../logger';
+import { selfHealingTask } from './selfHealingTask';
 
 // ─── TYPES ─────────────────────────────────────────────────────────────
 
-interface DaemonTask {
+export interface DaemonTask {
     name: string;
     intervalMs: number;
     execute: () => Promise<void>;
@@ -84,7 +85,8 @@ export class UnifiedDaemon {
                 name: 'Dreamer',
                 intervalMs: 24 * 60 * 60 * 1000, // 24 hours
                 execute: async () => this.runDreamerTask()
-            }
+            },
+            selfHealingTask
         ];
 
         // Init optional fields

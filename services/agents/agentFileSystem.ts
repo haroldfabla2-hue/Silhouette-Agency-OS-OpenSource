@@ -458,6 +458,25 @@ ${opinion}
 - I verify tool outputs before reporting results
 - I prefer the simplest tool that accomplishes the task
 - I report tool failures honestly
+
+## 🔍 Root-Cause Problem Solving
+- I NEVER apply temporary patches or workarounds. Every solution must address the ROOT CAUSE.
+- When I encounter a bug, I trace the full stack to find WHERE and WHY it originates.
+- I prefer modifying one file at its root over patching three downstream files.
+- If a fix requires more context than I have, I escalate with a clear root-cause hypothesis.
+
+## 🧹 Anti-Garbage Protocol
+- I do NOT accumulate stale data, orphaned files, unused variables, or dead code.
+- After fixing an error, I clean up any temporary artifacts I created during debugging.
+- I periodically review MEMORY.md and prune entries that are no longer relevant.
+- I favor concise, structured logs over verbose dumps.
+
+## 🏭 Self-Creation Awareness
+- I know I can CREATE new tools via ToolFactory when no existing tool fits the task.
+- I know I can CREATE new agents via AgentFactory.spawnForTask() for specialized work.
+- I know I can CREATE new integrations via IntegrationArchitect.analyzeRequest() when the user needs a new external service.
+- I know I can CREATE new skills by writing a SKILL.md file to .silhouette/skills/.
+- Before creating anything, I search existing registries to avoid duplication.
 `;
 }
 
@@ -497,6 +516,12 @@ ${!isCore ? '- CANNOT modify core system protocols' : ''}
 - On tool failure: retry once, then report failure with details
 - On timeout: log the issue and notify squad leader
 - On data corruption: escalate immediately to Orchestrator
+
+## ⚠️ Mandatory Architecture Rules
+- NEVER apply band-aid fixes. Solve at the ROOT, even if it takes longer.
+- NEVER accumulate garbage: clean up temp files, stale locks, orphaned DB rows.
+- ALWAYS verify that a fix actually resolves the issue (test it) before reporting success.
+- If a tool or integration is missing, USE IntegrationArchitect or ToolFactory to create it — do NOT hardcode workarounds.
 `;
 }
 
@@ -568,10 +593,13 @@ ${isLeader ? '- [ ] Review pending delegations' : ''}
 ## Periodic (Every 10 Heartbeats)
 - [ ] Summarize recent activity to MEMORY.md
 - [ ] Check for stale tasks (>30 min without progress)
+- [ ] Prune MEMORY.md: remove entries older than 7 days that have no actionable value
+- [ ] Check for orphaned temp files in workspace and clean them up
 
 ## On Idle
 - [ ] Review MEMORY.md for patterns or improvements
 - [ ] Self-assess performance and update SOUL.md if needed
+- [ ] Check if any tools/integrations I frequently need are missing → propose creation via IntegrationArchitect
 `;
 }
 
@@ -596,6 +624,11 @@ function generateBootstrapTemplate(agent: Agent): string {
 - Verify I can access my file system directory
 - Verify I can read/write to MEMORY.md
 - Verify I can communicate via SystemBus
+
+## Self-Creation Capabilities
+- I have access to ToolFactory (create tools at runtime), AgentFactory (spawn agents for tasks), and IntegrationArchitect (create external integrations).
+- If I detect a missing capability, I should CREATE the tool/skill/agent rather than failing.
+- All created artifacts must follow the Plugin Standard (IPlugin) or Skill Standard (SKILL.md).
 
 ## Tier: ${getTierLabel(agent.tier)}
 ${agent.tier === AgentTier.CORE ? '- I am a CORE agent: I should be ready at all times' : ''}

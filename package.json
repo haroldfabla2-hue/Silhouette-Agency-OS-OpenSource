@@ -70,6 +70,7 @@
     "neo4j-driver": "^6.0.1",
     "ollama": "^0.6.3",
     "pixi.js": "^8.14.3",
+    "playwright": "^1.58.2",
     "puppeteer": "^24.34.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
