@@ -490,7 +490,7 @@ ${this.getSuggestedActions(rootCause)}
 
     private async runDiagnosis(agentId: string, logs: string[]): Promise<{ rootCause: string, fixProposal: string, isCriticalApiMissing: boolean, missingApi?: string }> {
         // [OCA] Gather System Context for accurate diagnosis (e.g., is it OOM?)
-        const globalContext = await contextAssembler.getGlobalContext(`Critical Failure in ${agentId} with logs: ${logs.join(' ')}`);
+        const globalContext = await contextAssembler.getGlobalContext(`Critical Failure in ${agentId} with logs: ${logs.join(' ')}`, { mode: 'DEEP' });
 
         const prompt = `
         CRITICAL FAILURE ANALYSIS

@@ -243,7 +243,9 @@ export const generateAgentResponse = async (
 
         // 1. GATHER CONTEXT
         // [MODIFIED] Use ContextAssembler for Unified Reality
-        const globalContext = await contextAssembler.getGlobalContext(task);
+        // Use DEEP mode for background autonomous agents to grant them more time and RAG budget.
+        const fetchMode = communicationLevel === CommunicationLevel.USER_FACING ? 'FAST' : 'DEEP';
+        const globalContext = await contextAssembler.getGlobalContext(task, { mode: fetchMode });
         const { systemMetrics, orchestratorState, screenContext, narrativeState, relevantMemory, graphConnections, chatHistory } = globalContext;
 
         const memoryContext = `${relevantMemory}\n${graphConnections}`;
@@ -1042,7 +1044,15 @@ export const analyzeImage = async (
     }
 };
 
+let consecutiveEmbeddingFailures = 0;
+let isLocalEmbeddingPrimary = false;
+
 export const generateEmbedding = async (text: string): Promise<number[] | null> => {
+    if (isLocalEmbeddingPrimary) {
+        // [PA-048] User requested permanent fallback after 3 strikes
+        return await localEmbeddingService.getEmbedding(text);
+    }
+
     const client = ensureClient();
     if (!client) {
         // Fallback to local Transformers.js embedding (all-MiniLM-L6-v2)
@@ -1060,7 +1070,10 @@ export const generateEmbedding = async (text: string): Promise<number[] | null> 
                 contents: [{ parts: [{ text }] }]
             });
             const embedding = result.embeddings?.[0]?.values;
-            if (embedding) return embedding;
+            if (embedding) {
+                consecutiveEmbeddingFailures = 0; // Reset on success
+                return embedding;
+            }
         } catch (e: any) {
             // [ROBUSTNESS] Handle both Error objects and raw JSON error responses
             const errorMsg = e.message || JSON.stringify(e);
@@ -1074,19 +1087,48 @@ export const generateEmbedding = async (text: string): Promise<number[] | null> 
                         contents: [{ parts: [{ text }] }]
                     });
                     const embedding = result.embeddings?.[0]?.values;
-                    if (embedding) return embedding;
+                    if (embedding) {
+                        consecutiveEmbeddingFailures = 0; // Reset on success
+                        return embedding;
+                    }
                 } catch (fallbackError: any) {
+                    consecutiveEmbeddingFailures++;
                     console.error("[GeminiService] ❌ Fallback Embedding text-embedding-001 also failed:", fallbackError.message || fallbackError);
+
+                    if (consecutiveEmbeddingFailures >= 3) {
+                        isLocalEmbeddingPrimary = true;
+                        console.warn("[GeminiService] 🚨 3 Consecutive API Embedding Failures. Permanently switching to Local Embedding Engine.");
+                    } else {
+                        console.log(`[GeminiService] 🔌 Falling back to Local Embedding Engine (${consecutiveEmbeddingFailures}/3 strikes)...`);
+                    }
+                    return await localEmbeddingService.getEmbedding(text);
                 }
             } else {
-                throw e; // Rethrow other errors
+                consecutiveEmbeddingFailures++;
+                console.error("[GeminiService] ❌ Embedding API Failed:", errorMsg);
+
+                if (consecutiveEmbeddingFailures >= 3) {
+                    isLocalEmbeddingPrimary = true;
+                    console.warn("[GeminiService] 🚨 3 Consecutive API Embedding Failures. Permanently switching to Local Embedding Engine.");
+                } else {
+                    console.log(`[GeminiService] 🔌 Falling back to Local Embedding Engine (${consecutiveEmbeddingFailures}/3 strikes)...`);
+                }
+                return await localEmbeddingService.getEmbedding(text);
             }
         }
 
         return null;
     } catch (e: any) {
-        console.error("[GeminiService] ❌ Embedding API Failed:", e?.message || e);
-        return null;
+        consecutiveEmbeddingFailures++;
+        console.error("[GeminiService] ❌ Critical Embedding Failure:", e?.message || e);
+
+        if (consecutiveEmbeddingFailures >= 3) {
+            isLocalEmbeddingPrimary = true;
+            console.warn("[GeminiService] 🚨 3 Consecutive API Embedding Failures. Permanently switching to Local Embedding Engine.");
+        } else {
+            console.log(`[GeminiService] 🔌 Falling back to Local Embedding Engine (${consecutiveEmbeddingFailures}/3 strikes)...`);
+        }
+        return await localEmbeddingService.getEmbedding(text);
     }
 };
 
@@ -1433,7 +1475,7 @@ ${context?.relevantMemory || ''}
                     thoughtBuffer += text;
 
                     // Real-time Thought Extractor
-                    const thoughtRegex = /<thought>(.*?)<\/thought>/gs;
+                    const thoughtRegex = /<(?:thought|think)>(.*?)<\/(?:thought|think)>/gs;
                     let match;
                     while ((match = thoughtRegex.exec(thoughtBuffer)) !== null) {
                         const content = match[1].trim();

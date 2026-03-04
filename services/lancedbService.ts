@@ -5,6 +5,21 @@ import { MemoryNode, MemoryTier } from '../types';
 
 const DB_PATH = path.resolve(process.cwd(), 'db', 'silhouette.lancedb');
 const DB_DIR = path.dirname(DB_PATH);
+const DEFAULT_DIMENSIONS = 768; // Hardcoded default to match the original schema
+
+// Helper: Dynamically padding vectors to match the database schema
+function adjustVectorDimension(vector: number[], targetDim: number = DEFAULT_DIMENSIONS): number[] {
+    if (!vector || vector.length === 0) return Array(targetDim).fill(0);
+    if (vector.length === targetDim) return vector;
+    if (vector.length > targetDim) return vector.slice(0, targetDim); // Truncate
+
+    // Pad with zeros to match target dimensions
+    const padded = new Array(targetDim).fill(0);
+    for (let i = 0; i < vector.length; i++) {
+        padded[i] = vector[i];
+    }
+    return padded;
+}
 
 if (!fs.existsSync(DB_DIR)) {
     fs.mkdirSync(DB_DIR, { recursive: true });
@@ -108,7 +123,7 @@ export class LanceDbService {
 
         const record = {
             id: node.id,
-            vector: vector || Array(768).fill(0), // Placeholder if no vector provided yet
+            vector: adjustVectorDimension(vector || []),
             content: node.content,
             originalContent: node.originalContent || '',
             tags: node.tags,
@@ -151,7 +166,8 @@ export class LanceDbService {
         if (!this.table) return [];
 
         try {
-            let query = this.table.search(queryVector).limit(limit);
+            const adjustedVector = adjustVectorDimension(queryVector);
+            let query = this.table.search(adjustedVector).limit(limit);
             if (filter) {
                 query = query.where(filter);
             }
@@ -207,18 +223,26 @@ export class LanceDbService {
                     // Also convert target vector to native array
                     const targetVector: number[] = Array.isArray(rawTarget) ? rawTarget : Array.from(rawTarget);
 
+                    // Align vectors to min_len (like silhouette-brain) for cosine sim
+                    const min_len = Math.min(sourceVector.length, targetVector.length);
+                    const sourceAlign = sourceVector.slice(0, min_len);
+                    const targetAlign = targetVector.slice(0, min_len);
+
                     // Dot product
                     let dotProduct = 0;
-                    let targetNorm = 0;
-                    for (let i = 0; i < sourceVector.length && i < targetVector.length; i++) {
-                        dotProduct += sourceVector[i] * targetVector[i];
-                        targetNorm += targetVector[i] * targetVector[i];
+                    let sourceNormAligned = 0;
+                    let targetNormAligned = 0;
+                    for (let i = 0; i < min_len; i++) {
+                        dotProduct += sourceAlign[i] * targetAlign[i];
+                        sourceNormAligned += sourceAlign[i] * sourceAlign[i];
+                        targetNormAligned += targetAlign[i] * targetAlign[i];
                     }
-                    targetNorm = Math.sqrt(targetNorm);
+                    sourceNormAligned = Math.sqrt(sourceNormAligned);
+                    targetNormAligned = Math.sqrt(targetNormAligned);
 
                     // Cosine similarity: ranges from -1 to 1 (1 = identical, 0 = orthogonal, -1 = opposite)
-                    const cosineSim = (sourceNorm > 0 && targetNorm > 0)
-                        ? dotProduct / (sourceNorm * targetNorm)
+                    const cosineSim = (sourceNormAligned > 0 && targetNormAligned > 0)
+                        ? dotProduct / (sourceNormAligned * targetNormAligned)
                         : 0;
 
                     // Normalize to 0-1 scale: (cosineSim + 1) / 2
@@ -372,7 +396,8 @@ export class LanceDbService {
         }
 
         try {
-            const results = await this.knowledgeTable.search(queryVector)
+            const adjustedVector = adjustVectorDimension(queryVector);
+            const results = await this.knowledgeTable.search(adjustedVector)
                 .limit(limit)
                 .toArray();
             return results;

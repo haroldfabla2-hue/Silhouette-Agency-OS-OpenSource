@@ -624,7 +624,7 @@ export class IntrospectionEngine {
         const startTime = performance.now();
 
         // Regex for Thought Detection
-        const thoughtRegex = /<thought>([\s\S]*?)<\/thought>/g;
+        const thoughtRegex = /<(?:thought|think)>([\s\S]*?)<\/(?:thought|think)>/g;
         const thoughts: string[] = [];
         let match;
 

@@ -54,9 +54,13 @@ export const initServer = async () => {
     }, 30000);
 
     // === VOICE ENGINE MONITORING ===
-    // Start voice engine health monitoring (checks every 30s)
-    voiceMonitor.startMonitoring();
-    console.log("[LOADER] 🎤 Voice Engine monitoring started");
+    // Start voice engine health monitoring (checks every 30s) if enabled
+    if (process.env.ENABLE_VOICE_ENGINE === 'true') {
+        voiceMonitor.startMonitoring();
+        console.log("[LOADER] 🎤 Voice Engine monitoring started");
+    } else {
+        console.log("[LOADER] 🎤 Voice Engine monitoring disabled (ENABLE_VOICE_ENGINE != true)");
+    }
 
     // === CONNECTION NERVOUS SYSTEM ===
     // Auto-healing for Neo4j, Ollama, Google APIs, etc.

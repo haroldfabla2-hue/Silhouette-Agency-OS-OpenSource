@@ -780,14 +780,9 @@ Format each gap as:
             }
 
             // 1. Initial "Thinking" feedback for improved UX
+            // [UX FIX] Removed the literal "_Silhouette is thinking..._" text message.
+            // Channels like Telegram already have native typing indicators handled at the channel ingestion level.
             const { channelRouter } = await import('../server/channels/channelRouter');
-            const thinkingMessageId = `think-${Date.now()}`;
-
-            // Send initial ripple if the channel supports it (Telegram shows "typing...")
-            await channelRouter.send(payload.channel, {
-                chatId: payload.chatId,
-                text: "_Silhouette is thinking..._" // Markdown italic for internal feel
-            });
 
             // 2. Determine Agent, Complexity & Hydrate
             const complexityInfo = await this.analyzeComplexity(payload.message);

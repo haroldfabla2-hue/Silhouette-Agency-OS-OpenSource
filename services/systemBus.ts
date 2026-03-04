@@ -73,6 +73,13 @@ class SystemBus {
                 await redisAdapter.connect();
                 this.adapter = redisAdapter;
                 console.log("[SYSTEM BUS] ✅ Upgraded to Redis Adapter.");
+
+                // Re-apply existing subscriptions to the new adapter
+                for (const [protocol, handlers] of this.handlers.entries()) {
+                    for (const handler of handlers) {
+                        this.adapter.subscribe(protocol, handler);
+                    }
+                }
             } catch (err) {
                 console.error("[SYSTEM BUS] Failed to upgrade to Redis, staying on Memory", err);
             }

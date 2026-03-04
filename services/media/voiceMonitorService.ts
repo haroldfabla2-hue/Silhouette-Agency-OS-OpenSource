@@ -75,6 +75,11 @@ class VoiceMonitorService {
      * Check voice engine health
      */
     async checkHealth(): Promise<VoiceEngineHealth> {
+        if (process.env.ENABLE_VOICE_ENGINE !== 'true') {
+            this.lastHealthStatus = 'OFFLINE';
+            return { status: 'OFFLINE', lastCheck: Date.now() };
+        }
+
         try {
             const startTime = Date.now();
             const response = await fetch(`${this.voiceEngineUrl}/health`, {

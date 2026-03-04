@@ -73,8 +73,8 @@ export class TTSService {
 
         let clean = text;
 
-        // 1. Remove <thought> tags (XML style)
-        clean = clean.replace(/<thought>[\s\S]*?<\/thought>/gi, '');
+        // 1. Remove <thought> or <think> tags (XML style)
+        clean = clean.replace(/<(?:thought|think)>[\s\S]*?<\/(?:thought|think)>/gi, '');
 
         // 2. Remove [BLOCK] style thoughts (System logs)
         // Matches [INTROSPECTION] ..., [THOUGHT] ..., etc.
