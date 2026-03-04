@@ -145,6 +145,7 @@ export enum SystemProtocol {
   GOAL_UPDATED = 'PROTOCOL_GOAL_UPDATED',           // Goal progress/completion
   INTEGRATION_EVENT = 'PROTOCOL_INTEGRATION_EVENT', // External webhook/event received
   CONFIRMATION_REQUIRED = 'PROTOCOL_CONFIRMATION_REQUIRED', // Human-in-loop approval needed
+  SYSTEM_RESTART_REQUEST = 'PROTOCOL_SYSTEM_RESTART_REQUEST', // [PA-051] OS Supervisor Auto-Restart Hook
 
   // Inter-Agent Help Protocol (Team Leader Communication)
   HELP_REQUEST = 'PROTOCOL_HELP_REQUEST',     // Agent → Agent (solicita ayuda)

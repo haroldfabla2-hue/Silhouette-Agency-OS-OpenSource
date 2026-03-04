@@ -106,14 +106,57 @@ class SessionManager {
     }
 
     getOrCreateSession(sessionId?: string, opts?: Parameters<SessionManager['createSession']>[0]): Session {
+        const systemMode = (process.env.SYSTEM_MODE || 'personal').toLowerCase();
+
+        // [PA-050] PERSONAL MODE: Omni-Channel Global Memory Sync
+        if (systemMode === 'personal') {
+            const globalId = 'global-omni-session';
+            const globalSession = this.sessions.get(globalId);
+
+            if (globalSession) {
+                globalSession.lastActiveAt = Date.now();
+                globalSession.status = 'active';
+                // Update channel dynamically to reflect the latest interaction point
+                if (opts?.channel) globalSession.channel = opts.channel;
+                return globalSession;
+            }
+
+            // Create the initial global session if it doesn't exist
+            const newOpts = { ...opts, title: 'Omni-Channel Global Brain' };
+            const newSession = this.createSession(newOpts);
+
+            // Re-map the generated UUID back to the hardcoded global ID
+            this.sessions.delete(newSession.id);
+            newSession.id = globalId;
+            this.sessions.set(globalId, newSession);
+            return newSession;
+        }
+
+        // [PA-051] ENTERPRISE MODE: Client-Isolated Memory Grouping
+        if (opts?.clientId) {
+            // Find active session for this explicit enterprise client
+            const existingClientSession = Array.from(this.sessions.values()).find(
+                s => s.clientId === opts.clientId && s.status !== 'closed'
+            );
+            if (existingClientSession) {
+                existingClientSession.lastActiveAt = Date.now();
+                existingClientSession.status = 'active';
+                if (opts?.channel) existingClientSession.channel = opts.channel;
+                return existingClientSession;
+            }
+        }
+
+        // Standard UUID-based session lookup (Fallback / Legacy API)
         if (sessionId) {
             const existing = this.sessions.get(sessionId);
             if (existing) {
                 existing.lastActiveAt = Date.now();
                 existing.status = 'active';
+                if (opts?.channel) existing.channel = opts.channel;
                 return existing;
             }
         }
+
         return this.createSession(opts);
     }
 

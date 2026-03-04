@@ -110,6 +110,23 @@ export class UnifiedDaemon {
 
         // Run first tick immediately
         this.tick();
+
+        // [PA-051] OS Dynamic Reload Hook (For Enterprise Plugins)
+        import('../../services/systemBus').then(({ systemBus }) => {
+            import('../../types').then(({ SystemProtocol }) => {
+                systemBus.subscribe(SystemProtocol.SYSTEM_RESTART_REQUEST, async (event: any) => {
+                    console.warn('[DAEMON] 🚨 SYSTEM_RESTART_REQUEST RECEIVED!');
+                    console.warn(`[DAEMON] ♻️ Initiating Graceful Shutdown (Requested by: ${event.initiator})...`);
+                    this.stop();
+
+                    // Allow 1 second for immediate async writes to finish natively (like logs)
+                    setTimeout(() => {
+                        console.warn('[DAEMON] 💀 Exiting process to allow Janus Supervisor reboot...');
+                        process.exit(0);
+                    }, 1000);
+                });
+            });
+        }).catch(err => console.error('[DAEMON] Failed to bind restart hooks', err));
     }
 
     public stop() {
