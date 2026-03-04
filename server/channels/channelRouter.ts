@@ -9,6 +9,7 @@ import { systemBus } from '../../services/systemBus';
 import { SystemProtocol } from '../../types';
 import { sessionManager } from '../gateway/sessionManager';
 import { gateway } from '../gateway/wsGateway';
+import { nervousSystem } from '../../services/connectionNervousSystem';
 
 // ─── Channel Router ──────────────────────────────────────────────────────────
 
@@ -44,6 +45,24 @@ class ChannelRouter {
                 try {
                     await ch.connect();
                     console.log(`[ChannelRouter] ✅ ${ch.name} connected`);
+
+                    // Auto-register with Nervous System for health monitoring
+                    nervousSystem.register({
+                        id: `channel:${ch.name}`,
+                        name: `Channel: ${ch.name}`,
+                        type: 'LOCAL_SERVICE',
+                        isRequired: false,
+                        checkHealth: async () => ch.isConnected(),
+                        reconnect: async () => {
+                            try {
+                                await ch.connect();
+                                return ch.isConnected();
+                            } catch {
+                                return false;
+                            }
+                        }
+                    });
+
                     systemBus.emit(SystemProtocol.CONNECTION_RESTORED, {
                         service: `channel:${ch.name}`,
                         timestamp: Date.now(),
@@ -66,6 +85,11 @@ class ChannelRouter {
      * Disconnect all channels gracefully.
      */
     async disconnectAll(): Promise<void> {
+        // Unregister all channels from Nervous System monitoring
+        for (const ch of this.channels.values()) {
+            nervousSystem.unregister(`channel:${ch.name}`);
+        }
+
         await Promise.allSettled(
             Array.from(this.channels.values()).map(ch => ch.disconnect())
         );

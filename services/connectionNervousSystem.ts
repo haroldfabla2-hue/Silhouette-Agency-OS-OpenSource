@@ -54,6 +54,9 @@ class ConnectionNervousSystem {
      * Register a connection to be monitored
      */
     public register(target: ConnectionTarget): void {
+        if (this.connections.has(target.id)) {
+            console.log(`[NERVOUS] 🔄 Re-registering: ${target.name} (${target.type})`);
+        }
         this.connections.set(target.id, target);
         this.states.set(target.id, {
             status: 'UNKNOWN',
@@ -63,6 +66,29 @@ class ConnectionNervousSystem {
             isRecovering: false
         });
         console.log(`[NERVOUS] 📡 Registered: ${target.name} (${target.type})`);
+
+        // Immediately check health of the new connection
+        this.checkConnection(target.id, target).catch(() => { });
+    }
+
+    /**
+     * Unregister a connection — stops monitoring it
+     */
+    public unregister(id: string): boolean {
+        const target = this.connections.get(id);
+        if (!target) return false;
+
+        this.connections.delete(id);
+        this.states.delete(id);
+        console.log(`[NERVOUS] 🔌 Unregistered: ${target.name}`);
+        return true;
+    }
+
+    /**
+     * Check if a connection is already registered
+     */
+    public isRegistered(id: string): boolean {
+        return this.connections.has(id);
     }
 
     /**
@@ -381,6 +407,26 @@ export async function initializeNervousSystem(): Promise<void> {
     } else {
         console.log("[NERVOUS] ℹ️ Google APIs not configured — skipping monitoring (set GOOGLE_CLIENT_ID/SECRET in .env.local)");
     }
+
+    // 4. Listen for dynamic integration events from Settings UI
+    systemBus.subscribe(SystemProtocol.INTEGRATION_EVENT, (event: any) => {
+        const { action, integrationId, name, type } = event.payload || {};
+        if (action === 'connected' && integrationId) {
+            // Integration was enabled in Settings — register if not already
+            if (!nervousSystem.isRegistered(`integration:${integrationId}`)) {
+                nervousSystem.register({
+                    id: `integration:${integrationId}`,
+                    name: name || integrationId,
+                    type: type || 'API',
+                    isRequired: false,
+                    checkHealth: async () => true, // Basic — overridden by specific integrations
+                    reconnect: async () => true
+                });
+            }
+        } else if (action === 'disconnected' && integrationId) {
+            nervousSystem.unregister(`integration:${integrationId}`);
+        }
+    });
 
     // Start monitoring
     nervousSystem.start();

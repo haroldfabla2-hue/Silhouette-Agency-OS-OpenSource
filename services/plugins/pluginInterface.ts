@@ -1,5 +1,6 @@
 import { FunctionDeclarationSchema, ToolCategory } from '../tools/toolRegistry';
 import { SkillDefinition } from '../skills/skillRegistry';
+import { IMonitorable } from './monitorable';
 
 /**
  * Definition of a Tool provided by a Plugin.
@@ -44,6 +45,13 @@ export interface IPlugin {
      * These will be automatically registered with the SkillRegistry.
      */
     skills?: SkillDefinition[];
+
+    /**
+     * External dependency monitoring.
+     * If your plugin connects to an external service (API, DB, etc.),
+     * implement this to get automatic health monitoring from the Nervous System.
+     */
+    monitoring?: IMonitorable;
 
     /**
      * Initialization hook.
