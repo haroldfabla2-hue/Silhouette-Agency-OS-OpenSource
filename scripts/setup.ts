@@ -532,6 +532,72 @@ ${domain} {
         if (isCancel(googleClientSecret)) process.exit(0);
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    // VOICE & TTS ENGINE
+    // ═══════════════════════════════════════════════════════════════
+
+    let voiceEnabled = false;
+    let voiceProvider = 'minimax';
+    let minimaxVoiceApiKey = '';
+    let voiceId = 'female-chatty';
+
+    const setupVoice = await confirm({
+        message: 'Do you want to configure the Voice Engine (TTS/STT) for auditory capabilities?',
+        initialValue: true
+    });
+
+    if (isCancel(setupVoice)) process.exit(0);
+
+    if (setupVoice) {
+        voiceEnabled = true;
+
+        voiceProvider = await select({
+            message: 'Which TTS Provider do you want to use?',
+            options: [
+                { value: 'minimax', label: 'MiniMax (High Quality, Low VRAM, Recommended)' },
+                { value: 'local', label: 'Local Python Engine (XTTS-v2, Heavy VRAM)' }
+            ]
+        }) as string;
+
+        if (isCancel(voiceProvider)) process.exit(0);
+
+        if (voiceProvider === 'minimax') {
+            minimaxVoiceApiKey = await password({
+                message: 'Enter your MiniMax Voice API Key (leave blank to use your base Minimax SDK key if provided earlier):',
+                mask: '*'
+            }) as string;
+            if (isCancel(minimaxVoiceApiKey)) process.exit(0);
+
+            voiceId = await select({
+                message: 'Choose a default Voice Profile:',
+                options: [
+                    { value: 'female-chatty', label: 'Chatty Girl (Expressive, energetic, young female)', hint: 'Ideal for Personas' },
+                    { value: 'presenter_female', label: 'Professional Female (Calm, articulate, clear)' },
+                    { value: 'male-qn-qingse', label: 'Default Male (Standard masculine voice)' },
+                    { value: 'custom', label: 'Custom Voice ID (Enter manually)' }
+                ]
+            }) as string;
+
+            if (isCancel(voiceId)) process.exit(0);
+
+            if (voiceId === 'custom') {
+                const customId = await text({
+                    message: 'Enter your custom MiniMax Voice ID:',
+                    validate: v => v.length > 0 ? undefined : 'Required'
+                });
+                if (isCancel(customId)) process.exit(0);
+                voiceId = customId as string;
+            }
+        } else if (voiceProvider === 'local') {
+            const customLocalId = await text({
+                message: 'Enter local voice profile name (or leave default for xtts_en_sample):',
+                initialValue: 'xtts_en_sample',
+                placeholder: 'xtts_en_sample'
+            });
+            if (isCancel(customLocalId)) process.exit(0);
+            voiceId = customLocalId as string;
+        }
+    }
 
 
     s.start('Writing configuration to silhouette.config.json and .env.local...');
@@ -622,6 +688,18 @@ ${domain} {
     envLines.push(`NEO4J_USER=${neo4jUser}`);
     envLines.push(`NEO4J_PASSWORD=${neo4jPass}`);
     envLines.push(`REDIS_URL=redis://127.0.0.1:6499`);
+
+    // Write Voice ENV
+    envLines.push('');
+    envLines.push(`# Voice Configuration`);
+    envLines.push(`ENABLE_VOICE_ENGINE=${voiceEnabled}`);
+    if (voiceEnabled) {
+        envLines.push(`VOICE_PROVIDER=${voiceProvider}`);
+        envLines.push(`VOICE_ID=${voiceId}`);
+        if (minimaxVoiceApiKey) {
+            envLines.push(`MINIMAX_VOICE_API_KEY=${minimaxVoiceApiKey}`);
+        }
+    }
 
     // Write Deployment ENV
     envLines.push('');

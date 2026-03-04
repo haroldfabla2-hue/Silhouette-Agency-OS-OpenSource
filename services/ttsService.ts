@@ -39,6 +39,18 @@ export class TTSService {
 
     private async loadConfig() {
         try {
+            // 1. Load baseline from CLI Setup (.env.local)
+            if (process.env.VOICE_PROVIDER) {
+                this.config.provider = process.env.VOICE_PROVIDER as 'local' | 'minimax';
+            }
+            if (process.env.VOICE_ID) {
+                this.config.voiceId = process.env.VOICE_ID;
+            }
+            if (process.env.ENABLE_VOICE_ENGINE !== undefined) {
+                this.config.enabled = process.env.ENABLE_VOICE_ENGINE === 'true';
+            }
+
+            // 2. Allow SQLite runtime overrides (Web UI/Telegram settings)
             const { sqliteService } = await import('./sqliteService');
             const savedConfig = sqliteService.getConfig('voice_settings');
             if (savedConfig) {
