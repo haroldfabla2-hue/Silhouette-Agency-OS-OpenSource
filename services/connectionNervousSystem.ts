@@ -318,55 +318,68 @@ export async function initializeNervousSystem(): Promise<void> {
         console.warn("[NERVOUS] Neo4j service not available for monitoring");
     }
 
-    // 2. Ollama Local LLM
-    nervousSystem.register({
-        id: 'ollama',
-        name: 'Ollama LLM',
-        type: 'LOCAL_SERVICE',
-        isRequired: false,
-        checkHealth: async () => {
-            try {
-                const response = await fetch('http://localhost:11434/api/tags', {
-                    method: 'GET',
-                    signal: AbortSignal.timeout(3000)
-                });
-                return response.ok;
-            } catch {
-                return false;
-            }
-        },
-        reconnect: async () => {
-            // Ollama is external, we can only check if it's back
-            try {
-                const response = await fetch('http://localhost:11434/api/tags');
-                return response.ok;
-            } catch {
-                return false;
-            }
-        }
-    });
-
-    // 3. Google APIs (Drive/Gmail)
+    // 2. Ollama Local LLM — only register if Ollama is actually available
     try {
-        const { driveService } = await import('./driveService');
-        nervousSystem.register({
-            id: 'google_apis',
-            name: 'Google APIs',
-            type: 'CLOUD',
-            isRequired: false,
-            checkHealth: async () => {
-                // Ensure service is initialized before checking auth
-                await driveService.init();
-                return driveService.isAuthenticated();
-            },
-            reconnect: async () => {
-                // Re-initialize and check if tokens are valid
-                await driveService.init();
-                return driveService.isAuthenticated();
-            }
+        const ollamaProbe = await fetch('http://localhost:11434/api/tags', {
+            method: 'GET',
+            signal: AbortSignal.timeout(2000)
         });
-    } catch (e: any) {
-        console.warn("[NERVOUS] Google Drive service not available for monitoring:", e.message);
+        if (ollamaProbe.ok) {
+            nervousSystem.register({
+                id: 'ollama',
+                name: 'Ollama LLM',
+                type: 'LOCAL_SERVICE',
+                isRequired: false,
+                checkHealth: async () => {
+                    try {
+                        const response = await fetch('http://localhost:11434/api/tags', {
+                            method: 'GET',
+                            signal: AbortSignal.timeout(3000)
+                        });
+                        return response.ok;
+                    } catch {
+                        return false;
+                    }
+                },
+                reconnect: async () => {
+                    try {
+                        const response = await fetch('http://localhost:11434/api/tags');
+                        return response.ok;
+                    } catch {
+                        return false;
+                    }
+                }
+            });
+        } else {
+            console.log("[NERVOUS] ℹ️ Ollama not available — skipping monitoring (install from ollama.com if needed)");
+        }
+    } catch {
+        console.log("[NERVOUS] ℹ️ Ollama not installed or not running — skipping monitoring");
+    }
+
+    // 3. Google APIs (Drive/Gmail) — only register if credentials are configured
+    if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+        try {
+            const { driveService } = await import('./driveService');
+            nervousSystem.register({
+                id: 'google_apis',
+                name: 'Google APIs',
+                type: 'CLOUD',
+                isRequired: false,
+                checkHealth: async () => {
+                    await driveService.init();
+                    return driveService.isAuthenticated();
+                },
+                reconnect: async () => {
+                    await driveService.init();
+                    return driveService.isAuthenticated();
+                }
+            });
+        } catch (e: any) {
+            console.warn("[NERVOUS] Google Drive service not available for monitoring:", e.message);
+        }
+    } else {
+        console.log("[NERVOUS] ℹ️ Google APIs not configured — skipping monitoring (set GOOGLE_CLIENT_ID/SECRET in .env.local)");
     }
 
     // Start monitoring
