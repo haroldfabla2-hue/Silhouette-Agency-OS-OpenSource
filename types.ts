@@ -134,6 +134,11 @@ export enum SystemProtocol {
   VOICE_TTS_ERROR = 'PROTOCOL_VOICE_TTS_ERROR',
   VOICE_QUALITY_LOW = 'PROTOCOL_VOICE_QUALITY_LOW',
 
+  // Epistemological Integrity (Debate Vulnerability Fixes)
+  MEMORY_QUARANTINE = 'PROTOCOL_MEMORY_QUARANTINE',           // Janitor -> Orchestrator: Node quarantined (not deleted)
+  CONTRADICTION_DETECTED = 'PROTOCOL_CONTRADICTION_DETECTED', // Janitor -> Orchestrator: Contradiction found in memory
+  Z3_VERIFICATION_FAILED = 'PROTOCOL_Z3_VERIFICATION_FAILED', // Introspection -> System: Action blocked by formal logic
+
   // Connection Nervous System (Auto-Healing)
   CONNECTION_LOST = 'PROTOCOL_CONNECTION_LOST',       // Service disconnected
   CONNECTION_RESTORED = 'PROTOCOL_CONNECTION_RESTORED', // Service reconnected

@@ -41,6 +41,9 @@ export const ACTIONABLE_PROTOCOLS = [
   'PROTOCOL_INCIDENT_REPORT',            // Research found issue
   'PROTOCOL_GENESIS_TRIGGER',            // Code injection approved
   'PROTOCOL_MISSING_CREDENTIAL',         // New: Credential Safety
+  'PROTOCOL_MEMORY_QUARANTINE',          // Memory node quarantined (not deleted)
+  'PROTOCOL_CONTRADICTION_DETECTED',     // Contradiction found in memory base
+  'PROTOCOL_Z3_VERIFICATION_FAILED',     // Action blocked by formal logic verification
 ];
 
 

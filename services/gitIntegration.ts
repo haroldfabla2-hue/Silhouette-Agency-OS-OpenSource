@@ -572,6 +572,130 @@ ${JSON.stringify(tool.parameters, null, 2)}
             checkRuns: []
         };
     }
+
+    // ══════════════════════════════════════════════════════════════
+    // PR BATCHING & RISK SCORING (Debate Vulnerability Fix #4)
+    // Reduces reviewer fatigue by aggregating small changes into
+    // single PRs with risk assessment and executive summaries.
+    // ══════════════════════════════════════════════════════════════
+
+    private pendingChanges: FileChange[] = [];
+    private batchTimeout: ReturnType<typeof setTimeout> | null = null;
+    private static readonly BATCH_WINDOW_MS = 600000; // 10 minute aggregation window
+
+    /**
+     * Queue a file change for batched PR creation instead of creating immediate PRs.
+     * Changes accumulate for BATCH_WINDOW_MS before being flushed into a single PR.
+     */
+    public queueChange(file: FileChange): void {
+        this.pendingChanges.push(file);
+        console.log(`[GIT_INTEGRATION] 📦 Queued change: ${file.path} (${this.pendingChanges.length} pending)`);
+
+        // Start or reset the batch timer
+        if (this.batchTimeout) {
+            clearTimeout(this.batchTimeout);
+        }
+        this.batchTimeout = setTimeout(() => {
+            this.flushBatch().catch(e =>
+                console.error('[GIT_INTEGRATION] Batch flush failed:', e)
+            );
+        }, GitIntegration.BATCH_WINDOW_MS);
+    }
+
+    /**
+     * Calculate risk score for a set of file changes.
+     * Determines reviewer priority based on which parts of the system are modified.
+     */
+    public calculateRiskScore(files: FileChange[]): 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' {
+        const CRITICAL_PATHS = ['introspectionEngine', 'orchestrator', 'continuumMemory', 'contextJanitor', 'systemBus'];
+        const HIGH_PATHS = ['server/', 'routes/', 'security', 'config', '.env', 'gateway'];
+        const MEDIUM_PATHS = ['agents/', 'tools/', 'services/'];
+
+        for (const file of files) {
+            if (CRITICAL_PATHS.some(p => file.path.includes(p))) return 'CRITICAL';
+        }
+        for (const file of files) {
+            if (HIGH_PATHS.some(p => file.path.includes(p))) return 'HIGH';
+        }
+        for (const file of files) {
+            if (MEDIUM_PATHS.some(p => file.path.includes(p))) return 'MEDIUM';
+        }
+        return 'LOW';
+    }
+
+    /**
+     * Flush all pending changes into a single batched PR with risk assessment.
+     */
+    public async flushBatch(): Promise<PRResult> {
+        if (this.pendingChanges.length === 0) {
+            return { success: false, error: 'No pending changes' };
+        }
+
+        const changes = [...this.pendingChanges];
+        this.pendingChanges = [];
+        this.batchTimeout = null;
+
+        const risk = this.calculateRiskScore(changes);
+        const fileList = changes.map(f => f.path).join(', ');
+        const branchName = `silhouette/batch-${Date.now()}`;
+
+        // Generate executive summary
+        let summary = `Batched ${changes.length} file(s): ${fileList}`;
+        try {
+            summary = await this.generateBatchSummary(changes);
+        } catch (e) {
+            console.warn('[GIT_INTEGRATION] Could not generate executive summary, using default');
+        }
+
+        const title = `🤖 [${risk} RISK] Batch: ${changes.length} change(s)`;
+        const body = [
+            `## 🤖 Batched Auto-Modification`,
+            ``,
+            `**Risk Level**: \`${risk}\``,
+            `**Files Changed**: ${changes.length}`,
+            ``,
+            `### Executive Summary`,
+            summary,
+            ``,
+            `### Changed Files`,
+            ...changes.map(f => `- \`${f.path}\`: ${f.message}`),
+            ``,
+            `### Review Priority`,
+            risk === 'CRITICAL' ? '> 🔴 **CRITICAL**: Core system files modified. Requires thorough review.' :
+                risk === 'HIGH' ? '> 🟠 **HIGH**: Server/security files modified. Review recommended.' :
+                    risk === 'MEDIUM' ? '> 🟡 **MEDIUM**: Agent/tool files modified. Standard review.' :
+                        '> 🟢 **LOW**: Documentation/test changes. Quick review sufficient.',
+            ``,
+            `### Review Checklist`,
+            `- [ ] Changes are safe and follow existing patterns`,
+            `- [ ] No security implications`,
+            `- [ ] No breaking changes to existing APIs`,
+        ].join('\n');
+
+        console.log(`[GIT_INTEGRATION] 📤 Flushing batch: ${changes.length} files, risk: ${risk}`);
+        return this.createPR({ title, body, branchName, files: changes });
+    }
+
+    /**
+     * Generate an executive summary for batched changes using backgroundLLM.
+     */
+    private async generateBatchSummary(changes: FileChange[]): Promise<string> {
+        const fileDescriptions = changes.map(f => `${f.path}: ${f.message}`).join('\n');
+
+        const summary = await backgroundLLM.generate(
+            `Summarize these code changes in 3-5 bullet points for a human reviewer. Focus on what changed and potential impact:\n\n${fileDescriptions}`,
+            { taskType: 'ANALYSIS' as any }
+        );
+
+        return summary || `Modified ${changes.length} file(s): ${changes.map(f => f.path).join(', ')}`;
+    }
+
+    /**
+     * Get the number of pending changes in the batch queue.
+     */
+    public getPendingChangesCount(): number {
+        return this.pendingChanges.length;
+    }
 }
 
 export const gitIntegration = GitIntegration.getInstance();

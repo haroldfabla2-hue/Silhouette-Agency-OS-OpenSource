@@ -23,6 +23,8 @@ const CRASH_LOG_DIR = path.join(process.cwd(), 'logs');
 const CRASH_REPORT_PATH = path.join(CRASH_LOG_DIR, 'janus_crash_report.txt');
 const CRASH_HISTORY_PATH = path.join(CRASH_LOG_DIR, 'janus_crash_history.json');
 const REPAIR_THRESHOLD = 3; // Same crash 3x triggers repair
+const MAX_REPAIRS_PER_SIGNATURE = 3; // Circuit breaker: max total repair attempts per unique crash
+const REPAIR_COOLDOWN_MS = 300000;   // 5 minute cooldown between repairs
 
 let restartCount = 0;
 let lastRestartTime = Date.now();
@@ -88,15 +90,19 @@ function writeCrashReport(exitCode, stderr) {
 // REPAIR INVOCATION
 // ══════════════════════════════════════════════════════════════
 
-function attemptRepair(signature) {
-    console.log(`[JANUS] 🧬 Crash signature ${signature} repeated ${REPAIR_THRESHOLD}+ times. Invoking repair...`);
+function attemptRepair(signature, attemptNumber) {
+    console.log(`[JANUS] 🧬 Crash signature ${signature} repeated ${REPAIR_THRESHOLD}+ times. Invoking deep repair (attempt ${attemptNumber || 1})...`);
     try {
         // Try to invoke janus_repair.ts via tsx
         const npmCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
         execSync(`${npmCmd} tsx scripts/janus_repair.ts`, {
             stdio: 'inherit',
-            timeout: 60000, // 60s max for repair
-            env: { ...process.env, JANUS_CRASH_SIGNATURE: signature }
+            timeout: 120000, // 120s max for deep brain diagnosis
+            env: {
+                ...process.env,
+                JANUS_CRASH_SIGNATURE: signature,
+                JANUS_REPAIR_ATTEMPT: String(attemptNumber || 1)
+            }
         });
         console.log('[JANUS] 🔧 Repair script completed.');
         return true;
@@ -176,11 +182,30 @@ function startServer() {
 
             // Check if repair should be attempted
             if (history.signatures[signature] >= REPAIR_THRESHOLD) {
-                const repaired = attemptRepair(signature);
-                if (repaired) {
-                    // Reset signature count after successful repair
-                    history.signatures[signature] = 0;
+                // Circuit Breaker: check total repair attempts for this signature
+                const repairCount = history.repairAttempts?.[signature] || 0;
+                const now = Date.now();
+
+                if (repairCount >= MAX_REPAIRS_PER_SIGNATURE) {
+                    console.error(`[JANUS] 🔒 CIRCUIT BREAKER: Signature ${signature} has exhausted ${MAX_REPAIRS_PER_SIGNATURE} repair attempts.`);
+                    console.error('[JANUS] 🧑‍💻 HUMAN ESCALATION REQUIRED. Review: logs/janus_crash_report.txt');
+                    console.error('[JANUS] 📋 Repair history:', JSON.stringify(history.repairAttempts, null, 2));
+                    // Do NOT attempt repair — force human review
+                } else if (history.lastRepairAt && (now - history.lastRepairAt < REPAIR_COOLDOWN_MS)) {
+                    const remainingSec = Math.ceil((REPAIR_COOLDOWN_MS - (now - history.lastRepairAt)) / 1000);
+                    console.warn(`[JANUS] ⏳ Repair cooldown active. Next repair available in ${remainingSec}s`);
+                } else {
+                    const repaired = attemptRepair(signature, repairCount + 1);
+                    // Track repair attempt (independently from crash count)
+                    history.repairAttempts = history.repairAttempts || {};
+                    history.repairAttempts[signature] = repairCount + 1;
+                    history.lastRepairAt = now;
+                    if (repaired) {
+                        // Reset crash signature count to track NEW crashes post-repair
+                        history.signatures[signature] = 0;
+                    }
                     saveCrashHistory(history);
+                    console.log(`[JANUS] 🔧 Repair attempt ${repairCount + 1}/${MAX_REPAIRS_PER_SIGNATURE} for signature ${signature}`);
                 }
             }
 
