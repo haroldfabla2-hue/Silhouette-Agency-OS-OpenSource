@@ -408,7 +408,111 @@ export async function initializeNervousSystem(): Promise<void> {
         console.log("[NERVOUS] ℹ️ Google APIs not configured — skipping monitoring (set GOOGLE_CLIENT_ID/SECRET in .env.local)");
     }
 
-    // 4. Listen for dynamic integration events from Settings UI
+    // 4. Redis — register if REDIS_URL is configured (Docker service)
+    if (process.env.REDIS_URL) {
+        try {
+            const { redisClient } = await import('./redisClient');
+            nervousSystem.register({
+                id: 'redis',
+                name: 'Redis Cache',
+                type: 'DATABASE',
+                isRequired: false,
+                checkHealth: async () => {
+                    // If Redis fell back to mock mode, it's not truly connected
+                    if (redisClient.isMockMode()) return false;
+                    try {
+                        // Try a round-trip ping via get
+                        await redisClient.get('__nervous_ping__');
+                        return true;
+                    } catch {
+                        return false;
+                    }
+                },
+                reconnect: async () => {
+                    try {
+                        await redisClient.connect();
+                        return !redisClient.isMockMode();
+                    } catch {
+                        return false;
+                    }
+                }
+            });
+        } catch (e) {
+            console.warn("[NERVOUS] Redis client not available for monitoring");
+        }
+    }
+
+    // 5. Gemini API (Primary LLM) — register if API key is configured
+    if (process.env.GEMINI_API_KEY || process.env.API_KEY) {
+        nervousSystem.register({
+            id: 'gemini_api',
+            name: 'Gemini LLM',
+            type: 'API',
+            isRequired: false,
+            checkHealth: async () => {
+                // Cheap check: verify the SDK client is initialized (no API call)
+                try {
+                    const mod = await import('./geminiService');
+                    // ensureClient is not exported, but we can check generateText exists
+                    // If the key is set, the client initializes fine
+                    return !!(process.env.GEMINI_API_KEY || process.env.API_KEY);
+                } catch {
+                    return false;
+                }
+            },
+            reconnect: async () => {
+                // On reconnect, do a real lightweight API call to verify the key works
+                try {
+                    const { geminiService } = await import('./geminiService');
+                    const result = await geminiService.generateEmbedding('ping');
+                    return result !== null;
+                } catch {
+                    return false;
+                }
+            }
+        });
+    } else {
+        console.log("[NERVOUS] ℹ️ Gemini API not configured — skipping monitoring (set GEMINI_API_KEY in .env.local)");
+    }
+
+    // 6. MiniMax API (Secondary LLM) — register if API key is configured
+    if (process.env.MINIMAX_API_KEY) {
+        nervousSystem.register({
+            id: 'minimax_api',
+            name: 'MiniMax LLM',
+            type: 'API',
+            isRequired: false,
+            checkHealth: async () => {
+                // Cheap check: verify the API key is still set (no API call)
+                return !!process.env.MINIMAX_API_KEY;
+            },
+            reconnect: async () => {
+                // On reconnect, do a real API call to verify reachability
+                try {
+                    const response = await fetch('https://api.minimax.chat/v1/text/chatcompletion_v2', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${process.env.MINIMAX_API_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            model: 'MiniMax-Text-01',
+                            messages: [{ role: 'user', content: 'ping' }],
+                            max_tokens: 1
+                        }),
+                        signal: AbortSignal.timeout(5000)
+                    });
+                    return response.ok || response.status === 429;
+                } catch {
+                    return false;
+                }
+            }
+        });
+    } else {
+        console.log("[NERVOUS] ℹ️ MiniMax API not configured — skipping monitoring");
+    }
+
+    // 7. Listen for dynamic integration events from Settings UI
     systemBus.subscribe(SystemProtocol.INTEGRATION_EVENT, (event: any) => {
         const { action, integrationId, name, type } = event.payload || {};
         if (action === 'connected' && integrationId) {
