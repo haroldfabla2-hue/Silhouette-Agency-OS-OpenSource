@@ -272,6 +272,7 @@ export class TelegramChannel implements IChannel {
         }
 
         try {
+            logger.info(`[Telegram] 📥 Received message from ${ctx.from.id} (@${ctx.from.username || 'unknown'}): "${ctx.message.text}"`);
             const incoming: IncomingMessage = {
                 id: String(ctx.message.message_id),
                 channel: 'telegram',
@@ -332,10 +333,12 @@ export class TelegramChannel implements IChannel {
 
         // 1. FILTER INTERNAL THOUGHTS (enhanced)
         if (isInternalMessage(message.text)) {
+            logger.warn(`[Telegram] 🛑 Message dropped by isInternalMessage filter! Text: ${message.text.substring(0, 100)}...`);
             return null;
         }
 
         try {
+            logger.info(`[Telegram] 📤 Preparing to send message to ${chatId}. Length: ${message.text?.length || 0}`);
             // 2. SEND TYPING if requested or message is long
             if (message.showTyping || message.text.length > 50) {
                 await this.bot.api.sendChatAction(chatId, 'typing').catch(() => { });

@@ -37,6 +37,8 @@ export interface IncomingMessage {
     raw?: unknown;
     /** If true, the system will ingest memory but not reply */
     isReadOnly?: boolean;
+    /** User Role (OWNER, ADMIN, USER, GUEST) */
+    role?: string;
 }
 
 /**

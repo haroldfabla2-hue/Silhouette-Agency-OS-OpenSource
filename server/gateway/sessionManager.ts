@@ -20,6 +20,7 @@ export interface SessionMessage {
         model?: string;
         tokenCount?: number;
         channel?: string;    // Which channel sent this message
+        userRole?: string;   // [NEW] User Role for Anti-Prompt Injection Auth
     };
 }
 

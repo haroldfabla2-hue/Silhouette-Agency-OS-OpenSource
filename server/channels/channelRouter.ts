@@ -10,6 +10,7 @@ import { SystemProtocol } from '../../types';
 import { sessionManager } from '../gateway/sessionManager';
 import { gateway } from '../gateway/wsGateway';
 import { nervousSystem } from '../../services/connectionNervousSystem';
+import { identityService, UserRole } from '../../services/identityService';
 
 // ─── Channel Router ──────────────────────────────────────────────────────────
 
@@ -104,6 +105,10 @@ class ChannelRouter {
      */
     private async handleIncoming(msg: IncomingMessage): Promise<void> {
         try {
+            // 0. Lookup User Identity and Role
+            const user = identityService.getUserByChannelId(msg.channel, msg.senderId);
+            msg.role = user ? user.role : UserRole.GUEST;
+
             // 1. Get or create a session for this chat
             const sessionId = this.getOrCreateSessionForChat(msg);
 
@@ -114,6 +119,7 @@ class ChannelRouter {
                 metadata: {
                     channel: msg.channel,
                     agentId: msg.senderId,
+                    userRole: msg.role, // Track role in history
                 },
             });
 
@@ -129,6 +135,7 @@ class ChannelRouter {
                 media: msg.media,
                 timestamp: msg.timestamp,
                 isReadOnly: msg.isReadOnly,
+                role: msg.role, // Pass role to Orchestrator
             }, `channel:${msg.channel}`);
 
             // 4. Notify WS clients about the channel message

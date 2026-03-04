@@ -21,7 +21,8 @@ const CREATOR_EMAILS = (process.env.CREATOR_EMAILS || 'alberto.farah.b@gmail.com
 export enum UserRole {
     CREATOR = 'CREATOR',   // Absolute permissions, can modify Silhouette itself
     ADMIN = 'ADMIN',       // Full app access, cannot modify code
-    USER = 'USER'          // Standard access
+    USER = 'USER',         // Standard access
+    GUEST = 'GUEST'        // External channel visitor with restricted access
 }
 
 export interface User {
@@ -32,6 +33,9 @@ export interface User {
     avatarUrl?: string;
     role: UserRole;
     googleLinked: boolean;
+    telegramId?: string | null;
+    discordId?: string | null;
+    whatsappId?: string | null;
     createdAt: number;
     lastLogin: number;
 }
@@ -97,6 +101,9 @@ class IdentityService {
         avatar_url TEXT,
         role TEXT NOT NULL DEFAULT 'USER',
         google_email TEXT,
+        telegram_id TEXT,
+        discord_id TEXT,
+        whatsapp_id TEXT,
         created_at INTEGER NOT NULL,
         last_login INTEGER NOT NULL
       )
@@ -157,6 +164,15 @@ class IdentityService {
                     UPDATE users SET google_email = email
                     WHERE email IS NOT NULL AND email NOT LIKE '%@silhouette.local'
                 `);
+            }
+
+            // Add external channel ID columns if missing
+            const hasTelegramId = columns.some((c: any) => c.name === 'telegram_id');
+            if (!hasTelegramId) {
+                this.db.exec('ALTER TABLE users ADD COLUMN telegram_id TEXT');
+                this.db.exec('ALTER TABLE users ADD COLUMN discord_id TEXT');
+                this.db.exec('ALTER TABLE users ADD COLUMN whatsapp_id TEXT');
+                console.log('[IdentityService] Migrated: added external channel ID columns');
             }
         } catch {
             // Column already exists or table doesn't exist yet
@@ -389,6 +405,55 @@ class IdentityService {
     }
 
     /**
+     * Get a user by their external channel ID (telegram, discord, whatsapp)
+     */
+    getUserByChannelId(channel: string, channelId: string): User | null {
+        if (!this.db) return null;
+
+        let query = '';
+        if (channel === 'telegram') query = 'SELECT * FROM users WHERE telegram_id = ?';
+        else if (channel === 'discord') query = 'SELECT * FROM users WHERE discord_id = ?';
+        else if (channel === 'whatsapp') query = 'SELECT * FROM users WHERE whatsapp_id = ?';
+        else return null;
+
+        const row = this.db.prepare(query).get(channelId) as any;
+        if (!row) return null;
+
+        return this.rowToUser(row);
+    }
+
+    /**
+     * Link an external channel ID to an existing user
+     */
+    linkChannelId(userId: string, channel: string, channelId: string): User {
+        if (!this.db) throw new Error('IdentityService not initialized');
+
+        // Check if ID is already claimed by someone else
+        const existing = this.getUserByChannelId(channel, channelId);
+        if (existing && existing.id !== userId) {
+            throw new Error(`This ${channel} ID is already linked to another user`);
+        }
+
+        let column = '';
+        if (channel === 'telegram') column = 'telegram_id';
+        else if (channel === 'discord') column = 'discord_id';
+        else if (channel === 'whatsapp') column = 'whatsapp_id';
+        else throw new Error(`Unsupported channel: ${channel}`);
+
+        this.db.prepare(`UPDATE users SET ${column} = ? WHERE id = ?`).run(channelId, userId);
+
+        const updated = this.getUserById(userId);
+        if (!updated) throw new Error('User not found after channel link update');
+
+        if (this.currentUser?.id === userId) {
+            this.currentUser = updated;
+        }
+
+        console.log(`[IdentityService] Linked ${channel} ID ${channelId} to user ${userId}`);
+        return updated;
+    }
+
+    /**
      * Convert database row to User object
      */
     private rowToUser(row: any): User {
@@ -400,6 +465,9 @@ class IdentityService {
             avatarUrl: row.avatar_url,
             role: row.role as UserRole,
             googleLinked: !!row.google_email,
+            telegramId: row.telegram_id,
+            discordId: row.discord_id,
+            whatsappId: row.whatsapp_id,
             createdAt: row.created_at,
             lastLogin: row.last_login
         };
