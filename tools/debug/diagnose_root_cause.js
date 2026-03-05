@@ -6,7 +6,11 @@ async function test() {
     const log = (msg) => fs.appendFileSync('diagnosis_log.txt', msg + '\n');
     fs.writeFileSync('diagnosis_log.txt', '--- DIAGNOSIS START ---\n');
 
-    const key = "AIzaSyDXGN4AR3owdj00YXJMLhcErm5H4MePQUQ";
+    const key = process.env.GOOGLE_API_KEY;
+    if (!key) {
+        console.error("ERROR: GOOGLE_API_KEY environment variable is not set");
+        process.exit(1);
+    }
     const genAI = new GoogleGenerativeAI(key);
     const model004 = genAI.getGenerativeModel({ model: "text-embedding-004" });
     const model001 = genAI.getGenerativeModel({ model: "embedding-001" });
