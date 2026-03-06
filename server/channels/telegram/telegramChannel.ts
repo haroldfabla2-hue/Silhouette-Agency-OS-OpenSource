@@ -105,9 +105,25 @@ const INTERNAL_PATTERNS = [
     /^\[DAEMON\]/i,
 ];
 
-function isInternalMessage(text: string): boolean {
-    const trimmed = text.trim();
-    return INTERNAL_PATTERNS.some(p => p.test(trimmed));
+function stripInternalThoughts(text: string): string {
+    if (!text) return '';
+    let result = text;
+    // Remove <think>...</think>
+    result = result.replace(/<think>[\s\S]*?<\/think>/gi, '');
+    // Remove [THOUGHT]...[/THOUGHT] and similar pairs
+    result = result.replace(/\[(?:THOUGHT|INTERNAL|REFLECTIVE|COGNITIVE|SELF-HEAL)\][\s\S]*?\[\/(?:THOUGHT|INTERNAL|REFLECTIVE|COGNITIVE|SELF-HEAL)\]/gi, '');
+
+    // Fallback if the LLM forgot the closing tag but started with one
+    if (/^(\[THOUGHT\]|<think>|Introspection:|SYSTEM:|\[BUS\]|\[DAEMON\])/i.test(result.trim())) {
+        const parts = result.trim().split(/\n\n+/);
+        if (parts.length > 1) {
+            parts.shift(); // Remove the first block
+            result = parts.join('\n\n');
+        } else {
+            return ''; // The entire message is an unclosed thought block
+        }
+    }
+    return result.trim();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -332,8 +348,9 @@ export class TelegramChannel implements IChannel {
         const chatId = message.chatId;
 
         // 1. FILTER INTERNAL THOUGHTS (enhanced)
-        if (isInternalMessage(message.text)) {
-            logger.warn(`[Telegram] 🛑 Message dropped by isInternalMessage filter! Text: ${message.text.substring(0, 100)}...`);
+        message.text = stripInternalThoughts(message.text || '');
+        if (!message.text && (!message.media || message.media.length === 0)) {
+            logger.warn(`[Telegram] 🛑 Message dropped by internal filter (no user-facing content left).`);
             return null;
         }
 

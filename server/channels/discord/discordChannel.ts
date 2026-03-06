@@ -50,8 +50,25 @@ const INTERNAL_PATTERNS = [
     /^\[BUS\]/i, /^\[DAEMON\]/i,
 ];
 
-function isInternalMessage(text: string): boolean {
-    return INTERNAL_PATTERNS.some(p => p.test(text.trim()));
+function stripInternalThoughts(text: string): string {
+    if (!text) return '';
+    let result = text;
+    // Remove <think>...</think>
+    result = result.replace(/<think>[\s\S]*?<\/think>/gi, '');
+    // Remove [THOUGHT]...[/THOUGHT] and similar pairs
+    result = result.replace(/\[(?:THOUGHT|INTERNAL|REFLECTIVE|COGNITIVE|SELF-HEAL)\][\s\S]*?\[\/(?:THOUGHT|INTERNAL|REFLECTIVE|COGNITIVE|SELF-HEAL)\]/gi, '');
+
+    // Fallback if the LLM forgot the closing tag but started with one
+    if (/^(\[THOUGHT\]|<think>|Introspection:|SYSTEM:|\[BUS\]|\[DAEMON\])/i.test(result.trim())) {
+        const parts = result.trim().split(/\n\n+/);
+        if (parts.length > 1) {
+            parts.shift(); // Remove the first block
+            result = parts.join('\n\n');
+        } else {
+            return ''; // The entire message is an unclosed thought block
+        }
+    }
+    return result.trim();
 }
 
 // ═══════ DISCORD CHANNEL ═══════
@@ -184,7 +201,9 @@ class DiscordChannel implements IChannel {
 
     async send(message: OutgoingMessage): Promise<string | null> {
         if (!this.client || !this.connected) return null;
-        if (isInternalMessage(message.text)) return null;
+
+        message.text = stripInternalThoughts(message.text || '');
+        if (!message.text && (!message.media || message.media.length === 0)) return null;
 
         try {
             const channel = await this.client.channels.fetch(message.chatId);
