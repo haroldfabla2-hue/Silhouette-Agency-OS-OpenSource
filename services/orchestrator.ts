@@ -834,27 +834,8 @@ Format each gap as:
                     ? `\n--- YOUR CURRENT IDENTITY ---\nYou are: ${agent.name}\nRole: ${agent.role}\nDirectives: ${agent.directives?.join(', ') || 'Execute the task efficiently.'}\nOpinion: ${agent.opinion}\n`
                     : '');
 
-            // Get Cognitive Context (Deep Memory Integration)
-            let cognitiveContext = '';
-            try {
-                // Fetch relevant memories across short-term, episodic, and semantic layers
-                const { continuum } = await import('./continuumMemory');
-                const memoryResult = await continuum.getCombinedContext(payload.message);
-
-                let formattedMemory = '';
-                if (memoryResult.recent && memoryResult.recent.length > 0) {
-                    formattedMemory += '\n--- RECENT MEMORY ---\n' + memoryResult.recent.map((m: any) => `- [${new Date(m.timestamp).toLocaleTimeString()}] ${m.content}`).join('\n');
-                }
-                if (memoryResult.semantic && memoryResult.semantic.length > 0) {
-                    formattedMemory += '\n--- DEEP KNOWLEDGE ---\n' + memoryResult.semantic.map((m: any) => `- ${m.content}`).join('\n');
-                }
-
-                if (formattedMemory) {
-                    cognitiveContext = `\n[SYSTEM: Retrieved Cognitive Context]${formattedMemory}\n`;
-                }
-            } catch (err) {
-                console.warn('[ORCHESTRATOR] ⚠️ Failed to retrieve cognitive context:', err);
-            }
+            // Get Cognitive Context (Deep Memory Integration via Global Context Engine)
+            let cognitiveContext = await this.buildCognitiveContextForTask(payload.message, agentId);
 
             // [ANTI-PROMPT INJECTION] Security Shield for Untrusted Users
             if (payload.role === 'GUEST' || !payload.role) {
@@ -1988,6 +1969,26 @@ OBJECTIVES:
 
     }
 
+    /**
+     * [PHASE 5] Global Context Engine (Brain API)
+     * Builds the unified Cognitive Context (Semantic Deep Memory + Episodic Recent Memory)
+     * for any agent executing a task, not just the user-facing chat.
+     */
+    private async buildCognitiveContextForTask(taskQuery: string, agentId?: string): Promise<string> {
+        try {
+            const { contextAssembler } = await import('./contextAssembler');
+            // 'DEEP' mode allocates massive Budget to Vector Memory and Codebase logic
+            const globalCtx = await contextAssembler.getGlobalContext(taskQuery, { mode: 'DEEP' });
+            if (globalCtx.relevantMemory) {
+                console.log(`[ORCHESTRATOR] 🧠 Injected full cognitive memory context for agent ${agentId || 'unknown'}`);
+                return globalCtx.relevantMemory;
+            }
+        } catch (e) {
+            console.warn("[ORCHESTRATOR] Cognitive Context injection failed (non-fatal):", e);
+        }
+        return '';
+    }
+
     private async handleTaskAssignment(payload: any) {
         // Payload: { targetRole: string, taskType: string, context: any, priority: string }
         const { targetRole, taskType, context, priority } = payload;
@@ -2003,24 +2004,13 @@ OBJECTIVES:
             if (targetRole === 'Creative_Director') targetAgentId = 'mkt-lead';
         }
 
-        // [OMNISCIENT] Inject semantic memory context for the agent
+        // [OMNISCIENT] Inject FULL deep cognitive memory context for the agent
         const enrichedContext = { ...context };
-        try {
-            const { continuum } = await import('./continuumMemory');
-            const taskDescription = `${taskType}: ${JSON.stringify(context).substring(0, 200)} `;
-            const relevantMemory = await continuum.retrieve(taskDescription, undefined, targetAgentId);
+        const taskDescription = `${taskType}: ${JSON.stringify(context).substring(0, 200)}`;
+        const cognitiveContext = await this.buildCognitiveContextForTask(taskDescription, targetAgentId);
 
-            if (relevantMemory.length > 0) {
-                // Format memory as concise context (max 10 items, 100 chars each)
-                const memoryContext = relevantMemory.slice(0, 10).map(m =>
-                    m.content.substring(0, 100)
-                ).join(' | ');
-                enrichedContext.semanticMemory = memoryContext;
-                console.log(`[ORCHESTRATOR] 🧠 Injected ${relevantMemory.length} memory items for ${targetRole}`);
-            }
-        } catch (e) {
-            // Non-fatal, continue without memory context
-            console.warn("[ORCHESTRATOR] Memory injection failed (non-fatal):", e);
+        if (cognitiveContext) {
+            enrichedContext.semanticDeepMemory = cognitiveContext;
         }
 
         // 2. [PA-041] Send to Inbox with proper tagging (Async Decoupling)
@@ -2063,6 +2053,15 @@ OBJECTIVES:
             return;
         }
 
+        // [PHASE 5] Inject Full Cognitive Context into Help Request
+        const enrichedContext = { ...payload.context };
+        const helpDescription = `HELP REQUEST: ${payload.problem} Context: ${JSON.stringify(payload.context).substring(0, 200)}`;
+        const cognitiveContext = await this.buildCognitiveContextForTask(helpDescription, helperAgentId);
+
+        if (cognitiveContext) {
+            enrichedContext.semanticDeepMemory = cognitiveContext;
+        }
+
         // 2. Hydrate the helper if needed
         await this.hydrateAgent(helperAgentId);
 
@@ -2074,7 +2073,7 @@ OBJECTIVES:
                 requesterId: payload.requesterId,
                 requesterRole: payload.requesterRole,
                 problem: payload.problem,
-                context: payload.context
+                context: enrichedContext
             },
             {
                 tag: MessageTag.HELP_REQUEST,

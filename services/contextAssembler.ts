@@ -305,8 +305,8 @@ class ContextAssembler {
 
         // C. Heavy IO Operations (Parallel)
         const memoryPromise = query
-            ? this.timeoutPromise(continuum.retrieve(query), TIMEOUT_MS, [])
-            : Promise.resolve([]);
+            ? this.timeoutPromise(continuum.getCombinedContext(query), TIMEOUT_MS, { semantic: [], recent: [] })
+            : Promise.resolve({ semantic: [], recent: [] });
 
         const graphPromise = query
             ? this.timeoutPromise(this.fetchGraphContext(query), TIMEOUT_MS, "")
@@ -317,17 +317,29 @@ class ContextAssembler {
             : Promise.resolve("");
 
         // Await all
-        const [memories, graphText, codeSnippets] = await Promise.all([
+        const [memoryResult, graphText, codeSnippets] = await Promise.all([
             memoryPromise,
             graphPromise,
             ragPromise
         ]);
 
-        // Process Memories
-        const cleanMemories = Array.isArray(memories)
-            ? memories.filter(m => !m.content.includes("As an AI"))
-            : [];
-        const memoryText = cleanMemories.map((m: any) => `[MEMORY (${m.tier})]: ${m.content}`).join('\n');
+        // Process Memories into Unified Cognitive Block
+        let memoryText = '';
+        if (memoryResult.recent && memoryResult.recent.length > 0) {
+            const cleanRecent = memoryResult.recent.filter((m: any) => !m.content.includes("As an AI"));
+            if (cleanRecent.length > 0) {
+                memoryText += '\n--- RECENT EPISODIC MEMORY ---\n' + cleanRecent.map((m: any) => `- [${new Date(m.timestamp).toLocaleTimeString()}] ${m.content}`).join('\n');
+            }
+        }
+        if (memoryResult.semantic && memoryResult.semantic.length > 0) {
+            const cleanSemantic = memoryResult.semantic.filter((m: any) => !m.content.includes("As an AI"));
+            if (cleanSemantic.length > 0) {
+                memoryText += '\n--- SEMANTIC DEEP KNOWLEDGE ---\n' + cleanSemantic.map((m: any) => `- ${m.content}`).join('\n');
+            }
+        }
+        if (memoryText) {
+            memoryText = `\n[COGNITIVE SYSTEM MEMORY]\n${memoryText}\n`;
+        }
 
         // [PA-041] Build prioritized context items
         // Note: We fetch history separately? Or is it fast enough? 
