@@ -68,7 +68,7 @@ router.post('/setup', async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Missing email, password, or name' });
         }
 
-        // [PHASE 6] Write Auto-Evolution Config to .env.local
+        // [PHASE 6 & 7] Write Auto-Evolution Config to .env.local and Create GitHub Repo Clone
         if (gitToken && gitOwner && gitRepo) {
             try {
                 const fs = await import('fs');
@@ -95,6 +95,77 @@ router.post('/setup', async (req: Request, res: Response) => {
 
                 fs.writeFileSync(envPath, envContent.trim() + '\n', 'utf8');
                 console.log(`[IDENTITY_ROUTER] 💾 Auto-Evolution config explicitly saved to .env.local for ${gitOwner}/${gitRepo}`);
+
+                // [PHASE 7] True Auto-Evolution Clone Generation
+                // 1. Check if the repo exists or create it dynamically in the user's cloud
+                console.log(`[IDENTITY_ROUTER] 🚀 Initiating GitHub Auto-Evolution Clone Sequence...`);
+
+                // We do this asynchronously to avoid hanging the Setup UI request for too long
+                setImmediate(async () => {
+                    try {
+                        const repoUrl = `https://api.github.com/repos/${gitOwner}/${gitRepo}`;
+                        let repoCreated = false;
+
+                        const checkRes = await fetch(repoUrl, {
+                            headers: { 'Authorization': `Bearer ${gitToken}` }
+                        });
+
+                        if (checkRes.status === 404) {
+                            console.log(`[IDENTITY_ROUTER] ☁️ Repository ${gitRepo} not found. Creating Private OS Clone...`);
+                            const createRes = await fetch('https://api.github.com/user/repos', {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': `Bearer ${gitToken}`,
+                                    'Content-Type': 'application/json',
+                                    'Accept': 'application/vnd.github.v3+json'
+                                },
+                                body: JSON.stringify({
+                                    name: gitRepo,
+                                    private: true,
+                                    description: 'Silhouette Agency OS Auto-Evolution Clone'
+                                })
+                            });
+
+                            if (!createRes.ok) {
+                                throw new Error(`GitHub API Error: ${createRes.statusText}`);
+                            }
+                            repoCreated = true;
+                            console.log(`[IDENTITY_ROUTER] ✅ Successfully created private GitHub repository: ${gitRepo}`);
+                        } else {
+                            console.log(`[IDENTITY_ROUTER] ☁️ Repository ${gitRepo} already exists. Linking OS to existing repo.`);
+                            repoCreated = true;
+                        }
+
+                        // 2. Perform local git reconfiguration and force push everything up
+                        if (repoCreated) {
+                            const { exec } = await import('child_process');
+                            const gitOrigin = `https://${gitToken}@github.com/${gitOwner}/${gitRepo}.git`;
+                            console.log(`[IDENTITY_ROUTER] 📦 Packing local OS Brain & uploading to remote cloning matrix...`);
+
+                            // Ensure it's a git repo, swap the origin, stage all, commit if needed, and push.
+                            const gitScript = `
+                                git init &&
+                                git remote remove origin || echo "No origin to remove" &&
+                                git remote add origin ${gitOrigin} &&
+                                git branch -M main &&
+                                git add . &&
+                                git commit -m "chore(seed): initial agent OS clone injection" || echo "No changes to commit" &&
+                                git push -u origin main --force
+                            `.trim().replace(/\n/g, ' ');
+
+                            exec(gitScript, { cwd: process.cwd() }, (error, stdout, stderr) => {
+                                if (error) {
+                                    console.error(`[IDENTITY_ROUTER] ❌ Auto-Evolution OS Seed Error:`, error.message);
+                                    return;
+                                }
+                                console.log(`[IDENTITY_ROUTER] 🎉 SUCCESS: The Agent OS Brain has been fully uploaded/linked to the private cloud!`);
+                            });
+                        }
+                    } catch (asyncErr) {
+                        console.error('[IDENTITY_ROUTER] ❌ Fatal error during GitHub Auto-Evolution Clone Sequence:', asyncErr);
+                    }
+                });
+
             } catch (fsErr) {
                 console.error('[IDENTITY_ROUTER] ❌ Failed to write Auto-Evolution config to .env.local:', fsErr);
                 // Non-fatal, let the setup continue
