@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { SettingsState, IntegrationSchema, UserRole } from '../types';
 import { settingsManager } from '../services/settingsManager';
 import { api } from '../utils/api';
-import { Save, Shield, Globe, Bell, Palette, Database, Key, Check, AlertTriangle, Eye, EyeOff, Plug, Server, Trash2, Sliders, RotateCcw, Cloud, Download, Terminal } from 'lucide-react';
+import { Save, Shield, Globe, Bell, Palette, Database, Key, Check, AlertTriangle, Eye, EyeOff, Plug, Server, Trash2, Sliders, RotateCcw, Cloud, Download, Terminal, Github } from 'lucide-react';
 
 const Settings: React.FC = () => {
     // Force a deep copy state initialization to avoid reference issues
@@ -22,6 +22,11 @@ const Settings: React.FC = () => {
     // Dreamer Mode State
     const [dreamerMode, setDreamerMode] = useState<'DEV' | 'PROD'>('DEV');
 
+    // Auto-Evolution Cloud State
+    const [gitConfig, setGitConfig] = useState({ token: '', owner: '', repo: '', configured: false });
+    const [showGitToken, setShowGitToken] = useState(false);
+    const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+
     useEffect(() => {
         // Fetch initial config
         api.get('/v1/factory/config').then(res => {
@@ -30,6 +35,19 @@ const Settings: React.FC = () => {
                 setDreamerMode(data.dreamerConfig.mode);
             }
         }).catch(err => console.error("Failed to load config", err));
+
+        // Fetch Auto-Evolution Cloud config
+        api.get('/v1/system/auto-evolution').then(res => {
+            const data = res as any;
+            if (data.configured) {
+                setGitConfig({
+                    configured: true,
+                    token: data.gitToken || '',
+                    owner: data.gitOwner || '',
+                    repo: data.gitRepo || ''
+                });
+            }
+        }).catch(err => console.error("Failed to load auto-evolution config", err));
     }, []);
 
     const handleDreamerModeChange = (mode: 'DEV' | 'PROD') => {
@@ -141,6 +159,28 @@ const Settings: React.FC = () => {
         if (confirm("ARE YOU SURE? This will wipe all settings and local data.")) {
             settingsManager.factoryReset();
             window.location.reload();
+        }
+    };
+
+    const handleSaveAutoEvolution = async () => {
+        if (!gitConfig.token || !gitConfig.owner || !gitConfig.repo) {
+            alert("All fields are required to configure Cloud Auto-Evolution.");
+            return;
+        }
+
+        setIsSyncingCloud(true);
+        try {
+            await api.post('/v1/system/auto-evolution', {
+                gitToken: gitConfig.token,
+                gitOwner: gitConfig.owner,
+                gitRepo: gitConfig.repo
+            });
+            alert("Cloud Auto-Evolution successfully synchronized! The OS is seeding its brain to your private GitHub in the background.");
+            setGitConfig(prev => ({ ...prev, configured: true }));
+        } catch (error: any) {
+            alert(`Sync Failed: ${error.message}`);
+        } finally {
+            setIsSyncingCloud(false);
         }
     };
 
@@ -815,6 +855,81 @@ const Settings: React.FC = () => {
                                             className={`px-3 py-1.5 rounded text-[10px] font-bold transition-all ${dreamerMode === 'PROD' ? 'bg-purple-900/50 text-purple-400 border border-purple-500/50' : 'text-slate-500 hover:text-white'}`}
                                         >
                                             PROD
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* CLOUD AUTO-EVOLUTION */}
+                            <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-xl">
+                                <h3 className="text-sm font-bold text-white mb-4 flex items-center justify-between">
+                                    <span className="flex items-center gap-2"><Github size={16} className="text-white" /> Cloud Auto-Evolution Matrix</span>
+                                    {gitConfig.configured ? (
+                                        <span className="bg-green-500/20 text-green-400 text-[10px] px-2 py-1 rounded-full font-bold flex items-center gap-1 border border-green-500/30">
+                                            <Check size={10} /> LINKED
+                                        </span>
+                                    ) : (
+                                        <span className="bg-slate-800 text-slate-400 text-[10px] px-2 py-1 rounded-full font-bold border border-slate-700">
+                                            UNLINKED
+                                        </span>
+                                    )}
+                                </h3>
+
+                                <p className="text-xs text-slate-400 mb-4">
+                                    Link Silhouette to your private GitHub to activate continuous self-evolution. The agent matrix will automatically clone itself, adapt, and push optimizations to your repository without user intervention.
+                                </p>
+
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">GitHub Personal Access Token</label>
+                                        <div className="relative group">
+                                            <input
+                                                type={showGitToken ? "text" : "password"}
+                                                value={gitConfig.token}
+                                                onChange={(e) => setGitConfig(prev => ({ ...prev, token: e.target.value }))}
+                                                className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-white outline-none focus:border-cyan-500 text-xs font-mono"
+                                                placeholder={gitConfig.configured ? "ghp_... (Masked)" : "ghp_..."}
+                                            />
+                                            <button
+                                                onClick={() => setShowGitToken(!showGitToken)}
+                                                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                                            >
+                                                {showGitToken ? <EyeOff size={14} /> : <Eye size={14} />}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Repository Owner / Org</label>
+                                            <input
+                                                type="text"
+                                                value={gitConfig.owner}
+                                                onChange={(e) => setGitConfig(prev => ({ ...prev, owner: e.target.value }))}
+                                                className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-white outline-none focus:border-cyan-500 text-xs"
+                                                placeholder="e.g. AcmeCorp"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Private Matrix Clonetag (Repo Name)</label>
+                                            <input
+                                                type="text"
+                                                value={gitConfig.repo}
+                                                onChange={(e) => setGitConfig(prev => ({ ...prev, repo: e.target.value }))}
+                                                className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-white outline-none focus:border-cyan-500 text-xs"
+                                                placeholder="e.g. Master-AI-Agency-OS"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="flex justify-end pt-3">
+                                        <button
+                                            onClick={handleSaveAutoEvolution}
+                                            disabled={isSyncingCloud}
+                                            className={`px-4 py-2 bg-white text-black text-xs font-bold rounded flex items-center gap-2 hover:bg-slate-200 transition-colors shadow-lg ${isSyncingCloud ? 'opacity-70 cursor-wait' : ''}`}
+                                        >
+                                            <Cloud size={14} className={isSyncingCloud ? 'animate-bounce' : ''} />
+                                            {isSyncingCloud ? 'SYNCING CLOUD...' : 'SAVE & SYNC OVERRIDE'}
                                         </button>
                                     </div>
                                 </div>

@@ -122,6 +122,156 @@ router.post('/power-mode', async (req, res) => {
 
 // Route: /v1/system/health - Unified health check for all subsystems
 router.get('/health', async (req, res) => {
+
+    // [PHASE 8] Route: /v1/system/auto-evolution - Manage Cloud Git Configuration
+    router.get('/auto-evolution', async (req, res) => {
+        try {
+            const fs = await import('fs');
+            const path = await import('path');
+            const envPath = path.join(process.cwd(), '.env.local');
+
+            if (!fs.existsSync(envPath)) {
+                return res.json({ configured: false });
+            }
+
+            const envContent = fs.readFileSync(envPath, 'utf8');
+
+            let gitToken = '';
+            let gitOwner = '';
+            let gitRepo = '';
+
+            envContent.split('\n').forEach(line => {
+                if (line.startsWith('GITHUB_TOKEN=')) gitToken = line.split('=')[1] || '';
+                if (line.startsWith('GITHUB_REPO_OWNER=')) gitOwner = line.split('=')[1] || '';
+                if (line.startsWith('GITHUB_REPO_NAME=')) gitRepo = line.split('=')[1] || '';
+            });
+
+            // Never return the full raw token for security, just mask it
+            const maskedToken = gitToken.length > 8 ? `ghp_...${gitToken.slice(-4)}` : '';
+
+            res.json({
+                configured: !!(gitToken && gitOwner && gitRepo),
+                gitToken: maskedToken,
+                gitOwner,
+                gitRepo
+            });
+
+        } catch (error: any) {
+            res.status(500).json({ error: error.message });
+        }
+    });
+
+    router.post('/auto-evolution', async (req, res) => {
+        try {
+            const { gitToken, gitOwner, gitRepo } = req.body;
+
+            // Ensure values are provided
+            if (!gitToken || !gitOwner || !gitRepo) {
+                return res.status(400).json({ error: 'Missing GitHub configuration fields.' });
+            }
+
+            const fs = await import('fs');
+            const path = await import('path');
+            const envPath = path.join(process.cwd(), '.env.local');
+
+            let envContent = '';
+            if (fs.existsSync(envPath)) {
+                envContent = fs.readFileSync(envPath, 'utf8');
+            }
+
+            // Clean existing git keys if present
+            envContent = envContent.replace(/^GITHUB_TOKEN=.*$/gm, '')
+                .replace(/^GITHUB_REPO_OWNER=.*$/gm, '')
+                .replace(/^GITHUB_REPO_NAME=.*$/gm, '');
+
+            if (envContent && !envContent.endsWith('\n')) envContent += '\n';
+
+            let actualTokenToSave = gitToken;
+
+            // If the user submitted the masked placeholder string (e.g. didn't touch the password box),
+            // we must NOT overwrite the real token. We need to extract the raw token from the file again.
+            if (gitToken.startsWith('ghp_...')) {
+                const rawContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : '';
+                const match = rawContent.match(/^GITHUB_TOKEN=(.*)$/m);
+                if (match && match[1]) {
+                    actualTokenToSave = match[1];
+                } else {
+                    return res.status(400).json({ error: 'Cannot update with masked token. Enter full token.' });
+                }
+            }
+
+            envContent += `GITHUB_TOKEN=${actualTokenToSave}\n`;
+            envContent += `GITHUB_REPO_OWNER=${gitOwner}\n`;
+            envContent += `GITHUB_REPO_NAME=${gitRepo}\n`;
+
+            fs.writeFileSync(envPath, envContent.trim() + '\n', 'utf8');
+
+            console.log(`[SYSTEM_ROUTER] 💾 Auto-Evolution config manually updated for ${gitOwner}/${gitRepo}`);
+
+            // Trigger Repo Creation / Remote Link Sequence (same as Phase 7 setup)
+            setImmediate(async () => {
+                try {
+                    const repoUrl = `https://api.github.com/repos/${gitOwner}/${gitRepo}`;
+                    let repoCreated = false;
+
+                    const checkRes = await fetch(repoUrl, {
+                        headers: { 'Authorization': `Bearer ${actualTokenToSave}` }
+                    });
+
+                    if (checkRes.status === 404) {
+                        console.log(`[SYSTEM_ROUTER] ☁️ Repository ${gitRepo} not found. Creating Private OS Clone...`);
+                        const createRes = await fetch('https://api.github.com/user/repos', {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${actualTokenToSave}`,
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/vnd.github.v3+json'
+                            },
+                            body: JSON.stringify({
+                                name: gitRepo,
+                                private: true,
+                                description: 'Silhouette Agency OS Auto-Evolution Clone'
+                            })
+                        });
+
+                        if (!createRes.ok) throw new Error(`GitHub API Error: ${createRes.statusText}`);
+                        repoCreated = true;
+                        console.log(`[SYSTEM_ROUTER] ✅ Successfully created private GitHub repository: ${gitRepo}`);
+                    } else {
+                        console.log(`[SYSTEM_ROUTER] ☁️ Repository ${gitRepo} already exists. Swapping remotes.`);
+                        repoCreated = true;
+                    }
+
+                    if (repoCreated) {
+                        const { exec } = await import('child_process');
+                        const gitOrigin = `https://${actualTokenToSave}@github.com/${gitOwner}/${gitRepo}.git`;
+
+                        const gitScript = `
+                        git init &&
+                        git remote remove origin || echo "No origin to remove" &&
+                        git remote add origin ${gitOrigin} &&
+                        git branch -M main &&
+                        git add . &&
+                        git commit -m "chore(settings): user-triggered OS cloud sync" || echo "No changes to commit" &&
+                        git push -u origin main --force
+                    `.trim().replace(/\n/g, ' ');
+
+                        exec(gitScript, { cwd: process.cwd() }, (error) => {
+                            if (error) console.error(`[SYSTEM_ROUTER] ❌ OS Cloud Sync Error:`, error.message);
+                            else console.log(`[SYSTEM_ROUTER] 🎉 SUCCESS: OS Brain synchronized with GitHub cloud settings!`);
+                        });
+                    }
+                } catch (asyncErr) {
+                    console.error('[SYSTEM_ROUTER] ❌ Fatal error during UI-Triggered Cloud Sync:', asyncErr);
+                }
+            });
+
+            res.json({ success: true, message: 'Auto-Evolution configured and background sync initiated.' });
+
+        } catch (error: any) {
+            res.status(500).json({ error: error.message });
+        }
+    });
     const health: Record<string, { status: string; details?: string }> = {};
 
     // SQLite
