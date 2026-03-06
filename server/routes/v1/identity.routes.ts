@@ -62,10 +62,43 @@ router.post('/setup', async (req: Request, res: Response) => {
         const { identityService } = await import('../../../services/identityService');
         await identityService.init();
 
-        const { email, password, name } = req.body;
+        const { email, password, name, gitToken, gitOwner, gitRepo } = req.body;
 
         if (!email || !password || !name) {
             return res.status(400).json({ error: 'Missing email, password, or name' });
+        }
+
+        // [PHASE 6] Write Auto-Evolution Config to .env.local
+        if (gitToken && gitOwner && gitRepo) {
+            try {
+                const fs = await import('fs');
+                const path = await import('path');
+                const envPath = path.join(process.cwd(), '.env.local');
+
+                let envContent = '';
+                if (fs.existsSync(envPath)) {
+                    envContent = fs.readFileSync(envPath, 'utf8');
+                }
+
+                // Clean existing git keys if present to avoid duplicates
+                envContent = envContent.replace(/^GITHUB_TOKEN=.*$/gm, '')
+                    .replace(/^GITHUB_REPO_OWNER=.*$/gm, '')
+                    .replace(/^GITHUB_REPO_NAME=.*$/gm, '');
+
+                // Ensure ends with newline
+                if (envContent && !envContent.endsWith('\n')) envContent += '\n';
+
+                // Append the new keys
+                envContent += `GITHUB_TOKEN=${gitToken}\n`;
+                envContent += `GITHUB_REPO_OWNER=${gitOwner}\n`;
+                envContent += `GITHUB_REPO_NAME=${gitRepo}\n`;
+
+                fs.writeFileSync(envPath, envContent.trim() + '\n', 'utf8');
+                console.log(`[IDENTITY_ROUTER] 💾 Auto-Evolution config explicitly saved to .env.local for ${gitOwner}/${gitRepo}`);
+            } catch (fsErr) {
+                console.error('[IDENTITY_ROUTER] ❌ Failed to write Auto-Evolution config to .env.local:', fsErr);
+                // Non-fatal, let the setup continue
+            }
         }
 
         // Extremely simple hashing for demonstration (use bcrypt in production)

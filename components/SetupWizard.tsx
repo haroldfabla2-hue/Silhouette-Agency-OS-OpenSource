@@ -6,7 +6,7 @@ interface SetupWizardProps {
 }
 
 export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
-    const [step, setStep] = useState<1 | 2>(1);
+    const [step, setStep] = useState<1 | 2 | 3>(1);
 
     // Step 1 State
     const [email, setEmail] = useState('');
@@ -17,6 +17,12 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
     // Step 2 State
     const [diagnostics, setDiagnostics] = useState<any>(null);
     const [loadingDiag, setLoadingDiag] = useState(false);
+
+    // Step 3 State (Auto-Evolution)
+    const [enableEvo, setEnableEvo] = useState(false);
+    const [gitToken, setGitToken] = useState('');
+    const [gitOwner, setGitOwner] = useState('');
+    const [gitRepo, setGitRepo] = useState('Silhouette-Agency-OS');
 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -58,7 +64,10 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
             const data = await api.post<any>('/v1/identity/setup', {
                 email,
                 name,
-                password
+                password,
+                gitToken: enableEvo ? gitToken : undefined,
+                gitOwner: enableEvo ? gitOwner : undefined,
+                gitRepo: enableEvo ? gitRepo : undefined
             });
 
             // Persist session for subsequent API requests (api.ts reads this)
@@ -168,18 +177,75 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                             <button onClick={() => setStep(1)} type="button" className="px-5 py-3 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white transition-all duration-300">
                                 Back
                             </button>
-                            <button onClick={handleFinalSubmit} disabled={loading} className={`flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold py-3 px-4 rounded-lg shadow-[0_0_15px_rgba(6,182,212,0.3)] transition-all duration-300 ${loading ? 'opacity-70 cursor-wait' : 'hover:shadow-[0_0_25px_rgba(6,182,212,0.5)] hover:-translate-y-0.5'}`}>
-                                {loading && (
-                                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                )}
-                                {loading ? 'Initializing Core...' : 'Initialize & Boot OS'}
+                            <button onClick={() => setStep(3)} type="button" className={`flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold py-3 px-4 rounded-lg shadow-[0_0_15px_rgba(6,182,212,0.3)] transition-all duration-300 hover:shadow-[0_0_25px_rgba(6,182,212,0.5)] hover:-translate-y-0.5`}>
+                                Continue to Auto-Evolution ➔
                             </button>
                         </div>
                     </>
                 )}
+            </div>
+        );
+    };
+
+    const renderStep3 = () => {
+        return (
+            <div className="space-y-6">
+                <h2 className="text-xl font-bold text-white mb-2">3. Auto-Evolution API</h2>
+
+                <div className="p-4 rounded-xl border bg-slate-950/50 border-slate-800">
+                    <label className="flex items-center gap-3 cursor-pointer mb-2">
+                        <div className="relative">
+                            <input type="checkbox" className="sr-only" checked={enableEvo} onChange={(e) => setEnableEvo(e.target.checked)} />
+                            <div className={`block w-10 h-6 rounded-full transition-colors ${enableEvo ? 'bg-cyan-500' : 'bg-slate-700'}`}></div>
+                            <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${enableEvo ? 'translate-x-4' : 'translate-x-0'}`}></div>
+                        </div>
+                        <span className="text-white font-medium">Enable Core Auto-Evolution</span>
+                    </label>
+                    <p className="text-xs text-slate-400 ml-13">
+                        Allow agents to self-repair the OS and proactively build features via GitHub Pull Requests to your cloned repository.
+                    </p>
+                </div>
+
+                {enableEvo && (
+                    <div className="space-y-4 animate-fade-in">
+                        <div>
+                            <label className="block text-slate-400 text-xs font-medium mb-1 uppercase tracking-wider">GitHub Personal Access Token (Classic)</label>
+                            <input type="password" required={enableEvo} value={gitToken} onChange={(e) => setGitToken(e.target.value)}
+                                className="w-full bg-slate-950/50 border border-slate-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50"
+                                placeholder="ghp_xxxxxxxxxxxx" />
+                            <p className="text-xs text-slate-500 mt-1">Needs 'repo' and 'workflow' scopes.</p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-slate-400 text-xs font-medium mb-1 uppercase tracking-wider">Repository Owner</label>
+                                <input type="text" required={enableEvo} value={gitOwner} onChange={(e) => setGitOwner(e.target.value)}
+                                    className="w-full bg-slate-950/50 border border-slate-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50"
+                                    placeholder="your-github-username" />
+                            </div>
+                            <div>
+                                <label className="block text-slate-400 text-xs font-medium mb-1 uppercase tracking-wider">Repository Name</label>
+                                <input type="text" required={enableEvo} value={gitRepo} onChange={(e) => setGitRepo(e.target.value)}
+                                    className="w-full bg-slate-950/50 border border-slate-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50"
+                                    placeholder="Silhouette-Agency-OS" />
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                <div className="flex gap-3 pt-4">
+                    <button onClick={() => setStep(2)} type="button" className="px-5 py-3 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white transition-all duration-300">
+                        Back
+                    </button>
+                    <button onClick={handleFinalSubmit} disabled={loading} className={`flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold py-3 px-4 rounded-lg shadow-[0_0_15px_rgba(6,182,212,0.3)] transition-all duration-300 ${loading ? 'opacity-70 cursor-wait' : 'hover:shadow-[0_0_25px_rgba(6,182,212,0.5)] hover:-translate-y-0.5'}`}>
+                        {loading && (
+                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        )}
+                        {loading ? 'Booting Colmena...' : 'Initialize & Boot OS'}
+                    </button>
+                </div>
             </div>
         );
     };
@@ -201,7 +267,9 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
 
                 {error && <div className="mb-6 p-4 bg-red-950/50 border border-red-900/50 rounded-lg text-red-200 text-sm">{error}</div>}
 
-                {step === 1 ? renderStep1() : renderStep2()}
+                {step === 1 && renderStep1()}
+                {step === 2 && renderStep2()}
+                {step === 3 && renderStep3()}
             </div>
         </div>
     );
