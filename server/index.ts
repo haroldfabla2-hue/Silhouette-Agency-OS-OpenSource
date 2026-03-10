@@ -91,6 +91,14 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
         console.error('[PLUGINS] Failed to initialize plugin system:', error);
     }
 
+    // [INGESTION] Start Webhook Ingestion Engine
+    try {
+        const { ingestionEngine } = await import('../services/ingestionEngine');
+        console.log('[INGESTION] ✅ Webhook Ingestion Engine online');
+    } catch (error) {
+        console.error('[INGESTION] Failed to start Ingestion Engine:', error);
+    }
+
     // [EVOLUTION] Proactive Self-Evolution is now handled by Unified Daemon
 
     // [COGNITIVE] Start 4-Tier Memory Cognitive Engines & Evolution (Unified Daemon)

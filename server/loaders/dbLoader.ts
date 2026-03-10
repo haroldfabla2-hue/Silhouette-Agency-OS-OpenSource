@@ -2,6 +2,7 @@
 import fs from 'fs';
 import { PATHS } from '../config/paths';
 import { sqliteService } from '../../services/sqliteService';
+import { getDatabaseAdapter } from '../../services/database/adapterFactory';
 
 export const initDatabases = async () => {
     console.log('[LOADER] Initializing Databases...');
@@ -10,6 +11,16 @@ export const initDatabases = async () => {
     if (!fs.existsSync(PATHS.UPLOADS)) fs.mkdirSync(PATHS.UPLOADS, { recursive: true });
     if (!fs.existsSync(PATHS.DATA)) fs.mkdirSync(PATHS.DATA, { recursive: true });
     if (!fs.existsSync(PATHS.DB)) fs.mkdirSync(PATHS.DB, { recursive: true });
+
+    // 1.5 Initialize Database Adapter (auto-selects Postgres or SQLite)
+    try {
+        const adapter = await getDatabaseAdapter();
+        const mode = process.env.DATABASE_URL ? 'PostgreSQL + pgvector' : 'SQLite + LanceDB (embedded)';
+        console.log(`[LOADER] Database Adapter Ready — Mode: ${mode}`);
+    } catch (e: any) {
+        console.error('[LOADER] Database Adapter initialization failed:', e.message);
+        console.warn('[LOADER] Falling back to direct SQLite/LanceDB access');
+    }
 
     // 2. Initialize SQLite (constructor handles schema creation)
     console.log('[LOADER] SQLite Service Ready.');

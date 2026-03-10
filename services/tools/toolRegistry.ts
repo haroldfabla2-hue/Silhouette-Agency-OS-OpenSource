@@ -112,6 +112,7 @@ class ToolRegistry {
             MANAGE_ASSET_TOOL,
             PREVIEW_ASSET_TOOL,
             WEB_SEARCH_TOOL,
+            READ_URL_TOOL,
             ACADEMIC_SEARCH_TOOL,
             CONDUCT_RESEARCH_TOOL,
             // GitHub Tools
@@ -202,6 +203,14 @@ class ToolRegistry {
                 description: WEB_SEARCH_TOOL.description || '',
                 parameters: WEB_SEARCH_TOOL.parameters as unknown as FunctionDeclarationSchema,
                 handler: { type: 'BUILTIN', handlerName: 'handleWebSearch' },
+                category: 'RESEARCH'
+            },
+            {
+                id: 'tool_read_url',
+                name: 'read_url',
+                description: READ_URL_TOOL.description || '',
+                parameters: READ_URL_TOOL.parameters as unknown as FunctionDeclarationSchema,
+                handler: { type: 'BUILTIN', handlerName: 'handleReadUrl' },
                 category: 'RESEARCH'
             },
             {

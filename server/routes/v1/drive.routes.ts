@@ -67,7 +67,15 @@ router.get('/callback', async (req: Request, res: Response) => {
             await identityService.init();
 
             let user;
-            const currentUser = identityService.getCurrentUser();
+
+            // SECURITY: Resolve the user explicitly from the fingerprint passed through OAuth state!
+            let currentUser = null;
+            if (fingerprint) {
+                const device = identityService.getDeviceByFingerprint(fingerprint);
+                if (device) {
+                    currentUser = identityService.getUserById(device.userId);
+                }
+            }
 
             if (mode === 'link' && currentUser) {
                 // Link mode: attach Google to existing authenticated user
@@ -96,7 +104,7 @@ router.get('/callback', async (req: Request, res: Response) => {
                 identityService.createSession(user.id, device.id);
             }
 
-            const isCreator = identityService.isCreator();
+            const isCreator = user && user.role === 'CREATOR';
             const safeName = escapeHtml(user.name || '');
 
             // Redirect to frontend with success message

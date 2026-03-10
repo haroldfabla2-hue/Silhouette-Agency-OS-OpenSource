@@ -8,7 +8,7 @@ import { Save, Shield, Globe, Bell, Palette, Database, Key, Check, AlertTriangle
 const Settings: React.FC = () => {
     // Force a deep copy state initialization to avoid reference issues
     const [settings, setSettings] = useState<SettingsState>(settingsManager.getSettings());
-    const [activeTab, setActiveTab] = useState<'GENERAL' | 'INTEGRATIONS' | 'PERMISSIONS' | 'SYSTEM'>('GENERAL');
+    const [activeTab, setActiveTab] = useState<'GENERAL' | 'INTEGRATIONS' | 'PERMISSIONS' | 'SYSTEM' | 'WEBHOOKS'>('GENERAL');
     const [unsavedChanges, setUnsavedChanges] = useState(false);
     const [isDiscovering, setIsDiscovering] = useState(false);
     const [discoverMessage, setDiscoverMessage] = useState<string | null>(null);
@@ -375,7 +375,7 @@ const Settings: React.FC = () => {
                 </div>
                 <div className="flex gap-4">
                     <div className="flex bg-slate-900 rounded-lg p-1 border border-slate-800">
-                        {['GENERAL', 'INTEGRATIONS', 'PERMISSIONS', 'SYSTEM'].map(tab => (
+                        {['GENERAL', 'INTEGRATIONS', 'PERMISSIONS', 'SYSTEM', 'WEBHOOKS'].map(tab => (
                             <button
                                 key={tab}
                                 onClick={() => setActiveTab(tab as any)}
@@ -453,6 +453,8 @@ const Settings: React.FC = () => {
                                                         <option value="OPENAI">DALL-E 3 (OpenAI)</option>
                                                         <option value="GEMINI">Imagen 3 (Gemini)</option>
                                                         <option value="STABILITY">Stable Diffusion</option>
+                                                        <option value="REPLICATE">Replicate (Flux)</option>
+                                                        <option value="LOCAL_FLUX">Local Flux</option>
                                                     </select>
                                                 </div>
                                                 <div>
@@ -464,6 +466,8 @@ const Settings: React.FC = () => {
                                                     >
                                                         <option value="ELEVENLABS">ElevenLabs (Ultra)</option>
                                                         <option value="OPENAI">OpenAI TTS</option>
+                                                        <option value="MINIMAX">MiniMax (Chatty)</option>
+                                                        <option value="LOCAL">Local TTS</option>
                                                     </select>
                                                 </div>
                                                 <div>
@@ -594,6 +598,73 @@ const Settings: React.FC = () => {
                                         >
                                             COMPACT
                                         </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+                )}
+
+                {/* WEBHOOKS */}
+                {activeTab === 'WEBHOOKS' && (
+                    <div className="max-w-3xl space-y-8">
+                        <section>
+                            <h3 className="text-sm font-bold text-white border-b border-slate-800 pb-2 mb-4 flex items-center gap-2">
+                                <Globe size={16} className="text-blue-400" /> External Webhook Subscriptions
+                            </h3>
+                            <div className="bg-slate-900 border border-slate-700 rounded-lg p-5">
+                                <p className="text-xs text-slate-400 mb-6 font-medium leading-relaxed">
+                                    Use these unique ingestion URLs to pipe external signals (like Slack, GitHub, or custom SaaS apps) directly into the OS's cognitive continuum. Background agents will automatically classify and act on them.
+                                </p>
+
+                                <div className="space-y-4">
+                                    <div className="p-3 bg-slate-950 border border-slate-800 rounded flex flex-col gap-2">
+                                        <div className="flex justify-between items-center">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-2 h-2 rounded-full bg-pink-500"></div>
+                                                <span className="text-sm font-bold text-white">Slack Events API</span>
+                                            </div>
+                                            <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-1 rounded font-mono">POST</span>
+                                        </div>
+                                        <div className="flex gap-2 items-center">
+                                            <code className="text-[11px] text-cyan-400 bg-slate-900 px-2 py-1 rounded flex-1">
+                                                https://your-domain.com/v1/system/webhooks/slack
+                                            </code>
+                                            <button className="px-3 py-1 bg-slate-800 text-slate-300 hover:text-white rounded text-xs transition-colors" onClick={() => navigator.clipboard.writeText("https://your-domain.com/v1/system/webhooks/slack")}>Copy</button>
+                                        </div>
+                                    </div>
+
+                                    <div className="p-3 bg-slate-950 border border-slate-800 rounded flex flex-col gap-2">
+                                        <div className="flex justify-between items-center">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-2 h-2 rounded-full bg-slate-100"></div>
+                                                <span className="text-sm font-bold text-white">GitHub Webhooks</span>
+                                            </div>
+                                            <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-1 rounded font-mono">POST</span>
+                                        </div>
+                                        <div className="flex gap-2 items-center">
+                                            <code className="text-[11px] text-cyan-400 bg-slate-900 px-2 py-1 rounded flex-1">
+                                                https://your-domain.com/v1/system/webhooks/github
+                                            </code>
+                                            <button className="px-3 py-1 bg-slate-800 text-slate-300 hover:text-white rounded text-xs transition-colors" onClick={() => navigator.clipboard.writeText("https://your-domain.com/v1/system/webhooks/github")}>Copy</button>
+                                        </div>
+                                    </div>
+
+                                    <div className="p-3 bg-slate-950 border border-slate-800 rounded flex flex-col gap-2">
+                                        <div className="flex justify-between items-center">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-2 h-2 rounded-full bg-cyan-500"></div>
+                                                <span className="text-sm font-bold text-white">Custom Payload (Generic)</span>
+                                            </div>
+                                            <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-1 rounded font-mono">POST</span>
+                                        </div>
+                                        <div className="flex gap-2 items-center">
+                                            <code className="text-[11px] text-cyan-400 bg-slate-900 px-2 py-1 rounded flex-1">
+                                                https://your-domain.com/v1/system/webhooks/custom
+                                            </code>
+                                            <button className="px-3 py-1 bg-slate-800 text-slate-300 hover:text-white rounded text-xs transition-colors" onClick={() => navigator.clipboard.writeText("https://your-domain.com/v1/system/webhooks/custom")}>Copy</button>
+                                        </div>
+                                        <p className="text-[10px] text-slate-500 mt-1">Generic webhooks will be sent to the Orchestrator with raw JSON for autonomous analysis.</p>
                                     </div>
                                 </div>
                             </div>

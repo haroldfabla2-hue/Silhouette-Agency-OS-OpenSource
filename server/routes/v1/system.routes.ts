@@ -336,6 +336,11 @@ router.post('/webhooks/:source', async (req, res) => {
         const { source } = req.params;
         const payload = req.body;
 
+        // Automatically handle Slack url_verification challenges
+        if (source === 'slack' && payload.type === 'url_verification') {
+            return res.status(200).send(payload.challenge);
+        }
+
         // 1. Emit to SystemBus
         const { systemBus } = await import('../../../services/systemBus');
         const { SystemProtocol } = await import('../../../types');

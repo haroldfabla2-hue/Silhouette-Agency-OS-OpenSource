@@ -84,6 +84,8 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
     // 2. If no token is configured, skip auth (development mode)
     const serverToken = getToken();
     if (!serverToken) {
+        // Dev fallback: Give a fake admin context or bypass
+        (req as any).user = null;
         next();
         return;
     }
@@ -95,16 +97,15 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
     const sessionId = req.headers['x-session-id'] as string;
 
     if (sessionId) {
-        // Validate local session
+        // Validate local session securely & per request
         try {
             const { identityService } = await import('../../services/identityService');
-            // Check if session is valid by resolving current active session
-            // For real security this should do a DB check for the session ID. 
-            // For alpha we trust the active singleton if headers match, or implement a real check on identityService.
-            // Let's implement a real check for the session token.
-            const sessionValid = identityService.validateSession(sessionId);
+            const sessionUser = identityService.validateSessionAndGetUser(sessionId);
 
-            if (sessionValid) {
+            if (sessionUser) {
+                // Attach the user strictly to this request's lifecycle.
+                // Do NOT rely on identityService.getCurrentUser() later in the pipeline.
+                (req as any).user = sessionUser;
                 next();
                 return;
             }

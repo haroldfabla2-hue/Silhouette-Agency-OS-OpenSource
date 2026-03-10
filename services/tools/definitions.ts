@@ -10,6 +10,11 @@ export interface GenerateVideoArgs {
     duration?: number;
 }
 
+export interface GenerateVoiceArgs {
+    text: string;
+    voiceId?: string;
+}
+
 export interface GenerateImageArgs {
     prompt: string;
     style: 'PHOTOREALISTIC' | 'ILLUSTRATION' | 'ICON' | 'VECTOR' | 'STOCK_PHOTO';
@@ -100,6 +105,25 @@ export const GENERATE_IMAGE_TOOL: FunctionDeclaration = {
             }
         },
         required: ["prompt", "style"]
+    }
+};
+
+export const GENERATE_VOICE_TOOL: FunctionDeclaration = {
+    name: "generate_voice",
+    description: "Generates realistic, human-like voice audio from text. Use this when you need spoken audio or want to send a voice note.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            text: {
+                type: Type.STRING,
+                description: "The text to be spoken."
+            },
+            voiceId: {
+                type: Type.STRING,
+                description: "Optional specific voice ID to use (e.g. from ElevenLabs or OpenAI). If omitted, a default voice is used."
+            }
+        },
+        required: ["text"]
     }
 };
 
@@ -242,6 +266,10 @@ export interface WebSearchArgs {
     max_results?: number;
 }
 
+export interface ReadUrlArgs {
+    url: string;
+}
+
 export interface AcademicSearchArgs {
     query: string;
     max_results?: number;
@@ -270,6 +298,21 @@ export const WEB_SEARCH_TOOL: FunctionDeclaration = {
             }
         },
         required: ["query"]
+    }
+};
+
+export const READ_URL_TOOL: FunctionDeclaration = {
+    name: "read_url",
+    description: "Fetches and extracts the main text content from a specific URL. Use this to read articles, documentation, or links found via web_search.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            url: {
+                type: Type.STRING,
+                description: "The absolute URL to read (e.g. 'https://en.wikipedia.org/wiki/AI')"
+            }
+        },
+        required: ["url"]
     }
 };
 

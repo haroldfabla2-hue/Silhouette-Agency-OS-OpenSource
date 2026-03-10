@@ -319,9 +319,16 @@ class IdentityService {
         // Fallback: check by regular email (backward compat with pre-migration users)
         const existingByEmail = this.getUserByEmail(googleUser.email);
         if (existingByEmail) {
-            // Link Google and update
+            // SECURITY: If the account exists but isn't explicitly linked to Google, 
+            // deny the login! This prevents Account Takeovers where an attacker 
+            // registers a local email and waits for the victim to use Google Auth.
+            if (!existingByEmail.googleLinked && !CREATOR_EMAILS.includes(googleUser.email)) {
+                throw new Error('An account with this email already exists but is not linked to Google. Please login with your password and link your Google Account from Settings.');
+            }
+
+            // Link Google and update (only allowed for CREATOR_EMAILS or already linked)
             this.db.prepare(`
-                UPDATE users SET last_login = ?, name = ?, avatar_url = ?, google_email = ? WHERE id = ?
+                UPDATE users SET last_login = ?, name = ?, avatar_url = ?, google_email = ?, google_linked = 1 WHERE id = ?
             `).run(now, googleUser.name, googleUser.avatarUrl || null, googleUser.email, existingByEmail.id);
 
             existingByEmail.lastLogin = now;
@@ -728,19 +735,45 @@ class IdentityService {
     }
 
     /**
-     * Validate an existing session ID
+     * Validate an existing session ID and return the User (Stateless / Request-Scoped)
      */
-    validateSession(sessionId: string): boolean {
-        if (!this.db) return false;
+    validateSessionAndGetUser(sessionId: string): User | null {
+        if (!this.db) return null;
 
         const now = Date.now();
-        const row = this.db.prepare('SELECT * FROM sessions WHERE id = ? AND expires_at > ?').get(sessionId, now);
+        const row = this.db.prepare(`
+            SELECT u.* FROM sessions s
+            JOIN users u ON s.user_id = u.id
+            WHERE s.id = ? AND s.expires_at > ?
+        `).get(sessionId, now) as any;
 
-        return !!row;
+        if (!row) return null;
+        return this.rowToUser(row);
     }
 
     /**
-     * Logout - clear current session
+     * Validate an existing session ID (DEPRECATED: Use validateSessionAndGetUser instead)
+     */
+    validateSession(sessionId: string): boolean {
+        return this.validateSessionAndGetUser(sessionId) !== null;
+    }
+
+    /**
+     * Logout - clear a specific session
+     */
+    logoutSession(sessionId: string): void {
+        if (this.db) {
+            this.db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
+        }
+
+        // Also clear legacy singleton if the deleted session was the active one
+        if (this.currentSession?.id === sessionId) {
+            this.logout();
+        }
+    }
+
+    /**
+     * Logout - clear current session (Legacy stateful method)
      */
     logout(): void {
         if (this.currentSession && this.db) {
@@ -751,7 +784,7 @@ class IdentityService {
         this.currentDevice = null;
         this.currentSession = null;
 
-        console.log('[IdentityService] Logged out');
+        console.log('[IdentityService] Logged out (Legacy Stateful)');
     }
 
     /**

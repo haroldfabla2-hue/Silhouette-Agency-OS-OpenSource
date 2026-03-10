@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🌑 Silhouette Agency OS
+# 🌑 Silhouette Agency OS (V3 Deep Upgrade)
 
 ### An Autonomous Cognitive Operating System for Creative Agencies
 
@@ -18,12 +18,12 @@
 
 **Silhouette Agency OS** is an experimental autonomous cognitive operating system designed for creative agencies. It implements a novel multi-layered architecture that combines **introspective reasoning**, **continuous memory**, and **self-modification capabilities** through a unified agentic framework.
 
-Unlike traditional AI assistants, Silhouette operates as a persistent cognitive entity with:
-- **Consciousness simulation** through integrated introspection loops
-- **Long-term memory** with semantic indexing and graph-based knowledge representation
-- **Self-evolution** through controlled GitHub-based code modifications
+### 🌟 V3 Key Features (Deep Upgrade)
+- **Z3 Logic OODA Loop**: Mathematical verification of high-risk actions to prevent autonomous hallucinations.
+- **RAG Web Scraping pipeline**: Deep LanceDB integration extracting global knowledge dynamically.
+- **Cognitive Omnichannel RBAC**: Native Anti-Prompt Injection shields over Telegram, Discord, and WhatsApp.
+- **Auto-Evolution**: Capable of self-cloning and pushing to private GitHub repositories autonomously.
 - **Multi-modal perception** including visual, audio, and textual processing
-- **Multi-channel communication** via Telegram, WhatsApp, and Discord
 - **Production-grade deployment** with auto-SSL, Docker, and VPS support
 
 > [!WARNING]
@@ -87,8 +87,8 @@ The emergence of Large Language Models (LLMs) has created new possibilities for 
 ├─────────────────────────────────────────────────────────────────┤
 │                    DATA & STATE LAYER                           │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐           │
-│  │ LanceDB  │ │ SQLite   │ │  Redis   │ │ Neo4j    │           │
-│  │(Vectors) │ │(Persist) │ │ (Cache)  │ │ (Graph)  │           │
+│  │ Postgres │ │ pgvector │ │  Redis   │ │ Neo4j    │           │
+│  │(Relatnl) │ │(Vectors) │ │ (Cache)  │ │ (Graph)  │           │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘           │
 ├─────────────────────────────────────────────────────────────────┤
 │                  PRODUCTION LAYER                               │
@@ -142,8 +142,8 @@ A multi-tier memory system inspired by human cognition:
 | **Episodic** | Days | Recent experiences and outcomes |
 | **Semantic** | Permanent | Facts, skills, learned patterns |
 
-Memory is indexed using vector embeddings (LanceDB) with graph-based relationship tracking. 
-**Recent Enhancement (Brain Integration):** Silhouette features a unified `getCombinedContext` retrieval pipeline that fuses Semantic (Deep) and Episodic (Medium) memories in a single, token-optimized call, significantly improving the agent's contextual awareness without overwhelming the LLM context window.
+Memory is indexed using vector embeddings (PostgreSQL + `pgvector`) with graph-based relationship tracking. 
+**Recent Enhancement (Database Adapter):** Silhouette now leverages a unified `IDatabaseAdapter` connecting to an enterprise-grade PostgreSQL backend. It merges Semantic (Deep) and Episodic (Medium) memories in a single, token-optimized vector search (`HNSW` indexes), significantly improving contextual awareness without overwhelming the LLM context window.
 
 ### 3.4 Self-Evolution System
 

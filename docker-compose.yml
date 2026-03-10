@@ -1,5 +1,23 @@
 version: '3.8'
 services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: silhouette-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: silhouette
+      POSTGRES_USER: silhouette
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-silhouette_secure_2026}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U silhouette" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   redis:
     image: redis:alpine
     container_name: silhouette-llm-redis
@@ -10,20 +28,6 @@ services:
     restart: always
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  qdrant:
-    image: qdrant/qdrant
-    container_name: silhouette-llm-qdrant
-    ports:
-      - "6444:6333"
-    volumes:
-      - qdrant_data_llm:/qdrant/storage
-    restart: always
-    healthcheck:
-      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:6333/healthz" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -77,6 +81,8 @@ services:
       - silhouette_data:/app/data
       - silhouette_db:/app/db
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
       qdrant:
@@ -101,6 +107,7 @@ services:
     restart: always
 
 volumes:
+  postgres_data:
   redis_data_llm:
   qdrant_data_llm:
   neo4j_data_llm:

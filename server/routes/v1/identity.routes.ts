@@ -211,13 +211,12 @@ router.post('/login', async (req: Request, res: Response) => {
             const fingerprint = req.headers['user-agent'] || 'unknown-device';
             const device = identityService.registerDevice(user.id, fingerprint, 'Browser Login', true);
             const session = identityService.createSession(user.id, device.id);
-
             return res.json({
                 success: true,
                 user,
                 device,
                 session,
-                isCreator: identityService.isCreator()
+                isCreator: user && user.role === 'CREATOR'
             });
         }
 
@@ -245,9 +244,9 @@ router.post('/auto-login', async (req: Request, res: Response) => {
             return res.json({
                 success: true,
                 user,
-                device: identityService.getCurrentDevice(),
-                isCreator: identityService.isCreator(),
-                googleLinked: identityService.isGoogleLinked()
+                device: identityService.getDeviceByFingerprint(fingerprint),
+                isCreator: user && user.role === 'CREATOR',
+                googleLinked: user && user.googleLinked
             });
         }
 
@@ -265,7 +264,7 @@ router.post('/register-device', async (req: Request, res: Response) => {
         const { identityService } = await import('../../../services/identityService');
         await identityService.init();
 
-        const user = identityService.getCurrentUser();
+        const user = (req as any).user;
         if (!user) {
             return res.status(401).json({ error: 'Not authenticated' });
         }
@@ -293,12 +292,12 @@ router.post('/register-device', async (req: Request, res: Response) => {
 });
 
 // GET /v1/identity/google-status - Check if Google is linked for current user
-router.get('/google-status', async (_req: Request, res: Response) => {
+router.get('/google-status', async (req: Request, res: Response) => {
     try {
         const { identityService } = await import('../../../services/identityService');
         await identityService.init();
 
-        const user = identityService.getCurrentUser();
+        const user = (req as any).user;
         if (!user) {
             return res.json({ linked: false, email: null });
         }
@@ -311,10 +310,16 @@ router.get('/google-status', async (_req: Request, res: Response) => {
 });
 
 // POST /v1/identity/logout - Logout current session
-router.post('/logout', async (_req: Request, res: Response) => {
+router.post('/logout', async (req: Request, res: Response) => {
     try {
         const { identityService } = await import('../../../services/identityService');
-        identityService.logout();
+        const sessionId = req.headers['x-session-id'] as string;
+        if (sessionId) {
+            identityService.logoutSession(sessionId);
+        } else {
+            // Fallback to legacy logout
+            identityService.logout();
+        }
         return res.json({ success: true });
     } catch (error: any) {
         return res.status(500).json({ error: error.message });

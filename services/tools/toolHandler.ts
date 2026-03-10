@@ -11,6 +11,7 @@ import { imageFactory } from '../media/imageFactory';
 import { toolFactory } from './toolFactory';
 import { toolRegistry, ToolCategory } from './toolRegistry';
 import { pluginRegistry } from '../plugins/pluginRegistry';
+import { readUrl, searchWeb } from '../../tools/webBrowserTool';
 
 export class ToolHandler {
 
@@ -43,6 +44,8 @@ export class ToolHandler {
                 return await this.handleGenerateVideo(args as GenerateVideoArgs);
             case 'generate_image':
                 return await this.handleGenerateImage(args as GenerateImageArgs);
+            case 'generate_voice':
+                return await this.handleGenerateVoice(args as import('./definitions').GenerateVoiceArgs);
             case 'list_visual_assets':
                 return await this.handleListVisualAssets(args as ListVisualAssetsArgs);
             case 'delegate_task':
@@ -53,6 +56,11 @@ export class ToolHandler {
                 return await this.handleManageAsset(args as ManageAssetArgs);
             case 'preview_asset':
                 return await this.handlePreviewAsset(args as PreviewAssetArgs);
+            // Research Tools (Phase 11)
+            case 'web_search':
+                return await this.handleWebSearch(args as import('./definitions').WebSearchArgs);
+            case 'read_url':
+                return await this.handleReadUrl(args as import('./definitions').ReadUrlArgs);
             // Meta Tools (Self-Extension)
             case 'create_tool':
                 return await this.handleCreateTool(args as CreateToolArgs);
@@ -267,6 +275,45 @@ export class ToolHandler {
         }
     }
 
+    private async handleGenerateVoice(args: import('./definitions').GenerateVoiceArgs): Promise<any> {
+        if (!args.text) return { error: "Missing text to synthesize" };
+
+        try {
+            const { mediaService } = await import('../mediaService');
+            // Generate the audio buffer
+            const audioBuffer = await mediaService.generateSpeech(args.text, args.voiceId);
+            // Save it locally
+            const fs = await import('fs/promises');
+            const path = await import('path');
+            const today = new Date().toISOString().split('T')[0];
+            const dir = path.join(process.cwd(), 'uploads', 'audio', today);
+
+            await fs.mkdir(dir, { recursive: true });
+
+            const filename = `voice_${Date.now()}.mp3`;
+            const localPath = path.join(dir, filename);
+            await fs.writeFile(localPath, Buffer.from(audioBuffer));
+
+            // Register in assetCatalog
+            const { assetCatalog } = await import('../assetCatalog');
+            await assetCatalog.register({
+                type: 'audio',
+                name: filename,
+                filePath: localPath,
+                description: `Spoken audio generated from text: ${args.text.substring(0, 100)}`,
+                tags: ['voice', 'generated', 'audio']
+            });
+
+            return {
+                status: "success",
+                localPath: localPath,
+                message: `Voice generated successfully and saved to ${localPath}.`
+            };
+        } catch (e: any) {
+            return { error: `Voice generation failed: ${e.message}` };
+        }
+    }
+
     private async handleListVisualAssets(args: ListVisualAssetsArgs): Promise<any> {
         const filter = args.filter_type || 'all';
         const limit = args.limit || 10;
@@ -443,6 +490,66 @@ export class ToolHandler {
             };
         } catch (e: any) {
             return { error: `Preview failed: ${e.message}` };
+        }
+    }
+
+    // ==================== PHASE 11: RESEARCH TOOLS ====================
+
+    private async handleWebSearch(args: import('./definitions').WebSearchArgs): Promise<any> {
+        try {
+            console.log(`[ToolHandler] 🔍 Web Search: ${args.query}`);
+            const result = await searchWeb(args.query);
+            return {
+                result,
+                metadata: {
+                    search_engine: 'DuckDuckGo HTML Scraper',
+                    query: args.query
+                }
+            };
+        } catch (e: any) {
+            console.error(`[ToolHandler] ❌ Web search failed:`, e);
+            return { error: `Web search failed: ${e.message}` };
+        }
+    }
+
+    private async handleReadUrl(args: import('./definitions').ReadUrlArgs): Promise<any> {
+        try {
+            console.log(`[ToolHandler] 📖 Reading URL: ${args.url}`);
+            const content = await readUrl(args.url);
+
+            // Extract title and text to shove to LanceDB later or return to LLM
+            // Truncate to avoid exploding context window (80k limit is high, but good to be safe)
+            const maxLength = 25000;
+            const truncated = content.length > maxLength
+                ? content.substring(0, maxLength) + '\n\n[CONTENT TRUNCATED FOR LENGTH]'
+                : content;
+
+            // ---- PERSISTENT MEMORY / RAG INJECTION ----
+            try {
+                const { continuum } = await import('../continuumMemory');
+                const { ingestion } = await import('../ingestionService');
+                const { MemoryTier } = await import('../../types');
+
+                if (content.length > 20000) {
+                    // Start async background ingestion for large docs
+                    ingestion.ingest(content, ['web_scrape', `url:${args.url}`]).catch(e => console.error('[ToolHandler] Async ingestion error:', e));
+                } else {
+                    // Direct synchronous storage for smaller docs
+                    await continuum.store(content, MemoryTier.MEDIUM, ['web_scrape', `url:${args.url}`], true);
+                }
+            } catch (memErr) {
+                console.warn('[ToolHandler] Failed to store web content in Continuum (LanceDB missed it)', memErr);
+            }
+            // ------------------------------------------
+
+            return {
+                content: truncated,
+                length: content.length,
+                url: args.url
+            };
+        } catch (e: any) {
+            console.error(`[ToolHandler] ❌ Read URL failed:`, e);
+            return { error: `Failed to read URL format. Details: ${e.message}` };
         }
     }
 
