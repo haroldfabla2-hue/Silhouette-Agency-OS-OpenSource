@@ -364,7 +364,7 @@ const Settings: React.FC = () => {
         <div className="h-full flex flex-col gap-6">
 
             {/* Header */}
-            <div className="flex justify-between items-center glass-panel p-6 rounded-xl">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 glass-panel p-4 md:p-6 rounded-xl">
                 <div>
                     <h1 className="text-2xl font-bold text-white flex items-center gap-3">
                         <Sliders className="text-cyan-400" /> System Configuration
@@ -373,8 +373,8 @@ const Settings: React.FC = () => {
                         Manage global preferences, security vaults, and permission matrices.
                     </p>
                 </div>
-                <div className="flex gap-4">
-                    <div className="flex bg-slate-900 rounded-lg p-1 border border-slate-800">
+                <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto">
+                    <div className="flex flex-wrap md:flex-nowrap bg-slate-900 rounded-lg p-1 border border-slate-800 gap-1 w-full md:w-auto overflow-x-auto custom-scrollbar">
                         {['GENERAL', 'INTEGRATIONS', 'PERMISSIONS', 'SYSTEM', 'WEBHOOKS'].map(tab => (
                             <button
                                 key={tab}
@@ -406,7 +406,7 @@ const Settings: React.FC = () => {
                             <h3 className="text-sm font-bold text-white border-b border-slate-800 pb-2 mb-4 flex items-center gap-2">
                                 <Palette size={16} className="text-purple-400" /> Appearance
                             </h3>
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="space-y-4">
                                     <div>
                                         <label className="block text-xs text-slate-400 mb-2">Interface Theme</label>
@@ -442,7 +442,7 @@ const Settings: React.FC = () => {
 
                                         <div className="space-y-3">
                                             {/* Provider Selection */}
-                                            <div className="grid grid-cols-3 gap-2 mb-4">
+                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
                                                 <div>
                                                     <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Image Model</label>
                                                     <select

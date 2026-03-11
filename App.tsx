@@ -45,6 +45,7 @@ const App: React.FC = () => {
 
   const [currentUserRole, setCurrentUserRole] = useState<UserRole>(UserRole.ADMIN);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [autonomyConfig, setAutonomyConfig] = useState<AutonomousConfig>(DEFAULT_AUTONOMOUS_CONFIG);
   const [liveThoughts, setLiveThoughts] = useState<string[]>([]);
@@ -369,13 +370,38 @@ const App: React.FC = () => {
           onAgentThought={handleAgentThought}
         />
       </Suspense>
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onDriveClick={() => setDriveOpen(true)} onEmailClick={() => setEmailOpen(true)} />
-      <main className={`flex-1 ${paddingClass} overflow-y-auto relative`}>
-        {/* Notification Center in top-right corner */}
-        <div className="absolute top-4 right-4 z-40">
+
+      <Sidebar 
+        activeTab={activeTab} 
+        setActiveTab={(tab) => {
+          setActiveTab(tab);
+          setIsMobileMenuOpen(false); // Close on mobile after click
+        }} 
+        isMobileOpen={isMobileMenuOpen}
+        onCloseMobile={() => setIsMobileMenuOpen(false)}
+        onDriveClick={() => setDriveOpen(true)} 
+        onEmailClick={() => setEmailOpen(true)} 
+      />
+
+      <main className={`flex-1 ${paddingClass} overflow-y-auto relative pt-16 md:pt-8 w-full`}>
+        {/* Mobile Header */}
+        <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-slate-950/80 backdrop-blur border-b border-cyan-900/50 z-30 flex items-center justify-between px-4">
+          <div className="font-bold text-cyan-400 tracking-wider">SILHOUETTE</div>
+          <button 
+            onClick={() => setIsMobileMenuOpen(true)}
+            className="p-2 text-cyan-400 hover:bg-cyan-900/30 rounded"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Notification Center in mt-mobile to avoid overlapping Header */}
+        <div className="absolute top-20 md:top-4 right-4 z-40">
           <NotificationCenter />
         </div>
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 via-purple-500 to-cyan-500 opacity-50"></div>
+        <div className="absolute top-16 md:top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 via-purple-500 to-cyan-500 opacity-50"></div>
         <Suspense fallback={
           <div className="flex items-center justify-center h-full text-cyan-400">
             Loading module...

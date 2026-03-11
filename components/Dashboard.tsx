@@ -116,15 +116,15 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, projects, onCreateProjec
   };
 
   return (
-    <div className="p-6 space-y-6 max-w-[1600px] mx-auto animate-in fade-in duration-500">
+    <div className="p-4 md:p-6 space-y-6 max-w-[1600px] mx-auto animate-in fade-in duration-500">
 
       {/* CONFIRMATION MODAL */}
       <ConfirmationModal isOpen={showConfirmations} onClose={() => setShowConfirmations(false)} />
 
       {/* HEADER SECTION */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-4xl font-light tracking-tight text-white mb-2">
+          <h1 className="text-3xl md:text-4xl font-light tracking-tight text-white mb-2">
             Agency <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400 font-normal">Command</span>
           </h1>
           <p className="text-white/40 font-mono text-sm">Orchestrating {metrics.activeAgents} autonomous units</p>
@@ -146,7 +146,7 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, projects, onCreateProjec
             <Terminal className="w-4 h-4" />
             <span>System Logs</span>
           </button>
-          <button onClick={onCreateProject} className="bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white px-6 py-2 rounded-lg font-medium shadow-[0_0_20px_rgba(6,182,212,0.3)] transition-all transform hover:scale-105 flex items-center gap-2">
+          <button onClick={onCreateProject} className="w-full md:w-auto bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white px-6 py-2 rounded-lg font-medium shadow-[0_0_20px_rgba(6,182,212,0.3)] transition-all transform hover:scale-105 flex items-center justify-center gap-2">
             <Plus className="w-4 h-4" />
             New Project
           </button>
