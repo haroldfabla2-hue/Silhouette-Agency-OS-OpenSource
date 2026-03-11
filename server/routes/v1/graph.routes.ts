@@ -235,4 +235,18 @@ router.get('/hubs', async (req, res) => {
     }
 });
 
+// GET /v1/graph/topology - Full Small-World Topology Report (σ index)
+router.get('/topology', async (req, res) => {
+    try {
+        const { advancedDiscovery } = await import('../../../services/cognitive/advancedDiscovery');
+        const forceRefresh = req.query.refresh === 'true';
+        const report = await advancedDiscovery.getNetworkTopologyReport(forceRefresh);
+        res.json(report);
+    } catch (error: any) {
+        console.error('[GRAPH] Error fetching topology:', error);
+        res.status(500).json({ error: 'Failed to fetch topology', details: error.message });
+    }
+});
+
 export default router;
+

@@ -131,16 +131,17 @@ function stripInternalThoughts(text: string): string {
 // Tries Markdown first, falls back to plain text.
 // ═══════════════════════════════════════════════════════════════
 
-async function safeSendMessage(bot: Bot, chatId: string, text: string): Promise<number | null> {
+async function safeSendMessage(bot: Bot, chatId: string | number, text: string): Promise<number | null> {
+    const targetId = typeof chatId === 'string' && /^-?\d+$/.test(chatId) ? parseInt(chatId, 10) : chatId;
     try {
-        const sent = await bot.api.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+        const sent = await bot.api.sendMessage(targetId, text, { parse_mode: 'Markdown' });
         return sent.message_id;
     } catch (mdError: any) {
         // Markdown parsing failed — retry as plain text
         if (mdError.description?.includes('parse') || mdError.description?.includes('entities') || mdError.error_code === 400) {
-            logger.warn(`Markdown failed for chatId ${chatId}, retrying as plain text`);
+            logger.warn(`Markdown failed for chatId ${targetId}, retrying as plain text`);
             try {
-                const sent = await bot.api.sendMessage(chatId, text);
+                const sent = await bot.api.sendMessage(targetId, text);
                 return sent.message_id;
             } catch (plainError: any) {
                 logger.error(`Plain text send also failed: ${plainError.message}`);
@@ -162,6 +163,7 @@ export class TelegramChannel implements IChannel {
     private connected = false;
     private connectTime = 0;
     private lastMessageTime = 0;
+    private hasSentBootMessage = false;
     private bot: Bot | null = null;
     private activeTyping: Map<string, TypingIndicator> = new Map(); // chatId → indicator
     private config: {
@@ -255,8 +257,9 @@ export class TelegramChannel implements IChannel {
                     this.connectTime = Date.now();
                     logger.info(`[Telegram] ✅ Bot @${botInfo.username} is connected and polling.`);
 
-                    // Notify admin of startup
-                    if (this.config.allowedChatIds && this.config.allowedChatIds.length > 0) {
+                    // Notify admin of startup (only once per instance lifetime)
+                    if (!this.hasSentBootMessage && this.config.allowedChatIds && this.config.allowedChatIds.length > 0) {
+                        this.hasSentBootMessage = true;
                         this.bot?.api.sendMessage(this.config.allowedChatIds[0], "🤖 Silhouette OS: Telegram Uplink Online").catch(() => { });
                     }
                 },
@@ -345,7 +348,7 @@ export class TelegramChannel implements IChannel {
             return null;
         }
 
-        const chatId = message.chatId;
+        const chatId = /^-?\d+$/.test(message.chatId) ? parseInt(message.chatId, 10) : message.chatId;
 
         // 1. FILTER INTERNAL THOUGHTS (enhanced)
         message.text = stripInternalThoughts(message.text || '');

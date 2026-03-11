@@ -202,7 +202,7 @@ export const DEFAULT_AUTONOMOUS_CONFIG: AutonomousConfig = {
 
 export const DEFAULT_API_CONFIG = {
   enabled: true,
-  apiKey: getEnvVar('VITE_API_KEY', ''),
+  apiKey: getEnvVar('VITE_SILHOUETTE_API_KEY', getEnvVar('VITE_API_KEY', '') as string),
   port: 3005
 };
 

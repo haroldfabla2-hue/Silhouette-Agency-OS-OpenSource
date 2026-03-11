@@ -293,7 +293,7 @@ export class ThoughtNarrator {
      */
     private async rationalizeThought(
         structured: { thought: string; intent: string; confidence: number; action?: any; safety: any },
-        graphSensory: { triangles: any[]; hubs: any[]; userFacts: any[] }
+        graphSensory: { triangles: any[]; hubs: any[]; userFacts: any[]; smallWorldSigma?: number }
     ): Promise<{
         action: 'ACT_NOW' | 'DELIBERATE' | 'REFLECT' | 'INHIBIT' | 'ASK_USER';
         score: number;
@@ -327,7 +327,7 @@ export class ThoughtNarrator {
      */
     private async evaluateDimensions(
         structured: { thought: string; intent: string; confidence: number; action?: any },
-        graphSensory: { triangles: any[]; hubs: any[]; userFacts: any[] }
+        graphSensory: { triangles: any[]; hubs: any[]; userFacts: any[]; smallWorldSigma?: number }
     ): Promise<{ urgency: number; impact: number; reversibility: number; userAlignment: number; valence: number; composite: number }> {
 
         // ─── DIMENSION 1: URGENCY (U) ────────────────────────────────
@@ -442,7 +442,7 @@ export class ThoughtNarrator {
      */
     private async routeByIntent(
         structured: { thought: string; intent: string; confidence: number; action?: any },
-        graphSensory: { triangles: any[]; hubs: any[]; userFacts: any[] }
+        graphSensory: { triangles: any[]; hubs: any[]; userFacts: any[]; smallWorldSigma?: number }
     ): Promise<void> {
         const { intent, confidence, action, thought } = structured;
         // NOTE: Gating is now handled by System 2's rationalizeThought() — this method
@@ -686,17 +686,21 @@ If you have NOTHING meaningful to say, respond with: {"thought":"","intent":"REF
         triangles: { nodeA: any; nodeB: any; bridge: any }[];
         hubs: any[];
         userFacts: { category: string; content: string; confidence: number }[];
+        smallWorldSigma: number;
     }> {
         try {
-            const [triangles, hubs, userFacts] = await Promise.all([
+            const [triangles, hubs, userFacts, topology] = await Promise.all([
                 graph.findOpenTriangles(5).catch(() => []),
                 graph.getHubs(5).catch(() => []),
-                graph.getUserFacts().catch(() => [])
+                graph.getUserFacts().catch(() => []),
+                import('./advancedDiscovery').then(({ advancedDiscovery }) =>
+                    advancedDiscovery.getNetworkTopologyReport().catch(() => null)
+                ).catch(() => null)
             ]);
-            return { triangles, hubs, userFacts };
+            return { triangles, hubs, userFacts, smallWorldSigma: topology?.sigma ?? 0 };
         } catch (e) {
             console.warn(`[NARRATOR] Graph perception failed (Neo4j may be offline):`, e);
-            return { triangles: [], hubs: [], userFacts: [] };
+            return { triangles: [], hubs: [], userFacts: [], smallWorldSigma: 0 };
         }
     }
 
@@ -739,7 +743,7 @@ If you have NOTHING meaningful to say, respond with: {"thought":"","intent":"REF
      * Formats all sensory data into a structured report for the LLM.
      */
     private buildSensoryReport(
-        graphData: { triangles: any[]; hubs: any[]; userFacts: any[] },
+        graphData: { triangles: any[]; hubs: any[]; userFacts: any[]; smallWorldSigma?: number },
         errorData: { errors: any[] },
         memoryData: { pressure: number; total: number; deepCount: number }
     ): string {
@@ -779,6 +783,12 @@ If you have NOTHING meaningful to say, respond with: {"thought":"","intent":"REF
 
         // Memory
         sections.push(`## 🧠 Memory Status\n  - Working Memory: ${memoryData.pressure} nodes\n  - Total Memory: ${memoryData.total} nodes\n  - Deep Archive: ${memoryData.deepCount} vectors`);
+
+        // Small-World Index
+        if (graphData.smallWorldSigma > 0) {
+            const status = graphData.smallWorldSigma > 1.0 ? 'Small-World ✓ (healthy information flow)' : 'Below Small-World (needs more cross-domain bridges)';
+            sections.push(`## 🌐 Network Topology\n  - Small-World σ = ${graphData.smallWorldSigma.toFixed(3)} → ${status}`);
+        }
 
         return sections.join('\n\n');
     }

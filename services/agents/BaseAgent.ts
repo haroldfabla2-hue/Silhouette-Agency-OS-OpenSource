@@ -407,8 +407,15 @@ If it was routine, just acknowledge it.
     // ========================================================================
 
     private emitState() {
-        // Notifies the Orchestrator/UI that this agent changed state
-        // Could hook into a central specific Protocol like PROTOCOL_AGENT_STATE
+        systemBus.emit(SystemProtocol.SYSTEM_ALERT, {
+            type: 'AGENT_STATE_CHANGE',
+            agentId: this.id,
+            agentName: this.name,
+            status: this.status,
+            role: this.role,
+            tier: this.tier,
+            lastActive: this.lastActive
+        }, this.id);
     }
 
     /**

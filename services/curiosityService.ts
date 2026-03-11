@@ -43,8 +43,11 @@ class CuriosityService {
         MIN_TOPIC_COUNT_FOR_GAP: 3,                  // Topic must be mentioned 3+ times
         MAX_PENDING_GAPS: 10,                        // Don't queue too many questions
         RESEARCH_COOLDOWN_MS: 5 * 60 * 1000,         // Wait 5 min between researches
-        MAX_RESEARCH_ATTEMPTS: 2                     // Max retries per gap
+        MAX_RESEARCH_ATTEMPTS: 2,                    // Max retries per gap
+        MAX_CONCURRENT_RESEARCH: 3                   // Process up to 3 gaps per cycle
     };
+
+    private readonly GAPS_FILE = require('path').resolve(process.cwd(), 'data', 'curiosity_gaps.json');
 
     private knowledgeGaps: KnowledgeGap[] = [];
     private topicFrequency: Map<string, TopicFrequency> = new Map();
@@ -62,7 +65,43 @@ class CuriosityService {
             this.trackTopicFromThought(payload);
         });
 
+        // Restore persisted gaps from disk
+        this.loadGaps().catch(() => {});
+
         logger.info('Initialized. Curiosity is the engine of discovery.');
+    }
+
+    private async loadGaps(): Promise<void> {
+        try {
+            const fs = require('fs/promises');
+            const data = await fs.readFile(this.GAPS_FILE, 'utf-8');
+            const saved = JSON.parse(data);
+            if (saved.gaps) this.knowledgeGaps = saved.gaps;
+            if (saved.topics) {
+                for (const [k, v] of Object.entries(saved.topics)) {
+                    this.topicFrequency.set(k, v as TopicFrequency);
+                }
+            }
+            logger.info(`Restored ${this.knowledgeGaps.length} gaps and ${this.topicFrequency.size} topics from disk.`);
+        } catch (e: any) {
+            if (e.code !== 'ENOENT') logger.warn('Failed to load gaps:', e.message);
+        }
+    }
+
+    private async saveGaps(): Promise<void> {
+        try {
+            const fs = require('fs/promises');
+            const path = require('path');
+            await fs.mkdir(path.dirname(this.GAPS_FILE), { recursive: true });
+            const data = {
+                gaps: this.knowledgeGaps,
+                topics: Object.fromEntries(this.topicFrequency),
+                savedAt: Date.now()
+            };
+            await fs.writeFile(this.GAPS_FILE, JSON.stringify(data, null, 2), 'utf-8');
+        } catch (e: any) {
+            logger.warn('Failed to save gaps:', e.message);
+        }
     }
 
     /**
@@ -179,7 +218,50 @@ class CuriosityService {
     }
 
     /**
-     * Detect knowledge gaps based on topic frequency vs depth
+     * Calculate information entropy for a topic (diversity of contexts).
+     * High entropy = we hear about this in many different contexts, meaning we should investigate how it all connects.
+     */
+    private async calculateEntropy(topic: string): Promise<number> {
+        try {
+            const { graph } = await import('./graphService');
+            if (!graph.isConnectedStatus()) return 0.5;
+
+            // Get text content of all nodes mentioning this topic
+            const query = `
+                MATCH (n)
+                WHERE toLower(n.content) CONTAINS $topic 
+                   OR toLower(n.label) CONTAINS $topic
+                RETURN n.content as text
+                LIMIT 20
+            `;
+            const results = await graph.runQuery(query, { topic: topic.toLowerCase() });
+
+            if (!results || results.length === 0) return 1.0; // Completely unknown
+            if (results.length < 2) return 0.5; // Only 1 context = low variance
+
+            const uniqueWords = new Set<string>();
+            let validContexts = 0;
+
+            for (const r of results) {
+                if (r.text) {
+                    const words = String(r.text).toLowerCase().split(/\W+/).filter(w => w.length > 2);
+                    words.forEach(w => uniqueWords.add(w));
+                    validContexts++;
+                }
+            }
+
+            if (validContexts === 0) return 1.0;
+
+            // More unique words across different contexts = higher entropy
+            const entropy = uniqueWords.size / (validContexts * 10);
+            return Math.min(1.0, Math.max(0.1, entropy));
+        } catch {
+            return 0.5;
+        }
+    }
+
+    /**
+     * Detect knowledge gaps based on topic frequency, depth, and entropy
      */
     private async detectKnowledgeGaps(): Promise<KnowledgeGap[]> {
         const newGaps: KnowledgeGap[] = [];
@@ -200,10 +282,15 @@ class CuriosityService {
             freq.hasDepth = hasDepth;
 
             if (!hasDepth && this.knowledgeGaps.length < this.CONFIG.MAX_PENDING_GAPS) {
+                const entropy = await this.calculateEntropy(topic);
+
+                // Priority combines frequency and entropy calculation from Silhouette-brain
+                const discoveryPotential = (freq.count / 10.0) + entropy;
+
                 const gap: KnowledgeGap = {
                     topic,
                     question: await this.generateResearchQuestion(topic),
-                    priority: freq.count / 10, // Higher frequency = higher priority
+                    priority: discoveryPotential,
                     detectedAt: Date.now(),
                     status: 'PENDING',
                     attempts: 0
@@ -212,7 +299,7 @@ class CuriosityService {
                 this.knowledgeGaps.push(gap);
                 newGaps.push(gap);
 
-                logger.info(`New Gap: "${topic}" → "${gap.question}"`);
+                logger.info(`New Epistemic Gap: "${topic}" (Entropy: ${entropy.toFixed(2)}) → "${gap.question}"`);
             }
         }
 
@@ -420,9 +507,18 @@ class CuriosityService {
      * Trigger immediate research (for testing)
      */
     public async triggerResearch() {
-        const pendingGaps = this.knowledgeGaps.filter(g => g.status === 'PENDING');
+        const pendingGaps = this.knowledgeGaps
+            .filter(g => g.status === 'PENDING')
+            .sort((a, b) => b.priority - a.priority)
+            .slice(0, this.CONFIG.MAX_CONCURRENT_RESEARCH);
+
         if (pendingGaps.length > 0) {
-            await this.researchGap(pendingGaps[0]);
+            logger.info(`Researching ${pendingGaps.length} gaps in parallel...`);
+            await Promise.allSettled(
+                pendingGaps.map(gap => this.researchGap(gap))
+            );
+            // Persist after batch research
+            await this.saveGaps();
         } else {
             logger.info('No pending gaps to research');
         }

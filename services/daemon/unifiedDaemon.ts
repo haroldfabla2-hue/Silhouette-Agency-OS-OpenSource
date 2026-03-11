@@ -300,7 +300,10 @@ export class UnifiedDaemon {
     private async runCuriosityTask() {
         console.log('[COGNITIVE: CURIOSITY] 🔍 Seeking knowledge gaps from graph...');
         const { curiosity } = await import('../curiosityService');
-        const gaps = await graph.findOpenTriangles(5);
+        const { advancedDiscovery } = await import('../cognitive/advancedDiscovery');
+
+        // 1. Classical Open Triangles
+        const gaps = await graph.findOpenTriangles(3);
         if (gaps && gaps.length > 0) {
             for (const gap of gaps) {
                 const nodeA = gap.nodeA?.name || gap.nodeA?.id || 'Unknown';
@@ -314,6 +317,49 @@ export class UnifiedDaemon {
             }
             console.log(`[COGNITIVE: CURIOSITY] 📝 Fed ${gaps.length} graph triangles as knowledge gaps.`);
         }
+
+        // 2. Advanced Bridges (Small-World Theory)
+        const bridges = await advancedDiscovery.discoverBridges(3);
+        if (bridges && bridges.length > 0) {
+            for (const b of bridges) {
+                const nodeName = b.name;
+                curiosity.addGap(
+                    `Bridge Concept: ${nodeName}`,
+                    `The concept "${nodeName}" acts as a major bridge between different knowledge domains (Clustering: ${b.clustering.toFixed(2)}). What is its foundational nature?`,
+                    0.8
+                );
+
+                // Tag natively in Neo4j so UI can render it immediately without math
+                try {
+                    await graph.runQuery(
+                        `MATCH (n {id: $nodeId}) SET n.isBridge = true RETURN n`,
+                        { nodeId: b.nodeId }
+                    );
+                } catch (e) {
+                    console.warn(`[COGNITIVE: DAEMON] Failed to tag bridge node ${b.nodeId} in DB:`, e);
+                }
+            }
+            console.log(`[COGNITIVE: CURIOSITY] 🌉 Fed ${bridges.length} Small-World Bridges as knowledge gaps.`);
+        }
+
+        // 3. Small-World Topology Analysis (Watts-Strogatz σ)
+        try {
+            const report = await advancedDiscovery.getNetworkTopologyReport();
+            const symbol = report.isSmallWorld ? '🌐' : '⚠️';
+            console.log(`[COGNITIVE: CURIOSITY] ${symbol} σ=${report.sigma.toFixed(3)} (${report.isSmallWorld ? 'Small-World ✓' : 'Not yet Small-World'}) | C̄=${report.avgClustering.toFixed(3)} L=${report.avgPathLength.toFixed(2)} | N=${report.totalNodes} E=${report.totalEdges}`);
+
+            // If σ < 1, the graph needs more cross-domain connections 
+            if (report.sigma > 0 && report.sigma < 1.0 && report.totalNodes > 10) {
+                curiosity.addGap(
+                    'Network Topology Optimization',
+                    `The knowledge graph has σ=${report.sigma.toFixed(2)} (below 1.0), meaning it lacks the small-world property. We need more cross-domain bridges to improve information flow. What concepts from different domains could be connected?`,
+                    0.9
+                );
+            }
+        } catch (e: any) {
+            console.warn(`[COGNITIVE: CURIOSITY] σ analysis failed: ${e.message}`);
+        }
+
         await curiosity.triggerResearch();
     }
 
@@ -355,7 +401,9 @@ export class UnifiedDaemon {
     }
 
     private async runDreamerTask() {
-        console.log('[COGNITIVE: DREAMER] 🌙 Consolidating knowledge...');
+        console.log('[COGNITIVE: DREAMER] 🌙 Starting deep memory consolidation...');
+
+        // 1. Sync recent concepts to vector store
         const conceptsToSync = await graph.runQuery(`
             MATCH (c:Concept)
             RETURN c.id as id, c.name as name, c.description as description
@@ -372,6 +420,62 @@ export class UnifiedDaemon {
                 });
             }
         }
+
+        // 2. Decay old relationship weights (simulate memory fading)
+        try {
+            await graph.runQuery(`
+                MATCH ()-[r]->()
+                WHERE r.weight IS NOT NULL AND r.weight > 0.05
+                  AND r.lastUpdated IS NOT NULL
+                  AND r.lastUpdated < timestamp() - 7 * 24 * 60 * 60 * 1000
+                SET r.weight = r.weight * 0.95
+                RETURN count(r) as decayed
+            `);
+            console.log('[COGNITIVE: DREAMER] 📉 Decayed old relationship weights by 5%.');
+        } catch (e: any) {
+            console.warn(`[COGNITIVE: DREAMER] Weight decay failed: ${e.message}`);
+        }
+
+        // 3. Archive low-importance Working memories to Deep storage
+        try {
+            const workingMemories = await continuum.retrieve('', 'working');
+            const oldMemories = workingMemories.filter((m: any) => {
+                const age = Date.now() - (m.timestamp || 0);
+                return age > 48 * 60 * 60 * 1000; // Older than 48 hours
+            });
+
+            if (oldMemories.length > 0) {
+                const { MemoryTier } = await import('../../types');
+                for (const mem of oldMemories.slice(0, 20)) {
+                    await continuum.store(
+                        mem.content,
+                        MemoryTier.DEEP,
+                        mem.tags || ['consolidated'],
+                        false
+                    );
+                }
+                console.log(`[COGNITIVE: DREAMER] 💾 Consolidated ${Math.min(oldMemories.length, 20)} working memories to deep storage.`);
+            }
+        } catch (e: any) {
+            console.warn(`[COGNITIVE: DREAMER] Memory consolidation failed: ${e.message}`);
+        }
+
+        // 4. Clean stale bridge tags (nodes no longer meeting criteria)
+        try {
+            await graph.runQuery(`
+                MATCH (n {isBridge: true})
+                OPTIONAL MATCH (n)-[r]-()
+                WITH n, count(r) as degree
+                WHERE degree <= 3
+                SET n.isBridge = null
+                RETURN count(n) as cleaned
+            `);
+            console.log('[COGNITIVE: DREAMER] 🧹 Cleaned stale bridge tags.');
+        } catch (e: any) {
+            console.warn(`[COGNITIVE: DREAMER] Bridge cleanup failed: ${e.message}`);
+        }
+
+        console.log('[COGNITIVE: DREAMER] 🌙 Deep consolidation complete.');
     }
 }
 

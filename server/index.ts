@@ -18,14 +18,23 @@ const PORT = config.system.port || 3005;
 // ═══════════════════════════════════════════════════════════════
 // GLOBAL ERROR HANDLERS - Catch unhandled errors before they crash
 // ═══════════════════════════════════════════════════════════════
-process.on('unhandledRejection', (reason: any) => {
-    console.error('[FATAL] Unhandled Promise Rejection:', reason?.message || reason);
-    // Don't exit - log and continue. Most rejections are non-fatal (failed API calls, etc.)
+process.on('unhandledRejection', async (reason: any) => {
+    const msg = reason?.message || String(reason);
+    console.error('[FATAL] Unhandled Promise Rejection:', msg);
+    // Route through structured logger so self-healing can pick it up
+    try {
+        const { logger } = await import('../services/logger');
+        logger.error({ source: 'unhandledRejection', stack: reason?.stack?.substring(0, 500) }, msg);
+    } catch (_) { /* logger not yet available during early boot */ }
 });
 
-process.on('uncaughtException', (error: Error) => {
+process.on('uncaughtException', async (error: Error) => {
     console.error('[FATAL] Uncaught Exception:', error.message);
     console.error(error.stack);
+    try {
+        const { logger } = await import('../services/logger');
+        logger.fatal({ source: 'uncaughtException', stack: error.stack?.substring(0, 500) }, error.message);
+    } catch (_) { /* logger not yet available */ }
     // For uncaught exceptions, give time to flush logs then exit
     setTimeout(() => process.exit(1), 1000);
 });
@@ -107,6 +116,23 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
         unifiedDaemon.start();
     } catch (error) {
         console.error('[DAEMON] Failed to start unified daemon:', error);
+    }
+
+    // [ORCHESTRATOR] Initialize Agent Lifecycle Manager (auto-starts on import)
+    try {
+        await import('../services/orchestrator');
+        console.log('[ORCHESTRATOR] ✅ Agent Lifecycle Manager initialized');
+    } catch (error) {
+        console.error('[ORCHESTRATOR] Failed to initialize orchestrator:', error);
+    }
+
+    // [EVOLUTION] Start Self-Evolution Scheduler (respects PowerManager mode)
+    try {
+        const { evolutionScheduler } = await import('../services/evolution/evolutionScheduler');
+        evolutionScheduler.start();
+        console.log('[EVOLUTION] ✅ Evolution Scheduler started');
+    } catch (error) {
+        console.error('[EVOLUTION] Failed to start evolution scheduler:', error);
     }
 });
 

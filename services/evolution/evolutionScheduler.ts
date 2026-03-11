@@ -47,6 +47,24 @@ class EvolutionScheduler {
 
     private constructor(config: Partial<EvolutionConfig> = {}) {
         this.config = { ...DEFAULT_CONFIG, ...config };
+
+        // Subscribe to PowerManager mode changes to reactivate when mode upgrades
+        import('../systemBus').then(({ systemBus }) => {
+            import('../../types').then(({ SystemProtocol }) => {
+                systemBus.subscribe(SystemProtocol.CONFIG_MUTATION, (event: any) => {
+                    if (event.type === 'POWER_MODE_CHANGE') {
+                        const newMode = event.mode;
+                        if ((newMode === 'PERFORMANCE' || newMode === 'BALANCED') && !this.isRunning) {
+                            console.log(`[EVOLUTION] ⚡ PowerManager switched to ${newMode} — activating Evolution Scheduler!`);
+                            this.activateScheduler();
+                        } else if (newMode === 'ECO' && this.isRunning) {
+                            console.log(`[EVOLUTION] 💤 PowerManager switched to ECO — pausing Evolution Scheduler.`);
+                            this.stop();
+                        }
+                    }
+                });
+            }).catch(() => {});
+        }).catch(() => {});
     }
 
     public static getInstance(): EvolutionScheduler {
@@ -69,7 +87,7 @@ class EvolutionScheduler {
         // [OPTIMIZATION] Check PowerManager before starting
         import('../powerManager').then(({ powerManager }) => {
             if (!powerManager.isEvolutionEnabled) {
-                console.log('[EVOLUTION] 💤 Disabled by PowerManager. Call start() manually when PERFORMANCE mode.');
+                console.log('[EVOLUTION] 💤 Disabled by PowerManager (ECO mode). Will auto-activate on mode change.');
                 return;
             }
             this.activateScheduler();

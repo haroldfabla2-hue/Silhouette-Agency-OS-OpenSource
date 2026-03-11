@@ -83,6 +83,9 @@ const KnowledgeGraph: React.FC = () => {
 
     const [error, setError] = useState<string | null>(null);
 
+    // Small-World Topology State
+    const [topology, setTopology] = useState<{ sigma: number; isSmallWorld: boolean; totalNodes: number; totalEdges: number; avgClustering: number; avgPathLength: number } | null>(null);
+
     // Physics Controls State (with Persistence)
     // [UI FIX 2026-01-07] Made these adjustable via sliders with wider ranges
     const [nodeSize, setNodeSize] = useState(() => Number(localStorage.getItem('graph_nodeSize')) || 5);
@@ -173,14 +176,26 @@ const KnowledgeGraph: React.FC = () => {
         }
     }, []);
 
-    useEffect(() => {
-        // Initial fetch
-        fetchGraph();
+    // Fetch Small-World topology info (less frequently than graph)
+    const fetchTopology = useCallback(async () => {
+        try {
+            const topoData = await api.get<any>('/v1/graph/topology');
+            if (topoData && typeof topoData.sigma === 'number') {
+                setTopology(topoData);
+            }
+        } catch (e) {
+            // Non-critical: topology badge just won't show
+        }
+    }, []);
 
-        // Polling interaction
+    useEffect(() => {
+        fetchGraph();
+        fetchTopology();
+
         const interval = setInterval(fetchGraph, GRAPH_CONFIG.REFRESH_INTERVAL);
-        return () => clearInterval(interval);
-    }, [fetchGraph]);
+        const topoInterval = setInterval(fetchTopology, 60_000); // Every 60s
+        return () => { clearInterval(interval); clearInterval(topoInterval); };
+    }, [fetchGraph, fetchTopology]);
 
 
     // --- CONTROLS CONFIGURATION ---
@@ -497,15 +512,23 @@ const KnowledgeGraph: React.FC = () => {
                                 const label = node.label || 'Unknown';
                                 const content = node.content ? node.content.substring(0, 50) + '...' : '';
                                 const degree = nodeDegreeMap.get(node.id) || 0;
-                                const hubIndicator = degree >= 10 ? ' [HUB]' : '';
+                                let hubIndicator = '';
+                                if (node.isBridge) {
+                                    hubIndicator = ' [COGNITIVE BRIDGE]';
+                                } else if (degree >= 10) {
+                                    hubIndicator = ' [HUB]';
+                                }
                                 return `${label}${hubIndicator} (${degree} connections)${content ? '\n' + content : ''}`;
                             }}
                             nodeAutoColorBy="label"
 
                             // [HUB VISUALIZATION] Degree-based coloring
                             // Blue (low) → Cyan → Yellow → Red (high/Hub)
+                            // Bridges glow Magenta
                             nodeColor={(node: any) => {
                                 if (hoverNode && !highlightNodes.has(node.id)) return GRAPH_CONFIG.COLORS.DIMMED_NODE;
+
+                                if (node.isBridge) return '#ff00ff'; // Magenta: Cognitive Bridge
 
                                 const degree = nodeDegreeMap.get(node.id) || 0;
                                 if (degree >= 15) return '#ff4444'; // Red: Major Hub
@@ -517,7 +540,9 @@ const KnowledgeGraph: React.FC = () => {
 
                             // [HUB VISUALIZATION] Degree-based sizing
                             // Hubs are visually larger to stand out
+                            // Bridges are extra larger
                             nodeVal={(node: any) => {
+                                if (node.isBridge) return nodeSize * 5; // Bridges are highly visible
                                 const degree = nodeDegreeMap.get(node.id) || 0;
                                 const hubMultiplier = Math.min(1 + degree * 0.15, 4); // Max 4x size
                                 return nodeSize * hubMultiplier;
@@ -563,6 +588,27 @@ const KnowledgeGraph: React.FC = () => {
             <div className="absolute bottom-2 right-2 text-[10px] text-slate-600 font-mono pointer-events-none">
                 NODES: {data.nodes.length} | EDGES: {data.links.length}
             </div>
+
+            {/* Small-World σ Badge */}
+            {topology && topology.sigma > 0 && (
+                <div
+                    className="absolute top-2 left-2 font-mono px-2 py-1 rounded pointer-events-none"
+                    style={{
+                        fontSize: '11px',
+                        background: topology.isSmallWorld
+                            ? 'linear-gradient(135deg, rgba(0,255,136,0.15), rgba(0,200,255,0.1))'
+                            : 'linear-gradient(135deg, rgba(255,100,50,0.15), rgba(255,200,0,0.1))',
+                        border: `1px solid ${topology.isSmallWorld ? 'rgba(0,255,136,0.3)' : 'rgba(255,150,50,0.3)'}`,
+                        color: topology.isSmallWorld ? '#00ff88' : '#ffaa44',
+                        backdropFilter: 'blur(8px)',
+                    }}
+                >
+                    σ = {topology.sigma.toFixed(2)} {topology.isSmallWorld ? '✓ Small-World' : '⚡ Evolving'}
+                    <span style={{ color: 'rgba(255,255,255,0.3)', marginLeft: 6 }}>
+                        C̄={topology.avgClustering.toFixed(2)} L={topology.avgPathLength.toFixed(1)}
+                    </span>
+                </div>
+            )}
         </div>
     );
 
