@@ -23,8 +23,10 @@
 - **RAG Web Scraping pipeline**: Deep LanceDB integration extracting global knowledge dynamically.
 - **Cognitive Omnichannel RBAC**: Native Anti-Prompt Injection shields over Telegram, Discord, and WhatsApp.
 - **Auto-Evolution**: Capable of self-cloning and pushing to private GitHub repositories autonomously.
-- **Multi-modal perception** including visual, audio, and textual processing
-- **Production-grade deployment** with auto-SSL, Docker, and VPS support
+- **Multi-modal perception** including visual, audio, and textual processing.
+- **Debate Swarm Matrix**: Multi-agent consensus mechanisms for complex logical reasoning (Critics vs Creators).
+- **Host-Aware Dockerization**: Production-grade isolation that retains root host OS management capabilities.
+- **Fully Responsive UI**: Mobile-first architecture ready for edge-device deployments via Coolify and Traefik.
 
 > [!WARNING]
 > **This is an experimental hobby project.** Silhouette began as a personal assistant and evolved into an autonomous, self-improving system. While powerful, it executes code and modifies files. **Use with caution and review all actions.** See [SECURITY.md](SECURITY.md) for more details.
@@ -92,7 +94,7 @@ The emergence of Large Language Models (LLMs) has created new possibilities for 
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘           │
 ├─────────────────────────────────────────────────────────────────┤
 │                  PRODUCTION LAYER                               │
-│  Janus V2 Supervisor · Caddy (SSL) · Docker · CI/CD            │
+│  Coolify (Traefik SSL) · Host-Aware Docker · Janus V2   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -100,12 +102,12 @@ The emergence of Large Language Models (LLMs) has created new possibilities for 
 
 | Layer | Component | Responsibility |
 |-------|-----------|----------------|
-| **Presentation** | React UI + Messaging Channels | User interaction, visualization |
-| **Orchestration** | ManagerAgent | Cognitive loop coordination |
+| **Presentation** | React UI (Responsive) + Messaging Channels | User interaction, visualization on Desktop & Mobile |
+| **Orchestration** | ManagerAgent & Debate Matrix | Cognitive loop coordination and multi-agent consensus |
 | **Specialists** | Agent Pool (500+) | Domain-specific task execution |
 | **Capabilities** | ToolExecutor | External world interaction |
 | **Communication** | Telegram, WhatsApp, Discord | Multi-channel messaging |
-| **Production** | Janus, Caddy, Docker, CI | Supervision, SSL, deployment |
+| **Production** | Coolify, Docker, Traefik, Caddy | Supervision, Host-aware deployment, SSL |
 
 ---
 
@@ -156,6 +158,12 @@ Silhouette can propose modifications to its own codebase through:
 ```
 Silhouette → Proposes PR → Human Reviews → Approve/Reject → Merge
 ```
+
+### 3.5 Swarm Matrix V2 (Debate Squads)
+For complex tasks, Silhouette dynamically spawns specialized "Debate Squads" instead of relying on a single agent.
+- A **Creator Agent** proposes an initial solution.
+- A **Critic Agent** finds flaws and reviews logical consistency.
+- The **Orchestrator (Judge)** synthesizes the debate into a finalized meta-consensus.
 
 ### 3.5 Multi-Channel Communication
 
@@ -286,9 +294,10 @@ The wizard guides you through:
 | Mode | Command | Use Case |
 |------|---------|----------|
 | **Local** | `npm run boot` | Development (Janus supervisor) |
-| **Docker** | `docker-compose -f docker-compose.prod.yml up -d` | Production |
-| **VPS** | Setup wizard + Docker | Remote server with SSL |
-| **Coolify** | Git push | Managed deployment |
+| **Docker Base** | `docker-compose up -d` | Local containerized deployment |
+| **Coolify (SaaS)** | Git Link → Docker Compose | **Recommended**: Paste GitHub repo into Coolify and enable Traefik Reverse Proxy |
+
+**Note on Host-Aware Docker:** Silhouette's Compose file intentionally mounts `/var/run/docker.sock` and `/host` to empower the AGI to manage its own VPS host environments. Do not deploy on shared un-trusted clouds without caution.
 
 For detailed deployment instructions, see **[DEPLOY.md](DEPLOY.md)**.
 For architecture details, see **[ARCHITECTURE.md](ARCHITECTURE.md)**.
