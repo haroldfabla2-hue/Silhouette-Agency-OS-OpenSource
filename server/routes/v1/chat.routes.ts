@@ -1,12 +1,16 @@
 import { Router } from 'express';
 import { chatController } from '../../controllers/chatController';
+import { authMiddleware } from '../../middleware/authMiddleware';
 
 const router = Router();
 
+// Apply auth middleware to ALL chat routes
+router.use(authMiddleware);
+
 router.get('/sessions', (req, res) => chatController.getSessions(req, res));
-router.post('/sessions', (req, res) => chatController.createSession(req, res)); // [NEW]
+router.post('/sessions', (req, res) => chatController.createSession(req, res));
 router.get('/sessions/:sessionId', (req, res) => chatController.getHistory(req, res));
-router.delete('/sessions/:sessionId', (req, res) => chatController.deleteSession(req, res)); // [NEW]
+router.delete('/sessions/:sessionId', (req, res) => chatController.deleteSession(req, res));
 router.post('/message', (req, res) => chatController.sendMessage(req, res));
 
 // SSE Streaming endpoint for real-time chat

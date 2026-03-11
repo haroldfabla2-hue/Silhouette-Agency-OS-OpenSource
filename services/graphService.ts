@@ -410,14 +410,21 @@ class GraphService {
      * Get all user facts from Neo4j
      * Used by UI to display eternal memory
      */
-    public async getUserFacts(): Promise<{ category: string; content: string; confidence: number; timestamp: number }[]> {
+    public async getUserFacts(userId?: string): Promise<{ category: string; content: string; confidence: number; timestamp: number }[]> {
         if (!this.isConnected || !this.driver) {
             await this.connect();
             if (!this.driver) return [];
         }
 
         try {
-            const query = `
+            // If userId is provided, filter by that user. Otherwise, fallback to global (admin only)
+            const query = userId ? `
+                MATCH (u:User {id: $userId})-[:HAS_FACT]->(f:Fact)
+                RETURN f.category as category, f.content as content, 
+                       f.confidence as confidence, f.timestamp as timestamp
+                ORDER BY f.timestamp DESC
+                LIMIT 50
+            ` : `
                 MATCH (f:Fact)
                 RETURN f.category as category, f.content as content, 
                        f.confidence as confidence, f.timestamp as timestamp
@@ -425,7 +432,7 @@ class GraphService {
                 LIMIT 50
             `;
 
-            const records = await this.runQuery(query, {});
+            const records = await this.runQuery(query, { userId });
             return records.map((r: any) => ({
                 category: r.category || 'general',
                 content: r.content || '',
