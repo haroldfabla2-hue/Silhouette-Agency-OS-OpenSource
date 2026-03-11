@@ -19,7 +19,8 @@ export enum MessageTag {
     TRIGGER = 'TRIGGER',                     // Automated trigger/event
     SYSTEM = 'SYSTEM',                       // System-level message
     HELP_REQUEST = 'HELP_REQUEST',           // Inter-agent help request
-    REMEDIATION = 'REMEDIATION'              // Self-healing/recovery events
+    REMEDIATION = 'REMEDIATION',              // Self-healing/recovery events
+    DEBATE = 'DEBATE'                        // Multi-agent debate message
 }
 
 /**

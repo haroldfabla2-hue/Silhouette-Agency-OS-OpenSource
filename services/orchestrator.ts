@@ -1,4 +1,4 @@
-import { Agent, AgentStatus, AgentRoleType, Project, WorkflowStage, AgentCapability, SystemMode, BusinessType, AgentTier, AgentCategory, SystemProtocol, InterAgentMessage, Squad, ServiceStatus } from '../types';
+import { Agent, AgentStatus, AgentRoleType, Project, WorkflowStage, AgentCapability, SystemMode, BusinessType, AgentTier, AgentCategory, SystemProtocol, InterAgentMessage, Squad, ServiceStatus, IntrospectionLayer } from '../types';
 import { sqliteService } from './sqliteService';
 import { workflowEngine } from './workflowEngine';
 import { INITIAL_AGENTS, KERNEL_COMPLEXITY_THRESHOLD } from "../constants";
@@ -86,7 +86,8 @@ class AgentSwarmOrchestrator {
             [MessageTag.TRIGGER]: 0,
             [MessageTag.SYSTEM]: 0,
             [MessageTag.HELP_REQUEST]: 0,
-            [MessageTag.REMEDIATION]: 0
+            [MessageTag.REMEDIATION]: 0,
+            [MessageTag.DEBATE]: 0
         },
         byPriority: {
             [MessagePriority.CRITICAL]: 0,
@@ -99,6 +100,17 @@ class AgentSwarmOrchestrator {
 
     // [PA-041] Active Task Queue - Full visibility into what's being worked on
     private activeTasks: Map<string, ActiveTask> = new Map();
+
+    // [SWARM MATRIX V2] Active Debates tracking
+    private activeDebates: Map<string, { 
+        subject: string; 
+        participants: string[]; 
+        turns: { agentId: string; message: string; timestamp: number }[]; 
+        maxTurns: number; 
+        status: 'DEBATING' | 'CONSENSUS_REACHED' | 'TIMEOUT'; 
+        resolve: (result: string) => void;
+        reject: (error: any) => void;
+    }> = new Map();
 
     // Core Services State (Real Monitoring)
     private coreServices: ServiceStatus[] = [
@@ -190,7 +202,14 @@ class AgentSwarmOrchestrator {
             });
         });
 
-        // ... (existing code)
+        // --- SWARM MATRIX V2 (DEBATE SQUADS) ---
+        systemBus.subscribe(SystemProtocol.SQUAD_DEBATE_START, (event) => {
+            this.handleSquadDebateStart(event.payload);
+        });
+
+        systemBus.subscribe(SystemProtocol.AGENT_DEBATE_MESSAGE, (event) => {
+            this.handleAgentDebateMessage(event.payload);
+        });
     }
 
     // ...
@@ -786,6 +805,23 @@ Format each gap as:
 
             // 2. Determine Agent, Complexity & Hydrate
             const complexityInfo = await this.analyzeComplexity(payload.message);
+            
+            // [SWARM MATRIX V2] Check if task requires a Squad Debate
+            const needsDebate = complexityInfo.score >= 85 || /debate|squad|equipo|perspectivas|varios agentes|analicen/i.test(payload.message);
+            
+            if (needsDebate) {
+                console.log(`[ORCHESTRATOR] 🌪️ Swarm Matrix Activation! Routing to Debate Squad. Score: ${complexityInfo.score}`);
+                const debateResult = await this.formSquadAndDebate(payload.message, payload.sessionId);
+                
+                // Directly send the consensus back to the user
+                const { channelRouter } = await import('../server/channels/channelRouter');
+                await channelRouter.send(payload.channel, {
+                    chatId: payload.chatId,
+                    text: debateResult
+                });
+                return;
+            }
+
             let agentId = complexityInfo.suggestedAgentId || 'core-01';
 
             // [BIOMIMETIC] Check if complexity exceeds Kernel Capacity
@@ -2642,6 +2678,135 @@ OBJECTIVES:
      */
     private resetHourlyStats(): void {
         this.messageStats.lastHour = 0;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // [SWARM MATRIX V2] SQUAD DEBATE LOGIC
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Forms a temporary Debate Squad, triggers the debate, and awaits consensus.
+     */
+    private async formSquadAndDebate(query: string, sessionId: string): Promise<string> {
+        return new Promise((resolve, reject) => {
+            const debateId = `debate-${crypto.randomUUID()}`;
+            
+            // Standard participants for a complex task
+            const participants = ['creator-01', 'critic-01'];
+            
+            this.hydrateAgent('core-01'); // Ensure core is alive as Judge
+            
+            this.activeDebates.set(debateId, {
+                subject: query,
+                participants,
+                turns: [],
+                maxTurns: 3,
+                status: 'DEBATING',
+                resolve,
+                reject
+            });
+
+            console.log(`[ORCHESTRATOR] 🌪️ Debate ${debateId} Started. Subject: "${query}"`);
+            
+            // Start the debate via System Bus
+            systemBus.emit(SystemProtocol.SQUAD_DEBATE_START, {
+                debateId,
+                subject: query,
+                participants,
+                sessionId
+            });
+        });
+    }
+
+    private async handleSquadDebateStart(payload: { debateId: string, subject: string, participants: string[], sessionId: string }) {
+        const { debateId, subject, participants } = payload;
+        
+        // Agent 1 (Creator) will take the first turn
+        const firstAgent = participants[0];
+        
+        try {
+            const draftResult = await generateAgentResponse(
+                firstAgent,
+                'Debate Participant',
+                'GENERAL',
+                `Eres un experto creativo. Debes proponer una solución inicial a esto: ${subject}. Sé conciso y directo.`,
+                null,
+                IntrospectionLayer.SHALLOW
+            );
+            
+            systemBus.emit(SystemProtocol.AGENT_DEBATE_MESSAGE, {
+                debateId,
+                agentId: firstAgent,
+                message: draftResult.output,
+                turnNumber: 1
+            });
+        } catch (err: any) {
+            console.error(`[ORCHESTRATOR] ❌ Debate ${debateId} failed at start:`, err);
+        }
+    }
+
+    private async handleAgentDebateMessage(payload: { debateId: string, agentId: string, message: string, turnNumber: number }) {
+        const debate = this.activeDebates.get(payload.debateId);
+        if (!debate || debate.status !== 'DEBATING') return;
+
+        debate.turns.push({ agentId: payload.agentId, message: payload.message, timestamp: Date.now() });
+        console.log(`[ORCHESTRATOR] 🗣️ Debate Turn ${payload.turnNumber}: ${payload.agentId} said: "${payload.message.substring(0, 50)}..."`);
+        
+        // If we reached max turns, Judge synthesizes consensus
+        if (payload.turnNumber >= debate.maxTurns) {
+            debate.status = 'CONSENSUS_REACHED';
+            
+            // Synthesize final answer using Core
+            const history = debate.turns.map(t => `${t.agentId}: ${t.message}`).join('\n\n');
+            const judgePrompt = `Eres el Juez Orquestador. Basado en el debate de los expertos sobre "${debate.subject}", redacta la respuesta final y perfecta para el usuario humano, unificando las mejores ideas.\n\nDebate:\n${history}`;
+            
+            const judgeResult = await generateAgentResponse(
+                'core-01',
+                'Orchestrator Judge',
+                'GENERAL',
+                judgePrompt,
+                null,
+                IntrospectionLayer.MEDIUM
+            );
+            const finalAnswer = judgeResult.output;
+            
+            systemBus.emit(SystemProtocol.SQUAD_CONSENSUS, { debateId: payload.debateId, consensus: finalAnswer });
+            debate.resolve(finalAnswer);
+            this.activeDebates.delete(payload.debateId);
+            return;
+        }
+
+        // Next Agent's Turn (The Critic)
+        const nextAgentIndex = (debate.participants.indexOf(payload.agentId) + 1) % debate.participants.length;
+        const nextAgent = debate.participants[nextAgentIndex];
+        const nextTurnNumber = payload.turnNumber + 1;
+
+        try {
+            const previousMessage = payload.message;
+            const roleContext = nextAgent.includes('critic') ? 'Eres un crítico estricto. Revisa la propuesta anterior, señala fallas y mejórala.' : 'Eres el creador original. Adapta tu propuesta según las críticas.';
+            const prompt = `${roleContext}\n\nTema original: ${debate.subject}\n\nPropuesta anterior por ${payload.agentId}:\n"${previousMessage}"\n\nResponde mejorándola:`;
+            
+            const nextResult = await generateAgentResponse(
+                nextAgent,
+                nextAgent.includes('critic') ? 'Debate Critic' : 'Debate Creator',
+                'GENERAL',
+                prompt,
+                null,
+                IntrospectionLayer.SHALLOW
+            );
+            const nextResponse = nextResult.output;
+            
+            systemBus.emit(SystemProtocol.AGENT_DEBATE_MESSAGE, {
+                debateId: payload.debateId,
+                agentId: nextAgent,
+                message: nextResponse,
+                turnNumber: nextTurnNumber
+            });
+        } catch (err) {
+            console.error(`[ORCHESTRATOR] Debate Turn ${nextTurnNumber} failed:`, err);
+            debate.resolve(`(Debate interrupido) Última conclusión: ${payload.message}`);
+            this.activeDebates.delete(payload.debateId);
+        }
     }
 
 }

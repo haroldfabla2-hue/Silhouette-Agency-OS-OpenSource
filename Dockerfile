@@ -25,6 +25,9 @@ WORKDIR /usr/src/app
 
 ENV NODE_ENV=production
 
+# [ESCAPE HATCH] Install Docker CLI to allow container to control the Host's Docker Daemon
+RUN apk add --no-cache docker-cli
+
 # Re-install only production dependencies to save space
 COPY package*.json ./
 RUN npm ci --only=production

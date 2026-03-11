@@ -192,6 +192,9 @@ export enum SystemProtocol {
   // Squad Events
   SQUAD_FORMED = 'PROTOCOL_SQUAD_FORMED',               // New squad created
   SQUAD_DISSOLVED = 'PROTOCOL_SQUAD_DISSOLVED',         // Squad disbanded
+  SQUAD_DEBATE_START = 'PROTOCOL_SQUAD_DEBATE_START',   // Signal to begin a multi-agent debate
+  AGENT_DEBATE_MESSAGE = 'PROTOCOL_AGENT_DEBATE_MESSAGE', // A message from an agent in the debate room
+  SQUAD_CONSENSUS = 'PROTOCOL_SQUAD_CONSENSUS',         // Debate reached an agreement or max turns
 
   // Capability Sync
   CAPABILITY_SYNC = 'PROTOCOL_CAPABILITY_SYNC',         // Force capability refresh
