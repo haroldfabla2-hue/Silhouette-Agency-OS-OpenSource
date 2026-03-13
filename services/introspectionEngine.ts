@@ -194,9 +194,104 @@ export class IntrospectionEngine {
         const combinedText = thoughts.join(' ');
         const detectedActions = this.extractActions(combinedText);
         if (detectedActions.length > 0) {
-            console.log(`[INTROSPECTION] 🧠 Detected ${detectedActions.length} Actions. Forwarding to Orchestrator...`);
-            // Add traceId here if we had one
-            systemBus.emit(SystemProtocol.ACTION_INTENT, { actions: detectedActions }, 'INTROSPECTION_ENGINE');
+            console.log(`[INTROSPECTION] 🧠 Detected ${detectedActions.length} Actions. Verifying logic with Z3...`);
+
+            this.verifyReasoningWithZ3(thoughts, detectedActions).then(isValid => {
+                if (!isValid) {
+                    console.log(`[INTROSPECTION] 🛑 Z3 LOGIC CONTRADICTION DETECTED. Halting action batch.`);
+                    systemBus.emit(SystemProtocol.SYSTEM_ALERT, { message: 'Action batch blocked by Z3 Symbolic Logic Prover.' });
+                    return; // Halt execution
+                }
+
+                // Verified successfully
+                systemBus.emit(SystemProtocol.ACTION_INTENT, { actions: detectedActions }, 'INTROSPECTION_ENGINE');
+            });
+        }
+    }
+
+    // --- CAPABILITY 7: SYMBOLIC LOGIC VERIFICATION (Z3) ---
+
+    /**
+     * Determines if an action type requires Z3 formal verification.
+     * Only high-risk actions that modify state are verified.
+     * Safe internal operations (INJECT_CONCEPT, ADJUST_LAYER, SLEEP_CYCLE) bypass Z3.
+     */
+    private shouldVerifyWithZ3(action: CognitiveAction): boolean {
+        const HIGH_RISK_ACTIONS = [
+            'SELF_CORRECTION',     // Modifies code files
+            ActionType.WRITE_FILE, // Writes to filesystem
+            ActionType.EXECUTE_COMMAND, // Shell execution
+        ];
+        return HIGH_RISK_ACTIONS.includes(action.type as any);
+    }
+
+    private async verifyReasoningWithZ3(thoughts: string[], actions: AgentAction[]): Promise<boolean> {
+        if (actions.length < 2) return true; // Need at least 2 actions for a contradiction in this heuristic
+
+        try {
+            const z3 = await import('z3-solver');
+            const { Context } = await z3.init();
+            const Z3 = new Context('main');
+            const solver = new Z3.Solver();
+
+            let hasConstrained = false;
+
+            for (let i = 0; i < actions.length; i++) {
+                for (let j = 0; j < actions.length; j++) {
+                    if (i === j) continue;
+                    const actI = actions[i];
+                    const actJ = actions[j];
+                    const pathI = actI.payload.path;
+                    const pathJ = actJ.payload.path;
+
+                    // Skip if no paths to compare
+                    if (!pathI || !pathJ || pathI !== pathJ) continue;
+
+                    // Rule 1: Cannot READ and WRITE the exact same path simultaneously
+                    if (actI.type === ActionType.READ_FILE && actJ.type === ActionType.WRITE_FILE) {
+                        const r = Z3.Bool.const(`read_${i}`);
+                        const w = Z3.Bool.const(`write_${j}`);
+                        solver.add(r.eq(Z3.Bool.val(true)));
+                        solver.add(w.eq(Z3.Bool.val(true)));
+                        solver.add(Z3.Not(Z3.And(r, w)));
+                        hasConstrained = true;
+                    }
+
+                    // Rule 2: Cannot WRITE and EXECUTE_COMMAND targeting same path
+                    // (prevents writing a script and executing it in same cycle without validation)
+                    if (actI.type === ActionType.WRITE_FILE && actJ.type === ActionType.EXECUTE_COMMAND) {
+                        const w = Z3.Bool.const(`write_exec_${i}`);
+                        const e = Z3.Bool.const(`exec_write_${j}`);
+                        solver.add(w.eq(Z3.Bool.val(true)));
+                        solver.add(e.eq(Z3.Bool.val(true)));
+                        solver.add(Z3.Not(Z3.And(w, e)));
+                        hasConstrained = true;
+                    }
+                }
+
+                // Rule 3: Self-referential modification detection
+                // An agent should not modify files in its own service directory in a single cycle
+                const selfModPaths = ['introspectionEngine', 'orchestrator', 'continuumMemory', 'contextJanitor'];
+                const actPath = actions[i].payload.path || '';
+                if (actions[i].type === ActionType.WRITE_FILE && selfModPaths.some(p => actPath.includes(p))) {
+                    console.warn(`[Z3-SOLVER] ⚠️ Self-referential modification detected: ${actPath}`);
+                    // This is a constraint that's always unsatisfiable — flag it
+                    const selfMod = Z3.Bool.const(`selfmod_${i}`);
+                    solver.add(selfMod.eq(Z3.Bool.val(true)));
+                    solver.add(selfMod.eq(Z3.Bool.val(false))); // Contradiction = UNSAT
+                    hasConstrained = true;
+                }
+            }
+
+            if (!hasConstrained) return true;
+
+            const isSat = await solver.check();
+            return isSat === "sat";
+
+        } catch (error) {
+            console.error('[Z3-SOLVER] Logic verification failed gracefully:', error);
+            // Non-blocking failure, assume safe if solver crashes
+            return true;
         }
     }
 
@@ -568,7 +663,7 @@ export class IntrospectionEngine {
         const startTime = performance.now();
 
         // Regex for Thought Detection
-        const thoughtRegex = /<thought>([\s\S]*?)<\/thought>/g;
+        const thoughtRegex = /<(?:thought|think)>([\s\S]*?)<\/(?:thought|think)>/g;
         const thoughts: string[] = [];
         let match;
 
@@ -1019,6 +1114,33 @@ export class IntrospectionEngine {
     // 4. ACT: Execute Intervention
     public async act(decision: Decision): Promise<void> {
         if (!decision.requiresIntervention || !decision.proposedAction) return;
+
+        // [Z3 GATE] Verify high-risk actions don't violate logical invariants
+        if (this.shouldVerifyWithZ3(decision.proposedAction)) {
+            try {
+                const actions = this.extractActions(decision.reasoning);
+                if (actions.length > 0) {
+                    const isValid = await this.verifyReasoningWithZ3(
+                        this.recentThoughts,
+                        actions
+                    );
+                    if (!isValid) {
+                        console.error(`[INTROSPECTION] 🚫 Z3 BLOCKED action: ${decision.proposedAction.type} — logical invariant violation detected`);
+                        systemBus.emit(SystemProtocol.Z3_VERIFICATION_FAILED, {
+                            source: 'INTROSPECTION_ENGINE',
+                            action: decision.proposedAction.type,
+                            reasoning: decision.reasoning,
+                            details: `Action blocked by formal logic verification: ${decision.proposedAction.type}`
+                        });
+                        return; // HALT — do not execute
+                    }
+                    console.log(`[INTROSPECTION] ✅ Z3 verified: ${decision.proposedAction.type}`);
+                }
+            } catch (e) {
+                // Z3 gate failure is non-blocking — log and proceed
+                console.warn('[INTROSPECTION] Z3 gate exception (proceeding with action):', e);
+            }
+        }
 
         console.log(`[INTROSPECTION] AUTO-CORRECTION: ${decision.proposedAction.type} - ${decision.reasoning}`);
 

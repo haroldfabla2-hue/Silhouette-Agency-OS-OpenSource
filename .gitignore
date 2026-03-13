@@ -85,3 +85,8 @@ brain/
 *walkthrough.md
 *.txt.log
 *.session.json
+silhouette.config.json
+data/
+
+silhouette.config.json
+data/

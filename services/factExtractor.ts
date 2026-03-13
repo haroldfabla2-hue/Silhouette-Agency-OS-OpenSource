@@ -34,12 +34,22 @@ interface MemoryAction {
 }
 
 class FactExtractionService {
-    private readonly EXTRACTION_PROMPT = `You are a memory extraction system for an AI assistant named Silhouette. Analyze the conversation and extract facts that should be remembered permanently.
+    private getExtractionPrompt(): string {
+        // Dynamically resolve the creator's name from the identity service
+        let creatorName = 'the user';
+        try {
+            const { identityService } = require('./identityService');
+            creatorName = identityService.getCreatorName() || 'the user';
+        } catch {
+            // identityService not yet initialized - use fallback
+        }
+
+        return `You are a memory extraction system for an AI assistant named Silhouette. Analyze the conversation and extract facts that should be remembered permanently.
 
 CRITICAL IDENTITY RULES:
-1. The USER is a human named Alberto (also called Beto). He is the creator of Silhouette.
+1. The USER is a human named ${creatorName}. They are the creator of Silhouette.
 2. SILHOUETTE is the AI assistant (you). Never confuse these identities.
-3. Facts about the USER should be phrased in THIRD PERSON: "The user's name is Alberto" NOT "My name is Alberto"
+3. Facts about the USER should be phrased in THIRD PERSON: "The user's name is ${creatorName}" NOT "My name is ${creatorName}"
 4. Facts about SILHOUETTE should be phrased as: "Silhouette can..." NOT "I can..."
 5. NEVER extract facts where USER claims to be Silhouette or vice versa.
 
@@ -72,6 +82,7 @@ If there are NO facts worth remembering, output: []
 
 CONVERSATION:
 `;
+    }
 
     /**
      * Extract facts from a conversation turn
@@ -84,7 +95,7 @@ CONVERSATION:
         try {
             console.log('[FACT_EXTRACT] 🔍 Analyzing conversation for memorable facts...');
 
-            const prompt = this.EXTRACTION_PROMPT + `
+            const prompt = this.getExtractionPrompt() + `
 User: ${userMessage}
 Assistant: ${assistantResponse}
 
@@ -193,7 +204,7 @@ CORRECTED (or REJECT):`;
     /**
      * Process extracted facts: validate, compare with existing, and decide action
      */
-    async processAndStore(facts: ExtractedFact[]): Promise<MemoryAction[]> {
+    async processAndStore(facts: ExtractedFact[], userId: string): Promise<MemoryAction[]> {
         const actions: MemoryAction[] = [];
 
         for (const fact of facts) {
@@ -206,7 +217,7 @@ CORRECTED (or REJECT):`;
 
             // Execute the action
             if (action.action === 'ADD') {
-                await this.storeFact(validatedFact);
+                await this.storeFact(validatedFact, userId);
             } else if (action.action === 'UPDATE' && action.existingId) {
                 await this.updateFact(action.existingId, validatedFact);
             } else if (action.action === 'DELETE' && action.existingId) {
@@ -297,7 +308,7 @@ CORRECTED (or REJECT):`;
     /**
      * Store a new fact permanently
      */
-    private async storeFact(fact: ExtractedFact): Promise<void> {
+    private async storeFact(fact: ExtractedFact, userId: string): Promise<void> {
         const id = crypto.randomUUID();
 
         // 1. Store in Neo4j (graph - for relationships and querying)
@@ -327,9 +338,11 @@ CORRECTED (or REJECT):`;
             // Link to User node if personal
             if (fact.type === 'PERSONAL' || fact.type === 'PREFERENCE') {
                 await graph.runQuery(`
-                    MATCH (u:User {id: 'user_primary'}), (f:Fact {id: $factId})
+                    MERGE (u:User {id: $userId})
+                    WITH u
+                    MATCH (f:Fact {id: $factId})
                     MERGE (u)-[:HAS_FACT]->(f)
-                `, { factId: id });
+                `, { userId, factId: id });
             }
 
             console.log(`[FACT_EXTRACT] 📝 Stored in Neo4j: "${fact.content}"`);
@@ -341,7 +354,7 @@ CORRECTED (or REJECT):`;
         await continuum.store(
             fact.content,
             MemoryTier.LONG,  // Long-term = permanent
-            ['FACT', 'USER', fact.type, `attr:${fact.attribute || 'general'}`]
+            ['FACT', 'USER', fact.type, `attr:${fact.attribute || 'general'}`, `owner:${userId}`]
         );
 
         console.log(`[FACT_EXTRACT] 💾 Fact stored eternally: "${fact.content}"`);
@@ -391,14 +404,14 @@ CORRECTED (or REJECT):`;
      * Retrieve all facts about the user
      * Call this when assembling context
      */
-    async getUserFacts(): Promise<string> {
+    async getUserFacts(userId: string): Promise<string> {
         try {
             const results = await graph.runQuery(`
-                MATCH (u:User)-[:HAS_FACT]->(f:Fact)
+                MATCH (u:User {id: $userId})-[:HAS_FACT]->(f:Fact)
                 RETURN f.type as type, f.content as content, f.attribute as attribute, f.value as value
                 ORDER BY f.createdAt DESC
                 LIMIT 20
-            `);
+            `, { userId });
 
             if (!results || results.length === 0) return '';
 

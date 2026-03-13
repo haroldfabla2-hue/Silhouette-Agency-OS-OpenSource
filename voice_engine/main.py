@@ -57,23 +57,44 @@ def list_voices():
 
 from fastapi import UploadFile, File
 
+MAX_UPLOAD_SIZE_MB = 50  # 50 MB max for voice samples
+
 @app.post("/voices/clone")
 async def clone_voice(file: UploadFile = File(...), name: str = Body(...)):
     """Upload a WAV file for voice cloning"""
     try:
+        # Validate file type
+        if file.content_type and file.content_type not in ("audio/wav", "audio/x-wav", "audio/wave", "audio/mpeg", "audio/mp3", "application/octet-stream"):
+            raise HTTPException(status_code=400, detail=f"Invalid file type: {file.content_type}. Expected audio file.")
+
         voices_dir = os.path.join(OUTPUT_DIR, "voices")
         os.makedirs(voices_dir, exist_ok=True)
-        
-        # Sanitize name
+
+        # Sanitize name - prevent path traversal
         safe_name = "".join([c for c in name if c.isalnum() or c in (' ', '-', '_')]).strip()
+        if not safe_name:
+            raise HTTPException(status_code=400, detail="Invalid voice name")
         filename = f"{safe_name}.wav"
         file_path = os.path.join(voices_dir, filename)
-        
+
+        # Validate resolved path is still inside voices_dir
+        real_path = os.path.realpath(file_path)
+        if not real_path.startswith(os.path.realpath(voices_dir)):
+            raise HTTPException(status_code=400, detail="Invalid file path")
+
+        # Read with size limit
+        content = await file.read()
+        if len(content) > MAX_UPLOAD_SIZE_MB * 1024 * 1024:
+            raise HTTPException(status_code=413, detail=f"File too large. Max {MAX_UPLOAD_SIZE_MB} MB.")
+        if len(content) == 0:
+            raise HTTPException(status_code=400, detail="Empty file")
+
         with open(file_path, "wb") as buffer:
-            content = await file.read()
             buffer.write(content)
-            
+
         return {"success": True, "voice_id": filename, "path": f"/uploads/voice/voices/{filename}"}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

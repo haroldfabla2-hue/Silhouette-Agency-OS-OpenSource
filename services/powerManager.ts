@@ -219,6 +219,8 @@ class PowerManager {
 
         this.listeners.forEach(l => l(mode, POWER_CONFIGS[mode]));
         systemBus.emit(SystemProtocol.UI_REFRESH, { type: 'POWER_MODE_CHANGED', mode }, 'POWER_MANAGER');
+        // Emit CONFIG_MUTATION so EvolutionScheduler and other services can react to mode changes
+        systemBus.emit(SystemProtocol.CONFIG_MUTATION, { type: 'POWER_MODE_CHANGE', mode, oldMode }, 'POWER_MANAGER');
     }
 
     public subscribe(callback: (mode: PowerMode, config: PowerConfig) => void): () => void {

@@ -15,7 +15,14 @@ export class SqliteService {
 
     constructor() {
         this.db = new Database(DB_PATH);
+
+        // Enable WAL mode for high concurrency (non-blocking readers)
+        this.db.pragma('journal_mode = WAL');
+        this.db.pragma('synchronous = NORMAL');
+        this.db.pragma('busy_timeout = 5000');
+
         this.initializeSchema();
+        this.runMigrations();
     }
 
     private initializeSchema() {
@@ -271,6 +278,48 @@ export class SqliteService {
         `);
         this.db.exec(`CREATE INDEX IF NOT EXISTS idx_clone_sessions_voice ON voice_clone_sessions(voice_id)`);
         this.db.exec(`CREATE INDEX IF NOT EXISTS idx_clone_sessions_status ON voice_clone_sessions(status)`);
+    }
+
+    private runMigrations() {
+        // Ensure migrations table exists
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS system_migrations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                version TEXT NOT NULL UNIQUE,
+                filename TEXT NOT NULL,
+                executed_at INTEGER NOT NULL
+            )
+        `);
+
+        const migrationsDir = path.resolve(process.cwd(), 'db', 'migrations', 'sqlite');
+        if (!fs.existsSync(migrationsDir)) {
+            fs.mkdirSync(migrationsDir, { recursive: true });
+            return;
+        }
+
+        const files = fs.readdirSync(migrationsDir)
+            .filter(f => f.endsWith('.up.sql'))
+            .sort(); // guarantees chronological order 001_, 002_, etc
+
+        for (const file of files) {
+            const version = file.split('_')[0];
+
+            // Check if already applied
+            const applied = this.db.prepare('SELECT id FROM system_migrations WHERE version = ?').get(version);
+            if (applied) continue;
+
+            const filePath = path.join(migrationsDir, file);
+            const sql = fs.readFileSync(filePath, 'utf-8');
+
+            console.log(`[Migrations] Applying SQLite migration: ${file}`);
+
+            this.db.transaction(() => {
+                this.db.exec(sql);
+                this.db.prepare('INSERT INTO system_migrations (version, filename, executed_at) VALUES (?, ?, ?)').run(version, file, Date.now());
+            })();
+
+            console.log(`[Migrations] Successfully applied: ${file}`);
+        }
     }
 
     // --- AGENT OPERATIONS ---
@@ -839,6 +888,13 @@ export class SqliteService {
     public getCloneSessionsForVoice(voiceId: string): any[] {
         const stmt = this.db.prepare('SELECT * FROM voice_clone_sessions WHERE voice_id = ? ORDER BY created_at DESC');
         return stmt.all(voiceId);
+    }
+
+    /** Close the database connection (for graceful shutdown) */
+    public close(): void {
+        try {
+            this.db.close();
+        } catch { /* ignore if already closed */ }
     }
 }
 

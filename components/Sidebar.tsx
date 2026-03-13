@@ -4,11 +4,13 @@ import { LayoutDashboard, Users, Brain, Terminal, Activity, Settings as Settings
 interface SidebarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  isMobileOpen?: boolean;
+  onCloseMobile?: () => void;
   onDriveClick?: () => void;
   onEmailClick?: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onDriveClick, onEmailClick }) => {
+const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isMobileOpen, onCloseMobile, onDriveClick, onEmailClick }) => {
   const menuItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Command Center' },
     { id: 'system_control', icon: Sliders, label: 'System Control' },
@@ -24,7 +26,18 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onDriveClick
 
 
   return (
-    <div className="w-64 h-screen bg-slate-950 border-r border-cyan-900/30 flex flex-col shadow-2xl z-20">
+    <>
+      {/* Mobile Backdrop */}
+      {isMobileOpen && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden"
+          onClick={onCloseMobile}
+        />
+      )}
+
+      {/* Sidebar Container */}
+      <div className={`fixed inset-y-0 left-0 transform ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0 transition-transform duration-300 ease-in-out w-64 h-screen bg-slate-950 border-r border-cyan-900/30 flex flex-col shadow-2xl z-50`}>
+
       <div className="p-6 flex items-center gap-3 border-b border-cyan-900/30">
         <div className="w-8 h-8 bg-cyan-500 rounded-full flex items-center justify-center animate-pulse-fast shadow-[0_0_15px_rgba(6,182,212,0.5)]">
           <Activity size={18} className="text-black" />
@@ -95,6 +108,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onDriveClick
       </div>
 
     </div>
+    </>
   );
 };
 

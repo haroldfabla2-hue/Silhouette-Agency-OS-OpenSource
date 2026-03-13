@@ -144,6 +144,13 @@ export class ChatController {
                 bodyKeys: Object.keys(req.body)
             });
 
+            // [COGNITIVE FIREWALL] Multi-Tenant Isolation
+            const requestUser = (req as any).user;
+            const userRole = requestUser?.role || 'GUEST';
+            const userId = requestUser?.id || 'anonymous';
+            const allowedOwner = (userRole === 'CREATOR' || userRole === 'ADMIN') ? undefined : userId;
+            const ownerTag = (userRole === 'CREATOR' || userRole === 'ADMIN') ? 'owner:global' : `owner:${userId}`;
+
             // [ROOT CAUSE FIX] Extract message from either format (same as streamMessage)
             let userMessage: string | undefined;
 
@@ -175,7 +182,7 @@ export class ChatController {
             // 2. Get context from memory AND codebase
             const recentHistory = sqliteService.getChatHistory(cleanSessionId, 50);
             const profileContext = userProfile.getProfileContext();
-            const memoryContext = await this.assembleContext(userMessage);
+            const memoryContext = await this.assembleContext(userMessage, allowedOwner);
             const codeContext = await this.getCodebaseContext(userMessage);
 
             // 3. Generate LLM response (uses fallback chain internally)
@@ -192,7 +199,7 @@ export class ChatController {
             sqliteService.appendChatMessage(assistantMsg, cleanSessionId);
 
             // 5. Store interaction in memory for future context
-            await continuum.store(`User asked: ${userMessage.slice(0, 100)}`, undefined, ['chat', 'interaction']);
+            await continuum.store(`User asked: ${userMessage.slice(0, 100)}`, undefined, ['chat', 'interaction', ownerTag]);
 
             res.json({
                 success: true,
@@ -221,6 +228,16 @@ export class ChatController {
             modelPreference,
             bodyKeys: Object.keys(req.body)
         });
+
+        // [COGNITIVE FIREWALL] Multi-Tenant Isolation
+        const requestUser = (req as any).user;
+        const userRole = requestUser?.role || 'GUEST';
+        const userId = requestUser?.id || 'anonymous';
+        
+        // ADMIN/CREATOR can query everything. GUESTS can only query their own memories + public ones
+        const allowedOwner = (userRole === 'CREATOR' || userRole === 'ADMIN') ? undefined : userId;
+        // High level roles save globally by default. Guests save strictly to their silo.
+        const ownerTag = (userRole === 'CREATOR' || userRole === 'ADMIN') ? 'owner:global' : `owner:${userId}`;
 
         // [ROOT CAUSE FIX] Extract message from either format:
         // - Frontend sends: { messages: [{ role: 'user', content: 'text' }] }
@@ -313,8 +330,8 @@ export class ChatController {
             // Get user profile context (always cheap, always included)
             const profileContext = userProfile.getProfileContext();
 
-            // Get raw memories (will be filtered by purifier)
-            const rawMemories = await continuum.retrieve(userMessage, undefined, undefined);
+            // Get raw memories (will be filtered by purifier & firewall)
+            const rawMemories = await continuum.retrieve(userMessage, undefined, allowedOwner);
 
             // Get code context if relevant
             const codeContext = await this.getCodebaseContext(userMessage);
@@ -326,7 +343,8 @@ export class ChatController {
                 rawMemories,
                 recentHistory.map(h => ({ role: h.role as 'user' | 'assistant', content: h.content })),
                 profileContext,
-                codeContext
+                codeContext,
+                userId // Inject Multi-Tenant Identity
             );
 
             // 4. Report which provider we're attempting
@@ -418,16 +436,16 @@ export class ChatController {
             // 7. Store CLEAN memories with proper namespace tags
             // Namespace isolation: USER memories separate from SYSTEM logs
 
-            // Store user message with USER namespace
+            // Store user message with USER namespace + Firewall Owner Tag
             if (userMessage && userMessage.length > 5) {
                 await continuum.store(
                     userMessage,
                     undefined,
-                    ['USER', 'CHAT', 'USER_MESSAGE', `session:${cleanSessionId}`]
+                    ['USER', 'CHAT', 'USER_MESSAGE', `session:${cleanSessionId}`, ownerTag]
                 );
             }
 
-            // Store clean assistant response (no JSON/internal state)
+            // Store clean assistant response (no JSON/internal state) + Firewall Owner Tag
             if (fullResponse && !contextPurifier.isInternalState(fullResponse)) {
                 const cleanResponse = fullResponse.length > 500
                     ? fullResponse.substring(0, 500) + '...'
@@ -435,7 +453,7 @@ export class ChatController {
                 await continuum.store(
                     cleanResponse,
                     undefined,
-                    ['USER', 'CHAT', 'ASSISTANT_RESPONSE', `session:${cleanSessionId}`]
+                    ['USER', 'CHAT', 'ASSISTANT_RESPONSE', `session:${cleanSessionId}`, ownerTag]
                 );
             }
 
@@ -446,7 +464,7 @@ export class ChatController {
                     const { factExtractor } = await import('../../services/factExtractor');
                     const facts = await factExtractor.extractFromConversation(userMessage, fullResponse);
                     if (facts.length > 0) {
-                        await factExtractor.processAndStore(facts);
+                        await factExtractor.processAndStore(facts, userId);
                     }
                 } catch (e) {
                     console.warn('[CHAT] Fact extraction failed (non-critical):', e);
@@ -466,9 +484,10 @@ export class ChatController {
 
     /**
      * Assemble context from various memory sources INCLUDING Neo4j Graph
-     * This ensures we can remember user information like names
+     * This ensures we can remember user information like names.
+     * Includes read isolation via the allowedOwner firewall.
      */
-    private async assembleContext(query: string): Promise<string> {
+    private async assembleContext(query: string, allowedOwner?: string): Promise<string> {
         try {
             if (!query || typeof query !== 'string') return '';
 
@@ -531,7 +550,7 @@ export class ChatController {
             const userQueries = ['nombre del usuario', 'me llamo', 'my name is'];
             for (const uq of userQueries) {
                 try {
-                    const userResults = await continuum.retrieve(uq, undefined, undefined);
+                    const userResults = await continuum.retrieve(uq, undefined, allowedOwner);
                     const relevant = userResults
                         .filter(m => m.content.toLowerCase().includes('llamo') ||
                             m.content.toLowerCase().includes('name') ||
@@ -554,7 +573,7 @@ export class ChatController {
             }
 
             // 3. Search relevant memories semantically (original behavior)
-            const memories = await continuum.retrieve(query, undefined, undefined);
+            const memories = await continuum.retrieve(query, undefined, allowedOwner);
             if (memories.length > 0) {
                 contextParts.push('[Relevant Memories]');
                 // [FIX] Add speaker attribution to prevent identity confusion

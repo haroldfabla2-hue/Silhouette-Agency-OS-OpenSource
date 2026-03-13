@@ -10,22 +10,32 @@ import * as fs from 'fs';
 
 const DB_PATH = path.join(process.cwd(), 'db', 'silhouette.sqlite');
 
-// Creator emails with absolute permissions (hardcoded for security)
-const CREATOR_EMAILS = ['alberto.farah.b@gmail.com'];
+// Creator emails: migrated from hardcode to env config
+// Comma-separated list. First setup user always gets CREATOR role regardless.
+const CREATOR_EMAILS = (process.env.CREATOR_EMAILS || 'alberto.farah.b@gmail.com')
+    .split(',')
+    .map(e => e.trim())
+    .filter(Boolean);
 
 // Role hierarchy
 export enum UserRole {
     CREATOR = 'CREATOR',   // Absolute permissions, can modify Silhouette itself
     ADMIN = 'ADMIN',       // Full app access, cannot modify code
-    USER = 'USER'          // Standard access
+    USER = 'USER',         // Standard access
+    GUEST = 'GUEST'        // External channel visitor with restricted access
 }
 
 export interface User {
     id: string;
-    email: string;
+    email: string | null;
+    passwordHash?: string; // [NEW] Added for local auth
     name: string;
     avatarUrl?: string;
     role: UserRole;
+    googleLinked: boolean;
+    telegramId?: string | null;
+    discordId?: string | null;
+    whatsappId?: string | null;
     createdAt: number;
     lastLogin: number;
 }
@@ -69,9 +79,10 @@ class IdentityService {
 
         this.db = new Database(DB_PATH);
         this.createTables();
+        this.migrateSchema();
         this.initialized = true;
 
-        console.log('[IdentityService] ✅ Initialized');
+        console.log('[IdentityService] Initialized');
     }
 
     /**
@@ -80,14 +91,19 @@ class IdentityService {
     private createTables(): void {
         if (!this.db) return;
 
-        // Users table
+        // Users table - email nullable for initial setup without Google
         this.db.exec(`
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
-        email TEXT UNIQUE NOT NULL,
+        email TEXT UNIQUE,
+        password_hash TEXT,
         name TEXT NOT NULL,
         avatar_url TEXT,
         role TEXT NOT NULL DEFAULT 'USER',
+        google_email TEXT,
+        telegram_id TEXT,
+        discord_id TEXT,
+        whatsapp_id TEXT,
         created_at INTEGER NOT NULL,
         last_login INTEGER NOT NULL
       )
@@ -129,6 +145,150 @@ class IdentityService {
     }
 
     /**
+     * Migrate schema for existing databases
+     * Adds google_email column if missing (older installations)
+     */
+    private migrateSchema(): void {
+        if (!this.db) return;
+
+        // Add google_email column if not exists
+        try {
+            const columns = this.db.pragma('table_info(users)') as any[];
+            const hasGoogleEmail = columns.some((c: any) => c.name === 'google_email');
+            if (!hasGoogleEmail) {
+                this.db.exec('ALTER TABLE users ADD COLUMN google_email TEXT');
+                console.log('[IdentityService] Migrated: added google_email column');
+
+                // Backfill google_email for existing users who logged in via Google
+                this.db.exec(`
+                    UPDATE users SET google_email = email
+                    WHERE email IS NOT NULL AND email NOT LIKE '%@silhouette.local'
+                `);
+            }
+
+            // Add external channel ID columns if missing
+            const hasTelegramId = columns.some((c: any) => c.name === 'telegram_id');
+            if (!hasTelegramId) {
+                this.db.exec('ALTER TABLE users ADD COLUMN telegram_id TEXT');
+                this.db.exec('ALTER TABLE users ADD COLUMN discord_id TEXT');
+                this.db.exec('ALTER TABLE users ADD COLUMN whatsapp_id TEXT');
+                console.log('[IdentityService] Migrated: added external channel ID columns');
+            }
+        } catch {
+            // Column already exists or table doesn't exist yet
+        }
+    }
+
+    // ─── Setup Flow ─────────────────────────────────────────────
+
+    /**
+     * Check if any users exist (determines if setup is needed)
+     */
+    hasAnyUsers(): boolean {
+        if (!this.db) return false;
+        const row = this.db.prepare('SELECT COUNT(*) as count FROM users').get() as any;
+        return row.count > 0;
+    }
+
+    /**
+     * First-time setup: create the initial CREATOR user without Google
+     * The first user always gets CREATOR role.
+     */
+    setupFirstUser(
+        name: string,
+        fingerprint: string,
+        deviceName: string
+    ): { user: User; device: Device; session: Session } {
+        if (!this.db) throw new Error('IdentityService not initialized');
+
+        if (this.hasAnyUsers()) {
+            throw new Error('Setup already completed. Users exist.');
+        }
+
+        const now = Date.now();
+        const userId = crypto.randomUUID();
+        // Placeholder email until Google is linked
+        const placeholderEmail = `setup-${userId.slice(0, 8)}@silhouette.local`;
+
+        this.db.prepare(`
+            INSERT INTO users (id, email, name, avatar_url, role, google_email, created_at, last_login)
+            VALUES (?, ?, ?, NULL, ?, NULL, ?, ?)
+        `).run(userId, placeholderEmail, name, UserRole.CREATOR, now, now);
+
+        const user: User = {
+            id: userId,
+            email: placeholderEmail,
+            name,
+            role: UserRole.CREATOR,
+            googleLinked: false,
+            createdAt: now,
+            lastLogin: now
+        };
+
+        this.currentUser = user;
+
+        // Register device and create session
+        const device = this.registerDevice(userId, fingerprint, deviceName, true);
+        const session = this.createSession(userId, device.id);
+
+        console.log(`[IdentityService] Setup complete: ${name} (CREATOR) on ${deviceName}`);
+        return { user, device, session };
+    }
+
+    // ─── Google Linking ─────────────────────────────────────────
+
+    /**
+     * Link a Google account to an existing user
+     * Unlocks: Drive, Gmail, Calendar, cross-device login
+     */
+    linkGoogleAccount(userId: string, googleEmail: string, googleName?: string, avatarUrl?: string): User {
+        if (!this.db) throw new Error('IdentityService not initialized');
+
+        const now = Date.now();
+
+        // Check if another user already has this Google email
+        const existing = this.getUserByGoogleEmail(googleEmail);
+        if (existing && existing.id !== userId) {
+            throw new Error('This Google account is already linked to another user');
+        }
+
+        this.db.prepare(`
+            UPDATE users
+            SET email = ?, google_email = ?, avatar_url = COALESCE(?, avatar_url),
+                name = COALESCE(?, name), last_login = ?
+            WHERE id = ?
+        `).run(googleEmail, googleEmail, avatarUrl || null, googleName || null, now, userId);
+
+        const updated = this.getUserById(userId);
+        if (!updated) throw new Error('User not found after update');
+
+        this.currentUser = updated;
+        console.log(`[IdentityService] Google linked: ${googleEmail} -> user ${userId}`);
+        return updated;
+    }
+
+    /**
+     * Check if current user has Google linked
+     */
+    isGoogleLinked(): boolean {
+        return this.currentUser?.googleLinked === true;
+    }
+
+    /**
+     * Get Google link status for any user by ID
+     */
+    getUserGoogleStatus(userId: string): { linked: boolean; email: string | null } {
+        if (!this.db) return { linked: false, email: null };
+        const row = this.db.prepare('SELECT google_email FROM users WHERE id = ?').get(userId) as any;
+        return {
+            linked: !!row?.google_email,
+            email: row?.google_email || null
+        };
+    }
+
+    // ─── User CRUD ──────────────────────────────────────────────
+
+    /**
      * Create or update user after Google OAuth
      */
     async upsertUser(googleUser: {
@@ -139,30 +299,64 @@ class IdentityService {
         if (!this.db) throw new Error('IdentityService not initialized');
 
         const now = Date.now();
-        const existingUser = this.getUserByEmail(googleUser.email);
 
-        if (existingUser) {
+        // Check if this Google email is already linked to a user
+        const existingByGoogle = this.getUserByGoogleEmail(googleUser.email);
+        if (existingByGoogle) {
             // Update last login
             this.db.prepare(`
-        UPDATE users SET last_login = ?, name = ?, avatar_url = ? WHERE id = ?
-      `).run(now, googleUser.name, googleUser.avatarUrl || null, existingUser.id);
+                UPDATE users SET last_login = ?, name = ?, avatar_url = ? WHERE id = ?
+            `).run(now, googleUser.name, googleUser.avatarUrl || null, existingByGoogle.id);
 
-            existingUser.lastLogin = now;
-            existingUser.name = googleUser.name;
-            existingUser.avatarUrl = googleUser.avatarUrl;
+            existingByGoogle.lastLogin = now;
+            existingByGoogle.name = googleUser.name;
+            existingByGoogle.avatarUrl = googleUser.avatarUrl;
 
-            this.currentUser = existingUser;
-            return existingUser;
+            this.currentUser = existingByGoogle;
+            return existingByGoogle;
+        }
+
+        // Fallback: check by regular email (backward compat with pre-migration users)
+        const existingByEmail = this.getUserByEmail(googleUser.email);
+        if (existingByEmail) {
+            // SECURITY: If the account exists but isn't explicitly linked to Google, 
+            // deny the login! This prevents Account Takeovers where an attacker 
+            // registers a local email and waits for the victim to use Google Auth.
+            if (!existingByEmail.googleLinked && !CREATOR_EMAILS.includes(googleUser.email)) {
+                throw new Error('An account with this email already exists but is not linked to Google. Please login with your password and link your Google Account from Settings.');
+            }
+
+            // Link Google and update (only allowed for CREATOR_EMAILS or already linked)
+            this.db.prepare(`
+                UPDATE users SET last_login = ?, name = ?, avatar_url = ?, google_email = ?, google_linked = 1 WHERE id = ?
+            `).run(now, googleUser.name, googleUser.avatarUrl || null, googleUser.email, existingByEmail.id);
+
+            existingByEmail.lastLogin = now;
+            existingByEmail.name = googleUser.name;
+            existingByEmail.avatarUrl = googleUser.avatarUrl;
+            existingByEmail.googleLinked = true;
+
+            this.currentUser = existingByEmail;
+            return existingByEmail;
         }
 
         // Create new user
         const id = crypto.randomUUID();
-        const role = CREATOR_EMAILS.includes(googleUser.email) ? UserRole.CREATOR : UserRole.USER;
+        const isFirstUser = !this.hasAnyUsers();
+        let role: UserRole;
+
+        if (isFirstUser) {
+            role = UserRole.CREATOR;
+        } else if (CREATOR_EMAILS.includes(googleUser.email)) {
+            role = UserRole.CREATOR;
+        } else {
+            role = UserRole.USER;
+        }
 
         this.db.prepare(`
-      INSERT INTO users (id, email, name, avatar_url, role, created_at, last_login)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, googleUser.email, googleUser.name, googleUser.avatarUrl || null, role, now, now);
+            INSERT INTO users (id, email, name, avatar_url, role, google_email, created_at, last_login)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(id, googleUser.email, googleUser.name, googleUser.avatarUrl || null, role, googleUser.email, now, now);
 
         const user: User = {
             id,
@@ -170,13 +364,14 @@ class IdentityService {
             name: googleUser.name,
             avatarUrl: googleUser.avatarUrl,
             role,
+            googleLinked: true,
             createdAt: now,
             lastLogin: now
         };
 
         this.currentUser = user;
 
-        console.log(`[IdentityService] 👤 Created user: ${googleUser.email} (${role})`);
+        console.log(`[IdentityService] Created user: ${googleUser.email} (${role})`);
         return user;
     }
 
@@ -189,16 +384,183 @@ class IdentityService {
         const row = this.db.prepare('SELECT * FROM users WHERE email = ?').get(email) as any;
         if (!row) return null;
 
+        return this.rowToUser(row);
+    }
+
+    /**
+     * Get user by Google email
+     */
+    getUserByGoogleEmail(googleEmail: string): User | null {
+        if (!this.db) return null;
+
+        const row = this.db.prepare('SELECT * FROM users WHERE google_email = ?').get(googleEmail) as any;
+        if (!row) return null;
+
+        return this.rowToUser(row);
+    }
+
+    /**
+     * Get user by ID
+     */
+    getUserById(userId: string): User | null {
+        if (!this.db) return null;
+
+        const row = this.db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as any;
+        if (!row) return null;
+
+        return this.rowToUser(row);
+    }
+
+    /**
+     * Get a user by their external channel ID (telegram, discord, whatsapp)
+     */
+    getUserByChannelId(channel: string, channelId: string): User | null {
+        if (!this.db) return null;
+
+        let query = '';
+        if (channel === 'telegram') query = 'SELECT * FROM users WHERE telegram_id = ?';
+        else if (channel === 'discord') query = 'SELECT * FROM users WHERE discord_id = ?';
+        else if (channel === 'whatsapp') query = 'SELECT * FROM users WHERE whatsapp_id = ?';
+        else return null;
+
+        const row = this.db.prepare(query).get(channelId) as any;
+        if (!row) return null;
+
+        return this.rowToUser(row);
+    }
+
+    /**
+     * Link an external channel ID to an existing user
+     */
+    linkChannelId(userId: string, channel: string, channelId: string): User {
+        if (!this.db) throw new Error('IdentityService not initialized');
+
+        // Check if ID is already claimed by someone else
+        const existing = this.getUserByChannelId(channel, channelId);
+        if (existing && existing.id !== userId) {
+            throw new Error(`This ${channel} ID is already linked to another user`);
+        }
+
+        let column = '';
+        if (channel === 'telegram') column = 'telegram_id';
+        else if (channel === 'discord') column = 'discord_id';
+        else if (channel === 'whatsapp') column = 'whatsapp_id';
+        else throw new Error(`Unsupported channel: ${channel}`);
+
+        this.db.prepare(`UPDATE users SET ${column} = ? WHERE id = ?`).run(channelId, userId);
+
+        const updated = this.getUserById(userId);
+        if (!updated) throw new Error('User not found after channel link update');
+
+        if (this.currentUser?.id === userId) {
+            this.currentUser = updated;
+        }
+
+        console.log(`[IdentityService] Linked ${channel} ID ${channelId} to user ${userId}`);
+        return updated;
+    }
+
+    /**
+     * Convert database row to User object
+     */
+    private rowToUser(row: any): User {
         return {
             id: row.id,
             email: row.email,
+            passwordHash: row.password_hash,
             name: row.name,
             avatarUrl: row.avatar_url,
             role: row.role as UserRole,
+            googleLinked: !!row.google_email,
+            telegramId: row.telegram_id,
+            discordId: row.discord_id,
+            whatsappId: row.whatsapp_id,
             createdAt: row.created_at,
             lastLogin: row.last_login
         };
     }
+
+    /**
+     * Get creator's display name (for dynamic prompts)
+     */
+    getCreatorName(): string | null {
+        if (!this.db) return null;
+
+        const row = this.db.prepare(
+            "SELECT name FROM users WHERE role = 'CREATOR' LIMIT 1"
+        ).get() as any;
+
+        return row?.name || null;
+    }
+
+    // ─── Local Auth (main branch methods) ───────────────────────
+
+    /**
+     * Check if ANY user exists in the database
+     */
+    hasAnyUser(): boolean {
+        if (!this.db) return false;
+        const row = this.db.prepare('SELECT COUNT(*) as count FROM users').get() as any;
+        return row && row.count > 0;
+    }
+
+    /**
+     * Register the initial admin user (Local Auth)
+     */
+    async registerInitialAdmin(email: string, passwordHash: string, name: string): Promise<User> {
+        if (!this.db) throw new Error('IdentityService not initialized');
+
+        if (this.hasAnyUser()) {
+            throw new Error('Initial setup already completed. Cannot register another initial admin.');
+        }
+
+        const now = Date.now();
+        const id = crypto.randomUUID();
+        const role = UserRole.CREATOR; // First ever user is CREATOR
+
+        this.db.prepare(`
+          INSERT INTO users (id, email, password_hash, name, role, created_at, last_login)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(id, email, passwordHash, name, role, now, now);
+
+        const user: User = {
+            id,
+            email,
+            passwordHash,
+            name,
+            role,
+            googleLinked: false,
+            createdAt: now,
+            lastLogin: now
+        };
+
+        this.currentUser = user;
+        console.log(`[IdentityService] 👑 Initial Admin Created: ${email}`);
+        return user;
+    }
+
+    /**
+     * Authenticate local user by password hash
+     */
+    async loginLocal(email: string, passwordHash: string): Promise<User | null> {
+        if (!this.db) return null;
+
+        const user = this.getUserByEmail(email);
+        if (!user || user.passwordHash !== passwordHash) {
+            return null;
+        }
+
+        const now = Date.now();
+        this.db.prepare('UPDATE users SET last_login = ? WHERE id = ?').run(now, user.id);
+
+        user.lastLogin = now;
+        this.currentUser = user;
+
+        console.log(`[IdentityService] 🔓 Local login: ${email}`);
+        return user;
+    }
+
+    // ─── Devices ────────────────────────────────────────────────
 
     /**
      * Register a device for a user
@@ -239,7 +601,7 @@ class IdentityService {
 
         this.currentDevice = device;
 
-        console.log(`[IdentityService] 💻 Registered device: ${deviceName}`);
+        console.log(`[IdentityService] Registered device: ${deviceName}`);
         return device;
     }
 
@@ -271,6 +633,8 @@ class IdentityService {
         };
     }
 
+    // ─── Sessions & Auto-login ──────────────────────────────────
+
     /**
      * Try auto-login using device fingerprint
      */
@@ -287,15 +651,7 @@ class IdentityService {
 
         if (!row) return null;
 
-        const user: User = {
-            id: row.id,
-            email: row.email,
-            name: row.name,
-            avatarUrl: row.avatar_url,
-            role: row.role as UserRole,
-            createdAt: row.created_at,
-            lastLogin: row.last_login
-        };
+        const user = this.rowToUser(row);
 
         // Update last login
         const now = Date.now();
@@ -313,7 +669,7 @@ class IdentityService {
             createdAt: row.created_at
         };
 
-        console.log(`[IdentityService] 🔓 Auto-login: ${user.email} on ${row.device_name}`);
+        console.log(`[IdentityService] Auto-login: ${user.name} on ${row.device_name}`);
         return user;
     }
 
@@ -347,6 +703,8 @@ class IdentityService {
         return session;
     }
 
+    // ─── Accessors ──────────────────────────────────────────────
+
     /**
      * Get current user
      */
@@ -377,7 +735,45 @@ class IdentityService {
     }
 
     /**
-     * Logout - clear current session
+     * Validate an existing session ID and return the User (Stateless / Request-Scoped)
+     */
+    validateSessionAndGetUser(sessionId: string): User | null {
+        if (!this.db) return null;
+
+        const now = Date.now();
+        const row = this.db.prepare(`
+            SELECT u.* FROM sessions s
+            JOIN users u ON s.user_id = u.id
+            WHERE s.id = ? AND s.expires_at > ?
+        `).get(sessionId, now) as any;
+
+        if (!row) return null;
+        return this.rowToUser(row);
+    }
+
+    /**
+     * Validate an existing session ID (DEPRECATED: Use validateSessionAndGetUser instead)
+     */
+    validateSession(sessionId: string): boolean {
+        return this.validateSessionAndGetUser(sessionId) !== null;
+    }
+
+    /**
+     * Logout - clear a specific session
+     */
+    logoutSession(sessionId: string): void {
+        if (this.db) {
+            this.db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
+        }
+
+        // Also clear legacy singleton if the deleted session was the active one
+        if (this.currentSession?.id === sessionId) {
+            this.logout();
+        }
+    }
+
+    /**
+     * Logout - clear current session (Legacy stateful method)
      */
     logout(): void {
         if (this.currentSession && this.db) {
@@ -388,7 +784,7 @@ class IdentityService {
         this.currentDevice = null;
         this.currentSession = null;
 
-        console.log('[IdentityService] 🚪 Logged out');
+        console.log('[IdentityService] Logged out (Legacy Stateful)');
     }
 
     /**
@@ -399,12 +795,14 @@ class IdentityService {
         user: User | null;
         device: Device | null;
         isCreator: boolean;
+        googleLinked: boolean;
     } {
         return {
             authenticated: this.currentUser !== null,
             user: this.currentUser,
             device: this.currentDevice,
-            isCreator: this.isCreator()
+            isCreator: this.isCreator(),
+            googleLinked: this.isGoogleLinked()
         };
     }
 }

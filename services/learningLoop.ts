@@ -265,30 +265,63 @@ Auto-applicable: ${insight.autoApplicable}
             return false;
         }
 
-        // Apply insight based on context type
         console.log(`[LEARNING_LOOP] 🔧 Auto-applying insight for: ${insight.context}`);
 
         try {
-            // Route to appropriate handler based on context
             if (insight.context.includes('tool') || insight.context.includes('TOOL')) {
-                // Store tool improvement in memory for future reference
-                await continuum.store(
-                    `TOOL_IMPROVEMENT: ${insight.context}\nFix: ${insight.suggestedFix}\nConfidence: ${insight.confidence}`,
-                    undefined,
-                    ['LEARNING', 'TOOL_IMPROVEMENT', insight.context]
-                );
-                console.log(`[LEARNING_LOOP] ✅ Tool improvement stored: ${insight.suggestedFix.substring(0, 50)}...`);
+                // Route to autoCorrection for actual code-level fixes
+                try {
+                    const { autoCorrection } = await import('./autoCorrection');
+                    const ciErrors = [
+                        `[${insight.context}]: ${insight.suggestedFix}\nRoot Cause: ${insight.rootCause}\nPattern: ${insight.pattern}`
+                    ];
+                    const fixes = await autoCorrection.generateFixes(ciErrors, 1);
+                    if (fixes && fixes.length > 0) {
+                        console.log(`[LEARNING_LOOP] ✅ AutoCorrection generated ${fixes.length} fix(es) for: ${insight.context}`);
+                        // Store the fix for the next git push cycle
+                        await continuum.store(
+                            `AUTO_FIX_GENERATED: ${insight.context}\n${fixes.map(f => `${f.path}: ${f.message}`).join('\n')}`,
+                            undefined,
+                            ['LEARNING', 'AUTO_FIX', 'APPLIED', insight.context]
+                        );
+                    } else {
+                        // Fallback: store as knowledge for manual review
+                        await continuum.store(
+                            `TOOL_IMPROVEMENT: ${insight.context}\nFix: ${insight.suggestedFix}\nConfidence: ${insight.confidence}`,
+                            undefined,
+                            ['LEARNING', 'TOOL_IMPROVEMENT', insight.context]
+                        );
+                    }
+                } catch (acError: any) {
+                    console.warn(`[LEARNING_LOOP] AutoCorrection unavailable: ${acError.message}. Storing as knowledge.`);
+                    await continuum.store(
+                        `TOOL_IMPROVEMENT: ${insight.context}\nFix: ${insight.suggestedFix}`,
+                        undefined,
+                        ['LEARNING', 'TOOL_IMPROVEMENT', insight.context]
+                    );
+                }
 
             } else if (insight.context.includes('agent') || insight.context.includes('AGENT')) {
-                // Apply agent behavior changes
-                systemBus.emit(SystemProtocol.AGENT_EVOLVED, {
-                    improvement: insight.suggestedFix,
-                    source: 'LEARNING_LOOP',
-                    confidence: insight.confidence
-                }, 'LEARNING_LOOP');
+                // Route agent behavior improvements through remediation
+                try {
+                    const { remediation } = await import('./remediationService');
+                    await remediation.mobilizeSquad(insight.context, [
+                        `Learning Loop Insight (confidence: ${insight.confidence}):`,
+                        `Pattern: ${insight.pattern}`,
+                        `Root Cause: ${insight.rootCause}`,
+                        `Suggested Fix: ${insight.suggestedFix}`
+                    ]);
+                    console.log(`[LEARNING_LOOP] ✅ Remediation squad mobilized for: ${insight.context}`);
+                } catch (remError: any) {
+                    console.warn(`[LEARNING_LOOP] Remediation unavailable: ${remError.message}`);
+                    systemBus.emit(SystemProtocol.AGENT_EVOLVED, {
+                        improvement: insight.suggestedFix,
+                        source: 'LEARNING_LOOP',
+                        confidence: insight.confidence
+                    }, 'LEARNING_LOOP');
+                }
 
             } else if (insight.context.includes('prompt') || insight.context.includes('PROMPT')) {
-                // Store prompt refinements for use by prompt compiler
                 await continuum.store(
                     `PROMPT_REFINEMENT: ${insight.suggestedFix}`,
                     undefined,
@@ -296,7 +329,6 @@ Auto-applicable: ${insight.autoApplicable}
                 );
 
             } else if (insight.context.includes('rate') || insight.context.includes('throttle')) {
-                // Apply rate limiting adjustments
                 systemBus.emit(SystemProtocol.CONFIG_MUTATION, {
                     type: 'RATE_LIMIT_ADJUSTMENT',
                     suggestion: insight.suggestedFix,

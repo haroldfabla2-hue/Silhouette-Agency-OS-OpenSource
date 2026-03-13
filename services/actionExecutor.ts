@@ -46,6 +46,21 @@ export class ActionExecutor {
         }
 
         this.ensureSandbox();
+
+        // [B5] Wire Webhooks into ActionExecutor
+        systemBus.subscribe(SystemProtocol.WEBHOOK_RECEIVED, (event) => {
+            console.log(`[ACTION EXECUTOR] 🔔 Triggered by External Webhook: ${event.payload?.source}`);
+            // By catching this globally on the bus, we can dispatch specific workflows automatically
+            this.execute({
+                id: crypto.randomUUID(),
+                type: 'EVALUATE_WEBHOOK' as any,
+                agentId: 'system-orchestrator',
+                payload: event.payload,
+                status: 'PENDING' as any,
+                requiresApproval: false,
+                timestamp: Date.now()
+            }).catch(e => console.error("[ACTION EXECUTOR] Webhook dispatch failed", e));
+        });
     }
 
     public disableSandbox(enableGodMode: boolean = false) {

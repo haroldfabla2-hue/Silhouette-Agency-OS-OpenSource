@@ -14,7 +14,7 @@ import rateLimit from 'express-rate-limit';
  */
 export const globalLimiter = rateLimit({
     windowMs: 60 * 1000, // 1 minute
-    max: 100,
+    max: 1000,
     standardHeaders: true,    // Return rate limit info in `RateLimit-*` headers
     legacyHeaders: false,     // Disable `X-RateLimit-*` headers
     message: {

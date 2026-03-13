@@ -136,7 +136,7 @@ class SilhouetteGateway {
         const { clientId, clientType, auth, capabilities, version } = frame.params;
 
         // Auth Check
-        const expectedToken = process.env.SILHOUETTE_API_KEY;
+        const expectedToken = process.env.SILHOUETTE_API_KEY || process.env.SILHOUETTE_API_TOKEN;
         let authenticated = false;
 
         if (expectedToken) {
@@ -144,14 +144,17 @@ class SilhouetteGateway {
                 authenticated = true;
             } else {
                 console.warn(`[Gateway] 🛑 Auth failed: Invalid/Missing token from ${clientId}`);
-                // Instead of hard closing, strictly mark as unauthenticated or close.
-                // Protocol says we can close with error frame or error code.
                 ws.close(4001, 'Unauthorized');
                 return;
             }
         } else {
-            // If no token set server-side, we default to open (dev mode) or warn.
-            // Given "Perfect" requirement, we should probably warn but allow local if no env set.
+            // [SECURITY HARDENING] Refuse unauthenticated connections in production
+            if (process.env.NODE_ENV === 'production') {
+                console.error(`[Gateway] 🛑 FATAL: No SILHOUETTE_API_KEY set in production! Rejecting connection from ${clientId}`);
+                ws.close(4001, 'Unauthorized (Server Configuration Error)');
+                return;
+            }
+            // Allow in local dev mode if no env set
             authenticated = true;
         }
 

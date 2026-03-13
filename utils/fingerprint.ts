@@ -80,8 +80,10 @@ export function getDeviceName(): string {
  */
 export async function checkDeviceTrust(): Promise<{
     trusted: boolean;
-    user?: { email: string; name: string; role: string };
+    user?: { email: string | null; name: string; role: string };
     isCreator?: boolean;
+    googleLinked?: boolean;
+    needsSetup?: boolean;
 }> {
     const fingerprint = generateFingerprint();
 
@@ -112,11 +114,17 @@ export async function checkDeviceTrust(): Promise<{
             return {
                 trusted: true,
                 user: data.user,
-                isCreator: data.isCreator
+                isCreator: data.isCreator,
+                googleLinked: data.googleLinked
             };
         }
 
-        return { trusted: false };
+        // Not trusted - pass through setup/link status for LoginGate
+        return {
+            trusted: false,
+            needsSetup: data.needsSetup,
+            googleLinked: data.googleLinked
+        };
     } catch (error: any) {
         // Handle abort (timeout) or network errors gracefully
         if (error.name === 'AbortError') {
@@ -146,6 +154,27 @@ export function startGoogleAuth(): void {
     window.open(
         authUrl,
         'Google Sign In',
+        `width=${width},height=${height},left=${left},top=${top}`
+    );
+}
+
+/**
+ * Start Google OAuth flow specifically for linking (user already authenticated)
+ * Passes mode=link so the backend links to existing user instead of creating new
+ */
+export function startGoogleLink(): void {
+    const fingerprint = generateFingerprint();
+
+    const width = 500;
+    const height = 600;
+    const left = (screen.width - width) / 2;
+    const top = (screen.height - height) / 2;
+
+    const authUrl = `/v1/drive/auth?state=${encodeURIComponent(fingerprint)}&mode=link`;
+
+    window.open(
+        authUrl,
+        'Link Google Account',
         `width=${width},height=${height},left=${left},top=${top}`
     );
 }

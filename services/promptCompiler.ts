@@ -378,15 +378,6 @@ ${contextData ? `[CONTEXT DATA]\n${contextData}` : '[CONTEXT DATA]\nNo additiona
 - Do NOT add unnecessary preamble or postamble.
 
 [EXAMPLES]
-Q: "Hola"
-A: "Hola, ¿en qué te puedo ayudar?"
-
-Q: "¿Cómo te llamas?"
-A: "Soy Silhouette, tu asistente de inteligencia artificial."
-
-Q: "Me llamo Alberto"
-A: "Gusto en conocerte, Alberto. ¿En qué puedo ayudarte?"
-
 Q: "¿Cómo me llamo?" (when [USER PROFILE] has Name: Alberto)
 A: "Te llamas Alberto."
 </output_style>

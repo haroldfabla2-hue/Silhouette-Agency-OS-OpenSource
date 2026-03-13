@@ -1,361 +1,323 @@
 #!/usr/bin/env node
-// =============================================================================
-// SILHOUETTE CLI
-// Command-line interface for Silhouette Agency OS.
-// Provides doctor diagnostics, status checks, and configuration management.
-// =============================================================================
+// ═══════════════════════════════════════════════════════════════
+// SILHOUETTE CLI — MAIN ENTRY POINT
+// Premium command-line interface for Silhouette Agency OS
+//
+// Usage:
+//   silhouette                    → Interactive mode selector
+//   silhouette start              → Boot the full OS
+//   silhouette setup              → Intelligent setup wizard
+//   silhouette doctor             → System diagnostics (--fix)
+//   silhouette restart            → Graceful restart (--force)
+//   silhouette status             → Live service dashboard (--watch)
+//   silhouette evolve [id]        → Evolve agents (--all)
+//   silhouette brain              → Knowledge graph stats
+//   silhouette memory             → 4-tier memory inspection
+//   silhouette tokens             → Token usage & costs
+//   silhouette squad              → Squad management (list, wake)
+//   silhouette config             → Configuration management
+//   silhouette optimizer          → Resource optimization
+//   silhouette help [command]     → Comprehensive help
+// ═══════════════════════════════════════════════════════════════
 
-import { loadConfig, validateConfig, saveConfig, SilhouetteConfig } from '../server/config/configSchema';
+import { Command } from 'commander';
+import { printBanner, printSmartRecommendations, isConfigured, isServerRunning, getVersion, C, printSection, printRecommendation } from './utils/ui';
+import { loadConfig, validateConfig, saveConfig } from '../server/config/configSchema';
 
-const BANNER = `
-╔═══════════════════════════════════════════════════╗
-║          🌑 SILHOUETTE AGENCY OS CLI              ║
-║               v2.2.0                              ║
-╚═══════════════════════════════════════════════════╝
-`;
+const program = new Command();
 
-// ─── Commands ────────────────────────────────────────────────────────────────
+program
+    .name('silhouette')
+    .description('Silhouette Agency OS — Autonomous Agent Operating System')
+    .version(getVersion(), '-v, --version', 'Display version and system info')
+    .option('--quiet', 'Suppress non-essential output')
+    .option('--verbose', 'Enable verbose debug output');
 
-async function cmdDoctor(): Promise<void> {
-    console.log(BANNER);
-    console.log('🩺 Running system diagnostics...\n');
+// ═══════════════════════════════════════════════════════════════
+// PREMIUM COMMANDS (New)
+// ═══════════════════════════════════════════════════════════════
 
-    const config = loadConfig();
-    const issues = validateConfig(config);
-
-    const checks: { name: string; status: '✅' | '⚠️' | '❌'; message: string }[] = [];
-
-    // 1. Configuration
-    checks.push({
-        name: 'Configuration',
-        status: issues.length === 0 ? '✅' : '⚠️',
-        message: issues.length === 0
-            ? 'Configuration is valid'
-            : `${issues.length} issue(s): ${issues.join('; ')}`,
+// ─── silhouette start ────────────────────────────────────────
+program
+    .command('start')
+    .description('Boot the Cognitive Kernel (backend + UI + daemon)')
+    .option('--kernel-only', 'Start only the API backend (no UI)')
+    .option('--ui-only', 'Start only the UI frontend')
+    .option('-p, --port <port>', 'API port (default: 3005)')
+    .action(async (options) => {
+        const { startCommand } = await import('./commands/start');
+        await startCommand(options);
     });
 
-    // 2. LLM Providers
-    const providers = Object.entries(config.llm.providers)
-        .filter(([, v]) => v && ((v as any).apiKey || (v as any).baseUrl))
-        .map(([k]) => k);
-    checks.push({
-        name: 'LLM Providers',
-        status: providers.length > 0 ? '✅' : '❌',
-        message: providers.length > 0
-            ? `Configured: ${providers.join(', ')}`
-            : 'No providers configured! Set GEMINI_API_KEY or OLLAMA_BASE_URL',
+// ─── silhouette setup ────────────────────────────────────────
+program
+    .command('setup')
+    .description('Launch the intelligent interactive setup wizard')
+    .option('--reset', 'Wipe existing config and re-run full wizard')
+    .option('--quick', 'Minimal setup (just LLM key + start)')
+    .action(async (options) => {
+        const { setupCommand } = await import('./commands/setup');
+        await setupCommand(options);
     });
 
-    // 3. Neo4j
-    checks.push({
-        name: 'Neo4j',
-        status: config.memory.neo4j.uri ? '✅' : '⚠️',
-        message: `URI: ${config.memory.neo4j.uri || 'not set'}`,
+// ─── silhouette chat ─────────────────────────────────────────
+program
+    .command('chat')
+    .description('Interactive terminal chat session with the Cognitive Kernel')
+    .option('-s, --session <id>', 'Specific session ID to resume context')
+    .action(async (options) => {
+        const { chatCommand } = await import('./commands/chat');
+        await chatCommand(options);
     });
 
-    // 4. Redis
-    checks.push({
-        name: 'Redis',
-        status: config.memory.redis.host ? '✅' : '⚠️',
-        message: `${config.memory.redis.host}:${config.memory.redis.port}`,
+// ─── silhouette doctor ───────────────────────────────────────
+program
+    .command('doctor')
+    .description('Run comprehensive system diagnostics (6 categories)')
+    .option('--fix', 'Auto-repair detected issues')
+    .option('--security', 'Deep security audit (OWASP checks)')
+    .action(async (options) => {
+        const { doctorCommand } = await import('./commands/doctor');
+        await doctorCommand(options);
     });
 
-    // 5. Channels
-    const channels = Object.entries(config.channels)
-        .filter(([, v]) => v && (v as any).enabled)
-        .map(([k]) => k);
-    checks.push({
-        name: 'Channels',
-        status: channels.length > 0 ? '✅' : '⚠️',
-        message: channels.length > 0
-            ? `Enabled: ${channels.join(', ')}`
-            : 'No messaging channels configured',
+// ─── silhouette restart ──────────────────────────────────────
+program
+    .command('restart')
+    .description('Graceful restart with automatic recovery')
+    .option('-p, --port <port>', 'API port (default: 3005)')
+    .option('--force', 'Force kill processes if graceful shutdown fails')
+    .action(async (options) => {
+        const { restartCommand } = await import('./commands/restart');
+        await restartCommand(options);
     });
 
-    // 6. Memory System
-    checks.push({
-        name: 'Memory (SQLite)',
-        status: '✅',
-        message: `Path: ${config.memory.sqlitePath}`,
+// ─── silhouette status ───────────────────────────────────────
+program
+    .command('status')
+    .description('Live service dashboard with agent overview')
+    .option('--json', 'Machine-readable JSON output')
+    .option('--watch', 'Auto-refresh every 5 seconds')
+    .action(async (options) => {
+        const { statusCommand } = await import('./commands/status');
+        await statusCommand(options);
     });
 
-    checks.push({
-        name: 'Memory (LanceDB)',
-        status: '✅',
-        message: `Path: ${config.memory.lanceDbPath}`,
+// ─── silhouette evolve ───────────────────────────────────────
+program
+    .command('evolve [agentId]')
+    .description('Trigger evolution cycle for agents')
+    .option('--all', 'Evolve all underperforming agents')
+    .option('--dry-run', 'Preview what would happen without executing')
+    .action(async (agentId, options) => {
+        const { evolveCommand } = await import('./commands/evolve');
+        await evolveCommand(agentId, options);
     });
 
-    // 7. Media
-    checks.push({
-        name: 'TTS (ElevenLabs)',
-        status: config.media.elevenlabs?.apiKey ? '✅' : '⚠️',
-        message: config.media.elevenlabs?.apiKey ? 'API key configured' : 'Not configured',
+// ─── silhouette brain ────────────────────────────────────────
+program
+    .command('brain')
+    .description('Knowledge graph topology: σ index, concepts, bridges')
+    .option('--json', 'Machine-readable JSON output')
+    .action(async (options) => {
+        const { brainCommand } = await import('./commands/brain');
+        await brainCommand(options);
     });
 
-    // 8. Tool Security
-    checks.push({
-        name: 'Tool Security',
-        status: config.tools.requireApproval ? '✅' : '⚠️',
-        message: config.tools.requireApproval
-            ? 'Approval required for dangerous tools'
-            : 'WARNING: Tools run without approval',
+// ─── silhouette memory ───────────────────────────────────────
+program
+    .command('memory')
+    .description('Inspect 4-tier memory system (Working → Short → Long → Deep)')
+    .option('-t, --tier <tier>', 'Filter by tier (working, short, long, deep)')
+    .option('-s, --search <query>', 'Semantic search across all memories')
+    .option('--json', 'Machine-readable JSON output')
+    .action(async (options) => {
+        const { memoryCommand } = await import('./commands/memory');
+        await memoryCommand(options);
     });
 
-    // Print results
-    console.log('─'.repeat(55));
-    for (const check of checks) {
-        console.log(`  ${check.status}  ${check.name.padEnd(20)} ${check.message}`);
-    }
-    console.log('─'.repeat(55));
+// ─── silhouette tokens ──────────────────────────────────────
+program
+    .command('tokens')
+    .description('Token usage, costs, and per-provider breakdown')
+    .option('--json', 'Machine-readable JSON output')
+    .option('--reset', 'Reset usage counters')
+    .action(async (options) => {
+        const { tokensCommand } = await import('./commands/tokens');
+        await tokensCommand(options);
+    });
 
-    const hasErrors = checks.some(c => c.status === '❌');
-    const hasWarnings = checks.some(c => c.status === '⚠️');
+// ═══════════════════════════════════════════════════════════════
+// LEGACY COMMANDS (Preserved from original CLI)
+// ═══════════════════════════════════════════════════════════════
 
-    if (hasErrors) {
-        console.log('\n❌ System has critical issues that must be resolved.');
-    } else if (hasWarnings) {
-        console.log('\n⚠️  System is functional but has warnings.');
-    } else {
-        console.log('\n✅ All checks passed!');
-    }
-}
+// ─── silhouette squad ────────────────────────────────────────
+program
+    .command('squad [action] [id]')
+    .description('Manage squads (list | wake <id>)')
+    .action(async (action, id) => {
+        const { printCompactBanner, printSection, printCheck } = await import('./utils/ui');
+        printCompactBanner();
 
-async function cmdStatus(): Promise<void> {
-    console.log(BANNER);
-    console.log('📊 System status:\n');
-
-    try {
-        // Try to connect to the running server
-        const port = process.env.PORT || 3005;
-        const res = await fetch(`http://localhost:${port}/v1/system/health`);
-        if (res.ok) {
-            const data = await res.json();
-            console.log(`  Server:     🟢 Online (port ${port})`);
-            console.log(`  Uptime:     ${data.uptime ?? 'unknown'}`);
+        if (!action || action === 'list') {
+            try {
+                const res = await fetch('http://localhost:3005/v1/squads');
+                if (!res.ok) throw new Error(`Server returned ${res.status}`);
+                const data: any = await res.json();
+                if (data.success) {
+                    printSection('Active Squads', '🛡️');
+                    console.table(data.squads.map((s: any) => ({
+                        ID: s.id, Name: s.name, Status: s.status,
+                        Members: s.memberCount, Leader: s.leaderId
+                    })));
+                } else {
+                    printCheck('fail', `Error: ${data.error}`);
+                }
+            } catch (e: any) {
+                printCheck('fail', `Failed to fetch squads: ${e.message}`);
+            }
+        } else if (action === 'wake' && id) {
+            try {
+                const res = await fetch(`http://localhost:3005/v1/squads/${id}/wake`, { method: 'POST' });
+                const data: any = await res.json();
+                if (data.success) printCheck('ok', data.message);
+                else printCheck('fail', data.error);
+            } catch (e: any) {
+                printCheck('fail', `Failed to wake squad: ${e.message}`);
+            }
         } else {
-            console.log(`  Server:     🔴 Error (HTTP ${res.status})`);
+            console.log(`    ${C.GRAY}Usage: silhouette squad list${C.RESET}`);
+            console.log(`    ${C.GRAY}       silhouette squad wake <id>${C.RESET}\n`);
         }
-    } catch {
-        console.log('  Server:     🔴 Offline');
-    }
+    });
 
-    // Check WS Gateway
-    try {
-        const port = process.env.PORT || 3005;
-        const ws = await import('ws');
-        const socket = new ws.default(`ws://localhost:${port}/ws`);
-        await new Promise<void>((resolve, reject) => {
-            const timer = setTimeout(() => {
-                socket.close();
-                reject(new Error('timeout'));
-            }, 2000);
-            socket.on('error', () => {
-                clearTimeout(timer);
-                reject(new Error('connection failed'));
-            });
-            socket.on('open', () => {
-                clearTimeout(timer);
-                console.log('  WS Gateway: 🟢 Online');
-                socket.close();
-                resolve();
-            });
-        });
-    } catch {
-        console.log('  WS Gateway: 🔴 Offline');
-    }
-}
+// ─── silhouette config ───────────────────────────────────────
+program
+    .command('config [action] [value]')
+    .description('Configuration management (show | init | mode <lite|full>)')
+    .action(async (action, value) => {
+        const { printCompactBanner, printSection, printCheck } = await import('./utils/ui');
+        printCompactBanner();
 
-async function cmdConfigShow(): Promise<void> {
-    console.log(BANNER);
-    const config = loadConfig();
-
-    // Redact secrets for display
-    const display = JSON.parse(JSON.stringify(config));
-    if (display.llm?.providers) {
-        for (const p of Object.values(display.llm.providers) as any[]) {
-            if (p?.apiKey) p.apiKey = p.apiKey.slice(0, 8) + '...';
-        }
-    }
-
-    console.log(JSON.stringify(display, null, 2));
-}
-
-async function cmdConfigInit(): Promise<void> {
-    console.log(BANNER);
-    console.log('📝 Creating silhouette.config.json with defaults...\n');
-    const config = loadConfig();
-    saveConfig(config);
-    console.log('✅ Configuration file created. Edit it to customize your setup.');
-    console.log('   Secrets should be set via environment variables (.env.local).');
-}
-
-async function cmdConfigMode(): Promise<void> {
-    const mode = args[1]; // 'lite' or 'full'
-    if (!mode || (mode !== 'lite' && mode !== 'full')) {
-        console.log(BANNER);
-        console.error('❌ Usage: silhouette config:mode <lite|full>\n');
-        console.log('  lite  : Optimized for <8GB RAM (No Neo4j, No Qdrant, No Browser)');
-        console.log('  full  : Standard Mode (All systems go)');
-        return;
-    }
-
-    console.log(BANNER);
-    console.log(`🔄 Switching to ${mode.toUpperCase()} mode...`);
-
-    const config = loadConfig();
-
-    if (mode === 'lite') {
-        // [PA-058] Lite Mode
-        config.modules = {
-            graph: false,
-            vectorDB: false,
-            redis: false,
-            browser: false
-        };
-        // Also set Autonomy defaults for low power
-        config.autonomy.maxConcurrentAgents = 3;
-        config.autonomy.enableNarrative = false;
-        config.autonomy.enableIntrospection = false;
-
-        console.log('  - Disabled: Graph, VectorDB, Redis, Browser');
-        console.log('  - Reduced: Max Agents (3)');
-    } else {
-        // Full Mode
-        config.modules = {
-            graph: true,
-            vectorDB: true,
-            redis: true,
-            browser: true
-        };
-        config.autonomy.maxConcurrentAgents = 10;
-        config.autonomy.enableNarrative = true;
-        config.autonomy.enableIntrospection = true;
-
-        console.log('  - Enabled: Graph, VectorDB, Redis, Browser');
-        console.log('  - Restored: Max Agents (10), Narrative, Introspection');
-    }
-
-    saveConfig(config);
-    console.log('\n✅ Configuration updated. Restart the server to apply changes.');
-}
-
-async function cmdOptimizer(): Promise<void> {
-    const force = args.includes('--force') || args.includes('-f');
-    console.log(BANNER);
-    console.log(`🧹 Running resource optimizer${force ? ' (FORCE MODE)' : ''}...\n`);
-
-    try {
-        const port = process.env.PORT || 3005;
-        const res = await fetch(`http://localhost:${port}/v1/system/optimize`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ force })
-        });
-
-        if (res.ok) {
-            const data = await res.json();
-            console.log(`✅ Success: ${data.message}`);
-        } else {
-            console.log(`❌ Error: Server returned ${res.status}`);
-            const text = await res.text();
-            console.log(text);
-        }
-    } catch (e: any) {
-        console.log(`❌ Failed to connect to server: ${e.message}`);
-    }
-}
-
-// ─── Main ────────────────────────────────────────────────────────────────────
-
-const args = process.argv.slice(2);
-const command = args[0];
-
-const COMMANDS: Record<string, () => Promise<void>> = {
-    'doctor': cmdDoctor,
-    'status': cmdStatus,
-    'config': cmdConfigShow,
-    'config:init': cmdConfigInit,
-    'config:mode': cmdConfigMode,
-    'optimizer': cmdOptimizer,
-    'squad': cmdSquad,
-};
-
-if (!command || command === 'help' || command === '--help') {
-    console.log(BANNER);
-    console.log('Usage: silhouette <command>\n');
-    console.log('Commands:');
-    console.log('  doctor       Run system diagnostics');
-    console.log('  status       Check if services are running');
-    console.log('  config       Show current configuration');
-    console.log('  config:init  Create silhouette.config.json');
-    console.log('  config:mode  Switch hardware mode <lite|full>');
-    console.log('  optimizer    Prune idle resources (use --force to prune all)');
-    console.log('  squad        Manage squads (list | wake <id>)');
-    console.log('  help         Show this help message');
-    process.exit(0);
-}
-
-// ... existing code ...
-
-async function cmdSquad() {
-    const subCommand = args[1];
-    const targetId = args[2];
-
-    if (!subCommand || subCommand === 'list') {
-        // List Squads
-        try {
-            const res = await fetch('http://localhost:3005/v1/squads');
-            if (!res.ok) throw new Error(`Server returned ${res.status}`);
-            const data: any = await res.json();
-
-            if (data.success) {
-                console.log('\n🛡️  ACTIVE SQUADS\n');
-                console.table(data.squads.map((s: any) => ({
-                    ID: s.id,
-                    Name: s.name,
-                    Status: s.status,
-                    Members: s.memberCount,
-                    Leader: s.leaderId
-                })));
+        if (action === 'init') {
+            const config = loadConfig();
+            saveConfig(config);
+            printCheck('ok', 'silhouette.config.json created');
+            console.log(`    ${C.GRAY}Edit it to customize. Secrets via .env.local${C.RESET}\n`);
+        } else if (action === 'mode') {
+            if (value !== 'lite' && value !== 'full') {
+                console.log(`    ${C.GRAY}Usage: silhouette config mode <lite|full>${C.RESET}`);
+                console.log(`    ${C.GRAY}  lite  : Optimized for <8GB RAM${C.RESET}`);
+                console.log(`    ${C.GRAY}  full  : All systems enabled${C.RESET}\n`);
+                return;
+            }
+            const config = loadConfig();
+            if (value === 'lite') {
+                config.modules = { graph: false, vectorDB: false, redis: false, browser: false };
+                config.autonomy.maxConcurrentAgents = 3;
+                config.autonomy.enableNarrative = false;
+                config.autonomy.enableIntrospection = false;
+                printCheck('ok', 'Switched to LITE mode');
             } else {
-                console.error('❌ Error:', data.error);
+                config.modules = { graph: true, vectorDB: true, redis: true, browser: true };
+                config.autonomy.maxConcurrentAgents = 10;
+                config.autonomy.enableNarrative = true;
+                config.autonomy.enableIntrospection = true;
+                printCheck('ok', 'Switched to FULL mode');
+            }
+            saveConfig(config);
+            console.log(`    ${C.GRAY}Restart to apply: ${C.WHITE}silhouette restart${C.RESET}\n`);
+        } else {
+            // Show config (redacted)
+            const config = loadConfig();
+            const display = JSON.parse(JSON.stringify(config));
+            if (display.llm?.providers) {
+                for (const p of Object.values(display.llm.providers) as any[]) {
+                    if (p?.apiKey) p.apiKey = p.apiKey.slice(0, 8) + '...';
+                }
+            }
+            printSection('Current Configuration', '⚙️');
+            console.log(JSON.stringify(display, null, 2));
+            console.log();
+        }
+    });
+
+// ─── silhouette optimizer ────────────────────────────────────
+program
+    .command('optimizer')
+    .description('Prune idle resources (--force to prune all)')
+    .option('--force', 'Force prune all idle resources')
+    .action(async (options) => {
+        const { printCompactBanner, printCheck } = await import('./utils/ui');
+        printCompactBanner();
+
+        try {
+            const port = process.env.PORT || 3005;
+            const res = await fetch(`http://localhost:${port}/v1/system/optimize`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ force: options.force })
+            });
+            if (res.ok) {
+                const data: any = await res.json();
+                printCheck('ok', data.message || 'Resources optimized');
+            } else {
+                printCheck('fail', `Server returned HTTP ${res.status}`);
             }
         } catch (e: any) {
-            console.error(`❌ Failed to fetch squads: ${e.message}`);
+            printCheck('fail', `Failed to connect: ${e.message}`);
         }
-    } else if (subCommand === 'wake') {
-        // Wake Squad
-        if (!targetId) {
-            console.error('❌ Error: Missing squad ID. Usage: silhouette squad wake <id>');
-            return;
+    });
+
+// ═══════════════════════════════════════════════════════════════
+// DEFAULT ACTION (no command specified)
+// ═══════════════════════════════════════════════════════════════
+
+program
+    .action(async () => {
+        printBanner();
+
+        // Smart context detection
+        const hasConfig = isConfigured();
+        const isRunning = hasConfig ? await isServerRunning() : false;
+
+        // Show available commands grouped by category
+        printSection('Core Commands', '🚀');
+        printRecommendation('start', 'Boot the Cognitive Kernel (backend + UI + daemon)');
+        printRecommendation('chat', 'Interactive terminal session with the agent');
+        printRecommendation('setup', 'Launch the intelligent interactive setup wizard');
+        printRecommendation('restart', 'Graceful restart with automatic recovery (--force)');
+
+        printSection('Inspection & Monitoring', '🔍');
+        printRecommendation('status', 'Live service dashboard (--watch for auto-refresh)');
+        printRecommendation('doctor', 'System diagnostics across 6 categories (--fix)');
+        printRecommendation('brain', 'Knowledge graph: σ index, topology, bridges');
+        printRecommendation('memory', 'Inspect 4-tier memory system (--search)');
+        printRecommendation('tokens', 'Token usage, costs, per-provider breakdown');
+
+        printSection('Evolution & Management', '🧬');
+        printRecommendation('evolve', 'Trigger agent evolution (--all for batch)');
+        printRecommendation('squad', 'Manage agent squads (list, wake)');
+        printRecommendation('config', 'Configuration (show, init, mode <lite|full>)');
+        printRecommendation('optimizer', 'Prune idle resources');
+
+        // Smart recommendations based on current state
+        printSmartRecommendations({
+            hasConfig,
+            isRunning,
+            hasDiagnosticIssues: !hasConfig,
+        });
+    });
+
+// ─── Parse ───────────────────────────────────────────────────
+program.parseAsync(process.argv)
+    .then(() => {
+        // Force exit to prevent hanging on open handles from API checks
+        if (!process.argv.includes('status') && !process.argv.includes('--watch')) {
+            setTimeout(() => process.exit(0), 100);
         }
-        try {
-            const res = await fetch(`http://localhost:3005/v1/squads/${targetId}/wake`, { method: 'POST' });
-            if (!res.ok) throw new Error(`Server returned ${res.status}`);
-            const data: any = await res.json();
-
-            if (data.success) {
-                console.log(`✅ ${data.message}`);
-            } else {
-                console.error('❌ Error:', data.error);
-            }
-        } catch (e: any) {
-            console.error(`❌ Failed to wake squad: ${e.message}`);
-        }
-    } else {
-        console.error(`Unknown subcommand: ${subCommand}`);
-        console.log('Usage: silhouette squad list');
-        console.log('       silhouette squad wake <id>');
-    }
-}
-
-const handler = COMMANDS[command];
-if (!handler) {
-    console.error(`Unknown command: ${command}\nRun 'silhouette help' for available commands.`);
-    process.exit(1);
-}
-
-handler().catch((err) => {
-    console.error('Error:', err);
-    process.exit(1);
-});
+    })
+    .catch((err) => {
+        console.error(err);
+        process.exit(1);
+    });

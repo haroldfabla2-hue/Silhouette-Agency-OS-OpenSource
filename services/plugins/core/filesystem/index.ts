@@ -1,4 +1,4 @@
-import { IPlugin } from '../../../pluginInterface';
+import { IPlugin } from '../../pluginInterface';
 import * as tools from './tools';
 
 export const CoreFilesystemPlugin: IPlugin = {

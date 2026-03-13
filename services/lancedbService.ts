@@ -5,6 +5,21 @@ import { MemoryNode, MemoryTier } from '../types';
 
 const DB_PATH = path.resolve(process.cwd(), 'db', 'silhouette.lancedb');
 const DB_DIR = path.dirname(DB_PATH);
+const DEFAULT_DIMENSIONS = 768; // Hardcoded default to match the original schema
+
+// Helper: Dynamically padding vectors to match the database schema
+function adjustVectorDimension(vector: number[], targetDim: number = DEFAULT_DIMENSIONS): number[] {
+    if (!vector || vector.length === 0) return Array(targetDim).fill(0);
+    if (vector.length === targetDim) return vector;
+    if (vector.length > targetDim) return vector.slice(0, targetDim); // Truncate
+
+    // Pad with zeros to match target dimensions
+    const padded = new Array(targetDim).fill(0);
+    for (let i = 0; i < vector.length; i++) {
+        padded[i] = vector[i];
+    }
+    return padded;
+}
 
 if (!fs.existsSync(DB_DIR)) {
     fs.mkdirSync(DB_DIR, { recursive: true });
@@ -17,34 +32,68 @@ export class LanceDbService {
     private initialized = false;
 
     constructor() {
-        // [MOD] Manual init for better control
-        // this.init(); 
+        // Lazy initialization - called explicitly from dbLoader or on first use
     }
 
-    private async init() {
+    /** Explicit initialization (called from dbLoader at startup) */
+    public async ensureInitialized(): Promise<void> {
+        if (this.initialized) return;
+        await this.init();
+    }
+
+    private async init(retries = 3, delayMs = 1000) {
+        if (this.initialized) return;
+
+        let attempt = 0;
+        while (attempt < retries) {
+            try {
+                if (attempt > 0) {
+                    console.log(`[LANCEDB] 🔄 Retry attempt ${attempt + 1}/${retries}...`);
+                    await new Promise(r => setTimeout(r, delayMs * Math.pow(2, attempt - 1)));
+                } else {
+                    console.log(`[LANCEDB] Connecting to: ${DB_PATH}`);
+                }
+
+                this.db = await lancedb.connect(DB_PATH);
+                const tableNames = await this.db.tableNames();
+
+                // 1. Memory Table
+                if (tableNames.includes('memory')) {
+                    this.table = await this.db.openTable('memory');
+                } else {
+                    console.log("[LANCEDB] Table 'memory' not found. It will be created on first insert.");
+                }
+
+                // 2. Universal Knowledge Table
+                if (tableNames.includes('universal_knowledge')) {
+                    this.knowledgeTable = await this.db.openTable('universal_knowledge');
+                } else {
+                    console.log("[LANCEDB] Table 'universal_knowledge' not found. Will be created on ingest.");
+                }
+
+                this.initialized = true;
+                console.log("[LANCEDB] Connected.");
+                return;
+
+            } catch (e: any) {
+                console.error(`[LANCEDB] Initialization Failed (Attempt ${attempt + 1}/${retries}):`, e.message);
+                attempt++;
+            }
+        }
+
+        // Exhausted retries
+        console.error("[LANCEDB] 🚨 FATAL: LanceDB connection completely failed after retries.");
         try {
-            console.log(`[LANCEDB DEBUG] Connecting to: ${DB_PATH}`);
-            this.db = await lancedb.connect(DB_PATH);
-            const tableNames = await this.db.tableNames();
-
-            // 1. Memory Table
-            if (tableNames.includes('memory')) {
-                this.table = await this.db.openTable('memory');
-            } else {
-                console.log("[LANCEDB] Table 'memory' not found. It will be created on first insert.");
-            }
-
-            // 2. Universal Knowledge Table
-            if (tableNames.includes('universal_knowledge')) {
-                this.knowledgeTable = await this.db.openTable('universal_knowledge');
-            } else {
-                console.log("[LANCEDB] Table 'universal_knowledge' not found. Will be created on ingest.");
-            }
-
-            this.initialized = true;
-            console.log("[LANCEDB] Connected.");
+            const { systemBus } = await import('./systemBus');
+            systemBus.emit('PROTOCOL_SYSTEM_ALERT' as any, {
+                component: 'LanceDB',
+                error: 'Connection Exhaustion',
+                severity: 'CRITICAL',
+                message: 'LanceDB vector database failed to initialize. Storage may be locked or corrupted.',
+                timestamp: Date.now()
+            }, 'system-kernel');
         } catch (e) {
-            console.error("[LANCEDB] Initialization Failed", e);
+            console.error("[LANCEDB] Could not emit SYSTEM_ALERT:", e);
         }
     }
 
@@ -52,8 +101,9 @@ export class LanceDbService {
         if (!this.table) await this.init();
         if (!this.table) return false;
         try {
-            await this.table.delete(`id = '${id}'`);
-            // console.debug(`[LANCEDB] Deleted node ${nodeId}`);
+            // [FIX 2026-02] Sanitize ID to prevent SQL injection
+            const safeId = id.replace(/'/g, "''");
+            await this.table.delete(`id = '${safeId}'`);
             return true;
         } catch (e) {
             console.error(`[LANCEDB] Failed to delete node ${id}`, e);
@@ -73,7 +123,7 @@ export class LanceDbService {
 
         const record = {
             id: node.id,
-            vector: vector || Array(768).fill(0), // Placeholder if no vector provided yet
+            vector: adjustVectorDimension(vector || []),
             content: node.content,
             originalContent: node.originalContent || '',
             tags: node.tags,
@@ -100,11 +150,10 @@ export class LanceDbService {
 
             // Upsert logic: Delete existing record with same ID to prevent duplicates
             try {
-                await this.table.delete(`id = '${node.id}'`);
-                // console.log(`[LANCEDB] Deleted old version of ${node.id}`);
+                const safeId = node.id.replace(/'/g, "''");
+                await this.table.delete(`id = '${safeId}'`);
             } catch (delError) {
-                // Ignore delete error (e.g. if table doesn't support delete or record not found)
-                console.warn("[LANCEDB] Delete failed (might be new record)", delError);
+                console.error("[LANCEDB] Upsert deletion ignored:", delError);
             }
 
             await this.table.add([record]);
@@ -117,7 +166,8 @@ export class LanceDbService {
         if (!this.table) return [];
 
         try {
-            let query = this.table.search(queryVector).limit(limit);
+            const adjustedVector = adjustVectorDimension(queryVector);
+            let query = this.table.search(adjustedVector).limit(limit);
             if (filter) {
                 query = query.where(filter);
             }
@@ -142,8 +192,9 @@ export class LanceDbService {
 
         try {
             // 1. Get the vector of the source node
+            const safeNodeId = nodeId.replace(/'/g, "''");
             const sourceRecord = await this.table.query()
-                .where(`id = '${nodeId}'`)
+                .where(`id = '${safeNodeId}'`)
                 .limit(1)
                 .toArray();
 
@@ -172,18 +223,26 @@ export class LanceDbService {
                     // Also convert target vector to native array
                     const targetVector: number[] = Array.isArray(rawTarget) ? rawTarget : Array.from(rawTarget);
 
+                    // Align vectors to min_len (like silhouette-brain) for cosine sim
+                    const min_len = Math.min(sourceVector.length, targetVector.length);
+                    const sourceAlign = sourceVector.slice(0, min_len);
+                    const targetAlign = targetVector.slice(0, min_len);
+
                     // Dot product
                     let dotProduct = 0;
-                    let targetNorm = 0;
-                    for (let i = 0; i < sourceVector.length && i < targetVector.length; i++) {
-                        dotProduct += sourceVector[i] * targetVector[i];
-                        targetNorm += targetVector[i] * targetVector[i];
+                    let sourceNormAligned = 0;
+                    let targetNormAligned = 0;
+                    for (let i = 0; i < min_len; i++) {
+                        dotProduct += sourceAlign[i] * targetAlign[i];
+                        sourceNormAligned += sourceAlign[i] * sourceAlign[i];
+                        targetNormAligned += targetAlign[i] * targetAlign[i];
                     }
-                    targetNorm = Math.sqrt(targetNorm);
+                    sourceNormAligned = Math.sqrt(sourceNormAligned);
+                    targetNormAligned = Math.sqrt(targetNormAligned);
 
                     // Cosine similarity: ranges from -1 to 1 (1 = identical, 0 = orthogonal, -1 = opposite)
-                    const cosineSim = (sourceNorm > 0 && targetNorm > 0)
-                        ? dotProduct / (sourceNorm * targetNorm)
+                    const cosineSim = (sourceNormAligned > 0 && targetNormAligned > 0)
+                        ? dotProduct / (sourceNormAligned * targetNormAligned)
                         : 0;
 
                     // Normalize to 0-1 scale: (cosineSim + 1) / 2
@@ -261,11 +320,11 @@ export class LanceDbService {
         if (!this.table) await this.init();
         if (!this.table) return [];
         try {
-            // Use SQL-like filter for efficiency if supported, or fetch and filter
-            // LanceDB JS 'where' string syntax: "tier = 'MEDIUM'"
+            // [FIX 2026-02] Sanitize tier to prevent SQL injection
+            const safeTier = String(tier).replace(/'/g, "''");
             const results = await this.table.query()
-                .where(`tier = '${tier}'`)
-                .limit(Math.max(limit * 5, 1000)) // Fetch more to allow effective in-memory sorting
+                .where(`tier = '${safeTier}'`)
+                .limit(Math.max(limit * 5, 1000))
                 .toArray();
 
             return results
@@ -307,8 +366,11 @@ export class LanceDbService {
 
             // Upsert
             try {
-                await this.knowledgeTable.delete(`id = '${item.id}'`);
-            } catch (e) { } // Ignore if not found
+                const safeId = String(item.id).replace(/'/g, "''");
+                await this.knowledgeTable.delete(`id = '${safeId}'`);
+            } catch (e) {
+                console.error("[LANCEDB] Knowledge Upsert deletion ignored:", e);
+            }
 
             await this.knowledgeTable.add([item]);
             // console.log(`[LANCEDB] Stored Knowledge: ${item.path}`);
@@ -334,7 +396,8 @@ export class LanceDbService {
         }
 
         try {
-            const results = await this.knowledgeTable.search(queryVector)
+            const adjustedVector = adjustVectorDimension(queryVector);
+            const results = await this.knowledgeTable.search(adjustedVector)
                 .limit(limit)
                 .toArray();
             return results;

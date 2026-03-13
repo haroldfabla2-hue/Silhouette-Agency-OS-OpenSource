@@ -10,6 +10,11 @@ export interface GenerateVideoArgs {
     duration?: number;
 }
 
+export interface GenerateVoiceArgs {
+    text: string;
+    voiceId?: string;
+}
+
 export interface GenerateImageArgs {
     prompt: string;
     style: 'PHOTOREALISTIC' | 'ILLUSTRATION' | 'ICON' | 'VECTOR' | 'STOCK_PHOTO';
@@ -100,6 +105,25 @@ export const GENERATE_IMAGE_TOOL: FunctionDeclaration = {
             }
         },
         required: ["prompt", "style"]
+    }
+};
+
+export const GENERATE_VOICE_TOOL: FunctionDeclaration = {
+    name: "generate_voice",
+    description: "Generates realistic, human-like voice audio from text. Use this when you need spoken audio or want to send a voice note.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            text: {
+                type: Type.STRING,
+                description: "The text to be spoken."
+            },
+            voiceId: {
+                type: Type.STRING,
+                description: "Optional specific voice ID to use (e.g. from ElevenLabs or OpenAI). If omitted, a default voice is used."
+            }
+        },
+        required: ["text"]
     }
 };
 
@@ -242,6 +266,10 @@ export interface WebSearchArgs {
     max_results?: number;
 }
 
+export interface ReadUrlArgs {
+    url: string;
+}
+
 export interface AcademicSearchArgs {
     query: string;
     max_results?: number;
@@ -270,6 +298,21 @@ export const WEB_SEARCH_TOOL: FunctionDeclaration = {
             }
         },
         required: ["query"]
+    }
+};
+
+export const READ_URL_TOOL: FunctionDeclaration = {
+    name: "read_url",
+    description: "Fetches and extracts the main text content from a specific URL. Use this to read articles, documentation, or links found via web_search.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            url: {
+                type: Type.STRING,
+                description: "The absolute URL to read (e.g. 'https://en.wikipedia.org/wiki/AI')"
+            }
+        },
+        required: ["url"]
     }
 };
 
@@ -747,12 +790,193 @@ export const SYSTEM_GET_INFO_TOOL: FunctionDeclaration = {
     }
 };
 
+// ==================== SELF-CONFIGURATION TOOLS (Phase 17) ====================
+
+export const GET_SYSTEM_CONFIG_TOOL: FunctionDeclaration = {
+    name: "get_system_config",
+    description: "Read configuration values from .env.local or silhouette.config.json. Use this to check your current mode, channel states, or API keys.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            keys: {
+                type: Type.ARRAY,
+                description: "Array of keys to retrieve (e.g., ['WHATSAPP_RESPONSE_MODE', 'TELEGRAM_ACCESS_MODE', 'PORT']). Pass an empty array to read the entire public config.",
+                items: { type: Type.STRING }
+            }
+        }
+    }
+};
+
+export const UPDATE_SYSTEM_CONFIG_TOOL: FunctionDeclaration = {
+    name: "update_system_config",
+    description: "Modify configuration values in .env.local or silhouette.config.json. CRITICAL SECURITY RULE: You MUST ask the user for explicit permission BEFORE calling this tool. NEVER invoke this tool unless the user has confirmed the exact change.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            updates: {
+                type: Type.OBJECT,
+                description: "Key-value pairs to update (e.g., { 'WHATSAPP_RESPONSE_MODE': 'auto-reply', 'TELEGRAM_ACCESS_MODE': 'allowlist' })"
+            },
+            reason: {
+                type: Type.STRING,
+                description: "A brief explanation of why this configuration is being changed, for the audit log."
+            }
+        },
+        required: ["updates", "reason"]
+    }
+};
+
+export const READ_ARCHITECTURE_TOOL: FunctionDeclaration = {
+    name: "read_architecture",
+    description: "Read the ARCHITECTURE.md file of Silhouette Agency OS. Use this when you need absolute clarity on how your subsystems, orchestrator, tools, and agents interoperate.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {}
+    }
+};
+
+// ==================== SELF-HEALING KERNEL TOOLS (Phase 18) ====================
+
+export const READ_SYSTEM_LOGS_TOOL: FunctionDeclaration = {
+    name: "read_system_logs",
+    description: "Read recent system error logs from logs/system_errors.log. Used by Developer Agents to detect node crashes, syntax errors, or logical failures in their own source code.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            lines: {
+                type: Type.INTEGER,
+                description: "Number of trailing lines to read from the log file (e.g., 50)."
+            }
+        }
+    }
+};
+
+export const ANALYZE_AND_REPAIR_TOOL: FunctionDeclaration = {
+    name: "analyze_and_repair",
+    description: "Submit an automated repair hypothesis. Triggers a specialized sub-routine that takes your hypothesis, tests it, and provides the terminal output to confirm if your fix resolved the system error.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            file: {
+                type: Type.STRING,
+                description: "The absolute path of the file requiring a fix."
+            },
+            hypothesis: {
+                type: Type.STRING,
+                description: "Your technical explanation of the bug and how it should be fixed."
+            },
+            proposed_code_change: {
+                type: Type.STRING,
+                description: "The exact code snippet or sed replacement script to apply."
+            }
+        },
+        required: ["file", "hypothesis", "proposed_code_change"]
+    }
+};
+
+// ==================== BROWSER SUBAGENT TOOLS (Phase 18) ====================
+
+export const BROWSER_NAVIGATE_TOOL: FunctionDeclaration = {
+    name: "browser_navigate",
+    description: "Opens a headless browser and navigates to a URL. Returns the page title.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            url: { type: Type.STRING, description: "The full URL to load (e.g., https://news.ycombinator.com)" }
+        },
+        required: ["url"]
+    }
+};
+
+export const BROWSER_ACTION_TOOL: FunctionDeclaration = {
+    name: "browser_action",
+    description: "Performs a DOM action (click or type) on the current browser page.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            actionType: { type: Type.STRING, description: "Either 'click' or 'type'" },
+            selector: { type: Type.STRING, description: "The CSS selector for the element" },
+            text: { type: Type.STRING, description: "The text to type (if actionType is 'type')" }
+        },
+        required: ["actionType", "selector"]
+    }
+};
+
+export const BROWSER_EXTRACT_TOOL: FunctionDeclaration = {
+    name: "browser_extract",
+    description: "Extracts all readable text content from the current browser page. Use this after navigating to a page to read it.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {}
+    }
+};
+
+export const BROWSER_SCREENSHOT_TOOL: FunctionDeclaration = {
+    name: "browser_screenshot",
+    description: "Takes a full-page screenshot of the current browser page. Returns the file path to the saved PNG image. Use this to capture visual evidence of web pages for the user.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {}
+    }
+};
+
+// ==================== CODE EXECUTION TOOL ====================
+
+export interface ExecuteCodeArgs {
+    language: 'python' | 'javascript' | 'typescript' | 'bash';
+    code: string;
+    timeout?: number;
+    purpose?: string;  // Optional: Describe what the code should do (for security review)
+}
+
+export const EXECUTE_CODE_TOOL: FunctionDeclaration = {
+    name: "execute_code",
+    description: "Execute code in a sandboxed environment. Use for testing, data processing, or automation. Safety limits apply.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            language: {
+                type: Type.STRING,
+                description: "Programming language.",
+                enum: ["python", "javascript", "typescript", "bash"]
+            },
+            code: {
+                type: Type.STRING,
+                description: "The code to execute."
+            },
+            timeout: {
+                type: Type.NUMBER,
+                description: "Maximum execution time in seconds. Default: 30."
+            }
+        },
+        required: ["language", "code"]
+    }
+};
+
 export const ARCHITECT_AUDIT_TOOL: FunctionDeclaration = {
     name: "architect_audit",
     description: "Perform a self-audit of the system architecture, documentation sync, and structural alignment. Use this to verify the health of the Agency OS code and documentation.",
     parameters: {
         type: Type.OBJECT,
         properties: {}
+    }
+};
+
+export interface IntrospectDatabaseArgs {
+    uri: string;
+    dbType: 'sqlite' | 'postgres' | 'mysql' | 'mongo';
+}
+
+export const INTROSPECT_DATABASE_TOOL: FunctionDeclaration = {
+    name: "introspect_database",
+    description: "Introspects an external database schema based on a connection URI. Automatically adapts Silhouette OS by generating new Database Query Tools. Use this when the user wants to connect the system to an external database to make the system independent and universally adaptable.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            uri: { type: Type.STRING, description: 'The absolute file path (for SQLite) or connection string (for Postgres/MySQL)' },
+            dbType: { type: Type.STRING, description: 'Type of database: sqlite, postgres, mysql, mongo', enum: ['sqlite', 'postgres', 'mysql', 'mongo'] }
+        },
+        required: ['uri', 'dbType']
     }
 };
 
@@ -788,6 +1012,8 @@ export const AGENT_TOOLS = [
     SYSTEM_OPEN_APP_TOOL,
     SYSTEM_GET_SCREENSHOT_TOOL,
     SYSTEM_GET_INFO_TOOL,
+    // Code Execution
+    EXECUTE_CODE_TOOL,
     // Architectural Self-Awareness
     ARCHITECT_AUDIT_TOOL
 ];
@@ -1070,38 +1296,7 @@ export const WORKSPACE_SEARCH_TOOL: FunctionDeclaration = {
     }
 };
 
-// ==================== CODE EXECUTION TOOL ====================
 
-export interface ExecuteCodeArgs {
-    language: 'python' | 'javascript' | 'typescript' | 'bash';
-    code: string;
-    timeout?: number;
-    purpose?: string;  // Optional: Describe what the code should do (for security review)
-}
-
-export const EXECUTE_CODE_TOOL: FunctionDeclaration = {
-    name: "execute_code",
-    description: "Execute code in a sandboxed environment. Use for testing, data processing, or automation. Safety limits apply.",
-    parameters: {
-        type: Type.OBJECT,
-        properties: {
-            language: {
-                type: Type.STRING,
-                description: "Programming language.",
-                enum: ["python", "javascript", "typescript", "bash"]
-            },
-            code: {
-                type: Type.STRING,
-                description: "The code to execute."
-            },
-            timeout: {
-                type: Type.NUMBER,
-                description: "Maximum execution time in seconds. Default: 30."
-            }
-        },
-        required: ["language", "code"]
-    }
-};
 
 // ==================== COMPLETE TOOLS EXPORT ====================
 

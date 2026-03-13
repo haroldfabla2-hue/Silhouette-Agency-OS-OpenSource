@@ -184,7 +184,7 @@ class HubStrengtheningService {
                 WHERE r.lastAccessed IS NOT NULL 
                   AND r.lastAccessed < timestamp() - 600000
                 WITH r, a, b
-                LIMIT $batchSize
+                LIMIT toInteger($batchSize)
                 SET r.weight = CASE
                     WHEN a.id IN $hubIds OR b.id IN $hubIds 
                     THEN r.weight - ($decayRate * $hubProtection)
@@ -208,7 +208,7 @@ class HubStrengtheningService {
                 WHERE r.weight IS NOT NULL AND r.weight < $threshold
                   AND NOT (a.id IN $hubIds AND b.id IN $hubIds)
                 WITH r
-                LIMIT $batchSize
+                LIMIT toInteger($batchSize)
                 DELETE r
                 RETURN count(*) as prunedCount
             `;

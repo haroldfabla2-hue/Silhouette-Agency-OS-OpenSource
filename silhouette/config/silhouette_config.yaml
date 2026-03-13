@@ -127,8 +127,10 @@ inference:
   use_cache: true
 
 hardware:
-  # Target: NVIDIA RTX 3050 4GB
-  device: "cuda"
+  # GPU auto-detection: run "python scripts/detect_gpu.py" to see your config
+  # Supported devices: "auto", "cuda", "mps", "cpu"
+  # "auto" will detect your GPU at startup and select the best backend
+  device: "auto"
   device_ids: [0]
-  max_memory_gb: 3.5  # Leave 0.5GB headroom
-  compile_model: true  # torch.compile for speedup
+  max_memory_gb: "auto"  # "auto" = detect VRAM and use 85% headroom
+  compile_model: "auto"  # "auto" = true for CUDA/ROCm, false for MPS/CPU

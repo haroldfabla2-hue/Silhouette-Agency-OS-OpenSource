@@ -68,20 +68,43 @@ export const DrivePanel: React.FC<DrivePanelProps> = ({ isOpen, onClose, onFileS
         }
     };
 
+    // Track auth polling interval so it can be cleaned up on unmount
+    const authIntervalRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+
+    useEffect(() => {
+        return () => {
+            // Clean up auth polling if component unmounts during OAuth flow
+            if (authIntervalRef.current) {
+                clearInterval(authIntervalRef.current);
+                authIntervalRef.current = null;
+            }
+        };
+    }, []);
+
     const handleConnect = () => {
         window.open('/v1/drive/auth', 'Google Drive', 'width=500,height=600');
-        // Listen for success
-        const checkInterval = setInterval(async () => {
-            const res = await fetch('/v1/drive/status');
-            const data = await res.json();
-            if (data.authenticated) {
-                clearInterval(checkInterval);
-                setConnected(true);
-                loadFiles();
-            }
+        // Clear any previous polling
+        if (authIntervalRef.current) clearInterval(authIntervalRef.current);
+
+        authIntervalRef.current = setInterval(async () => {
+            try {
+                const res = await fetch('/v1/drive/status');
+                const data = await res.json();
+                if (data.authenticated) {
+                    if (authIntervalRef.current) clearInterval(authIntervalRef.current);
+                    authIntervalRef.current = null;
+                    setConnected(true);
+                    loadFiles();
+                }
+            } catch { /* ignore polling errors */ }
         }, 2000);
         // Stop after 2 minutes
-        setTimeout(() => clearInterval(checkInterval), 120000);
+        setTimeout(() => {
+            if (authIntervalRef.current) {
+                clearInterval(authIntervalRef.current);
+                authIntervalRef.current = null;
+            }
+        }, 120000);
     };
 
     const handleFolderClick = (folder: DriveFile) => {

@@ -11,7 +11,7 @@ accelerate>=0.26.0
 modelscope
 
 # Optimization
-bitsandbytes>=0.41.0  # For 8-bit quantization
+bitsandbytes>=0.41.0  # For 8-bit quantization (NVIDIA only - skipped on AMD/Intel/CPU)
 
 # Utilities
 numpy

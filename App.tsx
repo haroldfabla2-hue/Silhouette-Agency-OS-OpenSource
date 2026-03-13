@@ -45,6 +45,7 @@ const App: React.FC = () => {
 
   const [currentUserRole, setCurrentUserRole] = useState<UserRole>(UserRole.ADMIN);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [autonomyConfig, setAutonomyConfig] = useState<AutonomousConfig>(DEFAULT_AUTONOMOUS_CONFIG);
   const [liveThoughts, setLiveThoughts] = useState<string[]>([]);
@@ -69,10 +70,10 @@ const App: React.FC = () => {
     activeAgents: 0,
     agentsInVram: 0,
     agentsInRam: 0,
-    introspectionDepth: parseInt(localStorage.getItem('silhouette_introspection_depth') || '32'),
+    introspectionDepth: (() => { try { return parseInt(localStorage.getItem('silhouette_introspection_depth') || '32'); } catch { return 32; } })(),
     awarenessScore: 85.0,
     fps: 60,
-    currentMode: (localStorage.getItem('silhouette_power_mode') as SystemMode) || SystemMode.ECO,
+    currentMode: (() => { try { return (localStorage.getItem('silhouette_power_mode') as SystemMode) || SystemMode.ECO; } catch { return SystemMode.ECO; } })(),
     tokenUsageToday: 0,
     currentStage: WorkflowStage.IDLE,
     jsHeapSize: 0,
@@ -130,7 +131,8 @@ const App: React.FC = () => {
             realCpu: data.telemetry.cpu || 0,
             gpu: data.telemetry.gpu,
             providerHealth: data.telemetry.providerHealth,
-            mediaQueue: data.telemetry.mediaQueue
+            mediaQueue: data.telemetry.mediaQueue,
+            brain: data.telemetry.brain // [NEW] Unified Daemon cognitive data
           }));
         }
 
@@ -172,74 +174,88 @@ const App: React.FC = () => {
   }, []); // [NEURO-UPDATE] SSE BRIDGE (Server -> Client Bus)
 
   useEffect(() => {
-    console.log("🔌 [SSE] Connecting to Neural Uplink...");
-    const evtSource = new EventSource(`/v1/factory/stream?apiKey=${DEFAULT_API_CONFIG.apiKey}`);
+    let evtSource: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectDelay = 1000; // Start at 1s, exponential backoff up to 30s
+    let isCancelled = false;
 
-    evtSource.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        if (data.type === 'bus_event') {
-          // [PA-045] Unwrap Server Bus Events so components hear the actual protocol
-          // Server sends: { type: 'bus_event', payload: { type: 'PROTOCOL_VISUAL_REQUEST', payload: {} } }
-          const innerEvent = data.payload;
-          if (innerEvent && innerEvent.type) {
-            systemBus.emit(innerEvent.type, innerEvent.payload, 'SERVER_BRIDGE');
-          }
-        } else if (data.type) {
-          // Legacy direct events or Logs
-          systemBus.emit(data.type, data.payload, 'SERVER_BRIDGE');
-          // ... existing logic ...
+    function connectSSE() {
+      if (isCancelled) return;
 
-          // Special Handlers for UI state caching
-          if (data.type === SystemProtocol.TASK_COMPLETION) {
-            console.log("✅ [SSE] Task Completed:", data.payload);
-          }
+      console.log("[SSE] Connecting to Neural Uplink...");
+      evtSource = new EventSource(`/v1/factory/stream?apiKey=${DEFAULT_API_CONFIG.apiKey}`);
 
-          // [UI CONTROL] Handle navigation and UI action commands from Silhouette
-          if (data.type === SystemProtocol.UI_REFRESH && data.payload?.uiCommand) {
-            const cmd = data.payload.uiCommand;
-            console.log("🎮 [SSE] UI Command received:", cmd);
+      evtSource.onopen = () => {
+        console.log("[SSE] Connected.");
+        reconnectDelay = 1000; // Reset backoff on successful connection
+      };
 
-            if (cmd.type === 'NAVIGATE') {
-              // Navigate to tab
-              setActiveTab(cmd.destination);
-              if (cmd.message) {
-                console.log(`📍 Navigation message: ${cmd.message}`);
-              }
-            } else if (cmd.type === 'ACTION') {
-              // Handle UI actions
-              if (cmd.action === 'open_panel') {
-                if (cmd.panel === 'drive') setDriveOpen(true);
-                else if (cmd.panel === 'email') setEmailOpen(true);
-              } else if (cmd.action === 'close_panel') {
-                if (cmd.panel === 'drive') setDriveOpen(false);
-                else if (cmd.panel === 'email') setEmailOpen(false);
-              } else if (cmd.action === 'highlight' && cmd.target) {
-                // Highlight element with visual effect
-                const el = document.querySelector(cmd.target);
-                if (el) {
-                  el.classList.add('silhouette-highlight');
-                  setTimeout(() => el.classList.remove('silhouette-highlight'), cmd.durationMs || 3000);
+      evtSource.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.type === 'bus_event') {
+            const innerEvent = data.payload;
+            if (innerEvent && innerEvent.type) {
+              systemBus.emit(innerEvent.type, innerEvent.payload, 'SERVER_BRIDGE');
+            }
+          } else if (data.type) {
+            systemBus.emit(data.type, data.payload, 'SERVER_BRIDGE');
+
+            if (data.type === SystemProtocol.TASK_COMPLETION) {
+              console.log("[SSE] Task Completed:", data.payload);
+            }
+
+            if (data.type === SystemProtocol.UI_REFRESH && data.payload?.uiCommand) {
+              const cmd = data.payload.uiCommand;
+
+              if (cmd.type === 'NAVIGATE') {
+                setActiveTab(cmd.destination);
+              } else if (cmd.type === 'ACTION') {
+                if (cmd.action === 'open_panel') {
+                  if (cmd.panel === 'drive') setDriveOpen(true);
+                  else if (cmd.panel === 'email') setEmailOpen(true);
+                } else if (cmd.action === 'close_panel') {
+                  if (cmd.panel === 'drive') setDriveOpen(false);
+                  else if (cmd.panel === 'email') setEmailOpen(false);
+                } else if (cmd.action === 'highlight' && cmd.target) {
+                  const el = document.querySelector(cmd.target);
+                  if (el) {
+                    el.classList.add('silhouette-highlight');
+                    setTimeout(() => el.classList.remove('silhouette-highlight'), cmd.durationMs || 3000);
+                  }
                 }
               }
             }
           }
+        } catch (err) {
+          // Ignore parse errors for heartbeat/keepalive messages
         }
-      } catch (err) {
-        // console.error("SSE Parse Error", err);
-      }
-    };
+      };
+
+      evtSource.onerror = () => {
+        if (isCancelled) return;
+        console.warn(`[SSE] Connection lost. Reconnecting in ${reconnectDelay / 1000}s...`);
+        evtSource?.close();
+        evtSource = null;
+        reconnectTimer = setTimeout(() => {
+          reconnectDelay = Math.min(reconnectDelay * 2, 30000); // Exponential backoff, max 30s
+          connectSSE();
+        }, reconnectDelay);
+      };
+    }
+
+    connectSSE();
 
     return () => {
-      evtSource.close();
+      isCancelled = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      evtSource?.close();
     };
   }, []);
 
   const handleModeChange = (mode: SystemMode) => {
     setMetrics(prev => ({ ...prev, currentMode: mode }));
     localStorage.setItem('silhouette_power_mode', mode);
-    // Sync with server
-    // Sync with server
     api.post('/v1/system/mode', { mode }).catch(console.error);
   };
 
@@ -354,13 +370,38 @@ const App: React.FC = () => {
           onAgentThought={handleAgentThought}
         />
       </Suspense>
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onDriveClick={() => setDriveOpen(true)} onEmailClick={() => setEmailOpen(true)} />
-      <main className={`flex-1 ${paddingClass} overflow-y-auto relative`}>
-        {/* Notification Center in top-right corner */}
-        <div className="absolute top-4 right-4 z-40">
+
+      <Sidebar 
+        activeTab={activeTab} 
+        setActiveTab={(tab) => {
+          setActiveTab(tab);
+          setIsMobileMenuOpen(false); // Close on mobile after click
+        }} 
+        isMobileOpen={isMobileMenuOpen}
+        onCloseMobile={() => setIsMobileMenuOpen(false)}
+        onDriveClick={() => setDriveOpen(true)} 
+        onEmailClick={() => setEmailOpen(true)} 
+      />
+
+      <main className={`flex-1 ${paddingClass} overflow-y-auto relative pt-16 md:pt-8 w-full`}>
+        {/* Mobile Header */}
+        <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-slate-950/80 backdrop-blur border-b border-cyan-900/50 z-30 flex items-center justify-between px-4">
+          <div className="font-bold text-cyan-400 tracking-wider">SILHOUETTE</div>
+          <button 
+            onClick={() => setIsMobileMenuOpen(true)}
+            className="p-2 text-cyan-400 hover:bg-cyan-900/30 rounded"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Notification Center in mt-mobile to avoid overlapping Header */}
+        <div className="absolute top-20 md:top-4 right-4 z-40">
           <NotificationCenter />
         </div>
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 via-purple-500 to-cyan-500 opacity-50"></div>
+        <div className="absolute top-16 md:top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 via-purple-500 to-cyan-500 opacity-50"></div>
         <Suspense fallback={
           <div className="flex items-center justify-center h-full text-cyan-400">
             Loading module...

@@ -18,20 +18,46 @@ const getEnvUrl = (): string => {
 };
 export const API_BASE_URL = getEnvUrl();
 
+const REQUEST_TIMEOUT_MS = 30000; // 30s default timeout
+
 const getHeaders = () => {
-    return {
+    const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${DEFAULT_API_CONFIG.apiKey}`
     };
+
+    // Attach Local Auth Session ID if present
+    const sessionId = localStorage.getItem('silhouette_session_id');
+    if (sessionId) {
+        headers['x-session-id'] = sessionId;
+    }
+
+    return headers;
 };
+
+/** Parse error response body for detailed error messages */
+async function parseErrorResponse(res: Response): Promise<string> {
+    try {
+        const body = await res.json();
+        return body?.error || body?.message || body?.detail || res.statusText;
+    } catch {
+        return res.statusText || `HTTP ${res.status}`;
+    }
+}
+
+/** Create an AbortSignal with timeout */
+function withTimeout(timeoutMs: number = REQUEST_TIMEOUT_MS): AbortSignal {
+    return AbortSignal.timeout(timeoutMs);
+}
 
 export const api = {
     get: async <T>(endpoint: string): Promise<T> => {
         const res = await fetch(`${API_BASE_URL}${endpoint}`, {
             method: 'GET',
-            headers: getHeaders()
+            headers: getHeaders(),
+            signal: withTimeout()
         });
-        if (!res.ok) throw new Error(`API Error: ${res.statusText}`);
+        if (!res.ok) throw new Error(await parseErrorResponse(res));
         return res.json();
     },
 
@@ -39,9 +65,10 @@ export const api = {
         const res = await fetch(`${API_BASE_URL}${endpoint}`, {
             method: 'POST',
             headers: getHeaders(),
-            body: JSON.stringify(body)
+            body: JSON.stringify(body),
+            signal: withTimeout()
         });
-        if (!res.ok) throw new Error(`API Error: ${res.statusText}`);
+        if (!res.ok) throw new Error(await parseErrorResponse(res));
         return res.json();
     },
 
@@ -49,9 +76,10 @@ export const api = {
         const res = await fetch(`${API_BASE_URL}${endpoint}`, {
             method: 'PUT',
             headers: getHeaders(),
-            body: JSON.stringify(body)
+            body: JSON.stringify(body),
+            signal: withTimeout()
         });
-        if (!res.ok) throw new Error(`API Error: ${res.statusText}`);
+        if (!res.ok) throw new Error(await parseErrorResponse(res));
         return res.json();
     },
 
@@ -59,18 +87,20 @@ export const api = {
         const res = await fetch(`${API_BASE_URL}${endpoint}`, {
             method: 'PATCH',
             headers: getHeaders(),
-            body: JSON.stringify(body)
+            body: JSON.stringify(body),
+            signal: withTimeout()
         });
-        if (!res.ok) throw new Error(`API Error: ${res.statusText}`);
+        if (!res.ok) throw new Error(await parseErrorResponse(res));
         return res.json();
     },
 
     delete: async <T>(endpoint: string): Promise<T> => {
         const res = await fetch(`${API_BASE_URL}${endpoint}`, {
             method: 'DELETE',
-            headers: getHeaders()
+            headers: getHeaders(),
+            signal: withTimeout()
         });
-        if (!res.ok) throw new Error(`API Error: ${res.statusText}`);
+        if (!res.ok) throw new Error(await parseErrorResponse(res));
         return res.json();
     },
 
@@ -78,13 +108,23 @@ export const api = {
     // For FormData uploads, DO NOT set Content-Type - browser will set multipart/form-data with boundary
     fetch: async (endpoint: string, options: RequestInit = {}) => {
         const isFormData = options.body instanceof FormData;
+
+        const baseHeaders: Record<string, string> = {
+            'Authorization': `Bearer ${DEFAULT_API_CONFIG.apiKey}`
+        };
+        const sessionId = localStorage.getItem('silhouette_session_id');
+        if (sessionId) {
+            baseHeaders['x-session-id'] = sessionId;
+        }
+
         const headers = isFormData
-            ? { 'Authorization': `Bearer ${DEFAULT_API_CONFIG.apiKey}`, ...options.headers }
+            ? { ...baseHeaders, ...options.headers }
             : { ...getHeaders(), ...options.headers };
 
         return fetch(`${API_BASE_URL}${endpoint}`, {
             ...options,
-            headers
+            headers,
+            signal: options.signal || withTimeout(60000) // 60s for raw fetch (uploads, streams)
         });
     }
 };

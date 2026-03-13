@@ -9,7 +9,7 @@ services:
       - "7474:7474" # HTTP
       - "7687:7687" # Bolt
     environment:
-      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-silhouette_graph_2025}
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-changeme_on_first_run}
       NEO4J_apoc_export_file_enabled: "true"
       NEO4J_apoc_import_file_enabled: "true"
       NEO4J_PLUGINS: '["apoc"]'
@@ -55,7 +55,7 @@ services:
     environment:
       - NEO4J_URI=bolt://neo4j:7687
       - NEO4J_USER=neo4j
-      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-silhouette_graph_2025}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-changeme_on_first_run}
     depends_on:
       - neo4j
     restart: unless-stopped

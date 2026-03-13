@@ -9,6 +9,8 @@ import { systemBus } from '../../services/systemBus';
 import { SystemProtocol } from '../../types';
 import { sessionManager } from '../gateway/sessionManager';
 import { gateway } from '../gateway/wsGateway';
+import { nervousSystem } from '../../services/connectionNervousSystem';
+import { identityService, UserRole } from '../../services/identityService';
 
 // ─── Channel Router ──────────────────────────────────────────────────────────
 
@@ -44,6 +46,24 @@ class ChannelRouter {
                 try {
                     await ch.connect();
                     console.log(`[ChannelRouter] ✅ ${ch.name} connected`);
+
+                    // Auto-register with Nervous System for health monitoring
+                    nervousSystem.register({
+                        id: `channel:${ch.name}`,
+                        name: `Channel: ${ch.name}`,
+                        type: 'LOCAL_SERVICE',
+                        isRequired: false,
+                        checkHealth: async () => ch.isConnected(),
+                        reconnect: async () => {
+                            try {
+                                await ch.connect();
+                                return ch.isConnected();
+                            } catch {
+                                return false;
+                            }
+                        }
+                    });
+
                     systemBus.emit(SystemProtocol.CONNECTION_RESTORED, {
                         service: `channel:${ch.name}`,
                         timestamp: Date.now(),
@@ -66,6 +86,11 @@ class ChannelRouter {
      * Disconnect all channels gracefully.
      */
     async disconnectAll(): Promise<void> {
+        // Unregister all channels from Nervous System monitoring
+        for (const ch of this.channels.values()) {
+            nervousSystem.unregister(`channel:${ch.name}`);
+        }
+
         await Promise.allSettled(
             Array.from(this.channels.values()).map(ch => ch.disconnect())
         );
@@ -80,6 +105,10 @@ class ChannelRouter {
      */
     private async handleIncoming(msg: IncomingMessage): Promise<void> {
         try {
+            // 0. Lookup User Identity and Role
+            const user = identityService.getUserByChannelId(msg.channel, msg.senderId);
+            msg.role = user ? user.role : UserRole.GUEST;
+
             // 1. Get or create a session for this chat
             const sessionId = this.getOrCreateSessionForChat(msg);
 
@@ -90,6 +119,7 @@ class ChannelRouter {
                 metadata: {
                     channel: msg.channel,
                     agentId: msg.senderId,
+                    userRole: msg.role, // Track role in history
                 },
             });
 
@@ -104,6 +134,8 @@ class ChannelRouter {
                 isGroup: msg.isGroup,
                 media: msg.media,
                 timestamp: msg.timestamp,
+                isReadOnly: msg.isReadOnly,
+                role: msg.role, // Pass role to Orchestrator
             }, `channel:${msg.channel}`);
 
             // 4. Notify WS clients about the channel message

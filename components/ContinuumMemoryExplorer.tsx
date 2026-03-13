@@ -186,8 +186,8 @@ const ContinuumMemoryExplorer: React.FC = () => {
                                 <p>No universal memories found.</p>
                             </div>
                         )}
-                        {searchResults.map((node, idx) => (
-                            <div key={node.id + idx} className={`bg-slate-900 border ${node.tier === MemoryTier.DEEP ? 'border-green-900/50 bg-green-900/10' : 'border-slate-800'} p-4 rounded-lg relative hover:border-cyan-500/50 transition-all`}>
+                        {searchResults.map((node) => (
+                            <div key={`${node.id}-${node.timestamp}`} className={`bg-slate-900 border ${node.tier === MemoryTier.DEEP ? 'border-green-900/50 bg-green-900/10' : 'border-slate-800'} p-4 rounded-lg relative hover:border-cyan-500/50 transition-all`}>
                                 <div className="flex justify-between items-start mb-2">
                                     <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${node.tier === MemoryTier.DEEP ? 'bg-green-500/20 text-green-400' :
                                         node.tier === MemoryTier.MEDIUM ? 'bg-purple-500/20 text-purple-400' : 'bg-slate-700 text-slate-300'

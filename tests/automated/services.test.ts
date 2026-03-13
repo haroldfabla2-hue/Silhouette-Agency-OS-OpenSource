@@ -33,7 +33,7 @@ describe('Core Services', () => {
     });
 
     describe('SettingsManager', () => {
-        it('should return valid settings structure', async () => {
+        it('should return valid settings structure and persist updates', async () => {
             const { settingsManager } = await import('../../services/settingsManager');
             const settings = settingsManager.getSettings();
 
@@ -41,6 +41,18 @@ describe('Core Services', () => {
             expect(settings).toHaveProperty('integrations');
             expect(settings).toHaveProperty('permissions');
             expect(settings).toHaveProperty('notifications');
+
+            // Test an update roundtrip
+            const originalThemeMode = settings.theme?.mode || 'dark';
+            const testThemeMode = originalThemeMode === 'light' ? 'dark' : 'light';
+
+            settingsManager.updateTheme({ mode: testThemeMode });
+            const updated = settingsManager.getSettings();
+
+            expect(updated.theme.mode).toBe(testThemeMode);
+
+            // Revert
+            settingsManager.updateTheme({ mode: originalThemeMode });
         });
     });
 
@@ -59,11 +71,53 @@ describe('Core Services', () => {
     });
 });
 
-describe('Security Services', () => {
-    describe('SecuritySquad', () => {
-        it('should have RBAC permission matrix', async () => {
-            const { securitySquad } = await import('../../services/security/securitySquad');
-            expect(securitySquad).toBeDefined();
+describe('SecuritySquad', () => {
+    it('should perform static analysis on code reviews', async () => {
+        const { securitySquad } = await import('../../services/security/securitySquad');
+        expect(securitySquad).toBeDefined();
+
+        // Test security evaluation
+        const review = await securitySquad.reviewCode({
+            requesterId: 'test-agent',
+            language: 'javascript',
+            code: 'console.log("safe code");',
+            traceId: 'test-trace-123',
+            statedPurpose: 'Static analysis tests'
+        });
+
+        expect(typeof review.approved).toBe('boolean');
+        expect(review.riskLevel).toBeDefined();
+    });
+});
+
+describe('Memory Services', () => {
+    describe('ContinuumMemory', () => {
+        it('should execute a full store and retrieve roundtrip natively', async () => {
+            const { continuum } = await import('../../services/continuumMemory');
+            const { MemoryTier } = await import('../../types');
+
+            // Store a test memory
+            const testId = `test-mem-${Date.now()}`;
+            const testContent = `This is an automated test memory for assertion ${testId}`;
+
+            await continuum.store(
+                testContent,
+                MemoryTier.WORKING,
+                ['test', 'vitest', 'automated'],
+                true // skipIngestion
+            );
+
+            // Give it a brief moment to index if Qdrant/SQLite is async
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            // Retrieve the memory generically via exact match or related tags
+            const retrieved = await continuum.retrieve(testContent, 'vitest');
+
+            expect(Array.isArray(retrieved)).toBe(true);
+            const found = retrieved.find(m => m.content === testContent);
+            expect(found).toBeDefined();
+            expect(found?.content).toBe(testContent);
+            expect(found?.tags).toContain('vitest');
         });
     });
 });

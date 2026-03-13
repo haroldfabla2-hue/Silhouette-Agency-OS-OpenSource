@@ -2,33 +2,8 @@ import { StockImage, BrandDNA, CreativeContext } from '../types';
 import { DEFAULT_API_CONFIG } from '../constants';
 import { costEstimator } from './costEstimator';
 
-// Mock data for "Real Stock" simulation until API Key is provided
-const MOCK_STOCK_DB: StockImage[] = [
-    {
-        id: 'img_01',
-        url: 'https://images.unsplash.com/photo-1600607686527-6fb886090705?auto=format&fit=crop&w=2000&q=80',
-        thumb: 'https://images.unsplash.com/photo-1600607686527-6fb886090705?auto=format&fit=crop&w=400&q=80',
-        photographer: 'Dan Gold',
-        description: 'Luxury marble counter with morning light',
-        primaryColor: '#f5f5f5'
-    },
-    {
-        id: 'img_02',
-        url: 'https://images.unsplash.com/photo-1556228453-efd6c1ff04f6?auto=format&fit=crop&w=2000&q=80',
-        thumb: 'https://images.unsplash.com/photo-1556228453-efd6c1ff04f6?auto=format&fit=crop&w=400&q=80',
-        photographer: 'Austin Distel',
-        description: 'Modern office desk with tech vibes',
-        primaryColor: '#1a1a1a'
-    },
-    {
-        id: 'img_03',
-        url: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=2000&q=80',
-        thumb: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=400&q=80',
-        photographer: 'Sean Oulashin',
-        description: 'Tropical beach sunset background',
-        primaryColor: '#ff9900'
-    }
-];
+
+
 
 export class StockService {
     private apiKey: string | null = null;
@@ -45,6 +20,23 @@ export class StockService {
     private async loadConfig() {
         if (this.apiKey) return; // Already loaded
         try {
+            // First try secrets vault (new secure storage)
+            const res = await fetch(`http://localhost:${DEFAULT_API_CONFIG.port}/v1/system/secrets/unsplash`, {
+                headers: { 'Authorization': `Bearer ${DEFAULT_API_CONFIG.apiKey}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                if (data.credentials?.accessKey) {
+                    this.apiKey = data.credentials.accessKey;
+                    console.log("[StockService] Loaded API Key from Secrets Vault.");
+                    return;
+                }
+            }
+        } catch (e) {
+            // Vault might not be available
+        }
+        try {
+            // Fallback to system config
             const res = await fetch(`http://localhost:${DEFAULT_API_CONFIG.port}/v1/system/config`);
             const config = await res.json();
             if (config.unsplashKey) {
@@ -52,7 +44,7 @@ export class StockService {
                 console.log("[StockService] Loaded API Key from System Config.");
             }
         } catch (e) {
-            console.warn("[StockService] Failed to load config (using mock data):", e);
+            console.warn("[StockService] Failed to load config:", e);
         }
     }
 
@@ -107,8 +99,9 @@ export class StockService {
             return this.fetchFromUnsplash(optimizedQuery, this.apiKey);
         }
 
-        console.warn("[StockService] No API Key found. Using Mock Data.");
-        return this.simulateSearch(optimizedQuery);
+        // NO MOCK DATA — return empty with clear error
+        console.warn("[StockService] ⚠️ No UNSPLASH_ACCESS_KEY configured. Set it in Settings → Integrations or .env.local.");
+        return [];
     }
 
     private async fetchFromUnsplash(query: string, apiKey: string): Promise<StockImage[]> {
@@ -135,22 +128,9 @@ export class StockService {
                 primaryColor: img.color
             }));
         } catch (error) {
-            console.error("[StockService] API Failed, falling back to mock:", error);
-            return this.simulateSearch(query);
+            console.error("[StockService] API request failed:", error);
+            return [];
         }
-    }
-
-    private async simulateSearch(query: string): Promise<StockImage[]> {
-        // Simulate network latency
-        await new Promise(resolve => setTimeout(resolve, 800));
-
-        // Simple keyword matching simulation
-        const results = MOCK_STOCK_DB.filter(img => {
-            const searchTerms = query.toLowerCase().split(' ');
-            return searchTerms.some(term => img.description.toLowerCase().includes(term)) || true; // Fallback to return all for demo
-        });
-
-        return results.slice(0, 3);
     }
 
     /**

@@ -164,12 +164,24 @@ For general questions, respond conversationally without using tools.
     /**
      * Execute a single tool call
      */
-    async executeTool(toolName: string, args: Record<string, any>): Promise<ToolCallResult> {
+    async executeTool(toolName: string, args: Record<string, any>, userRole: string = 'GUEST'): Promise<ToolCallResult> {
         const startTime = Date.now();
 
         console.log(`[CHAT_TOOLS] 🔧 Executing tool: ${toolName}`, args);
 
         try {
+            // [ANTI-PROMPT INJECTION] Hard Security Enforcement
+            const highRiskTools = ['execute_command', 'write_file', 'janus_repair', 'delete_file', 'shell', 'spawn_agent', 'git_commit', 'git_push'];
+            if (userRole === 'GUEST' && highRiskTools.includes(toolName.toLowerCase())) {
+                console.error(`[SECURITY] 🚨 Blocked high-risk tool "${toolName}" for GUEST user`);
+                return {
+                    toolName,
+                    success: false,
+                    error: `SECURITY_VIOLATION: Insufficient privileges (GUEST). This action is prohibited.`,
+                    executionTimeMs: Date.now() - startTime
+                };
+            }
+
             // Check if tool exists
             if (!toolRegistry.hasTool(toolName)) {
                 console.log(`[CHAT_TOOLS] ⚠️ Tool not found: ${toolName}, attempting auto-creation...`);
@@ -242,7 +254,7 @@ For general questions, respond conversationally without using tools.
     /**
      * Process all tool calls from response text
      */
-    async processToolCalls(responseText: string): Promise<{
+    async processToolCalls(responseText: string, userRole: string = 'GUEST'): Promise<{
         toolResults: ToolCallResult[];
         enhancedResponse: string;
     }> {
@@ -258,7 +270,7 @@ For general questions, respond conversationally without using tools.
         let enhancedResponse = responseText;
 
         for (const call of calls) {
-            const result = await this.executeTool(call.toolName, call.args);
+            const result = await this.executeTool(call.toolName, call.args, userRole);
             results.push(result);
 
             // Replace tool tag with result in response

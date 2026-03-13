@@ -12,7 +12,7 @@ import { nervousSystem } from './connectionNervousSystem';
 
 class GraphService {
     private driver: Driver | null = null;
-    private isConnected: boolean = false;
+    private _isConnected: boolean = false; // Renamed to avoid conflict with method
     private isRegistered: boolean = false;
     private connectionTimeout: NodeJS.Timeout | null = null;
     private readonly TIMEOUT_MS = 5 * 60 * 1000; // 5 Minutes
@@ -21,12 +21,24 @@ class GraphService {
         // Lazy initialization - connection managed by NervousSystem
     }
 
+    /** Check if Neo4j is connected. Used by health check endpoint. */
+    public async isConnected(): Promise<boolean> {
+        if (!this.driver) return false;
+        try {
+            await this.driver.verifyConnectivity();
+            return true;
+        } catch {
+            return false;
+        }
+        return this._isConnected;
+    }
+
     /**
-     * Simple connection - no retry logic here.
-     * All resilience is handled by ConnectionNervousSystem.
+     * Connects to Neo4j with Exponential Backoff Retry.
+     * Fires a SYSTEM_ALERT if all retries fail so the Swarm can self-heal.
      */
-    public async connect(): Promise<boolean> {
-        if (this.isConnected && this.driver) {
+    public async connect(retries = 3, delayMs = 2000): Promise<boolean> {
+        if (this._isConnected && this.driver) {
             this.resetConnectionTimeout(); // Keep alive on manual connect
             return true;
         }
@@ -37,39 +49,65 @@ class GraphService {
             return false;
         }
 
-        try {
-            console.log("[GRAPH] 🔗 Connecting to Neo4j...");
-            this.driver = neo4j.driver(
-                process.env.NEO4J_URI || 'bolt://127.0.0.1:7787',
-                neo4j.auth.basic(
-                    process.env.NEO4J_USER || 'neo4j',
-                    process.env.NEO4J_PASSWORD || 'silhouette_graph_2035'
-                ),
-                {
-                    maxConnectionLifetime: 30 * 60 * 1000,
-                    maxConnectionPoolSize: 50,
-                    connectionAcquisitionTimeout: 5000
+        let attempt = 0;
+        while (attempt < retries) {
+            try {
+                if (attempt > 0) {
+                    console.log(`[GRAPH] 🔄 Reconnection attempt ${attempt + 1}/${retries}...`);
+                    await new Promise(r => setTimeout(r, delayMs * Math.pow(2, attempt - 1)));
+                } else {
+                    console.log("[GRAPH] 🔗 Connecting to Neo4j...");
                 }
-            );
 
-            await this.driver.verifyConnectivity();
-            this.isConnected = true;
-            console.log("[GRAPH] ✅ Connected to Neo4j.");
+                this.driver = neo4j.driver(
+                    process.env.NEO4J_URI || 'bolt://127.0.0.1:7787',
+                    neo4j.auth.basic(
+                        process.env.NEO4J_USER || 'neo4j',
+                        process.env.NEO4J_PASSWORD || 'changeme_on_first_run'
+                    ),
+                    {
+                        maxConnectionLifetime: 30 * 60 * 1000,
+                        maxConnectionPoolSize: 50,
+                        connectionAcquisitionTimeout: 5000
+                    }
+                );
 
-            this.resetConnectionTimeout();
-            this.registerWithNervousSystem();
+                await this.driver.verifyConnectivity();
+                this._isConnected = true;
+                console.log("[GRAPH] ✅ Connected to Neo4j.");
 
-            // Initialize schema in background
-            setImmediate(() => this.initializeSchema().catch(() => { }));
+                this.resetConnectionTimeout();
+                this.registerWithNervousSystem();
 
-            return true;
+                // Initialize schema in background
+                setImmediate(() => this.initializeSchema().catch(() => { }));
 
-        } catch (error: any) {
-            console.error("[GRAPH] ❌ Connection failed:", error.message);
-            this.isConnected = false;
-            this.driver = null;
-            return false;
+                return true;
+
+            } catch (error: any) {
+                console.error(`[GRAPH] ❌ Connection failed (Attempt ${attempt + 1}/${retries}):`, error.message);
+                this._isConnected = false;
+                this.driver = null;
+                attempt++;
+            }
         }
+
+        // Exhausted retries
+        console.error("[GRAPH] 🚨 FATAL: Neo4j connection completely failed after retries.");
+        try {
+            const { systemBus } = await import('./systemBus');
+            systemBus.emit('PROTOCOL_SYSTEM_ALERT' as any, {
+                component: 'Neo4j',
+                error: 'Connection Exhaustion',
+                severity: 'CRITICAL',
+                message: 'Neo4j database failed to connect after multiple exponential backoff retries. Recommend deploying Remediation Agent.',
+                timestamp: Date.now()
+            }, 'system-kernel');
+        } catch (e) {
+            console.error("[GRAPH] Could not emit SYSTEM_ALERT:", e);
+        }
+
+        return false;
     }
 
     private resetConnectionTimeout() {
@@ -84,7 +122,7 @@ class GraphService {
      * Check if connected (used by NervousSystem health check)
      */
     public isConnectedStatus(): boolean {
-        return this.isConnected;
+        return this._isConnected;
     }
 
     /**
@@ -100,7 +138,7 @@ class GraphService {
             } catch { }
         }
         this.driver = null;
-        this.isConnected = false;
+        this._isConnected = false;
     }
 
     private registerWithNervousSystem() {
@@ -162,7 +200,7 @@ class GraphService {
             // Auto-recovery for stale connections
             if (error.code === 'ServiceUnavailable' || error.code === 'SessionExpired') {
                 console.warn("[GRAPH] ⚠️ Connection stale, reconnecting...");
-                this.isConnected = false;
+                this._isConnected = false;
                 if (this.driver) await this.driver.close();
                 this.driver = null;
 
@@ -189,7 +227,7 @@ class GraphService {
     public async close() {
         if (this.driver) {
             await this.driver.close();
-            this.isConnected = false;
+            this._isConnected = false;
             console.log("[GRAPH] 🔌 Disconnected.");
         }
     }
@@ -263,7 +301,7 @@ class GraphService {
             ORDER BY degree DESC
             LIMIT $limit
         `;
-        return this.runQuery(query, { limit });
+        return this.runQuery(query, { limit: neo4j.int(limit) });
     }
 
     /**
@@ -372,14 +410,21 @@ class GraphService {
      * Get all user facts from Neo4j
      * Used by UI to display eternal memory
      */
-    public async getUserFacts(): Promise<{ category: string; content: string; confidence: number; timestamp: number }[]> {
+    public async getUserFacts(userId?: string): Promise<{ category: string; content: string; confidence: number; timestamp: number }[]> {
         if (!this.isConnected || !this.driver) {
             await this.connect();
             if (!this.driver) return [];
         }
 
         try {
-            const query = `
+            // If userId is provided, filter by that user. Otherwise, fallback to global (admin only)
+            const query = userId ? `
+                MATCH (u:User {id: $userId})-[:HAS_FACT]->(f:Fact)
+                RETURN f.category as category, f.content as content, 
+                       f.confidence as confidence, f.timestamp as timestamp
+                ORDER BY f.timestamp DESC
+                LIMIT 50
+            ` : `
                 MATCH (f:Fact)
                 RETURN f.category as category, f.content as content, 
                        f.confidence as confidence, f.timestamp as timestamp
@@ -387,7 +432,7 @@ class GraphService {
                 LIMIT 50
             `;
 
-            const records = await this.runQuery(query, {});
+            const records = await this.runQuery(query, { userId });
             return records.map((r: any) => ({
                 category: r.category || 'general',
                 content: r.content || '',
@@ -417,35 +462,8 @@ class GraphService {
         try {
             const content = `${concept.name}: ${concept.description || 'No description'}`;
 
-            // Generate embedding (try Gemini first, fallback handled internally)
+            // Generate embedding (try Gemini first, falls back to Local xenova/transformers)
             let embedding = await geminiEmbed(content);
-
-            // Fallback to direct Ollama HTTP call if Gemini fails
-            if (!embedding) {
-                try {
-                    console.log("[GRAPH] 🔄 Trying Ollama embeddings via HTTP...");
-                    const response = await fetch('http://localhost:11434/api/embeddings', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            model: 'nomic-embed-text',
-                            prompt: content
-                        })
-                    });
-
-                    if (response.ok) {
-                        const data = await response.json();
-                        if (data.embedding && Array.isArray(data.embedding)) {
-                            embedding = data.embedding;
-                            console.log(`[GRAPH] ✅ Ollama embedding generated (${embedding.length} dims)`);
-                        }
-                    } else {
-                        console.warn("[GRAPH] Ollama embedding request failed:", response.status);
-                    }
-                } catch (ollamaError: any) {
-                    console.warn("[GRAPH] Ollama embedding fallback failed:", ollamaError.message);
-                }
-            }
 
             if (!embedding) {
                 console.warn(`[GRAPH] ⚠️ No embedding generated for concept: ${concept.id}`);

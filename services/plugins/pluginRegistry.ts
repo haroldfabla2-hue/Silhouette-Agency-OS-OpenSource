@@ -3,6 +3,7 @@ import { toolRegistry, DynamicTool } from '../tools/toolRegistry';
 import { skillRegistry } from '../skills/skillRegistry';
 import { systemBus } from '../systemBus';
 import { SystemProtocol } from '../../types';
+import { nervousSystem } from '../connectionNervousSystem';
 
 /**
  * PLUGIN REGISTRY
@@ -154,6 +155,18 @@ class PluginRegistry {
                     await plugin.onStart();
                 }
 
+                // 5. Auto-register monitoring with Nervous System
+                if (plugin.monitoring) {
+                    nervousSystem.register({
+                        id: plugin.monitoring.monitorId,
+                        name: plugin.monitoring.monitorName,
+                        type: plugin.monitoring.monitorType,
+                        isRequired: plugin.monitoring.isRequired,
+                        checkHealth: () => plugin.monitoring!.checkHealth(),
+                        reconnect: () => plugin.monitoring!.reconnect()
+                    });
+                }
+
                 console.log(`[PluginRegistry] ✅ Initialized: ${plugin.name}`);
 
             } catch (error) {
@@ -186,6 +199,11 @@ class PluginRegistry {
      */
     public async shutdown(): Promise<void> {
         for (const [id, plugin] of this.plugins) {
+            // Unregister monitoring before stopping
+            if (plugin.monitoring) {
+                nervousSystem.unregister(plugin.monitoring.monitorId);
+            }
+
             if (plugin.onStop) {
                 try {
                     await plugin.onStop();

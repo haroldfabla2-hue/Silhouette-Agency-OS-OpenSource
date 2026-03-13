@@ -390,10 +390,11 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ currentUserRole, onChangeRole, 
             const decoder = new TextDecoder();
             let fullText = '';
             let buffer = '';
+            let isDone = false;
 
-            while (true) {
+            while (!isDone) {
                 const { done, value } = await reader.read();
-                if (done) break;
+                isDone = done;
 
                 buffer += decoder.decode(value, { stream: true });
                 const lines = buffer.split('\n\n');
@@ -468,10 +469,11 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ currentUserRole, onChangeRole, 
             </div>
 
             {isOpen && (
-                <div className="w-[800px] h-[600px] bg-slate-950 border border-slate-800 rounded-xl shadow-2xl flex overflow-hidden animate-in fade-in slide-in-from-bottom-10">
+                <div className="w-[95vw] md:w-[800px] h-[85vh] md:h-[600px] bg-slate-950 border border-slate-800 rounded-xl shadow-2xl flex overflow-hidden animate-in fade-in slide-in-from-bottom-10 relative">
 
                     {/* SIDEBAR */}
-                    <div className={`${isSidebarOpen ? 'w-64' : 'w-0'} bg-slate-900 border-r border-slate-800 transition-all duration-300 flex flex-col overflow-hidden`}>
+                    {/* Mobile: Absolute overlay. Desktop: Relative side-by-side */}
+                    <div className={`${isSidebarOpen ? 'w-3/4 md:w-64 translate-x-0' : 'w-0 -translate-x-full'} absolute md:relative z-20 h-full bg-slate-900 border-r border-slate-800 transition-all duration-300 flex flex-col overflow-hidden`}>
                         <div className="p-3 border-b border-slate-800 flex justify-between items-center">
                             <span className="text-xs font-bold text-slate-400">SESSIONS</span>
                             <button onClick={createNewSession} className="text-cyan-400 hover:text-cyan-300">
@@ -505,7 +507,12 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ currentUserRole, onChangeRole, 
                     </div>
 
                     {/* MAIN CHAT AREA */}
-                    <div className="flex-1 flex flex-col min-w-0 bg-slate-950/50">
+                    <div className="flex-1 flex flex-col min-w-0 bg-slate-950/50 w-full relative z-10">
+
+                        {/* Mobile Overlay to close sidebar when tapping outside */}
+                        {isSidebarOpen && (
+                            <div className="absolute inset-0 bg-black/50 z-10 md:hidden" onClick={() => setIsSidebarOpen(false)} />
+                        )}
 
                         {/* HEADER */}
                         <div className="h-12 border-b border-slate-800 flex items-center justify-between px-4 bg-slate-900/50">

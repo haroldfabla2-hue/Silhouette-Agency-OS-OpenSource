@@ -21,20 +21,50 @@ export const EvolutionLab: React.FC<EvolutionLabProps> = ({ agents }) => {
     const [evolutionLog, setEvolutionLog] = useState<string[]>([]);
     const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
 
-    // Fetch health scores for agents
+    // Fetch real health scores from agent state
     const fetchHealthScores = async () => {
         setIsLoading(true);
         try {
-            // In production, this would call an API endpoint
-            // For now, we simulate with placeholder data
-            const mockData: AgentHealth[] = agents.slice(0, 10).map(a => ({
-                agentId: a.id,
-                agentName: a.name,
-                score: Math.floor(Math.random() * 40) + 60, // 60-100 simulated
-            }));
-            setHealthData(mockData);
+            const agentData = await api.get<any>('/v1/orchestrator/agents');
+            const agentList = Array.isArray(agentData) ? agentData : (agentData?.agents || agents);
+
+            // Compute health score from real agent metadata
+            const healthScores: AgentHealth[] = agentList.slice(0, 20).map((a: any) => {
+                let score = 50; // Base score
+
+                // Activity bonus: agents active in last hour get +20
+                const lastActive = a.lastActive || 0;
+                const hoursSinceActive = (Date.now() - lastActive) / (1000 * 60 * 60);
+                if (hoursSinceActive < 1) score += 20;
+                else if (hoursSinceActive < 6) score += 10;
+
+                // Thought process bonus: agents with thoughts are healthier
+                const thoughts = a.thoughtProcess || [];
+                score += Math.min(20, thoughts.length * 4);
+
+                // Status bonus
+                if (a.status === 'IDLE' || a.status === 'WORKING') score += 10;
+                if (a.status === 'CRITICAL') score -= 30;
+
+                return {
+                    agentId: a.id,
+                    agentName: a.name,
+                    score: Math.max(0, Math.min(100, score)),
+                    lastEvolved: a.lastEvolved,
+                    improvements: thoughts.slice(-3)
+                };
+            });
+
+            setHealthData(healthScores);
         } catch (error) {
             console.error('[EvolutionLab] Failed to fetch health:', error);
+            // Fallback to agents prop if API fails
+            const fallback: AgentHealth[] = agents.slice(0, 10).map(a => ({
+                agentId: a.id,
+                agentName: a.name,
+                score: a.status === 'CRITICAL' ? 30 : a.status === 'IDLE' ? 70 : 50,
+            }));
+            setHealthData(fallback);
         } finally {
             setIsLoading(false);
         }

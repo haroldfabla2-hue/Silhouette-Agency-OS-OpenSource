@@ -100,19 +100,23 @@ export interface SilhouetteConfig {
             enabled: boolean;
             sessionPath: string;
             accessMode: 'open' | 'allowlist';
+            responseMode?: 'auto-reply' | 'read-only';
             allowFrom?: string[];  // Allowed phone numbers
         };
         telegram?: {
             enabled: boolean;
             botToken: string;
             accessMode: 'open' | 'allowlist';
+            responseMode?: 'auto-reply' | 'read-only';
             allowedChatIds?: number[];
         };
         discord?: {
             enabled: boolean;
             botToken: string;
             accessMode: 'open' | 'allowlist';
+            responseMode?: 'auto-reply' | 'read-only';
             allowedGuildIds?: string[];
+            allowedChannelIds?: string[];
         };
     };
 
@@ -311,16 +315,81 @@ function applyEnvOverrides(config: SilhouetteConfig): void {
         'NEO4J_PASSWORD': (v) => config.memory.neo4j.password = v,
         'REDIS_HOST': (v) => config.memory.redis.host = v,
         'REDIS_PORT': (v) => config.memory.redis.port = parseInt(v, 10),
-        // Channels
+        // Channels - Telegram
         'TELEGRAM_BOT_TOKEN': (v) => {
             if (!config.channels.telegram) config.channels.telegram = { enabled: true, botToken: '', accessMode: 'allowlist' };
             config.channels.telegram.botToken = v;
             config.channels.telegram.enabled = true;
         },
+        'TELEGRAM_ACCESS_MODE': (v) => {
+            if (config.channels.telegram) {
+                config.channels.telegram.accessMode = v as 'open' | 'allowlist';
+            }
+        },
+        'TELEGRAM_RESPONSE_MODE': (v) => {
+            if (config.channels.telegram) {
+                config.channels.telegram.responseMode = v as 'auto-reply' | 'read-only';
+            }
+        },
+        'TELEGRAM_ALLOWED_IDS': (v) => {
+            if (config.channels.telegram) {
+                // Parse comma-separated numeric IDs
+                const ids = v.split(',').map(id => parseInt(id.trim(), 10)).filter(id => !isNaN(id));
+                if (ids.length > 0) {
+                    config.channels.telegram.allowedChatIds = ids;
+                }
+            }
+        },
+
+        // Channels - Discord
         'DISCORD_BOT_TOKEN': (v) => {
             if (!config.channels.discord) config.channels.discord = { enabled: true, botToken: '', accessMode: 'allowlist' };
             config.channels.discord.botToken = v;
             config.channels.discord.enabled = true;
+        },
+        'DISCORD_ACCESS_MODE': (v) => {
+            if (config.channels.discord) {
+                config.channels.discord.accessMode = v as 'open' | 'allowlist';
+            }
+        },
+        'DISCORD_RESPONSE_MODE': (v) => {
+            if (config.channels.discord) {
+                config.channels.discord.responseMode = v as 'auto-reply' | 'read-only';
+            }
+        },
+        'DISCORD_ALLOWED_GUILDS': (v) => {
+            if (config.channels.discord) {
+                const ids = v.split(',').map(id => id.trim()).filter(id => id);
+                if (ids.length > 0) config.channels.discord.allowedGuildIds = ids;
+            }
+        },
+        'DISCORD_ALLOWED_CHANNELS': (v) => {
+            if (config.channels.discord) {
+                const ids = v.split(',').map(id => id.trim()).filter(id => id);
+                if (ids.length > 0) config.channels.discord.allowedChannelIds = ids;
+            }
+        },
+
+        // Channels - WhatsApp
+        'WHATSAPP_ENABLED': (v) => {
+            if (!config.channels.whatsapp) config.channels.whatsapp = { enabled: true, sessionPath: './data/whatsapp-session', accessMode: 'allowlist' };
+            config.channels.whatsapp.enabled = v.toLowerCase() === 'true';
+        },
+        'WHATSAPP_ACCESS_MODE': (v) => {
+            if (config.channels.whatsapp) {
+                config.channels.whatsapp.accessMode = v as 'open' | 'allowlist';
+            }
+        },
+        'WHATSAPP_RESPONSE_MODE': (v) => {
+            if (config.channels.whatsapp) {
+                config.channels.whatsapp.responseMode = v as 'auto-reply' | 'read-only';
+            }
+        },
+        'WHATSAPP_ALLOWED_IDS': (v) => {
+            if (config.channels.whatsapp) {
+                const ids = v.split(',').map(id => id.trim()).filter(id => id);
+                if (ids.length > 0) config.channels.whatsapp.allowFrom = ids;
+            }
         },
         // Media
         'ELEVENLABS_API_KEY': (v) => {

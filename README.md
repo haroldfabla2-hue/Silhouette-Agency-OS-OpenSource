@@ -1,14 +1,14 @@
 <div align="center">
 
-# 🌑 Silhouette Agency OS
+# 🌑 Silhouette Agency OS (V3 Deep Upgrade)
 
 ### An Autonomous Cognitive Operating System for Creative Agencies
 
 **Created by Harold Fabla**
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.1-blue.svg)](#)
-[![Status](https://img.shields.io/badge/Status-Active%20Development-green.svg)](#)
+[![Version](https://img.shields.io/badge/Version-3.0-blue.svg)](#)
+[![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen.svg)](#)
 
 </div>
 
@@ -18,11 +18,15 @@
 
 **Silhouette Agency OS** is an experimental autonomous cognitive operating system designed for creative agencies. It implements a novel multi-layered architecture that combines **introspective reasoning**, **continuous memory**, and **self-modification capabilities** through a unified agentic framework.
 
-Unlike traditional AI assistants, Silhouette operates as a persistent cognitive entity with:
-- **Consciousness simulation** through integrated introspection loops
-- **Long-term memory** with semantic indexing and graph-based knowledge representation
-- **Self-evolution** through controlled GitHub-based code modifications
-- **Multi-modal perception** including visual, audio, and textual processing
+### 🌟 V3 Key Features (Deep Upgrade)
+- **Z3 Logic OODA Loop**: Mathematical verification of high-risk actions to prevent autonomous hallucinations.
+- **RAG Web Scraping pipeline**: Deep LanceDB integration extracting global knowledge dynamically.
+- **Cognitive Omnichannel RBAC**: Native Anti-Prompt Injection shields over Telegram, Discord, and WhatsApp.
+- **Auto-Evolution**: Capable of self-cloning and pushing to private GitHub repositories autonomously.
+- **Multi-modal perception** including visual, audio, and textual processing.
+- **Debate Swarm Matrix**: Multi-agent consensus mechanisms for complex logical reasoning (Critics vs Creators).
+- **Host-Aware Dockerization**: Production-grade isolation that retains root host OS management capabilities.
+- **Fully Responsive UI**: Mobile-first architecture ready for edge-device deployments via Coolify and Traefik.
 
 > [!WARNING]
 > **This is an experimental hobby project.** Silhouette began as a personal assistant and evolved into an autonomous, self-improving system. While powerful, it executes code and modifies files. **Use with caution and review all actions.** See [SECURITY.md](SECURITY.md) for more details.
@@ -58,7 +62,7 @@ The emergence of Large Language Models (LLMs) has created new possibilities for 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                     PRESENTATION LAYER                          │
-│                    (React/TypeScript UI)                        │
+│           React UI  ·  Telegram  ·  WhatsApp  ·  Discord        │
 ├─────────────────────────────────────────────────────────────────┤
 │                   ORCHESTRATION LAYER                           │
 │     ┌─────────────────────────────────────────────────────┐     │
@@ -75,25 +79,35 @@ The emergence of Large Language Models (LLMs) has created new possibilities for 
 ├─────────────────────────────────────────────────────────────────┤
 │                    CAPABILITY LAYER                             │
 │     ToolExecutor: web_search, code_execution, image_gen,       │
-│                   video_gen, memory_write, git_operations      │
+│                   video_gen, memory_write, git_operations       │
+├─────────────────────────────────────────────────────────────────┤
+│              COMMUNICATION CHANNELS                             │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐           │
+│  │ Telegram │ │ WhatsApp │ │ Discord  │ │  Web UI  │           │
+│  │(Grammy)  │ │(Baileys) │ │(discordjs│ │ (React)  │           │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘           │
 ├─────────────────────────────────────────────────────────────────┤
 │                    DATA & STATE LAYER                           │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐           │
-│  │ LanceDB  │ │ SQLite   │ │  Redis   │ │ GitHub   │           │
-│  │(Vectors) │ │(Persist) │ │ (Cache)  │ │(Version) │           │
+│  │ Postgres │ │ pgvector │ │  Redis   │ │ Neo4j    │           │
+│  │(Relatnl) │ │(Vectors) │ │ (Cache)  │ │ (Graph)  │           │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘           │
+├─────────────────────────────────────────────────────────────────┤
+│                  PRODUCTION LAYER                               │
+│  Coolify (Traefik SSL) · Host-Aware Docker · Janus V2   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 2.1 Five-Layer Architecture
+### 2.1 Six-Layer Architecture
 
 | Layer | Component | Responsibility |
 |-------|-----------|----------------|
-| **Presentation** | WPF/React UI | User interaction, visualization |
-| **Orchestration** | ManagerAgent | Cognitive loop coordination |
-| **Specialists** | Agent Pool | Domain-specific task execution |
+| **Presentation** | React UI (Responsive) + Messaging Channels | User interaction, visualization on Desktop & Mobile |
+| **Orchestration** | ManagerAgent & Debate Matrix | Cognitive loop coordination and multi-agent consensus |
+| **Specialists** | Agent Pool (500+) | Domain-specific task execution |
 | **Capabilities** | ToolExecutor | External world interaction |
-| **Data/State** | Multi-DB | Persistence and memory |
+| **Communication** | Telegram, WhatsApp, Discord | Multi-channel messaging |
+| **Production** | Coolify, Docker, Traefik, Caddy | Supervision, Host-aware deployment, SSL |
 
 ---
 
@@ -116,7 +130,10 @@ enum CognitivePhase {
 }
 ```
 
-### 3.2 Continuum Memory
+### 3.2 Truth Evaluation (Janitor Engine)
+A critical part of cognition is resolving conflicting information. The **Janitor Engine** continuously scans working and episodic memory (last 24h) in the background. If it detects logical or narrative contradictions (e.g., "User prefers X" vs "User prefers Y"), it uses an LLM synthesis pass to resolve the conflict, generating a singular **Meta-Truth** and pruning the obsolete fragmented memories.
+
+### 3.3 Continuum Memory
 
 A multi-tier memory system inspired by human cognition:
 
@@ -127,9 +144,10 @@ A multi-tier memory system inspired by human cognition:
 | **Episodic** | Days | Recent experiences and outcomes |
 | **Semantic** | Permanent | Facts, skills, learned patterns |
 
-Memory is indexed using vector embeddings (LanceDB) with graph-based relationship tracking.
+Memory is indexed using vector embeddings (PostgreSQL + `pgvector`) with graph-based relationship tracking. 
+**Recent Enhancement (Database Adapter):** Silhouette now leverages a unified `IDatabaseAdapter` connecting to an enterprise-grade PostgreSQL backend. It merges Semantic (Deep) and Episodic (Medium) memories in a single, token-optimized vector search (`HNSW` indexes), significantly improving contextual awareness without overwhelming the LLM context window.
 
-### 3.3 Self-Evolution System
+### 3.4 Self-Evolution System
 
 Silhouette can propose modifications to its own codebase through:
 
@@ -141,7 +159,35 @@ Silhouette can propose modifications to its own codebase through:
 Silhouette → Proposes PR → Human Reviews → Approve/Reject → Merge
 ```
 
-### 3.4 Multi-LLM Orchestration
+### 3.5 Swarm Matrix V2 (Debate Squads)
+For complex tasks, Silhouette dynamically spawns specialized "Debate Squads" instead of relying on a single agent.
+- A **Creator Agent** proposes an initial solution.
+- A **Critic Agent** finds flaws and reviews logical consistency.
+- The **Orchestrator (Judge)** synthesizes the debate into a finalized meta-consensus.
+
+### 3.5 Multi-Channel Communication
+
+All channels share the same Brain, memory, and session context:
+
+| Channel | Library | UX Features |
+|---------|---------|-------------|
+| **Telegram** | Grammy | Continuous typing (4s), Markdown fallback, message chunking (4000 char) |
+| **WhatsApp** | Baileys | Composing presence, auto-trust first contact, QR login |
+| **Discord** | discord.js | Typing (9s), 1950 char chunking, guild/channel allowlists |
+| **Web UI** | React + WebSocket | Real-time dashboard, introspection hub |
+
+**Security:** Each channel supports `open`, `allowlist`, and `auto-trust` access modes. Internal thoughts are filtered (10 patterns) to prevent LLM reasoning from leaking to users.
+
+### 3.6 Janus V2 — Intelligent Supervisor
+
+The Janus process supervisor goes beyond simple restarts:
+
+- **Crash Analysis**: Captures stderr, computes crash signatures
+- **Exponential Backoff**: 1s → 2s → 4s → ... → 30s max
+- **LLM Repair**: After 3 crashes with same signature, invokes Gemini API for root-cause analysis
+- **Learning Loop**: Feeds crash reports to self-evolution system
+
+### 3.7 Multi-LLM Orchestration
 
 The system implements a resilient multi-provider architecture via the **LLM Gateway**:
 
@@ -158,44 +204,30 @@ The system implements a resilient multi-provider architecture via the **LLM Gate
 └─────────────────────────────────────────────────────┘
 ```
 
-Each provider is monitored by a **Circuit Breaker** pattern that:
-- Tracks success/failure rates
-- Suspends failing providers temporarily
-- Automatically recovers after cooldown
-- Provides health metrics via `/v1/system/llm-health`
+### 3.8 Google Workspace Integration
 
-### 3.5 Autonomous Exploration (CuriosityService)
+Unified plugin with per-service activation:
 
-Silhouette proactively expands its knowledge through:
+| Service | Capabilities |
+|---------|-------------|
+| Calendar | List, create, update events |
+| Drive | Upload, search, share files |
+| Gmail | Read, send, search emails |
+| Docs | Create, read documents |
+| Sheets | Read, write, create spreadsheets |
+| Slides, Forms, Meet, Places | Full integration |
 
-1. **Topic Tracking**: Monitors frequently mentioned subjects
-2. **Gap Detection**: Identifies topics lacking depth in the knowledge graph
-3. **Question Generation**: Creates research questions using LLM
-4. **Web Research**: Searches for answers during idle time
-5. **Integration**: Stores discoveries in memory and graph
+OAuth2 flow: `GET /v1/google-auth/start?services=calendar,drive`
 
-### 3.6 Scale-Free Knowledge Network
+### 3.9 Production Security
 
-The knowledge graph implements **scale-free network** principles:
-
-- **Hebbian Learning**: "Neurons that fire together, wire together"
-- **Hub Formation**: Frequently accessed nodes become highly connected
-- **Synaptic Pruning**: Weak, unused connections decay over time
-- **Watts-Strogatz Shortcuts**: Dream cycles create long-range bridges
-
-### 3.7 Per-Agent File System (PAFS)
-Agents are no longer just database entries. Each agent possesses a rich identity stored in specific markdown files (`IDENTITY.md`, `SOUL.md`, `MEMORY.md`, etc.), allowing for deep personalization and persistent context that survives upgrades.
-
-### 3.8 Bilateral Hierarchical Communication
-Agents communicate using a strict hierarchy (Core → Leader → Specialist → Worker) via a session-based protocol (`agentConversation`). This supports:
-- **Direct Messaging**: One-on-one inter-agent chats
-- **Group Sessions**: Multi-agent collaborative war rooms
-- **Delegation**: Structured task hand-off with reporting
-
-### 3.9 Genesis Protocol V2
-A sophisticated 5-phase "birth" process for new agents:
-`SEED` → `BOOTSTRAP` → `HANDSHAKE` → `TEACHING` → `VALIDATION`.
-This ensures every agent is fully cognizant of its role, tools, and team before accepting tasks.
+| Layer | Implementation |
+|-------|---------------|
+| **Auth** | JWT middleware on all API routes |
+| **Rate Limiting** | Global, chat, and admin limiters |
+| **Prompt Sanitization** | 14 injection patterns neutralized |
+| **CORS** | Configurable origin whitelist |
+| **Secrets** | `.env.local` + SQLite secrets vault |
 
 ---
 
@@ -209,6 +241,7 @@ This ensures every agent is fully cognizant of its role, tools, and team before 
 | `code_execution` | Python sandbox for computation |
 | `image_generation` | Visual asset creation |
 | `video_generation` | Motion content (WAN, AnimateDiff) |
+| `introspect_database`| Universal Database Introspector (Postgres/MySQL/SQLite/Mongo) |
 | `memory_write` | Long-term knowledge encoding |
 | `git_operations` | Self-modification proposals |
 
@@ -230,64 +263,44 @@ Integrated visual and audio processing:
 
 ---
 
-## 5. Novel Contributions
+## 5. Installation & Deployment
 
-### 5.1 Architectural Innovations
+> [!CAUTION]
+> **SECURITY DISCLAIMER:** This is a hobbyist research project. It grants autonomous LLMs access to your file system and terminal. Run this inside a sandbox, VM, or strictly controlled environment. The creator is not responsible for accidental data loss or API costs.
 
-1. **Cognitive Loop Integration**: Unlike chain-of-thought, implements a persistent introspection cycle
-2. **Memory Continuum**: Unified memory across sessions with decay and consolidation
-3. **Controlled Self-Evolution**: Safe self-modification through version control
-4. **Dynamic Capability Injection**: Runtime tool loading based on task requirements
-5. **Autonomous Curiosity**: Proactive knowledge gap filling during idle time
-6. **Scale-Free Knowledge Network**: Hub-based topology with Hebbian learning
+### Interactive Setup (Recommended)
 
-### 5.2 Research Implications
-
-This system demonstrates:
-- Feasibility of persistent AI identity
-- Practical implementation of cognitive architectures
-- Human-AI collaborative evolution patterns
-- Multi-modal agency in creative domains
-- Autonomous knowledge acquisition patterns
-
----
-
-## 6. Installation & Usage
-
-### Setup
-**One-Command Setup:**
 ```bash
-npm run setup:intelligent
+# Clone the repository
+git clone https://github.com/haroldfabla2-hue/Silhouette-Agency-OS-OpenSource.git
+cd Silhouette-Agency-OS-OpenSource
+
+# Install dependencies
+npm install
+
+# Run interactive setup wizard
+npx tsx scripts/setup.ts
 ```
 
-**Personalize:**
-```bash
-npm run personalize
-```
+The wizard guides you through:
+1. **LLM Providers** — Gemini, OpenAI, Groq, DeepSeek, Ollama
+2. **Messaging Channels** — Telegram, WhatsApp, Discord
+3. **Deployment Mode** — Local, Docker, VPS, Coolify
+4. **Domain & SSL** — Auto-provisioned via Caddy + Let's Encrypt
+5. **Google Workspace** — OAuth2 credentials
 
 ### Starting the System
 
-**Option A: Full Stack (Local)**
-```bash
-npm run start:stack
-```
-*Starts Databases (Docker), Backend, Frontend, Voice Engine, and Visual Cortex. Best for development.*
+| Mode | Command | Use Case |
+|------|---------|----------|
+| **Local** | `npm run boot` | Development (Janus supervisor) |
+| **Docker Base** | `docker-compose up -d` | Local containerized deployment |
+| **Coolify (SaaS)** | Git Link → Docker Compose | **Recommended**: Paste GitHub repo into Coolify and enable Traefik Reverse Proxy |
 
-**Option B: Production (Docker)**
-```bash
-npm run docker:prod
-```
-*Runs the entire stack in isolated containers with persistent data. Best for deployment.*
+**Note on Host-Aware Docker:** Silhouette's Compose file intentionally mounts `/var/run/docker.sock` and `/host` to empower the AGI to manage its own VPS host environments. Do not deploy on shared un-trusted clouds without caution.
 
-**Option C: Frontend Only**
-```bash
-npm run dev
-```
-*Starts only the React UI (requires backend running separately).*
-
-For detailed architecture, see **[ARCHITECTURE.md](ARCHITECTURE.md)**.
-For production deployment, see **[docker-compose.prod.yml](docker-compose.prod.yml)**.
-For installation guide, see **[INSTALL.md](INSTALL.md)**.
+For detailed deployment instructions, see **[DEPLOY.md](DEPLOY.md)**.
+For architecture details, see **[ARCHITECTURE.md](ARCHITECTURE.md)**.
 
 This starts:
 - Frontend (React) on `http://localhost:5173`
@@ -317,18 +330,38 @@ Silhouette: [Analyzes codebase, proposes PR with enhancements]
 | `/v1/system/llm-health` | GET | LLM provider status |
 | `/v1/system/status` | GET | System status |
 
+## 8. V5 Advanced Features & Implementation
+
+### 8.1 Genesis V2 Protocol (Agent Factory)
+Genesis V2 is the intelligent birth protocol that scaffolds new cognitive entities automatically. It runs automatically when the OS detects a missing or uninitialized agent roster.
+- **How it works:** It uses a 5-step lifecycle (`SEED` → `BOOTSTRAP` → `HANDSHAKE` → `TEACHING` → `VALIDATION`). It generates the underlying `AGENT_TPL` files (Soul, Heartbeat, Tools, Memory), forces the agent to read the Orchestrator's operational manual via the `SystemBus`, and validates their logical consistency.
+- **Triggering Genesis:** Genesis runs autonomously via `npm run setup:intelligent` or when an unresolved Core agent is invoked. 
+
+### 8.2 Reasoning Verification v2 (Z3 Symbolic Logic)
+Located in `services/introspectionEngine.ts`. The kernel intercepts the agent's proposed `AgentAction`s and mathematically proves they do not violate universal invariants (e.g., trying to modify and delete the same resource simultaneously). 
+- **Usage:** This runs silently on every single cognitive cycle. If a logical contradiction is found, the system halts the loop and emits a `SYSTEM_ALERT`.
+
+### 8.3 Extended Modalities (Haptics & Olfactory)
+Software-level drivers located in `services/sensory/hapticsDriver.ts` and `olfactoryDriver.ts`.
+- **Usage:** Though primarily software abstraction layers for missing physical hardware, these drivers broadcast sensory states (like `HEARTBEAT` haptic pulses or `OZONE` chemical emulation) to the UI's `SENSORY_SNAPSHOT` bus to allow testing immersive biometric hardware setups.
+
+### 8.4 P2P Federated Memory Sync
+Agents can sync Generalized knowledge (`DEEP` tier vectors) with other Silhouette instances on different subnets.
+- **Usage:** Handled autonomously in `services/federatedMemory.ts`. The instance will broadcast generalized learnings on the `HIVE_MIND_SYNC` channel dynamically.
+
 ---
 
-## 8. Future Work
+## 9. Future Work
 
 - [x] Multi-agent swarm coordination
 - [x] Scale-free network topology
 - [x] LLM fallback gateway
 - [x] Autonomous curiosity system
 - [x] **Academic Paper Generation**: Automated pipeline for research, writing, LaTeX formatting, and peer review simulation (`services/paperPipeline.ts`).
-- [ ] **Reasoning Verification v2**: Integration with symbolic logic provers (Current: Introspection Engine).
-- [ ] **Extended Modality**: Haptics & Olfactory (Current: Vision, Audio, 3D Canvas).
-- [ ] **Federated Memory**: P2P knowledge sharing between distinct Silhouette instances.
+- [x] **Reasoning Verification v2**: Integration with symbolic logic provers via `z3-solver`.
+- [x] **Extended Modality**: Software drivers for Haptics & Olfactory.
+- [x] **Federated Memory**: P2P knowledge sharing between distinct Silhouette instances.
+- [x] **Minimax Core Integration**: Native TTS and Visual-Cortex multimodal support mapping to API.
 
 ---
 

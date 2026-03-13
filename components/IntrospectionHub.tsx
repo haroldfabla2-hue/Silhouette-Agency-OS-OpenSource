@@ -11,6 +11,7 @@ import { SystemProtocol } from '../types';
 const KnowledgeGraph = React.lazy(() => import('./KnowledgeGraph'));
 const NeuroPlasticityVis = React.lazy(() => import('./NeuroPlasticityVis'));
 const NeuralLearningDisplay = React.lazy(() => import('./NeuralLearningDisplay'));
+const DiscoveriesFeed = React.lazy(() => import('./DiscoveriesFeed'));
 
 import { ActionIntent, AwarenessMode, Capability, TrainingExample } from '../types';
 import { Brain, Shield, Network, Terminal, BookOpen } from 'lucide-react';
@@ -32,7 +33,7 @@ const IntrospectionHub: React.FC<IntrospectionHubProps> = () => { // Props destr
     const [isDreaming, setIsDreaming] = useState<boolean>(false);
     const [narrativeState, setNarrativeState] = useState<any>(null);
     const [temporalState, setTemporalState] = useState<any>(null);
-    const [activeTab, setActiveTab] = useState<'introspection' | 'PLASTICITY'>('introspection');
+    const [activeTab, setActiveTab] = useState<'introspection' | 'PLASTICITY' | 'feed'>('introspection');
     const [socketConnected, setSocketConnected] = useState(false); // Added for header display
 
     // Placeholder for currentDepth and onSetDepth, as they were removed from props
@@ -122,7 +123,7 @@ const IntrospectionHub: React.FC<IntrospectionHubProps> = () => { // Props destr
         }, 10000); // Reduced from 3s to 10s (App.tsx handles primary polling)
 
         return () => clearInterval(interval);
-    }, [activeConcepts.length]);
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps -- polling interval, activeConcepts read via latest state
 
     const handleInject = async () => {
         if (!injectionPrompt.trim()) return;
@@ -181,10 +182,23 @@ const IntrospectionHub: React.FC<IntrospectionHubProps> = () => { // Props destr
                 <div className="flex gap-1 bg-slate-900/50 p-1 rounded-lg border border-slate-800">
                     <button
                         onClick={() => setActiveTab('introspection')}
-                        className="px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-2 bg-cyan-600 text-white shadow-lg"
+                        className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-2 ${activeTab === 'introspection'
+                                ? 'bg-cyan-600 text-white shadow-lg'
+                                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                            }`}
                     >
                         <Activity size={14} />
                         INTROSPECTION
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('feed')}
+                        className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-2 ${activeTab === 'feed'
+                                ? 'bg-yellow-600 text-white shadow-lg'
+                                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                            }`}
+                    >
+                        <Sparkles size={14} />
+                        DISCOVERIES
                     </button>
                 </div>
             </div>
@@ -192,8 +206,7 @@ const IntrospectionHub: React.FC<IntrospectionHubProps> = () => { // Props destr
             {/* Main Content Area */}
             <div className="flex-1 overflow-hidden relative">
 
-
-                {/* INTROSPECTION TAB (Always Mounted, Hidden via CSS) */}
+                {/* INTROSPECTION TAB */}
                 <div className={`h-full overflow-y-auto custom-scrollbar p-4 ${activeTab === 'introspection' ? 'block' : 'hidden'}`}>
                     <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 min-h-full">
 
@@ -531,6 +544,19 @@ const IntrospectionHub: React.FC<IntrospectionHubProps> = () => { // Props destr
 
                     </div>
                 </div>
+
+                {/* DISCOVERIES FEED TAB */}
+                {activeTab === 'feed' && (
+                    <div className="h-full p-3">
+                        <Suspense fallback={
+                            <div className="h-full flex items-center justify-center text-yellow-400/50 animate-pulse text-sm font-mono">
+                                Loading Event Stream...
+                            </div>
+                        }>
+                            <DiscoveriesFeed className="h-full" />
+                        </Suspense>
+                    </div>
+                )}
 
             </div>
         </div>

@@ -19,7 +19,8 @@ export enum MessageTag {
     TRIGGER = 'TRIGGER',                     // Automated trigger/event
     SYSTEM = 'SYSTEM',                       // System-level message
     HELP_REQUEST = 'HELP_REQUEST',           // Inter-agent help request
-    REMEDIATION = 'REMEDIATION'              // Self-healing/recovery events
+    REMEDIATION = 'REMEDIATION',              // Self-healing/recovery events
+    DEBATE = 'DEBATE'                        // Multi-agent debate message
 }
 
 /**
@@ -73,6 +74,13 @@ class SystemBus {
                 await redisAdapter.connect();
                 this.adapter = redisAdapter;
                 console.log("[SYSTEM BUS] ✅ Upgraded to Redis Adapter.");
+
+                // Re-apply existing subscriptions to the new adapter
+                for (const [protocol, handlers] of this.handlers.entries()) {
+                    for (const handler of handlers) {
+                        this.adapter.subscribe(protocol, handler);
+                    }
+                }
             } catch (err) {
                 console.error("[SYSTEM BUS] Failed to upgrade to Redis, staying on Memory", err);
             }
@@ -163,18 +171,81 @@ class SystemBus {
 
     /**
      * Sends a request and waits for a response (Promise-based).
-     * Used for "Ask for Help" patterns.
+     * Uses adaptive timeout based on protocol type and supports retries.
+     * 
+     * @param timeoutMs Override timeout. Defaults are per-protocol:
+     *   - RESEARCH_REQUEST / SYNTHESIS_REQUEST: 60s
+     *   - TASK_ASSIGNMENT / HELP_PROTOCOL: 45s
+     *   - Default: 30s
      */
-    public async request(targetId: string, protocol: SystemProtocol, payload: any, traceId: string, timeoutMs: number = 10000): Promise<InterAgentMessage> {
+    public async request(
+        targetId: string,
+        protocol: SystemProtocol,
+        payload: any,
+        traceId: string,
+        timeoutMs?: number,
+        maxRetries: number = 2
+    ): Promise<InterAgentMessage> {
+        // Adaptive timeout based on protocol complexity
+        const effectiveTimeout = timeoutMs || this.getProtocolTimeout(protocol);
+
+        let lastError: Error | null = null;
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                return await this._singleRequest(targetId, protocol, payload, traceId, effectiveTimeout, attempt);
+            } catch (err: any) {
+                lastError = err;
+                if (attempt < maxRetries) {
+                    const backoffMs = Math.min(1000 * Math.pow(2, attempt), 10000);
+                    console.warn(`[BUS] ⏳ Request to ${targetId} timed out (attempt ${attempt + 1}/${maxRetries + 1}). Retrying in ${backoffMs}ms...`);
+
+                    // Emit warning event instead of silently failing
+                    this.emit(SystemProtocol.SYSTEM_ALERT, {
+                        type: 'TIMEOUT_WARNING',
+                        targetId,
+                        protocol,
+                        attempt: attempt + 1,
+                        maxRetries: maxRetries + 1,
+                        timeoutMs: effectiveTimeout
+                    }, 'SYSTEM_BUS');
+
+                    await new Promise(resolve => setTimeout(resolve, backoffMs));
+                }
+            }
+        }
+
+        throw lastError || new Error(`Request to ${targetId} exhausted all retries.`);
+    }
+
+    private getProtocolTimeout(protocol: SystemProtocol): number {
+        const timeoutMap: Partial<Record<SystemProtocol, number>> = {
+            [SystemProtocol.RESEARCH_REQUEST]: 60000,
+            [SystemProtocol.SYNTHESIS_REQUEST]: 60000,
+            [SystemProtocol.PAPER_GENERATION_REQUEST]: 60000,
+            [SystemProtocol.TASK_ASSIGNMENT]: 45000,
+            [SystemProtocol.HELP_REQUEST]: 45000,
+            [SystemProtocol.EPISTEMIC_GAP_DETECTED]: 45000,
+        };
+        return timeoutMap[protocol] || 30000;
+    }
+
+    private _singleRequest(
+        targetId: string,
+        protocol: SystemProtocol,
+        payload: any,
+        traceId: string,
+        timeoutMs: number,
+        attempt: number
+    ): Promise<InterAgentMessage> {
         const requestId = crypto.randomUUID();
         const message: InterAgentMessage = {
             id: requestId,
             traceId: traceId,
-            senderId: 'SYSTEM', // Or caller
+            senderId: 'SYSTEM',
             targetId: targetId,
             type: 'REQUEST',
             protocol: protocol,
-            payload: { ...payload, correlationId: requestId }, // Embed ID for correlation
+            payload: { ...payload, correlationId: requestId, attempt },
             timestamp: Date.now(),
             priority: 'NORMAL'
         };
@@ -183,7 +254,7 @@ class SystemBus {
             const timer = setTimeout(() => {
                 if (this.pendingRequests.has(requestId)) {
                     this.pendingRequests.delete(requestId);
-                    reject(new Error(`Request ${requestId} to ${targetId} timed out after ${timeoutMs}ms`));
+                    reject(new Error(`Request ${requestId} to ${targetId} timed out after ${timeoutMs}ms (attempt ${attempt + 1})`));
                 }
             }, timeoutMs);
 

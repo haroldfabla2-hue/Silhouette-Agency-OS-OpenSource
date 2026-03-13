@@ -1,6 +1,5 @@
 import { api } from "../utils/api";
 import { SettingsState, IntegrationSchema, PermissionMatrix, UserRole } from "../types";
-// import { continuum } from "./continuumMemory"; // REMOVED: Frontend service should not import backend logic
 
 // --- SETTINGS MANAGER V1.0 ---
 // Handles configuration, secrets vault, and permission matrices.
@@ -56,6 +55,10 @@ class SettingsManager {
         this.state = this.loadSettings();
         // Initialize default integrations if missing
         this.ensureDefaultIntegrations();
+        // Migrate any existing localStorage secrets to server-side vault
+        this.migrateLocalStorageSecrets();
+        // Load server-side secret status (which services are configured)
+        this.loadServerSecrets();
     }
 
     public getSettings(): SettingsState {
@@ -110,40 +113,95 @@ class SettingsManager {
         return available || null;
     }
 
-    public saveCredential(serviceId: string, data: Record<string, string>) {
-        // In a real server, this would encrypt before saving to disk.
-        // Here we store in memory/localstorage structure.
-        if (!this.state.integrations[serviceId]) {
-            this.state.integrations[serviceId] = {};
+    public async saveCredential(serviceId: string, data: Record<string, string>) {
+        // ── Server-side storage via Secrets Vault API ──
+        try {
+            await api.post(`/v1/system/secrets/${serviceId}`, { credentials: data });
+            console.log(`[SETTINGS] Credentials for ${serviceId} saved to server vault`);
+        } catch (e) {
+            console.error(`[SETTINGS] Failed to save credentials for ${serviceId} to server:`, e);
+            // Fall through — still update local UI state below
         }
-        this.state.integrations[serviceId] = { ...this.state.integrations[serviceId], ...data };
 
-        // Mark as connected
+        // Update local connected status (for fast UI rendering)
         const schema = this.state.registeredIntegrations.find(i => i.id === serviceId);
         if (schema) {
             schema.isConnected = true;
             schema.lastSync = Date.now();
         }
 
-        this.saveSettings();
-
-        // REAL LOGIC: Sync with Backend if it's the Gemini Key
-        if (serviceId === 'gemini' && data.apiKey) {
-            this.syncGeminiKeyToBackend(data.apiKey);
+        // Keep a minimal reference locally (just which keys exist, NOT values)
+        if (!this.state.integrations[serviceId]) {
+            this.state.integrations[serviceId] = {};
         }
+        // Store only key names as markers, not actual values
+        Object.keys(data).forEach(k => {
+            this.state.integrations[serviceId][k] = '••••••••'; // Masked placeholder
+        });
 
-        // Also verify connectivity (Simulated)
+        this.saveSettings();
         return true;
     }
 
-    private async syncGeminiKeyToBackend(apiKey: string) {
+    /**
+     * Load secret status from server to hydrate UI connected indicators.
+     * Called once on init — does NOT fetch raw values, only which services are configured.
+     */
+    private async loadServerSecrets() {
         try {
-            // We need to fetch the port from somewhere, but for now assume 3001 or use window location if applicable
-            // Since this runs in browser, we can use fetch
-            await api.post('/v1/system/config', { apiKey });
-            console.log("[SETTINGS] Synced Gemini Key to Backend");
+            const response = await api.get<{ services: Array<{ id: string; hasCredentials: boolean; keys: string[]; maskedPreview: Record<string, string> }> }>('/v1/system/secrets');
+            if (response.services) {
+                for (const svc of response.services) {
+                    // Mark integration as connected in local state
+                    const schema = this.state.registeredIntegrations.find(i => i.id === svc.id);
+                    if (schema) {
+                        schema.isConnected = true;
+                    }
+                    // Store masked previews for UI display
+                    this.state.integrations[svc.id] = svc.maskedPreview;
+                }
+                this.saveSettings();
+            }
         } catch (e) {
-            console.error("[SETTINGS] Failed to sync key to backend", e);
+            // Server may not be available yet during cold start — this is OK
+            console.warn('[SETTINGS] Could not load server secrets status (server may be starting)');
+        }
+    }
+
+    /**
+     * One-time migration: if secrets exist in old localStorage format (raw values),
+     * upload them to the server vault and replace with masked placeholders.
+     */
+    private async migrateLocalStorageSecrets() {
+        const integrations = this.state.integrations;
+        if (!integrations || Object.keys(integrations).length === 0) return;
+
+        let migratedCount = 0;
+        for (const [serviceId, creds] of Object.entries(integrations)) {
+            if (!creds || typeof creds !== 'object') continue;
+
+            // Check if any value looks like a real secret (not already masked)
+            const hasRealValues = Object.values(creds).some(
+                v => typeof v === 'string' && v.length > 0 && !v.startsWith('••')
+            );
+
+            if (hasRealValues) {
+                try {
+                    await api.post(`/v1/system/secrets/${serviceId}`, { credentials: creds });
+                    // Replace with masked values
+                    Object.keys(creds).forEach(k => {
+                        (creds as any)[k] = '••••••••';
+                    });
+                    migratedCount++;
+                } catch (e) {
+                    // If server isn't ready, we'll try again next time
+                }
+            }
+        }
+
+        if (migratedCount > 0) {
+            console.log(`[SETTINGS] Migrated ${migratedCount} service credentials to server vault`);
+            this.saveSettings();
         }
     }
 

@@ -3,7 +3,7 @@ import requests
 import os
 import json
 
-API_KEY = "AIzaSyDXGN4AR3owdj00YXJMLhcErm5H4MePQUQ"
+API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 URL = f"https://generativelanguage.googleapis.com/v1beta/models?key={API_KEY}"
 
 print(f"🚀 Starting Python Model List Script...")

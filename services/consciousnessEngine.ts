@@ -141,14 +141,19 @@ class ConsciousnessEngine {
         // 3. Emergence (Optimization Success)
         const emergenceFactor = this.metrics.emergenceIndex;
 
-        // 4. Grounding (Semantic Alignment) - NEW
-        // We assume perfect grounding (1.0) if no recent thoughts, otherwise we'd need to fetch from Introspection
-        // Since this runs in tick(), we can't easily get the *last* introspection result without coupling.
-        // For now, we will assume grounding is high unless penalized by emergence.
-        // Ideally, IntrospectionEngine should push grounding score to ConsciousnessEngine.
+        // 4. Network Topology Quality (Small-World σ)
+        let networkFactor = 0;
+        try {
+            const { advancedDiscovery } = await import('./cognitive/advancedDiscovery');
+            const report = await advancedDiscovery.getNetworkTopologyReport();
+            // σ > 3 = excellent small-world → full factor
+            networkFactor = Math.min(1.0, report.sigma / 3.0);
+        } catch (_) {
+            // advancedDiscovery or Neo4j not available
+        }
 
-        // Weighted Phi Score
-        this.metrics.phiScore = (memoryFactor * 0.3) + (throughputFactor * 0.3) + (emergenceFactor * 0.4);
+        // Weighted Phi Score (now includes network topology)
+        this.metrics.phiScore = (memoryFactor * 0.25) + (throughputFactor * 0.25) + (emergenceFactor * 0.3) + (networkFactor * 0.2);
 
         // Determine Level based on Real Score
         if (this.metrics.phiScore > 0.8) this.metrics.level = ConsciousnessLevel.HIGH;

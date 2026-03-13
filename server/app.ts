@@ -12,6 +12,7 @@ import cors from 'cors';
 
 // Security Middleware
 import { authMiddleware } from './middleware/authMiddleware';
+import { promptSanitizerMiddleware } from './middleware/promptSanitizer';
 import { globalLimiter, chatLimiter, adminLimiter } from './middleware/rateLimiter';
 
 // Routes
@@ -24,6 +25,7 @@ import introspectionRoutes from './routes/v1/introspection.routes'; // [NEURO-UP
 import mediaRoutes from './routes/v1/media.routes'; // [PA-047] Media Cortex API
 import graphRoutes from './routes/v1/graph.routes';
 import trainingRoutes from './routes/v1/training.routes';
+import { telemetryRouter } from './routes/telemetry'; // [TELEMETRY] Brain Observability
 import chatRoutes from './routes/v1/chat.routes'; // [NEW] Chat API
 import memoryRoutes from './routes/v1/memory.routes'; // [NEW] Memory System
 import inboxRoutes from './routes/v1/inbox.routes'; // [DASHBOARD] Mission Control
@@ -38,6 +40,9 @@ import productionRoutes from './routes/v1/production.routes'; // [PRODUCTION] Lo
 import squadsRoutes from './routes/v1/squads.routes'; // [SQUADS] Manual Squad Control
 import apikeysRoutes from './routes/v1/apikeys.routes'; // [SECURITY] API Key Management
 import doctorRouter from './routes/doctorRoute'; // [DOCTOR] System Diagnostics
+import assetsRoutes from './routes/v1/assets.routes'; // [ASSETS] General file upload
+import googleAuthRoutes from './routes/v1/google-auth.routes'; // [GOOGLE] OAuth2 Initiation
+
 
 // Loaders
 import { initServer } from './loaders';
@@ -69,6 +74,14 @@ app.use(express.json({ limit: '10mb' }));
 // Global rate limiter
 app.use(globalLimiter);
 
+// ─── HEALTH CHECK (Pre-auth — must be accessible without token) ──────────────
+import { healthRouter } from './routes/health';
+app.use('/health', healthRouter);
+
+// ─── OAUTH CALLBACK (Pre-auth — external providers redirect here) ────────────
+import oauthRoutes from './routes/oauth.routes';
+app.use('/oauth', oauthRoutes);
+
 // Authentication: Bearer token validation
 app.use(authMiddleware);
 
@@ -86,7 +99,8 @@ app.use('/v1/introspection', introspectionRoutes); // [NEURO-UPDATE]
 app.use('/v1/media', mediaRoutes); // [PA-047] Media Cortex API
 app.use('/v1/graph', graphRoutes);
 app.use('/v1/training', trainingRoutes);
-app.use('/v1/chat', chatLimiter, chatRoutes); // [NEW] + chat rate limit
+app.use('/v1/telemetry', telemetryRouter); // [TELEMETRY] Brain Observability
+app.use('/v1/chat', chatLimiter, promptSanitizerMiddleware, chatRoutes); // [NEW] + chat rate limit + prompt sanitizer
 app.use('/v1/memory', memoryRoutes); // [NEW] Memory System
 app.use('/v1/inbox', inboxRoutes); // [DASHBOARD] Mission Control
 app.use('/v1/voices', voiceRoutes); // [VOICE] Voice Library & Cloning
@@ -99,6 +113,8 @@ app.use('/v1/autonomy', autonomyRoutes); // [AUTONOMY] Goals, Scheduler, Confirm
 app.use('/v1/production', productionRoutes); // [PRODUCTION] Long-form Video Pipeline
 app.use('/v1/squads', squadsRoutes); // [SQUADS] Manual Squad Control
 app.use('/v1/admin/api-keys', adminLimiter, apikeysRoutes); // [SECURITY] Admin-only API Key Management
+app.use('/v1/assets', assetsRoutes); // [ASSETS] General file upload
+app.use('/v1/google-auth', googleAuthRoutes); // [GOOGLE] OAuth2 Flow
 app.use('/v1', legacyRoutes);
 
 // --- INTEGRATION HUB WEBHOOKS ---

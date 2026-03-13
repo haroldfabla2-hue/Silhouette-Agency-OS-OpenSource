@@ -150,7 +150,7 @@ class ContextAssembler {
      * [PA-041] Build prioritized context items with token estimates
      * Maps context keys to their priority levels and calculates token usage
      */
-    private buildPrioritizedItems(contextMap: Record<string, string>): PrioritizedContextItem[] {
+    private buildPrioritizedItems(contextMap: Record<string, string>, activeBudget?: TokenBudgetConfig): PrioritizedContextItem[] {
         // Priority mapping for each context type
         const priorityMap: Record<string, ContextPriority> = {
             systemMetrics: ContextPriority.SYSTEM,
@@ -164,7 +164,8 @@ class ContextAssembler {
         };
 
         const items: PrioritizedContextItem[] = [];
-        const availableBudget = this.tokenBudget.totalBudget - this.tokenBudget.reservedForResponse;
+        const budgetToUse = activeBudget || this.tokenBudget;
+        const availableBudget = budgetToUse.totalBudget - budgetToUse.reservedForResponse;
 
         for (const [key, content] of Object.entries(contextMap)) {
             const priority = priorityMap[key] || ContextPriority.SYSTEM;
@@ -172,7 +173,7 @@ class ContextAssembler {
             const tokenEstimate = this.estimateTokens(content);
 
             // Calculate max tokens for this priority
-            const allocationPercent = this.tokenBudget.priorityAllocations[priority] || 10;
+            const allocationPercent = budgetToUse.priorityAllocations[priority] || 10;
             const maxTokens = Math.floor((availableBudget * allocationPercent) / 100);
 
             // Truncate if needed (except IMMEDIATE priority)
@@ -229,7 +230,7 @@ class ContextAssembler {
      * Implements OCA (Omniscient Context Architecture) with caching and safety gates.
      * @param query - Optional query to fetch relevant memory/graph data.
      */
-    public async getGlobalContext(query?: string): Promise<GlobalContext> {
+    public async getGlobalContext(query?: string, options?: { mode?: 'FAST' | 'DEEP' }): Promise<GlobalContext> {
         const start = Date.now();
 
         // [OPTIMIZATION] TTL Cache (2s) to prevent hardware thrashing
@@ -265,9 +266,28 @@ class ContextAssembler {
 
         // 2-6. PARALLEL EXECUTION with TIMEOUTS
         // We proceed optimistically. If Graph/RAG are slow, we skip them for this turn.
+        // Adaptive Timeouts:
+        // FAST: Real-time chat (5s)
+        // DEEP: Autonomous agents, research, coding (60s)
+        const fetchMode = options?.mode || 'FAST';
+        const TIMEOUT_MS = fetchMode === 'DEEP' ? 60000 : 5000;
 
-        // Define promises
-        const TIMEOUT_MS = 5000; // Increased to 5s (User preference: Intelligence > Speed)
+        // [PA-045] Adaptive Token Budgets
+        // If mode is DEEP or query is highly technical/coding, we temporarily adjust the budget 
+        // to give much more space to Codebase and Vector Memory, stealing from Chat History.
+        let activeBudget = { ...this.tokenBudget };
+
+        if (query) {
+            const isCodeRelated = /código|code|file|archivo|function|función|repo|class|component|bug|error/i.test(query);
+            if (fetchMode === 'DEEP' || isCodeRelated) {
+                activeBudget.priorityAllocations = {
+                    ...activeBudget.priorityAllocations,
+                    [ContextPriority.CODEBASE]: 35, // Steal budget for code (up from 5%)
+                    [ContextPriority.MEMORY]: 30,   // Steal budget for memory (up from 20%)
+                    [ContextPriority.CONVERSATION]: 5 // Drastically reduce chat history
+                };
+            }
+        }
 
         // A. Orchestrator State (Sync/Fast)
         const swarmState = {
@@ -285,8 +305,8 @@ class ContextAssembler {
 
         // C. Heavy IO Operations (Parallel)
         const memoryPromise = query
-            ? this.timeoutPromise(continuum.retrieve(query), TIMEOUT_MS, [])
-            : Promise.resolve([]);
+            ? this.timeoutPromise(continuum.getCombinedContext(query), TIMEOUT_MS, { semantic: [], recent: [] })
+            : Promise.resolve({ semantic: [], recent: [] });
 
         const graphPromise = query
             ? this.timeoutPromise(this.fetchGraphContext(query), TIMEOUT_MS, "")
@@ -297,33 +317,48 @@ class ContextAssembler {
             : Promise.resolve("");
 
         // Await all
-        const [memories, graphText, codeSnippets] = await Promise.all([
+        const [memoryResult, graphText, codeSnippets] = await Promise.all([
             memoryPromise,
             graphPromise,
             ragPromise
         ]);
 
-        // Process Memories
-        const cleanMemories = Array.isArray(memories)
-            ? memories.filter(m => !m.content.includes("As an AI"))
-            : [];
-        const memoryText = cleanMemories.map((m: any) => `[MEMORY (${m.tier})]: ${m.content}`).join('\n');
+        // Process Memories into Unified Cognitive Block
+        let memoryText = '';
+        if (memoryResult.recent && memoryResult.recent.length > 0) {
+            const cleanRecent = memoryResult.recent.filter((m: any) => !m.content.includes("As an AI"));
+            if (cleanRecent.length > 0) {
+                memoryText += '\n--- RECENT EPISODIC MEMORY ---\n' + cleanRecent.map((m: any) => `- [${new Date(m.timestamp).toLocaleTimeString()}] ${m.content}`).join('\n');
+            }
+        }
+        if (memoryResult.semantic && memoryResult.semantic.length > 0) {
+            const cleanSemantic = memoryResult.semantic.filter((m: any) => !m.content.includes("As an AI"));
+            if (cleanSemantic.length > 0) {
+                memoryText += '\n--- SEMANTIC DEEP KNOWLEDGE ---\n' + cleanSemantic.map((m: any) => `- ${m.content}`).join('\n');
+            }
+        }
+        if (memoryText) {
+            memoryText = `\n[COGNITIVE SYSTEM MEMORY]\n${memoryText}\n`;
+        }
 
         // [PA-041] Build prioritized context items
         // Note: We fetch history separately? Or is it fast enough? 
         // continuum.getSessionHistory is usually DB access. Let's make it parallel too preferably, but for now linear is ok as it's key.
         const chatHistoryData = this.formatHistory(await continuum.getSessionHistory(1000));
 
-        const prioritizedItems: PrioritizedContextItem[] = this.buildPrioritizedItems({
-            systemMetrics: JSON.stringify(metrics),
-            orchestratorState: JSON.stringify(swarmState),
-            screenContext: JSON.stringify(screen),
-            narrativeState: JSON.stringify(goal),
-            relevantMemory: memoryText,
-            graphConnections: graphText,
-            codeSnippets: codeSnippets,
-            chatHistory: JSON.stringify(chatHistoryData)
-        });
+        const prioritizedItems: PrioritizedContextItem[] = this.buildPrioritizedItems(
+            {
+                systemMetrics: JSON.stringify(metrics),
+                orchestratorState: JSON.stringify(swarmState),
+                screenContext: JSON.stringify(screen),
+                narrativeState: JSON.stringify(goal),
+                relevantMemory: memoryText,
+                graphConnections: graphText,
+                codeSnippets: codeSnippets,
+                chatHistory: JSON.stringify(chatHistoryData)
+            },
+            activeBudget // Pass the temporary active budget
+        );
 
         // Calculate total tokens used
         let totalTokensUsed = prioritizedItems.reduce((sum, item) => sum + item.tokenEstimate, 0);
@@ -377,7 +412,7 @@ class ContextAssembler {
                 ContextPriority.GRAPH,
                 ContextPriority.CODEBASE
             ],
-            tokenBudget: this.tokenBudget,
+            tokenBudget: activeBudget, // Report the budget actually used
             prioritizedItems: prioritizedItems,
             totalTokensUsed: totalTokensUsed
         };

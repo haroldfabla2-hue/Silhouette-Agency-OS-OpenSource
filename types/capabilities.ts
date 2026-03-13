@@ -20,7 +20,7 @@ export interface CapabilityResult {
 /**
  * Who/what executed the capability
  */
-export type CapabilityExecutor = 'TOOL' | 'AGENT' | 'WORKFLOW' | 'DIRECT' | 'TOOL_HANDLER';
+export type CapabilityExecutor = 'TOOL' | 'AGENT' | 'WORKFLOW' | 'DIRECT' | 'TOOL_HANDLER' | 'ORCHESTRATOR';
 
 /**
  * Metadata about the execution

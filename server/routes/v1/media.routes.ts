@@ -306,8 +306,14 @@ router.get('/catalog', async (req: Request, res: Response) => {
         if (req.query.tags) options.tags = (req.query.tags as string).split(',');
         if (req.query.isFavorite) options.isFavorite = req.query.isFavorite === 'true';
         if (req.query.isArchived) options.isArchived = req.query.isArchived === 'true';
-        if (req.query.limit) options.limit = parseInt(req.query.limit as string);
-        if (req.query.offset) options.offset = parseInt(req.query.offset as string);
+        if (req.query.limit) {
+            const parsed = parseInt(req.query.limit as string);
+            if (!isNaN(parsed) && parsed > 0) options.limit = Math.min(parsed, 1000);
+        }
+        if (req.query.offset) {
+            const parsed = parseInt(req.query.offset as string);
+            if (!isNaN(parsed) && parsed >= 0) options.offset = parsed;
+        }
 
         const assets = assetCatalog.search(options);
         const stats = assetCatalog.getStats();
@@ -483,7 +489,13 @@ router.get('/canvas/documents/:id', async (req: Request, res: Response) => {
         if (!document) {
             return res.status(404).json({ error: 'Document not found' });
         }
-        return res.json({ document: JSON.parse(document) });
+        let parsed;
+        try {
+            parsed = typeof document === 'string' ? JSON.parse(document) : document;
+        } catch {
+            return res.status(500).json({ error: 'Corrupted document data' });
+        }
+        return res.json({ document: parsed });
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }

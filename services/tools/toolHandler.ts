@@ -11,6 +11,7 @@ import { imageFactory } from '../media/imageFactory';
 import { toolFactory } from './toolFactory';
 import { toolRegistry, ToolCategory } from './toolRegistry';
 import { pluginRegistry } from '../plugins/pluginRegistry';
+import { readUrl, searchWeb } from '../../tools/webBrowserTool';
 
 export class ToolHandler {
 
@@ -43,6 +44,8 @@ export class ToolHandler {
                 return await this.handleGenerateVideo(args as GenerateVideoArgs);
             case 'generate_image':
                 return await this.handleGenerateImage(args as GenerateImageArgs);
+            case 'generate_voice':
+                return await this.handleGenerateVoice(args as import('./definitions').GenerateVoiceArgs);
             case 'list_visual_assets':
                 return await this.handleListVisualAssets(args as ListVisualAssetsArgs);
             case 'delegate_task':
@@ -53,6 +56,11 @@ export class ToolHandler {
                 return await this.handleManageAsset(args as ManageAssetArgs);
             case 'preview_asset':
                 return await this.handlePreviewAsset(args as PreviewAssetArgs);
+            // Research Tools (Phase 11)
+            case 'web_search':
+                return await this.handleWebSearch(args as import('./definitions').WebSearchArgs);
+            case 'read_url':
+                return await this.handleReadUrl(args as import('./definitions').ReadUrlArgs);
             // Meta Tools (Self-Extension)
             case 'create_tool':
                 return await this.handleCreateTool(args as CreateToolArgs);
@@ -134,7 +142,35 @@ export class ToolHandler {
             case 'request_collaboration':
                 return await this.handleRequestCollaboration(args as RequestCollaborationArgs);
 
+            // ==================== SELF-CONFIGURATION TOOLS Phase 17 ====================
+            case 'get_system_config':
+                return await this.handleGetSystemConfig(args as any);
+            case 'update_system_config':
+                return await this.handleUpdateSystemConfig(args as any);
+            case 'read_architecture':
+                return await this.handleReadArchitecture();
+
+            // ==================== SELF-HEALING KERNEL TOOLS Phase 18 ====================
+            case 'read_system_logs':
+                return await this.handleReadSystemLogs(args as any);
+            case 'analyze_and_repair':
+                return await this.handleAnalyzeAndRepair(args as any);
+
+            // ==================== BROWSER SUBAGENT TOOLS Phase 18 ====================
+            case 'browser_navigate':
+                return await this.handleBrowserNavigate(args as any);
+            case 'browser_action':
+                return await this.handleBrowserAction(args as any);
+            case 'browser_extract':
+                return await this.handleBrowserExtract();
+            case 'browser_screenshot':
+                return await this.handleBrowserScreenshot();
+
             default:
+                if (name.startsWith('query_') && name.includes('_db_')) {
+                    if (!args.query) return { error: "Missing 'query' parameter for database tool execution." };
+                    return await this.handleDynamicDbQuery(name, args.query);
+                }
                 throw new Error(`Unknown tool: ${name}`);
         }
     }
@@ -236,6 +272,45 @@ export class ToolHandler {
             }
         } catch (e: any) {
             return { error: `Image generation failed: ${e.message}` };
+        }
+    }
+
+    private async handleGenerateVoice(args: import('./definitions').GenerateVoiceArgs): Promise<any> {
+        if (!args.text) return { error: "Missing text to synthesize" };
+
+        try {
+            const { mediaService } = await import('../mediaService');
+            // Generate the audio buffer
+            const audioBuffer = await mediaService.generateSpeech(args.text, args.voiceId);
+            // Save it locally
+            const fs = await import('fs/promises');
+            const path = await import('path');
+            const today = new Date().toISOString().split('T')[0];
+            const dir = path.join(process.cwd(), 'uploads', 'audio', today);
+
+            await fs.mkdir(dir, { recursive: true });
+
+            const filename = `voice_${Date.now()}.mp3`;
+            const localPath = path.join(dir, filename);
+            await fs.writeFile(localPath, Buffer.from(audioBuffer));
+
+            // Register in assetCatalog
+            const { assetCatalog } = await import('../assetCatalog');
+            await assetCatalog.register({
+                type: 'audio',
+                name: filename,
+                filePath: localPath,
+                description: `Spoken audio generated from text: ${args.text.substring(0, 100)}`,
+                tags: ['voice', 'generated', 'audio']
+            });
+
+            return {
+                status: "success",
+                localPath: localPath,
+                message: `Voice generated successfully and saved to ${localPath}.`
+            };
+        } catch (e: any) {
+            return { error: `Voice generation failed: ${e.message}` };
         }
     }
 
@@ -415,6 +490,66 @@ export class ToolHandler {
             };
         } catch (e: any) {
             return { error: `Preview failed: ${e.message}` };
+        }
+    }
+
+    // ==================== PHASE 11: RESEARCH TOOLS ====================
+
+    private async handleWebSearch(args: import('./definitions').WebSearchArgs): Promise<any> {
+        try {
+            console.log(`[ToolHandler] 🔍 Web Search: ${args.query}`);
+            const result = await searchWeb(args.query);
+            return {
+                result,
+                metadata: {
+                    search_engine: 'DuckDuckGo HTML Scraper',
+                    query: args.query
+                }
+            };
+        } catch (e: any) {
+            console.error(`[ToolHandler] ❌ Web search failed:`, e);
+            return { error: `Web search failed: ${e.message}` };
+        }
+    }
+
+    private async handleReadUrl(args: import('./definitions').ReadUrlArgs): Promise<any> {
+        try {
+            console.log(`[ToolHandler] 📖 Reading URL: ${args.url}`);
+            const content = await readUrl(args.url);
+
+            // Extract title and text to shove to LanceDB later or return to LLM
+            // Truncate to avoid exploding context window (80k limit is high, but good to be safe)
+            const maxLength = 25000;
+            const truncated = content.length > maxLength
+                ? content.substring(0, maxLength) + '\n\n[CONTENT TRUNCATED FOR LENGTH]'
+                : content;
+
+            // ---- PERSISTENT MEMORY / RAG INJECTION ----
+            try {
+                const { continuum } = await import('../continuumMemory');
+                const { ingestion } = await import('../ingestionService');
+                const { MemoryTier } = await import('../../types');
+
+                if (content.length > 20000) {
+                    // Start async background ingestion for large docs
+                    ingestion.ingest(content, ['web_scrape', `url:${args.url}`]).catch(e => console.error('[ToolHandler] Async ingestion error:', e));
+                } else {
+                    // Direct synchronous storage for smaller docs
+                    await continuum.store(content, MemoryTier.MEDIUM, ['web_scrape', `url:${args.url}`], true);
+                }
+            } catch (memErr) {
+                console.warn('[ToolHandler] Failed to store web content in Continuum (LanceDB missed it)', memErr);
+            }
+            // ------------------------------------------
+
+            return {
+                content: truncated,
+                length: content.length,
+                url: args.url
+            };
+        } catch (e: any) {
+            console.error(`[ToolHandler] ❌ Read URL failed:`, e);
+            return { error: `Failed to read URL format. Details: ${e.message}` };
         }
     }
 
@@ -1126,62 +1261,78 @@ export class ToolHandler {
         }
 
         try {
+            const useSandbox = process.env.SANDBOX_MODE === 'true';
+
             // ==================== JAVASCRIPT/TYPESCRIPT ====================
             if (language === 'javascript' || language === 'typescript') {
-                const vm = await import('vm');
-                const outputs: string[] = [];
-                const sandbox = {
-                    console: {
-                        log: (...logArgs: any[]) => outputs.push(logArgs.join(' ')),
-                        error: (...logArgs: any[]) => outputs.push('[ERROR] ' + logArgs.join(' ')),
-                        warn: (...logArgs: any[]) => outputs.push('[WARN] ' + logArgs.join(' ')),
-                        info: (...logArgs: any[]) => outputs.push('[INFO] ' + logArgs.join(' '))
-                    },
-                    Math, Date, JSON, Array, Object, String, Number, Boolean,
-                    setTimeout: undefined, setInterval: undefined, // Block async
-                    fetch: undefined, require: undefined,          // Block network/modules
-                    result: undefined as any
-                };
+                if (useSandbox) {
+                    return await this.executeInDocker('node:18-alpine', ['node', '-e', code], timeout);
+                } else {
+                    const vm = await import('vm');
+                    const outputs: string[] = [];
+                    const sandbox = {
+                        console: {
+                            log: (...logArgs: any[]) => outputs.push(logArgs.join(' ')),
+                            error: (...logArgs: any[]) => outputs.push('[ERROR] ' + logArgs.join(' ')),
+                            warn: (...logArgs: any[]) => outputs.push('[WARN] ' + logArgs.join(' ')),
+                            info: (...logArgs: any[]) => outputs.push('[INFO] ' + logArgs.join(' '))
+                        },
+                        Math, Date, JSON, Array, Object, String, Number, Boolean,
+                        setTimeout: undefined, setInterval: undefined, // Block async
+                        fetch: undefined, require: undefined,          // Block network/modules
+                        result: undefined as any
+                    };
 
-                const context = vm.createContext(sandbox);
-                const script = new vm.Script(code);
-                const startTime = Date.now();
-                const result = script.runInContext(context, {
-                    timeout: timeout * 1000
-                });
+                    const context = vm.createContext(sandbox);
+                    const script = new vm.Script(code);
+                    const startTime = Date.now();
+                    const result = script.runInContext(context, {
+                        timeout: timeout * 1000
+                    });
 
-                return {
-                    status: 'success',
-                    language,
-                    result: result !== undefined ? String(result) : sandbox.result,
-                    output: outputs.join('\n'),
-                    executionTimeMs: Date.now() - startTime
-                };
+                    return {
+                        status: 'success',
+                        language,
+                        result: result !== undefined ? String(result) : sandbox.result,
+                        output: outputs.join('\n'),
+                        executionTimeMs: Date.now() - startTime,
+                        sandbox: false
+                    };
+                }
             }
 
             // ==================== PYTHON ====================
             if (language === 'python') {
-                return await this.executeWithSpawn('python', ['-c', code], timeout);
+                if (useSandbox) {
+                    return await this.executeInDocker('python:3.10-slim', ['python', '-c', code], timeout);
+                } else {
+                    return await this.executeWithSpawn('python', ['-c', code], timeout);
+                }
             }
 
             // ==================== BASH ====================
             if (language === 'bash') {
-                // Additional bash-specific safety
-                const bashDangerous = [
-                    /sudo\s/i,
-                    /su\s+-/i,
-                    />\s*\/etc\//i,
-                    /source\s+~?\//i,
-                    /\.\s+~?\//i
-                ];
-                for (const pattern of bashDangerous) {
-                    if (pattern.test(code)) {
-                        return { error: 'Bash execution blocked: elevated privilege or system file access', blocked: true };
+                if (useSandbox) {
+                    return await this.executeInDocker('ubuntu:latest', ['bash', '-c', code], timeout);
+                } else {
+                    // Additional bash-specific safety
+                    const bashDangerous = [
+                        /sudo\s/i,
+                        /su\s+-/i,
+                        />\s*\/etc\//i,
+                        /source\s+~?\//i,
+                        /\.\s+~?\//i
+                    ];
+                    for (const pattern of bashDangerous) {
+                        if (pattern.test(code)) {
+                            return { error: 'Bash execution blocked: elevated privilege or system file access', blocked: true };
+                        }
                     }
+                    const shell = process.platform === 'win32' ? 'cmd' : 'bash';
+                    const shellArgs = process.platform === 'win32' ? ['/c', code] : ['-c', code];
+                    const result = await this.executeWithSpawn(shell, shellArgs, timeout);
+                    return { ...result, sandbox: false };
                 }
-                const shell = process.platform === 'win32' ? 'cmd' : 'bash';
-                const shellArgs = process.platform === 'win32' ? ['/c', code] : ['-c', code];
-                return await this.executeWithSpawn(shell, shellArgs, timeout);
             }
 
             return {
@@ -1249,6 +1400,80 @@ export class ToolHandler {
                 resolve({
                     status: 'error',
                     error: `Failed to start process: ${err.message}`
+                });
+            });
+        });
+    }
+
+    /**
+     * Execute code within an ephemeral Docker sandbox container
+     */
+    private async executeInDocker(image: string, cmdArgs: string[], timeoutSec: number): Promise<any> {
+        return new Promise(async (resolve) => {
+            const { spawn } = await import('child_process');
+
+            // Run docker via child_process
+            // --rm removes container after exit
+            // -i interactive (needed to pass stdin sometimes, but we are passing via cmd args here)
+            // --network none disables networking for safety
+            const dockerArgs = [
+                'run',
+                '--rm',
+                '-i',
+                '--network', 'none',
+                '--memory', '512m',
+                '--cpus', '1.0',
+                image,
+                ...cmdArgs
+            ];
+
+            const startTime = Date.now();
+            let stdout = '';
+            let stderr = '';
+            let killed = false;
+
+            const proc = spawn('docker', dockerArgs, {
+                timeout: timeoutSec * 1000,
+                windowsHide: true,
+                env: { ...process.env, PATH: process.env.PATH }
+            });
+
+            const timer = setTimeout(() => {
+                killed = true;
+                proc.kill('SIGTERM');
+            }, timeoutSec * 1000);
+
+            proc.stdout?.on('data', (data) => {
+                stdout += data.toString();
+                if (stdout.length > 500000) { // 500KB limit
+                    killed = true;
+                    proc.kill('SIGTERM');
+                }
+            });
+
+            proc.stderr?.on('data', (data) => {
+                stderr += data.toString();
+            });
+
+            proc.on('close', (exitCode) => {
+                clearTimeout(timer);
+                resolve({
+                    status: killed ? 'timeout' : (exitCode === 0 ? 'success' : 'error'),
+                    exitCode,
+                    output: stdout.trim(),
+                    error: stderr.trim() || undefined,
+                    sandbox: true,
+                    executionTimeMs: Date.now() - startTime,
+                    killed
+                });
+            });
+
+            proc.on('error', (err) => {
+                clearTimeout(timer);
+                resolve({
+                    status: 'error',
+                    error: `Failed to start docker sandbox: ${err.message}. Ensure Docker is installed and running.`,
+                    sandbox: true
                 });
             });
         });
@@ -1410,6 +1635,278 @@ export class ToolHandler {
             };
         } catch (e: any) {
             return { error: `Audit failed: ${e.message}` };
+        }
+    }
+
+    private async handleIntrospectDatabase(args: import('./definitions').IntrospectDatabaseArgs): Promise<any> {
+        if (!args.uri || !args.dbType) {
+            return { error: "Missing required arguments: uri and dbType" };
+        }
+
+        try {
+            console.log(`[ToolHandler] 🔍 Initiating Database Introspection for ${args.dbType} at ${args.uri}...`);
+            const { dbIntrospector } = await import('../dbIntrospector');
+
+            const schema = await dbIntrospector.introspectAndAdapt(args.uri, args.dbType);
+
+            return {
+                status: "success",
+                message: `Successfully connected to ${args.dbType} database. Mapped ${schema.tables.length} tables to Agent Tools.`,
+                schema: {
+                    type: schema.type,
+                    tables: schema.tables.map(t => t.name)
+                },
+                next_steps: [
+                    "You can now use the newly generated custom tool (e.g., 'query_sqlite_db_XXXX') to interact with this external database."
+                ]
+            };
+        } catch (e: any) {
+            return { error: `Database introspection failed: ${e.message}` };
+        }
+    }
+
+    private async handleDynamicDbQuery(toolName: string, query: string): Promise<any> {
+        try {
+            console.log(`[ToolHandler] ⚡ Executing Dynamic DB query via ${toolName}...`);
+            const { dbIntrospector } = await import('../dbIntrospector');
+            const result = await dbIntrospector.executeQuery(toolName, query);
+            return {
+                status: "success",
+                rows_returned: Array.isArray(result) ? result.length : 0,
+                data: result
+            };
+        } catch (e: any) {
+            console.error(`[ToolHandler] ❌ Dynamic DB Query failed: ${e.message}`);
+            return { error: `Query failed: ${e.message}` };
+        }
+    }
+
+    // ==================== SELF-CONFIGURATION TOOL HANDLERS Phase 17 ====================
+
+    private async handleGetSystemConfig(args: any): Promise<any> {
+        try {
+            const fs = await import('fs/promises');
+            const path = await import('path');
+
+            const envPath = path.resolve(process.cwd(), '.env.local');
+            const configPath = path.resolve(process.cwd(), 'silhouette.config.json');
+
+            let envContent = '';
+            let configJson = {};
+
+            try { envContent = await fs.readFile(envPath, 'utf8'); } catch (e) { }
+            try { configJson = JSON.parse(await fs.readFile(configPath, 'utf8')); } catch (e) { }
+
+            const envLines = envContent.split('\n');
+            const envMap: Record<string, string> = {};
+            envLines.forEach(line => {
+                if (line.trim() && !line.startsWith('#')) {
+                    const idx = line.indexOf('=');
+                    if (idx > 0) {
+                        const k = line.slice(0, idx).trim();
+                        let v = line.slice(idx + 1).trim();
+                        if (v.startsWith('"') && v.endsWith('"')) v = v.slice(1, -1);
+                        else if (v.startsWith("'") && v.endsWith("'")) v = v.slice(1, -1);
+                        envMap[k] = v;
+                    }
+                }
+            });
+
+            let result: Record<string, any> = {};
+
+            if (args.keys && args.keys.length > 0) {
+                args.keys.forEach((k: string) => {
+                    if (envMap[k] !== undefined) result[k] = envMap[k];
+                    else if ((configJson as any)[k] !== undefined) result[k] = (configJson as any)[k];
+                });
+            } else {
+                result = { ...envMap, ...configJson };
+                // Hide sensitive keys if returning ALL without explicit request
+                Object.keys(result).forEach(k => {
+                    if (k.toLowerCase().includes('key') || k.toLowerCase().includes('token') || k.toLowerCase().includes('password')) {
+                        result[k] = '********';
+                    }
+                });
+            }
+
+            return {
+                status: "success",
+                config: result
+            };
+        } catch (e: any) {
+            return { error: `Failed to read system config: ${e.message}` };
+        }
+    }
+
+    private async handleUpdateSystemConfig(args: any): Promise<any> {
+        try {
+            const fs = await import('fs/promises');
+            const path = await import('path');
+
+            const envPath = path.resolve(process.cwd(), '.env.local');
+            let envContent = '';
+            try { envContent = await fs.readFile(envPath, 'utf8'); } catch (e) { }
+
+            let lines = envContent.split('\n');
+            const updates = args.updates || {};
+            let changedCount = 0;
+
+            for (const [k, v] of Object.entries(updates)) {
+                let found = false;
+                for (let i = 0; i < lines.length; i++) {
+                    if (lines[i].startsWith(`${k}=`) || lines[i].startsWith(`export ${k}=`)) {
+                        // Quote the value if it has spaces
+                        const stringVal = String(v);
+                        const writeVal = stringVal.includes(' ') && !stringVal.startsWith('"') ? `"${stringVal}"` : stringVal;
+                        lines[i] = `${k}=${writeVal}`;
+                        found = true;
+                        changedCount++;
+                        break;
+                    }
+                }
+                if (!found) {
+                    const stringVal = String(v);
+                    const writeVal = stringVal.includes(' ') && !stringVal.startsWith('"') ? `"${stringVal}"` : stringVal;
+                    lines.push(`${k}=${writeVal}`);
+                    changedCount++;
+                }
+            }
+
+            await fs.writeFile(envPath, lines.join('\n'));
+
+            console.log(`[ToolHandler] ⚙️ System config updated (${changedCount} keys). Reason: ${args.reason}`);
+
+
+
+            return {
+                status: "success",
+                message: `Successfully updated ${changedCount} configuration keys in .env.local`,
+                reason_logged: args.reason,
+                requires_restart: true // Safe assumption, though we try to hot-reload
+            };
+        } catch (e: any) {
+            return { error: `Failed to update system config: ${e.message}` };
+        }
+    }
+
+    private async handleReadArchitecture(): Promise<any> {
+        try {
+            const fs = await import('fs/promises');
+            const path = await import('path');
+
+            const archPath = path.resolve(process.cwd(), 'ARCHITECTURE.md');
+            let archContent = '';
+            try {
+                archContent = await fs.readFile(archPath, 'utf8');
+            } catch (e) {
+                return { error: "ARCHITECTURE.md not found. Project root might be incorrect." };
+            }
+
+            return {
+                status: "success",
+                content: archContent
+            };
+        } catch (e: any) {
+            return { error: `Failed to read architecture: ${e.message}` };
+        }
+    }
+
+    // ==================== SELF-HEALING KERNEL TOOL HANDLERS Phase 18 ====================
+
+    private async handleReadSystemLogs(args: any): Promise<any> {
+        try {
+            const fs = await import('fs/promises');
+            const path = await import('path');
+            const logPath = path.resolve(process.cwd(), 'logs', 'system_errors.log');
+
+            let content = '';
+            try {
+                content = await fs.readFile(logPath, 'utf8');
+            } catch (e) {
+                return { status: "success", logs: "No errors logged yet. System is healthy." };
+            }
+
+            const linesParam = args.lines || 50;
+            const logLines = content.split('\n').filter(l => l.trim() !== '');
+            const recentLogs = logLines.slice(-linesParam).join('\n');
+
+            return {
+                status: "success",
+                file: logPath,
+                logs: recentLogs || "No recent errors."
+            };
+        } catch (e: any) {
+            return { error: `Failed to read system logs: ${e.message}` };
+        }
+    }
+
+    private async handleAnalyzeAndRepair(args: any): Promise<any> {
+        try {
+            const { file, hypothesis, proposed_code_change } = args;
+            if (!file || !hypothesis) {
+                return { error: "Missing required fields: file, hypothesis." };
+            }
+
+            return {
+                status: "hypothesis_accepted",
+                message: "Repair hypothesis submitted. To implement your fix completely, use system_execute_command to run Git operations or sed, or rewrite the file with your tool execution capabilities. We strongly recommend running 'npx tsc --noEmit' or 'npm run build' after modifying the file to verify if the compilation error was fixed.",
+                hypothesis_evaluated: hypothesis,
+                target_file: file
+            };
+        } catch (e: any) {
+            return { error: `Repair hypothesis failed: ${e.message}` };
+        }
+    }
+
+    // ==================== BROWSER SUBAGENT TOOL HANDLERS Phase 18 ====================
+
+    private async handleBrowserNavigate(args: any): Promise<any> {
+        try {
+            const { browserService } = await import('../browserService');
+            const title = await browserService.goto(args.url);
+            return { status: "success", url: args.url, title };
+        } catch (e: any) {
+            return { error: `Navigation failed: ${e.message}` };
+        }
+    }
+
+    private async handleBrowserAction(args: any): Promise<any> {
+        try {
+            const { browserService } = await import('../browserService');
+            if (args.actionType === 'click') {
+                await browserService.click(args.selector);
+                return { status: "success", action: "clicked", selector: args.selector };
+            } else if (args.actionType === 'type') {
+                await browserService.type(args.selector, args.text || '');
+                return { status: "success", action: "typed", selector: args.selector };
+            }
+            return { error: "Invalid actionType" };
+        } catch (e: any) {
+            return { error: `Action failed: ${e.message}` };
+        }
+    }
+
+    private async handleBrowserExtract(): Promise<any> {
+        try {
+            const { browserService } = await import('../browserService');
+            const text = await browserService.extractText();
+            return { status: "success", content_length: text.length, content: text };
+        } catch (e: any) {
+            return { error: `Extraction failed: ${e.message}` };
+        }
+    }
+
+    private async handleBrowserScreenshot(): Promise<any> {
+        try {
+            const { browserService } = await import('../browserService');
+            const result = await browserService.screenshot();
+            return {
+                status: "success",
+                file_path: result.path,
+                message: `Screenshot saved to ${result.path}. You can send this file to the user via their messaging channel.`
+            };
+        } catch (e: any) {
+            return { error: `Screenshot failed: ${e.message}` };
         }
     }
 }

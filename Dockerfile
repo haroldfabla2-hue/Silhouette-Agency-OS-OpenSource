@@ -1,65 +1,47 @@
-# =============================================================================
-# MULTI-STAGE DOCKERFILE FOR SILHOUETTE AGENCY OS
-# Stage 1: Install dependencies
-# Stage 2: Production image (no devDependencies)
-# =============================================================================
+# ─────────────────────────────────────────────────────────────
+# Silhouette Agency OS - Production Dockerfile
+# Multi-stage optimized build for Node.js
+# ─────────────────────────────────────────────────────────────
 
-# --- Stage 1: Build ---
+# Stage 1: Build
 FROM node:20-alpine AS builder
 
-WORKDIR /app
+WORKDIR /usr/src/app
 
-# Install build dependencies for native modules (better-sqlite3, etc.)
-RUN apk add --no-cache python3 make g++
-
-# Copy package files first (layer caching)
-COPY package.json package-lock.json ./
-
-# Install ALL dependencies (including devDependencies for build)
+# Only copy package files first for optimized layer caching
+COPY package*.json ./
 RUN npm ci
 
-# Copy source code
+# Copy full source and tsconfig
 COPY . .
 
-# Build frontend
+# Build TypeScript to Javascript (assuming there is a build script)
 RUN npm run build
 
-# --- Stage 2: Production ---
-FROM node:20-alpine AS production
+# Stage 2: Production Runtime
+FROM node:20-alpine AS runner
 
-WORKDIR /app
+WORKDIR /usr/src/app
 
-# Install runtime dependencies for native modules
-RUN apk add --no-cache python3 make g++
+ENV NODE_ENV=production
 
-# Copy package files
-COPY package.json package-lock.json ./
+# [ESCAPE HATCH] Install Docker CLI to allow container to control the Host's Docker Daemon
+RUN apk add --no-cache docker-cli
 
-# Install production dependencies only
-RUN npm ci --omit=dev && npm cache clean --force
+# Re-install only production dependencies to save space
+COPY package*.json ./
+RUN npm ci --only=production
 
-# Copy built frontend from builder
-COPY --from=builder /app/dist ./dist
+# Copy built outputs from the builder stage
+COPY --from=builder /usr/src/app/dist ./dist
+COPY --from=builder /usr/src/app/package.json ./package.json
 
-# Copy server source (TypeScript executed via tsx at runtime)
-COPY server/ ./server/
-COPY services/ ./services/
-COPY types.ts ./
-COPY types/ ./types/
-COPY constants.ts ./
-COPY constants/ ./constants/
-COPY universalprompts/ ./universalprompts/
-COPY silhouette.config.json ./
-
-# Create data directories
-RUN mkdir -p data uploads
-
-# Expose API port
+# Expose API & WS port
 EXPOSE 3005
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD wget -qO- http://localhost:3005/v1/system/status || exit 1
+# Healthcheck for the runtime Container (hits pre-auth /health endpoint)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3005/health || exit 1
 
-# Start server
-CMD ["node", "--import", "tsx/esm", "server/index.ts"]
+# Start the Node.js server
+CMD ["node", "dist/server/index.js"]

@@ -78,7 +78,8 @@ class ContextPurifierService {
         rawMemories: MemoryNode[],
         rawHistory: ChatMessage[],
         profileContext: string,
-        codeContext?: string
+        codeContext?: string,
+        userId?: string
     ): Promise<PurifiedContext> {
         console.log('[PURIFIER] 🧹 Purifying context...');
 
@@ -86,7 +87,7 @@ class ContextPurifierService {
         let userFacts = '';
         try {
             const { factExtractor } = await import('./factExtractor');
-            userFacts = await factExtractor.getUserFacts();
+            userFacts = await factExtractor.getUserFacts(userId || 'global');
         } catch (e) {
             console.warn('[PURIFIER] Could not retrieve user facts:', e);
         }

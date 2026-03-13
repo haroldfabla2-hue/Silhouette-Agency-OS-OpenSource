@@ -112,13 +112,15 @@ class ToolRegistry {
             MANAGE_ASSET_TOOL,
             PREVIEW_ASSET_TOOL,
             WEB_SEARCH_TOOL,
+            READ_URL_TOOL,
             ACADEMIC_SEARCH_TOOL,
             CONDUCT_RESEARCH_TOOL,
             // GitHub Tools
             GITHUB_CREATE_PR_TOOL,
             GITHUB_LIST_PRS_TOOL,
             GITHUB_CHECK_PR_TOOL,
-            ARCHITECT_AUDIT_TOOL
+            ARCHITECT_AUDIT_TOOL,
+            INTROSPECT_DATABASE_TOOL
         } = await import('./definitions');
 
         // Convert static declarations to DynamicTool format
@@ -130,6 +132,14 @@ class ToolRegistry {
                 parameters: ARCHITECT_AUDIT_TOOL.parameters as unknown as FunctionDeclarationSchema,
                 handler: { type: 'BUILTIN', handlerName: 'handleArchitectAudit' },
                 category: 'DEV'
+            },
+            {
+                id: 'tool_introspect_database',
+                name: 'introspect_database',
+                description: INTROSPECT_DATABASE_TOOL.description || '',
+                parameters: INTROSPECT_DATABASE_TOOL.parameters as unknown as FunctionDeclarationSchema,
+                handler: { type: 'BUILTIN', handlerName: 'handleIntrospectDatabase' },
+                category: 'UTILITY'
             },
             {
                 id: 'tool_generate_video',
@@ -193,6 +203,14 @@ class ToolRegistry {
                 description: WEB_SEARCH_TOOL.description || '',
                 parameters: WEB_SEARCH_TOOL.parameters as unknown as FunctionDeclarationSchema,
                 handler: { type: 'BUILTIN', handlerName: 'handleWebSearch' },
+                category: 'RESEARCH'
+            },
+            {
+                id: 'tool_read_url',
+                name: 'read_url',
+                description: READ_URL_TOOL.description || '',
+                parameters: READ_URL_TOOL.parameters as unknown as FunctionDeclarationSchema,
+                handler: { type: 'BUILTIN', handlerName: 'handleReadUrl' },
                 category: 'RESEARCH'
             },
             {

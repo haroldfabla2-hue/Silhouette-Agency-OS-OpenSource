@@ -98,6 +98,7 @@ export enum SystemProtocol {
   VISUAL_REQUEST = 'PROTOCOL_VISUAL_REQUEST',
   UI_COMMAND = 'PROTOCOL_UI_COMMAND', // NEW: Backend -> Frontend UI commands (popups, modals)
   VISUAL_SNAPSHOT = 'PROTOCOL_VISUAL_SNAPSHOT',
+  WEBHOOK_RECEIVED = 'PROTOCOL_WEBHOOK_RECEIVED', // External network events
   INCIDENT_REPORT = 'PROTOCOL_INCIDENT_REPORT', // NEW: Remediation -> Research
   ARCHITECTURAL_RFC = 'PROTOCOL_ARCHITECTURAL_RFC', // NEW: Research -> User
   INTUITION_CONSOLIDATED = 'PROTOCOL_INTUITION_CONSOLIDATED', // NEW: Dreamer -> NeuroSynapse
@@ -133,6 +134,11 @@ export enum SystemProtocol {
   VOICE_TTS_ERROR = 'PROTOCOL_VOICE_TTS_ERROR',
   VOICE_QUALITY_LOW = 'PROTOCOL_VOICE_QUALITY_LOW',
 
+  // Epistemological Integrity (Debate Vulnerability Fixes)
+  MEMORY_QUARANTINE = 'PROTOCOL_MEMORY_QUARANTINE',           // Janitor -> Orchestrator: Node quarantined (not deleted)
+  CONTRADICTION_DETECTED = 'PROTOCOL_CONTRADICTION_DETECTED', // Janitor -> Orchestrator: Contradiction found in memory
+  Z3_VERIFICATION_FAILED = 'PROTOCOL_Z3_VERIFICATION_FAILED', // Introspection -> System: Action blocked by formal logic
+
   // Connection Nervous System (Auto-Healing)
   CONNECTION_LOST = 'PROTOCOL_CONNECTION_LOST',       // Service disconnected
   CONNECTION_RESTORED = 'PROTOCOL_CONNECTION_RESTORED', // Service reconnected
@@ -144,6 +150,7 @@ export enum SystemProtocol {
   GOAL_UPDATED = 'PROTOCOL_GOAL_UPDATED',           // Goal progress/completion
   INTEGRATION_EVENT = 'PROTOCOL_INTEGRATION_EVENT', // External webhook/event received
   CONFIRMATION_REQUIRED = 'PROTOCOL_CONFIRMATION_REQUIRED', // Human-in-loop approval needed
+  SYSTEM_RESTART_REQUEST = 'PROTOCOL_SYSTEM_RESTART_REQUEST', // [PA-051] OS Supervisor Auto-Restart Hook
 
   // Inter-Agent Help Protocol (Team Leader Communication)
   HELP_REQUEST = 'PROTOCOL_HELP_REQUEST',     // Agent → Agent (solicita ayuda)
@@ -185,6 +192,9 @@ export enum SystemProtocol {
   // Squad Events
   SQUAD_FORMED = 'PROTOCOL_SQUAD_FORMED',               // New squad created
   SQUAD_DISSOLVED = 'PROTOCOL_SQUAD_DISSOLVED',         // Squad disbanded
+  SQUAD_DEBATE_START = 'PROTOCOL_SQUAD_DEBATE_START',   // Signal to begin a multi-agent debate
+  AGENT_DEBATE_MESSAGE = 'PROTOCOL_AGENT_DEBATE_MESSAGE', // A message from an agent in the debate room
+  SQUAD_CONSENSUS = 'PROTOCOL_SQUAD_CONSENSUS',         // Debate reached an agreement or max turns
 
   // Capability Sync
   CAPABILITY_SYNC = 'PROTOCOL_CAPABILITY_SYNC',         // Force capability refresh
@@ -561,7 +571,7 @@ export interface Agent {
   role: string;
   status: AgentStatus;
   enabled: boolean;
-  preferredMemory: 'VRAM' | 'RAM'; // NEW: Hardware Preference
+  preferredMemory: 'VRAM' | 'RAM' | 'DISK'; // Hardware Preference (DISK = hibernated)
   systemInstruction?: string; // [PA-038] Dynamic definition
   metadata?: Record<string, any>; // [PA-045] Flexible storage for Squads/Genesis
   memoryLocation: 'VRAM' | 'RAM' | 'DISK';
@@ -628,6 +638,10 @@ export interface SystemMetrics {
   realCpu?: number;
   providerHealth?: Record<string, ProviderState>; // NEW: Circuit Breaker Status
   mediaQueue?: VideoJob[]; // NEW: Render Queue Status
+  brain?: {
+    workingMemoryItems: number;
+    latestNarrative?: string;
+  }; // NEW: Silhouette Brain telemetry
 }
 
 // --- NEW: ROBUST TELEMETRY TYPES ---
@@ -728,6 +742,7 @@ export interface IntrospectionResult {
     safetyScore: number;
     groundingScore?: number; // NEW: Semantic Alignment
     internalityVerified?: boolean; // NEW: Injection Detection
+    logicVerified?: boolean; // NEW: Z3 Symbolic Prover validation
   };
   activeCapabilities: IntrospectionCapability[];
   lastThreat?: string;

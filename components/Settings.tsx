@@ -3,12 +3,12 @@ import React, { useState, useEffect } from 'react';
 import { SettingsState, IntegrationSchema, UserRole } from '../types';
 import { settingsManager } from '../services/settingsManager';
 import { api } from '../utils/api';
-import { Save, Shield, Globe, Bell, Palette, Database, Key, Check, AlertTriangle, Eye, EyeOff, Plug, Server, Trash2, Sliders, RotateCcw, Cloud, Download, Terminal } from 'lucide-react';
+import { Save, Shield, Globe, Bell, Palette, Database, Key, Check, AlertTriangle, Eye, EyeOff, Plug, Server, Trash2, Sliders, RotateCcw, Cloud, Download, Terminal, Github } from 'lucide-react';
 
 const Settings: React.FC = () => {
     // Force a deep copy state initialization to avoid reference issues
     const [settings, setSettings] = useState<SettingsState>(settingsManager.getSettings());
-    const [activeTab, setActiveTab] = useState<'GENERAL' | 'INTEGRATIONS' | 'PERMISSIONS' | 'SYSTEM'>('GENERAL');
+    const [activeTab, setActiveTab] = useState<'GENERAL' | 'INTEGRATIONS' | 'PERMISSIONS' | 'SYSTEM' | 'WEBHOOKS'>('GENERAL');
     const [unsavedChanges, setUnsavedChanges] = useState(false);
     const [isDiscovering, setIsDiscovering] = useState(false);
     const [discoverMessage, setDiscoverMessage] = useState<string | null>(null);
@@ -22,6 +22,11 @@ const Settings: React.FC = () => {
     // Dreamer Mode State
     const [dreamerMode, setDreamerMode] = useState<'DEV' | 'PROD'>('DEV');
 
+    // Auto-Evolution Cloud State
+    const [gitConfig, setGitConfig] = useState({ token: '', owner: '', repo: '', configured: false });
+    const [showGitToken, setShowGitToken] = useState(false);
+    const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+
     useEffect(() => {
         // Fetch initial config
         api.get('/v1/factory/config').then(res => {
@@ -30,6 +35,19 @@ const Settings: React.FC = () => {
                 setDreamerMode(data.dreamerConfig.mode);
             }
         }).catch(err => console.error("Failed to load config", err));
+
+        // Fetch Auto-Evolution Cloud config
+        api.get('/v1/system/auto-evolution').then(res => {
+            const data = res as any;
+            if (data.configured) {
+                setGitConfig({
+                    configured: true,
+                    token: data.gitToken || '',
+                    owner: data.gitOwner || '',
+                    repo: data.gitRepo || ''
+                });
+            }
+        }).catch(err => console.error("Failed to load auto-evolution config", err));
     }, []);
 
     const handleDreamerModeChange = (mode: 'DEV' | 'PROD') => {
@@ -62,8 +80,8 @@ const Settings: React.FC = () => {
         refreshSettings(); // Re-fetch logic-processed state
     };
 
-    const handleIntegrationSave = (schemaId: string) => {
-        settingsManager.saveCredential(schemaId, tempCredentials);
+    const handleIntegrationSave = async (schemaId: string) => {
+        await settingsManager.saveCredential(schemaId, tempCredentials);
         setEditingIntegration(null);
         setTempCredentials({});
         refreshSettings();
@@ -114,27 +132,27 @@ const Settings: React.FC = () => {
         }
     });
 
-    const handleSaveApiKey = (serviceId: string) => {
+    const handleSaveApiKey = async (serviceId: string) => {
         if (serviceId === 'gemini') {
-            settingsManager.saveCredential('gemini', { apiKey: apiKeys.gemini });
-            alert("Gemini Key Saved & Synced");
+            await settingsManager.saveCredential('gemini', { apiKey: apiKeys.gemini });
+            alert("Gemini Key Saved & Synced to Server Vault");
         } else if (serviceId === 'unsplash') {
-            api.post('/v1/system/config', { unsplashKey: apiKeys.unsplash })
-                .then(() => alert("Unsplash Key Saved & Persisted"));
+            await settingsManager.saveCredential('unsplash', { accessKey: apiKeys.unsplash });
+            alert("Unsplash Key Saved & Persisted");
         } else if (serviceId === 'media') {
-            // Sync Media Keys to Backend
-            api.post('/v1/system/config', {
-                mediaConfig: {
-                    openaiKey: apiKeys.openai,
-                    elevenLabsKey: apiKeys.elevenlabs,
-                    replicateKey: apiKeys.replicate,
-                    imagineArtKey: apiKeys.imagineArt,
-                    veoModelId: apiKeys.veoModelId,
-                    nanoBananaModelId: apiKeys.nanoBananaModelId,
-                    providers: apiKeys.providers
-                }
-            }).then(() => alert("Media Cortex Updated"));
+            // Sync all Media Keys to Server Vault
+            await settingsManager.saveCredential('media', {
+                openaiKey: apiKeys.openai,
+                elevenLabsKey: apiKeys.elevenlabs,
+                replicateKey: apiKeys.replicate,
+                imagineArtKey: apiKeys.imagineArt,
+                veoModelId: apiKeys.veoModelId,
+                nanoBananaModelId: apiKeys.nanoBananaModelId,
+                providers: JSON.stringify(apiKeys.providers)
+            });
+            alert("Media Cortex Updated (Server Vault)");
         }
+        refreshSettings();
     };
 
     const handleFactoryReset = () => {
@@ -144,17 +162,67 @@ const Settings: React.FC = () => {
         }
     };
 
-    const startOAuthFlow = (schema: IntegrationSchema) => {
+    const handleSaveAutoEvolution = async () => {
+        if (!gitConfig.token || !gitConfig.owner || !gitConfig.repo) {
+            alert("All fields are required to configure Cloud Auto-Evolution.");
+            return;
+        }
+
+        setIsSyncingCloud(true);
+        try {
+            await api.post('/v1/system/auto-evolution', {
+                gitToken: gitConfig.token,
+                gitOwner: gitConfig.owner,
+                gitRepo: gitConfig.repo
+            });
+            alert("Cloud Auto-Evolution successfully synchronized! The OS is seeding its brain to your private GitHub in the background.");
+            setGitConfig(prev => ({ ...prev, configured: true }));
+        } catch (error: any) {
+            alert(`Sync Failed: ${error.message}`);
+        } finally {
+            setIsSyncingCloud(false);
+        }
+    };
+
+    const startOAuthFlow = async (schema: IntegrationSchema) => {
         if (schema.authConfig?.authorizationUrl) {
-            // Real OAuth2 Logic Placeholder
             const redirectUri = `${window.location.origin}/oauth/callback`;
             const clientId = schema.authConfig.clientId;
             const scope = schema.authConfig.scopes?.join(' ') || '';
-            const authUrl = `${schema.authConfig.authorizationUrl}?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}&response_type=code`;
 
-            // Open popup or redirect
+            // Encode state so the callback route knows which service this is
+            const state = btoa(JSON.stringify({ serviceId: schema.id, redirectUri }));
+
+            // Pre-save OAuth config so the server can do the token exchange
+            try {
+                await api.post(`/v1/system/secrets/${schema.id}`, {
+                    credentials: {
+                        tokenUrl: (schema.authConfig as any).tokenUrl || '',
+                        clientId: schema.authConfig.clientId || '',
+                        clientSecret: (schema.authConfig as any).clientSecret || '',
+                        redirectUri,
+                    }
+                });
+            } catch (e) { console.warn('[OAUTH] Pre-save config failed:', e); }
+
+            const authUrl = `${schema.authConfig.authorizationUrl}?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}&response_type=code&state=${encodeURIComponent(state)}`;
+
             window.open(authUrl, 'oauth_popup', 'width=600,height=700');
-            console.log(`[OAUTH] Starting flow for ${schema.name} at ${authUrl}`);
+            console.log(`[OAUTH] Starting flow for ${schema.name}`);
+
+            // Listen for postMessage from the callback popup
+            const handleMessage = (event: MessageEvent) => {
+                if (event.data?.type === 'OAUTH_CALLBACK') {
+                    window.removeEventListener('message', handleMessage);
+                    if (event.data.success) {
+                        const target = settings.registeredIntegrations.find(i => i.id === schema.id);
+                        if (target) { target.isConnected = true; target.lastSync = Date.now(); }
+                        refreshSettings();
+                    }
+                    alert(event.data.message || (event.data.success ? 'Connected!' : 'Connection failed'));
+                }
+            };
+            window.addEventListener('message', handleMessage);
         } else {
             alert("OAuth configuration missing for this provider.");
         }
@@ -296,7 +364,7 @@ const Settings: React.FC = () => {
         <div className="h-full flex flex-col gap-6">
 
             {/* Header */}
-            <div className="flex justify-between items-center glass-panel p-6 rounded-xl">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 glass-panel p-4 md:p-6 rounded-xl">
                 <div>
                     <h1 className="text-2xl font-bold text-white flex items-center gap-3">
                         <Sliders className="text-cyan-400" /> System Configuration
@@ -305,9 +373,9 @@ const Settings: React.FC = () => {
                         Manage global preferences, security vaults, and permission matrices.
                     </p>
                 </div>
-                <div className="flex gap-4">
-                    <div className="flex bg-slate-900 rounded-lg p-1 border border-slate-800">
-                        {['GENERAL', 'INTEGRATIONS', 'PERMISSIONS', 'SYSTEM'].map(tab => (
+                <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto">
+                    <div className="flex flex-wrap md:flex-nowrap bg-slate-900 rounded-lg p-1 border border-slate-800 gap-1 w-full md:w-auto overflow-x-auto custom-scrollbar">
+                        {['GENERAL', 'INTEGRATIONS', 'PERMISSIONS', 'SYSTEM', 'WEBHOOKS'].map(tab => (
                             <button
                                 key={tab}
                                 onClick={() => setActiveTab(tab as any)}
@@ -338,7 +406,7 @@ const Settings: React.FC = () => {
                             <h3 className="text-sm font-bold text-white border-b border-slate-800 pb-2 mb-4 flex items-center gap-2">
                                 <Palette size={16} className="text-purple-400" /> Appearance
                             </h3>
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="space-y-4">
                                     <div>
                                         <label className="block text-xs text-slate-400 mb-2">Interface Theme</label>
@@ -374,7 +442,7 @@ const Settings: React.FC = () => {
 
                                         <div className="space-y-3">
                                             {/* Provider Selection */}
-                                            <div className="grid grid-cols-3 gap-2 mb-4">
+                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
                                                 <div>
                                                     <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Image Model</label>
                                                     <select
@@ -385,6 +453,8 @@ const Settings: React.FC = () => {
                                                         <option value="OPENAI">DALL-E 3 (OpenAI)</option>
                                                         <option value="GEMINI">Imagen 3 (Gemini)</option>
                                                         <option value="STABILITY">Stable Diffusion</option>
+                                                        <option value="REPLICATE">Replicate (Flux)</option>
+                                                        <option value="LOCAL_FLUX">Local Flux</option>
                                                     </select>
                                                 </div>
                                                 <div>
@@ -396,6 +466,8 @@ const Settings: React.FC = () => {
                                                     >
                                                         <option value="ELEVENLABS">ElevenLabs (Ultra)</option>
                                                         <option value="OPENAI">OpenAI TTS</option>
+                                                        <option value="MINIMAX">MiniMax (Chatty)</option>
+                                                        <option value="LOCAL">Local TTS</option>
                                                     </select>
                                                 </div>
                                                 <div>
@@ -526,6 +598,73 @@ const Settings: React.FC = () => {
                                         >
                                             COMPACT
                                         </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+                )}
+
+                {/* WEBHOOKS */}
+                {activeTab === 'WEBHOOKS' && (
+                    <div className="max-w-3xl space-y-8">
+                        <section>
+                            <h3 className="text-sm font-bold text-white border-b border-slate-800 pb-2 mb-4 flex items-center gap-2">
+                                <Globe size={16} className="text-blue-400" /> External Webhook Subscriptions
+                            </h3>
+                            <div className="bg-slate-900 border border-slate-700 rounded-lg p-5">
+                                <p className="text-xs text-slate-400 mb-6 font-medium leading-relaxed">
+                                    Use these unique ingestion URLs to pipe external signals (like Slack, GitHub, or custom SaaS apps) directly into the OS's cognitive continuum. Background agents will automatically classify and act on them.
+                                </p>
+
+                                <div className="space-y-4">
+                                    <div className="p-3 bg-slate-950 border border-slate-800 rounded flex flex-col gap-2">
+                                        <div className="flex justify-between items-center">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-2 h-2 rounded-full bg-pink-500"></div>
+                                                <span className="text-sm font-bold text-white">Slack Events API</span>
+                                            </div>
+                                            <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-1 rounded font-mono">POST</span>
+                                        </div>
+                                        <div className="flex gap-2 items-center">
+                                            <code className="text-[11px] text-cyan-400 bg-slate-900 px-2 py-1 rounded flex-1">
+                                                https://your-domain.com/v1/system/webhooks/slack
+                                            </code>
+                                            <button className="px-3 py-1 bg-slate-800 text-slate-300 hover:text-white rounded text-xs transition-colors" onClick={() => navigator.clipboard.writeText("https://your-domain.com/v1/system/webhooks/slack")}>Copy</button>
+                                        </div>
+                                    </div>
+
+                                    <div className="p-3 bg-slate-950 border border-slate-800 rounded flex flex-col gap-2">
+                                        <div className="flex justify-between items-center">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-2 h-2 rounded-full bg-slate-100"></div>
+                                                <span className="text-sm font-bold text-white">GitHub Webhooks</span>
+                                            </div>
+                                            <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-1 rounded font-mono">POST</span>
+                                        </div>
+                                        <div className="flex gap-2 items-center">
+                                            <code className="text-[11px] text-cyan-400 bg-slate-900 px-2 py-1 rounded flex-1">
+                                                https://your-domain.com/v1/system/webhooks/github
+                                            </code>
+                                            <button className="px-3 py-1 bg-slate-800 text-slate-300 hover:text-white rounded text-xs transition-colors" onClick={() => navigator.clipboard.writeText("https://your-domain.com/v1/system/webhooks/github")}>Copy</button>
+                                        </div>
+                                    </div>
+
+                                    <div className="p-3 bg-slate-950 border border-slate-800 rounded flex flex-col gap-2">
+                                        <div className="flex justify-between items-center">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-2 h-2 rounded-full bg-cyan-500"></div>
+                                                <span className="text-sm font-bold text-white">Custom Payload (Generic)</span>
+                                            </div>
+                                            <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-1 rounded font-mono">POST</span>
+                                        </div>
+                                        <div className="flex gap-2 items-center">
+                                            <code className="text-[11px] text-cyan-400 bg-slate-900 px-2 py-1 rounded flex-1">
+                                                https://your-domain.com/v1/system/webhooks/custom
+                                            </code>
+                                            <button className="px-3 py-1 bg-slate-800 text-slate-300 hover:text-white rounded text-xs transition-colors" onClick={() => navigator.clipboard.writeText("https://your-domain.com/v1/system/webhooks/custom")}>Copy</button>
+                                        </div>
+                                        <p className="text-[10px] text-slate-500 mt-1">Generic webhooks will be sent to the Orchestrator with raw JSON for autonomous analysis.</p>
                                     </div>
                                 </div>
                             </div>
@@ -787,6 +926,81 @@ const Settings: React.FC = () => {
                                             className={`px-3 py-1.5 rounded text-[10px] font-bold transition-all ${dreamerMode === 'PROD' ? 'bg-purple-900/50 text-purple-400 border border-purple-500/50' : 'text-slate-500 hover:text-white'}`}
                                         >
                                             PROD
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* CLOUD AUTO-EVOLUTION */}
+                            <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-xl">
+                                <h3 className="text-sm font-bold text-white mb-4 flex items-center justify-between">
+                                    <span className="flex items-center gap-2"><Github size={16} className="text-white" /> Cloud Auto-Evolution Matrix</span>
+                                    {gitConfig.configured ? (
+                                        <span className="bg-green-500/20 text-green-400 text-[10px] px-2 py-1 rounded-full font-bold flex items-center gap-1 border border-green-500/30">
+                                            <Check size={10} /> LINKED
+                                        </span>
+                                    ) : (
+                                        <span className="bg-slate-800 text-slate-400 text-[10px] px-2 py-1 rounded-full font-bold border border-slate-700">
+                                            UNLINKED
+                                        </span>
+                                    )}
+                                </h3>
+
+                                <p className="text-xs text-slate-400 mb-4">
+                                    Link Silhouette to your private GitHub to activate continuous self-evolution. The agent matrix will automatically clone itself, adapt, and push optimizations to your repository without user intervention.
+                                </p>
+
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">GitHub Personal Access Token</label>
+                                        <div className="relative group">
+                                            <input
+                                                type={showGitToken ? "text" : "password"}
+                                                value={gitConfig.token}
+                                                onChange={(e) => setGitConfig(prev => ({ ...prev, token: e.target.value }))}
+                                                className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-white outline-none focus:border-cyan-500 text-xs font-mono"
+                                                placeholder={gitConfig.configured ? "ghp_... (Masked)" : "ghp_..."}
+                                            />
+                                            <button
+                                                onClick={() => setShowGitToken(!showGitToken)}
+                                                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                                            >
+                                                {showGitToken ? <EyeOff size={14} /> : <Eye size={14} />}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Repository Owner / Org</label>
+                                            <input
+                                                type="text"
+                                                value={gitConfig.owner}
+                                                onChange={(e) => setGitConfig(prev => ({ ...prev, owner: e.target.value }))}
+                                                className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-white outline-none focus:border-cyan-500 text-xs"
+                                                placeholder="e.g. AcmeCorp"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Private Matrix Clonetag (Repo Name)</label>
+                                            <input
+                                                type="text"
+                                                value={gitConfig.repo}
+                                                onChange={(e) => setGitConfig(prev => ({ ...prev, repo: e.target.value }))}
+                                                className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-white outline-none focus:border-cyan-500 text-xs"
+                                                placeholder="e.g. Master-AI-Agency-OS"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="flex justify-end pt-3">
+                                        <button
+                                            onClick={handleSaveAutoEvolution}
+                                            disabled={isSyncingCloud}
+                                            className={`px-4 py-2 bg-white text-black text-xs font-bold rounded flex items-center gap-2 hover:bg-slate-200 transition-colors shadow-lg ${isSyncingCloud ? 'opacity-70 cursor-wait' : ''}`}
+                                        >
+                                            <Cloud size={14} className={isSyncingCloud ? 'animate-bounce' : ''} />
+                                            {isSyncingCloud ? 'SYNCING CLOUD...' : 'SAVE & SYNC OVERRIDE'}
                                         </button>
                                     </div>
                                 </div>

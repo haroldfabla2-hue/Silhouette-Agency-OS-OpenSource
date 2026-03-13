@@ -1,0 +1,26 @@
+[Unit]
+Description=Silhouette Agency OS - Frontend UI
+After=network.target silhouette-core.service
+
+[Service]
+Type=simple
+# Update USER and GROUP to the correct deployment user
+User=silhouette
+Group=silhouette
+
+# Update WorkingDirectory to absolute path of your clone
+WorkingDirectory=/opt/Silhouette-Agency-OS-OpenSource
+
+# Command to serve the frontend preview build (assuming 'npm run build' was executed)
+# Alternatively, use NGINX to serve the static /dist directory for massive scale
+ExecStart=/usr/bin/npm run preview -- --host 0.0.0.0 --port 5173
+
+Restart=always
+RestartSec=5
+
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=silhouette-ui
+
+[Install]
+WantedBy=multi-user.target

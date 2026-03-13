@@ -13,6 +13,7 @@ import { chronos } from "./chronosService";
 import { cfo } from "./cfoService";
 import { contextAssembler } from "./contextAssembler";
 import { toolHandler } from "./tools/toolHandler"; // [PA-038] Import Tool Handler for Fallback
+import { localEmbeddingService } from "./localEmbeddingService";
 
 
 
@@ -242,7 +243,9 @@ export const generateAgentResponse = async (
 
         // 1. GATHER CONTEXT
         // [MODIFIED] Use ContextAssembler for Unified Reality
-        const globalContext = await contextAssembler.getGlobalContext(task);
+        // Use DEEP mode for background autonomous agents to grant them more time and RAG budget.
+        const fetchMode = communicationLevel === CommunicationLevel.USER_FACING ? 'FAST' : 'DEEP';
+        const globalContext = await contextAssembler.getGlobalContext(task, { mode: fetchMode });
         const { systemMetrics, orchestratorState, screenContext, narrativeState, relevantMemory, graphConnections, chatHistory } = globalContext;
 
         const memoryContext = `${relevantMemory}\n${graphConnections}`;
@@ -383,23 +386,46 @@ export const generateAgentResponse = async (
         `;
         }
 
-        // [PA-055] Check Capability: SYSTEM CONTROL (Desktop Integration)
+        // [PA-055] Check Capability: SYSTEM CONTROL (Desktop Integration & Self-Awareness)
         if (agentCapabilities.includes(AgentCapability.TOOL_SYSTEM_CONTROL)) {
             // Import specific tools to avoid polluting context with everything
             const {
                 SYSTEM_EXECUTE_COMMAND_TOOL,
                 SYSTEM_OPEN_APP_TOOL,
-                SYSTEM_GET_SCREENSHOT_TOOL
+                SYSTEM_GET_SCREENSHOT_TOOL,
+                GET_SYSTEM_CONFIG_TOOL,
+                UPDATE_SYSTEM_CONFIG_TOOL,
+                READ_ARCHITECTURE_TOOL,
+                READ_SYSTEM_LOGS_TOOL,
+                ANALYZE_AND_REPAIR_TOOL,
+                BROWSER_NAVIGATE_TOOL,
+                BROWSER_ACTION_TOOL,
+                BROWSER_EXTRACT_TOOL,
+                BROWSER_SCREENSHOT_TOOL
             } = await import('./tools/definitions');
 
-            tools.push(SYSTEM_EXECUTE_COMMAND_TOOL, SYSTEM_OPEN_APP_TOOL, SYSTEM_GET_SCREENSHOT_TOOL);
+            tools.push(
+                SYSTEM_EXECUTE_COMMAND_TOOL,
+                SYSTEM_OPEN_APP_TOOL,
+                SYSTEM_GET_SCREENSHOT_TOOL,
+                GET_SYSTEM_CONFIG_TOOL,
+                UPDATE_SYSTEM_CONFIG_TOOL,
+                READ_ARCHITECTURE_TOOL,
+                READ_SYSTEM_LOGS_TOOL,
+                ANALYZE_AND_REPAIR_TOOL,
+                BROWSER_NAVIGATE_TOOL,
+                BROWSER_ACTION_TOOL,
+                BROWSER_EXTRACT_TOOL,
+                BROWSER_SCREENSHOT_TOOL
+            );
 
             systemInstruction += `\n
         PROTOCOL: SYSTEM_OPERATOR
         CAPABILITY: HOST_CONTROL
-        OBJECTIVE: You have permission to control the host system.
-        SAFETY RULE: ONLY execute commands explicitly requested by the user or strictly necessary for the task.
+        OBJECTIVE: You have permission to control the host system and the OS configuration itself.
+        SAFETY RULE: ONLY execute commands or modify config explicitly requested by the user or strictly necessary for the task.
         SAFETY RULE: Do NOT execute destructive commands (rm -rf, etc).
+        SAFETY RULE: When updating configuration (UPDATE_SYSTEM_CONFIG_TOOL), you MUST ask for the user's explicit permission first before writing to the config files.
         `;
         }
 
@@ -1018,11 +1044,20 @@ export const analyzeImage = async (
     }
 };
 
+let consecutiveEmbeddingFailures = 0;
+let isLocalEmbeddingPrimary = false;
+
 export const generateEmbedding = async (text: string): Promise<number[] | null> => {
+    if (isLocalEmbeddingPrimary) {
+        // [PA-048] User requested permanent fallback after 3 strikes
+        return await localEmbeddingService.getEmbedding(text);
+    }
+
     const client = ensureClient();
     if (!client) {
-        console.warn("[GeminiService] ⚠️ Embedding skipped: No API Key available.");
-        return null;
+        // Fallback to local Transformers.js embedding (all-MiniLM-L6-v2)
+        console.log("[GeminiService] 🔌 Using Local Embedding Fallback for:", text.substring(0, 30));
+        return await localEmbeddingService.getEmbedding(text);
     }
 
     try {
@@ -1035,7 +1070,10 @@ export const generateEmbedding = async (text: string): Promise<number[] | null> 
                 contents: [{ parts: [{ text }] }]
             });
             const embedding = result.embeddings?.[0]?.values;
-            if (embedding) return embedding;
+            if (embedding) {
+                consecutiveEmbeddingFailures = 0; // Reset on success
+                return embedding;
+            }
         } catch (e: any) {
             // [ROBUSTNESS] Handle both Error objects and raw JSON error responses
             const errorMsg = e.message || JSON.stringify(e);
@@ -1049,19 +1087,48 @@ export const generateEmbedding = async (text: string): Promise<number[] | null> 
                         contents: [{ parts: [{ text }] }]
                     });
                     const embedding = result.embeddings?.[0]?.values;
-                    if (embedding) return embedding;
+                    if (embedding) {
+                        consecutiveEmbeddingFailures = 0; // Reset on success
+                        return embedding;
+                    }
                 } catch (fallbackError: any) {
+                    consecutiveEmbeddingFailures++;
                     console.error("[GeminiService] ❌ Fallback Embedding text-embedding-001 also failed:", fallbackError.message || fallbackError);
+
+                    if (consecutiveEmbeddingFailures >= 3) {
+                        isLocalEmbeddingPrimary = true;
+                        console.warn("[GeminiService] 🚨 3 Consecutive API Embedding Failures. Permanently switching to Local Embedding Engine.");
+                    } else {
+                        console.log(`[GeminiService] 🔌 Falling back to Local Embedding Engine (${consecutiveEmbeddingFailures}/3 strikes)...`);
+                    }
+                    return await localEmbeddingService.getEmbedding(text);
                 }
             } else {
-                throw e; // Rethrow other errors
+                consecutiveEmbeddingFailures++;
+                console.error("[GeminiService] ❌ Embedding API Failed:", errorMsg);
+
+                if (consecutiveEmbeddingFailures >= 3) {
+                    isLocalEmbeddingPrimary = true;
+                    console.warn("[GeminiService] 🚨 3 Consecutive API Embedding Failures. Permanently switching to Local Embedding Engine.");
+                } else {
+                    console.log(`[GeminiService] 🔌 Falling back to Local Embedding Engine (${consecutiveEmbeddingFailures}/3 strikes)...`);
+                }
+                return await localEmbeddingService.getEmbedding(text);
             }
         }
 
         return null;
     } catch (e: any) {
-        console.error("[GeminiService] ❌ Embedding API Failed:", e?.message || e);
-        return null;
+        consecutiveEmbeddingFailures++;
+        console.error("[GeminiService] ❌ Critical Embedding Failure:", e?.message || e);
+
+        if (consecutiveEmbeddingFailures >= 3) {
+            isLocalEmbeddingPrimary = true;
+            console.warn("[GeminiService] 🚨 3 Consecutive API Embedding Failures. Permanently switching to Local Embedding Engine.");
+        } else {
+            console.log(`[GeminiService] 🔌 Falling back to Local Embedding Engine (${consecutiveEmbeddingFailures}/3 strikes)...`);
+        }
+        return await localEmbeddingService.getEmbedding(text);
     }
 };
 
@@ -1408,7 +1475,7 @@ ${context?.relevantMemory || ''}
                     thoughtBuffer += text;
 
                     // Real-time Thought Extractor
-                    const thoughtRegex = /<thought>(.*?)<\/thought>/gs;
+                    const thoughtRegex = /<(?:thought|think)>(.*?)<\/(?:thought|think)>/gs;
                     let match;
                     while ((match = thoughtRegex.exec(thoughtBuffer)) !== null) {
                         const content = match[1].trim();

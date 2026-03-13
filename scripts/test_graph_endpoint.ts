@@ -1,7 +1,7 @@
 import fetch from 'node-fetch';
 
 const API_PORT = 3001;
-const API_KEY = 'sk-silhouette-default';
+const API_KEY = process.env.API_KEY || '';
 const URL = `http://localhost:${API_PORT}/v1/graph/visualize`;
 
 async function testGraphEndpoint() {

@@ -1,6 +1,17 @@
 
 import { Agent, AgentStatus, AgentRoleType, Project, AutonomousConfig, AgentCapability, AgentTier, AgentCategory } from './types';
 
+// Safe environment variable getter for both Node and Vite environments
+const getEnvVar = (key: string, defaultValue?: string): string | undefined => {
+  if (typeof process !== 'undefined' && process.env) {
+    if (process.env[key] !== undefined) return process.env[key];
+  }
+  if (typeof import.meta !== 'undefined' && (import.meta as any).env) {
+    if ((import.meta as any).env[key] !== undefined) return (import.meta as any).env[key];
+  }
+  return defaultValue;
+};
+
 // The "Hero" Agents are explicitly defined.
 // The Orchestrator will generate the remaining "Worker" drones to reach 131 total.
 
@@ -30,6 +41,9 @@ export const ACTIONABLE_PROTOCOLS = [
   'PROTOCOL_INCIDENT_REPORT',            // Research found issue
   'PROTOCOL_GENESIS_TRIGGER',            // Code injection approved
   'PROTOCOL_MISSING_CREDENTIAL',         // New: Credential Safety
+  'PROTOCOL_MEMORY_QUARANTINE',          // Memory node quarantined (not deleted)
+  'PROTOCOL_CONTRADICTION_DETECTED',     // Contradiction found in memory base
+  'PROTOCOL_Z3_VERIFICATION_FAILED',     // Action blocked by formal logic verification
 ];
 
 
@@ -173,7 +187,7 @@ export const PROJECTS: Project[] = [
 export const MOCK_PROJECTS = PROJECTS;
 
 export const QDRANT_CONFIG = {
-  url: process.env.QDRANT_URL || 'http://localhost:6444',
+  url: getEnvVar('QDRANT_URL', 'http://localhost:6444'),
   collectionName: 'silhouette_memory_v1',
   embeddingSize: 384 // using all-MiniLM-L6-v2
 };
@@ -188,14 +202,12 @@ export const DEFAULT_AUTONOMOUS_CONFIG: AutonomousConfig = {
 
 export const DEFAULT_API_CONFIG = {
   enabled: true,
-  apiKey: process.env.VITE_API_KEY ||
-    ((import.meta as any).env?.VITE_API_KEY) ||
-    '',
+  apiKey: getEnvVar('VITE_SILHOUETTE_API_KEY', getEnvVar('VITE_API_KEY', '') as string),
   port: 3005
 };
 
 export const REPLICATE_CONFIG = {
-  apiKey: process.env.REPLICATE_API_TOKEN || 'default-replicate-key',
+  apiKey: getEnvVar('REPLICATE_API_TOKEN', 'default-replicate-key'),
   models: {
     primary: "stability-ai/sdxl:39ed52f2a78e934b3ba6e2a89f5b1c712de7dfea535525255b1aa35c5565e08b",
     fallback: "black-forest-labs/flux-dev", // Or another fallback
@@ -203,8 +215,27 @@ export const REPLICATE_CONFIG = {
   }
 };
 
-export const REDIS_CONFIG = {
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT || '6499'),
-  password: process.env.REDIS_PASSWORD
+// Redis config: supports REDIS_URL (Docker prod) or individual host/port (dev)
+// Dev docker-compose maps 6499:6379, prod uses standard 6379
+const parseRedisUrl = (): { host: string; port: number; password?: string } => {
+  const url = getEnvVar('REDIS_URL');
+  if (url) {
+    try {
+      const parsed = new URL(url);
+      return {
+        host: parsed.hostname,
+        port: parseInt(parsed.port) || 6379,
+        password: parsed.password || undefined,
+      };
+    } catch {
+      console.warn('[CONFIG] Invalid REDIS_URL, falling back to individual vars');
+    }
+  }
+  return {
+    host: getEnvVar('REDIS_HOST', 'localhost') as string,
+    port: parseInt(getEnvVar('REDIS_PORT', '6499') as string),
+    password: getEnvVar('REDIS_PASSWORD'),
+  };
 };
+
+export const REDIS_CONFIG = parseRedisUrl();

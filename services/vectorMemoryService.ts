@@ -11,15 +11,28 @@ class VectorMemoryService {
         // Lazy init
     }
 
+    /** Check if Qdrant is connected and ready for queries */
+    public isReady(): boolean {
+        return this.isConnected;
+    }
+
+    private connecting = false;
+
     public async connect() {
         if (typeof window !== 'undefined') return; // Browser safety
+        if (this.isConnected || this.connecting) return; // Already connected or in progress
 
-        // [PA-058] Lite Mode Check
-        const { configLoader } = await import('../server/config/configLoader');
-        const config = configLoader.getConfig();
-        if (config.modules.vectorDB === false) {
-            console.log("[VECTOR_MEM] 🚫 VectorDB module disabled in config (Lite Mode). Using LanceDB only.");
-            return;
+        this.connecting = true;
+        try {
+            // [PA-058] Lite Mode Check
+            const { configLoader } = await import('../server/config/configLoader');
+            const config = configLoader.getConfig();
+            if (config.modules.vectorDB === false) {
+                console.log("[VECTOR_MEM] VectorDB module disabled in config (Lite Mode). Using LanceDB only.");
+                return;
+            }
+        } catch {
+            // Config not available yet, proceed with default
         }
 
         if (!this.client) {
@@ -41,8 +54,12 @@ class VectorMemoryService {
                 // Ensure collection exists
                 await this.ensureCollection();
             } catch (e) {
-                console.error("❌ Failed to initialize Qdrant client", e);
+                console.error("[VECTOR_MEM] Failed to initialize Qdrant client:", e);
+            } finally {
+                this.connecting = false;
             }
+        } else {
+            this.connecting = false;
         }
     }
 

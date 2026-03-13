@@ -12,8 +12,8 @@ async function listModels() {
 
     fs.writeFileSync(logFile, "🚀 Starting Model List Script (File Mode)...\n");
 
-    // Manually injected key
-    const key = "AIzaSyDXGN4AR3owdj00YXJMLhcErm5H4MePQUQ";
+    // Use environment variable for API key
+    const key = process.env.GOOGLE_API_KEY;
 
     if (!key) {
         log('❌ No Gemini API Key found');

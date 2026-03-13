@@ -386,6 +386,36 @@ class IntegrationHub {
                 config: {}
             });
         }
+
+        // [PA-051] DYNAMIC INTEGRATIONS: Auto-scan and register Agent-built custom plugins
+        try {
+            const fs = require('fs');
+            const path = require('path');
+            const customPluginsPath = path.join(process.cwd(), 'services', 'plugins', 'custom');
+
+            if (fs.existsSync(customPluginsPath)) {
+                const files = fs.readdirSync(customPluginsPath);
+                for (const file of files) {
+                    if (file.endsWith('.ts')) {
+                        const pluginId = file.replace('.ts', '').toLowerCase();
+
+                        // Register if not already loaded from settings
+                        if (!this.providers.has(pluginId)) {
+                            this.registerProvider({
+                                id: pluginId,
+                                name: pluginId.charAt(0).toUpperCase() + pluginId.slice(1) + ' (Dynamic)',
+                                type: 'WEBHOOK',
+                                enabled: true, // Agent plugins are auto-enabled
+                                config: {}
+                            });
+                            console.log(`[INTEGRATION_HUB] 🔌 Dynamically loaded Custom Plugin: ${pluginId}`);
+                        }
+                    }
+                }
+            }
+        } catch (scanErr: any) {
+            console.warn('[INTEGRATION_HUB] Dynamic custom plugin scan failed:', scanErr.message);
+        }
     }
 
     private mapKeyToType(key: string): IntegrationProvider['type'] {
