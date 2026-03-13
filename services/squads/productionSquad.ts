@@ -333,7 +333,7 @@ class ProductionOrchestrator {
                     try {
                         // Get enhanced prompt with consistency
                         let imagePrompt = shot.imagePrompt || shot.description;
-                        let videoPrompt = shot.videoPrompt || shot.action;
+                        const videoPrompt = shot.videoPrompt || shot.action;
 
                         if (project.consistencySessionId && shot.characterIds?.length) {
                             const enhancement = sceneConsistencyManager.getEnhancedPrompt(

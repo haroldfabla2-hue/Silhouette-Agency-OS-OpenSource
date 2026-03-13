@@ -69,7 +69,7 @@ export class ContextCompactionService {
         const head = annotatedHistory.slice(0, cfg.reservedHead);
 
         // Ensure tail doesn't overlap with head
-        let tailStartIndex = Math.max(cfg.reservedHead, annotatedHistory.length - cfg.reservedTail);
+        const tailStartIndex = Math.max(cfg.reservedHead, annotatedHistory.length - cfg.reservedTail);
         const tail = annotatedHistory.slice(tailStartIndex);
 
         const middle = annotatedHistory.slice(cfg.reservedHead, tailStartIndex);
@@ -81,7 +81,7 @@ export class ContextCompactionService {
         // Ensure we have budget for Tail
         const headTokens = head.reduce((sum, msg) => sum + (msg.tokenEstimate || 0), 0);
         const tailTokens = tail.reduce((sum, msg) => sum + (msg.tokenEstimate || 0), 0);
-        let remainingBudget = cfg.tokenBudget - headTokens - tailTokens;
+        const remainingBudget = cfg.tokenBudget - headTokens - tailTokens;
 
         if (remainingBudget < 0) {
             console.warn("[COMPACTION] 🚨 Critical: Even Head + Tail exceeds budget. Truncating Tail...");

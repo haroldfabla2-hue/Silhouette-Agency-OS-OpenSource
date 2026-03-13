@@ -83,10 +83,10 @@ async function runComfyWorker() {
         // Process Pending Jobs
         if (!fs.existsSync(VIDEO_QUEUE_PATH)) return;
 
-        let queueData = fs.readFileSync(VIDEO_QUEUE_PATH, 'utf8');
+        const queueData = fs.readFileSync(VIDEO_QUEUE_PATH, 'utf8');
         let queue = JSON.parse(queueData);
         // Re-filter to be sure
-        let pending = queue.filter((j: any) => j.status === 'QUEUED');
+        const pending = queue.filter((j: any) => j.status === 'QUEUED');
 
         console.log(`[Orchestrator] Processing ${pending.length} jobs via ComfyUI...`);
 

@@ -107,7 +107,7 @@ const RuntimeApp: React.FC<{ code: string }> = ({ code }) => {
         try {
             // 1. TRANSFORM IMPORTS TO DESTRUCTURING
             // This allows 'import { LineChart } from "recharts"' to work with our injected object
-            let cleanCode = code
+            const cleanCode = code
                 // Handle React imports
                 .replace(/import\s+React,?\s*{([^}]*)}\s+from\s+['"]react['"];?/g, 'const {$1} = React;')
                 .replace(/import\s+React\s+from\s+['"]react['"];?/g, '') // Remove plain import if handled
@@ -206,7 +206,7 @@ const DynamicWorkspace: React.FC<DynamicWorkspaceProps> = ({ initialProjectId })
     // Creation State
     const [isCreatingProject, setIsCreatingProject] = useState(false);
     const [newProjectName, setNewProjectName] = useState('');
-    const [newProjectType, setNewProjectType] = useState<VFSProject['type']>('REACT');
+    const [newProjectType] = useState<VFSProject['type']>('REACT');
 
     // Presentation Viewer State
     const [showPresentationViewer, setShowPresentationViewer] = useState(false);
@@ -449,7 +449,7 @@ const DynamicWorkspace: React.FC<DynamicWorkspaceProps> = ({ initialProjectId })
     // --- TERMINAL LOGIC ---
     const getPathString = (nodeId: string): string => {
         if (!activeProject || nodeId === activeProject.rootFolderId) return '~';
-        let parts = [];
+        const parts = [];
         let curr = vfs.getNode(nodeId);
         while (curr && curr.id !== activeProject.rootFolderId) {
             parts.unshift(curr.name);
@@ -538,7 +538,7 @@ const DynamicWorkspace: React.FC<DynamicWorkspaceProps> = ({ initialProjectId })
                 case 'help': output = 'Commands: ls, cd, pwd, mkdir, touch, rm, cat, echo, cp, mv, clear, npm'; break;
                 case 'clear': setTerminalLines([]); return;
                 case 'pwd': output = getPathString(cwdId!); break;
-                case 'ls':
+                case 'ls': {
                     const targetPath = args[0] || '.';
                     const targetNode = resolvePathNode(cwdId!, targetPath);
                     if (targetNode && targetNode.type === 'FOLDER') {
@@ -551,7 +551,8 @@ const DynamicWorkspace: React.FC<DynamicWorkspaceProps> = ({ initialProjectId })
                         }
                     } else output = `ls: cannot access '${targetPath}'`;
                     break;
-                case 'cd':
+                }
+                case 'cd': {
                     const cdPath = args[0] || '~';
                     const cdNode = resolvePathNode(cwdId!, cdPath);
                     if (cdNode && cdNode.type === 'FOLDER') {
@@ -559,6 +560,7 @@ const DynamicWorkspace: React.FC<DynamicWorkspaceProps> = ({ initialProjectId })
                         setExpandedFolders(prev => new Set(prev).add(cdNode.id));
                     } else output = `cd: no such file: ${cdPath}`;
                     break;
+                }
                 case 'mkdir':
                     if (args[0]) { vfs.createFolder(cwdId!, args[0]); output = `Created directory: ${args[0]}`; forceUpdate(); }
                     else output = 'usage: mkdir <name>';
@@ -686,7 +688,7 @@ const DynamicWorkspace: React.FC<DynamicWorkspaceProps> = ({ initialProjectId })
 
                 {/* PR Notification - Shows when Silhouette has pending PRs */}
                 <div className="mb-6">
-                    <PRNotification onOpenPR={(prNumber) => {
+                    <PRNotification onOpenPR={() => {
                         // Refresh projects to pick up newly ingested PR project
                         setProjects(vfs.getProjects());
                     }} />
@@ -913,6 +915,7 @@ const DynamicWorkspace: React.FC<DynamicWorkspaceProps> = ({ initialProjectId })
                         {terminalLines.map((line, i) => (
                             <div key={i} className="whitespace-pre-wrap break-all leading-tight mb-0.5">
                                 <span className={line.includes('[32m') ? "text-green-400" : line.includes('[31m') ? "text-red-400" : line.includes('[36m') ? "text-cyan-400" : "text-slate-400"}>
+                                    {/* eslint-disable-next-line no-control-regex */}
                                     {line.replace(/\x1b\[[0-9;]*m/g, '')}
                                 </span>
                             </div>

@@ -77,7 +77,7 @@ class QualityControlService {
         const errorCount = recentErrors.length;
 
         // Base score 100, deduct 2 points per error. Min 0.
-        let score = Math.max(0, 100 - (errorCount * 2));
+        const score = Math.max(0, 100 - (errorCount * 2));
 
         // Provide stability assessment
         let stability = 'EXCELLENT';

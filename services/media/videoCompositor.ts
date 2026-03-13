@@ -421,7 +421,7 @@ class VideoCompositor {
      */
     public async mixAudio(videoPath: string, audioTracks: AudioTrack[], outputPath: string): Promise<CompositorResult> {
         return new Promise((resolve, reject) => {
-            let command = ffmpeg(videoPath);
+            const command = ffmpeg(videoPath);
 
             // Add audio inputs
             audioTracks.forEach(track => {

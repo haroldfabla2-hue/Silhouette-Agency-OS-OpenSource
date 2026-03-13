@@ -167,7 +167,7 @@ async function main() {
     console.log('');
 
     const basePath = process.cwd();
-    let allCorrupted: CorruptedItem[] = [];
+    const allCorrupted: CorruptedItem[] = [];
 
     // 1. Scan SQLite
     console.log('📂 Scanning SQLite...');

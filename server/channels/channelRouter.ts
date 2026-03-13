@@ -132,7 +132,7 @@ class ChannelRouter {
 
     private getOrCreateSessionForChat(msg: IncomingMessage): string {
         const chatKey = `${msg.channel}:${msg.chatId}`;
-        let sessionId = this.chatToSession.get(chatKey);
+        const sessionId = this.chatToSession.get(chatKey);
 
         if (sessionId) {
             const session = sessionManager.getSession(sessionId);

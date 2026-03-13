@@ -27,7 +27,7 @@ async function verifyPaperPipeline() {
 
     // Step 1: Create insight (or use existing)
     console.log('[TEST] Step 1: Getting/creating insight...');
-    let insight = await synthesisService.synthesizeFromRecent({
+    const insight = await synthesisService.synthesizeFromRecent({
         minDiscoveries: 3,
         includeResearch: true
     });
