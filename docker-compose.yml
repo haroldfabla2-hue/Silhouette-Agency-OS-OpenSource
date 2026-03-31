@@ -5,10 +5,12 @@ services:
     container_name: silhouette-postgres
     ports:
       - "5432:5432"
+    env_file:
+      - .env.local
     environment:
       POSTGRES_DB: silhouette
       POSTGRES_USER: silhouette
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-silhouette_secure_2026}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-silhouette_secure_dev_2026}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: always
