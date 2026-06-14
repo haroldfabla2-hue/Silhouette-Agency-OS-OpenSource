@@ -6,6 +6,8 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
+import path from 'path';
+import fs from 'fs';
 import {
     Presentation,
     Slide,
@@ -814,6 +816,68 @@ Return ONLY the slide body content as clean text/markdown.
             }
             return '';
         }).join('');
+    }
+
+    /**
+     * Export presentation to native PowerPoint (.pptx) file
+     */
+    async exportToPPTX(presentationId: string): Promise<string> {
+        const pres = this.get(presentationId);
+        if (!pres) {
+            throw new Error(`Presentation with ID ${presentationId} not found`);
+        }
+
+        const tempJsonPath = path.join(process.cwd(), `temp_pres_${presentationId}.json`);
+        const outputPptxName = `presentation_${presentationId}.pptx`;
+        
+        // Ensure uploads directory exists
+        const uploadsDir = path.join(process.cwd(), 'uploads');
+        if (!fs.existsSync(uploadsDir)) {
+            fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+        
+        const outputPptxPath = path.join(uploadsDir, outputPptxName);
+
+        const slidesData = pres.slides.map(slide => {
+            const imageAsset = slide.assets.find(a => a.type === 'image');
+            return {
+                title: slide.title,
+                subtitle: slide.subtitle || '',
+                content: slide.content,
+                layout: slide.layout,
+                imagePath: imageAsset ? imageAsset.src : ''
+            };
+        });
+
+        const jsonInput = {
+            title: pres.title,
+            slides: slidesData
+        };
+
+        fs.writeFileSync(tempJsonPath, JSON.stringify(jsonInput, null, 2), 'utf-8');
+
+        const scriptPath = path.join(process.cwd(), 'scripts', 'pptxGenerator.py');
+
+        return new Promise<string>((resolve, reject) => {
+            const { exec } = require('child_process');
+            exec(`python "${scriptPath}" "${tempJsonPath}" "${outputPptxPath}"`, (error: any, stdout: string, stderr: string) => {
+                // Cleanup temp JSON file
+                try {
+                    fs.unlinkSync(tempJsonPath);
+                } catch (e) {
+                    console.error('[PRESENTATION] Failed to clean up temp presentation JSON:', e);
+                }
+
+                if (error) {
+                    console.error(`[PRESENTATION] PPTX generation error: ${stderr || error.message}`);
+                    reject(new Error(`Failed to compile PPTX: ${stderr || error.message}`));
+                    return;
+                }
+
+                console.log(`[PRESENTATION] 📈 PPTX compiled: ${outputPptxPath}`);
+                resolve(outputPptxPath);
+            });
+        });
     }
 }
 

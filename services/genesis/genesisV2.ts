@@ -251,7 +251,7 @@ export class GenesisV2 {
                 agentConversation.registerAgent(agent);
 
                 // Emit handshake event
-                systemBus.emit('AGENT_HANDSHAKE' as SystemProtocol, {
+                systemBus.emit(SystemProtocol.AGENT_HANDSHAKE, {
                     agentId: agent.id,
                     name: agent.name,
                     role: agent.role,

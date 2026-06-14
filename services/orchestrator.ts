@@ -61,7 +61,7 @@ interface ActiveTask {
     status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED';
 }
 
-class AgentSwarmOrchestrator {
+export class AgentSwarmOrchestrator {
     // Active Actors in RAM (The "Stage")
     // OPTIMIZED: LRU Cache Implementation
     private activeActors: Map<string, StandardAgent> = new Map();

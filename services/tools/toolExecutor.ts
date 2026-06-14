@@ -13,6 +13,8 @@ import { DynamicTool, ComposedStep, toolRegistry } from './toolRegistry';
 import { toolPersistence } from './toolPersistence';
 import { systemBus } from '../systemBus';
 import { SystemProtocol } from '../../types';
+import { spawn } from 'node:child_process';
+import path from 'node:path';
 
 class ToolExecutor {
     private static instance: ToolExecutor;
@@ -203,43 +205,63 @@ class ToolExecutor {
      * Execute code in sandboxed environment
      */
     private async executeSandboxedCode(code: string, args: any): Promise<any> {
-        // Use VM2 or similar for true sandboxing
-        // For now, use Function constructor with limited scope
+        return new Promise((resolve, reject) => {
+            const runnerPath = path.resolve(process.cwd(), 'scripts/sandbox_runner.js');
+            const child = spawn('node', [runnerPath], {
+                stdio: ['pipe', 'pipe', 'pipe']
+            });
 
-        const allowedModules = {
-            // Expose safe utilities
-            console: {
-                log: (...a: any[]) => console.log('[Sandbox]', ...a),
-                warn: (...a: any[]) => console.warn('[Sandbox]', ...a),
-                error: (...a: any[]) => console.error('[Sandbox]', ...a)
-            },
-            JSON,
-            Math,
-            Date,
-            Array,
-            Object,
-            String,
-            Number,
-            Boolean
-        };
+            let stdoutData = '';
+            let stderrData = '';
 
-        try {
-            // Create isolated function
-            const wrappedCode = `
-                return (async function(args, modules) {
-                    const { console, JSON, Math, Date, Array, Object, String, Number, Boolean } = modules;
-                    ${code}
-                })
-            `;
+            child.stdout.on('data', (data) => {
+                stdoutData += data.toString();
+            });
 
-            const fn = new Function(wrappedCode)();
-            const result = await fn(args, allowedModules);
+            child.stderr.on('data', (data) => {
+                stderrData += data.toString();
+            });
 
-            return result;
-        } catch (error: any) {
-            console.error('[ToolExecutor] Sandbox execution error:', error);
-            throw new Error(`Sandboxed code execution failed: ${error.message}`);
-        }
+            // Set process timeout monitor (5 seconds)
+            const timeout = setTimeout(() => {
+                child.kill('SIGKILL');
+                reject(new Error('Sandbox process execution timed out after 5000ms'));
+            }, 5000);
+
+            child.on('close', (exitCode) => {
+                clearTimeout(timeout);
+
+                if (stderrData.trim()) {
+                    console.error('[ToolExecutor] Sandbox stderr:', stderrData);
+                }
+
+                try {
+                    const parsed = JSON.parse(stdoutData.trim());
+                    if (parsed.success) {
+                        if (Array.isArray(parsed.logs)) {
+                            parsed.logs.forEach((logMessage: string) => {
+                                console.log(`[Sandbox Log] ${logMessage}`);
+                            });
+                        }
+                        resolve(parsed.result);
+                    } else {
+                        reject(new Error(parsed.error || 'Execution failed inside sandbox'));
+                    }
+                } catch (err: any) {
+                    reject(new Error(`Failed to parse sandbox output: ${stdoutData || stderrData || err.message}`));
+                }
+            });
+
+            child.on('error', (err) => {
+                clearTimeout(timeout);
+                reject(err);
+            });
+
+            // Write the execution payload
+            const payload = JSON.stringify({ code, args });
+            child.stdin.write(payload);
+            child.stdin.end();
+        });
     }
 
     /**

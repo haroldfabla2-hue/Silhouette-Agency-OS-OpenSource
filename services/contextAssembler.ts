@@ -367,6 +367,7 @@ class ContextAssembler {
         const availableBudget = this.tokenBudget.totalBudget - this.tokenBudget.reservedForResponse;
 
         // [STRICT ENFORCEMENT] If total exceeds budget, trim from lowest priority
+        const availableBudget = this.tokenBudget.totalBudget - this.tokenBudget.reservedForResponse;
         if (totalTokensUsed > availableBudget) {
             console.warn(`[CONTEXT] ⚠️ Total budget exceeded (${totalTokensUsed}/${availableBudget} tokens). Trimming from lowest priority...`);
 

@@ -13,12 +13,17 @@ services:
       NEO4J_apoc_export_file_enabled: "true"
       NEO4J_apoc_import_file_enabled: "true"
       NEO4J_PLUGINS: '["apoc"]'
-      NEO4J_dbms_memory_heap_initial__size: "512m"
-      NEO4J_dbms_memory_heap_max__size: "2G"
+      NEO4J_dbms_memory_heap_initial__size: "256m"
+      NEO4J_dbms_memory_heap_max__size: "512m"
+      NEO4J_dbms_memory_pagecache_size: "256m"
     volumes:
       - ./data/neo4j/data:/data
       - ./data/neo4j/plugins:/plugins
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
     networks:
       - silhouette-net
 
@@ -26,11 +31,16 @@ services:
   redis:
     image: redis:alpine
     container_name: silhouette-prod-redis
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
     ports:
       - "6379:6379"
     volumes:
       - ./data/redis:/data
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
     networks:
       - silhouette-net
 
@@ -43,6 +53,10 @@ services:
     volumes:
       - ./data/qdrant:/qdrant/storage
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
     networks:
       - silhouette-net
 
@@ -59,6 +73,10 @@ services:
     depends_on:
       - neo4j
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
     networks:
       - silhouette-net
 
@@ -94,6 +112,10 @@ services:
       - neo4j
       - reasoning-engine
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
     networks:
       - silhouette-net
     # GPU Support (Uncomment if using local models in the container)

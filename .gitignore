@@ -58,6 +58,8 @@ cost_metrics.json
 *.bin
 *.safetensors
 uploads/
+*.tar.gz
+silhouette/checkpoints/
 
 # Python cache (training engine)
 __pycache__/
@@ -88,5 +90,8 @@ brain/
 silhouette.config.json
 data/
 
-silhouette.config.json
-data/
+# Local PowerShell helper scripts (contain secrets)
+scripts/create_repo.ps1
+scripts/deploy_fix.ps1
+scripts/fix_lfs.ps1
+scripts/force_push.ps1

@@ -29,5 +29,24 @@
     "allowSyntheticDefaultImports": true,
     "downlevelIteration": true,
     "noEmit": true
-  }
+  },
+  "include": [
+    "App.tsx",
+    "index.tsx",
+    "components/**/*",
+    "hooks/**/*",
+    "services/**/*",
+    "server/**/*",
+    "utils/**/*",
+    "types/**/*",
+    "types.ts",
+    "constants.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "ComfyUI",
+    "silhouette",
+    "uploads"
+  ]
 }
