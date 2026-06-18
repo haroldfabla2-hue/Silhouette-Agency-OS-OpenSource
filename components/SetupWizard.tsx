@@ -146,8 +146,8 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                             </h3>
                             <p className="text-sm text-slate-300 mb-4">
                                 {recommendsLocal
-                                    ? `Your system has ${totalRAM}GB of RAM, which is ample for running Neo4j locally. We recommend using Docker for maximum data privacy.`
-                                    : `Your system has ${totalRAM}GB of RAM. The 4-Tier Memory system (Neo4j) requires at least 1GB dedicated. We recommend the free Cloud Tier to save local resources.`}
+                                    ? `Your system has ${totalRAM}GB of RAM, which is ample for running Neo4j locally. We recommend using Docker for maximum data privacy. (If you prefer not to use Docker, the system will automatically use the local-first SQLite fallback with zero configuration!).`
+                                    : `Your system has ${totalRAM}GB of RAM. We recommend the free Cloud Tier (Neo4j AuraDB) to save resources, OR you can simply skip this: the system will automatically fall back to local-first SQLite mode with zero configuration!`}
                             </p>
 
                             <div className="bg-slate-950 rounded p-3 font-mono text-xs text-slate-400 border border-slate-800">

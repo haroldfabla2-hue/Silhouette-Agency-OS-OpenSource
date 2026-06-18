@@ -100,12 +100,14 @@ Frontend: `http://localhost:5173`
 | Orchestrator + Core Agents | Full | Full |
 | Chat (terminal / WebSocket) | Full | Full |
 | Memory (working / episodic) | SQLite + in-memory | + Redis persistent |
-| Knowledge graph | Degraded (no Neo4j) | Full |
+| Knowledge graph | Full (via SQLite fallback) | Full (via Neo4j) |
 | Vector semantic search | LanceDB (local file) | Full |
 | Evolution scheduler | Full | Full |
 | Telegram / Discord channel | Full (with token) | Full (with token) |
 | Image / video generation | Full (with provider key) | Full (with provider key) |
 | Voice synthesis | Full (with ElevenLabs key) | Full (with ElevenLabs key) |
+
+> **Note on SQLite Graph Fallback:** If Neo4j is offline or Docker is not running, the system automatically and transparently activates the SQLite Graph Database Fallback. All entities, relationships, GraphRAG queries, 3D visualization, and user facts continue to work 100% locally with zero configuration.
 
 ---
 

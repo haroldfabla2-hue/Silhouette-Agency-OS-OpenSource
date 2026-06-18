@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Silhouette OS - Booting</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;600;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #050507;
+            --panel-bg: rgba(13, 13, 18, 0.45);
+            --panel-border: rgba(255, 255, 255, 0.05);
+            --glow-color: rgba(99, 102, 241, 0.15);
+            --text-primary: #f3f4f6;
+            --text-secondary: #9ca3af;
+            --color-success: #10b981;
+            --color-error: #ef4444;
+            --color-warning: #f59e0b;
+            --color-info: #6366f1;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Ambient Glow Background */
+        .ambient-glow {
+            position: absolute;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, var(--glow-color) 0%, rgba(5, 5, 7, 0) 70%);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 1;
+            pointer-events: none;
+            animation: pulse-glow 8s infinite alternate ease-in-out;
+        }
+
+        @keyframes pulse-glow {
+            0% { opacity: 0.6; transform: translate(-50%, -50%) scale(0.9); }
+            100% { opacity: 1.0; transform: translate(-50%, -50%) scale(1.1); }
+        }
+
+        /* Container */
+        .splash-container {
+            position: relative;
+            z-index: 10;
+            width: 100%;
+            max-width: 580px;
+            padding: 40px;
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 24px;
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+            text-align: center;
+            animation: fade-in 0.6s ease-out;
+        }
+
+        @keyframes fade-in {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Logo and Header */
+        .logo-container {
+            margin-bottom: 30px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .logo-ring {
+            width: 72px;
+            height: 72px;
+            border-radius: 50%;
+            border: 2px solid transparent;
+            border-top-color: var(--color-info);
+            border-bottom-color: var(--color-info);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: spin 2s infinite linear;
+            margin-bottom: 15px;
+            box-shadow: 0 0 15px rgba(99, 102, 241, 0.2);
+        }
+
+        .logo-inner {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: #0d0d12;
+            border: 1px solid var(--panel-border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: reverse-spin 4s infinite linear;
+        }
+
+        .logo-inner span {
+            font-family: 'Outfit', sans-serif;
+            font-size: 24px;
+            font-weight: 800;
+            background: linear-gradient(135deg, #a5b4fc, #6366f1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @keyframes reverse-spin {
+            0% { transform: rotate(360deg); }
+            100% { transform: rotate(0deg); }
+        }
+
+        h1 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 24px;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+            margin-bottom: 8px;
+            background: linear-gradient(to right, #ffffff, #d1d5db);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 35px;
+        }
+
+        /* Diagnostics Checklist */
+        .checklist {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            margin-bottom: 35px;
+            text-align: left;
+        }
+
+        .check-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 18px;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.03);
+            border-radius: 12px;
+            transition: all 0.3s ease;
+        }
+
+        .check-item.up {
+            border-color: rgba(16, 185, 129, 0.2);
+            background: rgba(16, 185, 129, 0.02);
+        }
+
+        .check-item.down {
+            border-color: rgba(239, 68, 68, 0.2);
+            background: rgba(239, 68, 68, 0.02);
+        }
+
+        .check-label {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .check-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: var(--text-secondary);
+            position: relative;
+        }
+
+        .check-item.up .check-indicator {
+            background-color: var(--color-success);
+            box-shadow: 0 0 8px var(--color-success);
+        }
+
+        .check-item.down .check-indicator {
+            background-color: var(--color-error);
+            box-shadow: 0 0 8px var(--color-error);
+        }
+
+        .check-item.loading .check-indicator {
+            background-color: var(--color-warning);
+            box-shadow: 0 0 8px var(--color-warning);
+            animation: pulse-indicator 1s infinite alternate;
+        }
+
+        @keyframes pulse-indicator {
+            0% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .service-name {
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .service-detail {
+            font-size: 11px;
+            color: var(--text-secondary);
+            font-family: 'Fira Code', monospace;
+        }
+
+        .check-status {
+            font-size: 12px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .check-item.up .check-status { color: var(--color-success); }
+        .check-item.down .check-status { color: var(--color-error); }
+        .check-item.loading .check-status { color: var(--color-warning); }
+
+        /* Warning / Troubleshooting Panel */
+        .warning-panel {
+            background: rgba(239, 68, 68, 0.06);
+            border: 1px solid rgba(239, 68, 68, 0.15);
+            border-radius: 16px;
+            padding: 20px;
+            text-align: left;
+            margin-top: 25px;
+            display: none;
+            animation: slide-up 0.4s ease-out;
+        }
+
+        @keyframes slide-up {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .warning-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #fca5a5;
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        .warning-desc {
+            font-size: 13px;
+            color: #d1d5db;
+            margin-bottom: 12px;
+            line-height: 1.4;
+        }
+
+        .command-box {
+            background: #000000;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 10px 14px;
+            font-family: 'Fira Code', monospace;
+            font-size: 11px;
+            color: #38bdf8;
+            overflow-x: auto;
+            white-space: nowrap;
+            margin-bottom: 15px;
+        }
+
+        .btn-retry {
+            background: linear-gradient(135deg, #6366f1, #4f46e5);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-family: 'Inter', sans-serif;
+            font-size: 13px;
+            font-weight: 500;
+            padding: 10px 20px;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+            width: 100%;
+        }
+
+        .btn-retry:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(99, 102, 241, 0.4);
+        }
+
+        .btn-retry:active {
+            transform: translateY(0);
+        }
+
+        /* Footer */
+        .footer {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.2);
+            margin-top: 20px;
+            letter-spacing: 0.05em;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="ambient-glow"></div>
+
+    <div class="splash-container">
+        <div class="logo-container">
+            <div class="logo-ring">
+                <div class="logo-inner">
+                    <span>S</span>
+                </div>
+            </div>
+            <h1>SILHOUETTE OS</h1>
+            <p class="subtitle">Orchestrating Cognitive Architecture & Systems</p>
+        </div>
+
+        <div class="checklist">
+            <div class="check-item loading" id="node-item">
+                <div class="check-label">
+                    <div class="check-indicator"></div>
+                    <div>
+                        <div class="service-name">Node.js Core Server</div>
+                        <div class="service-detail">port 3005</div>
+                    </div>
+                </div>
+                <div class="check-status" id="node-status">Connecting...</div>
+            </div>
+
+            <div class="check-item loading" id="brain-item">
+                <div class="check-label">
+                    <div class="check-indicator"></div>
+                    <div>
+                        <div class="service-name">Silhouette Brain API</div>
+                        <div class="service-detail">port 9876</div>
+                    </div>
+                </div>
+                <div class="check-status" id="brain-status">Waiting...</div>
+            </div>
+
+            <div class="check-item loading" id="redis-item">
+                <div class="check-label">
+                    <div class="check-indicator"></div>
+                    <div>
+                        <div class="service-name">Redis Memory Cache</div>
+                        <div class="service-detail">port 6379 / 6499</div>
+                    </div>
+                </div>
+                <div class="check-status" id="redis-status">Waiting...</div>
+            </div>
+
+            <div class="check-item loading" id="neo4j-item">
+                <div class="check-label">
+                    <div class="check-indicator"></div>
+                    <div>
+                        <div class="service-name">Neo4j Deep Memory</div>
+                        <div class="service-detail">port 7687 / 7787</div>
+                    </div>
+                </div>
+                <div class="check-status" id="neo4j-status">Waiting...</div>
+            </div>
+        </div>
+
+        <div class="warning-panel" id="warning-panel">
+            <div class="warning-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                <span>Infrastructure Service Offline</span>
+            </div>
+            <div class="warning-desc" id="warning-desc">
+                Redis or Neo4j databases are not running. Start your local Docker stack for full episodic and semantic memory features.
+            </div>
+            <div class="command-box" id="command-box">
+                docker-compose up -d
+            </div>
+            <button class="btn-retry" onclick="triggerRetry()">Retry Connection</button>
+        </div>
+
+        <div class="footer">
+            ALBERTO FARAH AGENCY &copy; 2026
+        </div>
+    </div>
+
+    <script>
+        const DIAGNOSTICS_URL = 'http://localhost:3005/health/diagnostics';
+        let pollInterval = null;
+        let isChecking = false;
+
+        async function checkDiagnostics() {
+            if (isChecking) return;
+            isChecking = true;
+
+            try {
+                const response = await fetch(DIAGNOSTICS_URL, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' },
+                    mode: 'cors'
+                });
+
+                if (!response.ok) {
+                    throw new Error('Server returned error status');
+                }
+
+                const data = await response.json();
+                isChecking = false;
+                updateUI(data.services);
+            } catch (err) {
+                isChecking = false;
+                // Node is down
+                updateUI({
+                    node: { status: 'down' },
+                    redis: { status: 'down' },
+                    neo4j: { status: 'down' },
+                    brain: { status: 'down' }
+                });
+            }
+        }
+
+        function updateUI(services) {
+            const warningPanel = document.getElementById('warning-panel');
+            const warningDesc = document.getElementById('warning-desc');
+            const commandBox = document.getElementById('command-box');
+
+            // 1. Node.js status
+            updateServiceItem('node', services.node);
+
+            // 2. Brain API status
+            updateServiceItem('brain', services.brain);
+
+            // 3. Redis status
+            updateServiceItem('redis', services.redis);
+
+            // 4. Neo4j status
+            updateServiceItem('neo4j', services.neo4j);
+
+            // Check if any service is down
+            const nodeDown = !services.node || services.node.status !== 'up';
+            const brainDown = !services.brain || services.brain.status !== 'up';
+            const redisDown = !services.redis || services.redis.status !== 'up';
+            const neo4jDown = !services.neo4j || services.neo4j.status !== 'up';
+
+            if (nodeDown) {
+                // Node server starting up
+                warningPanel.style.display = 'none';
+                document.getElementById('node-status').innerText = 'Booting Node...';
+            } else if (brainDown || redisDown || neo4jDown) {
+                // Show warning panel
+                warningPanel.style.display = 'block';
+
+                let issueDesc = "";
+                let cmd = "";
+
+                if (brainDown && (redisDown || neo4jDown)) {
+                    issueDesc = "Ecosystem databases and Silhouette Brain API are offline. Start Docker and make sure the Brain API is running.";
+                    cmd = "docker-compose up -d && python ../silhouette-brain/src/api/enhanced_memory_api.py";
+                } else if (brainDown) {
+                    issueDesc = "Silhouette Brain API is offline. Make sure the python backend is running.";
+                    cmd = "python ../silhouette-brain/src/api/enhanced_memory_api.py";
+                } else {
+                    issueDesc = "Docker infrastructure databases (Redis / Neo4j) are offline. Long-term associative memory requires them.";
+                    cmd = "docker-compose up -d";
+                }
+
+                warningDesc.innerText = issueDesc;
+                commandBox.innerText = cmd;
+
+                // Slow down polling when we know something is down
+                clearInterval(pollInterval);
+                pollInterval = setInterval(checkDiagnostics, 3000);
+            } else {
+                // Everything is UP!
+                warningPanel.style.display = 'none';
+                clearInterval(pollInterval);
+                
+                // Success visual delay before redirecting
+                setTimeout(() => {
+                    window.location.href = 'http://localhost:3005';
+                }, 800);
+            }
+        }
+
+        function updateServiceItem(id, service) {
+            const item = document.getElementById(`${id}-item`);
+            const statusText = document.getElementById(`${id}-status`);
+
+            item.classList.remove('loading', 'up', 'down');
+
+            if (!service) {
+                item.classList.add('loading');
+                statusText.innerText = 'Waiting...';
+            } else if (service.status === 'up') {
+                item.classList.add('up');
+                statusText.innerText = 'Online';
+            } else {
+                item.classList.add('down');
+                statusText.innerText = 'Offline';
+            }
+        }
+
+        function triggerRetry() {
+            clearInterval(pollInterval);
+            pollInterval = setInterval(checkDiagnostics, 1000);
+            checkDiagnostics();
+        }
+
+        // Initialize polling
+        pollInterval = setInterval(checkDiagnostics, 1000);
+        checkDiagnostics();
+    </script>
+</body>
+</html>

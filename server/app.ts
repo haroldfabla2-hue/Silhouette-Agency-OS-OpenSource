@@ -129,6 +129,19 @@ app.use('/v1', legacyRoutes);
     }
 })();
 
+// Serve production React app build static files
+if (process.env.NODE_ENV === 'production') {
+    const distPath = path.resolve(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req: Request, res: Response, next: NextFunction) => {
+        // Exclude API, webhook, and health paths from React SPA fallback
+        if (req.path.startsWith('/v1') || req.path.startsWith('/webhooks') || req.path.startsWith('/health')) {
+            return next();
+        }
+        res.sendFile(path.join(distPath, 'index.html'));
+    });
+}
+
 // ─── 404 HANDLER ─────────────────────────────────────────────────────────────
 app.use((req: Request, res: Response) => {
     res.status(404).json({ error: "Endpoint not found" });

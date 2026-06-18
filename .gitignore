@@ -30,6 +30,7 @@ archives/
 .gemini/
 db/*.lancedb
 db/*.sqlite
+db/*.sqlite-*
 *.db-journal
 
 # Secrets & API Keys (CRITICAL)

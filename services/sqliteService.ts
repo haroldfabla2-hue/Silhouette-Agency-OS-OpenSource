@@ -11,7 +11,7 @@ if (!fs.existsSync(DB_DIR)) {
 }
 
 export class SqliteService {
-    private db: Database.Database;
+    public db: Database.Database;
 
     constructor() {
         this.db = new Database(DB_PATH);
@@ -26,6 +26,35 @@ export class SqliteService {
     }
 
     private initializeSchema() {
+        // Graph Nodes Table (Neo4j fallback)
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS graph_nodes (
+                id TEXT PRIMARY KEY,
+                label TEXT NOT NULL,
+                name TEXT,
+                properties TEXT NOT NULL, -- JSON string
+                last_updated INTEGER NOT NULL
+            )
+        `);
+        this.db.exec(`CREATE INDEX IF NOT EXISTS idx_graph_nodes_label ON graph_nodes(label)`);
+
+        // Graph Edges Table (Neo4j fallback)
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS graph_edges (
+                source TEXT NOT NULL,
+                target TEXT NOT NULL,
+                type TEXT NOT NULL,
+                properties TEXT NOT NULL, -- JSON string
+                last_updated INTEGER NOT NULL,
+                PRIMARY KEY (source, target, type),
+                FOREIGN KEY (source) REFERENCES graph_nodes(id) ON DELETE CASCADE,
+                FOREIGN KEY (target) REFERENCES graph_nodes(id) ON DELETE CASCADE
+            )
+        `);
+        this.db.exec(`CREATE INDEX IF NOT EXISTS idx_graph_edges_source ON graph_edges(source)`);
+        this.db.exec(`CREATE INDEX IF NOT EXISTS idx_graph_edges_target ON graph_edges(target)`);
+        this.db.exec(`CREATE INDEX IF NOT EXISTS idx_graph_edges_type ON graph_edges(type)`);
+
         // Agents Table
         this.db.exec(`
             CREATE TABLE IF NOT EXISTS agents (
