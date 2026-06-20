@@ -132,7 +132,7 @@ export class SystemController {
 
     public async updateConfig(req: Request, res: Response) {
         try {
-            const { apiKey, mediaConfig, dreamerConfig } = req.body;
+            const { apiKey, mediaConfig, dreamerConfig, systemUpdates } = req.body;
             let updatedCount = 0;
 
             if (apiKey) {
@@ -157,6 +157,26 @@ export class SystemController {
                 }
                 sqliteService.setConfig('dreamerConfig', dreamerConfig);
                 console.log("[CONFIG] Dreamer Configuration Updated");
+                updatedCount++;
+            }
+
+            if (systemUpdates) {
+                sqliteService.setConfig('systemUpdates', systemUpdates);
+                
+                // Sync to silhouette.config.json for Electron boot loader
+                try {
+                    const { configLoader } = await import('../config/configLoader.js');
+                    configLoader.saveConfig({
+                        system: {
+                            ...configLoader.getConfig().system,
+                            autoCheckUpdates: systemUpdates.autoCheck,
+                            autoLaunch: systemUpdates.autoLaunch
+                        }
+                    });
+                } catch (configErr: any) {
+                    console.error("[CONFIG] Failed to write systemUpdates to JSON config:", configErr.message);
+                }
+                
                 updatedCount++;
             }
 
@@ -459,6 +479,23 @@ export class SystemController {
             const freeMemory = os.freemem();
             const cpus = os.cpus();
 
+            const si = await import('systeminformation');
+            let gpuInfo = { vramTotalMB: 4096, vramTotalGB: 4, name: 'Standard Controller' };
+            try {
+                const graphics = await si.graphics().catch(() => ({ controllers: [] }));
+                if (graphics && graphics.controllers && graphics.controllers.length > 0) {
+                    const card = graphics.controllers[0];
+                    const vram = card.vram || 4096;
+                    gpuInfo = {
+                        vramTotalMB: vram,
+                        vramTotalGB: Math.round(vram / 1024),
+                        name: card.model || card.name || 'Standard Graphics Card'
+                    };
+                }
+            } catch (e) {
+                console.warn("[SYSTEM] GPU diagnostics failed:", e);
+            }
+
             res.json({
                 ram: {
                     totalBytes: totalMemory,
@@ -470,6 +507,7 @@ export class SystemController {
                     cores: cpus.length,
                     model: cpus[0]?.model
                 },
+                gpu: gpuInfo,
                 os: {
                     platform: os.platform(),
                     release: os.release()
@@ -477,6 +515,30 @@ export class SystemController {
             });
         } catch (error: any) {
             console.error('[SYSTEM] getDiagnostics failed:', error.message);
+            res.status(500).json({ error: error.message });
+        }
+    }
+
+    /**
+     * Submit a support ticket, sanitizing raw logs for PII before cloud sync
+     */
+    async submitSupportTicket(req: Request, res: Response) {
+        try {
+            const { description } = req.body;
+            if (!description || typeof description !== 'string') {
+                return res.status(400).json({ error: 'Description must be a non-empty string' });
+            }
+
+            const { supportAgent } = await import('../../services/supportAgent');
+            const result = await supportAgent.analyzeAndReport(description);
+
+            res.json({
+                success: true,
+                resolvedLocal: result.resolvedLocal,
+                message: result.message
+            });
+        } catch (error: any) {
+            console.error('[SYSTEM] Support ticket submission failed:', error.message);
             res.status(500).json({ error: error.message });
         }
     }

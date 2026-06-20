@@ -8,7 +8,7 @@ import { Save, Shield, Globe, Bell, Palette, Database, Key, Check, AlertTriangle
 const Settings: React.FC = () => {
     // Force a deep copy state initialization to avoid reference issues
     const [settings, setSettings] = useState<SettingsState>(settingsManager.getSettings());
-    const [activeTab, setActiveTab] = useState<'GENERAL' | 'INTEGRATIONS' | 'PERMISSIONS' | 'SYSTEM' | 'WEBHOOKS'>('GENERAL');
+    const [activeTab, setActiveTab] = useState<'GENERAL' | 'INTEGRATIONS' | 'PERMISSIONS' | 'SYSTEM' | 'WEBHOOKS' | 'PRIVACY'>('GENERAL');
     const [unsavedChanges, setUnsavedChanges] = useState(false);
     const [isDiscovering, setIsDiscovering] = useState(false);
     const [discoverMessage, setDiscoverMessage] = useState<string | null>(null);
@@ -26,6 +26,33 @@ const Settings: React.FC = () => {
     const [gitConfig, setGitConfig] = useState({ token: '', owner: '', repo: '', configured: false });
     const [showGitToken, setShowGitToken] = useState(false);
     const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+
+    // Support Ticket Agent State
+    const [supportDescription, setSupportDescription] = useState('');
+    const [isSendingSupport, setIsSendingSupport] = useState(false);
+    const [supportResult, setSupportResult] = useState<{ success: boolean; message: string } | null>(null);
+
+    // Privacy & Telemetry State
+    const [telemetryConsent, setTelemetryConsent] = useState(false);
+    const [telemetryEvents, setTelemetryEvents] = useState<any[]>([]);
+    const [telemetryLoading, setTelemetryLoading] = useState(false);
+
+    const handleSubmitSupportTicket = async () => {
+        if (!supportDescription.trim()) return;
+        setIsSendingSupport(true);
+        setSupportResult(null);
+        try {
+            const res = await api.post<any>('/v1/system/support-ticket', { description: supportDescription });
+            setSupportResult({ success: res.success, message: res.message || res.error });
+            if (res.success) {
+                setSupportDescription('');
+            }
+        } catch (e: any) {
+            setSupportResult({ success: false, message: e.message || 'Error de conexión' });
+        } finally {
+            setIsSendingSupport(false);
+        }
+    };
 
     useEffect(() => {
         // Fetch initial config
@@ -375,7 +402,7 @@ const Settings: React.FC = () => {
                 </div>
                 <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto">
                     <div className="flex flex-wrap md:flex-nowrap bg-slate-900 rounded-lg p-1 border border-slate-800 gap-1 w-full md:w-auto overflow-x-auto custom-scrollbar">
-                        {['GENERAL', 'INTEGRATIONS', 'PERMISSIONS', 'SYSTEM', 'WEBHOOKS'].map(tab => (
+                        {['GENERAL', 'INTEGRATIONS', 'PERMISSIONS', 'SYSTEM', 'WEBHOOKS', 'PRIVACY'].map(tab => (
                             <button
                                 key={tab}
                                 onClick={() => setActiveTab(tab as any)}
@@ -1006,6 +1033,101 @@ const Settings: React.FC = () => {
                                 </div>
                             </div>
 
+                            {/* SUPPORT ESCALATION AGENT */}
+                            <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-xl">
+                                <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2 font-mono uppercase tracking-wider text-cyan-400">
+                                    <Terminal size={16} /> Soporte Técnico e Incidencias
+                                </h3>
+                                <p className="text-xs text-slate-400 mb-4 leading-relaxed">
+                                    ¿Experimentas problemas técnicos o de rendimiento? Describe el problema a continuación. Nuestro Agente de Soporte local analizará los registros de sistema recientes (redactando automáticamente contraseñas, emails o API keys) y buscará una solución automática o escalará el ticket a la nube.
+                                </p>
+                                <div className="space-y-4">
+                                    <textarea
+                                        value={supportDescription}
+                                        onChange={(e) => setSupportDescription(e.target.value)}
+                                        placeholder="Describe el error (ej. 'El motor Python no inicia en mi máquina' o 'Error de memoria CUDA al usar mamba')..."
+                                        className="w-full bg-slate-950 border border-slate-800 rounded p-3 text-white outline-none focus:border-cyan-500 text-xs h-24 resize-none font-mono"
+                                        disabled={isSendingSupport}
+                                    />
+                                    {supportResult && (
+                                        <div className={`p-4 rounded text-xs border leading-relaxed ${supportResult.success ? 'bg-cyan-950/30 border-cyan-800/50 text-cyan-300' : 'bg-red-950/30 border-red-800/50 text-red-300'}`}>
+                                            {supportResult.message}
+                                        </div>
+                                    )}
+                                    <div className="flex justify-end">
+                                        <button
+                                            onClick={handleSubmitSupportTicket}
+                                            disabled={isSendingSupport || !supportDescription.trim()}
+                                            className={`px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-bold rounded flex items-center gap-2 transition-all shadow-lg ${isSendingSupport ? 'opacity-70 cursor-wait' : ''}`}
+                                        >
+                                            {isSendingSupport ? 'ANALIZANDO LOGS...' : 'ENVIAR REPORTE AL AGENTE'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="bg-slate-900/50 p-6 rounded-xl border border-slate-800 space-y-4">
+                                <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
+                                    <Server size={16} className="text-cyan-400" /> Startup & Updates
+                                </h3>
+                                <p className="text-xs text-slate-400 leading-relaxed mb-4">
+                                    Configure boot and release options for Silhouette Agency OS.
+                                </p>
+                                <div className="space-y-3">
+                                    <label className="flex items-center gap-3 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={settings.systemUpdates?.autoCheck ?? true}
+                                            onChange={async (e) => {
+                                                const checked = e.target.checked;
+                                                settingsManager.updateSystemUpdates({ autoCheck: checked });
+                                                setSettings(settingsManager.getSettings());
+                                                await api.post('/v1/system/config', {
+                                                    systemUpdates: {
+                                                        autoCheck: checked,
+                                                        autoLaunch: settings.systemUpdates?.autoLaunch ?? false
+                                                    }
+                                                });
+                                            }}
+                                            className="rounded bg-slate-950 border-slate-800 text-cyan-600 focus:ring-cyan-500 focus:ring-opacity-25"
+                                        />
+                                        <div>
+                                            <span className="text-xs text-white font-semibold block">Auto Check for Updates</span>
+                                            <span className="text-[10px] text-slate-500">Automatically check for new releases in production when the app starts.</span>
+                                        </div>
+                                    </label>
+
+                                    <label className="flex items-center gap-3 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={settings.systemUpdates?.autoLaunch ?? false}
+                                            onChange={async (e) => {
+                                                const checked = e.target.checked;
+                                                settingsManager.updateSystemUpdates({ autoLaunch: checked });
+                                                setSettings(settingsManager.getSettings());
+                                                
+                                                // If running inside Electron, trigger native login item settings
+                                                if ((window as any).electronAPI?.setAutoLaunch) {
+                                                    await (window as any).electronAPI.setAutoLaunch(checked);
+                                                }
+                                                
+                                                await api.post('/v1/system/config', {
+                                                    systemUpdates: {
+                                                        autoCheck: settings.systemUpdates?.autoCheck ?? true,
+                                                        autoLaunch: checked
+                                                    }
+                                                });
+                                            }}
+                                            className="rounded bg-slate-950 border-slate-800 text-cyan-600 focus:ring-cyan-500 focus:ring-opacity-25"
+                                        />
+                                        <div>
+                                            <span className="text-xs text-white font-semibold block">Start on System Boot</span>
+                                            <span className="text-[10px] text-slate-500">Automatically launch Silhouette Agency OS when you log in to Windows/macOS.</span>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+
                             <div className="bg-red-900/10 border border-red-900/50 p-6 rounded-xl">
                                 <h3 className="text-sm font-bold text-red-400 mb-4 flex items-center gap-2">
                                     <AlertTriangle size={16} /> Danger Zone
@@ -1042,6 +1164,160 @@ const Settings: React.FC = () => {
                         </div>
                     )
                 }
+
+                {/* PRIVACY & TELEMETRY */}
+                {activeTab === 'PRIVACY' && (
+                    <div className="max-w-3xl space-y-8">
+                        <section>
+                            <h3 className="text-sm font-bold text-white border-b border-slate-800 pb-2 mb-4 flex items-center gap-2">
+                                <Shield size={16} className="text-emerald-400" /> Privacy & Telemetry
+                            </h3>
+                            <p className="text-xs text-slate-400 mb-6 leading-relaxed">
+                                Silhouette Agency OS includes an <strong className="text-white">anonymous, opt-in</strong> telemetry system.
+                                When enabled, it helps us understand which features are used and improve stability.
+                                <strong className="text-cyan-400"> No personal data is ever collected.</strong>
+                            </p>
+
+                            {/* Consent Toggle */}
+                            <div className="p-5 bg-slate-950/50 border border-slate-800 rounded-xl mb-6">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <span className="text-sm text-white font-bold block">Anonymous Telemetry</span>
+                                        <span className="text-[11px] text-slate-400 mt-1 block">
+                                            Share anonymous usage statistics to help improve the OS.
+                                        </span>
+                                    </div>
+                                    <label className="relative inline-flex items-center cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            className="sr-only"
+                                            checked={telemetryConsent}
+                                            onChange={async (e) => {
+                                                const newValue = e.target.checked;
+                                                setTelemetryConsent(newValue);
+                                                try {
+                                                    await api.put('/v1/analytics/consent', { optedIn: newValue });
+                                                } catch (err) {
+                                                    console.error('Failed to update telemetry consent:', err);
+                                                    setTelemetryConsent(!newValue);
+                                                }
+                                            }}
+                                        />
+                                        <div className={`block w-11 h-6 rounded-full transition-colors ${telemetryConsent ? 'bg-emerald-500' : 'bg-slate-700'}`}></div>
+                                        <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${telemetryConsent ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                                    </label>
+                                </div>
+                            </div>
+
+                            {/* What We Collect / Don't Collect */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                                <div className="p-4 bg-emerald-950/20 border border-emerald-900/40 rounded-xl">
+                                    <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider mb-3">✓ What We Collect</h4>
+                                    <ul className="text-xs text-slate-300 space-y-1.5">
+                                        <li>• App launch / close events</li>
+                                        <li>• Feature usage counts (anonymous)</li>
+                                        <li>• Hardware tier (RAM range, CPU cores)</li>
+                                        <li>• OS platform (win32, darwin, linux)</li>
+                                        <li>• Crash reports (stack traces only)</li>
+                                        <li>• App version</li>
+                                    </ul>
+                                </div>
+                                <div className="p-4 bg-red-950/20 border border-red-900/40 rounded-xl">
+                                    <h4 className="text-xs font-bold text-red-400 uppercase tracking-wider mb-3">✗ What We NEVER Collect</h4>
+                                    <ul className="text-xs text-slate-300 space-y-1.5">
+                                        <li>• Email, name, or any personal info</li>
+                                        <li>• Chat messages or AI conversations</li>
+                                        <li>• File paths or file contents</li>
+                                        <li>• API keys or credentials</li>
+                                        <li>• IP addresses or location data</li>
+                                        <li>• Browsing history or screenshots</li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            {/* View Collected Data */}
+                            <div className="p-5 bg-slate-950/50 border border-slate-800 rounded-xl mb-6">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div>
+                                        <span className="text-sm text-white font-bold block">Collected Data Viewer</span>
+                                        <span className="text-[11px] text-slate-400">Inspect every event stored locally before it is sent.</span>
+                                    </div>
+                                    <button
+                                        onClick={async () => {
+                                            setTelemetryLoading(true);
+                                            try {
+                                                const data = await api.get<any>('/v1/analytics/events?limit=50');
+                                                setTelemetryEvents(data.events || []);
+                                            } catch (err) {
+                                                console.error('Failed to fetch telemetry events:', err);
+                                            } finally {
+                                                setTelemetryLoading(false);
+                                            }
+                                        }}
+                                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded flex items-center gap-2"
+                                    >
+                                        <Eye size={14} /> {telemetryLoading ? 'Loading...' : 'Load Events'}
+                                    </button>
+                                </div>
+                                {telemetryEvents.length > 0 && (
+                                    <div className="max-h-64 overflow-y-auto custom-scrollbar rounded border border-slate-800">
+                                        <table className="w-full text-xs">
+                                            <thead className="bg-slate-900 sticky top-0">
+                                                <tr>
+                                                    <th className="text-left p-2 text-slate-400 font-medium">Event</th>
+                                                    <th className="text-left p-2 text-slate-400 font-medium">Properties</th>
+                                                    <th className="text-left p-2 text-slate-400 font-medium">Timestamp</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {telemetryEvents.map((evt: any, i: number) => (
+                                                    <tr key={evt.id || i} className="border-t border-slate-800/50 hover:bg-slate-900/50">
+                                                        <td className="p-2 text-cyan-400 font-mono">{evt.event}</td>
+                                                        <td className="p-2 text-slate-300 font-mono truncate max-w-[200px]">
+                                                            {JSON.stringify(evt.properties)}
+                                                        </td>
+                                                        <td className="p-2 text-slate-500 whitespace-nowrap">
+                                                            {new Date(evt.timestamp).toLocaleString()}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                                {telemetryEvents.length === 0 && !telemetryLoading && (
+                                    <p className="text-xs text-slate-500 text-center py-4">No events collected yet. Click "Load Events" to check.</p>
+                                )}
+                            </div>
+
+                            {/* Delete All Data */}
+                            <div className="p-5 bg-red-950/20 border border-red-900/30 rounded-xl">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <span className="text-sm text-white font-bold block">Delete All Telemetry Data</span>
+                                        <span className="text-[11px] text-slate-400 mt-1 block">
+                                            Permanently removes all locally stored analytics events. This cannot be undone.
+                                        </span>
+                                    </div>
+                                    <button
+                                        onClick={async () => {
+                                            if (!confirm('Are you sure you want to permanently delete all telemetry data?')) return;
+                                            try {
+                                                await api.delete('/v1/analytics/data');
+                                                setTelemetryEvents([]);
+                                            } catch (err) {
+                                                console.error('Failed to purge telemetry data:', err);
+                                            }
+                                        }}
+                                        className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded flex items-center gap-2"
+                                    >
+                                        <Trash2 size={14} /> PURGE DATA
+                                    </button>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+                )}
 
             </div >
         </div >

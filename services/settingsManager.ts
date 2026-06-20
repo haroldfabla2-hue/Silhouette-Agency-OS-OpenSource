@@ -95,6 +95,14 @@ class SettingsManager {
         return this.state.notifications; // Return actual state after logic
     }
 
+    public updateSystemUpdates(updates: Partial<SettingsState['systemUpdates']>) {
+        if (!this.state.systemUpdates) {
+            this.state.systemUpdates = { autoCheck: true, autoLaunch: false };
+        }
+        this.state.systemUpdates = { ...this.state.systemUpdates, ...updates };
+        this.saveSettings();
+    }
+
     // --- DYNAMIC INTEGRATION LOGIC ---
 
     // Register a new tool capability (called by Installation Service or manually)
@@ -266,7 +274,11 @@ class SettingsManager {
                 browser: true,
                 securityAlerts: true
             },
-            language: 'en'
+            language: 'en',
+            systemUpdates: {
+                autoCheck: true,
+                autoLaunch: false
+            }
         };
     }
 

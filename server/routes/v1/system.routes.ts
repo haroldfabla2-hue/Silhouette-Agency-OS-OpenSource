@@ -64,6 +64,9 @@ router.get('/resources', (req, res) => systemController.getResources(req, res));
 // Route: /v1/system/diagnostics - Hardware evaluation for setup wizard
 router.get('/diagnostics', (req, res) => systemController.getDiagnostics(req, res));
 
+// Route: /v1/system/support-ticket - Escalate unresolved issues to cloud support agent
+router.post('/support-ticket', (req, res) => systemController.submitSupportTicket(req, res));
+
 // Route: /v1/system/llm-health - LLM Gateway provider health
 router.get('/llm-health', async (req, res) => {
     try {

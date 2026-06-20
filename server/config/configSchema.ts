@@ -22,6 +22,10 @@ export interface SilhouetteConfig {
         debug: boolean;
         /** Server version string */
         version: string;
+        /** Auto check for updates in production */
+        autoCheckUpdates?: boolean;
+        /** Start application on system boot */
+        autoLaunch?: boolean;
     };
 
     /** Service Modules (Lite Mode Toggles) [PA-058] */
@@ -189,6 +193,8 @@ export const DEFAULT_CONFIG: SilhouetteConfig = {
         env: 'development',
         debug: false,
         version: '2.2.0',
+        autoCheckUpdates: true,
+        autoLaunch: false,
     },
     modules: {
         graph: true,

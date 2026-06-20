@@ -6,7 +6,7 @@ interface SetupWizardProps {
 }
 
 export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
-    const [step, setStep] = useState<1 | 2 | 3>(1);
+    const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
 
     // Step 1 State
     const [email, setEmail] = useState('');
@@ -18,7 +18,10 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
     const [diagnostics, setDiagnostics] = useState<any>(null);
     const [loadingDiag, setLoadingDiag] = useState(false);
 
-    // Step 3 State (Auto-Evolution)
+    // Step 3 State (Privacy & Telemetry)
+    const [telemetryOptIn, setTelemetryOptIn] = useState(false);
+
+    // Step 4 State (Auto-Evolution)
     const [enableEvo, setEnableEvo] = useState(false);
     const [gitToken, setGitToken] = useState('');
     const [gitOwner, setGitOwner] = useState('');
@@ -75,6 +78,13 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 localStorage.setItem('silhouette_session_id', data.session.id);
             }
 
+            // Send telemetry consent preference
+            try {
+                await api.put('/v1/analytics/consent', { optedIn: telemetryOptIn });
+            } catch (telErr) {
+                console.warn('[Setup] Could not save telemetry consent:', telErr);
+            }
+
             onComplete(data.session, data.user);
         } catch (err: any) {
             setError(err.message || "Failed to complete setup");
@@ -117,7 +127,9 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
 
     const renderStep2 = () => {
         const totalRAM = diagnostics?.ram?.totalGB || 0;
+        const totalVRAM = diagnostics?.gpu?.vramTotalGB || 4;
         const recommendsLocal = totalRAM >= 16;
+        const recommendsGemma = totalVRAM < 8;
 
         return (
             <div className="space-y-6">
@@ -138,6 +150,23 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                                 <span className="block text-xs text-slate-500 uppercase">CPU Cores</span>
                                 <span className="text-lg text-white font-mono">{diagnostics?.cpu?.cores || 8}</span>
                             </div>
+                        </div>
+
+                        <div className="p-3 bg-slate-950/50 border border-slate-800 rounded-lg">
+                            <span className="block text-xs text-slate-500 uppercase">Graphics Processing Unit (GPU)</span>
+                            <span className="text-sm text-white font-mono block truncate">{diagnostics?.gpu?.name || 'Standard Graphics Card'}</span>
+                            <span className="text-xs text-slate-400 font-mono block mt-1">Dedicated VRAM: <strong className="text-cyan-400">{totalVRAM} GB</strong></span>
+                        </div>
+
+                        <div className={`p-4 rounded-xl border ${recommendsGemma ? 'bg-amber-950/20 border-amber-800/40' : 'bg-emerald-950/20 border-emerald-800/40'}`}>
+                            <h3 className="text-white font-medium mb-1.5 flex items-center gap-2 text-sm">
+                                {recommendsGemma ? '⚠️ Modelo Local Sugerido: Gemma 2B / Mamba' : '✨ Modelo Local Sugerido: Llama 8B'}
+                            </h3>
+                            <p className="text-xs text-slate-300 leading-relaxed">
+                                {recommendsGemma
+                                    ? `Tu GPU cuenta con ${totalVRAM}GB de VRAM. Se recomienda utilizar un modelo local ultra-liviano (Gemma 2B o Mamba 2.8B) para no sobrecargar el sistema. Se limitarán las misiones de alta complejidad local.`
+                                    : `Tu GPU cuenta con ${totalVRAM}GB de VRAM, lo cual es ideal para ejecutar Llama 8B / Gemma 9B localmente con excelente velocidad de tokenización.`}
+                            </p>
                         </div>
 
                         <div className={`p-4 rounded-xl border ${recommendsLocal ? 'bg-cyan-950/30 border-cyan-800/50' : 'bg-purple-950/30 border-purple-800/50'}`}>
@@ -178,7 +207,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                                 Back
                             </button>
                             <button onClick={() => setStep(3)} type="button" className={`flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold py-3 px-4 rounded-lg shadow-[0_0_15px_rgba(6,182,212,0.3)] transition-all duration-300 hover:shadow-[0_0_25px_rgba(6,182,212,0.5)] hover:-translate-y-0.5`}>
-                                Continue to Auto-Evolution ➔
+                                Continue to Privacy & Telemetry ➔
                             </button>
                         </div>
                     </>
@@ -190,7 +219,66 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
     const renderStep3 = () => {
         return (
             <div className="space-y-6">
-                <h2 className="text-xl font-bold text-white mb-2">3. Auto-Evolution API</h2>
+                <h2 className="text-xl font-bold text-white mb-2">3. Privacy & Telemetry</h2>
+
+                <div className="p-4 rounded-xl border bg-slate-950/50 border-slate-800">
+                    <p className="text-sm text-slate-300 leading-relaxed mb-4">
+                        Silhouette Agency OS includes an <strong className="text-white">anonymous, opt-in</strong> telemetry system.
+                        If you choose to participate, we collect only anonymous usage data to help improve the OS.
+                        <strong className="text-cyan-400"> No personal data is ever collected.</strong>
+                    </p>
+
+                    <div className="grid grid-cols-2 gap-3 mb-4">
+                        <div className="p-3 bg-emerald-950/20 border border-emerald-900/40 rounded-lg">
+                            <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block mb-2">✓ Collected</span>
+                            <ul className="text-[11px] text-slate-300 space-y-1">
+                                <li>• App launch / close events</li>
+                                <li>• Feature usage counts</li>
+                                <li>• Hardware tier (RAM range)</li>
+                                <li>• OS platform & app version</li>
+                            </ul>
+                        </div>
+                        <div className="p-3 bg-red-950/20 border border-red-900/40 rounded-lg">
+                            <span className="text-[10px] font-bold text-red-400 uppercase tracking-wider block mb-2">✗ Never Collected</span>
+                            <ul className="text-[11px] text-slate-300 space-y-1">
+                                <li>• Emails, names, passwords</li>
+                                <li>• Chat or AI conversations</li>
+                                <li>• File paths or contents</li>
+                                <li>• API keys or credentials</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg border border-slate-800 hover:border-cyan-800/50 transition-colors">
+                        <input
+                            type="checkbox"
+                            checked={telemetryOptIn}
+                            onChange={(e) => setTelemetryOptIn(e.target.checked)}
+                            className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-cyan-500 focus:ring-cyan-500 focus:ring-offset-0"
+                        />
+                        <div>
+                            <span className="text-white font-medium text-sm block">Yes, I'd like to help improve Silhouette Agency OS</span>
+                            <span className="text-[11px] text-slate-500">You can change this anytime in Settings → Privacy.</span>
+                        </div>
+                    </label>
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                    <button onClick={() => setStep(2)} type="button" className="px-5 py-3 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white transition-all duration-300">
+                        Back
+                    </button>
+                    <button onClick={() => setStep(4)} type="button" className={`flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold py-3 px-4 rounded-lg shadow-[0_0_15px_rgba(6,182,212,0.3)] transition-all duration-300 hover:shadow-[0_0_25px_rgba(6,182,212,0.5)] hover:-translate-y-0.5`}>
+                        Continue to Auto-Evolution ➔
+                    </button>
+                </div>
+            </div>
+        );
+    };
+
+    const renderStep4 = () => {
+        return (
+            <div className="space-y-6">
+                <h2 className="text-xl font-bold text-white mb-2">4. Auto-Evolution API</h2>
 
                 <div className="p-4 rounded-xl border bg-slate-950/50 border-slate-800">
                     <label className="flex items-center gap-3 cursor-pointer mb-2">
@@ -233,7 +321,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 )}
 
                 <div className="flex gap-3 pt-4">
-                    <button onClick={() => setStep(2)} type="button" className="px-5 py-3 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white transition-all duration-300">
+                    <button onClick={() => setStep(3)} type="button" className="px-5 py-3 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white transition-all duration-300">
                         Back
                     </button>
                     <button onClick={handleFinalSubmit} disabled={loading} className={`flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold py-3 px-4 rounded-lg shadow-[0_0_15px_rgba(6,182,212,0.3)] transition-all duration-300 ${loading ? 'opacity-70 cursor-wait' : 'hover:shadow-[0_0_25px_rgba(6,182,212,0.5)] hover:-translate-y-0.5'}`}>
@@ -270,6 +358,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 {step === 1 && renderStep1()}
                 {step === 2 && renderStep2()}
                 {step === 3 && renderStep3()}
+                {step === 4 && renderStep4()}
             </div>
         </div>
     );

@@ -502,6 +502,10 @@ export interface SettingsState {
     securityAlerts: boolean;
   };
   language: 'en' | 'es' | 'fr' | 'jp';
+  systemUpdates?: {
+    autoCheck: boolean;
+    autoLaunch: boolean;
+  };
 }
 
 export interface AutonomousConfig {

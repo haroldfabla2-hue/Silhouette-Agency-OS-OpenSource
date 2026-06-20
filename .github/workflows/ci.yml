@@ -7,17 +7,18 @@ on:
     branches: [main, develop]
 
 jobs:
-  lint-and-test:
+  quality:
+    name: Code Quality & Tests
     runs-on: ubuntu-latest
-
     strategy:
       matrix:
         node-version: [20, 22]
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Use Node.js ${{ matrix.node-version }}
+      - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
@@ -27,20 +28,94 @@ jobs:
         run: npm ci
         env:
           PUPPETEER_SKIP_DOWNLOAD: 'true'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 'true'
 
       - name: Lint
-        run: npm run lint || true
+        run: npm run lint
 
       - name: Type check
-        run: npx tsc --noEmit
+        run: npm run typecheck
 
-      - name: Run unit tests
-        run: npm test || true
+      - name: Unit tests
+        run: npm test
 
-      - name: Run channel tests
-        run: npx tsx tests/automated/channels.test.ts
-        env:
-          NODE_ENV: test
-
-      - name: Build
+      - name: Build frontend
         run: npm run build
+
+      - name: Build server
+        run: npx vite build --config vite.server.config.ts
+
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 'true'
+
+      - name: NPM Audit
+        run: npm audit --audit-level=high || true
+
+      - name: Check for known vulnerabilities
+        run: npx audit-ci --high
+        continue-on-error: true
+
+  build-check:
+    name: Electron Build Verification
+    runs-on: windows-latest
+    needs: quality
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 'true'
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Build server
+        run: npx vite build --config vite.server.config.ts
+
+      - name: Electron Builder dry-run
+        run: npx electron-builder build --win --dir
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify packaged files
+        shell: pwsh
+        run: |
+          $requiredFiles = @(
+            'dist-desktop/win-unpacked/resources/app.asar',
+            'dist-desktop/win-unpacked/resources/splash.html'
+          )
+          foreach ($file in $requiredFiles) {
+            if (Test-Path $file) {
+              Write-Host "✅ Found: $file"
+            } else {
+              Write-Host "❌ Missing: $file"
+              exit 1
+            }
+          }
+          Write-Host '✅ All required packaged files present'

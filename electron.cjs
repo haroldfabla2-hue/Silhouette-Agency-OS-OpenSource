@@ -1,7 +1,14 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const fs = require('fs');
+const log = require('electron-log');
+const { pythonBackendManager } = require('./pythonManager.cjs');
+
+// Configure structured logging
+log.transports.file.level = 'info';
+log.transports.file.maxSize = 10 * 1024 * 1024; // 10MB
+log.transports.console.level = 'debug';
 
 let mainWindow;
 let serverProcess;
@@ -143,14 +150,15 @@ function createWindow() {
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
-            sandbox: true
+            sandbox: true,
+            preload: path.join(__dirname, 'preload.cjs')
         }
     });
 
     // Load the diagnostics splash screen
     const splashPath = isDev 
         ? path.join(__dirname, 'public', 'splash.html')
-        : path.join(__dirname, 'dist', 'splash.html');
+        : path.join(process.resourcesPath, 'splash.html');
 
     mainWindow.loadFile(splashPath).catch(err => {
         console.error('[Electron] Failed to load splash screen file', err);
@@ -175,17 +183,94 @@ function killProcess(proc, name) {
     }
 }
 
-app.on('ready', () => {
+ipcMain.handle('set-auto-launch', async (event, enabled) => {
+    try {
+        app.setLoginItemSettings({
+            openAtLogin: enabled,
+            path: process.execPath
+        });
+        log.info(`[Electron] Auto-launch updated via IPC: ${enabled}`);
+        return { success: true };
+    } catch (err) {
+        log.error('[Electron] Failed to update auto-launch via IPC:', err.message);
+        return { success: false, error: err.message };
+    }
+});
+
+app.on('ready', async () => {
+    log.info('[Electron] Silhouette Agency OS starting...');
+    log.info(`[Electron] Version: ${app.getVersion()}, Packaged: ${app.isPackaged}`);
+    log.info(`[Electron] Platform: ${process.platform}, Arch: ${process.arch}`);
+    
+    // Read local configuration silhouette.config.json if it exists
+    let config = {};
+    const configPath = path.join(process.cwd(), 'silhouette.config.json');
+    if (fs.existsSync(configPath)) {
+        try {
+            config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        } catch (e) {
+            log.error('[Electron] Failed to read silhouette.config.json:', e.message);
+        }
+    }
+
+    // Apply auto-launch configuration on boot
+    const autoLaunchEnabled = config.system?.autoLaunch ?? false;
+    try {
+        app.setLoginItemSettings({
+            openAtLogin: autoLaunchEnabled,
+            path: process.execPath
+        });
+        log.info(`[Electron] Auto-Launch set to: ${autoLaunchEnabled}`);
+    } catch (err) {
+        log.warn('[Electron] Failed to set auto-launch on boot:', err.message);
+    }
+    
     startServer();
-    startEcosystem();
     createWindow();
+    pythonBackendManager.initialize(mainWindow);
+
+    // Auto-updater (production only)
+    if (app.isPackaged) {
+        try {
+            const { autoUpdater } = require('electron-updater');
+            autoUpdater.logger = log;
+            autoUpdater.autoDownload = false;
+            
+            autoUpdater.on('update-available', (info) => {
+                log.info(`[AutoUpdate] Update available: v${info.version}`);
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.webContents.send('update-available', info.version);
+                }
+            });
+
+            autoUpdater.on('update-downloaded', (info) => {
+                log.info(`[AutoUpdate] Update downloaded: v${info.version}`);
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.webContents.send('update-downloaded', info.version);
+                }
+            });
+
+            autoUpdater.on('error', (err) => {
+                log.error('[AutoUpdate] Error checking for updates:', err.message);
+            });
+
+            // Check for updates after 10 seconds (only if enabled)
+            const autoCheckUpdates = config.system?.autoCheckUpdates ?? true;
+            if (autoCheckUpdates) {
+                setTimeout(() => autoUpdater.checkForUpdates(), 10000);
+            } else {
+                log.info('[AutoUpdate] Auto-check updates is disabled.');
+            }
+        } catch (err) {
+            log.warn('[AutoUpdate] electron-updater not available:', err.message);
+        }
+    }
 });
 
 app.on('window-all-closed', () => {
     console.log('[Electron] Shutting down subprocesses...');
     killProcess(serverProcess, 'Node Core Server');
-    killProcess(brainApiProcess, 'Brain API');
-    killProcess(brainDaemonProcess, 'Brain Daemon');
+    pythonBackendManager.shutdown();
     
     if (process.platform !== 'darwin') {
         app.quit();

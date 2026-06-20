@@ -6,6 +6,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.2.0] - 2026-06-18
+
+### Added
+
+#### Enterprise Desktop Packaging
+- **Professional NSIS Installer** with custom wizard, license agreement, and desktop shortcuts
+- **Auto-Update System** via `electron-updater` with GitHub Releases integration
+- **Protocol Handler** registration (`silhouette://`) for deep linking
+- **Multi-platform builds** — Windows (NSIS), macOS (DMG), Linux (AppImage + deb)
+- **Native module unpacking** — `better-sqlite3`, `@lancedb`, `sharp` properly extracted from ASAR
+
+#### CI/CD Pipeline
+- **Release Workflow** (`.github/workflows/release.yml`) — Automated cross-platform builds on tag push
+- **Enhanced CI** — Security audit, strict lint/test enforcement, improved caching
+- **Artifact Publishing** — Automatic upload to GitHub Releases with checksums
+
+#### Anonymous Opt-In Telemetry
+- **Privacy-First Analytics SDK** (`services/telemetryAnalytics.ts`)
+  - Anonymous UUID, no PII, no file paths, no chat content
+  - Local SQLite buffer with periodic batch flush
+  - Graceful offline handling — events persist until connectivity
+- **Consent Management** — Explicit opt-in during onboarding setup wizard
+- **Privacy Dashboard** in Settings — view collected data, opt-out, purge all data
+- **Analytics API** (`/v1/analytics/*`) — events ingestion, consent CRUD, data deletion
+
+### Fixed
+- Production splash screen path using `process.resourcesPath`
+- Missing `preload.cjs`, `pythonManager.cjs` in electron-builder files array
+- Windows icon format — proper `.ico` generation from PNG source
+- `node_modules` runtime dependencies included in packaged builds
+- Native modules (`better-sqlite3`, LanceDB) properly unpacked from ASAR archive
+
+### Security
+- Crash reporter with PII-free stack traces
+- Telemetry proxy validates event schema before ingestion
+- All analytics data deletable by user at any time
+
+---
+
 ## [2.1.0] - 2026-01-07
 
 ### Added

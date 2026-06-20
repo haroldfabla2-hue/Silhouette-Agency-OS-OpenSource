@@ -5,6 +5,7 @@ import { DEFAULT_AUTONOMOUS_CONFIG, DEFAULT_API_CONFIG } from './constants';
 import { api } from './utils/api';
 import { systemBus } from './services/systemBus';
 import LoginGate from './components/LoginGate';
+import OnboardingTour from './components/OnboardingTour';
 
 // CRITICAL COMPONENTS - Eager load for fast initial render
 // [OPTIMIZATION] Dashboard is now Lazy Loaded to defer Recharts/Charts bundle
@@ -420,6 +421,9 @@ const App: React.FC = () => {
       <Suspense fallback={null}>
         <EmailPanel isOpen={emailOpen} onClose={() => setEmailOpen(false)} />
       </Suspense>
+
+      {/* Onboarding Tour */}
+      <OnboardingTour />
     </div>
   );
 };

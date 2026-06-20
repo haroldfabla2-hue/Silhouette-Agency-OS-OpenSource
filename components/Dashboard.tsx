@@ -154,7 +154,7 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, projects, onCreateProjec
       </div>
 
       {/* METRICS GRID */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div id="tour-metrics-grid" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
           icon={Cpu}
           label="Neural Load"
@@ -192,7 +192,7 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, projects, onCreateProjec
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
         {/* LEFT: MISSION CONTROL (BRIEF SENDER) */}
-        <div className="lg:col-span-2 glass-panel p-6 rounded-2xl border border-white/10 flex flex-col gap-4 relative overflow-hidden group">
+        <div id="tour-mission-control" className="lg:col-span-2 glass-panel p-6 rounded-2xl border border-white/10 flex flex-col gap-4 relative overflow-hidden group">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 opacity-30 group-hover:opacity-100 transition-opacity" />
           <h3 className="text-lg font-medium text-white/80 flex items-center gap-2">
             <MessageSquare className="w-5 h-5 text-indigo-400" />
@@ -229,7 +229,7 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, projects, onCreateProjec
         </div>
 
         {/* RIGHT: REAL-TIME CHART */}
-        <div className="glass-panel p-6 rounded-2xl border border-white/10 flex flex-col">
+        <div id="tour-token-velocity" className="glass-panel p-6 rounded-2xl border border-white/10 flex flex-col">
           <h3 className="text-lg font-medium text-white/80 mb-4 flex items-center gap-2">
             <Zap className="w-5 h-5 text-amber-400" />
             Live Token Velocity
@@ -272,7 +272,7 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, projects, onCreateProjec
       <HealthMonitor providerHealth={metrics.providerHealth} mediaQueue={metrics.mediaQueue} />
 
       {/* ACTIVE PROJECTS ROW */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div id="tour-active-operations" className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">
           <h2 className="text-xl font-light text-white/80 flex items-center gap-2">
             <Globe className="w-5 h-5 text-emerald-400" />

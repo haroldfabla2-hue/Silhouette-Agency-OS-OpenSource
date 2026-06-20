@@ -333,6 +333,16 @@
             <p class="subtitle">Orchestrating Cognitive Architecture & Systems</p>
         </div>
 
+        <div class="progress-container" id="pip-progress-container" style="display: none; margin-bottom: 25px; text-align: left; padding: 16px; background: rgba(99, 102, 241, 0.05); border: 1px solid rgba(99, 102, 241, 0.15); border-radius: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <span style="font-size: 13px; font-weight: 500; color: #a5b4fc;" id="pip-progress-msg">Configurando entorno de IA...</span>
+                <span style="font-size: 12px; font-weight: 600; color: #6366f1; font-family: 'Fira Code', monospace;" id="pip-progress-percent">0%</span>
+            </div>
+            <div style="width: 100%; height: 6px; background: rgba(255, 255, 255, 0.05); border-radius: 3px; overflow: hidden;">
+                <div id="pip-progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #6366f1, #a5b4fc); border-radius: 3px; transition: width 0.3s ease;"></div>
+            </div>
+        </div>
+
         <div class="checklist">
             <div class="check-item loading" id="node-item">
                 <div class="check-label">
@@ -523,6 +533,28 @@
         // Initialize polling
         pollInterval = setInterval(checkDiagnostics, 1000);
         checkDiagnostics();
+
+        // Setup IPC Onboarding Progress Listener
+        if (window.electronAPI) {
+            const pipContainer = document.getElementById('pip-progress-container');
+            const pipMsg = document.getElementById('pip-progress-msg');
+            const pipPercent = document.getElementById('pip-progress-percent');
+            const pipBar = document.getElementById('pip-progress-bar');
+
+            window.electronAPI.onOnboardingProgress((data) => {
+                if (data) {
+                    pipContainer.style.display = 'block';
+                    if (data.message) {
+                        pipMsg.innerText = data.message;
+                    }
+                    if (typeof data.percent === 'number') {
+                        const pct = Math.round(data.percent);
+                        pipPercent.innerText = `${pct}%`;
+                        pipBar.style.width = `${pct}%`;
+                    }
+                }
+            });
+        }
     </script>
 </body>
 </html>

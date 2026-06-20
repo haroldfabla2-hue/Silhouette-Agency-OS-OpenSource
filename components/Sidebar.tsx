@@ -55,6 +55,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isMobileOpen
           return (
             <button
               key={item.id}
+              id={`sidebar-tab-${item.id}`}
               onClick={() => setActiveTab(item.id)}
               className={`w-full flex items-center gap-4 px-4 py-3 rounded-lg transition-all duration-200 group ${isActive
                 ? 'bg-cyan-950/50 text-cyan-400 border border-cyan-900/50 shadow-[0_0_10px_rgba(6,182,212,0.1)]'

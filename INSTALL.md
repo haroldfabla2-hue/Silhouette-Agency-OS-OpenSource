@@ -181,6 +181,40 @@ Key ports:
 
 ---
 
+## Desktop Application & Installation (Electron)
+
+For a native desktop experience, Silhouette Agency OS can be compiled and installed as a standalone desktop application.
+
+### 1. Download & Build
+* **Download Official Releases:** Go to the [Releases](https://github.com/haroldfabla2-hue/Silhouette-Agency-OS-OpenSource/releases) page on GitHub to download the pre-compiled installer for your platform.
+* **Build from Source:**
+  ```bash
+  # Compile frontend & server, and pack executable
+  npm run desktop:build
+  ```
+  This generates the NSIS executable installer inside `dist-desktop/`.
+
+### 2. Windows Installation (Unsigned Binaries Bypass)
+Because the open-source binaries are not signed with a paid commercial certificate, Windows SmartScreen will flag the installer:
+1. When launching the `.exe` installer, you will see a blue **"Windows protected your PC"** popup.
+2. Click on **"More info"** (under the title text).
+3. Click the **"Run anyway"** button.
+4. Follow the NSIS setup wizard to configure shortcuts, installation directory, and complete the installation.
+
+### 3. macOS Installation (Gatekeeper Bypass)
+To run the unsigned application on macOS:
+1. Double-clicking the app might show a **"Developer cannot be verified"** block.
+2. Instead, **Right-click (or Ctrl+click) the app icon** and choose **Open** from the context menu.
+3. In the dialog that appears, click **Open** again to authorize the launch.
+4. (Alternative) Go to **System Settings** -> **Privacy & Security**, scroll down, and click **"Open Anyway"** under the security section.
+
+### 4. Features & System Integration
+* **Custom Protocol handler (`silhouette://`):** The installer automatically registers the `silhouette://` custom URI scheme on your machine. This allows you to launch the application or trigger actions (such as starting an agent) directly from links on websites.
+* **Startup Auto-Launch:** You can toggle whether the app boots automatically when you turn on your PC. Go to **Settings** -> **System** -> **Startup & Updates** and toggle *Auto-Launch*.
+* **Silent Updates Check:** You can enable or disable automated checking for updates under the **Startup & Updates** settings.
+
+---
+
 ## Troubleshooting
 
 **"No LLM provider configured" warning at startup**

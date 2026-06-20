@@ -42,6 +42,7 @@ import apikeysRoutes from './routes/v1/apikeys.routes'; // [SECURITY] API Key Ma
 import doctorRouter from './routes/doctorRoute'; // [DOCTOR] System Diagnostics
 import assetsRoutes from './routes/v1/assets.routes'; // [ASSETS] General file upload
 import googleAuthRoutes from './routes/v1/google-auth.routes'; // [GOOGLE] OAuth2 Initiation
+import { analyticsRouter } from './routes/v1/analytics.routes'; // [ANALYTICS] Privacy-First Telemetry
 
 
 // Loaders
@@ -115,6 +116,7 @@ app.use('/v1/squads', squadsRoutes); // [SQUADS] Manual Squad Control
 app.use('/v1/admin/api-keys', adminLimiter, apikeysRoutes); // [SECURITY] Admin-only API Key Management
 app.use('/v1/assets', assetsRoutes); // [ASSETS] General file upload
 app.use('/v1/google-auth', googleAuthRoutes); // [GOOGLE] OAuth2 Flow
+app.use('/v1/analytics', analyticsRouter); // [ANALYTICS] Privacy-First Telemetry
 app.use('/v1', legacyRoutes);
 
 // --- INTEGRATION HUB WEBHOOKS ---

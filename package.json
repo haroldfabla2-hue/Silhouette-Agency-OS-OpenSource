@@ -36,7 +36,9 @@
     "lint:fix": "eslint . --ext .ts,.tsx,.js,.jsx --fix",
     "typecheck": "tsc --noEmit --skipLibCheck",
     "desktop:dev": "electron .",
-    "desktop:build": "npm run build && vite build --config vite.server.config.ts && electron-builder build --win --mac"
+    "desktop:build": "npm run build && npx vite build --config vite.server.config.ts && electron-builder build --win",
+    "desktop:build:all": "npm run build && npx vite build --config vite.server.config.ts && electron-builder build --win --mac --linux",
+    "desktop:build:dir": "npm run build && npx vite build --config vite.server.config.ts && electron-builder build --win --dir"
   },
   "dependencies": {
     "@clack/prompts": "^1.0.1",
@@ -62,6 +64,9 @@
     "cors": "^2.8.5",
     "discord.js": "^14.25.1",
     "dotenv": "^17.2.3",
+    "driver.js": "^1.4.0",
+    "electron-log": "^5.4.4",
+    "electron-updater": "^6.3.0",
     "elevenlabs": "^1.59.0",
     "express": "^5.1.0",
     "express-rate-limit": "^7.5.0",
@@ -93,7 +98,7 @@
     "redis": "^5.10.0",
     "replicate": "^1.4.0",
     "screenshot-desktop": "^1.15.3",
-    "systeminformation": "^5.21.0",
+    "systeminformation": "^5.31.7",
     "unsplash-js": "^7.0.20",
     "uuid": "^9.0.1",
     "ws": "^8.19.0",
@@ -116,35 +121,85 @@
     "@vitest/coverage-v8": "^4.0.16",
     "autoprefixer": "^10.4.17",
     "concurrently": "^9.2.1",
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3",
     "eslint": "^8.57.0",
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.1",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0",
-    "vitest": "^4.0.16",
-    "electron": "^30.0.0",
-    "electron-builder": "^24.13.3"
+    "vitest": "^4.0.16"
   },
   "build": {
-    "appId": "com.albertofarah.silhouetteagency",
+    "appId": "com.silhouetteagency.os",
     "productName": "Silhouette Agency OS",
+    "copyright": "Copyright © 2026 Silhouette Agency",
     "directories": {
       "output": "dist-desktop"
     },
     "files": [
       "dist/**/*",
       "electron.cjs",
+      "preload.cjs",
+      "pythonManager.cjs",
       "package.json",
-      "silhouette.config.json"
+      "silhouette.config.json",
+      "node_modules/**/*",
+      "!node_modules/**/test/**",
+      "!node_modules/**/tests/**",
+      "!node_modules/**/*.md",
+      "!node_modules/**/example/**",
+      "!node_modules/**/.github/**",
+      "!node_modules/**/docs/**"
+    ],
+    "extraResources": [
+      {
+        "from": "public/splash.html",
+        "to": "splash.html"
+      }
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**",
+      "node_modules/@lancedb/**",
+      "node_modules/sharp/**"
     ],
     "win": {
-      "target": "nsis",
-      "icon": "public/logo/logo.png"
+      "target": [
+        { "target": "nsis", "arch": ["x64"] }
+      ],
+      "icon": "build/icons/icon.ico",
+      "artifactName": "${productName}-Setup-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "build/icons/icon.ico",
+      "uninstallerIcon": "build/icons/icon.ico",
+      "installerHeaderIcon": "build/icons/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Silhouette Agency OS",
+      "include": "build/installer.nsh",
+      "license": "LICENSE"
     },
     "mac": {
-      "target": "dmg",
-      "icon": "public/logo/logo.png"
+      "target": ["dmg"],
+      "icon": "build/icons/icon.png",
+      "category": "public.app-category.productivity",
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "icon": "build/icons/icon.png",
+      "category": "Office",
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "haroldfabla2-hue",
+      "repo": "Silhouette-Agency-OS-OpenSource"
     }
   }
 }

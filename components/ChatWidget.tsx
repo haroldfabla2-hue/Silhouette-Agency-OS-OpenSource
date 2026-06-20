@@ -753,6 +753,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ currentUserRole, onChangeRole, 
 
             {!isOpen && (
                 <button
+                    id="chat-toggle-btn"
                     onClick={() => setIsOpen(true)}
                     className="w-14 h-14 rounded-full bg-cyan-600 hover:bg-cyan-500 text-white shadow-[0_0_20px_rgba(6,182,212,0.5)] flex items-center justify-center transition-all hover:scale-110 animate-bounce-subtle"
                 >

@@ -96,3 +96,10 @@ scripts/create_repo.ps1
 scripts/deploy_fix.ps1
 scripts/fix_lfs.ps1
 scripts/force_push.ps1
+
+# Desktop packaging build output
+dist-desktop/
+
+# Corrupted SQLite DB backups
+db/*corrupted*
+db/silhouette.sqlite.*
