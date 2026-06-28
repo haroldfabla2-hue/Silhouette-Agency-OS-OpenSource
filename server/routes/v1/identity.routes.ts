@@ -4,8 +4,16 @@
 // =============================================================================
 
 import { Router, Request, Response } from 'express';
+import { hashPassword } from '../../utils/password';
 
 const router = Router();
+
+/** Strip secret fields (password hash) from a user object before returning it. */
+function sanitizeUser<T extends { passwordHash?: string } | null | undefined>(user: T): T {
+    if (!user) return user;
+    const { passwordHash, ...safe } = user as any;
+    return safe as T;
+}
 
 // GET /v1/identity/setup-status - Check if initial setup is needed
 router.get('/setup-status', async (_req: Request, res: Response) => {
@@ -172,9 +180,8 @@ router.post('/setup', async (req: Request, res: Response) => {
             }
         }
 
-        // Extremely simple hashing for demonstration (use bcrypt in production)
-        const crypto = await import('crypto');
-        const passwordHash = crypto.createHash('sha256').update(password).digest('hex');
+        // Salted scrypt hashing (see server/utils/password.ts)
+        const passwordHash = hashPassword(password);
 
         const user = await identityService.registerInitialAdmin(email, passwordHash, name);
 
@@ -184,7 +191,7 @@ router.post('/setup', async (req: Request, res: Response) => {
         const device = identityService.registerDevice(user.id, fingerprint, deviceName, true);
         const session = identityService.createSession(user.id, device.id);
 
-        return res.json({ success: true, user, session });
+        return res.json({ success: true, user: sanitizeUser(user), session });
     } catch (error: any) {
         return res.status(400).json({ error: error.message }); // 400 for bad request like "already setup"
     }
@@ -202,10 +209,7 @@ router.post('/login', async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Missing email or password' });
         }
 
-        const crypto = await import('crypto');
-        const passwordHash = crypto.createHash('sha256').update(password).digest('hex');
-
-        const user = await identityService.loginLocal(email, passwordHash);
+        const user = await identityService.loginLocalVerify(email, password);
 
         if (user) {
             const fingerprint = req.headers['user-agent'] || 'unknown-device';
@@ -213,7 +217,7 @@ router.post('/login', async (req: Request, res: Response) => {
             const session = identityService.createSession(user.id, device.id);
             return res.json({
                 success: true,
-                user,
+                user: sanitizeUser(user),
                 device,
                 session,
                 isCreator: user && user.role === 'CREATOR'
@@ -243,7 +247,7 @@ router.post('/auto-login', async (req: Request, res: Response) => {
         if (user) {
             return res.json({
                 success: true,
-                user,
+                user: sanitizeUser(user),
                 device: identityService.getDeviceByFingerprint(fingerprint),
                 isCreator: user && user.role === 'CREATOR',
                 googleLinked: user && user.googleLinked

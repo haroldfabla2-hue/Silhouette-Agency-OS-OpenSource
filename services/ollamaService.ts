@@ -22,9 +22,14 @@ const CB_TIMEOUT_MS = 30000; // 30 seconds cooldown
 
 export class OllamaService {
     private ollama: Ollama;
-    private queue: Queue;
-    private worker: Worker;
-    private queueEvents: QueueEvents;
+    // BullMQ infra is created lazily (on first enqueue) so that merely importing
+    // this module never opens a Redis connection — that previously produced
+    // *unhandled* ioredis 'error' events (and could crash the process / fail CI)
+    // whenever Redis was unavailable.
+    private queue?: Queue;
+    private worker?: Worker;
+    private queueEvents?: QueueEvents;
+    private infraReady = false;
 
     // Circuit Breaker State
     private failureCount = 0;
@@ -35,11 +40,18 @@ export class OllamaService {
     public serviceName = "Ollama Native Brain";
 
     constructor() {
-        // 1. Initialize Official Client
+        // Only initialize the lightweight HTTP client eagerly.
         this.ollama = new Ollama({ host: 'http://localhost:11434' });
+    }
 
-        // 2. Initialize Redis Connection for BullMQ
-        // We create a dedicated connection for the Queue to avoid blocking shared clients
+    /**
+     * Lazily build the BullMQ Queue/Worker/QueueEvents and their Redis
+     * connections. Every connection gets an 'error' handler so transient Redis
+     * failures never surface as unhandled events.
+     */
+    private ensureInfra(): void {
+        if (this.infraReady) return;
+
         const redisOptions = {
             host: REDIS_CONFIG.host,
             port: REDIS_CONFIG.port,
@@ -47,35 +59,27 @@ export class OllamaService {
             maxRetriesPerRequest: null // Required by BullMQ
         };
 
-        // 3. Initialize Queue
-        this.queue = new Queue(this.QUEUE_NAME, {
-            connection: new Redis(redisOptions)
-        });
+        const makeConnection = () => {
+            const conn = new Redis(redisOptions);
+            conn.on('error', (err: any) => {
+                console.warn(`[Ollama] Redis connection error: ${err?.message || err}`);
+            });
+            return conn;
+        };
 
-        // 4. Initialize QueueEvents (Required for waitUntilFinished)
-        this.queueEvents = new QueueEvents(this.QUEUE_NAME, {
-            connection: new Redis(redisOptions)
-        });
-
-        // 5. Initialize Worker (The Gridlock Solver)
-        // Concurrency: 1 ensures SERIAL execution. No conflicting GPU calls.
+        this.queue = new Queue(this.QUEUE_NAME, { connection: makeConnection() });
+        this.queueEvents = new QueueEvents(this.QUEUE_NAME, { connection: makeConnection() });
         this.worker = new Worker(this.QUEUE_NAME, async (job: Job) => {
             return await this.processJob(job);
-        }, {
-            connection: new Redis(redisOptions),
-            concurrency: 1
-        });
+        }, { connection: makeConnection(), concurrency: 1 });
 
-        // Worker Event Listeners
         this.worker.on('failed', (job, err) => {
             console.error(`[Ollama] Job ${job?.id} failed:`, err);
             this.handleFailure();
         });
+        this.worker.on('completed', () => this.handleSuccess());
 
-        this.worker.on('completed', (job) => {
-            // console.log(`[Ollama] Job ${job.id} completed.`);
-            this.handleSuccess();
-        });
+        this.infraReady = true;
     }
 
     async initialize(): Promise<void> {
@@ -206,7 +210,8 @@ export class OllamaService {
         // [MODIFIED] Support dynamic model selection, defaulting to GLM-4 Light
         const modelToUse = model || 'glm4:light';
 
-        const job = await this.queue.add('generate', {
+        this.ensureInfra();
+        const job = await this.queue!.add('generate', {
             type: 'generate',
             payload: {
                 prompt,
@@ -218,7 +223,7 @@ export class OllamaService {
         });
 
         // Wait for the job to finish
-        const result = await job.waitUntilFinished(this.queueEvents);
+        const result = await job.waitUntilFinished(this.queueEvents!);
         return result.data;
     }
 
@@ -226,7 +231,8 @@ export class OllamaService {
      * Public API: Enqueues an embedding request
      */
     async generateEmbedding(text: string): Promise<number[]> {
-        const job = await this.queue.add('embedding', {
+        this.ensureInfra();
+        const job = await this.queue!.add('embedding', {
             type: 'embedding',
             payload: {
                 text,
@@ -234,7 +240,7 @@ export class OllamaService {
             }
         });
 
-        const result = await job.waitUntilFinished(this.queueEvents);
+        const result = await job.waitUntilFinished(this.queueEvents!);
         return result.data;
     }
 

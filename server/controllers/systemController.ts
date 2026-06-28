@@ -6,6 +6,19 @@ import { sqliteService } from '../../services/sqliteService';
 // Prefix used for all secrets in the system_config table
 const SECRETS_PREFIX = 'secretsVault_';
 
+/** Mask a secret value (object of strings or a raw string) for safe display. */
+function maskSecretValue(value: any): any {
+    const maskStr = (v: string): string =>
+        v.length > 4 ? `${v.substring(0, 4)}${'•'.repeat(Math.min(v.length - 4, 12))}` : '••••';
+    if (typeof value === 'string') return maskStr(value);
+    if (value && typeof value === 'object') {
+        return Object.fromEntries(
+            Object.entries(value).map(([k, v]) => [k, typeof v === 'string' ? maskStr(v) : '••••'])
+        );
+    }
+    return '••••';
+}
+
 export class SystemController {
 
     // ═══════════════════════════════════════════════════════════
@@ -98,7 +111,18 @@ export class SystemController {
                 return res.status(404).json({ error: `No credentials found for ${serviceId}` });
             }
 
-            res.json({ serviceId, credentials: value });
+            // [SECURITY] Never return raw secrets over HTTP by default. Mask them.
+            // Raw reveal requires an explicit ?reveal=true AND a CREATOR session.
+            const wantsReveal = req.query.reveal === 'true' || req.query.reveal === '1';
+            const role = (req as any).user?.role;
+            const mayReveal = wantsReveal && role === 'CREATOR';
+
+            if (mayReveal) {
+                console.warn(`[SECRETS] ⚠️ Raw secret revealed for "${serviceId}" to CREATOR session`);
+                return res.json({ serviceId, credentials: value, revealed: true });
+            }
+
+            return res.json({ serviceId, credentials: maskSecretValue(value), masked: true });
         } catch (e: any) {
             console.error('[SECRETS] Get failed:', e.message);
             res.status(500).json({ error: 'Failed to get secret', details: e.message });

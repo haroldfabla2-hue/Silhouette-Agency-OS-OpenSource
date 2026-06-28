@@ -7,10 +7,18 @@ import { C, printCompactBanner, printSection, printCheck, printTable, isServerRu
 
 interface BrainOptions {
     json?: boolean;
+    remote?: boolean;
 }
 
 export async function brainCommand(options: BrainOptions) {
     printCompactBanner();
+
+    // ── Remote mode: query the external silhouette-brain 4-Tier memory service ──
+    if (options.remote) {
+        await remoteBrainCommand(options);
+        return;
+    }
+
     printSection('Knowledge Graph — Brain', '🧠');
 
     if (!await isServerRunning()) {
@@ -84,6 +92,57 @@ export async function brainCommand(options: BrainOptions) {
 
     } catch (err: any) {
         spinner.stop('Failed to query brain', 'fail');
+        printCheck('fail', err.message?.slice(0, 60));
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// REMOTE BRAIN — external silhouette-brain 4-Tier memory service
+// ═══════════════════════════════════════════════════════════════
+async function remoteBrainCommand(options: BrainOptions) {
+    printSection('Silhouette Brain — External 4-Tier Memory', '🧠');
+
+    const { brainClient } = await import('../../services/brain');
+
+    if (!brainClient.isEnabled()) {
+        printCheck('warn', 'Brain integration disabled');
+        console.log(`    ${C.GRAY}Enable it by setting ${C.WHITE}BRAIN_API_URL${C.GRAY} (e.g. http://localhost:9876)${C.RESET}\n`);
+        return;
+    }
+
+    const spinner = new Spinner(`Connecting to ${brainClient.getBaseUrl()}...`);
+    spinner.start();
+
+    try {
+        const status = await brainClient.getStatus();
+        spinner.stop('Brain probe complete', status ? 'ok' : 'fail');
+
+        if (options.json) {
+            console.log(JSON.stringify({ baseUrl: brainClient.getBaseUrl(), status }, null, 2));
+            return;
+        }
+
+        if (!status) {
+            printCheck('fail', `Brain unreachable at ${brainClient.getBaseUrl()}`);
+            console.log(`    ${C.GRAY}Is the silhouette-brain service running? (docker compose up brain)${C.RESET}\n`);
+            return;
+        }
+
+        const f = status.features || {};
+        printTable(
+            ['Capability', 'Status'],
+            [
+                ['Service', status.status === 'ok' ? 'ONLINE ✓' : String(status.status)],
+                ['Version', String(status.version || '?')],
+                ['Embeddings', f.embeddings ? 'YES' : 'no'],
+                ['Reasoning Engine', f.reasoning ? 'YES' : 'no'],
+                ['Context Assembler', f.context_assembler ? 'YES' : 'no'],
+                ['Neo4j (Deep)', f.neo4j ? 'YES' : 'no'],
+                ['4-Tier Memory', f['4_tier'] ? 'YES' : 'no'],
+            ]
+        );
+    } catch (err: any) {
+        spinner.stop('Failed to query remote brain', 'fail');
         printCheck('fail', err.message?.slice(0, 60));
     }
 }

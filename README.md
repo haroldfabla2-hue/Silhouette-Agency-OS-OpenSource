@@ -19,13 +19,14 @@
 **Silhouette Agency OS** is an experimental autonomous cognitive operating system designed for creative agencies. It implements a novel multi-layered architecture that combines **introspective reasoning**, **continuous memory**, and **self-modification capabilities** through a unified agentic framework.
 
 ### 🌟 V3 Key Features (Deep Upgrade)
-- **Z3 Logic OODA Loop**: Mathematical verification of high-risk actions to prevent autonomous hallucinations.
+- **External Brain (4-Tier Memory)**: First-class integration with the standalone [silhouette-brain](https://github.com/haroldfabla2-hue/silhouette-brain) service (Working/Redis · Medium/SQLite · Long-Term/Vectors · Deep/Neo4j) over HTTP — see [docs/BRAIN_INTEGRATION.md](docs/BRAIN_INTEGRATION.md).
+- **Z3 Logic OODA Loop**: Symbolic-logic gating of high-risk action sets via `z3-solver` (file-path invariants).
 - **RAG Web Scraping pipeline**: Deep LanceDB integration extracting global knowledge dynamically.
-- **Cognitive Omnichannel RBAC**: Native Anti-Prompt Injection shields over Telegram, Discord, and WhatsApp.
-- **Auto-Evolution**: Capable of self-cloning and pushing to private GitHub repositories autonomously.
+- **Cognitive Omnichannel RBAC**: Anti-Prompt Injection filters + role enforcement over Telegram, Discord, and WhatsApp.
+- **Auto-Evolution**: Proposes its own upgrades via GitHub Pull Requests (human-approved; no direct push to main).
 - **Multi-modal perception** including visual, audio, and textual processing.
-- **Debate Swarm Matrix**: Multi-agent consensus mechanisms for complex logical reasoning (Critics vs Creators).
-- **Host-Aware Dockerization**: Production-grade isolation that retains root host OS management capabilities.
+- **Debate Swarm Matrix**: Multi-agent consensus (Creator vs Critic + Judge) for complex reasoning.
+- **Secure-by-default Deployment**: Loopback bind + mandatory token on exposed hosts; host-access escape hatches are opt-in only.
 - **Fully Responsive UI**: Mobile-first architecture ready for edge-device deployments via Coolify and Traefik.
 
 > [!WARNING]
@@ -223,11 +224,13 @@ OAuth2 flow: `GET /v1/google-auth/start?services=calendar,drive`
 
 | Layer | Implementation |
 |-------|---------------|
-| **Auth** | JWT middleware on all API routes |
+| **Auth** | Bearer-token middleware on all API routes + scrypt-hashed local sessions. Token-less access is refused on network-exposed binds (loopback-only otherwise; `SILHOUETTE_ALLOW_INSECURE` to override). |
+| **Passwords** | Salted **scrypt** hashing (legacy SHA-256 auto-upgraded on login); password hashes never leave the server. |
+| **Tool Policy** | `securityManager` denylist enforced at the orchestrator execution chokepoint; GUEST channel users cannot run code/git/HTTP tools. |
 | **Rate Limiting** | Global, chat, and admin limiters |
-| **Prompt Sanitization** | 14 injection patterns neutralized |
-| **CORS** | Configurable origin whitelist |
-| **Secrets** | `.env.local` + SQLite secrets vault |
+| **Prompt Sanitization** | Injection-pattern filters across HTTP + channels |
+| **Secrets** | `.env.local` + SQLite secrets vault; API never returns raw secrets (masked; raw reveal requires CREATOR + explicit opt-in) |
+| **Deployment** | Binds to `127.0.0.1` by default; Docker `docker.sock` / host-fs mounts are opt-in via `docker-compose.host-access.yml`, not the default stack. |
 
 ---
 
@@ -337,17 +340,18 @@ Genesis V2 is the intelligent birth protocol that scaffolds new cognitive entiti
 - **How it works:** It uses a 5-step lifecycle (`SEED` → `BOOTSTRAP` → `HANDSHAKE` → `TEACHING` → `VALIDATION`). It generates the underlying `AGENT_TPL` files (Soul, Heartbeat, Tools, Memory), forces the agent to read the Orchestrator's operational manual via the `SystemBus`, and validates their logical consistency.
 - **Triggering Genesis:** Genesis runs autonomously via `npm run setup:intelligent` or when an unresolved Core agent is invoked. 
 
-### 8.2 Reasoning Verification v2 (Z3 Symbolic Logic)
-Located in `services/introspectionEngine.ts`. The kernel intercepts the agent's proposed `AgentAction`s and mathematically proves they do not violate universal invariants (e.g., trying to modify and delete the same resource simultaneously). 
-- **Usage:** This runs silently on every single cognitive cycle. If a logical contradiction is found, the system halts the loop and emits a `SYSTEM_ALERT`.
+### 8.2 Reasoning Verification (Z3 Symbolic Logic)
+Located in `services/introspectionEngine.ts`. Before high-risk action sets execute, the kernel runs them through the `z3-solver` to check a set of file/IO invariants and reject contradictory or unsafe combinations:
+- READ + WRITE the same path in one cycle; WRITE + EXECUTE the same path; conflicting WRITEs (divergent content); self-referential modification of core engine files; and a **secret-exfiltration shape** (READ of a `.env`/secret/key path followed by an outbound HTTP request).
+- **Observability:** violations are emitted as `SYSTEM_ALERT` with a concrete reason, and counters are exposed via `getZ3Stats()`. Failure mode is non-blocking by default; set `Z3_FAIL_CLOSED=true` for strict mode.
 
 ### 8.3 Extended Modalities (Haptics & Olfactory)
-Software-level drivers located in `services/sensory/hapticsDriver.ts` and `olfactoryDriver.ts`.
-- **Usage:** Though primarily software abstraction layers for missing physical hardware, these drivers broadcast sensory states (like `HEARTBEAT` haptic pulses or `OZONE` chemical emulation) to the UI's `SENSORY_SNAPSHOT` bus to allow testing immersive biometric hardware setups.
+Functional software sensory drivers in `services/sensory/`. They maintain real, queryable state (active emissions, TTL-based dissipation, history) and broadcast to the UI's `SENSORY_SNAPSHOT` bus.
+- **Pluggable hardware:** real devices can be attached via `registerBackend()` (`HapticsBackend` / `OlfactoryBackend`). Software mode is the honest default — no fake "hardware detected" claims.
 
 ### 8.4 P2P Federated Memory Sync
-Agents can sync Generalized knowledge (`DEEP` tier vectors) with other Silhouette instances on different subnets.
-- **Usage:** Handled autonomously in `services/federatedMemory.ts`. The instance will broadcast generalized learnings on the `HIVE_MIND_SYNC` channel dynamically.
+Real HTTP-based federation in `services/federatedMemory.ts`: instances push generalized `DEEP`-tier knowledge to authorized peers.
+- **Integrity & safety:** order-independent **Merkle root** over memory contents, whole-payload dedup, trust-scaled sharing, optional `FEDERATED_SYNC_TOKEN`. Peers expose `POST /v1/federated/sync`; manage via `/v1/federated/{peers,broadcast,stats}`.
 
 ---
 

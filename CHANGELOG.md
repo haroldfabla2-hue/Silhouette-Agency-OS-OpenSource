@@ -6,6 +6,56 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [3.0.0] - 2026-06-27
+
+### Added
+- **External Silhouette Brain integration** — typed, resilient client (`services/brain/`) for the
+  standalone [silhouette-brain](https://github.com/haroldfabla2-hue/silhouette-brain) 4-Tier memory
+  service. Deep recall is injected into the ContextAssembler and local memories are mirrored to the
+  Brain (both fail-safe). New `/v1/brain/*` API routes, `silhouette brain --remote` CLI, a `brain`
+  Docker Compose profile, config section + env overrides, docs, and 10 unit tests.
+- Missing `qdrant` service added to `docker-compose.yml` (the `bot` service depended on it but it
+  was never defined, breaking `docker compose up`).
+
+### Security
+- **Auth bypass closed**: token-less access is refused on network-exposed binds; allowed only on
+  loopback or with explicit `SILHOUETTE_ALLOW_INSECURE=true`. Server now binds `127.0.0.1` by default.
+- **Password hashing**: replaced unsalted SHA-256 with salted **scrypt** (backward compatible +
+  transparent upgrade). Password hashes are no longer returned in API responses.
+- **Tool policy enforcement**: `securityManager` denylist is now consulted at the orchestrator
+  execution chokepoint; GUEST channel users can no longer invoke code execution, git, or HTTP tools.
+- **Secrets endpoint** masks credentials by default (raw reveal requires CREATOR + explicit opt-in).
+- **Git shell injection removed**: `gitService` now uses `execFile` argv arrays (no shell).
+- **Host-access escape hatches** (`/var/run/docker.sock`, `/:/host`) removed from the default Docker
+  stack and moved to an opt-in `docker-compose.host-access.yml` override.
+
+### Fixed
+- `ollamaService` now lazily initializes its BullMQ/Redis infrastructure and attaches error handlers
+  to every connection — eliminating unhandled `ioredis` error events that failed CI without Redis.
+- Hardened `continuumMemory.search` against circular-import init ordering.
+- Test suite is green end-to-end (136 tests, 0 unhandled errors); converted a legacy channels test to
+  Vitest and moved a manual integration probe out of the automated path.
+
+### Removed
+- Stray committed artifacts: a 40 MB `.m4a`, `pr5.json`, `types.ts.temp_actions`, `env_snippet.txt`.
+
+### Changed — features made real (were aspirational / stubs)
+- **Lint is green**: pre-existing lint failed (128 errors + 2747 warnings); now 0
+  errors via a pragmatic ESLint config + dead-config cleanup (warnings advisory).
+- **Z3 verification**: real invariants (conflicting writes, secret-exfiltration
+  shape) + `getZ3Stats()` observability + `Z3_FAIL_CLOSED` opt-in.
+- **Cognitive cadence**: replaced `Math.random()` "occasional" triggers in the
+  introspection loop with reproducible time/signal-gated cadence.
+- **Cognitive-state engine**: dropped overclaimed "IIT" framing; documented as a
+  composite index with a transparent `getPhiBreakdown()`.
+- **Federated memory**: real P2P-over-HTTP sync (Merkle integrity, dedup,
+  trust-scaling, `/v1/federated/*` routes) — previously a mock.
+- **Sensory drivers**: functional software state machines (TTL state, history)
+  with pluggable hardware backends — previously emulation stubs.
+- Test suite grew to 155 passing tests (was 103 at the start).
+
+---
+
 ## [2.2.0] - 2026-06-18
 
 ### Added

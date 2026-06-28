@@ -171,8 +171,17 @@ For general questions, respond conversationally without using tools.
 
         try {
             // [ANTI-PROMPT INJECTION] Hard Security Enforcement
-            const highRiskTools = ['execute_command', 'write_file', 'janus_repair', 'delete_file', 'shell', 'spawn_agent', 'git_commit', 'git_push'];
-            if (userRole === 'GUEST' && highRiskTools.includes(toolName.toLowerCase())) {
+            // NOTE: code execution (execute_code/code_execution), git operations and
+            // HTTP egress are now blocked for GUESTs too — these were the gaps that
+            // let an untrusted Telegram/Discord visitor run arbitrary code.
+            const highRiskTools = new Set([
+                'execute_command', 'execute_code', 'code_execution', 'run_code',
+                'write_file', 'delete_file', 'edit_file',
+                'janus_repair', 'shell', 'shell_exec', 'spawn_agent', 'create_tool',
+                'git_commit', 'git_push', 'git_operations', 'github_create_pr',
+                'http_request', 'send_email',
+            ]);
+            if (userRole === 'GUEST' && highRiskTools.has(toolName.toLowerCase())) {
                 console.error(`[SECURITY] 🚨 Blocked high-risk tool "${toolName}" for GUEST user`);
                 return {
                     toolName,

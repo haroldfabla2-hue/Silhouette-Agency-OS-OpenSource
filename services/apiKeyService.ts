@@ -14,6 +14,7 @@ import crypto from 'crypto';
 import { sqliteService } from './sqliteService';
 import { systemBus } from './systemBus';
 import { SystemProtocol } from '../types';
+import { hashPassword, verifyPassword } from '../server/utils/password';
 
 // ==================== INTERFACES ====================
 
@@ -67,13 +68,13 @@ class ApiKeyService {
      * Set admin password (first time setup or reset)
      */
     public setAdminPassword(password: string): void {
-        const hash = this.hashString(password);
-        sqliteService.setConfig(this.ADMIN_PASSWORD_KEY, hash);
+        // Salted scrypt (see server/utils/password.ts) instead of unsalted SHA-256.
+        sqliteService.setConfig(this.ADMIN_PASSWORD_KEY, hashPassword(password));
         console.log('[ApiKeyService] ✅ Admin password set');
     }
 
     /**
-     * Verify admin password
+     * Verify admin password (supports legacy SHA-256 hashes + transparent upgrade)
      */
     public verifyAdminPassword(password: string): boolean {
         const storedHash = sqliteService.getConfig(this.ADMIN_PASSWORD_KEY);
@@ -81,7 +82,11 @@ class ApiKeyService {
             // No password set - first time setup
             return false;
         }
-        return this.hashString(password) === storedHash;
+        const { valid, needsUpgrade } = verifyPassword(password, storedHash);
+        if (valid && needsUpgrade) {
+            try { sqliteService.setConfig(this.ADMIN_PASSWORD_KEY, hashPassword(password)); } catch { /* best-effort */ }
+        }
+        return valid;
     }
 
     /**

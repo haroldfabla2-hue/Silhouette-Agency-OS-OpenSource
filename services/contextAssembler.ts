@@ -14,6 +14,9 @@ import { janitor } from "./contextJanitor";
 import { codebaseAwareness } from "./codebaseAwareness";
 import { contextCompaction } from "./context/contextCompactionService";
 
+// [BRAIN] External silhouette-brain 4-Tier memory integration (optional)
+import { brainBridge } from "./brain";
+
 /**
  * [PA-041] Context Priority System
  * ================================
@@ -316,11 +319,22 @@ class ContextAssembler {
             ? this.timeoutPromise(codebaseAwareness.query(query), TIMEOUT_MS + 200, "") // Give RAG a bit more time
             : Promise.resolve("");
 
+        // [BRAIN] External 4-Tier memory recall (optional, never blocks the loop).
+        // Synthesis is only requested in DEEP mode to keep the chat hot-path fast.
+        const brainPromise = (query && brainBridge.isEnabled())
+            ? this.timeoutPromise(
+                brainBridge.getContextBlock(query, { synthesize: fetchMode === 'DEEP' }).then(b => b.text),
+                TIMEOUT_MS,
+                ""
+              )
+            : Promise.resolve("");
+
         // Await all
-        const [memoryResult, graphText, codeSnippets] = await Promise.all([
+        const [memoryResult, graphText, codeSnippets, brainText] = await Promise.all([
             memoryPromise,
             graphPromise,
-            ragPromise
+            ragPromise,
+            brainPromise
         ]);
 
         // Process Memories into Unified Cognitive Block
@@ -339,6 +353,11 @@ class ContextAssembler {
         }
         if (memoryText) {
             memoryText = `\n[COGNITIVE SYSTEM MEMORY]\n${memoryText}\n`;
+        }
+
+        // [BRAIN] Append external Brain recall (if any) to the memory block.
+        if (brainText) {
+            memoryText += brainText;
         }
 
         // [PA-041] Build prioritized context items

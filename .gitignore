@@ -80,9 +80,11 @@ models/
 "**/*.ckpt"
 
 # Brain & Agentic Context (Self-Evolving Data)
+# NOTE: scoped to the repo root so it does not swallow `services/brain/` (the
+# silhouette-brain integration code, which IS tracked).
 .gemini/
 .agent/
-brain/
+/brain/
 *task.md
 *implementation_plan.md
 *walkthrough.md
@@ -99,6 +101,13 @@ scripts/force_push.ps1
 
 # Desktop packaging build output
 dist-desktop/
+
+# Stray artifacts / scratch files (should never be committed)
+*.m4a
+*.temp_actions
+pr*.json
+env_snippet.txt
+types.ts.temp*
 
 # Corrupted SQLite DB backups
 db/*corrupted*

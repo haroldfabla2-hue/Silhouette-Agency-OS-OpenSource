@@ -62,6 +62,41 @@ function getToken(): string | null {
  */
 export function resetTokenCache(): void {
     _cachedToken = null;
+    _insecureWarned = false;
+}
+
+let _insecureWarned = false;
+
+/**
+ * Determine whether running token-less is acceptable for this deployment.
+ *
+ * Without an API token the API is wide open, so we only permit it when the
+ * server is bound to the loopback interface (local development), or when the
+ * operator has explicitly accepted the risk via SILHOUETTE_ALLOW_INSECURE=true.
+ *
+ * Otherwise — i.e. a network-exposed server with no token — we refuse the
+ * bypass and force callers to authenticate.
+ */
+function isTokenlessBypassAllowed(): boolean {
+    if (/^(1|true|yes|on)$/i.test(process.env.SILHOUETTE_ALLOW_INSECURE || '')) {
+        if (!_insecureWarned) {
+            console.warn('[AUTH] ⚠️ SILHOUETTE_ALLOW_INSECURE is set — running with NO authentication. Do not use in production.');
+            _insecureWarned = true;
+        }
+        return true;
+    }
+
+    const host = (process.env.SILHOUETTE_HOST || process.env.HOST || '').trim().toLowerCase();
+    // Treat an unset host as loopback ONLY in non-production. In production a
+    // missing token already aborts boot via getToken().
+    const loopbackHosts = new Set(['', '127.0.0.1', 'localhost', '::1']);
+    const boundToLoopback = loopbackHosts.has(host);
+
+    if (boundToLoopback && !_insecureWarned) {
+        console.warn('[AUTH] 🔓 No API token configured — auth disabled for loopback-only access. Set SILHOUETTE_API_TOKEN to secure the API.');
+        _insecureWarned = true;
+    }
+    return boundToLoopback;
 }
 
 // ─── Middleware ──────────────────────────────────────────────────────────────
@@ -81,12 +116,20 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
         return;
     }
 
-    // 2. If no token is configured, skip auth (development mode)
+    // 2. If no token is configured, only bypass when it is safe to do so
+    //    (loopback-only, or explicit opt-in). A network-exposed token-less
+    //    server is refused — closing the previous "wide open" hole.
     const serverToken = getToken();
     if (!serverToken) {
-        // Dev fallback: Give a fake admin context or bypass
-        (req as any).user = null;
-        next();
+        if (isTokenlessBypassAllowed()) {
+            (req as any).user = null;
+            next();
+            return;
+        }
+        res.status(401).json({
+            error: 'Authentication required',
+            hint: 'This server is network-exposed with no API token. Set SILHOUETTE_API_TOKEN, or set SILHOUETTE_ALLOW_INSECURE=true to explicitly run without auth.',
+        });
         return;
     }
 
