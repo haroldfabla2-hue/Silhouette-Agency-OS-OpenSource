@@ -3,7 +3,7 @@
 // Live service dashboard + agent overview
 // ═══════════════════════════════════════════════════════════════
 
-import { C, printCompactBanner, printSection, printTable, printCheck, isServerRunning, getProjectRoot } from '../utils/ui';
+import { C, printCompactBanner, printSection, printTable, printCheck, isServerRunning } from '../utils/ui';
 
 interface StatusOptions {
     json?: boolean;

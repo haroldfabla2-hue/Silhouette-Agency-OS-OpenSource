@@ -2,7 +2,7 @@
  * AUTOMATED TEST SUITE: Services
  * Tests core service initialization and basic functionality
  */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
 describe('Core Services', () => {
     describe('SystemBus', () => {

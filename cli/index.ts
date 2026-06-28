@@ -22,7 +22,7 @@
 
 import { Command } from 'commander';
 import { printBanner, printSmartRecommendations, isConfigured, isServerRunning, getVersion, C, printSection, printRecommendation } from './utils/ui';
-import { loadConfig, validateConfig, saveConfig } from '../server/config/configSchema';
+import { loadConfig, saveConfig } from '../server/config/configSchema';
 
 const program = new Command();
 

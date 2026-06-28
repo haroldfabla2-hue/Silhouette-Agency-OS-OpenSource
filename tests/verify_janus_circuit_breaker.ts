@@ -9,8 +9,6 @@
 import fs from 'fs';
 import path from 'path';
 
-const CRASH_LOG_DIR = path.join(process.cwd(), 'logs');
-const CRASH_HISTORY_PATH = path.join(CRASH_LOG_DIR, 'janus_crash_history.json');
 const MAX_REPAIRS_PER_SIGNATURE = 3;
 const REPAIR_COOLDOWN_MS = 300000;
 
