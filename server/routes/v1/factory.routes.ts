@@ -128,11 +128,7 @@ router.post('/agent', async (req: Request, res: Response) => {
         const {
             name,
             role,
-            category = 'OPS',
-            tier = 'WORKER',
             capabilities = [],
-            personality,
-            systemPrompt
         } = req.body;
 
         if (!name || !role) {

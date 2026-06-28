@@ -8,7 +8,6 @@ import { WebSocketServer, WebSocket, RawData } from 'ws';
 import { Server as HTTPServer } from 'http';
 import { v4 as uuidv4 } from 'uuid';
 import {
-    Frame,
     RequestFrame,
     ConnectFrame,
     ClientConnection,

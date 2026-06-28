@@ -328,8 +328,7 @@ export class SystemController {
             }
 
             // Gather all data in parallel or sequence
-            const logs = sqliteService.getRecentLogs('INFO', 5); // Last 5 mins logs? or just last 10 items? 
-            // Better: get last 20 logs independent of time
+            // Last 20 log lines for the dashboard snapshot
             const recentLogs = sqliteService.getLogs(20).map(l => `[${l.level}] ${l.message}`);
 
             const state = {

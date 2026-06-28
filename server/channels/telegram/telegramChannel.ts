@@ -6,7 +6,7 @@
 // =============================================================================
 
 import { IChannel, IncomingMessage, OutgoingMessage, ChannelStatus, MessageHandler } from '../channelInterface';
-import { Bot, Context, InputFile } from 'grammy';
+import { Bot, Context } from 'grammy';
 import { geminiService } from '../../../services/geminiService';
 import fs from 'fs';
 import path from 'path';
@@ -92,7 +92,7 @@ function chunkMessage(text: string, maxLen: number = TELEGRAM_MAX_LENGTH): strin
 // UTILITY: Internal Thought Filtering
 // ═══════════════════════════════════════════════════════════════
 
-const INTERNAL_PATTERNS = [
+const _INTERNAL_PATTERNS = [
     /^\[THOUGHT\]/i,
     /^\[INTERNAL\]/i,
     /^Introspection:/i,

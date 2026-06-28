@@ -1249,7 +1249,7 @@ export class ToolHandler {
             console.warn('[ToolHandler] SecuritySquad not available, falling back to basic checks');
             // Fallback to basic pattern matching if SecuritySquad fails
             const dangerousPatterns = [
-                /rm\s+-rf\s+[\/~]/i,
+                /rm\s+-rf\s+[/~]/i,
                 /:(){ :\|:& };:/,
                 /mkfs\./i,
             ];
@@ -1747,7 +1747,7 @@ export class ToolHandler {
             let envContent = '';
             try { envContent = await fs.readFile(envPath, 'utf8'); } catch (e) { }
 
-            let lines = envContent.split('\n');
+            const lines = envContent.split('\n');
             const updates = args.updates || {};
             let changedCount = 0;
 

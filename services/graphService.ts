@@ -1035,7 +1035,7 @@ class GraphService {
             const content = `${concept.name}: ${concept.description || 'No description'}`;
 
             // Generate embedding (try Gemini first, falls back to Local xenova/transformers)
-            let embedding = await geminiEmbed(content);
+            const embedding = await geminiEmbed(content);
 
             if (!embedding) {
                 console.warn(`[GRAPH] ⚠️ No embedding generated for concept: ${concept.id}`);

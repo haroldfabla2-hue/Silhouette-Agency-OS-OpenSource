@@ -145,7 +145,7 @@ Format: One pattern per line, starting with "•"`;
         return response
             .split('\n')
             .filter(line => line.trim().startsWith('•') || line.trim().startsWith('-'))
-            .map(line => line.replace(/^[•\-]\s*/, '').trim())
+            .map(line => line.replace(/^[•-]\s*/, '').trim())
             .filter(line => line.length > 10);
     }
 

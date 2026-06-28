@@ -763,7 +763,7 @@ Respuesta JSON:`;
                 console.log(`[NARRATIVE] ⚠️ JSON repair failed (${parseError.message?.substring(0, 50)}), using as plain text`);
                 for (const item of batch) {
                     // Clean up the response for display
-                    const cleanText = response.replace(/[\[\]{}\"]/g, '').replace(/index:\s*\d+,?\s*/gi, '').replace(/narrated:\s*/gi, '').trim();
+                    const cleanText = response.replace(/[[\]{}"]/g, '').replace(/index:\s*\d+,?\s*/gi, '').replace(/narrated:\s*/gi, '').trim();
                     await this.emitNarrativeUpdate(item.source as any, cleanText || item.content, item.importance, item.metadata, true, provider);
                 }
             } else {
@@ -850,7 +850,7 @@ Respuesta JSON:`;
 
             // === USER INTERACTIONS ===
             [/^User Message Noted: (.+)$/i, 'The user reaches out to me: "$1"'],
-            [/^Conversation: User asked \"(.+)\".*$/i, 'The user asked me: "$1"'],
+            [/^Conversation: User asked "(.+)".*$/i, 'The user asked me: "$1"'],
             [/^User said: (.+)$/i, 'The user told me: $1'],
 
             // === INTUITIONS & GAPS ===

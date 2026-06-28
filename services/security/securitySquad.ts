@@ -51,7 +51,7 @@ export interface CodeReviewRequest {
 
 const CRITICAL_PATTERNS: { pattern: RegExp; description: string; severity: 'HIGH' | 'CRITICAL' }[] = [
     // Filesystem destruction
-    { pattern: /rm\s+-rf\s+[\/~]/, description: 'Delete root/home directory', severity: 'CRITICAL' },
+    { pattern: /rm\s+-rf\s+[/~]/, description: 'Delete root/home directory', severity: 'CRITICAL' },
     { pattern: /del\s+\/[sq]\s+[c-z]:/i, description: 'Windows delete root', severity: 'CRITICAL' },
     { pattern: /format\s+[c-z]:/i, description: 'Windows format drive', severity: 'CRITICAL' },
     { pattern: /mkfs\./i, description: 'Linux format filesystem', severity: 'CRITICAL' },
@@ -74,7 +74,7 @@ const CRITICAL_PATTERNS: { pattern: RegExp; description: string; severity: 'HIGH
     { pattern: /\.env|API_KEY|SECRET|PASSWORD/i, description: 'Potential credential access', severity: 'HIGH' },
 
     // Python specific
-    { pattern: /os\.system\s*\(\s*['\"]rm\s+-rf/i, description: 'Python exec rm -rf', severity: 'CRITICAL' },
+    { pattern: /os\.system\s*\(\s*['"]rm\s+-rf/i, description: 'Python exec rm -rf', severity: 'CRITICAL' },
     { pattern: /subprocess\.(call|run|Popen).*shell\s*=\s*True/i, description: 'Python shell injection risk', severity: 'HIGH' },
     { pattern: /eval\s*\(\s*input\s*\(/i, description: 'Eval user input', severity: 'CRITICAL' },
 

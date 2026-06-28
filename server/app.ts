@@ -30,7 +30,7 @@ import chatRoutes from './routes/v1/chat.routes'; // [NEW] Chat API
 import memoryRoutes from './routes/v1/memory.routes'; // [NEW] Memory System
 import inboxRoutes from './routes/v1/inbox.routes'; // [DASHBOARD] Mission Control
 import voiceRoutes from './routes/v1/voice.routes'; // [VOICE] Voice Library & Cloning
-import contextRoutes, { initializeContextConfig } from './routes/v1/context.routes'; // [PA-041] Context Priority
+import contextRoutes from './routes/v1/context.routes'; // [PA-041] Context Priority
 import selfEvolutionRoutes from './routes/v1/self-evolution.routes'; // [CI/CD] Self-Modification Review
 import driveRoutes from './routes/v1/drive.routes'; // [DRIVE] Google Drive Integration
 import identityRoutes from './routes/v1/identity.routes'; // [IDENTITY] User Auth & Device Recognition

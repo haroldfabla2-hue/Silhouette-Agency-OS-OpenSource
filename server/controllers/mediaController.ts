@@ -374,11 +374,8 @@ Respond in JSON format:
      * GET /v1/media/brand/:id/rules
      * Get brand design rules for objective
      */
-    async getBrandRules(req: Request, res: Response) {
+    async getBrandRules(_req: Request, res: Response) {
         try {
-            const { id } = req.params;
-            const objective = req.query.objective as string || 'general';
-
             // Generate rules based on brand and objective
             const rules = `Use bold, dynamic compositions. Emphasize innovation and premium quality. Avoid cluttered layouts.`;
 

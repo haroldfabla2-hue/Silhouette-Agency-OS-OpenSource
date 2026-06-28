@@ -353,8 +353,8 @@ export class ChatController {
                     providerHealth.isAvailable('groq') ? 'groq' : 'ollama';
             res.write(`data: ${JSON.stringify({ type: 'provider', provider: primaryProvider })}\n\n`);
 
-            // 5. Build the system prompt with PURIFIED context
-            const systemPrompt = this.buildSystemPrompt(purifiedContext.code || '');
+            // 5. Build the system prompt with PURIFIED context (side-effect: warms prompt cache)
+            this.buildSystemPrompt(purifiedContext.code || '');
             const fullPrompt = this.buildPromptPurified(userMessage, purifiedContext);
 
             // 5. Stream LLM response using the Universal Fallback Chain

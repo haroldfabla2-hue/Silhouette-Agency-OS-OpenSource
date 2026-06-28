@@ -548,7 +548,7 @@ class ContinuumMemorySystem {
         const cutoff = Date.now() - (hours * 3600 * 1000);
 
         // From RAM
-        let recentRam = this.working.filter(n => n.timestamp >= cutoff);
+        const recentRam = this.working.filter(n => n.timestamp >= cutoff);
 
         // From LanceDB (Medium)
         let recentDb: MemoryNode[] = [];
