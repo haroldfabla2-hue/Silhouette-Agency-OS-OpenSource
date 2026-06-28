@@ -14,6 +14,9 @@ import { app } from './app';
 import '../services/narrativeService'; // Initialize Unified Stream Aggregator
 
 const PORT = config.system.port || 3005;
+// Bind to loopback by default for safety. Set SILHOUETTE_HOST=0.0.0.0 to expose
+// on all interfaces (containers/VPS) — and set SILHOUETTE_API_TOKEN when you do.
+const HOST = process.env.SILHOUETTE_HOST || '127.0.0.1';
 
 // ═══════════════════════════════════════════════════════════════
 // GLOBAL ERROR HANDLERS - Catch unhandled errors before they crash
@@ -39,13 +42,14 @@ process.on('uncaughtException', async (error: Error) => {
     setTimeout(() => process.exit(1), 1000);
 });
 
-const server = app.listen(PORT, '0.0.0.0', async () => {
+const server = app.listen(PORT, HOST, async () => {
     console.log(`
     -------------------------------------------
     SILHOUETTE AGENCY OS IS ONLINE
     -------------------------------------------
     ► API Gateway:  http://localhost:${PORT}
     ► WS Gateway:   ws://localhost:${PORT}/ws
+    ► Bind Host:    ${HOST}
     ► Environment:  ${process.env.NODE_ENV || 'development'}
     -------------------------------------------
     `);

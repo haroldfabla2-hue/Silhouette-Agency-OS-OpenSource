@@ -119,6 +119,7 @@ program
     .command('brain')
     .description('Knowledge graph topology: σ index, concepts, bridges')
     .option('--json', 'Machine-readable JSON output')
+    .option('--remote', 'Query the external silhouette-brain 4-Tier memory service')
     .action(async (options) => {
         const { brainCommand } = await import('./commands/brain');
         await brainCommand(options);

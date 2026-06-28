@@ -162,6 +162,16 @@ class SecurityManager {
         return { allowed: true };
     }
 
+    /**
+     * Lightweight enforcement used at execution chokepoints (no approval side
+     * effects). Returns true if the tool is hard-blocked by the denylist.
+     */
+    isDenied(toolName: string): boolean {
+        const denied = this.policy.denylist.has(toolName);
+        if (denied) this.log('DENIED', toolName, 'Blocked at execution chokepoint (denylist)');
+        return denied;
+    }
+
     // ── Approvals ─────────────────────────────────────────────────────────
 
     private createApprovalRequest(toolName: string, args: Record<string, unknown>, requestedBy: string): string {

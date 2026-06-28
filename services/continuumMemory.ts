@@ -465,6 +465,16 @@ class ContinuumMemorySystem {
             import('./dreamerService').then(({ dreamer }) => {
                 if (dreamer?.notifyNewMemory) dreamer.notifyNewMemory();
             }).catch(() => { /* Dreamer not available */ });
+
+            // 5. [BRAIN] Mirror to the external silhouette-brain 4-Tier memory
+            //    (fire-and-forget, no-op when the integration is disabled).
+            import('./brain').then(({ brainBridge }) => {
+                brainBridge.mirrorMemory(content, {
+                    importance: node.importance,
+                    tags: node.tags,
+                    tier: (tierStr === 'DEEP' ? 'DEEP' : tierStr === 'MEDIUM' ? 'MEDIUM' : 'WORKING'),
+                });
+            }).catch(() => { /* Brain integration not available */ });
         }
     }
 
@@ -900,10 +910,12 @@ class ContinuumMemorySystem {
             // 3. Search Deep Memory (SEMANTIC / VECTOR)
             // Dynamic import to avoid circular dependency
             const { vectorMemory } = await import('./vectorMemoryService');
-            const { geminiService } = await import('./geminiService');
+            const geminiMod = await import('./geminiService');
 
-            // Generate Embedding for Query
-            const embedding = await geminiService.generateEmbedding(query);
+            // Generate Embedding for Query — resilient to circular-import init order
+            // (fall back to the named export, then to no embedding → text search).
+            const embedFn = geminiMod.geminiService?.generateEmbedding || geminiMod.generateEmbedding;
+            const embedding = typeof embedFn === 'function' ? await embedFn(query) : null;
 
             let deepVectors: any[] = [];
 

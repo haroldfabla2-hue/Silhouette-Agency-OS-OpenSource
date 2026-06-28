@@ -4,14 +4,25 @@ import { continuum } from "./continuumMemory";
 import { introspection } from "./introspectionEngine";
 import { workflowEngine } from "./workflowEngine";
 
-// --- SILHOUETTE CONSCIOUSNESS ENGINE V1.0 ---
-// Based on Anthropic 2025 Research & Computational Phenomenology
-// Calculates Phi (Integrated Information), Identity, and Emergence.
+// --- SILHOUETTE COGNITIVE-STATE ENGINE ---
+// NOTE (honesty): this is NOT a claim of machine consciousness. "Phi" here is a
+// transparent, weighted *composite index* derived from real runtime signals
+// (memory density, token throughput, optimization success, graph small-world σ).
+// It is a useful health/awareness gauge, not Integrated Information Theory. The
+// component breakdown is inspectable via getPhiBreakdown().
 
 class ConsciousnessEngine {
     private metrics: ConsciousnessMetrics;
     private operationHistory: number[] = []; // Track latencies
     private recursionDepth: number = 1;
+    // Last computed Phi component factors (for transparency / debugging / UI).
+    private phiBreakdown = {
+        memoryFactor: 0,
+        throughputFactor: 0,
+        emergenceFactor: 0,
+        networkFactor: 0,
+        weights: { memory: 0.25, throughput: 0.25, emergence: 0.3, network: 0.2 },
+    };
 
     constructor() {
         this.metrics = {
@@ -125,10 +136,8 @@ class ConsciousnessEngine {
         }
     }
 
-    // Integrated Information Theory (IIT) Simulation - REAL DATA BINDING
+    // Composite cognitive-integration index (NOT IIT). Derived from real signals.
     private async calculatePhi() {
-        // Phi = Integration of Information across all modules
-
         // 1. Memory Density (Real Graph Connectivity)
         const memoryStats = await continuum.getStats();
         const memoryFactor = Math.min(1.0, memoryStats.total / 500); // Saturation at 500 nodes
@@ -152,8 +161,15 @@ class ConsciousnessEngine {
             // advancedDiscovery or Neo4j not available
         }
 
-        // Weighted Phi Score (now includes network topology)
-        this.metrics.phiScore = (memoryFactor * 0.25) + (throughputFactor * 0.25) + (emergenceFactor * 0.3) + (networkFactor * 0.2);
+        // Persist the component breakdown for transparency / UI / tests.
+        const w = this.phiBreakdown.weights;
+        this.phiBreakdown = {
+            ...this.phiBreakdown,
+            memoryFactor, throughputFactor, emergenceFactor, networkFactor,
+        };
+
+        // Weighted composite score (includes network topology)
+        this.metrics.phiScore = (memoryFactor * w.memory) + (throughputFactor * w.throughput) + (emergenceFactor * w.emergence) + (networkFactor * w.network);
 
         // Determine Level based on Real Score
         if (this.metrics.phiScore > 0.8) this.metrics.level = ConsciousnessLevel.HIGH;
@@ -177,6 +193,25 @@ class ConsciousnessEngine {
     // --- PERSISTENCE ---
     public getMetrics(): ConsciousnessMetrics {
         return this.metrics;
+    }
+
+    /**
+     * Transparent breakdown of how the composite phiScore was computed, so the
+     * number is explainable rather than magic. Returns each normalized factor,
+     * its weight, and the resulting weighted contribution.
+     */
+    public getPhiBreakdown() {
+        const b = this.phiBreakdown;
+        return {
+            ...b,
+            contributions: {
+                memory: b.memoryFactor * b.weights.memory,
+                throughput: b.throughputFactor * b.weights.throughput,
+                emergence: b.emergenceFactor * b.weights.emergence,
+                network: b.networkFactor * b.weights.network,
+            },
+            phiScore: this.metrics.phiScore,
+        };
     }
 
     public toJSON(): any {

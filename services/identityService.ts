@@ -540,7 +540,50 @@ class IdentityService {
     }
 
     /**
-     * Authenticate local user by password hash
+     * Update a user's stored password hash (used for transparent legacy upgrades).
+     */
+    setPasswordHash(userId: string, passwordHash: string): void {
+        if (!this.db) return;
+        this.db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(passwordHash, userId);
+    }
+
+    /**
+     * Authenticate a local user with a plaintext password using salted scrypt
+     * verification (with backward-compatible legacy SHA-256 support + upgrade).
+     */
+    async loginLocalVerify(email: string, plainPassword: string): Promise<User | null> {
+        if (!this.db) return null;
+
+        const user = this.getUserByEmail(email);
+        if (!user) return null;
+
+        const { verifyPassword, hashPassword } = await import('../server/utils/password');
+        const { valid, needsUpgrade } = verifyPassword(plainPassword, user.passwordHash);
+        if (!valid) return null;
+
+        // Transparently upgrade legacy unsalted hashes to scrypt.
+        if (needsUpgrade) {
+            try {
+                const upgraded = hashPassword(plainPassword);
+                this.setPasswordHash(user.id, upgraded);
+                user.passwordHash = upgraded;
+                console.log(`[IdentityService] 🔐 Upgraded legacy password hash for ${email}`);
+            } catch (e) {
+                console.warn('[IdentityService] Failed to upgrade legacy password hash:', e);
+            }
+        }
+
+        const now = Date.now();
+        this.db.prepare('UPDATE users SET last_login = ? WHERE id = ?').run(now, user.id);
+        user.lastLogin = now;
+        this.currentUser = user;
+        console.log(`[IdentityService] 🔓 Local login: ${email}`);
+        return user;
+    }
+
+    /**
+     * @deprecated Authenticate local user by precomputed hash. Kept for
+     * compatibility; prefer loginLocalVerify(email, plainPassword).
      */
     async loginLocal(email: string, passwordHash: string): Promise<User | null> {
         if (!this.db) return null;

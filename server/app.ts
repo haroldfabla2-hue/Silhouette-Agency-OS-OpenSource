@@ -43,6 +43,8 @@ import doctorRouter from './routes/doctorRoute'; // [DOCTOR] System Diagnostics
 import assetsRoutes from './routes/v1/assets.routes'; // [ASSETS] General file upload
 import googleAuthRoutes from './routes/v1/google-auth.routes'; // [GOOGLE] OAuth2 Initiation
 import { analyticsRouter } from './routes/v1/analytics.routes'; // [ANALYTICS] Privacy-First Telemetry
+import brainRoutes from './routes/v1/brain.routes'; // [BRAIN] External silhouette-brain 4-Tier memory
+import federatedRoutes from './routes/v1/federated.routes'; // [FEDERATED] P2P memory sync
 
 
 // Loaders
@@ -117,6 +119,8 @@ app.use('/v1/admin/api-keys', adminLimiter, apikeysRoutes); // [SECURITY] Admin-
 app.use('/v1/assets', assetsRoutes); // [ASSETS] General file upload
 app.use('/v1/google-auth', googleAuthRoutes); // [GOOGLE] OAuth2 Flow
 app.use('/v1/analytics', analyticsRouter); // [ANALYTICS] Privacy-First Telemetry
+app.use('/v1/brain', brainRoutes); // [BRAIN] External silhouette-brain 4-Tier memory
+app.use('/v1/federated', federatedRoutes); // [FEDERATED] P2P memory sync between instances
 app.use('/v1', legacyRoutes);
 
 // --- INTEGRATION HUB WEBHOOKS ---

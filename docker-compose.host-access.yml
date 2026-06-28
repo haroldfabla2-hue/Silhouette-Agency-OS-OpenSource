@@ -1,0 +1,24 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# ⚠️  DANGER — HOST ACCESS OVERRIDE  ⚠️
+# ───────────────────────────────────────────────────────────────────────────
+# This override re-enables the "host-aware" escape hatches that were removed
+# from the default stack for security reasons. It grants the bot container:
+#
+#   • Control of the host's Docker daemon (/var/run/docker.sock)
+#   • Read/write access to the ENTIRE host filesystem (/:/host)
+#
+# Combined, these are equivalent to ROOT on the host machine. A single
+# prompt-injection or tool-misuse can lead to full host compromise.
+#
+# ONLY use this on a dedicated, disposable VPS/VM that you fully control, never
+# on shared infrastructure or anything with sensitive data.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.host-access.yml up -d
+# ═══════════════════════════════════════════════════════════════════════════
+version: '3.8'
+services:
+  bot:
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /:/host

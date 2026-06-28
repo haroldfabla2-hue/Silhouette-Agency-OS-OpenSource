@@ -123,7 +123,8 @@ const IntrospectionHub: React.FC<IntrospectionHubProps> = () => { // Props destr
         }, 10000); // Reduced from 3s to 10s (App.tsx handles primary polling)
 
         return () => clearInterval(interval);
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps -- polling interval, activeConcepts read via latest state
+        // polling interval, activeConcepts read via latest state
+    }, []);
 
     const handleInject = async () => {
         if (!injectionPrompt.trim()) return;

@@ -167,6 +167,20 @@ export interface SilhouetteConfig {
         };
     };
 
+    /** External silhouette-brain 4-Tier memory integration */
+    brain: {
+        /** Enable the external Brain integration */
+        enabled: boolean;
+        /** Base URL of the Brain HTTP API (e.g. http://localhost:9876) */
+        baseUrl: string;
+        /** Optional bearer token if the Brain is behind an auth proxy */
+        apiKey?: string;
+        /** Per-request timeout in ms */
+        timeoutMs: number;
+        /** Mirror local memory writes into the Brain */
+        mirrorMemory: boolean;
+    };
+
     /** Autonomy settings */
     autonomy: {
         /** Enable autonomous mode */
@@ -192,7 +206,7 @@ export const DEFAULT_CONFIG: SilhouetteConfig = {
         port: 3005,
         env: 'development',
         debug: false,
-        version: '2.2.0',
+        version: '3.0.0',
         autoCheckUpdates: true,
         autoLaunch: false,
     },
@@ -254,6 +268,12 @@ export const DEFAULT_CONFIG: SilhouetteConfig = {
         imageGeneration: {
             provider: 'gemini',
         },
+    },
+    brain: {
+        enabled: false,
+        baseUrl: 'http://localhost:9876',
+        timeoutMs: 8000,
+        mirrorMemory: true,
     },
     autonomy: {
         enabled: false,
@@ -401,6 +421,19 @@ function applyEnvOverrides(config: SilhouetteConfig): void {
         'ELEVENLABS_API_KEY': (v) => {
             config.media.elevenlabs = config.media.elevenlabs ?? { apiKey: '', defaultVoice: 'Rachel' };
             config.media.elevenlabs.apiKey = v;
+        },
+        // External silhouette-brain integration
+        'BRAIN_API_URL': (v) => {
+            config.brain.baseUrl = v;
+            config.brain.enabled = true;
+        },
+        'BRAIN_API_ENABLED': (v) => {
+            config.brain.enabled = /^(1|true|yes|on)$/i.test(v);
+        },
+        'BRAIN_API_KEY': (v) => { config.brain.apiKey = v; },
+        'BRAIN_API_TIMEOUT_MS': (v) => {
+            const n = parseInt(v, 10);
+            if (!isNaN(n)) config.brain.timeoutMs = n;
         },
     };
 

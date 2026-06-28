@@ -1271,6 +1271,28 @@ JSON ONLY:
 
         try {
             // ═══════════════════════════════════════════════════════════════
+            // [SECURITY] Central enforcement chokepoint
+            // Every capability execution flows through here, so this is where the
+            // operator-configured denylist is actually enforced (previously the
+            // securityManager was initialized but never consulted on this path).
+            // ═══════════════════════════════════════════════════════════════
+            try {
+                const { securityManager } = await import('./security/securityManager');
+                if (securityManager.isDenied(capabilityName)) {
+                    const denied: CapabilityResult = {
+                        success: false,
+                        data: null,
+                        error: `SECURITY_DENIED: Tool "${capabilityName}" is blocked by security policy`,
+                        executedBy: 'ORCHESTRATOR',
+                        executionTimeMs: Date.now() - startTime,
+                        metadata: { toolName: capabilityName }
+                    };
+                    this.emitCapabilityResult(capabilityName, denied, requesterId);
+                    return denied;
+                }
+            } catch { /* security manager not available — fail open to avoid deadlock */ }
+
+            // ═══════════════════════════════════════════════════════════════
             // ROUTE 0: Core Tools - Direct routing to toolHandler
             // These are fundamental capabilities that should NEVER create plans
             // ═══════════════════════════════════════════════════════════════

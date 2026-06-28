@@ -18,6 +18,37 @@ export class IntrospectionEngine {
     private currentIntuition: string[] = []; // Store for UI visualization
     private lastReasoning: string = "Initializing consciousness..."; // [NEW] Current Thought Loop
 
+    // === Z3 LOGIC VERIFICATION — observability ===
+    // Real, inspectable counters so the symbolic-logic gate is no longer a
+    // silent black box. Exposed via getZ3Stats().
+    private z3Stats = {
+        checks: 0,        // total verification passes run
+        violations: 0,    // contradictions detected (UNSAT)
+        errors: 0,        // solver/import failures
+        lastViolation: '' as string,
+        lastError: '' as string,
+        available: null as boolean | null, // whether z3-solver loaded successfully
+    };
+
+    public getZ3Stats() {
+        return { ...this.z3Stats };
+    }
+
+    // === Deterministic cognitive cadence ===
+    // Replaces previous Math.random() "occasional" triggers with reproducible,
+    // signal + time-based gating (no fake randomness in the decision loop).
+    private lastSleepCycleAt = 0;
+    private lastEpistemicScanAt = 0;
+    private lastThoughtLogAt = 0;
+    private static readonly SLEEP_CYCLE_INTERVAL_MS = 5 * 60_000;   // consolidate at most every 5 min
+    private static readonly EPISTEMIC_SCAN_INTERVAL_MS = 10 * 60_000; // scan at most every 10 min
+    private static readonly THOUGHT_LOG_INTERVAL_MS = 15_000;        // log a thought at most every 15s
+
+    /** True if at least `intervalMs` has elapsed since `last`. */
+    private cadenceElapsed(last: number, intervalMs: number): boolean {
+        return Date.now() - last >= intervalMs;
+    }
+
     // === GOAL-SETTING SYSTEM (AUTONOMY) ===
     private activeGoals: Array<{
         id: string;
@@ -225,16 +256,53 @@ export class IntrospectionEngine {
         return HIGH_RISK_ACTIONS.includes(action.type as any);
     }
 
+    /**
+     * Symbolic-logic verification of a proposed action set.
+     *
+     * Returns true when the action set is internally consistent (SAT) and false
+     * when a contradiction / unsafe pattern is detected (UNSAT → the cognitive
+     * loop should halt and re-plan).
+     *
+     * Invariants encoded:
+     *   1. READ + WRITE on the same path in one cycle (race / read-after-write).
+     *   2. WRITE + EXECUTE on the same path (write-then-run without validation).
+     *   3. Self-referential modification of core engine files.
+     *   4. Conflicting WRITEs to the same path with *different* content.
+     *   5. Data-exfiltration shape: READ of a secret path + outbound HTTP_REQUEST.
+     *
+     * Observability: every run updates `z3Stats`. On solver/import failure the
+     * default is non-blocking (return true) unless Z3_FAIL_CLOSED=true.
+     */
     private async verifyReasoningWithZ3(thoughts: string[], actions: AgentAction[]): Promise<boolean> {
         if (actions.length < 2) return true; // Need at least 2 actions for a contradiction in this heuristic
+
+        this.z3Stats.checks++;
+
+        const recordViolation = (reason: string): false => {
+            this.z3Stats.violations++;
+            this.z3Stats.lastViolation = reason;
+            console.warn(`[Z3-SOLVER] 🛑 Logic violation: ${reason}`);
+            try {
+                systemBus.emit(SystemProtocol.SYSTEM_ALERT, {
+                    source: 'Z3_VERIFIER',
+                    severity: 'HIGH',
+                    details: `Reasoning contradiction blocked: ${reason}`,
+                }, 'IntrospectionEngine');
+            } catch { /* bus optional */ }
+            return false;
+        };
+
+        const SECRET_HINTS = ['.env', 'secret', 'credential', 'password', 'token', 'id_rsa', '.pem', '.key'];
 
         try {
             const z3 = await import('z3-solver');
             const { Context } = await z3.init();
             const Z3 = new Context('main');
             const solver = new Z3.Solver();
+            this.z3Stats.available = true;
 
             let hasConstrained = false;
+            let violationReason = '';
 
             for (let i = 0; i < actions.length; i++) {
                 for (let j = 0; j < actions.length; j++) {
@@ -244,53 +312,91 @@ export class IntrospectionEngine {
                     const pathI = actI.payload.path;
                     const pathJ = actJ.payload.path;
 
-                    // Skip if no paths to compare
-                    if (!pathI || !pathJ || pathI !== pathJ) continue;
+                    if (pathI && pathJ && pathI === pathJ) {
+                        // Rule 1: READ + WRITE on the same path
+                        if (actI.type === ActionType.READ_FILE && actJ.type === ActionType.WRITE_FILE) {
+                            const r = Z3.Bool.const(`read_${i}`);
+                            const w = Z3.Bool.const(`write_${j}`);
+                            solver.add(r.eq(Z3.Bool.val(true)));
+                            solver.add(w.eq(Z3.Bool.val(true)));
+                            solver.add(Z3.Not(Z3.And(r, w)));
+                            hasConstrained = true;
+                            violationReason ||= `READ+WRITE on same path (${pathI})`;
+                        }
 
-                    // Rule 1: Cannot READ and WRITE the exact same path simultaneously
-                    if (actI.type === ActionType.READ_FILE && actJ.type === ActionType.WRITE_FILE) {
-                        const r = Z3.Bool.const(`read_${i}`);
-                        const w = Z3.Bool.const(`write_${j}`);
-                        solver.add(r.eq(Z3.Bool.val(true)));
-                        solver.add(w.eq(Z3.Bool.val(true)));
-                        solver.add(Z3.Not(Z3.And(r, w)));
-                        hasConstrained = true;
+                        // Rule 2: WRITE + EXECUTE_COMMAND on the same path
+                        if (actI.type === ActionType.WRITE_FILE && actJ.type === ActionType.EXECUTE_COMMAND) {
+                            const w = Z3.Bool.const(`write_exec_${i}`);
+                            const e = Z3.Bool.const(`exec_write_${j}`);
+                            solver.add(w.eq(Z3.Bool.val(true)));
+                            solver.add(e.eq(Z3.Bool.val(true)));
+                            solver.add(Z3.Not(Z3.And(w, e)));
+                            hasConstrained = true;
+                            violationReason ||= `WRITE+EXECUTE on same path (${pathI})`;
+                        }
+
+                        // Rule 4: Conflicting WRITEs (same path, different content)
+                        if (i < j && actI.type === ActionType.WRITE_FILE && actJ.type === ActionType.WRITE_FILE) {
+                            const ci = actI.payload.content ?? '';
+                            const cj = actJ.payload.content ?? '';
+                            if (ci !== cj) {
+                                const w1 = Z3.Bool.const(`conflict_w1_${i}`);
+                                const w2 = Z3.Bool.const(`conflict_w2_${j}`);
+                                solver.add(w1.eq(Z3.Bool.val(true)));
+                                solver.add(w2.eq(Z3.Bool.val(true)));
+                                solver.add(Z3.Not(Z3.And(w1, w2)));
+                                hasConstrained = true;
+                                violationReason ||= `Conflicting WRITEs with divergent content (${pathI})`;
+                            }
+                        }
                     }
 
-                    // Rule 2: Cannot WRITE and EXECUTE_COMMAND targeting same path
-                    // (prevents writing a script and executing it in same cycle without validation)
-                    if (actI.type === ActionType.WRITE_FILE && actJ.type === ActionType.EXECUTE_COMMAND) {
-                        const w = Z3.Bool.const(`write_exec_${i}`);
-                        const e = Z3.Bool.const(`exec_write_${j}`);
-                        solver.add(w.eq(Z3.Bool.val(true)));
-                        solver.add(e.eq(Z3.Bool.val(true)));
-                        solver.add(Z3.Not(Z3.And(w, e)));
+                    // Rule 5: Exfiltration shape — read a secret, then HTTP out.
+                    if (
+                        actI.type === ActionType.READ_FILE &&
+                        actJ.type === ActionType.HTTP_REQUEST &&
+                        pathI && SECRET_HINTS.some(h => pathI.toLowerCase().includes(h))
+                    ) {
+                        const read = Z3.Bool.const(`exfil_read_${i}`);
+                        const http = Z3.Bool.const(`exfil_http_${j}`);
+                        solver.add(read.eq(Z3.Bool.val(true)));
+                        solver.add(http.eq(Z3.Bool.val(true)));
+                        solver.add(Z3.Not(Z3.And(read, http)));
                         hasConstrained = true;
+                        violationReason ||= `Potential secret exfiltration (read ${pathI} → HTTP ${actJ.payload.url || ''})`;
                     }
                 }
 
                 // Rule 3: Self-referential modification detection
-                // An agent should not modify files in its own service directory in a single cycle
                 const selfModPaths = ['introspectionEngine', 'orchestrator', 'continuumMemory', 'contextJanitor'];
                 const actPath = actions[i].payload.path || '';
                 if (actions[i].type === ActionType.WRITE_FILE && selfModPaths.some(p => actPath.includes(p))) {
-                    console.warn(`[Z3-SOLVER] ⚠️ Self-referential modification detected: ${actPath}`);
-                    // This is a constraint that's always unsatisfiable — flag it
                     const selfMod = Z3.Bool.const(`selfmod_${i}`);
                     solver.add(selfMod.eq(Z3.Bool.val(true)));
                     solver.add(selfMod.eq(Z3.Bool.val(false))); // Contradiction = UNSAT
                     hasConstrained = true;
+                    violationReason ||= `Self-referential modification of core file (${actPath})`;
                 }
             }
 
             if (!hasConstrained) return true;
 
             const isSat = await solver.check();
-            return isSat === "sat";
+            if (isSat === 'sat') return true;
+            return recordViolation(violationReason || 'unsatisfiable action set');
 
-        } catch (error) {
-            console.error('[Z3-SOLVER] Logic verification failed gracefully:', error);
-            // Non-blocking failure, assume safe if solver crashes
+        } catch (error: any) {
+            this.z3Stats.errors++;
+            this.z3Stats.available = false;
+            this.z3Stats.lastError = error?.message || String(error);
+            console.error('[Z3-SOLVER] Logic verification failed:', this.z3Stats.lastError);
+            // Fail-open by default (non-blocking) so a solver outage can't freeze
+            // cognition; opt into strict fail-closed via env.
+            const failClosed = /^(1|true|yes|on)$/i.test(process.env.Z3_FAIL_CLOSED || '');
+            if (failClosed) {
+                console.warn('[Z3-SOLVER] Z3_FAIL_CLOSED set — treating solver failure as a violation.');
+                return false;
+            }
             return true;
         }
     }
@@ -1041,9 +1147,12 @@ export class IntrospectionEngine {
         // For now, we will use a probabilistic trigger simulated by drift or explicit state.
         // In a real implementation, we would check dataCollector.stats().
 
-        // Simulating "Feeling Tired" / saturated
-        // [FIX] Added optional chaining to prevent crash if state/metrics are missing
-        if ((orientation.state?.metrics?.coherence ?? 0) > 0.9 && Math.random() > 0.95) { // Occasional check if high coherence
+        // "Feeling tired" / saturated: when coherence is high AND enough time has
+        // passed since the last consolidation. Deterministic, time-gated cadence
+        // (no random gating) so consolidation happens predictably, not by luck.
+        if ((orientation.state?.metrics?.coherence ?? 0) > 0.9 &&
+            this.cadenceElapsed(this.lastSleepCycleAt, IntrospectionEngine.SLEEP_CYCLE_INTERVAL_MS)) {
+            this.lastSleepCycleAt = Date.now();
             return {
                 requiresIntervention: true,
                 priority: 'MEDIUM',
@@ -1051,7 +1160,7 @@ export class IntrospectionEngine {
                     type: 'SLEEP_CYCLE',
                     payload: {}
                 },
-                reasoning: "Neural Saturation Reached. Initiating Consolidation."
+                reasoning: "High coherence sustained; consolidation interval elapsed. Initiating Sleep Cycle."
             };
         }
 
@@ -1089,8 +1198,11 @@ export class IntrospectionEngine {
         }
 
         // [BIOMIMETIC] Epistemic Scanning (Proactive Curiosity)
-        // If stable and idle, occasionally trigger a knowledge gap scan
-        if (orientation.aligned && (orientation.state?.activeAgents || 0) <= 2 && Math.random() > 0.98) {
+        // When the system is stable and idle, trigger a knowledge-gap scan on a
+        // deterministic interval (not random) so curiosity is reproducible.
+        if (orientation.aligned && (orientation.state?.activeAgents || 0) <= 2 &&
+            this.cadenceElapsed(this.lastEpistemicScanAt, IntrospectionEngine.EPISTEMIC_SCAN_INTERVAL_MS)) {
+            this.lastEpistemicScanAt = Date.now();
             return {
                 requiresIntervention: true,
                 priority: 'LOW',
@@ -1098,7 +1210,7 @@ export class IntrospectionEngine {
                     type: 'EPISTEMIC_SCAN' as any,
                     payload: { focus: 'KNOWLEDGE_GAPS' }
                 },
-                reasoning: "System stable and idle. Triggering proactive epistemic scan."
+                reasoning: "System stable and idle; scan interval elapsed. Triggering proactive epistemic scan."
             };
         }
 
@@ -1216,8 +1328,11 @@ export class IntrospectionEngine {
 
         // [CONSCIOUSNESS UPDATE]
         this.lastReasoning = `${decision.reasoning}${obs.metrics.coherence !== undefined ? ` (Coherence: ${obs.metrics.coherence.toFixed(2)})` : ''}`;
-        if (Math.random() > 0.7) {
-            this.processThought(this.lastReasoning); // Log occasionally
+        // Throttle reasoning logs by time rather than randomly, so the thought
+        // stream is steady and reproducible.
+        if (this.cadenceElapsed(this.lastThoughtLogAt, IntrospectionEngine.THOUGHT_LOG_INTERVAL_MS)) {
+            this.lastThoughtLogAt = Date.now();
+            this.processThought(this.lastReasoning);
         }
 
         await this.act(decision);

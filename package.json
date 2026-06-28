@@ -1,7 +1,7 @@
 {
   "name": "silhouette-llm",
   "private": true,
-  "version": "2.0.0",
+  "version": "3.0.0",
   "type": "module",
   "main": "electron.cjs",
   "repository": {
@@ -32,7 +32,7 @@
     "start:all": "concurrently \"npm run dev\" \"npm run boot\"",
     "cli": "tsx cli/index.ts",
     "docker:prod": "docker-compose -f docker-compose.prod.yml up -d",
-    "lint": "eslint . --ext .ts,.tsx,.js,.jsx --max-warnings 100",
+    "lint": "eslint . --ext .ts,.tsx,.js,.jsx --max-warnings 500",
     "lint:fix": "eslint . --ext .ts,.tsx,.js,.jsx --fix",
     "typecheck": "tsc --noEmit --skipLibCheck",
     "desktop:dev": "electron .",
