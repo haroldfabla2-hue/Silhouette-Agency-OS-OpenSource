@@ -7,7 +7,7 @@ import path from 'path';
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 dotenv.config(); // Fallback to .env
 
-import { AgentCapability, IntrospectionLayer, AgentRoleType, WorkflowStage } from '../types';
+import { AgentCapability, IntrospectionLayer, WorkflowStage } from '../types';
 
 async function testE2EAgent() {
     console.log("🎬 Starting E2E Agent Test: Video Generation");

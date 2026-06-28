@@ -28,7 +28,6 @@ export function checkNodeVersion(): CheckResult {
 
 export function checkDiskSpace(): CheckResult {
     try {
-        const freeMB = os.freemem() / (1024 ** 2);
         // Check disk directly is OS-specific, use memory as proxy for system health
         const freeGB = Math.round(os.freemem() / (1024 ** 3) * 10) / 10;
         if (freeGB >= 2) return { name: 'Available Memory', status: 'ok', message: `${freeGB}GB free`, detail: `of ${Math.round(os.totalmem() / (1024 ** 3))}GB total` };

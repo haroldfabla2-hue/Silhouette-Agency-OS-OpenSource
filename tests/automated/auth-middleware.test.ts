@@ -2,7 +2,7 @@
  * AUTOMATED TEST SUITE: Auth Middleware
  * Tests Bearer token authentication middleware
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { authMiddleware, resetTokenCache } from '../../server/middleware/authMiddleware';
 
 vi.mock('../../services/identityService', () => ({

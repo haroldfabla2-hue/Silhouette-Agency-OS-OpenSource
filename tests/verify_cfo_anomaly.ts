@@ -19,7 +19,7 @@ async function runTest() {
 
     // We need to initialize the Orchestrator for it to listen
     console.log("🚀 Initializing Orchestrator...");
-    const { orchestrator } = await import('../services/orchestrator');
+    await import('../services/orchestrator');
 
     // Wait for init
     await new Promise(resolve => setTimeout(resolve, 2000));

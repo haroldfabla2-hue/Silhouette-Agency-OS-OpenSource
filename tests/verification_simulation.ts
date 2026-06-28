@@ -13,7 +13,6 @@ if (typeof global.localStorage === 'undefined') {
 }
 
 // Mock SystemBus to avoid Redis connection
-import { SystemProtocol } from '../types';
 const mockBusEmit = (protocol: any, payload: any) => {
     console.log(`[BUS] Emitted ${protocol}:`, JSON.stringify(payload).substring(0, 100) + "...");
 };

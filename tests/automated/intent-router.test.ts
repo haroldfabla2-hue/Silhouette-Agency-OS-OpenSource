@@ -2,7 +2,7 @@
  * INTEGRATION TEST: Cognitive Intent Router
  * Tests the ThoughtNarrator's structured output, intent classification, and routing.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
 // ─── Minimal type stubs for test isolation ───────────────────
 const VALID_INTENTS = ['REFLECTION', 'CURIOSITY', 'DIAGNOSTIC', 'PROACTIVE_ACTION', 'USER_INSIGHT', 'EVOLUTION'];

@@ -4,8 +4,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { spawn, ChildProcess } from 'child_process';
-import { C, printCompactBanner, printSection, printCheck, isConfigured, getProjectRoot, Spinner,
-         printSmartRecommendations } from '../utils/ui';
+import { C, printCompactBanner, printSection, printCheck, isConfigured, getProjectRoot, Spinner } from '../utils/ui';
 import { checkNodeVersion, checkEnvFile, checkApiKeys } from '../utils/checks';
 
 const isWindows = process.platform === 'win32';

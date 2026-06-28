@@ -20,8 +20,9 @@ async function verifyEurekaVector() {
     const closeVector = [...baseVector];
     closeVector[0] += 0.05;
 
-    // Far Vector - inverted
-    const farVector = baseVector.map(v => -v);
+    // Far Vector - inverted (reserved for future negative-control assertions)
+    const _farVector = baseVector.map(v => -v);
+    void _farVector;
 
     const nodeA: MemoryNode = {
         id: 'test_vec_A',
