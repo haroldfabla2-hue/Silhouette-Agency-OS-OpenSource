@@ -1,2 +1,0 @@
-# Deprecated — do not add secrets here.
-# Copy .env.example to .env.local and configure MINIMAX / other keys there.
