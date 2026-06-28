@@ -2,7 +2,6 @@ import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
 import { SilhouetteConfig, DEFAULT_CONFIG } from './configSchema';
-import { PATHS } from './paths';
 
 // Load .env files for initial migration
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });

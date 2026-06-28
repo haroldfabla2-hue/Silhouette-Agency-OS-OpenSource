@@ -32,7 +32,7 @@ export class MediaManager {
             const originalName = path.basename(sourcePath, ext);
 
             // Sanitize original name or use generic if weird
-            const sanitizedName = originalName.replace(/[^a-zA-Z0-9_\-]/g, '_');
+            const sanitizedName = originalName.replace(/[^a-zA-Z0-9_-]/g, '_');
 
             // Create robust unique name: {jobId}_{sanitizedName}.{ext}
             let finalName = sanitizedName;

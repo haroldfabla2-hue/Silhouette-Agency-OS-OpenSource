@@ -192,7 +192,7 @@ class AnonymousTelemetry {
         const piiPatterns = [
             /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/,  // email
             /\b[A-Za-z]:\\[^\s]+/,                                // Windows file path
-            /\/(?:home|Users)\/[^\s]+/,                           // Unix file path
+            new RegExp('/(?:home|Users)/[^\\s]+'),                 // Unix file path
             /Bearer\s+[A-Za-z0-9\-._~+\/]+=*/,                   // Bearer token
             /\b(?:sk-|pk-|api[_-]?key)[a-zA-Z0-9]{10,}/,         // API key
         ];

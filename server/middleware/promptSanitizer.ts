@@ -90,7 +90,7 @@ export function promptSanitizerMiddleware(req: Request, res: Response, next: Nex
         return next();
     }
 
-    let totalDetections: string[] = [];
+    const totalDetections: string[] = [];
 
     // Shape 1: { message: string }
     if (typeof req.body.message === 'string') {

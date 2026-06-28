@@ -236,7 +236,7 @@ router.post('/auto-login', async (req: Request, res: Response) => {
         const { identityService } = await import('../../../services/identityService');
         await identityService.init();
 
-        const { fingerprint, deviceName } = req.body;
+        const { fingerprint } = req.body;
 
         if (!fingerprint) {
             return res.status(400).json({ error: 'Missing fingerprint' });

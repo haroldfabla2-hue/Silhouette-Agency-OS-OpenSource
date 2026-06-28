@@ -126,7 +126,7 @@ healthRouter.get('/diagnostics', async (_req: Request, res: Response) => {
     let redisPort = 6379;
 
     if (process.env.REDIS_URL) {
-        const redisMatch = process.env.REDIS_URL.match(/redis:\/\/(?:[^@\n]+@)?([^:\/\n]+):(\d+)/);
+        const redisMatch = process.env.REDIS_URL.match(/redis:\/\/(?:[^@\n]+@)?([^:/\n]+):(\d+)/);
         if (redisMatch) {
             redisHost = redisMatch[1];
             redisPort = parseInt(redisMatch[2]);
@@ -141,7 +141,7 @@ healthRouter.get('/diagnostics', async (_req: Request, res: Response) => {
     let neo4jPort = 7687;
 
     if (process.env.NEO4J_URI) {
-        const neo4jMatch = process.env.NEO4J_URI.match(/(?:bolt|neo4j|neo4j\+s):\/\/([^:\/\n]+):(\d+)/);
+        const neo4jMatch = process.env.NEO4J_URI.match(/(?:bolt|neo4j|neo4j\+s):\/\/([^:/\n]+):(\d+)/);
         if (neo4jMatch) {
             neo4jHost = neo4jMatch[1];
             neo4jPort = parseInt(neo4jMatch[2]);

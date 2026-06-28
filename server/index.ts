@@ -106,7 +106,7 @@ const server = app.listen(PORT, HOST, async () => {
 
     // [INGESTION] Start Webhook Ingestion Engine
     try {
-        const { ingestionEngine } = await import('../services/ingestionEngine');
+        await import('../services/ingestionEngine');
         console.log('[INGESTION] ✅ Webhook Ingestion Engine online');
     } catch (error) {
         console.error('[INGESTION] Failed to start Ingestion Engine:', error);

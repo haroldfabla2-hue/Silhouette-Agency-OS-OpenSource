@@ -11,32 +11,11 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-import type { TextContent, CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { toolRegistry } from "../../services/tools/toolRegistry";
 import { toolExecutor } from "../../services/tools/toolExecutor";
 import { webhookManager } from "../../services/webhookManager";
 import { z } from "zod";
 import type { Application, Request, Response } from "express";
-
-/**
- * Helper to create a properly typed TextContent object
- */
-function createTextContent(text: string): TextContent {
-    return {
-        type: "text",
-        text
-    };
-}
-
-/**
- * Helper to create a properly typed CallToolResult
- */
-function createToolResult(text: string, isError: boolean = false): CallToolResult {
-    return {
-        content: [createTextContent(text)],
-        isError
-    };
-}
 
 export class MCPWrapper {
     private server: McpServer;

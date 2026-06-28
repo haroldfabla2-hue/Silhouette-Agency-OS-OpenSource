@@ -278,7 +278,7 @@ class ContextAssembler {
         // [PA-045] Adaptive Token Budgets
         // If mode is DEEP or query is highly technical/coding, we temporarily adjust the budget 
         // to give much more space to Codebase and Vector Memory, stealing from Chat History.
-        let activeBudget = { ...this.tokenBudget };
+        const activeBudget = { ...this.tokenBudget };
 
         if (query) {
             const isCodeRelated = /código|code|file|archivo|function|función|repo|class|component|bug|error/i.test(query);

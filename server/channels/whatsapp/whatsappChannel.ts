@@ -42,7 +42,7 @@ function chunkMessage(text: string, maxLen: number = WA_MAX_LEN): string[] {
     return chunks.filter(c => c.length > 0);
 }
 
-const INTERNAL_PATTERNS = [
+const _INTERNAL_PATTERNS = [
     /^\[THOUGHT\]/i, /^\[INTERNAL\]/i, /^Introspection:/i, /^<think>/i,
     /^SYSTEM:/, /^\[REFLECTIVE\]/i, /^\[COGNITIVE\]/i, /^\[SELF-HEAL\]/i,
     /^\[BUS\]/i, /^\[DAEMON\]/i,

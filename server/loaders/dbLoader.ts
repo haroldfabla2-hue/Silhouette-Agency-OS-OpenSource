@@ -1,7 +1,6 @@
 
 import fs from 'fs';
 import { PATHS } from '../config/paths';
-import { sqliteService } from '../../services/sqliteService';
 import { getDatabaseAdapter } from '../../services/database/adapterFactory';
 
 export const initDatabases = async () => {
@@ -14,7 +13,7 @@ export const initDatabases = async () => {
 
     // 1.5 Initialize Database Adapter (auto-selects Postgres or SQLite)
     try {
-        const adapter = await getDatabaseAdapter();
+        await getDatabaseAdapter();
         const mode = process.env.DATABASE_URL ? 'PostgreSQL + pgvector' : 'SQLite + LanceDB (embedded)';
         console.log(`[LOADER] Database Adapter Ready — Mode: ${mode}`);
     } catch (e: any) {
