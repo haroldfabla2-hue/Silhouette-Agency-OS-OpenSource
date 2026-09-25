@@ -3,6 +3,17 @@ import { continuum } from '../continuumMemory';
 import { systemBus } from '../systemBus';
 import { SystemProtocol, MemoryTier } from '../../types';
 import { narratorLog } from '../logger';
+import {
+    computeUrgency,
+    computeImpact,
+    computeReversibility,
+    computeUserAlignment,
+    computeLinguisticValence,
+    blendValence,
+    mapQualiaValence,
+    computeComposite,
+    classifyWithConsent
+} from './rationalization';
 
 /**
  * 🧠 Silhouette Thought Narrator V2.0 — The Global Consciousness
@@ -299,137 +310,51 @@ export class ThoughtNarrator {
         score: number;
         dimensions: { urgency: number; impact: number; reversibility: number; userAlignment: number; valence: number };
     }> {
-        // ─── Override: if the LLM explicitly flagged user consent required ───
-        if (structured.safety?.requires_user_consent) {
-            const dims = await this.evaluateDimensions(structured, graphSensory);
-            return { action: 'ASK_USER', score: dims.composite, dimensions: dims };
-        }
-
         const dims = await this.evaluateDimensions(structured, graphSensory);
 
-        // ─── Disposition thresholds ──────────────────────────────────
-        let action: 'ACT_NOW' | 'DELIBERATE' | 'REFLECT' | 'INHIBIT';
-        if (dims.composite >= 0.75) {
-            action = 'ACT_NOW';
-        } else if (dims.composite >= 0.50) {
-            action = 'DELIBERATE';
-        } else if (dims.composite >= 0.25) {
-            action = 'REFLECT';
-        } else {
-            action = 'INHIBIT';
-        }
+        // ─── Disposition: consent flags always win, then thresholds ───
+        const action = classifyWithConsent(structured.safety, dims.composite);
 
         return { action, score: dims.composite, dimensions: dims };
     }
 
     /**
      * Compute the 5 psychological dimensions for a thought.
+     * All scoring logic lives in ./rationalization (pure, unit-tested);
+     * this method only gathers the live signals (Qualia) and delegates.
      */
     private async evaluateDimensions(
         structured: { thought: string; intent: string; confidence: number; action?: any },
         graphSensory: { triangles: any[]; hubs: any[]; userFacts: any[]; smallWorldSigma?: number }
     ): Promise<{ urgency: number; impact: number; reversibility: number; userAlignment: number; valence: number; composite: number }> {
 
-        // ─── DIMENSION 1: URGENCY (U) ────────────────────────────────
-        // How time-sensitive is this thought? Errors are urgent, curiosity is not.
-        const urgencyMap: Record<string, number> = {
-            'DIAGNOSTIC': 0.95,       // System is broken → fix NOW
-            'PROACTIVE_ACTION': 0.60, // Opportunity, moderate urgency
-            'USER_INSIGHT': 0.40,     // Useful but not time-sensitive
-            'EVOLUTION': 0.35,        // Long-term improvement
-            'CURIOSITY': 0.30,        // Interesting but can wait
-            'REFLECTION': 0.10        // No urgency at all
-        };
-        const urgency = (urgencyMap[structured.intent] || 0.3) * structured.confidence;
-
-        // ─── DIMENSION 2: IMPACT (I) ─────────────────────────────────
-        // How significant would the resulting action be?
-        const impactMap: Record<string, number> = {
-            'execute_task': 0.90,     // Running a task = high impact
-            'remediate': 0.85,        // Fixing errors = high impact
-            'evolve_agent': 0.70,     // Evolving an agent = moderate-high
-            'research_gap': 0.40,     // Research = moderate
-            'store_fact': 0.20,       // Storing data = low impact
-            'none': 0.05              // No action = minimal
-        };
+        // ─── DIMENSIONS 1-3: intent, impact, reversibility ───────────
+        const urgency = computeUrgency(structured.intent, structured.confidence);
         const actionType = structured.action?.type || 'none';
-        const impact = impactMap[actionType] || 0.3;
-
-        // ─── DIMENSION 3: REVERSIBILITY (R) ──────────────────────────
-        // Can the action be undone? Higher = more reversible = safer to act.
-        const reversibilityMap: Record<string, number> = {
-            'none': 1.0,              // No action = perfectly reversible
-            'store_fact': 0.95,       // Can delete a fact
-            'research_gap': 0.90,     // Research is harmless
-            'evolve_agent': 0.60,     // Can roll back but complex
-            'remediate': 0.50,        // Fixes may have side effects
-            'execute_task': 0.30      // Tasks may be hard to undo
-        };
-        const reversibility = reversibilityMap[actionType] || 0.5;
+        const impact = computeImpact(actionType);
+        const reversibility = computeReversibility(actionType);
 
         // ─── DIMENSION 4: USER ALIGNMENT (A) ─────────────────────────
-        // Does this action align with the user's known goals and preferences?
-        // Check graph UserFacts for semantic alignment with the thought.
-        let userAlignment = 0.5; // Neutral default
-        if (graphSensory.userFacts.length > 0) {
-            const thoughtLower = structured.thought.toLowerCase();
-            let matchCount = 0;
-            for (const fact of graphSensory.userFacts) {
-                const factContent = (fact.content || '').toLowerCase();
-                // Simple semantic overlap: count shared significant words
-                const factWords = factContent.split(/\s+/).filter((w: string) => w.length > 4);
-                const hasOverlap = factWords.some((w: string) => thoughtLower.includes(w));
-                if (hasOverlap) matchCount++;
-            }
-            // More matching facts = higher alignment
-            userAlignment = Math.min(1.0, 0.3 + (matchCount * 0.2));
-        }
+        const userAlignment = computeUserAlignment(structured.thought, graphSensory.userFacts);
 
         // ─── DIMENSION 5: EMOTIONAL VALENCE (V) ──────────────────────
-        // Blends real Qualia from ConsciousnessEngine with linguistic analysis.
-        // This creates a feedback loop: thoughts → Qualia → Valence → disposition.
-        let valence = 0.5; // Neutral default
-
-        // A. Read real Qualia from ConsciousnessEngine (if available)
+        // Blends real Qualia from ConsciousnessEngine (if available) with
+        // linguistic analysis. Feedback loop: thoughts → Qualia → Valence → disposition.
+        let qualiaValence: number | null = null;
         try {
             const { consciousness } = await import('../consciousnessEngine');
             const metrics = consciousness.getMetrics();
             if (metrics.qualia && metrics.qualia.length > 0) {
-                const qualia = metrics.qualia[0];
-                // Map Qualia valence to numeric: POSITIVE=0.75, NEGATIVE=0.25, NEUTRAL=0.5
-                const qualiaValence = qualia.valence === 'POSITIVE' ? 0.75
-                    : qualia.valence === 'NEGATIVE' ? 0.25
-                        : 0.5;
-                // Weight: 60% real Qualia, 40% linguistic analysis (below)
-                valence = qualiaValence * 0.6;
+                qualiaValence = mapQualiaValence(metrics.qualia[0].valence);
             }
         } catch (_) {
             // ConsciousnessEngine not available — fall back to linguistics only
         }
-
-        // B. Linguistic analysis as supplementary signal
-        const thought = structured.thought.toLowerCase();
-        const positivePatterns = /\b(opportunit|discover|improve|help|creat|optimi|innovat|benefit|solv|succeed|grow)\w*/i;
-        const negativePatterns = /\b(error|fail|risk|danger|broke|crash|corrupt|leak|vulnerab|degrad|overload)\w*/i;
-
-        let linguisticValence = 0.5;
-        if (positivePatterns.test(thought)) linguisticValence += 0.25;
-        if (negativePatterns.test(thought)) linguisticValence -= 0.15;
-        linguisticValence = Math.min(1.0, Math.max(0.0, linguisticValence));
-
-        // Blend: if Qualia was read (valence != 0.5), use weighted blend; otherwise full linguistic
-        valence = valence === 0.5 ? linguisticValence : valence + (linguisticValence * 0.4);
+        const valence = blendValence(qualiaValence, computeLinguisticValence(structured.thought));
 
         // ─── COMPOSITE SCORE ─────────────────────────────────────────
-        // Weighted combination inspired by Reflective-Impulsive Model (RIM)
-        const composite =
-            (urgency * 0.30) +         // 30% — How pressing is this?
-            (impact * 0.25) +           // 25% — How significant?
-            ((1 - reversibility) * 0.15) + // 15% — Irreversible actions weigh more
-            (userAlignment * 0.20) +    // 20% — Aligned with user goals?
-            (valence * 0.10);           // 10% — Emotional tone
-
-        return { urgency, impact, reversibility, userAlignment, valence, composite };
+        const dims = { urgency, impact, reversibility, userAlignment, valence };
+        return { ...dims, composite: computeComposite(dims) };
     }
 
     // ========================================================================
@@ -795,4 +720,3 @@ If you have NOTHING meaningful to say, respond with: {"thought":"","intent":"REF
 }
 
 export const thoughtNarrator = new ThoughtNarrator();
-
