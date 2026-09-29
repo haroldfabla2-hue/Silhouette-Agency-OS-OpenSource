@@ -1,5 +1,6 @@
 import { MemoryNode, MemoryTier } from "../types";
 import { lancedbService } from './lancedbService';
+import { memoryTransitions } from './memoryTransitions';
 import { introspection } from './introspectionEngine';
 import { redisClient } from './redisClient';
 import * as fs from 'fs/promises';
@@ -58,32 +59,30 @@ class ContinuumMemorySystem {
 
     public checkDirty(): boolean {
         const wasDirty = this.isDirty;
-        this.isDirty = false; // Reset on check (assuming caller will save)
-        return wasDirty;
+        return wasDirty; // Never clear before a durable snapshot succeeds.
     }
 
 
     // ...
 
+    private async promoteWorking(node: MemoryNode, tags: string[] = []): Promise<void> {
+        const promoted = { ...node, tier: MemoryTier.MEDIUM, tags: [...node.tags, ...tags] };
+        const entry = await memoryTransitions.begin(node, promoted);
+        await memoryTransitions.run(entry);
+        await memoryTransitions.commit(entry);
+        // Do not remove a replacement with the same ID that arrived while writing.
+        this.working = this.working.filter(n => n !== node);
+        this.isDirty = true;
+        await this.saveSnapshot();
+    }
+
     private async tickMedium(now: number) {
-        // L2 -> L3 (LanceDB)
-        // Only promote if it's old enough (15m) OR very critical
-        const toPromote = this.working.filter(node => {
-            const ageMs = now - node.timestamp;
-            const isOldEnough = ageMs > 900000; // 15 Minutes
-            return isOldEnough || node.accessCount > 10 || node.importance >= 0.95;
-        });
-
+        const toPromote = this.working.filter(node =>
+            now - node.timestamp > 900000 || node.accessCount > 10 || node.importance >= 0.95
+        );
         for (const node of toPromote) {
-            try {
-                const promotedNode = { ...node, tier: MemoryTier.MEDIUM };
-                await lancedbService.store(promotedNode);
-
-                // Success: Remove from RAM
-                this.working = this.working.filter(n => n.id !== node.id);
-            } catch (e) {
-                console.error(`[CONTINUUM] Failed to promote node ${node.id} to MEDIUM`, e);
-            }
+            try { await this.promoteWorking(node); }
+            catch (e) { console.error(`[CONTINUUM] Failed to promote ${node.id}`, e); }
         }
     }
 
@@ -102,10 +101,10 @@ class ContinuumMemorySystem {
         // RAM tiers start empty on reboot (Tabula Rasa for short term) UNLESS hydrated explicitly.
 
         // Connect to Redis (Hybrid Persistence Layer)
-        redisClient.connect().then(() => {
-            // Restore Volatile Memory (Redis -> Disk Fallback)
-            this.loadSnapshot().catch(err => console.error("[CONTINUUM] Failed to load snapshot:", err));
-        });
+        // Disk/journal recovery must not depend on Redis availability.
+        redisClient.connect().catch(err => console.warn('[CONTINUUM] Redis unavailable:', err));
+        this.loadSnapshot().then(() => this.reconcileTransitions())
+            .catch(err => console.error('[CONTINUUM] Failed to recover memory:', err));
 
         // Start Dreaming Protocol (Subconscious)
         import('./dreamerService').then(({ dreamer }) => {
@@ -133,15 +132,23 @@ class ContinuumMemorySystem {
             const payload = JSON.stringify(data, null, 2);
 
             // 1. Primary: Redis (Fast, Distributed)
-            await redisClient.set('continuum:volatile', payload, 3600); // 1h TTL for cache
+            try { await redisClient.set('continuum:volatile', payload, 3600); }
+            catch (error) { console.warn('[CONTINUUM] Redis snapshot unavailable:', error); }
 
             // 2. Secondary: Disk (Permanent, Local)
             await fs.mkdir(path.dirname(SNAPSHOT_PATH), { recursive: true });
-            await fs.writeFile(SNAPSHOT_PATH, payload);
+            const temporary = `${SNAPSHOT_PATH}.${process.pid}.${crypto.randomUUID()}.tmp`;
+            try {
+                await fs.writeFile(temporary, payload);
+                await fs.rename(temporary, SNAPSHOT_PATH);
+            } finally {
+                await fs.rm(temporary, { force: true });
+            }
 
             // console.log("[CONTINUUM] Volatile memory snapshot saved (V5.0 format).");
         } catch (error) {
             console.error("[CONTINUUM] Failed to save snapshot:", error);
+            throw error;
         }
     }
 
@@ -150,16 +157,14 @@ class ContinuumMemorySystem {
             let snapshot: any = null;
             let source = '';
 
-            // 1. Try Redis First
-            const redisData = await redisClient.get('continuum:volatile');
-            if (redisData) {
-                snapshot = JSON.parse(redisData);
-                source = 'REDIS';
-            } else {
-                // 2. Fallback to Disk
-                const data = await fs.readFile(SNAPSHOT_PATH, 'utf-8');
-                snapshot = JSON.parse(data);
+            // Disk is the durable authority; Redis can be stale after a disk failure.
+            try {
+                snapshot = JSON.parse(await fs.readFile(SNAPSHOT_PATH, 'utf-8'));
                 source = 'DISK';
+            } catch (error: any) {
+                if (error.code !== 'ENOENT') throw error;
+                const redisData = await redisClient.get('continuum:volatile');
+                if (redisData) { snapshot = JSON.parse(redisData); source = 'REDIS'; }
             }
 
             if (!snapshot) return;
@@ -189,6 +194,35 @@ class ContinuumMemorySystem {
         } catch (error: any) {
             if (error.code !== 'ENOENT') {
                 console.error("[CONTINUUM] Error loading snapshot:", error);
+            }
+        }
+    }
+
+    public async reconcileTransitions(): Promise<void> {
+        for (const entry of await memoryTransitions.pending()) {
+            try {
+                if (entry.state !== 'COMMITTED') {
+                    // Keep a RAM source until the destination is independently verified.
+                    if (entry.source.tier === MemoryTier.WORKING && !this.working.some(n => n.id === entry.source.id)) this.working.push(entry.source);
+                    if (entry.source.tier !== MemoryTier.WORKING) {
+                        const current = await lancedbService.getNodeById(entry.source.id);
+                        if (!current || (current.tier !== entry.source.tier && current.tier !== entry.destination.tier)) {
+                            throw new Error(`Source changed before replay: ${entry.key}`);
+                        }
+                    }
+                    await memoryTransitions.run(entry);
+                    await memoryTransitions.commit(entry);
+                } else {
+                    const stored = await lancedbService.getNodeById(entry.destination.id);
+                    if (JSON.stringify(stored) !== JSON.stringify(entry.destination)) {
+                        throw new Error(`Committed transition missing destination: ${entry.key}`);
+                    }
+                }
+                if (entry.source.tier === MemoryTier.WORKING) this.working = this.working.filter(n => n.id !== entry.source.id);
+                this.isDirty = true;
+                await this.saveSnapshot();
+            } catch (error) {
+                console.error(`[CONTINUUM] Recovery deferred for ${entry.key}:`, error);
             }
         }
     }
@@ -327,12 +361,7 @@ class ContinuumMemorySystem {
             console.log(`[CONTINUUM] ♻️ Deduplicated recent content`);
             return;
         }
-        this.recentHashes.add(contentHash);
-        // Keep only last 100 hashes to prevent memory bloat
-        if (this.recentHashes.size > 100) {
-            const arr = Array.from(this.recentHashes);
-            this.recentHashes = new Set(arr.slice(-50));
-        }
+
 
         // [FIX] Identity Re-Perspectiver: Transform user first-person statements
         const transformedContent = this.transformUserPerspective(content, tags);
@@ -383,26 +412,25 @@ class ContinuumMemorySystem {
             // Dynamic import to avoid circular dependency if any
             const { ingestion } = await import('./ingestionService');
             const handled = await ingestion.ingest(content, tags);
-            if (handled) return;
+            if (handled) { this.recentHashes.add(contentHash); return; }
         }
 
         // L1: RAM Storage (Unified WORKING tier)
         // Cast to string for flexible comparison (handles both enum values and legacy strings)
         const tierStr = String(node.tier);
         if (tierStr === 'WORKING' || tierStr === 'ULTRA_SHORT' || tierStr === 'SHORT') {
-            // [FIX 2026-02] Backpressure: if RAM is at hard cap, promote oldest to LanceDB first
-            if (this.working.length >= this.RAM_HARD_CAP) {
-                console.warn(`[CONTINUUM] ⚠️ RAM at hard cap (${this.RAM_HARD_CAP}). Evicting oldest node to LanceDB.`);
-                const evicted = this.working.shift(); // Remove oldest (front of array)
-                if (evicted) {
-                    const promoted = { ...evicted, tier: MemoryTier.MEDIUM, tags: [...evicted.tags, 'EVICTED'] };
-                    lancedbService.store(promoted).catch(e =>
-                        console.error('[CONTINUUM] Failed to evict node to LanceDB:', e)
-                    );
-                }
-            }
+            // Save the incoming memory first. Failure to evict an older node may exceed
+            // the soft capacity, but must never discard the new memory or its source.
             this.working.push(node as MemoryNode);
             this.isDirty = true;
+            await this.saveSnapshot();
+            if (this.working.length > this.RAM_HARD_CAP) {
+                const evicted = this.working[0];
+                if (evicted && evicted !== node) {
+                    try { await this.promoteWorking(evicted, ['EVICTED']); }
+                    catch (error) { console.error('[CONTINUUM] Eviction deferred; source remains in RAM:', error); }
+                }
+            }
         }
         // L5: Deep / Vector Storage
         else if (node.tier === MemoryTier.DEEP) {
@@ -430,6 +458,7 @@ class ContinuumMemorySystem {
                     vector = await generateEmbedding(content);
                 }
 
+                await lancedbService.store(nodeToStore); // Canonical copy before optional vector projection.
                 if (vector) {
                     await vectorMemory.storeMemory(nodeToStore.id, vector, {
                         ...nodeToStore,
@@ -453,6 +482,12 @@ class ContinuumMemorySystem {
                 timestamp: node.timestamp || Date.now()
             } as MemoryNode;
             await lancedbService.store(nodeToStore);
+        }
+
+        // A failed write must never poison deduplication and suppress a retry.
+        this.recentHashes.add(contentHash);
+        if (this.recentHashes.size > 100) {
+            this.recentHashes = new Set(Array.from(this.recentHashes).slice(-50));
         }
 
         // [FIX] Anti-Recursion Guard 3: Only notify introspection/dreamer for non-internal stores
@@ -605,8 +640,9 @@ class ContinuumMemorySystem {
             if (now % 30000 < 1000) {
                 this.tickFast(now);
                 // Snapshot check (Lazy Persistence)
-                if (this.checkDirty()) {
+                if (this.isDirty) {
                     await this.saveSnapshot();
+                    this.isDirty = false;
                 }
             }
             if (now % 60000 < 1000) await this.tickMedium(now);
@@ -628,6 +664,7 @@ class ContinuumMemorySystem {
             const age = (now - node.timestamp) / 1000;
             if (age > 900) { // 15 Minutes (Conversation Window) — move to hippocampus
                 this.moveToHippocampus(node);
+                toKeep.push(node); // Hippocampus is a view, never an unverified eviction.
                 this.isDirty = true;
             } else if (node.accessCount >= 2 || node.importance >= 0.8) {
                 // Mark as promoted (tier upgrade) but keep in working memory
@@ -665,10 +702,12 @@ class ContinuumMemorySystem {
             for (const node of mediumNodes) {
                 const ageMs = now - node.timestamp;
                 // Demo: 15 minutes (900000ms) - Increased for better context
-                if (ageMs > 900000 && node.accessCount < 5) {
+                if (ageMs > 30 * 24 * 60 * 60 * 1000 && node.accessCount < 5) {
                     // console.log(`[CONTINUUM] Archiving node ${node.id} to LONG tier.`);
                     const archivedNode = { ...node, tier: MemoryTier.LONG, compressionLevel: 1 };
-                    await lancedbService.store(archivedNode);
+                    const entry = await memoryTransitions.begin(node, archivedNode);
+                    await memoryTransitions.run(entry);
+                    await memoryTransitions.commit(entry);
                     archivedCount++;
                 }
             }
@@ -691,7 +730,7 @@ class ContinuumMemorySystem {
             // Consolidate in chunks of 5 (Lowered for responsiveness)
             const candidates = longNodes.filter(n => {
                 const ageMs = now - n.timestamp;
-                return ageMs > 60000; // 1 Minute old (Accelerated for debugging/flow)
+                return ageMs > 90 * 24 * 60 * 60 * 1000; // 90 days in normal operation
             });
 
             console.log(`[CONTINUUM] 🔍 Deep Sleep Check: Found ${candidates.length} candidates (Threshold: 3)`);
@@ -702,7 +741,8 @@ class ContinuumMemorySystem {
 
                 // Dynamic import to avoid circular dependency
                 const { dreamer } = await import('./dreamerService');
-                await dreamer.consolidateLongTerm(batch);
+                const archiveId = await dreamer.consolidateLongTerm(batch);
+                if (!await lancedbService.getNodeById(archiveId)) throw new Error(`Missing archive ${archiveId}`);
 
                 // If successful, delete them from LONG (LanceDB)
                 // LanceDB currently doesn't have a reliable 'deleteMany', so we 'soft delete' or just move them?
@@ -712,10 +752,10 @@ class ContinuumMemorySystem {
                 // simpler: Mark them as TIER: DEEP in LanceDB too (as a backup/log) but filter them out in UI.
 
                 for (const node of batch) {
-                    // Option A: Hard Delete (Best for cleanup) -> Need delete support in Service
-                    // Option B: Soft Delete (Tier = DEEP or ARCHIVED)
-                    const archived = { ...node, tier: MemoryTier.DEEP, tags: [...node.tags, 'ARCHIVED'] };
-                    await lancedbService.store(archived);
+                    const archived = { ...node, tier: MemoryTier.DEEP, tags: [...new Set([...node.tags, 'ARCHIVED', `archive:${archiveId}`])] };
+                    const entry = await memoryTransitions.begin(node, archived);
+                    await memoryTransitions.run(entry);
+                    await memoryTransitions.commit(entry);
                 }
             }
 
@@ -957,16 +997,10 @@ class ContinuumMemorySystem {
         console.log("[CONTINUUM] 🌪️ FORCE CONSOLIDATION INITIATED");
         let count = 0;
 
-        // [FIX 2026-02] Use working directly (ultraShort/short are aliases — was double-iterating)
-        for (const node of this.working) {
-            const promoted = { ...node, tier: MemoryTier.MEDIUM, tags: [...node.tags, 'CONSOLIDATED'] };
-            await lancedbService.store(promoted);
+        for (const node of [...this.working]) {
+            await this.promoteWorking(node, ['CONSOLIDATED']);
             count++;
         }
-        this.working = [];
-
-        this.isDirty = true;
-        await this.saveSnapshot();
 
         console.log(`[CONTINUUM] 🌪️ Consolidated ${count} memories to L3 (LanceDB). RAM is empty.`);
         return { promoted: count };
