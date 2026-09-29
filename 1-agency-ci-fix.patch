@@ -1,0 +1,41 @@
+diff --git a/services/lancedbService.ts b/services/lancedbService.ts
+index 19914e9..7cdd362 100644
+--- a/services/lancedbService.ts
++++ b/services/lancedbService.ts
+@@ -4,7 +4,10 @@ import fs from 'fs';
+ import { createHash } from 'node:crypto';
+ import { MemoryNode, MemoryTier } from '../types';
+ 
+-const DB_PATH = path.resolve(process.cwd(), 'db', 'silhouette.lancedb');
++// Vitest workers must not mutate the same LanceDB directory concurrently.
++const DB_PATH = path.resolve(process.cwd(), 'db', process.env.VITEST_WORKER_ID
++    ? `silhouette-test-worker-${process.env.VITEST_WORKER_ID}.lancedb`
++    : 'silhouette.lancedb');
+ const DB_DIR = path.dirname(DB_PATH);
+ const DEFAULT_DIMENSIONS = 768; // Hardcoded default to match the original schema
+ 
+@@ -32,6 +35,7 @@ export class LanceDbService {
+     private knowledgeTable: lancedb.Table | null = null; // Universal Knowledge Table
+     private initialized = false;
+     private writeQueue: Promise<void> = Promise.resolve();
++    private initPromise: Promise<void> | null = null;
+ 
+     constructor() {
+         // Lazy initialization - called explicitly from dbLoader or on first use
+@@ -43,7 +47,15 @@ export class LanceDbService {
+         await this.init();
+     }
+ 
+-    private async init(retries = 3, delayMs = 1000) {
++    private init(retries = 3, delayMs = 1000): Promise<void> {
++        if (this.initialized) return Promise.resolve();
++        if (!this.initPromise) {
++            this.initPromise = this.initOnce(retries, delayMs).finally(() => { this.initPromise = null; });
++        }
++        return this.initPromise;
++    }
++
++    private async initOnce(retries = 3, delayMs = 1000) {
+         if (this.initialized) return;
+ 
+         let attempt = 0;
