@@ -700,6 +700,8 @@ export interface MemoryNode {
   id: string;
   content: string;
   originalContent?: string;
+  significantAccesses?: number[];
+  parentIds?: string[];
   timestamp: number;
   tier: MemoryTier;
   importance: number;
@@ -708,6 +710,7 @@ export interface MemoryNode {
   lastAccess: number;
   decayHealth?: number;
   compressionLevel?: number;
+  embeddingIdentity?: { model: string; version: string; dimension: number };
   embeddingVector?: Float32Array;
   ownerId?: string; // NEW: Agent-Specific Ownership
   nestingLevel?: number; // NEW: 1=Raw, 2=Thought, 3=Episode, 4=Fact, 5=Identity

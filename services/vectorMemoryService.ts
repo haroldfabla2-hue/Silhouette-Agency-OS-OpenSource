@@ -84,6 +84,7 @@ class VectorMemoryService {
     }
 
     public async storeMemory(id: string, vector: number[], payload: any) {
+        if (!vector || vector.length !== 768 || !vector.every(Number.isFinite) || !vector.some(v => v !== 0)) throw new Error('Invalid Qdrant vector');
         if (!this.isConnected || !this.client) return;
 
         // [ROBUSTNESS] Hard Guard: Never store empty/undefined thoughts.
@@ -218,25 +219,27 @@ class VectorMemoryService {
         }
     }
 
-    public async searchByContent(query: string, limit: number = 20): Promise<any[]> {
+    public async searchByContent(query: string, limit: number = 20, ownerId?: string): Promise<any[]> {
         if (!this.isConnected || !this.client) return [];
         try {
             // Scroll through recent memories and filter by content
             // NOTE: Ideally we should use Qdrant Full Text Search, but for now this is robust enough for <10k items
             return await this.retry(async () => {
-                const result = await this.client.scroll(this.collectionName, {
-                    limit: 500, // Fetch broader context
-                    with_payload: true,
-                    with_vector: false
-                });
-
-                const queryLower = query.toLowerCase();
-                const points = result.points || [];
-
-                return points
-                    .filter((p: any) => (p.payload?.content || "").toLowerCase().includes(queryLower))
-                    .slice(0, limit);
+                const matches: any[] = [];
+                let offset: string | number | undefined;
+                do {
+                    const result = await this.client.scroll(this.collectionName, {
+                        limit: 256, offset, with_payload: true, with_vector: false,
+                        filter: ownerId ? { must: [{ key: 'ownerId', match: { value: ownerId } }] } : undefined
+                    });
+                    matches.push(...(result.points || []).filter((p: any) =>
+                        (p.payload?.content || '').toLowerCase().includes(query.toLowerCase())
+                        && !(p.payload?.tags || []).includes('HYPOTHESIS')));
+                    offset = result.next_page_offset;
+                } while (offset !== undefined && offset !== null && matches.length < limit);
+                return matches.slice(0, limit);
             });
+
         } catch (e) {
             console.error("Failed to search vector memory by content", e);
             return [];

@@ -11,18 +11,13 @@ const DB_PATH = path.resolve(process.cwd(), 'db', process.env.VITEST_WORKER_ID
 const DB_DIR = path.dirname(DB_PATH);
 const DEFAULT_DIMENSIONS = 768; // Hardcoded default to match the original schema
 
-// Helper: Dynamically padding vectors to match the database schema
-function adjustVectorDimension(vector: number[], targetDim: number = DEFAULT_DIMENSIONS): number[] {
-    if (!vector || vector.length === 0) return Array(targetDim).fill(0);
-    if (vector.length === targetDim) return vector;
-    if (vector.length > targetDim) return vector.slice(0, targetDim); // Truncate
+import { validEmbedding, scopeSql, inScope, type EmbeddingIdentity, type MemoryScope } from './memoryRetrieval';
 
-    // Pad with zeros to match target dimensions
-    const padded = new Array(targetDim).fill(0);
-    for (let i = 0; i < vector.length; i++) {
-        padded[i] = vector[i];
+function adjustVectorDimension(vector: number[], targetDim: number = DEFAULT_DIMENSIONS): number[] {
+    if (!validEmbedding(vector, { model: 'knowledge', version: '1', dimension: targetDim })) {
+        throw new Error('Invalid embedding: dimension, finite values and nonzero magnitude required');
     }
-    return padded;
+    return vector;
 }
 
 if (!fs.existsSync(DB_DIR)) {
@@ -32,12 +27,14 @@ if (!fs.existsSync(DB_DIR)) {
 export class LanceDbService {
     private db: lancedb.Connection | null = null;
     private table: lancedb.Table | null = null; // Memory Table
+    private legacyTable: lancedb.Table | null = null;
+    private ftsReady = new Set<string>();
     private knowledgeTable: lancedb.Table | null = null; // Universal Knowledge Table
     private initialized = false;
     private writeQueue: Promise<void> = Promise.resolve();
     private initPromise: Promise<void> | null = null;
 
-    constructor() {
+    constructor(private readonly databasePath = DB_PATH) {
         // Lazy initialization - called explicitly from dbLoader or on first use
     }
 
@@ -68,12 +65,12 @@ export class LanceDbService {
                     console.log(`[LANCEDB] Connecting to: ${DB_PATH}`);
                 }
 
-                this.db = await lancedb.connect(DB_PATH);
+                this.db = await lancedb.connect(this.databasePath);
                 const tableNames = await this.db.tableNames();
 
                 // 1. Memory Table
                 if (tableNames.includes('memory')) {
-                    this.table = await this.db.openTable('memory');
+                    this.legacyTable = await this.db.openTable('memory');
                 } else {
                     console.log("[LANCEDB] Table 'memory' not found. It will be created on first insert.");
                 }
@@ -85,6 +82,7 @@ export class LanceDbService {
                     console.log("[LANCEDB] Table 'universal_knowledge' not found. Will be created on ingest.");
                 }
 
+                if (tableNames.includes('memory_records_v2')) this.table = await this.db.openTable('memory_records_v2');
                 this.initialized = true;
                 console.log("[LANCEDB] Connected.");
                 return;
@@ -113,11 +111,11 @@ export class LanceDbService {
 
     public async deleteNode(id: string): Promise<boolean> {
         if (!this.table) await this.init();
-        if (!this.table) return false;
+        if (!this.table && !this.legacyTable) return false;
         try {
             // [FIX 2026-02] Sanitize ID to prevent SQL injection
             const safeId = id.replace(/'/g, "''");
-            await this.table.delete(`id = '${safeId}'`);
+            for (const table of [this.table, this.legacyTable]) { if (table) await table.delete(`id = '${safeId}'`); }
             return true;
         } catch (e) {
             console.error(`[LANCEDB] Failed to delete node ${id}`, e);
@@ -143,7 +141,7 @@ export class LanceDbService {
         const checksum = createHash('sha256').update(json).digest('hex');
         const record = {
             id: node.id,
-            vector: adjustVectorDimension(vector || []),
+            embedding_state: 'EMBEDDING_PENDING',
             content: node.content,
             originalContent: node.originalContent || '',
             tags: node.tags.length ? node.tags : [''],
@@ -158,15 +156,21 @@ export class LanceDbService {
         };
         if (!this.table) {
             const names = await this.db.tableNames();
-            this.table = names.includes('memory')
-                ? await this.db.openTable('memory')
-                : await this.db.createTable('memory', [record]);
+            this.table = names.includes('memory_records_v2')
+                ? await this.db.openTable('memory_records_v2')
+                : await this.db.createTable('memory_records_v2', [record]);
         } else {
             // Atomic merge rather than delete + add, which loses the old row on add failure.
             await this.table.mergeInsert('id')
                 .whenMatchedUpdateAll()
                 .whenNotMatchedInsertAll()
                 .execute([record]);
+        }
+        this.ftsReady.delete('v2');
+        // Unknown legacy vectors are never guessed into a model collection.
+        if (vector && node.embeddingIdentity && validEmbedding(vector, node.embeddingIdentity)) {
+            try { await this.projectEmbedding(node, vector, node.embeddingIdentity); }
+            catch (error) { console.warn('[LANCEDB] Vector projection pending; canonical memory preserved', error); }
         }
         const stored = await this.getNodeById(node.id);
         if (!stored || createHash('sha256').update(JSON.stringify(stored)).digest('hex') !== checksum) {
@@ -177,161 +181,93 @@ export class LanceDbService {
 
     public async getNodeById(id: string): Promise<MemoryNode | null> {
         await this.ensureInitialized();
-        if (!this.table) return null;
         const safeId = id.replace(/'/g, "''");
-        const rows = await this.table.query().where(`id = '${safeId}'`).limit(2).toArray();
-        if (rows.length > 1) throw new Error(`Duplicate memory ID in LanceDB: ${id}`);
-        return rows.length ? JSON.parse(rows[0].json_data) as MemoryNode : null;
+        for (const table of [this.table, this.legacyTable]) {
+            if (!table) continue;
+            const rows = await table.query().where(`id = '${safeId}'`).limit(2).toArray();
+            if (rows.length > 1) throw new Error(`Duplicate memory ID in LanceDB: ${id}`);
+            if (rows.length) return JSON.parse(rows[0].json_data) as MemoryNode;
+        }
+        return null;
     }
 
-    public async search(queryVector: number[], limit: number = 10, filter?: string): Promise<MemoryNode[]> {
+    private vectorTableName(identity: EmbeddingIdentity): string {
+        return 'memory_vectors_' + createHash('sha256').update(JSON.stringify(identity)).digest('hex').slice(0, 24);
+    }
+    public async projectEmbedding(node: MemoryNode, vector: number[], identity: EmbeddingIdentity): Promise<void> {
+        if (!validEmbedding(vector, identity)) throw new Error('Invalid or incompatible embedding');
+        await this.ensureInitialized();
+        if (!this.db) throw new Error('LanceDB is unavailable');
+        const name = this.vectorTableName(identity);
+        const record = { id: node.id, vector, ownerId: node.ownerId || 'system', json_data: JSON.stringify(node) };
+        const names = await this.db.tableNames();
+        const table = names.includes(name) ? await this.db.openTable(name) : await this.db.createTable(name, [record]);
+        await table.mergeInsert('id').whenMatchedUpdateAll().whenNotMatchedInsertAll().execute([record]);
+        if (this.table) await this.table.update({ where: `id = '${node.id.replace(/'/g, "''")}'`, values: { embedding_state: 'READY' } });
+    }
+    public async pendingEmbeddings(limit = 100): Promise<MemoryNode[]> {
+        await this.ensureInitialized();
         if (!this.table) return [];
-
-        try {
-            const adjustedVector = adjustVectorDimension(queryVector);
-            let query = this.table.search(adjustedVector).limit(limit);
-            if (filter) {
-                query = query.where(filter);
-            }
-            const results = await query.toArray();
-
-            return results.map((r: any) => {
-                const node = JSON.parse(r.json_data);
-                return node;
-            });
-        } catch (e) {
-            console.error("[LANCEDB] Search Failed", e);
-            return [];
-        }
+        const rows = await this.table.query().where("embedding_state = 'EMBEDDING_PENDING'").limit(limit).toArray();
+        return rows.map(r => JSON.parse(r.json_data));
+    }
+    public async search(queryVector: number[], limit = 10, filter?: string, identity?: EmbeddingIdentity): Promise<MemoryNode[]> {
+        if (!identity || !validEmbedding(queryVector, identity)) return [];
+        await this.ensureInitialized();
+        if (!this.db) return [];
+        const name = this.vectorTableName(identity);
+        if (!(await this.db.tableNames()).includes(name)) return [];
+        const table = await this.db.openTable(name);
+        let query = table.search(queryVector).distanceType('cosine').limit(limit);
+        if (filter) query = query.where(filter);
+        const rows = await query.toArray();
+        const current = await Promise.all(rows.map(r => this.getNodeById(r.id)));
+        return current.filter((n): n is MemoryNode => n !== null);
     }
 
     /**
      * Finds semantically similar nodes to the given existing node ID.
      */
     public async findSimilarNodes(nodeId: string, limit: number = 5): Promise<(MemoryNode & { similarity?: number })[]> {
-        if (!this.table) await this.init();
-        if (!this.table) return [];
-
-        try {
-            // 1. Get the vector of the source node
-            const safeNodeId = nodeId.replace(/'/g, "''");
-            const sourceRecord = await this.table.query()
-                .where(`id = '${safeNodeId}'`)
-                .limit(1)
-                .toArray();
-
-            if (sourceRecord.length === 0) return [];
-
-            const rawVector = sourceRecord[0].vector;
-            if (!rawVector) return [];
-
-            // Convert to native array (might be Float32Array or similar from LanceDB)
-            const sourceVector: number[] = Array.isArray(rawVector) ? rawVector : Array.from(rawVector);
-
-            // 2. Search for neighbors using L2 distance (default)
-            // Note: LanceDB JS doesn't support distanceType, so we compute cosine similarity manually
-            const results = await this.table.search(rawVector) // Use raw for search
-                .limit(limit + 1) // Fetch +1 because it will find itself
-                .toArray();
-
-            // 3. Calculate TRUE COSINE SIMILARITY manually
-            // Cosine(A,B) = (A·B) / (||A|| × ||B||)
-            // This is the mathematically correct semantic similarity measure
-            const sourceNorm = Math.sqrt(sourceVector.reduce((sum: number, v: number) => sum + v * v, 0));
-
-            return results
-                .map((r: any) => {
-                    const rawTarget = r.vector || [];
-                    // Also convert target vector to native array
-                    const targetVector: number[] = Array.isArray(rawTarget) ? rawTarget : Array.from(rawTarget);
-
-                    // Align vectors to min_len (like silhouette-brain) for cosine sim
-                    const min_len = Math.min(sourceVector.length, targetVector.length);
-                    const sourceAlign = sourceVector.slice(0, min_len);
-                    const targetAlign = targetVector.slice(0, min_len);
-
-                    // Dot product
-                    let dotProduct = 0;
-                    let sourceNormAligned = 0;
-                    let targetNormAligned = 0;
-                    for (let i = 0; i < min_len; i++) {
-                        dotProduct += sourceAlign[i] * targetAlign[i];
-                        sourceNormAligned += sourceAlign[i] * sourceAlign[i];
-                        targetNormAligned += targetAlign[i] * targetAlign[i];
-                    }
-                    sourceNormAligned = Math.sqrt(sourceNormAligned);
-                    targetNormAligned = Math.sqrt(targetNormAligned);
-
-                    // Cosine similarity: ranges from -1 to 1 (1 = identical, 0 = orthogonal, -1 = opposite)
-                    const cosineSim = (sourceNormAligned > 0 && targetNormAligned > 0)
-                        ? dotProduct / (sourceNormAligned * targetNormAligned)
-                        : 0;
-
-                    // Normalize to 0-1 scale: (cosineSim + 1) / 2
-                    const similarity = (cosineSim + 1) / 2;
-
-                    return {
-                        ...JSON.parse(r.json_data),
-                        similarity
-                    };
-                })
-                .filter((n: any) => n.id !== nodeId)
-                .slice(0, limit);
-
-        } catch (e) {
-            console.error(`[LANCEDB] findSimilarNodes(${nodeId}) Failed`, e);
-            return [];
-        }
+        const node = await this.getNodeById(nodeId);
+        if (!node?.embeddingIdentity || !node.embeddingVector) return [];
+        const neighbors = await this.search(Array.from(node.embeddingVector), limit + 1, undefined, node.embeddingIdentity);
+        return neighbors.filter(n => n.id !== nodeId).slice(0, limit);
     }
 
-    public async searchByContent(textQuery: string, limit: number = 20): Promise<MemoryNode[]> {
-        if (!this.table) await this.init();
-        if (!this.table) return [];
-
-        try {
-            // LanceDB SQL/Filtering is limited in JS. 
-            // We'll use a filter if possible, otherwise we might need to rely on vector search 
-            // OR if we can't do 'LIKE', we might have to fetch more and filter, 
-            // but we want to avoid fetching ALL.
-            // Since we don't have a vector here, we can't use .search(vector).
-            // We can use .query().where().limit()
-
-            // NOTE: LanceDB JS 'where' supports SQL-like syntax.
-            // Let's try to use a simple LIKE if supported, or just fetch recent and filter in memory 
-            // but with a LIMIT to avoid the RAM spike of loading 10k rows.
-
-            // Strategy: Fetch last 1000 items (sorted by timestamp desc if possible) and filter those.
-            // This is better than fetching ALL.
-            // However, LanceDB doesn't strictly guarantee order without an index or sort.
-            // Let's try to filter by content if possible.
-
-            // If 'LIKE' is not supported, we fall back to a safer limit.
-            // const results = await this.table.query().where(`content LIKE '%${textQuery}%'`).limit(limit).toArray();
-
-            // Safer approach for now: Fetch recent 500 and filter in memory. 
-            // This caps the RAM usage significantly compared to 10k+.
-            const results = await this.table.query().limit(500).toArray();
-
-            return results
-                .map((r: any) => JSON.parse(r.json_data))
-                .filter((n: MemoryNode) => n.content.toLowerCase().includes(textQuery.toLowerCase()))
-                .slice(0, limit);
-
-        } catch (e) {
-            console.error("[LANCEDB] SearchByContent Failed", e);
-            return [];
+    public async searchByContent(textQuery: string, limit = 20, scope: MemoryScope = {}): Promise<MemoryNode[]> {
+        if (!textQuery.trim()) return [];
+        await this.ensureInitialized();
+        const nodes = new Map<string, MemoryNode>();
+        for (const [name, table] of [['legacy', this.legacyTable], ['v2', this.table]] as const) {
+            if (!table) continue;
+            if (!this.ftsReady.has(name)) {
+                await table.createIndex('content', { config: lancedb.Index.fts(), replace: true });
+                this.ftsReady.add(name);
+            }
+            const rows = await table.query().where(scopeSql(scope)).fullTextSearch(textQuery).limit(limit * 3).toArray();
+            for (const row of rows) {
+                const node = JSON.parse(row.json_data) as MemoryNode;
+                if (inScope(node, scope)) nodes.set(node.id, node);
+            }
         }
+        return [...nodes.values()].slice(0, limit);
     }
 
     public async getAllNodes(): Promise<MemoryNode[]> {
         if (!this.table) await this.init();
-        if (!this.table) {
+        if (!this.table && !this.legacyTable) {
             console.warn("[LANCEDB] getAllNodes: Table not initialized.");
             return [];
         }
         try {
-            const results = await this.table.query().limit(10000).toArray();
-            return results.map((r: any) => JSON.parse(r.json_data));
+            const unique = new Map<string, MemoryNode>();
+            for (const table of [this.legacyTable, this.table]) {
+                if (!table) continue;
+                const rows = await table.query().limit(await table.countRows()).toArray();
+                for (const row of rows) { const node = JSON.parse(row.json_data); unique.set(node.id, node); }
+            }
+            return [...unique.values()];
         } catch (e) {
             console.error("[LANCEDB] getAllNodes Failed", e);
             return [];
@@ -340,23 +276,8 @@ export class LanceDbService {
 
     public async getNodesByTier(tier: MemoryTier, limit: number = 1000): Promise<MemoryNode[]> {
         await this.ensureInitialized();
-        if (!this.table) return [];
-        try {
-            // [FIX 2026-02] Sanitize tier to prevent SQL injection
-            const safeTier = String(tier).replace(/'/g, "''");
-            const results = await this.table.query()
-                .where(`tier = '${safeTier}'`)
-                .limit(Math.max(limit * 5, 1000))
-                .toArray();
-
-            return results
-                .map((r: any) => JSON.parse(r.json_data))
-                .sort((a: MemoryNode, b: MemoryNode) => (b.timestamp || 0) - (a.timestamp || 0)) // Recency Bias
-                .slice(0, limit);
-        } catch (e) {
-            console.error(`[LANCEDB] getNodesByTier(${tier}) Failed`, e);
-            throw e;
-        }
+        return (await this.getAllNodes()).filter(n => n.tier === tier)
+            .sort((a, b) => b.timestamp - a.timestamp).slice(0, limit);
     }
 
     // Helper to delete/cleanup if needed
