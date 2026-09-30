@@ -218,7 +218,7 @@ export class LanceDbService {
         const name = this.vectorTableName(identity);
         if (!(await this.db.tableNames()).includes(name)) return [];
         const table = await this.db.openTable(name);
-        let query = table.search(queryVector).distanceType('cosine').limit(limit);
+        let query = table.vectorSearch(queryVector).distanceType('cosine').limit(limit);
         if (filter) query = query.where(filter);
         const rows = await query.toArray();
         const current = await Promise.all(rows.map(r => this.getNodeById(r.id)));
