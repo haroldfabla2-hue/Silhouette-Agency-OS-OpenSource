@@ -1,3 +1,4 @@
+import { verifyClaims, type CitedClaim } from './memoryCognition';
 import { continuum } from './continuumMemory';
 import { geminiService } from './geminiService';
 import { vectorMemory } from './vectorMemoryService';
@@ -668,57 +669,10 @@ export class DreamerService {
 
         // 2. Store in Continuum (Vector DB)
         // Use Continuum to store in DEEP tier (which routes to Qdrant)
-        await continuum.store(content, MemoryTier.DEEP, ['INTUITION', 'DREAM', 'SUBCONSCIOUS']);
+        await continuum.store(content, MemoryTier.DEEP, ['INTUITION', 'DREAM', 'SUBCONSCIOUS', 'HYPOTHESIS']);
 
-        // 3. Graph Integration (Structure the Insight)
-        try {
-            // Lazy load graph services to avoid circular deps if any
-            const { graphExtractor } = await import('./graphExtractionService');
-            const { graph } = await import('./graphService');
-
-            const graphData = await graphExtractor.extractEntities("Self-Reflection", content);
-
-            // Store Nodes
-            for (const node of graphData.nodes) {
-                // ROBUSTNESS FIX: Concepts must be unique by defined Name, not random ID.
-                const mergeKey = node.label === 'Concept' ? 'name' : 'id';
-
-                // If merging by name, ensure we don't overwrite the existing ID with a new random one
-                if (mergeKey === 'name' && node.properties.id) {
-                    delete node.properties.id;
-                }
-
-                await graph.createNode(node.label, node.properties, mergeKey);
-            }
-
-            // Store Edges
-            for (const edge of graphData.edges) {
-                await graph.createRelationship(edge.from, edge.to, edge.type, edge.properties);
-            }
-            console.log(`[DREAMER] 🕸️ Intuition woven into Knowledge Graph.`);
-
-        } catch (e) {
-            console.warn("[DREAMER] Graph integration failed (Non-critical):", e);
-        }
-
-        // 4. Neuro-Link Emission (Trigger Evolution)
-        systemBus.emit(
-            SystemProtocol.INTUITION_CONSOLIDATED,
-            {
-                idea: content,
-                timestamp: Date.now(),
-                source: 'DreamerService',
-                confidence: 1.0 // It passed the Critic
-            },
-            'DreamerService'
-        );
-        console.log(`[DREAMER] 📡 Signal beamed to Neuro-Synapse.`);
-
-        // 5. TRIGGER NEUROCOGNITIVE DISCOVERY (The new Lobe)
-        // Now that we have a new concept, let's see what *else* it unlocks in the graph
-        import('./neuroCognitiveService').then(({ neuroCognitive }) => {
-            neuroCognitive.triggerDiscoveryCycle();
-        });
+        // Exploratory content is retained, but graph writes and action-triggering signals
+        // require evidence-backed review rather than a dream critic's confidence.
     }
 
     private async isRedundant(content: string): Promise<boolean> {
@@ -753,13 +707,19 @@ export class DreamerService {
         const archiveId = createHash('sha256').update(JSON.stringify(nodes.map(n => n.id).sort())).digest('hex');
         const existing = await lancedbService.getNodeById(archiveId);
         if (existing?.tier === MemoryTier.DEEP && existing.tags.includes('DEEP_SLEEP')) return archiveId;
-        const context = nodes.map(n => `[${new Date(n.timestamp).toLocaleString()}] ${n.content}`).join('\n');
-        const summary = await this.generateDeepSummary(context);
-        if (!summary?.trim()) throw new Error('Deep summary was empty; originals remain LONG');
+        const context = nodes.map(n => `[source:${n.id}] ${n.content}`).join('\n');
+        const raw = await this.generateDeepSummary(context);
+        if (!raw?.trim()) throw new Error('Deep summary was empty; originals remain LONG');
+        let claims: CitedClaim[];
+        try { claims = JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/g, '')).claims; }
+        catch { throw new Error('Summary did not supply cited claims; originals remain LONG'); }
+        if (!Array.isArray(claims) || !verifyClaims(claims, nodes)) throw new Error('Unsupported summary; originals remain LONG');
+        const summary = claims.map(c => `${c.text} [${c.parentIds.join(',')}]`).join('\n');
         const timestamp = Math.max(...nodes.map(n => n.timestamp));
         const archive: MemoryNode = {
             id: archiveId,
             content: `[ARCHIVE] ${summary}`,
+            parentIds: nodes.map(n => n.id),
             timestamp,
             tier: MemoryTier.DEEP,
             importance: Math.max(...nodes.map(n => n.importance)),
@@ -968,13 +928,12 @@ export class DreamerService {
 
     private async generateDeepSummary(context: string): Promise<string | null> {
         const prompt = `
-        You are the Archivist. Compress the following stream of raw memories into a single, dense narrative paragraph.
-        Preserve key facts, decisions, and dates. Discard fluff.
+        You are the Archivist. Select important exact spans from the raw memories. Do not paraphrase or invent claims. Return JSON {"claims":[{"text":"exact source span","parentIds":["source id"]}]}. Every claim needs evidence.
         
         Raw Memories:
         ${context}
         
-        Output only the summary.
+        Output only the JSON object.
         `;
 
         const response = await geminiService.generateAgentResponse(

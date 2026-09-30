@@ -1,5 +1,7 @@
 import { MemoryNode, MemoryTier } from "../types";
 import { lancedbService } from './lancedbService';
+import { fuseMemories, inScope, scopeSql, type MemoryScope } from './memoryRetrieval';
+import { activation, selectSleepBatch } from './memoryCognition';
 import { memoryTransitions } from './memoryTransitions';
 import { introspection } from './introspectionEngine';
 import { redisClient } from './redisClient';
@@ -458,7 +460,10 @@ class ContinuumMemorySystem {
                     vector = await generateEmbedding(content);
                 }
 
-                await lancedbService.store(nodeToStore); // Canonical copy before optional vector projection.
+                if (process.env.MEMORY_WRITE_MODEL && vector) nodeToStore.embeddingIdentity = {
+                    model: process.env.MEMORY_WRITE_MODEL, version: process.env.MEMORY_WRITE_VERSION || '1', dimension: vector.length
+                };
+                await lancedbService.store(nodeToStore, vector || undefined); // Canonical copy before optional vector projection.
                 if (vector) {
                     await vectorMemory.storeMemory(nodeToStore.id, vector, {
                         ...nodeToStore,
@@ -513,9 +518,20 @@ class ContinuumMemorySystem {
         }
     }
 
+    public async recordMeaningfulRecall(id: string, now = Date.now()): Promise<void> {
+        const source = this.working.find(n => n.id === id) || await lancedbService.getNodeById(id);
+        if (!source) throw new Error(`Missing memory ${id}`);
+        const { recordSignificantAccess } = await import('./memoryCognition');
+        const updated = recordSignificantAccess(source, now);
+        if (updated === source) return;
+        await lancedbService.store(updated);
+        const index = this.working.findIndex(n => n.id === id);
+        if (index >= 0) { this.working[index] = updated; this.isDirty = true; await this.saveSnapshot(); }
+    }
+
     public async retrieve(query: string, filterTag?: string, agentId?: string): Promise<MemoryNode[]> {
         // Use the new Universal Search to get candidates from all tiers (RAM + LanceDB + Qdrant)
-        let candidates = await this.search(query);
+        let candidates = await this.search(query, { ownerId: agentId, tag: filterTag });
 
         // Apply strict filters
         candidates = candidates.filter(n => {
@@ -534,7 +550,7 @@ class ContinuumMemorySystem {
         // Sort by timestamp (Newest first) and limit
         // Sort by timestamp (Newest first) and limit
         // [PHASE 16] Massive Context: 500 items (~100k tokens). Covers near-total database.
-        return candidates.sort((a, b) => b.timestamp - a.timestamp).slice(0, 500);
+        return candidates;
     }
 
     /**
@@ -736,7 +752,7 @@ class ContinuumMemorySystem {
             console.log(`[CONTINUUM] 🔍 Deep Sleep Check: Found ${candidates.length} candidates (Threshold: 3)`);
 
             if (candidates.length >= 3) {
-                const batch = candidates.slice(0, 5); // Process 5 at a time
+                const batch = selectSleepBatch(candidates, 5); // Process 5 at a time
                 console.log(`[CONTINUUM] 💤 Triggering Deep Sleep for ${batch.length} nodes...`);
 
                 // Dynamic import to avoid circular dependency
@@ -929,8 +945,8 @@ class ContinuumMemorySystem {
             if (addTag) node.tags.push('IDENTITY');
         }
     }
-    public async search(query: string): Promise<MemoryNode[]> {
-        const results: MemoryNode[] = [];
+    public async search(query: string, scope: MemoryScope = {}): Promise<MemoryNode[]> {
+        const lists: MemoryNode[][] = [];
 
         // [ROOT CAUSE FIX] Defensive Guard
         if (!query || typeof query !== 'string') return [];
@@ -938,14 +954,14 @@ class ContinuumMemorySystem {
         const queryLower = query.toLowerCase();
 
         // [FIX 2026-02] Use working directly (ultraShort/short are aliases to same array)
-        const ramResults = this.working.filter(n => (n.content || "").toLowerCase().includes(queryLower));
-        results.push(...ramResults);
+        const ramResults = this.working.filter(n => inScope(n, scope) && (n.content || "").toLowerCase().includes(queryLower));
+        lists.push(ramResults);
 
         try {
             // 2. Search LanceDB (Semantic or Text)
             // For now, still text based fallback for LanceDB until we add embedding there too
-            const dbResults = await lancedbService.searchByContent(query, 50);
-            results.push(...dbResults);
+            const dbResults = await lancedbService.searchByContent(query, 50, scope);
+            lists.push(dbResults);
 
             // 3. Search Deep Memory (SEMANTIC / VECTOR)
             // Dynamic import to avoid circular dependency
@@ -959,17 +975,18 @@ class ContinuumMemorySystem {
 
             let deepVectors: any[] = [];
 
-            if (embedding) {
+            if (embedding && process.env.MEMORY_QDRANT_MODEL === process.env.MEMORY_QUERY_MODEL && process.env.MEMORY_QUERY_MODEL) {
                 // Semantic Search
                 console.log(`[CONTINUUM] Performing Semantic Search for: "${query}"`);
-                deepVectors = await vectorMemory.searchMemory(embedding, 50);
+                deepVectors = await vectorMemory.searchMemory(embedding, 50, scope.ownerId ? { ownerId: scope.ownerId } : undefined);
             } else {
                 // Fallback to Text Search if embedding fails
                 console.warn("[CONTINUUM] Embedding failed, falling back to text search for Deep Memory.");
-                deepVectors = await vectorMemory.searchByContent(query, 50);
+                deepVectors = await vectorMemory.searchByContent(query, 50, scope.ownerId);
             }
 
             const deepNodes = deepVectors.map(v => ({
+                ...v.payload,
                 id: v.id,
                 content: v.payload?.content || "Vector Result",
                 tier: MemoryTier.DEEP,
@@ -981,16 +998,18 @@ class ContinuumMemorySystem {
                 lastAccess: Date.now(),
                 compressionLevel: 0
             }));
-            results.push(...deepNodes);
+            lists.push(deepNodes.filter(n => inScope(n, scope)));
+            if (embedding && process.env.MEMORY_QUERY_MODEL) {
+                const identity = { model: process.env.MEMORY_QUERY_MODEL, version: process.env.MEMORY_QUERY_VERSION || "1", dimension: embedding.length };
+                lists.push((await lancedbService.search(embedding, 50, scopeSql(scope), identity)).filter(n => inScope(n, scope)));
+            }
 
         } catch (e) {
             console.error("[CONTINUUM] Search failed:", e);
         }
 
         // Deduplicate by ID
-        const unique = new Map<string, MemoryNode>();
-        results.forEach(n => unique.set(n.id, n));
-        return Array.from(unique.values());
+        return fuseMemories(lists.map(list => list.sort((a, b) => activation(b).score - activation(a).score)), query);
     }
     // --- MANUAL CONSOLIDATION VOID ---
     public async consolidateRamImmediate(): Promise<{ promoted: number }> {
