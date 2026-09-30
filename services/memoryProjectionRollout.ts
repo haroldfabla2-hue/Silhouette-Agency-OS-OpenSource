@@ -10,7 +10,7 @@ export interface EmbeddingProvider {
     identity: ProviderIdentity;
     embed(texts: string[]): Promise<number[][]>;
 }
-export interface ProjectionRow { id: string; ownerId: string; fingerprint: string; vector: number[] }
+export interface ProjectionRow { [key: string]: unknown; id: string; ownerId: string; fingerprint: string; vector: number[] }
 export interface ShadowComparison {
     exactIds: string[]; annIds: string[]; recallAtK: number;
     exactMs: number; annMs: number; requestedK: number; referenceCount: number;
@@ -122,4 +122,4 @@ export class LexicalHashProvider implements EmbeddingProvider {
             return vector;
         });
     }
-                            }
+}
