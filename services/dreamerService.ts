@@ -745,36 +745,30 @@ export class DreamerService {
         }
     }
     // --- DEEP SLEEP PROTOCOL (Consolidation) ---
-    public async consolidateLongTerm(nodes: MemoryNode[]) {
-        if (nodes.length === 0) return;
-
-        console.log(`[DREAMER] 🧶 Consolidating ${nodes.length} Long-Term memories into Deep Storage...`);
-
-        // 1. Group by context (for now, simple batch)
-        // In a real system, we might cluster by embedding similarity first.
-
-        try {
-            // 2. Generate Summary via LLM
-            const context = nodes.map(n => `[${new Date(n.timestamp).toLocaleString()}] ${n.content}`).join('\n');
-            const summary = await this.generateDeepSummary(context);
-
-            if (summary) {
-                // 3. Store in Deep Memory (Vector)
-                // We use a specific tag 'ARCHIVE_VOLUME' to indicate it's a compressed batch
-                const archiveId = uuidv4();
-                await continuum.store(
-                    `[ARCHIVE ${new Date().toLocaleDateString()}] ${summary}`,
-                    MemoryTier.DEEP,
-                    ['ARCHIVE', 'DEEP_SLEEP', 'COMPRESSED']
-                );
-                console.log(`[DREAMER] ✅ Archived ${nodes.length} nodes to Deep Memory.`);
-
-                // 4. Cleanup Original Nodes (Soft Delete or Hard Delete)
-                // For now, we return true so the caller (Continuum) can remove them.
-            }
-        } catch (e) {
-            console.error("[DREAMER] Deep Sleep Failed:", e);
-        }
+    public async consolidateLongTerm(nodes: MemoryNode[]): Promise<string> {
+        if (nodes.length === 0) throw new Error('Cannot consolidate an empty batch');
+        const { createHash } = await import('node:crypto');
+        const { lancedbService } = await import('./lancedbService');
+        // Stable across retry, including restart. Source IDs remain unchanged.
+        const archiveId = createHash('sha256').update(JSON.stringify(nodes.map(n => n.id).sort())).digest('hex');
+        const existing = await lancedbService.getNodeById(archiveId);
+        if (existing?.tier === MemoryTier.DEEP && existing.tags.includes('DEEP_SLEEP')) return archiveId;
+        const context = nodes.map(n => `[${new Date(n.timestamp).toLocaleString()}] ${n.content}`).join('\n');
+        const summary = await this.generateDeepSummary(context);
+        if (!summary?.trim()) throw new Error('Deep summary was empty; originals remain LONG');
+        const timestamp = Math.max(...nodes.map(n => n.timestamp));
+        const archive: MemoryNode = {
+            id: archiveId,
+            content: `[ARCHIVE] ${summary}`,
+            timestamp,
+            tier: MemoryTier.DEEP,
+            importance: Math.max(...nodes.map(n => n.importance)),
+            tags: ['ARCHIVE', 'DEEP_SLEEP', 'COMPRESSED', ...nodes.map(n => `source:${n.id}`)],
+            accessCount: 0,
+            lastAccess: timestamp
+        };
+        await lancedbService.store(archive); // Throws unless stored and verified.
+        return archiveId;
     }
 
     // --- PHASE 7: SERENDIPITY (Active Dreaming) ---

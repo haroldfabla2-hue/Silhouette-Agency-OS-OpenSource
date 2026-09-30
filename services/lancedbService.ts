@@ -1,9 +1,13 @@
 import * as lancedb from '@lancedb/lancedb';
 import path from 'path';
 import fs from 'fs';
+import { createHash } from 'node:crypto';
 import { MemoryNode, MemoryTier } from '../types';
 
-const DB_PATH = path.resolve(process.cwd(), 'db', 'silhouette.lancedb');
+// Vitest workers must not mutate the same LanceDB directory concurrently.
+const DB_PATH = path.resolve(process.cwd(), 'db', process.env.VITEST_WORKER_ID
+    ? `silhouette-test-worker-${process.env.VITEST_WORKER_ID}.lancedb`
+    : 'silhouette.lancedb');
 const DB_DIR = path.dirname(DB_PATH);
 const DEFAULT_DIMENSIONS = 768; // Hardcoded default to match the original schema
 
@@ -30,6 +34,8 @@ export class LanceDbService {
     private table: lancedb.Table | null = null; // Memory Table
     private knowledgeTable: lancedb.Table | null = null; // Universal Knowledge Table
     private initialized = false;
+    private writeQueue: Promise<void> = Promise.resolve();
+    private initPromise: Promise<void> | null = null;
 
     constructor() {
         // Lazy initialization - called explicitly from dbLoader or on first use
@@ -41,7 +47,15 @@ export class LanceDbService {
         await this.init();
     }
 
-    private async init(retries = 3, delayMs = 1000) {
+    private init(retries = 3, delayMs = 1000): Promise<void> {
+        if (this.initialized) return Promise.resolve();
+        if (!this.initPromise) {
+            this.initPromise = this.initOnce(retries, delayMs).finally(() => { this.initPromise = null; });
+        }
+        return this.initPromise;
+    }
+
+    private async initOnce(retries = 3, delayMs = 1000) {
         if (this.initialized) return;
 
         let attempt = 0;
@@ -111,22 +125,28 @@ export class LanceDbService {
         }
     }
 
-    public async store(node: MemoryNode, vector?: number[]): Promise<void> {
-        if (!this.db) await this.init();
-        if (!this.db) return;
-
-        // [ROBUSTNESS] Hard Guard: Never store empty/undefined memory nodes.
-        if (!node || !node.content || node.content === 'undefined' || node.content.trim().length === 0) {
-            console.warn(`[LANCEDB] 🛡️ BLOCKED Corrupt Node Write. ID: ${node.id}`);
-            return;
+    /** A successful write is confirmed by a read of the same ID and payload. */
+    public async store(node: MemoryNode, vector?: number[]): Promise<{ ok: true; id: string; checksum: string; version: number }> {
+        if (!node?.id || !node.content?.trim() || node.content === 'undefined') {
+            throw new Error('Invalid memory node: refusing persistent write');
         }
+        // Serialize writes through first-table creation and upserts in this process.
+        const operation = this.writeQueue.then(() => this.writeAndVerify(node, vector));
+        this.writeQueue = operation.then(() => undefined, () => undefined);
+        return operation;
+    }
 
+    private async writeAndVerify(node: MemoryNode, vector?: number[]): Promise<{ ok: true; id: string; checksum: string; version: number }> {
+        await this.ensureInitialized();
+        if (!this.db) throw new Error('LanceDB is unavailable');
+        const json = JSON.stringify(node);
+        const checksum = createHash('sha256').update(json).digest('hex');
         const record = {
             id: node.id,
             vector: adjustVectorDimension(vector || []),
             content: node.content,
             originalContent: node.originalContent || '',
-            tags: node.tags,
+            tags: node.tags.length ? node.tags : [''],
             importance: node.importance,
             timestamp: node.timestamp,
             tier: node.tier,
@@ -134,32 +154,34 @@ export class LanceDbService {
             accessCount: node.accessCount,
             lastAccess: node.lastAccess,
             stabilityScore: node.stabilityScore || 0,
-            json_data: JSON.stringify(node) // Store full object for reconstruction
+            json_data: json
         };
-
-        try {
-            if (!this.table) {
-                const tableNames = await this.db.tableNames();
-                if (tableNames.includes('memory')) {
-                    this.table = await this.db.openTable('memory');
-                } else {
-                    this.table = await this.db.createTable('memory', [record]);
-                    return; // Created and inserted
-                }
-            }
-
-            // Upsert logic: Delete existing record with same ID to prevent duplicates
-            try {
-                const safeId = node.id.replace(/'/g, "''");
-                await this.table.delete(`id = '${safeId}'`);
-            } catch (delError) {
-                console.error("[LANCEDB] Upsert deletion ignored:", delError);
-            }
-
-            await this.table.add([record]);
-        } catch (e) {
-            console.error("[LANCEDB] Store Failed", e);
+        if (!this.table) {
+            const names = await this.db.tableNames();
+            this.table = names.includes('memory')
+                ? await this.db.openTable('memory')
+                : await this.db.createTable('memory', [record]);
+        } else {
+            // Atomic merge rather than delete + add, which loses the old row on add failure.
+            await this.table.mergeInsert('id')
+                .whenMatchedUpdateAll()
+                .whenNotMatchedInsertAll()
+                .execute([record]);
         }
+        const stored = await this.getNodeById(node.id);
+        if (!stored || createHash('sha256').update(JSON.stringify(stored)).digest('hex') !== checksum) {
+            throw new Error(`LanceDB read-back verification failed for ${node.id}`);
+        }
+        return { ok: true, id: node.id, checksum, version: node.timestamp };
+    }
+
+    public async getNodeById(id: string): Promise<MemoryNode | null> {
+        await this.ensureInitialized();
+        if (!this.table) return null;
+        const safeId = id.replace(/'/g, "''");
+        const rows = await this.table.query().where(`id = '${safeId}'`).limit(2).toArray();
+        if (rows.length > 1) throw new Error(`Duplicate memory ID in LanceDB: ${id}`);
+        return rows.length ? JSON.parse(rows[0].json_data) as MemoryNode : null;
     }
 
     public async search(queryVector: number[], limit: number = 10, filter?: string): Promise<MemoryNode[]> {
@@ -317,7 +339,7 @@ export class LanceDbService {
     }
 
     public async getNodesByTier(tier: MemoryTier, limit: number = 1000): Promise<MemoryNode[]> {
-        if (!this.table) await this.init();
+        await this.ensureInitialized();
         if (!this.table) return [];
         try {
             // [FIX 2026-02] Sanitize tier to prevent SQL injection
@@ -333,7 +355,7 @@ export class LanceDbService {
                 .slice(0, limit);
         } catch (e) {
             console.error(`[LANCEDB] getNodesByTier(${tier}) Failed`, e);
-            return [];
+            throw e;
         }
     }
 
