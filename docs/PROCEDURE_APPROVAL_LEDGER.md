@@ -60,3 +60,29 @@ defend against a compromised process holding the key. Deleting the newest entrie
 (truncating the tail) is not detectable from the chain alone; anchor the latest
 `entryHash` somewhere outside the file if that matters. No key rotation or
 revocation list yet. Not a hardware attestation.
+
+## Owner identity: WebAuthn assertion gate (opt-in)
+
+`new ProcedureApprovalLedger(path, { ownerIdentity: { rpId, origins, challengeTtlMs? } })`.
+Once set, plain `decide()` throws; approve/revoke must go through
+`issueDecisionChallenge(...)` then `decideWithAssertion(...)`.
+- Challenge: 32 random bytes, single use, short TTL, bound to owner, procedure, version,
+  contract hash, decision, reason and the contract epoch at issue time. It is consumed
+  atomically before verification, so a failed attempt burns it. If the contract changed
+  since issue, the decision is refused.
+- Assertion checks: `webauthn.get` type, challenge, allowed origin (no cross-origin),
+  rpIdHash, user presence AND user verification flags, ES256 signature over
+  authData || SHA-256(clientDataJSON), and a strictly increasing signature counter
+  when the authenticator uses one (clone detection). Credentials are per owner.
+- Enrollment (`issueEnrollmentChallenge`, `enrollCredential`): attestation "none", ES256
+  only, UP+UV+AT flags required.
+
+Limits, stated plainly:
+- Tests use a SOFTWARE authenticator (real P-256 keys and ECDSA, exact WebAuthn byte
+  formats). It validates the server logic. No hardware authenticator or browser
+  ceremony was exercised here.
+- Attestation "none" proves possession of a fresh key, not the device make or model.
+- Who may enroll an owner's FIRST credential is the caller's authenticated decision.
+  No recovery flow, no credential removal API, no multi-reviewer quorum.
+- Counter 0 on both sides (synced passkeys) cannot detect cloning.
+- The decision UI must display the exact contract, decision and reason that the challenge is bound to.
