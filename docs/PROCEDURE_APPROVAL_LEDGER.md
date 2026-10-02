@@ -86,3 +86,11 @@ Limits, stated plainly:
   No recovery flow, no credential removal API, no multi-reviewer quorum.
 - Counter 0 on both sides (synced passkeys) cannot detect cloning.
 - The decision UI must display the exact contract, decision and reason that the challenge is bound to.
+
+## Signer key rotation
+
+`ledger.rotateSigner(newSigner, newPublicKeyPem)` retires the current signing key. The OLD key signs a rotation record that names the new key and the hash of the last receipt, so the rotation is fixed at one position in the chain. From then on only the new key can sign: a ledger opened with a retired signer refuses `finish` ("Signer key was retired by a rotation"). A key that was ever used cannot be reused.
+
+`ledger.verifyChainFromRoot(rootPublicKeyPem)` audits the whole chain from the one public key that started it. It follows each signed rotation and requires every receipt to use the key active at its position. A removed, edited or forged rotation, or a receipt signed by a retired key after its rotation, fails the audit. The existing `verifyChain(trustedKeys)` still works and is unchanged.
+
+Limits: the ledger does not store private keys, so where the new key lives and who may call `rotateSigner` is the caller's decision. Rotation does not help if the old private key was stolen before rotating: an attacker holding it could sign a rotation to their own key. The last entry hash should be anchored outside this database (not implemented here).

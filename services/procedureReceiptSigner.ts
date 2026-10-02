@@ -34,3 +34,18 @@ export function verifyEntrySignature(entry: Pick<SignedReceiptEntry, 'payload' |
         return verify(null, Buffer.from(entry.payload), createPublicKey(publicKeyPem), Buffer.from(entry.signature, 'base64'));
     } catch { return false; }
 }
+
+export interface KeyRotationEntry { seq: number; payload: string; signature: string; oldKeyId: string; newKeyId: string }
+export interface RotationPayload { v: 1; kind: 'ROTATE'; oldKeyId: string; newKeyId: string; newPublicKeyPem: string; prevEntryHash: string; at: number }
+export function canonicalRotation(p: RotationPayload): string {
+    return JSON.stringify({ v: p.v, kind: p.kind, oldKeyId: p.oldKeyId, newKeyId: p.newKeyId, newPublicKeyPem: p.newPublicKeyPem, prevEntryHash: p.prevEntryHash, at: p.at });
+}
+/** A rotation is valid only if signed by the key it retires and it names a new key whose id matches its public key. */
+export function verifyRotationSignature(entry: Pick<KeyRotationEntry, 'payload' | 'signature'>, oldPublicKeyPem: string): RotationPayload | undefined {
+    try {
+        const p = JSON.parse(entry.payload) as RotationPayload;
+        if (p.v !== 1 || p.kind !== 'ROTATE' || receiptKeyId(oldPublicKeyPem) !== p.oldKeyId || receiptKeyId(p.newPublicKeyPem) !== p.newKeyId || p.oldKeyId === p.newKeyId) return undefined;
+        if (canonicalRotation(p) !== entry.payload) return undefined;
+        return verify(null, Buffer.from(entry.payload), createPublicKey(oldPublicKeyPem), Buffer.from(entry.signature, 'base64')) ? p : undefined;
+    } catch { return undefined; }
+}
