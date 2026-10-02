@@ -64,6 +64,14 @@ export class ProcedureApprovalLedger {
         const run = this.db.prepare('SELECT * FROM procedure_runs WHERE run_id=?').get(lease.runId) as { state: string; procedure_id: string; version: number; owner_id: string; hash: string; epoch: number } | undefined;
         return !!row && row.state === 'APPROVED' && row.epoch === lease.epoch && row.hash === lease.contractHash && run?.state === 'RESERVED' && run.procedure_id === lease.procedureId && run.version === lease.version && run.owner_id === lease.ownerId && run.hash === lease.contractHash && run.epoch === lease.epoch;
     }
+    contractFor(lease: ExecutionLease): Procedure {
+        if (!this.isCurrent(lease)) throw new Error('Lease revoked or no longer reserved');
+        const row = this.row(lease.procedureId, lease.version, lease.ownerId)!;
+        if (createHash('sha256').update(row.contract).digest('hex') !== lease.contractHash) throw new Error('Stored contract hash mismatch');
+        return { id: lease.procedureId, version: lease.version, ownerId: lease.ownerId,
+            steps: [row.contract], sourceIds: [], preconditions: [], postconditions: [],
+            context: 'Explicit execution lease', state: 'APPROVED', successfulRuns: 0, failedRuns: 0 };
+    }
     finish(lease: ExecutionLease, receipt: SandboxReceipt): 'SUCCEEDED' | 'FAILED' | 'REVOKED' {
         return this.db.transaction(() => {
             const run = this.db.prepare('SELECT * FROM procedure_runs WHERE run_id=?').get(lease.runId) as { state: string; procedure_id: string; version: number; hash: string; owner_id: string; epoch: number; receipt: string | null } | undefined;
