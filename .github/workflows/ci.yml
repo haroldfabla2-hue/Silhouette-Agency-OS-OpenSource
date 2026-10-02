@@ -36,6 +36,13 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
+      - name: Install real Linux sandbox dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap libseccomp2
+          # Ubuntu AppArmor otherwise denies CI runner user namespaces.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
       - name: Unit tests
         run: npm test
 
