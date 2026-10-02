@@ -18,7 +18,7 @@ completion, owner-scoped lookup. Receipts persist on disk and across reopen.
 
 A late successful worker receipt after revocation is stored as REVOKED, never
 SUCCEEDED. Forged owner/version/hash/epoch or replayed completion is rejected.
-Receipt is an audit record, not a signed attestation. This ledger does not claim
+Receipts are audit records. With the opt-in `signer` option (see Signed receipts below) each finished run also gets an Ed25519-signed, hash-chained envelope. This ledger does not claim
 kernel-atomic cancellation of a running process, rollback of external effects,
 cross-DB evidence transactions or authenticated UI integration. Its API is not
 wired to the worker and registry approval is NOT execution authority. A worker
@@ -41,3 +41,22 @@ cgroup v2 is present but not writable in the current environment; no cgroup quot
 verification or deployment is claimed. Existing bubblewrap namespaces/prlimit
 limits continue unchanged. seccomp/cgroup deployment and signed receipts remain
 separate work, not hidden behind this ledger.
+
+## Signed receipts (opt-in)
+
+`new ProcedureApprovalLedger(path, { signer })` with `createEd25519Signer(privateKeyPem)`.
+The caller owns the key; nothing is generated, stored or defaulted by the ledger.
+On `finish`, in the same IMMEDIATE transaction as the run state, a row is added to
+`procedure_receipts`: canonical JSON payload (run, procedure, version, owner,
+contract hash, epoch, final state, stored receipt, completion time, previous entry
+hash), its SHA-256, and an Ed25519 signature. `keyId` is the hash of the public key.
+- `verifyRun(runId, owner, publicKeyPem)`: signature valid AND payload equals the live run row.
+- `verifyChain(trustedKeys)`: every entry signed by a trusted key and linked from genesis.
+- A late success after revoke is signed as REVOKED.
+
+Limits, stated plainly: the signing key lives in the process that runs the ledger,
+so this detects edits to the database file by anyone without the key; it does not
+defend against a compromised process holding the key. Deleting the newest entries
+(truncating the tail) is not detectable from the chain alone; anchor the latest
+`entryHash` somewhere outside the file if that matters. No key rotation or
+revocation list yet. Not a hardware attestation.

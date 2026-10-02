@@ -2,13 +2,17 @@ import Database from 'better-sqlite3';
 import { createHash, randomUUID } from 'node:crypto';
 import { encodeFileContract, decodeFileContract, type SandboxReceipt } from './procedureFileSandbox';
 import type { Procedure } from './memoryEvidence';
+import { GENESIS_HASH, canonicalPayload, entryHashOf, verifyEntrySignature, type ReceiptPayload, type ReceiptSigner, type SignedReceiptEntry } from './procedureReceiptSigner';
 
 export interface ExecutionLease { runId: string; procedureId: string; version: number; ownerId: string; contractHash: string; epoch: number }
 interface Row { procedure_id: string; version: number; owner_id: string; hash: string; contract: string; state: string; epoch: number }
 /** Opt-in single-file SQLite ledger. Caller must authenticate the owner, never an LLM. */
 export class ProcedureApprovalLedger {
     private readonly db: Database.Database;
-    constructor(path: string) {
+    private readonly signer?: ReceiptSigner;
+    /** `options.signer` is opt-in: without it behaviour and stored data are identical to before. */
+    constructor(path: string, options: { signer?: ReceiptSigner } = {}) {
+        this.signer = options.signer;
         this.db = new Database(path);
         this.db.pragma('journal_mode = WAL'); this.db.pragma('busy_timeout = 5000'); this.db.pragma('foreign_keys = ON');
         this.db.exec(`CREATE TABLE IF NOT EXISTS procedure_contracts (
@@ -21,7 +25,10 @@ export class ProcedureApprovalLedger {
           CREATE TABLE IF NOT EXISTS procedure_runs (
             run_id TEXT PRIMARY KEY, procedure_id TEXT NOT NULL, version INTEGER NOT NULL,
             owner_id TEXT NOT NULL, hash TEXT NOT NULL, epoch INTEGER NOT NULL,
-            state TEXT NOT NULL, receipt TEXT, started INTEGER NOT NULL, completed INTEGER);`);
+            state TEXT NOT NULL, receipt TEXT, started INTEGER NOT NULL, completed INTEGER);
+          CREATE TABLE IF NOT EXISTS procedure_receipts (
+            seq INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL UNIQUE REFERENCES procedure_runs(run_id),
+            payload TEXT NOT NULL, entry_hash TEXT NOT NULL, signature TEXT NOT NULL, key_id TEXT NOT NULL);`);
     }
     close(): void { this.db.close(); }
     register(procedure: Procedure): string {
@@ -78,11 +85,44 @@ export class ProcedureApprovalLedger {
             if (!run || run.receipt !== null || run.hash !== lease.contractHash || run.owner_id !== lease.ownerId || run.epoch !== lease.epoch || run.procedure_id !== lease.procedureId || run.version !== lease.version) throw new Error('Unknown, forged or completed lease');
             if (receipt.procedureId !== lease.procedureId || receipt.ownerId !== lease.ownerId || receipt.version !== lease.version || receipt.contractHash !== lease.contractHash || !Number.isInteger(receipt.operations) || receipt.operations < 0 || receipt.operations > 32 || typeof receipt.succeeded !== 'boolean') throw new Error('Receipt does not match exact lease');
             const state = this.isCurrent(lease) ? (receipt.succeeded ? 'SUCCEEDED' : 'FAILED') : 'REVOKED';
-            this.db.prepare('UPDATE procedure_runs SET state=?,receipt=?,completed=? WHERE run_id=?').run(state, JSON.stringify(receipt), Date.now(), lease.runId);
+            const stored = JSON.stringify(receipt), completedAt = Date.now();
+            this.db.prepare('UPDATE procedure_runs SET state=?,receipt=?,completed=? WHERE run_id=?').run(state, stored, completedAt, lease.runId);
+            if (this.signer) {
+                // Same IMMEDIATE transaction: the state, the chain link and the signature commit together or not at all.
+                const last = this.db.prepare('SELECT entry_hash FROM procedure_receipts ORDER BY seq DESC LIMIT 1').get() as { entry_hash: string } | undefined;
+                const payload = canonicalPayload({ v: 1, runId: lease.runId, procedureId: lease.procedureId, version: lease.version, ownerId: lease.ownerId, contractHash: lease.contractHash, epoch: lease.epoch, state, receipt: stored, completedAt, prevEntryHash: last?.entry_hash ?? GENESIS_HASH });
+                const signature = this.signer.sign(Buffer.from(payload)).toString('base64');
+                this.db.prepare('INSERT INTO procedure_receipts(run_id,payload,entry_hash,signature,key_id) VALUES (?,?,?,?,?)').run(lease.runId, payload, entryHashOf(payload), signature, this.signer.keyId);
+            }
             return state;
         }).immediate();
     }
     receipt(runId: string, ownerId: string): { state: string; receipt: string | null } | undefined {
         return this.db.prepare('SELECT state,receipt FROM procedure_runs WHERE run_id=? AND owner_id=?').get(runId, ownerId) as { state: string; receipt: string | null } | undefined;
+    }
+    /** Owner-scoped read of the signed envelope for one run, or undefined if unsigned/unknown/other owner. */
+    signedReceipt(runId: string, ownerId: string): SignedReceiptEntry | undefined {
+        const r = this.db.prepare('SELECT r.seq,r.run_id,r.payload,r.entry_hash,r.signature,r.key_id FROM procedure_receipts r JOIN procedure_runs u ON u.run_id=r.run_id WHERE r.run_id=? AND u.owner_id=?').get(runId, ownerId) as { seq: number; run_id: string; payload: string; entry_hash: string; signature: string; key_id: string } | undefined;
+        return r && { seq: r.seq, runId: r.run_id, payload: r.payload, entryHash: r.entry_hash, signature: r.signature, keyId: r.key_id };
+    }
+    /** Checks signature AND that the signed payload still equals the live run row (state, receipt, identity). */
+    verifyRun(runId: string, ownerId: string, publicKeyPem: string): boolean {
+        const e = this.signedReceipt(runId, ownerId);
+        const run = this.db.prepare('SELECT * FROM procedure_runs WHERE run_id=? AND owner_id=?').get(runId, ownerId) as { procedure_id: string; version: number; owner_id: string; hash: string; epoch: number; state: string; receipt: string | null; completed: number } | undefined;
+        if (!e || !run || !verifyEntrySignature(e, publicKeyPem)) return false;
+        const p = JSON.parse(e.payload) as ReceiptPayload;
+        return p.runId === runId && p.ownerId === run.owner_id && p.procedureId === run.procedure_id && p.version === run.version && p.contractHash === run.hash && p.epoch === run.epoch && p.state === run.state && p.receipt === run.receipt && p.completedAt === run.completed;
+    }
+    /** Operator audit: every entry signed by a trusted key, hashes chained from genesis with no gap or reorder. */
+    verifyChain(trustedKeys: Record<string, string>): { ok: boolean; entries: number; failedAtSeq?: number } {
+        const rows = this.db.prepare('SELECT seq,run_id,payload,entry_hash,signature,key_id FROM procedure_receipts ORDER BY seq').all() as { seq: number; run_id: string; payload: string; entry_hash: string; signature: string; key_id: string }[];
+        let prev = GENESIS_HASH;
+        for (const r of rows) {
+            const pem = trustedKeys[r.key_id];
+            const p = JSON.parse(r.payload) as ReceiptPayload;
+            if (!pem || p.prevEntryHash !== prev || p.runId !== r.run_id || !verifyEntrySignature({ payload: r.payload, entryHash: r.entry_hash, signature: r.signature, keyId: r.key_id }, pem)) return { ok: false, entries: rows.length, failedAtSeq: r.seq };
+            prev = r.entry_hash;
+        }
+        return { ok: true, entries: rows.length };
     }
 }
