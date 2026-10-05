@@ -3,14 +3,14 @@ import { createHash, randomUUID } from 'node:crypto';
 import { encodeFileContract, decodeFileContract, type SandboxReceipt } from './procedureFileSandbox';
 import type { Procedure } from './memoryEvidence';
 import { newChallenge, verifyAssertion, verifyRegistration, type AssertionResponse, type OwnerIdentityConfig, type RegistrationResponse } from './procedureOwnerIdentity';
-import { GENESIS_HASH, canonicalPayload, entryHashOf, verifyEntrySignature, type ReceiptPayload, type ReceiptSigner, type SignedReceiptEntry } from './procedureReceiptSigner';
+import { GENESIS_HASH, canonicalPayload, entryHashOf, verifyEntrySignature, canonicalRotation, receiptKeyId, verifyRotationSignature, type KeyRotationEntry, type RotationPayload, type ReceiptPayload, type ReceiptSigner, type SignedReceiptEntry } from './procedureReceiptSigner';
 
 export interface ExecutionLease { runId: string; procedureId: string; version: number; ownerId: string; contractHash: string; epoch: number }
 interface Row { procedure_id: string; version: number; owner_id: string; hash: string; contract: string; state: string; epoch: number }
 /** Opt-in single-file SQLite ledger. Caller must authenticate the owner, never an LLM. */
 export class ProcedureApprovalLedger {
     private readonly db: Database.Database;
-    private readonly signer?: ReceiptSigner;
+    private signer?: ReceiptSigner;
     private readonly identity?: OwnerIdentityConfig;
     /** `options.signer` is opt-in: without it behaviour and stored data are identical to before. */
     constructor(path: string, options: { signer?: ReceiptSigner; ownerIdentity?: OwnerIdentityConfig } = {}) {
@@ -31,6 +31,8 @@ export class ProcedureApprovalLedger {
           CREATE TABLE IF NOT EXISTS procedure_receipts (
             seq INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL UNIQUE REFERENCES procedure_runs(run_id),
             payload TEXT NOT NULL, entry_hash TEXT NOT NULL, signature TEXT NOT NULL, key_id TEXT NOT NULL);
+          CREATE TABLE IF NOT EXISTS procedure_receipt_rotations (
+            seq INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL, signature TEXT NOT NULL, old_key_id TEXT NOT NULL, new_key_id TEXT NOT NULL UNIQUE);
           CREATE TABLE IF NOT EXISTS owner_credentials (
             credential_id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, public_key_pem TEXT NOT NULL, sign_count INTEGER NOT NULL, created INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
           CREATE TABLE IF NOT EXISTS owner_challenges (
@@ -99,6 +101,8 @@ export class ProcedureApprovalLedger {
             const stored = JSON.stringify(receipt), completedAt = Date.now();
             this.db.prepare('UPDATE procedure_runs SET state=?,receipt=?,completed=? WHERE run_id=?').run(state, stored, completedAt, lease.runId);
             if (this.signer) {
+                const active = this.db.prepare('SELECT new_key_id FROM procedure_receipt_rotations ORDER BY seq DESC LIMIT 1').get() as { new_key_id: string } | undefined;
+                if (active && active.new_key_id !== this.signer.keyId) throw new Error('Signer key was retired by a rotation');
                 // Same IMMEDIATE transaction: the state, the chain link and the signature commit together or not at all.
                 const last = this.db.prepare('SELECT entry_hash FROM procedure_receipts ORDER BY seq DESC LIMIT 1').get() as { entry_hash: string } | undefined;
                 const payload = canonicalPayload({ v: 1, runId: lease.runId, procedureId: lease.procedureId, version: lease.version, ownerId: lease.ownerId, contractHash: lease.contractHash, epoch: lease.epoch, state, receipt: stored, completedAt, prevEntryHash: last?.entry_hash ?? GENESIS_HASH });
@@ -123,6 +127,47 @@ export class ProcedureApprovalLedger {
         if (!e || !run || !verifyEntrySignature(e, publicKeyPem)) return false;
         const p = JSON.parse(e.payload) as ReceiptPayload;
         return p.runId === runId && p.ownerId === run.owner_id && p.procedureId === run.procedure_id && p.version === run.version && p.contractHash === run.hash && p.epoch === run.epoch && p.state === run.state && p.receipt === run.receipt && p.completedAt === run.completed;
+    }
+    /** Retires the current signer: the OLD key signs a rotation naming the new key, bound to the chain head. Later receipts need the new key. */
+    rotateSigner(newSigner: ReceiptSigner, newPublicKeyPem: string): string {
+        const old = this.signer;
+        if (!old) throw new Error('No signer configured');
+        if (receiptKeyId(newPublicKeyPem) !== newSigner.keyId) throw new Error('New public key does not match the new signer');
+        return this.db.transaction(() => {
+            const active = this.db.prepare('SELECT new_key_id FROM procedure_receipt_rotations ORDER BY seq DESC LIMIT 1').get() as { new_key_id: string } | undefined;
+            if (active && active.new_key_id !== old.keyId) throw new Error('Signer key was retired by a rotation');
+            if (this.db.prepare('SELECT 1 FROM procedure_receipts WHERE key_id=? UNION SELECT 1 FROM procedure_receipt_rotations WHERE old_key_id=? OR new_key_id=?').get(newSigner.keyId, newSigner.keyId, newSigner.keyId)) throw new Error('New key was already used');
+            const last = this.db.prepare('SELECT entry_hash FROM procedure_receipts ORDER BY seq DESC LIMIT 1').get() as { entry_hash: string } | undefined;
+            const body: RotationPayload = { v: 1, kind: 'ROTATE', oldKeyId: old.keyId, newKeyId: newSigner.keyId, newPublicKeyPem, prevEntryHash: last?.entry_hash ?? GENESIS_HASH, at: Date.now() };
+            const payload = canonicalRotation(body);
+            this.db.prepare('INSERT INTO procedure_receipt_rotations(payload,signature,old_key_id,new_key_id) VALUES (?,?,?,?)').run(payload, old.sign(Buffer.from(payload)).toString('base64'), old.keyId, newSigner.keyId);
+            this.signer = newSigner;
+            return newSigner.keyId;
+        }).immediate();
+    }
+    /** Audit from ONE trusted root public key: follows signed rotations; each receipt must use the key active at its position. */
+    verifyChainFromRoot(rootPublicKeyPem: string): { ok: boolean; entries: number; rotations: number; failedAtSeq?: number } {
+        const rows = this.db.prepare('SELECT seq,run_id,payload,entry_hash,signature,key_id FROM procedure_receipts ORDER BY seq').all() as { seq: number; run_id: string; payload: string; entry_hash: string; signature: string; key_id: string }[];
+        const rots = this.db.prepare('SELECT seq,payload,signature,old_key_id,new_key_id FROM procedure_receipt_rotations ORDER BY seq').all() as { seq: number; payload: string; signature: string; old_key_id: string; new_key_id: string }[];
+        const rotations = rots.map((r): KeyRotationEntry => ({ seq: r.seq, payload: r.payload, signature: r.signature, oldKeyId: r.old_key_id, newKeyId: r.new_key_id }));
+        let pem = rootPublicKeyPem, prev = GENESIS_HASH, ri = 0;
+        const fail = (seq?: number) => ({ ok: false, entries: rows.length, rotations: rots.length, failedAtSeq: seq });
+        const applyRotations = (): boolean => {
+            while (ri < rotations.length) {
+                const p = verifyRotationSignature(rotations[ri], pem);
+                if (!p || p.prevEntryHash !== prev) { if (!p) return false; break; }
+                pem = p.newPublicKeyPem; ri++;
+            }
+            return true;
+        };
+        if (!applyRotations()) return fail();
+        for (const r of rows) {
+            const p = JSON.parse(r.payload) as ReceiptPayload;
+            if (p.prevEntryHash !== prev || p.runId !== r.run_id || !verifyEntrySignature({ payload: r.payload, entryHash: r.entry_hash, signature: r.signature, keyId: r.key_id }, pem)) return fail(r.seq);
+            prev = r.entry_hash;
+            if (!applyRotations()) return fail(r.seq);
+        }
+        return ri === rotations.length ? { ok: true, entries: rows.length, rotations: rots.length } : fail();
     }
     /** Operator audit: every entry signed by a trusted key, hashes chained from genesis with no gap or reorder. */
     verifyChain(trustedKeys: Record<string, string>): { ok: boolean; entries: number; failedAtSeq?: number } {

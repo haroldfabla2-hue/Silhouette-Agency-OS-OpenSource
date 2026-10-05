@@ -82,3 +82,50 @@ describe('real Ed25519 signed, hash-chained receipts', () => {
         expect(() => createEd25519Signer(rsa)).toThrow('Ed25519');
     });
 });
+
+describe('signer key rotation', () => {
+    it('chain verifies from the ROOT public key only, across a rotation, and survives reopen', async () => {
+        const { ledger, path, keys } = await setup(); runOne(ledger, 'a');
+        const next = generateReceiptKeyPair(); ledger.rotateSigner(createEd25519Signer(next.privateKeyPem), next.publicKeyPem);
+        runOne(ledger, 'b');
+        expect(ledger.verifyChainFromRoot(keys.publicKeyPem)).toEqual({ ok: true, entries: 2, rotations: 1 });
+        expect(ledger.verifyChainFromRoot(next.publicKeyPem).ok).toBe(false); // new key is not a root
+        expect(ledger.verifyChain({ [receiptKeyId(keys.publicKeyPem)]: keys.publicKeyPem, [receiptKeyId(next.publicKeyPem)]: next.publicKeyPem })).toEqual({ ok: true, entries: 2 });
+        const reopened = new ProcedureApprovalLedger(path); handles.push(reopened);
+        expect(reopened.verifyChainFromRoot(keys.publicKeyPem).ok).toBe(true);
+    });
+    it('the retired key can no longer sign, even after reopen', async () => {
+        const { ledger, path, keys } = await setup(); runOne(ledger, 'a');
+        const next = generateReceiptKeyPair(); ledger.rotateSigner(createEd25519Signer(next.privateKeyPem), next.publicKeyPem);
+        const old = new ProcedureApprovalLedger(path, { signer: createEd25519Signer(keys.privateKeyPem) }); handles.push(old);
+        expect(() => runOne(old, 'c')).toThrow('retired');
+        expect(old.verifyChainFromRoot(keys.publicKeyPem).ok).toBe(true);
+    });
+    it('rejects forged, edited or removed rotations and a mismatched new key', async () => {
+        const { ledger, path, keys } = await setup(); runOne(ledger, 'a');
+        const next = generateReceiptKeyPair();
+        expect(() => ledger.rotateSigner(createEd25519Signer(next.privateKeyPem), generateReceiptKeyPair().publicKeyPem)).toThrow('does not match');
+        ledger.rotateSigner(createEd25519Signer(next.privateKeyPem), next.publicKeyPem); runOne(ledger, 'b');
+        const raw = new Database(path);
+        const rot = raw.prepare('SELECT * FROM procedure_receipt_rotations').get() as Record<string, unknown>;
+        // attacker swaps in their own key as the "new" key: signature no longer matches
+        const evil = generateReceiptKeyPair();
+        raw.prepare('UPDATE procedure_receipt_rotations SET payload=replace(payload,?,?) WHERE seq=?').run(JSON.stringify(next.publicKeyPem).slice(1, -1), JSON.stringify(evil.publicKeyPem).slice(1, -1), rot.seq);
+        expect(ledger.verifyChainFromRoot(keys.publicKeyPem).ok).toBe(false);
+        raw.prepare('UPDATE procedure_receipt_rotations SET payload=? WHERE seq=?').run(rot.payload, rot.seq);
+        expect(ledger.verifyChainFromRoot(keys.publicKeyPem).ok).toBe(true);
+        raw.prepare('DELETE FROM procedure_receipt_rotations WHERE seq=?').run(rot.seq); // removing it makes the new-key receipt unverifiable
+        expect(ledger.verifyChainFromRoot(keys.publicKeyPem).ok).toBe(false);
+        raw.close();
+    });
+    it('a second rotation chains from the first and reusing a key is refused', async () => {
+        const { ledger, keys } = await setup(); runOne(ledger, 'a');
+        const k2 = generateReceiptKeyPair(), k3 = generateReceiptKeyPair();
+        ledger.rotateSigner(createEd25519Signer(k2.privateKeyPem), k2.publicKeyPem); runOne(ledger, 'b');
+        ledger.rotateSigner(createEd25519Signer(k3.privateKeyPem), k3.publicKeyPem); runOne(ledger, 'c');
+        expect(ledger.verifyChainFromRoot(keys.publicKeyPem)).toEqual({ ok: true, entries: 3, rotations: 2 });
+        const k4 = generateReceiptKeyPair();
+        expect(() => ledger.rotateSigner(createEd25519Signer(keys.privateKeyPem), keys.publicKeyPem)).toThrow();
+        void k4;
+    });
+});
