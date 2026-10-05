@@ -6,6 +6,7 @@
 import React from 'react';
 import { useActiveTool, useCanvasStore } from '../store/useCanvasStore';
 import type { CanvasTool } from '../../../types/canvas';
+import { api } from '../../../utils/api';
 
 interface ToolButtonProps {
     tool: CanvasTool;
@@ -175,9 +176,26 @@ export const ToolbarPanel: React.FC = () => {
 
                 {/* Manual Sync Button */}
                 <button
-                    onClick={() => {
-                        // TODO: Implement manual sync
+                    id="canvas-sync-btn"
+                    onClick={async (e) => {
                         console.log('[Canvas] Manual sync triggered');
+                        const doc = useCanvasStore.getState().document;
+                        if (!doc) return;
+                        
+                        const target = e.currentTarget;
+                        target.style.opacity = '0.5';
+                        try {
+                            await api.post('/v1/drive/upload-content', {
+                                fileName: `canvas_sync_${doc.id}.json`,
+                                content: JSON.stringify(doc),
+                                mimeType: 'application/json'
+                            });
+                            console.log('[Canvas] Sync successful');
+                        } catch (err) {
+                            console.error('[Canvas] Sync failed:', err);
+                        } finally {
+                            target.style.opacity = '1';
+                        }
                     }}
                     className="w-10 h-10 flex items-center justify-center rounded-lg bg-slate-700 text-slate-400 hover:bg-cyan-600 hover:text-white transition-all group relative"
                 >

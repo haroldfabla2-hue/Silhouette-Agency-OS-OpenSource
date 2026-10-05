@@ -304,10 +304,11 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ currentUserRole, onChangeRole, 
     };
 
     // --- STREAMING HANDLER ---
-    const handleSend = async () => {
-        if (!input.trim() && !selectedFile) return;
+    const handleSend = async (overrideText?: string | React.MouseEvent) => {
+        const textToSend = typeof overrideText === 'string' ? overrideText : input;
+        if (!textToSend.trim() && !selectedFile) return;
 
-        let userText = input;
+        let userText = textToSend;
 
         // [PHASE 15] File Upload Handling
         if (selectedFile) {
@@ -343,7 +344,9 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ currentUserRole, onChangeRole, 
             }
         }
 
-        setInput('');
+        if (typeof overrideText !== 'string') {
+            setInput('');
+        }
         setIsTyping(true);
 
         // Optimistic Update
@@ -601,7 +604,11 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ currentUserRole, onChangeRole, 
                                                                     }}
                                                                     onAction={(action, asset) => {
                                                                         console.log('[Chat] Asset action:', action, asset);
-                                                                        // TODO: Implement regenerate, upscale, etc.
+                                                                        if (action === 'regenerate') {
+                                                                            handleSend(`Please regenerate the asset: ${asset.id}`);
+                                                                        } else if (action === 'upscale') {
+                                                                            handleSend(`Please upscale the asset: ${asset.id}`);
+                                                                        }
                                                                     }}
                                                                 />
                                                             </Suspense>
@@ -770,7 +777,11 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ currentUserRole, onChangeRole, 
                         onClose={() => setLightboxAsset(null)}
                         onAction={(action, asset) => {
                             console.log('[Lightbox] Action:', action, asset);
-                            // TODO: Implement regenerate action via API
+                            if (action === 'regenerate') {
+                                handleSend(`Please regenerate the asset: ${asset.id}`);
+                            } else if (action === 'upscale') {
+                                handleSend(`Please upscale the asset: ${asset.id}`);
+                            }
                         }}
                     />
                 </Suspense>

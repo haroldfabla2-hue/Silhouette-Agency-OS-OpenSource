@@ -1,4 +1,6 @@
 import { Agent, AgentStatus, AgentRoleType, Project, WorkflowStage, AgentCapability, SystemMode, BusinessType, AgentTier, AgentCategory, SystemProtocol, InterAgentMessage, Squad, ServiceStatus, IntrospectionLayer } from '../types';
+import fs from 'fs';
+import path from 'path';
 import { sqliteService } from './sqliteService';
 import { workflowEngine } from './workflowEngine';
 import { INITIAL_AGENTS, KERNEL_COMPLEXITY_THRESHOLD } from "../constants";
@@ -1130,20 +1132,19 @@ JSON ONLY:
     private generateSquadsStructureOnly() {
         console.log("[ORCHESTRATOR] 🏗️ Reconstructing Squads from Persistent Memory...");
 
-        // 1. Define Base Squad Structure (The skeletons)
-        // Ideally this should also be persisted, but for now we reconstruct the 'teams' 
-        // and populate them with the agents we actually have on disk.
-
-        // Use the same definitions as Genesis, but empty members
-        this.squads = [
-            { id: 'TEAM_CORE', name: 'Orchestration Command', leaderId: 'core-01', members: [], category: 'CORE', active: true, port: 8000 },
-            { id: 'TEAM_STRATEGY', name: 'Strategic Planning HQ', leaderId: 'strat-01', members: [], category: 'OPS', active: false, port: 8001 },
-            { id: 'TEAM_CONTEXT', name: 'Context Transcendence', leaderId: 'ctx-01', members: [], category: 'DATA', active: false, port: 8002 },
-            { id: 'TEAM_OPTIMIZE', name: 'Workflow Optimizer', leaderId: 'opt-01', members: [], category: 'OPS', active: false, port: 8003 },
-            { id: 'TEAM_QA', name: 'The Inquisitors (QA)', leaderId: 'qa-01', members: [], category: 'OPS', active: false, port: 8004 },
-            { id: 'TEAM_FIX', name: 'The Mechanics (Fix)', leaderId: 'fix-01', members: [], category: 'DEV', active: false, port: 8005 },
-            { id: 'TEAM_SCIENCE', name: 'Innovation Labs', leaderId: 'sci-01', members: [], category: 'SCIENCE', active: false, port: 8006 }
-        ];
+        const squadsPath = path.resolve(process.cwd(), 'data', 'squads.json');
+        try {
+            if (fs.existsSync(squadsPath)) {
+                const squadsData = fs.readFileSync(squadsPath, 'utf-8');
+                this.squads = JSON.parse(squadsData);
+            } else {
+                console.warn("[ORCHESTRATOR] data/squads.json not found. Initializing with empty squads array.");
+                this.squads = [];
+            }
+        } catch (e) {
+            console.error("[ORCHESTRATOR] Error loading squads configuration", e);
+            this.squads = [];
+        }
 
         // Re-add Domain Squads (Dynamic Ones)
         // We scan the known agents to find Squads that might not be in the hardcoded list

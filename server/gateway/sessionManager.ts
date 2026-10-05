@@ -65,6 +65,7 @@ class SessionManager {
     // ── Create ────────────────────────────────────────────────────────────
 
     createSession(opts?: {
+        id?: string;
         channel?: string;
         clientId?: string;
         agentId?: string;
@@ -77,7 +78,7 @@ class SessionManager {
         }
 
         const session: Session = {
-            id: uuidv4(),
+            id: opts?.id ?? uuidv4(),
             createdAt: Date.now(),
             lastActiveAt: Date.now(),
             title: opts?.title,
@@ -123,13 +124,9 @@ class SessionManager {
             }
 
             // Create the initial global session if it doesn't exist
-            const newOpts = { ...opts, title: 'Omni-Channel Global Brain' };
+            const newOpts = { ...opts, id: globalId, title: 'Omni-Channel Global Brain' };
             const newSession = this.createSession(newOpts);
 
-            // Re-map the generated UUID back to the hardcoded global ID
-            this.sessions.delete(newSession.id);
-            newSession.id = globalId;
-            this.sessions.set(globalId, newSession);
             return newSession;
         }
 

@@ -148,7 +148,7 @@ export function startGoogleAuth(): void {
     const left = (screen.width - width) / 2;
     const top = (screen.height - height) / 2;
 
-    // TODO: Backend should include state param in OAuth URL
+    // Backend includes state param in OAuth URL to preserve session through redirect
     const authUrl = `/v1/drive/auth?state=${encodeURIComponent(fingerprint)}`;
 
     window.open(
