@@ -120,6 +120,12 @@ export class ProcedureApprovalLedger {
         const r = this.db.prepare('SELECT r.seq,r.run_id,r.payload,r.entry_hash,r.signature,r.key_id FROM procedure_receipts r JOIN procedure_runs u ON u.run_id=r.run_id WHERE r.run_id=? AND u.owner_id=?').get(runId, ownerId) as { seq: number; run_id: string; payload: string; entry_hash: string; signature: string; key_id: string } | undefined;
         return r && { seq: r.seq, runId: r.run_id, payload: r.payload, entryHash: r.entry_hash, signature: r.signature, keyId: r.key_id };
     }
+    /** Chain head: seq, entry hash and signer key id of the newest signed receipt, or undefined when nothing is signed.
+     *  Operator-level read for external anchoring; deliberately exposes no payload or receipt body. */
+    chainHead(): { seq: number; entryHash: string; keyId: string } | undefined {
+        const r = this.db.prepare('SELECT seq,entry_hash,key_id FROM procedure_receipts ORDER BY seq DESC LIMIT 1').get() as { seq: number; entry_hash: string; key_id: string } | undefined;
+        return r && { seq: r.seq, entryHash: r.entry_hash, keyId: r.key_id };
+    }
     /** Checks signature AND that the signed payload still equals the live run row (state, receipt, identity). */
     verifyRun(runId: string, ownerId: string, publicKeyPem: string): boolean {
         const e = this.signedReceipt(runId, ownerId);
