@@ -9,6 +9,7 @@ import { redisClient } from "./redisClient";
 import { systemBus } from "./systemBus";
 import { SystemProtocol, AgentCategory } from "../types";
 import { janitor } from "./contextJanitor";
+import { applyBudgetToFields } from "./context/contextBudget";
 
 // [PA-045] Codebase RAG Integration
 import { codebaseAwareness } from "./codebaseAwareness";
@@ -92,6 +93,8 @@ export interface GlobalContext {
     graphConnections: string;
     codeSnippets: string;
     contextIntegrity: 'VERIFIED' | 'COMPROMISED';
+    // [PA-041-FIX] Honest degradation/notes (e.g. over-cap state, unimplemented graph fetch)
+    contextNotes: string[];
     chatHistory: { role: string; content: string }[];
     // [PA-041] Priority metadata
     priorityOrder: ContextPriority[];           // Order in which context was assembled
@@ -107,7 +110,7 @@ class ContextAssembler {
     // Cache for performance optimization
     private cachedContext: GlobalContext | null = null;
     private lastCacheTime: number = 0;
-    private lastQuery: string | undefined = undefined;
+    private lastCacheKey: string | undefined = undefined;
 
     constructor() {
         console.log("[CONTEXT ASSEMBLER] 🧠 Initializing Omniscient Cortex...");
@@ -153,7 +156,7 @@ class ContextAssembler {
      * [PA-041] Build prioritized context items with token estimates
      * Maps context keys to their priority levels and calculates token usage
      */
-    private buildPrioritizedItems(contextMap: Record<string, string>, activeBudget?: TokenBudgetConfig): PrioritizedContextItem[] {
+    private buildPrioritizedItems(contextMap: Record<string, string>): PrioritizedContextItem[] {
         // Priority mapping for each context type
         const priorityMap: Record<string, ContextPriority> = {
             systemMetrics: ContextPriority.SYSTEM,
@@ -167,28 +170,16 @@ class ContextAssembler {
         };
 
         const items: PrioritizedContextItem[] = [];
-        const budgetToUse = activeBudget || this.tokenBudget;
-        const availableBudget = budgetToUse.totalBudget - budgetToUse.reservedForResponse;
 
         for (const [key, content] of Object.entries(contextMap)) {
             const priority = priorityMap[key] || ContextPriority.SYSTEM;
             const originalLength = content?.length || 0;
-            const tokenEstimate = this.estimateTokens(content);
 
-            // Calculate max tokens for this priority
-            const allocationPercent = budgetToUse.priorityAllocations[priority] || 10;
-            const maxTokens = Math.floor((availableBudget * allocationPercent) / 100);
-
-            // Truncate if needed (except IMMEDIATE priority)
-            let finalContent = content || '';
-            let truncated = false;
-
-            if (priority !== ContextPriority.IMMEDIATE && tokenEstimate > maxTokens && maxTokens > 0) {
-                // Truncate to fit budget (estimate char count from token count)
-                const maxChars = maxTokens * 4;
-                finalContent = content.substring(0, maxChars) + '... [truncated]';
-                truncated = true;
-            }
+            // [PA-041-FIX] Measurement only: injected text fields are bounded
+            // beforehand by applyBudgetToFields, so this breakdown describes
+            // exactly what is returned to callers (and injected downstream).
+            const finalContent = content || '';
+            const truncated = false;
 
             items.push({
                 priority,
@@ -235,9 +226,13 @@ class ContextAssembler {
      */
     public async getGlobalContext(query?: string, options?: { mode?: 'FAST' | 'DEEP' }): Promise<GlobalContext> {
         const start = Date.now();
+        const fetchMode = options?.mode || 'FAST';
+        const cacheKey = `${query ?? ''}|${fetchMode}|${brainBridge.isEnabled()}`;
 
-        // [OPTIMIZATION] TTL Cache (2s) to prevent hardware thrashing
-        if (this.cachedContext && (start - this.lastCacheTime < 2000) && this.lastQuery === query) {
+        // [OPTIMIZATION] TTL Cache (2s) to prevent hardware thrashing.
+        // [PA-041-FIX] Key includes mode and brain state: a DEEP request right
+        // after a FAST one with the same query must not receive FAST content.
+        if (this.cachedContext && (start - this.lastCacheTime < 2000) && this.lastCacheKey === cacheKey) {
             return this.cachedContext;
         }
 
@@ -272,7 +267,6 @@ class ContextAssembler {
         // Adaptive Timeouts:
         // FAST: Real-time chat (5s)
         // DEEP: Autonomous agents, research, coding (60s)
-        const fetchMode = options?.mode || 'FAST';
         const TIMEOUT_MS = fetchMode === 'DEEP' ? 60000 : 5000;
 
         // [PA-045] Adaptive Token Budgets
@@ -307,22 +301,36 @@ class ContextAssembler {
         const goal = narrative.getState();
 
         // C. Heavy IO Operations (Parallel)
+        // [PA-041-FIX] Fallbacks are tracked: a source that timed out or
+        // failed is reported in degradedSources/contextIntegrity instead of
+        // degrading silently.
+        const degraded: string[] = [];
+        const tracked = <T>(name: string, promise: Promise<T>, ms: number, fallback: T): Promise<T> =>
+            this.timeoutPromise<{ value: T; ok: boolean }>(
+                promise.then(value => ({ value, ok: true })),
+                ms,
+                { value: fallback, ok: false }
+            ).then(result => {
+                if (!result.ok) degraded.push(name);
+                return result.value;
+            });
+
         const memoryPromise = query
-            ? this.timeoutPromise(continuum.getCombinedContext(query), TIMEOUT_MS, { semantic: [], recent: [] })
+            ? tracked('memory', continuum.getCombinedContext(query), TIMEOUT_MS, { semantic: [], recent: [] })
             : Promise.resolve({ semantic: [], recent: [] });
 
         const graphPromise = query
-            ? this.timeoutPromise(this.fetchGraphContext(query), TIMEOUT_MS, "")
+            ? tracked('graph', this.fetchGraphContext(query), TIMEOUT_MS, "")
             : Promise.resolve("");
 
         const ragPromise = query
-            ? this.timeoutPromise(codebaseAwareness.query(query), TIMEOUT_MS + 200, "") // Give RAG a bit more time
+            ? tracked('codebase', codebaseAwareness.query(query), TIMEOUT_MS + 200, "") // Give RAG a bit more time
             : Promise.resolve("");
 
         // [BRAIN] External 4-Tier memory recall (optional, never blocks the loop).
         // Synthesis is only requested in DEEP mode to keep the chat hot-path fast.
         const brainPromise = (query && brainBridge.isEnabled())
-            ? this.timeoutPromise(
+            ? tracked('brain',
                 brainBridge.getContextBlock(query, { synthesize: fetchMode === 'DEEP' }).then(b => b.text),
                 TIMEOUT_MS,
                 ""
@@ -360,10 +368,22 @@ class ContextAssembler {
             memoryText += brainText;
         }
 
+        // [PA-041-FIX] The token budget now bounds the fields that are actually
+        // injected downstream (geminiService reads these raw fields). Before this
+        // change only the dashboard breakdown was truncated, not the prompt.
+        const bounded = applyBudgetToFields([
+            { key: 'relevantMemory', priority: ContextPriority.MEMORY, content: memoryText },
+            { key: 'graphConnections', priority: ContextPriority.GRAPH, content: graphText },
+            { key: 'codeSnippets', priority: ContextPriority.CODEBASE, content: codeSnippets }
+        ], activeBudget);
+        memoryText = bounded.fields.relevantMemory;
+        const boundedGraph = bounded.fields.graphConnections;
+        const boundedCode = bounded.fields.codeSnippets;
+
         // [PA-041] Build prioritized context items
         // Note: We fetch history separately? Or is it fast enough? 
         // continuum.getSessionHistory is usually DB access. Let's make it parallel too preferably, but for now linear is ok as it's key.
-        const chatHistoryData = this.formatHistory(await continuum.getSessionHistory(1000));
+        const chatHistoryData = this.formatHistory(await continuum.getSessionHistory(1000), activeBudget);
 
         const prioritizedItems: PrioritizedContextItem[] = this.buildPrioritizedItems(
             {
@@ -372,43 +392,24 @@ class ContextAssembler {
                 screenContext: JSON.stringify(screen),
                 narrativeState: JSON.stringify(goal),
                 relevantMemory: memoryText,
-                graphConnections: graphText,
-                codeSnippets: codeSnippets,
+                graphConnections: boundedGraph,
+                codeSnippets: boundedCode,
                 chatHistory: JSON.stringify(chatHistoryData)
-            },
-            activeBudget // Pass the temporary active budget
+            }
         );
 
-        // Calculate total tokens used
-        let totalTokensUsed = prioritizedItems.reduce((sum, item) => sum + item.tokenEstimate, 0);
+        // [PA-041-FIX] Truthful totals: the injected text fields are already
+        // budget-bounded. If small structured state fields still push the total
+        // over the cap, report it instead of trimming a copy the model never sees.
+        const totalTokensUsed = prioritizedItems.reduce((sum, item) => sum + item.tokenEstimate, 0);
 
-        // Get available budget for strict enforcement
-        const availableBudget = this.tokenBudget.totalBudget - this.tokenBudget.reservedForResponse;
-
+        const contextNotes: string[] = [];
+        const availableBudget = activeBudget.totalBudget - activeBudget.reservedForResponse;
         if (totalTokensUsed > availableBudget) {
-            console.warn(`[CONTEXT] ⚠️ Total budget exceeded (${totalTokensUsed}/${availableBudget} tokens). Trimming from lowest priority...`);
-
-            // Priority order is 1 (Highest) to 7 (Lowest)
-            // Reverse to start trimming from lowest priority (7)
-            const sortedForTrimming = [...prioritizedItems].sort((a, b) => b.priority - a.priority);
-
-            for (const item of sortedForTrimming) {
-                if (totalTokensUsed <= availableBudget) break;
-                if (item.priority === ContextPriority.IMMEDIATE) continue; // Never trim critical info
-
-                const excess = totalTokensUsed - availableBudget;
-                const reduction = Math.min(item.tokenEstimate, excess);
-
-                // Severe trim: drop the item content significantly
-                const newTokens = item.tokenEstimate - reduction;
-                const newChars = Math.max(0, newTokens * 4);
-
-                item.content = item.content.substring(0, newChars) + '... [budget cap reached]';
-                item.tokenEstimate = this.estimateTokens(item.content);
-                item.truncated = true;
-
-                totalTokensUsed = prioritizedItems.reduce((sum, item) => sum + item.tokenEstimate, 0);
-            }
+            contextNotes.push(`budget:over-cap-by-${totalTokensUsed - availableBudget}`);
+        }
+        if (query && !boundedGraph) {
+            contextNotes.push('graph:text-fetch-not-implemented');
         }
 
         const result: GlobalContext = {
@@ -417,9 +418,10 @@ class ContextAssembler {
             screenContext: screen,
             narrativeState: goal,
             relevantMemory: memoryText,
-            graphConnections: graphText,
-            codeSnippets: codeSnippets,
-            contextIntegrity: 'VERIFIED',
+            graphConnections: boundedGraph,
+            codeSnippets: boundedCode,
+            contextIntegrity: degraded.length > 0 ? 'COMPROMISED' : 'VERIFIED',
+            contextNotes,
             chatHistory: chatHistoryData,
             priorityOrder: [
                 ContextPriority.IMMEDIATE,
@@ -437,7 +439,7 @@ class ContextAssembler {
 
         this.cachedContext = result;
         this.lastCacheTime = Date.now();
-        this.lastQuery = query;
+        this.lastCacheKey = cacheKey;
 
         // console.log(`[CONTEXT] ⚡ Assembled in ${Date.now() - start}ms`);
         return result;
@@ -476,15 +478,15 @@ class ContextAssembler {
     // ... (rest of methods)
 
     // REPLACED: formatHistory is now delegated to ContextCompactionService
-    private formatHistory(history: { role: string; content: string }[]): { role: string; content: string }[] {
+    private formatHistory(history: { role: string; content: string }[], budget: TokenBudgetConfig = this.tokenBudget): { role: string; content: string }[] {
         if (!history) return [];
 
         // Use the new Compaction Service
-        // Budget for conversation history is calculated from our TokenBudget
-        // DEFAULT_TOKEN_BUDGET.priorityAllocations[ContextPriority.CONVERSATION] is percentage (e.g. 30%)
+        // Budget for conversation history is calculated from the ACTIVE budget
+        // (adaptive: DEEP/code queries shrink conversation allocation).
 
-        const availableBudget = this.tokenBudget.totalBudget - this.tokenBudget.reservedForResponse;
-        const convPercent = this.tokenBudget.priorityAllocations[ContextPriority.CONVERSATION] || 30;
+        const availableBudget = budget.totalBudget - budget.reservedForResponse;
+        const convPercent = budget.priorityAllocations[ContextPriority.CONVERSATION] || 30;
         const conversationBudget = Math.floor((availableBudget * convPercent) / 100);
 
         return contextCompaction.compactHistory(history, {
