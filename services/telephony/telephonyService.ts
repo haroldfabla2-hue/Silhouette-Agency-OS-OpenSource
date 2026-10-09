@@ -202,6 +202,11 @@ export class TelephonyService {
                     status = 'FAILED';
                 } else {
                     const body = new URLSearchParams({ To: params.toNumber, From: fromNumber, Url: webhookUrl });
+                    try {
+                        // Provider status callbacks come back to the same public origin.
+                        body.set('StatusCallback', new URL('/v1/voices/status', webhookUrl).toString());
+                        body.set('StatusCallbackEvent', 'initiated ringing answered completed');
+                    } catch { /* invalid URL is surfaced by the provider response */ }
                     const res = await fetch(endpoint, {
                         method: 'POST',
                         headers: { 'Authorization': `Basic ${authHeader}`, 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -636,10 +641,20 @@ ${fullTranscriptText}
         return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say voice="Polly.Joanna-Neural">${greeting}</Say>
-    <Gather input="speech" timeout="4" action="/v1/voice/twiml-gather">
+    <Gather input="speech" timeout="4" action="/v1/voices/twiml-gather">
         <Say>Please speak your request after the tone.</Say>
     </Gather>
 </Response>`;
+    }
+
+    /** Finds a call by the provider SID (used by webhooks). */
+    public getCallByProviderSid(sid: string): TelephonyCall | null {
+        for (const c of this.activeCalls.values()) if (c.providerCallSid === sid) return c;
+        this.initializeSchema();
+        try {
+            const row = sqliteService.db.prepare(`SELECT id FROM telephony_calls WHERE provider_call_sid = ?`).get(sid) as any;
+            return row ? this.getCall(row.id) : null;
+        } catch { return null; }
     }
 
     /**

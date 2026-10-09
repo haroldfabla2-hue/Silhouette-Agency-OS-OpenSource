@@ -3,7 +3,8 @@
  * API endpoints for voice library and cloning management
  */
 
-import { Router, Request, Response } from 'express';
+import express, { Router, Request, Response } from 'express';
+import { verifyTwilioSignature, escapeXml } from '../../../services/telephony/twilioSignature';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -350,19 +351,64 @@ router.get('/default', async (_req: Request, res: Response) => {
 // ==================== TELEPHONY & PHONE CALL WEBHOOKS ====================
 
 /**
- * POST /v1/voices/twiml
- * Incoming / Outbound Twilio Voice webhook returning TwiML
+ * Twilio webhooks: form-encoded, signature-verified, fail-closed.
+ * No auth token or no public URL configured => 503 (never accept unsigned traffic).
  */
-router.post('/twiml', async (_req: Request, res: Response) => {
+const twilioForm = express.urlencoded({ extended: false, limit: '100kb' });
+function requireTwilioSignature(req: Request, res: Response, next: () => void) {
+    const token = process.env.TWILIO_AUTH_TOKEN;
+    const base = process.env.SILHOUETTE_VOICE_WEBHOOK;
+    if (!token || !base) {
+        return res.status(503).type('text/plain').send('UNAVAILABLE: Twilio webhook verification is not configured.');
+    }
+    let fullUrl: string;
+    try { fullUrl = new URL(req.originalUrl, base).toString(); } catch { return res.status(503).type('text/plain').send('UNAVAILABLE: invalid SILHOUETTE_VOICE_WEBHOOK.'); }
+    const params: Record<string, string> = {};
+    for (const [k, v] of Object.entries((req.body || {}) as Record<string, unknown>)) params[k] = String(v);
+    const sig = req.header('X-Twilio-Signature');
+    if (!verifyTwilioSignature(token, fullUrl, params, sig)) {
+        return res.status(403).type('text/plain').send('Invalid signature.');
+    }
+    next();
+}
+
+/** POST /v1/voices/twiml - call answered, returns TwiML. */
+router.post('/twiml', twilioForm, requireTwilioSignature, async (_req: Request, res: Response) => {
     try {
         const { telephonyService } = await import('../../../services/telephony/telephonyService');
         const greeting = "Hello, this is Silhouette Agency OS. How can I assist you today?";
-        const twiml = telephonyService.generateInboundTwiML(greeting);
         res.type('text/xml');
-        return res.send(twiml);
+        return res.send(telephonyService.generateInboundTwiML(greeting));
     } catch (e: any) {
-        return res.status(500).send('<Response><Say>An internal error occurred.</Say></Response>');
+        return res.status(500).type('text/xml').send('<Response><Say>An internal error occurred.</Say></Response>');
     }
+});
+
+/** POST /v1/voices/twiml-gather - caller speech result, returns next TwiML turn. */
+router.post('/twiml-gather', twilioForm, requireTwilioSignature, async (req: Request, res: Response) => {
+    res.type('text/xml');
+    try {
+        const { telephonyService } = await import('../../../services/telephony/telephonyService');
+        const sid = String(req.body?.CallSid || '');
+        const speech = String(req.body?.SpeechResult || '').trim();
+        const call = sid ? telephonyService.getCallByProviderSid(sid) : null;
+        if (!call) return res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Say>Sorry, I could not find this call.</Say><Hangup/></Response>');
+        if (!speech) {
+            return res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Gather input="speech" timeout="4" action="/v1/voices/twiml-gather"><Say>I did not catch that. Please repeat.</Say></Gather></Response>');
+        }
+        const turn = await telephonyService.processCallTurn(call.id, speech);
+        const reply = escapeXml(turn.agentResponse || '');
+        return res.send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say>${reply}</Say><Gather input="speech" timeout="4" action="/v1/voices/twiml-gather"/></Response>`);
+    } catch {
+        return res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Say>An internal error occurred.</Say></Response>');
+    }
+});
+
+/** POST /v1/voices/status - provider status callback; the only way a real call advances. */
+router.post('/status', twilioForm, requireTwilioSignature, async (req: Request, res: Response) => {
+    const { telephonyService } = await import('../../../services/telephony/telephonyService');
+    const updated = telephonyService.applyProviderStatus(String(req.body?.CallSid || ''), String(req.body?.CallStatus || ''));
+    return res.status(200).json({ ok: true, changed: !!updated });
 });
 
 /**
@@ -378,6 +424,7 @@ router.post('/dial', async (req: Request, res: Response) => {
 
         const { telephonyService } = await import('../../../services/telephony/telephonyService');
         const result = await telephonyService.dial({ toNumber, purpose, initialGreeting });
+        if (result.error) return res.status(502).json({ success: false, error: result.error, call: result.call });
         return res.json({ success: true, call: result.call });
     } catch (e: any) {
         return res.status(500).json({ error: e.message });
