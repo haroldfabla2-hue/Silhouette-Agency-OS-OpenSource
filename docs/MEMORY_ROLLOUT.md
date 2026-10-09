@@ -73,6 +73,6 @@ writes and reads, not simulated execution.
 Five additional real tests, no mocks/skips added. Full local suite: 24 files,
 171/171 passing on Node 22. Full lint: zero errors, 400 pre-existing warnings.
 Local full typecheck could not complete within the 2 GB workspace budget and
-triggered an execution outage. Node 20/22 CI must independently validate full
+triggered an execution outage. Node 22.18/22 CI must independently validate full
 lint/typecheck/tests/builds. Existing audit tolerates known vulnerabilities;
 CI green must not be described as security clean.

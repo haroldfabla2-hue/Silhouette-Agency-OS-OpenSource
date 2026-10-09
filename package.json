@@ -11,6 +11,9 @@
   "bin": {
     "silhouette": "./cli/index.ts"
   },
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "scripts": {
     "start": "node dist/server/index.js",
     "test": "vitest run",
