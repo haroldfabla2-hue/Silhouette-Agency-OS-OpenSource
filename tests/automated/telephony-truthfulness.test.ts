@@ -62,10 +62,12 @@ describe('Telephony: no false successes (regressions)', () => {
         expect(r.call.isSimulated).toBe(true);
     });
 
+    let n = 0;
     const liveCall = async () => {
-        globalThis.fetch = vi.fn(async () => resp(201, { sid: 'CAlive' })) as any;
+        const sid = `CAlive${++n}`;
+        globalThis.fetch = vi.fn(async () => resp(201, { sid })) as any;
         const r = await telephonyService.dial({ toNumber: '+15550100', purpose: 'x' });
-        telephonyService.applyProviderStatus('CAlive', 'in-progress');
+        telephonyService.applyProviderStatus(sid, 'in-progress');
         return r.call.id;
     };
 
