@@ -12,6 +12,7 @@ import path from 'path';
 import { systemBus } from '../systemBus';
 import { SystemProtocol } from '../../types';
 import { requiresPaymentApproval, ClickDescriptor } from './paymentGate';
+import { defaultPaymentApproval } from './paymentApproval';
 
 export interface VisualElement {
     id: number;
@@ -59,22 +60,7 @@ export class VisualBrowserEngine {
      * ActionExecutor (human in the loop, single-use grant bound to this destination).
      * Tests can inject their own. Returning false (or throwing) blocks the click.
      */
-    private approvalProvider: (d: ClickDescriptor) => Promise<boolean> = async (d) => {
-        const { actionExecutor } = await import('../actionExecutor');
-        let host = '';
-        try { host = new URL(d.url || '').host; } catch { /* unknown host */ }
-        const binding = { type: 'EXECUTE_PAYMENT', destination: host };
-        const grant = await actionExecutor.requestApproval({
-            id: crypto.randomUUID(),
-            agentId: 'visual-browser',
-            type: 'EXECUTE_PAYMENT' as any,
-            payload: { url: d.url, prompt: d.instruction || d.elementText } as any,
-            status: 'PENDING' as any,
-            requiresApproval: true,
-            timestamp: Date.now()
-        }, binding, `Browser click on a payment/commitment control at ${host || 'unknown site'}: "${d.instruction || d.elementText || 'unidentified element'}"`);
-        return !!grant && actionExecutor.verifyApproval(grant.token, binding).ok;
-    };
+    private approvalProvider: (d: ClickDescriptor) => Promise<boolean> = defaultPaymentApproval;
 
     public setApprovalProvider(fn: (d: ClickDescriptor) => Promise<boolean>): void {
         this.approvalProvider = fn;

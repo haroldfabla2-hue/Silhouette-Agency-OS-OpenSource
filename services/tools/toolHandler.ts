@@ -169,6 +169,8 @@ export class ToolHandler {
                 return await this.handleBrowserVisualAct(args as any);
             case 'browser_visual_observe':
                 return await this.handleBrowserVisualObserve(args as any);
+            case 'browser_ai_perception':
+                return await this.handleBrowserAiPerception(args as any);
             case 'browser_visual_overlay':
                 return await this.handleBrowserVisualOverlay();
             case 'browser_click_coordinate':
@@ -1967,6 +1969,17 @@ export class ToolHandler {
             };
         } catch (e: any) {
             return { error: `Visual observe failed: ${e.message}` };
+        }
+    }
+
+    private async handleBrowserAiPerception(args: any): Promise<any> {
+        const ops = ['status', 'goto', 'observe', 'extract', 'act'];
+        if (!ops.includes(args?.operation)) return { error: `operation must be one of: ${ops.join(', ')}` };
+        try {
+            const { browserService } = await import('../browserService');
+            return await browserService.perception(args.operation, { url: args.url, instruction: args.instruction, text: args.text });
+        } catch (e: any) {
+            return { error: `AI perception failed: ${e.message}` };
         }
     }
 

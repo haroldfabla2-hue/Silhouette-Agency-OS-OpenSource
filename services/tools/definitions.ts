@@ -944,6 +944,21 @@ export const BROWSER_VISUAL_OBSERVE_TOOL: FunctionDeclaration = {
     }
 };
 
+export const BROWSER_AI_PERCEPTION_TOOL: FunctionDeclaration = {
+    name: "browser_ai_perception",
+    description: "AI 'eyes' for the browser (Stagehand). Understands the page semantically ('the pay button', 'the email field') and can act/extract on it. Operations: status (is Stagehand REAL or UNAVAILABLE and what is missing), goto, observe, extract, act. When Stagehand is not configured the call transparently falls back to the built-in visual engine and says so in the result (provider='builtin'). act on payment/commitment controls always requires human approval. Note: Stagehand uses its own browser session, separate from browser_navigate.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            operation: { type: Type.STRING, description: "One of: status, goto, observe, extract, act" },
+            url: { type: Type.STRING, description: "URL for goto" },
+            instruction: { type: Type.STRING, description: "Natural-language goal for observe/extract/act" },
+            text: { type: Type.STRING, description: "Optional text to type (built-in fallback only)" }
+        },
+        required: ["operation"]
+    }
+};
+
 export const BROWSER_VISUAL_OVERLAY_TOOL: FunctionDeclaration = {
     name: "browser_visual_overlay",
     description: "Renders numbered visual badges (Set-of-Marks) on every clickable/interactive element and takes a marked screenshot. Allows 100% precision by choosing an element by ID.",
@@ -1193,6 +1208,7 @@ export const CAPABILITY_TOOLS = [
     BROWSER_SCREENSHOT_TOOL,
     BROWSER_VISUAL_ACT_TOOL,
     BROWSER_VISUAL_OBSERVE_TOOL,
+    BROWSER_AI_PERCEPTION_TOOL,
     BROWSER_VISUAL_OVERLAY_TOOL,
     BROWSER_CLICK_COORDINATE_TOOL,
     BROWSER_CLEAR_OBSTRUCTIONS_TOOL,
