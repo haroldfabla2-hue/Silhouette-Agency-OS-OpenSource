@@ -41,6 +41,7 @@
     "desktop:build:dir": "npm run build && npx vite build --config vite.server.config.ts && electron-builder build --win --dir"
   },
   "dependencies": {
+    "@browserbasehq/stagehand": "^4.2.0",
     "@clack/prompts": "^1.0.1",
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@google/genai": "^1.30.0",
@@ -167,7 +168,12 @@
     ],
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "build/icons/icon.ico",
       "artifactName": "${productName}-Setup-${version}-${arch}.${ext}"
@@ -185,13 +191,18 @@
       "license": "LICENSE"
     },
     "mac": {
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "icon": "build/icons/icon.png",
       "category": "public.app-category.productivity",
       "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "icon": "build/icons/icon.png",
       "category": "Office",
       "artifactName": "${productName}-${version}-${arch}.${ext}"

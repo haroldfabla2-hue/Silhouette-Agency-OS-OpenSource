@@ -1,67 +1,80 @@
-import { chromium, Browser, Page } from 'playwright';
+import { visualBrowserEngine, VisualElement, VisualActionResult } from './browser/visualBrowserEngine';
 
 export class BrowserService {
-    private browser: Browser | null = null;
-    private page: Page | null = null;
-
-    private async init() {
-        if (!this.browser) {
-            this.browser = await chromium.launch({ headless: true });
-        }
-        if (!this.page) {
-            this.page = await this.browser.newPage();
-        }
-    }
-
+    /**
+     * Navigates to a URL safely using anti-bot evasion profiles.
+     */
     public async goto(url: string): Promise<string> {
-        await this.init();
-        await this.page!.goto(url, { waitUntil: 'domcontentloaded' });
-        return this.page!.title();
+        const result = await visualBrowserEngine.goto(url);
+        return result.title;
     }
 
+    /**
+     * Natural language visual action: clicks, types, or interacts with elements
+     * without requiring brittle CSS selectors.
+     */
+    public async act(instruction: string, textToType?: string): Promise<VisualActionResult> {
+        return await visualBrowserEngine.act(instruction, textToType);
+    }
+
+    /**
+     * Inspects the page and returns all currently visible interactive elements
+     * with their spatial coordinates and labels.
+     */
+    public async observe(instruction?: string): Promise<VisualElement[]> {
+        return await visualBrowserEngine.observe(instruction);
+    }
+
+    /**
+     * Direct spatial click by (x, y) coordinates.
+     */
+    public async clickCoordinate(x: number, y: number): Promise<VisualActionResult> {
+        return await visualBrowserEngine.clickCoordinate(x, y);
+    }
+
+    /**
+     * Injects Set-of-Marks visual badges and takes a screenshot with all numbers.
+     */
+    public async renderVisualOverlayAndScreenshot(): Promise<{ elements: VisualElement[]; screenshotPath: string; base64: string }> {
+        return await visualBrowserEngine.renderVisualOverlayAndScreenshot();
+    }
+
+    /**
+     * Legacy CSS selector click with fallback.
+     */
     public async click(selector: string): Promise<void> {
-        await this.init();
-        await this.page!.click(selector);
+        const page = await visualBrowserEngine.init();
+        await page.click(selector);
     }
 
+    /**
+     * Legacy CSS selector fill with fallback.
+     */
     public async type(selector: string, text: string): Promise<void> {
-        await this.init();
-        await this.page!.fill(selector, text);
+        const page = await visualBrowserEngine.init();
+        await page.fill(selector, text);
     }
 
+    /**
+     * Extracts text content from the current page.
+     */
     public async extractText(): Promise<string> {
-        await this.init();
-        return await this.page!.evaluate(() => {
-            document.querySelectorAll('script, style, noscript').forEach(el => el.remove());
-            return document.body.innerText.substring(0, 10000);
-        });
+        const result = await visualBrowserEngine.extract('all text');
+        return result.extractedData?.content || '';
     }
 
+    /**
+     * Takes a screenshot and saves it to disk.
+     */
     public async screenshot(): Promise<{ base64: string; path: string }> {
-        await this.init();
-        const fs = await import('fs');
-        const pathMod = await import('path');
-        const dir = pathMod.resolve(process.cwd(), 'uploads', 'screenshots');
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
-        const filename = `screenshot_${Date.now()}.png`;
-        const filePath = pathMod.join(dir, filename);
-
-        const buffer = await this.page!.screenshot({ fullPage: true });
-        fs.writeFileSync(filePath, buffer);
-
-        return {
-            base64: buffer.toString('base64'),
-            path: filePath
-        };
+        return await visualBrowserEngine.screenshot();
     }
 
-    public async close() {
-        if (this.browser) {
-            await this.browser.close();
-            this.browser = null;
-            this.page = null;
-        }
+    /**
+     * Closes the browser instance.
+     */
+    public async close(): Promise<void> {
+        await visualBrowserEngine.close();
     }
 }
 

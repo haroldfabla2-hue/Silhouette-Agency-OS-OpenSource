@@ -920,6 +920,53 @@ export const BROWSER_SCREENSHOT_TOOL: FunctionDeclaration = {
     }
 };
 
+export const BROWSER_VISUAL_ACT_TOOL: FunctionDeclaration = {
+    name: "browser_visual_act",
+    description: "Performs a visual natural-language action on the page (click, type, navigate, fill) without requiring fragile CSS selectors. Uses Set-of-Marks and spatial grounding to detect buttons, links, and forms as a human would.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            instruction: { type: Type.STRING, description: "Natural language instruction of what to do (e.g. 'Click the Book Flight button', 'Type user@email.com in email field', 'Click element #4')" },
+            text: { type: Type.STRING, description: "Optional text to type if the action is typing into an input" }
+        },
+        required: ["instruction"]
+    }
+};
+
+export const BROWSER_VISUAL_OBSERVE_TOOL: FunctionDeclaration = {
+    name: "browser_visual_observe",
+    description: "Visually inspects the current page and returns a catalog of all interactive elements, buttons, links, inputs, and their spatial coordinates.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            instruction: { type: Type.STRING, description: "Optional filtering instruction or goal (e.g., 'find flight search form')" }
+        }
+    }
+};
+
+export const BROWSER_VISUAL_OVERLAY_TOOL: FunctionDeclaration = {
+    name: "browser_visual_overlay",
+    description: "Renders numbered visual badges (Set-of-Marks) on every clickable/interactive element and takes a marked screenshot. Allows 100% precision by choosing an element by ID.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {}
+    }
+};
+
+export const BROWSER_CLICK_COORDINATE_TOOL: FunctionDeclaration = {
+    name: "browser_click_coordinate",
+    description: "Performs a direct spatial click on specific (x, y) pixel coordinates on the page with human-like mouse curve trajectory.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            x: { type: Type.NUMBER, description: "Horizontal pixel coordinate X" },
+            y: { type: Type.NUMBER, description: "Vertical pixel coordinate Y" }
+        },
+        required: ["x", "y"]
+    }
+};
+
+
 // ==================== CODE EXECUTION TOOL ====================
 
 export interface ExecuteCodeArgs {

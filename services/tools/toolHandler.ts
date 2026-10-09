@@ -1,4 +1,4 @@
-﻿
+
 import { GenerateVideoArgs, ListVisualAssetsArgs, GenerateImageArgs, DelegateTaskArgs, SearchAssetsArgs, ManageAssetArgs, PreviewAssetArgs, CreateToolArgs, RequestCollaborationArgs } from './definitions';
 // ... (existing imports)
 
@@ -165,6 +165,14 @@ export class ToolHandler {
                 return await this.handleBrowserExtract();
             case 'browser_screenshot':
                 return await this.handleBrowserScreenshot();
+            case 'browser_visual_act':
+                return await this.handleBrowserVisualAct(args as any);
+            case 'browser_visual_observe':
+                return await this.handleBrowserVisualObserve(args as any);
+            case 'browser_visual_overlay':
+                return await this.handleBrowserVisualOverlay();
+            case 'browser_click_coordinate':
+                return await this.handleBrowserClickCoordinate(args as any);
 
             default:
                 if (name.startsWith('query_') && name.includes('_db_')) {
@@ -1907,6 +1915,55 @@ export class ToolHandler {
             };
         } catch (e: any) {
             return { error: `Screenshot failed: ${e.message}` };
+        }
+    }
+
+    private async handleBrowserVisualAct(args: any): Promise<any> {
+        try {
+            const { browserService } = await import('../browserService');
+            const result = await browserService.act(args.instruction, args.text);
+            return result;
+        } catch (e: any) {
+            return { error: `Visual act failed: ${e.message}` };
+        }
+    }
+
+    private async handleBrowserVisualObserve(args: any): Promise<any> {
+        try {
+            const { browserService } = await import('../browserService');
+            const elements = await browserService.observe(args.instruction);
+            return {
+                status: "success",
+                count: elements.length,
+                interactive_elements: elements.slice(0, 30)
+            };
+        } catch (e: any) {
+            return { error: `Visual observe failed: ${e.message}` };
+        }
+    }
+
+    private async handleBrowserVisualOverlay(): Promise<any> {
+        try {
+            const { browserService } = await import('../browserService');
+            const result = await browserService.renderVisualOverlayAndScreenshot();
+            return {
+                status: "success",
+                screenshot_path: result.screenshotPath,
+                element_count: result.elements.length,
+                elements: result.elements.map(e => ({ id: e.id, tag: e.tag, text: e.text, center: e.center }))
+            };
+        } catch (e: any) {
+            return { error: `Visual overlay failed: ${e.message}` };
+        }
+    }
+
+    private async handleBrowserClickCoordinate(args: any): Promise<any> {
+        try {
+            const { browserService } = await import('../browserService');
+            const result = await browserService.clickCoordinate(args.x, args.y);
+            return result;
+        } catch (e: any) {
+            return { error: `Coordinate click failed: ${e.message}` };
         }
     }
 }
