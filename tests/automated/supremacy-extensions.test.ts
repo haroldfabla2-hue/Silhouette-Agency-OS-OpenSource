@@ -12,6 +12,7 @@ import { ttsService } from '../../services/ttsService';
 describe('Silhouette Supremacy Extensions (Anti-Instinct Superiority)', () => {
 
     beforeAll(() => {
+        process.env.SILHOUETTE_DEMO_MODE = '1'; // telephony simulation only runs in explicit demo mode
         vi.spyOn(ttsService, 'speak').mockResolvedValue('data:audio/wav;base64,mock_audio');
         vi.spyOn(geminiService, 'generateText').mockResolvedValue('Understood. I am processing that request for you right now.');
         try {
