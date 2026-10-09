@@ -71,8 +71,8 @@ export class BrowserService {
      * Legacy CSS selector click with fallback.
      */
     public async click(selector: string): Promise<void> {
-        const page = await visualBrowserEngine.init();
-        await page.click(selector);
+        const result = await visualBrowserEngine.clickSelector(selector);
+        if (!result.success) throw new Error(result.error || 'click blocked');
     }
 
     /**

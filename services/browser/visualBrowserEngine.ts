@@ -6,9 +6,11 @@
 
 import { chromium, Browser, BrowserContext, Page, ElementHandle } from 'playwright';
 import fs from 'fs/promises';
+import crypto from 'crypto';
 import path from 'path';
 import { systemBus } from '../systemBus';
 import { SystemProtocol } from '../../types';
+import { requiresPaymentApproval, ClickDescriptor } from './paymentGate';
 
 export interface VisualElement {
     id: number;
@@ -50,6 +52,97 @@ export class VisualBrowserEngine {
     private page: Page | null = null;
     private isInitialized: boolean = false;
     private readonly defaultTimeoutMs: number = 30000;
+
+    /**
+     * Human-approval provider for payment-like clicks. Default routes through the
+     * ActionExecutor (human in the loop, single-use grant bound to this destination).
+     * Tests can inject their own. Returning false (or throwing) blocks the click.
+     */
+    private approvalProvider: (d: ClickDescriptor) => Promise<boolean> = async (d) => {
+        const { actionExecutor } = await import('../actionExecutor');
+        let host = '';
+        try { host = new URL(d.url || '').host; } catch { /* unknown host */ }
+        const binding = { type: 'EXECUTE_PAYMENT', destination: host };
+        const grant = await actionExecutor.requestApproval({
+            id: crypto.randomUUID(),
+            agentId: 'visual-browser',
+            type: 'EXECUTE_PAYMENT' as any,
+            payload: { url: d.url, prompt: d.instruction || d.elementText } as any,
+            status: 'PENDING' as any,
+            requiresApproval: true,
+            timestamp: Date.now()
+        }, binding, `Browser click on a payment/commitment control at ${host || 'unknown site'}: "${d.instruction || d.elementText || 'unidentified element'}"`);
+        return !!grant && actionExecutor.verifyApproval(grant.token, binding).ok;
+    };
+
+    public setApprovalProvider(fn: (d: ClickDescriptor) => Promise<boolean>): void {
+        this.approvalProvider = fn;
+    }
+
+    /** Hard gate. Returns a blocking result when approval is required and not granted, else null. */
+    private async gateClick(d: ClickDescriptor, action: string, startTime: number): Promise<VisualActionResult | null> {
+        if (!requiresPaymentApproval(d)) return null;
+        systemBus.emit(SystemProtocol.TELEMETRY_LOG, {
+            service: 'VisualBrowserEngine',
+            event: 'PAYMENT_CLICK_REQUIRES_APPROVAL',
+            action
+        });
+        let approved = false;
+        try { approved = await this.approvalProvider(d); } catch { approved = false; }
+        if (approved) return null;
+        systemBus.emit(SystemProtocol.TELEMETRY_LOG, {
+            service: 'VisualBrowserEngine',
+            event: 'PAYMENT_CLICK_BLOCKED',
+            action
+        });
+        return {
+            success: false,
+            action,
+            error: 'Blocked: payment/commitment action requires explicit human approval.',
+            securityGated: true,
+            executionTimeMs: Date.now() - startTime
+        };
+    }
+
+    /** Describe the element under a point (for gating coordinate clicks). */
+    private async describePoint(page: Page, x: number, y: number): Promise<ClickDescriptor> {
+        try {
+            const d = await page.evaluate(([px, py]) => {
+                const el = document.elementFromPoint(px as number, py as number) as HTMLElement | null;
+                if (!el) return null;
+                const c = (el.closest('button,a,input,[role=button],[type=submit]') as HTMLElement | null) || el;
+                const inp = c as HTMLInputElement;
+                return {
+                    text: [c.innerText, c.getAttribute('aria-label'), inp.value, c.getAttribute('title')].filter(Boolean).join(' '),
+                    type: inp.type || c.getAttribute('type') || ''
+                };
+            }, [x, y]);
+            if (!d) return { elementUnknown: true, url: page.url() };
+            return { elementText: d.text, elementType: d.type, url: page.url() };
+        } catch {
+            return { elementUnknown: true, url: page.url() };
+        }
+    }
+
+    /** Legacy CSS-selector click, now behind the same payment gate. */
+    public async clickSelector(selector: string): Promise<VisualActionResult> {
+        const startTime = Date.now();
+        const page = await this.init();
+        let desc: ClickDescriptor;
+        try {
+            const d = await page.locator(selector).first().evaluate((el: any) => ({
+                text: [el.innerText, el.getAttribute('aria-label'), el.value, el.getAttribute('title')].filter(Boolean).join(' '),
+                type: el.type || el.getAttribute('type') || ''
+            }), undefined, { timeout: 5000 });
+            desc = { elementText: d.text, elementType: d.type, url: page.url() };
+        } catch {
+            desc = { elementUnknown: true, url: page.url() };
+        }
+        const blocked = await this.gateClick(desc, `click(${selector})`, startTime);
+        if (blocked) return blocked;
+        await page.click(selector);
+        return { success: true, action: `click(${selector})`, executionTimeMs: Date.now() - startTime };
+    }
 
     /**
      * Initialize the headless browser with anti-bot evasion profiles.
@@ -360,6 +453,15 @@ export class VisualBrowserEngine {
             };
         }
 
+        // 3b. HARD GATE: payment / irreversible commitment requires human approval BEFORE any interaction
+        const gated = await this.gateClick({
+            instruction,
+            elementText: [target.text, target.ariaLabel, target.placeholder].filter(Boolean).join(' '),
+            elementType: target.type,
+            url: page.url()
+        }, instruction, startTime);
+        if (gated) return gated;
+
         // 4. Perform human-like interaction with jitter and smooth movement
         await page.mouse.move(target.center.x, target.center.y, { steps: 5 });
         await page.waitForTimeout(100);
@@ -404,6 +506,9 @@ export class VisualBrowserEngine {
     public async clickCoordinate(x: number, y: number): Promise<VisualActionResult> {
         const startTime = Date.now();
         const page = await this.init();
+
+        const gated = await this.gateClick(await this.describePoint(page, x, y), `clickCoordinate(${x}, ${y})`, startTime);
+        if (gated) return gated;
 
         await page.mouse.move(x, y, { steps: 8 });
         await page.waitForTimeout(120);
