@@ -41,6 +41,7 @@ SyntaxHighlighter.registerLanguage('md', markdown);
 import { UserRole, ChatMessage, ChatSession, IntrospectionLayer, WorkflowStage, SystemProtocol } from '../types';
 import { MessageCircle, X, Send, User, RotateCcw, Cpu, WifiOff, Globe, Plus, MessageSquare, ChevronLeft, ChevronRight, Trash2, Paperclip, Volume2, Settings } from 'lucide-react';
 import { api, API_BASE_URL } from '../utils/api';
+import { runAssetAction } from './chat/assetActions';
 import { getDonnaGreeting } from '../constants/personalities';
 import type { ParsedAsset } from './chat/AssetRenderer';
 
@@ -304,6 +305,14 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ currentUserRole, onChangeRole, 
     };
 
     // --- STREAMING HANDLER ---
+    // Real asset actions with verified outcome; unsupported ones still go to the agent via chat.
+    const handleAssetAction = async (action: string, asset: any) => {
+        const result = await runAssetAction(action, asset, (path, body) => api.post(path, body));
+        if (result.kind === 'delegate') { handleSend(result.text); return; }
+        const text = result.kind === 'done' ? `${result.message}\n![${asset.id}](${result.url})` : `⚠️ ${result.message}`;
+        setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'system', text, timestamp: Date.now() }]);
+    };
+
     const handleSend = async (overrideText?: string | React.MouseEvent) => {
         const textToSend = typeof overrideText === 'string' ? overrideText : input;
         if (!textToSend.trim() && !selectedFile) return;
@@ -603,12 +612,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ currentUserRole, onChangeRole, 
                                                                         setLightboxAsset(asset);
                                                                     }}
                                                                     onAction={(action, asset) => {
-                                                                        console.log('[Chat] Asset action:', action, asset);
-                                                                        if (action === 'regenerate') {
-                                                                            handleSend(`Please regenerate the asset: ${asset.id}`);
-                                                                        } else if (action === 'upscale') {
-                                                                            handleSend(`Please upscale the asset: ${asset.id}`);
-                                                                        }
+                                                                        handleAssetAction(action, asset);
                                                                     }}
                                                                 />
                                                             </Suspense>
@@ -776,12 +780,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ currentUserRole, onChangeRole, 
                         assets={allAssets}
                         onClose={() => setLightboxAsset(null)}
                         onAction={(action, asset) => {
-                            console.log('[Lightbox] Action:', action, asset);
-                            if (action === 'regenerate') {
-                                handleSend(`Please regenerate the asset: ${asset.id}`);
-                            } else if (action === 'upscale') {
-                                handleSend(`Please upscale the asset: ${asset.id}`);
-                            }
+                            handleAssetAction(action, asset);
                         }}
                     />
                 </Suspense>
