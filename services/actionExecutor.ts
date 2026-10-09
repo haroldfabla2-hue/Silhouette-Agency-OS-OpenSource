@@ -651,8 +651,10 @@ export class ActionExecutor {
             case ActionType.HTTP_REQUEST:
             case 'HTTP_REQUEST':
                 return `HTTP request to: ${action.payload?.url || 'unknown'}`;
-            case 'EXECUTE_PAYMENT':
-                return `PAYMENT: ${action.payload?.merchant || 'unknown merchant'} ${action.payload?.amountCents ?? '?'} cents`;
+            case 'EXECUTE_PAYMENT': {
+                const pay = (action.payload || {}) as { merchant?: string; amountCents?: number };
+                return `PAYMENT: ${pay.merchant || 'unknown merchant'} ${pay.amountCents ?? '?'} cents`;
+            }
             default:
                 return classifyActionType(type).known
                     ? `Execute action: ${action.type}`
