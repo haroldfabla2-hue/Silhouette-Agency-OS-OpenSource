@@ -4,6 +4,9 @@ import path from 'path';
 import { sqliteService } from './sqliteService';
 import { workflowEngine } from './workflowEngine';
 import { INITIAL_AGENTS, KERNEL_COMPLEXITY_THRESHOLD } from "../constants";
+import { loadSquads } from "./squads/squadConfig";
+
+const KERNEL_AND_SPECIALISTS = INITIAL_AGENTS;
 import { systemBus, MessageTag, MessagePriority, EnhancedInterAgentMessage } from "./systemBus"; // [PA-041] Enhanced with Tagging
 import * as si from 'systeminformation';
 import { agentPersistence } from "./agentPersistence";
@@ -1133,18 +1136,10 @@ JSON ONLY:
         console.log("[ORCHESTRATOR] 🏗️ Reconstructing Squads from Persistent Memory...");
 
         const squadsPath = path.resolve(process.cwd(), 'data', 'squads.json');
-        try {
-            if (fs.existsSync(squadsPath)) {
-                const squadsData = fs.readFileSync(squadsPath, 'utf-8');
-                this.squads = JSON.parse(squadsData);
-            } else {
-                console.warn("[ORCHESTRATOR] data/squads.json not found. Initializing with empty squads array.");
-                this.squads = [];
-            }
-        } catch (e) {
-            console.error("[ORCHESTRATOR] Error loading squads configuration", e);
-            this.squads = [];
-        }
+        // Validated load; a missing or broken file falls back to the seed squads and the reason is logged loudly.
+        const loaded = loadSquads(squadsPath, [...KERNEL_AND_SPECIALISTS]);
+        this.squads = loaded.squads;
+        if (loaded.warning) console.warn(`[ORCHESTRATOR] ⚠️ ${loaded.warning}`);
 
         // Re-add Domain Squads (Dynamic Ones)
         // We scan the known agents to find Squads that might not be in the hardcoded list
