@@ -8,6 +8,7 @@ describe('FinancialVault & Autonomous Checkout System (Phase 22)', () => {
     let testCardId: string;
 
     beforeAll(() => {
+        process.env.FINANCIAL_VAULT_KEY = process.env.FINANCIAL_VAULT_KEY || 'test-only-key-not-a-secret';
         process.env.SILHOUETTE_DEMO_MODE = '1'; // cards are DEMO only when explicitly enabled
         try {
             sqliteService.db.exec(`

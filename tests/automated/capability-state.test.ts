@@ -3,6 +3,7 @@ import { isDemoModeEnabled, demoOrUnavailable } from '../../services/security/ca
 import { financialVault } from '../../services/vault/financialVault';
 
 describe('capability states', () => {
+    process.env.FINANCIAL_VAULT_KEY = process.env.FINANCIAL_VAULT_KEY || 'test-only-key-not-a-secret';
     const prev = process.env.SILHOUETTE_DEMO_MODE;
     afterEach(() => { if (prev === undefined) delete process.env.SILHOUETTE_DEMO_MODE; else process.env.SILHOUETTE_DEMO_MODE = prev; });
 

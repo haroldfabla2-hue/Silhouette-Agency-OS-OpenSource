@@ -54,14 +54,15 @@ export interface SpendSummary {
 }
 
 export class FinancialVault {
-    private encryptionKey: Buffer;
+    /** Resolved lazily from the environment (no hardcoded default). Derivation unchanged for stored-card compatibility. */
+    private get encryptionKey(): Buffer | null {
+        const seed = process.env.FINANCIAL_VAULT_KEY || process.env.SYSTEM_SECRET;
+        return seed ? crypto.createHash('sha256').update(seed).digest() : null;
+    }
     private readonly defaultDailyLimitCents = 50000; // $500.00 default daily ceiling
     private isInitialized = false;
 
     constructor() {
-        // Derive master key from environment or fallback to machine-specific anchor
-        const seed = process.env.FINANCIAL_VAULT_KEY || process.env.SYSTEM_SECRET || 'silhouette-vault-anchor-2026';
-        this.encryptionKey = crypto.createHash('sha256').update(seed).digest();
         this.initializeSchema();
     }
 
@@ -110,15 +111,27 @@ export class FinancialVault {
             CREATE INDEX IF NOT EXISTS idx_trans_card ON financial_transactions(card_id);
         `);
 
+        // Migration: idempotency key for spend reservations (safe on existing databases)
+        const cols = sqliteService.db.prepare(`PRAGMA table_info(financial_transactions)`).all() as any[];
+        if (!cols.some(c => c.name === 'idempotency_key')) {
+            sqliteService.db.exec(`ALTER TABLE financial_transactions ADD COLUMN idempotency_key TEXT`);
+        }
+        sqliteService.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_trans_idem ON financial_transactions(idempotency_key) WHERE idempotency_key IS NOT NULL`);
+
         this.isInitialized = true;
     }
 
     /**
      * Encrypts card sensitive data using AES-256-GCM.
      */
+    private requireKey(): Buffer {
+        if (!this.encryptionKey) throw new Error('VAULT_KEY_MISSING: set FINANCIAL_VAULT_KEY (no default key is used)');
+        return this.encryptionKey;
+    }
+
     private encrypt(plainText: string): { cipherText: string; iv: string; authTag: string } {
         const iv = crypto.randomBytes(12);
-        const cipher = crypto.createCipheriv('aes-256-gcm', this.encryptionKey, iv);
+        const cipher = crypto.createCipheriv('aes-256-gcm', this.requireKey(), iv);
         let encrypted = cipher.update(plainText, 'utf8', 'hex');
         encrypted += cipher.final('hex');
         const authTag = cipher.getAuthTag().toString('hex');
@@ -133,7 +146,7 @@ export class FinancialVault {
      * Decrypts card data using AES-256-GCM.
      */
     private decrypt(cipherText: string, ivHex: string, authTagHex: string): string {
-        const decipher = crypto.createDecipheriv('aes-256-gcm', this.encryptionKey, Buffer.from(ivHex, 'hex'));
+        const decipher = crypto.createDecipheriv('aes-256-gcm', this.requireKey(), Buffer.from(ivHex, 'hex'));
         decipher.setAuthTag(Buffer.from(authTagHex, 'hex'));
         let decrypted = decipher.update(cipherText, 'hex', 'utf8');
         decrypted += decipher.final('utf8');
@@ -149,6 +162,9 @@ export class FinancialVault {
 
         // 0. Truthfulness gate: no card issuer integration exists yet, so a card can only be
         //    minted in explicit DEMO mode. Otherwise the capability is UNAVAILABLE (never fake success).
+        if (!this.encryptionKey) {
+            return { error: 'Vault key not configured (FINANCIAL_VAULT_KEY). No default key is used.', capabilityState: 'UNAVAILABLE' };
+        }
         const cap = demoOrUnavailable('Virtual card issuing');
         if (cap.state !== 'DEMO') {
             return { error: cap.reason, capabilityState: cap.state };
@@ -306,8 +322,80 @@ export class FinancialVault {
         };
     }
 
+    /** Normalizes a merchant or URL to a comparable lowercase host-ish key. */
+    private normalizeMerchant(m: string): string {
+        const t = (m || '').trim().toLowerCase();
+        try { return new URL(t.includes('://') ? t : `https://${t}`).hostname.replace(/^www\./, ''); }
+        catch { return t.replace(/^www\./, ''); }
+    }
+
     /**
-     * Records a transaction, deducts from spend limit, and burns single-use cards.
+     * Atomically RESERVES spend (PENDING). All checks and the insert happen in one SQLite
+     * transaction: card must exist, be ACTIVE and unexpired; merchant must match the lock; currency must
+     * match the card; the amount must be a positive integer; card limit and the per-currency daily ceiling
+     * count PENDING + COMPLETED. Idempotent on idempotencyKey (a repeat returns the same reservation).
+     */
+    public reserveSpend(p: { cardId: string; merchant: string; amountCents: number; currency?: string; idempotencyKey: string; purpose?: string }):
+        { ok: true; txId: string; replayed?: boolean } | { ok: false; reason: string } {
+        this.initializeSchema();
+        if (!Number.isInteger(p.amountCents) || p.amountCents <= 0) return { ok: false, reason: 'INVALID_AMOUNT' };
+        if (!p.idempotencyKey) return { ok: false, reason: 'IDEMPOTENCY_KEY_REQUIRED' };
+        const db = sqliteService.db;
+        const run = db.transaction((): { ok: true; txId: string; replayed?: boolean } | { ok: false; reason: string } => {
+            const prior = db.prepare(`SELECT id, card_id, amount_cents FROM financial_transactions WHERE idempotency_key = ?`).get(p.idempotencyKey) as any;
+            if (prior) {
+                if (prior.card_id !== p.cardId || prior.amount_cents !== p.amountCents) return { ok: false, reason: 'IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST' };
+                return { ok: true, txId: prior.id, replayed: true };
+            }
+            const card = db.prepare(`SELECT * FROM financial_cards WHERE id = ?`).get(p.cardId) as any;
+            if (!card) return { ok: false, reason: 'CARD_NOT_FOUND' };
+            if (card.status !== 'ACTIVE') return { ok: false, reason: `CARD_${card.status}` };
+            if (Date.now() > card.expires_at) return { ok: false, reason: 'CARD_EXPIRED' };
+            const cur = (p.currency || card.currency || 'USD').toUpperCase();
+            if (cur !== String(card.currency).toUpperCase()) return { ok: false, reason: 'CURRENCY_MISMATCH' };
+            if (card.merchant_lock && this.normalizeMerchant(card.merchant_lock) !== this.normalizeMerchant(p.merchant)) return { ok: false, reason: 'MERCHANT_MISMATCH' };
+            const committed = (db.prepare(`SELECT COALESCE(SUM(amount_cents),0) AS t FROM financial_transactions WHERE card_id = ? AND status IN ('PENDING','COMPLETED')`).get(p.cardId) as any).t;
+            if (committed + p.amountCents > card.spend_limit_cents) return { ok: false, reason: 'CARD_LIMIT_EXCEEDED' };
+            const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
+            const day = (db.prepare(`SELECT COALESCE(SUM(amount_cents),0) AS t FROM financial_transactions WHERE timestamp >= ? AND currency = ? AND status IN ('PENDING','COMPLETED')`).get(startOfDay.getTime(), cur) as any).t;
+            if (day + p.amountCents > this.defaultDailyLimitCents) return { ok: false, reason: 'DAILY_LIMIT_EXCEEDED' };
+            const txId = `tx_${crypto.randomUUID().replace(/-/g, '').substring(0, 12)}`;
+            db.prepare(`INSERT INTO financial_transactions (id, card_id, merchant, amount_cents, currency, status, purpose, receipt_signature, timestamp, idempotency_key) VALUES (?,?,?,?,?,?,?,?,?,?)`)
+                .run(txId, p.cardId, p.merchant, p.amountCents, cur, 'PENDING', p.purpose || card.purpose, null, Date.now(), p.idempotencyKey);
+            return { ok: true, txId };
+        });
+        const r = run();
+        if (r.ok && !r.replayed) {
+            systemBus.emit(SystemProtocol.TELEMETRY_LOG, { service: 'FinancialVault', event: 'SPEND_RESERVED', txId: r.txId, cardId: p.cardId, amountCents: p.amountCents });
+        }
+        return r;
+    }
+
+    /** PENDING -> COMPLETED; updates card spend and burns an exhausted card. */
+    public captureSpend(txId: string, receiptSignature?: string): boolean {
+        this.initializeSchema();
+        const db = sqliteService.db;
+        return db.transaction((): boolean => {
+            const tx = db.prepare(`SELECT * FROM financial_transactions WHERE id = ? AND status = 'PENDING'`).get(txId) as any;
+            if (!tx) return false;
+            db.prepare(`UPDATE financial_transactions SET status = 'COMPLETED', receipt_signature = ? WHERE id = ?`).run(receiptSignature || null, txId);
+            const card = db.prepare(`SELECT spent_cents, spend_limit_cents FROM financial_cards WHERE id = ?`).get(tx.card_id) as any;
+            const newSpent = card.spent_cents + tx.amount_cents;
+            db.prepare(`UPDATE financial_cards SET spent_cents = ?, status = CASE WHEN ? >= spend_limit_cents AND status = 'ACTIVE' THEN 'EXHAUSTED' ELSE status END WHERE id = ?`).run(newSpent, newSpent, tx.card_id);
+            return true;
+        })();
+    }
+
+    /** PENDING -> RELEASED (frees the reserved amount). */
+    public releaseSpend(txId: string): boolean {
+        this.initializeSchema();
+        return sqliteService.db.prepare(`UPDATE financial_transactions SET status = 'RELEASED' WHERE id = ? AND status = 'PENDING'`).run(txId).changes > 0;
+    }
+
+    /**
+     * Records a completed transaction. Now validated: reserve (card active, merchant lock, currency, limits)
+     * then capture, atomically per step. Returns false when any rule rejects it (revoked card, wrong
+     * merchant, over limit...). Prefer reserveSpend/captureSpend/releaseSpend for real payment flows.
      */
     public recordTransaction(
         cardId: string,
@@ -316,51 +404,11 @@ export class FinancialVault {
         purpose?: string,
         receiptSignature?: string
     ): boolean {
-        this.initializeSchema();
-
-        const card = sqliteService.db.prepare(`
-            SELECT * FROM financial_cards WHERE id = ?
-        `).get(cardId) as any;
-
-        if (!card) return false;
-
-        const txId = `tx_${crypto.randomUUID().replace(/-/g, '').substring(0, 12)}`;
-
-        sqliteService.db.transaction(() => {
-            sqliteService.db.prepare(`
-                INSERT INTO financial_transactions (
-                    id, card_id, merchant, amount_cents, currency, status, purpose, receipt_signature, timestamp
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `).run(
-                txId,
-                cardId,
-                merchant,
-                amountCents,
-                card.currency,
-                'COMPLETED',
-                purpose || card.purpose,
-                receiptSignature || null,
-                Date.now()
-            );
-
-            const newSpent = card.spent_cents + amountCents;
-            const newStatus: CardStatus = newSpent >= card.spend_limit_cents ? 'EXHAUSTED' : 'ACTIVE';
-
-            sqliteService.db.prepare(`
-                UPDATE financial_cards SET spent_cents = ?, status = ? WHERE id = ?
-            `).run(newSpent, newStatus, cardId);
-        })();
-
-        systemBus.emit(SystemProtocol.TELEMETRY_LOG, {
-            service: 'FinancialVault',
-            event: 'TRANSACTION_RECORDED',
-            txId,
-            cardId,
-            amountCents,
-            merchant
-        });
-
-        return true;
+        const r = this.reserveSpend({ cardId, merchant, amountCents, idempotencyKey: `rec_${crypto.randomUUID()}`, purpose });
+        if (!r.ok) return false;
+        const captured = this.captureSpend(r.txId, receiptSignature);
+        if (captured) systemBus.emit(SystemProtocol.TELEMETRY_LOG, { service: 'FinancialVault', event: 'TRANSACTION_RECORDED', txId: r.txId, cardId, amountCents, merchant });
+        return captured;
     }
 
     /**
@@ -398,8 +446,8 @@ export class FinancialVault {
         const spentRow = sqliteService.db.prepare(`
             SELECT COALESCE(SUM(amount_cents), 0) as total
             FROM financial_transactions
-            WHERE timestamp >= ? AND status = 'COMPLETED'
-        `).get(startOfDay.getTime()) as any;
+            WHERE timestamp >= ? AND currency = ? AND status IN ('PENDING','COMPLETED')
+        `).get(startOfDay.getTime(), (currency || 'USD').toUpperCase()) as any;
 
         const activeRow = sqliteService.db.prepare(`
             SELECT COUNT(*) as count FROM financial_cards WHERE status = 'ACTIVE'
