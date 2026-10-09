@@ -1015,6 +1015,62 @@ export const VAULT_BURN_CARD_TOOL: FunctionDeclaration = {
     }
 };
 
+// ==================== REAL-TIME TELEPHONY & VOIP TOOLS (Phase 22) ====================
+
+export const TELEPHONY_DIAL_TOOL: FunctionDeclaration = {
+    name: "telephony_dial_phone",
+    description: "Places a real telephone call to a business, airline, customer service line, or individual. The agent speaks by voice, listens to caller responses, and navigates automated phone menus.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            phone_number: { type: Type.STRING, description: "The destination telephone number including country code (e.g., '+18004337300' or '+34912345678')" },
+            purpose: { type: Type.STRING, description: "The specific objective of the phone call (e.g., 'Ask airline about status of reservation 8X9KP4')" },
+            initial_greeting: { type: Type.STRING, description: "Optional initial sentence spoken by the agent when the call connects" }
+        },
+        required: ["phone_number", "purpose"]
+    }
+};
+
+export const TELEPHONY_PROCESS_TURN_TOOL: FunctionDeclaration = {
+    name: "telephony_process_turn",
+    description: "Processes an ongoing telephone turn: takes what the representative/caller said, reasons, and returns the agent's natural spoken voice response.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            call_id: { type: Type.STRING, description: "Active call ID returned by telephony_dial_phone" },
+            caller_utterance: { type: Type.STRING, description: "Transcript of what the person on the other end said" }
+        },
+        required: ["call_id", "caller_utterance"]
+    }
+};
+
+export const TELEPHONY_SEND_DTMF_TOOL: FunctionDeclaration = {
+    name: "telephony_send_dtmf",
+    description: "Sends DTMF touch-tone keypad digits ('1', '2', '#', etc.) to navigate automated phone trees and Interactive Voice Response (IVR) systems.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            call_id: { type: Type.STRING, description: "Active call ID" },
+            digits: { type: Type.STRING, description: "Keypad characters to press (e.g. '1' for English, '2' for customer service, '#')" }
+        },
+        required: ["call_id", "digits"]
+    }
+};
+
+export const TELEPHONY_HANGUP_TOOL: FunctionDeclaration = {
+    name: "telephony_hangup",
+    description: "Terminates an ongoing phone call, generates an executive transcript summary, and anchors agreed items into Silhouette's memory.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            call_id: { type: Type.STRING, description: "Active call ID to end" },
+            reason: { type: Type.STRING, description: "Reason for ending call (e.g. 'Flight rebooked successfully', 'Placed on hold over limit')" }
+        },
+        required: ["call_id"]
+    }
+};
+
+
 
 
 // ==================== CODE EXECUTION TOOL ====================

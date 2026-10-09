@@ -342,8 +342,56 @@ router.get('/default', async (_req: Request, res: Response) => {
         }
 
         return res.json({ success: true, voice });
-    } catch (error: any) {
-        return res.status(500).json({ error: error.message });
+});
+
+// ==================== TELEPHONY & PHONE CALL WEBHOOKS ====================
+
+/**
+ * POST /v1/voices/twiml
+ * Incoming / Outbound Twilio Voice webhook returning TwiML
+ */
+router.post('/twiml', async (_req: Request, res: Response) => {
+    try {
+        const { telephonyService } = await import('../../../services/telephony/telephonyService');
+        const greeting = "Hello, this is Silhouette Agency OS. How can I assist you today?";
+        const twiml = telephonyService.generateInboundTwiML(greeting);
+        res.type('text/xml');
+        return res.send(twiml);
+    } catch (e: any) {
+        return res.status(500).send('<Response><Say>An internal error occurred.</Say></Response>');
+    }
+});
+
+/**
+ * POST /v1/voices/dial
+ * Trigger outbound phone call
+ */
+router.post('/dial', async (req: Request, res: Response) => {
+    try {
+        const { toNumber, purpose, initialGreeting } = req.body;
+        if (!toNumber || !purpose) {
+            return res.status(400).json({ error: 'toNumber and purpose are required' });
+        }
+
+        const { telephonyService } = await import('../../../services/telephony/telephonyService');
+        const result = await telephonyService.dial({ toNumber, purpose, initialGreeting });
+        return res.json({ success: true, call: result.call });
+    } catch (e: any) {
+        return res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * GET /v1/voices/calls
+ * List recent phone calls
+ */
+router.get('/calls', async (_req: Request, res: Response) => {
+    try {
+        const { telephonyService } = await import('../../../services/telephony/telephonyService');
+        const calls = telephonyService.listCalls(30);
+        return res.json({ success: true, count: calls.length, calls });
+    } catch (e: any) {
+        return res.status(500).json({ error: e.message });
     }
 });
 

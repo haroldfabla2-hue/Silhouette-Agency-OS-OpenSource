@@ -184,6 +184,16 @@ export class ToolHandler {
             case 'vault_burn_card':
                 return await this.handleVaultBurnCard(args as any);
 
+            // ==================== REAL-TIME TELEPHONY & VOIP TOOLS Phase 22 ====================
+            case 'telephony_dial_phone':
+                return await this.handleTelephonyDial(args as any);
+            case 'telephony_process_turn':
+                return await this.handleTelephonyProcessTurn(args as any);
+            case 'telephony_send_dtmf':
+                return await this.handleTelephonySendDtmf(args as any);
+            case 'telephony_hangup':
+                return await this.handleTelephonyHangup(args as any);
+
             default:
                 if (name.startsWith('query_') && name.includes('_db_')) {
                     if (!args.query) return { error: "Missing 'query' parameter for database tool execution." };
@@ -2052,6 +2062,91 @@ export class ToolHandler {
                 : { error: `Could not burn card ${args.card_id}. Already burned or not found.` };
         } catch (e: any) {
             return { error: `Burn card failed: ${e.message}` };
+        }
+    }
+
+    private async handleTelephonyDial(args: any): Promise<any> {
+        try {
+            const { telephonyService } = await import('../telephony/telephonyService');
+            const result = await telephonyService.dial({
+                toNumber: args.phone_number,
+                purpose: args.purpose,
+                initialGreeting: args.initial_greeting
+            });
+
+            if (result.error) {
+                return { error: result.error };
+            }
+
+            return {
+                status: "success",
+                message: `Call successfully placed to ${args.phone_number}. Initial greeting dispatched.`,
+                call_id: result.call.id,
+                direction: result.call.direction,
+                state: result.call.status,
+                is_simulated: result.call.isSimulated,
+                transcript: result.call.transcript
+            };
+        } catch (e: any) {
+            return { error: `Dial phone failed: ${e.message}` };
+        }
+    }
+
+    private async handleTelephonyProcessTurn(args: any): Promise<any> {
+        try {
+            const { telephonyService } = await import('../telephony/telephonyService');
+            const result = await telephonyService.processCallTurn(args.call_id, args.caller_utterance);
+
+            if (result.error) {
+                return { error: result.error };
+            }
+
+            return {
+                status: "success",
+                spoken_response: result.agentResponse,
+                audio_synthesized: Boolean(result.audioBase64)
+            };
+        } catch (e: any) {
+            return { error: `Process call turn failed: ${e.message}` };
+        }
+    }
+
+    private async handleTelephonySendDtmf(args: any): Promise<any> {
+        try {
+            const { telephonyService } = await import('../telephony/telephonyService');
+            const result = await telephonyService.sendDtmf(args.call_id, args.digits);
+
+            if (!result.success) {
+                return { error: result.error || "Failed to send DTMF tones." };
+            }
+
+            return {
+                status: "success",
+                message: `DTMF tone '${args.digits}' sent to phone system successfully.`
+            };
+        } catch (e: any) {
+            return { error: `Send DTMF failed: ${e.message}` };
+        }
+    }
+
+    private async handleTelephonyHangup(args: any): Promise<any> {
+        try {
+            const { telephonyService } = await import('../telephony/telephonyService');
+            const result = await telephonyService.hangup(args.call_id, args.reason);
+
+            if (result.error) {
+                return { error: result.error };
+            }
+
+            return {
+                status: "success",
+                message: "Call ended successfully and archived to episodic memory.",
+                call_id: result.call?.id,
+                duration_seconds: result.call?.durationSeconds,
+                executive_summary: result.call?.summary
+            };
+        } catch (e: any) {
+            return { error: `Hangup call failed: ${e.message}` };
         }
     }
 }
