@@ -257,6 +257,11 @@ export class BrowserAuditLedger {
         return { session: structuredClone(session), isValid, reportPath };
     }
 
+    public hasActiveSession(): boolean {
+        const s = this.activeSessionId ? this.sessions.get(this.activeSessionId) : undefined;
+        return !!s && s.status === 'RECORDING';
+    }
+
     /**
      * Gets session info.
      */
