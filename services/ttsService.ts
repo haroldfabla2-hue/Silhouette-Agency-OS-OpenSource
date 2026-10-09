@@ -105,7 +105,9 @@ export class TTSService {
     /**
      * Generate speech from text
      */
-    public async speak(text: string): Promise<string | null> {
+    public async speak(text: string, options?: { voiceId?: string }): Promise<string | null> {
+        // Per-call voice override (e.g. a phone call's chosen voice); the global config voice is only the default.
+        const voiceId = options?.voiceId || this.config.voiceId;
         if (!this.config.enabled) return null;
 
         const cleanText = this.cleanForSpeech(text);
@@ -116,7 +118,7 @@ export class TTSService {
         // --- MINIMAX CLOUD AUDIO ---
         if (this.config.provider === 'minimax') {
             try {
-                const audioUrl = await minimaxService.generateSpeech(cleanText, this.config.voiceId);
+                const audioUrl = await minimaxService.generateSpeech(cleanText, voiceId);
                 if (audioUrl) {
                     return audioUrl;
                 }
@@ -142,7 +144,7 @@ export class TTSService {
             const response = await axios.post(`${this.pythonEngineUrl}/speak`, {
                 text: cleanText,
                 language: 'es',
-                voice_id: this.config.voiceId, // Pass configured voice
+                voice_id: voiceId, // Pass configured voice
                 auto_speak: this.config.autoSpeak // Pass autoSpeak mode for intelligent sleep/wake
             }, { timeout: 120000 }); // 120s timeout for TTS generation (Chatterbox model loading)
 
@@ -164,7 +166,7 @@ export class TTSService {
                     const retryResponse = await axios.post(`${this.pythonEngineUrl}/speak`, {
                         text: cleanText,
                         language: 'es',
-                        voice_id: this.config.voiceId,
+                        voice_id: voiceId,
                         auto_speak: this.config.autoSpeak
                     }, { timeout: 120000 });
 
