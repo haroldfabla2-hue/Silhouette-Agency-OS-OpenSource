@@ -142,9 +142,17 @@ class ContinuumMemorySystem {
             const temporary = `${SNAPSHOT_PATH}.${process.pid}.${crypto.randomUUID()}.tmp`;
             try {
                 await fs.writeFile(temporary, payload);
-                await fs.rename(temporary, SNAPSHOT_PATH);
+                try {
+                    await fs.rename(temporary, SNAPSHOT_PATH);
+                } catch (renameErr: any) {
+                    if (renameErr.code === 'EPERM' || renameErr.code === 'EBUSY') {
+                        await fs.copyFile(temporary, SNAPSHOT_PATH);
+                    } else {
+                        throw renameErr;
+                    }
+                }
             } finally {
-                await fs.rm(temporary, { force: true });
+                await fs.rm(temporary, { force: true }).catch(() => {});
             }
 
             // console.log("[CONTINUUM] Volatile memory snapshot saved (V5.0 format).");

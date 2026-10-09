@@ -966,6 +966,28 @@ export const BROWSER_CLICK_COORDINATE_TOOL: FunctionDeclaration = {
     }
 };
 
+export const BROWSER_CLEAR_OBSTRUCTIONS_TOOL: FunctionDeclaration = {
+    name: "browser_clear_obstructions",
+    description: "Autonomous self-healing DOM cleanup: identifies and clears blocking popups, cookie consent banners (GDPR/CCPA), dark backdrops, and modal overlays that obstruct page interactions.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {}
+    }
+};
+
+export const BROWSER_AUDIT_SESSION_TOOL: FunctionDeclaration = {
+    name: "browser_audit_session",
+    description: "Controls the cryptographic visual audit ledger (Ed25519/HMAC-SHA256 frame-by-frame hash chaining) for tamper-evident browser automation replay.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            action: { type: Type.STRING, description: "Either 'start' to begin recording a new session, or 'seal' to finalize and verify chain integrity." },
+            session_id: { type: Type.STRING, description: "Optional session ID to seal. If omitted, seals the currently active session." }
+        },
+        required: ["action"]
+    }
+};
+
 // ==================== FINANCIAL VAULT & EPHEMERAL CARDS (Phase 22) ====================
 
 export const VAULT_REQUEST_VCARD_TOOL: FunctionDeclaration = {
@@ -1025,7 +1047,8 @@ export const TELEPHONY_DIAL_TOOL: FunctionDeclaration = {
         properties: {
             phone_number: { type: Type.STRING, description: "The destination telephone number including country code (e.g., '+18004337300' or '+34912345678')" },
             purpose: { type: Type.STRING, description: "The specific objective of the phone call (e.g., 'Ask airline about status of reservation 8X9KP4')" },
-            initial_greeting: { type: Type.STRING, description: "Optional initial sentence spoken by the agent when the call connects" }
+            initial_greeting: { type: Type.STRING, description: "Optional initial sentence spoken by the agent when the call connects" },
+            voice_id: { type: Type.STRING, description: "Optional voice persona ID from the voice library (e.g., 'xtts_es_sample', 'xtts_en_sample')" }
         },
         required: ["phone_number", "purpose"]
     }
@@ -1041,6 +1064,31 @@ export const TELEPHONY_PROCESS_TURN_TOOL: FunctionDeclaration = {
             caller_utterance: { type: Type.STRING, description: "Transcript of what the person on the other end said" }
         },
         required: ["call_id", "caller_utterance"]
+    }
+};
+
+export const TELEPHONY_BARGE_IN_TOOL: FunctionDeclaration = {
+    name: "telephony_barge_in",
+    description: "Sub-100ms full-duplex interruption (Barge-in): immediately cuts off outgoing agent speech and clears media stream buffers when the caller interrupts.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            call_id: { type: Type.STRING, description: "Active call ID" }
+        },
+        required: ["call_id"]
+    }
+};
+
+export const TELEPHONY_ANALYZE_SENTIMENT_TOOL: FunctionDeclaration = {
+    name: "telephony_analyze_sentiment",
+    description: "Acoustic Negotiation Radar: analyzes speaker utterance cadence, hesitation index, urgency score, and objections to provide tactical negotiation recommendations.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            text: { type: Type.STRING, description: "Caller utterance or transcribed speech to evaluate" },
+            latency_ms: { type: Type.NUMBER, description: "Optional pause duration or response latency in milliseconds" }
+        },
+        required: ["text"]
     }
 };
 

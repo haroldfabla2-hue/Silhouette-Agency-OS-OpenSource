@@ -163,7 +163,7 @@ export class FinancialVault {
                     merchant: request.merchant,
                     amountCents: request.maxAmountCents,
                     purpose: request.purpose
-                },
+                } as any,
                 status: 'PENDING' as any,
                 requiresApproval: true,
                 timestamp: Date.now()
@@ -289,6 +289,7 @@ export class FinancialVault {
             status: row.status,
             purpose: row.purpose,
             createdAt: row.created_at,
+            expiresAt: row.expires_at,
             cardNumber,
             cvv
         };

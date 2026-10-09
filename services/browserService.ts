@@ -47,6 +47,27 @@ export class BrowserService {
     }
 
     /**
+     * Autonomous Self-Healing: clears popups, cookie consent banners, and modal overlays.
+     */
+    public async clearObstructions(): Promise<{ cleared: boolean; dismissedCount: number; details: string[] }> {
+        return await visualBrowserEngine.clearObstructions();
+    }
+
+    /**
+     * Starts an immutable, cryptographically signed visual audit session.
+     */
+    public async startAuditSession(): Promise<string> {
+        return await visualBrowserEngine.startAuditSession();
+    }
+
+    /**
+     * Seals the cryptographic audit trail and returns verified manifest.
+     */
+    public async sealAuditSession(sessionId?: string): Promise<{ isValid: boolean; reportPath: string }> {
+        return await visualBrowserEngine.sealAuditSession(sessionId);
+    }
+
+    /**
      * Legacy CSS selector click with fallback.
      */
     public async click(selector: string): Promise<void> {

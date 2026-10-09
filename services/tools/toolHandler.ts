@@ -179,6 +179,10 @@ export class ToolHandler {
                 return await this.handleVaultRequestVCard(args as any);
             case 'browser_autofill_payment':
                 return await this.handleBrowserAutofillPayment(args as any);
+            case 'browser_clear_obstructions':
+                return await this.handleBrowserClearObstructions();
+            case 'browser_audit_session':
+                return await this.handleBrowserAuditSession(args as any);
             case 'vault_get_spend_summary':
                 return await this.handleVaultGetSpendSummary();
             case 'vault_burn_card':
@@ -189,6 +193,10 @@ export class ToolHandler {
                 return await this.handleTelephonyDial(args as any);
             case 'telephony_process_turn':
                 return await this.handleTelephonyProcessTurn(args as any);
+            case 'telephony_barge_in':
+                return await this.handleTelephonyBargeIn(args as any);
+            case 'telephony_analyze_sentiment':
+                return await this.handleTelephonyAnalyzeSentiment(args as any);
             case 'telephony_send_dtmf':
                 return await this.handleTelephonySendDtmf(args as any);
             case 'telephony_hangup':
@@ -2037,6 +2045,53 @@ export class ToolHandler {
         }
     }
 
+    private async handleBrowserClearObstructions(): Promise<any> {
+        try {
+            const { browserService } = await import('../browserService');
+            const result = await browserService.clearObstructions();
+            return {
+                status: "success",
+                cleared: result.cleared,
+                dismissed_count: result.dismissedCount,
+                message: result.cleared
+                    ? `Successfully cleared ${result.dismissedCount} obstruction(s) from page.`
+                    : "No obstructing popups or backdrops detected."
+            };
+        } catch (e: any) {
+            return { error: `Clear obstructions failed: ${e.message}` };
+        }
+    }
+
+    private async handleBrowserAuditSession(args: any): Promise<any> {
+        try {
+            const { browserService } = await import('../browserService');
+            if (args.action === 'start') {
+                const sessionId = await browserService.startAuditSession();
+                return {
+                    status: "success",
+                    action: "start",
+                    session_id: sessionId,
+                    message: "Cryptographic visual audit session started. Hash chaining active."
+                };
+            } else if (args.action === 'seal') {
+                const result = await browserService.sealAuditSession(args.session_id);
+                return {
+                    status: "success",
+                    action: "seal",
+                    is_valid: result.isValid,
+                    report_path: result.reportPath,
+                    message: result.isValid
+                        ? "Audit session verified and sealed. Cryptographic integrity confirmed."
+                        : "WARNING: Hash chain integrity check failed."
+                };
+            } else {
+                return { error: `Invalid action '${args.action}'. Must be 'start' or 'seal'.` };
+            }
+        } catch (e: any) {
+            return { error: `Browser audit session failed: ${e.message}` };
+        }
+    }
+
     private async handleVaultGetSpendSummary(): Promise<any> {
         try {
             const { financialVault } = await import('../vault/financialVault');
@@ -2071,7 +2126,8 @@ export class ToolHandler {
             const result = await telephonyService.dial({
                 toNumber: args.phone_number,
                 purpose: args.purpose,
-                initialGreeting: args.initial_greeting
+                initialGreeting: args.initial_greeting,
+                voiceId: args.voice_id
             });
 
             if (result.error) {
@@ -2085,6 +2141,7 @@ export class ToolHandler {
                 direction: result.call.direction,
                 state: result.call.status,
                 is_simulated: result.call.isSimulated,
+                voice_id: result.call.voiceId,
                 transcript: result.call.transcript
             };
         } catch (e: any) {
@@ -2095,7 +2152,7 @@ export class ToolHandler {
     private async handleTelephonyProcessTurn(args: any): Promise<any> {
         try {
             const { telephonyService } = await import('../telephony/telephonyService');
-            const result = await telephonyService.processCallTurn(args.call_id, args.caller_utterance);
+            const result = await telephonyService.processCallTurn(args.call_id, args.caller_utterance, args.latency_ms);
 
             if (result.error) {
                 return { error: result.error };
@@ -2104,10 +2161,46 @@ export class ToolHandler {
             return {
                 status: "success",
                 spoken_response: result.agentResponse,
-                audio_synthesized: Boolean(result.audioBase64)
+                audio_synthesized: Boolean(result.audioBase64),
+                sentiment: result.sentiment,
+                voice_persona: result.voicePersona
             };
         } catch (e: any) {
             return { error: `Process call turn failed: ${e.message}` };
+        }
+    }
+
+    private async handleTelephonyBargeIn(args: any): Promise<any> {
+        try {
+            const { telephonyService } = await import('../telephony/telephonyService');
+            const result = await telephonyService.triggerBargeIn(args.call_id);
+            if (!result.success) {
+                return { error: result.error || "Failed to trigger barge-in." };
+            }
+            return {
+                status: "success",
+                message: "Barge-in triggered: outbound speech truncated, media queue flushed.",
+                timestamp: result.timestamp
+            };
+        } catch (e: any) {
+            return { error: `Barge-in failed: ${e.message}` };
+        }
+    }
+
+    private async handleTelephonyAnalyzeSentiment(args: any): Promise<any> {
+        try {
+            const { telephonyService } = await import('../telephony/telephonyService');
+            const result = telephonyService.analyzeAcousticSentiment(args.text, args.latency_ms);
+            return {
+                status: "success",
+                disposition: result.disposition,
+                hesitation_index: result.hesitationIndex,
+                urgency_score: result.urgencyScore,
+                signals: result.negotiationSignals,
+                tactical_advice: result.tacticalAdvice
+            };
+        } catch (e: any) {
+            return { error: `Analyze sentiment failed: ${e.message}` };
         }
     }
 

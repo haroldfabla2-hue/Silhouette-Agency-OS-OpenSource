@@ -101,11 +101,34 @@ export class VisualBrowserEngine {
             timezoneId: 'America/New_York'
         });
 
-        // Anti-fingerprinting stealth evasion: hide navigator.webdriver
+        // Chameleon hardware fingerprint randomization: hide automation & spoof GPU/Canvas
         await this.context.addInitScript(() => {
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined,
-            });
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+            Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 12 });
+            Object.defineProperty(navigator, 'deviceMemory', { get: () => 16 });
+
+            // Spoof WebGL vendor & renderer to high-end hardware
+            const getParameterProto = WebGLRenderingContext.prototype.getParameter;
+            WebGLRenderingContext.prototype.getParameter = function (param: number) {
+                if (param === 37445) return 'Google Inc. (Apple)'; // UNMASKED_VENDOR_WEBGL
+                if (param === 37446) return 'ANGLE (Apple, Apple M2 Max, OpenGL 4.1)'; // UNMASKED_RENDERER_WEBGL
+                return getParameterProto.apply(this, [param]);
+            };
+
+            // Canvas noise perturbation (defeats canvas hash trackers without visual distortion)
+            const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
+            HTMLCanvasElement.prototype.toDataURL = function (type?: string, ...args: any[]) {
+                const ctx = this.getContext('2d');
+                if (ctx && this.width > 0 && this.height > 0) {
+                    try {
+                        const img = ctx.getImageData(0, 0, 1, 1);
+                        img.data[0] = (img.data[0] ^ 1);
+                        ctx.putImageData(img, 0, 0);
+                    } catch {}
+                }
+                return origToDataURL.apply(this, [type, ...args]);
+            };
+
             // Mock Chrome runtime
             (window as any).chrome = {
                 runtime: {},
@@ -315,7 +338,19 @@ export class VisualBrowserEngine {
         // 3. Match the target element semantically
         const matched = this.matchElementByInstruction(instruction, elements);
 
-        if (!matched) {
+        let target = matched;
+
+        // [SELF-HEALING RETRY] If no element matched, auto-clear popup/modal obstructions and retry
+        if (!target) {
+            const cleared = await this.clearObstructions();
+            if (cleared.dismissedCount > 0) {
+                await page.waitForTimeout(500);
+                const freshElements = await this.observe();
+                target = this.matchElementByInstruction(instruction, freshElements);
+            }
+        }
+
+        if (!target) {
             return {
                 success: false,
                 action: instruction,
@@ -326,26 +361,39 @@ export class VisualBrowserEngine {
         }
 
         // 4. Perform human-like interaction with jitter and smooth movement
-        await page.mouse.move(matched.center.x, matched.center.y, { steps: 5 });
+        await page.mouse.move(target.center.x, target.center.y, { steps: 5 });
         await page.waitForTimeout(100);
 
-        if (matched.tag === 'input' || matched.tag === 'textarea' || textToType) {
-            await page.mouse.click(matched.center.x, matched.center.y);
+        if (target.tag === 'input' || target.tag === 'textarea' || textToType) {
+            await page.mouse.click(target.center.x, target.center.y);
             const content = textToType || this.extractTextToTypeFromInstruction(instruction) || '';
             if (content) {
                 await page.keyboard.type(content, { delay: 45 });
             }
         } else {
-            await page.mouse.click(matched.center.x, matched.center.y);
+            await page.mouse.click(target.center.x, target.center.y);
         }
 
         await page.waitForTimeout(1000); // Allow navigation or reaction
 
+        // 5. Cryptographic Audit Recording
+        try {
+            const { browserAuditLedger } = await import('./browserAuditLedger');
+            const screenBuf = await page.screenshot({ fullPage: false }).catch(() => undefined);
+            await browserAuditLedger.recordFrame({
+                actionType: 'act',
+                targetDescription: instruction,
+                coordinates: target.center,
+                url: page.url(),
+                screenshotBuffer: screenBuf
+            });
+        } catch { /* ledger recording non-blocking */ }
+
         return {
             success: true,
             action: instruction,
-            targetElement: matched,
-            coordinates: matched.center,
+            targetElement: target,
+            coordinates: target.center,
             executionTimeMs: Date.now() - startTime
         };
     }
@@ -496,6 +544,93 @@ export class VisualBrowserEngine {
             success: fieldsInjected.length > 0,
             fieldsInjected,
             maskedLast4: `•••• ${card.last4}`
+        };
+    }
+
+    /**
+     * Autonomous Self-Healing: detects and dismisses cookie consent banners,
+     * GDPR notices, subscription overlays, and modal backdrops.
+     */
+    public async clearObstructions(): Promise<{ cleared: boolean; dismissedCount: number; details: string[] }> {
+        const page = await this.init();
+        const details: string[] = [];
+
+        const dismissedCount = await page.evaluate(() => {
+            let count = 0;
+            const dismissButtonSelectors = [
+                'button[aria-label*="close" i]',
+                'button[aria-label*="dismiss" i]',
+                'button[aria-label*="accept" i]',
+                'button[id*="accept" i]',
+                'button[id*="cookie" i]',
+                'button[class*="close" i]',
+                'button[class*="dismiss" i]',
+                'button[class*="agree" i]',
+                'button[class*="accept" i]',
+                '.modal-close',
+                '.popup-close',
+                '#onetrust-accept-btn-handler'
+            ];
+
+            // 1. Click accept/dismiss buttons inside popups
+            dismissButtonSelectors.forEach(selector => {
+                const buttons = Array.from(document.querySelectorAll(selector));
+                buttons.forEach((btn: any) => {
+                    const rect = btn.getBoundingClientRect();
+                    if (rect.width > 0 && rect.height > 0) {
+                        try {
+                            btn.click();
+                            count++;
+                        } catch {}
+                    }
+                });
+            });
+
+            // 2. Clear lingering dark modal backdrops with high z-index
+            const overlays = Array.from(document.querySelectorAll('.modal-backdrop, .overlay, [class*="backdrop" i]'));
+            overlays.forEach((overlay: any) => {
+                try {
+                    overlay.remove();
+                    count++;
+                } catch {}
+            });
+
+            return count;
+        });
+
+        if (dismissedCount > 0) {
+            systemBus.emit(SystemProtocol.TELEMETRY_LOG, {
+                service: 'VisualBrowserEngine',
+                event: 'OBSTRUCTIONS_SELF_HEALED',
+                dismissedCount
+            });
+        }
+
+        return {
+            cleared: dismissedCount > 0,
+            dismissedCount,
+            details
+        };
+    }
+
+    /**
+     * Starts an immutable, cryptographically signed visual audit session.
+     */
+    public async startAuditSession(): Promise<string> {
+        const page = await this.init();
+        const { browserAuditLedger } = await import('./browserAuditLedger');
+        return browserAuditLedger.startSession(page.url());
+    }
+
+    /**
+     * Seals the cryptographic audit trail and returns verified manifest.
+     */
+    public async sealAuditSession(sessionId?: string): Promise<{ isValid: boolean; reportPath: string }> {
+        const { browserAuditLedger } = await import('./browserAuditLedger');
+        const result = await browserAuditLedger.sealSession(sessionId);
+        return {
+            isValid: result.isValid,
+            reportPath: result.reportPath
         };
     }
 

@@ -10,6 +10,7 @@ import { systemBus } from '../systemBus';
 import { SystemProtocol } from '../../types';
 import { ttsService } from '../ttsService';
 import { generateText } from '../geminiService';
+import { voiceLibraryService } from '../media/voiceLibraryService';
 
 export type CallDirection = 'INBOUND' | 'OUTBOUND';
 export type CallStatus = 'QUEUED' | 'RINGING' | 'IN_PROGRESS' | 'COMPLETED' | 'BUSY' | 'FAILED';
@@ -20,6 +21,14 @@ export interface CallTurn {
     timestamp: number;
     dtmfDigits?: string;
     audioUrl?: string;
+}
+
+export interface AcousticSentimentAnalysis {
+    hesitationIndex: number; // 0.0 to 1.0 (fillers, hesitations, latency)
+    urgencyScore: number;    // 0.0 to 1.0 (urgency cues, pace)
+    disposition: 'COOPERATIVE' | 'HESITANT' | 'RESISTANT' | 'FATIGUED';
+    negotiationSignals: string[];
+    tacticalAdvice: string;
 }
 
 export interface TelephonyCall {
@@ -33,6 +42,7 @@ export interface TelephonyCall {
     durationSeconds: number;
     providerCallSid?: string;
     isSimulated: boolean;
+    voiceId?: string;
     createdAt: number;
     endedAt?: number;
     summary?: string;
@@ -44,6 +54,7 @@ export interface InitiateCallParams {
     purpose: string;
     initialGreeting?: string;
     agentPersona?: string;
+    voiceId?: string;
     maxDurationSeconds?: number;
 }
 
@@ -85,6 +96,7 @@ export class TelephonyService {
                 duration_seconds INTEGER DEFAULT 0,
                 provider_call_sid TEXT,
                 is_simulated INTEGER DEFAULT 1,
+                voice_id TEXT,
                 created_at INTEGER NOT NULL,
                 ended_at INTEGER,
                 summary TEXT
@@ -93,6 +105,10 @@ export class TelephonyService {
             CREATE INDEX IF NOT EXISTS idx_telephony_status ON telephony_calls(status);
             CREATE INDEX IF NOT EXISTS idx_telephony_created ON telephony_calls(created_at);
         `);
+
+        try {
+            sqliteService.db.exec(`ALTER TABLE telephony_calls ADD COLUMN voice_id TEXT;`);
+        } catch {}
 
         this.isInitialized = true;
     }
@@ -161,6 +177,7 @@ export class TelephonyService {
             durationSeconds: 0,
             providerCallSid,
             isSimulated,
+            voiceId: params.voiceId,
             createdAt: Date.now()
         };
 
@@ -179,23 +196,158 @@ export class TelephonyService {
     }
 
     /**
-     * Processes an interactive voice turn in an ongoing phone call.
-     * Converts speech transcript -> LLM reasoning -> voice synthesis (TTS).
+     * Acoustic Negotiation Radar:
+     * Analyzes cadence, hesitation markers, speech tempo/latency, and resistance cues
+     * to dynamically calibrate the agent's negotiation posture in real time.
      */
-    public async processCallTurn(callId: string, callerUtterance: string): Promise<{ agentResponse: string; audioBase64?: string; error?: string }> {
+    public analyzeAcousticSentiment(text: string, latencyMs?: number): AcousticSentimentAnalysis {
+        const lower = text.toLowerCase();
+        const signals: string[] = [];
+
+        // Hesitation detection
+        const hesitationMarkers = ['um', 'uh', 'er', 'hmm', 'well...', 'well,', 'maybe', 'i guess', 'not sure', 'i think so', '...'];
+        let hesitationCount = 0;
+        for (const m of hesitationMarkers) {
+            if (lower.includes(m)) hesitationCount++;
+        }
+        if (latencyMs && latencyMs > 2500) {
+            hesitationCount += 2;
+            signals.push('HIGH_LATENCY_PAUSE');
+        }
+        const hesitationIndex = Math.min(1, Number((hesitationCount / 4).toFixed(2)));
+        if (hesitationIndex > 0.4) signals.push('UNCERTAINTY_HESITATION');
+
+        // Urgency detection
+        const urgencyMarkers = ['urgent', 'urgently', 'asap', 'immediately', 'quick', 'hurry', 'right now', 'emergency', 'fast', 'now'];
+        let urgencyCount = 0;
+        for (const m of urgencyMarkers) {
+            if (lower.includes(m)) urgencyCount++;
+        }
+        if (latencyMs && latencyMs < 800) {
+            urgencyCount++;
+            signals.push('RAPID_RESPONSE');
+        }
+        const urgencyScore = Math.min(1, Number((urgencyCount / 3).toFixed(2)));
+        if (urgencyScore > 0.5) signals.push('HIGH_URGENCY');
+
+        // Resistance / Objection detection
+        const resistanceMarkers = ['too expensive', 'can\'t', 'cannot', 'no way', 'too high', 'disagree', 'impossible', 'cancel', 'refund', 'don\'t want', 'ridiculous', 'not interested'];
+        let resistanceCount = 0;
+        for (const m of resistanceMarkers) {
+            if (lower.includes(m)) resistanceCount++;
+        }
+        if (resistanceCount > 0) signals.push('COMMERCIAL_OBJECTION');
+
+        // Fatigue detection
+        const fatigueMarkers = ['whatever', 'fine', 'i don\'t care', 'if you say so', 'tired', 'ugh', 'exhausted'];
+        let fatigueCount = 0;
+        for (const m of fatigueMarkers) {
+            if (lower.includes(m)) fatigueCount++;
+        }
+        if (fatigueCount > 0) signals.push('CALLER_FATIGUE');
+
+        // Disposition classification
+        let disposition: 'COOPERATIVE' | 'HESITANT' | 'RESISTANT' | 'FATIGUED' = 'COOPERATIVE';
+        let tacticalAdvice = 'Interlocutor is receptive and cooperative. Proceed directly with confirmation and clear next steps.';
+
+        if (resistanceCount > 0) {
+            disposition = 'RESISTANT';
+            tacticalAdvice = 'Interlocutor exhibits price, terms, or policy resistance. Acknowledge concerns with empathy, de-escalate tension, reframe value, and offer an alternative concession or tier.';
+        } else if (hesitationIndex >= 0.4) {
+            disposition = 'HESITANT';
+            tacticalAdvice = 'Interlocutor is uncertain or weighing trade-offs. Simplify choices into a binary decision (Option A vs Option B) and provide reassuring validation.';
+        } else if (fatigueCount > 0) {
+            disposition = 'FATIGUED';
+            tacticalAdvice = 'Interlocutor is experiencing conversation fatigue. Minimize verbosity, skip preamble, and proceed immediately to final resolution.';
+        }
+
+        return {
+            hesitationIndex,
+            urgencyScore,
+            disposition,
+            negotiationSignals: signals,
+            tacticalAdvice
+        };
+    }
+
+    /**
+     * Sub-100ms Full-Duplex Interruption (Barge-In).
+     * Truncates outbound TTS playback immediately when caller speech is detected,
+     * flushing the provider media stream queue and synchronizing dialog turns.
+     */
+    public async triggerBargeIn(callId: string): Promise<{ success: boolean; twiml: string; timestamp: number; error?: string }> {
+        const call = this.activeCalls.get(callId);
+        if (!call || call.status !== 'IN_PROGRESS') {
+            return { success: false, twiml: '', timestamp: Date.now(), error: `Call ${callId} is not active.` };
+        }
+
+        const timestamp = Date.now();
+        call.transcript.push({
+            speaker: 'system',
+            text: `[BARGE_IN_TRIGGERED: Outbound audio truncated. Interruption detected at ${new Date(timestamp).toISOString()}]`,
+            timestamp
+        });
+
+        this.saveCallToDb(call);
+
+        const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Clear/></Response>`;
+
+        systemBus.emit(SystemProtocol.TELEMETRY_LOG, {
+            service: 'TelephonyService',
+            event: 'BARGE_IN_TRIGGERED',
+            callId,
+            timestamp
+        });
+
+        return {
+            success: true,
+            twiml,
+            timestamp
+        };
+    }
+
+    /**
+     * Processes an interactive voice turn in an ongoing phone call.
+     * Converts speech transcript -> acoustic radar -> LLM reasoning -> voice synthesis (TTS).
+     */
+    public async processCallTurn(
+        callId: string,
+        callerUtterance: string,
+        latencyMs?: number
+    ): Promise<{
+        agentResponse: string;
+        audioBase64?: string;
+        sentiment?: AcousticSentimentAnalysis;
+        voicePersona?: string;
+        error?: string;
+    }> {
         const call = this.activeCalls.get(callId);
         if (!call || call.status !== 'IN_PROGRESS') {
             return { agentResponse: '', error: `Call ${callId} is not currently active.` };
         }
 
-        // 1. Record caller's utterance
+        // 1. Analyze acoustic sentiment & caller disposition
+        const sentiment = this.analyzeAcousticSentiment(callerUtterance, latencyMs);
+
+        // 2. Resolve configured voice persona
+        let voicePersonaName = 'Silhouette Voice';
+        if (call.voiceId) {
+            try {
+                const voice = await voiceLibraryService.getVoice(call.voiceId);
+                if (voice) {
+                    voicePersonaName = `${voice.name} (${voice.style || 'natural'}, ${voice.language})`;
+                }
+            } catch {}
+        }
+
+        // 3. Record caller's utterance
         call.transcript.push({
             speaker: 'caller',
             text: callerUtterance,
             timestamp: Date.now()
         });
 
-        // 2. Build prompt context using call purpose and transcript history
+        // 4. Build prompt context using call purpose, acoustic radar, and transcript history
         const dialogHistory = call.transcript
             .map(t => `${t.speaker.toUpperCase()}: ${t.text}`)
             .join('\n');
@@ -206,6 +358,14 @@ Keep your response concise, conversational, and direct (1-3 sentences maximum).
 Never output markdown, bullet points, or emojis, because your response will be read by Text-to-Speech over a telephone line.
 Current Call Purpose: ${call.purpose}
 To Phone Number: ${call.toNumber}
+Voice Persona: ${voicePersonaName}
+
+Acoustic Negotiation Radar:
+- Disposition: ${sentiment.disposition}
+- Hesitation Index: ${sentiment.hesitationIndex}
+- Urgency Score: ${sentiment.urgencyScore}
+- Detected Signals: ${sentiment.negotiationSignals.join(', ') || 'Normal pace'}
+- Tactical Negotiation Guidance: ${sentiment.tacticalAdvice}
 
 Call Transcript so far:
 ${dialogHistory}
@@ -222,18 +382,18 @@ Agent Response (spoken naturally):`;
             console.error(`[Telephony] LLM generation error in call ${callId}:`, e.message);
         }
 
-        // 3. Synthesize voice audio
+        // 5. Synthesize voice audio
         let audioBase64: string | undefined;
         try {
-            const ttsResult = await ttsService.synthesize(responseText);
-            if (ttsResult && ttsResult.audioBase64) {
-                audioBase64 = ttsResult.audioBase64;
+            const audioUrl = await ttsService.speak(responseText);
+            if (audioUrl) {
+                audioBase64 = audioUrl;
             }
         } catch {
             // TTS fallback
         }
 
-        // 4. Record agent's response
+        // 6. Record agent's response
         call.transcript.push({
             speaker: 'agent',
             text: responseText,
@@ -244,7 +404,9 @@ Agent Response (spoken naturally):`;
 
         return {
             agentResponse: responseText,
-            audioBase64
+            audioBase64,
+            sentiment,
+            voicePersona: voicePersonaName
         };
     }
 
@@ -402,6 +564,7 @@ ${fullTranscriptText}
             durationSeconds: row.duration_seconds,
             providerCallSid: row.provider_call_sid,
             isSimulated: Boolean(row.is_simulated),
+            voiceId: row.voice_id || undefined,
             createdAt: row.created_at,
             endedAt: row.ended_at,
             summary: row.summary
@@ -428,6 +591,7 @@ ${fullTranscriptText}
             durationSeconds: r.duration_seconds,
             providerCallSid: r.provider_call_sid,
             isSimulated: Boolean(r.is_simulated),
+            voiceId: r.voice_id || undefined,
             createdAt: r.created_at,
             endedAt: r.ended_at,
             summary: r.summary
@@ -439,12 +603,13 @@ ${fullTranscriptText}
             INSERT INTO telephony_calls (
                 id, to_number, from_number, direction, status, purpose,
                 transcript, duration_seconds, provider_call_sid, is_simulated,
-                created_at, ended_at, summary
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                voice_id, created_at, ended_at, summary
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 status = excluded.status,
                 transcript = excluded.transcript,
                 duration_seconds = excluded.duration_seconds,
+                voice_id = excluded.voice_id,
                 ended_at = excluded.ended_at,
                 summary = excluded.summary
         `).run(
@@ -458,6 +623,7 @@ ${fullTranscriptText}
             call.durationSeconds,
             call.providerCallSid || null,
             call.isSimulated ? 1 : 0,
+            call.voiceId || null,
             call.createdAt,
             call.endedAt || null,
             call.summary || null

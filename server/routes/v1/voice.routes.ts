@@ -342,6 +342,9 @@ router.get('/default', async (_req: Request, res: Response) => {
         }
 
         return res.json({ success: true, voice });
+    } catch (e: any) {
+        return res.status(500).json({ error: e.message });
+    }
 });
 
 // ==================== TELEPHONY & PHONE CALL WEBHOOKS ====================

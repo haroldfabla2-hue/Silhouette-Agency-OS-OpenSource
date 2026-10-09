@@ -1,11 +1,15 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { telephonyService } from '../../services/telephony/telephonyService';
 import { sqliteService } from '../../services/sqliteService';
+import { ttsService } from '../../services/ttsService';
+import * as geminiService from '../../services/geminiService';
 
 describe('TelephonyService & Real-Time VoIP Engine (Phase 22)', () => {
     let testCallId: string;
 
     beforeAll(() => {
+        vi.spyOn(ttsService, 'speak').mockResolvedValue('data:audio/wav;base64,mock_audio');
+        vi.spyOn(geminiService, 'generateText').mockResolvedValue('Understood. I am processing that request for you right now.');
         try {
             sqliteService.db.exec(`
                 DELETE FROM telephony_calls;

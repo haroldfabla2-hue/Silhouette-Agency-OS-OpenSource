@@ -170,6 +170,9 @@ export enum SystemProtocol {
   // Credential Safety
   MISSING_CREDENTIAL = 'PROTOCOL_MISSING_CREDENTIAL',
 
+  // Telemetry & Audit Logs
+  TELEMETRY_LOG = 'PROTOCOL_TELEMETRY_LOG',
+
   // Job Queue / Async Workers
   VIDEO_REQUEST = 'PROTOCOL_VIDEO_REQUEST',
   WORK_COMPLETE = 'PROTOCOL_WORK_COMPLETE',
