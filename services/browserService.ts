@@ -40,6 +40,13 @@ export class BrowserService {
     }
 
     /**
+     * Safely injects virtual card payment details directly into active checkout fields.
+     */
+    public async autofillPayment(cardId: string): Promise<{ success: boolean; fieldsInjected: string[]; maskedLast4?: string; error?: string }> {
+        return await visualBrowserEngine.autofillPayment(cardId);
+    }
+
+    /**
      * Legacy CSS selector click with fallback.
      */
     public async click(selector: string): Promise<void> {

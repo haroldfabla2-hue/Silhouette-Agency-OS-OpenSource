@@ -174,6 +174,16 @@ export class ToolHandler {
             case 'browser_click_coordinate':
                 return await this.handleBrowserClickCoordinate(args as any);
 
+            // ==================== FINANCIAL VAULT & EPHEMERAL CARDS Phase 22 ====================
+            case 'vault_request_vcard':
+                return await this.handleVaultRequestVCard(args as any);
+            case 'browser_autofill_payment':
+                return await this.handleBrowserAutofillPayment(args as any);
+            case 'vault_get_spend_summary':
+                return await this.handleVaultGetSpendSummary();
+            case 'vault_burn_card':
+                return await this.handleVaultBurnCard(args as any);
+
             default:
                 if (name.startsWith('query_') && name.includes('_db_')) {
                     if (!args.query) return { error: "Missing 'query' parameter for database tool execution." };
@@ -1964,6 +1974,84 @@ export class ToolHandler {
             return result;
         } catch (e: any) {
             return { error: `Coordinate click failed: ${e.message}` };
+        }
+    }
+
+    private async handleVaultRequestVCard(args: any): Promise<any> {
+        try {
+            const { financialVault } = await import('../vault/financialVault');
+            const amountCents = Math.round(Number(args.max_amount_dollars) * 100);
+            const result = await financialVault.requestVirtualCard({
+                merchant: args.merchant,
+                maxAmountCents: amountCents,
+                purpose: args.purpose,
+                requireHumanApproval: true
+            });
+
+            if (result.error) {
+                return { error: result.error };
+            }
+
+            return {
+                status: "success",
+                message: `Ephemeral card minted for ${args.merchant}. Use browser_autofill_payment to inject it into checkout fields without exposing digits.`,
+                card: {
+                    id: result.card?.id,
+                    last4: result.card?.last4,
+                    brand: result.card?.brand,
+                    merchant: result.card?.merchantLock,
+                    spend_limit: `$${(result.card!.spendLimitCents / 100).toFixed(2)}`,
+                    expires_in_minutes: 30
+                }
+            };
+        } catch (e: any) {
+            return { error: `Virtual card request failed: ${e.message}` };
+        }
+    }
+
+    private async handleBrowserAutofillPayment(args: any): Promise<any> {
+        try {
+            const { browserService } = await import('../browserService');
+            const result = await browserService.autofillPayment(args.card_id);
+            if (!result.success) {
+                return { error: result.error || "Autofill failed: no matching payment fields found on page." };
+            }
+            return {
+                status: "success",
+                message: `Card details successfully injected into fields: ${result.fieldsInjected.join(', ')}. Review order before submitting payment.`,
+                fields: result.fieldsInjected,
+                masked_card: result.maskedLast4
+            };
+        } catch (e: any) {
+            return { error: `Autofill payment failed: ${e.message}` };
+        }
+    }
+
+    private async handleVaultGetSpendSummary(): Promise<any> {
+        try {
+            const { financialVault } = await import('../vault/financialVault');
+            const summary = financialVault.getSpendSummary();
+            return {
+                status: "success",
+                today_spent: `$${(summary.todaySpentCents / 100).toFixed(2)}`,
+                daily_ceiling: `$${(summary.dailyLimitCents / 100).toFixed(2)}`,
+                remaining_budget: `$${((summary.dailyLimitCents - summary.todaySpentCents) / 100).toFixed(2)}`,
+                active_cards_count: summary.activeCardsCount
+            };
+        } catch (e: any) {
+            return { error: `Spend summary failed: ${e.message}` };
+        }
+    }
+
+    private async handleVaultBurnCard(args: any): Promise<any> {
+        try {
+            const { financialVault } = await import('../vault/financialVault');
+            const success = financialVault.burnCard(args.card_id, 'REVOKED');
+            return success
+                ? { status: "success", message: `Virtual card ${args.card_id} burned and revoked permanently.` }
+                : { error: `Could not burn card ${args.card_id}. Already burned or not found.` };
+        } catch (e: any) {
+            return { error: `Burn card failed: ${e.message}` };
         }
     }
 }

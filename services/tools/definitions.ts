@@ -966,6 +966,56 @@ export const BROWSER_CLICK_COORDINATE_TOOL: FunctionDeclaration = {
     }
 };
 
+// ==================== FINANCIAL VAULT & EPHEMERAL CARDS (Phase 22) ====================
+
+export const VAULT_REQUEST_VCARD_TOOL: FunctionDeclaration = {
+    name: "vault_request_vcard",
+    description: "Requests issuance of an ephemeral, single-use virtual credit card with a strict maximum dollar spend limit and merchant lock. Triggers human-in-the-loop authorization to ensure zero-risk purchases.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            merchant: { type: Type.STRING, description: "The specific merchant or website domain (e.g., 'americanairlines.com', 'iberia.com', 'amazon.com')" },
+            max_amount_dollars: { type: Type.NUMBER, description: "Strict maximum spend limit in USD for this transaction (e.g., 149.99)" },
+            purpose: { type: Type.STRING, description: "Detailed description of the purchase intent (e.g., 'Economy flight JFK to MIA on Nov 12')" }
+        },
+        required: ["merchant", "max_amount_dollars", "purpose"]
+    }
+};
+
+export const BROWSER_AUTOFILL_PAYMENT_TOOL: FunctionDeclaration = {
+    name: "browser_autofill_payment",
+    description: "Safely injects virtual card payment details directly into the active browser page's checkout form without leaking the sensitive card number or CVV to model logs.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            card_id: { type: Type.STRING, description: "The ID of the active virtual card issued by vault_request_vcard" }
+        },
+        required: ["card_id"]
+    }
+};
+
+export const VAULT_GET_SPEND_SUMMARY_TOOL: FunctionDeclaration = {
+    name: "vault_get_spend_summary",
+    description: "Returns the current financial spending summary, including today's total spent against the safety ceiling and active virtual cards.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {}
+    }
+};
+
+export const VAULT_BURN_CARD_TOOL: FunctionDeclaration = {
+    name: "vault_burn_card",
+    description: "Immediately burns/destroys an active virtual card, rendering it permanently unusable after a completed or cancelled purchase.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            card_id: { type: Type.STRING, description: "The ID of the virtual card to revoke" }
+        },
+        required: ["card_id"]
+    }
+};
+
+
 
 // ==================== CODE EXECUTION TOOL ====================
 

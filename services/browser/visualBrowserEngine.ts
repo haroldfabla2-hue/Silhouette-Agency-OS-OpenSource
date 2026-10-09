@@ -417,6 +417,89 @@ export class VisualBrowserEngine {
     }
 
     /**
+     * Autonomous and safe payment checkout autofill.
+     * Injects virtual card details directly into DOM form elements
+     * WITHOUT exposing raw card data into LLM context logs.
+     */
+    public async autofillPayment(cardId: string): Promise<{ success: boolean; fieldsInjected: string[]; maskedLast4?: string; error?: string }> {
+        const { financialVault } = await import('../vault/financialVault');
+        const card = financialVault.getCardForAutofill(cardId);
+
+        if (!card) {
+            return {
+                success: false,
+                fieldsInjected: [],
+                error: `Active virtual card ${cardId} not found or expired.`
+            };
+        }
+
+        const page = await this.init();
+        const fieldsInjected: string[] = [];
+
+        // 1. Card Number field
+        const numSelector = 'input[autocomplete*="cc-number" i], input[name*="cardnumber" i], input[name*="card_num" i], input[name*="card" i], input[placeholder*="card number" i], input[id*="card" i]';
+        const numElement = await page.$(numSelector);
+        if (numElement) {
+            await numElement.click();
+            await page.keyboard.type(card.cardNumber, { delay: 35 });
+            fieldsInjected.push('cardNumber');
+        }
+
+        // 2. Expiration Date (Single field or split)
+        const expSelector = 'input[autocomplete*="cc-exp" i], input[name*="exp" i], input[placeholder*="mm/yy" i], input[placeholder*="mm / yy" i]';
+        const expElement = await page.$(expSelector);
+        if (expElement) {
+            await expElement.click();
+            await page.keyboard.type(`${card.expMonth}${card.expYear}`, { delay: 35 });
+            fieldsInjected.push('expiration');
+        } else {
+            // Split month / year
+            const monthEl = await page.$('input[name*="month" i], select[name*="month" i]');
+            const yearEl = await page.$('input[name*="year" i], select[name*="year" i]');
+            if (monthEl) {
+                await monthEl.fill(card.expMonth);
+                fieldsInjected.push('expMonth');
+            }
+            if (yearEl) {
+                await yearEl.fill(`20${card.expYear}`);
+                fieldsInjected.push('expYear');
+            }
+        }
+
+        // 3. CVV / Security Code
+        const cvvSelector = 'input[autocomplete*="cc-csc" i], input[name*="cvv" i], input[name*="cvc" i], input[placeholder*="cvv" i], input[placeholder*="cvc" i], input[placeholder*="security code" i]';
+        const cvvElement = await page.$(cvvSelector);
+        if (cvvElement) {
+            await cvvElement.click();
+            await page.keyboard.type(card.cvv, { delay: 35 });
+            fieldsInjected.push('cvv');
+        }
+
+        // 4. Cardholder Name
+        const nameSelector = 'input[autocomplete*="cc-name" i], input[name*="cardholder" i], input[name*="holder" i], input[placeholder*="name on card" i]';
+        const nameElement = await page.$(nameSelector);
+        if (nameElement) {
+            await nameElement.click();
+            await page.keyboard.type(card.cardholderName, { delay: 35 });
+            fieldsInjected.push('cardholderName');
+        }
+
+        systemBus.emit(SystemProtocol.TELEMETRY_LOG, {
+            service: 'VisualBrowserEngine',
+            event: 'PAYMENT_FORM_AUTOFILLED',
+            cardId,
+            last4: card.last4,
+            fieldsInjected
+        });
+
+        return {
+            success: fieldsInjected.length > 0,
+            fieldsInjected,
+            maskedLast4: `•••• ${card.last4}`
+        };
+    }
+
+    /**
      * Cleanly close browser instance and free resources.
      */
     public async close(): Promise<void> {
