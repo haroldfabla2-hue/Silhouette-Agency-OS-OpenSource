@@ -8,6 +8,7 @@ describe('TelephonyService & Real-Time VoIP Engine (Phase 22)', () => {
     let testCallId: string;
 
     beforeAll(() => {
+        process.env.SILHOUETTE_DEMO_MODE = '1'; // telephony simulation only runs in explicit demo mode
         vi.spyOn(ttsService, 'speak').mockResolvedValue('data:audio/wav;base64,mock_audio');
         vi.spyOn(geminiService, 'generateText').mockResolvedValue('Understood. I am processing that request for you right now.');
         try {

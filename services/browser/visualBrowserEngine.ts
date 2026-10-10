@@ -104,6 +104,41 @@ export class VisualBrowserEngine {
         };
     }
 
+
+    /**
+     * Records an action in the audit ledger. Every browser action goes through here (act, coordinate click,
+     * CSS click, goto, autofill). DOM is hashed AFTER redacting input values; screenshots are skipped when
+     * sensitive fields may be visible (autofill). A recording failure is reported via telemetry, never silent.
+     */
+    private async auditAction(page: Page, a: { actionType: string; description?: string; coordinates?: { x: number; y: number }; screenshot?: boolean }): Promise<void> {
+        try {
+            const { browserAuditLedger } = await import('./browserAuditLedger');
+            const screenshotBuffer = a.screenshot === false ? undefined : await page.screenshot({ fullPage: false }).catch(() => undefined);
+            const domContent = await page.evaluate(() => {
+                const clone = document.documentElement.cloneNode(true) as HTMLElement;
+                clone.querySelectorAll('input,textarea,select').forEach((el: any) => {
+                    el.removeAttribute('value'); if ('value' in el) el.value = '';
+                    el.textContent = '';
+                });
+                clone.querySelectorAll('script,style').forEach(el => el.remove());
+                return clone.outerHTML;
+            }).catch(() => undefined);
+            const frame = await browserAuditLedger.recordFrame({
+                actionType: a.actionType,
+                targetDescription: a.description,
+                coordinates: a.coordinates,
+                url: page.url(),
+                screenshotBuffer,
+                domContent
+            });
+            if (frame === null && browserAuditLedger.hasActiveSession?.()) {
+                systemBus.emit(SystemProtocol.TELEMETRY_LOG, { service: 'VisualBrowserEngine', event: 'AUDIT_RECORD_REJECTED', action: a.actionType });
+            }
+        } catch (e: any) {
+            systemBus.emit(SystemProtocol.TELEMETRY_LOG, { service: 'VisualBrowserEngine', event: 'AUDIT_RECORD_FAILED', action: a.actionType, error: String(e?.message || e) });
+        }
+    }
+
     /** Describe the element under a point (for gating coordinate clicks). */
     private async describePoint(page: Page, x: number, y: number): Promise<ClickDescriptor> {
         try {
@@ -124,6 +159,13 @@ export class VisualBrowserEngine {
         }
     }
 
+    /** Legacy CSS-selector fill, now audited. The typed text is NOT recorded (only its length). */
+    public async typeSelector(selector: string, text: string): Promise<void> {
+        const page = await this.init();
+        await page.fill(selector, text);
+        await this.auditAction(page, { actionType: 'typeSelector', description: `type(${selector}, ${text.length} chars)`, screenshot: false });
+    }
+
     /** Legacy CSS-selector click, now behind the same payment gate. */
     public async clickSelector(selector: string): Promise<VisualActionResult> {
         const startTime = Date.now();
@@ -141,6 +183,7 @@ export class VisualBrowserEngine {
         const blocked = await this.gateClick(desc, `click(${selector})`, startTime);
         if (blocked) return blocked;
         await page.click(selector);
+        await this.auditAction(page, { actionType: 'clickSelector', description: `click(${selector})` });
         return { success: true, action: `click(${selector})`, executionTimeMs: Date.now() - startTime };
     }
 
@@ -252,6 +295,7 @@ export class VisualBrowserEngine {
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: this.defaultTimeoutMs });
         // Give dynamic SPAs 1 second to hydrate
         await page.waitForTimeout(1000);
+        await this.auditAction(page, { actionType: 'goto', description: url });
         return {
             title: await page.title(),
             url: page.url()
@@ -479,17 +523,7 @@ export class VisualBrowserEngine {
         await page.waitForTimeout(1000); // Allow navigation or reaction
 
         // 5. Cryptographic Audit Recording
-        try {
-            const { browserAuditLedger } = await import('./browserAuditLedger');
-            const screenBuf = await page.screenshot({ fullPage: false }).catch(() => undefined);
-            await browserAuditLedger.recordFrame({
-                actionType: 'act',
-                targetDescription: instruction,
-                coordinates: target.center,
-                url: page.url(),
-                screenshotBuffer: screenBuf
-            });
-        } catch { /* ledger recording non-blocking */ }
+        await this.auditAction(page, { actionType: 'act', description: instruction, coordinates: target.center });
 
         return {
             success: true,
@@ -515,6 +549,7 @@ export class VisualBrowserEngine {
         await page.mouse.down();
         await page.waitForTimeout(80);
         await page.mouse.up();
+        await this.auditAction(page, { actionType: 'clickCoordinate', description: `clickCoordinate(${x}, ${y})`, coordinates: { x, y } });
 
         return {
             success: true,
@@ -636,6 +671,9 @@ export class VisualBrowserEngine {
             await page.keyboard.type(card.cardholderName, { delay: 35 });
             fieldsInjected.push('cardholderName');
         }
+
+        // Audit without screenshot (card digits may be visible) and with redacted DOM; never log card values
+        await this.auditAction(page, { actionType: 'autofillPayment', description: `autofill fields: ${fieldsInjected.join(',')} (card ****${card.last4})`, screenshot: false });
 
         systemBus.emit(SystemProtocol.TELEMETRY_LOG, {
             service: 'VisualBrowserEngine',

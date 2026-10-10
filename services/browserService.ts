@@ -79,8 +79,7 @@ export class BrowserService {
      * Legacy CSS selector fill with fallback.
      */
     public async type(selector: string, text: string): Promise<void> {
-        const page = await visualBrowserEngine.init();
-        await page.fill(selector, text);
+        await visualBrowserEngine.typeSelector(selector, text);
     }
 
     /**

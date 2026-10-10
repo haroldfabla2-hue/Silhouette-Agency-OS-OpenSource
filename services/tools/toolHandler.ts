@@ -2137,8 +2137,10 @@ export class ToolHandler {
             }
 
             return {
-                status: "success",
-                message: `Call successfully placed to ${args.phone_number}. Initial greeting dispatched.`,
+                status: result.call.isSimulated ? "demo" : "queued",
+                message: result.call.isSimulated
+                    ? `DEMO call (simulated, NOT a real call) to ${args.phone_number}.`
+                    : `Call to ${args.phone_number} accepted by the provider (state ${result.call.status}). It is only live once the provider reports IN_PROGRESS.`,
                 call_id: result.call.id,
                 direction: result.call.direction,
                 state: result.call.status,

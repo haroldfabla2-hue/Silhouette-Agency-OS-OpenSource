@@ -9,11 +9,35 @@ import { sqliteService } from '../sqliteService';
 import { systemBus } from '../systemBus';
 import { SystemProtocol } from '../../types';
 import { ttsService } from '../ttsService';
+import { isDemoModeEnabled } from '../security/capabilityState';
 import { generateText } from '../geminiService';
 import { voiceLibraryService } from '../media/voiceLibraryService';
 
 export type CallDirection = 'INBOUND' | 'OUTBOUND';
 export type CallStatus = 'QUEUED' | 'RINGING' | 'IN_PROGRESS' | 'COMPLETED' | 'BUSY' | 'FAILED';
+
+const TERMINAL: ReadonlySet<CallStatus> = new Set<CallStatus>(['COMPLETED', 'BUSY', 'FAILED']);
+const ORDER: Record<CallStatus, number> = { QUEUED: 0, RINGING: 1, IN_PROGRESS: 2, COMPLETED: 3, BUSY: 3, FAILED: 3 };
+
+/** Maps a Twilio call status to ours (null = unknown, ignored). */
+export function mapProviderStatus(raw: string): CallStatus | null {
+    switch ((raw || '').toLowerCase()) {
+        case 'queued': case 'initiated': return 'QUEUED';
+        case 'ringing': return 'RINGING';
+        case 'in-progress': case 'answered': return 'IN_PROGRESS';
+        case 'completed': return 'COMPLETED';
+        case 'busy': return 'BUSY';
+        case 'failed': case 'no-answer': case 'canceled': return 'FAILED';
+        default: return null;
+    }
+}
+
+/** Status only moves forward and never leaves a terminal state. */
+export function canTransition(from: CallStatus, to: CallStatus): boolean {
+    if (from === to) return false;
+    if (TERMINAL.has(from)) return false;
+    return ORDER[to] > ORDER[from];
+}
 
 export interface CallTurn {
     speaker: 'agent' | 'caller' | 'system';
@@ -42,6 +66,8 @@ export interface TelephonyCall {
     durationSeconds: number;
     providerCallSid?: string;
     isSimulated: boolean;
+    /** Provider error when the call could not be placed (status FAILED). */
+    providerError?: string;
     voiceId?: string;
     createdAt: number;
     endedAt?: number;
@@ -113,6 +139,34 @@ export class TelephonyService {
         this.isInitialized = true;
     }
 
+    /** Optional sender to the live media stream (WebSocket). Registered by the media-stream server when present. */
+    private mediaStreamSender: ((callId: string, msg: { event: 'clear' }) => Promise<boolean>) | null = null;
+    public setMediaStreamSender(fn: ((callId: string, msg: { event: 'clear' }) => Promise<boolean>) | null): void {
+        this.mediaStreamSender = fn;
+    }
+
+    /**
+     * Applies a provider status update (callback). This is the ONLY way a real call moves forward.
+     * Backwards or post-terminal updates are ignored. Returns the call when the state changed.
+     */
+    public applyProviderStatus(providerCallSid: string, rawStatus: string): TelephonyCall | null {
+        const next = mapProviderStatus(rawStatus);
+        if (!next) return null;
+        let call: TelephonyCall | undefined;
+        for (const c of this.activeCalls.values()) if (c.providerCallSid === providerCallSid) { call = c; break; }
+        if (!call) return null;
+        if (!canTransition(call.status, next)) return null;
+        call.status = next;
+        if (TERMINAL.has(next)) {
+            call.endedAt = Date.now();
+            call.durationSeconds = Math.max(1, Math.round((call.endedAt - call.createdAt) / 1000));
+            this.activeCalls.delete(call.id);
+        }
+        this.saveCallToDb(call);
+        systemBus.emit(SystemProtocol.TELEMETRY_LOG, { service: 'TelephonyService', event: 'CALL_STATUS', callId: call.id, status: next });
+        return call;
+    }
+
     /**
      * Dials an outbound phone number.
      * Uses Twilio REST API when credentials exist; otherwise gracefully runs in
@@ -123,40 +177,53 @@ export class TelephonyService {
 
         const callId = `call_${crypto.randomUUID().replace(/-/g, '').substring(0, 12)}`;
         const fromNumber = params.fromNumber || this.defaultFromNumber || '+15550199000';
-        const isSimulated = !this.accountSid || !this.authToken;
-
+        const hasCreds = !!(this.accountSid && this.authToken);
         let providerCallSid: string | undefined;
+        let providerError: string | undefined;
+        let status: CallStatus = 'QUEUED';
+        let isSimulated = false;
 
-        if (!isSimulated) {
+        if (!hasCreds) {
+            if (isDemoModeEnabled()) {
+                // Explicit DEMO mode only: a labelled simulation, never presented as a real call.
+                isSimulated = true;
+                status = 'IN_PROGRESS';
+            } else {
+                providerError = 'UNAVAILABLE: no telephony provider credentials configured (TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN). Set them, or enable SILHOUETTE_DEMO_MODE=1 for a labelled demo.';
+                status = 'FAILED';
+            }
+        } else {
             try {
-                // Real Twilio REST API outbound call trigger
                 const endpoint = `https://api.twilio.com/2010-04-01/Accounts/${this.accountSid}/Calls.json`;
                 const authHeader = Buffer.from(`${this.accountSid}:${this.authToken}`).toString('base64');
-                const webhookUrl = process.env.SILHOUETTE_VOICE_WEBHOOK || 'http://localhost:3000/v1/voice/twiml';
-
-                const body = new URLSearchParams({
-                    To: params.toNumber,
-                    From: fromNumber,
-                    Url: webhookUrl
-                });
-
-                const res = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Basic ${authHeader}`,
-                        'Content-Type': 'application/x-www-form-urlencoded'
-                    },
-                    body: body.toString()
-                });
-
-                if (res.ok) {
-                    const data: any = await res.json();
-                    providerCallSid = data.sid;
+                const webhookUrl = process.env.SILHOUETTE_VOICE_WEBHOOK;
+                if (!webhookUrl) {
+                    providerError = 'UNAVAILABLE: SILHOUETTE_VOICE_WEBHOOK (public HTTPS URL for call callbacks) is not configured.';
+                    status = 'FAILED';
                 } else {
-                    console.warn(`[Telephony] Twilio call dispatch failed, falling back to simulation. Status: ${res.status}`);
+                    const body = new URLSearchParams({ To: params.toNumber, From: fromNumber, Url: webhookUrl });
+                    const res = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Basic ${authHeader}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: body.toString()
+                    });
+                    if (res.ok) {
+                        const data: any = await res.json();
+                        if (data && typeof data.sid === 'string' && data.sid) {
+                            providerCallSid = data.sid;
+                            status = 'QUEUED'; // advances ONLY via provider callbacks
+                        } else {
+                            providerError = 'Provider accepted the request but returned no call SID.';
+                            status = 'FAILED';
+                        }
+                    } else {
+                        providerError = `Provider rejected the call (HTTP ${res.status}).`;
+                        status = 'FAILED';
+                    }
                 }
             } catch (err: any) {
-                console.warn(`[Telephony] Error connecting to Twilio: ${err.message}. Using simulation.`);
+                providerError = `Could not reach provider: ${err.message}`;
+                status = 'FAILED';
             }
         }
 
@@ -171,28 +238,31 @@ export class TelephonyService {
             toNumber: params.toNumber,
             fromNumber,
             direction: 'OUTBOUND',
-            status: 'IN_PROGRESS',
+            status,
             purpose: params.purpose,
             transcript: [initialTurn],
             durationSeconds: 0,
             providerCallSid,
             isSimulated,
+            providerError,
             voiceId: params.voiceId,
-            createdAt: Date.now()
+            createdAt: Date.now(),
+            endedAt: status === 'FAILED' ? Date.now() : undefined
         };
 
-        this.activeCalls.set(callId, callRecord);
+        if (status !== 'FAILED') this.activeCalls.set(callId, callRecord);
         this.saveCallToDb(callRecord);
 
         systemBus.emit(SystemProtocol.TELEMETRY_LOG, {
             service: 'TelephonyService',
-            event: 'CALL_INITIATED',
+            event: status === 'FAILED' ? 'CALL_FAILED' : 'CALL_INITIATED',
             callId,
             toNumber: params.toNumber,
-            isSimulated
+            isSimulated,
+            status
         });
 
-        return { call: callRecord };
+        return status === 'FAILED' ? { call: callRecord, error: providerError } : { call: callRecord };
     }
 
     /**
@@ -281,6 +351,21 @@ export class TelephonyService {
             return { success: false, twiml: '', timestamp: Date.now(), error: `Call ${callId} is not active.` };
         }
 
+        // A real call needs a connected media stream to flush queued audio. No stream = honestly UNAVAILABLE.
+        const twimlClear = `<?xml version="1.0" encoding="UTF-8"?><Response><Clear/></Response>`;
+        if (!call.isSimulated) {
+            const sender = this.mediaStreamSender;
+            if (!sender) {
+                return { success: false, twiml: '', timestamp: Date.now(), error: 'UNAVAILABLE: no media stream connected for this call, audio cannot be cleared.' };
+            }
+            try {
+                const ok = await sender(callId, { event: 'clear' });
+                if (!ok) return { success: false, twiml: '', timestamp: Date.now(), error: 'Media stream did not accept the clear command.' };
+            } catch (e: any) {
+                return { success: false, twiml: '', timestamp: Date.now(), error: `Media stream error: ${e.message}` };
+            }
+        }
+
         const timestamp = Date.now();
         call.transcript.push({
             speaker: 'system',
@@ -290,7 +375,7 @@ export class TelephonyService {
 
         this.saveCallToDb(call);
 
-        const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Clear/></Response>`;
+        const twiml = twimlClear;
 
         systemBus.emit(SystemProtocol.TELEMETRY_LOG, {
             service: 'TelephonyService',
@@ -434,7 +519,7 @@ Agent Response (spoken naturally):`;
                 const twiml = `<Response><Play digits="${sanitized}"/></Response>`;
                 const body = new URLSearchParams({ Twiml: twiml });
 
-                await fetch(endpoint, {
+                const res = await fetch(endpoint, {
                     method: 'POST',
                     headers: {
                         'Authorization': `Basic ${authHeader}`,
@@ -442,8 +527,11 @@ Agent Response (spoken naturally):`;
                     },
                     body: body.toString()
                 });
+                if (!res.ok) {
+                    return { success: false, error: `Provider rejected DTMF (HTTP ${res.status}).` };
+                }
             } catch (err: any) {
-                console.warn(`[Telephony] Failed to send real DTMF: ${err.message}`);
+                return { success: false, error: `DTMF not sent, provider unreachable: ${err.message}` };
             }
         }
 
@@ -474,6 +562,22 @@ Agent Response (spoken naturally):`;
         const call = this.activeCalls.get(callId);
         if (!call) {
             return { error: `Call ${callId} not found.` };
+        }
+
+        // Real call: the provider must confirm the hangup. A local flag alone never ends a live call.
+        if (!call.isSimulated && call.providerCallSid && this.accountSid && this.authToken) {
+            try {
+                const endpoint = `https://api.twilio.com/2010-04-01/Accounts/${this.accountSid}/Calls/${call.providerCallSid}.json`;
+                const authHeader = Buffer.from(`${this.accountSid}:${this.authToken}`).toString('base64');
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Basic ${authHeader}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({ Status: 'completed' }).toString()
+                });
+                if (!res.ok) return { call, error: `Hangup NOT confirmed by provider (HTTP ${res.status}). The call may still be live.` };
+            } catch (err: any) {
+                return { call, error: `Hangup NOT confirmed, provider unreachable: ${err.message}. The call may still be live.` };
+            }
         }
 
         call.status = 'COMPLETED';
