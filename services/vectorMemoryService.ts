@@ -1,3 +1,4 @@
+import { lexicalMatches } from './lexicalMatch';
 import { QDRANT_CONFIG } from '../constants';
 import { BrandDigitalTwin } from '../types';
 
@@ -233,7 +234,7 @@ class VectorMemoryService {
                         filter: ownerId ? { must: [{ key: 'ownerId', match: { value: ownerId } }] } : undefined
                     });
                     matches.push(...(result.points || []).filter((p: any) =>
-                        (p.payload?.content || '').toLowerCase().includes(query.toLowerCase())
+                        lexicalMatches(p.payload?.content || '', query)
                         && !(p.payload?.tags || []).includes('HYPOTHESIS')));
                     offset = result.next_page_offset;
                 } while (offset !== undefined && offset !== null && matches.length < limit);
