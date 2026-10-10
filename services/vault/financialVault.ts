@@ -9,6 +9,7 @@ import { sqliteService } from '../sqliteService';
 import { systemBus } from '../systemBus';
 import { SystemProtocol } from '../../types';
 import { actionExecutor } from '../actionExecutor';
+import { CapabilityState, demoOrUnavailable } from '../security/capabilityState';
 
 export type CardStatus = 'ACTIVE' | 'EXHAUSTED' | 'REVOKED' | 'EXPIRED';
 
@@ -27,6 +28,8 @@ export interface VirtualCard {
     purpose: string;
     createdAt: number;
     expiresAt: number;
+    /** DEMO = locally generated test number, NOT a real issued card. */
+    capabilityState?: CapabilityState;
 }
 
 export interface DecryptedCardDetails extends VirtualCard {
@@ -141,8 +144,15 @@ export class FinancialVault {
      * Requests the issuance of a new single-use virtual card.
      * Enforces daily ceilings and triggers Human-in-the-Loop approval if required.
      */
-    public async requestVirtualCard(request: CreateCardRequest): Promise<{ card?: VirtualCard; error?: string; approvalRequired?: boolean }> {
+    public async requestVirtualCard(request: CreateCardRequest): Promise<{ card?: VirtualCard; error?: string; approvalRequired?: boolean; capabilityState?: CapabilityState }> {
         this.initializeSchema();
+
+        // 0. Truthfulness gate: no card issuer integration exists yet, so a card can only be
+        //    minted in explicit DEMO mode. Otherwise the capability is UNAVAILABLE (never fake success).
+        const cap = demoOrUnavailable('Virtual card issuing');
+        if (cap.state !== 'DEMO') {
+            return { error: cap.reason, capabilityState: cap.state };
+        }
 
         // 1. Check daily budget ceiling
         const summary = this.getSpendSummary(request.currency || 'USD');
@@ -248,10 +258,11 @@ export class FinancialVault {
             status: 'ACTIVE',
             purpose: request.purpose,
             createdAt: Date.now(),
-            expiresAt
+            expiresAt,
+            capabilityState: 'DEMO'
         };
 
-        return { card: createdCard };
+        return { card: createdCard, capabilityState: 'DEMO' };
     }
 
     /**

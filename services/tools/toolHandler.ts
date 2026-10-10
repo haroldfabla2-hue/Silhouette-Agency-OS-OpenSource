@@ -2007,11 +2007,13 @@ export class ToolHandler {
             });
 
             if (result.error) {
-                return { error: result.error };
+                return { error: result.error, capability_state: result.capabilityState };
             }
 
             return {
                 status: "success",
+                capability_state: result.capabilityState,
+                warning: result.capabilityState === 'DEMO' ? 'DEMO card: locally generated test number, NOT a real issued card. It cannot pay anything.' : undefined,
                 message: `Ephemeral card minted for ${args.merchant}. Use browser_autofill_payment to inject it into checkout fields without exposing digits.`,
                 card: {
                     id: result.card?.id,

@@ -8,6 +8,7 @@ describe('FinancialVault & Autonomous Checkout System (Phase 22)', () => {
     let testCardId: string;
 
     beforeAll(() => {
+        process.env.SILHOUETTE_DEMO_MODE = '1'; // cards are DEMO only when explicitly enabled
         try {
             sqliteService.db.exec(`
                 DELETE FROM financial_transactions;
