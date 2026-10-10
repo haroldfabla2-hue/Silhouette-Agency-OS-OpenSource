@@ -12,7 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [20, 22]
+        # Floor required by package.json engines (Stagehand needs >=22.18) plus latest 22.x.
+        node-version: ['22.18.0', '22']
 
     steps:
       - name: Checkout
@@ -82,10 +83,9 @@ jobs:
         continue-on-error: true
 
   build-check:
-    name: Electron Build Verification
+    name: Windows Build Verification (frontend + server)
     runs-on: windows-latest
     needs: quality
-    if: github.ref == 'refs/heads/main'
     steps:
       - name: Checkout
         uses: actions/checkout@v4

@@ -8,7 +8,7 @@ Esta guía te guiará paso a paso para configurar tu propio agente cognitivo y t
 
 Antes de comenzar, asegúrate de tener instalados:
 
-1.  **Node.js** (v18 o superior) - [Descargar Node.js](https://nodejs.org)
+1.  **Node.js** (v22.18 o superior) - [Descargar Node.js](https://nodejs.org)
 2.  **Git** - [Descargar Git](https://git-scm.com/)
 3.  *(Opcional pero recomendado)* **Docker Desktop** - Si deseas usar LanceDB, Neo4j Graph y Redis localmente para contar con Memoria a Largo Plazo. [Descargar Docker](https://www.docker.com/products/docker-desktop)
 
