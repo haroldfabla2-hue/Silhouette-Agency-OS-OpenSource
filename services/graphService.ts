@@ -16,6 +16,16 @@ class GraphService {
     private isRegistered: boolean = false;
     private connectionTimeout: NodeJS.Timeout | null = null;
     private readonly TIMEOUT_MS = 5 * 60 * 1000; // 5 Minutes
+    // Circuit breaker: after connect() exhausts its retries, further automatic connects are skipped for
+    // this long so every graph query does not block ~6 s (3 attempts with backoff) while Neo4j is down.
+    private connectCooldownUntil = 0;
+    private outageAlerted = false; // one CRITICAL alert per outage episode, not one per query
+    private idleClosed = false; // Neo4j was closed on purpose by the idle timer (not an outage)
+
+    private connectCooldownMs(): number {
+        const v = Number(process.env.GRAPH_CONNECT_COOLDOWN_MS);
+        return Number.isFinite(v) && v >= 0 ? v : 30_000;
+    }
 
     constructor() {
         // Lazy initialization - connection managed by NervousSystem
@@ -30,18 +40,20 @@ class GraphService {
         } catch {
             return false;
         }
-        return this._isConnected;
     }
 
     /**
      * Connects to Neo4j with Exponential Backoff Retry.
      * Fires a SYSTEM_ALERT if all retries fail so the Swarm can self-heal.
      */
-    public async connect(retries = 3, delayMs = 2000): Promise<boolean> {
+    public async connect(retries = 3, delayMs = 2000, force = false): Promise<boolean> {
         if (this._isConnected && this.driver) {
             this.resetConnectionTimeout(); // Keep alive on manual connect
             return true;
         }
+
+        // Circuit breaker (automatic callers only; the nervous system and explicit reconnects pass force=true)
+        if (!force && Date.now() < this.connectCooldownUntil) return false;
 
         const config = configLoader.getConfig();
         if (config.modules.graph === false) {
@@ -74,6 +86,10 @@ class GraphService {
 
                 await this.driver.verifyConnectivity();
                 this._isConnected = true;
+                this.idleClosed = false;
+                this.connectCooldownUntil = 0;
+                if (this.outageAlerted) console.log("[GRAPH] ✅ Neo4j recovered after outage.");
+                this.outageAlerted = false;
                 console.log("[GRAPH] ✅ Connected to Neo4j.");
 
                 this.resetConnectionTimeout();
@@ -93,6 +109,9 @@ class GraphService {
         }
 
         // Exhausted retries
+        this.connectCooldownUntil = Date.now() + this.connectCooldownMs();
+        if (this.outageAlerted) return false; // same outage: already alerted, stay quiet
+        this.outageAlerted = true;
         console.error("[GRAPH] 🚨 FATAL: Neo4j connection completely failed after retries.");
         try {
             const { systemBus } = await import('./systemBus');
@@ -114,6 +133,7 @@ class GraphService {
         if (this.connectionTimeout) clearTimeout(this.connectionTimeout);
         this.connectionTimeout = setTimeout(() => {
             console.log("[GRAPH] 💤 Idle timeout reached. Closing Neo4j connection.");
+            this.idleClosed = true;
             this.disconnect();
         }, this.TIMEOUT_MS);
     }
@@ -135,7 +155,20 @@ class GraphService {
      * Check if connected (used by NervousSystem health check)
      */
     public isConnectedStatus(): boolean {
-        return this._isConnected || true; // Always operational via SQLite fallback
+        return true; // Always operational: Neo4j when reachable, SQLite fallback otherwise. Use getBackendStatus() for the truth.
+    }
+
+    /**
+     * Real health probe for the nervous system. Unlike isConnectedStatus() it can be false:
+     *  - disabled by config (Lite Mode) => healthy (by design, not an outage)
+     *  - driver present => verifyConnectivity()
+     *  - closed on purpose by the idle timer => healthy (reconnects lazily on next query)
+     *  - otherwise (Neo4j unreachable, SQLite fallback serving) => unhealthy so the nervous system reconnects
+     */
+    public async probeHealth(): Promise<boolean> {
+        if (configLoader.getConfig().modules.graph === false) return true;
+        if (this.driver) return this.isConnected();
+        return this.idleClosed;
     }
 
     /**
@@ -156,24 +189,22 @@ class GraphService {
 
     private registerWithNervousSystem() {
         if (this.isRegistered) return;
+        // Never overwrite an existing 'neo4j' registration (initializeNervousSystem registers the truthful one at boot);
+        // the old always-healthy check replaced it after the first successful connect, hiding later drops.
+        if (nervousSystem.isRegistered('neo4j')) {
+            this.isRegistered = true;
+            return;
+        }
 
         nervousSystem.register({
             id: 'neo4j',
             name: 'Neo4j Graph',
             type: 'DATABASE',
             isRequired: false,
-            checkHealth: async () => {
-                if (!this.isConnectedStatus()) return false;
-                try {
-                    await this.runQuery('RETURN 1');
-                    return true;
-                } catch {
-                    return false;
-                }
-            },
+            checkHealth: () => this.probeHealth(),
             reconnect: async () => {
                 await this.disconnect();
-                return await this.connect();
+                return await this.connect(3, 2000, true);
             }
         });
         this.isRegistered = true;
@@ -931,7 +962,7 @@ class GraphService {
 
     // Given a list of Node IDs (from Vector Search), find their neighbors
     public async getRelatedConcepts(nodeIds: string[], depth: number = 1): Promise<any[]> {
-        if (!this.isConnected || !this.driver) return [];
+        // runQuery decides the backend (Neo4j or the SQLite fallback); no early return here.
         if (nodeIds.length === 0) return [];
 
         // Query: Find nodes with these IDs, and traverse OUT/IN relationships
@@ -969,7 +1000,7 @@ class GraphService {
     // Find "Open Triangles" (A connected to C, B connected to C, but A not connected to B)
     // This suggests A and B might be related via C.
     public async findOpenTriangles(limit: number = 5): Promise<{ nodeA: any, nodeB: any, bridge: any }[]> {
-        if (!this.isConnected || !this.driver) return [];
+        // runQuery decides the backend (Neo4j or the SQLite fallback); no early return here.
 
         const query = `
             MATCH (a:Concept)-[:RELATED]-(bridge:Concept)-[:RELATED]-(b:Concept)
@@ -996,11 +1027,6 @@ class GraphService {
      * Used by UI to display eternal memory
      */
     public async getUserFacts(userId?: string): Promise<{ category: string; content: string; confidence: number; timestamp: number }[]> {
-        if (!this.isConnected || !this.driver) {
-            await this.connect();
-            if (!this.driver) return [];
-        }
-
         try {
             // If userId is provided, filter by that user. Otherwise, fallback to global (admin only)
             const query = userId ? `

@@ -331,14 +331,8 @@ export async function initializeNervousSystem(): Promise<void> {
             name: 'Neo4j Graph',
             type: 'DATABASE',
             isRequired: false,
-            checkHealth: async () => {
-                if (!graph['isConnected']) {
-                    console.warn("[NERVOUS] graph.isConnected() is not accessible or not a function.");
-                    return false;
-                }
-                return graph.isConnected();
-            },
-            reconnect: async () => graph.connect()
+            checkHealth: () => graph.probeHealth(),
+            reconnect: async () => graph.connect(3, 2000, true)
         });
     } catch (e) {
         console.warn("[NERVOUS] Neo4j service not available for monitoring");
