@@ -333,21 +333,26 @@ export class SqliteService {
         for (const file of files) {
             const version = file.split('_')[0];
 
-            // Check if already applied
-            const applied = this.db.prepare('SELECT id FROM system_migrations WHERE version = ?').get(version);
-            if (applied) continue;
+            // Fast path: already applied (no write lock needed).
+            if (this.db.prepare('SELECT id FROM system_migrations WHERE version = ?').get(version)) continue;
 
             const filePath = path.join(migrationsDir, file);
             const sql = fs.readFileSync(filePath, 'utf-8');
 
-            console.log(`[Migrations] Applying SQLite migration: ${file}`);
-
-            this.db.transaction(() => {
+            // Several processes (server, CLI, parallel test workers) can open the same DB file at once.
+            // BEGIN IMMEDIATE takes the write lock first, so the "already applied?" re-check and the
+            // apply are atomic: exactly one process applies a migration, the others see it as done.
+            const applyOnce = this.db.transaction((): boolean => {
+                if (this.db.prepare('SELECT id FROM system_migrations WHERE version = ?').get(version)) return false;
                 this.db.exec(sql);
                 this.db.prepare('INSERT INTO system_migrations (version, filename, executed_at) VALUES (?, ?, ?)').run(version, file, Date.now());
-            })();
+                return true;
+            });
 
-            console.log(`[Migrations] Successfully applied: ${file}`);
+            if (applyOnce.immediate()) {
+                console.log(`[Migrations] Applying SQLite migration: ${file}`);
+                console.log(`[Migrations] Successfully applied: ${file}`);
+            }
         }
     }
 
