@@ -119,6 +119,19 @@ class GraphService {
     }
 
     /**
+     * Truthful backend state for health reporting.
+     * Unlike isConnectedStatus() (always true because SQLite takes over), this says WHICH backend is serving:
+     *  - 'neo4j': driver connected
+     *  - 'sqlite-fallback': Neo4j unreachable, queries are served by the SQLite fallback (degraded)
+     *  - 'disabled': graph module turned off in config (Lite Mode), SQLite by design
+     */
+    public getBackendStatus(): { backend: 'neo4j' | 'sqlite-fallback' | 'disabled'; connected: boolean } {
+        if (configLoader.getConfig().modules.graph === false) return { backend: 'disabled', connected: false };
+        if (this._isConnected && this.driver) return { backend: 'neo4j', connected: true };
+        return { backend: 'sqlite-fallback', connected: false };
+    }
+
+    /**
      * Check if connected (used by NervousSystem health check)
      */
     public isConnectedStatus(): boolean {

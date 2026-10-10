@@ -10,9 +10,37 @@ import { Router, Request, Response } from 'express';
 export const healthRouter = Router();
 
 interface ServiceCheck {
-    status: 'up' | 'down';
+    status: 'up' | 'down' | 'degraded';
     latencyMs?: number;
     error?: string;
+    /** Which backend is really serving (e.g. 'neo4j' | 'sqlite-fallback' | 'disabled'). */
+    backend?: string;
+    note?: string;
+}
+
+/**
+ * Health of a dependency that has a fallback. A fallback keeps the service ANSWERING, but it is not the real
+ * dependency: reporting it as 'up' would hide the outage (a reported-healthy lie). So:
+ *  - real backend answers            -> 'up'
+ *  - fallback serving                -> 'degraded' (HTTP stays 200: the service still works; status says why)
+ *  - disabled by config (Lite Mode)  -> 'up' with backend 'disabled' (intentional, not an outage)
+ *  - real backend claims up but fails the probe -> 'degraded' with the error
+ */
+export async function checkGraphHealth(
+    graph: { getBackendStatus(): { backend: 'neo4j' | 'sqlite-fallback' | 'disabled'; connected: boolean }; runQuery(q: string): Promise<unknown> }
+): Promise<ServiceCheck> {
+    const { backend } = graph.getBackendStatus();
+    if (backend === 'disabled') return { status: 'up', backend, note: 'Graph module disabled in config (Lite Mode); SQLite by design.' };
+    if (backend === 'sqlite-fallback') {
+        return { status: 'degraded', backend, note: 'Neo4j unreachable; graph queries are served by the SQLite fallback.' };
+    }
+    const start = Date.now();
+    try {
+        await graph.runQuery('RETURN 1 AS ping');
+        return { status: 'up', backend, latencyMs: Date.now() - start };
+    } catch (e: any) {
+        return { status: 'degraded', backend, latencyMs: Date.now() - start, error: e.message };
+    }
 }
 
 healthRouter.get('/', async (_req: Request, res: Response) => {
@@ -33,12 +61,10 @@ healthRouter.get('/', async (_req: Request, res: Response) => {
         overallHealthy = false;
     }
 
-    // 2. Neo4j (Graph)
+    // 2. Neo4j (Graph) - has a SQLite fallback, so report the REAL backend (see checkGraphHealth)
     try {
-        const start = Date.now();
         const { graph } = await import('../../services/graphService');
-        await graph.runQuery('RETURN 1 AS ping');
-        checks.neo4j = { status: 'up', latencyMs: Date.now() - start };
+        checks.neo4j = await checkGraphHealth(graph);
     } catch (e: any) {
         checks.neo4j = { status: 'down', error: e.message };
         overallHealthy = false;
@@ -78,7 +104,8 @@ healthRouter.get('/', async (_req: Request, res: Response) => {
         checks.daemon = { status: 'down' };
     }
 
-    const status = overallHealthy ? 'healthy' : 'degraded';
+    const anyDegraded = Object.values(checks).some(c => c.status === 'degraded');
+    const status = !overallHealthy || anyDegraded ? 'degraded' : 'healthy';
     const httpCode = overallHealthy ? 200 : 503;
 
     res.status(httpCode).json({
