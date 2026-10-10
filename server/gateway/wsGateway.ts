@@ -437,10 +437,12 @@ class SilhouetteGateway {
             case 'graph.health': {
                 try {
                     const { graph } = await import('../../services/graphService');
+                    // Truthful backend: 'connected' only when Neo4j really answers; SQLite fallback is 'degraded'.
+                    const b = graph.getBackendStatus();
                     return {
-                        status: graph.isConnectedStatus() ? 'connected' : 'disconnected',
-                        // Graph service doesn't expose public stats, so we return simple status
-                        connected: graph.isConnectedStatus()
+                        status: b.backend === 'neo4j' ? 'connected' : b.backend === 'disabled' ? 'disabled' : 'degraded',
+                        backend: b.backend,
+                        connected: b.connected
                     };
                 } catch {
                     return { status: 'disconnected' };
