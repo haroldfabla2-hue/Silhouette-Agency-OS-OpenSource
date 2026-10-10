@@ -20,7 +20,7 @@ router.get('/state', async (req, res) => {
     try {
         // Get all nodes from the 5-tier memory system
         const nodes = await continuum.getAllNodes();
-        const stats = continuum.getStats();
+        const stats = await continuum.getStats();
 
         res.json({ nodes, stats });
     } catch (error: any) {
@@ -124,7 +124,7 @@ router.delete('/:nodeId', async (req, res) => {
 // GET /v1/memory/stats - Get memory system statistics
 router.get('/stats', async (req, res) => {
     try {
-        const stats = continuum.getStats();
+        const stats = await continuum.getStats();
         res.json({ stats });
     } catch (error: any) {
         console.error('[MEMORY] Error fetching stats:', error);
