@@ -1,3 +1,4 @@
+import { atomicWriteFile } from './utils/atomicWrite';
 import { MemoryNode, MemoryTier } from "../types";
 import { lancedbService } from './lancedbService';
 import { fuseMemories, inScope, scopeSql, type MemoryScope } from './memoryRetrieval';
@@ -139,21 +140,7 @@ class ContinuumMemorySystem {
 
             // 2. Secondary: Disk (Permanent, Local)
             await fs.mkdir(path.dirname(SNAPSHOT_PATH), { recursive: true });
-            const temporary = `${SNAPSHOT_PATH}.${process.pid}.${crypto.randomUUID()}.tmp`;
-            try {
-                await fs.writeFile(temporary, payload);
-                try {
-                    await fs.rename(temporary, SNAPSHOT_PATH);
-                } catch (renameErr: any) {
-                    if (renameErr.code === 'EPERM' || renameErr.code === 'EBUSY') {
-                        await fs.copyFile(temporary, SNAPSHOT_PATH);
-                    } else {
-                        throw renameErr;
-                    }
-                }
-            } finally {
-                await fs.rm(temporary, { force: true }).catch(() => {});
-            }
+            await atomicWriteFile(SNAPSHOT_PATH, payload);
 
             // console.log("[CONTINUUM] Volatile memory snapshot saved (V5.0 format).");
         } catch (error) {
