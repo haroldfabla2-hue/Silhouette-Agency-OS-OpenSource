@@ -1,3 +1,4 @@
+import { APP_VERSION } from '../utils/appVersion';
 import React from 'react';
 import { LayoutDashboard, Users, Brain, Terminal, Activity, Settings as SettingsIcon, Database, LayoutTemplate, Wand2, Sliders, BrainCircuit, Cloud, Mail, Palette } from 'lucide-react';
 
@@ -44,7 +45,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isMobileOpen
         </div>
         <div>
           <h1 className="text-cyan-400 font-bold tracking-wider text-lg">SILHOUETTE</h1>
-          <p className="text-xs text-slate-500 tracking-widest">AGENCY OS V4.0</p>
+          <p className="text-xs text-slate-500 tracking-widest">AGENCY OS V{APP_VERSION}</p>
         </div>
       </div>
 

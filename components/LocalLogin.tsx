@@ -1,3 +1,4 @@
+import { APP_VERSION } from '../utils/appVersion';
 import React, { useState } from 'react';
 import { api } from '../utils/api';
 
@@ -59,7 +60,7 @@ export const LocalLogin: React.FC<LocalLoginProps> = ({ onComplete, onGoogleLogi
                         <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">
                             SILHOUETTE
                         </h1>
-                        <p className="text-slate-500 text-sm mt-1 tracking-wide">Agency OS v2.0</p>
+                        <p className="text-slate-500 text-sm mt-1 tracking-wide">Agency OS v{APP_VERSION}</p>
                     </div>
                 </div>
 

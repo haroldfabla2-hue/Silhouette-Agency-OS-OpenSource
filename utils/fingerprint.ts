@@ -84,6 +84,7 @@ export async function checkDeviceTrust(): Promise<{
     isCreator?: boolean;
     googleLinked?: boolean;
     needsSetup?: boolean;
+    serverUnreachable?: boolean;
 }> {
     const fingerprint = generateFingerprint();
 
@@ -105,7 +106,8 @@ export async function checkDeviceTrust(): Promise<{
         clearTimeout(timeoutId);
 
         if (!response.ok) {
-            return { trusted: false };
+            // 5xx / blocked (e.g. CORS proxy) is not the same as 'not trusted': say so.
+            return { trusted: false, serverUnreachable: response.status >= 500 };
         }
 
         const data = await response.json();
@@ -132,7 +134,7 @@ export async function checkDeviceTrust(): Promise<{
         } else {
             console.error('[Fingerprint] Auto-login check failed:', error.message);
         }
-        return { trusted: false };
+        return { trusted: false, serverUnreachable: true };
     }
 }
 
