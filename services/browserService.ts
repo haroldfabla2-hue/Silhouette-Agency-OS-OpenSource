@@ -1,4 +1,18 @@
 import { visualBrowserEngine, VisualElement, VisualActionResult } from './browser/visualBrowserEngine';
+import { StagehandPerception } from './browser/stagehandPerception';
+import { routePerception, PerceptionOperation, RoutedResult } from './browser/perceptionRouter';
+import { defaultPaymentApproval } from './browser/paymentApproval';
+
+/** One Stagehand session per process, gated by the same payment approval and recorded in the audit ledger. */
+export const stagehandPerception = new StagehandPerception(
+    () => process.env,
+    undefined,
+    defaultPaymentApproval,
+    async (a) => {
+        const { browserAuditLedger } = await import('./browser/browserAuditLedger');
+        await browserAuditLedger.recordFrame({ actionType: `stagehand_${a.actionType}`, targetDescription: a.description, url: a.url || '' });
+    },
+);
 
 export class BrowserService {
     /**
@@ -98,9 +112,23 @@ export class BrowserService {
     }
 
     /**
+     * AI perception layer: Stagehand when configured (REAL), otherwise the built-in engine.
+     * The result states which provider answered; a fallback is never presented as Stagehand.
+     */
+    public async perception(op: PerceptionOperation, args: { url?: string; instruction?: string; text?: string; schema?: any }): Promise<RoutedResult> {
+        return await routePerception(op, args, stagehandPerception, {
+            goto: (u) => visualBrowserEngine.goto(u),
+            observe: (i) => visualBrowserEngine.observe(i),
+            act: (i, t) => visualBrowserEngine.act(i, t),
+            extract: (i) => visualBrowserEngine.extract(i),
+        });
+    }
+
+    /**
      * Closes the browser instance.
      */
     public async close(): Promise<void> {
+        await stagehandPerception.close();
         await visualBrowserEngine.close();
     }
 }
