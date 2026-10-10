@@ -43,6 +43,9 @@ jobs:
           # Ubuntu AppArmor otherwise denies CI runner user namespaces.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
+      - name: Install Chromium for browser tests
+        run: npx playwright install --with-deps chromium
+
       - name: Unit tests
         run: npm test
 
