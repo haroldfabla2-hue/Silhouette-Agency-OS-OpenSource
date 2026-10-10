@@ -8,10 +8,15 @@ import { useCanvasStore } from '../store/useCanvasStore';
 import { systemBus } from '../../../services/systemBus';
 import { SystemProtocol } from '../../../types';
 import { api } from '../../../utils/api';
+import { interpretUpload, driveFileName, type DriveUploadResponse } from './driveSyncResult';
 
 export const useDriveSync = () => {
     const { document, prefs } = useCanvasStore();
     const [isAuthenticated, setIsAuthenticated] = useState(false);
+    // Visible sync state: the UI can show the last error instead of failing silently.
+    const [syncError, setSyncError] = useState<string | null>(null);
+    const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
+    const [syncVersion, setSyncVersion] = useState(0);
 
     // Check Drive auth status on mount
     useEffect(() => {
@@ -32,6 +37,7 @@ export const useDriveSync = () => {
     const syncToDrive = useCallback(async () => {
         if (!document) {
             console.warn('[DriveSync] No document to sync');
+            setSyncError('There is no document to sync.');
             return false;
         }
 
@@ -43,6 +49,7 @@ export const useDriveSync = () => {
             if (!status.authenticated) {
                 console.warn('[DriveSync] ❌ Google Drive not authenticated. Redirecting to auth...');
                 window.open('/v1/drive/auth', '_blank', 'width=500,height=600');
+                setSyncError('Google Drive is not connected. Complete the sign-in window and sync again.');
                 return false;
             }
 
@@ -60,7 +67,8 @@ export const useDriveSync = () => {
             }
 
             // 3. Prepare document for upload
-            const fileName = `${document.name.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}.ncx`;
+            const nextVersion = syncVersion + 1;
+            const fileName = driveFileName(document.name, document.id, nextVersion);
             const docJson = JSON.stringify(document, null, 2);
 
             // 4. Upload to Google Drive via /upload-content endpoint
@@ -70,9 +78,15 @@ export const useDriveSync = () => {
                     fileName,
                     mimeType: 'application/json',
                     folderId // Will use GOOGLE_DRIVE_FOLDER_ID if null
-                }) as { success: boolean; file: { id: string; name: string; webViewLink?: string } };
+                }) as DriveUploadResponse;
 
-                if (uploadRes.success && uploadRes.file) {
+                const outcome = interpretUpload(uploadRes);
+                if (outcome.ok === false) {
+                    localStorage.setItem(`canvas_backup_${document.id}`, docJson);
+                    setSyncError(`${outcome.error} A local backup was kept.`);
+                    return false;
+                }
+                if (uploadRes.file) {
                     console.log(`[DriveSync] ✅ Uploaded to Drive: ${uploadRes.file.name}`);
                     console.log(`[DriveSync] 🔗 View: ${uploadRes.file.webViewLink || 'N/A'}`);
 
@@ -92,21 +106,26 @@ export const useDriveSync = () => {
                     });
 
                     setIsAuthenticated(true);
+                    setSyncError(null);
+                    setLastSyncedAt(Date.now());
+                    setSyncVersion(nextVersion);
                     return true;
                 }
             } catch (uploadErr: any) {
                 console.error('[DriveSync] ❌ Upload failed:', uploadErr);
                 // Fallback to local backup only
                 localStorage.setItem(`canvas_backup_${document.id}`, docJson);
+                setSyncError(`Upload to Google Drive failed (${uploadErr?.message || 'unknown error'}). A local backup was kept.`);
                 console.log('[DriveSync] 💾 Saved to localStorage as fallback');
             }
 
             return false;
         } catch (error) {
             console.error('[DriveSync] ❌ Sync failed:', error);
+            setSyncError(`Sync failed: ${(error as Error)?.message || 'unknown error'}`);
             return false;
         }
-    }, [document]);
+    }, [document, syncVersion]);
 
     /**
      * Auto-sync after autosave if enabled
@@ -116,6 +135,8 @@ export const useDriveSync = () => {
     return {
         syncToDrive,
         shouldAutoSync,
-        isAuthenticated
+        isAuthenticated,
+        syncError,
+        lastSyncedAt
     };
 };
