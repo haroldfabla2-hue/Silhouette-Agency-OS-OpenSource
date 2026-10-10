@@ -134,6 +134,42 @@ router.post('/library/download-all', async (_req: Request, res: Response) => {
     }
 });
 
+// ROUTE ORDER MATTERS (Express matches in registration order): fixed paths such as /default and /calls MUST be
+// registered before the parameterized '/:id' routes, otherwise '/:id' captures them ("Voice not found").
+// tests/automated/route-order.test.ts fails the build if any router shadows a static path with a param route.
+/**
+ * GET /v1/voices/default
+ * Get the current default voice
+ */
+router.get('/default', async (_req: Request, res: Response) => {
+    try {
+        const { voiceLibraryService } = await import('../../../services/media/voiceLibraryService');
+        const voice = await voiceLibraryService.getDefaultVoice();
+
+        if (!voice) {
+            return res.json({ success: true, voice: null, message: 'No default voice set' });
+        }
+
+        return res.json({ success: true, voice });
+    } catch (e: any) {
+        return res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * GET /v1/voices/calls
+ * List recent phone calls
+ */
+router.get('/calls', async (_req: Request, res: Response) => {
+    try {
+        const { telephonyService } = await import('../../../services/telephony/telephonyService');
+        const calls = telephonyService.listCalls(30);
+        return res.json({ success: true, count: calls.length, calls });
+    } catch (e: any) {
+        return res.status(500).json({ error: e.message });
+    }
+});
+
 // ==================== INDIVIDUAL VOICE ====================
 
 /**
@@ -329,25 +365,6 @@ router.post('/clone/analyze', voiceUpload.single('audio'), async (req: MulterReq
     }
 });
 
-/**
- * GET /v1/voices/default
- * Get the current default voice
- */
-router.get('/default', async (_req: Request, res: Response) => {
-    try {
-        const { voiceLibraryService } = await import('../../../services/media/voiceLibraryService');
-        const voice = await voiceLibraryService.getDefaultVoice();
-
-        if (!voice) {
-            return res.json({ success: true, voice: null, message: 'No default voice set' });
-        }
-
-        return res.json({ success: true, voice });
-    } catch (e: any) {
-        return res.status(500).json({ error: e.message });
-    }
-});
-
 // ==================== TELEPHONY & PHONE CALL WEBHOOKS ====================
 
 /**
@@ -426,20 +443,6 @@ router.post('/dial', async (req: Request, res: Response) => {
         const result = await telephonyService.dial({ toNumber, purpose, initialGreeting });
         if (result.error) return res.status(502).json({ success: false, error: result.error, call: result.call });
         return res.json({ success: true, call: result.call });
-    } catch (e: any) {
-        return res.status(500).json({ error: e.message });
-    }
-});
-
-/**
- * GET /v1/voices/calls
- * List recent phone calls
- */
-router.get('/calls', async (_req: Request, res: Response) => {
-    try {
-        const { telephonyService } = await import('../../../services/telephony/telephonyService');
-        const calls = telephonyService.listCalls(30);
-        return res.json({ success: true, count: calls.length, calls });
     } catch (e: any) {
         return res.status(500).json({ error: e.message });
     }
