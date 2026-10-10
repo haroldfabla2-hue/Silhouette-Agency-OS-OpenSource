@@ -475,7 +475,7 @@ Agent Response (spoken naturally):`;
         // 5. Synthesize voice audio
         let audioBase64: string | undefined;
         try {
-            const audioUrl = await ttsService.speak(responseText);
+            const audioUrl = await ttsService.speak(responseText, { voiceId: call.voiceId });
             if (audioUrl) {
                 audioBase64 = audioUrl;
             }
