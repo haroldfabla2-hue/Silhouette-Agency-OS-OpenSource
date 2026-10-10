@@ -177,6 +177,16 @@ export class ToolHandler {
                 return await this.handleBrowserClickCoordinate(args as any);
 
             // ==================== FINANCIAL VAULT & EPHEMERAL CARDS Phase 22 ====================
+            case 'payments_providers':
+                return await this.handlePayments('providers', {});
+            case 'payments_initiate':
+                return await this.handlePayments('initiate', args as any);
+            case 'payments_confirm':
+                return await this.handlePayments('confirm', args as any);
+            case 'payments_status':
+                return await this.handlePayments('status', args as any);
+            case 'payments_payout':
+                return await this.handlePayments('payout', args as any);
             case 'vault_request_vcard':
                 return await this.handleVaultRequestVCard(args as any);
             case 'browser_autofill_payment':
@@ -1969,6 +1979,20 @@ export class ToolHandler {
             };
         } catch (e: any) {
             return { error: `Visual observe failed: ${e.message}` };
+        }
+    }
+
+    private async handlePayments(op: 'providers' | 'initiate' | 'confirm' | 'status' | 'payout', args: any): Promise<any> {
+        try {
+            const { paymentGateway } = await import('../payments/paymentGateway');
+            if (op === 'providers') return { status: 'success', providers: paymentGateway.listProviders() };
+            const req = { amountCents: args?.amount_cents, currency: args?.currency, destination: args?.destination, purpose: args?.purpose, reference: args?.reference };
+            if (op === 'initiate') return await paymentGateway.initiate(args?.provider, req as any);
+            if (op === 'confirm') return await paymentGateway.confirm(args?.provider, args?.payment_id, req as any);
+            if (op === 'payout') return await paymentGateway.payout(args?.provider, req as any);
+            return await paymentGateway.status(args?.provider, args?.payment_id);
+        } catch (e: any) {
+            return { error: `Payments ${op} failed: ${e.message}` };
         }
     }
 

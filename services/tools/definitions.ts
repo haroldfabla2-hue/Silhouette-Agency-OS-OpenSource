@@ -959,6 +959,45 @@ export const BROWSER_AI_PERCEPTION_TOOL: FunctionDeclaration = {
     }
 };
 
+const MONEY_PROPS = {
+    provider: { type: Type.STRING, description: "Payment provider id (e.g. 'paypal'). Optional if PAYMENT_PROVIDER is configured." },
+    amount_cents: { type: Type.NUMBER, description: "Amount in minor units (cents), positive integer" },
+    currency: { type: Type.STRING, description: "ISO 4217 currency code, e.g. USD" },
+    destination: { type: Type.STRING, description: "Counterparty: payee email for a payout, payer/customer label for a collection" },
+    purpose: { type: Type.STRING, description: "Short human-readable purpose" },
+    reference: { type: Type.STRING, description: "Optional internal reference" }
+};
+
+export const PAYMENTS_PROVIDERS_TOOL: FunctionDeclaration = {
+    name: "payments_providers",
+    description: "Lists payment/collection providers (PayPal, Stripe Issuing, ...) with their real state: REAL or UNAVAILABLE, sandbox/live mode, and exactly which settings are missing. Read-only.",
+    parameters: { type: Type.OBJECT, properties: {} }
+};
+
+export const PAYMENTS_INITIATE_TOOL: FunctionDeclaration = {
+    name: "payments_initiate",
+    description: "Creates a collection (cobro) on a payment provider and returns the link the payer must approve. Requires explicit human approval bound to provider, destination, amount and currency. UNAVAILABLE without provider credentials; never simulated.",
+    parameters: { type: Type.OBJECT, properties: MONEY_PROPS, required: ["amount_cents", "currency", "destination"] }
+};
+
+export const PAYMENTS_CONFIRM_TOOL: FunctionDeclaration = {
+    name: "payments_confirm",
+    description: "Captures a collection the payer already approved. Requires explicit human approval bound to the exact amount, currency and destination; the provider refuses to capture if the order differs.",
+    parameters: { type: Type.OBJECT, properties: { ...MONEY_PROPS, payment_id: { type: Type.STRING, description: "Id returned by payments_initiate" } }, required: ["payment_id", "amount_cents", "currency", "destination"] }
+};
+
+export const PAYMENTS_STATUS_TOOL: FunctionDeclaration = {
+    name: "payments_status",
+    description: "Reads the real status of a payment or payout from the provider. Read-only.",
+    parameters: { type: Type.OBJECT, properties: { provider: MONEY_PROPS.provider, payment_id: { type: Type.STRING, description: "Id returned by payments_initiate or payments_payout" } }, required: ["payment_id"] }
+};
+
+export const PAYMENTS_PAYOUT_TOOL: FunctionDeclaration = {
+    name: "payments_payout",
+    description: "Sends money out to a recipient through a payment provider. Moves real money: requires explicit human approval bound to provider, recipient, amount and currency. UNAVAILABLE without credentials.",
+    parameters: { type: Type.OBJECT, properties: MONEY_PROPS, required: ["amount_cents", "currency", "destination"] }
+};
+
 export const BROWSER_VISUAL_OVERLAY_TOOL: FunctionDeclaration = {
     name: "browser_visual_overlay",
     description: "Renders numbered visual badges (Set-of-Marks) on every clickable/interactive element and takes a marked screenshot. Allows 100% precision by choosing an element by ID.",
@@ -1215,6 +1254,11 @@ export const CAPABILITY_TOOLS = [
     BROWSER_AUDIT_SESSION_TOOL,
     // Financial vault
     VAULT_REQUEST_VCARD_TOOL,
+    PAYMENTS_PROVIDERS_TOOL,
+    PAYMENTS_INITIATE_TOOL,
+    PAYMENTS_CONFIRM_TOOL,
+    PAYMENTS_STATUS_TOOL,
+    PAYMENTS_PAYOUT_TOOL,
     BROWSER_AUTOFILL_PAYMENT_TOOL,
     VAULT_GET_SPEND_SUMMARY_TOOL,
     VAULT_BURN_CARD_TOOL,
