@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { browserAuditLedger } from '../../services/browser/browserAuditLedger';
+import { browserAuditLedger, verifySession } from '../../services/browser/browserAuditLedger';
 import { browserService } from '../../services/browserService';
 import { telephonyService } from '../../services/telephony/telephonyService';
 import { toolHandler } from '../../services/tools/toolHandler';
@@ -93,12 +93,13 @@ describe('Silhouette Supremacy Extensions (Anti-Instinct Superiority)', () => {
                 screenshotBuffer: Buffer.from('legit_frame')
             });
 
-            const session = browserAuditLedger.getSession(tamperSessionId)!;
-            // Malicious actor alters the recorded coordinates or action
-            session.frames[0].actionType = 'MALICIOUS_UNAUTHORIZED_CLICK';
-
+            // getSession now returns a copy (the ledger cannot be mutated by callers).
+            // Tampering is exercised on the sealed manifest copy and must be detected.
             const sealResult = await browserAuditLedger.sealSession(tamperSessionId);
-            expect(sealResult.isValid).toBe(false); // Tamper detected!
+            expect(sealResult.isValid).toBe(true);
+            const tampered = JSON.parse(JSON.stringify(sealResult.session));
+            tampered.frames[0].actionType = 'MALICIOUS_UNAUTHORIZED_CLICK';
+            expect(verifySession(tampered).valid).toBe(false); // Tamper detected!
         });
     });
 

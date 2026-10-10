@@ -9,6 +9,10 @@ import fs from 'fs/promises';
 import path from 'path';
 import { systemBus } from '../systemBus';
 import { SystemProtocol } from '../../types';
+import {
+    ReceiptSigner, createEd25519Signer, generateReceiptKeyPair, receiptKeyId,
+} from '../procedureReceiptSigner';
+import { verify as edVerify, createPublicKey } from 'crypto';
 
 export interface AuditFrame {
     frameIndex: number;
@@ -21,7 +25,8 @@ export interface AuditFrame {
     domHash: string;        // SHA-256 of visible DOM state
     previousFrameHash: string;
     frameHash: string;      // Current combined block hash
-    signature?: string;     // Ed25519 / HMAC signature
+    signature?: string;     // Ed25519 signature (base64) over frameHash
+    keyId?: string;
 }
 
 export interface AuditSession {
@@ -33,6 +38,69 @@ export interface AuditSession {
     chainRootHash: string;
     latestHash: string;
     status: 'RECORDING' | 'SEALED';
+    /** Public key that verifies every signature of this session. */
+    publicKeyPem?: string;
+    keyId?: string;
+    /** CONFIGURED = key supplied by the owner (trust anchor). EPHEMERAL = per-process key, proves integrity only, not origin. */
+    keySource?: 'CONFIGURED' | 'EPHEMERAL';
+    /** Ed25519 signature over the seal record (sessionId, root, latest, frameCount, start, end). */
+    sealSignature?: string;
+    frameCount?: number;
+}
+
+export interface VerificationResult { valid: boolean; reason?: string }
+
+
+/** Hash over EVERY field of a frame, so any edit (description, time, coordinates...) breaks it. */
+export function computeFrameHash(f: Pick<AuditFrame, 'frameIndex' | 'actionType' | 'targetDescription' | 'coordinates' | 'timestamp' | 'url' | 'screenshotHash' | 'domHash' | 'previousFrameHash'>): string {
+    const data = JSON.stringify([
+        f.frameIndex, f.actionType, f.targetDescription ?? null, f.coordinates ?? null,
+        f.timestamp, f.url, f.screenshotHash, f.domHash, f.previousFrameHash,
+    ]);
+    return crypto.createHash('sha256').update(data).digest('hex');
+}
+
+export function sealRecord(s: Pick<AuditSession, 'sessionId' | 'chainRootHash' | 'latestHash' | 'startTime' | 'endTime' | 'initialUrl'>, frameCount: number): string {
+    return JSON.stringify(['SEAL', s.sessionId, s.initialUrl, s.chainRootHash, s.latestHash, frameCount, s.startTime, s.endTime ?? null]);
+}
+
+function edOk(publicKeyPem: string, message: string, sigB64: string | undefined): boolean {
+    if (!sigB64) return false;
+    try { return edVerify(null, Buffer.from(message), createPublicKey(publicKeyPem), Buffer.from(sigB64, 'base64')); }
+    catch { return false; }
+}
+
+/**
+ * Pure verification of a (sealed) session or manifest. Checks: root, chain links, full frame hashes,
+ * every frame signature, key id, timestamp ordering and bounds, and the seal signature that commits to
+ * the frame count and terminal hash (so deleting the last frame is detected).
+ */
+export function verifySession(session: AuditSession, publicKeyPem?: string): VerificationResult {
+    const pem = publicKeyPem ?? session.publicKeyPem;
+    if (!pem) return { valid: false, reason: 'NO_PUBLIC_KEY' };
+    let keyId: string;
+    try { keyId = receiptKeyId(pem); } catch { return { valid: false, reason: 'BAD_PUBLIC_KEY' }; }
+    if (session.keyId && session.keyId !== keyId) return { valid: false, reason: 'KEY_ID_MISMATCH' };
+
+    let expectedPrev = session.chainRootHash;
+    let lastTs = session.startTime;
+    for (let i = 0; i < session.frames.length; i++) {
+        const f = session.frames[i];
+        if (f.frameIndex !== i) return { valid: false, reason: `BAD_INDEX_${i}` };
+        if (f.previousFrameHash !== expectedPrev) return { valid: false, reason: `BROKEN_CHAIN_${i}` };
+        if (computeFrameHash(f) !== f.frameHash) return { valid: false, reason: `BAD_FRAME_HASH_${i}` };
+        if (!edOk(pem, f.frameHash, f.signature)) return { valid: false, reason: `BAD_SIGNATURE_${i}` };
+        if (f.keyId && f.keyId !== keyId) return { valid: false, reason: `FRAME_KEY_MISMATCH_${i}` };
+        if (typeof f.timestamp !== 'number' || f.timestamp < lastTs) return { valid: false, reason: `BAD_TIMESTAMP_${i}` };
+        lastTs = f.timestamp;
+        expectedPrev = f.frameHash;
+    }
+    if (session.status !== 'SEALED') return { valid: false, reason: 'NOT_SEALED' };
+    if (session.endTime !== undefined && lastTs > session.endTime) return { valid: false, reason: 'FRAME_AFTER_END' };
+    if (session.latestHash !== expectedPrev) return { valid: false, reason: 'TERMINAL_HASH_MISMATCH' };
+    if (session.frameCount !== session.frames.length) return { valid: false, reason: 'FRAME_COUNT_MISMATCH' };
+    if (!edOk(pem, sealRecord(session, session.frames.length), session.sealSignature)) return { valid: false, reason: 'BAD_SEAL_SIGNATURE' };
+    return { valid: true };
 }
 
 export class BrowserAuditLedger {
@@ -40,8 +108,29 @@ export class BrowserAuditLedger {
     private activeSessionId: string | null = null;
     private readonly auditDir: string;
 
-    constructor() {
+    private signer: ReceiptSigner;
+    private publicKeyPem: string;
+    private keySource: 'CONFIGURED' | 'EPHEMERAL';
+
+    /**
+     * Key policy: never a hardcoded default. Use BROWSER_AUDIT_SIGNING_KEY (Ed25519 PKCS8 PEM) when
+     * the owner provides it (trust anchor). Otherwise a random per-process Ed25519 key is generated and
+     * the session is labelled EPHEMERAL (integrity yes, origin attestation no).
+     */
+    constructor(signerOverride?: { privateKeyPem: string; publicKeyPem: string; source: 'CONFIGURED' | 'EPHEMERAL' }) {
         this.auditDir = path.resolve(process.cwd(), 'uploads', 'audit_trails');
+        const envPem = (process.env.BROWSER_AUDIT_SIGNING_KEY || '').replace(/\\n/g, '\n').trim();
+        let priv: string; let pub: string; let src: 'CONFIGURED' | 'EPHEMERAL';
+        if (signerOverride) { priv = signerOverride.privateKeyPem; pub = signerOverride.publicKeyPem; src = signerOverride.source; }
+        else if (envPem) {
+            const { createPrivateKey, createPublicKey: cpk } = crypto;
+            priv = envPem;
+            pub = cpk(createPrivateKey(envPem)).export({ type: 'spki', format: 'pem' }).toString();
+            src = 'CONFIGURED';
+        } else { const kp = generateReceiptKeyPair(); priv = kp.privateKeyPem; pub = kp.publicKeyPem; src = 'EPHEMERAL'; }
+        this.signer = createEd25519Signer(priv);
+        this.publicKeyPem = pub;
+        this.keySource = src;
     }
 
     /**
@@ -58,7 +147,10 @@ export class BrowserAuditLedger {
             frames: [],
             chainRootHash: rootHash,
             latestHash: rootHash,
-            status: 'RECORDING'
+            status: 'RECORDING',
+            publicKeyPem: this.publicKeyPem,
+            keyId: this.signer.keyId,
+            keySource: this.keySource
         };
 
         this.sessions.set(sessionId, session);
@@ -101,32 +193,28 @@ export class BrowserAuditLedger {
             ? crypto.createHash('sha256').update(params.domContent).digest('hex')
             : '0'.repeat(64);
 
-        // 2. Compute combined frame hash block
-        const frameData = `${frameIndex}|${params.actionType}|${params.url}|${JSON.stringify(params.coordinates || {})}|${screenshotHash}|${domHash}|${previousHash}`;
-        const frameHash = crypto.createHash('sha256').update(frameData).digest('hex');
-
-        // 3. Anchor signature (HMAC-SHA256 simulation or Ed25519 signature)
-        const secretKey = process.env.SYSTEM_SECRET || 'silhouette-audit-ledger-root';
-        const signature = crypto.createHmac('sha256', secretKey).update(frameHash).digest('hex');
-
-        const frame: AuditFrame = {
+        // 2. Frame hash covers every field; 3. Ed25519 signature over the hash
+        const timestamp = Date.now();
+        const base = {
             frameIndex,
             actionType: params.actionType,
             targetDescription: params.targetDescription,
             coordinates: params.coordinates,
-            timestamp: Date.now(),
+            timestamp,
             url: params.url,
             screenshotHash,
             domHash,
             previousFrameHash: previousHash,
-            frameHash,
-            signature
         };
+        const frameHash = computeFrameHash(base);
+        const signature = this.signer.sign(Buffer.from(frameHash)).toString('base64');
+
+        const frame: AuditFrame = { ...base, frameHash, signature, keyId: this.signer.keyId };
 
         session.frames.push(frame);
         session.latestHash = frameHash;
 
-        return frame;
+        return structuredClone(frame);
     }
 
     /**
@@ -139,31 +227,20 @@ export class BrowserAuditLedger {
         const session = this.sessions.get(targetId);
         if (!session) throw new Error(`Audit session ${targetId} not found.`);
 
+        if (session.status === 'SEALED') throw new Error(`Audit session ${targetId} is already sealed.`);
         session.status = 'SEALED';
         session.endTime = Date.now();
+        session.frameCount = session.frames.length;
+        session.sealSignature = this.signer.sign(Buffer.from(sealRecord(session, session.frames.length))).toString('base64');
 
-        // Verify cryptographic hash-chain integrity
-        let isValid = true;
-        let expectedPrevHash = session.chainRootHash;
-
-        for (const frame of session.frames) {
-            if (frame.previousFrameHash !== expectedPrevHash) {
-                isValid = false;
-                break;
-            }
-            const recomputedData = `${frame.frameIndex}|${frame.actionType}|${frame.url}|${JSON.stringify(frame.coordinates || {})}|${frame.screenshotHash}|${frame.domHash}|${frame.previousFrameHash}`;
-            const recomputedHash = crypto.createHash('sha256').update(recomputedData).digest('hex');
-            if (recomputedHash !== frame.frameHash) {
-                isValid = false;
-                break;
-            }
-            expectedPrevHash = frame.frameHash;
-        }
+        // Full verification (signatures, timestamps, descriptions, terminal hash, frame count)
+        const verification = verifySession(session, this.publicKeyPem);
+        const isValid = verification.valid;
 
         // Write report file to disk
         await fs.mkdir(this.auditDir, { recursive: true });
         const reportPath = path.join(this.auditDir, `${targetId}_audit_manifest.json`);
-        await fs.writeFile(reportPath, JSON.stringify({ ...session, isValid }, null, 2));
+        await fs.writeFile(reportPath, JSON.stringify({ ...session, isValid, invalidReason: verification.reason }, null, 2));
 
         if (this.activeSessionId === targetId) {
             this.activeSessionId = null;
@@ -177,14 +254,15 @@ export class BrowserAuditLedger {
             isValid
         });
 
-        return { session, isValid, reportPath };
+        return { session: structuredClone(session), isValid, reportPath };
     }
 
     /**
      * Gets session info.
      */
     public getSession(sessionId: string): AuditSession | undefined {
-        return this.sessions.get(sessionId);
+        const s = this.sessions.get(sessionId);
+        return s ? structuredClone(s) : undefined; // copy: callers can never mutate the ledger
     }
 }
 
