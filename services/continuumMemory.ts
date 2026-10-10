@@ -1,3 +1,4 @@
+import { lexicalMatches, lexicalScore } from './lexicalMatch';
 import { atomicWriteFile } from './utils/atomicWrite';
 import { MemoryNode, MemoryTier } from "../types";
 import { lancedbService } from './lancedbService';
@@ -946,10 +947,12 @@ class ContinuumMemorySystem {
         // [ROOT CAUSE FIX] Defensive Guard
         if (!query || typeof query !== 'string') return [];
 
-        const queryLower = query.toLowerCase();
 
         // [FIX 2026-02] Use working directly (ultraShort/short are aliases to same array)
-        const ramResults = this.working.filter(n => inScope(n, scope) && (n.content || "").toLowerCase().includes(queryLower));
+        // Tokenized lexical match (all query tokens, any order, accent/case-insensitive); exact phrase ranks first.
+        const ramResults = this.working
+            .filter(n => inScope(n, scope) && lexicalMatches(n.content || "", query))
+            .sort((a, b) => lexicalScore(b.content || "", query) - lexicalScore(a.content || "", query));
         lists.push(ramResults);
 
         try {
