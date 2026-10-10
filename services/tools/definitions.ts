@@ -1181,6 +1181,40 @@ export const INTROSPECT_DATABASE_TOOL: FunctionDeclaration = {
     }
 };
 
+/**
+ * Capability tools that have handlers in toolHandler but were never offered to the model.
+ * Risky ones (payments, calls) stay protected by the fail-closed gates, approvals and capability states.
+ */
+export const CAPABILITY_TOOLS = [
+    // Browser subagent
+    BROWSER_NAVIGATE_TOOL,
+    BROWSER_ACTION_TOOL,
+    BROWSER_EXTRACT_TOOL,
+    BROWSER_SCREENSHOT_TOOL,
+    BROWSER_VISUAL_ACT_TOOL,
+    BROWSER_VISUAL_OBSERVE_TOOL,
+    BROWSER_VISUAL_OVERLAY_TOOL,
+    BROWSER_CLICK_COORDINATE_TOOL,
+    BROWSER_CLEAR_OBSTRUCTIONS_TOOL,
+    BROWSER_AUDIT_SESSION_TOOL,
+    // Financial vault
+    VAULT_REQUEST_VCARD_TOOL,
+    BROWSER_AUTOFILL_PAYMENT_TOOL,
+    VAULT_GET_SPEND_SUMMARY_TOOL,
+    VAULT_BURN_CARD_TOOL,
+    // Telephony
+    TELEPHONY_DIAL_TOOL,
+    TELEPHONY_PROCESS_TURN_TOOL,
+    TELEPHONY_BARGE_IN_TOOL,
+    TELEPHONY_ANALYZE_SENTIMENT_TOOL,
+    TELEPHONY_SEND_DTMF_TOOL,
+    TELEPHONY_HANGUP_TOOL,
+    // Misc
+    GENERATE_VOICE_TOOL,
+    READ_URL_TOOL,
+    INTROSPECT_DATABASE_TOOL
+];
+
 export const AGENT_TOOLS = [
     GENERATE_VIDEO_TOOL,
     GENERATE_IMAGE_TOOL,
@@ -1216,7 +1250,9 @@ export const AGENT_TOOLS = [
     // Code Execution
     EXECUTE_CODE_TOOL,
     // Architectural Self-Awareness
-    ARCHITECT_AUDIT_TOOL
+    ARCHITECT_AUDIT_TOOL,
+    // Capabilities previously implemented but never offered to the model
+    ...CAPABILITY_TOOLS
 ];
 
 // ==================== PRODUCTION VIDEO TOOLS ====================
