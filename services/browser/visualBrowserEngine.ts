@@ -4,6 +4,7 @@
 // Natural Language act(), observe(), extract(), Spatial Coordinates & Safety Gates.
 // =============================================================================
 
+import { matchInstruction } from './elementMatcher';
 import { chromium, Browser, BrowserContext, Page, ElementHandle } from 'playwright';
 import fs from 'fs/promises';
 import crypto from 'crypto';
@@ -355,7 +356,7 @@ export class VisualBrowserEngine {
                 }
 
                 const rawText = (el.textContent || (el as HTMLInputElement).value || '').trim();
-                const cleanText = rawText.replace(/\\s+/g, ' ').substring(0, 100);
+                const cleanText = rawText.replace(/\s+/g, ' ').substring(0, 100);
 
                 visibleElements.push({
                     id: index++,
@@ -492,7 +493,9 @@ export class VisualBrowserEngine {
                 success: false,
                 action: instruction,
                 observedElements: elements.slice(0, 15),
-                error: `Could not identify an element matching: "${instruction}". Found ${elements.length} other interactive elements.`,
+                error: this.lastAmbiguousCandidates.length > 1
+                    ? `AMBIGUOUS: "${instruction}" matches ${this.lastAmbiguousCandidates.length} elements (${this.lastAmbiguousCandidates.map(c => `#${c.id} ${c.tag} "${(c.text || c.ariaLabel || '').slice(0, 30)}"`).join(', ')}). Specify one by #id.`
+                    : `Could not identify an element matching: "${instruction}". Found ${elements.length} other interactive elements.`,
                 executionTimeMs: Date.now() - startTime
             };
         }
@@ -703,16 +706,11 @@ export class VisualBrowserEngine {
             const dismissButtonSelectors = [
                 'button[aria-label*="close" i]',
                 'button[aria-label*="dismiss" i]',
-                'button[aria-label*="accept" i]',
-                'button[id*="accept" i]',
                 'button[id*="cookie" i]',
                 'button[class*="close" i]',
                 'button[class*="dismiss" i]',
-                'button[class*="agree" i]',
-                'button[class*="accept" i]',
                 '.modal-close',
-                '.popup-close',
-                '#onetrust-accept-btn-handler'
+                '.popup-close'
             ];
 
             // 1. Click accept/dismiss buttons inside popups
@@ -795,42 +793,12 @@ export class VisualBrowserEngine {
 
     // ── Helper Matching Heuristics ─────────────────────────────────────────────
 
+    private lastAmbiguousCandidates: VisualElement[] = [];
+
     private matchElementByInstruction(instruction: string, elements: VisualElement[]): VisualElement | null {
-        const normalized = instruction.toLowerCase();
-
-        // 1. Direct number match (e.g., "click #4" or "element 4")
-        const idMatch = normalized.match(/#?(\d+)/);
-        if (idMatch) {
-            const id = parseInt(idMatch[1], 10);
-            const found = elements.find(e => e.id === id);
-            if (found) return found;
-        }
-
-        // 2. Exact or substring match in text, aria-label, or placeholder
-        const scored = elements.map(el => {
-            let score = 0;
-            const elText = el.text.toLowerCase();
-            const aria = (el.ariaLabel || '').toLowerCase();
-            const ph = (el.placeholder || '').toLowerCase();
-
-            // Word overlap scoring
-            const words = normalized.split(/\\s+/).filter(w => w.length > 2);
-            words.forEach(word => {
-                if (elText.includes(word)) score += 3;
-                if (aria.includes(word)) score += 4;
-                if (ph.includes(word)) score += 3;
-            });
-
-            // Target tag priority
-            if (normalized.includes('button') && el.tag === 'button') score += 2;
-            if (normalized.includes('input') && el.tag === 'input') score += 2;
-            if (normalized.includes('link') && el.tag === 'a') score += 2;
-
-            return { element: el, score };
-        });
-
-        scored.sort((a, b) => b.score - a.score);
-        return scored[0]?.score > 0 ? scored[0].element : null;
+        const r = matchInstruction(instruction, elements);
+        this.lastAmbiguousCandidates = r.ambiguous ? r.candidates : [];
+        return r.element;
     }
 
     private extractTextToTypeFromInstruction(instruction: string): string | null {
@@ -839,7 +807,7 @@ export class VisualBrowserEngine {
         if (quoted) return quoted[1];
 
         // Looks for keywords: type myemail@test.com
-        const match = instruction.match(/(?:type|write|fill|enter)\\s+(?:in\\s+)?(?:.*?\\s+with\\s+)?(.*)/i);
+        const match = instruction.match(/(?:type|write|fill|enter)\s+(?:in\s+)?(?:.*?\s+with\s+)?(.*)/i);
         return match ? match[1].trim() : null;
     }
 
