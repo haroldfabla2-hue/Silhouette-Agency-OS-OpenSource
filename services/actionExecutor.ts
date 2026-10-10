@@ -5,6 +5,7 @@ import { AgentAction, ActionType, ActionResult, SystemProtocol } from '../types'
 import { gitService } from './gitService';
 import { verificationService } from './verificationService';
 import { systemBus } from './systemBus';
+import { classifyActionType } from './security/actionRiskRegistry';
 
 /**
  * PHASE 13/14: ACTION EXECUTOR (THE HANDS)
@@ -630,36 +631,8 @@ export class ActionExecutor {
      * Assess risk level of an action
      */
     private assessRiskLevel(action: AgentAction): PendingConfirmation['riskLevel'] {
-        const type = action.type as string;
-
-        // CRITICAL: Could cause data loss or break things
-        const criticalTypes = [
-            ActionType.EXECUTE_COMMAND,
-            'EXECUTE_COMMAND',
-            'DELETE_FILE',
-            'EXECUTE_SHELL'
-        ];
-        if (criticalTypes.includes(type as any)) return 'CRITICAL';
-
-        // HIGH: Modifies system state
-        const highTypes = [
-            ActionType.WRITE_FILE,
-            'WRITE_FILE',
-            'SELF_CODE_EDIT'
-        ];
-        if (highTypes.includes(type as any)) return 'HIGH';
-
-        // MEDIUM: External communication
-        const mediumTypes = [
-            ActionType.HTTP_REQUEST,
-            'HTTP_REQUEST',
-            'SEND_EMAIL',
-            'API_REQUEST'
-        ];
-        if (mediumTypes.includes(type as any)) return 'MEDIUM';
-
-        // LOW: Read-only or safe operations
-        return 'LOW';
+        // Fail-closed: unregistered types are HIGH (never auto-approved).
+        return classifyActionType(action.type as string).risk;
     }
 
     /**
@@ -678,8 +651,14 @@ export class ActionExecutor {
             case ActionType.HTTP_REQUEST:
             case 'HTTP_REQUEST':
                 return `HTTP request to: ${action.payload?.url || 'unknown'}`;
+            case 'EXECUTE_PAYMENT': {
+                const pay = (action.payload || {}) as { merchant?: string; amountCents?: number };
+                return `PAYMENT: ${pay.merchant || 'unknown merchant'} ${pay.amountCents ?? '?'} cents`;
+            }
             default:
-                return `Execute action: ${action.type}`;
+                return classifyActionType(type).known
+                    ? `Execute action: ${action.type}`
+                    : `Execute UNREGISTERED action: ${action.type} (denied by default, needs your approval)`;
         }
     }
 }
