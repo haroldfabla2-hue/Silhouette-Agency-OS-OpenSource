@@ -6,6 +6,7 @@ import { gitService } from './gitService';
 import { verificationService } from './verificationService';
 import { systemBus } from './systemBus';
 import { classifyActionType } from './security/actionRiskRegistry';
+import { approvalGrants, ApprovalBinding, ApprovalGrant, GrantCheck } from './security/approvalGrants';
 
 /**
  * PHASE 13/14: ACTION EXECUTOR (THE HANDS)
@@ -578,6 +579,22 @@ export class ActionExecutor {
                 }
             }, this.confirmationTimeoutMs);
         });
+    }
+
+    /**
+     * Request human approval and, if granted, return a single-use grant bound to
+     * this exact action (type, destination, amount, currency). The effect must call
+     * verifyApproval() with the same binding immediately before it runs.
+     * Returns null when rejected or timed out.
+     */
+    public async requestApproval(action: AgentAction, binding: ApprovalBinding, reason?: string): Promise<ApprovalGrant | null> {
+        const approved = await this.requestConfirmation(action, reason);
+        return approved ? approvalGrants.issue(binding) : null;
+    }
+
+    /** Verify and consume a grant. Fail-closed: anything but ok:true means DO NOT execute. */
+    public verifyApproval(token: unknown, binding: ApprovalBinding): GrantCheck {
+        return approvalGrants.consume(token, binding);
     }
 
     /**
