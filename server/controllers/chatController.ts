@@ -553,8 +553,7 @@ export class ChatController {
                     const userResults = await continuum.retrieve(uq, undefined, allowedOwner);
                     const relevant = userResults
                         .filter(m => m.content.toLowerCase().includes('llamo') ||
-                            m.content.toLowerCase().includes('name') ||
-                            m.content.toLowerCase().includes('alberto'))
+                            m.content.toLowerCase().includes('name'))
                         .slice(0, 2);
 
                     if (relevant.length > 0) {
