@@ -101,7 +101,10 @@ export class TelephonyService {
     public reloadCredentials(): void {
         this.accountSid = process.env.TWILIO_ACCOUNT_SID || null;
         this.authToken = process.env.TWILIO_AUTH_TOKEN || null;
-        this.defaultFromNumber = process.env.TWILIO_PHONE_NUMBER || '+15550199000';
+        // No fabricated default: without TWILIO_PHONE_NUMBER there is no real
+        // sender number, and dial() fails honestly (demo mode uses a labelled
+        // fictional 555 number instead).
+        this.defaultFromNumber = process.env.TWILIO_PHONE_NUMBER || null;
     }
 
     /**
@@ -176,8 +179,17 @@ export class TelephonyService {
         this.initializeSchema();
 
         const callId = `call_${crypto.randomUUID().replace(/-/g, '').substring(0, 12)}`;
-        const fromNumber = params.fromNumber || this.defaultFromNumber || '+15550199000';
         const hasCreds = !!(this.accountSid && this.authToken);
+        const configuredFrom = params.fromNumber || this.defaultFromNumber;
+        // Demo mode is a labelled simulation, so a fictional 555-range number
+        // is honest there; a real provider call needs a real configured number.
+        const fromNumber = configuredFrom || (isDemoModeEnabled() ? '+15550199000' : null);
+        if (hasCreds && !fromNumber) {
+            return {
+                call: null as any,
+                error: 'UNAVAILABLE: no sender phone number configured. Set TWILIO_PHONE_NUMBER (or pass fromNumber) to place real calls.'
+            };
+        }
         let providerCallSid: string | undefined;
         let providerError: string | undefined;
         let status: CallStatus = 'QUEUED';
