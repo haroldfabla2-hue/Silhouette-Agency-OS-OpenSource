@@ -101,6 +101,17 @@ export class SqliteService {
             )
         `);
 
+        // Telemetry Samples Table (real token/cost history for the dashboard)
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS telemetry_samples (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts INTEGER NOT NULL,
+                total_tokens INTEGER NOT NULL,
+                total_cost REAL NOT NULL DEFAULT 0
+            )
+        `);
+        this.db.exec('CREATE INDEX IF NOT EXISTS idx_telemetry_samples_ts ON telemetry_samples(ts)');
+
         // System Config Table (Replaces silhouette_memory_db.json)
         this.db.exec(`
             CREATE TABLE IF NOT EXISTS system_config (
@@ -443,6 +454,25 @@ export class SqliteService {
         const row = stmt.get('global') as { data: string } | undefined;
         if (!row) return null;
         return JSON.parse(row.data);
+    }
+
+    // --- TELEMETRY SAMPLES (real token/cost history) ---
+
+    /** Persist one telemetry sample. Prunes samples older than 24h. */
+    public recordTelemetrySample(totalTokens: number, totalCost: number, ts: number = Date.now()): void {
+        const stmt = this.db.prepare(
+            'INSERT INTO telemetry_samples (ts, total_tokens, total_cost) VALUES (?, ?, ?)'
+        );
+        stmt.run(ts, Math.max(0, Math.floor(totalTokens)), Math.max(0, totalCost));
+        this.db.prepare('DELETE FROM telemetry_samples WHERE ts < ?').run(ts - 24 * 60 * 60 * 1000);
+    }
+
+    /** Read samples since a timestamp, oldest first. */
+    public getTelemetrySamples(sinceTs: number): { ts: number; totalTokens: number; totalCost: number }[] {
+        const stmt = this.db.prepare(
+            'SELECT ts, total_tokens AS totalTokens, total_cost AS totalCost FROM telemetry_samples WHERE ts >= ? ORDER BY ts ASC'
+        );
+        return stmt.all(sinceTs) as { ts: number; totalTokens: number; totalCost: number }[];
     }
 
     // --- SYSTEM CONFIG OPERATIONS ---

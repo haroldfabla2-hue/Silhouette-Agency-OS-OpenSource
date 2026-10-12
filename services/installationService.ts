@@ -1,5 +1,5 @@
 
-import { InstallationState, SystemMap, UserRole } from "../types";
+import { InstallationState, SystemMap } from "../types";
 import { DEFAULT_API_CONFIG } from "../constants";
 
 // --- INSTALLATION & ONBOARDING SERVICE ---
@@ -53,21 +53,22 @@ class InstallationService {
         this.state.progress = 0;
         this.saveState();
 
-        // Simulate activating the Installation Squad
-        this.log("Activating 'Code_Scanner' agent...");
-        await this.simulateDelay(1000);
+        // Real scan: the server traverses the actual filesystem and database.
+        this.log("Requesting real system scan from backend...");
         this.state.progress = 20;
-        this.log("Scanning Frontend Components...");
 
-        // In a real server environment, we would use fs.readdir here.
-        // For the browser demo, we construct the map based on the known app structure.
-        const map = await this.performDeepScan();
+        const map = await this.performRealScan();
+        if (!map) {
+            this.log("ERROR: Real scan failed. The system map was NOT generated - nothing was fabricated. Check that the backend is reachable.");
+            this.state.currentStep = 'KEYS';
+            this.state.progress = 0;
+            this.saveState();
+            return;
+        }
 
         this.state.progress = 60;
         this.state.currentStep = 'MAPPING';
-        this.log("Activating 'DB_Cartographer' agent...");
-        await this.simulateDelay(1000);
-        this.log("Mapping Database Schema & Relationships...");
+        this.log(`Scan complete: ${map.frontendComponents.length} components, ${map.backendEndpoints.length} endpoints, ${map.databaseSchema.length} tables found.`);
         this.state.progress = 90;
 
         this.state.systemMap = map;
@@ -77,34 +78,21 @@ class InstallationService {
         await this.handoverToOrchestrator(map);
     }
 
-    private async performDeepScan(): Promise<SystemMap> {
-        // This represents the result of the agents analyzing the code base
-        // In the real backend (server/index.ts), this logic traverses the actual file system.
-        return {
-            scanTimestamp: Date.now(),
-            frontendComponents: [
-                'Dashboard.tsx', 'AgentOrchestrator.tsx', 'IntrospectionHub.tsx',
-                'ContinuumMemoryExplorer.tsx', 'SystemControl.tsx', 'ChatWidget.tsx', 'InstallationWizard.tsx'
-            ],
-            backendEndpoints: [
-                '/v1/chat/completions', '/v1/workflow/task', '/v1/memory/query',
-                '/v1/introspection/analyze', '/v1/integration/analyze'
-            ],
-            databaseSchema: [
-                'MemoryNode (id, content, tier)',
-                'Agent (id, role, status)',
-                'ConceptVector (id, vector, strength)',
-                'Project (id, client, status)'
-            ],
-            rolePolicy: {
-                [UserRole.SUPER_ADMIN]: ['*'],
-                [UserRole.ADMIN]: ['dashboard', 'orchestrator', 'memory'],
-                [UserRole.WORKER_L1]: ['tasks'],
-                [UserRole.WORKER_L2]: ['tasks', 'docs'],
-                [UserRole.CLIENT]: ['project_view', 'support_chat'],
-                [UserRole.VISITOR]: []
+    private async performRealScan(): Promise<SystemMap | null> {
+        try {
+            const response = await fetch(`http://localhost:${DEFAULT_API_CONFIG.port}/v1/system/install/scan`);
+            if (!response.ok) {
+                throw new Error(`Scan endpoint returned HTTP ${response.status}`);
             }
-        };
+            const map = await response.json();
+            if (!map || !Array.isArray(map.frontendComponents)) {
+                throw new Error('Scan endpoint returned an invalid system map');
+            }
+            return map as SystemMap;
+        } catch (error) {
+            console.error('Real system scan failed', error);
+            return null;
+        }
     }
 
     private async handoverToOrchestrator(map: SystemMap) {
@@ -151,9 +139,6 @@ class InstallationService {
         }
     }
 
-    private simulateDelay(ms: number) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
 
     // Reset for testing purposes
     public hardReset() {

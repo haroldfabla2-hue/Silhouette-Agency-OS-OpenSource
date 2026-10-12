@@ -10,9 +10,10 @@ import * as fs from 'fs';
 
 const DB_PATH = path.join(process.cwd(), 'db', 'silhouette.sqlite');
 
-// Creator emails: migrated from hardcode to env config
-// Comma-separated list. First setup user always gets CREATOR role regardless.
-const CREATOR_EMAILS = (process.env.CREATOR_EMAILS || 'alberto.farah.b@gmail.com')
+// Creator emails come ONLY from env config (CREATOR_EMAILS, comma-separated).
+// No personal email is baked into the product. The first setup user always
+// gets the CREATOR role regardless, so an empty list never locks the owner out.
+const CREATOR_EMAILS = (process.env.CREATOR_EMAILS || '')
     .split(',')
     .map(e => e.trim())
     .filter(Boolean);

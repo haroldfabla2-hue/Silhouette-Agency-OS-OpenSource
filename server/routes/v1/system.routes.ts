@@ -13,8 +13,10 @@ router.get('/secrets', (req, res) => systemController.listSecrets(req, res));
 router.get('/secrets/:serviceId', (req, res) => systemController.getSecret(req, res));
 router.post('/secrets/:serviceId', (req, res) => systemController.saveSecret(req, res));
 
-// Route: /v1/system/scan
+// Route: /v1/system/scan - REAL installation scan (filesystem + DB traversal)
 router.post('/scan', (req, res) => systemController.scanSystem(req, res));
+router.get('/install/scan', (req, res) => systemController.scanSystem(req, res));
+router.post('/install/handover', (req, res) => systemController.installHandover(req, res));
 
 // Route: /v1/system/read
 router.post('/read', (req, res) => systemController.readFile(req, res));

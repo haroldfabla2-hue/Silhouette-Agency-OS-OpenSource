@@ -2,6 +2,7 @@
 import { Request, Response } from 'express';
 import { configureGenAI } from '../../services/geminiService';
 import { sqliteService } from '../../services/sqliteService';
+import { buildTokenHistory } from '../../services/telemetryHistory';
 
 // Prefix used for all secrets in the system_config table
 const SECRETS_PREFIX = 'secretsVault_';
@@ -212,8 +213,35 @@ export class SystemController {
         }
     }
 
+    /**
+     * Real installation scan: traverses the actual filesystem and SQLite
+     * schema via server/lib/installScanner. Never returns a hardcoded map.
+     */
     public async scanSystem(req: Request, res: Response) {
-        res.json({ success: true, map: { files: [] } }); // Placeholder from original code
+        try {
+            const { buildSystemMap } = await import('../lib/installScanner');
+            const map = await buildSystemMap({ rootDir: process.cwd(), db: sqliteService.db });
+            res.json(map);
+        } catch (e: any) {
+            res.status(500).json({ error: `Real scan failed: ${e.message}` });
+        }
+    }
+
+    /**
+     * Installation handover: persists the real system map so the
+     * orchestrator/UI can read what the installer actually found.
+     */
+    public async installHandover(req: Request, res: Response) {
+        try {
+            const map = req.body?.map;
+            if (!map || !Array.isArray(map.frontendComponents)) {
+                return res.status(400).json({ error: 'Invalid system map payload' });
+            }
+            sqliteService.setConfig('installSystemMap', map);
+            res.json({ success: true });
+        } catch (e: any) {
+            res.status(500).json({ error: `Handover failed: ${e.message}` });
+        }
     }
 
     public async readFile(req: Request, res: Response) {
@@ -426,6 +454,19 @@ export class SystemController {
             agentsInRam: 0,
             providerHealth: providerStats
         };
+
+        // Real token history: sample the cumulative counter and bucket per minute.
+        try {
+            const costs = sqliteService.getCostMetrics();
+            const totalTokens = Number(costs?.totalTokens ?? 0);
+            const totalCost = Number(costs?.totalCost ?? 0);
+            sqliteService.recordTelemetrySample(totalTokens, totalCost);
+            const since = now - 11 * 60 * 1000;
+            (telemetry as any).tokenHistory = buildTokenHistory(sqliteService.getTelemetrySamples(since), now, 10);
+        } catch (e: any) {
+            console.warn('[TELEMETRY] token history sampling failed', e);
+            (telemetry as any).tokenHistory = [];
+        }
 
         this.lastTelemetry = telemetry;
         this.lastTelemetryTime = now;

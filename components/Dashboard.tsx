@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Activity, Cpu, Database, HardDrive, Layout, Server, Zap, Brain, MessageSquare, Terminal, Plus, Send, Globe, ShieldAlert } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Project, SystemMetrics } from '../types';
@@ -25,18 +25,15 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, projects, onCreateProjec
     const fetchTokens = async () => {
       try {
         const res = await api.get('/v1/system/telemetry') as any;
-        if (res.tokenHistory) {
+        // Real telemetry only. An empty array means "no samples yet" and the
+        // chart shows an honest empty state - never fabricated numbers.
+        if (Array.isArray(res?.tokenHistory)) {
           setTokenHistory(res.tokenHistory);
         } else {
-          // Fallback realistic mock if backend not ready
-          const mock = Array.from({ length: 10 }).map((_, i) => ({
-            time: `-${10 - i}m`,
-            tokens: Math.floor(Math.random() * 500) + 100
-          }));
-          setTokenHistory(mock);
+          setTokenHistory([]);
         }
       } catch (e) {
-        // Fallback
+        setTokenHistory([]);
       }
     };
     fetchTokens();
@@ -88,16 +85,6 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, projects, onCreateProjec
 
     return () => observer.disconnect();
   }, []);
-
-  // Use real CPU tick history for chart in a real implementation
-  // Memoize data to prevent unnecessary re-calculations during render phase
-  const data = useMemo(() => [
-    { name: '0s', cpu: (metrics.realCpu || 0), mem: metrics.jsHeapSize * 0.9 },
-    { name: '-1s', cpu: (metrics.realCpu || 0) * 0.9, mem: metrics.jsHeapSize },
-    { name: '-2s', cpu: (metrics.realCpu || 0) * 1.1, mem: metrics.jsHeapSize * 0.95 },
-    { name: '-3s', cpu: (metrics.realCpu || 0) * 0.8, mem: metrics.jsHeapSize * 0.92 },
-    { name: '-4s', cpu: (metrics.realCpu || 0) * 1.0, mem: metrics.jsHeapSize * 0.98 },
-  ], [metrics.realCpu, metrics.jsHeapSize]);
 
   const handleSendBrief = async () => {
     if (!brief.trim()) return;
@@ -167,14 +154,14 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, projects, onCreateProjec
           icon={Zap}
           label="Token Velocity"
           value={(metrics.tokenUsageToday || 0).toLocaleString()}
-          subValue="$0.042/hr"
+          subValue="hoy"
           color="text-amber-400"
           trend={-5}
         />
         <MetricCard
           icon={Activity}
           label="System Coherence"
-          value={`${(metrics.awarenessScore || 85)}%`}
+          value={`${(metrics.awarenessScore ?? 0)}%`}
           subValue="Stable"
           color="text-emerald-400"
           trend={2}
@@ -235,9 +222,14 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, projects, onCreateProjec
             Live Token Velocity
           </h3>
           <div className="flex-1 min-h-[150px]" ref={containerRef}>
-            {dimensions.width > 0 && dimensions.height > 0 && (
+            {tokenHistory.length === 0 && (
+              <div className="flex items-center justify-center h-[150px] text-xs text-slate-500 text-center px-4">
+                Sin datos de tokens todavía. El historial se construye con telemetría real conforme el sistema procesa llamadas LLM.
+              </div>
+            )}
+            {tokenHistory.length > 0 && dimensions.width > 0 && dimensions.height > 0 && (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={tokenHistory.length > 0 ? tokenHistory : data}>
+                <AreaChart data={tokenHistory}>
                   <defs>
                     <linearGradient id="colorTokens" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#fbbf24" stopOpacity={0.3} />

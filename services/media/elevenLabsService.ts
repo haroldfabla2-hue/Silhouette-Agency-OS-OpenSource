@@ -5,7 +5,8 @@ import path from 'path';
 
 export class ElevenLabsService {
     private client: ElevenLabsClient | null = null;
-    private defaultVoiceId: string = "JBFqnCBsd6RMkjVDRZzb"; // Example: "George" or similar standard voice
+    // Default voice is configurable; no hardcoded voice identity baked in.
+    private defaultVoiceId: string = process.env.ELEVENLABS_VOICE_ID || "";
 
     constructor() {
         const apiKey = process.env.ELEVENLABS_API_KEY;
@@ -17,13 +18,18 @@ export class ElevenLabsService {
         }
     }
 
-    public async generateSpeech(text: string, outputPath: string): Promise<string | null> {
+    public async generateSpeech(text: string, outputPath: string, voiceId?: string): Promise<string | null> {
         if (!this.client) return null;
+        const effectiveVoiceId = voiceId || this.defaultVoiceId;
+        if (!effectiveVoiceId) {
+            console.warn("[ElevenLabs] No voice configured (ELEVENLABS_VOICE_ID). Speech skipped.");
+            return null;
+        }
 
         console.log(`[ElevenLabs] 🗣️ Speaking: "${text.substring(0, 30)}..."`);
 
         try {
-            const response = await this.client.textToSpeech.convert(this.defaultVoiceId, {
+            const response = await this.client.textToSpeech.convert(effectiveVoiceId, {
                 text: text,
                 model_id: "eleven_multilingual_v2",
                 output_format: "mp3_44100_128",
@@ -45,6 +51,38 @@ export class ElevenLabsService {
         } catch (error) {
             console.error("[ElevenLabs] Speech Generation Failed:", error);
             // Fallback: Try to handle it as a stream event if arrayBuffer fails
+            return null;
+        }
+    }
+
+    public isAvailable(): boolean {
+        return this.client !== null;
+    }
+
+    /**
+     * Real Instant Voice Cloning via the ElevenLabs API.
+     * Uploads the sample and returns the provider voice_id. Never faked:
+     * callers must check isAvailable() first and report UNAVAILABLE otherwise.
+     */
+    public async cloneVoice(name: string, samplePath: string): Promise<{ voiceId: string } | null> {
+        if (!this.client) return null;
+
+        console.log(`[ElevenLabs] 🧬 Cloning voice "${name}" from ${path.basename(samplePath)}...`);
+        try {
+            const fileStream = fs.createReadStream(samplePath);
+            const result: any = await (this.client as any).voices.add({
+                name,
+                files: [fileStream]
+            });
+            const voiceId = result?.voice_id || result?.voiceId;
+            if (!voiceId) {
+                console.error("[ElevenLabs] Clone response had no voice_id:", result);
+                return null;
+            }
+            console.log(`[ElevenLabs] ✅ Voice cloned: ${voiceId}`);
+            return { voiceId };
+        } catch (error) {
+            console.error("[ElevenLabs] Voice cloning failed:", error);
             return null;
         }
     }

@@ -207,7 +207,7 @@ export const DEFAULT_API_CONFIG = {
 };
 
 export const REPLICATE_CONFIG = {
-  apiKey: getEnvVar('REPLICATE_API_TOKEN', 'default-replicate-key'),
+  apiKey: getEnvVar('REPLICATE_API_TOKEN', ''),
   models: {
     primary: "stability-ai/sdxl:39ed52f2a78e934b3ba6e2a89f5b1c712de7dfea535525255b1aa35c5565e08b",
     fallback: "black-forest-labs/flux-dev", // Or another fallback
