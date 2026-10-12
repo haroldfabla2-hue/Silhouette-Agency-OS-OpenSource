@@ -54,6 +54,11 @@ export const VoiceCloningWizard = ({
     const [mode, setMode] = useState<CloneMode>('instant');
     const [language, setLanguage] = useState('es');
     const [voiceName, setVoiceName] = useState('');
+    const [provider, setProvider] = useState<'auto' | 'elevenlabs' | 'local'>('auto');
+    const [providers, setProviders] = useState<any>(null);
+    useEffect(() => {
+        fetch('/v1/voices/clone/providers').then(r => r.json()).then(setProviders).catch(() => setProviders(null));
+    }, []);
     const [isRecording, setIsRecording] = useState(false);
     const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
     const [recordingDuration, setRecordingDuration] = useState(0);
@@ -255,6 +260,7 @@ export const VoiceCloningWizard = ({
             const formData = new FormData();
             formData.append('audio', recordedBlob, 'recording.webm');
             formData.append('name', voiceName);
+            formData.append('provider', provider);
             formData.append('language', language);
 
             const response = await api.fetch('/v1/voices/clone', {
@@ -489,6 +495,17 @@ export const VoiceCloningWizard = ({
                                             </ul>
                                         </div>
                                     )}
+
+                                    <div className="name-input">
+                                        <label>Cloning engine:</label>
+                                        <select value={provider} onChange={e => setProvider(e.target.value as any)}>
+                                            <option value="auto">Auto (first available)</option>
+                                            <option value="elevenlabs">ElevenLabs (cloud){providers && !providers.elevenlabs?.available ? ' - not configured' : ''}</option>
+                                            <option value="local">Local engine (Chatterbox){providers && !providers.local?.available ? ' - not running' : ''}</option>
+                                        </select>
+                                        {providers && provider === 'elevenlabs' && !providers.elevenlabs?.available && <small>{providers.elevenlabs.howToEnable}</small>}
+                                        {providers && provider === 'local' && !providers.local?.available && <small>{providers.local.howToEnable}</small>}
+                                    </div>
 
                                     <div className="name-input">
                                         <label>Name your voice:</label>
