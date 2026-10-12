@@ -107,7 +107,6 @@ const Settings: React.FC = () => {
     useEffect(() => {
         // Load creator emails (Settings > Permissions)
         loadCreatorEmails();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {
