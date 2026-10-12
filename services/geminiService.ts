@@ -1,3 +1,4 @@
+import { ToolCaller } from './communication/helpProtocol';
 import { GoogleGenAI } from "@google/genai";
 import { IntrospectionLayer, AgentRoleType, WorkflowStage, SensoryData, AgentCategory, CommunicationLevel, AgentCapability, SystemProtocol } from "../types";
 import { systemBus } from "./systemBus";
@@ -1493,7 +1494,7 @@ ${context?.relevantMemory || ''}
     } catch (error: any) {
         // --- UNIVERSAL FALLBACK ---
         // Catches init errors AND mid-stream errors
-        yield* runUniversalFallback(category, systemPrompt, task, context, error, agentName);
+        yield* runUniversalFallback(category, systemPrompt, task, context, error, agentName, config?.toolCaller);
     }
 }
 
@@ -1505,7 +1506,8 @@ export async function* runUniversalFallback(
     task: string,
     context: any,
     originalError: any,
-    agentName: string
+    agentName: string,
+    toolCaller?: ToolCaller
 ): AsyncGenerator<string, void, unknown> {
     console.warn("[GEMINI STREAM] Primary Cloud Failed. Initiating Universal Fallback Protocol...", originalError.message);
 
@@ -1733,7 +1735,7 @@ DO NOT hallucinate fake media urls. Use the tool.
                         systemBus.emit(SystemProtocol.THOUGHT_EMISSION, { thoughts: [`[Universal Fallback] 🛠️ Local Tool Call: ${payload.tool}`] }, agentName);
 
                         // Execute
-                        const toolResult = await toolHandler.handleFunctionCall(payload.tool, payload.args, config?.toolCaller);
+                        const toolResult = await toolHandler.handleFunctionCall(payload.tool, payload.args, toolCaller);
 
                         // Report back
                         const output = JSON.stringify(toolResult, null, 2);
