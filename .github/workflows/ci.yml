@@ -47,6 +47,9 @@ jobs:
       - name: Install Chromium for browser tests
         run: npx playwright install --with-deps chromium
 
+      - name: F0 verification coverage and hermetic legacy checks
+        run: npx vitest run tests/automated/help-protocol.test.ts tests/automated/legacy-hermetic.test.ts tests/automated/verification-inventory.test.ts
+
       - name: Unit tests
         run: npm test
 
