@@ -201,8 +201,7 @@ export const REPLICATE_CONFIG = {
   apiKey: getEnvVar('REPLICATE_API_TOKEN', ''),
   models: {
     primary: "stability-ai/sdxl:39ed52f2a78e934b3ba6e2a89f5b1c712de7dfea535525255b1aa35c5565e08b",
-    fallback: "black-forest-labs/flux-dev", // Or another fallback
-    video: "stability-ai/stable-video-diffusion:3f0457e4619daac51203dedb472816f3afc54a3aaa84d8dd471ccbb1ba79c7b3"
+    fallback: "black-forest-labs/flux-dev" // Image fallback. Video generation routes through VeoService (google/veo-3.1).
   }
 };
 
