@@ -1,3 +1,4 @@
+import { ToolCaller } from '../communication/helpProtocol';
 /**
  * TOOL EXECUTOR - Executes Dynamic Tools
  * 
@@ -32,7 +33,7 @@ class ToolExecutor {
     /**
      * Execute a tool by name with given arguments
      */
-    public async execute(toolName: string, args: any): Promise<any> {
+    public async execute(toolName: string, args: any, caller?: ToolCaller): Promise<any> {
         const tool = toolRegistry.getTool(toolName);
 
         if (!tool) {
@@ -51,10 +52,10 @@ class ToolExecutor {
 
             switch (tool.handler.type) {
                 case 'BUILTIN':
-                    result = await this.executeBuiltin(tool, args);
+                    result = await this.executeBuiltin(tool, args, caller);
                     break;
                 case 'COMPOSED':
-                    result = await this.executeComposed(tool, args);
+                    result = await this.executeComposed(tool, args, caller);
                     break;
                 case 'CODE':
                     result = await this.executeCode(tool, args);
@@ -85,20 +86,20 @@ class ToolExecutor {
     /**
      * Execute builtin tool (delegates to original toolHandler)
      */
-    private async executeBuiltin(tool: DynamicTool, args: any): Promise<any> {
+    private async executeBuiltin(tool: DynamicTool, args: any, caller?: ToolCaller): Promise<any> {
         if (!this.builtinHandler) {
             const { toolHandler } = await import('./toolHandler');
             this.builtinHandler = toolHandler;
         }
 
         // Call the original handler
-        return this.builtinHandler.handleFunctionCall(tool.name, args);
+        return this.builtinHandler.handleFunctionCall(tool.name, args, caller);
     }
 
     /**
      * Execute composed tool (chain of tools)
      */
-    private async executeComposed(tool: DynamicTool, args: any): Promise<any> {
+    private async executeComposed(tool: DynamicTool, args: any, caller?: ToolCaller): Promise<any> {
         if (tool.handler.type !== 'COMPOSED') {
             throw new Error('Handler is not COMPOSED type');
         }
@@ -117,7 +118,7 @@ class ToolExecutor {
             const stepArgs = this.resolveInputMappings(step.inputMapping, context, lastResult);
 
             // Execute the step
-            const result = await this.execute(step.toolName, stepArgs);
+            const result = await this.execute(step.toolName, stepArgs, caller);
 
             // Store result in context if outputAs is specified
             if (step.outputAs) {
