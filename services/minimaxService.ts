@@ -80,7 +80,7 @@ class MinimaxService {
             // Support explicit environment split for voice security; fallback to unified key
             this.voiceApiKey = process.env.MINIMAX_VOICE_API_KEY || mmConfig.apiKey;
             this.groupId = mmConfig.groupId || '';
-            this.defaultModel = mmConfig.model || 'abab6.5s-chat';
+            this.defaultModel = mmConfig.model || 'MiniMax-M2.7-highspeed';
             this.isInitialized = true;
             console.log('[MINIMAX] ✅ Service initialized (Direct API)');
         } else {
@@ -359,7 +359,7 @@ Be introspective, deep, and analytical.`
                     'Authorization': `Bearer ${this.apiKey}`
                 },
                 body: JSON.stringify({
-                    model: this.defaultModel, // e.g. 'abab6.5s-chat'
+                    model: this.defaultModel, // e.g. 'MiniMax-M2.7-highspeed'
                     messages: messages,
                     temperature: 0.1, // low temp for descriptions
                     max_tokens: 2048,
