@@ -13,7 +13,8 @@
  *   const stream = llmGateway.stream("Your prompt here");
  */
 
-import { modelCatalog, ModelCatalogEntry, getModelById } from './modelCatalog';
+import { ProviderRegistry } from './llm/providerRegistry';
+import { OpenAICompatibleClient, type ChatMessage, type ChatOptions, type ChatResult } from './llm/openAICompatible';
 
 // Provider status for circuit breaker
 interface ProviderStatus {
@@ -27,11 +28,11 @@ interface ProviderStatus {
 }
 
 // Completion options
-interface CompletionOptions {
+export interface CompletionOptions extends ChatOptions {
     temperature?: number;
     maxTokens?: number;
     systemPrompt?: string;
-    preferredProvider?: 'GEMINI' | 'GROQ' | 'DEEPSEEK' | 'OLLAMA' | 'MINIMAX';
+    preferredProvider?: string;
     skipProviders?: string[];
     timeout?: number;
 }
@@ -57,7 +58,7 @@ const logger = {
     }
 };
 
-class LLMGatewayService {
+export class LLMGatewayService {
     private readonly CONFIG = {
         CIRCUIT_BREAKER_THRESHOLD: 3,      // Failures before opening circuit
         CIRCUIT_BREAKER_RESET_MS: 60000,   // 1 minute before retrying failed provider
@@ -66,26 +67,51 @@ class LLMGatewayService {
         DEFAULT_TIMEOUT_MS: 30000          // 30 second timeout
     };
 
-    private providers: Map<string, ProviderStatus> = new Map([
-        ['GEMINI', { name: 'GEMINI', failures: 0, lastFailure: 0, circuitOpen: false, totalCalls: 0, totalLatencyMs: 0, currentModel: 'gemini-2.0-flash' }],
-        ['GROQ', { name: 'GROQ', failures: 0, lastFailure: 0, circuitOpen: false, totalCalls: 0, totalLatencyMs: 0, currentModel: 'llama-3.3-70b-versatile' }],
-        ['DEEPSEEK', { name: 'DEEPSEEK', failures: 0, lastFailure: 0, circuitOpen: false, totalCalls: 0, totalLatencyMs: 0, currentModel: 'deepseek-chat' }],
-        ['OLLAMA', { name: 'OLLAMA', failures: 0, lastFailure: 0, circuitOpen: false, totalCalls: 0, totalLatencyMs: 0, currentModel: 'qwen2.5-coder:7b' }],
-        ['MINIMAX', { name: 'MINIMAX', failures: 0, lastFailure: 0, circuitOpen: false, totalCalls: 0, totalLatencyMs: 0, currentModel: 'MiniMax-M2.7-highspeed' }],
-        ['ZHIPUAI', { name: 'ZHIPUAI', failures: 0, lastFailure: 0, circuitOpen: false, totalCalls: 0, totalLatencyMs: 0, currentModel: 'glm-4-flash' }]
-    ]);
-
-    private readonly FALLBACK_ORDER = ['MINIMAX', 'GEMINI', 'GROQ', 'DEEPSEEK', 'OLLAMA'];
+    private providers = new Map<string, ProviderStatus>();
+    constructor(public readonly registry = ProviderRegistry.fromEnvironment(), private client = new OpenAICompatibleClient()) {
+        for (const definition of registry.list()) this.providers.set(definition.id, {
+            name: definition.id, failures: 0, lastFailure: 0, circuitOpen: false, totalCalls: 0, totalLatencyMs: 0, currentModel: definition.model
+        });
+    }
+    private providerOrder(preferred?: string): string[] {
+        // Registry can be extended after construction without editing this gateway.
+        for (const definition of this.registry.list()) if (!this.providers.has(definition.id)) this.providers.set(definition.id, {
+            name: definition.id, failures: 0, lastFailure: 0, circuitOpen: false, totalCalls: 0, totalLatencyMs: 0, currentModel: definition.model
+        });
+        const order = this.registry.order();
+        return preferred ? [preferred, ...order.filter(p => p !== preferred)] : order;
+    }
+    public async discoverModels(provider: string, refresh = false) {
+        const definition = this.registry.get(provider);
+        if (!definition) throw new Error(`Unknown provider: ${provider}`);
+        if (definition.transport === 'legacy') return { ids: [definition.model], source: 'configured' as const, capabilities: 'unknown' as const };
+        return this.client.discover(definition, refresh);
+    }
+    /** Structured tool calls are returned, never executed here. No lossy legacy conversion. */
+    public async chat(provider: string, messages: ChatMessage[], options: ChatOptions = {}): Promise<ChatResult> {
+        this.providerOrder();
+        const definition = this.registry.get(provider);
+        if (definition?.transport !== 'openai-compatible') throw new Error('Structured chat requires a configured OpenAI-compatible provider');
+        if (!this.isProviderAvailable(provider)) throw new Error(`${provider}: unavailable`);
+        const start = Date.now();
+        await this.client.discover(definition);
+        try {
+            const result = await this.client.complete(definition, messages, options);
+            const status = this.providers.get(provider)!;
+            status.totalCalls++; status.totalLatencyMs += Date.now() - start; status.failures = 0;
+            return result;
+        } catch (error) { this.recordFailure(provider, error); throw error; }
+    }
 
     /**
      * Complete a prompt using the best available provider
      */
     public async complete(prompt: string, options: CompletionOptions = {}): Promise<CompletionResult> {
-        const startTime = Date.now();
+        if (options.tools?.length) throw new Error('Use chat() for structured tools');
         const skipProviders = new Set(options.skipProviders || []);
 
         // Build provider order
-        let providerOrder = [...this.FALLBACK_ORDER];
+        let providerOrder = this.providerOrder(options.preferredProvider);
         if (options.preferredProvider) {
             providerOrder = [options.preferredProvider, ...providerOrder.filter(p => p !== options.preferredProvider)];
         }
@@ -120,8 +146,9 @@ class LLMGatewayService {
      * Stream a completion (returns async generator)
      */
     public async *stream(prompt: string, options: CompletionOptions = {}): AsyncGenerator<string, void, unknown> {
+        if (options.tools?.length) throw new Error('Use OpenAICompatibleClient.stream() for structured tools');
         const skipProviders = new Set(options.skipProviders || []);
-        let providerOrder = [...this.FALLBACK_ORDER];
+        let providerOrder = this.providerOrder(options.preferredProvider);
 
         if (options.preferredProvider) {
             providerOrder = [options.preferredProvider, ...providerOrder.filter(p => p !== options.preferredProvider)];
@@ -131,10 +158,13 @@ class LLMGatewayService {
             if (skipProviders.has(providerName)) continue;
             if (!this.isProviderAvailable(providerName)) continue;
 
+            let emitted = false;
             try {
-                yield* await this.streamFromProvider(providerName, prompt, options);
+                for await (const chunk of this.streamFromProvider(providerName, prompt, options)) { emitted = true; yield chunk; }
                 return; // Success - exit
             } catch (error: any) {
+                // Never concatenate another model's answer after a partial response.
+                if (emitted) { this.recordFailure(providerName, error); throw error; }
                 this.recordFailure(providerName, error);
                 logger.warn(`${providerName} streaming failed, trying next...`);
             }
@@ -149,6 +179,8 @@ class LLMGatewayService {
     private isProviderAvailable(providerName: string): boolean {
         const provider = this.providers.get(providerName);
         if (!provider) return false;
+        const definition = this.registry.get(providerName);
+        if (definition?.transport === 'openai-compatible' && !this.client.configured(definition)) return false;
 
         // Check if circuit is open but enough time has passed to retry
         if (provider.circuitOpen) {
@@ -192,7 +224,14 @@ class LLMGatewayService {
         const systemPrompt = options.systemPrompt || 'You are a helpful AI assistant.';
         const temperature = options.temperature ?? 0.7;
         const providerStatus = this.providers.get(providerName);
-        const modelId = providerStatus?.currentModel || 'default';
+        const modelId = options.model || providerStatus?.currentModel || 'default';
+        const definition = this.registry.get(providerName);
+        if (definition?.transport === 'openai-compatible') {
+            await this.client.discover(definition);
+            const result = await this.client.complete(definition, [{ role: 'system', content: systemPrompt }, { role: 'user', content: prompt }], options);
+            if (result.toolCalls.length) throw new Error('Use chat() for structured tool responses');
+            return { text: result.text, provider: providerName, latencyMs: Date.now() - startTime, usage: result.usage };
+        }
 
         let text: string;
         let usage: any;
@@ -308,6 +347,15 @@ class LLMGatewayService {
     ): AsyncGenerator<string, void, unknown> {
         const systemPrompt = options.systemPrompt || 'You are a helpful AI assistant.';
 
+        const definition = this.registry.get(providerName);
+        if (definition?.transport === 'openai-compatible') {
+            await this.client.discover(definition);
+            for await (const event of this.client.stream(definition, [{ role: 'system', content: systemPrompt }, { role: 'user', content: prompt }], options)) {
+                if (event.type === 'tool') throw new Error('Use OpenAICompatibleClient.stream() for tool deltas');
+                if (event.type === 'text') yield event.text;
+            }
+            return;
+        }
         switch (providerName) {
             case 'GEMINI': {
                 const { geminiService } = await import('./geminiService');
