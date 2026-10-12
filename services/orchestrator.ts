@@ -1,3 +1,4 @@
+import { subscribeHelpProtocol } from './communication/helpProtocol';
 import { Agent, AgentStatus, AgentRoleType, Project, WorkflowStage, AgentCapability, SystemMode, BusinessType, AgentTier, AgentCategory, SystemProtocol, InterAgentMessage, Squad, ServiceStatus, IntrospectionLayer } from '../types';
 import fs from 'fs';
 import path from 'path';
@@ -168,8 +169,17 @@ export class AgentSwarmOrchestrator {
 
         // --- INTER-AGENT HELP PROTOCOL ---
         // Allows team leaders to request help from other specialists
-        systemBus.subscribe(SystemProtocol.HELP_REQUEST, (event) => {
-            this.handleHelpRequest(event.payload);
+        subscribeHelpProtocol({
+            findHelper: role => this.findAgentByRole(role),
+            prepare: async (request, helperId) => {
+                const enrichedContext = typeof request.context === 'object' && request.context !== null
+                    ? { ...request.context } : { sharedContext: request.context };
+                const cognitive = await this.buildCognitiveContextForTask(request.problem, helperId);
+                if (cognitive) Object.assign(enrichedContext, { semanticDeepMemory: cognitive });
+                await this.hydrateAgent(helperId);
+                if (!this.activeActors.has(helperId)) throw new Error(`Unable to hydrate specialist ${helperId}`);
+                return enrichedContext;
+            }
         });
 
         // --- EMERGENCY BRAKE (CFO INTERVENTION) ---
@@ -447,7 +457,7 @@ export class AgentSwarmOrchestrator {
                     if (messages.length > 0) {
                         console.log(`[ORCHESTRATOR] 📨 Delivering ${messages.length} letters to ${agent.name}`);
                         for (const msg of messages) {
-                            agentStreamer.handleIncomingMessage(agent, msg);
+                            void agentStreamer.handleIncomingMessage(agent, msg).catch(error => console.error('[ORCHESTRATOR] Inbox delivery failed', error));
                         }
                     }
                 }
@@ -909,7 +919,7 @@ ${payload.message}
                 null,
                 undefined,
                 undefined,
-                { useWebSearch: true },
+                { useWebSearch: true, toolCaller: { requesterId: agent.id, requesterRole: agent.role } },
                 {},
                 agent.capabilities || [],
                 CommunicationLevel.USER_FACING
@@ -1296,14 +1306,14 @@ JSON ONLY:
                 'generate_image', 'generate_video', 'list_visual_assets',
                 'web_search', 'send_email', 'get_emails', 'read_inbox',
                 'search_assets', 'manage_asset', 'preview_asset',
-                'execute_code', 'read_file', 'write_file', 'list_files'
+                'execute_code', 'read_file', 'write_file', 'list_files', 'request_collaboration'
             ];
 
             if (CORE_TOOLS.includes(capabilityName)) {
                 console.log(`[ORCHESTRATOR] 🎯 Direct routing to toolHandler: ${capabilityName} `);
 
                 const { toolHandler } = await import('./tools/toolHandler');
-                const toolResult = await toolHandler.handleFunctionCall(capabilityName, args);
+                const toolResult = await toolHandler.handleFunctionCall(capabilityName, args, { requesterId, requesterRole: this.getAgent(requesterId)?.role });
 
                 const result: CapabilityResult = {
                     success: !toolResult.error,
@@ -1357,7 +1367,7 @@ JSON ONLY:
             if (toolRegistry.hasTool(capabilityName)) {
                 console.log(`[ORCHESTRATOR] 🔧 Routing to toolExecutor: ${capabilityName} `);
 
-                const toolResult = await toolExecutor.execute(capabilityName, args);
+                const toolResult = await toolExecutor.execute(capabilityName, args, { requesterId, requesterRole: this.getAgent(requesterId)?.role });
 
                 const result: CapabilityResult = {
                     success: !toolResult.error,
@@ -2083,59 +2093,6 @@ OBJECTIVES:
 
     // --- INTER-AGENT HELP PROTOCOL ---
     // Handles help requests from one agent to another
-    private async handleHelpRequest(payload: {
-        requesterId: string;
-        requesterRole: string;
-        targetRole: string;
-        problem: string;
-        context: any;
-    }) {
-        console.log(`[ORCHESTRATOR] 🤝 Help Request: ${payload.requesterRole} → ${payload.targetRole} `);
-
-        // 1. Find the best helper agent for the requested role
-        const helperAgentId = this.findAgentByRole(payload.targetRole);
-
-        if (!helperAgentId) {
-            console.warn(`[ORCHESTRATOR] No agent found for role: ${payload.targetRole} `);
-            // Respond with error
-            systemBus.emit(SystemProtocol.HELP_RESPONSE, {
-                requesterId: payload.requesterId,
-                helperId: 'system',
-                solution: `No specialist found for role: ${payload.targetRole} `,
-                success: false
-            }, 'ORCHESTRATOR');
-            return;
-        }
-
-        // [PHASE 5] Inject Full Cognitive Context into Help Request
-        const enrichedContext = { ...payload.context };
-        const helpDescription = `HELP REQUEST: ${payload.problem} Context: ${JSON.stringify(payload.context).substring(0, 200)}`;
-        const cognitiveContext = await this.buildCognitiveContextForTask(helpDescription, helperAgentId);
-
-        if (cognitiveContext) {
-            enrichedContext.semanticDeepMemory = cognitiveContext;
-        }
-
-        // 2. Hydrate the helper if needed
-        await this.hydrateAgent(helperAgentId);
-
-        // 3. Send help request to helper's inbox
-        this.sendTaggedMessage(
-            helperAgentId,
-            SystemProtocol.HELP_REQUEST,
-            {
-                requesterId: payload.requesterId,
-                requesterRole: payload.requesterRole,
-                problem: payload.problem,
-                context: enrichedContext
-            },
-            {
-                tag: MessageTag.HELP_REQUEST,
-                priority: MessagePriority.HIGH
-            }
-        );
-    }
-
     // Helper to find agent by role name with dynamic fallback
     private findAgentByRole(role: string): string | null {
         const roleMap: Record<string, string> = {

@@ -1,0 +1,340 @@
+{
+  "schemaVersion": 1,
+  "scripts": [
+    {
+      "path": "scripts/verify_catalog.ts",
+      "status": "ported",
+      "reason": "Hermetic assertions in tests/automated/legacy-hermetic.test.ts; catalog API call remains manual."
+    },
+    {
+      "path": "scripts/verify_chronos.ts",
+      "status": "ported",
+      "reason": "Hermetic assertions in tests/automated/legacy-hermetic.test.ts; catalog API call remains manual."
+    },
+    {
+      "path": "scripts/verify_config_migration.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "scripts/verify_connection.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "scripts/verify_context.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "scripts/verify_continuum_flow.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "scripts/verify_dcr_injection.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "scripts/verify_distributed_flow.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "scripts/verify_fallback.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "scripts/verify_graph_communities.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "scripts/verify_introspection.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "scripts/verify_layer_persistence.ts",
+      "status": "service-required",
+      "reason": "Needs an explicitly configured isolated server and endpoint credentials; console logging alone is not a pass."
+    },
+    {
+      "path": "scripts/verify_memory_api.ts",
+      "status": "service-required",
+      "reason": "Needs an explicitly configured isolated server and endpoint credentials; console logging alone is not a pass."
+    },
+    {
+      "path": "scripts/verify_memory_endpoint.ts",
+      "status": "service-required",
+      "reason": "Needs an explicitly configured isolated server and endpoint credentials; console logging alone is not a pass."
+    },
+    {
+      "path": "scripts/verify_memory_health.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "scripts/verify_minimax.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "scripts/verify_model_version.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "scripts/verify_nested_memory.ts",
+      "status": "service-required",
+      "reason": "Needs an explicitly configured isolated server and endpoint credentials; console logging alone is not a pass."
+    },
+    {
+      "path": "scripts/verify_phase7.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "scripts/verify_qdrant.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "scripts/verify_system_integrity.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "scripts/verify_workflow_api.ts",
+      "status": "service-required",
+      "reason": "Needs an explicitly configured isolated server and endpoint credentials; console logging alone is not a pass."
+    },
+    {
+      "path": "scripts/verify_zombie_protocol.ts",
+      "status": "isolated-runtime",
+      "reason": "Use disposable checkout/runtime; may mutate state, repair code, or disable safety. Requires fail-closed assertions before CI."
+    },
+    {
+      "path": "tests/manual/verify_phase18.ts",
+      "status": "isolated-runtime",
+      "reason": "Use disposable checkout/runtime; may mutate state, repair code, or disable safety. Requires fail-closed assertions before CI."
+    },
+    {
+      "path": "tests/verify_agent_factory.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tests/verify_agent_registry.ts",
+      "status": "ported",
+      "reason": "Hermetic assertions in tests/automated/legacy-hermetic.test.ts; catalog API call remains manual."
+    },
+    {
+      "path": "tests/verify_agent_tools.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tests/verify_base_agent.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tests/verify_cfo_anomaly.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tests/verify_circadian_trigger.ts",
+      "status": "rewrite-required",
+      "reason": "Replaces services or copies logic; must be rewritten against production code before admission to CI."
+    },
+    {
+      "path": "tests/verify_circuit_breaker.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tests/verify_comfy_connection.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tests/verify_creative_director.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tests/verify_discovery_full.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tests/verify_e2e_agent.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tests/verify_eureka_vector.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tests/verify_fallback.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tests/verify_full_agency.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tests/verify_full_autonomy.ts",
+      "status": "isolated-runtime",
+      "reason": "Use disposable checkout/runtime; may mutate state, repair code, or disable safety. Requires fail-closed assertions before CI."
+    },
+    {
+      "path": "tests/verify_hive_mind.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tests/verify_hybrid_models.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tests/verify_image_tool.ts",
+      "status": "rewrite-required",
+      "reason": "Replaces services or copies logic; must be rewritten against production code before admission to CI."
+    },
+    {
+      "path": "tests/verify_janitor_full_response.ts",
+      "status": "rewrite-required",
+      "reason": "Replaces services or copies logic; must be rewritten against production code before admission to CI."
+    },
+    {
+      "path": "tests/verify_janitor_healing.ts",
+      "status": "rewrite-required",
+      "reason": "Replaces services or copies logic; must be rewritten against production code before admission to CI."
+    },
+    {
+      "path": "tests/verify_janus_circuit_breaker.ts",
+      "status": "rewrite-required",
+      "reason": "Replaces services or copies logic; must be rewritten against production code before admission to CI."
+    },
+    {
+      "path": "tests/verify_json_repair.ts",
+      "status": "rewrite-required",
+      "reason": "Replaces services or copies logic; must be rewritten against production code before admission to CI."
+    },
+    {
+      "path": "tests/verify_knowledge_ingest.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tests/verify_media_endpoints.ts",
+      "status": "service-required",
+      "reason": "Needs an explicitly configured isolated server and endpoint credentials; console logging alone is not a pass."
+    },
+    {
+      "path": "tests/verify_media_stack.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tests/verify_memory_gatekeeper.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tests/verify_nocturnal.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tests/verify_ollama_arch.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tests/verify_ollama_chat.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tests/verify_paper_pipeline.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tests/verify_paper_pipeline_v2.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tests/verify_real_wan.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tests/verify_research_tools.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tests/verify_resource_shunt.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tests/verify_resources.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tests/verify_self_healing.ts",
+      "status": "isolated-runtime",
+      "reason": "Use disposable checkout/runtime; may mutate state, repair code, or disable safety. Requires fail-closed assertions before CI."
+    },
+    {
+      "path": "tests/verify_self_modification.ts",
+      "status": "isolated-runtime",
+      "reason": "Use disposable checkout/runtime; may mutate state, repair code, or disable safety. Requires fail-closed assertions before CI."
+    },
+    {
+      "path": "tests/verify_squad_factory.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tests/verify_synthesis_agent.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tests/verify_training_api.ts",
+      "status": "service-required",
+      "reason": "Needs an explicitly configured isolated server and endpoint credentials; console logging alone is not a pass."
+    },
+    {
+      "path": "tests/verify_visual_pipeline.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tools/debug/verify_memory_full.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    },
+    {
+      "path": "tools/debug/verify_universal_pipeline.ts",
+      "status": "runtime-review",
+      "reason": "Imports runtime services, persistence, LLM or hardware; isolate dependencies and convert logging/catches to failing assertions before CI."
+    }
+  ]
+}

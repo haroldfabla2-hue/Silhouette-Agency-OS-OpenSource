@@ -1,3 +1,4 @@
+import { requestCollaboration, ToolCaller } from '../communication/helpProtocol';
 
 import { GenerateVideoArgs, ListVisualAssetsArgs, GenerateImageArgs, DelegateTaskArgs, SearchAssetsArgs, ManageAssetArgs, PreviewAssetArgs, CreateToolArgs, RequestCollaborationArgs } from './definitions';
 // ... (existing imports)
@@ -15,7 +16,7 @@ import { readUrl, searchWeb } from '../../tools/webBrowserTool';
 
 export class ToolHandler {
 
-    public async handleFunctionCall(name: string, args: any): Promise<any> {
+    public async handleFunctionCall(name: string, args: any, caller?: ToolCaller): Promise<any> {
         console.log(`[ToolHandler] 🛠️ Executing Tool: ${name}`);
 
         // 1. Check if this is a Plugin Tool
@@ -140,7 +141,7 @@ export class ToolHandler {
             case 'architect_audit':
                 return await this.handleArchitectAudit();
             case 'request_collaboration':
-                return await this.handleRequestCollaboration(args as RequestCollaborationArgs);
+                return await requestCollaboration(args as RequestCollaborationArgs, caller);
 
             // ==================== SELF-CONFIGURATION TOOLS Phase 17 ====================
             case 'get_system_config':
@@ -1644,28 +1645,6 @@ export class ToolHandler {
             console.error('[TOOL] Create presentation failed:', e);
             return { error: `Failed to create presentation: ${e.message}` };
         }
-    }
-
-    private async handleRequestCollaboration(args: RequestCollaborationArgs): Promise<any> {
-        if (!args.target_role || !args.message) return { error: "Missing role or message" };
-
-        const { systemBus } = await import('../systemBus');
-        const { SystemProtocol } = await import('../../types');
-
-        // Emit event for Orchestrator to route
-        systemBus.emit(SystemProtocol.HELP_REQUEST, {
-            targetRole: args.target_role,
-            content: args.message,
-            context: args.context,
-            priority: args.priority || 'NORMAL',
-            timestamp: Date.now()
-        }, 'TOOL_HANDLER');
-
-        return {
-            status: "sent",
-            message: `Collaboration request sent to ${args.target_role}.`,
-            id: `REQ-${Date.now()}`
-        };
     }
 
     private async handleArchitectAudit(): Promise<any> {

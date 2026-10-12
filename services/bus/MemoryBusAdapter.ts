@@ -33,6 +33,10 @@ export class MemoryBusAdapter implements IBusAdapter {
         this.listeners[protocol].push(handler);
     }
 
+    unsubscribe(protocol: SystemProtocol, handler: (event: ProtocolEvent) => void): void {
+        this.listeners[protocol] = (this.listeners[protocol] || []).filter(listener => listener !== handler);
+    }
+
     async send(message: InterAgentMessage): Promise<void> {
         if (!this.mailboxes.has(message.targetId)) {
             this.mailboxes.set(message.targetId, []);

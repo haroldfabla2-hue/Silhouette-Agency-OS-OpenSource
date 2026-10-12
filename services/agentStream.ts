@@ -1,3 +1,4 @@
+import { emitHelpResponse } from './communication/helpProtocol';
 
 import { Agent, SystemProtocol } from "../types";
 import { geminiService } from "./geminiService";
@@ -14,6 +15,8 @@ import { agentFileSystem } from "./agents/agentFileSystem";
  */
 export class AgentStreamService {
     // Stores context metadata to enable Loop Closure
+    private idleWaiters = new Map<string, (() => void)[]>();
+
     private activeStreams: Map<string, any> = new Map();
 
     /**
@@ -55,6 +58,7 @@ export class AgentStreamService {
                 agent.capabilities || [], // [DCR]
                 {
                     ...context,
+                    toolCaller: { requesterId: agent.id, requesterRole: agent.role },
                     agentProfile: {
                         name: agent.name,
                         role: agent.role,
@@ -84,6 +88,13 @@ export class AgentStreamService {
                 }
             }
 
+            // A completed helper stream closes the same correlated request, not a generic task only.
+            const source = context?.sourceMsg;
+            if (source?.protocol === SystemProtocol.HELP_REQUEST && source.payload?.requesterId) {
+                const failed = !fullText.trim() || /(^Error:|\[ERROR\]|\[SYSTEM CRITICAL FAILURE\])/i.test(fullText.trim());
+                emitHelpResponse(source.payload, agent.id, fullText || 'Helper returned no output', !failed);
+            }
+
             // Completion
             systemBus.emit(SystemProtocol.TASK_COMPLETION, {
                 agentId: agent.id,
@@ -102,8 +113,15 @@ export class AgentStreamService {
 
         } catch (e) {
             console.error(`[AGENT_STREAM] 💥 Thread Crash for ${agent.name}:`, e);
+            const source = context?.sourceMsg;
+            if (source?.protocol === SystemProtocol.HELP_REQUEST && source.payload?.requesterId) {
+                emitHelpResponse(source.payload, agent.id, `Unable to provide help: ${e instanceof Error ? e.message : String(e)}`, false);
+            }
         } finally {
             this.activeStreams.delete(agent.id);
+            const waiters = this.idleWaiters.get(agent.id) || [];
+            this.idleWaiters.delete(agent.id);
+            waiters.forEach(resolve => resolve());
         }
     }
 
@@ -115,6 +133,14 @@ export class AgentStreamService {
      * Processes an inbox message by converting it into a cognitive event/prompt.
      */
     public async handleIncomingMessage(agent: Agent, message: any) {
+        // Do not drop incoming help replies while an agent is still streaming.
+        while (this.isStreaming(agent.id)) {
+            await new Promise<void>(resolve => {
+                const waiters = this.idleWaiters.get(agent.id) || [];
+                waiters.push(resolve);
+                this.idleWaiters.set(agent.id, waiters);
+            });
+        }
         const sender = message.senderId;
         const content = JSON.stringify(message.payload);
         const type = message.protocol || 'MESSAGE';
