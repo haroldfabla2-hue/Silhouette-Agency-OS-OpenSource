@@ -55,12 +55,12 @@ def list_voices():
         "cloned_voices": custom_voices
     }
 
-from fastapi import UploadFile, File
+from fastapi import UploadFile, File, Form
 
 MAX_UPLOAD_SIZE_MB = 50  # 50 MB max for voice samples
 
 @app.post("/voices/clone")
-async def clone_voice(file: UploadFile = File(...), name: str = Body(...)):
+async def clone_voice(file: UploadFile = File(...), name: str = Form(...)):
     """Upload a WAV file for voice cloning"""
     try:
         # Validate file type
@@ -212,7 +212,7 @@ except Exception as e:
 
 # Additional preprocessing endpoint using shared code
 @app.post("/preprocess-for-cloning")
-async def preprocess_voice(file: UploadFile = File(...), name: str = Body(default="processed")):
+async def preprocess_voice(file: UploadFile = File(...), name: str = Form(default="processed")):
     """Preprocess audio specifically for voice cloning with Chatterbox"""
     try:
         import tempfile
