@@ -78,11 +78,13 @@ export const modelCatalog: ModelCatalogEntry[] = [
 
     // --- MINIMAX ---
     {
-        id: 'abab6.5s-chat',
-        name: 'MiniMax 6.5s',
+        // Current MiniMax chat model (abab6.5s-chat was retired by the vendor).
+        // Specs per https://platform.minimax.io/docs/guides/text-generation
+        id: 'MiniMax-M2.7-highspeed',
+        name: 'MiniMax M2.7 Highspeed',
         provider: 'MINIMAX',
-        contextWindow: 128000,
-        capabilities: { vision: false, reasoning: false, toolUse: true, streaming: true },
+        contextWindow: 204800,
+        capabilities: { vision: false, reasoning: true, toolUse: true, streaming: true },
         isLocal: false
     },
 
