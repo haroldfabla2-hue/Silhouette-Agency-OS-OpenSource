@@ -17,7 +17,7 @@ export interface VoiceConfig {
 
 export class TTSService {
     private static instance: TTSService;
-    private pythonEngineUrl = 'http://localhost:8100';
+    private pythonEngineUrl = process.env.VOICE_ENGINE_URL || 'http://localhost:8100';
     private isEngineAwake = false;
 
     // Config default
@@ -243,8 +243,18 @@ export class TTSService {
     public getHealth() {
         return {
             status: this.isEngineAwake ? 'ONLINE' : 'OFFLINE/SLEEPING',
+            engineUrl: this.pythonEngineUrl,
             config: this.config
         };
+    }
+
+    /**
+     * True when the local Python voice engine (voice_engine/, Chatterbox TTS)
+     * answered its last health check. Used to offer honest local voice
+     * cloning instead of pretending or silently falling back.
+     */
+    public isLocalEngineAvailable(): boolean {
+        return this.isEngineAwake;
     }
 
     public updateConfig(newConfig: Partial<VoiceConfig>) {
