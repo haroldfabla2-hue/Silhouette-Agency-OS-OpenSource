@@ -270,23 +270,40 @@ router.post('/clone', voiceUpload.single('audio'), async (req: MulterRequest, re
             return res.status(400).json({ error: 'Voice name is required' });
         }
 
-        // Generate unique voice ID
+        // Voice cloning is REAL Instant Voice Cloning through ElevenLabs.
+        // Without the provider key we never pretend a stored WAV is a clone.
+        const { elevenLabsService } = await import('../../../services/media/elevenLabsService');
+        if (!elevenLabsService.isAvailable()) {
+            fs.unlinkSync(req.file.path);
+            return res.status(503).json({
+                error: 'UNAVAILABLE: voice cloning requires ELEVENLABS_API_KEY (ElevenLabs Instant Voice Cloning). Set it in .env.local and restart to enable this feature.'
+            });
+        }
+
+        // Process and convert audio file to standard WAV format
         const voiceId = `cloned_${Date.now()}_${Math.random().toString(36).substring(7)}`;
         const outputPath = path.join(process.cwd(), 'uploads', 'voice', 'cloned', `${voiceId}.wav`);
 
-        // Process and convert audio file to standard WAV format
         console.log(`[VOICE_CLONE] Processing ${req.file.originalname} for voice: ${name}`);
         const result = await processVoiceFile(req.file.path, outputPath);
 
         if (!result.success) {
-            // Clean up temp file
             fs.unlinkSync(req.file.path);
             return res.status(400).json({
                 error: `Audio processing failed: ${result.error}`
             });
         }
 
-        // Add the cloned voice to library
+        // Real provider-side clone
+        const clone = await elevenLabsService.cloneVoice(name, outputPath);
+        if (!clone) {
+            fs.unlinkSync(req.file.path);
+            return res.status(502).json({
+                error: 'Voice cloning failed at the provider (ElevenLabs). The voice was NOT created; check the server log for details.'
+            });
+        }
+
+        // Add the cloned voice to library, bound to the real provider voice id
         const voice = await voiceLibraryService.addClonedVoice(
             name,
             outputPath,
@@ -295,7 +312,9 @@ router.post('/clone', voiceUpload.single('audio'), async (req: MulterRequest, re
                 originalFilename: req.file.originalname,
                 fileSize: req.file.size,
                 mimeType: req.file.mimetype,
-                voiceId
+                voiceId,
+                provider: 'elevenlabs',
+                providerVoiceId: clone.voiceId
             }
         );
 
@@ -304,7 +323,7 @@ router.post('/clone', voiceUpload.single('audio'), async (req: MulterRequest, re
 
         return res.json({
             success: true,
-            message: 'Voice cloned successfully',
+            message: 'Voice cloned via ElevenLabs Instant Voice Cloning',
             voice
         });
     } catch (error: any) {
