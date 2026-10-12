@@ -258,15 +258,40 @@ export class SystemController {
             res.json({ success: true, content });
         } catch (e) { res.status(500).json({ error: "Read failed" }); }
     }
+    /**
+     * GET /v1/system/status
+     * Honest liveness report: every entry is derived from a real check.
+     * The core gateway entry is ONLINE only because this handler is executing
+     * (i.e. the HTTP process answered); its port is the configured one, and
+     * the SQLite entry reflects a real read against the real database file.
+     */
     public async getStatus(req: Request, res: Response) {
+        const services: Array<{ id: string; name: string; status: string; port?: number; path?: string; details?: string }> = [];
+
+        // Core API gateway: this handler only runs if the HTTP process is alive.
+        let port = 3005; // documented default (server/index.ts)
+        try {
+            const { config } = await import('../config/configLoader');
+            if (config?.system?.port) port = config.system.port;
+        } catch {
+            // Keep the default; it matches the server's own fallback.
+        }
+        services.push({ id: 'core', name: 'Orchestrator Core', status: 'ONLINE', port });
+
+        // SQLite persistence: real read probe against the real database file.
+        try {
+            sqliteService.getLogs(1); // throws if the database is unreadable
+            services.push({ id: 'db', name: 'SQLite Persistence', status: 'ONLINE', path: sqliteService.getDbPath() });
+        } catch (e: any) {
+            services.push({ id: 'db', name: 'SQLite Persistence', status: 'ERROR', details: e?.message || 'SQLite read probe failed' });
+        }
+
+        const degraded = services.some(s => s.status !== 'ONLINE');
         res.json({
-            status: 'ONLINE',
+            status: degraded ? 'DEGRADED' : 'ONLINE',
             uptime: process.uptime(),
             timestamp: Date.now(),
-            services: [
-                { id: 'core', name: 'Orchestrator Core', status: 'ONLINE', port: 3000 },
-                { id: 'db', name: 'SQLite Persistence', status: 'ONLINE', url: 'file:///db/silhouette.sqlite' }
-            ]
+            services
         });
     }
 
