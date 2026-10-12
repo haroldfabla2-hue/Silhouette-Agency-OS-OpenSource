@@ -270,13 +270,29 @@ router.post('/clone', voiceUpload.single('audio'), async (req: MulterRequest, re
             return res.status(400).json({ error: 'Voice name is required' });
         }
 
-        // Voice cloning is REAL Instant Voice Cloning through ElevenLabs.
-        // Without the provider key we never pretend a stored WAV is a clone.
+        // Voice cloning is REAL: either ElevenLabs Instant Voice Cloning (cloud)
+        // or the local voice engine (voice_engine/, Chatterbox, reference-audio
+        // cloning). We never pretend a stored WAV is a clone.
         const { elevenLabsService } = await import('../../../services/media/elevenLabsService');
-        if (!elevenLabsService.isAvailable()) {
+        const { ttsService } = await import('../../../services/ttsService');
+        const requested = String(req.body.provider || 'auto').toLowerCase();
+        const cloudOk = elevenLabsService.isAvailable();
+        const localOk = ttsService.isLocalEngineAvailable();
+
+        let provider: 'elevenlabs' | 'local' | null = null;
+        if (requested === 'elevenlabs') provider = cloudOk ? 'elevenlabs' : null;
+        else if (requested === 'local') provider = localOk ? 'local' : null;
+        else provider = cloudOk ? 'elevenlabs' : (localOk ? 'local' : null);
+
+        if (!provider) {
             fs.unlinkSync(req.file.path);
             return res.status(503).json({
-                error: 'UNAVAILABLE: voice cloning requires ELEVENLABS_API_KEY (ElevenLabs Instant Voice Cloning). Set it in .env.local and restart to enable this feature.'
+                error: 'UNAVAILABLE: no voice cloning provider is ready' +
+                    (requested !== 'auto' ? ` for "${requested}"` : '') + '. ' +
+                    'Cloud: set ELEVENLABS_API_KEY in .env.local and restart. ' +
+                    'Local: install and start the voice engine (cd voice_engine && pip install -r requirements.txt && uvicorn main:app --port 8100; ' +
+                    'set VOICE_ENGINE_URL if it runs elsewhere).',
+                providers: { elevenlabs: cloudOk, local: localOk }
             });
         }
 
@@ -284,7 +300,7 @@ router.post('/clone', voiceUpload.single('audio'), async (req: MulterRequest, re
         const voiceId = `cloned_${Date.now()}_${Math.random().toString(36).substring(7)}`;
         const outputPath = path.join(process.cwd(), 'uploads', 'voice', 'cloned', `${voiceId}.wav`);
 
-        console.log(`[VOICE_CLONE] Processing ${req.file.originalname} for voice: ${name}`);
+        console.log(`[VOICE_CLONE] Processing ${req.file.originalname} for voice: ${name} (provider: ${provider})`);
         const result = await processVoiceFile(req.file.path, outputPath);
 
         if (!result.success) {
@@ -295,12 +311,30 @@ router.post('/clone', voiceUpload.single('audio'), async (req: MulterRequest, re
         }
 
         // Real provider-side clone
-        const clone = await elevenLabsService.cloneVoice(name, outputPath);
-        if (!clone) {
-            fs.unlinkSync(req.file.path);
-            return res.status(502).json({
-                error: 'Voice cloning failed at the provider (ElevenLabs). The voice was NOT created; check the server log for details.'
-            });
+        let providerVoiceId: string | undefined;
+        if (provider === 'elevenlabs') {
+            const clone = await elevenLabsService.cloneVoice(name, outputPath);
+            providerVoiceId = clone?.voiceId;
+            if (!providerVoiceId) {
+                fs.unlinkSync(req.file.path);
+                return res.status(502).json({
+                    error: 'Voice cloning failed at the provider (ElevenLabs). The voice was NOT created; check the server log for details.'
+                });
+            }
+        } else {
+            try {
+                const clone = await ttsService.cloneVoice({ path: outputPath }, name);
+                providerVoiceId = clone?.voice_id;
+            } catch (e: any) {
+                providerVoiceId = undefined;
+                console.error('[VOICE_CLONE] Local engine clone failed:', e?.message || e);
+            }
+            if (!providerVoiceId) {
+                fs.unlinkSync(req.file.path);
+                return res.status(502).json({
+                    error: 'Voice cloning failed in the local voice engine. The voice was NOT created; check that voice_engine is running and its log for details.'
+                });
+            }
         }
 
         // Add the cloned voice to library, bound to the real provider voice id
@@ -313,8 +347,8 @@ router.post('/clone', voiceUpload.single('audio'), async (req: MulterRequest, re
                 fileSize: req.file.size,
                 mimeType: req.file.mimetype,
                 voiceId,
-                provider: 'elevenlabs',
-                providerVoiceId: clone.voiceId
+                provider,
+                providerVoiceId
             }
         );
 
@@ -323,7 +357,8 @@ router.post('/clone', voiceUpload.single('audio'), async (req: MulterRequest, re
 
         return res.json({
             success: true,
-            message: 'Voice cloned via ElevenLabs Instant Voice Cloning',
+            message: provider === 'local' ? 'Voice cloned with the local voice engine' : 'Voice cloned via ElevenLabs Instant Voice Cloning',
+            provider,
             voice
         });
     } catch (error: any) {
@@ -334,6 +369,31 @@ router.post('/clone', voiceUpload.single('audio'), async (req: MulterRequest, re
             fs.unlinkSync(req.file.path);
         }
 
+        return res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * GET /v1/voices/clone/providers
+ * Which cloning providers are actually ready right now (no guessing).
+ */
+router.get('/clone/providers', async (_req: Request, res: Response) => {
+    try {
+        const { elevenLabsService } = await import('../../../services/media/elevenLabsService');
+        const { ttsService } = await import('../../../services/ttsService');
+        const h = ttsService.getHealth();
+        return res.json({
+            elevenlabs: {
+                available: elevenLabsService.isAvailable(),
+                howToEnable: 'Set ELEVENLABS_API_KEY in .env.local and restart.'
+            },
+            local: {
+                available: ttsService.isLocalEngineAvailable(),
+                engineUrl: h.engineUrl,
+                howToEnable: 'Install and start the voice engine: cd voice_engine && pip install -r requirements.txt && uvicorn main:app --port 8100 (set VOICE_ENGINE_URL if elsewhere).'
+            }
+        });
+    } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
 });
