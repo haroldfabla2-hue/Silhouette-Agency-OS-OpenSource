@@ -32,18 +32,17 @@ export class VideoWorker {
         this.isProcessing = true;
 
         try {
-            // Simulate API latency or call Replicate if key exists
-            if (REPLICATE_CONFIG.apiKey === 'default-replicate-key') {
-                console.warn('[VIDEO WORKER] ⚠️ No Replicate API Key found. Simulating video gen...');
-                await new Promise(resolve => setTimeout(resolve, 3000)); // Sim 3s delay
-
-                systemBus.emit(SystemProtocol.TASK_COMPLETION, {
-                    taskId: jobId,
-                    taskName: 'Video Generation (Simulated)',
-                    result: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjEx.../giphy.gif', // Placeholder
-                    agentId
+            // No provider key => honest UNAVAILABLE, never a fabricated result.
+            if (!REPLICATE_CONFIG.apiKey) {
+                const reason = 'UNAVAILABLE: video generation requires REPLICATE_API_TOKEN. Set it in .env.local to enable the Replicate (SVD) video worker.';
+                console.warn(`[VIDEO WORKER] ⚠️ ${reason}`);
+                systemBus.emit(SystemProtocol.INCIDENT_REPORT, {
+                    error: reason,
+                    jobId
                 });
-            } else {
+                return;
+            }
+            {
                 // Actual Replicate API call
                 console.log('[VIDEO WORKER] 📡 Calling Replicate API...');
 
