@@ -6,6 +6,12 @@
  * ===================================
  * Intelligent history reduction to fit within Token Budget.
  * Optimized compaction logic for long-running cognitive sessions.
+ *
+ * Truthfulness contract: when messages must be dropped, the marker inserted
+ * into the history says exactly what happened. A real LLM-generated summary
+ * is labeled as such; when no summary could be produced, the marker says the
+ * content was OMITTED and is not present — it never claims a summary exists
+ * when none was generated.
  */
 
 export interface CompactionConfig {
@@ -28,6 +34,9 @@ const DEFAULT_CONFIG: CompactionConfig = {
     maxToolOutputChars: 2000
 };
 
+/** Max characters of middle-transcript sent to the LLM for summarization. */
+const SUMMARIZER_INPUT_MAX_CHARS = 12000;
+
 export class ContextCompactionService {
 
     constructor() {
@@ -43,68 +52,172 @@ export class ContextCompactionService {
     }
 
     /**
-     * Main compaction method
+     * Honest marker used when middle messages are dropped without a summary.
+     * It explicitly says the content is NOT present, so the agent never
+     * believes a summary exists when none was generated.
+     */
+    private buildOmissionMarker(count: number, reason?: string): ChatMessage {
+        const reasonPart = reason ? ` (reason: ${reason})` : '';
+        return {
+            role: 'system',
+            content: `[SYSTEM: ${count} intermediary messages were OMITTED to fit the context budget${reasonPart}. Their content is NOT present anywhere in this context and no summary of them exists. Do not assume what they contained.]`
+        };
+    }
+
+    /**
+     * Marker used when a real LLM summary replaces the dropped messages.
+     */
+    private buildSummaryMarker(count: number, summary: string): ChatMessage {
+        return {
+            role: 'system',
+            content: `[SYSTEM: ${count} intermediary messages were removed to fit the context budget and replaced by the following LLM-GENERATED summary. The original messages are no longer in this context; only this summary represents them.\n\nSUMMARY OF OMITTED MESSAGES:\n${summary}\n\nEND OF SUMMARY]`
+        };
+    }
+
+    /**
+     * Splits an annotated history into head / middle / tail per the config.
+     * Returns null when the history already fits the budget.
+     */
+    private splitHistory(annotatedHistory: ChatMessage[], cfg: CompactionConfig): { head: ChatMessage[]; middle: ChatMessage[]; tail: ChatMessage[]; remainingBudget: number } | null {
+        const totalTokens = annotatedHistory.reduce((sum, msg) => sum + (msg.tokenEstimate || 0), 0);
+        if (totalTokens <= cfg.tokenBudget) return null;
+
+        console.log(`[COMPACTION] ⚠️ History exceeds budget (${totalTokens} > ${cfg.tokenBudget}). Compacting...`);
+
+        const head = annotatedHistory.slice(0, cfg.reservedHead);
+        const tailStartIndex = Math.max(cfg.reservedHead, annotatedHistory.length - cfg.reservedTail);
+        const tail = annotatedHistory.slice(tailStartIndex);
+        const middle = annotatedHistory.slice(cfg.reservedHead, tailStartIndex);
+
+        const headTokens = head.reduce((sum, msg) => sum + (msg.tokenEstimate || 0), 0);
+        const tailTokens = tail.reduce((sum, msg) => sum + (msg.tokenEstimate || 0), 0);
+        const remainingBudget = cfg.tokenBudget - headTokens - tailTokens;
+
+        return { head, middle, tail, remainingBudget };
+    }
+
+    /**
+     * Attempts a REAL LLM summary of the dropped middle messages via the LLM
+     * Gateway. Returns null when summarization is impossible (no provider
+     * configured, circuit open, network failure, empty output) so callers can
+     * fall back to the honest omission marker.
+     */
+    private async summarizeMiddle(middle: ChatMessage[]): Promise<string | null> {
+        try {
+            // Dynamic import keeps this service free of heavy provider deps on
+            // the hot path and avoids circular imports with the gateway.
+            const { llmGateway } = await import('../llmGateway');
+
+            let transcript = middle
+                .map(m => `${(m.role || 'unknown').toUpperCase()}: ${m.content}`)
+                .join('\n');
+
+            if (transcript.length > SUMMARIZER_INPUT_MAX_CHARS) {
+                const half = Math.floor(SUMMARIZER_INPUT_MAX_CHARS / 2);
+                transcript = transcript.slice(0, half)
+                    + '\n...[middle of the omitted transcript truncated for summarization]...\n'
+                    + transcript.slice(-half);
+            }
+
+            const summary = await llmGateway.quickComplete(
+                'Summarize the following conversation transcript factually and densely. ' +
+                'Preserve: decisions made, tasks requested and their status, names, ' +
+                'commitments, unresolved questions, and any facts the assistant must ' +
+                'remember to continue coherently. Do not invent content that is not in ' +
+                'the transcript. Output only the summary.\n\nTRANSCRIPT:\n' + transcript
+            );
+
+            const cleaned = (summary || '').trim();
+            // Guard against empty/error-shaped outputs being presented as a summary.
+            if (cleaned.length < 20) {
+                console.warn('[COMPACTION] ⚠️ LLM summarization returned an unusable result; omitting without summary.');
+                return null;
+            }
+            return cleaned;
+        } catch (e: any) {
+            console.warn(`[COMPACTION] ⚠️ LLM summarization unavailable (${e?.message || e}); omitting without summary.`);
+            return null;
+        }
+    }
+
+    /**
+     * Main compaction method (async, preferred).
+     *
+     * When the history exceeds the budget, the middle section is replaced by a
+     * REAL LLM-generated summary. If the summary cannot be produced, the
+     * middle is dropped with an honest omission marker — never a fake summary.
+     */
+    public async compactHistoryAsync(history: ChatMessage[], config: Partial<CompactionConfig> = {}): Promise<ChatMessage[]> {
+        const cfg = { ...DEFAULT_CONFIG, ...config };
+
+        if (!history || history.length === 0) return [];
+
+        const annotatedHistory = history.map(msg => ({
+            ...msg,
+            tokenEstimate: this.estimateTokens(msg.content)
+        }));
+
+        const split = this.splitHistory(annotatedHistory, cfg);
+        if (!split) {
+            return this.optimizeDetailedHistory(annotatedHistory, cfg);
+        }
+
+        const { head, middle, tail, remainingBudget } = split;
+
+        if (remainingBudget < 0) {
+            console.warn("[COMPACTION] 🚨 Critical: Even Head + Tail exceeds budget. Truncating Tail...");
+            return this.emergencyTruncate(head, tail, cfg.tokenBudget);
+        }
+
+        const compacted: ChatMessage[] = [...head];
+
+        if (middle.length > 0) {
+            const summary = await this.summarizeMiddle(middle);
+            compacted.push(summary !== null
+                ? this.buildSummaryMarker(middle.length, summary)
+                : this.buildOmissionMarker(middle.length, 'LLM summarization unavailable'));
+        }
+
+        compacted.push(...tail);
+
+        return this.optimizeDetailedHistory(compacted, cfg);
+    }
+
+    /**
+     * Synchronous compaction (legacy callers / no-LLM contexts).
+     * Drops the middle with an HONEST omission marker. It never claims a
+     * summary happened — use compactHistoryAsync for real summarization.
      */
     public compactHistory(history: ChatMessage[], config: Partial<CompactionConfig> = {}): ChatMessage[] {
         const cfg = { ...DEFAULT_CONFIG, ...config };
 
         if (!history || history.length === 0) return [];
 
-        // 1. Annotate with token estimates
         const annotatedHistory = history.map(msg => ({
             ...msg,
             tokenEstimate: this.estimateTokens(msg.content)
         }));
 
-        const totalTokens = annotatedHistory.reduce((sum, msg) => sum + (msg.tokenEstimate || 0), 0);
-
-        // If within budget, return as is (but check for huge tool outputs)
-        if (totalTokens <= cfg.tokenBudget) {
+        const split = this.splitHistory(annotatedHistory, cfg);
+        if (!split) {
             return this.optimizeDetailedHistory(annotatedHistory, cfg);
         }
 
-        console.log(`[COMPACTION] ⚠️ History exceeds budget (${totalTokens} > ${cfg.tokenBudget}). Compacting...`);
-
-        // 2. Identify Head and Tail
-        const head = annotatedHistory.slice(0, cfg.reservedHead);
-
-        // Ensure tail doesn't overlap with head
-        const tailStartIndex = Math.max(cfg.reservedHead, annotatedHistory.length - cfg.reservedTail);
-        const tail = annotatedHistory.slice(tailStartIndex);
-
-        const middle = annotatedHistory.slice(cfg.reservedHead, tailStartIndex);
-
-        // 3. Construct Compacted History
-        // Start with Head
-        const compacted: ChatMessage[] = [...head];
-
-        // Ensure we have budget for Tail
-        const headTokens = head.reduce((sum, msg) => sum + (msg.tokenEstimate || 0), 0);
-        const tailTokens = tail.reduce((sum, msg) => sum + (msg.tokenEstimate || 0), 0);
-        const remainingBudget = cfg.tokenBudget - headTokens - tailTokens;
+        const { head, middle, tail, remainingBudget } = split;
 
         if (remainingBudget < 0) {
             console.warn("[COMPACTION] 🚨 Critical: Even Head + Tail exceeds budget. Truncating Tail...");
-            // We must preserve Head (System Instructions), so we truncate Tail
             return this.emergencyTruncate(head, tail, cfg.tokenBudget);
         }
 
-        // 4. Summarize Middle (Placeholder logic for now: Drop oldest in middle)
-        // In a full implementation, we would use an LLM call to summarize `middle` into one message used as context.
-        // For now, we will add a "Gap" message indicating skipped turns.
+        const compacted: ChatMessage[] = [...head];
 
         if (middle.length > 0) {
-            const gapMessage: ChatMessage = {
-                role: 'system',
-                content: `[SYSTEM: Skipped ${middle.length} intermediary messages to preserve memory context. Previous discussions summarized: Interactions occurred.]`
-            };
-            compacted.push(gapMessage);
+            compacted.push(this.buildOmissionMarker(middle.length, 'synchronous compaction path cannot run LLM summarization'));
         }
 
-        // 5. Add Tail
         compacted.push(...tail);
 
-        // 6. Final Tool Output Optimization on the result
         return this.optimizeDetailedHistory(compacted, cfg);
     }
 
