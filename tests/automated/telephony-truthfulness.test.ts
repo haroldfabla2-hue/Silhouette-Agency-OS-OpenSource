@@ -9,9 +9,12 @@ describe('Telephony: no false successes (regressions)', () => {
     beforeEach(() => {
         delete process.env.SILHOUETTE_DEMO_MODE;
         svc.accountSid = 'ACtest'; svc.authToken = 'tok';
+        // Fixture sender number: real calls now require a configured
+        // TWILIO_PHONE_NUMBER (no fabricated default since Tanda 8).
+        svc.defaultFromNumber = '+15550199000';
         process.env.SILHOUETTE_VOICE_WEBHOOK = 'https://example.test/v1/voices/twiml';
     });
-    afterEach(() => { globalThis.fetch = realFetch; svc.accountSid = null; svc.authToken = null; svc.setMediaStreamSender(null); delete process.env.SILHOUETTE_VOICE_WEBHOOK; });
+    afterEach(() => { globalThis.fetch = realFetch; svc.accountSid = null; svc.authToken = null; svc.defaultFromNumber = null; svc.setMediaStreamSender(null); delete process.env.SILHOUETTE_VOICE_WEBHOOK; });
 
     it('Twilio 401 => FAILED, no SID, error returned (used to stay IN_PROGRESS)', async () => {
         globalThis.fetch = vi.fn(async () => resp(401)) as any;
