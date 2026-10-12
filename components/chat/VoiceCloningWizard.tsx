@@ -10,13 +10,12 @@ import { api } from '../../utils/api';
 type WizardStep = 'intro' | 'recording' | 'analysis' | 'processing' | 'preview';
 type CloneMode = 'instant' | 'professional';
 
-interface QualityMetrics {
-    overallScore: number;
-    duration: number;
-    noiseLevel: 'low' | 'medium' | 'high';
-    volumeConsistency: 'good' | 'fair' | 'poor';
-    clarity: 'excellent' | 'good' | 'fair' | 'poor';
-    issues: string[];
+interface ServerAudioAnalysis {
+    filename: string;
+    fileSize: string;
+    mimeType: string;
+    isValidFormat: boolean;
+    recommendations: string[];
 }
 
 interface VoiceCloningWizardProps {
@@ -58,7 +57,7 @@ export const VoiceCloningWizard = ({
     const [isRecording, setIsRecording] = useState(false);
     const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
     const [recordingDuration, setRecordingDuration] = useState(0);
-    const [qualityMetrics, setQualityMetrics] = useState<QualityMetrics | null>(null);
+    const [audioAnalysis, setAudioAnalysis] = useState<ServerAudioAnalysis | null>(null);
     const [processingStep, setProcessingStep] = useState(0);
     const [previewAudioUrl, setPreviewAudioUrl] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -79,7 +78,7 @@ export const VoiceCloningWizard = ({
             setStep('intro');
             setRecordedBlob(null);
             setRecordingDuration(0);
-            setQualityMetrics(null);
+            setAudioAnalysis(null);
             setProcessingStep(0);
             setPreviewAudioUrl(null);
             setError(null);
@@ -206,19 +205,33 @@ export const VoiceCloningWizard = ({
         setStep('analysis');
 
         try {
-            // For now, simulate analysis (real analysis would be done server-side)
-            await new Promise(resolve => setTimeout(resolve, 1500));
+            // Real server-side analysis: the backend inspects the actual file
+            // (format, size) and returns honest findings - nothing is invented here.
+            const formData = new FormData();
+            formData.append('audio', recordedBlob, 'recording.wav');
 
-            const metrics: QualityMetrics = {
-                overallScore: Math.min(95, 70 + Math.random() * 25),
-                duration: recordingDuration,
-                noiseLevel: recordingDuration > 10 ? 'low' : 'medium',
-                volumeConsistency: recordingDuration > 8 ? 'good' : 'fair',
-                clarity: recordingDuration > 6 ? 'excellent' : 'good',
-                issues: recordingDuration < 6 ? ['Recording is shorter than recommended (6+ seconds)'] : []
-            };
+            const response = await api.fetch('/v1/voices/clone/analyze', {
+                method: 'POST',
+                body: formData
+            });
 
-            setQualityMetrics(metrics);
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(err.error || `Analysis failed (HTTP ${response.status})`);
+            }
+
+            const data = await response.json();
+            if (!data?.analysis) {
+                throw new Error('Analysis endpoint returned no analysis');
+            }
+            const analysis: ServerAudioAnalysis = data.analysis;
+            if (recordingDuration > 0 && recordingDuration < 6) {
+                analysis.recommendations = [
+                    ...(analysis.recommendations || []),
+                    'Recording is shorter than recommended (6+ seconds).'
+                ];
+            }
+            setAudioAnalysis(analysis);
         } catch (err: any) {
             setError(err.message);
         } finally {
@@ -233,20 +246,10 @@ export const VoiceCloningWizard = ({
         setStep('processing');
         setProcessingStep(0);
 
-        const steps = [
-            'Normalizing audio...',
-            'Removing background noise...',
-            'Optimizing segments...',
-            'Creating voice clone...',
-            'Finalizing...'
-        ];
-
         try {
-            // Simulate processing steps
-            for (let i = 0; i < steps.length; i++) {
-                setProcessingStep(i);
-                await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 400));
-            }
+            // One honest step: upload the sample and let the server do the real
+            // conversion + provider-side cloning. No fake progress theater.
+            setProcessingStep(0);
 
             // Upload to server
             const formData = new FormData();
@@ -454,43 +457,33 @@ export const VoiceCloningWizard = ({
                                     <div className="spinner-large"></div>
                                     <p>Analyzing audio quality...</p>
                                 </div>
-                            ) : qualityMetrics && (
+                            ) : audioAnalysis && (
                                 <>
-                                    <div className="quality-score">
-                                        <div className="score-circle">
-                                            <span className="score-value">{Math.round(qualityMetrics.overallScore)}</span>
-                                            <span className="score-label">Quality Score</span>
-                                        </div>
-                                    </div>
-
                                     <div className="metrics-grid">
                                         <div className="metric">
                                             <span className="metric-icon">⏱️</span>
                                             <span className="metric-label">Duration</span>
-                                            <span className="metric-value">{qualityMetrics.duration}s</span>
+                                            <span className="metric-value">{recordingDuration}s</span>
                                         </div>
                                         <div className="metric">
-                                            <span className="metric-icon">🔇</span>
-                                            <span className="metric-label">Noise Level</span>
-                                            <span className={`metric-value ${qualityMetrics.noiseLevel}`}>{qualityMetrics.noiseLevel}</span>
+                                            <span className="metric-icon">📦</span>
+                                            <span className="metric-label">File Size</span>
+                                            <span className="metric-value">{audioAnalysis.fileSize}</span>
                                         </div>
                                         <div className="metric">
-                                            <span className="metric-icon">📊</span>
-                                            <span className="metric-label">Volume</span>
-                                            <span className={`metric-value ${qualityMetrics.volumeConsistency}`}>{qualityMetrics.volumeConsistency}</span>
-                                        </div>
-                                        <div className="metric">
-                                            <span className="metric-icon">✨</span>
-                                            <span className="metric-label">Clarity</span>
-                                            <span className={`metric-value ${qualityMetrics.clarity}`}>{qualityMetrics.clarity}</span>
+                                            <span className="metric-icon">🎙️</span>
+                                            <span className="metric-label">Format</span>
+                                            <span className={`metric-value ${audioAnalysis.isValidFormat ? 'good' : 'poor'}`}>
+                                                {audioAnalysis.isValidFormat ? 'Valid' : 'Not WAV'}
+                                            </span>
                                         </div>
                                     </div>
 
-                                    {qualityMetrics.issues.length > 0 && (
+                                    {audioAnalysis.recommendations.length > 0 && (
                                         <div className="issues-list">
                                             <h4>⚠️ Recommendations</h4>
                                             <ul>
-                                                {qualityMetrics.issues.map((issue, i) => (
+                                                {audioAnalysis.recommendations.map((issue, i) => (
                                                     <li key={i}>{issue}</li>
                                                 ))}
                                             </ul>
@@ -534,7 +527,7 @@ export const VoiceCloningWizard = ({
                             </div>
 
                             <div className="processing-steps">
-                                {['Normalizing audio...', 'Removing background noise...', 'Optimizing segments...', 'Creating voice clone...', 'Finalizing...'].map((label, i) => (
+                                {['Uploading sample and cloning voice (ElevenLabs)...'].map((label, i) => (
                                     <div key={i} className={`proc-step ${processingStep >= i ? 'active' : ''} ${processingStep > i ? 'complete' : ''}`}>
                                         <span className="step-icon">
                                             {processingStep > i ? '✓' : processingStep === i ? '⟳' : '○'}
