@@ -274,8 +274,9 @@ const DynamicWorkspace: React.FC<DynamicWorkspaceProps> = ({ initialProjectId })
                 handleSave();
                 break;
             case 'format':
-                // Placeholder for format logic
-                logTerminal("Formatting document... (Prettier simulation)");
+                // Honest: no formatter is bundled in the browser workspace,
+                // so we say so instead of pretending a format happened.
+                logTerminal("Format is unavailable in the browser workspace (no formatter is bundled). The document was NOT modified.");
                 break;
             case 'toggle_terminal':
                 // Logic to toggle terminal visibility could go here
@@ -295,12 +296,10 @@ const DynamicWorkspace: React.FC<DynamicWorkspaceProps> = ({ initialProjectId })
         const handleRuntimeError = (e: any) => {
             const { error } = e.detail;
             logTerminal(`\x1b[31m[CRITICAL] Runtime Error Detected: ${error}\x1b[0m`);
-            logTerminal(`\x1b[33m[AUTO-HEAL] Requesting immediate fix from TEAM_FIX...\x1b[0m`);
-
-            // Emit Fix Request
-            // In a real implementation, we would send the file content + error
-            // For now, we simulate the request
-            // systemBus.emit(SystemProtocol.TASK_ASSIGNMENT, { ... });
+            // Honest: the browser workspace has no channel to the remediation
+            // squads, so nothing is requested and no fix is running. Saying
+            // otherwise would be a fake action.
+            logTerminal(`\x1b[33m[AUTO-HEAL] Automatic repair is not connected to this workspace. No fix was requested or started — this error needs manual attention.\x1b[0m`);
         };
 
         window.addEventListener('silhouette-runtime-error', handleRuntimeError);

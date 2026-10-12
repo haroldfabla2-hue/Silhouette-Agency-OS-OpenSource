@@ -21,9 +21,19 @@ export class DockerSandbox implements SandboxEnvironment {
     async run(image: string, scriptContent: string, envVars?: Record<string, string>): Promise<string> {
         console.log(`[SANDBOX] 📦 Starting container '${image}'...`);
 
+        let tempDir: string | null = null;
+
         try {
             // Dynamic import to avoid bundling issues
-            const Dockerode = (await import('dockerode')).default;
+            let Dockerode: any;
+            try {
+                Dockerode = (await import('dockerode')).default;
+            } catch (importErr: any) {
+                throw this.sandboxUnavailable(
+                    `the 'dockerode' package is not installed (${importErr?.message || importErr}). ` +
+                    `Install it with 'npm install dockerode' and ensure the Docker daemon is running.`
+                );
+            }
             const docker = new Dockerode();
 
             // Create a temporary file path for the script
@@ -31,51 +41,96 @@ export class DockerSandbox implements SandboxEnvironment {
             const path = await import('path');
             const os = await import('os');
 
-            const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-'));
+            tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-'));
             const scriptPath = path.join(tempDir, 'script.sh');
             await fs.writeFile(scriptPath, scriptContent);
 
             // Create container with resource limits
-            const container = await docker.createContainer({
-                Image: image,
-                Cmd: ['/bin/sh', '/sandbox/script.sh'],
-                HostConfig: {
-                    Memory: 256 * 1024 * 1024, // 256MB limit
-                    CpuQuota: 50000, // 50% CPU
-                    NetworkMode: 'none', // No network access for security
-                    Binds: [`${tempDir}:/sandbox:ro`],
-                    AutoRemove: true
-                },
-                Env: Object.entries(envVars || {}).map(([k, v]) => `${k}=${v}`),
-                WorkingDir: '/sandbox'
-            });
+            let container;
+            try {
+                container = await docker.createContainer({
+                    Image: image,
+                    Cmd: ['/bin/sh', '/sandbox/script.sh'],
+                    HostConfig: {
+                        Memory: 256 * 1024 * 1024, // 256MB limit
+                        CpuQuota: 50000, // 50% CPU
+                        NetworkMode: 'none', // No network access for security
+                        Binds: [`${tempDir}:/sandbox:ro`],
+                        AutoRemove: true
+                    },
+                    Env: Object.entries(envVars || {}).map(([k, v]) => `${k}=${v}`),
+                    WorkingDir: '/sandbox'
+                });
+            } catch (dockerErr: any) {
+                if (this.isDockerDaemonError(dockerErr)) {
+                    throw this.sandboxUnavailable(
+                        `the Docker daemon is not reachable (${dockerErr?.message || dockerErr}). ` +
+                        `Install Docker (https://docs.docker.com/get-docker/) and grant access to /var/run/docker.sock.`
+                    );
+                }
+                throw dockerErr;
+            }
 
             this.containerId = container.id;
 
-            // Start and wait for completion
-            await container.start();
-            const result = await container.wait();
+            try {
+                // Start and wait for completion
+                await container.start();
+                const result = await container.wait();
 
-            // Get logs
-            const logs = await container.logs({ stdout: true, stderr: true, follow: false });
-            const output = logs.toString('utf8');
+                // Get logs
+                const logs = await container.logs({ stdout: true, stderr: true, follow: false });
+                const output = logs.toString('utf8');
 
-            // Cleanup temp directory
-            await fs.rm(tempDir, { recursive: true, force: true });
+                if (result.StatusCode !== 0) {
+                    throw new Error(`Container exited with code ${result.StatusCode}: ${output}`);
+                }
 
-            if (result.StatusCode !== 0) {
-                throw new Error(`Container exited with code ${result.StatusCode}: ${output}`);
+                return output;
+            } catch (runErr: any) {
+                if (this.isDockerDaemonError(runErr)) {
+                    throw this.sandboxUnavailable(
+                        `the Docker daemon is not reachable (${runErr?.message || runErr}). ` +
+                        `Install Docker (https://docs.docker.com/get-docker/) and grant access to /var/run/docker.sock.`
+                    );
+                }
+                throw runErr;
             }
-
-            return output;
-        } catch (error: any) {
-            // Fallback to simulation if Docker is not available
-            if (error.message?.includes('connect ENOENT') || error.code === 'ENOENT') {
-                console.warn('[SANDBOX] ⚠️ Docker not available, using simulation mode');
-                return `[SANDBOX] Simulated execution of ${scriptContent.length} bytes in ${image}`;
+        } finally {
+            // Always clean up the temp directory, success or failure.
+            if (tempDir) {
+                try {
+                    const fs = await import('fs/promises');
+                    await fs.rm(tempDir, { recursive: true, force: true });
+                } catch { /* best effort cleanup */ }
             }
-            throw error;
         }
+    }
+
+    /**
+     * Docker daemon/socket failures (as opposed to script failures).
+     */
+    private isDockerDaemonError(error: any): boolean {
+        const msg = error?.message || '';
+        return error?.code === 'ENOENT'
+            || msg.includes('connect ENOENT')
+            || msg.includes('docker.sock')
+            || msg.includes('connect ECONNREFUSED');
+    }
+
+    /**
+     * Builds the honest UNAVAILABLE error. The sandbox NEVER returns simulated
+     * output as if it were real execution output: either the script really ran
+     * in a container, or the caller gets this error explaining how to enable
+     * real execution.
+     */
+    private sandboxUnavailable(reason: string): Error {
+        const err = new Error(
+            `SANDBOX UNAVAILABLE: the script was NOT executed because ${reason} ` +
+            `Simulated output is never returned as a result.`
+        );
+        (err as any).code = 'SANDBOX_UNAVAILABLE';
+        return err;
     }
 
     async destroy(): Promise<void> {

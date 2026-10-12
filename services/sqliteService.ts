@@ -10,8 +10,16 @@ if (!fs.existsSync(DB_DIR)) {
     fs.mkdirSync(DB_DIR, { recursive: true });
 }
 
+/** Absolute path of the SQLite database file this service persists to. */
+export const SQLITE_DB_PATH = DB_PATH;
+
 export class SqliteService {
     public db: Database.Database;
+
+    /** Real on-disk location of the database (for honest status reporting). */
+    public getDbPath(): string {
+        return DB_PATH;
+    }
 
     constructor() {
         this.db = new Database(DB_PATH);
