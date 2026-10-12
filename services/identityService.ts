@@ -10,10 +10,12 @@ import * as fs from 'fs';
 
 const DB_PATH = path.join(process.cwd(), 'db', 'silhouette.sqlite');
 
-// Creator emails come ONLY from env config (CREATOR_EMAILS, comma-separated).
-// No personal email is baked into the product. The first setup user always
-// gets the CREATOR role regardless, so an empty list never locks the owner out.
-const CREATOR_EMAILS = (process.env.CREATOR_EMAILS || '')
+// Creator emails come from env config (CREATOR_EMAILS, comma-separated) PLUS
+// a user-configured list persisted in the system_config table (editable from
+// Settings, see getCreatorEmails). No personal email is baked into the product.
+// The first setup user always gets the CREATOR role regardless, so an empty
+// list never locks the owner out.
+const ENV_CREATOR_EMAILS = (process.env.CREATOR_EMAILS || '')
     .split(',')
     .map(e => e.trim())
     .filter(Boolean);
@@ -323,11 +325,11 @@ class IdentityService {
             // SECURITY: If the account exists but isn't explicitly linked to Google, 
             // deny the login! This prevents Account Takeovers where an attacker 
             // registers a local email and waits for the victim to use Google Auth.
-            if (!existingByEmail.googleLinked && !CREATOR_EMAILS.includes(googleUser.email)) {
+            if (!existingByEmail.googleLinked && !this.getCreatorEmails().includes(googleUser.email.toLowerCase())) {
                 throw new Error('An account with this email already exists but is not linked to Google. Please login with your password and link your Google Account from Settings.');
             }
 
-            // Link Google and update (only allowed for CREATOR_EMAILS or already linked)
+            // Link Google and update (only allowed for creator emails or already linked)
             this.db.prepare(`
                 UPDATE users SET last_login = ?, name = ?, avatar_url = ?, google_email = ?, google_linked = 1 WHERE id = ?
             `).run(now, googleUser.name, googleUser.avatarUrl || null, googleUser.email, existingByEmail.id);
@@ -348,7 +350,7 @@ class IdentityService {
 
         if (isFirstUser) {
             role = UserRole.CREATOR;
-        } else if (CREATOR_EMAILS.includes(googleUser.email)) {
+        } else if (this.getCreatorEmails().includes(googleUser.email.toLowerCase())) {
             role = UserRole.CREATOR;
         } else {
             role = UserRole.USER;
@@ -829,6 +831,99 @@ class IdentityService {
         this.currentSession = null;
 
         console.log('[IdentityService] Logged out (Legacy Stateful)');
+    }
+
+    // ─── Creator emails: env + user-configured (system_config) ──────────────
+
+    private static readonly CREATOR_EMAILS_CONFIG_KEY = 'identity.creator_emails';
+
+    private ensureSystemConfigTable(): void {
+        if (!this.db) return;
+        this.db.exec(`
+      CREATE TABLE IF NOT EXISTS system_config (
+        key TEXT PRIMARY KEY,
+        value JSON,
+        updated_at INTEGER
+      )
+    `);
+    }
+
+    /**
+     * Creator emails configured by the user from Settings (persisted in the
+     * system_config table of the same SQLite DB). Never includes env values.
+     */
+    getConfiguredCreatorEmails(): string[] {
+        if (!this.db) return [];
+        this.ensureSystemConfigTable();
+        const row = this.db.prepare('SELECT value FROM system_config WHERE key = ?')
+            .get(IdentityService.CREATOR_EMAILS_CONFIG_KEY) as { value: string } | undefined;
+        if (!row) return [];
+        try {
+            const parsed = JSON.parse(row.value);
+            if (!Array.isArray(parsed)) return [];
+            return parsed.filter(e => typeof e === 'string' && e.includes('@'));
+        } catch {
+            return [];
+        }
+    }
+
+    /**
+     * Creator emails that come from the environment (CREATOR_EMAILS).
+     * These can only be changed by editing the env config, not from the UI.
+     */
+    getEnvCreatorEmails(): string[] {
+        return [...ENV_CREATOR_EMAILS];
+    }
+
+    /**
+     * Effective creator emails: env list + user-configured list (deduped,
+     * lowercase). Used everywhere a creator check by email is needed.
+     */
+    getCreatorEmails(): string[] {
+        const all = [...ENV_CREATOR_EMAILS, ...this.getConfiguredCreatorEmails()];
+        return [...new Set(all.map(e => e.toLowerCase()))];
+    }
+
+    /**
+     * Add a creator email from the Settings UI. Persisted in system_config.
+     * Returns the updated configured list.
+     */
+    addCreatorEmail(email: string): string[] {
+        if (!this.db) throw new Error('IdentityService not initialized');
+        const clean = email.trim().toLowerCase();
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(clean)) {
+            throw new Error('Invalid email address');
+        }
+        const current = this.getConfiguredCreatorEmails();
+        if (!current.includes(clean)) {
+            current.push(clean);
+            this.persistConfiguredCreatorEmails(current);
+        }
+        return this.getConfiguredCreatorEmails();
+    }
+
+    /**
+     * Remove a user-configured creator email. Env-provided emails cannot be
+     * removed here (edit CREATOR_EMAILS instead); returns false in that case.
+     */
+    removeCreatorEmail(email: string): boolean {
+        if (!this.db) throw new Error('IdentityService not initialized');
+        const clean = email.trim().toLowerCase();
+        const current = this.getConfiguredCreatorEmails();
+        const idx = current.indexOf(clean);
+        if (idx === -1) return false;
+        current.splice(idx, 1);
+        this.persistConfiguredCreatorEmails(current);
+        return true;
+    }
+
+    private persistConfiguredCreatorEmails(emails: string[]): void {
+        if (!this.db) return;
+        this.ensureSystemConfigTable();
+        this.db.prepare(`
+      INSERT INTO system_config (key, value, updated_at) VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).run(IdentityService.CREATOR_EMAILS_CONFIG_KEY, JSON.stringify(emails), Date.now());
     }
 
     /**

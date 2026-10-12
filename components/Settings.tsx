@@ -33,6 +33,56 @@ const Settings: React.FC = () => {
     const [supportResult, setSupportResult] = useState<{ success: boolean; message: string } | null>(null);
 
     // Privacy & Telemetry State
+    // Creator Emails State (B1: user-configurable creator emails, persisted server-side)
+    const [creatorEmails, setCreatorEmails] = useState<string[]>([]);
+    const [envCreatorEmails, setEnvCreatorEmails] = useState<string[]>([]);
+    const [newCreatorEmail, setNewCreatorEmail] = useState('');
+    const [creatorEmailsLoading, setCreatorEmailsLoading] = useState(false);
+    const [creatorEmailsError, setCreatorEmailsError] = useState<string | null>(null);
+
+    const loadCreatorEmails = async () => {
+        setCreatorEmailsLoading(true);
+        setCreatorEmailsError(null);
+        try {
+            const res = await api.get<any>('/v1/identity/creator-emails');
+            setCreatorEmails(res.configured || []);
+            setEnvCreatorEmails(res.envEmails || []);
+        } catch (e: any) {
+            setCreatorEmailsError(e.message || 'Could not load creator emails');
+        } finally {
+            setCreatorEmailsLoading(false);
+        }
+    };
+
+    const handleAddCreatorEmail = async () => {
+        const email = newCreatorEmail.trim();
+        if (!email) return;
+        setCreatorEmailsLoading(true);
+        setCreatorEmailsError(null);
+        try {
+            const res = await api.post<any>('/v1/identity/creator-emails', { email });
+            setCreatorEmails(res.configured || []);
+            setNewCreatorEmail('');
+        } catch (e: any) {
+            setCreatorEmailsError(e.message || 'Could not add creator email');
+        } finally {
+            setCreatorEmailsLoading(false);
+        }
+    };
+
+    const handleRemoveCreatorEmail = async (email: string) => {
+        setCreatorEmailsLoading(true);
+        setCreatorEmailsError(null);
+        try {
+            const res = await api.delete<any>(`/v1/identity/creator-emails/${encodeURIComponent(email)}`);
+            setCreatorEmails(res.configured || []);
+        } catch (e: any) {
+            setCreatorEmailsError(e.message || 'Could not remove creator email');
+        } finally {
+            setCreatorEmailsLoading(false);
+        }
+    };
+
     const [telemetryConsent, setTelemetryConsent] = useState(false);
     const [telemetryEvents, setTelemetryEvents] = useState<any[]>([]);
     const [telemetryLoading, setTelemetryLoading] = useState(false);
@@ -53,6 +103,11 @@ const Settings: React.FC = () => {
             setIsSendingSupport(false);
         }
     };
+
+    useEffect(() => {
+        // Load creator emails (Settings > Permissions)
+        loadCreatorEmails();
+    }, []);
 
     useEffect(() => {
         // Fetch initial config
@@ -870,6 +925,66 @@ const Settings: React.FC = () => {
                 {
                     activeTab === 'PERMISSIONS' && (
                         <div>
+                            {/* CREATOR EMAILS (B1): the owner configures which emails get the CREATOR role */}
+                            <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-xl mb-6">
+                                <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
+                                    <Shield size={16} className="text-cyan-400" /> Creator Emails
+                                </h3>
+                                <p className="text-xs text-slate-400 mb-4">
+                                        Emails listed here get the CREATOR role when they register or link Google.
+                                        The first user created during setup is always CREATOR, so you can never lock yourself out.
+                                        Changes are saved on the server (system config), no restart needed.
+                                </p>
+
+                                {creatorEmailsError && (
+                                    <div className="mb-3 p-3 bg-red-900/20 border border-red-500/40 rounded text-xs text-red-300 flex items-center gap-2">
+                                        <AlertTriangle size={14} /> {creatorEmailsError}
+                                    </div>
+                                )}
+
+                                <div className="space-y-2 mb-4">
+                                    {envCreatorEmails.map(email => (
+                                        <div key={`env-${email}`} className="flex items-center justify-between p-2 bg-black/20 rounded border border-slate-800">
+                                            <span className="text-xs text-white">{email}</span>
+                                            <span className="text-[10px] text-slate-500">from env (CREATOR_EMAILS) - edit .env to change</span>
+                                        </div>
+                                    ))}
+                                    {creatorEmails.map(email => (
+                                        <div key={email} className="flex items-center justify-between p-2 bg-black/20 rounded border border-slate-800">
+                                            <span className="text-xs text-white">{email}</span>
+                                            <button
+                                                onClick={() => handleRemoveCreatorEmail(email)}
+                                                disabled={creatorEmailsLoading}
+                                                className="text-red-400 hover:text-red-300 disabled:opacity-50"
+                                                title="Remove"
+                                            >
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                    {envCreatorEmails.length === 0 && creatorEmails.length === 0 && !creatorEmailsLoading && (
+                                        <p className="text-[11px] text-slate-500 italic">No extra creator emails configured. Only the first setup user is CREATOR.</p>
+                                    )}
+                                </div>
+
+                                <div className="flex gap-2">
+                                    <input
+                                        type="email"
+                                        value={newCreatorEmail}
+                                        onChange={e => setNewCreatorEmail(e.target.value)}
+                                        placeholder="email@example.com"
+                                        className="flex-1 bg-black/30 border border-slate-700 rounded px-3 py-2 text-xs text-white focus:border-cyan-500 outline-none"
+                                    />
+                                    <button
+                                        onClick={handleAddCreatorEmail}
+                                        disabled={creatorEmailsLoading || !newCreatorEmail.trim()}
+                                        className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-xs font-bold rounded"
+                                    >
+                                        Add
+                                    </button>
+                                </div>
+                            </div>
+
                             <div className="bg-yellow-900/10 border border-yellow-500/30 p-4 rounded-lg mb-6 flex items-start gap-3">
                                 <Shield className="text-yellow-500 shrink-0" size={20} />
                                 <div>
