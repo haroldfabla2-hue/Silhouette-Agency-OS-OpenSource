@@ -5,6 +5,8 @@ import { AgentProfile } from '../../types';
 const AGENTS_DIR = path.join(process.cwd(), 'data', 'agents', 'definitions');
 
 export class AgentRegistry {
+    constructor(private readonly agentsDir = AGENTS_DIR) {}
+
     private cache: Map<string, AgentProfile> = new Map();
 
     /**
@@ -12,14 +14,14 @@ export class AgentRegistry {
      */
     async loadAgents(): Promise<void> {
         try {
-            await fs.mkdir(AGENTS_DIR, { recursive: true });
-            const files = await fs.readdir(AGENTS_DIR);
+            await fs.mkdir(this.agentsDir, { recursive: true });
+            const files = await fs.readdir(this.agentsDir);
 
             this.cache.clear();
 
             for (const file of files) {
                 if (file.endsWith('.json')) {
-                    const content = await fs.readFile(path.join(AGENTS_DIR, file), 'utf-8');
+                    const content = await fs.readFile(path.join(this.agentsDir, file), 'utf-8');
                     try {
                         const agent = JSON.parse(content) as AgentProfile;
                         if (agent.id) {
@@ -63,8 +65,8 @@ export class AgentRegistry {
         }
 
         try {
-            await fs.mkdir(AGENTS_DIR, { recursive: true });
-            const filePath = path.join(AGENTS_DIR, `${agent.id}.json`);
+            await fs.mkdir(this.agentsDir, { recursive: true });
+            const filePath = path.join(this.agentsDir, `${agent.id}.json`);
             await fs.writeFile(filePath, JSON.stringify(agent, null, 2), 'utf-8');
 
             this.cache.set(agent.id, agent);
