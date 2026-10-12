@@ -11,6 +11,8 @@ const execAsync = util.promisify(exec);
 // Decides if an agent can be woken up based on REAL hardware metrics.
 
 interface ResourceMetrics {
+    /** true when these numbers are browser-side estimates, not real server metrics */
+    estimated?: boolean;
     cpuLoad: number;
     ramUsed: number;
     ramTotal: number;
@@ -254,27 +256,38 @@ class ResourceArbiter {
         }
     }
 
-    private getSimulatedMetrics(): ResourceMetrics {
-        // Fallback for Client-Side or Error
-        // We can use performance.memory if available in Chrome (non-standard)
+    private getEstimatedMetrics(): ResourceMetrics {
+        // Fallback for client-side or server-error paths. These are ESTIMATES,
+        // flagged with estimated:true so callers never mistake them for real
+        // server telemetry. Real JS-heap numbers are used when Chrome exposes
+        // performance.memory; CPU cannot be measured in a browser.
         const perf = (performance as any).memory;
         if (perf) {
             return {
-                cpuLoad: 50, // Cannot measure CPU in browser easily
+                estimated: true,
+                cpuLoad: -1, // -1 = not measurable in the browser (no fake %)
                 ramUsed: perf.usedJSHeapSize,
                 ramTotal: perf.jsHeapSizeLimit,
                 vramUsed: 0,
-                vramTotal: 4096
+                vramTotal: 0 // 0 = unknown, not a fabricated VRAM figure
             };
         }
 
+        // No real signal at all: report zeros flagged as estimates instead of
+        // invented "8GB/16GB" figures.
         return {
-            cpuLoad: 40,
-            ramUsed: 8 * 1024 * 1024 * 1024, // 8GB Mock
-            ramTotal: 16 * 1024 * 1024 * 1024,
-            vramUsed: 2048,
-            vramTotal: 4096
+            estimated: true,
+            cpuLoad: -1,
+            ramUsed: 0,
+            ramTotal: 0,
+            vramUsed: 0,
+            vramTotal: 0
         };
+    }
+
+    /** @deprecated use getEstimatedMetrics (kept for call-site compatibility) */
+    private getSimulatedMetrics(): ResourceMetrics {
+        return this.getEstimatedMetrics();
     }
 
     public getQueueLength(): number {
