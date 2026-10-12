@@ -126,7 +126,7 @@ export default function MediaStudio() {
     // --- HANDLERS ---
 
     const handleLoadBrand = async () => {
-        const brandId = prompt("Enter Brand ID to Load (e.g., 'brand_nike_001'):", "brand_nike_001");
+        const brandId = prompt("Enter the Brand ID to load (from Vector Memory):", "");
         if (!brandId) return;
 
         try {
@@ -409,7 +409,7 @@ export default function MediaStudio() {
                                     onClick={handleLoadBrand}
                                     className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-bold transition-colors"
                                 >
-                                    LOAD DEMO BRAND (NIKE)
+                                    LOAD BRAND TWIN
                                 </button>
                             ) : (
                                 <div className="space-y-4">

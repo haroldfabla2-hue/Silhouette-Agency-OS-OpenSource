@@ -1,4 +1,5 @@
 
+import { APP_VERSION } from '../utils/appVersion';
 import React, { useState, useRef, useEffect, lazy, Suspense } from 'react';
 import ReactMarkdown from 'react-markdown';
 
@@ -755,7 +756,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ currentUserRole, onChangeRole, 
                                 </button>
                             </div>
                             <div className="text-[10px] text-slate-600 mt-2 text-center">
-                                Silhouette OS v2.0 • {isLocalMode ? 'Edge Compute' : 'Hive Mind Connected'} • {systemMetrics?.activeAgents || 0} Agents Active
+                                Silhouette OS v{APP_VERSION} • {isLocalMode ? 'Edge Compute' : 'Hive Mind Connected'} • {systemMetrics?.activeAgents || 0} Agents Active
                             </div>
                         </div>
                     </div>

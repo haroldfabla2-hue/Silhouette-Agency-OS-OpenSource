@@ -1,6 +1,9 @@
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import { readFileSync } from 'fs';
+
+const appVersion: string = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8')).version;
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
@@ -15,6 +18,9 @@ export default defineConfig(({ mode }) => {
       }
     },
     plugins: [react()],
+    define: {
+      __APP_VERSION__: JSON.stringify(appVersion),
+    },
     // NOTE: API keys are intentionally NOT injected into the frontend bundle.
     // All LLM calls must go through the backend proxy at /v1/*.
     build: {

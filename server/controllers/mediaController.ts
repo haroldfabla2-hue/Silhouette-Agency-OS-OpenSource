@@ -1,3 +1,4 @@
+import { isDemoModeEnabled } from '../../services/security/capabilityState';
 import { Request, Response } from 'express';
 import { mediaService } from '../../services/mediaService';
 import { mediaManager } from '../../services/mediaManager';
@@ -353,7 +354,10 @@ Respond in JSON format:
                 }
             }
 
-            // Return demo brand if not found
+            // Not found: only fabricate a placeholder brand in explicit demo mode.
+            if (!isDemoModeEnabled()) {
+                return res.status(404).json({ error: `Brand '${id}' not found in memory` });
+            }
             return res.json({
                 id: id,
                 name: 'Demo Brand',
