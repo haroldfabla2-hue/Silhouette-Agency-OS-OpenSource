@@ -72,7 +72,7 @@ describe('configurable OpenAI-compatible HTTP transport', () => {
         expect(events).toContainEqual({ type: 'text', text: 'héllo' }); expect(events.some(e => e.type === 'tool')).toBe(true); expect(events.at(-1)).toEqual({ type: 'finish', reason: 'stop' });
     });
     it('fails explicitly on truncated SSE', async () => {
-        mode = 'truncated'; await expect(async () => { for await (const _ of client.stream(provider, messages)) {} }).rejects.toThrow('truncated');
+        mode = 'truncated'; await expect(async () => { for await (const _ of client.stream(provider, messages)) { /* consume */ } }).rejects.toThrow('truncated');
     });
     it('redacts vendor response bodies in errors', async () => {
         mode = 'error'; await expect(client.complete(provider, messages)).rejects.toThrow('HTTP 429');
@@ -94,7 +94,25 @@ describe('configurable OpenAI-compatible HTTP transport', () => {
     it('does not splice fallback text after a stream has emitted output', async () => {
         const second = { ...provider, id: 'SECOND', priority: 2 };
         const gateway = new LLMGatewayService(new ProviderRegistry([provider, second]), client); mode = 'truncated';
-        await expect(async () => { for await (const _ of gateway.stream('generic')) {} }).rejects.toThrow('truncated'); expect(requests.filter(r => r.path.endsWith('/chat/completions'))).toHaveLength(1);
+        await expect(async () => { for await (const _ of gateway.stream('generic')) { /* consume */ } }).rejects.toThrow('truncated'); expect(requests.filter(r => r.path.endsWith('/chat/completions'))).toHaveLength(1);
+    });
+    it('rejects tools in text APIs before sending or falling back', async () => {
+        const gateway = new LLMGatewayService(new ProviderRegistry([provider]), client);
+        const tools = [{ type: 'function' as const, function: { name: 'read_file', parameters: {} } }];
+        await expect(gateway.complete('generic', { tools })).rejects.toThrow('structured tools');
+        await expect(async () => { for await (const _ of gateway.stream('generic', { tools })) { /* consume */ } }).rejects.toThrow('structured tools');
+        expect(requests).toHaveLength(0);
+    });
+    it('honors external cancellation', async () => {
+        const controller = new AbortController(); controller.abort();
+        await expect(client.complete(provider, messages, { signal: controller.signal })).rejects.toThrow();
+        expect(requests).toHaveLength(0);
+    });
+    it('records real failures and opens/reset circuits', async () => {
+        const gateway = new LLMGatewayService(new ProviderRegistry([provider]), client); mode = 'error';
+        for (let i = 0; i < 3; i++) await expect(gateway.complete('generic')).rejects.toThrow('All LLM providers failed');
+        expect(gateway.getProviderHealth().TEST.circuitOpen).toBe(true);
+        mode = 'ok'; gateway.resetCircuit('TEST'); expect((await gateway.complete('generic')).text).toBe('hello');
     });
     it('retains legacy provider order and rejects overwriting native paths', () => {
         const registry = new ProviderRegistry(); expect(registry.order().slice(0, 5)).toEqual(['MINIMAX', 'GEMINI', 'GROQ', 'DEEPSEEK', 'OLLAMA']);
