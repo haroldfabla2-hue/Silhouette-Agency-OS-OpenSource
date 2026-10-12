@@ -330,4 +330,91 @@ router.post('/logout', async (req: Request, res: Response) => {
     }
 });
 
+// ─── Creator emails management (Settings UI) ───────────────────────────────
+// These endpoints are protected by the Bearer-token auth middleware (they are
+// not in PUBLIC_PATHS) AND require the current session user to be CREATOR.
+
+// GET /v1/identity/creator-emails - List effective creator emails and their source
+router.get('/creator-emails', async (_req: Request, res: Response) => {
+    try {
+        const { identityService } = await import('../../../services/identityService');
+        await identityService.init();
+
+        const status = identityService.getStatus();
+        if (!status.isCreator) {
+            return res.status(403).json({ error: 'Only the CREATOR can manage creator emails' });
+        }
+
+        const envEmails = identityService.getEnvCreatorEmails();
+        const configured = identityService.getConfiguredCreatorEmails();
+        return res.json({
+            success: true,
+            emails: identityService.getCreatorEmails(),
+            envEmails,
+            configured
+        });
+    } catch (error: any) {
+        return res.status(500).json({ error: error.message });
+    }
+});
+
+// POST /v1/identity/creator-emails - Add a creator email (persisted in system config)
+router.post('/creator-emails', async (req: Request, res: Response) => {
+    try {
+        const { identityService } = await import('../../../services/identityService');
+        await identityService.init();
+
+        const status = identityService.getStatus();
+        if (!status.isCreator) {
+            return res.status(403).json({ error: 'Only the CREATOR can manage creator emails' });
+        }
+
+        const { email } = req.body;
+        if (!email || typeof email !== 'string') {
+            return res.status(400).json({ error: 'Missing email' });
+        }
+
+        const configured = identityService.addCreatorEmail(email);
+        return res.json({
+            success: true,
+            emails: identityService.getCreatorEmails(),
+            configured
+        });
+    } catch (error: any) {
+        return res.status(400).json({ error: error.message });
+    }
+});
+
+// DELETE /v1/identity/creator-emails/:email - Remove a user-configured creator email
+router.delete('/creator-emails/:email', async (req: Request, res: Response) => {
+    try {
+        const { identityService } = await import('../../../services/identityService');
+        await identityService.init();
+
+        const status = identityService.getStatus();
+        if (!status.isCreator) {
+            return res.status(403).json({ error: 'Only the CREATOR can manage creator emails' });
+        }
+
+        const email = decodeURIComponent(req.params.email || '');
+        if (identityService.getEnvCreatorEmails().map(e => e.toLowerCase()).includes(email.toLowerCase())) {
+            return res.status(409).json({
+                error: 'This email comes from the CREATOR_EMAILS environment variable. Remove it from the env config instead.'
+            });
+        }
+
+        const removed = identityService.removeCreatorEmail(email);
+        if (!removed) {
+            return res.status(404).json({ error: 'Email not found in the configured creator emails' });
+        }
+        return res.json({
+            success: true,
+            emails: identityService.getCreatorEmails(),
+            configured: identityService.getConfiguredCreatorEmails()
+        });
+    } catch (error: any) {
+        return res.status(500).json({ error: error.message });
+    }
+});
+
 export default router;
