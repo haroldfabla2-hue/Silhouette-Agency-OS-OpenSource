@@ -4,7 +4,7 @@ import { continuum } from "./continuumMemory";
 import { generateAgentResponse } from "./geminiService";
 import { introspection } from "./introspectionEngine";
 import { systemBus } from "./systemBus";
-import { MOCK_PROJECTS, DEFAULT_API_CONFIG } from "../constants";
+import { DEFAULT_API_CONFIG } from "../constants";
 import { contextResolver } from './contextResolver';
 import { visualCortex } from './visualCortex';
 import { CommunicationLevel } from "../types"; // Import from types
