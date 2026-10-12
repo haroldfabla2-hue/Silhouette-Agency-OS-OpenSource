@@ -363,7 +363,7 @@ class ContextAssembler {
         // [PA-041] Build prioritized context items
         // Note: We fetch history separately? Or is it fast enough? 
         // continuum.getSessionHistory is usually DB access. Let's make it parallel too preferably, but for now linear is ok as it's key.
-        const chatHistoryData = this.formatHistory(await continuum.getSessionHistory(1000));
+        const chatHistoryData = await this.formatHistory(await continuum.getSessionHistory(1000));
 
         const prioritizedItems: PrioritizedContextItem[] = this.buildPrioritizedItems(
             {
@@ -476,7 +476,9 @@ class ContextAssembler {
     // ... (rest of methods)
 
     // REPLACED: formatHistory is now delegated to ContextCompactionService
-    private formatHistory(history: { role: string; content: string }[]): { role: string; content: string }[] {
+    // Async: over-budget histories get a REAL LLM summary of the omitted middle,
+    // or an honest omission marker when no summary can be generated (never a fake one).
+    private async formatHistory(history: { role: string; content: string }[]): Promise<{ role: string; content: string }[]> {
         if (!history) return [];
 
         // Use the new Compaction Service
@@ -487,7 +489,7 @@ class ContextAssembler {
         const convPercent = this.tokenBudget.priorityAllocations[ContextPriority.CONVERSATION] || 30;
         const conversationBudget = Math.floor((availableBudget * convPercent) / 100);
 
-        return contextCompaction.compactHistory(history, {
+        return contextCompaction.compactHistoryAsync(history, {
             tokenBudget: conversationBudget,
             reservedHead: 2,
             reservedTail: 15, // Increased recent context
