@@ -95,11 +95,11 @@ export class MemoryProjectionRollout {
         }
         return nodes.slice(0, k);
     }
-    public async shadow(vector: number[], identity: ProviderIdentity, k = 10, scope: MemoryScope = {}): Promise<ShadowComparison> {
+    public async shadow(vector: number[], identity: ProviderIdentity, k = 10, scope: MemoryScope = {}, probes = 8): Promise<ShadowComparison> {
         const start = performance.now();
         const exact = await this.candidates(vector, identity, k, scope, 'exact');
         const middle = performance.now();
-        const ann = await this.candidates(vector, identity, k, scope, 'ann');
+        const ann = await this.candidates(vector, identity, k, scope, 'ann', probes);
         const end = performance.now();
         const exactIds = exact.map(r => r.id), annIds = ann.map(r => r.id);
         return { exactIds, annIds, recallAtK: exactIds.length ? annIds.filter(id => exactIds.includes(id)).length / exactIds.length : 0,
