@@ -107,6 +107,7 @@ export class LLMGatewayService {
      * Complete a prompt using the best available provider
      */
     public async complete(prompt: string, options: CompletionOptions = {}): Promise<CompletionResult> {
+        if (options.tools?.length) throw new Error('Use chat() for structured tools');
         const skipProviders = new Set(options.skipProviders || []);
 
         // Build provider order
@@ -145,6 +146,7 @@ export class LLMGatewayService {
      * Stream a completion (returns async generator)
      */
     public async *stream(prompt: string, options: CompletionOptions = {}): AsyncGenerator<string, void, unknown> {
+        if (options.tools?.length) throw new Error('Use OpenAICompatibleClient.stream() for structured tools');
         const skipProviders = new Set(options.skipProviders || []);
         let providerOrder = this.providerOrder(options.preferredProvider);
 
