@@ -78,7 +78,7 @@ export const modelCatalog: ModelCatalogEntry[] = [
 
     // --- MINIMAX ---
     {
-        // Current MiniMax chat model (abab6.5s-chat was retired by the vendor).
+        // Current MiniMax chat model (the previous abab generation was retired by the vendor).
         // Specs per https://platform.minimax.io/docs/guides/text-generation
         id: 'MiniMax-M2.7-highspeed',
         name: 'MiniMax M2.7 Highspeed',
