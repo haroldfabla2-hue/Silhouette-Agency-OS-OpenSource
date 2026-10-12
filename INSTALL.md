@@ -15,7 +15,7 @@ Everything else (Neo4j, Redis, voice engine, media pipelines) is **optional** an
 
 ### Required Software
 
-- **Node.js**: v18.0.0 or higher
+- **Node.js**: v22.18.0 or higher (enforced by `engines` in `package.json`; CI tests 22.18.0 and latest 22.x)
 - **npm**: v9.0.0 or higher
 
 ### Optional (for enhanced capabilities)

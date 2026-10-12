@@ -19,7 +19,7 @@ When we refer to the **Nucleus (Core)**, we refer exclusively to the systems tha
 ### What is EXCLUDED from the Nucleus?
 - The React Web UI
 - The Vector / Graph Databases (Neo4j, LanceDB, Qdrant)
-- The 500+ Specialized Agents
+- The Specialized Agents (bundled definitions + dynamic spawning via the Agent Factory)
 - The Toolchain (Code executors, Image Generators, Web Scrapers)
 
 These are **not** the OS. They are the OS's *capabilities*.

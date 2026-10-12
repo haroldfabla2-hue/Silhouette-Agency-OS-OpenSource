@@ -8,7 +8,7 @@
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/Version-3.0-blue.svg)](#)
-[![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen.svg)](#)
+[![Status](https://img.shields.io/badge/Status-Experimental-orange.svg)](#)
 
 </div>
 
@@ -90,8 +90,8 @@ The emergence of Large Language Models (LLMs) has created new possibilities for 
 ├─────────────────────────────────────────────────────────────────┤
 │                    DATA & STATE LAYER                           │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐           │
-│  │ Postgres │ │ pgvector │ │  Redis   │ │ Neo4j    │           │
-│  │(Relatnl) │ │(Vectors) │ │ (Cache)  │ │ (Graph)  │           │
+│  │ SQLite   │ │ LanceDB  │ │  Redis   │ │ Neo4j    │           │
+│  │(Default) │ │(Vectors) │ │(Optional)│ │(Optional)│           │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘           │
 ├─────────────────────────────────────────────────────────────────┤
 │                  PRODUCTION LAYER                               │
@@ -105,7 +105,7 @@ The emergence of Large Language Models (LLMs) has created new possibilities for 
 |-------|-----------|----------------|
 | **Presentation** | React UI (Responsive) + Messaging Channels | User interaction, visualization on Desktop & Mobile |
 | **Orchestration** | ManagerAgent & Debate Matrix | Cognitive loop coordination and multi-agent consensus |
-| **Specialists** | Agent Pool (500+) | Domain-specific task execution |
+| **Specialists** | Dynamic Agent Factory (+ bundled definitions) | Domain-specific task execution |
 | **Capabilities** | ToolExecutor | External world interaction |
 | **Communication** | Telegram, WhatsApp, Discord | Multi-channel messaging |
 | **Production** | Coolify, Docker, Traefik, Caddy | Supervision, Host-aware deployment, SSL |
@@ -145,8 +145,8 @@ A multi-tier memory system inspired by human cognition:
 | **Episodic** | Days | Recent experiences and outcomes |
 | **Semantic** | Permanent | Facts, skills, learned patterns |
 
-Memory is indexed using vector embeddings (PostgreSQL + `pgvector`) with graph-based relationship tracking. 
-**Recent Enhancement (Database Adapter):** Silhouette now leverages a unified `IDatabaseAdapter` connecting to an enterprise-grade PostgreSQL backend. It merges Semantic (Deep) and Episodic (Medium) memories in a single, token-optimized vector search (`HNSW` indexes), significantly improving contextual awareness without overwhelming the LLM context window.
+Memory is indexed using vector embeddings (default: embedded SQLite + LanceDB, zero-config; optional PostgreSQL + `pgvector` when `DATABASE_URL` is set) with graph-based relationship tracking (SQLite fallback, or Neo4j when configured). 
+**Recent Enhancement (Database Adapter):** Silhouette uses a unified `IDatabaseAdapter` that selects the embedded SQLite + LanceDB backend by default and an optional PostgreSQL + `pgvector` backend (`HNSW` indexes) when `DATABASE_URL` is set. It merges Semantic (Deep) and Episodic (Medium) memories in a single, token-optimized vector search (`HNSW` indexes), significantly improving contextual awareness without overwhelming the LLM context window.
 
 ### 3.4 Self-Evolution System
 
@@ -244,13 +244,13 @@ OAuth2 flow: `GET /v1/google-auth/start?services=calendar,drive`
 | `code_execution` | Python sandbox for computation |
 | `image_generation` | Visual asset creation |
 | `video_generation` | Motion content (WAN, AnimateDiff) |
-| `introspect_database`| Universal Database Introspector (Postgres/MySQL/SQLite/Mongo) |
+| `introspect_database`| Database Introspector (SQLite supported; Postgres/MySQL/Mongo return an explicit "driver not available" error) |
 | `memory_write` | Long-term knowledge encoding |
 | `git_operations` | Self-modification proposals |
 
 ### 4.2 Specialized Agents
 
-The system includes 500+ specialized agents organized by domain:
+The system ships a small set of bundled agent definitions (`data/agents/definitions`) and spawns additional specialists dynamically through the Agent Factory (LLM-driven) per task. Typical domains:
 - **Development**: Code generation, debugging, architecture
 - **Research**: Literature review, citation, synthesis
 - **Creative**: Copywriting, visual direction, storytelling
