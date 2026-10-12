@@ -35,7 +35,7 @@ export class DatabaseIntrospector {
                 case 'postgres':
                 case 'mysql':
                 case 'mongo':
-                    throw new Error(`${dbType} introspection requires the respective npm driver (pg, mysql2, mongodb) installed in the environment. Auto-adaptation for ${dbType} is simulated in this build.`);
+                    throw new Error(`${dbType} introspection requires the respective npm driver (pg, mysql2, mongodb) installed in the environment. Introspection for ${dbType} is not implemented in this build; only SQLite is supported.`);
                 default:
                     throw new Error(`Unsupported database type: ${dbType}`);
             }
