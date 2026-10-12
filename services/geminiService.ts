@@ -660,7 +660,7 @@ export const generateAgentResponse = async (
                                     currentContents.push({ role: 'model', parts: [functionCallPart as any] });
 
                                     const { toolHandler } = await import('./tools/toolHandler');
-                                    const toolResult = await toolHandler.handleFunctionCall(calls[0].name, calls[0].args);
+                                    const toolResult = await toolHandler.handleFunctionCall(calls[0].name, calls[0].args, projectContext?.toolCaller);
 
                                     currentContents.push({
                                         role: 'function',
@@ -1733,7 +1733,7 @@ DO NOT hallucinate fake media urls. Use the tool.
                         systemBus.emit(SystemProtocol.THOUGHT_EMISSION, { thoughts: [`[Universal Fallback] 🛠️ Local Tool Call: ${payload.tool}`] }, agentName);
 
                         // Execute
-                        const toolResult = await toolHandler.handleFunctionCall(payload.tool, payload.args);
+                        const toolResult = await toolHandler.handleFunctionCall(payload.tool, payload.args, config?.toolCaller);
 
                         // Report back
                         const output = JSON.stringify(toolResult, null, 2);
