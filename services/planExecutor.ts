@@ -425,7 +425,8 @@ RESPOND NOW:`;
         requesterId: string,
         requesterRole: string,
         problem: string,
-        context: any
+        context: any,
+        requestId?: string
     ): Promise<string> {
         // Find best helper agent
         const helperRole = this.findBestHelper(problem);
@@ -460,8 +461,10 @@ RESPOND NOW:`;
 
             // Emit help response
             systemBus.emit(SystemProtocol.HELP_RESPONSE, {
+                requestId,
                 requesterId,
                 helperId,
+                success: !!response.output?.trim() && !response.output.startsWith("Error:"),
                 solution: response.output
             }, helperId);
 
@@ -469,7 +472,9 @@ RESPOND NOW:`;
 
         } catch (e: any) {
             console.error(`[PLAN_EXECUTOR] Help request failed:`, e);
-            return `Unable to provide help: ${e.message}`;
+            const solution = `Unable to provide help: ${e.message}`;
+            systemBus.emit(SystemProtocol.HELP_RESPONSE, { requestId, requesterId, helperId, solution, success: false }, helperId);
+            return solution;
         }
     }
 
