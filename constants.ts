@@ -1,5 +1,5 @@
 
-import { Agent, AgentStatus, AgentRoleType, Project, AutonomousConfig, AgentCapability, AgentTier, AgentCategory } from './types';
+import { Agent, AgentStatus, AgentRoleType, AutonomousConfig, AgentCapability, AgentTier, AgentCategory } from './types';
 
 // Safe environment variable getter for both Node and Vite environments
 const getEnvVar = (key: string, defaultValue?: string): string | undefined => {
@@ -177,17 +177,8 @@ export const SPECIALIST_LIBRARY: Agent[] = [
 // Export the Kernel as the initial agent set
 export const INITIAL_AGENTS: Agent[] = [...KERNEL_HEROS];
 
-export const PROJECTS: Project[] = [
-  { id: '1', name: 'Silhouette', status: 'active', progress: 65, activeSquads: 4, tasks: { pending: 15, inProgress: 4, completed: 88, backlog: 20 } },
-  { id: '2', name: 'Aether Lens', status: 'paused', progress: 30, activeSquads: 0, tasks: { pending: 10, inProgress: 0, completed: 15, backlog: 5 } },
-  { id: '3', name: 'Nebula', status: 'planning', progress: 10, activeSquads: 1, tasks: { pending: 5, inProgress: 1, completed: 2, backlog: 8 } }
-];
-
-// Added back implicitly required exports
-export const MOCK_PROJECTS = PROJECTS;
-
 export const QDRANT_CONFIG = {
-  url: getEnvVar('QDRANT_URL', 'http://localhost:6444'),
+  url: getEnvVar('QDRANT_URL', 'http://localhost:6433'), // matches docker-compose.yml published REST port
   collectionName: 'silhouette_memory_v1',
   embeddingSize: 384 // using all-MiniLM-L6-v2
 };
