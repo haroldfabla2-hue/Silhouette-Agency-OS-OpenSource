@@ -190,6 +190,10 @@ export class TelephonyService {
                 error: 'UNAVAILABLE: no sender phone number configured. Set TWILIO_PHONE_NUMBER (or pass fromNumber) to place real calls.'
             };
         }
+        // telephony_calls.from_number is NOT NULL: a call that never reaches a
+        // provider (honest local failure, no creds) gets an explicit marker,
+        // never a fabricated number and never a NULL insert.
+        const storedFromNumber = fromNumber || 'UNCONFIGURED';
         let providerCallSid: string | undefined;
         let providerError: string | undefined;
         let status: CallStatus = 'QUEUED';
@@ -253,7 +257,7 @@ export class TelephonyService {
         const callRecord: TelephonyCall = {
             id: callId,
             toNumber: params.toNumber,
-            fromNumber,
+            fromNumber: storedFromNumber,
             direction: 'OUTBOUND',
             status,
             purpose: params.purpose,
