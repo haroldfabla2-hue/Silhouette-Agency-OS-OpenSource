@@ -65,13 +65,17 @@ export class PluginFactory {
 
 ${toolNames.map(name => `
 export const handle${this.toPascalCase(name)} = async (args: any) => {
-    try {
-        console.log('[${name}] Executing with:', args);
-        // TODO: Implement logic
-        return { status: 'success', message: 'Tool executed stub.' };
-    } catch (error: any) {
-        throw new Error(\`Failed to execute ${name}: \${error.message}\`);
-    }
+    // Scaffolded by PluginFactory — NOT IMPLEMENTED YET.
+    // Truthfulness contract: a scaffolded tool must never report success for
+    // work it did not do. Until a human implements the real logic below, this
+    // handler returns an honest UNIMPLEMENTED error so the orchestrator and
+    // the user can see the tool does nothing yet.
+    console.warn('[${name}] Called, but this tool is a PluginFactory scaffold with no implementation.');
+    return {
+        status: 'error',
+        error: 'UNIMPLEMENTED',
+        message: "Tool '${name}' is a generated scaffold and is not implemented yet. Implement its logic in tools.ts before relying on any result from it."
+    };
 };
 `).join('\n')}
 `;
@@ -125,7 +129,7 @@ ${req.tools.map(t => `- **${t}**: Auto-generated description`).join('\n')}
 
 ## Setup
 1. Check \`index.ts\` and define parameter schemas.
-2. Implement logic in \`tools.ts\`.
+2. Implement logic in \`tools.ts\`. Until then every tool returns \`{ status: 'error', error: 'UNIMPLEMENTED' }\` — an honest failure, never a fake success.
 3. Register in environment if needed.
 `;
     }
