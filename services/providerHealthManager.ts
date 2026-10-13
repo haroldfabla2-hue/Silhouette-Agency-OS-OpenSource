@@ -34,9 +34,9 @@ export class ProviderHealthManager {
      */
     public isAvailable(providerId: string): boolean {
         const state = this.states.get(providerId);
-        if (!state) return true; // Assume healthy if unknown
+        if (!state) return true; // Closed circuit by default: unknown providers may be tried (status reports UNKNOWN, never HEALTHY)
 
-        if (state.status === 'HEALTHY') return true;
+        if (state.status !== 'SUSPENDED') return true;
 
         // If suspended, check if time has passed
         if (Date.now() >= state.suspendedUntil) {
@@ -60,7 +60,7 @@ export class ProviderHealthManager {
             console.log(`[CIRCUIT BREAKER] ✅ ${providerId} recovered! Resetting failure count (was ${state.consecutiveFailures}).`);
         }
 
-        state.status = 'HEALTHY';
+        state.status = 'VERIFIED'; // a real call succeeded: measured, not assumed
         state.consecutiveFailures = 0;
         state.suspendedUntil = 0;
         state.lastError = undefined;
@@ -121,7 +121,7 @@ export class ProviderHealthManager {
 
     public getBackoffTime(providerId: string): number {
         const state = this.states.get(providerId);
-        if (!state || state.status === 'HEALTHY') return 0;
+        if (!state || state.status !== 'SUSPENDED') return 0;
         return Math.max(0, state.suspendedUntil - Date.now());
     }
 
@@ -133,28 +133,71 @@ export class ProviderHealthManager {
     }
 
     private resetProvider(providerId: string) {
+        // [R9] never measured = UNKNOWN. HEALTHY-by-default was the lie.
         this.states.set(providerId, {
             name: providerId,
-            status: 'HEALTHY',
+            status: 'UNKNOWN',
             consecutiveFailures: 0,
             suspendedUntil: 0
         });
     }
 
+    /** Env vars that configure each legacy provider (verified against the services). */
+    private static readonly LEGACY_KEY_ENVS: Record<string, string[]> = {
+        gemini: ['GEMINI_API_KEY', 'API_KEY'],
+        deepseek: ['DEEPSEEK_API_KEY'],
+        minimax: ['MINIMAX_API_KEY'],
+        zhipuai: ['ZHIPUAI_API_KEY', 'ZHIPU_API_KEY'],
+        groq: ['GROQ_API_KEY'],
+        openrouter: ['OPENROUTER_API_KEY'],
+        nvidia: ['NVIDIA_API_KEY']
+    };
+
     /**
-     * Returns a snapshot of all provider health states.
-     * Includes dynamic check for Ollama.
+     * Returns an honest snapshot of provider states, built from the gateway
+     * catalog: NOT_CONFIGURED (no credentials), SUSPENDED (circuit open),
+     * VERIFIED (a real call succeeded this process), REACHABLE (probe ok),
+     * UNKNOWN (never measured). No provider is ever reported healthy by default.
      */
     public async getEnrichedHealthStats(): Promise<Record<string, ProviderState>> {
-        const stats = Object.fromEntries(this.states);
+        const stats: Record<string, ProviderState> = Object.fromEntries(this.states);
 
-        // Dynamic Check: Ollama
+        // Catalog from the gateway registry: every known provider appears,
+        // each with its real configuration state.
+        try {
+            const { ProviderRegistry } = await import('./llm/providerRegistry');
+            const registry = ProviderRegistry.fromEnvironment();
+            for (const def of registry.list()) {
+                const id = def.id.toLowerCase();
+                const existing = this.states.get(id);
+                if (existing?.status === 'SUSPENDED' || existing?.status === 'VERIFIED') {
+                    stats[id] = existing; // measured states win
+                    continue;
+                }
+                const keyEnvs = def.apiKeyEnv ? [def.apiKeyEnv] : ProviderHealthManager.LEGACY_KEY_ENVS[id] || [];
+                const configured = keyEnvs.length === 0 /* local, no key needed */ || keyEnvs.some(e => !!process.env[e]);
+                if (!configured) {
+                    stats[id] = {
+                        name: def.id, status: 'NOT_CONFIGURED',
+                        consecutiveFailures: 0, suspendedUntil: 0,
+                        lastError: `Missing credentials (${keyEnvs.join(' or ')})`
+                    };
+                } else if (!existing) {
+                    stats[id] = { name: def.id, status: 'UNKNOWN', consecutiveFailures: 0, suspendedUntil: 0 };
+                }
+            }
+        } catch (e) {
+            console.warn('[CIRCUIT BREAKER] provider catalog unavailable:', (e as any)?.message);
+        }
+
+        // Dynamic Check: Ollama (local, probe = reachability, not a real inference)
         try {
             const { ollamaService } = await import('./ollamaService');
             const isOllamaUp = await ollamaService.isAvailable();
-            stats['ollama'] = {
+            const existing = this.states.get('ollama');
+            stats['ollama'] = existing?.status === 'VERIFIED' ? existing : {
                 name: 'Ollama (Local)',
-                status: isOllamaUp ? 'HEALTHY' : 'SUSPENDED',
+                status: isOllamaUp ? 'REACHABLE' : 'SUSPENDED',
                 consecutiveFailures: isOllamaUp ? 0 : 1,
                 suspendedUntil: 0,
                 lastError: isOllamaUp ? undefined : 'Service Unreachable'
