@@ -238,17 +238,10 @@ export class LLMGatewayService {
 
         switch (providerName) {
             case 'GEMINI': {
-                const { geminiService } = await import('./geminiService');
-                text = await geminiService.generateText(`${systemPrompt}\n\n${prompt}`, {
-                    model: modelId
-                });
-                break;
-            }
-
-            case 'GROQ': {
-                const response = await this.callGroqDirect(systemPrompt, prompt, temperature, modelId);
-                text = response.text;
-                usage = response.usage;
+                // Pure Gemini transport: no provider-internal fallback, so the
+                // gateway's attribution always names the real answering provider.
+                const { generateGeminiTextPure } = await import('./geminiService');
+                text = await generateGeminiTextPure(`${systemPrompt}\n\n${prompt}`, modelId);
                 break;
             }
 
@@ -298,46 +291,6 @@ export class LLMGatewayService {
     }
 
     /**
-     * Direct Groq call (extracted from geminiService)
-     */
-    private async callGroqDirect(
-        systemPrompt: string,
-        userMessage: string,
-        temperature: number,
-        modelId: string = 'llama-3.1-70b-versatile'
-    ): Promise<{ text: string; usage: any }> {
-        const GROQ_API_KEY = process.env.GROQ_API_KEY;
-        if (!GROQ_API_KEY) throw new Error('GROQ_API_KEY not configured');
-
-        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${GROQ_API_KEY}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                model: modelId,
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: userMessage }
-                ],
-                temperature,
-                max_tokens: 2048
-            })
-        });
-
-        if (!response.ok) {
-            throw new Error(`Groq API error: ${response.status}`);
-        }
-
-        const data = await response.json();
-        return {
-            text: data.choices[0]?.message?.content || '',
-            usage: data.usage
-        };
-    }
-
-    /**
      * Stream from a specific provider
      */
     private async *streamFromProvider(
@@ -358,9 +311,9 @@ export class LLMGatewayService {
         }
         switch (providerName) {
             case 'GEMINI': {
-                const { geminiService } = await import('./geminiService');
+                const { generateGeminiTextPure } = await import('./geminiService');
                 // Use streaming if available, otherwise chunk the response
-                const text = await geminiService.generateText(`${systemPrompt}\n\n${prompt}`);
+                const text = await generateGeminiTextPure(`${systemPrompt}\n\n${prompt}`);
                 // Simulate streaming for non-streaming providers
                 const words = text.split(' ');
                 for (const word of words) {
