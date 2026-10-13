@@ -6,6 +6,7 @@ import { introspection } from "./introspectionEngine";
 import { continuum } from "./continuumMemory";
 import { consciousness } from "./consciousnessEngine";
 import { costEstimator } from "./costEstimator";
+import { DEFAULT_GEMINI_MODEL, DEFAULT_OPENROUTER_MODEL, DEFAULT_GROQ_MODEL, DEFAULT_GEMINI_EMBEDDING_MODEL, FALLBACK_GEMINI_EMBEDDING_MODEL, GEMINI_EMBEDDING_DIMENSIONS } from "./llm/defaultModels";
 import { promptCompiler } from "./promptCompiler"; // Import Compiler
 import { DONNA_PERSONA } from "../constants/personalities";
 import { narrative } from "./narrativeService";
@@ -218,8 +219,8 @@ export const generateAgentResponse = async (
     try {
         // --- CFO INTERVENTION (BUDGET & MODEL NEGOTIATION) ---
         // 1. Determine preferred model based on task type (Heuristic) or Override
-        let preferredModel = modelOverride || 'gemini-2.5-flash'; // User Preference or Default Flash
-        if (!modelOverride && (category === 'DEV' || category === 'SCIENCE')) preferredModel = 'gemini-2.5-flash'; // Smarter for code if not forced
+        let preferredModel = modelOverride || DEFAULT_GEMINI_MODEL; // User Preference or verified live default
+        if (!modelOverride && (category === 'DEV' || category === 'SCIENCE')) preferredModel = DEFAULT_GEMINI_MODEL; // Smarter for code if not forced
 
         // 2. Ask CFO for permission and best model
         const negotiatedModel = cfo.negotiateModel(task, preferredModel, { agentName, category });
@@ -500,7 +501,7 @@ export const generateAgentResponse = async (
                                 "X-Title": "Silhouette Agency OS"
                             },
                             body: JSON.stringify({
-                                model: "google/gemini-2.0-flash-001",
+                                model: DEFAULT_OPENROUTER_MODEL,
                                 messages: [
                                     { role: "system", content: systemInstruction },
                                     { role: "user", content: userMessageText }
@@ -814,9 +815,9 @@ export const generateAgentResponse = async (
         // Track Cost
         const inputTokens = response.usageMetadata?.promptTokenCount || 0;
         const outputTokens = response.usageMetadata?.candidatesTokenCount || 0;
-        let modelUsed = useOpenRouter ? "gemini-2.0-flash-001" : "gemini-2.5-flash";
-        modelUsed = useOpenRouter ? "gemini-2.0-flash-001" : "gemini-2.5-flash";
-        if (useGroq) modelUsed = "llama-3.3-70b-versatile";
+        let modelUsed = useOpenRouter ? DEFAULT_OPENROUTER_MODEL : DEFAULT_GEMINI_MODEL;
+        modelUsed = useOpenRouter ? DEFAULT_OPENROUTER_MODEL : DEFAULT_GEMINI_MODEL;
+        if (useGroq) modelUsed = DEFAULT_GROQ_MODEL;
 
         costEstimator.trackTransaction(inputTokens, outputTokens, modelUsed);
 
@@ -946,7 +947,7 @@ export const generateShotlist = async (
 
     try {
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: DEFAULT_GEMINI_MODEL,
             contents: [{ role: 'user', parts: [{ text: systemPrompt }] }],
             config: { temperature: 0.7 }
         } as any);
@@ -1009,7 +1010,7 @@ export const analyzeImage = async (
         const base64Image = Buffer.from(arrayBuffer).toString('base64');
 
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash', // Use Flash for speed/vision
+            model: DEFAULT_GEMINI_MODEL, // Use Flash for speed/vision
             contents: [
                 {
                     role: 'user',
@@ -1065,8 +1066,9 @@ export const generateEmbedding = async (text: string): Promise<number[] | null> 
 
         try {
             const result = await client.models.embedContent({
-                model: 'text-embedding-004',
-                contents: [{ parts: [{ text }] }]
+                model: DEFAULT_GEMINI_EMBEDDING_MODEL,
+                contents: [{ parts: [{ text }] }],
+                config: { outputDimensionality: GEMINI_EMBEDDING_DIMENSIONS }
             });
             const embedding = result.embeddings?.[0]?.values;
             if (embedding) {
@@ -1079,11 +1081,12 @@ export const generateEmbedding = async (text: string): Promise<number[] | null> 
 
             // Fallback to older model if 004 not found (404)
             if (errorMsg.includes('404') || errorMsg.includes('not found') || errorMsg.includes('NOT_FOUND')) {
-                console.warn("[GeminiService] ⚠️ text-embedding-004 not found, falling back to embedding-001...");
+                console.warn(`[GeminiService] ⚠️ ${DEFAULT_GEMINI_EMBEDDING_MODEL} not found, falling back to ${FALLBACK_GEMINI_EMBEDDING_MODEL}...`);
                 try {
                     const result = await client.models.embedContent({
-                        model: 'embedding-001',
-                        contents: [{ parts: [{ text }] }]
+                        model: FALLBACK_GEMINI_EMBEDDING_MODEL,
+                        contents: [{ parts: [{ text }] }],
+                        config: { outputDimensionality: GEMINI_EMBEDDING_DIMENSIONS }
                     });
                     const embedding = result.embeddings?.[0]?.values;
                     if (embedding) {
@@ -1092,7 +1095,7 @@ export const generateEmbedding = async (text: string): Promise<number[] | null> 
                     }
                 } catch (fallbackError: any) {
                     consecutiveEmbeddingFailures++;
-                    console.error("[GeminiService] ❌ Fallback Embedding text-embedding-001 also failed:", fallbackError.message || fallbackError);
+                    console.error(`[GeminiService] ❌ Fallback Embedding ${FALLBACK_GEMINI_EMBEDDING_MODEL} also failed:`, fallbackError.message || fallbackError);
 
                     if (consecutiveEmbeddingFailures >= 3) {
                         isLocalEmbeddingPrimary = true;
@@ -1150,7 +1153,7 @@ export const generateGeminiTextPure = async (prompt: string, model?: string): Pr
     const client = ensureClient();
     if (!client) throw new Error('GEMINI: API key not configured');
     const result = await client.models.generateContent({
-        model: model || 'gemini-2.5-flash',
+        model: model || DEFAULT_GEMINI_MODEL,
         contents: [{ parts: [{ text: prompt }] }]
     });
 
