@@ -76,11 +76,15 @@ async function main() {
     console.log(`✅ Created ${path.basename(configPath)}`);
 
     if (!fs.existsSync(envPath)) {
-        let envContent = `GEMINI_API_KEY=${geminiKey}\nMINIMAX_API_KEY=${minimaxKey}\n`;
-        envContent += `TELEGRAM_BOT_TOKEN=${telegramToken}\n`;
-        envContent += `ALLOWED_CHAT_IDS=${allowedChatIds}\n`;
-        envContent += `GITHUB_TOKEN=\nGITHUB_REPO_OWNER=\nGITHUB_REPO_NAME=\n`;
-        fs.writeFileSync(envPath, envContent);
+        // Only write values the user actually entered: an empty KEY= line in
+        // .env.local shadows the real key from .env (dotenv does not override),
+        // leaving providers NOT_CONFIGURED even with a valid key in .env.
+        const envLines: string[] = [];
+        if (geminiKey) envLines.push(`GEMINI_API_KEY=${geminiKey}`);
+        if (minimaxKey) envLines.push(`MINIMAX_API_KEY=${minimaxKey}`);
+        if (telegramToken) envLines.push(`TELEGRAM_BOT_TOKEN=${telegramToken}`);
+        if (allowedChatIds) envLines.push(`ALLOWED_CHAT_IDS=${allowedChatIds}`);
+        fs.writeFileSync(envPath, envLines.join('\n') + '\n');
         console.log(`✅ Created basic ${path.basename(envPath)}`);
     } else {
         console.log(`ℹ️  ${path.basename(envPath)} already exists. Update your keys manually if needed.`);
