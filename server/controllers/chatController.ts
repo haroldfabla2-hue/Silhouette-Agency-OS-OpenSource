@@ -3,6 +3,7 @@ import { sqliteService } from '../../services/sqliteService';
 import { agentInferenceRouter } from '../../services/llm/agentInferenceRouter';
 import { capabilitiesFromAgentCapabilities } from '../../services/llm/inference';
 import { continuum } from '../../services/continuumMemory';
+import { MemorySource, sourceTag, speakerLabel, shouldExcludeFromChat, wantsSelfIncluded } from '../../services/memory/provenance';
 import { codebaseAwareness } from '../../services/codebaseAwareness';
 import { providerHealth } from '../../services/providerHealthManager';
 import { userProfile } from '../../services/userProfileService';
@@ -201,7 +202,7 @@ export class ChatController {
             sqliteService.appendChatMessage(assistantMsg, cleanSessionId);
 
             // 5. Store interaction in memory for future context
-            await continuum.store(`User asked: ${userMessage.slice(0, 100)}`, undefined, ['chat', 'interaction', ownerTag]);
+            await continuum.store(`User asked: ${userMessage.slice(0, 100)}`, undefined, ['chat', 'interaction', ownerTag, sourceTag(MemorySource.USER_SAID)]);
 
             res.json({
                 success: true,
@@ -442,7 +443,7 @@ export class ChatController {
                 await continuum.store(
                     userMessage,
                     undefined,
-                    ['USER', 'CHAT', 'USER_MESSAGE', `session:${cleanSessionId}`, ownerTag]
+                    ['USER', 'CHAT', 'USER_MESSAGE', `session:${cleanSessionId}`, ownerTag, sourceTag(MemorySource.USER_SAID)]
                 );
             }
 
@@ -454,7 +455,7 @@ export class ChatController {
                 await continuum.store(
                     cleanResponse,
                     undefined,
-                    ['USER', 'CHAT', 'ASSISTANT_RESPONSE', `session:${cleanSessionId}`, ownerTag]
+                    ['USER', 'CHAT', 'ASSISTANT_RESPONSE', `session:${cleanSessionId}`, ownerTag, sourceTag(MemorySource.ASSISTANT_SAID)]
                 );
             }
 
@@ -551,18 +552,18 @@ export class ChatController {
             for (const uq of userQueries) {
                 try {
                     const userResults = await continuum.retrieve(uq, undefined, allowedOwner);
+                    const includeSelf = wantsSelfIncluded(query);
                     const relevant = userResults
+                        .filter(m => !shouldExcludeFromChat(m.tags, includeSelf))
                         .filter(m => m.content.toLowerCase().includes('llamo') ||
                             m.content.toLowerCase().includes('name'))
                         .slice(0, 2);
 
                     if (relevant.length > 0) {
                         contextParts.push('[User Context]');
-                        // [FIX] Add speaker attribution to prevent identity confusion
+                        // Attribution by provenance field (never content guessing)
                         relevant.forEach(m => {
-                            const speaker = m.tags?.includes('user') || m.tags?.includes('USER_MESSAGE') || m.tags?.includes('chat')
-                                ? 'USER said' : 'System recorded';
-                            contextParts.push(`- ${speaker}: ${m.content}`);
+                            contextParts.push(`- ${speakerLabel(m.tags)}: ${m.content}`);
                         });
                         break; // Found user context, no need to continue
                     }
@@ -573,13 +574,13 @@ export class ChatController {
 
             // 3. Search relevant memories semantically (original behavior)
             const memories = await continuum.retrieve(query, undefined, allowedOwner);
-            if (memories.length > 0) {
+            const includeSelf = wantsSelfIncluded(query);
+            const visibleMemories = memories.filter(m => !shouldExcludeFromChat(m.tags, includeSelf));
+            if (visibleMemories.length > 0) {
                 contextParts.push('[Relevant Memories]');
-                // [FIX] Add speaker attribution to prevent identity confusion
-                memories.slice(0, 5).forEach(m => {
-                    const speaker = m.tags?.includes('user') || m.tags?.includes('USER_MESSAGE') || m.tags?.includes('input')
-                        ? 'USER said' : 'Memory';
-                    contextParts.push(`- ${speaker}: ${m.content}`);
+                // Attribution by provenance field (never content guessing)
+                visibleMemories.slice(0, 5).forEach(m => {
+                    contextParts.push(`- ${speakerLabel(m.tags)}: ${m.content}`);
                 });
             }
 
