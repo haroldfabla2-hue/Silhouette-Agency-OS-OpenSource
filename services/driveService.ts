@@ -9,7 +9,9 @@ import * as path from 'path';
 import Database from 'better-sqlite3';
 
 // Token storage path (encrypted in DB)
-const DB_PATH = path.join(process.cwd(), 'db', 'silhouette.sqlite');
+const DB_PATH = process.env.SILHOUETTE_DB_PATH
+    ? path.resolve(process.env.SILHOUETTE_DB_PATH)
+    : path.join(process.cwd(), 'db', 'silhouette.sqlite');
 
 // Scopes - Drive + Gmail access
 const SCOPES = [
@@ -105,7 +107,7 @@ class DriveService {
     private async initDb(): Promise<void> {
         const DB_DIR = path.dirname(DB_PATH);
         await fs.mkdir(DB_DIR, { recursive: true });
-        this.db = new Database(DB_PATH);
+        this.db = new Database(DB_PATH, { timeout: 5000 });
 
         // Add pragmas for concurrency
         this.db.pragma('journal_mode = WAL');

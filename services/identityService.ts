@@ -8,7 +8,9 @@ import * as crypto from 'crypto';
 import * as path from 'path';
 import * as fs from 'fs';
 
-const DB_PATH = path.join(process.cwd(), 'db', 'silhouette.sqlite');
+const DB_PATH = process.env.SILHOUETTE_DB_PATH
+    ? path.resolve(process.env.SILHOUETTE_DB_PATH)
+    : path.join(process.cwd(), 'db', 'silhouette.sqlite');
 
 // Creator emails come from env config (CREATOR_EMAILS, comma-separated) PLUS
 // a user-configured list persisted in the system_config table (editable from
@@ -80,7 +82,7 @@ class IdentityService {
             fs.mkdirSync(dbDir, { recursive: true });
         }
 
-        this.db = new Database(DB_PATH);
+        this.db = new Database(DB_PATH, { timeout: 5000 });
         this.createTables();
         this.migrateSchema();
         this.initialized = true;

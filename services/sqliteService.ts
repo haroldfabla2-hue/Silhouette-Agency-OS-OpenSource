@@ -3,7 +3,11 @@ import path from 'path';
 import fs from 'fs';
 import { Agent } from '../types';
 
-const DB_PATH = path.resolve(process.cwd(), 'db', 'silhouette.sqlite');
+// Tests set SILHOUETTE_DB_PATH (per-worker temp file) so parallel vitest
+// workers never share one database file; production keeps the default path.
+const DB_PATH = process.env.SILHOUETTE_DB_PATH
+    ? path.resolve(process.env.SILHOUETTE_DB_PATH)
+    : path.resolve(process.cwd(), 'db', 'silhouette.sqlite');
 const DB_DIR = path.dirname(DB_PATH);
 
 if (!fs.existsSync(DB_DIR)) {
@@ -22,7 +26,10 @@ export class SqliteService {
     }
 
     constructor() {
-        this.db = new Database(DB_PATH);
+        // busy_timeout at open: without it the WAL pragma below can fail
+        // instantly with SQLITE_BUSY when another process holds a write lock
+        // (the pragma runs before any busy timeout is in effect).
+        this.db = new Database(DB_PATH, { timeout: 5000 });
 
         // Enable WAL mode for high concurrency (non-blocking readers)
         this.db.pragma('journal_mode = WAL');
@@ -971,4 +978,3 @@ export class SqliteService {
 }
 
 export const sqliteService = new SqliteService();
-

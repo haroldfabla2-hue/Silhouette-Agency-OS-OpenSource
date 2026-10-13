@@ -9,7 +9,9 @@ import * as path from 'path';
 import { systemBus } from './systemBus';
 import { SystemProtocol } from '../types';
 
-const DB_PATH = path.join(process.cwd(), 'db', 'silhouette.sqlite');
+const DB_PATH = process.env.SILHOUETTE_DB_PATH
+    ? path.resolve(process.env.SILHOUETTE_DB_PATH)
+    : path.join(process.cwd(), 'db', 'silhouette.sqlite');
 
 // Email types
 export interface EmailMessage {
@@ -68,7 +70,7 @@ class GmailService {
         this.gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
         // Initialize DB for storing last history ID
-        this.db = new Database(DB_PATH);
+        this.db = new Database(DB_PATH, { timeout: 5000 });
         this.db.pragma('journal_mode = WAL');
         this.db.pragma('synchronous = NORMAL');
         this.db.pragma('busy_timeout = 5000');

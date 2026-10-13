@@ -15,7 +15,9 @@ import crypto from 'crypto';
 // ─── Paths ───────────────────────────────────────────────────────────────────
 
 const DB_DIR = path.resolve(process.cwd(), 'db');
-const IDENTITY_DB_PATH = path.join(DB_DIR, 'identity.sqlite');
+const IDENTITY_DB_PATH = process.env.SILHOUETTE_IDENTITY_DB_PATH
+    ? path.resolve(process.env.SILHOUETTE_IDENTITY_DB_PATH)
+    : path.join(DB_DIR, 'identity.sqlite');
 
 export class SqliteAdapter implements IDatabaseAdapter {
     private identityDb: Database.Database | null = null;
@@ -27,7 +29,7 @@ export class SqliteAdapter implements IDatabaseAdapter {
             fs.mkdirSync(DB_DIR, { recursive: true });
         }
 
-        this.identityDb = new Database(IDENTITY_DB_PATH);
+        this.identityDb = new Database(IDENTITY_DB_PATH, { timeout: 5000 });
         this.identityDb.pragma('journal_mode = WAL');
         this.identityDb.pragma('busy_timeout = 5000');
         this.createIdentityTables();
