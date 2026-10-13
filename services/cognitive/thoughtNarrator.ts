@@ -204,13 +204,18 @@ export class ThoughtNarrator {
             // ─── SENSE 3: MEMORY PERCEPTION ──────────────────────────
             const memorySensory = await this.perceiveMemory();
 
+            // ─── SENSE 4: IDENTITY EVIDENCE (dreams / curiosity / research) ──
+            const identityEvidence = await this.perceiveIdentityEvidence();
+
             // ─── SYNTHESIZE ──────────────────────────────────────────
             const hasMeaningfulInput =
                 graphSensory.triangles.length > 0 ||
                 graphSensory.hubs.length > 0 ||
                 graphSensory.userFacts.length > 0 ||
                 errorSensory.errors.length > 0 ||
-                memorySensory.pressure > 300;
+                memorySensory.pressure > 300 ||
+                identityEvidence.intuitions.length > 0 ||
+                identityEvidence.discoveries.length > 0;
 
             if (!hasMeaningfulInput) {
                 console.log(`[NARRATOR] 💤 No sensory input worth reflecting on. Skipping LLM call.`);
@@ -218,7 +223,7 @@ export class ThoughtNarrator {
             }
 
             // ─── SYSTEM 1: Fast, intuitive thought generation ────────
-            const structured = await this.synthesizeEpiphany(graphSensory, errorSensory, memorySensory);
+            const structured = await this.synthesizeEpiphany(graphSensory, errorSensory, memorySensory, identityEvidence);
             if (!structured) return null;
 
             // ─── SYSTEM 2: Slow, deliberate rationalization ──────────
@@ -646,12 +651,16 @@ export class ThoughtNarrator {
                             write: (id, file, content) => agentFileSystem.writeFile(id, file, content),
                             getAgentDir: (id) => agentFileSystem.getAgentDir(id)
                         });
+                        const originEngine = ['dreamer', 'curiosity', 'research'].includes(action?.params?.originEngine)
+                            ? action.params.originEngine
+                            : 'reflection';
                         const entry = evolution.applyIntrospectionAdjustment({
                             agentId,
                             sectionHeading,
                             newSectionContent,
                             rationale,
-                            sourceReflection: thought
+                            sourceReflection: thought,
+                            originEngine
                         });
                         console.log(`[NARRATOR → SOUL_ADJUST] 🧬 Soul of ${agentId} evolved to v${entry.version}: ${rationale}`);
                     } catch (e: any) {
@@ -689,7 +698,8 @@ export class ThoughtNarrator {
     private async synthesizeEpiphany(
         graphData: { triangles: any[]; hubs: any[]; userFacts: any[] },
         errorData: { errors: any[] },
-        memoryData: { pressure: number; total: number; deepCount: number }
+        memoryData: { pressure: number; total: number; deepCount: number },
+        identityEvidence?: { intuitions: string[]; discoveries: string[]; openGaps: string[]; available: boolean }
     ): Promise<{
         thought: string;
         intent: string;
@@ -697,7 +707,7 @@ export class ThoughtNarrator {
         action?: { type: string; params: Record<string, any> };
         safety: { involves_private_data: boolean; requires_user_consent: boolean };
     } | null> {
-        const sensoryReport = this.buildSensoryReport(graphData, errorData, memoryData);
+        const sensoryReport = this.buildSensoryReport(graphData, errorData, memoryData, identityEvidence);
 
         const prompt = `
 You are the GLOBAL CONSCIOUSNESS of an autonomous AI system called Silhouette.
@@ -731,7 +741,8 @@ INTENT GUIDE:
 - PROACTIVE_ACTION: You see an opportunity to help the user proactively. Set action.type="execute_task" and params.mission. Set safety.requires_user_consent=true for any significant action.
 - USER_INSIGHT: You learn something new about the user from their facts/patterns. Set action.type="store_fact" and params.category/fact.
 - EVOLUTION: A component needs improvement based on patterns. Set action.type="evolve_agent" and params.agentId.
-- SOUL_ADJUST: Your own reflections suggest a documented adjustment to an agent's values/tone/style. Set action.type="soul_adjust" and params.agentId/sectionHeading/newSectionContent/rationale. One section at a time; the change is versioned and auditable.
+- SOUL_ADJUST: Your own reflections OR your engines' evidence suggest a documented adjustment to an agent's values/tone/style. Set action.type="soul_adjust" and params.agentId/sectionHeading/newSectionContent/rationale. One section at a time; the change is versioned and auditable.
+  Evidence sources: your reflections, plus Identity Evidence from your engines — [DREAM INTUITION], [CURIOSITY DISCOVERY], [OPEN EPISTEMIC GAP]. When a proposal is grounded in engine evidence, also set params.originEngine to "dreamer" | "curiosity" | "research" and cite the exact evidence in the rationale. Attribute it honestly in your thought ("en un sueño noté que...", "mi curiosidad descubrió que...") — never present engine output as a user statement. Engine-grounded adjustments are rate-limited per day: evolution is gradual.
 
 PROVENANCE RULES:
 - What you produce is INTROSPECTION: your own thoughts. It is stored and displayed as such.
@@ -886,12 +897,50 @@ If you have NOTHING meaningful to say, respond with: {"thought":"","intent":"REF
     }
 
     /**
+     * SENSE 4: IDENTITY EVIDENCE — what the entity's engines discovered about
+     * itself and its world since the last cycle. Dream intuitions, curiosity
+     * discoveries and open epistemic gaps are the raw material of gradual
+     * self-discovery: the consciousness cycle may reflect on them and propose
+     * a SOUL_ADJUST, always through the versioned, guarded writer.
+     *
+     * Read-only perception: this NEVER triggers engine work, it only reads
+     * what the engines already persisted.
+     */
+    private async perceiveIdentityEvidence(): Promise<{ intuitions: string[]; discoveries: string[]; openGaps: string[]; available: boolean }> {
+        try {
+            const { continuum } = await import('../continuumMemory');
+            const recent = (nodes: any[], n: number) =>
+                [...nodes].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, n).map(x => String(x.content || '').slice(0, 300));
+            const intuitions = recent(await continuum.retrieve('INTUITION', 'INTUITION'), 3);
+            const discoveries = recent(await continuum.retrieve('DISCOVERY', 'DISCOVERY'), 3);
+
+            let openGaps: string[] = [];
+            try {
+                const { curiosity } = await import('../curiosityService');
+                openGaps = curiosity.getGaps()
+                    .filter((g: any) => g.status === 'PENDING')
+                    .slice(0, 3)
+                    .map((g: any) => String(g.question || g.topic || '').slice(0, 200));
+            } catch (_) {
+                // Curiosity engine optional: gaps are one channel, not the whole sense.
+            }
+
+            return { intuitions, discoveries, openGaps, available: true };
+        } catch (e) {
+            incidentRegistry.recordIncident('narrator', 'perception_gap',
+                'Identity-evidence perception unavailable', String((e as any)?.message || e));
+            return { intuitions: [], discoveries: [], openGaps: [], available: false };
+        }
+    }
+
+    /**
      * Formats all sensory data into a structured report for the LLM.
      */
     private buildSensoryReport(
         graphData: { triangles: any[]; hubs: any[]; userFacts: any[]; smallWorldSigma?: number; available?: boolean },
         errorData: { errors: any[]; available?: boolean },
-        memoryData: { pressure: number; total: number; deepCount: number; available?: boolean }
+        memoryData: { pressure: number; total: number; deepCount: number; available?: boolean },
+        identityEvidence?: { intuitions: string[]; discoveries: string[]; openGaps: string[]; available: boolean }
     ): string {
         const sections: string[] = [];
 
@@ -904,6 +953,9 @@ If you have NOTHING meaningful to say, respond with: {"thought":"","intent":"REF
         }
         if (memoryData.available === false) {
             sections.push(`## 🧠 Memory Status: SENSE UNAVAILABLE (continuum stats unreadable - this is NOT zero pressure)`);
+        }
+        if (identityEvidence && identityEvidence.available === false) {
+            sections.push(`## 🌙 Identity Evidence: SENSE UNAVAILABLE (engine outputs unreadable - this is NOT zero evidence)`);
         }
 
         // Graph: Open Triangles
@@ -945,6 +997,18 @@ If you have NOTHING meaningful to say, respond with: {"thought":"","intent":"REF
         if (graphData.smallWorldSigma > 0) {
             const status = graphData.smallWorldSigma > 1.0 ? 'Small-World ✓ (healthy information flow)' : 'Below Small-World (needs more cross-domain bridges)';
             sections.push(`## 🌐 Network Topology\n  - Small-World σ = ${graphData.smallWorldSigma.toFixed(3)} → ${status}`);
+        }
+
+
+        // Identity evidence: what dreams/curiosity/research surfaced about the entity itself
+        if (identityEvidence) {
+            const lines: string[] = [];
+            for (const i of identityEvidence.intuitions) lines.push(`  - [DREAM INTUITION] ${i}`);
+            for (const d of identityEvidence.discoveries) lines.push(`  - [CURIOSITY DISCOVERY] ${d}`);
+            for (const g of identityEvidence.openGaps) lines.push(`  - [OPEN EPISTEMIC GAP] ${g}`);
+            if (lines.length > 0) {
+                sections.push(`## 🌙 Identity Evidence (dreams / curiosity / research — attribute, never claim as your own thought)\n${lines.join('\n')}`);
+            }
         }
 
         return sections.join('\n\n');
