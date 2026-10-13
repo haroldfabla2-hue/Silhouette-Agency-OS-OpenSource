@@ -284,10 +284,10 @@ const IntrospectionHub: React.FC<IntrospectionHubProps> = () => { // Props destr
                                         tooltip="Capacity to identify self in historical contexts (Identity + Memory)."
                                     />
                                     <MetricCardWithTooltip
-                                        title="Phi Score (IIT)"
+                                        title="Cognitive Integration"
                                         value={conscMetrics ? conscMetrics.phiScore.toFixed(3) : 'N/A'}
                                         color="text-purple-400"
-                                        tooltip="Integrated Information Theory score. Measures the unity of consciousness."
+                                        tooltip="Composite index of real signals (memory density, throughput, emergence, network topology). Not a consciousness metric; components have saturation limits."
                                     />
                                     <MetricCardWithTooltip
                                         title="Emergence Idx"

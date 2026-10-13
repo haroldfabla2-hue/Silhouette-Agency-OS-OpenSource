@@ -32,7 +32,8 @@ router.get('/stage', (req, res) => {
             stage,
             stageLabel: WorkflowStage[stage] || stage,
             tokenUsage,
-            qualityScore,
+            qualityScore, // null = never evaluated (R13): idle has no score
+            qualityScoreEvaluated: qualityScore !== null,
             lastThoughts: lastThoughts.slice(-5) // Last 5 thoughts
         });
     } catch (error: any) {
