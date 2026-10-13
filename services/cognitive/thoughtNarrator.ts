@@ -207,6 +207,10 @@ export class ThoughtNarrator {
             // ─── SENSE 4: IDENTITY EVIDENCE (dreams / curiosity / research) ──
             const identityEvidence = await this.perceiveIdentityEvidence();
 
+            // Parked soul adjustments mature here: applied only once the
+            // accumulated evidence crosses the threshold (gradual, human-paced).
+            await this.reevaluateParkedSoulAdjustments();
+
             // ─── SYNTHESIZE ──────────────────────────────────────────
             const hasMeaningfulInput =
                 graphSensory.triangles.length > 0 ||
@@ -635,34 +639,39 @@ export class ThoughtNarrator {
                     // Identity evolution: a reflection proposes adjusting ONE section of
                     // the agent's soul. Guarded (core markers survive, one section only)
                     // and versioned — the ledger records this thought as the source.
+                    // EVIDENCE GATE: the reflection triggers the proposal but never
+                    // justifies it alone — persisted memory must already hold several
+                    // signals about the same topic, sustained over days. Otherwise the
+                    // proposal is parked and re-evaluated as evidence accumulates.
                     const agentId = action?.params?.agentId;
                     const sectionHeading = action?.params?.sectionHeading;
                     const newSectionContent = action?.params?.newSectionContent;
                     const rationale = action?.params?.rationale;
-                    if (!agentId || !sectionHeading || !newSectionContent || !rationale) {
-                        console.warn('[NARRATOR → SOUL_ADJUST] Missing params (agentId/sectionHeading/newSectionContent/rationale); skipped.');
+                    const evidenceTopic = action?.params?.evidenceTopic;
+                    if (!agentId || !sectionHeading || !newSectionContent || !rationale || !evidenceTopic) {
+                        console.warn('[NARRATOR → SOUL_ADJUST] Missing params (agentId/sectionHeading/newSectionContent/rationale/evidenceTopic); skipped.');
                         break;
                     }
                     try {
-                        const { agentFileSystem } = await import('../agents/agentFileSystem');
-                        const { createIdentityEvolution } = await import('../identity/identityEvolution');
-                        const evolution = createIdentityEvolution({
-                            read: (id, file) => agentFileSystem.readFile(id, file),
-                            write: (id, file, content) => agentFileSystem.writeFile(id, file, content),
-                            getAgentDir: (id) => agentFileSystem.getAgentDir(id)
-                        });
+                        const evolution = await this.createWiredIdentityEvolution();
                         const originEngine = ['dreamer', 'curiosity', 'research'].includes(action?.params?.originEngine)
                             ? action.params.originEngine
                             : 'reflection';
-                        const entry = evolution.applyIntrospectionAdjustment({
+                        const outcome = await evolution.applyIntrospectionAdjustment({
                             agentId,
                             sectionHeading,
                             newSectionContent,
                             rationale,
                             sourceReflection: thought,
+                            evidenceTopic: String(evidenceTopic),
                             originEngine
                         });
-                        console.log(`[NARRATOR → SOUL_ADJUST] 🧬 Soul of ${agentId} evolved to v${entry.version}: ${rationale}`);
+                        if (outcome.status === 'applied') {
+                            console.log(`[NARRATOR → SOUL_ADJUST] 🧬 Soul of ${agentId} evolved to v${outcome.entry.version}: ${rationale}`);
+                        } else {
+                            const e = outcome.pending.evidenceWhenParked;
+                            console.log(`[NARRATOR → SOUL_ADJUST] 🌱 Proposal parked for ${agentId} ("${evidenceTopic}"): only ${e.count} signal(s) over ${e.distinctDays} day(s) so far — it will be re-evaluated as evidence accumulates.`);
+                        }
                     } catch (e: any) {
                         console.warn(`[NARRATOR → SOUL_ADJUST] Adjustment rejected: ${e.message}`);
                     }
@@ -741,8 +750,9 @@ INTENT GUIDE:
 - PROACTIVE_ACTION: You see an opportunity to help the user proactively. Set action.type="execute_task" and params.mission. Set safety.requires_user_consent=true for any significant action.
 - USER_INSIGHT: You learn something new about the user from their facts/patterns. Set action.type="store_fact" and params.category/fact.
 - EVOLUTION: A component needs improvement based on patterns. Set action.type="evolve_agent" and params.agentId.
-- SOUL_ADJUST: Your own reflections OR your engines' evidence suggest a documented adjustment to an agent's values/tone/style. Set action.type="soul_adjust" and params.agentId/sectionHeading/newSectionContent/rationale. One section at a time; the change is versioned and auditable.
+- SOUL_ADJUST: Your own reflections OR your engines' evidence suggest a documented adjustment to an agent's values/tone/style. Set action.type="soul_adjust" and params.agentId/sectionHeading/newSectionContent/rationale/evidenceTopic. One section at a time; the change is versioned and auditable.
   Evidence sources: your reflections, plus Identity Evidence from your engines — [DREAM INTUITION], [CURIOSITY DISCOVERY], [OPEN EPISTEMIC GAP]. When a proposal is grounded in engine evidence, also set params.originEngine to "dreamer" | "curiosity" | "research" and cite the exact evidence in the rationale. Attribute it honestly in your thought ("en un sueño noté que...", "mi curiosidad descubrió que...") — never present engine output as a user statement. Engine-grounded adjustments are rate-limited per day: evolution is gradual.
+  EVIDENCE GATE: a single realization NEVER changes the soul. params.evidenceTopic (2-5 words) names the recurring pattern; the system counts how many times that pattern already appears in persisted memory. Only propose a SOUL_ADJUST for patterns you have genuinely observed multiple times over days — anything fresher is automatically parked and re-evaluated as evidence accumulates, the way a person changes from sustained experience, not from one mood.
 
 PROVENANCE RULES:
 - What you produce is INTROSPECTION: your own thoughts. It is stored and displayed as such.
@@ -906,6 +916,62 @@ If you have NOTHING meaningful to say, respond with: {"thought":"","intent":"REF
      * Read-only perception: this NEVER triggers engine work, it only reads
      * what the engines already persisted.
      */
+    /**
+     * Identity evolution wired to the real memory stack. Evidence counting is
+     * honest: a lexical search over the continuum memory (working + LanceDB +
+     * deep tiers, deduped by node id), filtered to the evidence window. The
+     * signal stream (reflections, dream intuitions, curiosity discoveries,
+     * research findings) lives in the continuum; the Neo4j graph holds
+     * facts/relations, not this signal stream, so it is not double-counted.
+     */
+    private async createWiredIdentityEvolution() {
+        const { agentFileSystem } = await import('../agents/agentFileSystem');
+        const { createIdentityEvolution } = await import('../identity/identityEvolution');
+        return createIdentityEvolution({
+            read: (id, file) => agentFileSystem.readFile(id, file),
+            write: (id, file, content) => agentFileSystem.writeFile(id, file, content),
+            getAgentDir: (id) => agentFileSystem.getAgentDir(id)
+        }, {
+            evidence: {
+                async countSignals(_agentId: string, topic: string, sinceMs: number) {
+                    const { continuum } = await import('../continuumMemory');
+                    const nodes = await continuum.search(topic);
+                    const seen = new Set<string>();
+                    const relevant = nodes.filter(n => {
+                        if (seen.has(n.id)) return false;
+                        seen.add(n.id);
+                        return (n.timestamp || 0) >= sinceMs;
+                    });
+                    const days = new Set(relevant.map(n => new Date(n.timestamp).toISOString().slice(0, 10)));
+                    return { count: relevant.length, distinctDays: days.size };
+                }
+            }
+        });
+    }
+
+    /**
+     * Parked soul adjustments get another chance every consciousness cycle:
+     * for each agent with parked proposals, re-count the accumulated evidence
+     * and apply whatever now qualifies. Cheap no-op when nothing is parked.
+     */
+    private async reevaluateParkedSoulAdjustments(): Promise<void> {
+        try {
+            const { agentFileSystem } = await import('../agents/agentFileSystem');
+            const agents = agentFileSystem.listAgentDirectories();
+            if (agents.length === 0) return;
+            const evolution = await this.createWiredIdentityEvolution();
+            for (const agentId of agents) {
+                if (evolution.getPendingAdjustments(agentId).length === 0) continue;
+                const { applied, stillPending } = await evolution.reevaluatePendingAdjustments(agentId);
+                if (applied.length > 0) {
+                    console.log(`[NARRATOR → SOUL_ADJUST] 🌱→🧬 ${applied.length} parked adjustment(s) for ${agentId} matured into identity changes (still pending: ${stillPending}).`);
+                }
+            }
+        } catch (e: any) {
+            console.warn(`[NARRATOR → SOUL_ADJUST] Parked-adjustment reevaluation failed: ${e.message}`);
+        }
+    }
+
     private async perceiveIdentityEvidence(): Promise<{ intuitions: string[]; discoveries: string[]; openGaps: string[]; available: boolean }> {
         try {
             const { continuum } = await import('../continuumMemory');
