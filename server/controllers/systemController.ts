@@ -3,6 +3,7 @@ import { Request, Response } from 'express';
 import { configureGenAI } from '../../services/geminiService';
 import { sqliteService } from '../../services/sqliteService';
 import { buildTokenHistory } from '../../services/telemetryHistory';
+import { BUILD_VERSION } from '../../constants/buildVersion';
 
 // Prefix used for all secrets in the system_config table
 const SECRETS_PREFIX = 'secretsVault_';
@@ -504,18 +505,64 @@ export class SystemController {
         return telemetry;
     }
 
+    /**
+     * [R8] Common typed snapshot for the introspection UI. The backend used to
+     * return {thoughts, layer, activeConcepts, isDreaming} while the UI read
+     * {recentThoughts, consciousnessMetrics, narrativeState, temporalContext}
+     * - every conditional UI update silently never fired and defaults posed as
+     * data. Now one contract: measured values plus per-source availability,
+     * so a measured zero, an absent datum and an offline source are three
+     * different, visible states.
+     */
     private async getIntrospectionData() {
+        const snapshot: any = {
+            version: BUILD_VERSION,
+            timestamp: Date.now(),
+            source: 'introspection-engine',
+            // measured values (defaults are real empties, not fabrications)
+            recentThoughts: [] as string[],
+            intuition: [] as string[],
+            isDreaming: false,
+            layer: 0,
+            activeConcepts: [] as any[],
+            consciousnessMetrics: null as any,   // null = engine unavailable
+            narrativeState: null as any,         // null = no narrative yet (absent, not zero)
+            temporalContext: null as any,        // declared absent: no real source exists yet
+            available: { introspection: false, consciousness: false, narrative: false }
+        };
+
         try {
             const { introspection } = await import('../../services/introspectionEngine');
-            return {
-                thoughts: introspection.getRecentThoughts(),
-                layer: introspection.getCurrentLayer(),
-                activeConcepts: introspection.getActiveConcepts(),
-                isDreaming: introspection.getDreaming()
-            };
-        } catch {
-            return { thoughts: [], layer: 0, activeConcepts: [], isDreaming: false };
+            snapshot.recentThoughts = introspection.getRecentThoughts();
+            snapshot.intuition = introspection.getIntuition();
+            snapshot.layer = introspection.getCurrentLayer();
+            snapshot.activeConcepts = introspection.getActiveConcepts();
+            snapshot.isDreaming = introspection.getDreaming();
+            snapshot.available.introspection = true;
+        } catch (e: any) {
+            console.warn('[SYSTEM] introspection source unavailable:', e?.message);
         }
+
+        try {
+            const { consciousness } = await import('../../services/consciousnessEngine');
+            snapshot.consciousnessMetrics = consciousness.getMetrics();
+            snapshot.available.consciousness = true;
+        } catch (e: any) {
+            console.warn('[SYSTEM] consciousness metrics source unavailable:', e?.message);
+        }
+
+        try {
+            const { thoughtNarrator } = await import('../../services/cognitive/thoughtNarrator');
+            // non-triggering read: observability must never start a cycle
+            snapshot.narrativeState = await thoughtNarrator.getLatestNarrative();
+            snapshot.available.narrative = true;
+        } catch (e: any) {
+            console.warn('[SYSTEM] narrative source unavailable:', e?.message);
+        }
+
+        // Legacy aliases for older consumers (same values, kept in sync)
+        snapshot.thoughts = snapshot.recentThoughts;
+        return snapshot;
     }
 
     private async getOrchestratorData() {
@@ -538,7 +585,7 @@ export class SystemController {
             res.json(state);
         } catch (e: any) {
             console.error('[SYSTEM] getIntrospectionState failed:', e.message);
-            res.status(500).json({ error: 'Failed to get introspection state', thoughts: [], layer: 0, activeConcepts: [] });
+            res.status(500).json({ error: 'Failed to get introspection state', available: { introspection: false, consciousness: false, narrative: false } });
         }
     }
 
