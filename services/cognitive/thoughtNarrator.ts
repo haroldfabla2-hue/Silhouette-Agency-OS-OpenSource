@@ -122,7 +122,7 @@ export class ThoughtNarrator {
     // ========================================================================
 
     /** Valid intents from the consciousness LLM call */
-    private static readonly VALID_INTENTS = ['REFLECTION', 'CURIOSITY', 'DIAGNOSTIC', 'PROACTIVE_ACTION', 'USER_INSIGHT', 'EVOLUTION'] as const;
+    private static readonly VALID_INTENTS = ['REFLECTION', 'CURIOSITY', 'DIAGNOSTIC', 'PROACTIVE_ACTION', 'USER_INSIGHT', 'EVOLUTION', 'SOUL_ADJUST'] as const;
 
     /** Action dispositions from the System 2 rationalization layer */
     private static readonly DISPOSITIONS = ['ACT_NOW', 'DELIBERATE', 'REFLECT', 'INHIBIT', 'ASK_USER'] as const;
@@ -409,6 +409,7 @@ export class ThoughtNarrator {
             'PROACTIVE_ACTION': 0.60, // Opportunity, moderate urgency
             'USER_INSIGHT': 0.40,     // Useful but not time-sensitive
             'EVOLUTION': 0.35,        // Long-term improvement
+            'SOUL_ADJUST': 0.30,      // Identity evolution: deliberate, never urgent
             'CURIOSITY': 0.30,        // Interesting but can wait
             'REFLECTION': 0.10        // No urgency at all
         };
@@ -625,6 +626,40 @@ export class ThoughtNarrator {
                     break;
                 }
 
+                case 'SOUL_ADJUST': {
+                    // Identity evolution: a reflection proposes adjusting ONE section of
+                    // the agent's soul. Guarded (core markers survive, one section only)
+                    // and versioned — the ledger records this thought as the source.
+                    const agentId = action?.params?.agentId;
+                    const sectionHeading = action?.params?.sectionHeading;
+                    const newSectionContent = action?.params?.newSectionContent;
+                    const rationale = action?.params?.rationale;
+                    if (!agentId || !sectionHeading || !newSectionContent || !rationale) {
+                        console.warn('[NARRATOR → SOUL_ADJUST] Missing params (agentId/sectionHeading/newSectionContent/rationale); skipped.');
+                        break;
+                    }
+                    try {
+                        const { agentFileSystem } = await import('../agents/agentFileSystem');
+                        const { createIdentityEvolution } = await import('../identity/identityEvolution');
+                        const evolution = createIdentityEvolution({
+                            read: (id, file) => agentFileSystem.readFile(id, file),
+                            write: (id, file, content) => agentFileSystem.writeFile(id, file, content),
+                            getAgentDir: (id) => agentFileSystem.getAgentDir(id)
+                        });
+                        const entry = evolution.applyIntrospectionAdjustment({
+                            agentId,
+                            sectionHeading,
+                            newSectionContent,
+                            rationale,
+                            sourceReflection: thought
+                        });
+                        console.log(`[NARRATOR → SOUL_ADJUST] 🧬 Soul of ${agentId} evolved to v${entry.version}: ${rationale}`);
+                    } catch (e: any) {
+                        console.warn(`[NARRATOR → SOUL_ADJUST] Adjustment rejected: ${e.message}`);
+                    }
+                    break;
+                }
+
                 case 'REFLECTION':
                 default:
                     // Pure thought — already stored in memory, no further action
@@ -677,10 +712,10 @@ Based on this input, produce ONE structured thought.
 You MUST respond with ONLY a JSON object (no markdown, no code fences):
 {
   "thought": "Your genuine thought in 2-3 sentences, in FIRST PERSON, the way a person narrates their own inner state (e.g. 'me está doliendo la pierna', NOT 'el sistema reporta un error'). This is introspection: you narrating YOUR OWN thoughts. Mix Spanish/English naturally. Be specific — reference names, errors, facts.",
-  "intent": "REFLECTION | CURIOSITY | DIAGNOSTIC | PROACTIVE_ACTION | USER_INSIGHT | EVOLUTION",
+  "intent": "REFLECTION | CURIOSITY | DIAGNOSTIC | PROACTIVE_ACTION | USER_INSIGHT | EVOLUTION | SOUL_ADJUST",
   "confidence": 0.0 to 1.0,
   "action": {
-    "type": "none | research_gap | remediate | execute_task | store_fact | evolve_agent",
+    "type": "none | research_gap | remediate | execute_task | store_fact | evolve_agent | soul_adjust",
     "params": {}
   },
   "safety": {
@@ -696,6 +731,7 @@ INTENT GUIDE:
 - PROACTIVE_ACTION: You see an opportunity to help the user proactively. Set action.type="execute_task" and params.mission. Set safety.requires_user_consent=true for any significant action.
 - USER_INSIGHT: You learn something new about the user from their facts/patterns. Set action.type="store_fact" and params.category/fact.
 - EVOLUTION: A component needs improvement based on patterns. Set action.type="evolve_agent" and params.agentId.
+- SOUL_ADJUST: Your own reflections suggest a documented adjustment to an agent's values/tone/style. Set action.type="soul_adjust" and params.agentId/sectionHeading/newSectionContent/rationale. One section at a time; the change is versioned and auditable.
 
 PROVENANCE RULES:
 - What you produce is INTROSPECTION: your own thoughts. It is stored and displayed as such.
