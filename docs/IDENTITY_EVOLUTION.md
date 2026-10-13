@@ -69,3 +69,37 @@ text is recorded as `sourceReflection`. Guards (`INTROSPECTION_GUARDS`):
 
 `tests/automated/identity-evolution.test.ts` — 11 tests covering versioning,
 ledger append-only, guards, the introspection path, and the bus event.
+
+## Fuentes de evolución (engines)
+
+La introspección no es la única fuente de propuestas de ajuste. El ciclo de
+consciencia (`thoughtNarrator`) percibe además la evidencia que los motores del
+ente ya persistieron, como un cuarto sentido (`perceiveIdentityEvidence`):
+
+- **Dreamer**: intuiciones aceptadas del ciclo de sueño (memorias con tag
+  `INTUITION`), patrones descubiertos al recombinar memorias del día.
+- **Curiosidad**: descubrimientos de investigación (tag `DISCOVERY`) y
+  brechas epistémicas abiertas (`EPISTEMIC_GAP_DETECTED`, gaps `PENDING`).
+- **Investigación**: hallazgos del loop de research sobre esas brechas.
+
+Cuando una propuesta SOUL_ADJUST se fundamenta en evidencia de un motor, el
+clasificador la declara con `params.originEngine` (`dreamer` | `curiosity` |
+`research`) y la justificación cita la evidencia exacta. El ledger registra el
+origen en `appliedBy` (p. ej. `introspection:SOUL_ADJUST:dreamer`), así cada
+ajuste queda ligado para siempre al motor y a la evidencia que lo motivó.
+
+Guardarraíles adicionales para fuentes de motores:
+
+- **Límite diario**: máximo 3 ajustes por agente por día con origen en motores
+  (`MAX_ENGINE_ADJUSTMENTS_PER_DAY`). La evolución es gradual por diseño;
+  los ajustes nacidos de reflexión no tienen este límite.
+- Los mismos guards de siempre aplican: el núcleo del alma (arquetipo,
+  personalidad, valores, estilo, principios) debe sobrevivir intacto y un
+  ajuste toca una sola sección.
+- La percepción es de solo lectura: nunca dispara trabajo de los motores,
+  solo lee lo que ya persistieron. Si el sentido falla, se declara
+  `SENSE UNAVAILABLE` en el reporte, nunca se reporta como "cero evidencia".
+
+Honestidad: la evidencia de motores se atribuye como tal ("en un sueño noté
+que...", "mi curiosidad descubrió que..."); nunca se presenta como algo que
+dijo el usuario ni como pensamiento propio sin fuente.
