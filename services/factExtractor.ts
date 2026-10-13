@@ -16,6 +16,7 @@ import { ollamaService } from './ollamaService';
 import { graph } from './graphService';
 import { continuum } from './continuumMemory';
 import { MemoryTier } from '../types';
+import { MemorySource, sourceTag } from './memory/provenance';
 
 interface ExtractedFact {
     type: 'PERSONAL' | 'PREFERENCE' | 'FACT' | 'RELATIONSHIP' | 'REMINDER';
@@ -24,6 +25,8 @@ interface ExtractedFact {
     subject?: string;    // Who/what the fact is about
     attribute?: string;  // What aspect (name, preference, etc.)
     value?: string;      // The actual value
+    /** Provenance: USER_STATED = the user said it; USER_INFERRED = derived from the assistant's own words (unverified). */
+    source?: 'USER_STATED' | 'USER_INFERRED';
 }
 
 interface MemoryAction {
@@ -115,9 +118,14 @@ OUTPUT FORMAT (JSON array):
     "confidence": 0.0-1.0,
     "subject": "USER or SILHOUETTE or other",
     "attribute": "what aspect",
-    "value": "the value"
+    "value": "the value",
+    "source": "user | assistant"
   }
 ]
+
+PROVENANCE RULE (mandatory):
+- source="user" ONLY if the USER explicitly stated the fact in their own message.
+- source="assistant" if the fact comes from the ASSISTANT's words (suggestions, assumptions, confirmations the user did not state). These are stored as UNVERIFIED inferences, never as user statements.
 
 If there are NO facts worth remembering, output: []
 
@@ -186,10 +194,12 @@ FACTS (JSON only):`;
             ).map(f => ({
                 type: f.type || 'FACT',
                 content: f.content,
-                confidence: f.confidence || 0.7,
+                // Assistant-sourced facts are unverified inferences: cap confidence.
+                confidence: f.source === 'assistant' ? Math.min(f.confidence || 0.7, 0.6) : (f.confidence || 0.7),
                 subject: f.subject,
                 attribute: f.attribute,
-                value: f.value
+                value: f.value,
+                source: f.source === 'assistant' ? 'USER_INFERRED' as const : 'USER_STATED' as const
             }));
         } catch {
             return [];
@@ -364,7 +374,7 @@ CORRECTED (or REJECT):`;
                     value: $value,
                     confidence: $confidence,
                     createdAt: timestamp(),
-                    source: 'CONVERSATION'
+                    source: $source
                 })
             `, {
                 id,
@@ -373,7 +383,8 @@ CORRECTED (or REJECT):`;
                 subject: fact.subject || null,
                 attribute: fact.attribute || null,
                 value: fact.value || null,
-                confidence: fact.confidence
+                confidence: fact.confidence,
+                source: fact.source || 'USER_STATED'
             });
 
             // Link to User node if personal
@@ -392,10 +403,14 @@ CORRECTED (or REJECT):`;
         }
 
         // 2. Store in ContinuumMemory (vector - for semantic search)
+        // Provenance: USER_STATED facts keep the USER_SAID source; inferred facts
+        // are labeled USER_INFERRED and stay visible but attributed as inference.
+        const factSource = fact.source || 'USER_STATED';
         await continuum.store(
             fact.content,
             MemoryTier.LONG,  // Long-term = permanent
-            ['FACT', 'USER', fact.type, `attr:${fact.attribute || 'general'}`, `owner:${userId}`]
+            ['FACT', 'USER', fact.type, factSource, `attr:${fact.attribute || 'general'}`, `owner:${userId}`,
+             sourceTag(factSource === 'USER_STATED' ? MemorySource.USER_SAID : MemorySource.ASSISTANT_SAID)]
         );
 
         console.log(`[FACT_EXTRACT] 💾 Fact stored eternally: "${fact.content}"`);
