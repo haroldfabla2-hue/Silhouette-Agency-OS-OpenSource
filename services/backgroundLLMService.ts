@@ -203,12 +203,12 @@ class BackgroundLLMService {
             try {
                 const { zhipuService } = await import('./zhipuService');
 
-                if (zhipuService.isAvailable('background' as any)) {
+                if (zhipuService.isAvailable('background')) {
                     console.log('[BACKGROUND_LLM] 🇨🇳 Using ZhipuAI (FREE)');
                     const result = await zhipuService.generateCompletion(prompt, {
                         maxTokens: options.maxTokens || 1024,
                         temperature: options.temperature || 0.7
-                    }, 'background' as any);
+                    }, 'background');
 
                     // Track simulated cost
                     costEstimator.trackTransaction(
@@ -293,7 +293,7 @@ class BackgroundLLMService {
         let zhipuAvailable = false;
         try {
             const { zhipuService } = await import('./zhipuService');
-            zhipuAvailable = zhipuService.isAvailable('background' as any);
+            zhipuAvailable = zhipuService.isAvailable('background');
         } catch { }
 
         return {
