@@ -1,4 +1,8 @@
 import { subscribeHelpProtocol } from './communication/helpProtocol';
+import { loadOrganization, defaultOrganizationPath, teamsForDomain } from './org/organization';
+import { ReputationLedger, defaultReputationLedgerPath } from './org/reputationLedger';
+import { computeReputation, rankByReputation } from './org/reputation';
+import type { OrgChart } from './org/types';
 import { Agent, AgentStatus, AgentRoleType, Project, WorkflowStage, AgentCapability, SystemMode, BusinessType, AgentTier, AgentCategory, SystemProtocol, InterAgentMessage, Squad, ServiceStatus, IntrospectionLayer } from '../types';
 import fs from 'fs';
 import path from 'path';
@@ -132,9 +136,16 @@ export class AgentSwarmOrchestrator {
     ];
 
 
+    private orgChart: OrgChart;
+    private reputationLedger: ReputationLedger;
+
     constructor() {
         this.initializeSwarm();
         this.applyMode(SystemMode.ECO);
+        // Organization-as-data + evidence ledger: loaded before the help bus
+        // subscribes so collaboration facts are recorded from the first request.
+        this.reputationLedger = new ReputationLedger(defaultReputationLedgerPath());
+        this.orgChart = loadOrganization(defaultOrganizationPath(), INITIAL_AGENTS);
 
         // Listen for Expansion Protocols from the AI
         systemBus.subscribe(SystemProtocol.SQUAD_EXPANSION, (event) => {
@@ -171,6 +182,7 @@ export class AgentSwarmOrchestrator {
         // Allows team leaders to request help from other specialists
         subscribeHelpProtocol({
             findHelper: role => this.findAgentByRole(role),
+            recordFact: fact => this.reputationLedger.append(fact),
             prepare: async (request, helperId) => {
                 const enrichedContext = typeof request.context === 'object' && request.context !== null
                     ? { ...request.context } : { sharedContext: request.context };
@@ -2095,36 +2107,40 @@ OBJECTIVES:
     // Handles help requests from one agent to another
     // Helper to find agent by role name with dynamic fallback
     private findAgentByRole(role: string): string | null {
-        const roleMap: Record<string, string> = {
-            'Researcher_Pro': 'sci-03',
-            'Research_Synthesizer': 'sci-02',
-            'Creative_Director': 'mkt-lead',
-            'Code_Architect': 'dev-01',
-            'QA_Inquisitor': 'qa-01',
-            'ManagerAgent': 'manager',
-            'Context_Lead': 'ctx-01',
-            'Memory_Agent': 'mem-01'
-        };
-
-        if (roleMap[role]) return roleMap[role];
-
-        // Dynamic Search: Check active/known agents by Role Name or ID
+        // 1) Direct match over live agents (id, name, role; fuzzy includes).
         const allAgents = this.getAgents();
         const found = allAgents.find(a =>
             a.role === role ||
             a.name === role ||
             a.id === role ||
-            a.role.toLowerCase().includes(role.toLowerCase()) // Fuzzy match
+            a.role.toLowerCase().includes(role.toLowerCase())
         );
-
         if (found) return found.id;
 
-        // Semantic/Capability Fallback (Experimental)
-        // If role looks like a capability (e.g. "coder", "writer"), try registry
+        // 2) Organization roster: match the requested role against team domains
+        //    and route to the best-evidence member of that team (reputation is
+        //    derived from the append-only collaboration ledger, never stored).
+        const teams = teamsForDomain(this.orgChart, role);
+        for (const team of teams) {
+            const candidates = [team.headAgentId, ...team.memberAgentIds];
+            const ranked = rankByReputation(this.reputationLedger, candidates, role);
+            if (ranked.length > 0) return ranked[0].agentId;
+        }
+
+        // 3) Capability registry fallback (unchanged).
         const providers = capabilityRegistry.findProviders([role as any]);
         if (providers.length > 0) return providers[0];
 
         return null;
+    }
+
+    /** Organization-as-data accessors (tests, APIs, future dashboards). */
+    public getOrgChart(): OrgChart { return this.orgChart; }
+    public reloadOrganization(): void {
+        this.orgChart = loadOrganization(defaultOrganizationPath(), INITIAL_AGENTS);
+    }
+    public getAgentReputation(agentId: string, context?: string) {
+        return computeReputation(this.reputationLedger, agentId, context);
     }
 
     // --- DISTRIBUTED ORCHESTRATION (PHASE 3) ---
