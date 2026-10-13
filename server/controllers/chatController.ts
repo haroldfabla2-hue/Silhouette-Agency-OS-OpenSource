@@ -98,31 +98,19 @@ export class ChatController {
      */
     public async getProviderStatus(req: Request, res: Response) {
         try {
-            const healthStats = providerHealth.getHealthStats();
+            // [R9] catalog-driven, never a fixed list with HEALTHY defaults:
+            // every gateway provider appears with its real configuration and
+            // measured state (UNKNOWN when never measured).
+            const healthStats = await providerHealth.getEnrichedHealthStats();
 
-            // Build a user-friendly status object
-            const providers = {
-                gemini: {
-                    available: providerHealth.isAvailable('gemini'),
-                    status: healthStats['gemini']?.status || 'HEALTHY',
-                    backoffMs: providerHealth.getBackoffTime('gemini')
-                },
-                openrouter: {
-                    available: providerHealth.isAvailable('openrouter'),
-                    status: healthStats['openrouter']?.status || 'HEALTHY',
-                    backoffMs: providerHealth.getBackoffTime('openrouter')
-                },
-                groq: {
-                    available: providerHealth.isAvailable('groq'),
-                    status: healthStats['groq']?.status || 'HEALTHY',
-                    backoffMs: providerHealth.getBackoffTime('groq')
-                },
-                ollama: {
-                    available: true, // Local is always "available" (may timeout)
-                    status: 'LOCAL',
-                    backoffMs: 0
-                }
-            };
+            const providers: Record<string, { available: boolean; status: string; backoffMs: number }> = {};
+            for (const [id, state] of Object.entries(healthStats)) {
+                providers[id] = {
+                    available: state.status !== 'SUSPENDED' && state.status !== 'NOT_CONFIGURED',
+                    status: state.status,
+                    backoffMs: providerHealth.getBackoffTime(id)
+                };
+            }
 
             res.json({ providers, timestamp: Date.now() });
         } catch (e: any) {
