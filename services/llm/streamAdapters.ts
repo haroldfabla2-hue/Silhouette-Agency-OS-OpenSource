@@ -45,8 +45,9 @@ export function zhipuAdapter(): StreamAdapter {
 
             const response = await zhipuService.generateCompletion(fullPrompt, {
                 maxTokens: prepared.maxTokens,
-                temperature: prepared.temperature
-            }, 'agents');
+                temperature: prepared.temperature,
+                signal: prepared.signal
+            }, 'agents', prepared.lane);
 
             if (!response) throw new InferenceError('ZHIPUAI', 'invalid-response', 'empty completion');
             yield response;
@@ -116,7 +117,8 @@ export function openAICompatibleAdapter(definition: ProviderDefinition, client: 
             for await (const event of client.stream(definition, messages, {
                 model: prepared.model,
                 temperature: prepared.temperature,
-                maxTokens: prepared.maxTokens
+                maxTokens: prepared.maxTokens,
+                signal: prepared.signal
             })) {
                 if (event.type === 'text') yield event.text;
                 else if (event.type === 'tool') {
