@@ -122,6 +122,25 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
     const serverToken = getToken();
     if (!serverToken) {
         if (isTokenlessBypassAllowed()) {
+            // [R4] Root fix: the bypass used to assign req.user=null BEFORE
+            // validating a presented login session, so a logged-in user on a
+            // token-less local install was demoted to 'anonymous' and all
+            // memory landed in a shared global identity. Validate the session
+            // header when present; only truly unidentified requests stay null.
+            const sessionId = req.headers['x-session-id'] as string;
+            if (sessionId) {
+                try {
+                    const { identityService } = await import('../../services/identityService');
+                    const sessionUser = identityService.validateSessionAndGetUser(sessionId);
+                    if (sessionUser) {
+                        (req as any).user = sessionUser;
+                        next();
+                        return;
+                    }
+                } catch (e) {
+                    console.error('[AUTH] Failed to validate session (tokenless bypass)', e);
+                }
+            }
             (req as any).user = null;
             next();
             return;
