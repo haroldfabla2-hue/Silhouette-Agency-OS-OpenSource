@@ -35,11 +35,35 @@ describe('R11 stats snapshot consistency', () => {
 
         // a write must be visible immediately - no 30s stale window
         expect(after.revision).toBeGreaterThan(before.revision);
-        expect(after.total).toBe(before.total + 1);
-        // cleanup: remove the marker (also bumps revision)
+        // The system is alive: the MEMORY_CREATED event triggers real
+        // introspection reactions that persist their own nodes, so the global
+        // total can grow by MORE than our single marker. The invariant under
+        // test is immediate visibility (revision bump + marker present), not
+        // exclusive write access.
+        expect(after.total).toBeGreaterThanOrEqual(before.total + 1);
         const nodes = await continuum.getAllNodes();
         const marker = (nodes[MemoryTier.LONG] || []).find((n: any) => n.content.includes('r11-marker-'));
+        expect(marker).toBeDefined(); // the marker itself must be visible now
+        // cleanup: remove the marker (also bumps revision)
         if (marker) await continuum.deleteNode(marker.id);
+    });
+
+    it('recent dedup only skips truly identical content, never shared prefixes', async () => {
+        // Regression: the old hash kept only the first 12 bytes, so two
+        // memories with the same 12-char prefix collided and the second was
+        // silently dropped.
+        const pfx = `r11-dedup-${Date.now()}`;
+        await continuum.store(`${pfx}-AAAA-first`, MemoryTier.LONG, ['r11-dedup']);
+        await continuum.store(`${pfx}-BBBB-second`, MemoryTier.LONG, ['r11-dedup']);
+        // exact duplicate of the first one IS deduplicated
+        await continuum.store(`${pfx}-AAAA-first`, MemoryTier.LONG, ['r11-dedup']);
+        const nodes = await continuum.getAllNodes();
+        const mine = (nodes[MemoryTier.LONG] || []).filter((n: any) => n.content.includes(pfx));
+        const firsts = mine.filter((n: any) => n.content.includes('AAAA-first'));
+        const seconds = mine.filter((n: any) => n.content.includes('BBBB-second'));
+        expect(firsts.length).toBe(1); // identical repeat skipped
+        expect(seconds.length).toBe(1); // same-prefix different content stored
+        for (const n of mine) await continuum.deleteNode(n.id);
     });
 
     it('health is measured from real nodes, never a fixed 100', async () => {

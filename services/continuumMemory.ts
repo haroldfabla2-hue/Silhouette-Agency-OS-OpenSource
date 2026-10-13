@@ -2,6 +2,7 @@ import { lexicalMatches, lexicalScore } from './lexicalMatch';
 import { atomicWriteFile } from './utils/atomicWrite';
 import { MemoryNode, MemoryTier } from "../types";
 import { lancedbService } from './lancedbService';
+import { createHash } from 'node:crypto';
 import { fuseMemories, inScope, scopeSql, type MemoryScope } from './memoryRetrieval';
 import { activation, selectSleepBatch } from './memoryCognition';
 import { memoryTransitions } from './memoryTransitions';
@@ -351,9 +352,13 @@ class ContinuumMemorySystem {
             }
         }
 
-        // [FIX] Anti-Recursion Guard 2: Hash-based recent deduplication
+        // [FIX] Anti-Recursion Guard 2: Hash-based recent deduplication.
+        // [R11-FOLLOWUP] Hash the FULL content: base64 of a 100-char prefix
+        // truncated to 16 chars only encoded the first 12 bytes, so any two
+        // memories sharing a 12-char prefix collided and the later write was
+        // silently dropped (real data loss observed on r11-marker-* retries).
         const contentHash = content.length > 10 ?
-            Buffer.from(content.slice(0, 100)).toString('base64').slice(0, 16) :
+            createHash('sha256').update(content).digest('base64').slice(0, 16) :
             content;
         if (this.recentHashes.has(contentHash)) {
             console.log(`[CONTINUUM] ♻️ Deduplicated recent content`);
