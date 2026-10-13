@@ -395,9 +395,19 @@ export class UnifiedDaemon {
     }
 
     private async runJanitorTask() {
-        console.log('[COGNITIVE: JANITOR] 🧹 Cleaning up memories...');
-        const stats = await continuum.getStats();
-        console.log(`[COGNITIVE: JANITOR] Analyzed ${stats.working} working items.`);
+        // Janitor Truth Evaluation Engine v2 (services/janitor/janitorService.ts).
+        // Eternal-memory safe: the engine has no delete path. DRY-RUN by default
+        // (JANITOR_DRY_RUN=true): it records verified proposals to the ledger
+        // and modifies nothing until explicitly enabled.
+        console.log('[COGNITIVE: JANITOR] 🧹 Running truth evaluation cycle...');
+        try {
+            const { getJanitorService } = await import('../janitor/janitorService');
+            const janitor = await getJanitorService();
+            const report = await janitor.runCycle();
+            console.log(`[COGNITIVE: JANITOR] ✅ Cycle done (dryRun=${report.dryRun}): ${report.candidates} candidates, ${report.clusters} clusters, ${report.applied} applied, ${report.proposed} proposed, ${report.abstained} abstained, ${report.errors} errors${report.abortedByCircuitBreaker ? ' [CIRCUIT BREAKER]' : ''} in ${report.durationMs}ms.`);
+        } catch (e: any) {
+            console.warn(`[COGNITIVE: JANITOR] Cycle aborted safely (memory untouched): ${e.message}`);
+        }
     }
 
     private async runDreamerTask() {

@@ -1172,7 +1172,7 @@ export const generateGeminiTextPure = async (prompt: string, model?: string): Pr
 
 export const generateText = async (prompt: string, options: { model?: string } = {}): Promise<string> => {
     ensureClient();
-    const modelToUse = options.model || 'gemini-2.5-flash';
+    const modelToUse = options.model || DEFAULT_GEMINI_MODEL;
 
     // === PRIMARY: ZHIPUAI (FREE, 12 concurrent) ===
     try {
@@ -1345,7 +1345,7 @@ export const createCompletion = async (
         }
 
         const result = await ai.models.generateContent({
-            model: options.model || 'gemini-2.5-flash', // Fast for visual analysis
+            model: options.model || DEFAULT_GEMINI_MODEL, // verified live default (was gemini-2.5-flash, 404 dead)
             contents: [{ role: 'user', parts }],
             config: {
                 temperature: options.temperature || 0.2
@@ -1355,7 +1355,7 @@ export const createCompletion = async (
         // Track Cost
         const inputTokens = result.usageMetadata?.promptTokenCount || 0;
         const outputTokens = result.usageMetadata?.candidatesTokenCount || 0;
-        costEstimator.trackTransaction(inputTokens, outputTokens, 'gemini-2.5-flash');
+        costEstimator.trackTransaction(inputTokens, outputTokens, options.model || DEFAULT_GEMINI_MODEL);
 
         return result.text || "";
 
