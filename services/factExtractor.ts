@@ -345,7 +345,7 @@ CORRECTED (or REJECT):`;
                 `, { userId, factId: id });
             }
 
-            console.log(`[FACT_EXTRACT] 📝 Stored in Neo4j: "${fact.content}"`);
+            console.log(`[FACT_EXTRACT] 📝 Stored in graph: "${fact.content}"`);
         } catch (e) {
             console.warn('[FACT_EXTRACT] Neo4j storage failed:', e);
         }
