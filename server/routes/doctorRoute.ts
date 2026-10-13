@@ -166,4 +166,19 @@ doctorRouter.get('/doctor', async (_req: Request, res: Response) => {
     });
 });
 
+/**
+ * GET /v1/system/doctor/dream-cadence
+ * Dreamer cadence measurement (roadmap item 9): observed cycle intervals,
+ * trigger distribution, memories per cycle, and an advisory (never
+ * auto-applied) fallback suggestion. Read-only.
+ */
+doctorRouter.get('/doctor/dream-cadence', async (_req: Request, res: Response) => {
+    try {
+        const { getCadenceReport } = await import('../../services/dream/dreamTriggers');
+        res.json({ timestamp: new Date().toISOString(), cadence: await getCadenceReport() });
+    } catch (e) {
+        res.status(500).json({ error: `cadence report failed: ${(e as Error).message}` });
+    }
+});
+
 export default doctorRouter;

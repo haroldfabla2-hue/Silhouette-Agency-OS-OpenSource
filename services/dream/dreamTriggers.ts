@@ -86,37 +86,125 @@ export function evaluateDreamTriggers(
 // Dream state (last cycle timestamp) — tiny JSON, fsync-free best effort
 // ---------------------------------------------------------------------------
 
+export interface DreamCycleRecord {
+    at: number;
+    triggers: string[];
+    memoriesConsolidated: number | null;
+}
+
 export interface DreamState {
     lastDreamCycleAt: number | null;
     lastTriggers: string[];
     cycles: number;
+    /** Bounded metadata history (last 1000 cycles) for cadence measurement.
+     *  This is METRICS data, not memory — memories themselves are eternal. */
+    history: DreamCycleRecord[];
 }
+
+const HISTORY_CAP = 1000;
 
 export function readDreamState(statePath: string): DreamState {
     try {
-        if (!fs.existsSync(statePath)) return { lastDreamCycleAt: null, lastTriggers: [], cycles: 0 };
+        if (!fs.existsSync(statePath)) return { lastDreamCycleAt: null, lastTriggers: [], cycles: 0, history: [] };
         const raw = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
         return {
             lastDreamCycleAt: typeof raw.lastDreamCycleAt === 'number' ? raw.lastDreamCycleAt : null,
             lastTriggers: Array.isArray(raw.lastTriggers) ? raw.lastTriggers : [],
-            cycles: typeof raw.cycles === 'number' ? raw.cycles : 0
+            cycles: typeof raw.cycles === 'number' ? raw.cycles : 0,
+            history: Array.isArray(raw.history) ? raw.history : []
         };
     } catch {
-        return { lastDreamCycleAt: null, lastTriggers: [], cycles: 0 };
+        return { lastDreamCycleAt: null, lastTriggers: [], cycles: 0, history: [] };
     }
 }
 
 /** Record that a dream cycle executed. Called once per completed cycle from
  *  the dreamer's funnel point (attemptDream finally). */
-export function recordDreamCycle(statePath: string, triggers: string[] = []): void {
+export function recordDreamCycle(statePath: string, triggers: string[] = [], memoriesConsolidated: number | null = null): void {
     try {
         const prev = readDreamState(statePath);
-        const next: DreamState = { lastDreamCycleAt: Date.now(), lastTriggers: triggers, cycles: prev.cycles + 1 };
+        const history = [...prev.history, { at: Date.now(), triggers, memoriesConsolidated }].slice(-HISTORY_CAP);
+        const next: DreamState = { lastDreamCycleAt: Date.now(), lastTriggers: triggers, cycles: prev.cycles + 1, history };
         fs.mkdirSync(path.dirname(statePath), { recursive: true });
         fs.writeFileSync(statePath, JSON.stringify(next, null, 2), 'utf-8');
     } catch (e) {
         console.warn('[DREAM-TRIGGERS] could not record dream state:', e);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Cadence measurement (roadmap item 9): data-driven, not a fixed clock
+// ---------------------------------------------------------------------------
+
+export interface CadenceReport {
+    cycles: number;
+    windowDays: number | null;
+    intervalsHours: { mean: number | null; median: number | null; min: number | null; max: number | null };
+    triggerDistribution: Record<string, number>;
+    avgMemoriesPerCycle: number | null;
+    /** Advisory only — nothing auto-tunes. */
+    suggestion: string;
+}
+
+const triggerKind = (t: string): string =>
+    t.startsWith('pressure') ? 'pressure'
+    : t.startsWith('epiphanies') ? 'epiphanies'
+    : t.startsWith('milestone') ? 'milestone'
+    : t.startsWith('fallback') ? 'fallback'
+    : 'other';
+
+const median = (xs: number[]): number => {
+    const s = [...xs].sort((a, b) => a - b);
+    const mid = Math.floor(s.length / 2);
+    return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+};
+
+/** Pure cadence analysis over a cycle history — hermetically testable. */
+export function analyzeCadence(history: DreamCycleRecord[], config: DreamTriggerConfig): CadenceReport {
+    const dist: Record<string, number> = {};
+    for (const c of history) for (const t of c.triggers) dist[triggerKind(t)] = (dist[triggerKind(t)] || 0) + 1;
+
+    const withMem = history.filter(c => typeof c.memoriesConsolidated === 'number');
+    const avgMem = withMem.length
+        ? Math.round((withMem.reduce((a, c) => a + (c.memoriesConsolidated ?? 0), 0) / withMem.length) * 10) / 10
+        : null;
+
+    if (history.length < 3) {
+        return {
+            cycles: history.length, windowDays: null,
+            intervalsHours: { mean: null, median: null, min: null, max: null },
+            triggerDistribution: dist, avgMemoriesPerCycle: avgMem,
+            suggestion: `Insufficient data (${history.length} cycles); need >= 3 cycles to measure cadence.`
+        };
+    }
+
+    const intervals = history.slice(1).map((c, i) => (c.at - history[i].at) / 3600_000);
+    const mean = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+    const med = median(intervals);
+    const windowDays = Math.round(((history[history.length - 1].at - history[0].at) / 86400_000) * 10) / 10;
+
+    const eventDriven = (dist.pressure || 0) + (dist.epiphanies || 0) + (dist.milestone || 0);
+    const fallback = dist.fallback || 0;
+    const suggestedFallback = Math.min(168, Math.max(24, Math.ceil(med * 2)));
+    const suggestion = eventDriven >= fallback
+        ? `Events drive dreaming (median every ${med.toFixed(1)}h); the ${config.fallbackHours}h clock is a backstop. A data-driven fallback for this entity would be ~${suggestedFallback}h.`
+        : `The clock drives most dreams (median every ${med.toFixed(1)}h); event triggers rarely fire — consider lower epiphany/milestone thresholds.`;
+
+    return {
+        cycles: history.length, windowDays,
+        intervalsHours: {
+            mean: Math.round(mean * 100) / 100,
+            median: Math.round(med * 100) / 100,
+            min: Math.round(Math.min(...intervals) * 100) / 100,
+            max: Math.round(Math.max(...intervals) * 100) / 100
+        },
+        triggerDistribution: dist, avgMemoriesPerCycle: avgMem, suggestion
+    };
+}
+
+export async function getCadenceReport(): Promise<CadenceReport> {
+    const config = loadDreamTriggerConfig();
+    return analyzeCadence(readDreamState(config.statePath).history, config);
 }
 
 // ---------------------------------------------------------------------------
@@ -180,7 +268,7 @@ export async function collectDreamSignals(lastDreamAt: number | null, now: numbe
  * evaluate, dream if warranted. Recording the cycle happens centrally in
  * attemptDream's finally block, so every trigger path counts exactly once.
  */
-export async function evaluateAndMaybeDream(isDreaming: boolean, dream: () => Promise<void>): Promise<DreamTriggerVerdict> {
+export async function evaluateAndMaybeDream(isDreaming: boolean, dream: () => Promise<void>, markTriggers?: (reasons: string[]) => void): Promise<DreamTriggerVerdict> {
     const config = loadDreamTriggerConfig();
     const state = readDreamState(config.statePath);
     const now = Date.now();
@@ -189,6 +277,7 @@ export async function evaluateAndMaybeDream(isDreaming: boolean, dream: () => Pr
     const verdict = evaluateDreamTriggers(signals, config, minutesSince);
     if (verdict.shouldDream && !isDreaming) {
         console.log(`[DREAM-TRIGGERS] 🌙 Dream triggered: ${verdict.reasons.join(' | ')}`);
+        markTriggers?.(verdict.reasons);
         await dream();
     }
     return verdict;

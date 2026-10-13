@@ -20,6 +20,8 @@ export class DreamerService {
     private trainingCooldown: number = 1000 * 60 * 60; // 1 Hour min between trainings
     private startupGracePeriod: number = 1000 * 60 * 5; // 5 min startup delay
     private systemStartTime: number = Date.now();
+    private pendingTriggerReasons: string[] = [];
+    private lastCycleMemoryCount: number | null = null;
 
     public setThreshold(value: number) {
         this.threshold = value;
@@ -67,7 +69,7 @@ export class DreamerService {
             // hippocampus pressure, clock fallback. Never throws.
             try {
                 const { evaluateAndMaybeDream } = await import('./dream/dreamTriggers');
-                await evaluateAndMaybeDream(this.isDreaming, () => this.attemptDream());
+                await evaluateAndMaybeDream(this.isDreaming, () => this.attemptDream(), r => { this.pendingTriggerReasons = r; });
             } catch (e) {
                 console.warn('[DREAMER] trigger evaluation failed (non-fatal):', e);
             }
@@ -351,6 +353,8 @@ export class DreamerService {
             const processedIds = memories.map(m => m.id);
             continuum.clearHippocampus(processedIds);
 
+            this.lastCycleMemoryCount = memories.length;
+
             // 6. RAPTOR INGESTION (Hierarchical Consolidation)
             // If we have enough memories, build a tree structure for today's context.
             if (memories.length >= 5) {
@@ -370,7 +374,8 @@ export class DreamerService {
             // Record the cycle for event-based triggers (roadmap item 8).
             // Fire-and-forget: a state-write failure must never break the dreamer.
             import('./dream/dreamTriggers').then(({ recordDreamCycle, loadDreamTriggerConfig }) => {
-                recordDreamCycle(loadDreamTriggerConfig().statePath);
+                recordDreamCycle(loadDreamTriggerConfig().statePath, this.pendingTriggerReasons, this.lastCycleMemoryCount);
+                this.pendingTriggerReasons = [];
             }).catch(() => { /* non-fatal */ });
             // Update Introspection Engine Status
             import('./introspectionEngine').then(({ introspection }) => {
