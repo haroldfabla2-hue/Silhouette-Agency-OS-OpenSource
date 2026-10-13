@@ -1160,7 +1160,7 @@ class GraphService {
      * Get all user facts from Neo4j
      * Used by UI to display eternal memory
      */
-    public async getUserFacts(userId?: string): Promise<{ category: string; content: string; confidence: number; timestamp: number }[]> {
+    public async getUserFacts(userId?: string): Promise<{ category: string; content: string; confidence: number; timestamp: number; source?: string }[]> {
         try {
             // If userId is provided, filter by that user. Otherwise, fallback to global (admin only)
             // Writers store `type`/`createdAt`; legacy readers expected
@@ -1169,13 +1169,15 @@ class GraphService {
             const query = userId ? `
                 MATCH (u:User {id: $userId})-[:HAS_FACT]->(f:Fact)
                 RETURN coalesce(f.category, f.type, 'general') as category, f.content as content,
-                       f.confidence as confidence, coalesce(f.timestamp, f.createdAt, 0) as timestamp
+                       f.confidence as confidence, coalesce(f.timestamp, f.createdAt, 0) as timestamp,
+                       coalesce(f.source, 'LEGACY') as source
                 ORDER BY timestamp DESC
                 LIMIT 50
             ` : `
                 MATCH (f:Fact)
                 RETURN coalesce(f.category, f.type, 'general') as category, f.content as content,
-                       f.confidence as confidence, coalesce(f.timestamp, f.createdAt, 0) as timestamp
+                       f.confidence as confidence, coalesce(f.timestamp, f.createdAt, 0) as timestamp,
+                       coalesce(f.source, 'LEGACY') as source
                 ORDER BY timestamp DESC
                 LIMIT 50
             `;
@@ -1185,6 +1187,7 @@ class GraphService {
                 category: r.category || 'general',
                 content: r.content || '',
                 confidence: typeof r.confidence === 'number' ? r.confidence : 0.9,
+                source: r.source || 'LEGACY',
                 timestamp: typeof r.timestamp === 'number' ? r.timestamp : Date.now()
             }));
         } catch (e) {
