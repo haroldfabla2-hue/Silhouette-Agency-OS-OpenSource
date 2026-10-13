@@ -301,6 +301,30 @@ export const WEB_SEARCH_TOOL: FunctionDeclaration = {
     }
 };
 
+export interface RecallDeepArgs {
+    query: string;
+    limit?: number;
+}
+
+export const RECALL_DEEP_TOOL: FunctionDeclaration = {
+    name: "recall_deep",
+    description: "Deep recall over the cold memory archive: searches full archived originals (complete memory copies preserved forever, e.g. versions superseded by truth revisions) and returns them VERBATIM. Use this when normal memory search doesn't surface something old, superseded, or consolidated, and you need the exact original content rather than a summary.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            query: {
+                type: Type.STRING,
+                description: "What to look for in the archive. Lexical match over full original contents."
+            },
+            limit: {
+                type: Type.NUMBER,
+                description: "Maximum archived originals to return. Default 5."
+            }
+        },
+        required: ["query"]
+    }
+};
+
 export const READ_URL_TOOL: FunctionDeclaration = {
     name: "read_url",
     description: "Fetches and extracts the main text content from a specific URL. Use this to read articles, documentation, or links found via web_search.",
@@ -1285,6 +1309,7 @@ export const AGENT_TOOLS = [
     PREVIEW_ASSET_TOOL,
     // Research Tools
     WEB_SEARCH_TOOL,
+    RECALL_DEEP_TOOL,
     ACADEMIC_SEARCH_TOOL,
     CONDUCT_RESEARCH_TOOL,
     // Synthesis Tools

@@ -93,6 +93,9 @@ export interface JanitorDeps {
     upsertNode(node: MemoryNode): Promise<void>;
     /** Fetch a node by id (for unsupersede). */
     getNodeById(id: string): Promise<MemoryNode | null>;
+    /** Optional second-copy archive for originals (cold archive, roadmap item 7).
+     *  Called with the ORIGINAL node before marking; failures never break a run. */
+    archiveOriginal?(node: MemoryNode, reason: string): Promise<void>;
     /** Detector: provider A (production: Groq gpt-oss-120b). */
     detector: LlmJudge;
     /** Verifier: provider B, MUST be a different provider (production: OpenRouter nemotron free). */
@@ -318,6 +321,12 @@ export class JanitorService {
                        JANITOR_TAGS.SUPERSEDED, `${JANITOR_TAGS.SUPERSEDED_BY_PREFIX}${metaTruthId}`]
             };
             await this.deps.upsertNode(marked); // same id => upsert; content untouched
+            // Cold archive: second copy of the full ORIGINAL (eternal memory ×2).
+            // Archive failure must never break a janitor run.
+            if (this.deps.archiveOriginal) {
+                try { await this.deps.archiveOriginal(member, `janitor:superseded-by:${metaTruthId}`); }
+                catch (e) { console.error('[JANITOR] cold-archive copy failed (primary store intact):', e); }
+            }
         }
 
         // Stage 6 — surface the truth change to the consciousness/evidence stream
@@ -421,6 +430,10 @@ export async function getJanitorService(): Promise<JanitorService> {
         detector: makeJudge(groq, 'GROQ'),
         verifier: makeJudge(openrouter, 'OPENROUTER'),
         ledger: new RevisionLedger(defaultLedgerPath()),
+        archiveOriginal: async (node, reason) => {
+            const { getColdArchive } = await import('../memory/coldArchive');
+            getColdArchive().append(node, reason);
+        },
         noteRevision: async (text, refs) => {
             const { continuum } = await import('../continuumMemory');
             const { MemoryTier: MT } = await import('../../types');
