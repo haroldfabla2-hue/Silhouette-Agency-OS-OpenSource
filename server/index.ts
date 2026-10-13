@@ -97,6 +97,10 @@ const server = app.listen(PORT, HOST, async () => {
         // Register Core Plugins
         registerCorePlugins();
 
+        // [R12] Discover + validate + register custom plugins (real ESM load)
+        const { registerCustomPlugins } = await import('../services/plugins/loader');
+        await registerCustomPlugins();
+
         // Initialize Registry (starts plugins and registers tools)
         await pluginRegistry.initialize();
         console.log('[PLUGINS] ✅ Plugin System initialized with Core Plugins');
