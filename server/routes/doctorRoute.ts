@@ -149,11 +149,24 @@ doctorRouter.get('/doctor', async (_req: Request, res: Response) => {
         },
     });
 
+    // 7. Memory audit (roadmap item 6): duplicates, dream provenance, SOUL
+    // drift, tier health, stagnant evidence, janitor metrics. Read-only.
+    try {
+        const { runMemoryAudit, collectMemoryAuditDeps } = await import('../../services/health/memoryAudit');
+        checks.push(...runMemoryAudit(await collectMemoryAuditDeps()));
+    } catch (e) {
+        checks.push({
+            name: 'Memory: audit',
+            status: 'warning',
+            message: `Memory audit could not run: ${(e as Error).message}`
+        });
+    }
+
     const elapsed = Date.now() - startTime;
     const hasErrors = checks.some(c => c.status === 'error');
     const hasWarnings = checks.some(c => c.status === 'warning');
 
-    res.json({
+res.json({
         overall: hasErrors ? 'unhealthy' : hasWarnings ? 'degraded' : 'healthy',
         timestamp: new Date().toISOString(),
         diagnosticMs: elapsed,
