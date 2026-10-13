@@ -70,12 +70,41 @@ async function verifyMediaEndpoints() {
     console.log('\n[6/8] Stock Search...');
     if (await testEndpoint('GET search', 'GET', '/v1/media/search?query=sunset')) passed++; else failed++;
 
-    // Test 7: POST /v1/media/queue (Queue Video)
-    console.log('\n[7/8] Queue Video...');
-    if (await testEndpoint('POST queue', 'POST', '/v1/media/queue', {
-        prompt: 'Test video from verification script',
-        engine: 'WAN'
-    })) passed++; else failed++;
+    // Test 7: POST /v1/media/queue (Queue Video) - TEST-origin, cleaned up after itself
+    console.log('\n[7/8] Queue Video (test-origin, auto-cleanup)...');
+    let testJobOk = false;
+    try {
+        const res = await fetch(`${BASE_URL}/v1/media/queue`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${DEFAULT_API_CONFIG.apiKey}`,
+                // [R10] mark this job TEST so it never pollutes the user's queue
+                'x-job-origin': 'test'
+            },
+            body: JSON.stringify({ prompt: 'Test video from verification script', engine: 'WAN' })
+        });
+        const data = await res.json();
+        const jobId = data?.message?.id;
+        if (res.ok && jobId) {
+            console.log(`   ✅ POST queue: OK (test job ${jobId})`);
+            const del = await fetch(`${BASE_URL}/v1/media/queue/${jobId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${DEFAULT_API_CONFIG.apiKey}` }
+            });
+            if (del.ok) {
+                console.log('   ✅ cleanup: test job removed, user queue untouched');
+                testJobOk = true;
+            } else {
+                console.log(`   ❌ cleanup failed: ${del.status}`);
+            }
+        } else {
+            console.log(`   ❌ POST queue: ${res.status} - ${data.error || res.statusText}`);
+        }
+    } catch (e: any) {
+        console.log(`   ❌ POST queue: Connection failed - ${e.message}`);
+    }
+    if (testJobOk) passed++; else failed++;
 
     // Test 8: POST /v1/media/generate/image
     console.log('\n[8/8] Generate Image...');

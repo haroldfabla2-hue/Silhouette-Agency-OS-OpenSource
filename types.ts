@@ -676,6 +676,9 @@ export interface VideoJob {
   createdAt: string;
   videoPath?: string;
   provider: string; // generalized from 'LOCAL_WAN_2.1'
+  // [R10] who created this job: TEST jobs come from verification scripts and
+  // are the only ones a cleanup path may remove - never the user's queue.
+  origin?: 'USER' | 'TEST';
 
   // === KLING-INSPIRED: Advanced Parameters ===
   duration?: number;           // seconds

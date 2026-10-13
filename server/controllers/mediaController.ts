@@ -59,6 +59,9 @@ class MediaController {
             });
 
             // Pass all parameters to video factory
+            // [R10] verification scripts identify their jobs with x-job-origin: test
+            const origin = req.get('x-job-origin') === 'test' ? 'TEST' : 'USER';
+
             const result = await videoFactory.createVideo(prompt, duration, image, engine, {
                 fps,
                 aspectRatio,
@@ -72,7 +75,7 @@ class MediaController {
                 negativePrompt,
                 seed,
                 stylePreset
-            });
+            }, origin);
 
             if (result) {
                 return res.json({
@@ -100,6 +103,18 @@ class MediaController {
             return res.status(500).json({ success: false, error: error.message });
         }
     }
+
+    /**
+     * DELETE /v1/media/queue/:id
+     * [R10] test-cleanup only: refuses to remove anything that is not a
+     * TEST-origin job, so production queue entries can never be deleted here.
+     */
+    public removeQueueJob = async (req: Request, res: Response) => {
+        const result = localVideoService.removeTestJob(String(req.params.id || ''));
+        if (result.removed) return res.json({ success: true });
+        const status = result.reason === 'not_found' ? 404 : 403;
+        return res.status(status).json({ success: false, error: result.reason });
+    };
 
     /**
      * GET /v1/media/queue

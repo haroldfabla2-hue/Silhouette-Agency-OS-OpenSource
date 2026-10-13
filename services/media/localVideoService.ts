@@ -8,7 +8,10 @@ export class LocalVideoService {
     private queuePath: string;
 
     constructor() {
-        this.queuePath = path.resolve(process.cwd(), 'data/queues/video_render_queue.json');
+        // [R10] tests/scripts isolate their queue via SILHOUETTE_QUEUE_DIR so
+        // a verification run can never pollute the user's render queue.
+        const queueDir = process.env.SILHOUETTE_QUEUE_DIR || 'data/queues';
+        this.queuePath = path.resolve(process.cwd(), queueDir, 'video_render_queue.json');
         this.ensureQueueFile();
         console.log("[LocalVideoService] Service Initialized (Async Queue with Advanced Params).");
     }
@@ -28,7 +31,8 @@ export class LocalVideoService {
         imagePath?: string,
         engine: 'WAN' | 'SVD' | 'ANIMATEDIFF' | 'VID2VID' | 'KLING' | 'VEO' = 'WAN',
         duration: number = 5,
-        advancedParams?: VideoAdvancedParams
+        advancedParams?: VideoAdvancedParams,
+        origin: 'USER' | 'TEST' = 'USER'
     ): Promise<VideoJob | null> {
         console.log(`[LocalVideoService] 📥 Queuing Job: "${prompt}" (Engine: ${engine}, Duration: ${duration}s)`);
 
@@ -60,7 +64,8 @@ export class LocalVideoService {
             motionStrength: advancedParams?.motionStrength,
             negativePrompt: advancedParams?.negativePrompt,
             seed: advancedParams?.seed,
-            stylePreset: advancedParams?.stylePreset
+            stylePreset: advancedParams?.stylePreset,
+            origin
         };
 
         try {
@@ -74,6 +79,25 @@ export class LocalVideoService {
         } catch (error) {
             console.error("[LocalVideoService] Queue Write Failed:", error);
             return null;
+        }
+    }
+
+    /**
+     * [R10] Remove a job created by a verification script. TEST-origin only:
+     * the user's production queue can never be deleted through this path.
+     */
+    public removeTestJob(jobId: string): { removed: boolean; reason?: string } {
+        try {
+            const queueData = fs.readFileSync(this.queuePath, 'utf-8');
+            const queue: VideoJob[] = JSON.parse(queueData);
+            const job = queue.find(j => j.id === jobId);
+            if (!job) return { removed: false, reason: 'not_found' };
+            if (job.origin !== 'TEST') return { removed: false, reason: 'not_test_origin' };
+            fs.writeFileSync(this.queuePath, JSON.stringify(queue.filter(j => j.id !== jobId), null, 2));
+            return { removed: true };
+        } catch (error) {
+            console.error("[LocalVideoService] Test-job removal failed:", error);
+            return { removed: false, reason: 'io_error' };
         }
     }
 
@@ -91,4 +115,3 @@ export class LocalVideoService {
 }
 
 export const localVideoService = new LocalVideoService();
-
