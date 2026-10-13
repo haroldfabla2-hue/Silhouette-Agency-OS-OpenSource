@@ -261,9 +261,10 @@ export class OllamaService {
      * Public API: Direct Streaming for Chat Fallback (Bypasses Queue for Latency)
      */
     async * generateStream(prompt: string, model: string = 'glm4:light'): AsyncGenerator<string, void, unknown> {
+        // [R2] Errors are thrown, never yielded as content: an error string in the
+        // stream used to be persisted as an assistant response and stored as "facts".
         if (!this.checkCircuit()) {
-            yield " [Ollama Circuit Open - Local Brain Offline]";
-            return;
+            throw new Error('[Ollama Circuit Open - Local Brain Offline]');
         }
 
         try {
@@ -282,7 +283,7 @@ export class OllamaService {
         } catch (error: any) {
             this.handleFailure();
             console.error("[Ollama Stream Error]", error);
-            yield " [Local Brain Error]";
+            throw error;
         }
     }
 
@@ -290,9 +291,9 @@ export class OllamaService {
      * Public API: Chat Streaming (Messages Array) - Best for Context Retention
      */
     async * generateChatStream(messages: { role: string, content: string }[], model: string = 'glm4:light'): AsyncGenerator<string, void, unknown> {
+        // [R2] Errors are thrown, never yielded as content (see generateStream).
         if (!this.checkCircuit()) {
-            yield " [Ollama Circuit Open - Local Brain Offline]";
-            return;
+            throw new Error('[Ollama Circuit Open - Local Brain Offline]');
         }
 
         try {
@@ -311,7 +312,7 @@ export class OllamaService {
         } catch (error: any) {
             this.handleFailure();
             console.error("[Ollama Chat Error]", error);
-            yield " [Local Brain Error]";
+            throw error;
         }
     }
     /**
