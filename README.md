@@ -285,6 +285,17 @@ npm install
 npx tsx scripts/setup.ts
 ```
 
+> [!NOTE]
+> **Requirements:** `npm install` needs at least **4 GB of free RAM** (less can
+> OOM during dependency resolution). On small VPS instances, add swap first.
+>
+> **The wizard is interactive:** it pauses on stdin for each prompt. Run it in
+> a real terminal (SSH session, local shell). Do not run it piped, detached,
+> or with `nohup`/`&` — it will stall waiting for input you cannot provide.
+>
+> The wizard only writes values you actually enter into `.env.local`. Empty
+> answers are skipped, so they never shadow a key you already have in `.env`.
+
 The wizard guides you through:
 1. **LLM Providers** — Gemini, OpenAI, Groq, DeepSeek, Ollama
 2. **Messaging Channels** — Telegram, WhatsApp, Discord
