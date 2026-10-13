@@ -5,6 +5,7 @@ import { generateEmbedding as geminiEmbed } from './geminiService';
 import { configLoader } from '../server/config/configLoader'; // [PA-058]
 import { MemoryTier, MemoryNode } from '../types';
 import { nervousSystem } from './connectionNervousSystem';
+import { incidentRegistry } from './incidentRegistry';
 
 // --- SILHOUETTE GRAPH SERVICE (NEO4J) ---
 // The Structural Backbone of the Living Graph
@@ -90,6 +91,8 @@ class GraphService {
                 this.connectCooldownUntil = 0;
                 if (this.outageAlerted) console.log("[GRAPH] ✅ Neo4j recovered after outage.");
                 this.outageAlerted = false;
+                // [R6] recovery closes the SAME incident the outage opened
+                incidentRegistry.resolveIncidents('neo4j');
                 console.log("[GRAPH] ✅ Connected to Neo4j.");
 
                 this.resetConnectionTimeout();
@@ -113,6 +116,10 @@ class GraphService {
         if (this.outageAlerted) return false; // same outage: already alerted, stay quiet
         this.outageAlerted = true;
         console.error("[GRAPH] 🚨 FATAL: Neo4j connection completely failed after retries.");
+        // [R6] durable incident: console alone is ephemeral, nothing could perceive it
+        incidentRegistry.recordIncident('neo4j', 'outage',
+            'Neo4j connection failed after all retries',
+            'Graph queries fall back to SQLite where implemented; graph-only topology is unavailable.');
         try {
             const { systemBus } = await import('./systemBus');
             systemBus.emit('PROTOCOL_SYSTEM_ALERT' as any, {

@@ -33,29 +33,49 @@ export const selfHealingTask: DaemonTask = {
                 content = await fs.readFile(logPath, 'utf8');
             } catch (err: any) {
                 if (err.code === 'ENOENT') {
-                    daemonLog.debug({}, 'Self-Healing: No error log found. System healthy.');
-                    return;
+                    // [R6] a missing log file means this SOURCE is unavailable,
+                    // not that the system is healthy. Say so honestly and still
+                    // check the durable incident registry below.
+                    daemonLog.warn({}, 'Self-Healing: error log source unavailable (no system_errors.log) - NOT the same as zero errors.');
+                } else {
+                    throw err;
                 }
-                throw err;
             }
 
-            if (!content || content.trim() === '') {
-                daemonLog.debug({}, 'Self-Healing: No trailing errors.');
+            // [R6] durable incidents (Neo4j/Redis outages, perception gaps) are
+            // real failures even when the file log is empty or missing.
+            const { incidentRegistry } = await import('../incidentRegistry');
+            const openIncidents = incidentRegistry.getOpenIncidents();
+
+            if ((!content || content.trim() === '') && openIncidents.length === 0) {
+                daemonLog.debug({}, 'Self-Healing: No trailing errors and no open incidents.');
                 return;
             }
 
             // Parse structured JSON log lines into Experience objects
             const lines = content.split('\n').filter(Boolean);
 
-            if (lines.length === 0) return;
+            // [R6] incidents alone justify the cycle even with zero log lines
+            if (lines.length === 0 && openIncidents.length === 0) return;
 
-            daemonLog.warn({}, `Self-Healing: Found ${lines.length} error entries. Feeding to LearningLoop.`);
+            daemonLog.warn({}, `Self-Healing: Found ${lines.length} error entries and ${openIncidents.length} open incident(s). Feeding to LearningLoop.`);
 
             // Dynamically import LearningLoop to avoid circular dependencies
             const { learningLoop } = await import('../learningLoop');
 
             // Feed each error as a failure experience
             const { continuum } = await import('../continuumMemory');
+
+            for (const incident of openIncidents.slice(0, 20)) {
+                try {
+                    await continuum.store(
+                        `SYSTEM_INCIDENT [${incident.kind}] ${incident.source}: ${incident.summary} (x${incident.occurrenceCount}, open since ${new Date(incident.firstSeen).toISOString()})`,
+                        undefined,
+                        ['system_incident', 'self_healing', incident.kind, incident.source],
+                        false
+                    );
+                } catch { /* continuum unavailable: incident stays durable in the registry */ }
+            }
 
             for (const line of lines.slice(-50)) { // Process last 50 errors max
                 try {

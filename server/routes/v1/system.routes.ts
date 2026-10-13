@@ -84,6 +84,21 @@ router.get('/resources', (req, res) => systemController.getResources(req, res));
 // Route: /v1/system/diagnostics - Hardware evaluation for setup wizard
 router.get('/diagnostics', (req, res) => systemController.getDiagnostics(req, res));
 
+// [R6] Durable incident registry: same truth the narrator and self-healing read.
+// ?open=true filters to currently open incidents.
+router.get('/incidents', async (req, res) => {
+    try {
+        const { incidentRegistry } = await import('../../../services/incidentRegistry');
+        const incidents = req.query.open === 'true'
+            ? incidentRegistry.getOpenIncidents()
+            : incidentRegistry.getRecentIncidents(50);
+        res.json({ incidents, count: incidents.length });
+    } catch (error: any) {
+        console.error('[SYSTEM] Error fetching incidents:', error);
+        res.status(500).json({ error: 'Failed to fetch incidents', details: error.message });
+    }
+});
+
 // Route: /v1/system/support-ticket - Escalate unresolved issues to cloud support agent
 router.post('/support-ticket', (req, res) => systemController.submitSupportTicket(req, res));
 

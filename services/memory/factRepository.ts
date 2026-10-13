@@ -159,6 +159,20 @@ class FactRepository {
         return { id, action: 'RETRACT', sqliteRows: result.changes, projections };
     }
 
+    /**
+     * Recent facts across owners for system-level perception (narrator).
+     * The narrator previously read graph.getUserFacts() globally; this keeps
+     * the same disclosure level from the durable source, which works even
+     * when Neo4j is down. Status is included so consumers can honor it.
+     */
+    getRecentFacts(limit = 10): FactRecord[] {
+        const rows = sqliteService.db.prepare(`
+            SELECT * FROM facts WHERE retracted_at IS NULL
+            ORDER BY created_at DESC LIMIT ?
+        `).all(limit) as any[];
+        return rows.map(r => this.toRecord(r));
+    }
+
     /** Read facts from the durable source. Graph/continuum are never read here. */
     getFacts(ownerId: string, opts: { includeRetracted?: boolean } = {}): FactRecord[] {
         const rows = sqliteService.db.prepare(`
