@@ -7,6 +7,7 @@ import { MemorySource, sourceTag, speakerLabel, shouldExcludeFromChat, wantsSelf
 import { codebaseAwareness } from '../../services/codebaseAwareness';
 import { providerHealth } from '../../services/providerHealthManager';
 import { userProfile } from '../../services/userProfileService';
+import { factRepository } from '../../services/memory/factRepository';
 import { chatToolIntegration } from '../../services/chatToolIntegration';
 import { planGenerator } from '../../services/planGenerator';
 import { planExecutor } from '../../services/planExecutor';
@@ -179,11 +180,11 @@ export class ChatController {
             sqliteService.appendChatMessage(userMsg, cleanSessionId);
 
             // 1.5 Extract user profile info (name, preferences)
-            await userProfile.extractFromMessage(userMessage);
+            await userProfile.extractFromMessage(userMessage, userId);
 
             // 2. Get context from memory AND codebase
             const recentHistory = sqliteService.getChatHistory(cleanSessionId, 50);
-            const profileContext = userProfile.getProfileContext();
+            const profileContext = [userProfile.getProfileContext(userId), this.verifiedFactsBlock(userId)].filter(Boolean).join('\n');
             const memoryContext = await this.assembleContext(userMessage, allowedOwner);
             const codeContext = await this.getCodebaseContext(userMessage);
 
@@ -280,7 +281,7 @@ export class ChatController {
             res.write(`data: ${JSON.stringify({ type: 'user_saved', message: userMsg })}\n\n`);
 
             // 1.5 Extract user profile info (name, preferences) from message
-            await userProfile.extractFromMessage(userMessage);
+            await userProfile.extractFromMessage(userMessage, userId);
 
             // 1.6 INTELLIGENT ORCHESTRATION: Analyze complexity and delegate if needed
             res.write(`data: ${JSON.stringify({ type: 'status', message: 'Analyzing request...' })}\n\n`);
@@ -331,7 +332,7 @@ export class ChatController {
             const recentHistory = sqliteService.getChatHistory(cleanSessionId, 50);
 
             // Get user profile context (always cheap, always included)
-            const profileContext = userProfile.getProfileContext();
+            const profileContext = [userProfile.getProfileContext(userId), this.verifiedFactsBlock(userId)].filter(Boolean).join('\n');
 
             // Get raw memories (will be filtered by purifier & firewall)
             const rawMemories = await continuum.retrieve(userMessage, undefined, allowedOwner);
@@ -480,6 +481,41 @@ export class ChatController {
             console.error("[CHAT] Stream error", e);
             res.write(`data: ${JSON.stringify({ type: 'error', error: e.message })}\n\n`);
             res.end();
+        }
+    }
+
+    /**
+     * [R4] Verified identity/preference facts as a guaranteed prompt block,
+     * separate from episodic hybrid search. Only facts whose provenance was
+     * citation-verified (R5) qualify; hypotheses stay out of identity answers.
+     * Budget-capped, with an inclusion/discard trace per fact so a later
+     * investigation can see exactly why each fact reached (or missed) the prompt.
+     */
+    private verifiedFactsBlock(userId: string): string {
+        const MAX_FACTS = 15;
+        const MAX_CHARS = 1500;
+        try {
+            const all = factRepository.getFacts(userId);
+            const included: string[] = [];
+            let chars = 0;
+            for (const f of all) {
+                if (f.status !== 'verified') {
+                    console.debug(`[CHAT][FACT-TRACE] discard ${f.id}: status=${f.status} (not citation-verified)`);
+                    continue;
+                }
+                if (included.length >= MAX_FACTS || chars + f.content.length > MAX_CHARS) {
+                    console.debug(`[CHAT][FACT-TRACE] discard ${f.id}: budget exhausted`);
+                    continue;
+                }
+                included.push(`- ${f.content}`);
+                chars += f.content.length;
+                console.debug(`[CHAT][FACT-TRACE] include ${f.id}: verified, source=${f.source}`);
+            }
+            if (included.length === 0) return '';
+            return `[VERIFIED USER FACTS - stated by the user with evidence]\n${included.join('\n')}`;
+        } catch (e: any) {
+            console.warn('[CHAT] verified facts block unavailable (honest skip):', e?.message);
+            return '';
         }
     }
 
