@@ -60,6 +60,8 @@ export class ToolHandler {
             // Research Tools (Phase 11)
             case 'web_search':
                 return await this.handleWebSearch(args as import('./definitions').WebSearchArgs);
+            case 'recall_deep':
+                return await this.handleRecallDeep(args as import('./definitions').RecallDeepArgs);
             case 'read_url':
                 return await this.handleReadUrl(args as import('./definitions').ReadUrlArgs);
             // Meta Tools (Self-Extension)
@@ -558,6 +560,30 @@ export class ToolHandler {
         } catch (e: any) {
             console.error(`[ToolHandler] ❌ Web search failed:`, e);
             return { error: `Web search failed: ${e.message}` };
+        }
+    }
+
+    private async handleRecallDeep(args: import('./definitions').RecallDeepArgs): Promise<any> {
+        try {
+            const { getColdArchive } = await import('../memory/coldArchive');
+            const archive = getColdArchive();
+            const entries = archive.recall(args.query, args.limit ?? 5);
+            return {
+                found: entries.length,
+                stats: archive.stats(),
+                // Full originals, verbatim — the archive keeps complete copies forever.
+                results: entries.map(e => ({
+                    id: e.node.id,
+                    archivedAt: new Date(e.archivedAt).toISOString(),
+                    reason: e.reason,
+                    originalTimestamp: new Date(e.node.timestamp).toISOString(),
+                    tags: e.node.tags,
+                    content: e.node.content
+                }))
+            };
+        } catch (e: any) {
+            console.error('[ToolHandler] recall_deep failed:', e);
+            return { error: `recall_deep failed: ${e.message}` };
         }
     }
 
