@@ -2,23 +2,29 @@
  * USER PROFILE SERVICE
  * =====================
  * Dedicated service for managing user-specific information.
- * Based on best practices from Claude, Gemini CLI, and conversational AI research.
- * 
- * Key principles:
- * - Separate user profile from general memory
- * - Persist across sessions (Redis hot-cache + Neo4j cold storage)
- * - Cheap to query (always included in context)
- * 
- * Storage Hierarchy:
- * 1. RAM (instant) - this.profile
- * 2. Redis (fast, survives app restart) - hot cache
- * 3. Neo4j (persistent, survives container restart) - cold storage
+ *
+ * [R4] Root fix: the profile used to be a singleton ('user_primary') held in
+ * RAM + one global Redis key with a Neo4j projection. The Redis fallback
+ * loses data on restart, and every request - any user, anonymous or not -
+ * read and wrote the same identity. Now:
+ *
+ * Storage Hierarchy (per user):
+ * 1. RAM (instant) - per-user map
+ * 2. SQLite (durable source of truth) - user_profiles table, survives restarts
+ * 3. Redis (hot cache, per-user key) - best-effort, loss is harmless
+ * 4. Neo4j (projection) - legacy cold store, import path for the old singleton
+ *
+ * The legacy singleton profile is only imported for the exact 'user_primary'
+ * id - it is never re-attributed to another user without verifiable
+ * provenance.
  */
 
 import { graph } from './graphService';
 import { redisClient } from './redisClient';
+import { sqliteService } from './sqliteService';
 
-const REDIS_PROFILE_KEY = 'silhouette:user_profile';
+const REDIS_PROFILE_PREFIX = 'silhouette:user_profile:';
+const LEGACY_REDIS_KEY = 'silhouette:user_profile';
 const REDIS_TTL = 86400 * 7; // 7 days
 
 export interface UserProfile {
@@ -31,43 +37,79 @@ export interface UserProfile {
     lastInteraction: number;
 }
 
-class UserProfileService {
-    private profile: UserProfile | null = null;
+export class UserProfileService {
+    private profiles = new Map<string, UserProfile>();
     private readonly PROFILE_ID = 'user_primary';
 
     constructor() {
-        // Load profile on startup (try Redis first, then Neo4j)
+        // Warm the legacy primary profile on startup (best-effort)
         this.loadProfile().catch(e =>
             console.warn('[USER_PROFILE] Failed to load initial profile:', e)
         );
     }
 
-    /**
-     * Load profile from fastest available source
-     * Order: RAM -> Redis -> Neo4j
-     */
-    async loadProfile(): Promise<UserProfile | null> {
-        // Already in RAM?
-        if (this.profile) return this.profile;
+    private resolveId(userId?: string): string {
+        return userId && userId !== 'anonymous' ? userId : this.PROFILE_ID;
+    }
 
-        // Try Redis first (faster than Neo4j)
+    /**
+     * Load profile from fastest available source.
+     * Order: RAM -> SQLite (durable) -> Redis -> Neo4j (legacy singleton only)
+     */
+    async loadProfile(userId?: string): Promise<UserProfile | null> {
+        const id = this.resolveId(userId);
+        const cached = this.profiles.get(id);
+        if (cached) return cached;
+
+        // 1. SQLite: the durable source of truth
         try {
-            const cached = await redisClient.get(REDIS_PROFILE_KEY);
-            if (cached) {
-                this.profile = JSON.parse(cached);
-                console.log(`[USER_PROFILE] ⚡ Loaded from Redis cache: ${this.profile?.name || 'Unknown'}`);
-                return this.profile;
+            const row = sqliteService.db.prepare(
+                'SELECT * FROM user_profiles WHERE user_id = ?'
+            ).get(id) as any;
+            if (row) {
+                const profile: UserProfile = {
+                    id,
+                    name: row.name ?? undefined,
+                    preferredLanguage: row.preferred_language || 'auto',
+                    preferences: JSON.parse(row.preferences || '{}'),
+                    facts: JSON.parse(row.facts || '[]'),
+                    extractedAt: row.extracted_at || Date.now(),
+                    lastInteraction: row.last_interaction || Date.now()
+                };
+                this.profiles.set(id, profile);
+                return profile;
+            }
+        } catch (e) {
+            console.warn('[USER_PROFILE] SQLite load failed, trying cache/graph:', e);
+        }
+
+        // 2. Redis hot cache (per-user, then legacy global for user_primary)
+        try {
+            const cachedStr = await redisClient.get(REDIS_PROFILE_PREFIX + id)
+                || (id === this.PROFILE_ID ? await redisClient.get(LEGACY_REDIS_KEY) : null);
+            if (cachedStr) {
+                const profile = JSON.parse(cachedStr);
+                profile.id = id;
+                this.profiles.set(id, profile);
+                console.log(`[USER_PROFILE] ⚡ Loaded from Redis cache: ${profile?.name || 'Unknown'} (${id})`);
+                // Re-durabilize into SQLite so a Redis loss can never lose it again
+                await this.persistToSqlite(profile);
+                return profile;
             }
         } catch (e) {
             console.warn('[USER_PROFILE] Redis cache miss, trying Neo4j...');
         }
 
-        // Fallback to Neo4j
-        return this.loadFromGraph();
+        // 3. Neo4j: only the legacy singleton id is imported - never
+        //    re-attribute another user's data without verifiable provenance.
+        if (id === this.PROFILE_ID) {
+            return this.loadFromGraph();
+        }
+        return null;
     }
 
     /**
-     * Load user profile from Neo4j (cold storage)
+     * Load the legacy singleton profile from Neo4j (cold storage)
      */
     async loadFromGraph(): Promise<UserProfile | null> {
         try {
@@ -80,7 +122,7 @@ class UserProfileService {
 
             if (result && result.length > 0) {
                 const row = result[0];
-                this.profile = {
+                const profile: UserProfile = {
                     id: this.PROFILE_ID,
                     name: row.name,
                     preferredLanguage: row.preferredLanguage || 'auto',
@@ -89,12 +131,14 @@ class UserProfileService {
                     extractedAt: row.extractedAt || Date.now(),
                     lastInteraction: row.lastInteraction || Date.now()
                 };
-                console.log(`[USER_PROFILE] ✅ Loaded from Neo4j: ${this.profile.name || 'Unknown'}`);
+                this.profiles.set(this.PROFILE_ID, profile);
+                console.log(`[USER_PROFILE] ✅ Loaded from Neo4j: ${profile.name || 'Unknown'}`);
 
-                // Warm up Redis cache
-                await this.cacheToRedis();
+                // Re-durabilize + warm cache
+                await this.persistToSqlite(profile);
+                await this.cacheToRedis(profile);
 
-                return this.profile;
+                return profile;
             }
         } catch (e) {
             console.warn('[USER_PROFILE] Failed to load from graph:', e);
@@ -103,23 +147,40 @@ class UserProfileService {
     }
 
     /**
-     * Cache profile to Redis for fast access
+     * Cache profile to Redis for fast access (best-effort; SQLite is durable)
      */
-    private async cacheToRedis(): Promise<void> {
-        if (!this.profile) return;
+    private async cacheToRedis(profile: UserProfile): Promise<void> {
         try {
-            await redisClient.set(REDIS_PROFILE_KEY, JSON.stringify(this.profile), REDIS_TTL);
-            console.log('[USER_PROFILE] ⚡ Cached to Redis');
+            await redisClient.set(REDIS_PROFILE_PREFIX + profile.id, JSON.stringify(profile), REDIS_TTL);
         } catch (e) {
             console.warn('[USER_PROFILE] Failed to cache to Redis:', e);
         }
     }
 
     /**
+     * Durable write: SQLite upsert. This is the write that must never be lost.
+     */
+    private async persistToSqlite(profile: UserProfile): Promise<void> {
+        sqliteService.db.prepare(`
+            INSERT INTO user_profiles (user_id, name, preferred_language, preferences, facts, extracted_at, last_interaction)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                name = excluded.name,
+                preferred_language = excluded.preferred_language,
+                preferences = excluded.preferences,
+                facts = excluded.facts,
+                extracted_at = excluded.extracted_at,
+                last_interaction = excluded.last_interaction
+        `).run(profile.id, profile.name ?? null, profile.preferredLanguage,
+            JSON.stringify(profile.preferences), JSON.stringify(profile.facts),
+            profile.extractedAt, profile.lastInteraction);
+    }
+
+    /**
      * Extract user information from a message
      * Called on every user message to detect name, preferences, etc.
      */
-    async extractFromMessage(message: string): Promise<boolean> {
+    async extractFromMessage(message: string, userId?: string): Promise<boolean> {
         let updated = false;
 
         // Name extraction patterns
@@ -135,7 +196,7 @@ class UserProfileService {
                 const name = match[1].trim();
                 const skipWords = ['el', 'la', 'un', 'una', 'the', 'a', 'an', 'que', 'de'];
                 if (!skipWords.includes(name.toLowerCase()) && name.length > 1) {
-                    await this.setName(name);
+                    await this.setName(name, userId);
                     updated = true;
                     break;
                 }
@@ -145,11 +206,11 @@ class UserProfileService {
         // Language preference detection
         if (message.toLowerCase().includes('habla en español') ||
             message.toLowerCase().includes('responde en español')) {
-            await this.setPreference('preferredLanguage', 'es');
+            await this.setPreference('preferredLanguage', 'es', userId);
             updated = true;
         } else if (message.toLowerCase().includes('speak in english') ||
             message.toLowerCase().includes('respond in english')) {
-            await this.setPreference('preferredLanguage', 'en');
+            await this.setPreference('preferredLanguage', 'en', userId);
             updated = true;
         }
 
@@ -162,7 +223,7 @@ class UserProfileService {
         for (const pattern of rememberPatterns) {
             const match = message.match(pattern);
             if (match && match[1]) {
-                await this.addFact(match[1].trim());
+                await this.addFact(match[1].trim(), userId);
                 updated = true;
             }
         }
@@ -171,52 +232,56 @@ class UserProfileService {
     }
 
     /**
+     * Get an existing profile or create an empty one (RAM + durable on persist)
+     */
+    private async getOrCreate(userId?: string): Promise<UserProfile> {
+        const id = this.resolveId(userId);
+        const existing = await this.loadProfile(userId);
+        if (existing) return existing;
+        const profile = this.createEmptyProfile(id);
+        this.profiles.set(id, profile);
+        return profile;
+    }
+
+    /**
      * Set user name
      */
-    async setName(name: string): Promise<void> {
-        console.log(`[USER_PROFILE] 👤 Setting user name: ${name}`);
+    async setName(name: string, userId?: string): Promise<void> {
+        console.log(`[USER_PROFILE] 👤 Setting user name: ${name} (${this.resolveId(userId)})`);
 
-        if (!this.profile) {
-            this.profile = this.createEmptyProfile();
-        }
-
-        this.profile.name = name;
-        this.profile.extractedAt = Date.now();
-        await this.persist();
+        const profile = await this.getOrCreate(userId);
+        profile.name = name;
+        profile.extractedAt = Date.now();
+        await this.persist(profile);
     }
 
     /**
      * Set a user preference
      */
-    async setPreference(key: string, value: any): Promise<void> {
-        console.log(`[USER_PROFILE] ⚙️ Setting preference: ${key} = ${value}`);
+    async setPreference(key: string, value: any, userId?: string): Promise<void> {
+        console.log(`[USER_PROFILE] ⚙️ Setting preference: ${key} = ${value} (${this.resolveId(userId)})`);
 
-        if (!this.profile) {
-            this.profile = this.createEmptyProfile();
-        }
-
-        this.profile.preferences[key] = value;
-        await this.persist();
+        const profile = await this.getOrCreate(userId);
+        profile.preferences[key] = value;
+        await this.persist(profile);
     }
 
     /**
      * Add a user-stated fact
      */
-    async addFact(fact: string): Promise<void> {
-        console.log(`[USER_PROFILE] 📝 Adding fact: ${fact}`);
+    async addFact(fact: string, userId?: string): Promise<void> {
+        console.log(`[USER_PROFILE] 📝 Adding fact: ${fact} (${this.resolveId(userId)})`);
 
-        if (!this.profile) {
-            this.profile = this.createEmptyProfile();
-        }
+        const profile = await this.getOrCreate(userId);
 
         // Avoid duplicates
-        if (!this.profile.facts.includes(fact)) {
-            this.profile.facts.push(fact);
+        if (!profile.facts.includes(fact)) {
+            profile.facts.push(fact);
             // Keep only last 20 facts
-            if (this.profile.facts.length > 20) {
-                this.profile.facts = this.profile.facts.slice(-20);
+            if (profile.facts.length > 20) {
+                profile.facts = profile.facts.slice(-20);
             }
-            await this.persist();
+            await this.persist(profile);
         }
     }
 
@@ -224,28 +289,29 @@ class UserProfileService {
      * Get profile context for prompt injection
      * This is called on EVERY chat request (cheap operation)
      */
-    getProfileContext(): string {
-        if (!this.profile) return '';
+    getProfileContext(userId?: string): string {
+        const profile = this.profiles.get(this.resolveId(userId));
+        if (!profile) return '';
 
         const parts: string[] = ['[USER PROFILE]'];
 
-        if (this.profile.name) {
-            parts.push(`- Name: ${this.profile.name}`);
+        if (profile.name) {
+            parts.push(`- Name: ${profile.name}`);
         }
 
-        if (this.profile.preferredLanguage && this.profile.preferredLanguage !== 'auto') {
-            parts.push(`- Preferred Language: ${this.profile.preferredLanguage === 'es' ? 'Spanish' : 'English'}`);
+        if (profile.preferredLanguage && profile.preferredLanguage !== 'auto') {
+            parts.push(`- Preferred Language: ${profile.preferredLanguage === 'es' ? 'Spanish' : 'English'}`);
         }
 
         // Include key preferences
-        const prefs = Object.entries(this.profile.preferences);
+        const prefs = Object.entries(profile.preferences);
         if (prefs.length > 0) {
             parts.push(`- Preferences: ${prefs.map(([k, v]) => `${k}=${v}`).join(', ')}`);
         }
 
         // Include recent facts
-        if (this.profile.facts.length > 0) {
-            parts.push(`- User Facts: ${this.profile.facts.slice(-5).join('; ')}`);
+        if (profile.facts.length > 0) {
+            parts.push(`- User Facts: ${profile.facts.slice(-5).join('; ')}`);
         }
 
         return parts.length > 1 ? parts.join('\n') : '';
@@ -254,22 +320,27 @@ class UserProfileService {
     /**
      * Get just the user name (for quick checks)
      */
-    getName(): string | undefined {
-        return this.profile?.name;
+    getName(userId?: string): string | undefined {
+        return this.profiles.get(this.resolveId(userId))?.name;
     }
 
     /**
-     * Persist profile to Redis (hot) and Neo4j (cold)
+     * Persist profile: SQLite (durable) -> Redis (hot cache) -> Neo4j (projection)
      */
-    private async persist(): Promise<void> {
-        if (!this.profile) return;
+    private async persist(profile: UserProfile): Promise<void> {
+        profile.lastInteraction = Date.now();
 
-        this.profile.lastInteraction = Date.now();
+        // 1. SQLite first: the durable write. If this fails, say so loudly.
+        try {
+            await this.persistToSqlite(profile);
+        } catch (e) {
+            console.error('[USER_PROFILE] ❌ DURABLE WRITE FAILED (SQLite):', e);
+        }
 
-        // 1. Update Redis cache first (fast)
-        await this.cacheToRedis();
+        // 2. Update Redis hot cache
+        await this.cacheToRedis(profile);
 
-        // 2. Persist to Neo4j (cold storage)
+        // 3. Persist to Neo4j (cold-storage projection)
         try {
             await graph.runQuery(`
                 MERGE (u:User {id: $id})
@@ -280,16 +351,14 @@ class UserProfileService {
                     u.extractedAt = $extractedAt,
                     u.lastInteraction = $lastInteraction
             `, {
-                id: this.PROFILE_ID,
-                name: this.profile.name || null,
-                preferredLanguage: this.profile.preferredLanguage,
-                preferences: JSON.stringify(this.profile.preferences),
-                facts: JSON.stringify(this.profile.facts),
-                extractedAt: this.profile.extractedAt,
-                lastInteraction: this.profile.lastInteraction
+                id: profile.id,
+                name: profile.name || null,
+                preferredLanguage: profile.preferredLanguage,
+                preferences: JSON.stringify(profile.preferences),
+                facts: JSON.stringify(profile.facts),
+                extractedAt: profile.extractedAt,
+                lastInteraction: profile.lastInteraction
             });
-
-            console.log('[USER_PROFILE] ✅ Persisted to Neo4j');
         } catch (e) {
             console.error('[USER_PROFILE] ❌ Failed to persist to Neo4j:', e);
         }
@@ -298,9 +367,9 @@ class UserProfileService {
     /**
      * Create empty profile
      */
-    private createEmptyProfile(): UserProfile {
+    private createEmptyProfile(id: string = this.PROFILE_ID): UserProfile {
         return {
-            id: this.PROFILE_ID,
+            id,
             preferredLanguage: 'auto',
             preferences: {},
             facts: [],
