@@ -270,9 +270,140 @@ class GraphService {
         }
     }
 
+    /**
+     * True when the Cypher statement mutates the graph. Write statements must
+     * NEVER fall through to the read-pattern handlers below: a CREATE/SET/DELETE
+     * that matches a read pattern (e.g. any query containing "fact") used to
+     * return SELECT results without writing, producing false success.
+     */
+    private isWriteQuery(cypher: string): boolean {
+        return /\b(CREATE|MERGE|SET|DELETE|DETACH|REMOVE)\b/i.test(cypher);
+    }
+
+    /**
+     * Parse a Cypher property map (`{ id: $id, createdAt: timestamp(), ... }`)
+     * into a plain object using the supplied params.
+     */
+    private parseCypherProps(propsBlock: string, params: any): Record<string, any> {
+        const props: Record<string, any> = {};
+        const inner = propsBlock.trim().replace(/^\{/, '').replace(/\}$/, '').trim();
+        if (!inner) return props;
+
+        for (const part of inner.split(',')) {
+            const m = part.match(/^\s*([\w]+)\s*:\s*(.+?)\s*$/s);
+            if (!m) continue;
+            const [, key, rawVal] = m;
+            if (rawVal.startsWith('$')) {
+                props[key] = params[rawVal.slice(1)] ?? null;
+            } else if (/^timestamp\(\)$/i.test(rawVal)) {
+                props[key] = Date.now();
+            } else if (/^true$/i.test(rawVal)) {
+                props[key] = true;
+            } else if (/^false$/i.test(rawVal)) {
+                props[key] = false;
+            } else if (!isNaN(Number(rawVal)) && rawVal.trim() !== '') {
+                props[key] = Number(rawVal);
+            } else {
+                props[key] = rawVal.replace(/^['"]|['"]$/g, '');
+            }
+        }
+        return props;
+    }
+
+    /**
+     * Execute a write Cypher statement against the SQLite fallback graph.
+     * Supports the statement shapes the services actually emit (Fact CRUD,
+     * User MERGE + relationship MERGE). Anything else throws an explicit
+     * error: an unsupported write must fail loudly, never fake success.
+     */
+    private async runSqliteWrite(cypher: string, params: any = {}): Promise<any[]> {
+        const { sqliteService } = await import('./sqliteService');
+        const now = Date.now();
+
+        // A) CREATE (n:Label { ...props }) — single node creation
+        const createMatch = cypher.match(/CREATE\s*\(\s*(\w+)\s*(?::\s*(\w+))?\s*(\{[\s\S]*?\})?\s*\)/i);
+        if (createMatch && !/\b(MATCH|MERGE|DELETE)\b/i.test(cypher)) {
+            const label = createMatch[2] || 'Node';
+            const properties = this.parseCypherProps(createMatch[3] || '', params);
+            const id = String(properties.id || `node-${now}-${Math.random().toString(36).slice(2, 8)}`);
+            properties.id = id;
+            sqliteService.db.prepare(
+                'INSERT OR REPLACE INTO graph_nodes (id, label, name, properties, last_updated) VALUES (?, ?, ?, ?, ?)'
+            ).run(id, label, properties.name ? String(properties.name) : null, JSON.stringify(properties), now);
+            console.log(`[GRAPH] 💾 SQLite fallback: CREATE (:${label}) id=${id}`);
+            return [{ created: 1, id, backend: 'sqlite' }];
+        }
+
+        // B) MERGE (u:User {id: $userId}) ... MERGE (u)-[:REL]->(f) — user + relationship upsert
+        const userMerge = cypher.match(/MERGE\s*\(\s*(\w+)\s*:\s*User\s*\{[\s\S]*?\}/i);
+        const relMerge = cypher.match(/MERGE\s*\(\s*\w+\s*\)\s*-\s*\[\s*:\s*(\w+)\s*\]\s*->\s*\(\s*\w+\s*\)/i);
+        if (userMerge && relMerge) {
+            const userId = params.userId;
+            const factId = params.factId;
+            if (!userId || !factId) {
+                throw new Error('[GRAPH] SQLite fallback: MERGE User relationship requires $userId and $factId params.');
+            }
+            const factNode = sqliteService.db.prepare('SELECT id FROM graph_nodes WHERE id = ?').get(factId);
+            if (!factNode) {
+                throw new Error(`[GRAPH] SQLite fallback: cannot link ${relMerge[1]} — target node ${factId} does not exist.`);
+            }
+            sqliteService.db.prepare(
+                'INSERT OR IGNORE INTO graph_nodes (id, label, name, properties, last_updated) VALUES (?, ?, ?, ?, ?)'
+            ).run(userId, 'User', null, JSON.stringify({ id: userId }), now);
+            sqliteService.db.prepare(
+                'INSERT OR IGNORE INTO graph_edges (source, target, type, properties, last_updated) VALUES (?, ?, ?, ?, ?)'
+            ).run(userId, factId, relMerge[1], '{}', now);
+            console.log(`[GRAPH] 💾 SQLite fallback: MERGE (:User {id: ${userId}})-[:${relMerge[1]}]->(${factId})`);
+            return [{ created: 1, backend: 'sqlite' }];
+        }
+
+        // C) MATCH (f:Fact {id: $id}) SET f.prop = ... — fact update
+        if (/^\s*MATCH\s*\(\s*\w+\s*:\s*Fact/i.test(cypher) && /\bSET\b/i.test(cypher)) {
+            const id = params.id;
+            const row = sqliteService.db.prepare('SELECT properties FROM graph_nodes WHERE id = ?').get(id) as any;
+            if (!row) {
+                console.warn(`[GRAPH] SQLite fallback: SET matched 0 Fact nodes (id=${id}).`);
+                return [{ updated: 0, backend: 'sqlite' }];
+            }
+            const properties = JSON.parse(row.properties);
+            const setClause = cypher.slice(cypher.search(/\bSET\b/i) + 3);
+            const assignRe = /\w+\.(\w+)\s*=\s*(\$\w+|timestamp\(\))/g;
+            let m: RegExpExecArray | null;
+            while ((m = assignRe.exec(setClause)) !== null) {
+                const [, key, rawVal] = m;
+                if (rawVal.startsWith('$')) properties[key] = params[rawVal.slice(1)] ?? null;
+                else if (/^timestamp\(\)$/i.test(rawVal)) properties[key] = Date.now();
+            }
+            sqliteService.db.prepare('UPDATE graph_nodes SET properties = ?, last_updated = ? WHERE id = ?')
+                .run(JSON.stringify(properties), now, id);
+            console.log(`[GRAPH] 💾 SQLite fallback: UPDATE (:Fact) id=${id}`);
+            return [{ updated: 1, id, backend: 'sqlite' }];
+        }
+
+        // D) MATCH (f:Fact {id: $id}) DETACH DELETE f — fact removal
+        if (/DETACH\s+DELETE/i.test(cypher) && /\(\s*\w+\s*:\s*Fact/i.test(cypher)) {
+            const id = params.id;
+            const edges = sqliteService.db.prepare('DELETE FROM graph_edges WHERE source = ? OR target = ?').run(id, id);
+            const node = sqliteService.db.prepare('DELETE FROM graph_nodes WHERE id = ? AND label = ?').run(id, 'Fact');
+            console.log(`[GRAPH] 💾 SQLite fallback: DELETE (:Fact) id=${id} (nodes=${node.changes}, edges=${edges.changes})`);
+            return [{ deleted: node.changes, edgesDeleted: edges.changes, backend: 'sqlite' }];
+        }
+
+        // Anything else: fail honestly. A swallowed write is worse than a loud error.
+        throw new Error(
+            `[GRAPH] SQLite fallback does not support this write statement; it was NOT executed. ` +
+            `Run with Neo4j available or extend runSqliteWrite. Statement: ${cypher.replace(/\s+/g, ' ').slice(0, 160)}`
+        );
+    }
+
     private async runSqliteQuery(cypher: string, params: any = {}): Promise<any[]> {
         const { sqliteService } = await import('./sqliteService');
         const queryLower = cypher.toLowerCase().trim();
+
+        // 0. Write statements: execute them for real or fail honestly.
+        if (this.isWriteQuery(cypher)) {
+            return this.runSqliteWrite(cypher, params);
+        }
 
         // 1. Connection check / test query
         if (queryLower.includes('return 1') && queryLower.length < 20) {
@@ -540,11 +671,14 @@ class GraphService {
             
             const facts = rows.map(r => {
                 const props = JSON.parse(r.properties);
+                // Writers store `type`/`createdAt`; legacy readers expected
+                // `category`/`timestamp`. Accept both so written facts are readable.
                 return {
-                    category: props.category || 'general',
+                    category: props.category || props.type || 'general',
                     content: props.content || '',
                     confidence: typeof props.confidence === 'number' ? props.confidence : 0.9,
-                    timestamp: typeof props.timestamp === 'number' ? props.timestamp : Date.now()
+                    timestamp: typeof props.timestamp === 'number' ? props.timestamp
+                        : (typeof props.createdAt === 'number' ? props.createdAt : Date.now())
                 };
             });
             facts.sort((a, b) => b.timestamp - a.timestamp);
@@ -1029,17 +1163,20 @@ class GraphService {
     public async getUserFacts(userId?: string): Promise<{ category: string; content: string; confidence: number; timestamp: number }[]> {
         try {
             // If userId is provided, filter by that user. Otherwise, fallback to global (admin only)
+            // Writers store `type`/`createdAt`; legacy readers expected
+            // `category`/`timestamp`. Coalesce both so facts are readable
+            // regardless of which schema wrote them.
             const query = userId ? `
                 MATCH (u:User {id: $userId})-[:HAS_FACT]->(f:Fact)
-                RETURN f.category as category, f.content as content, 
-                       f.confidence as confidence, f.timestamp as timestamp
-                ORDER BY f.timestamp DESC
+                RETURN coalesce(f.category, f.type, 'general') as category, f.content as content,
+                       f.confidence as confidence, coalesce(f.timestamp, f.createdAt, 0) as timestamp
+                ORDER BY timestamp DESC
                 LIMIT 50
             ` : `
                 MATCH (f:Fact)
-                RETURN f.category as category, f.content as content, 
-                       f.confidence as confidence, f.timestamp as timestamp
-                ORDER BY f.timestamp DESC
+                RETURN coalesce(f.category, f.type, 'general') as category, f.content as content,
+                       f.confidence as confidence, coalesce(f.timestamp, f.createdAt, 0) as timestamp
+                ORDER BY timestamp DESC
                 LIMIT 50
             `;
 
