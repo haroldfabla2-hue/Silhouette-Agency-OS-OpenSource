@@ -21,7 +21,7 @@ export interface ProviderDefinition {
 export const builtInProviders: ProviderDefinition[] = [
     { id: 'MINIMAX', transport: 'legacy', model: 'MiniMax-M2.7-highspeed', priority: 10 },
     { id: 'GEMINI', transport: 'legacy', model: 'gemini-2.0-flash', priority: 20 },
-    { id: 'GROQ', transport: 'legacy', model: 'llama-3.3-70b-versatile', priority: 30 },
+    { id: 'GROQ', transport: 'openai-compatible', baseUrl: 'https://api.groq.com/openai/v1', apiKeyEnv: 'GROQ_API_KEY', modelEnv: 'GROQ_MODEL', model: 'llama-3.3-70b-versatile', discovery: false, priority: 30 },
     { id: 'DEEPSEEK', transport: 'legacy', model: 'deepseek-chat', priority: 40 },
     { id: 'OLLAMA', transport: 'legacy', model: 'qwen2.5-coder:7b', priority: 50 },
     // Kept explicitly selectable, preserving the previous fallback order.
