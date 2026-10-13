@@ -124,6 +124,7 @@ export enum SystemProtocol {
   SECURITY_ALERT = 'PROTOCOL_SECURITY_ALERT', // NEW: Security alerts
   TOOL_EVOLUTION = 'PROTOCOL_TOOL_EVOLUTION', // Self-Evolution: Tool optimization
   IDENTITY_EVOLVED = 'PROTOCOL_IDENTITY_EVOLVED', // Identity evolution: versioned IDENTITY.md/SOUL.md change
+  IDENTITY_ADJUSTMENT_PENDING = 'PROTOCOL_IDENTITY_ADJUSTMENT_PENDING', // Soul adjustment parked: not enough accumulated evidence yet
 
   // Voice System Events (PA-008)
   VOICE_ENGINE_ONLINE = 'PROTOCOL_VOICE_ENGINE_ONLINE',
