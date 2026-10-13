@@ -348,16 +348,19 @@ export class SystemController {
             const { orchestrator } = await import('../../services/orchestrator');
             const { sqliteService } = await import('../../services/sqliteService');
 
-            // Generate or fetch Brain Telemetry
+            // Fetch Brain Telemetry — READ-ONLY snapshot.
+            // A GET endpoint must never generate thought: cycles belong to the
+            // autonomous daemon or the explicit POST /v1/system/narrative/trigger.
             let brainStats = null;
             try {
                 const { continuum } = await import('../../services/continuumMemory');
                 const { thoughtNarrator } = await import('../../services/cognitive/thoughtNarrator');
                 const memStats = await continuum.getStats();
-                const narrative = await thoughtNarrator.generateNarrative();
+                const narrative = await thoughtNarrator.getLatestNarrative();
                 brainStats = {
                     workingMemoryItems: memStats.workingMemoryItems,
-                    latestNarrative: narrative
+                    latestNarrative: narrative ? narrative.text : null,
+                    latestNarrativeAt: narrative ? narrative.timestamp : null
                 };
             } catch (e) {
                 console.warn("[SYSTEM] Failed to fetch brain telemetry", e);

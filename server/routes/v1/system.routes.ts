@@ -53,7 +53,25 @@ router.get('/skills', async (req, res) => {
 });
 
 // Route: /v1/system/full-state (UNIFIED - combines telemetry, agents, introspection)
+// READ-ONLY snapshot: this GET never generates thought (Fase 0: observing != acting).
 router.get('/full-state', (req, res) => systemController.getFullState(req, res));
+
+// Route: /v1/system/narrative/trigger - EXPLICIT manual consciousness cycle.
+// The only HTTP entry point that may generate thought; GET endpoints stay pure.
+router.post('/narrative/trigger', async (req, res) => {
+    try {
+        const { thoughtNarrator } = await import('../../../services/cognitive/thoughtNarrator');
+        const narrative = await thoughtNarrator.generateNarrative('manual');
+        res.json({
+            status: 'ok',
+            generated: narrative !== null,
+            narrative,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error: any) {
+        res.status(500).json({ status: 'error', error: error.message });
+    }
+});
 
 // [NEURO-UPDATE] Introspection Routes (Mapped under /system or moved to own router?)
 // For now, let's keep it here but the Frontend expects /v1/introspection/state which might be its own router

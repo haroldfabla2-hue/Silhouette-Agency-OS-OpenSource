@@ -24,6 +24,12 @@ import { narratorLog } from '../logger';
  *   - Stored in ContinuumMemory as high-importance signals for agents to read.
  */
 export class ThoughtNarrator {
+    /** Last completed consciousness cycle (read-only snapshot for observability endpoints). */
+    private lastNarrative: { text: string; cycleId: string; timestamp: number; trigger: string } | null = null;
+
+    /** Single-flight guard: only one consciousness cycle may run at a time. */
+    private inFlightCycle: Promise<string | null> | null = null;
+
     private extractionPatterns = {
         name: [
             /(?:me llamo|mi nombre es|soy)\s+([A-Za-záéíóúñÁÉÍÓÚÑ]+)/i,
@@ -128,8 +134,63 @@ export class ThoughtNarrator {
      *   3. SYSTEM 2 → rationalizeThought() → 5-dimension evaluation (slow/deliberate)
      *   4. ROUTE → based on disposition (ACT_NOW, DELIBERATE, REFLECT, INHIBIT, ASK_USER)
      */
-    public async generateNarrative(): Promise<string | null> {
-        console.log(`[NARRATOR] 🧠 Global Consciousness cycle starting...`);
+    /**
+     * Run a consciousness cycle. Side-effecting BY DESIGN: may call the LLM,
+     * store thoughts and (via ASK_USER/ACT_NOW) trigger actions.
+     *
+     * Observability endpoints must NEVER call this; use getLatestNarrative().
+     * Only the autonomous scheduler (unifiedDaemon / cognitiveScheduler) or an
+     * explicit manual trigger (POST /v1/system/narrative/trigger) may run cycles.
+     *
+     * Single-flight: concurrent callers share the in-flight cycle instead of
+     * stacking duplicate LLM calls.
+     */
+    public async generateNarrative(trigger: 'daemon' | 'scheduler' | 'manual' = 'daemon'): Promise<string | null> {
+        if (this.inFlightCycle) {
+            console.log(`[NARRATOR] ♻️ Cycle already in flight; sharing it (trigger=${trigger}).`);
+            return this.inFlightCycle;
+        }
+        const cycle = this.runConsciousnessCycle(trigger);
+        this.inFlightCycle = cycle;
+        try {
+            return await cycle;
+        } finally {
+            this.inFlightCycle = null;
+        }
+    }
+
+    /**
+     * Read-only view of the most recent thought. NEVER calls the LLM,
+     * NEVER stores, NEVER acts. Safe for polling GET endpoints.
+     * Returns null when no cycle has completed (honest absence, not a fake zero).
+     */
+    public async getLatestNarrative(): Promise<{ text: string; cycleId: string; timestamp: number; trigger: string } | null> {
+        if (this.lastNarrative) return this.lastNarrative;
+
+        // Cold start (e.g. after restart): recover the newest stored epiphany
+        // from ContinuumMemory without generating anything.
+        try {
+            const stored = await continuum.retrieve('EPIPHANY', 'epiphany');
+            if (stored && stored.length > 0) {
+                const newest = [...stored].sort((a, b) => b.timestamp - a.timestamp)[0];
+                this.lastNarrative = {
+                    text: newest.content,
+                    cycleId: `restored-${newest.id}`,
+                    timestamp: newest.timestamp,
+                    trigger: 'restored'
+                };
+                return this.lastNarrative;
+            }
+        } catch (e: any) {
+            console.warn(`[NARRATOR] Could not restore last narrative from memory: ${e.message}`);
+        }
+        return null;
+    }
+
+    private async runConsciousnessCycle(trigger: 'daemon' | 'scheduler' | 'manual'): Promise<string | null> {
+        const cycleId = `cycle-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const cycleStart = Date.now();
+        console.log(`[NARRATOR] 🧠 Global Consciousness cycle ${cycleId} starting (trigger=${trigger})...`);
 
         try {
             // ─── SENSE 1: GRAPH PERCEPTION ───────────────────────────
@@ -260,11 +321,18 @@ export class ThoughtNarrator {
                 }
             }
 
+            this.lastNarrative = {
+                text: structured.thought,
+                cycleId,
+                timestamp: Date.now(),
+                trigger
+            };
             console.log(`[NARRATOR] ✨ [${structured.intent}→${disposition.action}] ${structured.thought.substring(0, 100)}...`);
+            console.log(`[NARRATOR] 🧠 Cycle ${cycleId} completed in ${Date.now() - cycleStart}ms (trigger=${trigger}, disposition=${disposition.action}).`);
             return structured.thought;
 
         } catch (e: any) {
-            console.error(`[NARRATOR] Consciousness cycle failed: ${e.message}`);
+            console.error(`[NARRATOR] Consciousness cycle ${cycleId} failed after ${Date.now() - cycleStart}ms: ${e.message}`);
             systemBus.emit(SystemProtocol.THOUGHT_EMISSION, {
                 agentId: 'GLOBAL_CONSCIOUSNESS',
                 agentName: 'Silhouette Narrator',
@@ -795,4 +863,3 @@ If you have NOTHING meaningful to say, respond with: {"thought":"","intent":"REF
 }
 
 export const thoughtNarrator = new ThoughtNarrator();
-

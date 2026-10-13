@@ -239,20 +239,29 @@ class ZhipuService {
     }
 
     /**
-     * Find best available key using Per-Key Tokens + Least Connections + Round Robin
+     * List keys that could serve a request right now (refilled, not suspended,
+     * under concurrency cap, with tokens left). Pure: consumes NO tokens.
      */
-    private findBestKey(): KeyStatus | null {
+    private getAvailableKeys(): KeyStatus[] {
         const now = Date.now();
 
-        // Refill tokens for all keys
+        // Refill tokens for all keys (time-based grant, not consumption)
         this.keys.forEach(k => this.refillKeyTokens(k));
 
         // Filter available keys (not suspended, not at max capacity, HAS TOKENS)
-        const availableKeys = this.keys.filter(k =>
+        return this.keys.filter(k =>
             k.suspendedUntil <= now &&
             k.activeConnections < this.CONFIG.MAX_CONCURRENT_PER_KEY &&
             k.tokens > 0  // Must have tokens available
         );
+    }
+
+    /**
+     * Find best available key using Per-Key Tokens + Least Connections + Round Robin.
+     * Consumes one token from the selected key: call ONLY when dispatching a request.
+     */
+    private findBestKey(): KeyStatus | null {
+        const availableKeys = this.getAvailableKeys();
 
         if (availableKeys.length === 0) return null;
 
@@ -273,10 +282,11 @@ class ZhipuService {
     }
 
     /**
-     * Check if service has capacity
+     * Check if service has capacity. Pure health check: must NOT consume
+     * tokens (dispatch-time reservation lives in findBestKey()).
      */
     public isAvailable(purpose: KeyPurpose = 'agents'): boolean {
-        return this.findBestKey() !== null;
+        return this.getAvailableKeys().length > 0;
     }
 
     /**

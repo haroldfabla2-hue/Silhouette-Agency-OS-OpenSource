@@ -17,7 +17,8 @@ router.get('/brain', async (req, res) => {
         const memoryStats = await continuum.getStats();
         const sessionStats = sessionManager.getStats();
 
-        const latestNarrative = await thoughtNarrator.generateNarrative(); // Forces a stream thought if none recently
+        // READ-ONLY snapshot: observing the brain must not make it think.
+        const latestNarrative = await thoughtNarrator.getLatestNarrative();
 
         // Return a unified view of the OS's cognitive health
         res.json({
@@ -25,7 +26,8 @@ router.get('/brain', async (req, res) => {
             uptime_seconds: process.uptime(),
             cognitive_state: {
                 working_memory_items: memoryStats.workingMemoryItems,
-                latest_narrative: latestNarrative,
+                latest_narrative: latestNarrative ? latestNarrative.text : null,
+                latest_narrative_at: latestNarrative ? latestNarrative.timestamp : null,
             },
             memory_health: {
                 redis_connected: !redisClient.isMockMode(),
