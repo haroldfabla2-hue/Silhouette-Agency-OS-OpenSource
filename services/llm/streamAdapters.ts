@@ -12,6 +12,7 @@ import { systemBus } from '../systemBus';
 import { InferenceError, type PreparedAgentRequest } from './inference';
 import type { ProviderDefinition } from './providerRegistry';
 import { OpenAICompatibleClient, type ChatMessage } from './openAICompatible';
+import { DEFAULT_GEMINI_MODEL } from './defaultModels';
 
 export interface StreamAdapter {
     readonly id: string;
@@ -57,7 +58,7 @@ export function zhipuAdapter(): StreamAdapter {
 
 // --- GEMINI: native SDK streaming with native tools (googleSearch / codeExecution) ---
 export function geminiAdapter(): StreamAdapter {
-    const DEFAULT_MODEL = 'gemini-2.0-flash-exp';
+    const DEFAULT_MODEL = DEFAULT_GEMINI_MODEL;
     return {
         id: 'GEMINI',
         isAvailable: async () => {
