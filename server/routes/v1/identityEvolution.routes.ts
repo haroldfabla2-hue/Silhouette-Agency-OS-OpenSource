@@ -6,7 +6,7 @@
  * evolution visible: who changed what, when, why, and what it looked like before.
  *
  * Endpoints:
- *  - GET /v1/identity-evolution/:agentId/history                     → full audit trail (oldest first)
+ *  - GET /v1/identity-evolution/:agentId/history                     → full audit trail (oldest first) + parked proposals
  *  - GET /v1/identity-evolution/:agentId/snapshot/:file/:version     → exact previous content
  */
 
@@ -31,7 +31,11 @@ router.get('/:agentId/history', async (req: Request, res: Response) => {
             write: (id, file, content) => agentFileSystem.writeFile(id, file, content),
             getAgentDir: (id) => agentFileSystem.getAgentDir(id)
         });
-        return res.json({ agentId, history: evolution.getHistory(agentId) });
+        return res.json({
+            agentId,
+            history: evolution.getHistory(agentId),
+            pending: evolution.getPendingAdjustments(agentId)
+        });
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
