@@ -63,6 +63,24 @@ function settle(ms = 60): Promise<void> {
     return new Promise(r => setTimeout(r, ms));
 }
 
+/**
+ * Condition-based synchronization: poll until the dispatcher reaches the
+ * expected state or fail loudly with a deadline. Fixed sleeps assume the
+ * event loop fires within N ms - false on a loaded CI runner (observed:
+ * main CI leg Node 22.18.0, run 38345940428, calls.length still 0 after
+ * 60ms). Absence assertions (nothing new may dispatch) keep fixed waits:
+ * completions are manual, so timing cannot produce a false positive there.
+ */
+async function waitFor(cond: () => boolean, what: string, timeoutMs = 8000): Promise<void> {
+    const start = Date.now();
+    while (!cond()) {
+        if (Date.now() - start > timeoutMs) {
+            throw new Error(`timed out after ${timeoutMs}ms waiting for ${what}`);
+        }
+        await new Promise(r => setTimeout(r, 5));
+    }
+}
+
 describe('R2: Zhipu conversational priority queue', () => {
 
     it('chat queued behind an in-flight background request is served next (1 key)', async () => {
@@ -71,7 +89,7 @@ describe('R2: Zhipu conversational priority queue', () => {
 
         // Background occupies the only key.
         const bg = svc.generateCompletion('extract facts', {}, 'background');
-        await settle();
+        await waitFor(() => calls.length === 1, 'background dispatch on idle system');
         expect(calls.length).toBe(1); // background dispatched immediately on idle system
 
         // Chat arrives while the key is busy: it must queue (no skipping Zhipu).
@@ -83,13 +101,13 @@ describe('R2: Zhipu conversational priority queue', () => {
         // Background finishes: CHAT is served before the queued background.
         complete(0, 'bg-done');
         await expect(bg).resolves.toBe('bg-done');
-        await settle();
+        await waitFor(() => calls.length === 2, 'chat dispatch after background completes');
         expect(calls.length).toBe(2);
         expect(JSON.stringify(calls[1].init.body)).toContain('user message');
 
         complete(1, 'chat-done');
         await expect(chat).resolves.toBe('chat-done');
-        await settle();
+        await waitFor(() => calls.length === 3, 'queued background dispatch after chat completes');
         expect(calls.length).toBe(3);
 
         complete(2, 'bg2-done');
@@ -101,7 +119,7 @@ describe('R2: Zhipu conversational priority queue', () => {
         const svc = new ZhipuService({ ...FAST, CONVERSATIONAL_STREAK_LIMIT: 3 }, oneKey, fetcher);
 
         const occupying = svc.generateCompletion('chat-0', {}, 'agents');
-        await settle();
+        await waitFor(() => calls.length === 1, 'occupying chat dispatch');
         expect(calls.length).toBe(1);
 
         // Queue: 4 chats, then 1 background.
@@ -120,8 +138,7 @@ describe('R2: Zhipu conversational priority queue', () => {
         const all = Promise.all([occupying, ...queued]);
         let completedCount = 0;
         while (completedCount < 6) {
-            for (let t = 0; t < 100 && calls.length <= completedCount; t++) await settle(5);
-            if (calls.length <= completedCount) throw new Error('dispatcher stalled');
+            await waitFor(() => calls.length > completedCount, `dispatch #${completedCount + 1} of 6`);
             const body = JSON.parse(calls[completedCount].init.body);
             dispatched.push(body.messages[1].content);
             complete(completedCount, `r${completedCount}`);
@@ -143,7 +160,7 @@ describe('R2: Zhipu conversational priority queue', () => {
         expect(internal.keys[0].tokens).toBe(tokensBefore); // health check is free
 
         const req = svc.generateCompletion('hi', {}, 'agents');
-        await settle();
+        await waitFor(() => calls.length === 1, 'dispatch reserves a token');
         expect(internal.keys[0].tokens).toBe(tokensBefore - 1); // dispatch reserves one token
         complete(0);
         await expect(req).resolves.toBeDefined();
@@ -155,7 +172,7 @@ describe('R2: Zhipu conversational priority queue', () => {
         const svc = new ZhipuService(FAST, oneKey, fetcher);
 
         const occupying = svc.generateCompletion('long chat', {}, 'agents');
-        await settle();
+        await waitFor(() => calls.length === 1, 'occupying request dispatch');
         expect(calls.length).toBe(1);
 
         const controller = new AbortController();
@@ -179,7 +196,7 @@ describe('R2: Zhipu conversational priority queue', () => {
 
         const bg = svc.generateCompletion('extract', {}, 'background');
         const chat = svc.generateCompletion('user message', {}, 'agents');
-        await settle();
+        await waitFor(() => calls.length === 2, 'parallel dispatch on both keys');
         expect(calls.length).toBe(2); // one per key: no artificial serialization
 
         complete(0); complete(1);
