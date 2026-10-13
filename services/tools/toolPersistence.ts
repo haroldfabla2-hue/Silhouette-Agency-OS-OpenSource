@@ -13,7 +13,9 @@ import fs from 'fs';
 import { DynamicTool, ToolHandler, FunctionDeclarationSchema, ToolCategory } from './toolRegistry';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
-const DB_PATH = path.join(DATA_DIR, 'tools.db');
+const DB_PATH = process.env.SILHOUETTE_TOOLS_DB_PATH
+    ? path.resolve(process.env.SILHOUETTE_TOOLS_DB_PATH)
+    : path.join(DATA_DIR, 'tools.db');
 
 class ToolPersistence {
     private db: Database.Database | null = null;
