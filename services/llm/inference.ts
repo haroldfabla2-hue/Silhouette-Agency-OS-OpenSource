@@ -64,6 +64,10 @@ export interface AgentInferenceRequest {
     model?: string;
     /** Explicit provider preference: attempted first, fallback order preserved afterwards. */
     preferredProvider?: string;
+    /** Scheduling lane: conversational traffic preempts background work in provider queues (R2). */
+    lane?: 'conversational' | 'background';
+    /** Cancellation: aborted requests are removed from provider queues and fetches. */
+    signal?: AbortSignal;
     temperature?: number;
     maxTokens?: number;
     metadata?: Record<string, unknown>;
@@ -83,6 +87,8 @@ export interface PreparedAgentRequest {
     temperature: number;
     maxTokens: number;
     toolCaller?: ToolCaller;
+    lane: 'conversational' | 'background';
+    signal?: AbortSignal;
 }
 
 export type InferenceEvent =
