@@ -34,6 +34,7 @@ import contextRoutes from './routes/v1/context.routes'; // [PA-041] Context Prio
 import selfEvolutionRoutes from './routes/v1/self-evolution.routes'; // [CI/CD] Self-Modification Review
 import driveRoutes from './routes/v1/drive.routes'; // [DRIVE] Google Drive Integration
 import identityRoutes from './routes/v1/identity.routes'; // [IDENTITY] User Auth & Device Recognition
+import identityEvolutionRoutes from './routes/v1/identityEvolution.routes'; // [IDENTITY EVOLUTION] Auditable personality history
 import gmailRoutes from './routes/v1/gmail.routes'; // [GMAIL] Email Integration
 import autonomyRoutes from './routes/v1/autonomy.routes'; // [AUTONOMY] Scheduler, Goals, Confirmations
 import productionRoutes from './routes/v1/production.routes'; // [PRODUCTION] Long-form Video Production
@@ -111,6 +112,7 @@ app.use('/v1/context', contextRoutes); // [PA-041] Context Priority System
 app.use('/v1/self-evolution', adminLimiter, selfEvolutionRoutes); // [CI/CD] + admin rate limit
 app.use('/v1/drive', driveRoutes); // [DRIVE] Google Drive Integration
 app.use('/v1/identity', identityRoutes); // [IDENTITY] User Auth & Device Recognition
+app.use('/v1/identity-evolution', identityEvolutionRoutes); // [IDENTITY EVOLUTION] Auditable personality history
 app.use('/v1/gmail', gmailRoutes); // [GMAIL] Email Integration
 app.use('/v1/autonomy', autonomyRoutes); // [AUTONOMY] Goals, Scheduler, Confirmations
 app.use('/v1/production', productionRoutes); // [PRODUCTION] Long-form Video Pipeline

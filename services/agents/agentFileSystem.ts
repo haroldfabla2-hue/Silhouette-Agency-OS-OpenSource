@@ -17,6 +17,7 @@
 import fs from 'fs';
 import path from 'path';
 import { Agent, AgentRoleType, AgentTier, AgentCapability } from '../../types';
+import { createIdentityEvolution, type IdentityEvolution } from '../identity/identityEvolution';
 
 // ═══════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -67,6 +68,13 @@ export interface PromptOptions {
 // ═══════════════════════════════════════════════════════════════
 
 export class AgentFileSystem {
+
+    /** Versioned, auditable identity writer — the only path for IDENTITY.md/SOUL.md changes. */
+    private readonly identityEvolution: IdentityEvolution = createIdentityEvolution({
+        read: (agentId, file) => this.readFile(agentId, file),
+        write: (agentId, file, content) => this.writeFile(agentId, file, content),
+        getAgentDir: (agentId) => this.getAgentDir(agentId)
+    });
 
     /**
      * Returns the directory path for a specific agent.
@@ -231,7 +239,13 @@ export class AgentFileSystem {
      * Update the SOUL.md for an agent (evolution of personality).
      */
     public updateSoul(agentId: string, newSoulContent: string): void {
-        this.writeFile(agentId, 'SOUL.md', newSoulContent);
+        this.identityEvolution.applyVersionedChange({
+            agentId,
+            file: 'SOUL.md',
+            newContent: newSoulContent,
+            rationale: 'Direct soul update via updateSoul()',
+            appliedBy: 'updateSoul'
+        });
         console.log(`[AGENT_FS] 🧬 Soul evolved for agent: ${agentId}`);
     }
 
@@ -246,7 +260,13 @@ export class AgentFileSystem {
             .replace(/## Display Name\n.*/, `## Display Name\n${name}`)
             .replace(/## Greeting\n[\s\S]*?(?=\n## Avatar)/, `## Greeting\n${greeting}`);
 
-        this.writeFile(agentId, 'IDENTITY.md', newIdentity);
+        this.identityEvolution.applyVersionedChange({
+            agentId,
+            file: 'IDENTITY.md',
+            newContent: newIdentity,
+            rationale: `User onboarding personalization (name: ${name})`,
+            appliedBy: 'personalizeAgent'
+        });
 
         // 2. Update SOUL.md
         const currentSoul = this.readFile(agentId, 'SOUL.md');
@@ -254,7 +274,13 @@ export class AgentFileSystem {
             .replace(/## Personality\n.*/, `## Personality\n${personality}`)
             .replace(/## Communication Style\n[\s\S]*?(?=\n## Principles)/, `## Communication Style\n${style}`);
 
-        this.writeFile(agentId, 'SOUL.md', newSoul);
+        this.identityEvolution.applyVersionedChange({
+            agentId,
+            file: 'SOUL.md',
+            newContent: newSoul,
+            rationale: `User onboarding personalization (style update for ${name})`,
+            appliedBy: 'personalizeAgent'
+        });
 
         console.log(`[AGENT_FS] ✨ Agent ${agentId} personalized as: ${name}`);
     }
