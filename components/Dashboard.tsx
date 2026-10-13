@@ -162,7 +162,7 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, projects, onCreateProjec
           icon={Activity}
           label="System Coherence"
           value={`${(metrics.awarenessScore ?? 0)}%`}
-          subValue="Stable"
+          subValue="Composite index"
           color="text-emerald-400"
           trend={2}
         />
@@ -170,7 +170,7 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, projects, onCreateProjec
           icon={HardDrive}
           label="Memory Usage"
           value={`${Math.round(metrics.jsHeapSize)} MB`}
-          subValue="VRAM: 12GB"
+          subValue="VRAM: N/A (no GPU telemetry)"
           color="text-purple-400"
         />
       </div>
