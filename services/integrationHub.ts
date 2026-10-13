@@ -387,30 +387,51 @@ class IntegrationHub {
             });
         }
 
-        // [PA-051] DYNAMIC INTEGRATIONS: Auto-scan and register Agent-built custom plugins
+        // [R12] DYNAMIC INTEGRATIONS: real discovery/validation/load of custom
+        // plugins via ESM (the old require() scan broke under "type": "module"
+        // and only registered inert descriptors). Valid plugins load for real
+        // through the PluginRegistry; invalid files stay DEACTIVATED with a
+        // reason. Provider entries are never auto-enabled: activation is
+        // explicit opt-in via config/plugins.json.
         try {
-            const fs = require('fs');
-            const path = require('path');
-            const customPluginsPath = path.join(process.cwd(), 'services', 'plugins', 'custom');
+            const { discoverCustomPlugins } = await import('./plugins/discovery');
+            const { pluginRegistry } = await import('./plugins/pluginRegistry');
+            const results = await discoverCustomPlugins();
 
-            if (fs.existsSync(customPluginsPath)) {
-                const files = fs.readdirSync(customPluginsPath);
-                for (const file of files) {
-                    if (file.endsWith('.ts')) {
-                        const pluginId = file.replace('.ts', '').toLowerCase();
+            let pluginConfig: any = {};
+            try {
+                const fsP = await import('fs/promises');
+                const pathM = await import('path');
+                const raw = await fsP.readFile(pathM.join(process.cwd(), 'config', 'plugins.json'), 'utf-8');
+                pluginConfig = JSON.parse(raw);
+            } catch { /* no config: everything discovered stays disabled */ }
 
-                        // Register if not already loaded from settings
-                        if (!this.providers.has(pluginId)) {
-                            this.registerProvider({
-                                id: pluginId,
-                                name: pluginId.charAt(0).toUpperCase() + pluginId.slice(1) + ' (Dynamic)',
-                                type: 'WEBHOOK',
-                                enabled: true, // Agent plugins are auto-enabled
-                                config: {}
-                            });
-                            console.log(`[INTEGRATION_HUB] 🔌 Dynamically loaded Custom Plugin: ${pluginId}`);
-                        }
+            for (const result of results) {
+                if (result.status === 'ACTIVATED' && result.plugin) {
+                    const plugin = result.plugin;
+                    pluginRegistry.register(plugin);
+                    if (!this.providers.has(plugin.id)) {
+                        this.registerProvider({
+                            id: plugin.id,
+                            name: `${plugin.name} (Dynamic)`,
+                            type: 'WEBHOOK',
+                            enabled: pluginConfig.plugins?.[plugin.id]?.enabled === true,
+                            config: { source: 'custom-plugin', file: result.file, version: plugin.version, author: plugin.author }
+                        });
+                        console.log(`[INTEGRATION_HUB] 🔌 Dynamically loaded Custom Plugin: ${plugin.id}`);
                     }
+                } else {
+                    const failedId = result.file.replace(/\.(ts|js)$/, '').toLowerCase();
+                    if (!this.providers.has(failedId)) {
+                        this.registerProvider({
+                            id: failedId,
+                            name: `${failedId} (Dynamic, deactivated)`,
+                            type: 'WEBHOOK',
+                            enabled: false,
+                            config: { source: 'custom-plugin', file: result.file, deactivatedReason: result.reason }
+                        });
+                    }
+                    console.warn(`[INTEGRATION_HUB] ⛔ Custom plugin deactivated: ${result.file} - ${result.reason}`);
                 }
             }
         } catch (scanErr: any) {
