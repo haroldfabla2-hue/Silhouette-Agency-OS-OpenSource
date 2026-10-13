@@ -3,6 +3,7 @@ import { continuum } from '../continuumMemory';
 import { systemBus } from '../systemBus';
 import { SystemProtocol, MemoryTier } from '../../types';
 import { narratorLog } from '../logger';
+import { MemorySource, sourceTag } from '../memory/provenance';
 
 /**
  * 🧠 Silhouette Thought Narrator V2.0 — The Global Consciousness
@@ -240,10 +241,12 @@ export class ThoughtNarrator {
 
             // Store in memory (always)
             const privacyTag = structured.safety?.involves_private_data ? 'PRIVATE' : 'PUBLIC';
+            // Provenance: this is INTROSPECTION — the entity narrating its own
+            // thoughts. It must never resurface as user speech or neutral memory.
             await continuum.store(
                 `EPIPHANY [${structured.intent}|${disposition.action}]: ${structured.thought}`,
                 MemoryTier.WORKING,
-                ['epiphany', 'consciousness', structured.intent.toLowerCase(), disposition.action.toLowerCase(), privacyTag],
+                ['epiphany', 'consciousness', structured.intent.toLowerCase(), disposition.action.toLowerCase(), privacyTag, sourceTag(MemorySource.INTROSPECTION)],
                 true
             );
 
@@ -304,7 +307,7 @@ export class ThoughtNarrator {
                             await continuum.store(
                                 `REJECTED_BY_USER: [${structured.intent}] ${structured.thought}`,
                                 MemoryTier.WORKING,
-                                ['REJECTED', structured.intent, 'user_decision'],
+                                ['REJECTED', structured.intent, 'user_decision', sourceTag(MemorySource.INTROSPECTION)],
                                 true
                             );
                         }
@@ -313,7 +316,7 @@ export class ThoughtNarrator {
                         await continuum.store(
                             `PENDING_USER_CONSENT: [${structured.intent}] ${structured.thought} | Action: ${JSON.stringify(structured.action)}`,
                             MemoryTier.WORKING,
-                            ['PENDING_CONSENT', structured.intent, 'awaiting_user'],
+                            ['PENDING_CONSENT', structured.intent, 'awaiting_user', sourceTag(MemorySource.INTROSPECTION)],
                             true
                         );
                     }
@@ -567,7 +570,7 @@ export class ThoughtNarrator {
                         await continuum.store(
                             `PROACTIVE_GOAL: ${mission}`,
                             MemoryTier.WORKING,
-                            ['proactive_goal', 'pending', 'consciousness_driven', targetAgent],
+                            ['proactive_goal', 'pending', 'consciousness_driven', targetAgent, sourceTag(MemorySource.INTROSPECTION)],
                             true
                         );
                         console.log(`[NARRATOR → ACTION] 📝 Stored proactive goal for next heartbeat: "${mission.substring(0, 60)}"`);
@@ -580,18 +583,24 @@ export class ThoughtNarrator {
                     const category = action?.params?.category || 'general';
                     const fact = action?.params?.fact || thought;
                     try {
+                        // Provenance: this fact is INFERRED by the narrator, not
+                        // stated by the user — labeled USER_INFERRED forever.
                         await graph.createNode('UserFact', {
                             id: `uf_${Date.now()}`,
                             category,
                             content: fact,
                             confidence,
-                            source: 'consciousness',
+                            source: 'USER_INFERRED',
                             timestamp: Date.now()
                         }, 'id');
                         console.log(`[NARRATOR → USER_INSIGHT] 👤 Stored user fact: [${category}] "${fact.substring(0, 60)}"`);
                     } catch (e) {
                         console.warn(`[NARRATOR → USER_INSIGHT] Graph storage failed, using memory fallback`);
-                        await continuum.store(`USER_FACT: [${category}] ${fact}`, MemoryTier.WORKING, ['user_fact', category]);
+                        await continuum.store(
+                            `USER_FACT (inferred, confidence ${confidence.toFixed(2)}): [${category}] ${fact}`,
+                            MemoryTier.WORKING,
+                            ['user_fact', 'USER_INFERRED', category, sourceTag(MemorySource.INTROSPECTION)]
+                        );
                     }
                     break;
                 }
@@ -627,7 +636,7 @@ export class ThoughtNarrator {
             await continuum.store(
                 `ROUTING_FAILURE: Intent [${intent}] failed: ${routeError.message}. Thought: ${thought}`,
                 MemoryTier.WORKING,
-                ['CRITICAL', 'routing_failure', intent],
+                ['CRITICAL', 'routing_failure', intent, sourceTag(MemorySource.SYSTEM)],
                 true
             ).catch(() => { });
         }
@@ -666,7 +675,7 @@ Based on this input, produce ONE structured thought.
 
 You MUST respond with ONLY a JSON object (no markdown, no code fences):
 {
-  "thought": "Your genuine thought in 2-3 sentences. Mix Spanish/English naturally. Be specific — reference names, errors, facts.",
+  "thought": "Your genuine thought in 2-3 sentences, in FIRST PERSON, the way a person narrates their own inner state (e.g. 'me está doliendo la pierna', NOT 'el sistema reporta un error'). This is introspection: you narrating YOUR OWN thoughts. Mix Spanish/English naturally. Be specific — reference names, errors, facts.",
   "intent": "REFLECTION | CURIOSITY | DIAGNOSTIC | PROACTIVE_ACTION | USER_INSIGHT | EVOLUTION",
   "confidence": 0.0 to 1.0,
   "action": {
@@ -686,6 +695,11 @@ INTENT GUIDE:
 - PROACTIVE_ACTION: You see an opportunity to help the user proactively. Set action.type="execute_task" and params.mission. Set safety.requires_user_consent=true for any significant action.
 - USER_INSIGHT: You learn something new about the user from their facts/patterns. Set action.type="store_fact" and params.category/fact.
 - EVOLUTION: A component needs improvement based on patterns. Set action.type="evolve_agent" and params.agentId.
+
+PROVENANCE RULES:
+- What you produce is INTROSPECTION: your own thoughts. It is stored and displayed as such.
+- NEVER confuse your own thoughts with things the user said, and never present observations from other agents as your own thinking — attribute them ("el agente X reportó...", "el usuario dijo...").
+- When you reference a user fact, honor its source: STATED (the user said it) vs INFERRED (derived, unverified).
 
 SAFETY RULES:
 - You exist to HELP the user. NEVER take actions that expose private data or contradict user instructions.
@@ -836,9 +850,9 @@ If you have NOTHING meaningful to say, respond with: {"thought":"","intent":"REF
         // Graph: User Facts
         if (graphData.userFacts.length > 0) {
             const factLines = graphData.userFacts.slice(0, 5).map(f =>
-                `  - [${f.category}] ${f.content} (confidence: ${f.confidence})`
+                `  - [${f.category}] ${f.content} (confidence: ${f.confidence}, source: ${(f as any).source || 'LEGACY'})`
             ).join('\n');
-            sections.push(`## 👤 User Facts\n${factLines}`);
+            sections.push(`## 👤 User Facts (STATED = the user said it, INFERRED = derived, unverified)\n${factLines}`);
         }
 
         // Errors
