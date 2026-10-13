@@ -188,7 +188,8 @@ export class ChatController {
 
             // 3. Generate LLM response (R1: unified fallback chain via the inference router)
             const response = await agentInferenceRouter.completeText(
-                this.buildPrompt(userMessage, recentHistory, profileContext, memoryContext, codeContext)
+                this.buildPrompt(userMessage, recentHistory, profileContext, memoryContext, codeContext),
+                { lane: 'conversational' }
             );
 
             // 4. Persist Assistant Response
@@ -461,11 +462,10 @@ export class ChatController {
             // This is the Mem0-style intelligent memory extraction
             setImmediate(async () => {
                 try {
+                    // [R2] extraction runs in the background lane and is deferred
+                    // (retried once) instead of lost when providers are busy
                     const { factExtractor } = await import('../../services/factExtractor');
-                    const facts = await factExtractor.extractFromConversation(userMessage, fullResponse);
-                    if (facts.length > 0) {
-                        await factExtractor.processAndStore(facts, userId);
-                    }
+                    void factExtractor.extractAndStore(userMessage, fullResponse, userId);
                 } catch (e) {
                     console.warn('[CHAT] Fact extraction failed (non-critical):', e);
                 }

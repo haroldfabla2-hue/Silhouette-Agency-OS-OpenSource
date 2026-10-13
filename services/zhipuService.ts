@@ -1,15 +1,25 @@
 /**
- * ZhipuAI Service V8.0 - True Concurrent (9 slots)
- * 
- * Changes from V7:
- * - PARALLEL PROCESSING: 3 concurrent per key × 3 keys = 9 total
- * - PER-KEY TRACKING: Each key tracks its own active connections
- * - LEAST CONNECTIONS: Distributes load to least busy key
- * - BACKPRESSURE: Limits queue size, bypasses at threshold
- * - NO GLOBAL COOLDOWN: Removed 3s cooldown for true parallelism
+ * ZhipuAI Service V9.2 - Single-concurrency per key with lane-aware queue.
+ *
+ * - STRICT CONCURRENCY: 1 in-flight request per key (production behavior).
+ * - PER-KEY TRACKING: Each key tracks its own active connections and token bucket.
+ * - LEAST CONNECTIONS: Distributes load to least busy key.
+ * - BACKPRESSURE: Soft/hard queue size warnings; requests are never dropped by size.
+ * - GLOBAL IP THROTTLE: Minimum interval between requests (z.ai limits by IP).
+ * - [R2] LANES: conversational traffic (chat, agents) dequeues before background
+ *   work (extraction, narration); an anti-starvation streak limit guarantees the
+ *   background lane is served under sustained chat load. Queue entries are
+ *   cancellable (AbortSignal) and deadline-bound.
  */
 
-type KeyPurpose = 'narration' | 'agents' | 'overflow';
+export type KeyPurpose = 'narration' | 'agents' | 'overflow' | 'background';
+
+/**
+ * Scheduling lane (R2): conversational traffic (chat, agent streams) preempts
+ * background work (fact extraction, narration, batch). Background never takes
+ * the last free slot unless it is starving, so a chat always finds capacity.
+ */
+export type ZhipuLane = 'conversational' | 'background';
 
 interface ZhipuMessage {
     role: 'user' | 'assistant' | 'system';
@@ -67,14 +77,7 @@ interface KeyStatus {
     lastTokenRefill: number;    // Last time tokens were refilled
 }
 
-class ZhipuService {
-    private keys: KeyStatus[] = [];
-    private apiBase: string;
-    private lastRequestTime: number = 0;  // For rate limiting
-    private roundRobinIndex: number = 0;  // For distributing load evenly
-
-    // Configuration
-    private readonly CONFIG = {
+const DEFAULT_CONFIG = {
         MAX_CONCURRENT_PER_KEY: 1,  // [USER-REQUEST] Strict concurrency of 1 per key
 
         // GLOBAL IP-based throttle (z.ai limits by IP, not just by key)
@@ -98,20 +101,40 @@ class ZhipuService {
         QUEUE_SOFT_LIMIT: 5,
         QUEUE_HARD_LIMIT: 8,
         QUEUE_TIMEOUT_MS: 30000,
+
+        // [R2] Conversational priority
+        CONVERSATIONAL_STREAK_LIMIT: 3,     // After this many consecutive conversational dequeues, serve waiting background (no starvation)
+        QUEUE_RETRY_MS: 2000,               // Re-evaluate the queue while entries wait (token refill, suspension expiry)
     };
+
+export type ZhipuConfig = typeof DEFAULT_CONFIG;
+
+export class ZhipuService {
+    private keys: KeyStatus[] = [];
+    private apiBase: string;
+    private lastRequestTime: number = 0;  // For rate limiting
+    private roundRobinIndex: number = 0;  // For distributing load evenly
+    private queueRetryTimer: NodeJS.Timeout | null = null;
+    private conversationalStreak = 0;  // [R2] consecutive conversational dequeues (anti-starvation)
+
+    // Configuration (DEFAULT_CONFIG merged with constructor overrides - tests use short timers)
+    private readonly CONFIG: ZhipuConfig;
 
     private requestQueue: Array<{
         resolve: (value: string) => void;
         reject: (error: Error) => void;
         model: string;
         messages: ZhipuMessage[];
-        options: { maxTokens?: number; temperature?: number };
+        options: { maxTokens?: number; temperature?: number; signal?: AbortSignal };
         purpose: KeyPurpose;
+        lane: ZhipuLane;
+        enqueuedAt: number;
     }> = [];
 
-    constructor() {
-        const keysString = process.env.ZHIPU_API_KEYS || process.env.ZHIPU_API_KEY || '';
-        this.apiBase = process.env.ZHIPU_API_BASE || 'https://open.bigmodel.cn/api/paas/v4';
+    constructor(overrides: Partial<ZhipuConfig> = {}, private env: NodeJS.ProcessEnv = process.env, private fetcher: typeof fetch = fetch) {
+        this.CONFIG = { ...DEFAULT_CONFIG, ...overrides };
+        const keysString = this.env.ZHIPU_API_KEYS || this.env.ZHIPU_API_KEY || '';
+        this.apiBase = this.env.ZHIPU_API_BASE || 'https://open.bigmodel.cn/api/paas/v4';
 
         const keyList = keysString.split(',').map(k => k.trim()).filter(k => k.length > 0);
         const purposes: KeyPurpose[] = ['narration', 'agents', 'overflow', 'overflow', 'overflow'];
@@ -294,8 +317,9 @@ class ZhipuService {
      */
     public async generateCompletion(
         prompt: string,
-        options: { maxTokens?: number; temperature?: number; model?: string } = {},
-        purpose: KeyPurpose = 'agents'
+        options: { maxTokens?: number; temperature?: number; model?: string; signal?: AbortSignal } = {},
+        purpose: KeyPurpose = 'agents',
+        lane?: ZhipuLane
     ): Promise<string> {
         const model = options.model || 'glm-4-flash'; // [USER-REQUEST] Use Free Flash Model
         const maxTokens = options.maxTokens || this.CONFIG.DEFAULT_MAX_TOKENS;
@@ -306,7 +330,77 @@ class ZhipuService {
             { role: 'user', content: prompt }
         ];
 
-        return this.executeOrQueue(model, messages, { ...options, maxTokens }, purpose);
+        // Lane defaults from purpose: 'agents' is conversational; the rest is background.
+        return this.executeOrQueue(model, messages, { ...options, maxTokens }, purpose, lane ?? (purpose === 'agents' ? 'conversational' : 'background'));
+    }
+
+    /**
+     * The queue is re-evaluated while entries wait: token buckets refill,
+     * suspensions expire and starvation overrides activate even when no
+     * request finishes to trigger processQueue().
+     */
+    private scheduleQueueRetry(): void {
+        if (this.queueRetryTimer) return;
+        this.queueRetryTimer = setTimeout(() => {
+            this.queueRetryTimer = null;
+            this.processQueue();
+            if (this.requestQueue.length > 0) this.scheduleQueueRetry();
+        }, this.CONFIG.QUEUE_RETRY_MS);
+        this.queueRetryTimer.unref?.();
+    }
+
+    private enqueue(
+        model: string,
+        messages: ZhipuMessage[],
+        options: { maxTokens?: number; temperature?: number; signal?: AbortSignal },
+        purpose: KeyPurpose,
+        lane: ZhipuLane
+    ): Promise<string> {
+        if (this.requestQueue.length >= this.CONFIG.QUEUE_SOFT_LIMIT) {
+            console.warn(`[ZHIPU] 📊 Queue pressure: ${this.requestQueue.length}/${this.CONFIG.QUEUE_MAX_SIZE} (${lane})`);
+        }
+        this.scheduleQueueRetry();
+        return new Promise((resolve, reject) => {
+            const timeoutId = setTimeout(() => {
+                const idx = this.requestQueue.findIndex(r => r.resolve === wrappedResolve);
+                if (idx !== -1) {
+                    this.requestQueue.splice(idx, 1);
+                    console.warn(`[ZHIPU] ⏰ Request timeout after ${this.CONFIG.QUEUE_TIMEOUT_MS / 1000}s (${lane})`);
+                    reject(new Error('Queue timeout - use fallback'));
+                }
+            }, this.CONFIG.QUEUE_TIMEOUT_MS);
+
+            const cleanup = () => {
+                clearTimeout(timeoutId);
+                options.signal?.removeEventListener('abort', onAbort);
+            };
+            const wrappedResolve = (value: string) => { cleanup(); resolve(value); };
+            const wrappedReject = (error: Error) => { cleanup(); reject(error); };
+            const onAbort = () => {
+                const idx = this.requestQueue.findIndex(r => r.resolve === wrappedResolve);
+                if (idx !== -1) {
+                    this.requestQueue.splice(idx, 1);
+                    cleanup();
+                    reject(new Error('Request aborted'));
+                }
+            };
+
+            if (options.signal) {
+                if (options.signal.aborted) return onAbort();
+                options.signal.addEventListener('abort', onAbort, { once: true });
+            }
+
+            this.requestQueue.push({
+                resolve: wrappedResolve,
+                reject: wrappedReject,
+                model,
+                messages,
+                options,
+                purpose,
+                lane,
+                enqueuedAt: Date.now()
+            });
+        });
     }
 
     /**
@@ -328,8 +422,9 @@ class ZhipuService {
     private async executeOrQueue(
         model: string,
         messages: ZhipuMessage[],
-        options: { maxTokens?: number; temperature?: number },
-        purpose: KeyPurpose
+        options: { maxTokens?: number; temperature?: number; signal?: AbortSignal },
+        purpose: KeyPurpose,
+        lane: ZhipuLane
     ): Promise<string> {
         // Import congestion manager for queue tracking (backpressure signals)
         const { congestionManager } = await import('./congestionManager');
@@ -343,89 +438,63 @@ class ZhipuService {
                 console.warn(`[ZHIPU] 🚨 Queue overflow (${this.requestQueue.length}). Processing anyway.`);
             }
 
-            // =========================================================
-            // GLOBAL IP-BASED THROTTLE: z.ai rate limits by IP, not key
-            // Must WAIT between requests regardless of which key we use
-            // =========================================================
-            const now = Date.now();
-            const timeSinceLastRequest = now - this.lastRequestTime;
-            if (timeSinceLastRequest < this.CONFIG.MIN_REQUEST_INTERVAL) {
-                const waitTime = this.CONFIG.MIN_REQUEST_INTERVAL - timeSinceLastRequest;
-                console.log(`[ZHIPU] ⏳ Global throttle: waiting ${(waitTime / 1000).toFixed(1)}s before request...`);
-                await new Promise(resolve => setTimeout(resolve, waitTime));
-            }
-            this.lastRequestTime = Date.now();
+            // [R2] Nobody jumps the queue: immediate dispatch only when nothing is
+            // already waiting. Priority lives in processQueue's dequeue order.
+            const mayAttemptNow = this.requestQueue.length === 0;
 
-            // Try to execute with key rotation on rate limit
-            const maxRetries = this.keys.length; // Try ALL keys before giving up
-            let lastError: Error | null = null;
-
-            for (let attempt = 0; attempt < maxRetries; attempt++) {
-                const key = this.findBestKey();
-                if (!key) {
-                    // All keys exhausted (no tokens or all suspended)
-                    console.log(`[ZHIPU] ⏳ No keys available. Waiting ${this.CONFIG.MIN_REQUEST_INTERVAL / 1000}s for cooldown...`);
-                    await new Promise(resolve => setTimeout(resolve, this.CONFIG.MIN_REQUEST_INTERVAL));
-                    break;
+            if (mayAttemptNow) {
+                // =========================================================
+                // GLOBAL IP-BASED THROTTLE: z.ai rate limits by IP, not key
+                // Must WAIT between requests regardless of which key we use
+                // =========================================================
+                const now = Date.now();
+                const timeSinceLastRequest = now - this.lastRequestTime;
+                if (timeSinceLastRequest < this.CONFIG.MIN_REQUEST_INTERVAL) {
+                    const waitTime = this.CONFIG.MIN_REQUEST_INTERVAL - timeSinceLastRequest;
+                    console.log(`[ZHIPU] ⏳ Global throttle: waiting ${(waitTime / 1000).toFixed(1)}s before request...`);
+                    await new Promise(resolve => setTimeout(resolve, waitTime));
                 }
+                this.lastRequestTime = Date.now();
 
-                try {
-                    return await this.executeRequest(key, model, messages, options);
-                } catch (error: any) {
-                    lastError = error;
-                    // If rate limited, wait FULL THROTTLE INTERVAL then try another key
-                    if (error.message.includes('Rate limited')) {
-                        console.log(`[ZHIPU] 🔄 Key rate limited, waiting ${this.CONFIG.MIN_REQUEST_INTERVAL / 1000}s before retry... (attempt ${attempt + 1}/${maxRetries})`);
-                        // Wait FULL global throttle interval between retries
+                // Try to execute with key rotation on rate limit
+                const maxRetries = this.keys.length; // Try ALL keys before giving up
+                let lastError: Error | null = null;
+
+                for (let attempt = 0; attempt < maxRetries; attempt++) {
+                    const key = this.findBestKey();
+                    if (!key) {
+                        // All keys exhausted (no tokens or all suspended)
+                        console.log(`[ZHIPU] ⏳ No keys available. Waiting ${this.CONFIG.MIN_REQUEST_INTERVAL / 1000}s for cooldown...`);
                         await new Promise(resolve => setTimeout(resolve, this.CONFIG.MIN_REQUEST_INTERVAL));
-                        this.lastRequestTime = Date.now(); // Update throttle timer
-                        continue;
+                        break;
                     }
-                    // For other errors, don't retry
-                    throw error;
+
+                    try {
+                        return await this.executeRequest(key, model, messages, options);
+                    } catch (error: any) {
+                        lastError = error;
+                        // If rate limited, wait FULL THROTTLE INTERVAL then try another key
+                        if (error.message.includes('Rate limited')) {
+                            console.log(`[ZHIPU] 🔄 Key rate limited, waiting ${this.CONFIG.MIN_REQUEST_INTERVAL / 1000}s before retry... (attempt ${attempt + 1}/${maxRetries})`);
+                            // Wait FULL global throttle interval between retries
+                            await new Promise(resolve => setTimeout(resolve, this.CONFIG.MIN_REQUEST_INTERVAL));
+                            this.lastRequestTime = Date.now(); // Update throttle timer
+                            continue;
+                        }
+                        // For other errors, don't retry
+                        throw error;
+                    }
+                }
+
+                // If all retry attempts failed, queue or throw
+                if (lastError?.message.includes('Rate limited')) {
+                    // All tried keys were rate limited
+                    console.warn(`[ZHIPU] ⚠️ All ${maxRetries} keys rate limited. Queueing request.`);
                 }
             }
 
-            // If all retry attempts failed, queue or throw
-            if (lastError?.message.includes('Rate limited')) {
-                // All tried keys were rate limited
-                console.warn(`[ZHIPU] ⚠️ All ${maxRetries} keys rate limited. Queueing request.`);
-            }
-
-            // If no key available, queue with warning
-            if (this.requestQueue.length >= this.CONFIG.QUEUE_SOFT_LIMIT) {
-                console.warn(`[ZHIPU] 📊 Queue pressure: ${this.requestQueue.length}/${this.CONFIG.QUEUE_MAX_SIZE}`);
-            }
-
-            // Queue for later
-            return new Promise((resolve, reject) => {
-                const timeoutId = setTimeout(() => {
-                    const idx = this.requestQueue.findIndex(r => r.resolve === wrappedResolve);
-                    if (idx !== -1) {
-                        this.requestQueue.splice(idx, 1);
-                        console.warn(`[ZHIPU] ⏰ Request timeout after ${this.CONFIG.QUEUE_TIMEOUT_MS / 1000}s`);
-                        reject(new Error('Queue timeout - use fallback'));
-                    }
-                }, this.CONFIG.QUEUE_TIMEOUT_MS);
-
-                const wrappedResolve = (value: string) => {
-                    clearTimeout(timeoutId);
-                    resolve(value);
-                };
-                const wrappedReject = (error: Error) => {
-                    clearTimeout(timeoutId);
-                    reject(error);
-                };
-
-                this.requestQueue.push({
-                    resolve: wrappedResolve,
-                    reject: wrappedReject,
-                    model,
-                    messages,
-                    options,
-                    purpose
-                });
-            });
+            // Queue for later (priority-ordered, cancellable, deadline-bound)
+            return this.enqueue(model, messages, options, purpose, lane);
         } finally {
             // Decrement queue size on completion
             const { congestionManager } = await import('./congestionManager');
@@ -439,7 +508,7 @@ class ZhipuService {
         keyStatus: KeyStatus,
         model: string,
         messages: ZhipuMessage[],
-        options: { maxTokens?: number; temperature?: number }
+        options: { maxTokens?: number; temperature?: number; signal?: AbortSignal }
     ): Promise<string> {
         const maxTokens = options.maxTokens || this.CONFIG.DEFAULT_MAX_TOKENS;
         const temperature = options.temperature || 0.7;
@@ -454,8 +523,9 @@ class ZhipuService {
         console.log(`[ZHIPU] 🔑 Key #${keyIndex} (${keyStatus.purpose}) → ${model} [${activeTotal}/${capacity} active]`);
 
         try {
-            const response = await fetch(`${this.apiBase}/chat/completions`, {
+            const response = await this.fetcher(`${this.apiBase}/chat/completions`, {
                 method: 'POST',
+                signal: options.signal,
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${keyStatus.key}`
@@ -563,10 +633,29 @@ class ZhipuService {
      */
     private processQueue(): void {
         while (this.requestQueue.length > 0) {
-            const key = this.findBestKey();
-            if (!key) break;  // No capacity available
+            // [R2] Conversational first. Anti-starvation: after
+            // CONVERSATIONAL_STREAK_LIMIT consecutive conversational dequeues,
+            // waiting background work is served next.
+            const backgroundWaiting = this.requestQueue.some(r => r.lane === 'background');
+            let idx = -1;
+            if (backgroundWaiting && this.conversationalStreak >= this.CONFIG.CONVERSATIONAL_STREAK_LIMIT) {
+                idx = this.requestQueue.findIndex(r => r.lane === 'background');
+            }
+            if (idx === -1) {
+                idx = this.requestQueue.findIndex(r => r.lane === 'conversational');
+            }
+            if (idx === -1) {
+                idx = 0; // only background waiting
+            }
 
-            const request = this.requestQueue.shift()!;
+            const key = this.findBestKey();
+            if (!key) {
+                this.scheduleQueueRetry();
+                return;  // No capacity available right now
+            }
+
+            const request = this.requestQueue.splice(idx, 1)[0];
+            this.conversationalStreak = request.lane === 'conversational' ? this.conversationalStreak + 1 : 0;
             this.executeRequest(key, request.model, request.messages, request.options)
                 .then(request.resolve)
                 .catch(request.reject);

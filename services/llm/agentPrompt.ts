@@ -109,6 +109,8 @@ ${context?.relevantMemory || ''}
         model: req.model,
         temperature: req.temperature ?? 0.7,
         maxTokens: req.maxTokens ?? 2048,
-        toolCaller: context?.toolCaller
+        toolCaller: context?.toolCaller,
+        lane: req.lane ?? 'conversational',
+        signal: req.signal
     };
 }

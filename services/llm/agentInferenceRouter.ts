@@ -128,7 +128,7 @@ export function createAgentInferenceRouter(deps: AgentInferenceRouterDeps = {}) 
      * internal consumers). Bypasses agent prompt assembly: the prompt travels as
      * the raw user task, exactly as the legacy generateText chain delivered it.
      */
-    async function completeText(prompt: string, options: { temperature?: number; maxTokens?: number } = {}): Promise<string> {
+    async function completeText(prompt: string, options: { temperature?: number; maxTokens?: number; lane?: 'conversational' | 'background' } = {}): Promise<string> {
         const prepared: PreparedAgentRequest = {
             agentName: 'InternalCompletion',
             category: 'CORE',
@@ -139,7 +139,8 @@ export function createAgentInferenceRouter(deps: AgentInferenceRouterDeps = {}) 
             relevantMemory: '',
             capabilities: { webSearch: false, codeExecution: false, imageGeneration: false, memoryWrite: false },
             temperature: options.temperature ?? 0.3,
-            maxTokens: options.maxTokens ?? 1024
+            maxTokens: options.maxTokens ?? 1024,
+            lane: options.lane ?? 'background'
         };
         let text = '';
         for await (const event of streamPrepared(prepared)) {

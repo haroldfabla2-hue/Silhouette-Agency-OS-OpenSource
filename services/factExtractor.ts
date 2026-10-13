@@ -33,7 +33,48 @@ interface MemoryAction {
     reason: string;
 }
 
-class FactExtractionService {
+export class FactExtractionService {
+    // [R2] Deferred extraction: a failed attempt is retried later, never silently lost.
+    private pendingDeferred = 0;
+    private readonly MAX_DEFERRED = 25;
+    private readonly DEFER_DELAY_MS = 60000;
+    private readonly MAX_EXTRACT_ATTEMPTS = 2;
+
+    /**
+     * Extraction + storage as one deferred-capable unit (R2: "diferir extracción
+     * sin perderla"). On failure the turn's extraction is retried once after
+     * DEFER_DELAY_MS; it is only dropped after MAX_EXTRACT_ATTEMPTS, with a loud log.
+     */
+    async extractAndStore(userMessage: string, assistantResponse: string, userId: string, attempt = 1): Promise<void> {
+        try {
+            const facts = await this.extractFromConversation(userMessage, assistantResponse);
+            if (facts.length > 0) {
+                await this.processAndStore(facts, userId);
+            }
+        } catch (e) {
+            console.warn(`[FACT_EXTRACT] ⚠️ extractAndStore failed (attempt ${attempt}/${this.MAX_EXTRACT_ATTEMPTS}):`, e);
+            this.deferExtraction(userMessage, assistantResponse, userId, attempt + 1);
+        }
+    }
+
+    private deferExtraction(userMessage: string, assistantResponse: string, userId: string, attempt: number): void {
+        if (attempt > this.MAX_EXTRACT_ATTEMPTS) {
+            console.warn('[FACT_EXTRACT] 🛑 Extraction dropped after retries; facts for this turn are lost (explicit).');
+            return;
+        }
+        if (this.pendingDeferred >= this.MAX_DEFERRED) {
+            console.warn('[FACT_EXTRACT] 🛑 Deferred queue full; dropping oldest-capable retry (explicit).');
+            return;
+        }
+        this.pendingDeferred++;
+        const timer = setTimeout(() => {
+            this.pendingDeferred--;
+            void this.extractAndStore(userMessage, assistantResponse, userId, attempt);
+        }, this.DEFER_DELAY_MS);
+        timer.unref?.();
+        console.log(`[FACT_EXTRACT] ⏳ Extraction deferred (attempt ${attempt} in ${this.DEFER_DELAY_MS / 1000}s, pending: ${this.pendingDeferred})`);
+    }
+
     private getExtractionPrompt(): string {
         // Dynamically resolve the creator's name from the identity service
         let creatorName = 'the user';
@@ -122,7 +163,7 @@ FACTS (JSON only):`;
             return facts;
         } catch (e) {
             console.warn('[FACT_EXTRACT] ⚠️ Extraction failed:', e);
-            return [];
+            throw e; // [R2] the caller (extractAndStore) defers the retry; a silent [] used to lose the turn's facts
         }
     }
 
