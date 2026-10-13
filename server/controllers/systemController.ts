@@ -445,7 +445,7 @@ export class SystemController {
             mem = await si.mem();
         } catch (e) {
             console.warn("[TELEMETRY] Mem fetch failed", e);
-            mem = { used: 0, total: 16 * 1024 * 1024 * 1024 };
+            mem = null; // [R9] unmeasured is declared, never an invented 16GB
         }
 
         try {
@@ -456,12 +456,15 @@ export class SystemController {
             gpu = { controllers: [] };
         }
 
-        let vramUsed = 0;
-        let vramTotal = 4096;
-        if (gpu.controllers && gpu.controllers.length > 0) {
+        // [R9] no GPU detected = N/A, never an invented 4GB card
+        let gpuTelemetry: { vramUsed: number; vramTotal: number; model: string } | null = null;
+        if (gpu.controllers && gpu.controllers.length > 0 && gpu.controllers[0].vram) {
             const card = gpu.controllers[0];
-            vramTotal = card.vram || 4096;
-            vramUsed = (card as any).memoryUsed || 0;
+            gpuTelemetry = {
+                vramUsed: (card as any).memoryUsed || 0,
+                vramTotal: card.vram,
+                model: card.model || 'Unknown GPU'
+            };
         }
 
         // Get real provider health stats (Enriched with Local Models)
@@ -475,8 +478,8 @@ export class SystemController {
 
         const telemetry = {
             cpu: cpu.currentLoad,
-            ram: { active: mem.active, total: mem.total },
-            gpu: { vramUsed, vramTotal },
+            ram: mem ? { active: (mem as any).active, total: (mem as any).total } : null, // null = unmeasured
+            gpu: gpuTelemetry, // null = no GPU detected (N/A)
             activeAgents: 0,
             agentsInVram: 0,
             agentsInRam: 0,
@@ -550,13 +553,11 @@ export class SystemController {
             res.json(metrics);
         } catch (e: any) {
             console.error('[SYSTEM] getResources failed:', e.message);
-            // Return simulated metrics as fallback (safe defaults)
-            res.json({
-                cpuLoad: 25,
-                ramUsed: 8 * 1024 * 1024 * 1024, // 8GB
-                ramTotal: 16 * 1024 * 1024 * 1024, // 16GB
-                vramUsed: 1 * 1024 * 1024 * 1024, // 1GB
-                vramTotal: 4 * 1024 * 1024 * 1024 // 4GB
+            // [R9] measured or unavailable - simulated metrics presented as real were the lie
+            res.status(503).json({
+                available: false,
+                error: 'Hardware metrics unavailable',
+                details: e.message
             });
         }
     }

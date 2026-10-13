@@ -24,7 +24,12 @@ const HealthMonitor: React.FC<HealthMonitorProps> = ({ providerHealth, mediaQueu
                     {providerHealth && Object.values(providerHealth).map((provider) => (
                         <div key={provider.name} className="flex items-center justify-between bg-black/40 p-3 rounded-lg border border-white/5">
                             <div className="flex items-center gap-3">
-                                <div className={`w-3 h-3 rounded-full shadow-[0_0_10px_currentColor] ${provider.status === 'HEALTHY' ? 'bg-emerald-500 text-emerald-500' : 'bg-red-500 text-red-500'
+                                <div className={`w-3 h-3 rounded-full shadow-[0_0_10px_currentColor] ${
+                                    provider.status === 'VERIFIED' ? 'bg-emerald-500 text-emerald-500' :
+                                    provider.status === 'REACHABLE' ? 'bg-teal-400 text-teal-400' :
+                                    provider.status === 'SUSPENDED' ? 'bg-red-500 text-red-500' :
+                                    provider.status === 'NOT_CONFIGURED' ? 'bg-amber-500 text-amber-500' :
+                                    'bg-white/30 text-white/30'
                                     }`} />
                                 <span className="font-mono text-sm uppercase tracking-wider text-white/80">{provider.name}</span>
                             </div>
@@ -36,8 +41,17 @@ const HealthMonitor: React.FC<HealthMonitorProps> = ({ providerHealth, mediaQueu
                                 </div>
                             )}
 
-                            {provider.status === 'HEALTHY' && (
-                                <span className="text-xs text-emerald-500/50 font-mono">OPERATIONAL</span>
+                            {provider.status === 'VERIFIED' && (
+                                <span className="text-xs text-emerald-500/50 font-mono">VERIFIED</span>
+                            )}
+                            {provider.status === 'REACHABLE' && (
+                                <span className="text-xs text-teal-400/60 font-mono">REACHABLE</span>
+                            )}
+                            {provider.status === 'UNKNOWN' && (
+                                <span className="text-xs text-white/30 font-mono">UNKNOWN</span>
+                            )}
+                            {provider.status === 'NOT_CONFIGURED' && (
+                                <span className="text-xs text-amber-500/60 font-mono">NOT CONFIGURED</span>
                             )}
                         </div>
                     ))}

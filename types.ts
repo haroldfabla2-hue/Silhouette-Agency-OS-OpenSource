@@ -654,7 +654,10 @@ export interface SystemMetrics {
 
 // --- NEW: ROBUST TELEMETRY TYPES ---
 
-export type ProviderStatus = 'HEALTHY' | 'SUSPENDED';
+// [R9] A closed circuit is not evidence of health. VERIFIED = a real call
+// succeeded; REACHABLE = a probe answered; UNKNOWN = never measured;
+// NOT_CONFIGURED = no credentials; SUSPENDED = circuit open after failures.
+export type ProviderStatus = 'VERIFIED' | 'REACHABLE' | 'UNKNOWN' | 'NOT_CONFIGURED' | 'SUSPENDED';
 
 export interface ProviderState {
   name: string;
