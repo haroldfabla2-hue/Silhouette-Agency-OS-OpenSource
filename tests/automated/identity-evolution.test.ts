@@ -190,4 +190,83 @@ describe('identityEvolution', () => {
         expect(events[0].payload.agentId).toBe('a1');
         expect(events[0].payload.version).toBe(1);
     });
+
+    it('records the origin engine for engine-sourced adjustments', () => {
+        files.set('a1/SOUL.md', SOUL_V1);
+        const evo = createIdentityEvolution(io);
+        const entry = evo.applyIntrospectionAdjustment({
+            agentId: 'a1',
+            sectionHeading: '## Communication Style',
+            newSectionContent: '## Communication Style\nWarmer, more curious.',
+            rationale: 'Dream intuition: users engage more with questions than statements',
+            sourceReflection: 'en un sueño noté que...',
+            originEngine: 'dreamer'
+        });
+        expect(entry.appliedBy).toBe('introspection:SOUL_ADJUST:dreamer');
+        const history = evo.getHistory('a1');
+        expect(history[history.length - 1].appliedBy).toBe('introspection:SOUL_ADJUST:dreamer');
+    });
+
+    it('defaults originEngine to reflection for plain introspection adjustments', () => {
+        files.set('a1/SOUL.md', SOUL_V1);
+        const evo = createIdentityEvolution(io);
+        const entry = evo.applyIntrospectionAdjustment({
+            agentId: 'a1',
+            sectionHeading: '## Communication Style',
+            newSectionContent: '## Communication Style\nMore concise.',
+            rationale: 'reflection-driven tweak',
+            sourceReflection: 'thought'
+        });
+        expect(entry.appliedBy).toBe('introspection:SOUL_ADJUST');
+    });
+
+    it('rate-limits engine-sourced adjustments per day but never reflection ones', () => {
+        files.set('a1/SOUL.md', SOUL_V1);
+        const evo = createIdentityEvolution(io);
+        const engines = ['dreamer', 'curiosity', 'research'] as const;
+        // 3 engine-sourced adjustments (the daily cap) all apply
+        engines.forEach((engine, i) => {
+            const current = files.get('a1/SOUL.md')!;
+            evo.applyIntrospectionAdjustment({
+                agentId: 'a1',
+                sectionHeading: '## Communication Style',
+                newSectionContent: `## Communication Style\nEngine tweak ${i}.`,
+                rationale: `${engine} evidence ${i}`,
+                sourceReflection: 'engine thought',
+                originEngine: engine
+            });
+            expect(files.get('a1/SOUL.md')).not.toBe(current);
+        });
+        // The 4th engine-sourced adjustment today is rejected
+        expect(() => evo.applyIntrospectionAdjustment({
+            agentId: 'a1',
+            sectionHeading: '## Communication Style',
+            newSectionContent: '## Communication Style\nOne too many.',
+            rationale: 'dreamer evidence overflow',
+            sourceReflection: 'engine thought',
+            originEngine: 'dreamer'
+        })).toThrowError(IdentityEvolutionError);
+        // A reflection-sourced adjustment still applies: the cap guards engines only
+        const entry = evo.applyIntrospectionAdjustment({
+            agentId: 'a1',
+            sectionHeading: '## Communication Style',
+            newSectionContent: '## Communication Style\nReflection still flows.',
+            rationale: 'reflection-driven tweak',
+            sourceReflection: 'thought'
+        });
+        expect(entry.appliedBy).toBe('introspection:SOUL_ADJUST');
+    });
+
+    it('rejects an unknown originEngine', () => {
+        files.set('a1/SOUL.md', SOUL_V1);
+        const evo = createIdentityEvolution(io);
+        expect(() => evo.applyIntrospectionAdjustment({
+            agentId: 'a1',
+            sectionHeading: '## Communication Style',
+            newSectionContent: '## Communication Style\nX.',
+            rationale: 'r',
+            sourceReflection: 't',
+            originEngine: 'oracle' as any
+        })).toThrowError(IdentityEvolutionError);
+    });
 });
