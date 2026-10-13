@@ -20,11 +20,11 @@ const CONFIG_PATH = path.join(PROJECT_ROOT, 'silhouette.config.json');
 const ENV_PATH = path.join(PROJECT_ROOT, '.env.local');
 
 const LLM_PROVIDERS = [
-    { id: 'gemini', name: 'Google Gemini (Free/Paid)', envKey: 'GEMINI_API_KEY', model: 'gemini-2.5-flash', requiresKey: true },
+    { id: 'gemini', name: 'Google Gemini (Free/Paid)', envKey: 'GEMINI_API_KEY', model: 'gemini-3.8-flash', requiresKey: true },
     { id: 'groq', name: 'Groq (Fast Inference)', envKey: 'GROQ_API_KEY', model: 'llama3-70b-8192', requiresKey: true },
     { id: 'openai', name: 'OpenAI', envKey: 'OPENAI_API_KEY', model: 'gpt-4o-mini', requiresKey: true },
     { id: 'deepseek', name: 'DeepSeek', envKey: 'DEEPSEEK_API_KEY', model: 'deepseek-coder', requiresKey: true },
-    { id: 'openrouter', name: 'OpenRouter (Multi-Model Routing)', envKey: 'OPENROUTER_API_KEY', model: 'google/gemini-2.0-flash-exp:free', requiresKey: true },
+    { id: 'openrouter', name: 'OpenRouter (Multi-Model Routing)', envKey: 'OPENROUTER_API_KEY', model: 'nvidia/nemotron-3-super-120b-a12b:free', requiresKey: true },
     { id: 'minimax', name: 'Minimax (Native Audio/Vision)', envKey: 'MINIMAX_API_KEY', model: 'abab-6.5s-chat', requiresKey: true },
     { id: 'ollama', name: 'Ollama (Local Offline)', envKey: '', model: 'llama3:8b', requiresKey: false }
 ];
