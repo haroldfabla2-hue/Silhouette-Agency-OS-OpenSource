@@ -171,11 +171,12 @@ router.get('/session-history', async (req, res) => {
 // ETERNAL MEMORY ENDPOINTS (Self-Improvement System)
 // ════════════════════════════════════════════════════════════════
 
-// GET /v1/memory/facts - Get user facts from Neo4j
+// GET /v1/memory/facts - Get user facts from the durable fact repository (R5)
 router.get('/facts', async (req, res) => {
     try {
-        const { graph } = await import('../../../services/graphService');
-        const facts = await graph.getUserFacts();
+        const { factRepository } = await import('../../../services/memory/factRepository');
+        const ownerId = (req.query.ownerId as string) || 'owner';
+        const facts = factRepository.getFacts(ownerId);
         res.json({ facts, count: facts.length });
     } catch (error: any) {
         console.error('[MEMORY] Error fetching facts:', error);
@@ -241,4 +242,3 @@ router.get('/feedback/stats', async (req, res) => {
 });
 
 export default router;
-

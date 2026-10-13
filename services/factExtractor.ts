@@ -13,10 +13,7 @@
  */
 
 import { ollamaService } from './ollamaService';
-import { graph } from './graphService';
-import { continuum } from './continuumMemory';
-import { MemoryTier } from '../types';
-import { MemorySource, sourceTag } from './memory/provenance';
+import { factRepository } from './memory/factRepository';
 
 interface ExtractedFact {
     type: 'PERSONAL' | 'PREFERENCE' | 'FACT' | 'RELATIONSHIP' | 'REMINDER';
@@ -27,6 +24,8 @@ interface ExtractedFact {
     value?: string;      // The actual value
     /** Provenance: USER_STATED = the user said it; USER_INFERRED = derived from the assistant's own words (unverified). */
     source?: 'USER_STATED' | 'USER_INFERRED';
+    /** Exact span of the USER's message backing this fact (mandatory for USER_STATED). */
+    quote?: string;
 }
 
 interface MemoryAction {
@@ -52,7 +51,7 @@ export class FactExtractionService {
         try {
             const facts = await this.extractFromConversation(userMessage, assistantResponse);
             if (facts.length > 0) {
-                await this.processAndStore(facts, userId);
+                await this.processAndStore(facts, userId, userMessage);
             }
         } catch (e) {
             console.warn(`[FACT_EXTRACT] ⚠️ extractAndStore failed (attempt ${attempt}/${this.MAX_EXTRACT_ATTEMPTS}):`, e);
@@ -119,13 +118,16 @@ OUTPUT FORMAT (JSON array):
     "subject": "USER or SILHOUETTE or other",
     "attribute": "what aspect",
     "value": "the value",
-    "source": "user | assistant"
+    "source": "user | assistant",
+    "quote": "exact span of the USER's message that states this fact (empty for assistant)"
   }
 ]
 
 PROVENANCE RULE (mandatory):
-- source="user" ONLY if the USER explicitly stated the fact in their own message.
+- source="user" ONLY if the USER explicitly stated the fact in their own message, and then
+  "quote" MUST be the exact substring of the user's message that says it (copy, do not paraphrase).
 - source="assistant" if the fact comes from the ASSISTANT's words (suggestions, assumptions, confirmations the user did not state). These are stored as UNVERIFIED inferences, never as user statements.
+- A fact whose quote is not a real substring of the user's message will be DOWNGRADED to an unverified inference automatically.
 
 If there are NO facts worth remembering, output: []
 
@@ -199,7 +201,8 @@ FACTS (JSON only):`;
                 subject: f.subject,
                 attribute: f.attribute,
                 value: f.value,
-                source: f.source === 'assistant' ? 'USER_INFERRED' as const : 'USER_STATED' as const
+                source: f.source === 'assistant' ? 'USER_INFERRED' as const : 'USER_STATED' as const,
+                quote: typeof f.quote === 'string' && f.quote.trim() ? f.quote.trim() : undefined
             }));
         } catch {
             return [];
@@ -255,24 +258,30 @@ CORRECTED (or REJECT):`;
     /**
      * Process extracted facts: validate, compare with existing, and decide action
      */
-    async processAndStore(facts: ExtractedFact[], userId: string): Promise<MemoryAction[]> {
+    async processAndStore(facts: ExtractedFact[], userId: string, userMessage?: string): Promise<MemoryAction[]> {
         const actions: MemoryAction[] = [];
 
         for (const fact of facts) {
+            // [R5] Citation check: USER_STATED requires the quote to literally
+            // appear in the user's message. The model's declared source is not
+            // evidence; without a verifiable citation the fact is a hypothesis.
+            const cited = this.verifyCitation(fact, userMessage);
+            if (!cited) continue; // dropped with loud log inside
+
             // [NEW] Validate and correct before processing
-            const validatedFact = await this.validateAndCorrect(fact);
+            const validatedFact = await this.validateAndCorrect(cited);
             if (!validatedFact) continue; // Skip rejected facts
 
-            const action = await this.decideAction(validatedFact);
+            const action = await this.decideAction(validatedFact, userId);
             actions.push(action);
 
             // Execute the action
             if (action.action === 'ADD') {
                 await this.storeFact(validatedFact, userId);
             } else if (action.action === 'UPDATE' && action.existingId) {
-                await this.updateFact(action.existingId, validatedFact);
+                await this.updateFact(action.existingId, validatedFact, userId);
             } else if (action.action === 'DELETE' && action.existingId) {
-                await this.deleteFact(action.existingId);
+                await this.deleteFact(action.existingId, userId);
             }
         }
 
@@ -280,12 +289,28 @@ CORRECTED (or REJECT):`;
     }
 
     /**
+     * [R5] Verify the citation behind a USER_STATED fact. Returns the fact
+     * possibly downgraded to USER_INFERRED (hypothesis) when the quote does
+     * not literally appear in the user's message; returns null only when an
+     * inferred fact has no usable content.
+     */
+    private verifyCitation(fact: ExtractedFact, userMessage?: string): ExtractedFact | null {
+        if (fact.source !== 'USER_STATED') return fact;
+        const quote = (fact.quote || '').trim();
+        if (userMessage && quote && userMessage.toLowerCase().includes(quote.toLowerCase())) {
+            return fact; // citation verified: the user really said this
+        }
+        console.warn(`[FACT_EXTRACT] 🔽 Downgraded to inference (no verifiable quote): "${fact.content.substring(0, 50)}..."`);
+        return { ...fact, source: 'USER_INFERRED', quote: undefined, confidence: Math.min(fact.confidence, 0.6) };
+    }
+
+    /**
      * Decide what to do with a fact (ADD/UPDATE/DELETE/NOOP)
      */
-    private async decideAction(fact: ExtractedFact): Promise<MemoryAction> {
+    private async decideAction(fact: ExtractedFact, userId: string): Promise<MemoryAction> {
         try {
-            // 1. Search for similar existing facts
-            const similar = await this.findSimilarFacts(fact);
+            // 1. Search for similar existing facts (owner-scoped: R5)
+            const similar = await this.findSimilarFacts(fact, userId);
 
             if (similar.length === 0) {
                 return { action: 'ADD', fact, reason: 'New fact' };
@@ -322,20 +347,10 @@ CORRECTED (or REJECT):`;
     /**
      * Find similar facts in storage
      */
-    private async findSimilarFacts(fact: ExtractedFact): Promise<any[]> {
+    private async findSimilarFacts(fact: ExtractedFact, userId: string): Promise<any[]> {
         try {
-            // Query Neo4j for facts with same attribute
-            const results = await graph.runQuery(`
-                MATCH (f:Fact)
-                WHERE f.attribute = $attribute OR f.content CONTAINS $keyword
-                RETURN f.id as id, f.content as content, f.attribute as attribute, f.value as value
-                LIMIT 5
-            `, {
-                attribute: fact.attribute || '',
-                keyword: fact.subject || fact.value || ''
-            });
-
-            return results || [];
+            // [R5] SQLite repository, owner-scoped (was: graph query across ALL owners)
+            return factRepository.findSimilar(fact, userId);
         } catch {
             return [];
         }
@@ -360,100 +375,41 @@ CORRECTED (or REJECT):`;
      * Store a new fact permanently
      */
     private async storeFact(fact: ExtractedFact, userId: string): Promise<void> {
-        const id = crypto.randomUUID();
-
-        // 1. Store in Neo4j (graph - for relationships and querying)
-        try {
-            await graph.runQuery(`
-                CREATE (f:Fact {
-                    id: $id,
-                    type: $type,
-                    content: $content,
-                    subject: $subject,
-                    attribute: $attribute,
-                    value: $value,
-                    confidence: $confidence,
-                    createdAt: timestamp(),
-                    source: $source
-                })
-            `, {
-                id,
-                type: fact.type,
-                content: fact.content,
-                subject: fact.subject || null,
-                attribute: fact.attribute || null,
-                value: fact.value || null,
-                confidence: fact.confidence,
-                source: fact.source || 'USER_STATED'
-            });
-
-            // Link to User node if personal
-            if (fact.type === 'PERSONAL' || fact.type === 'PREFERENCE') {
-                await graph.runQuery(`
-                    MERGE (u:User {id: $userId})
-                    WITH u
-                    MATCH (f:Fact {id: $factId})
-                    MERGE (u)-[:HAS_FACT]->(f)
-                `, { userId, factId: id });
-            }
-
-            console.log(`[FACT_EXTRACT] 📝 Stored in graph: "${fact.content}"`);
-        } catch (e) {
-            console.warn('[FACT_EXTRACT] Neo4j storage failed:', e);
-        }
-
-        // 2. Store in ContinuumMemory (vector - for semantic search)
-        // Provenance: USER_STATED facts keep the USER_SAID source; inferred facts
-        // are labeled USER_INFERRED and stay visible but attributed as inference.
-        const factSource = fact.source || 'USER_STATED';
-        await continuum.store(
-            fact.content,
-            MemoryTier.LONG,  // Long-term = permanent
-            ['FACT', 'USER', fact.type, factSource, `attr:${fact.attribute || 'general'}`, `owner:${userId}`,
-             sourceTag(factSource === 'USER_STATED' ? MemorySource.USER_SAID : MemorySource.ASSISTANT_SAID)]
-        );
-
-        console.log(`[FACT_EXTRACT] 💾 Fact stored eternally: "${fact.content}"`);
+        // [R5] Repository: SQLite durable source + graph/continuum projections
+        // under one shared id, with an honest receipt per backend.
+        const receipt = await factRepository.addFact({
+            type: fact.type,
+            content: fact.content,
+            subject: fact.subject,
+            attribute: fact.attribute,
+            value: fact.value,
+            source: fact.source || 'USER_STATED',
+            quote: fact.quote,
+            status: fact.source === 'USER_STATED' ? 'verified' : 'hypothesis',
+            confidence: fact.confidence
+        }, userId);
+        const proj = receipt.projections.map(p => `${p.backend}:${p.ok ? 'ok' : 'FAILED'}`).join(' ');
+        console.log(`[FACT_EXTRACT] 💾 Fact stored (id=${receipt.id}, sqlite=${receipt.sqliteRows} row, ${proj}): "${fact.content}"`);
     }
 
     /**
      * Update an existing fact
      */
-    private async updateFact(id: string, fact: ExtractedFact): Promise<void> {
-        try {
-            await graph.runQuery(`
-                MATCH (f:Fact {id: $id})
-                SET f.content = $content,
-                    f.value = $value,
-                    f.confidence = $confidence,
-                    f.updatedAt = timestamp()
-            `, {
-                id,
-                content: fact.content,
-                value: fact.value || null,
-                confidence: fact.confidence
-            });
-
-            console.log(`[FACT_EXTRACT] 🔄 Updated fact: "${fact.content}"`);
-        } catch (e) {
-            console.warn('[FACT_EXTRACT] Update failed:', e);
-        }
+    private async updateFact(id: string, fact: ExtractedFact, userId: string): Promise<void> {
+        const receipt = await factRepository.updateFact(id, {
+            content: fact.content,
+            value: fact.value,
+            confidence: fact.confidence
+        }, userId);
+        console.log(`[FACT_EXTRACT] 🔄 Updated fact (id=${id}, sqlite=${receipt.sqliteRows} row): "${fact.content}"`);
     }
 
     /**
      * Delete a fact
      */
-    private async deleteFact(id: string): Promise<void> {
-        try {
-            await graph.runQuery(`
-                MATCH (f:Fact {id: $id})
-                DETACH DELETE f
-            `, { id });
-
-            console.log(`[FACT_EXTRACT] 🗑️ Deleted fact: ${id}`);
-        } catch (e) {
-            console.warn('[FACT_EXTRACT] Delete failed:', e);
-        }
+    private async deleteFact(id: string, userId: string): Promise<void> {
+        const receipt = await factRepository.retractFact(id, userId);
+        console.log(`[FACT_EXTRACT] 🗑️ Retracted fact (id=${id}, sqlite=${receipt.sqliteRows} row)`);
     }
 
     /**
@@ -462,16 +418,11 @@ CORRECTED (or REJECT):`;
      */
     async getUserFacts(userId: string): Promise<string> {
         try {
-            const results = await graph.runQuery(`
-                MATCH (u:User {id: $userId})-[:HAS_FACT]->(f:Fact)
-                RETURN f.type as type, f.content as content, f.attribute as attribute, f.value as value
-                ORDER BY f.createdAt DESC
-                LIMIT 20
-            `, { userId });
-
+            // [R5] read the durable source (SQLite repository), not one projection
+            const results = factRepository.getFacts(userId).slice(0, 20);
             if (!results || results.length === 0) return '';
 
-            const facts = results.map((r: any) => `- ${r.content}`).join('\n');
+            const facts = results.map((r) => `- ${r.content}`).join('\n');
             return `[USER FACTS]\n${facts}`;
         } catch {
             return '';
