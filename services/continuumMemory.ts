@@ -76,7 +76,7 @@ class ContinuumMemorySystem {
         await memoryTransitions.commit(entry);
         // Do not remove a replacement with the same ID that arrived while writing.
         this.working = this.working.filter(n => n !== node);
-        this.isDirty = true;
+        this.markDirty();
         await this.saveSnapshot();
     }
 
@@ -217,7 +217,7 @@ class ContinuumMemorySystem {
                     }
                 }
                 if (entry.source.tier === MemoryTier.WORKING) this.working = this.working.filter(n => n.id !== entry.source.id);
-                this.isDirty = true;
+                this.markDirty();
                 await this.saveSnapshot();
             } catch (error) {
                 console.error(`[CONTINUUM] Recovery deferred for ${entry.key}:`, error);
@@ -239,7 +239,7 @@ class ContinuumMemorySystem {
             return tierStr === 'WORKING' || tierStr === 'ULTRA_SHORT' || tierStr === 'SHORT';
         });
         console.log(`[CONTINUUM] Hydrated Volatile Memory: ${this.working.length} WORKING nodes`);
-        this.isDirty = true; // Mark as dirty to trigger save
+        this.markDirty(); // Mark as dirty to trigger save
     }
 
     // --- FULL SESSION CHAT HISTORY (INFINITE CONTEXT) ---
@@ -331,7 +331,7 @@ class ContinuumMemorySystem {
 
         if (originalLen !== this.working.length) {
             console.log(`[CONTINUUM] 🗑️ Deleted node ${nodeId} from RAM.`);
-            this.isDirty = true;
+            this.markDirty();
         }
 
         // 3. Remove from Persistent Storage (LanceDB)
@@ -420,7 +420,7 @@ class ContinuumMemorySystem {
             // Save the incoming memory first. Failure to evict an older node may exceed
             // the soft capacity, but must never discard the new memory or its source.
             this.working.push(node as MemoryNode);
-            this.isDirty = true;
+            this.markDirty();
             await this.saveSnapshot();
             if (this.working.length > this.RAM_HARD_CAP) {
                 const evicted = this.working[0];
@@ -485,6 +485,11 @@ class ContinuumMemorySystem {
             await lancedbService.store(nodeToStore);
         }
 
+        // [R11] every persisted write (any tier) bumps the revision so stats
+        // snapshots invalidate immediately. The working-tier path already
+        // bumped via markDirty(); this covers the LanceDB/vector branches.
+        this.writeRevision++;
+
         // A failed write must never poison deduplication and suppress a retry.
         this.recentHashes.add(contentHash);
         if (this.recentHashes.size > 100) {
@@ -522,7 +527,7 @@ class ContinuumMemorySystem {
         if (updated === source) return;
         await lancedbService.store(updated);
         const index = this.working.findIndex(n => n.id === id);
-        if (index >= 0) { this.working[index] = updated; this.isDirty = true; await this.saveSnapshot(); }
+        if (index >= 0) { this.working[index] = updated; this.markDirty(); await this.saveSnapshot(); }
     }
 
     public async retrieve(query: string, filterTag?: string, agentId?: string): Promise<MemoryNode[]> {
@@ -677,12 +682,12 @@ class ContinuumMemorySystem {
             if (age > 900) { // 15 Minutes (Conversation Window) — move to hippocampus
                 this.moveToHippocampus(node);
                 toKeep.push(node); // Hippocampus is a view, never an unverified eviction.
-                this.isDirty = true;
+                this.markDirty();
             } else if (node.accessCount >= 2 || node.importance >= 0.8) {
                 // Mark as promoted (tier upgrade) but keep in working memory
                 node.tier = MemoryTier.WORKING;
                 toKeep.push(node);
-                this.isDirty = true;
+                this.markDirty();
             } else {
                 toKeep.push(node);
             }
@@ -860,10 +865,21 @@ class ContinuumMemorySystem {
     // Stats Cache
     private cachedStats: any = null;
     private lastStatsCacheTime = 0;
+    // [R11] write revision: every mutation bumps it, so a stats snapshot is
+    // only served from cache while no write happened. Revision + timestamp
+    // travel with the snapshot so consumers compare like with like.
+    private writeRevision = 0;
+    private markDirty() {
+        this.isDirty = true;
+        this.writeRevision++;
+    }
 
     public async getStats() {
         const now = Date.now();
-        if (this.cachedStats && (now - this.lastStatsCacheTime < this.CACHE_TTL)) {
+        // [R11] cache is valid only while NO write happened (revision match);
+        // the 30s TTL alone served stale counts after writes.
+        if (this.cachedStats && this.cachedStats.revision === this.writeRevision
+            && (now - this.lastStatsCacheTime < this.CACHE_TTL)) {
             return this.cachedStats;
         }
 
@@ -888,18 +904,49 @@ class ContinuumMemorySystem {
         const mediumCount = dbNodes.filter(n => n.tier === MemoryTier.MEDIUM || !n.tier).length;
         const longCount = dbNodes.filter(n => n.tier === MemoryTier.LONG).length;
 
+        // [R11] deep counted from the SAME dedup merge getAllNodes uses
+        // (Qdrant live vectors + LanceDB archived DEEP, dedup by id), so the
+        // stats and the node listing can never disagree. deepVectors keeps the
+        // raw Qdrant total visible for transparency.
+        let deepCount = vectorStats.count;
+        try {
+            const { vectorMemory } = await import('./vectorMemoryService');
+            const deepVectors = await vectorMemory.getAllNodes(100);
+            const deepArchived = dbNodes.filter(n => n.tier === MemoryTier.DEEP);
+            const deepMap = new Map<string, any>();
+            deepArchived.forEach(n => deepMap.set(n.id, n));
+            deepVectors.forEach((v: any) => deepMap.set(v.id, v));
+            deepCount = deepMap.size;
+        } catch (e) {
+            console.error("[CONTINUUM] Failed to dedup deep stats; falling back to raw vector count", e);
+        }
+
         // [FIX 2026-02] Use working.length directly (ultraShort/short are aliases — was double-counting)
         const workingCount = this.working.length;
+
+        // [R11] measured health: average decayHealth over sampled nodes;
+        // null (not a fixed 100) when there is nothing to measure.
+        const healthSample = [
+            ...this.working,
+            ...dbNodes.filter(n => typeof (n as any).decayHealth === 'number')
+        ];
+        const avgHealth = healthSample.length > 0
+            ? Math.round(healthSample.reduce((acc, n) => acc + ((n as any).decayHealth ?? 100), 0) / healthSample.length)
+            : null;
+
         this.cachedStats = {
+            revision: this.writeRevision,
+            timestamp: now,
             working: workingCount,
             // Legacy fields (kept for backward compat, both report the unified count)
             ultra: workingCount,
             short: 0,
             medium: mediumCount,
             long: longCount,
-            deep: vectorStats.count,
-            total: workingCount + mediumCount + longCount + vectorStats.count,
-            avgHealth: 100,
+            deep: deepCount,
+            deepVectors: vectorStats.count,
+            total: workingCount + mediumCount + longCount + deepCount,
+            avgHealth,
             archivedNodes: longCount
         };
         this.lastStatsCacheTime = now;

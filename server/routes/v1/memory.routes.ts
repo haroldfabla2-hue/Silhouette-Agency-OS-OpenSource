@@ -22,7 +22,10 @@ router.get('/state', async (req, res) => {
         const nodes = await continuum.getAllNodes();
         const stats = await continuum.getStats();
 
-        res.json({ nodes, stats });
+        // [R11] one consistent snapshot: revision + timestamp let the UI
+        // compare working with working of the SAME revision, never mixed
+        // snapshots. Stats invalidate on every write (revision-bumped).
+        res.json({ revision: stats.revision, timestamp: stats.timestamp, nodes, stats });
     } catch (error: any) {
         console.error('[MEMORY] Error fetching memory state:', error);
         res.status(500).json({ error: 'Failed to fetch memory state', details: error.message });
