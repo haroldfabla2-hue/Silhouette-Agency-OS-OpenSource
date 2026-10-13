@@ -63,6 +63,15 @@ export class DreamerService {
                 this.attemptDream();
             }
 
+            // Event-based triggers (roadmap item 8): epiphanies, milestones,
+            // hippocampus pressure, clock fallback. Never throws.
+            try {
+                const { evaluateAndMaybeDream } = await import('./dream/dreamTriggers');
+                await evaluateAndMaybeDream(this.isDreaming, () => this.attemptDream());
+            } catch (e) {
+                console.warn('[DREAMER] trigger evaluation failed (non-fatal):', e);
+            }
+
             // NEW: Nocturnal Plasticity Check (Sleep Mode)
             // GUARD: Wait for startup grace period to let frontend connect first
             const timeSinceStart = Date.now() - this.systemStartTime;
@@ -358,6 +367,11 @@ export class DreamerService {
         } finally {
             this.isDreaming = false;
             this.memoriesAccumulated = 0; // Reset Entropy
+            // Record the cycle for event-based triggers (roadmap item 8).
+            // Fire-and-forget: a state-write failure must never break the dreamer.
+            import('./dream/dreamTriggers').then(({ recordDreamCycle, loadDreamTriggerConfig }) => {
+                recordDreamCycle(loadDreamTriggerConfig().statePath);
+            }).catch(() => { /* non-fatal */ });
             // Update Introspection Engine Status
             import('./introspectionEngine').then(({ introspection }) => {
                 introspection.setDreaming(false);
