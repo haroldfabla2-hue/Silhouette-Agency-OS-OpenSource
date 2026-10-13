@@ -8,6 +8,8 @@ const router = Router();
 router.post('/queue', (req, res) => mediaController.queueVideo(req, res));
 // GET /v1/media/queue - Get all queued jobs
 router.get('/queue', (req, res) => mediaController.getQueue(req, res));
+// [R10] test-cleanup path - removes TEST-origin jobs only (see controller)
+router.delete('/queue/:id', (req, res) => mediaController.removeQueueJob(req, res));
 // GET /v1/media/queue/:id - Get specific job status
 router.get('/queue/:id', (req, res) => mediaController.getJobStatus(req, res));
 
@@ -589,4 +591,3 @@ router.post('/canvas/export', async (req: Request, res: Response) => {
 });
 
 export default router;
-
