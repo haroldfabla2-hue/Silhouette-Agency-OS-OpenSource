@@ -21,7 +21,7 @@ class WorkflowEngine {
   private isProcessing: boolean = false;
   private lastThoughts: string[] = [];
 
-  private lastQualityScore: number = 100;
+  private lastQualityScore: number | null = null; // [R13] null = never evaluated; an idle system has NO quality score
   private remediationAttempts: number = 0;
   private MAX_REMEDIATION_ATTEMPTS: number = 3;
 
@@ -77,7 +77,7 @@ class WorkflowEngine {
     return this.lastThoughts;
   }
 
-  public getLastQualityScore(): number {
+  public getLastQualityScore(): number | null {
     return this.lastQualityScore;
   }
 
@@ -329,12 +329,12 @@ class WorkflowEngine {
       this.recordSuccess();
       this.tokenUsage += response.usage;
       this.lastThoughts = response.thoughts;
-      this.lastQualityScore = response.qualityScore || 85;
+      this.lastQualityScore = response.qualityScore ?? null; // [R13] unmeasured is null, not a fabricated 85
       this.pipelineData.qaReport = response.output;
 
-      if (this.lastQualityScore < 90) systemBus.emit(SystemProtocol.INTERFACE_MORPH, { mode: 'DEFENSE' }, 'QA');
+      if (this.lastQualityScore !== null && this.lastQualityScore < 90) systemBus.emit(SystemProtocol.INTERFACE_MORPH, { mode: 'DEFENSE' }, 'QA');
 
-      if (this.lastQualityScore >= 98 || this.remediationAttempts >= this.MAX_REMEDIATION_ATTEMPTS) {
+      if ((this.lastQualityScore !== null && this.lastQualityScore >= 98) || this.remediationAttempts >= this.MAX_REMEDIATION_ATTEMPTS) {
         systemBus.emit(SystemProtocol.INTERFACE_MORPH, { mode: 'FLOW' }, 'QA');
         this.transitionTo(WorkflowStage.OPTIMIZATION);
       } else {
