@@ -76,6 +76,12 @@ export class IdentityEvolutionError extends Error {
 /** Core structure of a soul that no introspection-driven adjustment may remove. */
 export const SOUL_CORE_MARKERS = ['# Soul:', '## Personality', '## Core Values', '## Communication Style', '## Principles'];
 
+/**
+ * Engine-sourced adjustments (dreamer/curiosity/research evidence) may not
+ * exceed this many per agent per day. Evolution is gradual by design.
+ */
+export const MAX_ENGINE_ADJUSTMENTS_PER_DAY = 3;
+
 /** Guards for adjustments proposed by introspection: core survives, one section at a time. */
 export const INTROSPECTION_GUARDS: IdentityGuardOptions = {
     requiredMarkers: SOUL_CORE_MARKERS,
@@ -264,7 +270,26 @@ export function createIdentityEvolution(io: IdentityIO) {
         newSectionContent: string;
         rationale: string;
         sourceReflection: string;
+        /** Where the proposal's evidence came from. Engines feed introspection;
+         *  every non-reflection origin is rate-limited per day and recorded. */
+        originEngine?: 'reflection' | 'dreamer' | 'curiosity' | 'research';
     }): IdentityLedgerEntry {
+        const origin = params.originEngine ?? 'reflection';
+        if (!['reflection', 'dreamer', 'curiosity', 'research'].includes(origin)) {
+            throw new IdentityEvolutionError('invalid-input', `Unknown originEngine: ${origin}`);
+        }
+        if (origin !== 'reflection') {
+            const today = new Date().toISOString().slice(0, 10);
+            const engineToday = readLedger(params.agentId).filter(e =>
+                e.timestamp.startsWith(today) && /^introspection:SOUL_ADJUST:(dreamer|curiosity|research)$/.test(e.appliedBy)
+            ).length;
+            if (engineToday >= MAX_ENGINE_ADJUSTMENTS_PER_DAY) {
+                throw new IdentityEvolutionError(
+                    'guard-violation',
+                    `Engine-sourced identity evolution is rate-limited to ${MAX_ENGINE_ADJUSTMENTS_PER_DAY}/day per agent (gradual self-discovery, never runaway change)`
+                );
+            }
+        }
         const current = io.read(params.agentId, 'SOUL.md');
         if (!current) throw new IdentityEvolutionError('invalid-input', `Agent ${params.agentId} has no SOUL.md`);
         const newContent = replaceSection(current, params.sectionHeading, params.newSectionContent);
@@ -274,7 +299,7 @@ export function createIdentityEvolution(io: IdentityIO) {
             newContent,
             rationale: params.rationale,
             sourceReflection: params.sourceReflection,
-            appliedBy: 'introspection:SOUL_ADJUST',
+            appliedBy: origin === 'reflection' ? 'introspection:SOUL_ADJUST' : `introspection:SOUL_ADJUST:${origin}`,
             guard: INTROSPECTION_GUARDS
         });
     }
