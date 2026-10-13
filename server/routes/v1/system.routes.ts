@@ -88,7 +88,7 @@ router.get('/diagnostics', (req, res) => systemController.getDiagnostics(req, re
 // ?open=true filters to currently open incidents.
 router.get('/incidents', async (req, res) => {
     try {
-        const { incidentRegistry } = await import('../../services/incidentRegistry');
+        const { incidentRegistry } = await import('../../../services/incidentRegistry');
         const incidents = req.query.open === 'true'
             ? incidentRegistry.getOpenIncidents()
             : incidentRegistry.getRecentIncidents(50);
