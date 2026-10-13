@@ -343,7 +343,7 @@ class ContinuumMemorySystem {
         }
     }
 
-    public async store(content: string, tier: MemoryTier = MemoryTier.ULTRA_SHORT, tags: string[] = [], skipIngestion: boolean = false): Promise<void> {
+    public async store(content: string, tier: MemoryTier = MemoryTier.ULTRA_SHORT, tags: string[] = [], skipIngestion: boolean = false, extra?: { parentIds?: string[] }): Promise<void> {
         // [FIX] Anti-Recursion Guard 1: Block self-referential/recursive content patterns
         for (const pattern of ContinuumMemorySystem.LOOP_PATTERNS) {
             if (pattern.test(content)) {
@@ -380,6 +380,7 @@ class ContinuumMemorySystem {
             importance: this.calculateInitialImportance(content, tags),
             tags: tags,
             ownerId: tags.find(t => t.startsWith('owner:'))?.split(':')[1],
+            parentIds: extra?.parentIds?.length ? extra.parentIds : undefined,
             accessCount: 1,
             lastAccess: timestamp,
             decayHealth: 100,

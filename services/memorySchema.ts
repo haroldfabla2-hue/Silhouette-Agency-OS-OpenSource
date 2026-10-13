@@ -10,6 +10,11 @@ export const MemoryNodeSchema = z.object({
     importance: z.number().min(0).max(1),
     tags: z.array(z.string()),
     ownerId: z.string().optional(),
+    // Provenance: structured IDs of the source memories this node was
+    // synthesized from (dream intuitions, meta-truths). Eternal-memory safe:
+    // additive only. /doctor uses its absence on INTUITION tags to detect
+    // orphan consolidations.
+    parentIds: z.array(z.string()).optional(),
     accessCount: z.number().default(0),
     lastAccess: z.number(),
     decayHealth: z.number().optional(),

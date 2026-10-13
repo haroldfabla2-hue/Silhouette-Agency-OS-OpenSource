@@ -301,7 +301,7 @@ export class DreamerService {
 
             // 4. Handle Outcomes
             if (result && result.outcome === 'ACCEPTED') {
-                await this.consolidateIntuition(result.content);
+                await this.consolidateIntuition(result.content, memories.map(m => m.id));
             } else if (result && result.outcome === 'MYSTERY') {
                 console.log(`[DREAMER] 🕵️ Epistemic Gap Detected: "${result.content}" (Confidence: ${result.veracity}%)`);
 
@@ -311,7 +311,7 @@ export class DreamerService {
 
                 if (verifiedResult.outcome === 'ACCEPTED') {
                     console.log(`[DREAMER] ⚔️ Skeptic Challenge Passed! Upgrading mystery to truth.`);
-                    await this.consolidateIntuition(verifiedResult.content);
+                    await this.consolidateIntuition(verifiedResult.content, memories.map(m => m.id));
                 } else {
                     console.log(`[DREAMER] 🛡️ Mystery remains solved but unproven. Logging gap.`);
                     // Emit Epistemic Gap as before
@@ -657,7 +657,7 @@ export class DreamerService {
         }, 'DreamerService');
     }
 
-    private async consolidateIntuition(content: string) {
+    private async consolidateIntuition(content: string, sourceNodeIds: string[] = []) {
         console.log(`[DREAMER] ✨ Epiphany Candidate: ${content}`);
 
         // 1. Semantic Deduplication (The "Anti-Loop" Mechanism)
@@ -669,7 +669,7 @@ export class DreamerService {
 
         // 2. Store in Continuum (Vector DB)
         // Use Continuum to store in DEEP tier (which routes to Qdrant)
-        await continuum.store(content, MemoryTier.DEEP, ['INTUITION', 'DREAM', 'SUBCONSCIOUS', 'HYPOTHESIS']);
+        await continuum.store(content, MemoryTier.DEEP, ['INTUITION', 'DREAM', 'SUBCONSCIOUS', 'HYPOTHESIS'], false, { parentIds: sourceNodeIds });
 
         // Exploratory content is retained, but graph writes and action-triggering signals
         // require evidence-backed review rather than a dream critic's confidence.
@@ -784,7 +784,7 @@ export class DreamerService {
                     // 3. Adversarial Review (The Critic)
                     const grade = await this.criticReview(insight);
                     if (grade >= 8) {
-                        await this.consolidateIntuition(`[SERENDIPITY] ${insight}`);
+                        await this.consolidateIntuition(`[SERENDIPITY] ${insight}`, [anchor?.id, (partner as any)?.payload?.id, (partner as any)?.id].filter((x): x is string => typeof x === 'string' && x.length > 0));
                         console.log(`[DREAMER] 🏆 DISCOVERY SAVED! Grade: ${grade}/10`);
                     } else {
                         console.log(`[DREAMER] 🗑️ Idea rejected by Critic. Grade: ${grade}/10`);
@@ -812,7 +812,7 @@ export class DreamerService {
                     if (bridgeInsight) {
                         const grade = await this.criticReview(bridgeInsight);
                         if (grade >= 7) { // Slightly lower threshold for structural discoveries
-                            await this.consolidateIntuition(`[SHORTCUT] ${bridgeInsight}`);
+                            await this.consolidateIntuition(`[SHORTCUT] ${bridgeInsight}`, [gap?.nodeA?.id, gap?.nodeB?.id].filter((x): x is string => typeof x === 'string' && x.length > 0));
                             console.log(`[DREAMER] 🌉 SHORTCUT BRIDGED! Grade: ${grade}/10`);
                         }
                     }
@@ -887,7 +887,7 @@ export class DreamerService {
                 const insight = await eureka.attemptEureka(gap.nodeA, gap.nodeB);
 
                 if (insight) {
-                    await this.consolidateIntuition(`[EUREKA] ${insight}`);
+                    await this.consolidateIntuition(`[EUREKA] ${insight}`, [gap?.nodeA?.id, gap?.nodeB?.id].filter((x): x is string => typeof x === 'string' && x.length > 0));
                     console.log(`[DREAMER] 🌌 Neural Eureka Consolidated (Distance: ${gap.distance.toFixed(2)})`);
                 }
             }
