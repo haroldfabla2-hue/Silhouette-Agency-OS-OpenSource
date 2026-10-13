@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterAll } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import http from 'http';
@@ -22,6 +22,25 @@ export function findUnawaitedAsyncContinuumCalls(source: string, asyncMethods: s
 }
 
 describe('memory stats route awaits async stats', () => {
+    // Importing the memory route boots the continuumMemory singleton, whose
+    // constructor fires dynamic imports (dreamerService -> powerManager) and a
+    // Redis connection. If the vitest worker closes while that module fetch is
+    // still in flight, the run dies with "Closing rpc while fetch was pending"
+    // (observed in CI, Node 22 leg). Drain and close everything explicitly so
+    // teardown is deterministic — never a retry-loop lottery.
+    afterAll(async () => {
+        // dreamerService statically imports continuumMemory (circular), so its
+        // namespace can resolve before the `dreamer` export is initialized.
+        // ES module namespaces are live bindings: drain the evaluation, then stop.
+        const mod: any = await import('../../services/dreamerService');
+        for (let i = 0; i < 100 && !mod.dreamer; i++) {
+            await new Promise(r => setTimeout(r, 50));
+        }
+        mod.dreamer?.stopDreamingLoop();
+        const { redisClient } = await import('../../services/redisClient');
+        await redisClient.disconnect();
+    });
+
     it('detector flags the original bug (negative control)', () => {
         expect(findUnawaitedAsyncContinuumCalls('const stats = continuum.getStats();', ['getStats'])).toHaveLength(1);
         expect(findUnawaitedAsyncContinuumCalls('const stats = await continuum.getStats();', ['getStats'])).toEqual([]);
