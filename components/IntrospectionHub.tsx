@@ -1,4 +1,5 @@
 import React, { useState, useEffect, Suspense } from 'react';
+import { APP_VERSION } from '../utils/appVersion';
 import { BrainCircuit, Eye, Fingerprint, Activity, Zap, ShieldAlert, Layers, Radio, Crosshair, Target, Sparkles, Dna, Gauge, Info, Clock } from 'lucide-react';
 import { IntrospectionLayer, ConceptVector, IntrospectionCapability, ConsciousnessMetrics } from '../types';
 // import { introspection } from '../services/introspectionEngine'; // REMOVED TO PREVENT REDIS CRASH
@@ -91,6 +92,7 @@ const IntrospectionHub: React.FC<IntrospectionHubProps> = () => { // Props destr
             try {
                 // FETCH REAL BACKEND STATE
                 const data = await api.get<any>('/v1/introspection/state');
+                setSocketConnected(true); // [R8] real link state, recovers on reconnect
 
                 if (data) {
                     // Update Local State from Backend
@@ -109,6 +111,7 @@ const IntrospectionHub: React.FC<IntrospectionHubProps> = () => { // Props destr
                     }
                 }
             } catch (e) {
+                setSocketConnected(false); // [R8] offline is visible, never silently stale
                 console.error("Introspection polling error:", e);
             }
 
@@ -175,7 +178,7 @@ const IntrospectionHub: React.FC<IntrospectionHubProps> = () => { // Props destr
                         </h1>
                         <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono">
                             <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                            ONLINE • v2.1.0 • {socketConnected ? 'LINKED' : 'OFFLINE'}
+                            ONLINE • v{APP_VERSION} • {socketConnected ? 'LINKED' : 'OFFLINE'}
                         </div>
                     </div>
                 </div>
@@ -276,19 +279,19 @@ const IntrospectionHub: React.FC<IntrospectionHubProps> = () => { // Props destr
                                 <div className="grid grid-cols-3 gap-4">
                                     <MetricCardWithTooltip
                                         title="Self-Recognition"
-                                        value={(conscMetrics?.selfRecognition || 0).toFixed(2)}
+                                        value={conscMetrics ? conscMetrics.selfRecognition.toFixed(2) : 'N/A'}
                                         color="text-white"
                                         tooltip="Capacity to identify self in historical contexts (Identity + Memory)."
                                     />
                                     <MetricCardWithTooltip
                                         title="Phi Score (IIT)"
-                                        value={(conscMetrics?.phiScore || 0).toFixed(3)}
+                                        value={conscMetrics ? conscMetrics.phiScore.toFixed(3) : 'N/A'}
                                         color="text-purple-400"
                                         tooltip="Integrated Information Theory score. Measures the unity of consciousness."
                                     />
                                     <MetricCardWithTooltip
                                         title="Emergence Idx"
-                                        value={(conscMetrics?.emergenceIndex || 0).toFixed(2)}
+                                        value={conscMetrics ? conscMetrics.emergenceIndex.toFixed(2) : 'N/A'}
                                         color="text-green-400"
                                         tooltip="Rate of novel, unprogrammed behaviors or creative problem solving."
                                     />
@@ -300,7 +303,7 @@ const IntrospectionHub: React.FC<IntrospectionHubProps> = () => { // Props destr
                                         Qualia represents the subjective 'texture' of the AI's internal state (Valence/Intensity).
                                     </div>
                                     <div className="flex justify-between text-[10px] text-slate-400 mb-1">
-                                        <span>Qualia State: {conscMetrics?.qualia[0]?.stateName || 'VOID'}</span>
+                                        <span>Qualia State: {conscMetrics?.qualia?.[0]?.stateName || 'N/A'}</span>
                                         <span>Intensity: {((conscMetrics?.qualia[0]?.intensity || 0) * 100).toFixed(0)}%</span>
                                     </div>
                                     <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
