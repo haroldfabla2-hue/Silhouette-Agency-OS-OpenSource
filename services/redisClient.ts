@@ -1,4 +1,5 @@
 import { REDIS_CONFIG } from '../constants';
+import { incidentRegistry } from './incidentRegistry';
 
 const MOCK_STORE_MAX_SIZE = 10000; // Eviction threshold for in-memory fallback
 
@@ -54,6 +55,8 @@ class RedisService {
                 this.client.on('connect', () => {
                     console.log('[REDIS] Connected (Warm Persistence Active)');
                     this.isConnected = true;
+                    // [R6] recovery closes the SAME incident the fallback opened
+                    incidentRegistry.resolveIncidents('redis');
                 });
 
                 await this.client.connect();
@@ -67,6 +70,10 @@ class RedisService {
                 }
                 this.isMock = true;
                 this.isConnected = true;
+                // [R6] durable incident: in-memory fallback loses data on restart
+                incidentRegistry.recordIncident('redis', 'outage',
+                    `Redis unavailable: ${e.message || e}. Using in-memory fallback.`,
+                    'Cached data is lost on restart while the fallback is active.');
             }
         }
     }
