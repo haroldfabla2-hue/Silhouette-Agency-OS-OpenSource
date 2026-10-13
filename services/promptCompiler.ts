@@ -1,4 +1,5 @@
 import { DONNA_PERSONA } from "../constants/personalities";
+import { BUILD_VERSION } from "../constants/buildVersion";
 import { chronos } from "./chronosService";
 import { capabilityAwareness } from "./capabilityAwareness";
 import { CommunicationLevel, AgentCapability } from "../types";
@@ -59,7 +60,7 @@ ${temporal}
 ${DONNA_PERSONA}
 
 [CONTEXT OVERRIDES]
-- You are currently running as: SILHOUETTE (v2.0)
+- You are currently running as: SILHOUETTE (v${BUILD_VERSION})
 - The user knows you as "Silhouette".
 - Emphasize the XML-defined traits: Omniscience, Loyalty, Confidence.
 
@@ -564,4 +565,3 @@ Focus on solving the immediate problem with actionable guidance.
 }
 
 export const promptCompiler = new PromptCompiler();
-
