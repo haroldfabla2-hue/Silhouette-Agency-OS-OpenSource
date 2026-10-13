@@ -15,7 +15,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isMobileOpen
   const menuItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Command Center' },
     { id: 'system_control', icon: Sliders, label: 'System Control' },
-    { id: 'orchestrator', icon: Users, label: 'Agent Swarm (131)' },
+    { id: 'orchestrator', icon: Users, label: 'Agent Swarm' },
     { id: 'introspection', icon: BrainCircuit, label: 'Introspection Hub' },
     { id: 'visual_cortex', icon: Palette, label: 'Visual Cortex' },
     { id: 'memory', icon: Database, label: 'Continuum Memory' },
@@ -103,9 +103,9 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isMobileOpen
           <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
           <div className="flex-1">
             <p className="text-xs text-slate-400">System Status</p>
-            <p className="text-xs text-green-400 font-mono">OPTIMAL</p>
+            {/* [R9] no unmeasured OPTIMAL, no invented GPU model */}
+            <p className="text-xs text-slate-500 font-mono">See Health Monitor</p>
           </div>
-          <span className="text-[10px] text-slate-600 font-mono">RTX 3050</span>
         </div>
       </div>
 
