@@ -34,7 +34,8 @@ export class VideoFactory {
         duration: number = 5,
         imagePath?: string,
         engine: 'WAN' | 'SVD' | 'ANIMATEDIFF' | 'VID2VID' | 'KLING' | 'VEO' = 'WAN',
-        advancedParams?: VideoAdvancedParams
+        advancedParams?: VideoAdvancedParams,
+        origin: 'USER' | 'TEST' = 'USER'
     ): Promise<{ url: string, provider: string, audioUrl?: string } | null> {
         console.log(`[VideoFactory] 🎬 Processing Request: "${prompt}" (Engine: ${engine})`);
 
@@ -96,7 +97,8 @@ export class VideoFactory {
             imagePath,
             engine,
             duration,
-            advancedParams
+            advancedParams,
+            origin
         );
 
         if (ticket) {
@@ -108,4 +110,3 @@ export class VideoFactory {
 }
 
 export const videoFactory = new VideoFactory();
-
