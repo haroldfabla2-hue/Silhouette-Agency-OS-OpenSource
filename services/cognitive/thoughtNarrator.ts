@@ -1,5 +1,6 @@
 import { graph } from '../graphService';
 import { continuum } from '../continuumMemory';
+import { incidentRegistry } from '../incidentRegistry';
 import { systemBus } from '../systemBus';
 import { SystemProtocol, MemoryTier } from '../../types';
 import { narratorLog } from '../logger';
@@ -767,57 +768,84 @@ If you have NOTHING meaningful to say, respond with: {"thought":"","intent":"REF
     private async perceiveGraph(): Promise<{
         triangles: { nodeA: any; nodeB: any; bridge: any }[];
         hubs: any[];
-        userFacts: { category: string; content: string; confidence: number }[];
+        userFacts: { category: string; content: string; confidence: number; source?: string; status?: string }[];
         smallWorldSigma: number;
+        available: boolean;
     }> {
         try {
-            const [triangles, hubs, userFacts, topology] = await Promise.all([
+            const [triangles, hubs, topology] = await Promise.all([
                 graph.findOpenTriangles(5).catch(() => []),
                 graph.getHubs(5).catch(() => []),
-                graph.getUserFacts().catch(() => []),
                 import('./advancedDiscovery').then(({ advancedDiscovery }) =>
                     advancedDiscovery.getNetworkTopologyReport().catch(() => null)
                 ).catch(() => null)
             ]);
-            return { triangles, hubs, userFacts, smallWorldSigma: topology?.sigma ?? 0 };
+            // [R6] user facts come from the durable fact repository (SQLite):
+            // a new verified fact reaches the narrator even with Neo4j down.
+            const { factRepository } = await import('../memory/factRepository');
+            const userFacts = factRepository.getRecentFacts(10).map(f => ({
+                category: f.type, content: f.content, confidence: f.confidence,
+                source: f.source, status: f.status
+            }));
+            const graphBlind = !(await graph.isConnected()); // live probe: offline topology is declared, never zeroed
+            return { triangles, hubs, userFacts, smallWorldSigma: topology?.sigma ?? 0, available: !graphBlind };
         } catch (e) {
             console.warn(`[NARRATOR] Graph perception failed (Neo4j may be offline):`, e);
-            return { triangles: [], hubs: [], userFacts: [], smallWorldSigma: 0 };
+            // [R6] declare the lost sense durably instead of silently reporting zero
+            incidentRegistry.recordIncident('narrator', 'perception_gap',
+                'Graph perception unavailable', String((e as any)?.message || e));
+            return { triangles: [], hubs: [], userFacts: [], smallWorldSigma: 0, available: false };
         }
     }
 
     /**
      * Reads recent system errors from SQLite logs — the "pain signals".
      */
-    private async perceiveErrors(): Promise<{ errors: { message: string; timestamp: number }[] }> {
+    private async perceiveErrors(): Promise<{ errors: { message: string; timestamp: number }[]; available: boolean }> {
         try {
             const { sqliteService } = await import('../sqliteService');
             const recentErrors = sqliteService.getRecentLogs('ERROR', 30);
+            // [R6] open durable incidents are pain signals too - a Neo4j/Redis
+            // outage reaches the narrator even if it never hit the log table.
+            const openIncidents = incidentRegistry.getOpenIncidents().map(i => ({
+                message: `[OPEN INCIDENT x${i.occurrenceCount}] ${i.source}/${i.kind}: ${i.summary}`,
+                timestamp: i.lastSeen
+            }));
             return {
-                errors: recentErrors.map((e: any) => ({
-                    message: e.message || e.content || JSON.stringify(e),
-                    timestamp: e.timestamp || Date.now()
-                })).slice(0, 10)
+                errors: [
+                    ...recentErrors.map((e: any) => ({
+                        message: e.message || e.content || JSON.stringify(e),
+                        timestamp: e.timestamp || Date.now()
+                    })),
+                    ...openIncidents
+                ].slice(0, 10),
+                available: true
             };
         } catch (e) {
             console.warn(`[NARRATOR] Error perception failed:`, e);
-            return { errors: [] };
+            incidentRegistry.recordIncident('narrator', 'perception_gap',
+                'Error-log perception unavailable', String((e as any)?.message || e));
+            return { errors: [], available: false };
         }
     }
 
     /**
      * Reads memory statistics — the "cognitive load" of the system.
      */
-    private async perceiveMemory(): Promise<{ pressure: number; total: number; deepCount: number }> {
+    private async perceiveMemory(): Promise<{ pressure: number; total: number; deepCount: number; available: boolean }> {
         try {
             const stats = await continuum.getStats();
             return {
                 pressure: stats.working || 0,
                 total: stats.total || 0,
-                deepCount: stats.deep || 0
+                deepCount: stats.deep || 0,
+                available: true
             };
         } catch (e) {
-            return { pressure: 0, total: 0, deepCount: 0 };
+            // [R6] zeros used to masquerade as "no pressure"; declare the lost sense
+            incidentRegistry.recordIncident('narrator', 'perception_gap',
+                'Memory-stats perception unavailable', String((e as any)?.message || e));
+            return { pressure: 0, total: 0, deepCount: 0, available: false };
         }
     }
 
@@ -825,11 +853,22 @@ If you have NOTHING meaningful to say, respond with: {"thought":"","intent":"REF
      * Formats all sensory data into a structured report for the LLM.
      */
     private buildSensoryReport(
-        graphData: { triangles: any[]; hubs: any[]; userFacts: any[]; smallWorldSigma?: number },
-        errorData: { errors: any[] },
-        memoryData: { pressure: number; total: number; deepCount: number }
+        graphData: { triangles: any[]; hubs: any[]; userFacts: any[]; smallWorldSigma?: number; available?: boolean },
+        errorData: { errors: any[]; available?: boolean },
+        memoryData: { pressure: number; total: number; deepCount: number; available?: boolean }
     ): string {
         const sections: string[] = [];
+
+        // [R6] a lost sense is declared, never reported as "zero"
+        if (graphData.available === false) {
+            sections.push(`## 🔺 Knowledge Graph: SENSE UNAVAILABLE (Neo4j offline - topology unknown, this is NOT zero connections)`);
+        }
+        if (errorData.available === false) {
+            sections.push(`## 🔴 System Errors: SENSE UNAVAILABLE (error log unreadable - this is NOT zero errors)`);
+        }
+        if (memoryData.available === false) {
+            sections.push(`## 🧠 Memory Status: SENSE UNAVAILABLE (continuum stats unreadable - this is NOT zero pressure)`);
+        }
 
         // Graph: Open Triangles
         if (graphData.triangles.length > 0) {
