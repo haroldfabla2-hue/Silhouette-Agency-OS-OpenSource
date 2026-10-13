@@ -55,7 +55,7 @@ export class VideoFactory {
             if (!veoService.isAvailable()) {
                 console.error('[VideoFactory] ❌ Veo service not available (missing API key)');
                 // Fallback to local
-                return this.routeToLocal(prompt, imagePath, 'WAN', duration, advancedParams);
+                return this.routeToLocal(prompt, imagePath, 'WAN', duration, advancedParams, origin);
             }
 
             const result = await veoService.generateVideo(prompt, duration, {
@@ -75,11 +75,11 @@ export class VideoFactory {
             }
 
             console.warn('[VideoFactory] Veo generation failed, falling back to local');
-            return this.routeToLocal(prompt, imagePath, 'WAN', duration, advancedParams);
+            return this.routeToLocal(prompt, imagePath, 'WAN', duration, advancedParams, origin);
         }
 
         // === LOCAL ROUTING: ComfyUI ===
-        return this.routeToLocal(prompt, imagePath, engine, duration, advancedParams);
+        return this.routeToLocal(prompt, imagePath, engine, duration, advancedParams, origin);
     }
 
     /**
@@ -90,7 +90,8 @@ export class VideoFactory {
         imagePath: string | undefined,
         engine: 'WAN' | 'SVD' | 'ANIMATEDIFF' | 'VID2VID' | 'KLING' | 'VEO',
         duration: number,
-        advancedParams?: VideoAdvancedParams
+        advancedParams?: VideoAdvancedParams,
+        origin: 'USER' | 'TEST' = 'USER'
     ): Promise<{ url: string, provider: string } | null> {
         const ticket = await localVideoService.queueVideoGeneration(
             prompt,
