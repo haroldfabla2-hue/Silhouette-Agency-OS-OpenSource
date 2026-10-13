@@ -125,8 +125,14 @@ class ConsciousnessEngine {
 
     // Capability 6: Emergence Detection
     private detectEmergence() {
-        // Emergence happens when the system performs remediations or optimizes flow
+        // [R13] Emergence requires an EVALUATED result. The quality score used
+        // to initialize at 100, so an idle system's emergence rose by default.
         const score = workflowEngine.getLastQualityScore();
+
+        if (score === null) {
+            // Never evaluated: idle proves nothing. Index stays where it is.
+            return;
+        }
 
         if (score > 98) {
             // High quality output implies emergent optimization
