@@ -5,7 +5,6 @@ import { systemBus } from "./systemBus";
 import { introspection } from "./introspectionEngine";
 import { continuum } from "./continuumMemory";
 import { consciousness } from "./consciousnessEngine";
-import { uiContext } from "./uiContext"; // Import for screen context
 import { costEstimator } from "./costEstimator";
 import { promptCompiler } from "./promptCompiler"; // Import Compiler
 import { DONNA_PERSONA } from "../constants/personalities";
@@ -13,7 +12,6 @@ import { narrative } from "./narrativeService";
 import { chronos } from "./chronosService";
 import { cfo } from "./cfoService";
 import { contextAssembler } from "./contextAssembler";
-import { toolHandler } from "./tools/toolHandler"; // [PA-038] Import Tool Handler for Fallback
 import { localEmbeddingService } from "./localEmbeddingService";
 
 
@@ -1133,6 +1131,42 @@ export const generateEmbedding = async (text: string): Promise<number[] | null> 
     }
 };
 
+/** Current Gemini SDK client (null when no API key is configured). */
+export function getGeminiClient(): GoogleGenAI | null {
+    return ensureClient();
+}
+
+/** Pure availability check: true when a Gemini API key is configured. Never performs network calls. */
+export function hasGeminiKey(): boolean {
+    return ensureClient() !== null;
+}
+
+/**
+ * Direct Gemini text completion with NO fallback (R1). The previous generateText
+ * chain hid the real answering provider from the gateway; gateway/router callers
+ * use this pure transport and the router owns fallback.
+ */
+export const generateGeminiTextPure = async (prompt: string, model?: string): Promise<string> => {
+    const client = ensureClient();
+    if (!client) throw new Error('GEMINI: API key not configured');
+    const result = await client.models.generateContent({
+        model: model || 'gemini-2.5-flash',
+        contents: [{ parts: [{ text: prompt }] }]
+    });
+
+    // Try multiple extraction methods for SDK compatibility
+    let text = '';
+    if (typeof result.text === 'string') {
+        text = result.text;
+    } else if (typeof (result as any).text === 'function') {
+        text = (result as any).text();
+    } else if ((result as any).candidates?.[0]?.content?.parts?.[0]?.text) {
+        text = (result as any).candidates[0].content.parts[0].text;
+    }
+    if (!text) throw new Error('GEMINI: empty response');
+    return text;
+};
+
 export const generateText = async (prompt: string, options: { model?: string } = {}): Promise<string> => {
     ensureClient();
     const modelToUse = options.model || 'gemini-2.5-flash';
@@ -1332,6 +1366,12 @@ export const createCompletion = async (
 
 
 // --- STREAMING SUPPORT ---
+/**
+ * [R1] Backwards-compatible wrapper. All provider transports, tools bridging and
+ * fallback policy now live exclusively in the agent inference router
+ * (services/llm/agentInferenceRouter.ts). This wrapper preserves the legacy
+ * string-chunk contract for existing script/test callers.
+ */
 export async function* generateAgentResponseStream(
     agentName: string,
     role: string,
@@ -1345,420 +1385,27 @@ export async function* generateAgentResponseStream(
     tools: any = {},
     level: CommunicationLevel = CommunicationLevel.USER_FACING
 ): AsyncGenerator<string, void, unknown> {
-
-    // 1. GATHER CONTEXT (Parity with generateAgentResponse)
-    const uiCtx = (await import('./uiContext')).uiContext;
-    const screenContext = uiCtx.getContext();
-    const narrativeState = (await import('./narrativeService')).narrative.getState();
-
-    // Hardware & System Context
-    let systemContext = "";
-    if (context?.systemMetrics) {
-        const m = context.systemMetrics;
-        // Defensive coding: Ensure values are numbers, defaulting to 0 if undefined
-        const cpu = m.realCpu ?? 0;
-        const ram = m.jsHeapSize ?? 0;
-        const vram = m.vramUsage ?? 0;
-        systemContext += `\n[REAL-TIME HARDWARE]: CPU: ${cpu.toFixed(1)}%, RAM: ${ram.toFixed(0)}MB, VRAM: ${vram.toFixed(0)}MB`;
-    }
-    if (context?.orchestratorState) {
-        const o = context.orchestratorState;
-        systemContext += `\n[ORCHESTRATOR REALITY]: Active Agents: ${o.activeCount}`;
-        if (o.squads && o.squads.length > 0) {
-            systemContext += `\n[SQUAD STATUS]:\n${o.squads.map((s: any) => `- ${s.name}: ${s.status}`).join('\n')}`;
-        }
-    }
-    if (context?.systemMode) {
-        systemContext += `\n[BIO-SAFE PROTOCOL]: Current Mode: ${context.systemMode}`;
-    }
-    if (screenContext.activeTab) {
-        systemContext += `\n[SCREEN]: Active Tab: ${screenContext.activeTab}`;
-    }
-
-    if (screenContext.activeFile) {
-        systemContext += `\n[EDITING]: ${screenContext.activeFile.name}\n\`\`\`\n${screenContext.activeFile.content}\n\`\`\``;
-    }
-
-    // Only include narrative context for non-user-facing communication
-    // For user chat, this was causing ZhipuAI to output JSON instead of natural language
-    const narrativeContext = level === CommunicationLevel.USER_FACING
-        ? '' // Don't include internal state for user chat - it confuses the LLM
-        : `
-[NARRATIVE CORTEX - ACTIVE STATE]:
-- CURRENT FOCUS: ${narrativeState.currentFocus}
-- SESSION GOAL: ${narrativeState.sessionGoal}
-        `.trim();
-
-    // 1. Build Prompt
-    let systemPrompt = promptCompiler.compile(level, {
-        role,
-        category,
-        task,
-        contextData: `
-${systemContext}
-${narrativeContext}
-${context?.relevantMemory || ''} 
-        `.trim(),
-        constraints: [`Introspection Depth: ${introspectionDepth}`, `Workflow Stage: ${currentStage}`]
-    });
-
-    // 2. Stream from Gemini
-    // [DCR] Dynamic Capability Injection
-    const toolsList: any[] = [];
-
-    if (agentCapabilities.includes(AgentCapability.TOOL_WEB_SEARCH)) {
-        toolsList.push({ googleSearch: {} });
-        systemPrompt += `\n[CAPABILITY: WEB_SEARCH] You can search the web for real-time info.`;
-    }
-
-    if (agentCapabilities.includes(AgentCapability.TOOL_CODE_EXECUTION)) {
-        toolsList.push({ codeExecution: {} });
-        systemPrompt += `\n[CAPABILITY: CODE_EXECUTION] You can run Python code.`;
-    }
-
-    if (agentCapabilities.includes(AgentCapability.TOOL_IMAGE_GENERATION)) {
-        systemPrompt += `\n[CAPABILITY: IMAGE_GENERATION] Output [IMAGINE: <prompt>] to create images.`;
-    }
-
-    if (agentCapabilities.includes(AgentCapability.TOOL_MEMORY_WRITE)) {
-        systemPrompt += `\n[CAPABILITY: MEMORY_WRITE] Output [AUTHORIZE_MEMORY: <content>] to save knowledge.`;
-    }
-
-    const activeTools = toolsList.length > 0 ? toolsList : undefined;
-
-    // === PRIMARY: ZHIPUAI (FREE, 12 concurrent) ===
+    const { agentInferenceRouter } = await import('./llm/agentInferenceRouter');
+    const { capabilitiesFromAgentCapabilities } = await import('./llm/inference');
     try {
-        const { zhipuService } = await import('./zhipuService');
-        if (zhipuService.isAvailable('agents')) {
-            console.log("[GEMINI STREAM] 🇨🇳 Using ZhipuAI as PRIMARY (FREE)...");
-
-            // ZhipuAI doesn't support streaming - yield complete response
-            // For USER_FACING, add explicit instruction to respond in natural language (not JSON)
-            const outputInstruction = level === CommunicationLevel.USER_FACING
-                ? '\n\n[CRITICAL: Respond in natural conversational language. Do NOT output JSON, code blocks, or structured data unless explicitly asked.]'
-                : '';
-            const fullPrompt = `${systemPrompt}${outputInstruction}\n\nContext:\n${context?.relevantMemory || ''}\n\nUser: ${task}`;
-
-            const response = await zhipuService.generateCompletion(fullPrompt, {
-                maxTokens: 2048,
-                temperature: 0.7
-            }, 'agents');
-
-            if (response) {
-                console.log("[GEMINI STREAM] ✅ ZhipuAI PRIMARY responded successfully");
-                yield response;
-                return; // Success - don't try other providers
-            }
+        for await (const event of agentInferenceRouter.stream({
+            agentName,
+            role,
+            category,
+            task,
+            context,
+            introspectionDepth,
+            stage: currentStage,
+            capabilities: capabilitiesFromAgentCapabilities(agentCapabilities),
+            level,
+            model: config?.modelOverride,
+            temperature: config?.temperature ?? 0.7
+        })) {
+            if (event.type === 'text') yield event.text;
         }
-    } catch (zhipuError: any) {
-        console.warn("[GEMINI STREAM] ⚠️ ZhipuAI PRIMARY failed:", zhipuError.message);
-        // Fall through to Gemini
-    }
-
-    // === SECONDARY: GEMINI (Fallback when ZhipuAI unavailable) ===
-    // @ts-ignore
-    try {
-        console.log("[GEMINI STREAM] 📡 Trying Gemini (secondary)...");
-        const stream = await ai.models.generateContentStream({
-            model: "gemini-2.0-flash-exp",
-            contents: [{ role: 'user', parts: [{ text: systemPrompt }] }],
-            tools: activeTools,
-            config: { temperature: 0.7, maxOutputTokens: 8192 }
-        } as any);
-
-        let thoughtBuffer = "";
-        const emittedThoughts = new Set<string>();
-
-        for await (const chunk of stream) {
-            try {
-                const text = (chunk as any).text();
-                if (text) {
-                    thoughtBuffer += text;
-
-                    // Real-time Thought Extractor
-                    const thoughtRegex = /<(?:thought|think)>(.*?)<\/(?:thought|think)>/gs;
-                    let match;
-                    while ((match = thoughtRegex.exec(thoughtBuffer)) !== null) {
-                        const content = match[1].trim();
-                        if (!emittedThoughts.has(content)) {
-                            systemBus.emit(SystemProtocol.THOUGHT_EMISSION, { thoughts: [content] }, agentName);
-                            emittedThoughts.add(content);
-                        }
-                    }
-                    yield text;
-                }
-            } catch (chunkError) {
-                // Ignore transient chunk errors
-            }
-        }
-    } catch (error: any) {
-        // --- UNIVERSAL FALLBACK ---
-        // Catches init errors AND mid-stream errors
-        yield* runUniversalFallback(category, systemPrompt, task, context, error, agentName, config?.toolCaller);
-    }
-}
-
-// --- UNIVERSAL FALLBACK CHAIN (Cloud -> OpenRouter -> Groq -> Local) ---
-// Returns a generator that attempts each provider in sequence.
-export async function* runUniversalFallback(
-    category: string,
-    systemPrompt: string,
-    task: string,
-    context: any,
-    originalError: any,
-    agentName: string,
-    toolCaller?: ToolCaller
-): AsyncGenerator<string, void, unknown> {
-    console.warn("[GEMINI STREAM] Primary Cloud Failed. Initiating Universal Fallback Protocol...", originalError.message);
-
-    // 1. OPENROUTER FALLBACK
-    try {
-        console.log("[GEMINI STREAM] Attempting OpenRouter...");
-        const orResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`, // Requires OPENROUTER_API_KEY in .env.local
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://silhouette.agency",
-                "X-Title": "Silhouette Agency OS"
-            },
-            body: JSON.stringify({
-                model: "google/gemini-2.0-flash-001",
-                messages: [
-                    { role: "user", content: systemPrompt },
-                    ...(context?.chatHistory || []),
-                    { role: "user", content: task }
-                ],
-                stream: true,
-                temperature: 0.7
-            })
-        });
-
-        if (!orResponse.ok) throw new Error(`OpenRouter Status: ${orResponse.status}`);
-        if (!orResponse.body) throw new Error("No response body");
-
-        const reader = orResponse.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || "";
-            for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    const data = line.slice(6);
-                    if (data === '[DONE]') continue;
-                    try {
-                        const json = JSON.parse(data);
-                        const content = json.choices[0]?.delta?.content;
-                        if (content) yield content;
-                    } catch (e) { }
-                }
-            }
-        }
-        return; // Success
-    } catch (orError: any) {
-        console.error("[GEMINI STREAM] OpenRouter Failed:", orError.message);
-    }
-
-    // 2. GROQ FALLBACK
-    try {
-        console.log("[GEMINI STREAM] Attempting Groq...");
-        if (!process.env.GROQ_API_KEY) throw new Error("No Groq API Key");
-
-        const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                model: "llama-3.3-70b-versatile",
-                messages: [
-                    { role: "system", content: systemPrompt },
-                    ...(context?.chatHistory || []),
-                    { role: "user", content: task }
-                ],
-                stream: true,
-                temperature: 0.7
-            })
-        });
-
-        if (!groqResponse.ok) throw new Error(`Groq Status: ${groqResponse.status}`);
-        if (!groqResponse.body) throw new Error("No response body");
-
-        const reader = groqResponse.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || "";
-            for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    const data = line.slice(6);
-                    if (data === '[DONE]') continue;
-                    try {
-                        const json = JSON.parse(data);
-                        const content = json.choices[0]?.delta?.content;
-                        if (content) yield content;
-                    } catch (e) { }
-                }
-            }
-        }
-        return; // Success
-    } catch (groqError: any) {
-        console.error("[GEMINI STREAM] Groq Failed:", groqError.message);
-    }
-
-    // 3. ZHIPUAI CLOUD (Before local - FREE and reliable)
-    try {
-        console.log("[GEMINI STREAM] 🇨🇳 Trying ZhipuAI GLM-4.6V-Flash...");
-        const { zhipuService } = await import('./zhipuService');
-
-        if (zhipuService.isAvailable('agents')) {
-            // ZhipuAI doesn't support streaming - yield complete response at once
-            const fullPrompt = `${systemPrompt}\n\nContext:\n${context?.relevantMemory || ''}\n\nChat History:\n${(context?.chatHistory || []).map((m: any) => `${m.role}: ${m.content}`).join('\n')}\n\nUser: ${task}`;
-
-            const response = await zhipuService.generateCompletion(fullPrompt, {
-                maxTokens: 2048,
-                temperature: 0.7
-            }, 'agents');
-
-            if (response) {
-                console.log("[GEMINI STREAM] ✅ ZhipuAI responded successfully (non-streaming)");
-                yield response;
-                return; // Success
-            }
-        }
-    } catch (zhipuError: any) {
-        console.warn("[GEMINI STREAM] ⚠️ ZhipuAI failed:", zhipuError.message);
-    }
-
-    // 4. LOCAL HIVE MIND (OLLAMA) - ULTIMATE SURVIVAL
-    try {
-        console.warn("[GEMINI STREAM] 🌩️ CLOUD UNREACHABLE. Switching to LOCAL BIO-CIRCUITRY (Ollama)...");
-        const { ollamaService } = await import('./ollamaService');
-
-        // Notify UI of mode switch
-        systemBus.emit(SystemProtocol.THOUGHT_EMISSION, { thoughts: ["⚠️ Cloud Disconnected. Activating Local Neural Pathways (Universal Fallback)."] }, agentName);
-
-        // Determine tier based on category
-        // [PA-041] HYBRID INTELLIGENCE ROUTING
-        // Llama 3.2 (Motor) -> Fast, Reflexive, Tools
-        // GLM-4 (Cortex) -> Complex reasoning, Science, Coding
-        const localModel = (category === 'DEV' || category === 'SCIENCE' || category === 'PLANNING')
-            ? 'glm4:light'
-            : 'llama3.2:light';
-
-        // [PA-038] UNIVERSAL TOOL PROTOCOL (JSON RE-ACT)
-        // We instruct the local model to output JSON if it wants to use a tool.
-        const TOOL_PROTOCOL = `
-[SYSTEM PROTOCOL: UNIVERSAL TOOL USE]
-You are running in OFFLINE MODE. You have access to the following local tools:
-1. generate_video(prompt: string, engine?: 'WAN'|'SVD', duration?: number) - Use for any video request.
-2. generate_image(prompt: string, style: 'PHOTOREALISTIC'|'ILLUSTRATION', aspectRatio?: '16:9'|'1:1'|'9:16') - Use for image requests.
-3. list_visual_assets(filter_type?: 'video'|'image') - Use to find files.
-
-To use a tool, you MUST output valid JSON ONLY in this format:
-{
-  "thought": "Rationale...",
-  "tool": "tool_name",
-  "args": { ... }
-}
-
-If no tool is needed, respond with normal text.
-DO NOT hallucinate fake media urls. Use the tool.
-`;
-
-        // [PA-039] ROBUST CONTEXT INJECTION
-        // Instead of a single string, we use the proper Chat format to preserve history.
-
-        const messages = [
-            // 1. SYSTEM IDENTITY + TOOLS
-            { role: 'system', content: `${systemPrompt}\n\n${TOOL_PROTOCOL}` },
-
-            // 2. RETRIEVED MEMORY (Injected as verifyable context)
-            { role: 'system', content: `[MEMORY ACCESS DECK]:\n${context?.relevantMemory || "No relevant memories."}` },
-
-            // 3. CHAT HISTORY (The "Stream of Consciousness")
-            ...(context?.chatHistory || []).map((msg: any) => ({
-                role: msg.role === 'user' ? 'user' : 'assistant', // Map strictly to valid roles
-                content: msg.content
-            })),
-
-            // 4. CURRENT TASK
-            { role: 'user', content: task }
-        ];
-
-        // We capture the stream to buffer it for JSON detection
-        let buffer = "";
-        let isToolCall = false;
-
-        const stream = ollamaService.generateChatStream(messages, localModel);
-
-        for await (const chunk of stream) {
-            buffer += chunk;
-            // Heuristic: If buffer starts with { and looks like JSON, we might hush stdout until complete.
-            // But for simple UX, let's stream first, then parse after?
-            // "Stream Parsing" is hard for JSON. 
-            // Simplified Approach: Buffer the first 50 chars. If it starts with {, assume JSON and don't yield yet.
-
-            if (buffer.length < 50) {
-                // Wait to decide
-            } else if (buffer.trim().startsWith('{')) {
-                isToolCall = true;
-                // Don't yield chunk, we are buffering for execution
-            } else {
-                // Not a tool call, flush buffer and stream normally
-                if (buffer.length > 0) {
-                    yield buffer;
-                    buffer = ""; // Clear so we don't yield duplicate
-                }
-            }
-        }
-
-        // End of stream. If tool call, execute.
-        if (isToolCall) {
-            try {
-                // Try to find the JSON block
-                const jsonMatch = buffer.match(/\{[\s\S]*\}/);
-                if (jsonMatch) {
-                    const payload = JSON.parse(jsonMatch[0]);
-                    if (payload.tool && payload.args) {
-                        systemBus.emit(SystemProtocol.THOUGHT_EMISSION, { thoughts: [`[Universal Fallback] 🛠️ Local Tool Call: ${payload.tool}`] }, agentName);
-
-                        // Execute
-                        const toolResult = await toolHandler.handleFunctionCall(payload.tool, payload.args, toolCaller);
-
-                        // Report back
-                        const output = JSON.stringify(toolResult, null, 2);
-                        yield `\n\n[SYSTEM]: Tool Executed.\nResult: ${output}`;
-
-                        // Optional: Recursive call to summarize?
-                        // For now, raw output is better than nothing.
-                    }
-                } else {
-                    // Failed to parse, yield raw buffer
-                    yield buffer;
-                }
-            } catch (e) {
-                console.error("[Universal Fallback] JSON Parse Error:", e);
-                yield buffer; // Yield original messed up text
-            }
-        } else if (buffer.length > 0) {
-            // Yield remaining buffer if not flushed
-            yield buffer;
-        }
-
-    } catch (localError: any) {
-        console.error("[GEMINI STREAM] FATAL: Local Brain Failed:", localError);
+    } catch (e: any) {
+        // Legacy explicit-failure contract for script callers (never a fake success)
+        console.error("[GEMINI STREAM] FATAL: all inference providers failed:", e?.message);
         yield "\n\n[SYSTEM CRITICAL FAILURE]: Unable to generate response from any source (Cloud/Local).";
     }
 }

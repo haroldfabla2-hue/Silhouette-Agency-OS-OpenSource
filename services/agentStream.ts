@@ -1,7 +1,8 @@
 import { emitHelpResponse } from './communication/helpProtocol';
 
 import { Agent, SystemProtocol } from "../types";
-import { geminiService } from "./geminiService";
+import { agentInferenceRouter } from "./llm/agentInferenceRouter";
+import { capabilitiesFromAgentCapabilities } from "./llm/inference";
 import { systemBus } from "./systemBus";
 import { introspection } from "./introspectionEngine";
 import { IntrospectionLayer, WorkflowStage } from "../types";
@@ -47,16 +48,12 @@ export class AgentStreamService {
                 maxMemoryLines: 50
             });
 
-            const stream = geminiService.generateAgentResponseStream(
-                `${agent.name}_Stream`,
-                "Orchestrator", // Sender
-                agentSystemPrompt || agent.role, // Use rich prompt if available, fallback to role
+            const stream = agentInferenceRouter.stream({
+                agentName: `${agent.name}_Stream`,
+                role: "Orchestrator", // Sender
+                category: agentSystemPrompt || agent.role, // Use rich prompt if available, fallback to role
                 task,
-                null,
-                IntrospectionLayer.DEEP, // Sub-agents are deep thinkers
-                WorkflowStage.EXECUTION,
-                agent.capabilities || [], // [DCR]
-                {
+                context: {
                     ...context,
                     toolCaller: { requesterId: agent.id, requesterRole: agent.role },
                     agentProfile: {
@@ -65,10 +62,18 @@ export class AgentStreamService {
                         tier: agent.tier,
                         category: agent.category
                     }
-                }
-            );
+                },
+                introspectionDepth: IntrospectionLayer.DEEP, // Sub-agents are deep thinkers
+                stage: WorkflowStage.EXECUTION,
+                capabilities: capabilitiesFromAgentCapabilities(agent.capabilities || []) // [DCR]
+            });
 
-            for await (const chunk of stream) {
+            for await (const event of stream) {
+                if (event.type === 'provider') {
+                    console.log(`[AGENT_STREAM] 🔀 ${agent.name} answered by ${event.provider}${event.model ? ` (${event.model})` : ''}`);
+                    continue;
+                }
+                const chunk = event.text;
                 fullText += chunk;
 
                 // Real-time Thought Extraction for this Agent

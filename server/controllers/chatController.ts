@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { sqliteService } from '../../services/sqliteService';
-import { geminiService } from '../../services/geminiService';
+import { agentInferenceRouter } from '../../services/llm/agentInferenceRouter';
+import { capabilitiesFromAgentCapabilities } from '../../services/llm/inference';
 import { continuum } from '../../services/continuumMemory';
 import { codebaseAwareness } from '../../services/codebaseAwareness';
 import { providerHealth } from '../../services/providerHealthManager';
@@ -185,8 +186,8 @@ export class ChatController {
             const memoryContext = await this.assembleContext(userMessage, allowedOwner);
             const codeContext = await this.getCodebaseContext(userMessage);
 
-            // 3. Generate LLM response (uses fallback chain internally)
-            const response = await geminiService.generateText(
+            // 3. Generate LLM response (R1: unified fallback chain via the inference router)
+            const response = await agentInferenceRouter.completeText(
                 this.buildPrompt(userMessage, recentHistory, profileContext, memoryContext, codeContext)
             );
 
@@ -347,13 +348,9 @@ export class ChatController {
                 userId // Inject Multi-Tenant Identity
             );
 
-            // 4. Report which provider we're attempting
-            const primaryProvider = providerHealth.isAvailable('gemini') ? 'gemini' :
-                providerHealth.isAvailable('openrouter') ? 'openrouter' :
-                    providerHealth.isAvailable('groq') ? 'groq' : 'ollama';
-            res.write(`data: ${JSON.stringify({ type: 'provider', provider: primaryProvider })}\n\n`);
-
-            // 5. Build the system prompt with PURIFIED context (side-effect: warms prompt cache)
+            // 4. Build the system prompt with PURIFIED context (side-effect: warms prompt cache)
+            // (R1: the provider SSE event now reports the provider THAT ANSWERS, emitted
+            // by the inference router with the first token — never the attempted one.)
             this.buildSystemPrompt(purifiedContext.code || '');
             const fullPrompt = this.buildPromptPurified(userMessage, purifiedContext);
 
@@ -365,19 +362,19 @@ export class ChatController {
             if (modelPreference === 'pro') modelOverride = 'gemini-1.5-pro';
             if (modelPreference === 'flash') modelOverride = 'gemini-2.0-flash-exp';
 
-            const stream = geminiService.generateAgentResponseStream(
-                'Silhouette',
-                'Intelligent Assistant with Full Codebase Awareness',
-                'CORE',
-                fullPrompt,
-                {
+            const stream = agentInferenceRouter.stream({
+                agentName: 'Silhouette',
+                role: 'Intelligent Assistant with Full Codebase Awareness',
+                category: 'CORE',
+                task: fullPrompt,
+                context: {
                     history: recentHistory,
                     memory: purifiedContext.memories, // Use purified memories
                     chatHistory: recentHistory.map(h => ({ role: h.role, content: h.content }))
                 },
-                IntrospectionLayer.OPTIMAL,
-                WorkflowStage.EXECUTION,
-                [
+                introspectionDepth: IntrospectionLayer.OPTIMAL,
+                stage: WorkflowStage.EXECUTION,
+                capabilities: capabilitiesFromAgentCapabilities([
                     AgentCapability.RESEARCH,
                     AgentCapability.CODE_GENERATION,
                     AgentCapability.CODE_REVIEW,
@@ -386,16 +383,19 @@ export class ChatController {
                     AgentCapability.TOOL_MEMORY_WRITE,
                     AgentCapability.TOOL_VIDEO_GENERATION,
                     AgentCapability.TOOL_CODE_EXECUTION
-                ],
-                { temperature: 0.7, modelOverride },
-                {},
-                CommunicationLevel.USER_FACING
-            );
+                ]),
+                temperature: 0.7,
+                model: modelOverride,
+                level: CommunicationLevel.USER_FACING
+            });
 
-            for await (const chunk of stream) {
-                if (chunk) { // Guard against null chunks
-                    fullResponse += chunk;
-                    res.write(`data: ${JSON.stringify({ type: 'token', content: chunk })}\n\n`);
+            for await (const event of stream) {
+                if (event.type === 'provider') {
+                    // Real provider attribution: the provider that is answering, with its first token
+                    res.write(`data: ${JSON.stringify({ type: 'provider', provider: event.provider, model: event.model })}\n\n`);
+                } else if (event.type === 'text' && event.text) {
+                    fullResponse += event.text;
+                    res.write(`data: ${JSON.stringify({ type: 'token', content: event.text })}\n\n`);
                 }
             }
 

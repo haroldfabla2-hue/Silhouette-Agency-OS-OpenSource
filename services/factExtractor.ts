@@ -107,9 +107,9 @@ FACTS (JSON only):`;
             if (await ollamaService.isAvailable()) {
                 response = await ollamaService.generateSimpleResponse(prompt);
             } else {
-                // Fallback to cloud if local unavailable
-                const { geminiService } = await import('./geminiService');
-                response = await geminiService.generateText(prompt);
+                // Fallback to cloud if local unavailable (R1: unified chain via the inference router)
+                const { agentInferenceRouter } = await import('./llm/agentInferenceRouter');
+                response = await agentInferenceRouter.completeText(prompt);
             }
 
             // Parse JSON response
@@ -179,8 +179,8 @@ CORRECTED (or REJECT):`;
             if (await ollamaService.isAvailable()) {
                 corrected = await ollamaService.generateSimpleResponse(validationPrompt);
             } else {
-                const { geminiService } = await import('./geminiService');
-                corrected = await geminiService.generateText(validationPrompt);
+                const { agentInferenceRouter } = await import('./llm/agentInferenceRouter');
+                corrected = await agentInferenceRouter.completeText(validationPrompt);
             }
 
             corrected = corrected.trim().replace(/^["']|["']$/g, ''); // Remove quotes
