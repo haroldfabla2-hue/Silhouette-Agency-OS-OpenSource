@@ -554,10 +554,11 @@ class ContinuumMemorySystem {
             return true;
         });
 
-        // Sort by timestamp (Newest first) and limit
-        // Sort by timestamp (Newest first) and limit
-        // [PHASE 16] Massive Context: 500 items (~100k tokens). Covers near-total database.
-        return candidates;
+        // [VALUE RANKING] Re-rank by multi-signal value (importance, recency,
+        // access, provenance). Eternal-memory safe: reorders ONLY — every
+        // candidate is returned; superseded nodes are demoted, never removed.
+        const { rankByValue } = await import('./memory/valueRanking');
+        return rankByValue(candidates, Date.now());
     }
 
     /**
