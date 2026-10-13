@@ -22,7 +22,10 @@ describe('SqliteService migrations under concurrent startup', () => {
         const run = () => new Promise<{ code: number | null; err: string }>((resolve) => {
             const p = spawn(process.execPath, [tsxCli, '-e', script], {
                 cwd: tmp,
-                env: { ...process.env, RACE_START: String(startAt), VITEST_WORKER_ID: undefined } as any
+                // Deliberately race on the DEFAULT cwd-based path: drop the
+                // per-worker override the vitest setup injects, or the children
+                // would open the worker's temp DB instead of tmp/db/.
+                env: { ...process.env, RACE_START: String(startAt), VITEST_WORKER_ID: undefined, SILHOUETTE_DB_PATH: undefined } as any
             });
             let err = '';
             p.stderr.on('data', d => { err += d.toString(); });
