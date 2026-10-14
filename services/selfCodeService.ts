@@ -147,6 +147,28 @@ class SelfCodeService {
         return { diff: `${res.out}\n\n# status:\n${untracked.out}` };
     }
 
+    /** Fase 1 gate: full typecheck inside the isolated clone. */
+    public async runTypecheck(): Promise<{ code: number; output: string }> {
+        const cwd = this.worktreePath();
+        const env = { ...process.env, NODE_OPTIONS: '--max-old-space-size=6144' };
+        return new Promise((resolve) => {
+            execFile('npx', ['tsc', '--noEmit'], { cwd, env, timeout: 300_000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+                resolve({ code: err ? (err as any).code ?? 1 : 0, output: `${stdout}${stderr}` });
+            });
+        });
+    }
+
+    /** Fase 1 gate: each touched route module must import cleanly in the clone. */
+    public async runRouteSmoke(relPath: string): Promise<{ code: number; output: string }> {
+        const cwd = this.worktreePath();
+        const script = `import('./${relPath.replace(/'/g, '')}').then(()=>process.exit(0)).catch(e=>{console.error(e && e.message || e);process.exit(1)})`;
+        return new Promise((resolve) => {
+            execFile('npx', ['tsx', '-e', script], { cwd, timeout: 120_000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+                resolve({ code: err ? (err as any).code ?? 1 : 0, output: `${stdout}${stderr}` });
+            });
+        });
+    }
+
     public async runTest(target: string): Promise<{ code: number; output: string }> {
         if (!target || target.includes('..') || path.isAbsolute(target)) throw new Error('target must be a relative test path');
         const wt = (await this.ensureWorktree()).path;
