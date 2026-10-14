@@ -1,4 +1,5 @@
 
+import { computeTokensToday } from './tokensToday';
 import { Request, Response } from 'express';
 import { configureGenAI } from '../../services/geminiService';
 import { sqliteService } from '../../services/sqliteService';
@@ -495,6 +496,11 @@ export class SystemController {
             sqliteService.recordTelemetrySample(totalTokens, totalCost);
             const since = now - 11 * 60 * 1000;
             (telemetry as any).tokenHistory = buildTokenHistory(sqliteService.getTelemetrySamples(since), now, 10);
+            // Real "tokens today": positive deltas of the cumulative counter
+            // since local midnight (pure helper, unit-tested).
+            const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0);
+            (telemetry as any).tokensToday = computeTokensToday(
+                sqliteService.getTelemetrySamples(dayStart.getTime()), dayStart.getTime());
         } catch (e: any) {
             console.warn('[TELEMETRY] token history sampling failed', e);
             (telemetry as any).tokenHistory = [];

@@ -72,7 +72,7 @@ const App: React.FC = () => {
     agentsInVram: 0,
     agentsInRam: 0,
     introspectionDepth: (() => { try { return parseInt(localStorage.getItem('silhouette_introspection_depth') || '32'); } catch { return 32; } })(),
-    awarenessScore: 85.0,
+    awarenessScore: null, // no real composite exists; the card reads Consciousness Phi from the live engine instead
     fps: 60,
     currentMode: (() => { try { return (localStorage.getItem('silhouette_power_mode') as SystemMode) || SystemMode.ECO; } catch { return SystemMode.ECO; } })(),
     tokenUsageToday: 0,
@@ -130,6 +130,7 @@ const App: React.FC = () => {
               ? (data.telemetry.gpu.vramUsed / data.telemetry.gpu.vramTotal) * 100 : 0,
             cpuTickDuration: data.telemetry.cpu || 0,
             realCpu: data.telemetry.cpu || 0,
+            tokenUsageToday: data.telemetry.tokensToday ?? prev.tokenUsageToday,
             gpu: data.telemetry.gpu,
             providerHealth: data.telemetry.providerHealth,
             mediaQueue: data.telemetry.mediaQueue,

@@ -41,6 +41,24 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, projects, onCreateProjec
     return () => clearInterval(interval);
   }, []);
 
+  // Real Consciousness Phi from the live consciousness engine. null = engine
+  // has not published metrics yet -> the card shows an honest N/A.
+  const [phi, setPhi] = useState<number | null>(null);
+  useEffect(() => {
+    const fetchPhi = async () => {
+      try {
+        const data = await api.get('/v1/introspection/state') as any;
+        const score = data?.consciousnessMetrics?.phiScore;
+        setPhi(typeof score === 'number' ? score : null);
+      } catch (e) {
+        setPhi(null);
+      }
+    };
+    fetchPhi();
+    const interval = setInterval(fetchPhi, 15000); // 15s
+    return () => clearInterval(interval);
+  }, []);
+
   // Fetch pending confirmation count
   useEffect(() => {
     const fetchPendingCount = async () => {
@@ -102,6 +120,17 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, projects, onCreateProjec
     }
   };
 
+  // Real trend: last telemetry sample vs the previous one. Undefined when
+  // there is not enough data - the badge simply does not render.
+  const tokenTrend = (() => {
+    const samples = tokenHistory.filter(t => typeof t.tokens === 'number');
+    if (samples.length < 2) return undefined;
+    const prev = samples[samples.length - 2].tokens;
+    const last = samples[samples.length - 1].tokens;
+    if (prev <= 0) return undefined;
+    return Math.round(((last - prev) / prev) * 100);
+  })();
+
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-[1600px] mx-auto animate-in fade-in duration-500">
 
@@ -146,25 +175,23 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, projects, onCreateProjec
           icon={Cpu}
           label="Neural Load"
           value={`${(metrics.realCpu || 0).toFixed(1)}%`}
-          subValue="Optimal"
+          subValue={(metrics.realCpu || 0) < 70 ? 'Optimal' : (metrics.realCpu || 0) < 90 ? 'High' : 'Critical'}
           color="text-cyan-400"
-          trend={12}
         />
         <MetricCard
           icon={Zap}
           label="Token Velocity"
           value={(metrics.tokenUsageToday || 0).toLocaleString()}
-          subValue="hoy"
+          subValue="hoy (telemetria real)"
           color="text-amber-400"
-          trend={-5}
+          trend={tokenTrend}
         />
         <MetricCard
           icon={Activity}
-          label="System Coherence"
-          value={`${(metrics.awarenessScore ?? 0)}%`}
-          subValue="Composite index"
+          label="Consciousness Phi"
+          value={phi === null ? 'N/A' : `${Math.round(phi * 100)}%`}
+          subValue={phi === null ? 'engine has not published yet' : 'consciousness engine (real)'}
           color="text-emerald-400"
-          trend={2}
         />
         <MetricCard
           icon={HardDrive}
