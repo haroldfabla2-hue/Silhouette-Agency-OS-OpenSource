@@ -27,7 +27,7 @@
  *    SELFDEV_MAX_OPS, SELFDEV_MAX_PATCH_BYTES, SELFDEV_DIR.
  */
 
-import { checkScope, checkShrink } from './gates';
+import { applyCycleEdits, checkScope, checkShrink, CycleEdit, GateOp } from './gates';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
@@ -40,9 +40,10 @@ export type CycleState =
     | 'FAILED' | 'REJECTED' | 'ABANDONED';
 
 export interface CycleOp {
-    op: 'write';
+    op: 'write' | 'edit';
     path: string;        // repo-relative path inside the selfwork clone
-    content: string;
+    content?: string;    // write ops (new files): full content
+    edits?: CycleEdit[]; // edit ops (existing files): anchored replacements
     rationale: string;
 }
 
@@ -155,15 +156,25 @@ export class SelfDevCycleService {
         if (ops.length > this.maxOps) throw new Error(`too many ops (max ${this.maxOps})`);
         let total = 0;
         for (const o of ops) {
-            if (o.op !== 'write') throw new Error(`unsupported op: ${String(o.op)} (P0 supports write only)`);
+            if (o.op !== 'write' && o.op !== 'edit') throw new Error(`unsupported op: ${String(o.op)} (supports write + edit)`);
             if (!SelfDevCycleService.validRel(o.path)) throw new Error(`invalid path: ${String(o.path)}`);
             if (!scope.some(s => o.path === s || o.path.startsWith(s.endsWith('/') ? s : s + '/'))) {
                 throw new Error(`path outside declared cycle scope: ${o.path}`);
             }
-            if (typeof o.content !== 'string' || typeof o.rationale !== 'string' || !o.rationale.trim()) {
-                throw new Error(`op ${o.path}: content and non-empty rationale are required`);
+            if (typeof o.rationale !== 'string' || !o.rationale.trim()) {
+                throw new Error(`op ${o.path}: non-empty rationale is required`);
             }
-            total += Buffer.byteLength(o.content, 'utf8');
+            if (o.op === 'write') {
+                if (typeof o.content !== 'string') throw new Error(`op ${o.path}: write requires content`);
+                total += Buffer.byteLength(o.content, 'utf8');
+            } else {
+                if (!Array.isArray(o.edits) || o.edits.length === 0) throw new Error(`op ${o.path}: edit requires a non-empty edits array`);
+                for (const e of o.edits) {
+                    if (!e || typeof e.find !== 'string' || e.find.length === 0) throw new Error(`op ${o.path}: every edit needs a non-empty find`);
+                    if (typeof e.replace !== 'string') throw new Error(`op ${o.path}: every edit needs a string replace`);
+                    total += Buffer.byteLength(e.find, 'utf8') + Buffer.byteLength(e.replace, 'utf8');
+                }
+            }
         }
         if (total > this.maxPatchBytes) throw new Error(`patch too large (${total} bytes, max ${this.maxPatchBytes})`);
     }
@@ -253,13 +264,32 @@ export class SelfDevCycleService {
     }
 
     private async planWithLLM(c: SelfDevCycle): Promise<CycleOp[]> {
+        // Ground the planner in the CURRENT files (worktree is synced before
+        // attempt). A planner that never sees the code hallucinates both the
+        // old and the new version; that blindness plus a full-file-write
+        // contract is what produced destructive whole-file rewrites.
+        const MAX_GROUNDING_BYTES = 150_000;
+        const files: string[] = [];
+        let budget = MAX_GROUNDING_BYTES;
+        for (const entry of c.scope) {
+            try {
+                const r = await selfCodeService.readFile(entry);
+                if (r.content.length <= budget) {
+                    files.push(`--- CURRENT ${r.path} ---\n${r.content}`);
+                    budget -= r.content.length;
+                }
+            } catch { /* scope dir or not-yet-existing file: nothing to ground */ }
+        }
         const base = [
             'You are the planning step of a guarded self-improvement cycle for the Silhouette codebase.',
-            'Respond with STRICT JSON only: {"ops":[{"op":"write","path":"<repo-relative>","content":"<full file content>","rationale":"<why>"}]}.',
+            'You are given the CURRENT content of every existing in-scope file. Never invent code you cannot see.',
+            'Respond with STRICT JSON only: {"ops":[{"op":"edit","path":"<repo-relative>","edits":[{"find":"<exact snippet copied from the current file>","replace":"<replacement>"}],"rationale":"<why>"}]}.',
+            'For NEW files only, you may use {"op":"write","path":...,"content":"<full content>","rationale":...}.',
+            'Rules: every find must be copied EXACTLY from the provided current content and must match exactly once; make the smallest edit that solves the issue; NEVER rewrite a whole existing file; never touch paths outside the scope.',
             `Issue: ${c.issue}`,
             `Allowed path prefixes (scope): ${c.scope.join(', ')}`,
             `Acceptance: vitest target ${c.acceptance.target} must pass.`,
-            'Write complete file contents, keep the change minimal, never touch paths outside the scope.'
+            files.length ? `Current in-scope files:\n${files.join('\n')}` : 'No existing in-scope files (every op will be a new file).'
         ].join('\n');
         // [P1] Env-driven planner routing, nothing hardcoded.
         const env = process.env;
@@ -346,7 +376,29 @@ export class SelfDevCycleService {
             } catch { originals.set(o.path, null); }
         }
         const readOriginal = (p: string): string | null => originals.get(p) ?? null;
-        const preGate = checkScope(c.patch.ops, c.scope) || checkShrink(c.patch.ops, readOriginal);
+        // The gates judge exactly what would land on disk: for edit ops that
+        // is the current content with the anchors applied, computed in memory.
+        const effective: GateOp[] = [];
+        for (const o of c.patch.ops) {
+            if (o.op === 'edit') {
+                const original = originals.get(o.path);
+                if (original == null) {
+                    this.journal({ ts: new Date().toISOString(), cycleId: c.id, event: 'GATE_BLOCKED', detail: `edit target missing in clone: ${o.path}` });
+                    this.transition(c, 'FAILED', `edit target missing in clone: ${o.path}`);
+                    return c;
+                }
+                try {
+                    effective.push({ path: o.path, content: applyCycleEdits(original, o.edits!) });
+                } catch (err) {
+                    this.journal({ ts: new Date().toISOString(), cycleId: c.id, event: 'GATE_BLOCKED', detail: `edit anchor failed for ${o.path}: ${(err as Error).message}` });
+                    this.transition(c, 'FAILED', `edit anchor failed for ${o.path}: ${(err as Error).message}`);
+                    return c;
+                }
+            } else {
+                effective.push({ path: o.path, content: o.content! });
+            }
+        }
+        const preGate = checkScope(effective, c.scope) || checkShrink(effective, readOriginal);
         if (preGate) {
             this.journal({ ts: new Date().toISOString(), cycleId: c.id, event: 'GATE_BLOCKED', detail: `${preGate.gate}: ${preGate.detail}` });
             this.transition(c, 'FAILED', `diff sanity gate (${preGate.gate}): ${preGate.detail}`);
@@ -356,7 +408,11 @@ export class SelfDevCycleService {
         // Apply ops inside the isolated clone (F2, journaled there too).
         for (const o of c.patch.ops) {
             try {
-                await selfCodeService.writeFile(o.path, o.content, `selfdev cycle ${c.id}: ${o.rationale}`);
+                if (o.op === 'edit') {
+                    await selfCodeService.applyEdits(o.path, o.edits!, `selfdev cycle ${c.id}: ${o.rationale}`);
+                } else {
+                    await selfCodeService.writeFile(o.path, o.content!, `selfdev cycle ${c.id}: ${o.rationale}`);
+                }
             } catch (err) {
                 this.transition(c, 'FAILED', `write failed for ${o.path}: ${(err as Error).message}`);
                 return c;

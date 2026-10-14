@@ -18,6 +18,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { execFile } from 'child_process';
+import { applyCycleEdits, CycleEdit } from './selfdev/gates';
 
 const MAX_READ_BYTES = 512 * 1024;
 const MAX_WRITE_BYTES = 256 * 1024;
@@ -27,7 +28,7 @@ const DENIED_PREFIXES = ['.env'];
 export interface JournalEntry {
     ts: string;
     actor: string;
-    action: 'write' | 'test' | 'init' | 'sync';
+    action: 'write' | 'edit' | 'test' | 'init' | 'sync';
     path?: string;
     rationale?: string;
     shaBefore?: string | null;
@@ -158,6 +159,24 @@ class SelfCodeService {
             sha: sha256(buf),
             truncated
         };
+    }
+
+    /**
+     * Apply anchored edits to an existing file in the worktree. Every anchor
+     * must match exactly once (see applyCycleEdits); the whole op fails
+     * honestly before touching disk otherwise.
+     */
+    public async applyEdits(relPath: string, edits: CycleEdit[], rationale: string): Promise<{ path: string; shaBefore: string | null; shaAfter: string }> {
+        if (!rationale || !rationale.trim()) throw new Error('rationale is required for every write');
+        if (!Array.isArray(edits) || edits.length === 0) throw new Error('edits must be a non-empty array');
+        const current = await this.readFile(relPath); // worktree + confinement + existence
+        const next = applyCycleEdits(current.content, edits);
+        const abs = this.confine(relPath);
+        const shaBefore = current.sha;
+        fs.writeFileSync(abs, next, 'utf8');
+        const shaAfter = sha256(next);
+        this.journal({ ts: new Date().toISOString(), actor: 'api', action: 'edit', path: relPath, rationale, shaBefore, shaAfter });
+        return { path: relPath, shaBefore, shaAfter };
     }
 
     public async writeFile(relPath: string, content: string, rationale: string): Promise<{ path: string; shaBefore: string | null; shaAfter: string; diff: string }> {
