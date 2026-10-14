@@ -31,7 +31,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { selfCodeService } from '../selfCodeService';
-import { llmGateway } from '../llmGateway';
+import { llmGateway, CompletionOptions } from '../llmGateway';
 
 export type CycleState =
     | 'PLANNED' | 'ATTEMPTED' | 'EXECUTED' | 'VERIFIED'
@@ -66,6 +66,7 @@ export interface SelfDevCycle {
     diff?: string;
     runs: CycleRun[];
     pr?: { approvedBy: string; requestedAt: string; url?: string; number?: number };
+    outcome?: { state: 'merged' | 'closed-unmerged' | 'open'; mergedAt?: string; closedAt?: string; syncedAt: string };
     lastError?: string;
     createdAt: string;
     updatedAt: string;
@@ -241,7 +242,7 @@ export class SelfDevCycleService {
     }
 
     private async planWithLLM(c: SelfDevCycle): Promise<CycleOp[]> {
-        const prompt = [
+        const base = [
             'You are the planning step of a guarded self-improvement cycle for the Silhouette codebase.',
             'Respond with STRICT JSON only: {"ops":[{"op":"write","path":"<repo-relative>","content":"<full file content>","rationale":"<why>"}]}.',
             `Issue: ${c.issue}`,
@@ -249,13 +250,62 @@ export class SelfDevCycleService {
             `Acceptance: vitest target ${c.acceptance.target} must pass.`,
             'Write complete file contents, keep the change minimal, never touch paths outside the scope.'
         ].join('\n');
-        const out: any = await llmGateway.complete(prompt, {});
-        const text: string = typeof out === 'string' ? out : (out?.text ?? out?.content ?? '');
-        const m = text.match(/\{[\s\S]*\}/);
-        if (!m) throw new Error('planner returned no JSON object');
-        const parsed = JSON.parse(m[0]);
-        if (!parsed || !Array.isArray(parsed.ops)) throw new Error('planner JSON missing ops array');
-        return parsed.ops as CycleOp[];
+        // [P1] Env-driven planner routing, nothing hardcoded.
+        const env = process.env;
+        const options: CompletionOptions = {
+            temperature: Number(env.SELFDEV_PLANNER_TEMPERATURE ?? 0.2),
+            maxTokens: Number(env.SELFDEV_PLANNER_MAX_TOKENS ?? 8192),
+        };
+        if (env.SELFDEV_PLANNER_PROVIDER) options.preferredProvider = env.SELFDEV_PLANNER_PROVIDER;
+        if (env.SELFDEV_PLANNER_MODEL) (options as { model?: string }).model = env.SELFDEV_PLANNER_MODEL;
+
+        // One repair retry: LLMs occasionally wrap JSON in prose or fences.
+        let lastErr: Error | null = null;
+        for (let attempt = 1; attempt <= 2; attempt++) {
+            const prompt = attempt === 1
+                ? base
+                : `${base}\n\nYour previous answer was invalid (${lastErr!.message}). Return STRICT JSON only, no prose, no code fences.`;
+            const out: unknown = await llmGateway.complete(prompt, options);
+            const text: string = typeof out === 'string' ? out : ((out as { text?: string; content?: string })?.text ?? (out as { content?: string })?.content ?? '');
+            try {
+                const ops = SelfDevCycleService.parsePlanJson(text);
+                this.journal({ ts: new Date().toISOString(), cycleId: c.id, event: 'PLANNER_OK', attempt, provider: options.preferredProvider ?? 'default', model: env.SELFDEV_PLANNER_MODEL ?? 'default' });
+                return ops;
+            } catch (err) {
+                lastErr = err as Error;
+                this.journal({ ts: new Date().toISOString(), cycleId: c.id, event: 'PLANNER_RETRY', attempt, detail: lastErr.message });
+            }
+        }
+        throw lastErr ?? new Error('planner failed without detail');
+    }
+
+    /**
+     * Extract the first balanced JSON object from planner output. Tolerates
+     * code fences and surrounding prose; never throws on malformed input
+     * without a clear message. Exported for regression tests.
+     */
+    public static parsePlanJson(raw: string): CycleOp[] {
+        const text = raw.replace(/```(?:json)?/gi, '');
+        const start = text.indexOf('{');
+        if (start < 0) throw new Error('planner returned no JSON object');
+        let depth = 0, inStr = false, esc = false;
+        for (let i = start; i < text.length; i++) {
+            const ch = text[i];
+            if (esc) { esc = false; continue; }
+            if (ch === '\\') { esc = true; continue; }
+            if (ch === '"') { inStr = !inStr; continue; }
+            if (inStr) continue;
+            if (ch === '{') depth++;
+            if (ch === '}') {
+                depth--;
+                if (depth === 0) {
+                    const parsed = JSON.parse(text.slice(start, i + 1));
+                    if (!parsed || !Array.isArray(parsed.ops)) throw new Error('planner JSON missing ops array');
+                    return parsed.ops as CycleOp[];
+                }
+            }
+        }
+        throw new Error('planner JSON object never closed');
     }
 
     public async execute(id: string): Promise<SelfDevCycle> {
@@ -348,6 +398,71 @@ export class SelfDevCycleService {
             this.journal({ ts: new Date().toISOString(), cycleId: c.id, event: 'ERROR', detail: `unreadable publisher result: ${(err as Error).message}` });
         }
         return c;
+    }
+
+    /**
+     * [P1] Pull the real PR outcome from GitHub (merged / closed-unmerged /
+     * still open) and persist it. Outcome truth comes from GitHub, never
+     * from the agent's own claim (DGM reward-hacking lesson).
+     */
+    public async syncOutcome(id: string): Promise<SelfDevCycle> {
+        const c = this.get(id);
+        if (c.state !== 'PR_OPEN' || !c.pr?.number) {
+            throw Object.assign(new Error(`sync-outcome requires PR_OPEN with a PR number (current: ${c.state})`), { statusCode: 409 });
+        }
+        const env = process.env;
+        const owner = env.GITHUB_REPO_OWNER, repo = env.GITHUB_REPO_NAME, token = env.GITHUB_TOKEN;
+        if (!owner || !repo || !token) {
+            throw Object.assign(new Error('GITHUB_REPO_OWNER / GITHUB_REPO_NAME / GITHUB_TOKEN not configured'), { statusCode: 503 });
+        }
+        const resp = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls/${c.pr.number}`, {
+            headers: { Authorization: `Bearer ${token}`, 'User-Agent': 'silhouette-selfdev', Accept: 'application/vnd.github+json' }
+        });
+        if (!resp.ok) throw Object.assign(new Error(`GitHub API responded ${resp.status}`), { statusCode: 502 });
+        const pr = await resp.json() as { merged_at?: string | null; closed_at?: string | null; state?: string };
+        const at = new Date().toISOString();
+        const state = pr.merged_at ? 'merged' : (pr.state === 'closed' ? 'closed-unmerged' : 'open');
+        c.outcome = { state, mergedAt: pr.merged_at ?? undefined, closedAt: pr.closed_at ?? undefined, syncedAt: at };
+        c.updatedAt = at;
+        this.journal({ ts: at, cycleId: c.id, event: 'OUTCOME_SYNCED', outcome: state, pr: c.pr.number });
+        this.save();
+        return c;
+    }
+
+    /**
+     * [P1] Outcome metrics across every persisted cycle (Copilot-style:
+     * PRs created vs merged, time plan->PR). Eternal memory: computed from
+     * the persisted store, nothing is ever deleted.
+     */
+    public metrics() {
+        const cycles = this.store.cycles;
+        const byState: Record<string, number> = {};
+        const bySource: Record<string, number> = {};
+        let merged = 0, closedUnmerged = 0;
+        const planToPrMs: number[] = [];
+        for (const c of cycles) {
+            byState[c.state] = (byState[c.state] ?? 0) + 1;
+            if (c.patch?.source) bySource[c.patch.source] = (bySource[c.patch.source] ?? 0) + 1;
+            if (c.outcome?.state === 'merged') merged++;
+            if (c.outcome?.state === 'closed-unmerged') closedUnmerged++;
+            if (c.pr?.requestedAt) planToPrMs.push(Date.parse(c.pr.requestedAt) - Date.parse(c.createdAt));
+        }
+        planToPrMs.sort((a, b) => a - b);
+        const decided = merged + closedUnmerged;
+        return {
+            total: cycles.length,
+            byState,
+            bySource,
+            verifyFailures: byState['FAILED'] ?? 0,
+            prs: {
+                created: byState['PR_OPEN'] ?? 0,
+                merged,
+                closedUnmerged,
+                mergeRate: decided > 0 ? merged / decided : null,
+            },
+            medianMsPlanToPR: planToPrMs.length ? planToPrMs[Math.floor(planToPrMs.length / 2)] : null,
+            generatedAt: new Date().toISOString(),
+        };
     }
 
     public abandon(id: string, reason?: string): SelfDevCycle {
