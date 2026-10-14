@@ -35,7 +35,7 @@
  */
 
 import crypto from 'crypto';
-import { MemoryNode, MemoryTier } from '../../types';
+import { MemoryNode, MemoryTier, SystemProtocol } from '../../types';
 import { RevisionLedger, JanitorAction, RevisionLedgerEntry, JanitorMetrics, defaultLedgerPath } from './revisionLedger';
 
 // ---------------------------------------------------------------------------
@@ -105,6 +105,17 @@ export interface JanitorDeps {
      *  stores an INTROSPECTION-tagged memory so the narrator's evidence
      *  stream picks it up). */
     noteRevision(text: string, refs: string[]): Promise<void>;
+    /** Optional: fired after a revision is APPLIED (live runs only, never
+     *  dry-run) with the owner attribution of every superseded member, so
+     *  downstream learners (team heads, reputation) can absorb the revision.
+     *  Failures are logged and never break a janitor run. */
+    onRevisionApplied?(info: {
+        metaTruthId: string;
+        metaTruthContent: string;
+        action: JanitorAction;
+        memberIds: string[];
+        memberOwnerIds: string[];
+    }): Promise<void> | void;
     now(): number;
     newId(): string;
 }
@@ -336,6 +347,19 @@ export class JanitorService {
         );
 
         this.log({ ts: this.deps.now(), runId, event: 'APPLIED', action: verdict.action, clusterIds: memberIds, metaTruthId, metaTruthContent: verdict.metaTruth, detector: detectorVerdict, verifier: verifierVerdict, dryRun: false, reason: verdict.reason });
+        if (this.deps.onRevisionApplied) {
+            try {
+                await this.deps.onRevisionApplied({
+                    metaTruthId,
+                    metaTruthContent: verdict.metaTruth,
+                    action: verdict.action,
+                    memberIds,
+                    memberOwnerIds: cluster.map(m => m.ownerId).filter((o): o is string => !!o)
+                });
+            } catch (e) {
+                console.error('[JANITOR] onRevisionApplied hook failed (revision intact):', e);
+            }
+        }
         return 'applied';
     }
 
@@ -433,6 +457,10 @@ export async function getJanitorService(): Promise<JanitorService> {
         archiveOriginal: async (node, reason) => {
             const { getColdArchive } = await import('../memory/coldArchive');
             getColdArchive().append(node, reason);
+        },
+        onRevisionApplied: async (info) => {
+            const { systemBus } = await import('../systemBus');
+            systemBus.emit(SystemProtocol.TRUTH_REVISION_APPLIED, info, 'JANITOR');
         },
         noteRevision: async (text, refs) => {
             const { continuum } = await import('../continuumMemory');

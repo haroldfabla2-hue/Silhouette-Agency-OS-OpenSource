@@ -4,6 +4,7 @@ import { ReputationLedger, defaultReputationLedgerPath } from './org/reputationL
 import { computeReputation, rankByReputation } from './org/reputation';
 import type { OrgChart } from './org/types';
 import { resolveTeamRoute } from './org/teamRouting';
+import { attributeRevision } from './org/teamLearning';
 import { Agent, AgentStatus, AgentRoleType, Project, WorkflowStage, AgentCapability, SystemMode, BusinessType, AgentTier, AgentCategory, SystemProtocol, InterAgentMessage, Squad, ServiceStatus, IntrospectionLayer } from '../types';
 import fs from 'fs';
 import path from 'path';
@@ -202,6 +203,11 @@ export class AgentSwarmOrchestrator {
             }
         });
 
+        // --- TEAM LEARNING: janitor truth revisions become team evidence ---
+        systemBus.subscribe(SystemProtocol.TRUTH_REVISION_APPLIED, (event) => {
+            this.handleTruthRevisionApplied(event.payload);
+        });
+
         // --- EMERGENCY BRAKE (CFO INTERVENTION) ---
         systemBus.subscribe(SystemProtocol.COST_ANOMALY, (event) => {
             if (event.payload.agentId && event.payload.cost) {
@@ -256,6 +262,34 @@ export class AgentSwarmOrchestrator {
             this.resolveCuriosity(payload);
         }
         this.recordTaskFact(payload);
+    }
+
+    /**
+     * Heads learn from janitor revisions: an applied meta-truth that supersedes
+     * memories owned by agents becomes (a) JANITOR_REVISION facts in those
+     * agents' evidence trail and (b) an append-only learning note in the head's
+     * memory of each affected team. Nothing is deleted; notes only accumulate.
+     */
+    private handleTruthRevisionApplied(payload: any): void {
+        try {
+            if (!payload?.metaTruthId || !Array.isArray(payload.memberOwnerIds)) return;
+            const effects = attributeRevision(this.orgChart, payload, Date.now());
+            for (const fact of effects.facts) {
+                try { this.reputationLedger.append(fact); } catch (e) {
+                    console.warn(`[ORCHESTRATOR] revision fact not recorded: ${e instanceof Error ? e.message : String(e)}`);
+                }
+            }
+            for (const note of effects.headNotes) {
+                try { agentFileSystem.appendMemory(note.headAgentId, note.note); } catch (e) {
+                    console.warn(`[ORCHESTRATOR] head learning note failed for ${note.headAgentId}: ${e instanceof Error ? e.message : String(e)}`);
+                }
+            }
+            if (effects.facts.length > 0) {
+                console.log(`[ORCHESTRATOR] 📚 Truth revision ${payload.metaTruthId} absorbed: ${effects.facts.length} fact(s), ${effects.headNotes.length} head note(s).`);
+            }
+        } catch (error) {
+            console.warn(`[ORCHESTRATOR] truth revision handling failed (revision intact): ${error instanceof Error ? error.message : String(error)}`);
+        }
     }
 
     /**
