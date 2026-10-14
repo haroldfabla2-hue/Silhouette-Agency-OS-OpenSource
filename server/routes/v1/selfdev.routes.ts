@@ -45,6 +45,12 @@ router.post('/cycles/:id/execute', (req: Request, res: Response) => handle(res, 
 router.post('/cycles/:id/pr', (req: Request, res: Response) => handle(res, () =>
     selfDevCycleService.requestPR(req.params.id, req.body?.approvedBy)));
 
+router.get('/metrics', (_req: Request, res: Response) => handle(res, () =>
+    selfDevCycleService.metrics()));
+
+router.post('/cycles/:id/sync-outcome', (req: Request, res: Response) => handle(res, () =>
+    selfDevCycleService.syncOutcome(req.params.id)));
+
 router.post('/cycles/:id/abandon', (req: Request, res: Response) => handle(res, () =>
     selfDevCycleService.abandon(req.params.id, req.body?.reason)));
 
