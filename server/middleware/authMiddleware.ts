@@ -128,6 +128,24 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
         return;
     }
 
+    // [SECURITY] Fail-closed boot: the identity store must be ready before any
+    // auth decision. Before the first identity route call initializes it, every
+    // check below (session validation, empty-database detection) would run
+    // against a null database and permit anonymous access.
+    try {
+        const { identityService } = await import('../../services/identityService');
+        if (typeof identityService.isInitialized === 'function' && !identityService.isInitialized()) {
+            await identityService.init();
+        }
+    } catch (e) {
+        console.error('[AUTH] Identity store unavailable; denying request (fail-closed).', e);
+        res.status(503).json({
+            error: 'Service initializing',
+            hint: 'Identity store not ready; retry shortly.',
+        });
+        return;
+    }
+
     // 2. If no token is configured, only bypass when it is safe to do so
     //    (loopback-only, or explicit opt-in). A network-exposed token-less
     //    server is refused — closing the previous "wide open" hole.
