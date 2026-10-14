@@ -38,7 +38,7 @@ PY
   branch=$(sed -n '1p' <<<"$parsed"); title=$(sed -n '2p' <<<"$parsed"); paths=$(tail -n +3 <<<"$parsed")
   cd "$SELFWORK" || { fail "$id" "selfwork clone missing"; mv "$req" "$req.done"; continue; }
   git fetch -q origin main || { fail "$id" "git fetch failed"; mv "$req" "$req.done"; continue; }
-  dirty=$(git status --porcelain | awk '{print $2}' | sort -u)
+  dirty=$(git status --porcelain -uall | awk '{print $2}' | sort -u)
   if [ "$dirty" != "$paths" ]; then fail "$id" "dirty tree does not match declared paths: [$dirty] vs [$paths]"; mv "$req" "$req.done"; continue; fi
   git checkout -q -B "$branch" origin/main || { fail "$id" "branch checkout failed"; mv "$req" "$req.done"; continue; }
   while IFS= read -r p; do git add -- "$p"; done <<<"$paths"
