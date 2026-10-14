@@ -1,0 +1,7 @@
+[Unit]
+Description=Silhouette self-dev PR publisher (root helper, operator-approved only)
+
+[Service]
+Type=oneshot
+Environment=SELFWORK=/var/lib/silhouette/selfwork PR_DIR=/var/lib/silhouette/selfdev/pr-requests RESULTS=/var/lib/silhouette/selfdev/pr-results
+ExecStart=/opt/silhouette/scripts/selfdev-pr-publisher.sh

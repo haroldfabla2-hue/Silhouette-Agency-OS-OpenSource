@@ -1,0 +1,370 @@
+/**
+ * SELF-DEV CYCLE SERVICE — Wave 2, P0
+ * ═══════════════════════════════════════════════════════════════
+ * Full self-improvement cycle: issue -> change -> tests -> real
+ * verification -> operator-approved PR.
+ *
+ * State machine (persisted + journaled):
+ *   PLANNED -> ATTEMPTED -> EXECUTED -> VERIFIED
+ *     -> PR_SUBMITTED -> PR_OPEN
+ *   Terminals: PR_OPEN, FAILED, REJECTED, ABANDONED.
+ *
+ * Guardrails:
+ *  - File mutations are confined to the isolated selfwork clone via
+ *    selfCodeService (F2). This service never touches the running tree.
+ *  - Verification is real: the acceptance vitest target runs INSIDE the
+ *    clone and is executed TWICE (flake guard); both runs must pass.
+ *    CI on the resulting PR remains the full gate (tsc + full suite).
+ *  - PR creation is world-exiting: it requires operator approval
+ *    (approvedBy, same pattern as F4) and is executed by the root
+ *    publisher helper (scripts/selfdev-pr-publisher.sh) through a
+ *    handoff file. This service never pushes code itself.
+ *  - Persistence: atomic state file (tmp+fsync+rename; a corrupt state
+ *    file is quarantined, never deleted) plus an append-only journal.
+ *  - One active cycle at a time: the selfwork clone is shared, so a new
+ *    cycle cannot be created while another is non-terminal.
+ *  - Caps are env-driven, nothing hardcoded: SELFDEV_MAX_CYCLES_PER_DAY,
+ *    SELFDEV_MAX_OPS, SELFDEV_MAX_PATCH_BYTES, SELFDEV_DIR.
+ */
+
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
+import { selfCodeService } from '../selfCodeService';
+import { llmGateway } from '../llmGateway';
+
+export type CycleState =
+    | 'PLANNED' | 'ATTEMPTED' | 'EXECUTED' | 'VERIFIED'
+    | 'PR_SUBMITTED' | 'PR_OPEN'
+    | 'FAILED' | 'REJECTED' | 'ABANDONED';
+
+export interface CycleOp {
+    op: 'write';
+    path: string;        // repo-relative path inside the selfwork clone
+    content: string;
+    rationale: string;
+}
+
+export interface CycleRun {
+    kind: 'vitest';
+    target: string;
+    code: number;
+    pass: boolean;
+    outputTail: string;
+    at: string;
+}
+
+export interface CycleTransition { from: CycleState | null; to: CycleState; at: string; note?: string; }
+
+export interface SelfDevCycle {
+    id: string;
+    issue: string;
+    scope: string[];                              // allowed repo-relative path prefixes
+    acceptance: { kind: 'vitest'; target: string };
+    state: CycleState;
+    patch?: { source: 'operator' | 'llm'; ops: CycleOp[] };
+    diff?: string;
+    runs: CycleRun[];
+    pr?: { approvedBy: string; requestedAt: string; url?: string; number?: number };
+    lastError?: string;
+    createdAt: string;
+    updatedAt: string;
+    history: CycleTransition[];
+}
+
+interface CycleStore { cycles: SelfDevCycle[]; }
+
+const ACTIVE_STATES: CycleState[] = ['PLANNED', 'ATTEMPTED', 'EXECUTED', 'VERIFIED', 'PR_SUBMITTED'];
+
+export class SelfDevCycleService {
+    private dir: string;
+    private maxCyclesPerDay: number;
+    private maxOps: number;
+    private maxPatchBytes: number;
+    private store: CycleStore;
+
+    constructor(opts?: { dir?: string }) {
+        const env = process.env;
+        this.dir = opts?.dir ?? env.SELFDEV_DIR ?? path.resolve(process.cwd(), 'data', 'selfdev');
+        this.maxCyclesPerDay = Number(env.SELFDEV_MAX_CYCLES_PER_DAY ?? 5);
+        this.maxOps = Number(env.SELFDEV_MAX_OPS ?? 20);
+        this.maxPatchBytes = Number(env.SELFDEV_MAX_PATCH_BYTES ?? 65536);
+        fs.mkdirSync(this.requestsDir(), { recursive: true });
+        fs.mkdirSync(this.resultsDir(), { recursive: true });
+        this.store = this.load();
+    }
+
+    // ---------- persistence ----------
+
+    private statePath() { return path.join(this.dir, 'cycles.json'); }
+    private journalPath() { return path.join(this.dir, 'cycles.journal.jsonl'); }
+    private requestsDir() { return path.join(this.dir, 'pr-requests'); }
+    private resultsDir() { return path.join(this.dir, 'pr-results'); }
+
+    private load(): CycleStore {
+        const p = this.statePath();
+        if (!fs.existsSync(p)) return { cycles: [] };
+        try {
+            const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+            if (!parsed || !Array.isArray(parsed.cycles)) throw new Error('bad shape');
+            return parsed as CycleStore;
+        } catch (err) {
+            // Eternal-memory invariant: quarantine, never delete.
+            const q = `${p}.corrupt-${Date.now()}`;
+            fs.renameSync(p, q);
+            this.journal({ ts: new Date().toISOString(), event: 'STATE_QUARANTINED', detail: `corrupt cycles.json moved to ${path.basename(q)}` });
+            return { cycles: [] };
+        }
+    }
+
+    private save() {
+        const tmp = `${this.statePath()}.tmp`;
+        fs.writeFileSync(tmp, JSON.stringify(this.store, null, 2), 'utf-8');
+        const fd = fs.openSync(tmp, 'r+'); fs.fsyncSync(fd); fs.closeSync(fd);
+        fs.renameSync(tmp, this.statePath());
+    }
+
+    private journal(entry: Record<string, unknown>) {
+        const line = JSON.stringify(entry) + '\n';
+        const fd = fs.openSync(this.journalPath(), 'a');
+        fs.writeSync(fd, line); fs.fsyncSync(fd); fs.closeSync(fd);
+    }
+
+    private transition(c: SelfDevCycle, to: CycleState, note?: string) {
+        const at = new Date().toISOString();
+        c.history.push({ from: c.state, to, at, note });
+        c.state = to; c.updatedAt = at;
+        this.journal({ ts: at, cycleId: c.id, event: 'TRANSITION', to, note });
+        this.save();
+    }
+
+    private get(id: string): SelfDevCycle {
+        const c = this.store.cycles.find(x => x.id === id);
+        if (!c) throw Object.assign(new Error('cycle not found'), { statusCode: 404 });
+        return c;
+    }
+
+    // ---------- validation ----------
+
+    private static validRel(p: string) { return typeof p === 'string' && p.length > 0 && !path.isAbsolute(p) && !p.split('/').includes('..'); }
+
+    private validateOps(ops: CycleOp[], scope: string[]) {
+        if (!Array.isArray(ops) || ops.length === 0) throw new Error('ops must be a non-empty array');
+        if (ops.length > this.maxOps) throw new Error(`too many ops (max ${this.maxOps})`);
+        let total = 0;
+        for (const o of ops) {
+            if (o.op !== 'write') throw new Error(`unsupported op: ${String(o.op)} (P0 supports write only)`);
+            if (!SelfDevCycleService.validRel(o.path)) throw new Error(`invalid path: ${String(o.path)}`);
+            if (!scope.some(s => o.path === s || o.path.startsWith(s.endsWith('/') ? s : s + '/'))) {
+                throw new Error(`path outside declared cycle scope: ${o.path}`);
+            }
+            if (typeof o.content !== 'string' || typeof o.rationale !== 'string' || !o.rationale.trim()) {
+                throw new Error(`op ${o.path}: content and non-empty rationale are required`);
+            }
+            total += Buffer.byteLength(o.content, 'utf8');
+        }
+        if (total > this.maxPatchBytes) throw new Error(`patch too large (${total} bytes, max ${this.maxPatchBytes})`);
+    }
+
+    // ---------- API ----------
+
+    public list() {
+        return this.store.cycles.map(c => ({ id: c.id, issue: c.issue, state: c.state, updatedAt: c.updatedAt, pr: c.pr }));
+    }
+
+    public create(input: { issue?: string; scope?: string[]; acceptance?: { kind?: string; target?: string } }): SelfDevCycle {
+        const issue = (input.issue ?? '').trim();
+        if (!issue) throw Object.assign(new Error('issue is required'), { statusCode: 400 });
+        const scope = input.scope ?? [];
+        if (!Array.isArray(scope) || scope.length === 0 || !scope.every(SelfDevCycleService.validRel)) {
+            throw Object.assign(new Error('scope must be a non-empty array of repo-relative path prefixes'), { statusCode: 400 });
+        }
+        const kind = input.acceptance?.kind ?? 'vitest';
+        const target = input.acceptance?.target ?? '';
+        if (kind !== 'vitest' || !SelfDevCycleService.validRel(target)) {
+            throw Object.assign(new Error('acceptance must be { kind: "vitest", target: <relative test path> }'), { statusCode: 400 });
+        }
+        if (this.store.cycles.some(c => ACTIVE_STATES.includes(c.state))) {
+            throw Object.assign(new Error('another cycle is already active (shared selfwork clone): finish or abandon it first'), { statusCode: 409 });
+        }
+        const today = new Date().toISOString().slice(0, 10);
+        const todays = this.store.cycles.filter(c => c.createdAt.startsWith(today)).length;
+        if (todays >= this.maxCyclesPerDay) {
+            throw Object.assign(new Error(`daily cycle cap reached (${this.maxCyclesPerDay})`), { statusCode: 429 });
+        }
+        const at = new Date().toISOString();
+        const c: SelfDevCycle = {
+            id: crypto.randomUUID(), issue, scope, acceptance: { kind: 'vitest', target },
+            state: 'PLANNED', runs: [], createdAt: at, updatedAt: at,
+            history: [{ from: null, to: 'PLANNED', at, note: 'cycle created' }]
+        };
+        this.store.cycles.push(c);
+        this.journal({ ts: at, cycleId: c.id, event: 'CREATED', issue, scope, acceptance: c.acceptance });
+        this.save();
+        return c;
+    }
+
+    public async attempt(id: string, ops?: CycleOp[]): Promise<SelfDevCycle> {
+        const c = this.get(id);
+        if (c.state !== 'PLANNED') throw Object.assign(new Error(`attempt requires PLANNED (current: ${c.state})`), { statusCode: 409 });
+        let source: 'operator' | 'llm';
+        let finalOps: CycleOp[];
+        if (ops) {
+            source = 'operator';
+            finalOps = ops;
+        } else {
+            source = 'llm';
+            try {
+                finalOps = await this.planWithLLM(c);
+            } catch (err) {
+                c.lastError = `planner unavailable or invalid plan: ${(err as Error).message}`;
+                c.updatedAt = new Date().toISOString();
+                this.journal({ ts: c.updatedAt, cycleId: c.id, event: 'ERROR', detail: c.lastError });
+                this.save();
+                return c; // stays PLANNED, honestly
+            }
+        }
+        try {
+            this.validateOps(finalOps, c.scope);
+        } catch (err) {
+            c.lastError = `invalid plan: ${(err as Error).message}`;
+            c.updatedAt = new Date().toISOString();
+            this.journal({ ts: c.updatedAt, cycleId: c.id, event: 'ERROR', detail: c.lastError });
+            this.save();
+            return c;
+        }
+        delete c.lastError;
+        c.patch = { source, ops: finalOps };
+        this.journal({ ts: new Date().toISOString(), cycleId: c.id, event: 'PATCH_PROPOSED', source, paths: finalOps.map(o => o.path) });
+        this.transition(c, 'ATTEMPTED', `patch proposed by ${source} (${finalOps.length} ops)`);
+        return c;
+    }
+
+    private async planWithLLM(c: SelfDevCycle): Promise<CycleOp[]> {
+        const prompt = [
+            'You are the planning step of a guarded self-improvement cycle for the Silhouette codebase.',
+            'Respond with STRICT JSON only: {"ops":[{"op":"write","path":"<repo-relative>","content":"<full file content>","rationale":"<why>"}]}.',
+            `Issue: ${c.issue}`,
+            `Allowed path prefixes (scope): ${c.scope.join(', ')}`,
+            `Acceptance: vitest target ${c.acceptance.target} must pass.`,
+            'Write complete file contents, keep the change minimal, never touch paths outside the scope.'
+        ].join('\n');
+        const out: any = await llmGateway.complete(prompt, {});
+        const text: string = typeof out === 'string' ? out : (out?.text ?? out?.content ?? '');
+        const m = text.match(/\{[\s\S]*\}/);
+        if (!m) throw new Error('planner returned no JSON object');
+        const parsed = JSON.parse(m[0]);
+        if (!parsed || !Array.isArray(parsed.ops)) throw new Error('planner JSON missing ops array');
+        return parsed.ops as CycleOp[];
+    }
+
+    public async execute(id: string): Promise<SelfDevCycle> {
+        const c = this.get(id);
+        if (c.state !== 'ATTEMPTED' || !c.patch) throw Object.assign(new Error(`execute requires ATTEMPTED (current: ${c.state})`), { statusCode: 409 });
+        // Apply ops inside the isolated clone (F2, journaled there too).
+        for (const o of c.patch.ops) {
+            try {
+                await selfCodeService.writeFile(o.path, o.content, `selfdev cycle ${c.id}: ${o.rationale}`);
+            } catch (err) {
+                this.transition(c, 'FAILED', `write failed for ${o.path}: ${(err as Error).message}`);
+                return c;
+            }
+        }
+        c.diff = (await selfCodeService.diff()).diff;
+        this.transition(c, 'EXECUTED', `applied ${c.patch.ops.length} ops in selfwork clone`);
+        // Real verification: acceptance test twice, both must pass.
+        for (let i = 1; i <= 2; i++) {
+            try {
+                const r = await selfCodeService.runTest(c.acceptance.target);
+                const run: CycleRun = { kind: 'vitest', target: c.acceptance.target, code: r.code, pass: r.code === 0, outputTail: r.output.slice(-2000), at: new Date().toISOString() };
+                c.runs.push(run);
+                this.journal({ ts: run.at, cycleId: c.id, event: 'VERIFY_RUN', pass: run.pass, code: run.code, run: i });
+                if (!run.pass) {
+                    this.transition(c, 'FAILED', `acceptance failed (run ${i}, exit ${r.code})`);
+                    return c;
+                }
+            } catch (err) {
+                // Infrastructure unavailable (e.g. node_modules missing in the
+                // clone) is NOT a failing patch: stay EXECUTED with the reason.
+                c.lastError = `verification unavailable: ${(err as Error).message}`;
+                c.updatedAt = new Date().toISOString();
+                this.journal({ ts: c.updatedAt, cycleId: c.id, event: 'ERROR', detail: c.lastError });
+                this.save();
+                return c;
+            }
+        }
+        delete c.lastError;
+        this.transition(c, 'VERIFIED', 'acceptance passed twice (flake guard); CI on the PR remains the full gate');
+        return c;
+    }
+
+    public requestPR(id: string, approvedBy?: string): SelfDevCycle {
+        const c = this.get(id);
+        const by = (approvedBy ?? '').trim();
+        if (!by) throw Object.assign(new Error('approvedBy is required: PR creation is operator-approved'), { statusCode: 400 });
+        if (c.state !== 'VERIFIED') throw Object.assign(new Error(`pr requires VERIFIED (current: ${c.state})`), { statusCode: 409 });
+        const at = new Date().toISOString();
+        c.pr = { approvedBy: by, requestedAt: at };
+        const branch = `selfdev/cycle-${c.id}`;
+        const handoff = {
+            cycleId: c.id, branch,
+            title: `selfdev(${c.id.slice(0, 8)}): ${c.issue.slice(0, 70)}`,
+            body: [
+                `## Self-dev cycle ${c.id}`, '',
+                `Issue: ${c.issue}`, '',
+                `Patch source: ${c.patch?.source}. Acceptance: vitest ${c.acceptance.target} passed twice in the isolated clone.`,
+                `Approved for PR creation by operator: ${by} at ${at}.`, '',
+                'Paths:', ...(c.patch?.ops.map(o => `- ${o.path}`) ?? [])
+            ].join('\n'),
+            paths: c.patch?.ops.map(o => o.path) ?? [],
+            requestedBy: by, requestedAt: at
+        };
+        const tmp = path.join(this.requestsDir(), `.${c.id}.tmp`);
+        fs.writeFileSync(tmp, JSON.stringify(handoff, null, 2), 'utf-8');
+        fs.renameSync(tmp, path.join(this.requestsDir(), `${c.id}.json`));
+        this.journal({ ts: at, cycleId: c.id, event: 'PR_REQUESTED', approvedBy: by, branch });
+        this.transition(c, 'PR_SUBMITTED', `approved by ${by}; handoff written for root publisher (push-via-root, decision (b))`);
+        return c;
+    }
+
+    /** Opportunistically pick up the root publisher's result. */
+    public refresh(id: string): SelfDevCycle {
+        const c = this.get(id);
+        if (c.state !== 'PR_SUBMITTED') return c;
+        const rp = path.join(this.resultsDir(), `${c.id}.json`);
+        if (!fs.existsSync(rp)) return c;
+        try {
+            const res = JSON.parse(fs.readFileSync(rp, 'utf8'));
+            if (res.ok && res.prUrl) {
+                c.pr = { ...c.pr!, url: res.prUrl, number: res.number };
+                this.transition(c, 'PR_OPEN', `PR created by root publisher: ${res.prUrl}`);
+            } else {
+                c.lastError = `publisher error: ${res.error ?? 'unknown'}`;
+                c.updatedAt = new Date().toISOString();
+                this.journal({ ts: c.updatedAt, cycleId: c.id, event: 'ERROR', detail: c.lastError });
+                this.save();
+            }
+        } catch (err) {
+            this.journal({ ts: new Date().toISOString(), cycleId: c.id, event: 'ERROR', detail: `unreadable publisher result: ${(err as Error).message}` });
+        }
+        return c;
+    }
+
+    public abandon(id: string, reason?: string): SelfDevCycle {
+        const c = this.get(id);
+        if (!ACTIVE_STATES.includes(c.state)) throw Object.assign(new Error(`cannot abandon from ${c.state}`), { statusCode: 409 });
+        this.transition(c, 'ABANDONED', reason ?? 'abandoned by operator');
+        return c;
+    }
+
+    public journalEntries(cycleId: string, limit = 100): unknown[] {
+        const p = this.journalPath();
+        if (!fs.existsSync(p)) return [];
+        return fs.readFileSync(p, 'utf8').trim().split('\n').filter(Boolean)
+            .map(l => { try { return JSON.parse(l); } catch { return null; } })
+            .filter(e => e && e.cycleId === cycleId)
+            .slice(-Math.max(1, Math.min(limit, 500)));
+    }
+}
+
+export const selfDevCycleService = new SelfDevCycleService();
