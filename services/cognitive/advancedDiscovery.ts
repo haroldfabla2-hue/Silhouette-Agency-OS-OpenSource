@@ -137,7 +137,8 @@ class AdvancedDiscoveryService {
             const results = await graph.runQuery(query, { samplePairs });
             if (results.length === 0) return Infinity;
 
-            const totalLength = results.reduce((sum: number, r: any) => sum + (r.pathLength || 0), 0);
+            // [ROOT FIX] pathLength is a Neo4j Integer (BigInt): sum + BigInt throws.
+            const totalLength = results.reduce((sum: number, r: any) => sum + Number(r.pathLength || 0), 0);
             return totalLength / results.length;
         } catch (e) {
             logger.warn('Failed to calculate average path length:', e);
@@ -182,8 +183,10 @@ class AdvancedDiscoveryService {
 
         try {
             const stats = await graph.runQuery(statsQuery);
-            const N = stats[0]?.N || 0;
-            const E = stats[0]?.E || 0;
+            // [ROOT FIX] Neo4j integers arrive as BigInt; 2 * E below throws
+            // "Cannot mix BigInt and other types". Convert at the boundary.
+            const N = Number(stats[0]?.N) || 0;
+            const E = Number(stats[0]?.E) || 0;
 
             if (N < 5) {
                 logger.info(`Graph too small for σ (N=${N}). Need ≥5 nodes.`);
@@ -270,9 +273,10 @@ class AdvancedDiscoveryService {
             const weakTies = await Promise.all(
                 results.map(async (r: any) => ({
                     nodeId: r.targetId,
-                    weight: r.weight,
+                    // [ROOT FIX] weight can arrive as a Neo4j Integer (BigInt).
+                    weight: Number(r.weight),
                     clustering: await this.calculateClusteringCoefficient(r.targetId),
-                    discoveryPotential: 1.0 - r.weight
+                    discoveryPotential: 1.0 - Number(r.weight)
                 }))
             );
             return weakTies.sort((a, b) => b.discoveryPotential - a.discoveryPotential);

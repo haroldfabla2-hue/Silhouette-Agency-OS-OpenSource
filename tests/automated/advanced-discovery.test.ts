@@ -53,6 +53,27 @@ describe('advancedDiscovery (production-crash regressions)', () => {
         expect(src).not.toContain('WHEN k > 1 THEN toFloat(count(r2))');
     });
 
+    it('calculateAveragePathLength: BigInt path lengths do not crash the reduce', async () => {
+        mockRunQuery.mockResolvedValue([{ pathLength: 4n }, { pathLength: 6n }]);
+        const l = await advancedDiscovery.calculateAveragePathLength(50);
+        expect(l).toBe(5);
+        expect(typeof l).toBe('number');
+    });
+
+    it('calculateSmallWorldIndex: BigInt N/E from Neo4j do not crash (2 * E)', async () => {
+        mockRunQuery.mockImplementation(async (query: string) => {
+            if (query.includes('count(n) as N')) return [{ N: 647n, E: 12000n }]; // Neo4j Integers
+            if (query.includes('degree >= 2')) return [{ id: 'x' }, { id: 'y' }];
+            if (query.includes('shortestPath')) return [{ pathLength: 4n }, { pathLength: 6n }];
+            return [{ clustering: 0.5 }];
+        });
+        const r = await advancedDiscovery.calculateSmallWorldIndex();
+        expect(r.totalNodes).toBe(647);
+        expect(r.totalEdges).toBe(12000);
+        expect(typeof r.avgDegree).toBe('number');
+        expect(Number.isFinite(r.sigma)).toBe(true);
+        expect(r.sigma).toBeGreaterThan(0); // well-connected graph must score sigma > 0
+    });
     it('empty result (k <= 1 filtered out) yields 0.0 without throwing', async () => {
         mockRunQuery.mockResolvedValue([]);
         await expect(advancedDiscovery.calculateClusteringCoefficient('lonely')).resolves.toBe(0.0);
