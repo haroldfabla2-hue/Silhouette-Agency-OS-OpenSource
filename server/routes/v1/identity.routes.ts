@@ -4,7 +4,23 @@
 // =============================================================================
 
 import { Router, Request, Response } from 'express';
+import { parseSessionCookie } from '../../middleware/authMiddleware';
 import { hashPassword } from '../../utils/password';
+
+// [FASE1] Browser features that cannot set headers (EventSource, <img>) carry
+// the login session in this HttpOnly cookie; the x-session-id header keeps
+// working for clients that can set it.
+const SESSION_COOKIE_NAME = 'silhouette_session';
+function setSessionCookie(res: Response, session: { id: string; expiresAt?: number }): void {
+    const maxAge = session.expiresAt ? Math.max(0, session.expiresAt - Date.now()) : 30 * 24 * 60 * 60 * 1000;
+    res.cookie(SESSION_COOKIE_NAME, session.id, {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'strict',
+        path: '/',
+        maxAge,
+    });
+}
 
 const router = Router();
 
@@ -190,6 +206,7 @@ router.post('/setup', async (req: Request, res: Response) => {
         const deviceName = 'Initial Setup Device';
         const device = identityService.registerDevice(user.id, fingerprint, deviceName, true);
         const session = identityService.createSession(user.id, device.id);
+        setSessionCookie(res, session);
 
         return res.json({ success: true, user: sanitizeUser(user), session });
     } catch (error: any) {
@@ -215,6 +232,7 @@ router.post('/login', async (req: Request, res: Response) => {
             const fingerprint = req.headers['user-agent'] || 'unknown-device';
             const device = identityService.registerDevice(user.id, fingerprint, 'Browser Login', true);
             const session = identityService.createSession(user.id, device.id);
+            setSessionCookie(res, session);
             return res.json({
                 success: true,
                 user: sanitizeUser(user),
@@ -288,6 +306,7 @@ router.post('/register-device', async (req: Request, res: Response) => {
 
         // Create session
         const session = identityService.createSession(user.id, device.id);
+        setSessionCookie(res, session);
 
         return res.json({ success: true, device, session });
     } catch (error: any) {
@@ -317,13 +336,14 @@ router.get('/google-status', async (req: Request, res: Response) => {
 router.post('/logout', async (req: Request, res: Response) => {
     try {
         const { identityService } = await import('../../../services/identityService');
-        const sessionId = req.headers['x-session-id'] as string;
+        const sessionId = (req.headers['x-session-id'] as string) || parseSessionCookie(req.headers.cookie) || '';
         if (sessionId) {
             identityService.logoutSession(sessionId);
         } else {
             // Fallback to legacy logout
             identityService.logout();
         }
+        res.clearCookie(SESSION_COOKIE_NAME, { path: '/' });
         return res.json({ success: true });
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
