@@ -660,7 +660,13 @@ export const generateAgentResponse = async (
                                     currentContents.push({ role: 'model', parts: [functionCallPart as any] });
 
                                     const { toolHandler } = await import('./tools/toolHandler');
-                                    const toolResult = await toolHandler.handleFunctionCall(calls[0].name, calls[0].args, projectContext?.toolCaller);
+                                    // Identity fallback: callers that never pass projectContext.toolCaller
+                                    // (workflowEngine, pluginManager, ingestionService) still have the
+                                    // executing agent's name/role right here — identity comes from the
+                                    // executing agent, never from model-supplied args.
+                                    const toolCaller = projectContext?.toolCaller
+                                        ?? { requesterId: agentName, requesterRole: agentRole };
+                                    const toolResult = await toolHandler.handleFunctionCall(calls[0].name, calls[0].args, toolCaller);
 
                                     currentContents.push({
                                         role: 'function',

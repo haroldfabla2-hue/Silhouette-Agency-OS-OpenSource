@@ -20,18 +20,78 @@ export interface HelpResponse {
     success: boolean;
 }
 
+export interface CollaborationArgs { target_role: string; message: string; context?: unknown; priority?: string }
+
 // Identity comes from the executing agent, never from model-supplied tool args.
-export function requestCollaboration(args: { target_role: string; message: string; context?: unknown; priority?: string }, caller?: ToolCaller) {
+function buildHelpRequest(args: CollaborationArgs, caller?: ToolCaller): { error: string } | { request: HelpRequest } {
     if (!caller?.requesterId || caller.requesterId === 'unknown') return { error: 'Collaboration requires an identified requesting agent' };
     if (!args.target_role?.trim() || !args.message?.trim()) return { error: 'Missing role or message' };
     const requestId = crypto.randomUUID();
     const priority = Object.values(MessagePriority).includes(args.priority as MessagePriority)
         ? args.priority as MessagePriority : MessagePriority.NORMAL;
-    systemBus.emit(SystemProtocol.HELP_REQUEST, {
-        requestId, requesterId: caller.requesterId, requesterRole: caller.requesterRole || caller.requesterId,
-        targetRole: args.target_role, problem: args.message, context: args.context, priority
-    } satisfies HelpRequest, caller.requesterId);
-    return { status: 'queued', id: requestId, message: `Collaboration request queued for ${args.target_role}.` };
+    return {
+        request: {
+            requestId, requesterId: caller.requesterId, requesterRole: caller.requesterRole || caller.requesterId,
+            targetRole: args.target_role, problem: args.message, context: args.context, priority
+        }
+    };
+}
+
+function emitHelpRequest(request: HelpRequest): void {
+    systemBus.emit(SystemProtocol.HELP_REQUEST, request, request.requesterId);
+}
+
+export function requestCollaboration(args: CollaborationArgs, caller?: ToolCaller) {
+    const built = buildHelpRequest(args, caller);
+    if ('error' in built) return built;
+    emitHelpRequest(built.request);
+    return { status: 'queued', id: built.request.requestId, message: `Collaboration request queued for ${args.target_role}.` };
+}
+
+export type CollaborationResult =
+    | { status: 'answered'; id: string; helperId: string; solution: string; success: boolean }
+    | { status: 'timeout'; id: string; message: string }
+    | { error: string };
+
+/**
+ * Root fix for "help responses nobody hears": the caller subscribes for the
+ * correlated HELP_RESPONSE BEFORE emitting, and awaits the real answer (or an
+ * explicit unroutable failure, which also arrives as a HELP_RESPONSE). On
+ * timeout the model gets an explicit status instead of silence. The tool loop
+ * already awaits tool results, so the answer lands inside the calling agent's
+ * own turn — help is real, not queued into the void.
+ */
+export function requestCollaborationAndWait(
+    args: CollaborationArgs,
+    caller?: ToolCaller,
+    opts: { timeoutMs?: number } = {}
+): Promise<CollaborationResult> {
+    const timeoutMs = opts.timeoutMs ?? 45_000;
+    const built = buildHelpRequest(args, caller);
+    if ('error' in built) return Promise.resolve(built);
+    const request = built.request;
+    return new Promise(resolve => {
+        let settled = false;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const off = systemBus.subscribe(SystemProtocol.HELP_RESPONSE, event => {
+            const response = event.payload as HelpResponse;
+            if (!response?.requestId || response.requestId !== request.requestId) return;
+            if (settled) return;
+            settled = true;
+            if (timer) clearTimeout(timer);
+            off();
+            resolve({ status: 'answered', id: response.requestId, helperId: response.helperId, solution: response.solution, success: response.success });
+        });
+        // Subscribe BEFORE emitting: even a fully synchronous failure path
+        // (e.g. unroutable role answered in the same tick) is heard.
+        emitHelpRequest(request);
+        timer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            off();
+            resolve({ status: 'timeout', id: request.requestId, message: `No answer from ${args.target_role} within ${timeoutMs}ms.` });
+        }, timeoutMs);
+    });
 }
 
 export function emitHelpResponse(request: Pick<HelpRequest, 'requestId' | 'requesterId'>, helperId: string, solution: string, success: boolean) {

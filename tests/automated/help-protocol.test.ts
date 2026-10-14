@@ -65,7 +65,7 @@ describe('real inter-agent help transport (no mocked bus or helpers)', () => {
         const handler = await readFile('services/tools/toolHandler.ts', 'utf8');
         const stream = await readFile('services/agentStream.ts', 'utf8');
         expect(orchestrator).toContain('subscribeHelpProtocol({');
-        expect(handler).toContain('requestCollaboration(args as RequestCollaborationArgs, caller)');
+        expect(handler).toContain('requestCollaborationAndWait(args as RequestCollaborationArgs, caller)');
         expect(stream).toContain('emitHelpResponse(source.payload, agent.id');
         expect(orchestrator).toContain('void agentStreamer.handleIncomingMessage(agent, msg).catch');
     });
