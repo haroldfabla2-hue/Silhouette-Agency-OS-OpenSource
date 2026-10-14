@@ -286,6 +286,29 @@ class WorkflowEngine {
     this.transitionTo(WorkflowStage.INTENT);
   }
 
+  /**
+   * Seed a real mission into the autonomous loop and start a fresh cycle.
+   * An explicit operator command: it enables the engine for this run
+   * (mode24_7 stays untouched) and refuses to interrupt a cycle in flight.
+   * Throws an Error with code MISSION_BUSY when the engine is not IDLE.
+   */
+  public startMission(mission: string) {
+    if (this.isProcessing || this.currentStage !== WorkflowStage.IDLE) {
+      const err: any = new Error(`Workflow is busy (stage: ${this.currentStage})`);
+      err.code = 'MISSION_BUSY';
+      throw err;
+    }
+    this.config.enabled = true;
+    this.startNewCycle();
+    this.pipelineData.input = mission;
+    this.pipelineData.missionSource = 'api';
+    console.log(`[WORKFLOW] Mission seeded (${mission.length} chars). Cycle started.`);
+    systemBus.emit(SystemProtocol.WORKFLOW_UPDATE, { stage: this.currentStage, status: 'mission_seeded' });
+    // Best-effort audit trail in memory; a store failure never blocks a mission.
+    continuum.store(`Mission received via API: ${mission}`, undefined, ['mission', 'user-input'], true)
+      .catch(e => console.warn('[WORKFLOW] Mission audit store failed (non-blocking):', e));
+  }
+
   private transitionTo(stage: WorkflowStage) {
     this.currentStage = stage;
     console.log(`[WORKFLOW] 🔄 Transitioning to Stage: ${stage}`);
@@ -507,11 +530,16 @@ class WorkflowEngine {
     // For this simulation, we'll assume we have a way to get the latest input. 
     // In a real implementation, we'd pass the input to tick() or store it in pipelineData.input.
 
-    // REAL DATA: Fetch latest user input from Volatile Memory (RAM)
-    const volatile = continuum.getVolatileState();
-    // find last node with tag 'user-input'
-    const lastUserNode = volatile.reverse().find(n => n.tags.includes('user-input'));
-    const input = lastUserNode ? lastUserNode.content : "No recent input."; // Fallback only if memory empty
+    // A mission seeded via POST /v1/workflow/mission takes priority over memory.
+    const seededInput = typeof this.pipelineData.input === 'string' ? this.pipelineData.input.trim() : '';
+    let input = seededInput;
+    if (!input) {
+      // REAL DATA: Fetch latest user input from Volatile Memory (RAM)
+      const volatile = continuum.getVolatileState();
+      // find last node with tag 'user-input'
+      const lastUserNode = volatile.reverse().find(n => n.tags.includes('user-input'));
+      input = lastUserNode ? lastUserNode.content : "No recent input."; // Fallback only if memory empty
+    }
 
     if (input === "No recent input.") {
       return { needsResearch: false, originalIntent: input };
