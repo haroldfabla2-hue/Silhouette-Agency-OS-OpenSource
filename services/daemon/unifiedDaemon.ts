@@ -41,6 +41,14 @@ export class UnifiedDaemon {
     private isRunning: boolean = false;
     private checkInterval: NodeJS.Timeout | null = null;
     private readonly TICK_INTERVAL_MS = 10_000; // Check every 10 seconds
+    // Lock TTL cap: the Redis lock protects against CONCURRENT execution, not
+    // scheduling. A holder that dies (restart/crash) leaves a stale lock; with
+    // a TTL near the full task interval (up to 12h) one restart silently
+    // deferred every task by a whole interval. Cap the lease so a dead holder
+    // blocks for at most LOCK_TTL_CAP_MS. Documented tradeoff: a task that
+    // genuinely runs longer than the cap could overlap in a real multi-instance
+    // cluster (single-instance deployment today; longest observed run ~1min).
+    private readonly LOCK_TTL_CAP_MS = 60 * 60 * 1000; // 1 hour
     private readonly STATE_FILE = path.resolve(process.cwd(), 'data', 'daemon_state.json');
 
     private tasks: DaemonTask[] = [];
@@ -153,12 +161,26 @@ export class UnifiedDaemon {
                 // Enforce Redis Lock for Cluster Safety
                 const lockKey = `lock:daemon:${task.name.toLowerCase()}`;
                 // Lock for almost full interval so other instances don't run it
-                const acquired = await redisClient.acquireLock(lockKey, task.intervalMs - 1000);
+                let acquired = false;
+                try {
+                    acquired = await redisClient.acquireLock(
+                        lockKey,
+                        Math.min(task.intervalMs - 1000, this.LOCK_TTL_CAP_MS)
+                    );
+                } catch (lockErr: any) {
+                    // Lock CHECK failed (redis blip): not a run, not a deferral.
+                    // Log visibly and leave the task due for the next tick.
+                    console.warn(`[DAEMON: LOCK-ERROR] ⚠️ ${task.name} lock check failed (${lockErr?.message || lockErr}); task stays due.`);
+                    continue;
+                }
 
                 if (!acquired) {
                     console.log(`[DAEMON: SKIPPED] 🔒 ${task.name} already running in cluster.`);
-                    // Update lastRun so this instance doesn't keep hammering the lock locally
-                    task.lastRun = now;
+                    // Do NOT touch lastRun: a held/failed lock is not a run.
+                    // The task stays due and retries on the next tick, so a
+                    // stale lock from a dead holder only defers execution
+                    // until the (capped) lock expires — never a full interval.
+                    // Cost is one SET NX per due task per 10s tick: trivial.
                     continue;
                 }
 
