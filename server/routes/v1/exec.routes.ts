@@ -16,12 +16,12 @@ const router = Router();
 // POST /v1/self/exec/run { command, args?, timeoutMs? }
 router.post('/run', async (req, res) => {
     try {
-        const { command, args, timeoutMs } = req.body || {};
+        const { command, args, timeoutMs, untrustedContext } = req.body || {};
         if (typeof command !== 'string' || !command.trim()) {
             return res.status(400).json({ error: 'command must be a non-empty string' });
         }
         const safeArgs = Array.isArray(args) ? args.filter((a: any) => typeof a === 'string') : [];
-        const rec = await commandExecService.requestExecution(command.trim(), safeArgs, timeoutMs);
+        const rec = await commandExecService.requestExecution(command.trim(), safeArgs, timeoutMs, { untrustedContext: untrustedContext === true });
         const status = rec.status === 'executed' ? 200
             : rec.status === 'pending_approval' ? 202
             : rec.status === 'unavailable' ? 503
@@ -65,9 +65,24 @@ router.get('/journal', (req, res) => {
     res.json({ entries: commandExecService.journalEntries(limit) });
 });
 
-// GET /v1/self/exec/isolation - is real OS isolation available?
+// GET /v1/self/exec/isolation - is real OS isolation available? (+ exec mode)
 router.get('/isolation', async (_req, res) => {
-    res.json(await commandExecService.isolationStatus());
+    const status = await commandExecService.isolationStatus();
+    res.json({ ...status, mode: commandExecService.currentMode() });
+});
+
+// POST /v1/self/exec/mode { mode: 'isolated'|'full-access', approvedBy }
+// Operator-only: the agent can never flip its own isolation off.
+router.post('/mode', (req, res) => {
+    const { mode, approvedBy } = req.body || {};
+    if (mode !== 'isolated' && mode !== 'full-access') {
+        return res.status(400).json({ error: "mode must be 'isolated' or 'full-access'" });
+    }
+    if (typeof approvedBy !== 'string' || !approvedBy.trim()) {
+        return res.status(400).json({ error: 'approvedBy (operator) is required to change execution mode' });
+    }
+    const rec = commandExecService.setMode(mode, approvedBy.trim());
+    res.json(rec);
 });
 
 export default router;

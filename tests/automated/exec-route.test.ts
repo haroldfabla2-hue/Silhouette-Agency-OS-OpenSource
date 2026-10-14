@@ -18,7 +18,13 @@ const ROOT = path.resolve(__dirname, '..', '..');
 let server: http.Server;
 let port: number;
 let journalFile: string;
+let modeFile: string;
 let isolationReady: boolean;
+
+function get(route: string) {
+    return fetch(`http://127.0.0.1:${port}/v1/self/exec${route}`)
+        .then(async (r) => ({ status: r.status, json: await r.json() as any }));
+}
 
 function post(route: string, body: any) {
     return fetch(`http://127.0.0.1:${port}/v1/self/exec${route}`, {
@@ -32,6 +38,8 @@ describe('F3 command execution (real service, real HTTP)', () => {
     beforeAll(async () => {
         journalFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'exec-journal-')), 'journal.jsonl');
         process.env.SELF_EXEC_JOURNAL = journalFile;
+        modeFile = path.join(path.dirname(journalFile), 'exec-mode.json');
+        process.env.SELF_EXEC_MODE_FILE = modeFile;
         const { default: execRouter } = await import('../../server/routes/v1/exec.routes');
         const app = express();
         app.use(express.json());
@@ -48,6 +56,7 @@ describe('F3 command execution (real service, real HTTP)', () => {
     afterAll(() => {
         server?.close();
         delete process.env.SELF_EXEC_JOURNAL;
+        delete process.env.SELF_EXEC_MODE_FILE;
     });
 
     it('tier1 read-only diagnostics run sandboxed, or report UNAVAILABLE without degrading', async () => {
@@ -65,8 +74,10 @@ describe('F3 command execution (real service, real HTTP)', () => {
         }
     });
 
-    it('destructive, service-control, network and install commands are rejected outright', async () => {
-        for (const cmd of ['rm', 'systemctl', 'apt', 'curl', 'sudo', 'kill']) {
+    it('destructive, service-control and network commands are rejected outright', async () => {
+        // F4 moved apt-family to operator-approved host mutation (tested
+        // below); the truly destructive/control/network set stays hard-rejected.
+        for (const cmd of ['rm', 'systemctl', 'curl', 'sudo', 'kill']) {
             const { status, json } = await post('/run', { command: cmd, args: [] });
             expect(status).toBe(403);
             expect(json.status).toBe('rejected');
@@ -144,6 +155,59 @@ describe('F3 command execution (real service, real HTTP)', () => {
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
+    });
+
+    it('execution mode: isolated by default, operator-only change, journaled', async () => {
+        const iso0 = await get('/isolation');
+        expect(iso0.json.mode).toBe('isolated');
+
+        const noOperator = await post('/mode', { mode: 'full-access' });
+        expect(noOperator.status).toBe(400);
+        const badMode = await post('/mode', { mode: 'open', approvedBy: 'ci-operator' });
+        expect(badMode.status).toBe(400);
+
+        const set = await post('/mode', { mode: 'full-access', approvedBy: 'ci-operator' });
+        expect(set.status).toBe(200);
+        const iso1 = await get('/isolation');
+        expect(iso1.json.mode).toBe('full-access');
+
+        const j = await get('/journal');
+        expect(j.json.entries.some((e: any) => e.command === 'mode:full-access' && e.approvedBy === 'ci-operator')).toBe(true);
+    });
+
+    it('full-access mode runs tier1 on the host (sandbox:false, mode recorded)', async () => {
+        await post('/mode', { mode: 'full-access', approvedBy: 'ci-operator' });
+        const { status, json } = await post('/run', { command: 'uname', args: ['-a'] });
+        expect(status).toBe(200);
+        expect(json.status).toBe('executed');
+        expect(json.sandbox).toBe(false);
+        expect(json.mode).toBe('full-access');
+        expect(json.exitCode).toBe(0);
+        await post('/mode', { mode: 'isolated', approvedBy: 'ci-operator' });
+        const iso = await get('/isolation');
+        expect(iso.json.mode).toBe('isolated');
+    });
+
+    it('environment mutation (apt) goes pending, never auto-runs, executes on host after approval', async () => {
+        const run1 = await post('/run', { command: 'apt', args: ['list', '--installed'] });
+        expect(run1.status).toBe(202);
+        expect(run1.json.status).toBe('pending_approval');
+        expect(run1.json.reason).toMatch(/host environment/);
+
+        const ap = await post('/approve', { id: run1.json.id, approvedBy: 'ci-operator' });
+        expect(ap.status).toBe(200);
+        expect(ap.json.status).toBe('executed');
+        expect(ap.json.sandbox).toBe(false);
+        expect(ap.json.exitCode).toBe(0);
+        expect(ap.json.outputSha).toMatch(/^[a-f0-9]{64}$/);
+    });
+
+    it('untrusted external context forces approval even for whitelisted commands', async () => {
+        const { status, json } = await post('/run', { command: 'uname', args: ['-a'], untrustedContext: true });
+        expect(status).toBe(202);
+        expect(json.status).toBe('pending_approval');
+        expect(json.reason).toMatch(/untrusted external content/);
+        expect(json.untrustedContext).toBe(true);
     });
 
     it('source guards: bubblewrap is the only backend, no unsafe runner exists', () => {
