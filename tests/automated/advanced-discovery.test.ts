@@ -74,6 +74,14 @@ describe('advancedDiscovery (production-crash regressions)', () => {
         expect(Number.isFinite(r.sigma)).toBe(true);
         expect(r.sigma).toBeGreaterThan(0); // well-connected graph must score sigma > 0
     });
+    it('LIMIT params are coerced with toInteger() (driver sends JS numbers as Float, Neo4j rejects 30.0)', async () => {
+        mockRunQuery.mockResolvedValue([]);
+        await advancedDiscovery.calculateGlobalClusteringCoefficient(30);
+        await advancedDiscovery.calculateAveragePathLength(50);
+        const queries = mockRunQuery.mock.calls.map(c => String(c[0]));
+        expect(queries.some(q => q.includes('LIMIT toInteger($sampleSize)'))).toBe(true);
+        expect(queries.some(q => q.includes('LIMIT toInteger($samplePairs)'))).toBe(true);
+    });
     it('empty result (k <= 1 filtered out) yields 0.0 without throwing', async () => {
         mockRunQuery.mockResolvedValue([]);
         await expect(advancedDiscovery.calculateClusteringCoefficient('lonely')).resolves.toBe(0.0);

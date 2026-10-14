@@ -97,7 +97,9 @@ class AdvancedDiscoveryService {
             WHERE degree >= 2
             RETURN n.id as id
             ORDER BY rand()
-            LIMIT $sampleSize
+            // [ROOT FIX] the Neo4j JS driver encodes JS numbers as Float;
+            // LIMIT rejects 30.0. Coerce inside Cypher.
+            LIMIT toInteger($sampleSize)
         `;
 
         try {
@@ -128,7 +130,8 @@ class AdvancedDiscoveryService {
             WHERE a.id IS NOT NULL AND b.id IS NOT NULL
               AND a <> b AND rand() < 0.05
             WITH a, b
-            LIMIT $samplePairs
+            // [ROOT FIX] same driver Float encoding: LIMIT rejects 50.0.
+            LIMIT toInteger($samplePairs)
             MATCH path = shortestPath((a)-[*..15]-(b))
             RETURN length(path) as pathLength
         `;
