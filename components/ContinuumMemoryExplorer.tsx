@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Zap, Clock, HardDrive, Archive, Database, Activity, RefreshCw, Lock, Trash2, Search, BrainCircuit, Library, Calendar } from 'lucide-react';
-import { DEFAULT_API_CONFIG } from '../constants';
+import { api } from '../utils/api';
 import { MemoryNode, MemoryTier, SystemProtocol } from '../types';
 import { systemBus } from '../services/systemBus';
 
@@ -97,6 +97,7 @@ const ContinuumMemoryExplorer: React.FC = () => {
     // Search State
     const [searchResults, setSearchResults] = useState<MemoryNode[] | null>(null);
     const [isSearching, setIsSearching] = useState(false);
+    const [searchError, setSearchError] = useState<string | null>(null);
 
     useEffect(() => {
         const handleSearch = async (e: Event) => {
@@ -104,16 +105,16 @@ const ContinuumMemoryExplorer: React.FC = () => {
             if (!query) return;
 
             setIsSearching(true);
+            setSearchError(null);
             try {
-                const res = await fetch(`/v1/memory/search?q=${encodeURIComponent(query)}`, {
-                    headers: { 'Authorization': `Bearer ${DEFAULT_API_CONFIG.apiKey}` }
-                });
-                if (res.ok) {
-                    const json = await res.json();
-                    setSearchResults(json.results);
-                }
-            } catch (err) {
+                // Session-authenticated via the shared api helper (x-session-id).
+                const json = await api.get(`/v1/memory/search?q=${encodeURIComponent(query)}`) as any;
+                setSearchResults(json.results || []);
+            } catch (err: any) {
                 console.error("Search failed", err);
+                // Honest failure: surface it, never die silently.
+                setSearchResults([]);
+                setSearchError(err?.message || 'Search failed');
             } finally {
                 setIsSearching(false);
             }
@@ -126,20 +127,16 @@ const ContinuumMemoryExplorer: React.FC = () => {
     // ... (rest of useEffect for polling)
     useEffect(() => {
         const refresh = async () => {
+            // Session-authenticated via the shared api helper (x-session-id).
             try {
-                const res = await fetch(`/v1/memory/state`, {
-                    headers: { 'Authorization': `Bearer ${DEFAULT_API_CONFIG.apiKey}` }
+                const json = await api.get('/v1/memory/state') as any;
+                setData(json.nodes || {
+                    [MemoryTier.WORKING]: [],
+                    [MemoryTier.MEDIUM]: [],
+                    [MemoryTier.LONG]: [],
+                    [MemoryTier.DEEP]: []
                 });
-                if (res.ok) {
-                    const json = await res.json();
-                    setData(json.nodes || {
-                        [MemoryTier.WORKING]: [],
-                        [MemoryTier.MEDIUM]: [],
-                        [MemoryTier.LONG]: [],
-                        [MemoryTier.DEEP]: []
-                    });
-                    setStats(json.stats);
-                }
+                setStats(json.stats);
             } catch (e) {
                 console.error("Failed to fetch memory state", e);
             }
@@ -180,7 +177,12 @@ const ContinuumMemoryExplorer: React.FC = () => {
                     </div>
 
                     <div className="flex-1 overflow-y-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 custom-scrollbar pb-10">
-                        {searchResults.length === 0 && (
+                        {searchError && (
+                            <div className="col-span-full text-center py-6 text-red-400 font-mono text-sm">
+                                SEARCH UNAVAILABLE: {searchError}
+                            </div>
+                        )}
+                        {searchResults.length === 0 && !searchError && (
                             <div className="col-span-full text-center py-20 opacity-50">
                                 <Search size={48} className="mx-auto mb-4 text-slate-600" />
                                 <p>No universal memories found.</p>
@@ -246,12 +248,9 @@ const ContinuumMemoryExplorer: React.FC = () => {
                         onClick={async () => {
                             if (!confirm('FORCE CONSOLIDATION: Move all RAM memories to LanceDB?')) return;
                             try {
-                                const res = await fetch('/v1/memory/consolidate', { method: 'POST', headers: { 'Authorization': `Bearer ${DEFAULT_API_CONFIG.apiKey}` } });
-                                if (res.ok) {
-                                    const data = await res.json();
-                                    alert(`CONSOLIDATION COMPLETE: Promoted ${data.promoted} nodes.`);
-                                }
-                            } catch (e) { alert('Consolidation Failed'); }
+                                const data = await api.post('/v1/memory/consolidate', {}) as any;
+                                alert(`CONSOLIDATION COMPLETE: Promoted ${data.promoted} nodes.`);
+                            } catch (e: any) { alert(`Consolidation Failed: ${e?.message || 'unknown error'}`); }
                         }}
                         className="flex flex-col items-center group cursor-pointer hover:bg-white/5 p-2 rounded transition-colors"
                     >
