@@ -14,8 +14,10 @@
  *    identity ledgers, and facts can be reconciled against eternal memory
  *    provenance — reputation grounded in evidence the user can audit.
  *
- * Formula v1 (REPUTATION_FORMULA_VERSION = 'reputation-v1'):
- *   successRate      = (helped ok + 1) / (helped total + 2)   — Laplace prior 0.5
+ * Formula v2 (REPUTATION_FORMULA_VERSION = 'reputation-v2'):
+ *   Like v1, plus normal task outcomes join the success component:
+ *   successRate      = (helped ok + tasks completed + 1)
+ *                      / (helped total + tasks completed + tasks failed + 2) — Laplace prior 0.5
  *   responseRate     = (answered + 1) / (requested + 2)
  *   speedScore       = mean over answers of 1 / (1 + latencyMs / 60000)     (0.5 if none)
  *   composite        = 0.6*success + 0.25*response + 0.15*speed
@@ -25,11 +27,15 @@
  *   score            = PRIOR + confidence * (composite - PRIOR)
  * Cold start: no evidence → score = PRIOR (0.5), confidence 0 — new agents
  * are neither punished nor privileged; routing ties break toward the head.
+ *
+ * v1 -> v2: TASK_COMPLETED/TASK_FAILED facts enter successRate and the
+ * evidence count. The version bump is deliberate: same ledger, different
+ * formula version, different score — scores stay recomputable per version.
  */
 
 import { ReputationFact, ReputationLedger } from './reputationLedger';
 
-export const REPUTATION_FORMULA_VERSION = 'reputation-v1';
+export const REPUTATION_FORMULA_VERSION = 'reputation-v2';
 export const REPUTATION_PRIOR = 0.5;
 export const CONFIDENCE_FULL_EVIDENCE = 10;
 export const MIN_CONTEXT_EVIDENCE = 3;
@@ -55,15 +61,18 @@ function componentsFor(facts: ReputationFact[]) {
     const requested = facts.filter(f => f.type === 'COLLAB_REQUESTED').length;
     const helped = facts.filter(f => f.type === 'COLLAB_HELPED');
     const successes = helped.filter(f => f.success === true).length;
+    const tasksCompleted = facts.filter(f => f.type === 'TASK_COMPLETED').length;
+    const tasksFailed = facts.filter(f => f.type === 'TASK_FAILED').length;
     const latencies = helped.map(f => f.latencyMs).filter((x): x is number => typeof x === 'number' && x >= 0);
 
-    const successRate = (successes + 1) / (helped.length + 2);
+    // v2: normal task outcomes count toward demonstrated success, alongside help.
+    const successRate = (successes + tasksCompleted + 1) / (helped.length + tasksCompleted + tasksFailed + 2);
     const responseRate = (helped.length + 1) / (requested + 2);
     const speedScore = latencies.length > 0
         ? latencies.reduce((acc, ms) => acc + 1 / (1 + ms / LATENCY_REFERENCE_MS), 0) / latencies.length
         : REPUTATION_PRIOR;
     const composite = 0.6 * successRate + 0.25 * responseRate + 0.15 * speedScore;
-    return { successRate, responseRate, speedScore, composite, evidenceCount: requested + helped.length };
+    return { successRate, responseRate, speedScore, composite, evidenceCount: requested + helped.length + tasksCompleted + tasksFailed };
 }
 
 function toReport(agentId: string, context: string | null, scope: ReputationReport['scope'], facts: ReputationFact[]): ReputationReport {

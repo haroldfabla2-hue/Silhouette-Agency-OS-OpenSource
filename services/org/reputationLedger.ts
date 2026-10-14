@@ -23,6 +23,9 @@ export type ReputationFactType =
     | 'COLLAB_HELPED'       // agentId answered a help request (success + latency)
     | 'COLLAB_SERVED'       // agentId received help for its own request
     | 'COLLAB_UNROUTABLE'   // agentId's request found no helper
+    | 'TASK_COMPLETED'      // agentId finished a normal task (latencyMs = real duration)
+    | 'TASK_FAILED'         // agentId's normal task failed (crash / explicit failure marker)
+    | 'JANITOR_REVISION'    // a janitor truth revision superseded memories agentId owned
     | 'ESCALATION';         // agentId escalated (or was escalated to) — direction in `role`
 
 export interface ReputationFact {
