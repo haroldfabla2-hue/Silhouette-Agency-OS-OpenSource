@@ -40,21 +40,21 @@ export const modelCatalog: ModelCatalogEntry[] = [
         isLocal: false
     },
 
-    // --- GROQ (Llama 3) ---
+    // --- GROQ (verified live against GET /models 2026-10-14: llama-3.x retired) ---
     {
-        id: 'llama-3.3-70b-versatile',
-        name: 'Llama 3.3 70B (Groq)',
+        id: 'openai/gpt-oss-120b',
+        name: 'GPT-OSS 120B (Groq)',
         provider: 'GROQ',
-        contextWindow: 128000,
-        capabilities: { vision: false, reasoning: false, toolUse: true, streaming: true },
+        contextWindow: 131072,
+        capabilities: { vision: false, reasoning: true, toolUse: true, streaming: true },
         isLocal: false
     },
     {
-        id: 'llama-3.1-8b-instant',
-        name: 'Llama 3.1 8B (Groq)',
+        id: 'openai/gpt-oss-20b',
+        name: 'GPT-OSS 20B (Groq)',
         provider: 'GROQ',
-        contextWindow: 128000,
-        capabilities: { vision: false, reasoning: false, toolUse: true, streaming: true },
+        contextWindow: 131072,
+        capabilities: { vision: false, reasoning: true, toolUse: true, streaming: true },
         isLocal: false
     },
 
