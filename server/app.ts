@@ -93,6 +93,8 @@ app.use(authMiddleware);
 // ─── STATIC FILES ────────────────────────────────────────────────────────────
 // Serving uploads for media access
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+// Runtime-generated media (TTS, lipsync): real files, not the SPA catch-all.
+app.use('/output', express.static(path.join(process.cwd(), 'public/output')));
 
 // ─── ROUTES ──────────────────────────────────────────────────────────────────
 app.use('/v1/system', systemRoutes); // [FIX] Add /system prefix
