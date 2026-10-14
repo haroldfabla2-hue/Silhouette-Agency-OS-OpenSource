@@ -22,10 +22,22 @@ router.get('/state', async (req, res) => {
         const nodes = await continuum.getAllNodes();
         const stats = await continuum.getStats();
 
+        // Honest availability: can this deployment vectorize memories at all?
+        let embeddings: { available: boolean; providers: { minimax: boolean; gemini: boolean } } =
+            { available: false, providers: { minimax: false, gemini: false } };
+        try {
+            const { minimaxService } = await import('../../../services/minimaxService');
+            const { hasGeminiKey } = await import('../../../services/geminiService');
+            embeddings = {
+                available: minimaxService.isAvailable() || hasGeminiKey(),
+                providers: { minimax: minimaxService.isAvailable(), gemini: hasGeminiKey() }
+            };
+        } catch { /* keep honest default: unavailable */ }
+
         // [R11] one consistent snapshot: revision + timestamp let the UI
         // compare working with working of the SAME revision, never mixed
         // snapshots. Stats invalidate on every write (revision-bumped).
-        res.json({ revision: stats.revision, timestamp: stats.timestamp, nodes, stats });
+        res.json({ revision: stats.revision, timestamp: stats.timestamp, nodes, stats, embeddings });
     } catch (error: any) {
         console.error('[MEMORY] Error fetching memory state:', error);
         res.status(500).json({ error: 'Failed to fetch memory state', details: error.message });
