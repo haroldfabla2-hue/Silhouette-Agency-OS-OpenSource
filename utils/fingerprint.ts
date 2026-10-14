@@ -113,6 +113,11 @@ export async function checkDeviceTrust(): Promise<{
         const data = await response.json();
 
         if (data.success && data.user) {
+            // Persist the issued session so the shared api helper authenticates
+            // every call via x-session-id (cookie is also set server-side).
+            if (data.session?.id) {
+                localStorage.setItem('silhouette_session_id', data.session.id);
+            }
             return {
                 trusted: true,
                 user: data.user,
