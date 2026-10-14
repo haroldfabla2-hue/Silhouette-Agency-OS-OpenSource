@@ -10,6 +10,12 @@ export const MemoryNodeSchema = z.object({
     importance: z.number().min(0).max(1),
     tags: z.array(z.string()),
     ownerId: z.string().optional(),
+    // Affective tag (additive, optional). Functional regulation model.
+    affect: z.object({
+        valence: z.number().min(-1).max(1),
+        activation: z.number().min(0).max(1),
+        at: z.number()
+    }).optional(),
     // Provenance: structured IDs of the source memories this node was
     // synthesized from (dream intuitions, meta-truths). Eternal-memory safe:
     // additive only. /doctor uses its absence on INTUITION tags to detect
