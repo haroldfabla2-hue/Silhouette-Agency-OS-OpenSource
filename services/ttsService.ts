@@ -180,6 +180,29 @@ export class TTSService {
             }
         }
 
+        // --- ELEVENLABS CLOUD FALLBACK ---
+        // Last resort when Minimax and the local engine are both unavailable.
+        // Uses ELEVENLABS_VOICE_ID (a premade, non-library voice: library voices
+        // are paid-plan only). The provider-specific voiceId does not apply here.
+        const elKey = process.env.ELEVENLABS_API_KEY;
+        const elVoice = process.env.ELEVENLABS_VOICE_ID;
+        if (elKey && elVoice) {
+            try {
+                const { elevenLabsService } = await import('./media/elevenLabsService');
+                const outDir = path.resolve(process.cwd(), 'public/output/tts');
+                fs.mkdirSync(outDir, { recursive: true });
+                const outPath = path.join(outDir, `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.mp3`);
+                const spoken = await elevenLabsService.generateSpeech(cleanText, outPath, elVoice);
+                if (spoken) {
+                    const url = `/output/tts/${path.basename(spoken)}`;
+                    console.log(`[TTS] ✅ ElevenLabs fallback served: ${url}`);
+                    return url;
+                }
+            } catch (error) {
+                console.warn('[TTS] ⚠️ ElevenLabs fallback failed:', error);
+            }
+        }
+
         return null; // Fallback completely failed
     }
 
