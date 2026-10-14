@@ -21,6 +21,17 @@ router.post('/install/handover', (req, res) => systemController.installHandover(
 // Route: /v1/system/read
 router.post('/read', (req, res) => systemController.readFile(req, res));
 
+// Route: /v1/system/environment - F1 Environment Awareness (read-only, no secrets)
+router.get('/environment', async (req, res) => {
+    try {
+        const { environmentService } = await import('../../../services/environmentService');
+        res.json(await environmentService.getReport());
+    } catch (error: any) {
+        console.error('[SYSTEM] Error building environment report:', error);
+        res.status(500).json({ error: 'Failed to build environment report' });
+    }
+});
+
 // Route: /v1/system/status
 router.get('/status', (req, res) => systemController.getStatus(req, res));
 
