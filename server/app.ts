@@ -146,9 +146,13 @@ import { shouldServeUi } from './config/staticServing';
 const distPath = path.resolve(process.cwd(), 'dist');
 if (shouldServeUi(process.env, fs.existsSync(path.join(distPath, 'index.html')))) {
     app.use(express.static(distPath));
-    app.get('*', (req: Request, res: Response, next: NextFunction) => {
+    // SPA fallback as middleware, not app.get('*'): Express 5 /
+    // path-to-regexp v8 rejects the bare '*' route (this block previously
+    // never executed, so the crash was latent).
+    app.use((req: Request, res: Response, next: NextFunction) => {
         // Exclude API, webhook, and health paths from React SPA fallback
-        if (req.path.startsWith('/v1') || req.path.startsWith('/webhooks') || req.path.startsWith('/health')) {
+        if (req.method !== 'GET'
+            || req.path.startsWith('/v1') || req.path.startsWith('/webhooks') || req.path.startsWith('/health')) {
             return next();
         }
         res.sendFile(path.join(distPath, 'index.html'));
