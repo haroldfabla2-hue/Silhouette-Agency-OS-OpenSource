@@ -73,7 +73,7 @@ const SessionList: React.FC<SessionListProps> = ({ sessions, activeSessionId, on
             {sessions.map(session => (
                 <div
                     key={session.id}
-                    className={`p-3 rounded-lg cursor-pointer group relative transition-all duration-200 border ${activeSessionId === session.id ? 'bg-cyan-950/30 border-cyan-900/50 shadow-[0_0_10px_rgba(6,182,212,0.1)]' : 'hover:bg-slate-800/50 border-transparent hover:border-slate-700'}`}
+                    className={`p-3 rounded-lg cursor-pointer group relative transition-all duration-200 border ${activeSessionId === session.id ? 'bg-cyan-950/30 border-cyan-900/50 shadow-[0_0_10px_rgba(217,158,138,0.1)]' : 'hover:bg-slate-800/50 border-transparent hover:border-slate-700'}`}
                     onClick={() => onSelect(session.id)}
                 >
                     <div className="flex justify-between items-start">
@@ -767,7 +767,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ currentUserRole, onChangeRole, 
                 <button
                     id="chat-toggle-btn"
                     onClick={() => setIsOpen(true)}
-                    className="w-14 h-14 rounded-full bg-cyan-600 hover:bg-cyan-500 text-white shadow-[0_0_20px_rgba(6,182,212,0.5)] flex items-center justify-center transition-all hover:scale-110 animate-bounce-subtle"
+                    className="w-14 h-14 rounded-full bg-cyan-600 hover:bg-cyan-500 text-white shadow-[0_0_20px_rgba(217,158,138,0.5)] flex items-center justify-center transition-all hover:scale-110 animate-bounce-subtle"
                 >
                     <MessageCircle size={28} />
                 </button>

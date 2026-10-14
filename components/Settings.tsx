@@ -665,7 +665,7 @@ const Settings: React.FC = () => {
                                         <button
                                             onClick={() => handleDensityChange('comfortable')}
                                             className={`flex-1 py-2 rounded text-xs font-bold border transition-all ${settings.theme.density === 'comfortable'
-                                                ? 'bg-slate-800 border-cyan-500 text-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
+                                                ? 'bg-slate-800 border-cyan-500 text-cyan-400 shadow-[0_0_10px_rgba(217,158,138,0.2)]'
                                                 : 'bg-slate-900 border-slate-700 text-slate-500 hover:text-white'
                                                 }`}
                                         >
@@ -674,7 +674,7 @@ const Settings: React.FC = () => {
                                         <button
                                             onClick={() => handleDensityChange('compact')}
                                             className={`flex-1 py-2 rounded text-xs font-bold border transition-all ${settings.theme.density === 'compact'
-                                                ? 'bg-slate-800 border-cyan-500 text-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
+                                                ? 'bg-slate-800 border-cyan-500 text-cyan-400 shadow-[0_0_10px_rgba(217,158,138,0.2)]'
                                                 : 'bg-slate-900 border-slate-700 text-slate-500 hover:text-white'
                                                 }`}
                                         >

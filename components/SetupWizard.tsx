@@ -206,7 +206,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                             <button onClick={() => setStep(1)} type="button" className="px-5 py-3 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white transition-all duration-300">
                                 Back
                             </button>
-                            <button onClick={() => setStep(3)} type="button" className={`flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold py-3 px-4 rounded-lg shadow-[0_0_15px_rgba(6,182,212,0.3)] transition-all duration-300 hover:shadow-[0_0_25px_rgba(6,182,212,0.5)] hover:-translate-y-0.5`}>
+                            <button onClick={() => setStep(3)} type="button" className={`flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold py-3 px-4 rounded-lg shadow-[0_0_15px_rgba(217,158,138,0.3)] transition-all duration-300 hover:shadow-[0_0_25px_rgba(217,158,138,0.5)] hover:-translate-y-0.5`}>
                                 Continue to Privacy & Telemetry ➔
                             </button>
                         </div>
@@ -267,7 +267,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                     <button onClick={() => setStep(2)} type="button" className="px-5 py-3 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white transition-all duration-300">
                         Back
                     </button>
-                    <button onClick={() => setStep(4)} type="button" className={`flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold py-3 px-4 rounded-lg shadow-[0_0_15px_rgba(6,182,212,0.3)] transition-all duration-300 hover:shadow-[0_0_25px_rgba(6,182,212,0.5)] hover:-translate-y-0.5`}>
+                    <button onClick={() => setStep(4)} type="button" className={`flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold py-3 px-4 rounded-lg shadow-[0_0_15px_rgba(217,158,138,0.3)] transition-all duration-300 hover:shadow-[0_0_25px_rgba(217,158,138,0.5)] hover:-translate-y-0.5`}>
                         Continue to Auto-Evolution ➔
                     </button>
                 </div>
@@ -324,7 +324,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                     <button onClick={() => setStep(3)} type="button" className="px-5 py-3 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white transition-all duration-300">
                         Back
                     </button>
-                    <button onClick={handleFinalSubmit} disabled={loading} className={`flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold py-3 px-4 rounded-lg shadow-[0_0_15px_rgba(6,182,212,0.3)] transition-all duration-300 ${loading ? 'opacity-70 cursor-wait' : 'hover:shadow-[0_0_25px_rgba(6,182,212,0.5)] hover:-translate-y-0.5'}`}>
+                    <button onClick={handleFinalSubmit} disabled={loading} className={`flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold py-3 px-4 rounded-lg shadow-[0_0_15px_rgba(217,158,138,0.3)] transition-all duration-300 ${loading ? 'opacity-70 cursor-wait' : 'hover:shadow-[0_0_25px_rgba(217,158,138,0.5)] hover:-translate-y-0.5'}`}>
                         {loading && (
                             <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>

@@ -40,7 +40,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isMobileOpen
       <div className={`fixed inset-y-0 left-0 transform ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0 transition-transform duration-300 ease-in-out w-64 h-screen bg-slate-950 border-r border-cyan-900/30 flex flex-col shadow-2xl z-50`}>
 
       <div className="p-6 flex items-center gap-3 border-b border-cyan-900/30">
-        <div className="w-8 h-8 bg-cyan-500 rounded-full flex items-center justify-center animate-pulse-fast shadow-[0_0_15px_rgba(6,182,212,0.5)]">
+        <div className="w-8 h-8 bg-cyan-500 rounded-full flex items-center justify-center animate-pulse-fast shadow-[0_0_15px_rgba(217,158,138,0.5)]">
           <Activity size={18} className="text-black" />
         </div>
         <div>
@@ -59,13 +59,13 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isMobileOpen
               id={`sidebar-tab-${item.id}`}
               onClick={() => setActiveTab(item.id)}
               className={`w-full flex items-center gap-4 px-4 py-3 rounded-lg transition-all duration-200 group ${isActive
-                ? 'bg-cyan-950/50 text-cyan-400 border border-cyan-900/50 shadow-[0_0_10px_rgba(6,182,212,0.1)]'
+                ? 'bg-cyan-950/50 text-cyan-400 border border-cyan-900/50 shadow-[0_0_10px_rgba(217,158,138,0.1)]'
                 : 'text-slate-400 hover:bg-slate-900 hover:text-cyan-200'
                 }`}
             >
               <Icon size={20} className={isActive ? 'text-cyan-400' : 'text-slate-500 group-hover:text-cyan-200'} />
               <span className="font-mono text-sm">{item.label}</span>
-              {isActive && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_5px_rgba(34,211,238,1)]" />}
+              {isActive && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_5px_rgba(238,194,174,1)]" />}
             </button>
           );
         })}
