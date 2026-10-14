@@ -216,7 +216,7 @@ const AgentOrchestrator: React.FC<OrchestratorProps> = ({ agents: propAgents, cu
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
               <input
                 type="text"
-                placeholder="Search 131 Squads..."
+                placeholder={`Search ${squads.length} Squads...`}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-full py-2 pl-9 pr-4 text-xs text-white focus:border-cyan-500 focus:outline-none"

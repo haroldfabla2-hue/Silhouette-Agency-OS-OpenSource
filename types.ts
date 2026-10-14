@@ -626,7 +626,7 @@ export interface SystemMetrics {
   agentsInVram: number;
   agentsInRam: number;
   introspectionDepth: number;
-  awarenessScore: number;
+  awarenessScore?: number | null; // no real source today - never fabricate
   fps: number;
   currentMode: SystemMode;
   tokenUsageToday: number;
