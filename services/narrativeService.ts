@@ -2,6 +2,7 @@ import { NarrativeState } from '../types';
 import { generateAgentResponse } from './geminiService';
 import { CommunicationLevel } from '../types';
 import { jsonrepair } from 'jsonrepair';
+import { DEFAULT_OPENROUTER_MODEL } from './llm/defaultModels';
 
 // --- NARRATIVE CORTEX SERVICE ---
 // "The Continuous Thread of Self"
@@ -649,12 +650,12 @@ Respuesta JSON:`;
             console.warn(`[NARRATIVE] ⚠️ ZhipuAI failed: ${zhipuError.message}`);
         }
 
-        // 2. FALLBACK TO OPENROUTER (gemini-2.0-flash-exp:free - GRATIS)
+        // 2. FALLBACK TO OPENROUTER (free tier model from llm/defaultModels)
         if (!response) {
             try {
                 const orKey = process.env.OPENROUTER_API_KEY;
                 if (orKey) {
-                    console.log("[NARRATIVE] 🌐 Falling back to OpenRouter (gemini-2.0-flash-exp:free)...");
+                    console.log(`[NARRATIVE] 🌐 Falling back to OpenRouter (${DEFAULT_OPENROUTER_MODEL})...`);
 
                     const orResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
                         method: "POST",
@@ -665,7 +666,10 @@ Respuesta JSON:`;
                             "X-Title": "Silhouette Narrative"
                         },
                         body: JSON.stringify({
-                            model: "google/gemini-2.0-flash-exp:free",
+                            // [ROOT FIX] was hardcoded to a retired OpenRouter model
+                            // retired by OpenRouter (404 on every fallback). Use the
+                            // single source of truth (verified live, see llm/defaultModels.ts).
+                            model: DEFAULT_OPENROUTER_MODEL,
                             messages: [
                                 { role: "user", content: prompt }
                             ],
