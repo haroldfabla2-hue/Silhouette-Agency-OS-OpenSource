@@ -13,6 +13,7 @@ import path from 'path';
 import { MemoryNode } from '../../types';
 import { SOUL_CORE_MARKERS, type IdentityLedgerEntry } from '../identity/identityEvolution';
 import { RevisionLedger, type JanitorMetrics } from '../janitor/revisionLedger';
+import { normalizeContent, MIN_DUP_CONTENT_LEN, isJanitorProcessed } from '../janitor/exactDuplicateSweep';
 
 export interface AuditCheck {
     name: string;
@@ -39,8 +40,9 @@ export interface MemoryAuditDeps {
     stagnantDays?: number;
 }
 
-const normalize = (s: string): string =>
-    s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim().replace(/\s+/g, ' ');
+// normalizeContent/MIN_DUP_CONTENT_LEN come from exactDuplicateSweep: single
+// source of truth so the sweep consolidates exactly what this audit flags.
+const normalize = normalizeContent;
 
 const isDreamNode = (n: MemoryNode): boolean =>
     n.tags.some(t => /^(INTUITION|DREAM|intuition|dream)/.test(t));
@@ -52,8 +54,13 @@ export function runMemoryAudit(deps: MemoryAuditDeps): AuditCheck[] {
     // 1. Duplicate content (normalized-exact)
     const byNorm = new Map<string, MemoryNode[]>();
     for (const n of deps.nodes) {
+        // Only UNRESOLVED duplicates warn: copies already marked SUPERSEDED
+        // (by the janitor or the exact-duplicate sweep) point at their
+        // canonical survivor and stay forever (eternal memory), so they are
+        // resolved pointers, not pending duplicates.
+        if (isJanitorProcessed(n)) continue;
         const key = normalize(n.content || '');
-        if (key.length < 20) continue; // too short to dedupe meaningfully
+        if (key.length < MIN_DUP_CONTENT_LEN) continue; // too short to dedupe meaningfully
         const arr = byNorm.get(key) || [];
         arr.push(n);
         byNorm.set(key, arr);
@@ -63,8 +70,8 @@ export function runMemoryAudit(deps: MemoryAuditDeps): AuditCheck[] {
         name: 'Memory: duplicate content (normalized-exact)',
         status: dupGroups.length === 0 ? 'ok' : 'warning',
         message: dupGroups.length === 0
-            ? `No duplicates across ${deps.nodes.length} persistent nodes`
-            : `${dupGroups.length} duplicate group(s) across ${deps.nodes.length} nodes`,
+            ? `No unresolved duplicates across ${deps.nodes.length} persistent nodes`
+            : `${dupGroups.length} unresolved duplicate group(s) across ${deps.nodes.length} nodes`,
         metadata: dupGroups.length ? {
             groups: dupGroups.length,
             sampleIds: dupGroups.slice(0, 5).map(g => g.map(n => n.id))
