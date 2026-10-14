@@ -34,6 +34,7 @@ export class AgentStreamService {
 
         // Store context to pass it back on completion
         this.activeStreams.set(agent.id, { active: true, context });
+        const startedAt = Date.now();
         console.log(`[AGENT_STREAM] 🧠 Spawning Neural Thread for: ${agent.name} (${agent.role})`);
 
         let accumulatedThoughts: string[] = [];
@@ -95,15 +96,20 @@ export class AgentStreamService {
 
             // A completed helper stream closes the same correlated request, not a generic task only.
             const source = context?.sourceMsg;
-            if (source?.protocol === SystemProtocol.HELP_REQUEST && source.payload?.requesterId) {
-                const failed = !fullText.trim() || /(^Error:|\[ERROR\]|\[SYSTEM CRITICAL FAILURE\])/i.test(fullText.trim());
+            const helpDriven = source?.protocol === SystemProtocol.HELP_REQUEST && !!source.payload?.requesterId;
+            const failed = !fullText.trim() || /(^Error:|\[ERROR\]|\[SYSTEM CRITICAL FAILURE\])/i.test(fullText.trim());
+            if (helpDriven) {
                 emitHelpResponse(source.payload, agent.id, fullText || 'Helper returned no output', !failed);
             }
 
-            // Completion
+            // Completion. helpDriven streams are already evidenced by the
+            // collaboration facts (COLLAB_HELPED) — the flag prevents double counting.
             systemBus.emit(SystemProtocol.TASK_COMPLETION, {
                 agentId: agent.id,
                 result: fullText,
+                success: !failed,
+                startedAt,
+                helpDriven,
                 timestamp: Date.now(),
                 originalContext: context // Pass back context for correlation
             }, 'AGENT_STREAM');
@@ -119,9 +125,20 @@ export class AgentStreamService {
         } catch (e) {
             console.error(`[AGENT_STREAM] 💥 Thread Crash for ${agent.name}:`, e);
             const source = context?.sourceMsg;
-            if (source?.protocol === SystemProtocol.HELP_REQUEST && source.payload?.requesterId) {
+            const helpDriven = source?.protocol === SystemProtocol.HELP_REQUEST && !!source.payload?.requesterId;
+            if (helpDriven) {
                 emitHelpResponse(source.payload, agent.id, `Unable to provide help: ${e instanceof Error ? e.message : String(e)}`, false);
             }
+            // Honest outcome: a crashed stream is a FAILED task, recorded as such.
+            systemBus.emit(SystemProtocol.TASK_COMPLETION, {
+                agentId: agent.id,
+                result: `Error: ${e instanceof Error ? e.message : String(e)}`,
+                success: false,
+                startedAt,
+                helpDriven,
+                timestamp: Date.now(),
+                originalContext: context
+            }, 'AGENT_STREAM');
         } finally {
             this.activeStreams.delete(agent.id);
             const waiters = this.idleWaiters.get(agent.id) || [];

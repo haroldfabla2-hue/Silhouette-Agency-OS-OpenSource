@@ -255,6 +255,38 @@ export class AgentSwarmOrchestrator {
             console.log(`[ORCHESTRATOR] 🧩 Curiosity Missing Piece Found by ${payload.agentId}`);
             this.resolveCuriosity(payload);
         }
+        this.recordTaskFact(payload);
+    }
+
+    /**
+     * Every normal task outcome becomes an auditable reputation fact.
+     * Skips: help-driven streams (already evidenced as COLLAB_HELPED — no
+     * double counting), queued work (accepted, not done), and payloads
+     * without an agent identity. Outcome honesty: explicit `success` wins;
+     * legacy payloads without it get the same failure heuristic the stream
+     * uses on its result text. Recording must never break the loop.
+     */
+    private recordTaskFact(payload: any): void {
+        try {
+            if (!payload?.agentId || payload.helpDriven || payload.queued) return;
+            const success = typeof payload.success === 'boolean'
+                ? payload.success
+                : !/(^Error:|\[ERROR\]|\[SYSTEM CRITICAL FAILURE\])/i.test(String(payload.result ?? '').trim()) && !!String(payload.result ?? '').trim();
+            const latencyMs = typeof payload.startedAt === 'number' && typeof payload.timestamp === 'number'
+                ? Math.max(0, payload.timestamp - payload.startedAt) : undefined;
+            const team = teamOfAgent(this.orgChart, payload.agentId);
+            this.reputationLedger.append({
+                ts: Date.now(),
+                type: success ? 'TASK_COMPLETED' : 'TASK_FAILED',
+                agentId: payload.agentId,
+                context: team?.id,
+                success,
+                latencyMs,
+                reason: success ? 'task completed' : `task failed: ${String(payload.result ?? '').substring(0, 120)}`
+            });
+        } catch (error) {
+            console.warn(`[ORCHESTRATOR] task fact not recorded: ${error instanceof Error ? error.message : String(error)}`);
+        }
     }
 
     private async resolveCuriosity(payload: any) {
