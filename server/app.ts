@@ -4,6 +4,7 @@
 // ═══════════════════════════════════════════════════════════════
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
@@ -137,9 +138,13 @@ app.use('/v1', legacyRoutes);
     }
 })();
 
-// Serve production React app build static files
-if (process.env.NODE_ENV === 'production') {
-    const distPath = path.resolve(process.cwd(), 'dist');
+// Serve production React app build static files.
+// [ROOT FIX] was gated on NODE_ENV=production only; the live deployment runs
+// NODE_ENV=development and the UI 404'd despite a built dist/. Now: explicit
+// SERVE_UI override, else production, else serve whenever the build exists.
+import { shouldServeUi } from './config/staticServing';
+const distPath = path.resolve(process.cwd(), 'dist');
+if (shouldServeUi(process.env, fs.existsSync(path.join(distPath, 'index.html')))) {
     app.use(express.static(distPath));
     app.get('*', (req: Request, res: Response, next: NextFunction) => {
         // Exclude API, webhook, and health paths from React SPA fallback
