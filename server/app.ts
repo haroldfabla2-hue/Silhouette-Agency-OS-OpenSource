@@ -18,11 +18,11 @@ import { globalLimiter, chatLimiter, adminLimiter } from './middleware/rateLimit
 
 // Routes
 import systemRoutes from './routes/v1/system.routes';
+import selfExecRoutes from './routes/v1/exec.routes';
 import orchestratorRoutes from './routes/v1/orchestrator.routes';
 import factoryRoutes from './routes/v1/factory.routes';
 import legacyRoutes from './routes/v1/legacy.routes';
 import workflowRoutes from './routes/v1/workflow.routes';
-import selfCodeRoutes from './routes/v1/selfcode.routes';
 import introspectionRoutes from './routes/v1/introspection.routes'; // [NEURO-UPDATE]
 import mediaRoutes from './routes/v1/media.routes'; // [PA-047] Media Cortex API
 import graphRoutes from './routes/v1/graph.routes';
@@ -99,11 +99,11 @@ app.use('/output', express.static(path.join(process.cwd(), 'public/output')));
 
 // ─── ROUTES ──────────────────────────────────────────────────────────────────
 app.use('/v1/system', systemRoutes); // [FIX] Add /system prefix
+app.use('/v1/self/exec', selfExecRoutes); // [F3] Command Execution (bubblewrap isolation, approval-gated)
 app.use('/v1/system', doctorRouter); // [DOCTOR] System Diagnostics at /v1/system/doctor
 app.use('/v1/orchestrator', orchestratorRoutes);
 app.use('/v1/factory', factoryRoutes);
 app.use('/v1/workflow', workflowRoutes);
-app.use('/v1/self/code', selfCodeRoutes); // [F2] Self-Code Toolkit (isolated worktree only)
 app.use('/v1/introspection', introspectionRoutes); // [NEURO-UPDATE]
 app.use('/v1/media', mediaRoutes); // [PA-047] Media Cortex API
 app.use('/v1/graph', graphRoutes);
