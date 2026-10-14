@@ -207,6 +207,16 @@ export class SelfDevCycleService {
     }
 
     public async attempt(id: string, ops?: CycleOp[]): Promise<SelfDevCycle> {
+        // Freshness sync (best effort): the planner should see current code.
+        // If the sync is unavailable here, execute() still hard-blocks any
+        // VERIFIED without a fresh worktree, so a stale plan can never be
+        // promoted - it just gets caught by the gates later.
+        try {
+            await selfCodeService.syncWithUpstream();
+        } catch (err) {
+            this.journal({ ts: new Date().toISOString(), cycleId: id, event: 'ERROR', detail: `worktree sync unavailable at attempt: ${(err as Error).message}` });
+        }
+
         const c = this.get(id);
         if (c.state !== 'PLANNED') throw Object.assign(new Error(`attempt requires PLANNED (current: ${c.state})`), { statusCode: 409 });
         let source: 'operator' | 'llm';
@@ -313,6 +323,18 @@ export class SelfDevCycleService {
         const c = this.get(id);
         if (c.state !== 'ATTEMPTED' || !c.patch) throw Object.assign(new Error(`execute requires ATTEMPTED (current: ${c.state})`), { statusCode: 409 });
 
+        // Freshness sync (again): main may have moved between attempt and
+        // execute. VERIFIED is impossible without current code: if the sync
+        // is unavailable we still land the ops (auditable in the clone) but
+        // skip every gate and the acceptance run with an honest reason.
+        let stale = false;
+        try {
+            await selfCodeService.syncWithUpstream();
+        } catch (err) {
+            stale = true;
+            this.journal({ ts: new Date().toISOString(), cycleId: c.id, event: 'ERROR', detail: `worktree sync unavailable at execute: ${(err as Error).message}` });
+        }
+
         // GATE 1+2 (pre-write, pure): scope containment + anti-gut shrink check.
         // VERIFIED must mean correct: a patch that escapes its declared scope or
         // deletes more than half of a target file is FAILED before it touches disk.
@@ -342,6 +364,14 @@ export class SelfDevCycleService {
         }
         c.diff = (await selfCodeService.diff()).diff;
         this.transition(c, 'EXECUTED', `applied ${c.patch.ops.length} ops in selfwork clone`);
+
+        if (stale) {
+            c.lastError = 'verification unavailable (worktree sync): gates skipped, cycle cannot be VERIFIED against stale code';
+            c.updatedAt = new Date().toISOString();
+            this.journal({ ts: c.updatedAt, cycleId: c.id, event: 'ERROR', detail: c.lastError });
+            this.save();
+            return c;
+        }
 
         // GATE 3 (post-write): full typecheck in the clone. A patch that does
         // not compile can never be VERIFIED, whatever the acceptance test says.

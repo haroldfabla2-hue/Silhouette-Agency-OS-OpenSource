@@ -27,7 +27,7 @@ const DENIED_PREFIXES = ['.env'];
 export interface JournalEntry {
     ts: string;
     actor: string;
-    action: 'write' | 'test' | 'init';
+    action: 'write' | 'test' | 'init' | 'sync';
     path?: string;
     rationale?: string;
     shaBefore?: string | null;
@@ -110,6 +110,40 @@ class SelfCodeService {
         }
         this.journal({ ts: new Date().toISOString(), actor: 'api', action: 'init', detail: `worktree created at ${wt}` });
         return { path: wt, created: true };
+    }
+
+    /**
+     * Sync the local clone AND the selfwork worktree to the upstream default
+     * branch. The planner and the acceptance gates must operate on current
+     * code: a stale clone makes the shrink gate compare against ghosts and
+     * lets the planner rewrite files that no longer look the way it thinks.
+     * Upstream URL is env-driven (SELF_REPO_UPSTREAM_URL), never the clone's
+     * own origin, which may point at a template repo. Fail-closed: throws
+     * when the URL is unset or any git step fails.
+     */
+    public async syncWithUpstream(): Promise<{ syncedTo: string }> {
+        const url = (process.env.SELF_REPO_UPSTREAM_URL || '').trim();
+        if (!url) throw new Error('worktree sync unavailable: SELF_REPO_UPSTREAM_URL not configured');
+        const repo = this.repoPath();
+        const fetchRes = await run('git', ['fetch', url, 'main'], repo, 120000);
+        if (fetchRes.code !== 0) throw new Error(`worktree sync fetch failed: ${fetchRes.out.slice(-300)}`);
+        const shaRes = await run('git', ['rev-parse', 'FETCH_HEAD'], repo, 15000);
+        if (shaRes.code !== 0) throw new Error(`worktree sync rev-parse failed: ${shaRes.out.slice(-300)}`);
+        const sha = shaRes.out.trim();
+        const resetRepo = await run('git', ['reset', '--hard', sha], repo, 60000);
+        if (resetRepo.code !== 0) throw new Error(`worktree sync repo reset failed: ${resetRepo.out.slice(-300)}`);
+        const wt = (await this.ensureWorktree()).path;
+        const dirty = await run('git', ['status', '--porcelain'], wt, 15000);
+        const discarded = dirty.out ? dirty.out.split('\n').filter(Boolean).length : 0;
+        const resetWt = await run('git', ['reset', '--hard', sha], wt, 60000);
+        if (resetWt.code !== 0) throw new Error(`worktree sync worktree reset failed: ${resetWt.out.slice(-300)}`);
+        // keep the node_modules symlink (tests need it); drop every other leftover
+        await run('git', ['clean', '-fd', '-e', 'node_modules'], wt, 60000);
+        this.journal({
+            ts: new Date().toISOString(), actor: 'api', action: 'sync',
+            detail: `worktree synced to ${sha.slice(0, 8)}${discarded ? ` (discarded ${discarded} leftover entries)` : ''}`
+        });
+        return { syncedTo: sha };
     }
 
     public async readFile(relPath: string): Promise<{ path: string; content: string; sha: string; truncated: boolean }> {
