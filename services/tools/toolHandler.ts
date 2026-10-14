@@ -1,4 +1,4 @@
-import { requestCollaboration, ToolCaller } from '../communication/helpProtocol';
+import { requestCollaborationAndWait, ToolCaller } from '../communication/helpProtocol';
 
 import { GenerateVideoArgs, ListVisualAssetsArgs, GenerateImageArgs, DelegateTaskArgs, SearchAssetsArgs, ManageAssetArgs, PreviewAssetArgs, CreateToolArgs, RequestCollaborationArgs } from './definitions';
 // ... (existing imports)
@@ -143,7 +143,7 @@ export class ToolHandler {
             case 'architect_audit':
                 return await this.handleArchitectAudit();
             case 'request_collaboration':
-                return await requestCollaboration(args as RequestCollaborationArgs, caller);
+                return await requestCollaborationAndWait(args as RequestCollaborationArgs, caller);
 
             // ==================== SELF-CONFIGURATION TOOLS Phase 17 ====================
             case 'get_system_config':
