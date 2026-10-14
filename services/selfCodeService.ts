@@ -149,6 +149,10 @@ class SelfCodeService {
 
     /** Fase 1 gate: full typecheck inside the isolated clone. */
     public async runTypecheck(): Promise<{ code: number; output: string }> {
+        const wt = (await this.ensureWorktree()).path;
+        if (!fs.existsSync(path.join(wt, 'node_modules'))) {
+            throw new Error('typecheck unavailable: node_modules missing in worktree');
+        }
         const cwd = this.worktreePath();
         const env = { ...process.env, NODE_OPTIONS: '--max-old-space-size=6144' };
         return new Promise((resolve) => {
@@ -160,6 +164,10 @@ class SelfCodeService {
 
     /** Fase 1 gate: each touched route module must import cleanly in the clone. */
     public async runRouteSmoke(relPath: string): Promise<{ code: number; output: string }> {
+        const wt = (await this.ensureWorktree()).path;
+        if (!fs.existsSync(path.join(wt, 'node_modules'))) {
+            throw new Error('route smoke unavailable: node_modules missing in worktree');
+        }
         const cwd = this.worktreePath();
         const script = `import('./${relPath.replace(/'/g, '')}').then(()=>process.exit(0)).catch(e=>{console.error(e && e.message || e);process.exit(1)})`;
         return new Promise((resolve) => {

@@ -12,7 +12,8 @@ export interface GateFailure { gate: 'scope' | 'shrink'; detail: string }
 /** Every op must stay inside the cycle's declared scope. */
 export function checkScope(ops: GateOp[], scope: string[]): GateFailure | null {
     for (const o of ops) {
-        if (!scope.includes(o.path)) {
+        const inside = scope.some(s => o.path === s || o.path.startsWith(s.endsWith('/') ? s : s + '/'));
+        if (!inside) {
             return { gate: 'scope', detail: `op touches ${o.path} outside declared scope (${scope.join(', ')})` };
         }
     }

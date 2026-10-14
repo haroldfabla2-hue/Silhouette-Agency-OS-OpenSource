@@ -10,6 +10,10 @@ describe('scope gate', () => {
     const scope = ['server/routes/v1/selfdev.routes.ts'];
     it('passes ops inside the declared scope', () => {
         expect(checkScope([{ path: scope[0], content: 'x' }], scope)).toBeNull();
+        // a file nested inside a scoped directory is in scope (matches attempt() semantics)
+        expect(checkScope([{ path: 'server/routes/v1/x.ts', content: 'x' }], ['server/routes'])).toBeNull();
+        // sibling-prefix spoof is NOT in scope
+        expect(checkScope([{ path: 'server/routes-evil/x.ts', content: 'x' }], ['server/routes'])?.gate).toBe('scope');
     });
     it('blocks ops outside the declared scope', () => {
         const f = checkScope([{ path: 'services/other.ts', content: 'x' }], scope);

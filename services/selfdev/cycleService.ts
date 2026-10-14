@@ -316,12 +316,14 @@ export class SelfDevCycleService {
         // GATE 1+2 (pre-write, pure): scope containment + anti-gut shrink check.
         // VERIFIED must mean correct: a patch that escapes its declared scope or
         // deletes more than half of a target file is FAILED before it touches disk.
-        const readOriginal = (p: string): string | null => {
+        const originals = new Map<string, string | null>();
+        for (const o of c.patch.ops) {
             try {
-                const r = (selfCodeService as any).readFile(p);
-                return r?.content ?? null;
-            } catch { return null; }
-        };
+                const r = await selfCodeService.readFile(o.path);
+                originals.set(o.path, r?.content ?? null);
+            } catch { originals.set(o.path, null); }
+        }
+        const readOriginal = (p: string): string | null => originals.get(p) ?? null;
         const preGate = checkScope(c.patch.ops, c.scope) || checkShrink(c.patch.ops, readOriginal);
         if (preGate) {
             this.journal({ ts: new Date().toISOString(), cycleId: c.id, event: 'GATE_BLOCKED', detail: `${preGate.gate}: ${preGate.detail}` });
@@ -351,7 +353,7 @@ export class SelfDevCycleService {
                 return c;
             }
         } catch (err) {
-            c.lastError = `typecheck gate unavailable: ${(err as Error).message}`;
+            c.lastError = `verification unavailable (typecheck gate): ${(err as Error).message}`;
             c.updatedAt = new Date().toISOString();
             this.journal({ ts: c.updatedAt, cycleId: c.id, event: 'ERROR', detail: c.lastError });
             this.save();
@@ -369,7 +371,7 @@ export class SelfDevCycleService {
                     return c;
                 }
             } catch (err) {
-                c.lastError = `route smoke gate unavailable: ${(err as Error).message}`;
+                c.lastError = `verification unavailable (route smoke gate): ${(err as Error).message}`;
                 c.updatedAt = new Date().toISOString();
                 this.journal({ ts: c.updatedAt, cycleId: c.id, event: 'ERROR', detail: c.lastError });
                 this.save();
