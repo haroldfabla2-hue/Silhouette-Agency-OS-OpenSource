@@ -35,6 +35,18 @@ function isPublicPath(path: string): boolean {
     return false;
 }
 
+
+/**
+ * Read the login session id from the HttpOnly session cookie. Browser
+ * features that cannot set headers (EventSource streams, <img> media)
+ * authenticate through this cookie instead of the x-session-id header.
+ */
+export function parseSessionCookie(cookieHeader: string | undefined): string | null {
+    if (!cookieHeader) return null;
+    const match = cookieHeader.match(/(?:^|;\s*)silhouette_session=([^;\s]+)/);
+    return match ? decodeURIComponent(match[1]) : null;
+}
+
 // ─── Token Resolver ──────────────────────────────────────────────────────────
 
 let _cachedToken: string | null = null;
@@ -127,7 +139,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
             // token-less local install was demoted to 'anonymous' and all
             // memory landed in a shared global identity. Validate the session
             // header when present; only truly unidentified requests stay null.
-            const sessionId = req.headers['x-session-id'] as string;
+            const sessionId = (req.headers['x-session-id'] as string) || parseSessionCookie(req.headers.cookie) || '';
             if (sessionId) {
                 try {
                     const { identityService } = await import('../../services/identityService');
@@ -156,7 +168,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
     const authHeader = req.headers.authorization;
 
     // NEW: Check for session ID from local login
-    const sessionId = req.headers['x-session-id'] as string;
+    const sessionId = (req.headers['x-session-id'] as string) || parseSessionCookie(req.headers.cookie) || '';
 
     if (sessionId) {
         // Validate local session securely & per request
