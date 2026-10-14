@@ -458,9 +458,11 @@ class ContinuumMemorySystem {
                 if (minimaxService.isAvailable()) {
                     vector = await minimaxService.getEmbedding(content);
                 } else {
-                    // Fallback to Gemini if Minimax key missing
-                    const { generateEmbedding } = await import('./geminiService');
-                    vector = await generateEmbedding(content);
+                    // Fallback to Gemini if Minimax key missing - resilient to
+                    // circular-import init order (same pattern as the query path).
+                    const geminiMod = await import('./geminiService');
+                    const embedFn = geminiMod.geminiService?.generateEmbedding || geminiMod.generateEmbedding;
+                    vector = typeof embedFn === 'function' ? await embedFn(content) : null;
                 }
 
                 if (process.env.MEMORY_WRITE_MODEL && vector) nodeToStore.embeddingIdentity = {
@@ -1033,8 +1035,12 @@ class ContinuumMemorySystem {
                 console.log(`[CONTINUUM] Performing Semantic Search for: "${query}"`);
                 deepVectors = await vectorMemory.searchMemory(embedding, 50, scope.ownerId ? { ownerId: scope.ownerId } : undefined);
             } else {
-                // Fallback to Text Search if embedding fails
-                console.warn("[CONTINUUM] Embedding failed, falling back to text search for Deep Memory.");
+                // Honest reason: no embedding produced vs embedding-model env mismatch.
+                if (!embedding) {
+                    console.warn("[CONTINUUM] Embedding UNAVAILABLE (no embedding provider configured or provider error) - falling back to text search for Deep Memory.");
+                } else {
+                    console.warn("[CONTINUUM] Embedding model env mismatch (MEMORY_QDRANT_MODEL vs MEMORY_QUERY_MODEL) - falling back to text search for Deep Memory.");
+                }
                 deepVectors = await vectorMemory.searchByContent(query, 50, scope.ownerId);
             }
 
