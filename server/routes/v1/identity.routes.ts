@@ -263,10 +263,21 @@ router.post('/auto-login', async (req: Request, res: Response) => {
         const user = await identityService.tryAutoLogin(fingerprint);
 
         if (user) {
+            // Auto-login must issue a REAL session: previously this returned success
+            // with no session and no cookie, so the SPA rendered authenticated while
+            // every API call failed 401 (the UI looked frozen on return visits).
+            const device = identityService.getDeviceByFingerprint(fingerprint);
+            if (!device) {
+                return res.status(401).json({ success: false, requiresLogin: true, needsSetup: false });
+            }
+            const session = identityService.createSession(user.id, device.id);
+            setSessionCookie(res, session);
+
             return res.json({
                 success: true,
                 user: sanitizeUser(user),
-                device: identityService.getDeviceByFingerprint(fingerprint),
+                device,
+                session,
                 isCreator: user && user.role === 'CREATOR',
                 googleLinked: user && user.googleLinked
             });
