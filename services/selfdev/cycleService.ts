@@ -27,6 +27,7 @@
  *    SELFDEV_MAX_OPS, SELFDEV_MAX_PATCH_BYTES, SELFDEV_DIR.
  */
 
+import { checkScope, checkShrink } from './gates';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
@@ -46,7 +47,7 @@ export interface CycleOp {
 }
 
 export interface CycleRun {
-    kind: 'vitest';
+    kind: 'vitest' | 'tsc' | 'route-smoke';
     target: string;
     code: number;
     pass: boolean;
@@ -311,6 +312,25 @@ export class SelfDevCycleService {
     public async execute(id: string): Promise<SelfDevCycle> {
         const c = this.get(id);
         if (c.state !== 'ATTEMPTED' || !c.patch) throw Object.assign(new Error(`execute requires ATTEMPTED (current: ${c.state})`), { statusCode: 409 });
+
+        // GATE 1+2 (pre-write, pure): scope containment + anti-gut shrink check.
+        // VERIFIED must mean correct: a patch that escapes its declared scope or
+        // deletes more than half of a target file is FAILED before it touches disk.
+        const originals = new Map<string, string | null>();
+        for (const o of c.patch.ops) {
+            try {
+                const r = await selfCodeService.readFile(o.path);
+                originals.set(o.path, r?.content ?? null);
+            } catch { originals.set(o.path, null); }
+        }
+        const readOriginal = (p: string): string | null => originals.get(p) ?? null;
+        const preGate = checkScope(c.patch.ops, c.scope) || checkShrink(c.patch.ops, readOriginal);
+        if (preGate) {
+            this.journal({ ts: new Date().toISOString(), cycleId: c.id, event: 'GATE_BLOCKED', detail: `${preGate.gate}: ${preGate.detail}` });
+            this.transition(c, 'FAILED', `diff sanity gate (${preGate.gate}): ${preGate.detail}`);
+            return c;
+        }
+
         // Apply ops inside the isolated clone (F2, journaled there too).
         for (const o of c.patch.ops) {
             try {
@@ -322,6 +342,43 @@ export class SelfDevCycleService {
         }
         c.diff = (await selfCodeService.diff()).diff;
         this.transition(c, 'EXECUTED', `applied ${c.patch.ops.length} ops in selfwork clone`);
+
+        // GATE 3 (post-write): full typecheck in the clone. A patch that does
+        // not compile can never be VERIFIED, whatever the acceptance test says.
+        try {
+            const t = await selfCodeService.runTypecheck();
+            c.runs.push({ kind: 'tsc', target: 'tsc --noEmit', code: t.code, pass: t.code === 0, outputTail: t.output.slice(-2000), at: new Date().toISOString() });
+            if (t.code !== 0) {
+                this.transition(c, 'FAILED', `typecheck gate failed (exit ${t.code})`);
+                return c;
+            }
+        } catch (err) {
+            c.lastError = `verification unavailable (typecheck gate): ${(err as Error).message}`;
+            c.updatedAt = new Date().toISOString();
+            this.journal({ ts: c.updatedAt, cycleId: c.id, event: 'ERROR', detail: c.lastError });
+            this.save();
+            return c;
+        }
+
+        // GATE 4 (post-write): every touched route module must import cleanly.
+        for (const o of c.patch.ops) {
+            if (!/^server\/routes\//.test(o.path)) continue;
+            try {
+                const r = await selfCodeService.runRouteSmoke(o.path);
+                c.runs.push({ kind: 'route-smoke', target: o.path, code: r.code, pass: r.code === 0, outputTail: r.output.slice(-2000), at: new Date().toISOString() });
+                if (r.code !== 0) {
+                    this.transition(c, 'FAILED', `route smoke gate failed for ${o.path} (exit ${r.code})`);
+                    return c;
+                }
+            } catch (err) {
+                c.lastError = `verification unavailable (route smoke gate): ${(err as Error).message}`;
+                c.updatedAt = new Date().toISOString();
+                this.journal({ ts: c.updatedAt, cycleId: c.id, event: 'ERROR', detail: c.lastError });
+                this.save();
+                return c;
+            }
+        }
+
         // Real verification: acceptance test twice, both must pass.
         for (let i = 1; i <= 2; i++) {
             try {
