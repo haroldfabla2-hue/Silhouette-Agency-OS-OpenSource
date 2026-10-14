@@ -65,10 +65,10 @@ class AdvancedDiscoveryService {
             WITH n, count(DISTINCT n1) as k
             WHERE k > 1
             MATCH (n)-[]-(n1)-[r2]-(n2)-[]-(n)
-            RETURN CASE 
-                WHEN k > 1 THEN toFloat(count(r2)) / 2.0 / (k * (k - 1) / 2.0)
-                ELSE 0.0 
-            END as clustering
+            // [ROOT FIX] Neo4j 50N42: an aggregation expression may not use the
+            // implicit grouping key k — aggregate first, then do the arithmetic.
+            WITH k, count(r2) as links
+            RETURN toFloat(links) / 2.0 / (k * (k - 1) / 2.0) as clustering
         `;
 
         try {
@@ -305,7 +305,9 @@ class AdvancedDiscoveryService {
                 candidates.map(async (c: any) => {
                     const clustering = await this.calculateClusteringCoefficient(c.id);
                     return clustering < 0.3
-                        ? { nodeId: c.id, name: c.name || c.id, clustering, connections: c.degree }
+                        // [ROOT FIX] Neo4j integers arrive as BigInt; a plain
+                        // subtraction/sort on them throws TypeError. Convert.
+                        ? { nodeId: c.id, name: c.name || c.id, clustering, connections: Number(c.degree) }
                         : null;
                 })
             );
