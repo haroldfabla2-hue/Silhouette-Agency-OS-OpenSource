@@ -73,6 +73,13 @@ class IdentityService {
     /**
      * Initialize identity service
      */
+    /** True after init() has opened the database. The auth gate uses this to
+     *  fail closed during early boot instead of reading a null database as an
+     *  empty one. */
+    isInitialized(): boolean {
+        return this.initialized;
+    }
+
     async init(): Promise<void> {
         if (this.initialized) return;
 
