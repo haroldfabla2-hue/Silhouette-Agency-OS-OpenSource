@@ -222,6 +222,11 @@ export class UnifiedDaemon {
         } catch (e: any) {
             if (e.code !== 'ENOENT') {
                 console.warn(`[DAEMON] Failed to load state: ${e.message}`);
+                // Quarantine, never delete: keep the unreadable file for
+                // forensics and boot fresh instead of warning on every load.
+                try {
+                    await fs.rename(this.STATE_FILE, `${this.STATE_FILE}.corrupt-${Date.now()}`);
+                } catch { /* quarantine is best-effort */ }
             }
         }
     }
@@ -241,7 +246,20 @@ export class UnifiedDaemon {
                 };
             }
 
-            await fs.writeFile(this.STATE_FILE, JSON.stringify(state, null, 2), 'utf-8');
+            // Atomic write: serialize to a tmp sibling, fsync, then rename
+            // over the state file. An unclean exit mid-write then leaves the
+            // previous good file intact instead of a truncated one (observed
+            // in prod: repeated "Unexpected end of JSON input" load failures).
+            const tmpFile = `${this.STATE_FILE}.tmp`;
+            const payload = JSON.stringify(state, null, 2);
+            const handle = await fs.open(tmpFile, 'w');
+            try {
+                await handle.writeFile(payload, 'utf-8');
+                await handle.sync();
+            } finally {
+                await handle.close();
+            }
+            await fs.rename(tmpFile, this.STATE_FILE);
         } catch (e: any) {
             console.warn(`[DAEMON] Failed to save state: ${e.message}`);
         }
