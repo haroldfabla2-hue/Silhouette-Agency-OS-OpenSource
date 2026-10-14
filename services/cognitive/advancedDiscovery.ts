@@ -65,10 +65,10 @@ class AdvancedDiscoveryService {
             WITH n, count(DISTINCT n1) as k
             WHERE k > 1
             MATCH (n)-[]-(n1)-[r2]-(n2)-[]-(n)
-            RETURN CASE 
-                WHEN k > 1 THEN toFloat(count(r2)) / 2.0 / (k * (k - 1) / 2.0)
-                ELSE 0.0 
-            END as clustering
+            // [ROOT FIX] Neo4j 50N42: an aggregation expression may not use the
+            // implicit grouping key k — aggregate first, then do the arithmetic.
+            WITH k, count(r2) as links
+            RETURN toFloat(links) / 2.0 / (k * (k - 1) / 2.0) as clustering
         `;
 
         try {
@@ -97,7 +97,9 @@ class AdvancedDiscoveryService {
             WHERE degree >= 2
             RETURN n.id as id
             ORDER BY rand()
-            LIMIT $sampleSize
+            // [ROOT FIX] the Neo4j JS driver encodes JS numbers as Float;
+            // LIMIT rejects 30.0. Coerce inside Cypher.
+            LIMIT toInteger($sampleSize)
         `;
 
         try {
@@ -128,7 +130,8 @@ class AdvancedDiscoveryService {
             WHERE a.id IS NOT NULL AND b.id IS NOT NULL
               AND a <> b AND rand() < 0.05
             WITH a, b
-            LIMIT $samplePairs
+            // [ROOT FIX] same driver Float encoding: LIMIT rejects 50.0.
+            LIMIT toInteger($samplePairs)
             MATCH path = shortestPath((a)-[*..15]-(b))
             RETURN length(path) as pathLength
         `;
@@ -137,7 +140,8 @@ class AdvancedDiscoveryService {
             const results = await graph.runQuery(query, { samplePairs });
             if (results.length === 0) return Infinity;
 
-            const totalLength = results.reduce((sum: number, r: any) => sum + (r.pathLength || 0), 0);
+            // [ROOT FIX] pathLength is a Neo4j Integer (BigInt): sum + BigInt throws.
+            const totalLength = results.reduce((sum: number, r: any) => sum + Number(r.pathLength || 0), 0);
             return totalLength / results.length;
         } catch (e) {
             logger.warn('Failed to calculate average path length:', e);
@@ -182,8 +186,10 @@ class AdvancedDiscoveryService {
 
         try {
             const stats = await graph.runQuery(statsQuery);
-            const N = stats[0]?.N || 0;
-            const E = stats[0]?.E || 0;
+            // [ROOT FIX] Neo4j integers arrive as BigInt; 2 * E below throws
+            // "Cannot mix BigInt and other types". Convert at the boundary.
+            const N = Number(stats[0]?.N) || 0;
+            const E = Number(stats[0]?.E) || 0;
 
             if (N < 5) {
                 logger.info(`Graph too small for σ (N=${N}). Need ≥5 nodes.`);
@@ -270,9 +276,10 @@ class AdvancedDiscoveryService {
             const weakTies = await Promise.all(
                 results.map(async (r: any) => ({
                     nodeId: r.targetId,
-                    weight: r.weight,
+                    // [ROOT FIX] weight can arrive as a Neo4j Integer (BigInt).
+                    weight: Number(r.weight),
                     clustering: await this.calculateClusteringCoefficient(r.targetId),
-                    discoveryPotential: 1.0 - r.weight
+                    discoveryPotential: 1.0 - Number(r.weight)
                 }))
             );
             return weakTies.sort((a, b) => b.discoveryPotential - a.discoveryPotential);
@@ -305,7 +312,9 @@ class AdvancedDiscoveryService {
                 candidates.map(async (c: any) => {
                     const clustering = await this.calculateClusteringCoefficient(c.id);
                     return clustering < 0.3
-                        ? { nodeId: c.id, name: c.name || c.id, clustering, connections: c.degree }
+                        // [ROOT FIX] Neo4j integers arrive as BigInt; a plain
+                        // subtraction/sort on them throws TypeError. Convert.
+                        ? { nodeId: c.id, name: c.name || c.id, clustering, connections: Number(c.degree) }
                         : null;
                 })
             );

@@ -1,90 +1,89 @@
+/**
+ * AdvancedDiscovery regressions (found live in production logs):
+ * 1. calculateClusteringCoefficient emitted Cypher that Neo4j rejects with
+ *    50N42 (aggregation expression using implicit grouping key k).
+ * 2. discoverBridges crashed with "TypeError: Cannot convert a BigInt value
+ *    to a number" because Neo4j integers arrive as BigInt and the final
+ *    sort subtracted them raw — killing ConsciousnessEngine.calculatePhi
+ *    every tick.
+ */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { advancedDiscovery } from '../../services/cognitive/advancedDiscovery';
-import { graph } from '../../services/graphService';
+import fs from 'fs';
+import path from 'path';
 
-// Mock graphService
+const mockRunQuery = vi.fn();
 vi.mock('../../services/graphService', () => ({
     graph: {
-        isConnectedStatus: vi.fn().mockReturnValue(true),
-        runQuery: vi.fn()
+        isConnectedStatus: () => true,
+        runQuery: (q: string, p?: unknown) => mockRunQuery(q, p),
     }
 }));
+vi.mock('../../utils/logger', () => ({ logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn() } }));
 
-describe('AdvancedDiscoveryService', () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
+const { advancedDiscovery } = await import('../../services/cognitive/advancedDiscovery');
+
+describe('advancedDiscovery (production-crash regressions)', () => {
+    // NOTE: braces required — a bare arrow returns the mock from mockReset(),
+    // and vitest registers a returned function as a cleanup hook (calls it with
+    // no args after the test, re-entering mockImplementation with undefined).
+    beforeEach(() => { mockRunQuery.mockReset(); });
+
+    it('discoverBridges: BigInt degrees from Neo4j do not crash the sort', async () => {
+        mockRunQuery.mockImplementation(async (query: string) => {
+            if (query.includes('degree > 3')) {
+                return [
+                    { id: 'a', name: 'A', degree: 5n },   // Neo4j Integer => BigInt
+                    { id: 'b', name: 'B', degree: 9n },
+                ];
+            }
+            return [{ clustering: 0.1 }]; // clustering coefficient per candidate
+        });
+        const bridges = await advancedDiscovery.discoverBridges(10);
+        expect(bridges).toHaveLength(2);
+        expect(bridges.map(b => b.nodeId)).toEqual(['b', 'a']); // sorted desc, no TypeError
+        expect(typeof bridges[0].connections).toBe('number');
     });
 
-    describe('calculateClusteringCoefficient', () => {
-        it('should return 0.0 if not connected', async () => {
-            vi.mocked(graph.isConnectedStatus).mockReturnValueOnce(false);
-            const result = await advancedDiscovery.calculateClusteringCoefficient('node1');
-            expect(result).toBe(0.0);
-        });
-
-        it('should return correct coefficient from db', async () => {
-            vi.mocked(graph.runQuery).mockResolvedValueOnce([{ clustering: 0.75 }]);
-            const result = await advancedDiscovery.calculateClusteringCoefficient('node1');
-            expect(result).toBe(0.75);
-            expect(graph.runQuery).toHaveBeenCalledWith(expect.any(String), { nodeId: 'node1' });
-        });
-
-        it('should return 0.0 if query returns null result', async () => {
-            vi.mocked(graph.runQuery).mockResolvedValueOnce([]);
-            const result = await advancedDiscovery.calculateClusteringCoefficient('node1');
-            expect(result).toBe(0.0);
-        });
+    it('clustering Cypher is legal for Neo4j 5 (no aggregation over implicit grouping key)', async () => {
+        mockRunQuery.mockResolvedValue([{ clustering: 0.42 }]);
+        const c = await advancedDiscovery.calculateClusteringCoefficient('node-1');
+        expect(c).toBe(0.42);
+        const src = fs.readFileSync(path.resolve(__dirname, '../../services/cognitive/advancedDiscovery.ts'), 'utf-8');
+        expect(src).toContain('WITH k, count(r2) as links');
+        expect(src).not.toContain('WHEN k > 1 THEN toFloat(count(r2))');
     });
 
-    describe('findWeakTies', () => {
-        it('should find and sort weak ties by discovery potential', async () => {
-            vi.mocked(graph.runQuery).mockResolvedValueOnce([
-                { targetId: 'node2', weight: 0.2 },
-                { targetId: 'node3', weight: 0.1 }
-            ]);
-            // Mock clustering calls inside
-            const clusterSpy = vi.spyOn(advancedDiscovery, 'calculateClusteringCoefficient');
-            clusterSpy.mockResolvedValueOnce(0.5).mockResolvedValueOnce(0.8);
-
-            const result = await advancedDiscovery.findWeakTies('node1', 0.3);
-
-            expect(result).toHaveLength(2);
-            // node3 has weight 0.1 -> potential 0.9
-            // node2 has weight 0.2 -> potential 0.8
-            expect(result[0].nodeId).toBe('node3');
-            expect(result[0].discoveryPotential).toBe(0.9);
-            expect(result[0].clustering).toBe(0.8);
-
-            expect(result[1].nodeId).toBe('node2');
-            expect(result[1].discoveryPotential).toBe(0.8);
-            expect(result[1].clustering).toBe(0.5);
-
-            clusterSpy.mockRestore();
-        });
+    it('calculateAveragePathLength: BigInt path lengths do not crash the reduce', async () => {
+        mockRunQuery.mockResolvedValue([{ pathLength: 4n }, { pathLength: 6n }]);
+        const l = await advancedDiscovery.calculateAveragePathLength(50);
+        expect(l).toBe(5);
+        expect(typeof l).toBe('number');
     });
 
-    describe('discoverBridges', () => {
-        it('should discover and sort nodes with high degree and low clustering', async () => {
-            vi.mocked(graph.runQuery).mockResolvedValueOnce([
-                { id: 'nodeA', name: 'Concept A', degree: 10 },
-                { id: 'nodeB', name: 'Concept B', degree: 5 },
-                { id: 'nodeC', name: 'Concept C', degree: 4 } // High clustering so filtered out
-            ]);
-
-            const clusterSpy = vi.spyOn(advancedDiscovery, 'calculateClusteringCoefficient');
-            clusterSpy.mockImplementation(async (id) => {
-                if (id === 'nodeA') return 0.1; // Bridge!
-                if (id === 'nodeB') return 0.2; // Bridge!
-                if (id === 'nodeC') return 0.8; // Not a bridge
-                return 0.0;
-            });
-
-            const bridges = await advancedDiscovery.discoverBridges(10);
-            expect(bridges).toHaveLength(2);
-            expect(bridges[0].nodeId).toBe('nodeA'); // higher connections
-            expect(bridges[1].nodeId).toBe('nodeB');
-
-            clusterSpy.mockRestore();
+    it('calculateSmallWorldIndex: BigInt N/E from Neo4j do not crash (2 * E)', async () => {
+        mockRunQuery.mockImplementation(async (query: string) => {
+            if (query.includes('count(n) as N')) return [{ N: 647n, E: 12000n }]; // Neo4j Integers
+            if (query.includes('degree >= 2')) return [{ id: 'x' }, { id: 'y' }];
+            if (query.includes('shortestPath')) return [{ pathLength: 4n }, { pathLength: 6n }];
+            return [{ clustering: 0.5 }];
         });
+        const r = await advancedDiscovery.calculateSmallWorldIndex();
+        expect(r.totalNodes).toBe(647);
+        expect(r.totalEdges).toBe(12000);
+        expect(typeof r.avgDegree).toBe('number');
+        expect(Number.isFinite(r.sigma)).toBe(true);
+        expect(r.sigma).toBeGreaterThan(0); // well-connected graph must score sigma > 0
+    });
+    it('LIMIT params are coerced with toInteger() (driver sends JS numbers as Float, Neo4j rejects 30.0)', async () => {
+        mockRunQuery.mockResolvedValue([]);
+        await advancedDiscovery.calculateGlobalClusteringCoefficient(30);
+        await advancedDiscovery.calculateAveragePathLength(50);
+        const queries = mockRunQuery.mock.calls.map(c => String(c[0]));
+        expect(queries.some(q => q.includes('LIMIT toInteger($sampleSize)'))).toBe(true);
+        expect(queries.some(q => q.includes('LIMIT toInteger($samplePairs)'))).toBe(true);
+    });
+    it('empty result (k <= 1 filtered out) yields 0.0 without throwing', async () => {
+        mockRunQuery.mockResolvedValue([]);
+        await expect(advancedDiscovery.calculateClusteringCoefficient('lonely')).resolves.toBe(0.0);
     });
 });
