@@ -42,7 +42,9 @@ export function emitHelpResponse(request: Pick<HelpRequest, 'requestId' | 'reque
 
 /** Shared by the live orchestrator and transport integration tests. */
 export function subscribeHelpProtocol(deps: {
-    findHelper: (role: string) => string | null;
+    // `request` lets resolvers use the requester's identity (e.g. '@team-head'
+    // resolves against the requester's own team). Optional for back-compat.
+    findHelper: (role: string, request?: HelpRequest) => string | null;
     prepare: (request: HelpRequest, helperId: string) => Promise<unknown>;
     // Optional evidence sink: collaboration facts for the reputation ledger.
     // Recording must never break the bus — failures are logged, not thrown.
@@ -62,7 +64,7 @@ export function subscribeHelpProtocol(deps: {
         void (async () => {
             let helperId = 'system';
             try {
-                const found = deps.findHelper(request.targetRole);
+                const found = deps.findHelper(request.targetRole, request);
                 if (!found) {
                     record({ ts: Date.now(), type: 'COLLAB_UNROUTABLE', agentId: request.requesterId,
                         context: request.targetRole, success: false, requestId: request.requestId,

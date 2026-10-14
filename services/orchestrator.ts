@@ -1,8 +1,9 @@
 import { subscribeHelpProtocol } from './communication/helpProtocol';
-import { loadOrganization, defaultOrganizationPath, teamsForDomain } from './org/organization';
+import { loadOrganization, defaultOrganizationPath, teamsForDomain, teamOfAgent } from './org/organization';
 import { ReputationLedger, defaultReputationLedgerPath } from './org/reputationLedger';
 import { computeReputation, rankByReputation } from './org/reputation';
 import type { OrgChart } from './org/types';
+import { resolveTeamRoute } from './org/teamRouting';
 import { Agent, AgentStatus, AgentRoleType, Project, WorkflowStage, AgentCapability, SystemMode, BusinessType, AgentTier, AgentCategory, SystemProtocol, InterAgentMessage, Squad, ServiceStatus, IntrospectionLayer } from '../types';
 import fs from 'fs';
 import path from 'path';
@@ -181,7 +182,14 @@ export class AgentSwarmOrchestrator {
         // --- INTER-AGENT HELP PROTOCOL ---
         // Allows team leaders to request help from other specialists
         subscribeHelpProtocol({
-            findHelper: role => this.findAgentByRole(role),
+            findHelper: (role, request) => {
+                // Escalation path: an executor can ask for its team head directly.
+                if (role === '@team-head' && request) {
+                    const team = teamOfAgent(this.orgChart, request.requesterId);
+                    return team ? team.headAgentId : null;
+                }
+                return this.findAgentByRole(role);
+            },
             recordFact: fact => this.reputationLedger.append(fact),
             prepare: async (request, helperId) => {
                 const enrichedContext = typeof request.context === 'object' && request.context !== null
@@ -862,6 +870,15 @@ Format each gap as:
                         this.knownAgentIds.push(agentId);
                         agentPersistence.saveAgent(spawnedAgent);
                     }
+                }
+            } else {
+                // TEAM ROUTING: the request belongs to the suggested agent's team;
+                // work lands on the best-evidence executor. With no differentiating
+                // evidence yet, the original suggestion is kept (no degradation).
+                const teamRoute = resolveTeamRoute(this.orgChart, this.reputationLedger, agentId);
+                if (teamRoute.agentId !== agentId) {
+                    console.log(`[ORCHESTRATOR] 🧭 Team routing: ${agentId} -> ${teamRoute.agentId} (team ${teamRoute.teamId}, evidence-derived reputation)`);
+                    agentId = teamRoute.agentId;
                 }
             }
 
