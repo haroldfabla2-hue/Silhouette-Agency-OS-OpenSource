@@ -42,3 +42,25 @@ export function checkShrink(ops: GateOp[], readOriginal: (path: string) => strin
     }
     return null;
 }
+
+export interface CycleEdit { find: string; replace: string }
+
+/**
+ * Apply anchored edits to a file's content. Each find must match the current
+ * content EXACTLY ONCE: zero matches means the anchor hallucinated, more than
+ * one means it is ambiguous - both are honest failures, never a best-effort
+ * guess. This is the proven edit format for weak planner models: no line
+ * numbers, no diff syntax, context-verified by construction.
+ */
+export function applyCycleEdits(original: string, edits: CycleEdit[]): string {
+    let content = original;
+    for (const e of edits) {
+        if (!e || typeof e.find !== 'string' || e.find.length === 0) throw new Error('edit find must be a non-empty string');
+        if (typeof e.replace !== 'string') throw new Error('edit replace must be a string');
+        const first = content.indexOf(e.find);
+        if (first === -1) throw new Error('edit anchor not found in current file');
+        if (content.indexOf(e.find, first + 1) !== -1) throw new Error('edit anchor is ambiguous (matches more than once)');
+        content = content.slice(0, first) + e.replace + content.slice(first + e.find.length);
+    }
+    return content;
+}
