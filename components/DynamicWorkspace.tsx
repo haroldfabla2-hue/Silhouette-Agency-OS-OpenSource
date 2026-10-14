@@ -729,7 +729,7 @@ const DynamicWorkspace: React.FC<DynamicWorkspaceProps> = ({ initialProjectId })
                             <div
                                 key={p.id}
                                 onClick={() => setActiveProject(p)}
-                                className="h-32 rounded-xl border border-slate-800 bg-slate-900/50 p-4 hover:border-cyan-500 hover:shadow-[0_0_15px_rgba(6,182,212,0.1)] cursor-pointer relative group transition-all flex flex-col justify-between"
+                                className="h-32 rounded-xl border border-slate-800 bg-slate-900/50 p-4 hover:border-cyan-500 hover:shadow-[0_0_15px_rgba(217,158,138,0.1)] cursor-pointer relative group transition-all flex flex-col justify-between"
                             >
                                 <div>
                                     <div className="flex justify-between items-start">

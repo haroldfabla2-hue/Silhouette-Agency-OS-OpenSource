@@ -97,7 +97,7 @@ export const LocalLogin: React.FC<LocalLoginProps> = ({ onComplete, onGoogleLogi
                     <button
                         type="submit"
                         disabled={loading}
-                        className={`w-full flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold py-3 px-4 rounded-lg shadow-[0_0_15px_rgba(6,182,212,0.3)] transition-all duration-300 ${loading ? 'opacity-70 cursor-wait' : 'hover:shadow-[0_0_25px_rgba(6,182,212,0.5)] hover:-translate-y-0.5'}`}
+                        className={`w-full flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold py-3 px-4 rounded-lg shadow-[0_0_15px_rgba(217,158,138,0.3)] transition-all duration-300 ${loading ? 'opacity-70 cursor-wait' : 'hover:shadow-[0_0_25px_rgba(217,158,138,0.5)] hover:-translate-y-0.5'}`}
                     >
                         {loading && (
                             <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

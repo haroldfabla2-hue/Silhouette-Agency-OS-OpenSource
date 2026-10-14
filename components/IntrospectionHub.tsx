@@ -169,7 +169,7 @@ const IntrospectionHub: React.FC<IntrospectionHubProps> = () => { // Props destr
             {/* Header & Tabs */}
             <div className="flex items-center justify-between p-4 border-b border-white/10 bg-black/20 backdrop-blur-sm">
                 <div className="flex items-center gap-3">
-                    <div className="p-2 bg-cyan-500/10 rounded-lg border border-cyan-500/20 shadow-[0_0_15px_rgba(6,182,212,0.1)]">
+                    <div className="p-2 bg-cyan-500/10 rounded-lg border border-cyan-500/20 shadow-[0_0_15px_rgba(217,158,138,0.1)]">
                         <Brain className="text-cyan-400" size={20} />
                     </div>
                     <div>
@@ -383,7 +383,7 @@ const IntrospectionHub: React.FC<IntrospectionHubProps> = () => { // Props destr
                                                     onClick={() => onSetDepth(layer.id)}
                                                     title={layer.desc}
                                                     className={`flex-1 py-2 rounded text-xs font-mono transition-all border ${currentDepth === layer.id
-                                                        ? 'bg-cyan-500 border-cyan-400 text-black font-bold shadow-[0_0_15px_rgba(34,211,238,0.5)]'
+                                                        ? 'bg-cyan-500 border-cyan-400 text-black font-bold shadow-[0_0_15px_rgba(238,194,174,0.5)]'
                                                         : 'bg-slate-900/50 border-slate-700 text-slate-400 hover:bg-slate-800 hover:border-slate-500'
                                                         }`}
                                                 >

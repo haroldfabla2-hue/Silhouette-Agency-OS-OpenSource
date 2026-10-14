@@ -99,24 +99,24 @@ export const OnboardingTour: React.FC = () => {
     return (
         <style>{`
             .driver-popover.driverjs-theme {
-                background-color: #0b0f19 !important;
-                color: #f3f4f6 !important;
-                border: 1px solid rgba(6, 182, 212, 0.3) !important;
+                background-color: rgb(var(--c-slate-900)) !important;
+                color: rgb(var(--c-slate-100)) !important;
+                border: 1px solid rgb(var(--c-accent-400) / 0.3) !important;
                 border-radius: 16px !important;
                 box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8) !important;
-                font-family: 'Inter', sans-serif !important;
+                font-family: 'Jost', system-ui, sans-serif !important;
                 padding: 20px !important;
                 max-width: 350px !important;
             }
             .driver-popover.driverjs-theme .driver-popover-title {
-                color: #22d3ee !important;
-                font-family: 'Outfit', sans-serif !important;
+                color: rgb(var(--c-accent-400)) !important;
+                font-family: 'Cormorant Garamond', Georgia, serif !important;
                 font-size: 17px !important;
                 font-weight: 600 !important;
                 margin-bottom: 8px !important;
             }
             .driver-popover.driverjs-theme .driver-popover-description {
-                color: #9ca3af !important;
+                color: rgb(var(--c-slate-400)) !important;
                 font-size: 13.5px !important;
                 line-height: 1.6 !important;
                 margin-bottom: 15px !important;
@@ -128,9 +128,9 @@ export const OnboardingTour: React.FC = () => {
                 justify-content: space-between !important;
             }
             .driver-popover.driverjs-theme .driver-popover-btn {
-                background-color: #1e293b !important;
-                color: #e2e8f0 !important;
-                border: 1px solid rgba(255, 255, 255, 0.08) !important;
+                background-color: rgb(var(--c-slate-800)) !important;
+                color: rgb(var(--c-slate-200)) !important;
+                border: 1px solid rgb(var(--c-white) / 0.08) !important;
                 font-size: 12px !important;
                 padding: 8px 16px !important;
                 border-radius: 8px !important;
@@ -140,27 +140,27 @@ export const OnboardingTour: React.FC = () => {
                 outline: none !important;
             }
             .driver-popover.driverjs-theme .driver-popover-btn:hover {
-                background-color: #334155 !important;
-                color: #ffffff !important;
-                border-color: rgba(34, 211, 238, 0.3) !important;
+                background-color: rgb(var(--c-slate-700)) !important;
+                color: rgb(var(--c-white)) !important;
+                border-color: rgb(var(--c-accent-400) / 0.3) !important;
             }
             .driver-popover.driverjs-theme .driver-popover-next-btn {
-                background: linear-gradient(135deg, #0891b2, #2563eb) !important;
+                background: linear-gradient(135deg, rgb(var(--c-accent-600)), rgb(var(--c-accent-500))) !important;
                 border: none !important;
                 color: #ffffff !important;
             }
             .driver-popover.driverjs-theme .driver-popover-next-btn:hover {
-                background: linear-gradient(135deg, #06b6d4, #3b82f6) !important;
-                box-shadow: 0 0 10px rgba(6, 182, 212, 0.4) !important;
+                background: linear-gradient(135deg, rgb(var(--c-accent-500)), rgb(var(--c-accent-400))) !important;
+                box-shadow: 0 0 10px rgb(var(--c-accent-500) / 0.4) !important;
             }
             .driver-popover.driverjs-theme .driver-popover-progress-text {
-                color: #64748b !important;
+                color: rgb(var(--c-slate-500)) !important;
                 font-size: 11px !important;
             }
-            .driver-popover.driverjs-theme .driver-popover-arrow-side-left { border-left-color: #0b0f19 !important; }
-            .driver-popover.driverjs-theme .driver-popover-arrow-side-right { border-right-color: #0b0f19 !important; }
-            .driver-popover.driverjs-theme .driver-popover-arrow-side-top { border-top-color: #0b0f19 !important; }
-            .driver-popover.driverjs-theme .driver-popover-arrow-side-bottom { border-bottom-color: #0b0f19 !important; }
+            .driver-popover.driverjs-theme .driver-popover-arrow-side-left { border-left-color: rgb(var(--c-slate-900)) !important; }
+            .driver-popover.driverjs-theme .driver-popover-arrow-side-right { border-right-color: rgb(var(--c-slate-900)) !important; }
+            .driver-popover.driverjs-theme .driver-popover-arrow-side-top { border-top-color: rgb(var(--c-slate-900)) !important; }
+            .driver-popover.driverjs-theme .driver-popover-arrow-side-bottom { border-bottom-color: rgb(var(--c-slate-900)) !important; }
         `}</style>
     );
 };

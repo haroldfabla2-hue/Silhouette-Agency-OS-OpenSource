@@ -12,6 +12,7 @@ import OnboardingTour from './components/OnboardingTour';
 // import Dashboard from './components/Dashboard';
 
 import ProtocolOverlay from './components/ProtocolOverlay';
+import ThemeToggle from './components/ThemeToggle';
 import NotificationCenter from './components/NotificationCenter';
 
 // LAZY LOAD SECONDARY COMPONENTS - Only loaded when tab is visited
@@ -400,7 +401,8 @@ const App: React.FC = () => {
         </div>
 
         {/* Notification Center in mt-mobile to avoid overlapping Header */}
-        <div className="absolute top-20 md:top-4 right-4 z-40">
+        <div className="absolute top-20 md:top-4 right-4 z-40 flex items-center gap-2">
+          <ThemeToggle />
           <NotificationCenter />
         </div>
         <div className="absolute top-16 md:top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 via-purple-500 to-cyan-500 opacity-50"></div>

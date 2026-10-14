@@ -160,7 +160,7 @@ const AgentOrchestrator: React.FC<OrchestratorProps> = ({ agents: propAgents, cu
 
               return (
                 <div key={step.id} className="flex flex-col items-center gap-2 bg-slate-950 px-2 z-10">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all ${isActive ? 'bg-cyan-500 border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]' :
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all ${isActive ? 'bg-cyan-500 border-cyan-400 shadow-[0_0_15px_rgba(238,194,174,0.5)]' :
                     isPast ? 'bg-green-500/20 border-green-500 text-green-500' :
                       isMeta ? 'bg-purple-900/20 border-purple-500 text-purple-500' :
                         'bg-slate-900 border-slate-700 text-slate-600'
