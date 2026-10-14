@@ -117,6 +117,35 @@ describe('F3 command execution (real service, real HTTP)', () => {
         expect(entries.length).toBeGreaterThan(0);
     });
 
+    it('gitdir binds: worktree pointer resolves read-only git dirs, crafted pointers are refused', async () => {
+        const { commandExecService } = await import('../../services/commandExecService');
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gitdir-binds-'));
+        try {
+            const allowed = path.join(root, 'repo', '.git');
+            const wtGitdir = path.join(allowed, 'worktrees', 'selfwork');
+            fs.mkdirSync(wtGitdir, { recursive: true });
+            fs.writeFileSync(path.join(wtGitdir, 'commondir'), '../..\n');
+            const wt = path.join(root, 'selfwork');
+            fs.mkdirSync(wt, { recursive: true });
+            fs.writeFileSync(path.join(wt, '.git'), `gitdir: ${wtGitdir}\n`);
+
+            const binds = commandExecService.gitDirBinds(wt, allowed);
+            expect(binds).toContain(wtGitdir);
+            expect(binds).toContain(allowed);
+
+            // crafted pointer outside the allowed root: refused
+            fs.writeFileSync(path.join(wt, '.git'), 'gitdir: /etc\n');
+            expect(commandExecService.gitDirBinds(wt, allowed)).toEqual([]);
+
+            // a real repo (directory .git) needs no extra binds
+            const plainRepo = path.join(root, 'plain');
+            fs.mkdirSync(path.join(plainRepo, '.git'), { recursive: true });
+            expect(commandExecService.gitDirBinds(plainRepo, allowed)).toEqual([]);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('source guards: bubblewrap is the only backend, no unsafe runner exists', () => {
         const svc = fs.readFileSync(path.join(ROOT, 'services/commandExecService.ts'), 'utf8');
         expect(svc).toMatch(/--unshare-all/);

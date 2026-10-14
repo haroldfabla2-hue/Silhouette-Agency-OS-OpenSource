@@ -179,10 +179,38 @@ class CommandExecService {
             '--proc', '/proc', '--dev', '/dev',
             '--bind', wt, '/work', '--chdir', '/work'
         ];
+        // Whitelisted read-only git commands need the worktree's real gitdir:
+        // a linked worktree's .git is a pointer file into the deployment's
+        // own .git, which the sandbox does not otherwise see. Bind it (and
+        // the common dir) read-only at the SAME absolute path, but only when
+        // it resolves under the deployment's own .git - a crafted pointer
+        // cannot pull arbitrary host paths into the sandbox.
+        for (const p of this.gitDirBinds(wt)) bwrapArgs.push('--ro-bind', p, p);
         // /lib64 exists on most distros; bind it when present.
         if (fs.existsSync('/lib64')) bwrapArgs.push('--ro-bind', '/lib64', '/lib64');
         bwrapArgs.push(command, ...args);
         return bwrapArgs;
+    }
+
+    public gitDirBinds(worktree: string, allowedRoot: string = path.resolve(process.cwd(), '.git')): string[] {
+        try {
+            const dotgit = path.join(worktree, '.git');
+            if (!fs.existsSync(dotgit) || fs.statSync(dotgit).isDirectory()) return [];
+            const content = fs.readFileSync(dotgit, 'utf-8');
+            const m = content.match(/^gitdir:\s*(.+)$/m);
+            if (!m) return [];
+            const gitdir = path.resolve(m[1].trim());
+            if (gitdir !== allowedRoot && !gitdir.startsWith(allowedRoot + path.sep)) return [];
+            const binds = new Set<string>([gitdir]);
+            const commondirFile = path.join(gitdir, 'commondir');
+            if (fs.existsSync(commondirFile)) {
+                const common = path.resolve(gitdir, fs.readFileSync(commondirFile, 'utf-8').trim());
+                if (common === allowedRoot || common.startsWith(allowedRoot + path.sep)) binds.add(common);
+            }
+            return [...binds].filter((p) => fs.existsSync(p));
+        } catch {
+            return [];
+        }
     }
 
     private async executeSandboxed(command: string, args: string[], timeoutMs: number): Promise<{ code: number; out: string; durationMs: number }> {
