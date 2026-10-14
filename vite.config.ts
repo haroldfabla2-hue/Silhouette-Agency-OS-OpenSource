@@ -31,10 +31,10 @@ export default defineConfig(({ mode }) => {
             if (id.includes('node_modules')) {
               // 3D/Graphics - largest libraries
               if (id.includes('three') || id.includes('3d-force')) {
-                return 'vendor-3d';
+                return 'vendor-viz';
               }
               if (id.includes('force-graph')) {
-                return 'vendor-force-graph';
+                return 'vendor-viz';
               }
               // React ecosystem
               if (id.includes('react-dom') || id.includes('react-router') || id.includes('scheduler')) {
@@ -42,7 +42,7 @@ export default defineConfig(({ mode }) => {
               }
               // Charts/D3
               if (id.includes('recharts') || id.includes('d3-')) {
-                return 'vendor-charts';
+                return 'vendor-viz';
               }
               // UI libraries
               if (id.includes('framer-motion') || id.includes('lucide') || id.includes('@radix-ui')) {
