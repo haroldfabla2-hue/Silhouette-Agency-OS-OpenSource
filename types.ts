@@ -105,6 +105,7 @@ export enum SystemProtocol {
   GENESIS_TRIGGER = 'PROTOCOL_GENESIS_TRIGGER', // NEW: RFC Approved -> Code Injection
   EPISTEMIC_GAP_DETECTED = 'PROTOCOL_EPISTEMIC_GAP_DETECTED', // NEW: Dreamer -> Researcher (Curiosity)
   SQUAD_REASSIGNMENT = 'PROTOCOL_SQUAD_REASSIGNMENT', // NEW: Drag & Drop UI -> Orchestrator
+  TRUTH_REVISION_APPLIED = 'PROTOCOL_TRUTH_REVISION_APPLIED', // Janitor -> Orchestrator: applied meta-truth with owner attributions
   ACTION_INTENT = 'PROTOCOL_ACTION_INTENT', // NEW: Introspection -> Orchestrator
   TRAINING_EXAMPLE_FOUND = 'PROTOCOL_TRAINING_EXAMPLE_FOUND', // NEW: Nocturnal Plasticity
   TRAINING_START = 'PROTOCOL_TRAINING_START', // NEW: Trigger Dream Cycle
