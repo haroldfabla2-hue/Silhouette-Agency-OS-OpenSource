@@ -98,6 +98,7 @@ const ContinuumMemoryExplorer: React.FC = () => {
     const [searchResults, setSearchResults] = useState<MemoryNode[] | null>(null);
     const [isSearching, setIsSearching] = useState(false);
     const [searchError, setSearchError] = useState<string | null>(null);
+    const [embeddings, setEmbeddings] = useState<{ available: boolean } | null>(null);
 
     useEffect(() => {
         const handleSearch = async (e: Event) => {
@@ -137,6 +138,7 @@ const ContinuumMemoryExplorer: React.FC = () => {
                     [MemoryTier.DEEP]: []
                 });
                 setStats(json.stats);
+                setEmbeddings(json.embeddings ?? null);
             } catch (e) {
                 console.error("Failed to fetch memory state", e);
             }
@@ -266,6 +268,12 @@ const ContinuumMemoryExplorer: React.FC = () => {
                         <p className="text-[10px] text-slate-500 uppercase">Total Nodes</p>
                         <p className="text-xl font-mono text-white">{stats.total || 0}</p>
                     </div>
+                    {embeddings && !embeddings.available && (
+                        <div>
+                            <p className="text-[10px] text-slate-500 uppercase">Embeddings</p>
+                            <p className="text-xl font-mono text-amber-400" title="No embedding provider configured - deep memory stores and searches as text only">UNAVAILABLE</p>
+                        </div>
+                    )}
                     <div>
                         <p className="text-[10px] text-slate-500 uppercase">Avg Health</p>
                         <p className={`text-xl font-mono ${(stats.avgHealth || 0) < 50 ? 'text-red-400' : 'text-green-400'}`}>
