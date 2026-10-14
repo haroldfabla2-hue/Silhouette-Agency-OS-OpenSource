@@ -98,6 +98,32 @@ router.post('/cycle', async (req, res) => {
     }
 });
 
+// POST /v1/workflow/mission - Seed a real mission into the autonomous loop
+router.post('/mission', (req, res) => {
+    try {
+        const mission = typeof req.body?.mission === 'string' ? req.body.mission.trim() : '';
+        if (!mission || mission.length > 2000) {
+            return res.status(400).json({ error: 'mission must be a non-empty string of at most 2000 characters' });
+        }
+
+        workflowEngine.startMission(mission);
+        const stage = workflowEngine.getStage();
+
+        res.status(202).json({
+            success: true,
+            stage,
+            stageLabel: WorkflowStage[stage] || stage,
+            mission
+        });
+    } catch (error: any) {
+        if (error?.code === 'MISSION_BUSY') {
+            return res.status(409).json({ error: 'Workflow is busy', stage: workflowEngine.getStage() });
+        }
+        console.error('[WORKFLOW] Error seeding mission:', error);
+        res.status(500).json({ error: 'Failed to seed mission' });
+    }
+});
+
 // GET /v1/workflow/thoughts - Get recent workflow thoughts
 router.get('/thoughts', (req, res) => {
     try {
