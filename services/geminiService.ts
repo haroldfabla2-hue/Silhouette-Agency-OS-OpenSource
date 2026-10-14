@@ -114,9 +114,16 @@ const callGroq = async (
     }
 
     try {
-        // Use Llama 3.3 70B (Versatile & Reliable)
-        // Keep Llama-3.2-90b for Vision (Explicit Multimodal)
-        const modelToUse = imageBase64 ? "llama-3.2-90b-vision-preview" : "llama-3.3-70b-versatile";
+        // [ROOT FIX] the previous Groq chat and vision models here are RETIRED
+        // (404 model_not_found on every fallback). Verified live
+        // against GET /models with the account key: this account offers
+        // openai/gpt-oss-120b and NO vision model - so for images we honestly
+        // skip Groq (UNAVAILABLE beats a pretty 404) and let the next provider try.
+        if (imageBase64) {
+            console.warn("[GROQ] Vision fallback unavailable: no vision model in this Groq account (verified live). Skipping to next provider.");
+            return null;
+        }
+        const modelToUse = DEFAULT_GROQ_MODEL;
 
         console.log(`[GROQ] Using Model: ${modelToUse}`);
 
@@ -1269,7 +1276,8 @@ export const generateText = async (prompt: string, options: { model?: string } =
                     "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
-                    model: "llama-3.3-70b-versatile",
+                    // [ROOT FIX] retired literal -> verified default (llm/defaultModels.ts)
+                    model: DEFAULT_GROQ_MODEL,
                     messages: [{ role: "user", content: prompt }],
                     temperature: 0.3,
                     max_tokens: 4096
