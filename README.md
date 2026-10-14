@@ -6,7 +6,7 @@
 
 **Created by Harold Fabla**
 
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-BSL--1.1-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/Version-3.0-blue.svg)](#)
 [![Status](https://img.shields.io/badge/Status-Experimental-orange.svg)](#)
 
@@ -398,7 +398,7 @@ If you use or reference this work:
 
 ## License
 
-This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the **Business Source License 1.1** - see the [LICENSE](LICENSE) file for details. Versions published before October 13, 2026 remain under the MIT License; see [NOTICE.md](NOTICE.md). Commercial use requires a license from Silhouette Agency (Alberto Farah); every version converts to Apache 2.0 four years after release.
 
 ---
 

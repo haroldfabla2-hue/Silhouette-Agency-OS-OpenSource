@@ -725,6 +725,7 @@ export interface MemoryNode {
   embeddingIdentity?: { model: string; version: string; dimension: number };
   embeddingVector?: Float32Array;
   ownerId?: string; // NEW: Agent-Specific Ownership
+  affect?: { valence: number; activation: number; at: number }; // Affective tag at write time (additive, eternal-memory safe; functional model, NOT feelings)
   nestingLevel?: number; // NEW: 1=Raw, 2=Thought, 3=Episode, 4=Fact, 5=Identity
   stabilityScore?: number; // NEW: Resistance to decay (0-100)
   raptorLevel?: number; // NEW: 0=Leaf, 1=Summary, 2=Meta-Summary

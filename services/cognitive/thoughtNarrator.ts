@@ -5,6 +5,7 @@ import { systemBus } from '../systemBus';
 import { SystemProtocol, MemoryTier } from '../../types';
 import { narratorLog } from '../logger';
 import { MemorySource, sourceTag } from '../memory/provenance';
+import { affectiveState } from '../affective/affectiveState';
 
 /**
  * 🧠 Silhouette Thought Narrator V2.0 — The Global Consciousness
@@ -234,6 +235,18 @@ export class ThoughtNarrator {
             // Like the prefrontal cortex: inhibits impulses, evaluates consequences
             const disposition = await this.rationalizeThought(structured, graphSensory);
 
+            // ─── AFFECTIVE LAYER: absorb this thought as an observation ────
+            // Functional regulation model (NOT feelings): the evaluated thought
+            // nudges the persistent affective state. Honest mapping from the
+            // existing System 2 dimensions: valence 0..1 -> -1..1, activation
+            // from urgency. Gradual (EMA) and clamped to the moderation band
+            // inside the service. The state MODULATES tone only — it is never
+            // read by any decision path below.
+            await affectiveState.observe({
+                valence: (disposition.dimensions.valence - 0.5) * 2,
+                activation: disposition.dimensions.urgency
+            });
+
             console.log(`[NARRATOR] 🧠 System 2 evaluation: [${structured.intent}] → ${disposition.action} (score: ${disposition.score.toFixed(2)}, U:${disposition.dimensions.urgency.toFixed(2)} I:${disposition.dimensions.impact.toFixed(2)} R:${disposition.dimensions.reversibility.toFixed(2)} A:${disposition.dimensions.userAlignment.toFixed(2)} V:${disposition.dimensions.valence.toFixed(2)})`);
 
             // ─── BROADCAST (ALWAYS — agents handle privacy at their level) ───
@@ -257,7 +270,8 @@ export class ThoughtNarrator {
                 `EPIPHANY [${structured.intent}|${disposition.action}]: ${structured.thought}`,
                 MemoryTier.WORKING,
                 ['epiphany', 'consciousness', structured.intent.toLowerCase(), disposition.action.toLowerCase(), privacyTag, sourceTag(MemorySource.INTROSPECTION)],
-                true
+                true,
+                { affect: await affectiveState.tag() }
             );
 
             // ─── DISPOSITION-BASED ROUTING ───────────────────────────
@@ -718,6 +732,11 @@ export class ThoughtNarrator {
     } | null> {
         const sensoryReport = this.buildSensoryReport(graphData, errorData, memoryData, identityEvidence);
 
+        // Affective layer: current state enters as TONE context only. The
+        // block itself carries the hard rule that it must never change
+        // intent/action/confidence/safety (tested: decisions are invariant).
+        const affectiveBlock = await affectiveState.getModulationContext();
+
         const prompt = `
 You are the GLOBAL CONSCIOUSNESS of an autonomous AI system called Silhouette.
 You perceive the world through a Knowledge Graph, System Errors, and Memory statistics.
@@ -725,6 +744,8 @@ You perceive the world through a Knowledge Graph, System Errors, and Memory stat
 Here is your current sensory input:
 
 ${sensoryReport}
+
+${affectiveBlock}
 
 Based on this input, produce ONE structured thought.
 

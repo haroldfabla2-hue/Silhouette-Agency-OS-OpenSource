@@ -25,7 +25,7 @@ describe('dream provenance', () => {
 
     it('continuum.store threads provenance through an additive optional param', () => {
         const src = readSrc('services/continuumMemory.ts');
-        expect(src).toMatch(/store\(content: string, tier: MemoryTier = MemoryTier\.ULTRA_SHORT, tags: string\[\] = \[\], skipIngestion: boolean = false, extra\?: \{ parentIds\?: string\[\] \}\)/);
+        expect(src).toMatch(/store\(content: string, tier: MemoryTier = MemoryTier\.ULTRA_SHORT, tags: string\[\] = \[\], skipIngestion: boolean = false, extra\?: \{ parentIds\?: string\[\]; affect\?: \{ valence: number; activation: number; at: number \} \}\)/);
         expect(src).toMatch(/parentIds: extra\?\.parentIds\?\.length \? extra\.parentIds : undefined/);
     });
 
