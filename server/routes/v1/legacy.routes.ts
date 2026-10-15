@@ -13,9 +13,10 @@ router.get('/neurolink/nodes', async (req, res) => {
             {
                 id: 'genesis-core',
                 projectId: 'genesis-core',
-                url: 'http://localhost:3000',
+                // Self-node: serving this request proves the core is up. No fake URL or latency.
+                url: 'self://orchestrator-core',
                 status: 'CONNECTED',
-                latency: 5,
+                latency: 0,
                 category: 'CORE'
             }
         ];
@@ -36,7 +37,7 @@ router.get('/neurolink/nodes', async (req, res) => {
     } catch (e) {
         // Fallback to minimal response
         res.json([
-            { id: 'genesis-core', projectId: 'genesis-core', url: 'http://localhost:3000', status: 'CONNECTED', latency: 5, category: 'CORE' }
+            { id: 'genesis-core', projectId: 'genesis-core', url: 'self://orchestrator-core', status: 'CONNECTED', latency: 0, category: 'CORE' }
         ]);
     }
 });

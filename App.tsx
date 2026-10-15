@@ -259,7 +259,7 @@ const App: React.FC = () => {
   const handleModeChange = (mode: SystemMode) => {
     setMetrics(prev => ({ ...prev, currentMode: mode }));
     localStorage.setItem('silhouette_power_mode', mode);
-    api.post('/v1/system/mode', { mode }).catch(console.error);
+    api.post('/v1/system/power-mode', { mode }).catch(console.error);
   };
 
   const handleIntrospectionChange = (layer: IntrospectionLayer) => {
