@@ -13,7 +13,13 @@ const node = (id: string, content = 'ordinary memory'): MemoryNode => ({ id, con
 describe('P1 real LanceDB retrieval', () => {
     it('finds the indexed match after row 500, without zero vectors in ANN', async () => {
         const db = await fresh();
-        for (let i = 0; i < 502; i++) await db.store(node(`p1-row-${i}`, i === 501 ? 'quasarneedle specific evidence' : 'ordinary memory'));
+        // Bulk-seed the 501 filler rows in ONE transaction: this test asserts
+        // retrieval quality beyond row 500, not store() throughput. 502
+        // sequential store() calls (each a merge + read-back + FTS
+        // invalidation) blow the 120s cap on constrained/shared machines
+        // while passing on CI runners (verified 2026-10-15, 8GB shared box).
+        await db.storeMany(Array.from({ length: 501 }, (_, i) => node(`p1-row-${i}`)));
+        await db.store(node('p1-row-501', 'quasarneedle specific evidence'));
         expect((await db.searchByContent('quasarneedle')).map(n => n.id)).toContain('p1-row-501');
         const identity = { model: 'test-fixture-explicit', version: '1', dimension: 3 };
         await expect(db.projectEmbedding(node('bad-vector'), [0, 0, 0], identity)).rejects.toThrow('Invalid');

@@ -187,12 +187,9 @@ export class LanceDbService {
         return operation;
     }
 
-    private async writeAndVerify(node: MemoryNode, vector?: number[]): Promise<{ ok: true; id: string; checksum: string; version: number }> {
-        await this.ensureInitialized();
-        if (!this.db) throw new Error('LanceDB is unavailable');
-        const json = JSON.stringify(node);
-        const checksum = createHash('sha256').update(json).digest('hex');
-        const record = {
+    private toRecord(node: MemoryNode, json?: string) {
+        const jsonData = json ?? JSON.stringify(node);
+        return {
             id: node.id,
             embedding_state: 'EMBEDDING_PENDING',
             content: node.content,
@@ -205,8 +202,63 @@ export class LanceDbService {
             accessCount: node.accessCount,
             lastAccess: node.lastAccess,
             stabilityScore: node.stabilityScore || 0,
-            json_data: json
+            json_data: jsonData
         };
+    }
+
+    /**
+     * Bulk store for seed/import paths: ONE merge transaction for the whole
+     * batch instead of a merge + read-back per node. Sequential store() per
+     * filler row made the P1 retrieval test exceed its 120s cap on
+     * constrained/shared machines (verified 2026-10-15 on an 8GB shared box:
+     * 502 stores = 502 merge transactions + 502 read-back queries). Same
+     * refusal rules and writeQueue serialization as store().
+     */
+    public async storeMany(nodes: MemoryNode[]): Promise<{ ok: true; count: number }> {
+        for (const node of nodes) {
+            if (!node?.id || !node.content?.trim() || node.content === 'undefined') {
+                throw new Error('Invalid memory node: refusing persistent write');
+            }
+        }
+        const operation = this.writeQueue.then(() => this.writeManyAndVerify(nodes));
+        this.writeQueue = operation.then(() => undefined, () => undefined);
+        return operation;
+    }
+
+    private async writeManyAndVerify(nodes: MemoryNode[]): Promise<{ ok: true; count: number }> {
+        await this.ensureInitialized();
+        if (!this.db) throw new Error('LanceDB is unavailable');
+        if (nodes.length === 0) return { ok: true, count: 0 };
+        const records = nodes.map(n => this.toRecord(n));
+        if (!this.table) {
+            const names = await this.db.tableNames();
+            this.table = names.includes('memory_records_v2')
+                ? await this.db.openTable('memory_records_v2')
+                : await this.db.createTable('memory_records_v2', records);
+        } else {
+            // Same atomic merge as store(): update on id match, insert otherwise.
+            await this.table.mergeInsert('id')
+                .whenMatchedUpdateAll()
+                .whenNotMatchedInsertAll()
+                .execute(records);
+        }
+        this.ftsReady.delete('v2');
+        // Read-back spot check on the batch edges (first + last). Full per-row
+        // read-back is exactly what makes bulk seeding slow; store() keeps it
+        // for single writes.
+        for (const edge of [nodes[0], nodes[nodes.length - 1]]) {
+            const stored = await this.getNodeById(edge.id);
+            if (!stored) throw new Error(`LanceDB bulk read-back verification failed for ${edge.id}`);
+        }
+        return { ok: true, count: nodes.length };
+    }
+
+    private async writeAndVerify(node: MemoryNode, vector?: number[]): Promise<{ ok: true; id: string; checksum: string; version: number }> {
+        await this.ensureInitialized();
+        if (!this.db) throw new Error('LanceDB is unavailable');
+        const json = JSON.stringify(node);
+        const checksum = createHash('sha256').update(json).digest('hex');
+        const record = this.toRecord(node, json);
         if (!this.table) {
             const names = await this.db.tableNames();
             this.table = names.includes('memory_records_v2')
