@@ -174,6 +174,22 @@ class SettingsManager {
             // Server may not be available yet during cold start — this is OK
             console.warn('[SETTINGS] Could not load server secrets status (server may be starting)');
         }
+
+        // Unified Google status: one server-side OAuth consent covers Drive + Gmail,
+        // but /v1/system/secrets only reports the 'google-workspace' vault id.
+        // Cross-check the real status endpoint so both cards show ACTIVE when connected.
+        try {
+            const ws = await api.get<{ connected?: boolean }>('/v1/google-auth/status');
+            if (ws.connected) {
+                for (const id of ['google_drive', 'gmail']) {
+                    const schema = this.state.registeredIntegrations.find(i => i.id === id);
+                    if (schema) schema.isConnected = true;
+                }
+                this.saveSettings();
+            }
+        } catch {
+            // status endpoint unavailable — leave cards as-is
+        }
     }
 
     /**

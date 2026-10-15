@@ -305,6 +305,32 @@ const Settings: React.FC = () => {
                 }
             };
             window.addEventListener('message', handleMessage);
+        } else if (schema.authType === 'OAUTH2') {
+            // Unified Google connection: ONE consent covers Drive + Gmail. The server owns the
+            // OAuth config (client id/secret, redirect URI) — the UI just opens the popup.
+            try {
+                const { authUrl } = await api.get<{ authUrl: string }>('/v1/google-auth/start?services=drive,gmail&format=json');
+                window.open(authUrl, 'oauth_popup', 'width=600,height=700');
+            } catch (e) {
+                alert('Could not start Google authorization. Is the server reachable?');
+                return;
+            }
+
+            const handleMessage = (event: MessageEvent) => {
+                if (event.data?.type === 'OAUTH_CALLBACK') {
+                    window.removeEventListener('message', handleMessage);
+                    if (event.data.success) {
+                        // One consent connects both cards
+                        for (const id of ['google_drive', 'gmail']) {
+                            const target = settings.registeredIntegrations.find(i => i.id === id);
+                            if (target) { target.isConnected = true; target.lastSync = Date.now(); }
+                        }
+                        refreshSettings();
+                    }
+                    alert(event.data.message || (event.data.success ? 'Google connected (Drive + Gmail)' : 'Connection failed'));
+                }
+            };
+            window.addEventListener('message', handleMessage);
         } else {
             alert("OAuth configuration missing for this provider.");
         }
