@@ -275,12 +275,21 @@ const App: React.FC = () => {
     }));
   };
 
-  const handleCreateCampaign = () => {
+  const handleCreateCampaign = async () => {
     const defaultName = `Campaign ${new Date().toLocaleDateString().replace(/\//g, '-')}`;
     const name = prompt("SYSTEM PROTOCOL: INITIALIZE NEW CAMPAIGN\nEnter Project Identifier:", defaultName);
-    if (name) {
-      // Send request to server to create project
-      console.log("Creating campaign:", name);
+    if (!name) return;
+    try {
+      // Real spawn: creates the project on the server workspace via the Genesis factory
+      await api.post('/v1/factory/spawn', {
+        name,
+        description: `Campaign created from Command Center: ${name}`,
+        template: 'REACT_VITE'
+      });
+      setActiveTab('system_control'); // factory list + spawn logs live there
+    } catch (e) {
+      console.error('[CAMPAIGN] Spawn failed:', e);
+      alert(`Spawn failed: ${(e as any)?.message || e}`);
     }
   };
 

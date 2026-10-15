@@ -97,6 +97,33 @@ router.get('/diagnostics', (req, res) => systemController.getDiagnostics(req, re
 
 // [R6] Durable incident registry: same truth the narrator and self-healing read.
 // ?open=true filters to currently open incidents.
+// Route: /v1/system/logs - Real server log tail (read-only, byte-capped)
+router.get('/logs', async (req, res) => {
+    try {
+        const fs = await import('fs');
+        const logPath = process.env.SERVER_LOG_PATH || '/opt/deploy-logs/server.log';
+        const maxLines = Math.min(parseInt((req.query.lines as string) || '200', 10) || 200, 1000);
+        if (!fs.existsSync(logPath)) return res.json({ lines: [], note: `log file not found at ${logPath}` });
+        const size = fs.statSync(logPath).size;
+        const CHUNK = 2 * 1024 * 1024; // read at most the last 2MB, never the whole file
+        const fd = fs.openSync(logPath, 'r');
+        try {
+            const start = Math.max(0, size - CHUNK);
+            const buf = Buffer.alloc(size - start);
+            fs.readSync(fd, buf, 0, buf.length, start);
+            const raw = buf.toString('utf-8');
+            let lines = raw.split('\n');
+            if (start > 0) lines = lines.slice(1); // first line may be partial
+            const tail = lines.slice(-maxLines);
+            res.json({ lines: tail, logBytes: size, capped: true });
+        } finally {
+            fs.closeSync(fd);
+        }
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 router.get('/incidents', async (req, res) => {
     try {
         const { incidentRegistry } = await import('../../../services/incidentRegistry');
