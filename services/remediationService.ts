@@ -568,7 +568,19 @@ ${this.getSuggestedActions(rootCause)}
 
         try {
             const cleanJson = result.output.replace(/```json/g, '').replace(/```/g, '').trim();
-            return JSON.parse(cleanJson);
+            const parsed = JSON.parse(cleanJson);
+            // The LLM may return valid JSON missing the contract fields
+            // (e.g. an error envelope). Undefined fields crashed the triage
+            // downstream (undefined.includes at handleAgentError) as an
+            // unhandledRejection. Normalize here: missing rootCause means
+            // "Unknown", which routes to the research path instead of a
+            // blind fix.
+            return {
+                rootCause: typeof parsed?.rootCause === 'string' && parsed.rootCause ? parsed.rootCause : 'Unknown',
+                fixProposal: typeof parsed?.fixProposal === 'string' && parsed.fixProposal ? parsed.fixProposal : 'Research required',
+                isCriticalApiMissing: parsed?.isCriticalApiMissing === true,
+                missingApi: typeof parsed?.missingApi === 'string' ? parsed.missingApi : undefined
+            };
         } catch (e) {
             return { rootCause: "Unknown", fixProposal: "Restart Agent", isCriticalApiMissing: false };
         }
