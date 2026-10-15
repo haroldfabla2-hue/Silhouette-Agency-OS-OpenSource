@@ -107,12 +107,26 @@ export class OrchestratorController {
             // Dynamic import to avoid circular dependency
             const { systemBus } = await import('../../services/systemBus');
             const { SystemProtocol } = await import('../../types');
+            const { orchestrator } = await import('../../services/orchestrator');
+            const { resolveAgentTarget } = await import('../../services/org/agentLocator');
+
+            // [W4] Resolve the display-name/alias target to the canonical agent
+            // BEFORE sending. The fire-test failure: missions addressed to
+            // "Orchestrator" (canonical id: core-01) rotted in an unscanned
+            // mailbox while the API answered 200 OK. Fail loudly instead.
+            const target = resolveAgentTarget(agentId, orchestrator.getAgents());
+            if (!target) {
+                return res.status(404).json({
+                    success: false,
+                    error: `Agent not found: "${agentId}". No mailbox created — fix the address instead of letting the mission rot.`
+                });
+            }
 
             const interAgentMessage = {
                 id: crypto.randomUUID(),
                 traceId: crypto.randomUUID(),
                 senderId: 'DASHBOARD_USER',
-                targetId: agentId,
+                targetId: target.id,
                 type: 'BROADCAST' as const,
                 protocol: SystemProtocol.TASK_ASSIGNMENT,
                 payload: { message, source: 'MissionControl' },
@@ -122,10 +136,32 @@ export class OrchestratorController {
 
             systemBus.send(interAgentMessage);
 
+            // [W4] Missions addressed to the Orchestrator must TRIGGER WORK,
+            // not just mail: route them through the same classification ->
+            // planning -> dispatch pipeline a chat message gets. The mailbox
+            // copy above stays for auditability. channelRouter fails soft on
+            // the 'MissionControl' channel (no registered UI sink), so the
+            // pipeline runs without a response surface.
+            let dispatched = false;
+            if (target.id === 'core-01') {
+                systemBus.emit(SystemProtocol.USER_MESSAGE, {
+                    sessionId: `mission-${interAgentMessage.id}`,
+                    message,
+                    channel: 'MissionControl',
+                    senderId: 'DASHBOARD_USER',
+                    senderName: 'Mission Control'
+                }, 'MISSION_CONTROL');
+                dispatched = true;
+            }
+
             res.json({
                 success: true,
                 messageId: interAgentMessage.id,
-                message: `Brief dispatched to ${agentId}`
+                resolvedTarget: { id: target.id, name: target.name },
+                dispatched,
+                message: dispatched
+                    ? `Mission dispatched to ${target.name} — orchestration pipeline triggered`
+                    : `Brief dispatched to ${target.name}'s mailbox`
             });
         } catch (error: any) {
             res.status(500).json({ success: false, error: error.message });
