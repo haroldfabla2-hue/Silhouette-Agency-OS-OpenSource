@@ -5,6 +5,7 @@ import { BrandDigitalTwin, CampaignBlueprint, VideoJob } from '../types';
 import { api } from '../utils/api';
 import { MediaControlPanel, MediaGenerationParams } from './media/MediaControlPanel';
 import VisualComposePanel from './media/VisualComposePanel';
+import VisualEditorStage from './media/VisualEditorStage';
 import type { ParsedAsset } from './chat/AssetRenderer';
 
 // Lazy load premium components for performance
@@ -636,17 +637,7 @@ export default function MediaStudio() {
                 )}
 
                 {activeStage === 'EDITOR' && (
-                    <div className="space-y-3 h-full flex flex-col">
-                        <div className="text-xs text-slate-400">
-                            Editor completo PhotoCraft (el motor real, corriendo en tu navegador vía WebAssembly): capas, filtros, PSD, vectores, brushes.
-                            Abre archivos con File → Open; el resultado se descarga del navegador. Puente directo al workspace de Silhouette: en el roadmap del fork.
-                        </div>
-                        <iframe
-                            src="/visual-editor/"
-                            title="PhotoCraft Editor"
-                            className="flex-1 w-full min-h-[70vh] rounded-lg border border-slate-700 bg-[#262626]"
-                        />
-                    </div>
+                    <VisualEditorStage />
                 )}
 
                 {activeStage === 'SYNTHESIZE' && (

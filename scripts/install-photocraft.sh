@@ -21,6 +21,12 @@ curl -sL -o "$TMP/pcweb.zip" "$WEB_URL"
 unzip -q -o "$TMP/pcweb.zip" -d "$TMP"
 mkdir -p "$DEST/web"
 cp -r "$TMP/photocraft-web-${VERSION}/"* "$DEST/web/"
+
+# Silhouette workspace bridge: open workspace files in the editor, editor saves
+# land back in the workspace (intercepted blob downloads -> POST /v1/visual/import).
+cp "$(dirname "$0")/photocraft-web-bridge.js" "$DEST/web/silhouette-bridge.js"
+grep -q silhouette-bridge.js "$DEST/web/index.html" || \
+    sed -i 's|<script type="module">|<script src="./silhouette-bridge.js"></script>\n  <script type="module">|' "$DEST/web/index.html"
 chown -R silhouette:silhouette /opt/silhouette/tools "$DEST" /opt/silhouette/workspace/visual /opt/silhouette/output/visual 2>/dev/null || true
 "$DEST/bin/photocraft-cli" --version
 echo "PhotoCraft $VERSION installed at $DEST"
