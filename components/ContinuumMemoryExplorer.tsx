@@ -1,9 +1,11 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Zap, Clock, HardDrive, Archive, Database, Activity, RefreshCw, Lock, Trash2, Search, BrainCircuit, Library, Calendar } from 'lucide-react';
 import { api } from '../utils/api';
 import { MemoryNode, MemoryTier, SystemProtocol } from '../types';
 import { systemBus } from '../services/systemBus';
+
+const MEMORY_PAGE_SIZE = 100;
 
 const TierColumn: React.FC<{ tier: MemoryTier, title: string, icon: any, color: string, nodes: MemoryNode[] }> = ({ tier, title, icon: Icon, color, nodes }) => (
     <div className={`flex-1 min-w-[200px] flex flex-col bg-slate-900/30 border-r border-slate-800 last:border-r-0`}>
@@ -93,6 +95,9 @@ const ContinuumMemoryExplorer: React.FC = () => {
     });
 
     const [stats, setStats] = useState<any>({});
+    const [pagination, setPagination] = useState<{ limit: number, offset: number, total: number, hasMore: boolean } | null>(null);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const expandedRef = useRef(false); // true = user paged beyond page 1; freeze the 2s poll (static snapshot)
 
     // Search State
     const [searchResults, setSearchResults] = useState<MemoryNode[] | null>(null);
@@ -128,9 +133,11 @@ const ContinuumMemoryExplorer: React.FC = () => {
     // ... (rest of useEffect for polling)
     useEffect(() => {
         const refresh = async () => {
+            if (expandedRef.current) return; // expanded snapshot stays frozen until ACTUALIZAR
             // Session-authenticated via the shared api helper (x-session-id).
+            // Page 1 only: the full snapshot (~1.2MB) no longer polls every 2s.
             try {
-                const json = await api.get('/v1/memory/state') as any;
+                const json = await api.get(`/v1/memory/state?limit=${MEMORY_PAGE_SIZE}&offset=0`) as any;
                 setData(json.nodes || {
                     [MemoryTier.WORKING]: [],
                     [MemoryTier.MEDIUM]: [],
@@ -139,6 +146,7 @@ const ContinuumMemoryExplorer: React.FC = () => {
                 });
                 setStats(json.stats);
                 setEmbeddings(json.embeddings ?? null);
+                setPagination(json.pagination ?? null);
             } catch (e) {
                 console.error("Failed to fetch memory state", e);
             }
@@ -158,6 +166,33 @@ const ContinuumMemoryExplorer: React.FC = () => {
             unsubscribe();
         };
     }, []);
+
+    const loadedCount = Object.values(data).reduce((n, arr) => n + (arr?.length || 0), 0);
+
+    const loadMore = async () => {
+        if (!pagination || loadingMore || loadedCount >= pagination.total) return;
+        setLoadingMore(true);
+        try {
+            const json = await api.get(`/v1/memory/state?limit=${MEMORY_PAGE_SIZE}&offset=${loadedCount}`) as any;
+            const next = json.nodes || {};
+            setData(prev => ({
+                [MemoryTier.WORKING]: [...(prev[MemoryTier.WORKING] || []), ...(next[MemoryTier.WORKING] || [])],
+                [MemoryTier.MEDIUM]: [...(prev[MemoryTier.MEDIUM] || []), ...(next[MemoryTier.MEDIUM] || [])],
+                [MemoryTier.LONG]: [...(prev[MemoryTier.LONG] || []), ...(next[MemoryTier.LONG] || [])],
+                [MemoryTier.DEEP]: [...(prev[MemoryTier.DEEP] || []), ...(next[MemoryTier.DEEP] || [])]
+            }));
+            setPagination(json.pagination ?? null);
+            expandedRef.current = true; // freeze polling: this is now a static snapshot
+        } catch (e) {
+            console.error("Failed to load more memories", e);
+        } finally {
+            setLoadingMore(false);
+        }
+    };
+
+    const collapseToLive = () => {
+        expandedRef.current = false; // next poll (<=2s) replaces data with live page 1
+    };
 
     return (
         <div className="h-[calc(100vh-2rem)] flex flex-col gap-4 relative">
@@ -282,6 +317,25 @@ const ContinuumMemoryExplorer: React.FC = () => {
                     </div>
                 </div>
             </div>
+
+            {/* Pagination bar: poll fetches page 1 only (was: full ~1.2MB every 2s) */}
+            {pagination && (
+                <div className="flex items-center justify-between px-3 py-1.5 text-[10px] font-mono text-slate-400 border border-slate-800 rounded bg-slate-900/40">
+                    <span>Mostrando {loadedCount} de {pagination.total} memorias{pagination.hasMore ? '' : ' (todo)'}</span>
+                    <div className="flex gap-2">
+                        {pagination.hasMore && (
+                            <button onClick={loadMore} disabled={loadingMore} className="px-3 py-1 bg-cyan-900/40 hover:bg-cyan-800/50 border border-cyan-700/50 rounded text-cyan-300 disabled:opacity-50 transition-colors">
+                                {loadingMore ? 'CARGANDO...' : 'CARGAR MÁS'}
+                            </button>
+                        )}
+                        {loadedCount > MEMORY_PAGE_SIZE && (
+                            <button onClick={collapseToLive} className="px-3 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-slate-300 transition-colors" title="Vuelve a la vista en vivo (primeros 100, refresco cada 2s)">
+                                ACTUALIZAR (SNAPSHOT PAUSADO)
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* 5-Tier Columns */}
             <div className="flex-1 glass-panel rounded-xl overflow-hidden flex border-x border-slate-800">
