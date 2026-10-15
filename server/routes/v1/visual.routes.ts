@@ -3,8 +3,10 @@
  * Auth: global middleware (Bearer), same as the rest of /v1.
  * Honest availability: 503 UNAVAILABLE when the engine binary is not installed.
  */
-import { Router, Request, Response } from 'express';
-import { visualService } from '../../../services/visualService';
+import express, { Router, Request, Response } from 'express';
+import fs from 'fs';
+import path from 'path';
+import { visualService, confinePath } from '../../../services/visualService';
 
 const router = Router();
 
@@ -60,6 +62,71 @@ router.get('/info', async (req: Request, res: Response) => {
     const result = await visualService.info(file);
     const status = result.unavailable ? 503 : result.ok ? 200 : 400;
     return res.status(status).json(result.ok ? result.data : { error: result.error, unavailable: result.unavailable });
+});
+
+// --- WORKSPACE BRIDGE (for the embedded editor: open from / save to the Silhouette workspace) ---
+
+const WORKSPACE = process.env.VISUAL_WORKSPACE_ROOT || '/opt/silhouette/workspace';
+const OPENABLE = new Set(['.pcraft', '.psd', '.psb', '.png', '.jpg', '.jpeg', '.webp', '.tif', '.tiff', '.bmp', '.tga', '.exr', '.gif']);
+
+// GET /v1/visual/files — list openable documents in the workspace (newest first)
+router.get('/files', (_req: Request, res: Response) => {
+    try {
+        const out: Array<{ path: string; name: string; size: number; mtime: string }> = [];
+        const walk = (dir: string, depth: number) => {
+            if (depth > 3 || out.length >= 200) return;
+            let entries: fs.Dirent[];
+            try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+            for (const e of entries) {
+                if (out.length >= 200) return;
+                const full = path.join(dir, e.name);
+                if (e.isDirectory()) {
+                    if (e.name === 'node_modules' || e.name.startsWith('.')) continue;
+                    walk(full, depth + 1);
+                } else if (OPENABLE.has(path.extname(e.name).toLowerCase())) {
+                    try {
+                        const st = fs.statSync(full);
+                        out.push({ path: full, name: e.name, size: st.size, mtime: st.mtime.toISOString() });
+                    } catch { /* skip */ }
+                }
+            }
+        };
+        walk(WORKSPACE, 0);
+        out.sort((a, b) => b.mtime.localeCompare(a.mtime));
+        return res.json({ files: out });
+    } catch (e: any) {
+        return res.status(500).json({ error: e.message });
+    }
+});
+
+// GET /v1/visual/file?path=... — stream one workspace document (confined to the workspace)
+router.get('/file', (req: Request, res: Response) => {
+    try {
+        const confined = confinePath(String(req.query.path || ''), WORKSPACE);
+        if (!fs.existsSync(confined) || !fs.statSync(confined).isFile()) {
+            return res.status(404).json({ error: 'File not found in workspace' });
+        }
+        return res.sendFile(confined);
+    } catch (e: any) {
+        return res.status(400).json({ error: e.message });
+    }
+});
+
+// POST /v1/visual/import — receive a document from the editor (raw bytes) into workspace/visual/
+router.post('/import', express.raw({ type: 'application/octet-stream', limit: '200mb' }), (req: Request, res: Response) => {
+    try {
+        const rawName = String(req.headers['x-visual-filename'] || '');
+        const name = path.basename(rawName).replace(/[^\w.\- ()\[\]]/g, '_');
+        if (!name || name.startsWith('.')) return res.status(400).json({ error: 'Invalid X-Visual-Filename' });
+        if (!req.body || !(req.body as Buffer).length) return res.status(400).json({ error: 'Empty body' });
+        const dir = path.join(WORKSPACE, 'visual');
+        fs.mkdirSync(dir, { recursive: true });
+        const dest = confinePath(path.join(dir, name), WORKSPACE);
+        fs.writeFileSync(dest, req.body as Buffer);
+        return res.json({ success: true, path: dest, size: (req.body as Buffer).length });
+    } catch (e: any) {
+        return res.status(400).json({ error: e.message });
+    }
 });
 
 export default router;

@@ -4,6 +4,8 @@ import { AssetGrid } from './chat/AssetGrid';
 import { BrandDigitalTwin, CampaignBlueprint, VideoJob } from '../types';
 import { api } from '../utils/api';
 import { MediaControlPanel, MediaGenerationParams } from './media/MediaControlPanel';
+import VisualComposePanel from './media/VisualComposePanel';
+import VisualEditorStage from './media/VisualEditorStage';
 import type { ParsedAsset } from './chat/AssetRenderer';
 
 // Lazy load premium components for performance
@@ -11,7 +13,7 @@ const ImageCard = lazy(() => import('./chat/ImageCard').then(m => ({ default: m.
 const VideoCard = lazy(() => import('./chat/VideoCard').then(m => ({ default: m.VideoCard })));
 const AssetLightbox = lazy(() => import('./chat/AssetLightbox').then(m => ({ default: m.AssetLightbox })));
 
-type StudioStage = 'STRATEGY' | 'PRODUCT' | 'SCOUT' | 'SYNTHESIZE' | 'ANIMATE' | 'QA' | 'DELIVERY';
+type StudioStage = 'STRATEGY' | 'PRODUCT' | 'SCOUT' | 'COMPOSE' | 'EDITOR' | 'SYNTHESIZE' | 'ANIMATE' | 'QA' | 'DELIVERY';
 
 export default function MediaStudio() {
     const [activeStage, setActiveStage] = useState<StudioStage>('STRATEGY');
@@ -390,7 +392,7 @@ export default function MediaStudio() {
                     <Wand2 size={16} /> MEDIA CORTEX
                 </h2>
                 <div className="flex gap-1 bg-slate-800 p-1 rounded-lg">
-                    {(['STRATEGY', 'PRODUCT', 'SCOUT', 'SYNTHESIZE', 'QA', 'ANIMATE'] as any[]).map(stage => (
+                    {(['STRATEGY', 'PRODUCT', 'SCOUT', 'COMPOSE', 'EDITOR', 'SYNTHESIZE', 'QA', 'ANIMATE'] as any[]).map(stage => (
                         <button
                             key={stage}
                             onClick={() => setActiveStage(stage)}
@@ -630,6 +632,14 @@ export default function MediaStudio() {
                 )}
 
                 {/* STAGE 3: SYNTHESIZE */}
+                {activeStage === 'COMPOSE' && (
+                    <VisualComposePanel />
+                )}
+
+                {activeStage === 'EDITOR' && (
+                    <VisualEditorStage />
+                )}
+
                 {activeStage === 'SYNTHESIZE' && (
                     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                         <div className="flex gap-4">

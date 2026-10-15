@@ -103,6 +103,17 @@ app.use(authMiddleware);
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 // Runtime-generated media (TTS, lipsync): real files, not the SPA catch-all.
 app.use('/output', express.static(path.join(process.cwd(), 'public/output')));
+// Visual Cortex compositions (PhotoCraft engine output; auth-protected like the rest)
+app.use('/visual-output', express.static(path.join(process.cwd(), 'output')));
+// PhotoCraft web editor (official WASM build, pinned in scripts/install-photocraft.sh).
+// Same auth as the rest of /v1; the editor itself runs client-side in the browser.
+app.use('/visual-editor', express.static(path.join(process.cwd(), 'tools/photocraft/web'), {
+    index: 'index.html',
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.wasm')) res.setHeader('Content-Type', 'application/wasm');
+        if (filePath.endsWith('index.html')) res.setHeader('Cache-Control', 'no-cache');
+    }
+}));
 
 // ─── ROUTES ──────────────────────────────────────────────────────────────────
 app.use('/v1/system', systemRoutes); // [FIX] Add /system prefix
