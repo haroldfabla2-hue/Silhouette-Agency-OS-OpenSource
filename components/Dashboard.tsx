@@ -41,7 +41,7 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, projects, onCreateProjec
     return () => clearInterval(interval);
   }, []);
 
-  // Real Consciousness Phi from the live consciousness engine. null = engine
+  // Real composite cognitive-health index from the live engine. null = engine
   // has not published metrics yet -> the card shows an honest N/A.
   const [phi, setPhi] = useState<number | null>(null);
   useEffect(() => {
@@ -173,7 +173,7 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, projects, onCreateProjec
       <div id="tour-metrics-grid" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
           icon={Cpu}
-          label="Neural Load"
+          label="Host CPU"
           value={`${(metrics.realCpu || 0).toFixed(1)}%`}
           subValue={(metrics.realCpu || 0) < 70 ? 'Optimal' : (metrics.realCpu || 0) < 90 ? 'High' : 'Critical'}
           color="text-cyan-400"
@@ -188,9 +188,9 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, projects, onCreateProjec
         />
         <MetricCard
           icon={Activity}
-          label="Consciousness Phi"
+          label="Cognitive Health"
           value={phi === null ? 'N/A' : `${Math.round(phi * 100)}%`}
-          subValue={phi === null ? 'engine has not published yet' : 'consciousness engine (real)'}
+          subValue={phi === null ? 'engine has not published yet' : 'composite: memory + throughput + introspection + graph'}
           color="text-emerald-400"
         />
         <MetricCard
