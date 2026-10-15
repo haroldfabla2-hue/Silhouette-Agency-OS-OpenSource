@@ -143,7 +143,7 @@ const AgentOrchestrator: React.FC<OrchestratorProps> = ({ agents: propAgents, cu
                 {/* Quality Gate Indicator */}
                 {(currentStage === WorkflowStage.QA_AUDIT || currentStage === WorkflowStage.REMEDIATION) && (
                   <span className={`text-[10px] font-bold px-1.5 rounded ${qualityScore >= 99 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-                    ERROR SCORE (15m): {qualityScore}%
+                    ERROR SCORE (24h): {qualityScore}%
                   </span>
                 )}
               </div>

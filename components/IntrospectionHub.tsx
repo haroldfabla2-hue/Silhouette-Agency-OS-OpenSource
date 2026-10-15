@@ -490,7 +490,7 @@ const IntrospectionHub: React.FC<IntrospectionHubProps> = () => { // Props destr
                                 <div className="bg-purple-900/10 border border-purple-500/30 rounded p-3 text-[10px] font-mono text-purple-200 grid grid-cols-2 gap-2">
                                     <div>
                                         <span className="text-purple-500 block">NOW:</span>
-                                        <span>{temporalState?.now?.split(' ')[1] || '--:--'}</span>
+                                        <span>{(temporalState?.now?.split(' ')[1] || '--:--') + (temporalState?.timezone ? ' ' + temporalState.timezone : '')}</span>
                                     </div>
                                     <div>
                                         <span className="text-purple-500 block">DATE:</span>
@@ -498,7 +498,7 @@ const IntrospectionHub: React.FC<IntrospectionHubProps> = () => { // Props destr
                                     </div>
                                     <div className="col-span-2 border-t border-purple-500/20 pt-1 flex justify-between">
                                         <span className="text-purple-500">REL:</span>
-                                        <span>{temporalState?.dayOfWeek} (Day {temporalState?.dayOfYear})</span>
+                                        <span>{temporalState?.dayOfWeek ? `${temporalState.dayOfWeek} (Day ${temporalState.dayOfYear})` : '--'}</span>
                                     </div>
                                 </div>
                             </div>
