@@ -33,6 +33,13 @@ export interface VisualResult {
 export interface ComposeText {
     x: number; y: number; text: string;
     size?: number; color?: string; font?: string; align?: 'left' | 'center' | 'right';
+    /** CSS weight scale 100..900 (variable fonts interpolate; static families pick nearest face). */
+    weight?: number;
+    italic?: boolean;
+    /** 1/1000 em (Photoshop tracking). */
+    tracking?: number;
+    /** Line height in pt (paragraph text). */
+    leading?: number;
 }
 export interface ComposeImage { path: string; scale?: number; fit?: boolean; }
 export interface ComposeSpec {
@@ -110,6 +117,24 @@ export async function listCommands(filter?: string): Promise<VisualResult> {
         return { ok: true, data: { count: all.length, commands: all.slice(0, 500) } };
     } catch (e: any) {
         return { ok: false, error: e.message };
+    }
+}
+
+/** List the font families the engine can use right now (fontconfig dirs + bundled). */
+export async function listFonts(): Promise<VisualResult> {
+    if (!isAvailable()) return unavailableResult();
+    const probe = path.join(WRITE_ROOT, `fonts-probe-${Date.now()}.png`);
+    try {
+        const res = await execute({ newDoc: { width: 8, height: 8 }, steps: [{ command: 'type.fonts' }], out: probe });
+        if (!res.ok) return res;
+        const line = (res.data?.log ?? []).find((l: string) => l.includes('"type.fonts"'));
+        if (!line) return { ok: false, error: 'type.fonts result missing from engine log' };
+        const families: string[] = JSON.parse(line)?.result?.families ?? [];
+        return { ok: true, data: { families } };
+    } catch (e: any) {
+        return { ok: false, error: e.message };
+    } finally {
+        fs.unlink(probe, () => {});
     }
 }
 
@@ -212,7 +237,15 @@ export async function compose(spec: ComposeSpec): Promise<VisualResult> {
             if (!t.text || typeof t.text !== 'string' || t.text.length > 500) throw new Error('text layer needs text (max 500 chars)');
             if (!Number.isFinite(t.x) || !Number.isFinite(t.y)) throw new Error('text layer needs numeric x/y');
             if (t.color && !HEX.test(t.color)) throw new Error(`text color must be #rrggbb: ${t.color}`);
-            steps.push({ command: 'type.create', params: { x: t.x, y: t.y, text: t.text, size: t.size ?? 24, color: t.color ?? '#ffffff', font: t.font, align: t.align } });
+            if (t.weight !== undefined && (!Number.isFinite(t.weight) || t.weight < 100 || t.weight > 900)) throw new Error('text weight must be 100..900 (CSS scale)');
+            if (t.tracking !== undefined && (!Number.isFinite(t.tracking) || t.tracking < -1000 || t.tracking > 10000)) throw new Error('text tracking must be -1000..10000 (1/1000 em)');
+            if (t.leading !== undefined && (!Number.isFinite(t.leading) || t.leading < 0 || t.leading > 1296)) throw new Error('text leading must be 0..1296 pt');
+            const params: Record<string, any> = { x: t.x, y: t.y, text: t.text, size: t.size ?? 24, color: t.color ?? '#ffffff', font: t.font, align: t.align };
+            if (t.weight !== undefined) params.weight = t.weight;
+            if (t.italic !== undefined) params.italic = t.italic;
+            if (t.tracking !== undefined) params.tracking = t.tracking;
+            if (t.leading !== undefined) params.leading = t.leading;
+            steps.push({ command: 'type.create', params });
         }
         for (const adj of spec.adjustments ?? []) {
             await validateCommand(adj.command);

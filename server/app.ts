@@ -112,6 +112,7 @@ app.use('/visual-editor', express.static(path.join(process.cwd(), 'tools/photocr
     setHeaders: (res, filePath) => {
         if (filePath.endsWith('.wasm')) res.setHeader('Content-Type', 'application/wasm');
         if (filePath.endsWith('index.html')) res.setHeader('Cache-Control', 'no-cache');
+        if (filePath.endsWith('fonts/manifest.txt')) res.setHeader('Cache-Control', 'no-cache'); // served-font edits show up on reload
     }
 }));
 

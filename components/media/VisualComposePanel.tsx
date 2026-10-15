@@ -8,7 +8,7 @@ import { Plus, Trash2, Download, RefreshCw, Layers } from 'lucide-react';
 import { api } from '../../utils/api';
 
 type Health = { state: 'loading' | 'ok' | 'unavailable'; commands?: number; reason?: string };
-type TextLayer = { text: string; x: number; y: number; size: number; color: string };
+type TextLayer = { text: string; x: number; y: number; size: number; color: string; font?: string; weight?: number; tracking?: number; italic?: boolean };
 type ImageLayer = { path: string; fit: boolean };
 type ComposeResult = { url: string; output: string; log: string[] };
 
@@ -34,6 +34,7 @@ export const VisualComposePanel: React.FC = () => {
     const [solid, setSolid] = useState('#101010');
 
     const [texts, setTexts] = useState<TextLayer[]>([{ text: 'HEADLINE', x: 120, y: 540, size: 72, color: '#ffffff' }]);
+    const [families, setFamilies] = useState<string[]>([]);
     const [images, setImages] = useState<ImageLayer[]>([]);
     const [format, setFormat] = useState<'png' | 'jpg' | 'webp'>('png');
 
@@ -51,6 +52,12 @@ export const VisualComposePanel: React.FC = () => {
     };
 
     useEffect(checkHealth, []);
+
+    useEffect(() => {
+        api.get<{ families?: string[] }>('/v1/visual/fonts')
+            .then(res => setFamilies(res?.families ?? []))
+            .catch(() => { /* picker falls back to free-text font name */ });
+    }, []);
 
     const applyPreset = (i: number) => {
         setPreset(i); setCustom(false);
@@ -189,6 +196,21 @@ export const VisualComposePanel: React.FC = () => {
                                     <span>Y</span><input type="number" value={t.y} onChange={e => setTexts(texts.map((x, j) => j === i ? { ...x, y: parseInt(e.target.value) || 0 } : x))} className="w-16 bg-slate-900 border border-slate-800 rounded p-1 text-xs text-white" />
                                     <span>SIZE</span><input type="number" value={t.size} onChange={e => setTexts(texts.map((x, j) => j === i ? { ...x, size: parseInt(e.target.value) || 1 } : x))} className="w-16 bg-slate-900 border border-slate-800 rounded p-1 text-xs text-white" />
                                     <input type="color" value={t.color} onChange={e => setTexts(texts.map((x, j) => j === i ? { ...x, color: e.target.value } : x))} className="w-8 h-7 rounded cursor-pointer bg-transparent" />
+                                </div>
+                                <div className="flex gap-2 items-center text-[10px] text-slate-500 flex-wrap">
+                                    <select value={t.font ?? ''} onChange={e => setTexts(texts.map((x, j) => j === i ? { ...x, font: e.target.value || undefined } : x))}
+                                        className="max-w-[130px] bg-slate-900 border border-slate-800 rounded p-1 text-xs text-white">
+                                        <option value="">Font…</option>
+                                        {families.map(f => <option key={f} value={f}>{f}</option>)}
+                                    </select>
+                                    <select value={t.weight ?? ''} onChange={e => setTexts(texts.map((x, j) => j === i ? { ...x, weight: e.target.value ? parseInt(e.target.value) : undefined } : x))}
+                                        className="bg-slate-900 border border-slate-800 rounded p-1 text-xs text-white">
+                                        <option value="">Weight</option>
+                                        {[100, 200, 300, 400, 500, 600, 700, 800, 900].map(w => <option key={w} value={w}>{w}</option>)}
+                                    </select>
+                                    <span>TRACK</span><input type="number" value={t.tracking ?? ''} placeholder="0" onChange={e => setTexts(texts.map((x, j) => j === i ? { ...x, tracking: e.target.value === '' ? undefined : parseInt(e.target.value) || 0 } : x))} className="w-16 bg-slate-900 border border-slate-800 rounded p-1 text-xs text-white" />
+                                    <button onClick={() => setTexts(texts.map((x, j) => j === i ? { ...x, italic: !x.italic } : x))}
+                                        className={`px-2 py-1 text-[10px] font-bold italic rounded ${t.italic ? 'bg-cyan-500 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>I</button>
                                 </div>
                             </div>
                         ))}

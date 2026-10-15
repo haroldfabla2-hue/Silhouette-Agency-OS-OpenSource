@@ -46,6 +46,13 @@ router.post('/compose', async (req: Request, res: Response) => {
     return res.status(status).json(result.ok ? { success: true, ...result.data } : { success: false, error: result.error, unavailable: result.unavailable });
 });
 
+// GET /v1/visual/fonts — font families available to the engine (for compose pickers)
+router.get('/fonts', async (_req: Request, res: Response) => {
+    const result = await visualService.listFonts();
+    const status = result.unavailable ? 503 : result.ok ? 200 : 400;
+    return res.status(status).json(result.ok ? result.data : { error: result.error, unavailable: result.unavailable });
+});
+
 // POST /v1/visual/convert — format conversion { in, out, quality? }
 router.post('/convert', async (req: Request, res: Response) => {
     const { in: input, out, quality } = req.body || {};
