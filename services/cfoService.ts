@@ -3,6 +3,7 @@ import { SystemProtocol } from "../types";
 import { systemBus } from "./systemBus";
 import { settingsManager } from "./settingsManager";
 import { configLoader } from "../server/config/configLoader"; // [FIX] Import configLoader
+import { DEFAULT_GEMINI_MODEL } from "./llm/defaultModels";
 
 // --- CFO AGENT (Chief Financial Officer) ---
 // The Guardian of the Wallet.
@@ -71,7 +72,7 @@ export class CFOAgent {
             // 1. VISION -> Gemini (Minimax M2.5 is text-only/focused)
             if (isVisionTask) {
                 console.log(`[CFO] 👁️ Vision Task detected. Delegating to Gemini.`);
-                return 'gemini-2.0-flash';
+                return DEFAULT_GEMINI_MODEL;
             }
 
             // 2. COMPLEXITY ANALYSIS
@@ -89,7 +90,7 @@ export class CFOAgent {
                 return 'abab-6.5s-chat';
             } else {
                 console.log(`[CFO] ⚡ Low-Complexity Task. Offloading to Gemini Flash to save Quota.`);
-                return 'gemini-2.0-flash';
+                return DEFAULT_GEMINI_MODEL;
             }
         }
 
@@ -113,8 +114,12 @@ export class CFOAgent {
 
         // === CASE A: DEV AGENT OR CODE TASK → MINIMAX 2.5 (Direct) ===
         if ((isDevAgent || isCode) && hasOpenRouter) {
-            console.log(`[CFO] 🎯 Code task detected${isDevAgent ? ` (Agent: ${agentName}, Category: ${agentCategory})` : ''}. Using MiniMax 2.5.`);
-            return 'abab-6.5s-chat';
+            // The inference executor routes any 'abab*' model to minimaxService,
+            // whose API key is configured separately from OpenRouter and is empty
+            // in prod (measured live 2026-10-15: every such call failed). Until
+            // Minimax is provisioned, use the env-driven Gemini default.
+            console.log(`[CFO] 🎯 Code task detected${isDevAgent ? ` (Agent: ${agentName}, Category: ${agentCategory})` : ''}. Minimax unprovisioned; using Gemini default.`);
+            return DEFAULT_GEMINI_MODEL;
         }
 
         // === MINIMAX FALLBACK → DEEPSEEK ===
@@ -132,14 +137,13 @@ export class CFOAgent {
         // === ZHIPUAI FALLBACK → GEMINI (FREE) ===
         if (isDevAgent || isCode) {
             console.log(`[CFO] ⚠️ ZhipuAI unavailable. Fallback to Gemini.`);
-            if (isComplex) return 'gemini-1.5-pro';
-            return 'gemini-2.5-flash';
+            return DEFAULT_GEMINI_MODEL;
         }
 
         // Note: Ollama is last resort handled by geminiService when all cloud fails
 
-        console.log(`[CFO] Defaulting to Gemini 2.0 Flash.`);
-        return 'gemini-2.0-flash';
+        console.log(`[CFO] Defaulting to Gemini default model.`);
+        return DEFAULT_GEMINI_MODEL;
 
     }
 
@@ -172,13 +176,13 @@ export class CFOAgent {
     public getFallbackChain(taskType: 'CODE' | 'CREATIVE' | 'GENERAL'): string[] {
         switch (taskType) {
             case 'CODE':
-                // Minimax Prime
-                return ['abab-6.5s-chat', 'deepseek-coder', 'gemini-1.5-pro', 'glm-4.5-flash'];
+                // Minimax Prime (only reachable when its key is provisioned)
+                return ['abab-6.5s-chat', 'deepseek-coder', DEFAULT_GEMINI_MODEL, 'glm-4.5-flash'];
             case 'CREATIVE':
-                return ['abab-6.5s-chat', 'gemini-1.5-pro', 'glm-4.5-flash'];
+                return ['abab-6.5s-chat', DEFAULT_GEMINI_MODEL, 'glm-4.5-flash'];
             case 'GENERAL':
             default:
-                return ['abab-6.5s-chat', 'gemini-1.5-flash', 'glm-4.5-flash'];
+                return ['abab-6.5s-chat', DEFAULT_GEMINI_MODEL, 'glm-4.5-flash'];
         }
     }
 
