@@ -11,8 +11,10 @@
  *    format conversion, batch processing — 900+ engine commands, agent-drivable.
  */
 
-import { spawn } from 'child_process';
+import { spawn, execFile } from 'child_process';
+import { promisify } from 'util';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 const BIN = process.env.PHOTOCRAFT_BIN || '/opt/silhouette/tools/photocraft/bin/photocraft-cli';
@@ -135,6 +137,78 @@ export async function listFonts(): Promise<VisualResult> {
         return { ok: false, error: e.message };
     } finally {
         fs.unlink(probe, () => {});
+    }
+}
+
+const execFileAsync = promisify(execFile);
+
+/** User-uploaded fonts: server side (fontconfig) + web editor side (served-fonts manifest). */
+const USER_FONT_ROOT = '/opt/silhouette/fonts/user';
+const WEB_FONT_ROOT = '/opt/silhouette/tools/photocraft/web/fonts';
+const WEB_FONT_MANIFEST = path.join(WEB_FONT_ROOT, 'manifest.txt');
+const FONT_EXT = /\.(ttf|otf|ttc)$/i;
+const MAX_FONT_BYTES = 30 << 20;
+
+function fontMagicOk(b: Buffer): boolean {
+    if (b.length < 4) return false;
+    if (b[0] === 0x00 && b[1] === 0x01 && b[2] === 0x00 && b[3] === 0x00) return true; // TTF
+    const m = b.subarray(0, 4).toString('latin1');
+    return m === 'OTTO' || m === 'ttcf' || m === 'true' || m === 'typ1';
+}
+
+/**
+ * Install a user-uploaded font (TTF/OTF/TTC): validate, read its real family/style with
+ * fc-scan, install into the fontconfig dir + the web editor's served fonts, refresh caches.
+ * The engine picks it up on the next run (fontconfig rescan per process); the web editor
+ * on the next app load (manifest fetch at startup).
+ */
+export async function installUserFont(filename: string, bytes: Buffer): Promise<VisualResult> {
+    try {
+        const base = path.basename(String(filename || '')).replace(/[^\w.\- ()]/g, '_');
+        if (!FONT_EXT.test(base)) throw new Error('font must be .ttf, .otf or .ttc');
+        if (!bytes || !bytes.length) throw new Error('empty file');
+        if (bytes.length > MAX_FONT_BYTES) throw new Error('font too large (max 30 MB)');
+        if (!fontMagicOk(bytes)) throw new Error('not a valid font file (bad magic bytes)');
+
+        const tmp = path.join(os.tmpdir(), `fontprobe-${Date.now()}-${base}`);
+        let family = ''; let style = 'Regular';
+        try {
+            fs.writeFileSync(tmp, bytes);
+            const { stdout } = await execFileAsync('/usr/bin/fc-scan', ['--format', '%{family}|%{style}\n', tmp]);
+            const parts = String(stdout).trim().split('\n')[0].split('|'); // variable fonts: one line per named instance, take the first
+            family = (parts[0] || '').split(',')[0].trim();
+            style = ((parts[1] || 'Regular').split(',')[0].trim()) || 'Regular';
+        } finally {
+            fs.unlink(tmp, () => {});
+        }
+        if (!family) throw new Error('could not read the font family name (fc-scan)');
+
+        const slug = family.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+        if (!slug) throw new Error('font family name is not usable');
+        const serverDir = path.join(USER_FONT_ROOT, slug);
+        const webDir = path.join(WEB_FONT_ROOT, slug);
+        fs.mkdirSync(serverDir, { recursive: true });
+        fs.mkdirSync(webDir, { recursive: true });
+        fs.writeFileSync(path.join(serverDir, base), bytes);
+        fs.writeFileSync(path.join(webDir, base), bytes);
+
+        // Served-fonts manifest: one line per file, no duplicates.
+        const line = `${family} | ${style} | fonts/${slug}/${base}`;
+        let manifest = '';
+        try { manifest = fs.readFileSync(WEB_FONT_MANIFEST, 'utf8'); } catch { /* first font */ }
+        if (!manifest.split('\n').some(l => l.trim() === line)) {
+            if (manifest && !manifest.endsWith('\n')) manifest += '\n';
+            fs.writeFileSync(WEB_FONT_MANIFEST, manifest + line + '\n');
+        }
+
+        await execFileAsync('/usr/bin/fc-cache', ['-f']).catch(() => { /* cache refresh is best-effort */ });
+
+        // Verify the engine actually sees it (strong check, same path compose uses).
+        const fonts = await listFonts();
+        const visible = fonts.ok && (fonts.data?.families ?? []).includes(family);
+        return { ok: true, data: { family, style, file: base, engineVisible: visible } };
+    } catch (e: any) {
+        return { ok: false, error: e.message };
     }
 }
 
@@ -291,4 +365,4 @@ export async function info(file: string): Promise<VisualResult> {
     }
 }
 
-export const visualService = { isAvailable, listCommands, listFonts, execute, compose, convert, info };
+export const visualService = { isAvailable, listCommands, listFonts, installUserFont, execute, compose, convert, info };
