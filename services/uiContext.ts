@@ -15,7 +15,7 @@ class UiContextService {
             agentsInVram: 0,
             agentsInRam: 0,
             introspectionDepth: 32,
-            awarenessScore: 0,
+            awarenessScore: null, // no real composite exists (type allows null): never fabricate
             fps: 0,
             currentMode: 'ECO' as any,
             tokenUsageToday: 0,

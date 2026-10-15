@@ -3,6 +3,10 @@ import { BrandDigitalTwin, SystemProtocol } from '../types';
 import { sqliteService } from './sqliteService';
 import { systemBus } from './systemBus';
 
+// Quality score window: 24h so a failed night is still visible in the
+// morning; the old 15-minute window let real outages fade to 100/EXCELLENT.
+export const QUALITY_WINDOW_MINUTES = 24 * 60;
+
 export interface QAReport {
     score: number;
     reasoning: string;
@@ -72,8 +76,8 @@ class QualityControlService {
     }
 
     public getSystemQualityScore(): { score: number, stability: string } {
-        // Calculate dynamic quality score based on recent system errors (15 mins)
-        const recentErrors = sqliteService.getRecentLogs('ERROR', 15);
+        // Calculate dynamic quality score based on recent system errors (24h window)
+        const recentErrors = sqliteService.getRecentLogs('ERROR', QUALITY_WINDOW_MINUTES);
         const errorCount = recentErrors.length;
 
         // Base score 100, deduct 2 points per error. Min 0.

@@ -5,6 +5,7 @@ import { configureGenAI } from '../../services/geminiService';
 import { sqliteService } from '../../services/sqliteService';
 import { buildTokenHistory } from '../../services/telemetryHistory';
 import { BUILD_VERSION } from '../../constants/buildVersion';
+import { buildTemporalContext } from '../../services/temporalContext';
 
 // Prefix used for all secrets in the system_config table
 const SECRETS_PREFIX = 'secretsVault_';
@@ -533,7 +534,7 @@ export class SystemController {
             activeConcepts: [] as any[],
             consciousnessMetrics: null as any,   // null = engine unavailable
             narrativeState: null as any,         // null = no narrative yet (absent, not zero)
-            temporalContext: null as any,        // declared absent: no real source exists yet
+            temporalContext: buildTemporalContext(),  // measured: server clock (R8: measured, not absent)
             available: { introspection: false, consciousness: false, narrative: false }
         };
 
