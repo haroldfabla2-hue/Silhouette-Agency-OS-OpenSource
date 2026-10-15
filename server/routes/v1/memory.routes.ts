@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { continuum } from '../../../services/continuumMemory';
 import { MemoryTier } from '../../../types';
+import { paginateNodes, MAX_STATE_LIMIT, DEFAULT_STATE_LIMIT } from '../../../services/memoryPagination';
 
 const router = Router();
 
@@ -37,6 +38,25 @@ router.get('/state', async (req, res) => {
         // [R11] one consistent snapshot: revision + timestamp let the UI
         // compare working with working of the SAME revision, never mixed
         // snapshots. Stats invalidate on every write (revision-bumped).
+        //
+        // Pagination: ?limit=&offset= pages the flattened node list (stable
+        // tier order WORKING -> MEDIUM -> LONG -> DEEP) with per-tier totals.
+        // No params = legacy full snapshot (unchanged contract).
+        if (req.query.limit !== undefined || req.query.offset !== undefined) {
+            const rawLimit = parseInt(req.query.limit as string, 10);
+            const rawOffset = parseInt(req.query.offset as string, 10);
+            const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), MAX_STATE_LIMIT) : DEFAULT_STATE_LIMIT;
+            const offset = Number.isFinite(rawOffset) ? Math.max(rawOffset, 0) : 0;
+            const paged = paginateNodes(nodes, limit, offset);
+            return res.json({
+                revision: stats.revision,
+                timestamp: stats.timestamp,
+                nodes: paged.nodes,
+                stats,
+                embeddings,
+                pagination: paged.pagination
+            });
+        }
         res.json({ revision: stats.revision, timestamp: stats.timestamp, nodes, stats, embeddings });
     } catch (error: any) {
         console.error('[MEMORY] Error fetching memory state:', error);
