@@ -381,7 +381,7 @@ export default function MediaStudio() {
     return (
         <div className="w-full h-full flex flex-col bg-slate-900 border-l border-slate-800">
             {generationAvailable === false && (
-                <div className="bg-amber-900/40 border-b border-amber-700 text-amber-200 text-xs px-4 py-2 font-mono">
+                <div className="bg-amber-900/40 border-b border-amber-700 text-amber-200 text-xs px-4 py-2 pr-44 font-mono">
                     GENERATION UNAVAILABLE: este servidor no tiene GPU ni ComfyUI medidos (vramTotal=0). La generación de imagen/video fallará con error explícito; voz (TTS), catálogo y búsqueda sí funcionan.
                 </div>
             )}
