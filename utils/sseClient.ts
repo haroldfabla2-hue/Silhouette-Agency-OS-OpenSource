@@ -41,13 +41,16 @@ export function createSseParser(onEvent: (data: string) => void): (chunk: string
     return (chunk: string) => {
         buffer += chunk;
         // Frames are separated by a blank line (\n\n or \r\n\r\n)
-        while (true) {
+        let sepIndex = -1, sepLen = 0;
+        const findSeparator = () => {
             const rn = buffer.indexOf('\r\n\r\n');
             const n = buffer.indexOf('\n\n');
-            let sepIndex: number, sepLen: number;
             if (rn !== -1 && (n === -1 || rn <= n)) { sepIndex = rn; sepLen = 4; }
             else if (n !== -1) { sepIndex = n; sepLen = 2; }
-            else break;
+            else { sepIndex = -1; }
+        };
+        findSeparator();
+        while (sepIndex !== -1) {
             const frame = buffer.slice(0, sepIndex);
             buffer = buffer.slice(sepIndex + sepLen);
             const dataLines: string[] = [];
@@ -59,6 +62,7 @@ export function createSseParser(onEvent: (data: string) => void): (chunk: string
                 // event:/id:/retry: fields are unused by current consumers
             }
             if (dataLines.length > 0) onEvent(dataLines.join('\n'));
+            findSeparator();
         }
     };
 }
@@ -97,10 +101,11 @@ export function connectSSE(path: string, handlers: SseHandlers, options: SseOpti
             handlers.onOpen?.();
             const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
             const push = createSseParser((data) => handlers.onMessage({ data }));
-            while (true) {
+            let streamDone = false;
+            while (!streamDone) {
                 const { done, value } = await reader.read();
-                if (done) break;
-                if (value) push(value);
+                streamDone = done;
+                if (!done && value) push(value);
             }
             if (!closed) {
                 handlers.onError?.(new Error('SSE stream ended'));
