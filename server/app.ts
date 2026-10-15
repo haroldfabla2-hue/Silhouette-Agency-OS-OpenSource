@@ -58,6 +58,10 @@ import { initServer } from './loaders';
 
 export const app = express();
 
+// Behind nginx: trust the first hop so req.protocol/req.ip reflect the real client
+// (OAuth redirect_uri must be https://os.albertofarah.com, not http://).
+app.set('trust proxy', 1);
+
 // ─── SECURITY MIDDLEWARE ─────────────────────────────────────────────────────
 
 // CORS: Restrict to configured origins (default: localhost dev server)

@@ -306,6 +306,16 @@ export class SqliteAdapter implements IDatabaseAdapter {
             )
         `);
 
+        // Defensive migrations for DBs created before these columns existed:
+        // CREATE TABLE IF NOT EXISTS does not add columns to pre-existing tables.
+        const userCols = this.identityDb.prepare('PRAGMA table_info(users)').all() as Array<{ name: string }>;
+        if (!userCols.some((c) => c.name === 'google_linked')) {
+            this.identityDb.exec('ALTER TABLE users ADD COLUMN google_linked INTEGER DEFAULT 0');
+        }
+        if (!userCols.some((c) => c.name === 'google_email')) {
+            this.identityDb.exec('ALTER TABLE users ADD COLUMN google_email TEXT');
+        }
+
         this.identityDb.exec(`
             CREATE TABLE IF NOT EXISTS devices (
                 id TEXT PRIMARY KEY,

@@ -229,17 +229,38 @@ class DriveService {
 
         try {
             const row = this.db.prepare('SELECT * FROM google_tokens WHERE id = 1').get() as any;
-            if (!row) return null;
-
-            return {
-                access_token: row.access_token,
-                refresh_token: row.refresh_token,
-                expiry_date: row.expiry_date,
-                email: row.email
-            };
+            if (row) {
+                return {
+                    access_token: row.access_token,
+                    refresh_token: row.refresh_token,
+                    expiry_date: row.expiry_date,
+                    email: row.email
+                };
+            }
         } catch {
-            return null;
+            // fall through to unified vault
         }
+
+        // Unified "Connect Google" consent stores tokens in the google-workspace vault;
+        // honor it so a single consent covers Drive too (no drive-specific tokens needed).
+        try {
+            const ws = this.db.prepare("SELECT value FROM system_config WHERE key = 'secretsVault_google-workspace'").get() as any;
+            if (ws) {
+                const secrets = JSON.parse(ws.value);
+                if (secrets?.oauthConnected && secrets?.accessToken && secrets?.refreshToken) {
+                    return {
+                        access_token: secrets.accessToken,
+                        refresh_token: secrets.refreshToken,
+                        expiry_date: secrets.expiresAt || 0,
+                        email: undefined
+                    };
+                }
+            }
+        } catch {
+            // no unified vault available
+        }
+
+        return null;
     }
 
     /**

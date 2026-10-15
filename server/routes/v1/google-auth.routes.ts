@@ -76,6 +76,8 @@ router.get('/start', (req: Request, res: Response) => {
         });
 
         // Build Google OAuth2 URL
+        const wantsJson = req.query.format === 'json';
+
         const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
         authUrl.searchParams.set('client_id', clientId);
         authUrl.searchParams.set('redirect_uri', redirectUri);
@@ -85,6 +87,11 @@ router.get('/start', (req: Request, res: Response) => {
         authUrl.searchParams.set('prompt', 'consent');
         authUrl.searchParams.set('state', state);
 
+        // JSON mode: the dashboard fetches the URL with its auth headers and opens the popup itself
+        // (a bare window.open cannot send the API key, so a plain redirect 401s for the UI).
+        if (wantsJson) {
+            return res.json({ authUrl: authUrl.toString() });
+        }
         return res.redirect(authUrl.toString());
     } catch (err: any) {
         console.error('[GoogleAuth] Start error:', err.message);
