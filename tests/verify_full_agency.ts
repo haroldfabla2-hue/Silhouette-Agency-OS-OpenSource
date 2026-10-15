@@ -1,7 +1,6 @@
 
 import dotenv from 'dotenv';
 import path from 'path';
-import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -15,7 +14,7 @@ async function verifyFullAgencySimulation() {
 
     // Dynamic Imports
     const { systemBus } = await import("../services/systemBus");
-    const { orchestrator } = await import("../services/orchestrator");
+    await import("../services/orchestrator");
     const { creativeDirector } = await import("../services/skills/creativeDirectorSkill");
     const { SystemProtocol } = await import("../types");
 

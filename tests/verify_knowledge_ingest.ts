@@ -6,10 +6,7 @@ import path from 'path';
 async function verifyIngestion() {
     console.log("🔍 Verifying Knowledge Ingestion...");
 
-    // 1. Ingest a specific known file to test
-    const testFile = path.resolve(process.cwd(), 'universalprompts', 'Google', 'Gemini', 'README.md');
-    // If that file doesn't exist, we'll try to scan one folder.
-
+    // 1. Ingest a specific known file to test (see googleDir scan below)
     // Actually, let's just pick the first file found in 'Google' folder to test.
     const googleDir = path.resolve(process.cwd(), 'universalprompts', 'Google');
 

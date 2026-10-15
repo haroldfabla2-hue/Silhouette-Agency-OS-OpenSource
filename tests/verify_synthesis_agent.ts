@@ -28,7 +28,7 @@ async function main() {
     // Initialize orchestrator (which sets up the subscriptions)
     console.log('\n📊 STEP 1: Initialize Orchestrator');
     console.log('─'.repeat(40));
-    const { orchestrator } = await import('../services/orchestrator');
+    await import('../services/orchestrator');
     console.log('✅ Orchestrator initialized with synthesis handlers');
 
     // Check discovery stats

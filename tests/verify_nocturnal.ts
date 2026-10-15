@@ -4,7 +4,6 @@ import { SystemProtocol } from '../types';
 import { dataCollector } from '../services/training/dataCollector';
 import { dreamer } from '../services/dreamerService'; // Import to init it
 import * as fs from 'fs';
-import * as path from 'path';
 
 async function verify() {
     console.log("=== VERIFYING NOCTURNAL PLASTICITY (PHASE 1) ===");
