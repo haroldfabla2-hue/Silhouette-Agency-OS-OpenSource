@@ -14,6 +14,13 @@ trap 'rm -rf "$TMP"' EXIT
 curl -sL -o "$TMP/pc.tar.gz" "$URL"
 tar xzf "$TMP/pc.tar.gz" -C "$TMP"
 cp -r "$TMP/photocraft-${VERSION}-linux-x86_64/bin" "$DEST/"
+
+# Web editor (official WASM static site) — served by Silhouette at /visual-editor/
+WEB_URL="https://github.com/storytold/photocraft/releases/download/v${VERSION}/photocraft-web-${VERSION}.zip"
+curl -sL -o "$TMP/pcweb.zip" "$WEB_URL"
+unzip -q -o "$TMP/pcweb.zip" -d "$TMP"
+mkdir -p "$DEST/web"
+cp -r "$TMP/photocraft-web-${VERSION}/"* "$DEST/web/"
 chown -R silhouette:silhouette /opt/silhouette/tools "$DEST" /opt/silhouette/workspace/visual /opt/silhouette/output/visual 2>/dev/null || true
 "$DEST/bin/photocraft-cli" --version
 echo "PhotoCraft $VERSION installed at $DEST"

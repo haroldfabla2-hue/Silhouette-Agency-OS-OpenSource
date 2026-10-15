@@ -12,7 +12,7 @@ const ImageCard = lazy(() => import('./chat/ImageCard').then(m => ({ default: m.
 const VideoCard = lazy(() => import('./chat/VideoCard').then(m => ({ default: m.VideoCard })));
 const AssetLightbox = lazy(() => import('./chat/AssetLightbox').then(m => ({ default: m.AssetLightbox })));
 
-type StudioStage = 'STRATEGY' | 'PRODUCT' | 'SCOUT' | 'COMPOSE' | 'SYNTHESIZE' | 'ANIMATE' | 'QA' | 'DELIVERY';
+type StudioStage = 'STRATEGY' | 'PRODUCT' | 'SCOUT' | 'COMPOSE' | 'EDITOR' | 'SYNTHESIZE' | 'ANIMATE' | 'QA' | 'DELIVERY';
 
 export default function MediaStudio() {
     const [activeStage, setActiveStage] = useState<StudioStage>('STRATEGY');
@@ -391,7 +391,7 @@ export default function MediaStudio() {
                     <Wand2 size={16} /> MEDIA CORTEX
                 </h2>
                 <div className="flex gap-1 bg-slate-800 p-1 rounded-lg">
-                    {(['STRATEGY', 'PRODUCT', 'SCOUT', 'COMPOSE', 'SYNTHESIZE', 'QA', 'ANIMATE'] as any[]).map(stage => (
+                    {(['STRATEGY', 'PRODUCT', 'SCOUT', 'COMPOSE', 'EDITOR', 'SYNTHESIZE', 'QA', 'ANIMATE'] as any[]).map(stage => (
                         <button
                             key={stage}
                             onClick={() => setActiveStage(stage)}
@@ -633,6 +633,20 @@ export default function MediaStudio() {
                 {/* STAGE 3: SYNTHESIZE */}
                 {activeStage === 'COMPOSE' && (
                     <VisualComposePanel />
+                )}
+
+                {activeStage === 'EDITOR' && (
+                    <div className="space-y-3 h-full flex flex-col">
+                        <div className="text-xs text-slate-400">
+                            Editor completo PhotoCraft (el motor real, corriendo en tu navegador vía WebAssembly): capas, filtros, PSD, vectores, brushes.
+                            Abre archivos con File → Open; el resultado se descarga del navegador. Puente directo al workspace de Silhouette: en el roadmap del fork.
+                        </div>
+                        <iframe
+                            src="/visual-editor/"
+                            title="PhotoCraft Editor"
+                            className="flex-1 w-full min-h-[70vh] rounded-lg border border-slate-700 bg-[#262626]"
+                        />
+                    </div>
                 )}
 
                 {activeStage === 'SYNTHESIZE' && (
