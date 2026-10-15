@@ -20,7 +20,7 @@ import { orchestrator } from './orchestrator';
 import { geminiService } from './geminiService';
 import { systemBus } from './systemBus';
 import { SystemProtocol, CommunicationLevel, AgentStatus, AgentRoleType, AgentTier, AgentCapability } from '../types';
-import { stepDeclaresFileWork } from './tools/toolSelection'; // [W3]
+import { stepDeclaresFileWork, durableFileGrant } from './tools/toolSelection'; // [W3]
 import { evaluatePlanHonesty } from './execution/stepHonesty'; // [W3]
 import { collectWrittenArtifacts } from './execution/artifactLedger'; // [W3]
 
@@ -249,6 +249,20 @@ class PlanExecutor {
             // step requirements; file-declaring work receives the minimal
             // JAILED fs tools. The executor grants — the jail confines.
             const agentCaps = orchestrator.getAgent(step.agentId)?.capabilities ?? [];
+            // [Grant] Persist the FS grant durably for agents assigned
+            // file-declaring work (idempotent; jail stays the enforcement).
+            const durable = durableFileGrant(agentCaps, stepDeclaresFileWork(step));
+            if (durable) {
+                const rec = orchestrator.getAgent(step.agentId);
+                if (rec) {
+                    rec.capabilities = durable;
+                    const { agentPersistence } = await import('./agentPersistence');
+                    const { capabilityRegistry } = await import('./capabilityRegistry');
+                    agentPersistence.saveAgent(rec);
+                    capabilityRegistry.registerAgent(rec);
+                    console.log(`[PLAN_EXECUTOR] 🔏 Durable FS grant persisted for ${step.agentId}`);
+                }
+            }
             const effectiveCapabilities: AgentCapability[] = Array.from(new Set([
                 ...agentCaps,
                 ...step.requiredCapabilities,

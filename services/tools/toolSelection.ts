@@ -39,6 +39,23 @@ export function stepDeclaresFileWork(step: { taskDescription?: string; requiredC
     return FILE_WORK_PATTERN.test(step.taskDescription || '');
 }
 
+/**
+ * [Grant] Durable filesystem grant for agents assigned file-declaring work.
+ * The per-step tool attachment above is ephemeral; this persists the grant
+ * on the agent record so the capability registry and UI reflect reality and
+ * non-planExecutor paths (chat) can attach the same JAILED tools. The jail
+ * (W2) stays the real enforcement; this is honest bookkeeping, not a door.
+ * Returns the updated capability list, or null when nothing changes
+ * (idempotent — safe to call on every step).
+ */
+export function durableFileGrant(caps: AgentCapability[], declaresFileWork: boolean): AgentCapability[] | null {
+    if (!declaresFileWork) return null;
+    const hasRead = caps.includes(AgentCapability.ACTION_FILE_READ);
+    const hasWrite = caps.includes(AgentCapability.ACTION_FILE_WRITE);
+    if (hasRead && hasWrite) return null;
+    return Array.from(new Set([...caps, AgentCapability.ACTION_FILE_READ, AgentCapability.ACTION_FILE_WRITE]));
+}
+
 /** System-instruction block appended when confined filesystem tools attach. */
 export const FS_JAIL_INSTRUCTION = `
         PROTOCOL: BUILDER

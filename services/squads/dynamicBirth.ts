@@ -62,7 +62,12 @@ export function deriveDynamicCapabilities(payload: any): AgentCapability[] {
         const fromPayload = payload.capabilities.filter(
             (c: unknown): c is AgentCapability => typeof c === 'string' && valid.has(c)
         );
-        if (fromPayload.length > 0) return fromPayload;
+        if (fromPayload.length > 0) {
+            if (payloadDeclaresProject(payload)) {
+                return Array.from(new Set([...fromPayload, AgentCapability.ACTION_FILE_READ, AgentCapability.ACTION_FILE_WRITE]));
+            }
+            return fromPayload;
+        }
     }
     const caps = new Set<AgentCapability>([
         AgentCapability.CONTEXT_MANAGEMENT,
@@ -73,7 +78,23 @@ export function deriveDynamicCapabilities(payload: any): AgentCapability[] {
     for (const rule of DYNAMIC_ROLE_CAPABILITY_RULES) {
         if (rule.pattern.test(roleText)) caps.add(rule.capability);
     }
+    if (payloadDeclaresProject(payload)) {
+        caps.add(AgentCapability.ACTION_FILE_READ);
+        caps.add(AgentCapability.ACTION_FILE_WRITE);
+    }
     return [...caps];
+}
+
+/**
+ * Birth grant: a squad born with an EXPLICIT project reference (projectId /
+ * projectPath / project in the expansion payload) is born with the confined
+ * filesystem capabilities. Text mentions of paths are deliberately NOT
+ * parsed — the grant follows structured assignment, not prose. The jail (W2)
+ * confines every actual write; this only makes the capability real and
+ * visible from birth (DCR, UI, chat-path tool attachment).
+ */
+export function payloadDeclaresProject(payload: any): boolean {
+    return Boolean(payload?.projectId || payload?.projectPath || payload?.project);
 }
 
 /**
