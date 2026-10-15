@@ -291,4 +291,4 @@ export async function info(file: string): Promise<VisualResult> {
     }
 }
 
-export const visualService = { isAvailable, listCommands, execute, compose, convert, info };
+export const visualService = { isAvailable, listCommands, listFonts, execute, compose, convert, info };
