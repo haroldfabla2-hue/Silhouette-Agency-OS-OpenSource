@@ -71,6 +71,10 @@ export default function MediaStudio() {
     // VRAM STATUS
     const [vramStatus, setVramStatus] = useState<any>(null);
 
+    // Honest availability: this server has no GPU/ComfyUI, so visual generation
+    // must present itself as UNAVAILABLE instead of offering buttons that fail.
+    const [generationAvailable, setGenerationAvailable] = useState<boolean | null>(null);
+
     // [PREMIUM DISPLAY] Lightbox state for full-screen previews
     const [lightboxAsset, setLightboxAsset] = useState<ParsedAsset | null>(null);
 
@@ -87,6 +91,13 @@ export default function MediaStudio() {
         fetchVram();
         const interval = setInterval(fetchVram, 10000); // Every 10s
         return () => clearInterval(interval);
+    }, []);
+
+    // Measured GPU availability (real resources endpoint, no assumptions)
+    useEffect(() => {
+        api.get<any>('/v1/system/resources')
+            .then(res => setGenerationAvailable((res?.vramTotal || 0) > 0))
+            .catch(() => setGenerationAvailable(null));
     }, []);
 
     // --- POLLING EFFECT for active video jobs ---
@@ -367,6 +378,11 @@ export default function MediaStudio() {
 
     return (
         <div className="w-full h-full flex flex-col bg-slate-900 border-l border-slate-800">
+            {generationAvailable === false && (
+                <div className="bg-amber-900/40 border-b border-amber-700 text-amber-200 text-xs px-4 py-2 font-mono">
+                    GENERATION UNAVAILABLE: este servidor no tiene GPU ni ComfyUI medidos (vramTotal=0). La generación de imagen/video fallará con error explícito; voz (TTS), catálogo y búsqueda sí funcionan.
+                </div>
+            )}
 
             {/* HEADER */}
             <div className="p-4 border-b border-slate-800 flex justify-between items-center">

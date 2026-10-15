@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { systemBus } from '../services/systemBus';
+import { api } from '../utils/api';
 import { INFORMATIVE_PROTOCOLS } from '../constants';
 import { InteractiveTerminal } from './Terminal/InteractiveTerminal';
 import { Terminal, ScrollText } from 'lucide-react';
@@ -13,9 +14,27 @@ const MAX_LOGS = 200;
 const TerminalLog: React.FC<TerminalLogProps> = ({ logs: externalLogs = [] }) => {
   const endRef = useRef<HTMLDivElement>(null);
   const [internalLogs, setInternalLogs] = useState<string[]>([]);
+  const [serverLogs, setServerLogs] = useState<string[]>([]);
   const [mode, setMode] = useState<'LOGS' | 'SHELL'>('SHELL'); // Default to Shell for visibility of new feature
 
-  const allLogs = [...externalLogs, ...internalLogs].slice(-MAX_LOGS);
+  const allLogs = [...serverLogs, ...externalLogs, ...internalLogs].slice(-MAX_LOGS);
+
+  // Real server log tail (the actual server.log, not only bus events)
+  useEffect(() => {
+    if (mode !== 'LOGS') return;
+    let alive = true;
+    const pull = async () => {
+      try {
+        const res = await api.get('/v1/system/logs?lines=200') as any;
+        if (alive && res && Array.isArray(res.lines)) setServerLogs(res.lines);
+      } catch (e) {
+        // keep bus events only; the endpoint reports honestly when missing
+      }
+    };
+    pull();
+    const iv = setInterval(pull, 15000);
+    return () => { alive = false; clearInterval(iv); };
+  }, [mode]);
 
   useEffect(() => {
     const unsubscribers = INFORMATIVE_PROTOCOLS.map(protocol => {
