@@ -223,6 +223,25 @@ class BackgroundLLMService {
                 console.warn('[BACKGROUND_LLM] ZhipuAI failed:', error.message);
             }
 
+            // [Hotfix W6] Gemini fallback before Ollama: it is the only
+            // configured provider with live quota (DeepSeek/Zhipu keys are
+            // empty, Ollama is unprovisioned). Non-stream transport (the
+            // streaming quota is exhausted separately). PR to follow.
+            try {
+                const { generateGeminiTextPure } = await import('./geminiService');
+                // Per-transport model reality (W6): streaming quota and
+                // non-streaming quota drain independently. The background
+                // path is non-streaming, so it gets its own env-driven model.
+                const bgModel = process.env.GEMINI_BACKGROUND_MODEL?.trim() || 'gemini-3.5-flash';
+                const result = await generateGeminiTextPure(prompt, bgModel);
+                if (result) {
+                    console.log('[BACKGROUND_LLM] ✅ Gemini fallback responded');
+                    return result;
+                }
+            } catch (error: any) {
+                console.warn('[BACKGROUND_LLM] Gemini fallback failed:', error.message);
+            }
+
             // Fallback to Ollama
             if (await ollamaService.isAvailable()) {
                 console.log('[BACKGROUND_LLM] 🏠 Falling back to Ollama (local)');
