@@ -130,6 +130,17 @@ const server = app.listen(PORT, HOST, async () => {
     try {
         await import('../services/orchestrator');
         console.log('[ORCHESTRATOR] ✅ Agent Lifecycle Manager initialized');
+
+        // [Ticket W7] Wire the capability-awareness writer: it was imported
+        // (promptCompiler) but initialize() was never called, so its event
+        // subscriptions never existed and universal_knowledge had no writer.
+        try {
+            const { capabilityAwareness } = await import('../services/capabilityAwareness');
+            await capabilityAwareness.initialize();
+            console.log('[CAPABILITY_AWARENESS] ✅ Initialized');
+        } catch (caErr) {
+            console.error('[CAPABILITY_AWARENESS] Init failed (non-fatal):', caErr);
+        }
     } catch (error) {
         console.error('[ORCHESTRATOR] Failed to initialize orchestrator:', error);
     }
