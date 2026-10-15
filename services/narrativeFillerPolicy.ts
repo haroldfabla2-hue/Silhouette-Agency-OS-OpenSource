@@ -18,6 +18,16 @@
  *   SILHOUETTE_NARRATIVE_FILLER=on    — legacy behavior (regex fallback).
  *   SILHOUETTE_NARRATIVE_MIN_IMPORTANCE — LLM narration threshold
  *                                     (default 0.7; legacy queued >= 0.3).
+ *   SILHOUETTE_NARRATIVE_MEMORY_FLOOR — record-to-memory floor (default 0.3).
+ *                                     [W5b] Presentation and record are
+ *                                     separate decisions: a thought at/above
+ *                                     this floor is ALWAYS persisted to
+ *                                     continuum (raw, quota-free) even when
+ *                                     its narration is dropped; only noise
+ *                                     below the floor (heartbeats) is dropped
+ *                                     entirely. Alberto's narrator vision:
+ *                                     interpretation -> memory always; aloud
+ *                                     almost never.
  */
 export function fillerEnabled(): boolean {
     return (process.env.SILHOUETTE_NARRATIVE_FILLER || 'off').toLowerCase() === 'on';
@@ -27,6 +37,17 @@ export function minLlmImportance(): number {
     const n = Number(process.env.SILHOUETTE_NARRATIVE_MIN_IMPORTANCE);
     if (!Number.isFinite(n) || n <= 0 || n > 1) return 0.7;
     return n;
+}
+
+export function memoryFloor(): number {
+    const n = Number(process.env.SILHOUETTE_NARRATIVE_MEMORY_FLOOR);
+    if (!Number.isFinite(n) || n <= 0 || n > 1) return 0.3;
+    return n;
+}
+
+/** Record-to-memory decision, independent of presentation routing. */
+export function shouldRecord(importance: number): boolean {
+    return importance >= memoryFloor();
 }
 
 export type NarrativeRoute = 'DROP' | 'LLM' | 'REGEX';

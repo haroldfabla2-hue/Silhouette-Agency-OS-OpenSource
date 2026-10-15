@@ -552,9 +552,22 @@ class NarrativeService {
         // for importance >= SILHOUETTE_NARRATIVE_MIN_IMPORTANCE (0.7).
         // Dropped thoughts remain in memory — narration is presentation,
         // not record. No fabricated first-person prose, no quota burn.
-        const { routeThought } = await import('./narrativeFillerPolicy');
+        const { routeThought, shouldRecord } = await import('./narrativeFillerPolicy');
         const route = routeThought(importance);
         if (route === 'DROP') {
+            // [W5b] Presentation may be dropped; the record is not. Thoughts
+            // at/above the memory floor persist RAW (no LLM call, no
+            // fabricated voice): interpretation -> memory always, narration
+            // aloud almost never. Only sub-floor noise (heartbeats) is
+            // dropped entirely. Persisted raw content keeps its real source
+            // and importance tags; narrated copies (route != DROP) keep
+            // flowing through emitNarrativeUpdate as before.
+            if (shouldRecord(importance)) {
+                const eventId = crypto.randomUUID();
+                this.persistNarrativeEvent(eventId, source, content, importance, metadata).catch(e =>
+                    console.error("[NARRATIVE] Raw persistence failed:", e)
+                );
+            }
             return; // honest silence
         }
         if (route === 'REGEX') {
