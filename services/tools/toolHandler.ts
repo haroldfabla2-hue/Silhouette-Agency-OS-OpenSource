@@ -99,11 +99,11 @@ export class ToolHandler {
 
             // ==================== FILESYSTEM TOOLS ====================
             case 'read_file':
-                return await this.handleReadFile(args as import('./definitions').ReadFileArgs);
+                return await this.handleReadFile(args as import('./definitions').ReadFileArgs, caller);
             case 'write_file':
-                return await this.handleWriteFile(args as import('./definitions').WriteFileArgs);
+                return await this.handleWriteFile(args as import('./definitions').WriteFileArgs, caller);
             case 'list_files':
-                return await this.handleListFiles(args as import('./definitions').ListFilesArgs);
+                return await this.handleListFiles(args as import('./definitions').ListFilesArgs, caller);
 
             // ==================== WORKSPACE TOOLS ====================
             case 'workspace_create':
@@ -1046,42 +1046,74 @@ export class ToolHandler {
 
     // ==================== FILESYSTEM HANDLERS ====================
 
-    private async handleReadFile(args: import('./definitions').ReadFileArgs): Promise<any> {
+    // [W2] All filesystem tools flow through ./fileJail: allowlisted roots
+    // (env-driven), symlink-safe resolution, secret-name denylist, size cap,
+    // and an append-only audit journal (allowed AND denied decisions).
+    // Fail-closed: what the jail cannot resolve is denied with the reason.
+
+    private async handleReadFile(args: import('./definitions').ReadFileArgs, caller?: ToolCaller): Promise<any> {
+        const { resolveRead, auditFs, jailDenied } = await import('./fileJail');
+        const decision = resolveRead(args.path);
+        if (jailDenied(decision)) {
+            await auditFs({ op: 'read', requestedPath: String(args.path), decision: 'denied', reason: decision.reason, actor: caller?.requesterId, actorRole: caller?.requesterRole });
+            return { error: `JAIL_DENIED: ${decision.reason}` };
+        }
+        await auditFs({ op: 'read', requestedPath: String(args.path), decision: 'allowed', resolvedPath: decision.resolved, root: decision.root, actor: caller?.requesterId, actorRole: caller?.requesterRole });
         try {
             const fs = await import('fs/promises');
-            const content = await fs.readFile(args.path, 'utf-8');
-            return { content, path: args.path };
+            const content = await fs.readFile(decision.resolved, 'utf-8');
+            return { content, path: decision.resolved };
         } catch (e: any) {
             return { error: `Failed to read file: ${e.message}` };
         }
     }
 
-    private async handleWriteFile(args: import('./definitions').WriteFileArgs): Promise<any> {
+    private async handleWriteFile(args: import('./definitions').WriteFileArgs, caller?: ToolCaller): Promise<any> {
+        const { resolveWrite, maxWriteBytes, auditFs, sha256Of, jailDenied } = await import('./fileJail');
+        const content = args.content ?? '';
+        const bytes = Buffer.byteLength(content, 'utf-8');
+        const cap = maxWriteBytes();
+        if (bytes > cap) {
+            await auditFs({ op: 'write', requestedPath: String(args.path), decision: 'denied', reason: `content ${bytes} bytes exceeds cap ${cap}`, bytes, actor: caller?.requesterId, actorRole: caller?.requesterRole });
+            return { error: `JAIL_DENIED: content is ${bytes} bytes, cap is ${cap} (SILHOUETTE_FS_MAX_WRITE_BYTES)` };
+        }
+        const decision = resolveWrite(args.path);
+        if (jailDenied(decision)) {
+            await auditFs({ op: 'write', requestedPath: String(args.path), decision: 'denied', reason: decision.reason, bytes, actor: caller?.requesterId, actorRole: caller?.requesterRole });
+            return { error: `JAIL_DENIED: ${decision.reason}` };
+        }
         try {
             const fs = await import('fs/promises');
             const pathModule = await import('path');
 
-            // Create parent dirs if needed
+            // Create parent dirs if needed (still inside the resolved jail path)
             if (args.create_dirs !== false) {
-                const dir = pathModule.dirname(args.path);
+                const dir = pathModule.dirname(decision.resolved);
                 await fs.mkdir(dir, { recursive: true });
             }
 
-            await fs.writeFile(args.path, args.content, 'utf-8');
-            return { status: 'success', path: args.path, bytesWritten: args.content.length };
+            await fs.writeFile(decision.resolved, content, 'utf-8');
+            await auditFs({ op: 'write', requestedPath: String(args.path), decision: 'allowed', resolvedPath: decision.resolved, root: decision.root, bytes, sha256: sha256Of(content), actor: caller?.requesterId, actorRole: caller?.requesterRole });
+            return { status: 'success', path: decision.resolved, bytesWritten: bytes };
         } catch (e: any) {
             return { error: `Failed to write file: ${e.message}` };
         }
     }
 
-    private async handleListFiles(args: import('./definitions').ListFilesArgs): Promise<any> {
+    private async handleListFiles(args: import('./definitions').ListFilesArgs, caller?: ToolCaller): Promise<any> {
+        const { resolveRead, auditFs, jailDenied } = await import('./fileJail');
+        const decision = resolveRead(args.directory);
+        if (jailDenied(decision)) {
+            await auditFs({ op: 'list', requestedPath: String(args.directory), decision: 'denied', reason: decision.reason, actor: caller?.requesterId, actorRole: caller?.requesterRole });
+            return { error: `JAIL_DENIED: ${decision.reason}` };
+        }
+        await auditFs({ op: 'list', requestedPath: String(args.directory), decision: 'allowed', resolvedPath: decision.resolved, root: decision.root, actor: caller?.requesterId, actorRole: caller?.requesterRole });
         try {
             const fs = await import('fs/promises');
-            const files = await fs.readdir(args.directory, { recursive: args.recursive || false });
-            // Simple mapping - in real app might need stats
+            const files = await fs.readdir(decision.resolved, { recursive: args.recursive || false });
             return {
                 status: 'success',
-                path: args.directory,
+                path: decision.resolved,
                 files: files.slice(0, 100)
             };
         } catch (e: any) {
