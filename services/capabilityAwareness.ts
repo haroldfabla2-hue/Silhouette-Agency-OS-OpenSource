@@ -309,24 +309,24 @@ class CapabilityAwarenessService {
         };
 
         try {
-            // Store in LanceDB using storeKnowledge
-            await lancedbService.storeKnowledge({
-                id: 'capability_snapshot',
-                content: JSON.stringify(snapshot),
-                category: 'system_state',
-                source: 'capabilityAwareness',
-                vector: [] // Empty vector - will be filled by service
-            });
+            // [Ticket W7] Snapshot persistence moved to the sqlite KV.
+            // universal_knowledge is a semantic store whose writes must carry
+            // real embeddings; an operational snapshot with vector: [] was
+            // latent schema poison. sqlite config is the honest home for
+            // operational state (same KV the orchestrator uses), $0.
+            const { sqliteService } = await import('./sqliteService');
+            sqliteService.setConfig('capabilitySnapshot', snapshot);
         } catch (err) {
-            // LanceDB might not be initialized - that's okay
-            console.warn('[CapabilityAwareness] Could not persist to LanceDB:', err);
+            console.error('[CapabilityAwareness] Could not persist snapshot:', err);
         }
     }
 
     private async loadPersistedSnapshot(): Promise<void> {
         try {
-            // Try to load from content search
-            const results = await lancedbService.searchByContent('capability_snapshot', 1);
+            // [Ticket W7] Read back from the sqlite KV (see persistSnapshot).
+            const { sqliteService } = await import('./sqliteService');
+            const persisted = sqliteService.getConfig('capabilitySnapshot');
+            const results = persisted ? [{ content: JSON.stringify(persisted) }] : [];
             if (results.length > 0 && results[0].content) {
                 try {
                     const snapshot: CapabilitySnapshot = JSON.parse(results[0].content);

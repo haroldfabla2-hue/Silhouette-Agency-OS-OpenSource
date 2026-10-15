@@ -12,6 +12,7 @@ const DB_DIR = path.dirname(DB_PATH);
 const DEFAULT_DIMENSIONS = 768; // Hardcoded default to match the original schema
 
 import { validEmbedding, scopeSql, inScope, type EmbeddingIdentity, type MemoryScope } from './memoryRetrieval';
+import { Schema, Field, FixedSizeList, Float32, Utf8, Float64 } from 'apache-arrow';
 
 function adjustVectorDimension(vector: number[], targetDim: number = DEFAULT_DIMENSIONS): number[] {
     if (!validEmbedding(vector, { model: 'knowledge', version: '1', dimension: targetDim })) {
@@ -22,6 +23,27 @@ function adjustVectorDimension(vector: number[], targetDim: number = DEFAULT_DIM
 
 if (!fs.existsSync(DB_DIR)) {
     fs.mkdirSync(DB_DIR, { recursive: true });
+}
+
+/**
+ * [Ticket W7] universal_knowledge table — canonical vector dimension.
+ * LEGACY_EMBEDDING.dimension is 768 (memoryRetrieval.ts); every knowledge
+ * write must carry a valid embedding of this size. The table is created
+ * EMPTY with an explicit Arrow schema (never inferred from a first record —
+ * the old lazy path would have let an empty vector poison the schema).
+ */
+export const KNOWLEDGE_VECTOR_DIM = 768;
+
+function knowledgeSchema(): Schema {
+    return new Schema([
+        new Field('id', new Utf8()),
+        new Field('content', new Utf8()),
+        new Field('category', new Utf8(), true),
+        new Field('source', new Utf8(), true),
+        new Field('path', new Utf8(), true),
+        new Field('timestamp', new Float64(), true),
+        new Field('vector', new FixedSizeList(KNOWLEDGE_VECTOR_DIM, new Field('item', new Float32()))),
+    ]);
 }
 
 export class LanceDbService {
@@ -39,6 +61,37 @@ export class LanceDbService {
     }
 
     /** Explicit initialization (called from dbLoader at startup) */
+    private knowledgeTableEnsured = false;
+
+    /**
+     * [Ticket W7] Create universal_knowledge EMPTY with an explicit schema,
+     * once, with an explicit log line. Root cause of the months-long "table
+     * not ready": the only production writer was never wired (dead init) and
+     * the lazy create-from-first-record path would have poisoned the schema
+     * with an empty vector. Explicit and logged per Alberto's rule; creates
+     * nothing if the table already exists.
+     */
+    public async ensureKnowledgeTable(): Promise<void> {
+        if (this.knowledgeTableEnsured) return;
+        if (!this.db) await this.init();
+        if (!this.db) {
+            console.error('[LANCEDB] ensureKnowledgeTable: db unavailable — table NOT created (explicit, no silent skip)');
+            return;
+        }
+        try {
+            const names = await this.db.tableNames();
+            if (names.includes('universal_knowledge')) {
+                this.knowledgeTable = await this.db.openTable('universal_knowledge');
+            } else {
+                this.knowledgeTable = await this.db.createEmptyTable('universal_knowledge', knowledgeSchema());
+                console.log(`[LANCEDB] Created EMPTY 'universal_knowledge' table with explicit schema (vector dim ${KNOWLEDGE_VECTOR_DIM}).`);
+            }
+            this.knowledgeTableEnsured = true;
+        } catch (e) {
+            console.error('[LANCEDB] ensureKnowledgeTable failed:', e);
+        }
+    }
+
     public async ensureInitialized(): Promise<void> {
         if (this.initialized) return;
         await this.init();
@@ -292,7 +345,20 @@ export class LanceDbService {
 
     public async storeKnowledge(item: any): Promise<void> {
         if (!this.db) await this.init();
-        if (!this.db) return;
+        if (!this.db) {
+            console.error(`[LANCEDB] storeKnowledge REFUSED (db unavailable) for item ${item?.id ?? '?'} — explicit, not silent`);
+            return;
+        }
+        // [Ticket W7] Every knowledge write MUST carry a valid embedding.
+        // An empty/invalid vector was the latent schema poison: the first
+        // record defines nothing now (explicit schema), but an invalid vector
+        // would still violate the FixedSizeList(768) column on insert.
+        const vec = item?.vector;
+        if (!Array.isArray(vec) || vec.length !== KNOWLEDGE_VECTOR_DIM || !vec.every((n: any) => Number.isFinite(n))) {
+            console.error(`[LANCEDB] storeKnowledge REFUSED for item ${item?.id ?? '?'}: vector must be ${KNOWLEDGE_VECTOR_DIM} finite numbers (got ${Array.isArray(vec) ? vec.length : 'non-array'})`);
+            return;
+        }
+        await this.ensureKnowledgeTable();
 
         try {
             if (!this.knowledgeTable) {
