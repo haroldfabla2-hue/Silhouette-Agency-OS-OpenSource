@@ -19,7 +19,10 @@ import { congestionManager } from './congestionManager';
 import { orchestrator } from './orchestrator';
 import { geminiService } from './geminiService';
 import { systemBus } from './systemBus';
-import { SystemProtocol, CommunicationLevel, AgentStatus, AgentRoleType, AgentTier } from '../types';
+import { SystemProtocol, CommunicationLevel, AgentStatus, AgentRoleType, AgentTier, AgentCapability } from '../types';
+import { stepDeclaresFileWork } from './tools/toolSelection'; // [W3]
+import { evaluatePlanHonesty } from './execution/stepHonesty'; // [W3]
+import { collectWrittenArtifacts } from './execution/artifactLedger'; // [W3]
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -33,11 +36,15 @@ export interface StepResult {
     tokensUsed: number;
     executionTimeMs: number;
     error?: string;
+    /** [W3] Verified files this step wrote through the fs jail. */
+    artifacts?: string[];
 }
 
 export interface PlanExecutionResult {
     planId: string;
     success: boolean;
+    /** [W3] Verified files written through the fs jail during this plan. */
+    artifactsProduced?: string[];
     steps: StepResult[];
     finalOutput: string;
     totalTokens: number;
@@ -107,6 +114,19 @@ class PlanExecutor {
             }
         }
 
+        // ═══════════════════════════════════════════════════════════════
+        // [W3] ANTI-THEATER GATE: a plan that declared file-producing work
+        // but recorded ZERO verified writes is an honest FAILURE, never a
+        // simulated COMPLETE.
+        // ═══════════════════════════════════════════════════════════════
+        const allArtifacts = Array.from(results.values()).flatMap(r => r.artifacts ?? []);
+        const declaredFileWork = plan.steps.some(s => stepDeclaresFileWork(s));
+        const verdict = evaluatePlanHonesty(declaredFileWork, allArtifacts.length);
+        if (!verdict.pass) {
+            errors.push(verdict.error!);
+            console.error(`[PLAN_EXECUTOR] 🎭🚫 ${verdict.error}`);
+        }
+
         // Compile final output from all successful steps
         const successfulResults = Array.from(results.values())
             .filter(r => r.success)
@@ -128,6 +148,7 @@ class PlanExecutor {
         const executionResult: PlanExecutionResult = {
             planId: plan.id,
             success: errors.length === 0,
+            artifactsProduced: allArtifacts,
             steps: Array.from(results.values()),
             finalOutput,
             totalTokens,
@@ -224,6 +245,18 @@ class PlanExecutor {
         congestionManager.updateQueueSize(1); // Increment queue
 
         try {
+            // [W3] Real capabilities for the step: agent record + declared
+            // step requirements; file-declaring work receives the minimal
+            // JAILED fs tools. The executor grants — the jail confines.
+            const agentCaps = orchestrator.getAgent(step.agentId)?.capabilities ?? [];
+            const effectiveCapabilities: AgentCapability[] = Array.from(new Set([
+                ...agentCaps,
+                ...step.requiredCapabilities,
+                ...(stepDeclaresFileWork(step)
+                    ? [AgentCapability.ACTION_FILE_READ, AgentCapability.ACTION_FILE_WRITE]
+                    : [])
+            ]));
+
             const response = await geminiService.generateAgentResponse(
                 step.agentRole,
                 'PlanExecutor',
@@ -232,9 +265,9 @@ class PlanExecutor {
                 previousOutputs.join('\n\n'),
                 undefined,
                 undefined,
-                { useWebSearch: false },
+                { useWebSearch: false, toolCaller: { requesterId: step.agentId, requesterRole: step.agentRole } },
                 {},
-                [],
+                effectiveCapabilities,
                 CommunicationLevel.TECHNICAL
             );
 
@@ -300,13 +333,24 @@ class PlanExecutor {
                 }
             }
 
+            // [W3] Verified artifacts written by this step's identities
+            // (native tool loop + [TOOL:] text path + fallback).
+            const stepActors = new Set([
+                step.agentId,
+                step.agentRole,
+                `plan_step_${step.order}`,
+                `plan_step_${step.order}_fallback`
+            ]);
+            const stepArtifacts = await collectWrittenArtifacts(stepActors, stepStart - 1000);
+
             return {
                 stepOrder: step.order,
                 agentId: step.agentId,
                 output: finalOutput,
                 success: true,
                 tokensUsed: response.usage || 0,
-                executionTimeMs: Date.now() - stepStart
+                executionTimeMs: Date.now() - stepStart,
+                artifacts: stepArtifacts.map(a => a.path)
             };
 
         } catch (e: any) {

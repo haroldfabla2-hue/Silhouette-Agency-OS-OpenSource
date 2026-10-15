@@ -360,6 +360,16 @@ export const generateAgentResponse = async (
         `;
         }
 
+        // [DCR][W3] Check Capability: CONFINED FILESYSTEM
+        {
+            const { fsToolsForCapabilities, FS_JAIL_INSTRUCTION } = await import('./tools/toolSelection');
+            const fsBundles = fsToolsForCapabilities(agentCapabilities);
+            if (fsBundles.length > 0) {
+                tools.push(...fsBundles);
+                systemInstruction += FS_JAIL_INSTRUCTION;
+            }
+        }
+
         // [DCR] Check Capability: IMAGE GENERATION
         if (agentCapabilities.includes(AgentCapability.TOOL_IMAGE_GENERATION)) {
             // Note: Native Imagen is not yet exposed via this API in all regions, so we use a Protocol Instruction for now.
