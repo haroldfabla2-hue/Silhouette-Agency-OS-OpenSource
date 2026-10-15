@@ -6,7 +6,8 @@ import { GenesisCore } from './GenesisCore';
 import { PowerSelector } from './PowerSelector';
 import { CostSimulator } from './CostSimulator';
 import { ContextBudgetPanel } from './ContextBudgetPanel'; // [PA-041]
-import { api, API_BASE_URL } from '../utils/api';
+import { api } from '../utils/api';
+import { connectSSE } from '../utils/sseClient';
 // CostMetrics imported from types now
 
 // NOTE: Backend services are accessed via API to prevent build errors.
@@ -71,25 +72,23 @@ const SystemControl: React.FC<SystemControlProps> = ({ metrics, setMode, autonom
                 .catch(() => setIsConnected(false));
         }, 5000);
 
-        // SSE Connection for Real-time Logs
-        const eventSource = new EventSource(`${API_BASE_URL}/v1/factory/stream`);
-        eventSource.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                if (data.type === 'LOG') {
-                    setGenesisLogs(prev => [...prev, data.message].slice(-500));
+        // SSE Connection for Real-time Logs (fetch-based: Bearer/session auth, auto-reconnect)
+        const connection = connectSSE('/v1/factory/stream', {
+            onMessage: ({ data }) => {
+                try {
+                    const parsed = JSON.parse(data);
+                    if (parsed.type === 'LOG') {
+                        setGenesisLogs(prev => [...prev, parsed.message].slice(-500));
+                    }
+                } catch (e) {
+                    console.error("[SystemControl] SSE parse error:", e);
                 }
-            } catch (e) {
-                console.error("[SystemControl] SSE parse error:", e);
-            }
-        };
-        eventSource.onerror = () => {
-            // EventSource auto-reconnects by default
-        };
+            },
+        });
 
         return () => {
             clearInterval(interval);
-            eventSource.close();
+            connection.close();
         };
     }, []);
 

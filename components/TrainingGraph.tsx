@@ -2,10 +2,10 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import ForceGraph3D from 'react-force-graph-3d';
 import { Maximize2, RefreshCw, Minimize2, MousePointer2, Move, ZoomIn, ZoomOut, Brain, Terminal } from 'lucide-react';
-import { api, API_BASE_URL } from '../utils/api';
+import { api } from '../utils/api';
+import { connectSSE } from '../utils/sseClient';
 import * as THREE from 'three';
 import { TrainingExample } from '../types';
-import { DEFAULT_API_CONFIG } from '../constants';
 
 // --- STRICT TYPES ---
 interface GraphNode {
@@ -239,26 +239,29 @@ const TrainingGraph: React.FC = () => {
         setTrainingLogs([]);
         setIsTraining(true);
 
-        const eventSource = new EventSource(`${API_BASE_URL}/v1/training/sleep?apiKey=${DEFAULT_API_CONFIG.apiKey}`);
-
-        eventSource.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            if (data.type === 'done') {
+        const connection = connectSSE('/v1/training/sleep', {
+            onMessage: ({ data }) => {
+                try {
+                    const parsed = JSON.parse(data);
+                    if (parsed.type === 'done') {
+                        setIsTraining(false);
+                        connection.close();
+                        setTrainingLogs(prev => [...(prev || []), { type: 'success', message: '✨ TRAINING CYCLE COMPLETE. MODEL UPDATED.' }]);
+                        fetchGraph(); // Refresh graph to maybe show learned nodes? (or clear them as "consolidated")
+                    } else {
+                        setTrainingLogs(prev => [...(prev || []), parsed]);
+                    }
+                } catch {
+                    // Ignore heartbeat/keepalive frames
+                }
+            },
+            onError: (err) => {
+                console.error("Training Stream Error", err);
                 setIsTraining(false);
-                eventSource.close();
-                setTrainingLogs(prev => [...(prev || []), { type: 'success', message: '✨ TRAINING CYCLE COMPLETE. MODEL UPDATED.' }]);
-                fetchGraph(); // Refresh graph to maybe show learned nodes? (or clear them as "consolidated")
-            } else {
-                setTrainingLogs(prev => [...(prev || []), data]);
-            }
-        };
-
-        eventSource.onerror = (err) => {
-            console.error("Training Stream Error", err);
-            setIsTraining(false);
-            eventSource.close();
-            setTrainingLogs(prev => [...(prev || []), { type: 'error', message: 'CRITICAL: CONNECTION LOST' }]);
-        };
+                connection.close();
+                setTrainingLogs(prev => [...(prev || []), { type: 'error', message: 'CRITICAL: CONNECTION LOST' }]);
+            },
+        }, { reconnect: false });
 
     }, []);
 
