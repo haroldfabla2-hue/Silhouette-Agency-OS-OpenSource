@@ -53,10 +53,10 @@ export const VisualEditorStage: React.FC = () => {
             </div>
 
             {/* Workspace bridge toolbar */}
-            <div className="flex items-center gap-2 p-2 bg-slate-900 border border-slate-800 rounded-lg">
+            <div className="flex flex-wrap items-center gap-2 p-2 bg-slate-900 border border-slate-800 rounded-lg">
                 <FolderOpen size={14} className="text-cyan-400 shrink-0" />
                 <select value={selected} onChange={e => setSelected(e.target.value)}
-                    className="flex-1 min-w-0 bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-white">
+                    className="flex-1 min-w-[160px] bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-white">
                     <option value="">— archivo del workspace —</option>
                     {files.map(f => (
                         <option key={f.path} value={f.path}>{f.name} ({(f.size / 1024).toFixed(0)} KB)</option>
@@ -76,6 +76,10 @@ export const VisualEditorStage: React.FC = () => {
             </div>
 
             {status && <div className="text-[11px] font-mono text-slate-300 px-1">{status}</div>}
+
+            <div className="md:hidden text-[11px] text-amber-300/80 px-1">
+                El editor PhotoCraft es de escritorio (su interfaz es un lienzo WASM fijo). En pantalla pequena gira el telefono o usa COMPOSE para piezas rapidas.
+            </div>
 
             <iframe
                 ref={iframeRef}
