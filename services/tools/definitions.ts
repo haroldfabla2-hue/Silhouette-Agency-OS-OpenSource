@@ -1494,6 +1494,51 @@ export const LIST_FILES_TOOL: FunctionDeclaration = {
     }
 };
 
+export interface ReaAnalyzeArgs {
+    command: string;
+    target?: string;
+    args?: string[];
+    filter?: string;
+    entitlement: string;
+    purpose?: string;
+}
+
+export const REA_ANALYZE_TOOL: FunctionDeclaration = {
+    name: "rea_analyze",
+    description: "Bounded reverse-engineering analysis via the REA CLI. Daylight: JavaScript/Electron/web static analysis only; native/binary commands run only in the overnight window. Output is always JSON with a token cap - use filter for key-path subsets, NEVER request or paste raw output. entitlement is REQUIRED: why we may analyze this target (own build, open source, user-owned software, public web surface). HARD RULES: never copy decompiled code (understand, then rewrite from scratch); never analyze or bypass DRM/license/activation protections; cite evidence ids; absent facts are NOT proof of absence.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            command: {
+                type: Type.STRING,
+                description: "REA subcommand, e.g. analyze-javascript-application, analyze-web-bundle, compare, trace-javascript-semantics."
+            },
+            target: {
+                type: Type.STRING,
+                description: "Path or URL of the analysis target."
+            },
+            args: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: "Extra CLI arguments (passed through positionally, no shell)."
+            },
+            filter: {
+                type: Type.STRING,
+                description: "REA --filter-output key paths (e.g. 'modules,endpoints') to bound the output."
+            },
+            entitlement: {
+                type: Type.STRING,
+                description: "REQUIRED. Why we are entitled to analyze this target."
+            },
+            purpose: {
+                type: Type.STRING,
+                description: "What behavioral spec this analysis should produce."
+            }
+        },
+        required: ["command", "entitlement"]
+    }
+};
+
 // ==================== WORKSPACE TOOLS ====================
 
 export interface WorkspaceCreateArgs {
@@ -1623,6 +1668,7 @@ export const WORKSPACE_SEARCH_TOOL: FunctionDeclaration = {
 // ==================== COMPLETE TOOLS EXPORT ====================
 
 export const DEVELOPMENT_TOOLS = [
+    REA_ANALYZE_TOOL, // [REA Fase 2] bounded analysis; capability-gated attach
     // Filesystem
     READ_FILE_TOOL,
     WRITE_FILE_TOOL,
@@ -1854,48 +1900,3 @@ export const AGENT_TOOLS_EXPANDED = [
     CREATE_PLUGIN_TOOL,
     REQUEST_COLLABORATION_TOOL
 ];
-
-export interface ReaAnalyzeArgs {
-    command: string;
-    target?: string;
-    args?: string[];
-    filter?: string;
-    entitlement: string;
-    purpose?: string;
-}
-
-export const REA_ANALYZE_TOOL: FunctionDeclaration = {
-    name: "rea_analyze",
-    description: "Bounded reverse-engineering analysis via the REA CLI. Daylight: JavaScript/Electron/web static analysis only; native/binary commands run only in the overnight window. Output is always JSON with a token cap - use filter for key-path subsets, NEVER request or paste raw output. entitlement is REQUIRED: why we may analyze this target (own build, open source, user-owned software, public web surface). HARD RULES: never copy decompiled code (understand, then rewrite from scratch); never analyze or bypass DRM/license/activation protections; cite evidence ids; absent facts are NOT proof of absence.",
-    parameters: {
-        type: Type.OBJECT,
-        properties: {
-            command: {
-                type: Type.STRING,
-                description: "REA subcommand, e.g. analyze-javascript-application, analyze-web-bundle, compare, trace-javascript-semantics."
-            },
-            target: {
-                type: Type.STRING,
-                description: "Path or URL of the analysis target."
-            },
-            args: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING },
-                description: "Extra CLI arguments (passed through positionally, no shell)."
-            },
-            filter: {
-                type: Type.STRING,
-                description: "REA --filter-output key paths (e.g. 'modules,endpoints') to bound the output."
-            },
-            entitlement: {
-                type: Type.STRING,
-                description: "REQUIRED. Why we are entitled to analyze this target."
-            },
-            purpose: {
-                type: Type.STRING,
-                description: "What behavioral spec this analysis should produce."
-            }
-        },
-        required: ["command", "entitlement"]
-    }
-};
