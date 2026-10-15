@@ -547,8 +547,18 @@ class NarrativeService {
             this.lastDedupeCleanup = Date.now();
         }
 
-        if (importance < 0.3) {
-            // VERY LOW IMPORTANCE (heartbeats only): Use regex immediately
+        // [W5] Filler policy (SILHOUETTE_NARRATIVE_FILLER, default OFF):
+        // system noise is never regex-narrated, and LLM narration is reserved
+        // for importance >= SILHOUETTE_NARRATIVE_MIN_IMPORTANCE (0.7).
+        // Dropped thoughts remain in memory — narration is presentation,
+        // not record. No fabricated first-person prose, no quota burn.
+        const { routeThought } = await import('./narrativeFillerPolicy');
+        const route = routeThought(importance);
+        if (route === 'DROP') {
+            return; // honest silence
+        }
+        if (route === 'REGEX') {
+            // Legacy path (filler explicitly enabled): low importance regex
             await this.emitNarrativeUpdate(source, content, importance, metadata, false, 'REGEX');
         } else {
             // HIGH IMPORTANCE: Queue for LLM batch
@@ -712,7 +722,14 @@ Respuesta JSON:`;
         }
 
         // 4. FINAL FALLBACK TO REGEX
+        // [W5] With filler disabled (default), a failed provider round means
+        // HONEST SILENCE: drop the batch instead of fabricating a voice.
         if (!response) {
+            const { fillerEnabled } = await import('./narrativeFillerPolicy');
+            if (!fillerEnabled()) {
+                console.log("[NARRATIVE] 🤫 Providers unavailable + filler disabled — dropping batch (no fabricated narration)");
+                return;
+            }
             console.log("[NARRATIVE] 📝 Using regex patterns (all providers unavailable)");
             for (const item of batch) {
                 await this.emitNarrativeUpdate(item.source as any, item.content, item.importance, item.metadata, false, 'REGEX');
