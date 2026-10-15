@@ -8,7 +8,7 @@
  * produce prose. This module owns the mapping, pure and unit-tested.
  */
 import { AgentCapability } from '../../types';
-import { READ_FILE_TOOL, WRITE_FILE_TOOL, LIST_FILES_TOOL } from '../tools/definitions';
+import { READ_FILE_TOOL, WRITE_FILE_TOOL, LIST_FILES_TOOL, REA_ANALYZE_TOOL } from '../tools/definitions';
 
 /**
  * Filesystem tool bundles (Gemini functionDeclarations format) for the given
@@ -62,4 +62,36 @@ export const FS_JAIL_INSTRUCTION = `
         CAPABILITY: CONFINED_FILESYSTEM
         You have write_file / read_file / list_files tools. They are CONFINED to the project workspace jail: paths outside the allowed roots, secret files (.env, keys, databases, .git) and oversize content are DENIED and audited.
         RULES: (1) Write REAL files for every artifact you claim to produce. (2) After writing, state exactly what the tool returned. (3) If a write is denied, report the denial reason verbatim. (4) NEVER claim a file exists when the tool did not confirm it — simulated completion is a critical failure.
+        `;
+
+/**
+ * [REA Fase 2] Reverse-engineering tool bundle, attached only when the
+ * capability is present. The wrapper (./reaTool) enforces the legal and
+ * operational protocol; this is only the attachment.
+ */
+export function reaToolsForCapabilities(caps: AgentCapability[]): Array<{ functionDeclarations: unknown[] }> {
+    return caps.includes(AgentCapability.REVERSE_ENGINEERING) ? [{ functionDeclarations: [REA_ANALYZE_TOOL] }] : [];
+}
+
+/** Work-description heuristic: does this step declare reverse-engineering work? */
+export const RE_WORK_PATTERN = /(reverse.?engineer|ingenier[i\u00eda]a inversa|decompil|descompil|ghidra|\brea\b|binary analys|an[a\u00e1]lisis de binarios?)/i;
+
+export function stepDeclaresReWork(step: { taskDescription?: string; requiredCapabilities?: AgentCapability[] }): boolean {
+    if (step.requiredCapabilities?.includes(AgentCapability.REVERSE_ENGINEERING)) return true;
+    return RE_WORK_PATTERN.test(step.taskDescription || '');
+}
+
+/** [Grant] Durable REA capability grant, same bookkeeping bar as durableFileGrant. */
+export function durableReaGrant(caps: AgentCapability[], declaresReWork: boolean): AgentCapability[] | null {
+    if (!declaresReWork) return null;
+    if (caps.includes(AgentCapability.REVERSE_ENGINEERING)) return null;
+    return Array.from(new Set([...caps, AgentCapability.REVERSE_ENGINEERING]));
+}
+
+/** System-instruction block appended when the bounded REA tool attaches. */
+export const REA_INSTRUCTION = `
+        PROTOCOL: REVERSE_ENGINEER
+        CAPABILITY: BOUNDED_REA_CLI
+        You have the rea_analyze tool (bounded REA CLI). Output is JSON with a hard token cap; use filter for key-path subsets and cite evidence ids - NEVER paste raw output.
+        HARD RULES: (1) NEVER copy decompiled/extracted code: understand the behavior, write a fresh spec in your own words, implement from scratch. (2) NEVER analyze or bypass DRM, license checks, activation, or any access/copy protection - if the target is protected, STOP and report the block. (3) entitlement is required on every call and is audited. (4) Absent facts are NOT proof of absence - repeat that caveat in your reports. (5) Native/binary analysis runs only in the overnight window; by day use the JavaScript/web commands.
         `;

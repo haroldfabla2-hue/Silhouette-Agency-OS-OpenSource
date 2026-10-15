@@ -208,6 +208,12 @@ Write or modify source code.
             [AgentCapability.TOOL_VIDEO_GENERATION]: '',
             [AgentCapability.TOOL_ASSET_LISTING]: '',
             [AgentCapability.ACTION_FILE_READ]: '',
+            [AgentCapability.REVERSE_ENGINEERING]: `
+### rea_analyze
+Bounded reverse-engineering analysis (REA CLI).
+- **When to use**: understanding external software behavior to rewrite a feature from scratch.
+- **Rules**: daylight = JavaScript/web static analysis only; native/binary analysis overnight window only; entitlement required and audited; cite evidence ids; never copy decompiled code; never touch DRM/protections.
+            `.trim(),
             [AgentCapability.ACTION_FILE_WRITE]: '',
             [AgentCapability.ACTION_SHELL_EXEC]: '',
             [AgentCapability.DATA_ANALYSIS]: '',
