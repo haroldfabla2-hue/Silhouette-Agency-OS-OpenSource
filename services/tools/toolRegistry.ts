@@ -333,7 +333,7 @@ class ToolRegistry {
             {
                 id: 'tool_read_file',
                 name: 'read_file',
-                description: 'Read the contents of a file from the filesystem. Use to examine code, documents, or data files.',
+                description: 'Read a file inside the jailed read roots (SILHOUETTE_FS_READ_ROOTS). Secret files and paths outside the roots are denied; every access is audited.',
                 parameters: {
                     type: 'OBJECT',
                     properties: {
@@ -347,7 +347,7 @@ class ToolRegistry {
             {
                 id: 'tool_write_file',
                 name: 'write_file',
-                description: 'Write content to a file. Creates the file if it does not exist.',
+                description: 'Write a file inside the jailed write roots (SILHOUETTE_FS_WRITE_ROOTS, default the factory workspace). Paths outside the roots, secret names, and oversize content are denied; every write is audited with sha256.',
                 parameters: {
                     type: 'OBJECT',
                     properties: {
@@ -363,7 +363,7 @@ class ToolRegistry {
             {
                 id: 'tool_list_files',
                 name: 'list_files',
-                description: 'List files and directories in a given path. Use to explore project structure.',
+                description: 'List files under the jailed read roots. Use to explore project structure inside the workspace.',
                 parameters: {
                     type: 'OBJECT',
                     properties: {

@@ -1435,7 +1435,7 @@ export interface ListFilesArgs {
 
 export const READ_FILE_TOOL: FunctionDeclaration = {
     name: "read_file",
-    description: "Read the contents of a file from the filesystem. Use this to examine code, documents, or data files.",
+    description: "Read a file inside the jailed read roots. Secret files (.env, keys, databases, .git) and paths outside the roots are denied and audited.",
     parameters: {
         type: Type.OBJECT,
         properties: {
@@ -1450,13 +1450,13 @@ export const READ_FILE_TOOL: FunctionDeclaration = {
 
 export const WRITE_FILE_TOOL: FunctionDeclaration = {
     name: "write_file",
-    description: "Write content to a file. Creates the file if it doesn't exist. Use for creating code, documents, or data files.",
+    description: "Write a file inside the jailed write roots (the factory workspace). Denied outside the roots, for secret names, or over the size cap; audited with sha256.",
     parameters: {
         type: Type.OBJECT,
         properties: {
             path: {
                 type: Type.STRING,
-                description: "Absolute or relative path to the file to write."
+                description: "Path to the file to write. Must resolve inside the jailed write roots."
             },
             content: {
                 type: Type.STRING,
