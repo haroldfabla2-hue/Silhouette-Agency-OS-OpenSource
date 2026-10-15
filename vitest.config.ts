@@ -5,7 +5,7 @@ export default defineConfig({
     test: {
         globals: true,
         environment: 'node',
-        setupFiles: ['tests/setup/sqlite-per-worker.ts'],
+        setupFiles: ['tests/setup/sqlite-per-worker.ts', 'tests/setup/fetch-teardown.ts'],
         include: ['tests/automated/**/*.test.ts'],
         exclude: ['**/node_modules/**', '**/dist/**'],
         testTimeout: 30000,

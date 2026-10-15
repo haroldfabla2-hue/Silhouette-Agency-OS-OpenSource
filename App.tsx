@@ -1,7 +1,8 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import Sidebar from './components/Sidebar';
 import { Agent, SystemMode, AutonomousConfig, WorkflowStage, IntrospectionLayer, UserRole, Project, MorphPayload, SystemMetrics, SystemProtocol } from './types';
-import { DEFAULT_AUTONOMOUS_CONFIG, DEFAULT_API_CONFIG } from './constants';
+import { DEFAULT_AUTONOMOUS_CONFIG } from './constants';
+import { connectSSE } from './utils/sseClient';
 import { api } from './utils/api';
 import { systemBus } from './services/systemBus';
 import LoginGate from './components/LoginGate';
@@ -177,39 +178,28 @@ const App: React.FC = () => {
   }, []); // [NEURO-UPDATE] SSE BRIDGE (Server -> Client Bus)
 
   useEffect(() => {
-    let evtSource: EventSource | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let reconnectDelay = 1000; // Start at 1s, exponential backoff up to 30s
-    let isCancelled = false;
-
-    function connectSSE() {
-      if (isCancelled) return;
-
-      console.log("[SSE] Connecting to Neural Uplink...");
-      evtSource = new EventSource(`/v1/factory/stream?apiKey=${DEFAULT_API_CONFIG.apiKey}`);
-
-      evtSource.onopen = () => {
+    // Fetch-based SSE: authenticates with Bearer/session headers (no apiKey in URL)
+    const connection = connectSSE('/v1/factory/stream', {
+      onOpen: () => {
         console.log("[SSE] Connected.");
-        reconnectDelay = 1000; // Reset backoff on successful connection
-      };
-
-      evtSource.onmessage = (e) => {
+      },
+      onMessage: ({ data }) => {
         try {
-          const data = JSON.parse(e.data);
-          if (data.type === 'bus_event') {
-            const innerEvent = data.payload;
+          const parsed = JSON.parse(data);
+          if (parsed.type === 'bus_event') {
+            const innerEvent = parsed.payload;
             if (innerEvent && innerEvent.type) {
               systemBus.emit(innerEvent.type, innerEvent.payload, 'SERVER_BRIDGE');
             }
-          } else if (data.type) {
-            systemBus.emit(data.type, data.payload, 'SERVER_BRIDGE');
+          } else if (parsed.type) {
+            systemBus.emit(parsed.type, parsed.payload, 'SERVER_BRIDGE');
 
-            if (data.type === SystemProtocol.TASK_COMPLETION) {
-              console.log("[SSE] Task Completed:", data.payload);
+            if (parsed.type === SystemProtocol.TASK_COMPLETION) {
+              console.log("[SSE] Task Completed:", parsed.payload);
             }
 
-            if (data.type === SystemProtocol.UI_REFRESH && data.payload?.uiCommand) {
-              const cmd = data.payload.uiCommand;
+            if (parsed.type === SystemProtocol.UI_REFRESH && parsed.payload?.uiCommand) {
+              const cmd = parsed.payload.uiCommand;
 
               if (cmd.type === 'NAVIGATE') {
                 setActiveTab(cmd.destination);
@@ -233,27 +223,13 @@ const App: React.FC = () => {
         } catch (err) {
           // Ignore parse errors for heartbeat/keepalive messages
         }
-      };
+      },
+      onError: () => {
+        console.warn("[SSE] Connection lost. Reconnecting with backoff...");
+      },
+    });
 
-      evtSource.onerror = () => {
-        if (isCancelled) return;
-        console.warn(`[SSE] Connection lost. Reconnecting in ${reconnectDelay / 1000}s...`);
-        evtSource?.close();
-        evtSource = null;
-        reconnectTimer = setTimeout(() => {
-          reconnectDelay = Math.min(reconnectDelay * 2, 30000); // Exponential backoff, max 30s
-          connectSSE();
-        }, reconnectDelay);
-      };
-    }
-
-    connectSSE();
-
-    return () => {
-      isCancelled = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      evtSource?.close();
-    };
+    return () => connection.close();
   }, []);
 
   const handleModeChange = (mode: SystemMode) => {

@@ -35,6 +35,9 @@ const getHeaders = () => {
     return headers;
 };
 
+/** Auth headers shared by fetch-based SSE (same Bearer + session as all API calls) */
+export const getAuthHeaders = getHeaders;
+
 /** Parse error response body for detailed error messages */
 async function parseErrorResponse(res: Response): Promise<string> {
     try {
