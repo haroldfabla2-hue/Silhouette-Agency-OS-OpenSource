@@ -9,6 +9,7 @@ import { actionExecutor } from '../actionExecutor';
 import { mediaManager } from '../mediaManager';
 import { videoFactory } from '../media/videoFactory';
 import { imageFactory } from '../media/imageFactory';
+import { visualService } from '../visualService';
 import { toolFactory } from './toolFactory';
 import { toolRegistry, ToolCategory } from './toolRegistry';
 import { pluginRegistry } from '../plugins/pluginRegistry';
@@ -45,6 +46,10 @@ export class ToolHandler {
                 return await this.handleGenerateVideo(args as GenerateVideoArgs);
             case 'generate_image':
                 return await this.handleGenerateImage(args as GenerateImageArgs);
+            case 'visual_compose':
+                return await this.handleVisualCompose(args);
+            case 'visual_execute':
+                return await this.handleVisualExecute(args);
             case 'generate_voice':
                 return await this.handleGenerateVoice(args as import('./definitions').GenerateVoiceArgs);
             case 'list_visual_assets':
@@ -295,6 +300,35 @@ export class ToolHandler {
             }
         } catch (e: any) {
             return { error: `Video generation failed: ${e.message}` };
+        }
+    }
+
+    private async handleVisualCompose(args: any): Promise<any> {
+        try {
+            const spec = { ...args };
+            // LLM may send nested fields as JSON strings — parse honestly or fail loudly
+            for (const key of ['background', 'texts', 'images', 'adjustments']) {
+                if (typeof spec[key] === 'string') spec[key] = JSON.parse(spec[key]);
+            }
+            const result = await visualService.compose(spec);
+            if (!result.ok) return { success: false, unavailable: result.unavailable, error: result.error };
+            return { success: true, output: result.data?.output, note: 'Composed locally with PhotoCraft (no cloud, no cost).' };
+        } catch (e: any) {
+            return { success: false, error: `visual_compose failed: ${e.message}` };
+        }
+    }
+
+    private async handleVisualExecute(args: any): Promise<any> {
+        try {
+            const opts = { ...args };
+            for (const key of ['params', 'steps', 'newDoc']) {
+                if (typeof opts[key] === 'string') opts[key] = JSON.parse(opts[key]);
+            }
+            const result = await visualService.execute(opts);
+            if (!result.ok) return { success: false, unavailable: result.unavailable, error: result.error };
+            return { success: true, output: result.data?.output, log: result.data?.log };
+        } catch (e: any) {
+            return { success: false, error: `visual_execute failed: ${e.message}` };
         }
     }
 

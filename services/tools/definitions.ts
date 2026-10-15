@@ -1900,3 +1900,62 @@ export const AGENT_TOOLS_EXPANDED = [
     CREATE_PLUGIN_TOOL,
     REQUEST_COLLABORATION_TOOL
 ];
+
+// --- VISUAL CORTEX (local PhotoCraft engine: composition/edition, NOT prompt-to-image) ---
+
+export interface VisualComposeArgs {
+    width: number;
+    height: number;
+    resolution?: number;
+    background?: { type: 'gradient'; from: string; to: string; angle?: number } | { type: 'color'; color: string };
+    texts?: Array<{ x: number; y: number; text: string; size?: number; color?: string; font?: string; align?: 'left' | 'center' | 'right' }>;
+    images?: Array<{ path: string; scale?: number; fit?: boolean }>;
+    adjustments?: Array<{ command: string; params?: Record<string, any> }>;
+    out: string;
+}
+
+export interface VisualExecuteArgs {
+    command?: string;
+    params?: Record<string, any>;
+    steps?: Array<{ command: string; params?: Record<string, any> }>;
+    doc?: string;
+    newDoc?: { width: number; height: number; resolution?: number; mode?: string };
+    out?: string;
+}
+
+export const VISUAL_COMPOSE_TOOL: FunctionDeclaration = {
+    name: "visual_compose",
+    description: "Composes a real visual asset locally (no cloud, no cost): sized canvas with background (color or gradient), placed images, styled text layers and adjustments, exported to PNG/JPG/WebP/PSD. Use for brand posts, thumbnails, cards and template-based pieces. This is composition/edition, not prompt-to-image generation.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            width: { type: Type.NUMBER, description: "Canvas width in px (1-30000)" },
+            height: { type: Type.NUMBER, description: "Canvas height in px (1-30000)" },
+            background: { type: Type.STRING, description: 'JSON: {"type":"gradient","from":"#0f2050","to":"#501478","angle":45} or {"type":"color","color":"#101010"}' },
+            texts: { type: Type.STRING, description: 'JSON array: [{"x":120,"y":540,"text":"HEADLINE","size":72,"color":"#ffffff"}]' },
+            images: { type: Type.STRING, description: 'JSON array of images to place: [{"path":"/opt/silhouette/workspace/visual/bg.png","fit":true}]' },
+            out: { type: Type.STRING, description: "Output path under /opt/silhouette/output (png, jpg, webp, tif, psd)" }
+        },
+        required: ["width", "height", "out"]
+    }
+};
+
+export const VISUAL_EXECUTE_TOOL: FunctionDeclaration = {
+    name: "visual_execute",
+    description: "Runs arbitrary PhotoCraft engine commands (900+: filters, adjustments, selections, type, vectors, PSD I/O) against a document. Discover available commands first via the visual commands endpoint or ask for a filter. Validated against the live engine registry.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            command: { type: Type.STRING, description: 'Engine command id, e.g. "filter.sharpen.smartSharpen" or "image.adjustments.hueSaturation"' },
+            params: { type: Type.STRING, description: "JSON object of command params" },
+            steps: { type: Type.STRING, description: "JSON array of {command, params} for multi-step execution" },
+            doc: { type: Type.STRING, description: "Existing document path under /opt/silhouette/workspace (omit if newDoc)" },
+            newDoc: { type: Type.STRING, description: 'JSON: {"width":1080,"height":1080} to start from a blank document' },
+            out: { type: Type.STRING, description: "Optional output path under /opt/silhouette/output" }
+        }
+    }
+};
+
+// Expose Visual Cortex tools in the model catalog (declarations appended after the arrays;
+// module fully evaluates before importers read AGENT_TOOLS).
+AGENT_TOOLS.push(VISUAL_COMPOSE_TOOL, VISUAL_EXECUTE_TOOL);

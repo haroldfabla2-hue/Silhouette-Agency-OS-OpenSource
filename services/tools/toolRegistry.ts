@@ -120,7 +120,9 @@ class ToolRegistry {
             GITHUB_LIST_PRS_TOOL,
             GITHUB_CHECK_PR_TOOL,
             ARCHITECT_AUDIT_TOOL,
-            INTROSPECT_DATABASE_TOOL
+            INTROSPECT_DATABASE_TOOL,
+            VISUAL_COMPOSE_TOOL,
+            VISUAL_EXECUTE_TOOL
         } = await import('./definitions');
 
         // Convert static declarations to DynamicTool format
@@ -155,6 +157,22 @@ class ToolRegistry {
                 description: GENERATE_IMAGE_TOOL.description || '',
                 parameters: GENERATE_IMAGE_TOOL.parameters as unknown as FunctionDeclarationSchema,
                 handler: { type: 'BUILTIN', handlerName: 'handleGenerateImage' },
+                category: 'MEDIA'
+            },
+            {
+                id: 'tool_visual_compose',
+                name: 'visual_compose',
+                description: VISUAL_COMPOSE_TOOL.description || '',
+                parameters: VISUAL_COMPOSE_TOOL.parameters as unknown as FunctionDeclarationSchema,
+                handler: { type: 'BUILTIN', handlerName: 'handleVisualCompose' },
+                category: 'MEDIA'
+            },
+            {
+                id: 'tool_visual_execute',
+                name: 'visual_execute',
+                description: VISUAL_EXECUTE_TOOL.description || '',
+                parameters: VISUAL_EXECUTE_TOOL.parameters as unknown as FunctionDeclarationSchema,
+                handler: { type: 'BUILTIN', handlerName: 'handleVisualExecute' },
                 category: 'MEDIA'
             },
             {
