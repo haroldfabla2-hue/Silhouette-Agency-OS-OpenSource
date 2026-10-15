@@ -14,7 +14,7 @@ describe('continuum explorer uses session-authenticated api helper', () => {
         expect(src).not.toMatch(/fetch\(`?\/v1\/memory/);
     });
     it('routes state, search, and consolidate through the api helper', () => {
-        expect(src).toContain("api.get('/v1/memory/state')");
+        expect(src).toMatch(/api\.get\(`\/v1\/memory\/state\?limit=/); // paginated since feat/memory-pagination (was full dump every 2s)
         expect(src).toContain('api.get(`/v1/memory/search?q=');
         expect(src).toContain("api.post('/v1/memory/consolidate'");
     });
