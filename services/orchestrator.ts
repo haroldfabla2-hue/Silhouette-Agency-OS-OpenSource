@@ -12,6 +12,7 @@ import { sqliteService } from './sqliteService';
 import { workflowEngine } from './workflowEngine';
 import { INITIAL_AGENTS, KERNEL_COMPLEXITY_THRESHOLD } from "../constants";
 import { loadSquads } from "./squads/squadConfig";
+import { resolveSquadName, generateDynamicIds, deriveDynamicCapabilities, buildDynamicLeaderInstruction } from "./squads/dynamicBirth"; // [W1] complete births
 
 const KERNEL_AND_SPECIALISTS = INITIAL_AGENTS;
 import { systemBus, MessageTag, MessagePriority, EnhancedInterAgentMessage } from "./systemBus"; // [PA-041] Enhanced with Tagging
@@ -1105,20 +1106,26 @@ JSON ONLY:
     // --- DYNAMIC EXPANSION PROTOCOL ---
     private handleDynamicExpansion(payload: any) {
         // [PA-045] Robust Payload Handling (Handle potential double-wrapping)
-        const name = (payload.name || payload.payload?.name || "Unknown Squad");
-        console.log(`[ORCHESTRATOR] Executing Expansion Protocol: ${name} `);
+        // [W1] Name resolution moved to resolveSquadName(): the old code
+        // interpolated `payload.name` directly below, producing the literal
+        // "undefined Lead" on double-wrapped mission payloads.
+        const name = resolveSquadName(payload);
+        console.log(`[ORCHESTRATOR] Executing Expansion Protocol: ${name}`);
 
-        const newSquadId = `SQ_DYN_${Date.now()} `;
-        const leaderId = `agt_dyn_${Date.now()} `;
+        // [W1] Whitespace-free IDs (legacy IDs carried a trailing space that
+        // broke exact matching; old spaced IDs stay valid via read fallback).
+        const { squadId: newSquadId, leaderId } = generateDynamicIds();
 
-        // Create new agent dynamically
+        // [W1] Create new agent dynamically — born COMPLETE: role-coherent
+        // capabilities (DCR registration actually registers) and a
+        // deterministic system instruction. No LLM call spent here.
         const leader: Agent = {
             id: leaderId,
-            name: `${payload.name} Lead`,
+            name: `${name} Lead`,
             teamId: newSquadId,
             category: payload.category,
             roleType: AgentRoleType.LEADER,
-            role: payload.role,
+            role: payload.role || `${name} Squad Leader`,
             status: AgentStatus.WORKING,
             enabled: true,
             memoryLocation: 'VRAM',
@@ -1126,7 +1133,9 @@ JSON ONLY:
             ramUsage: 100,
             lastActive: Date.now(),
             tier: AgentTier.SPECIALIST,
-            preferredMemory: 'RAM'
+            preferredMemory: 'RAM',
+            capabilities: deriveDynamicCapabilities(payload),
+            systemInstruction: buildDynamicLeaderInstruction(name, payload)
         };
 
         // Persist immediately
@@ -1844,7 +1853,11 @@ JSON ONLY:
 
     private getCachedAgent(id: string): Agent {
         if (!this.agentCache.has(id)) {
-            const loaded = agentPersistence.loadAgent(id);
+            // [W1] Legacy dynamic IDs carried a trailing space; try exact,
+            // trimmed, and legacy-spaced variants before reconstructing.
+            const loaded = agentPersistence.loadAgent(id)
+                ?? agentPersistence.loadAgent(id.trim())
+                ?? agentPersistence.loadAgent(`${id.trim()} `);
             if (loaded) {
                 this.agentCache.set(id, loaded);
             } else {
