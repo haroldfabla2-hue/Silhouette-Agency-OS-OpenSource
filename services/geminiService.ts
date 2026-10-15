@@ -370,6 +370,16 @@ export const generateAgentResponse = async (
             }
         }
 
+        // [DCR][REA-F2] Check Capability: BOUNDED REVERSE ENGINEERING
+        {
+            const { reaToolsForCapabilities, REA_INSTRUCTION } = await import('./tools/toolSelection');
+            const reaBundles = reaToolsForCapabilities(agentCapabilities);
+            if (reaBundles.length > 0) {
+                tools.push(...reaBundles);
+                systemInstruction += REA_INSTRUCTION;
+            }
+        }
+
         // [DCR] Check Capability: IMAGE GENERATION
         if (agentCapabilities.includes(AgentCapability.TOOL_IMAGE_GENERATION)) {
             // Note: Native Imagen is not yet exposed via this API in all regions, so we use a Protocol Instruction for now.

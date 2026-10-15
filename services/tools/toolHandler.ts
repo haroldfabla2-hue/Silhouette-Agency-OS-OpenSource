@@ -104,6 +104,8 @@ export class ToolHandler {
                 return await this.handleWriteFile(args as import('./definitions').WriteFileArgs, caller);
             case 'list_files':
                 return await this.handleListFiles(args as import('./definitions').ListFilesArgs, caller);
+            case 'rea_analyze':
+                return await this.handleReaAnalyze(args as import('./definitions').ReaAnalyzeArgs, caller);
 
             // ==================== WORKSPACE TOOLS ====================
             case 'workspace_create':
@@ -1098,6 +1100,29 @@ export class ToolHandler {
         } catch (e: any) {
             return { error: `Failed to write file: ${e.message}` };
         }
+    }
+
+    // [REA Fase 2] All REA invocations flow through ./reaTool: command
+    // classification (blocked / daylight / overnight-window), bounded JSON
+    // output (--token-limit + hard byte cap), explicit entitlement, and an
+    // append-only audit journal. Fail-closed and honest when UNAVAILABLE.
+    private async handleReaAnalyze(args: import('./definitions').ReaAnalyzeArgs, caller?: ToolCaller): Promise<any> {
+        const { runRea } = await import('./reaTool');
+        const result = await runRea({
+            command: args.command, target: args.target, extraArgs: args.args,
+            filter: args.filter, entitlement: args.entitlement, purpose: args.purpose,
+        }, { id: caller?.requesterId, role: caller?.requesterRole });
+        if (result.ok === false) return { error: `REA_DENIED: ${result.reason}` };
+        return {
+            status: 'success',
+            command: result.command,
+            mode: result.mode,
+            output: result.output ?? result.raw,
+            truncated: result.truncated,
+            evidence_sha256: result.evidenceSha256,
+            duration_ms: result.durationMs,
+            note: 'Bounded evidence subset. Cite evidence ids; absent facts are NOT proof of absence. Never copy decompiled code: understand, then rewrite from scratch.',
+        };
     }
 
     private async handleListFiles(args: import('./definitions').ListFilesArgs, caller?: ToolCaller): Promise<any> {
