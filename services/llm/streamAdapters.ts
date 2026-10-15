@@ -58,7 +58,10 @@ export function zhipuAdapter(): StreamAdapter {
 
 // --- GEMINI: native SDK streaming with native tools (googleSearch / codeExecution) ---
 export function geminiAdapter(): StreamAdapter {
-    const DEFAULT_MODEL = DEFAULT_GEMINI_MODEL;
+    // [Hotfix W6] Per-transport model: streaming quota drains separately
+    // from non-streaming. GEMINI_STREAM_MODEL overrides the default for
+    // this streaming adapter only. PR to follow.
+    const DEFAULT_MODEL = process.env.GEMINI_STREAM_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
     return {
         id: 'GEMINI',
         isAvailable: async () => {
@@ -92,7 +95,13 @@ export function geminiAdapter(): StreamAdapter {
             } as any);
 
             for await (const chunk of stream) {
-                const text = (chunk as any).text();
+                // SDK compat: chunk.text is a getter property in current
+                // @google/genai, a function in older versions; fall back to
+                // the candidates shape. (Hotfix W6 — PR to follow.)
+                const c: any = chunk;
+                const text: string = typeof c.text === 'function' ? c.text()
+                    : (typeof c.text === 'string' ? c.text
+                    : (c.candidates?.[0]?.content?.parts?.[0]?.text ?? ''));
                 if (text) yield text;
             }
         }
