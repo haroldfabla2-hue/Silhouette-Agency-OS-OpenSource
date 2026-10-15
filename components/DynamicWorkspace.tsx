@@ -229,15 +229,17 @@ const DynamicWorkspace: React.FC<DynamicWorkspaceProps> = ({ initialProjectId })
 
     // Load Projects on Mount
     useEffect(() => {
-        const allProjects = vfs.getProjects();
-        setProjects(allProjects);
+        vfs.init().then(() => {
+            const allProjects = vfs.getProjects();
+            setProjects(allProjects);
 
-        if (initialProjectId) {
-            const target = allProjects.find(p => p.id === initialProjectId);
-            if (target) {
-                setActiveProject(target);
+            if (initialProjectId) {
+                const target = allProjects.find(p => p.id === initialProjectId);
+                if (target) {
+                    setActiveProject(target);
+                }
             }
-        }
+        }).catch(e => console.error('[VFS] init failed (server workspace unreachable)', e));
     }, [initialProjectId]);
 
     // Init Terminal & CWD when project activates
@@ -368,11 +370,12 @@ const DynamicWorkspace: React.FC<DynamicWorkspaceProps> = ({ initialProjectId })
     };
 
     const handleOpenFile = (file: FileNode) => {
-        if (!openFiles.find(f => f.id === file.id)) {
-            setOpenFiles([...openFiles, file]);
-        }
-        setActiveFileId(file.id);
-        setActiveTab('CODE');
+        vfs.loadContent(file.id).then((loaded) => {
+            const node = loaded || file;
+            setOpenFiles(prev => prev.find(f => f.id === node.id) ? prev : [...prev, node]);
+            setActiveFileId(node.id);
+            setActiveTab('CODE');
+        }).catch(e => console.error('[VFS] open failed', e));
     };
 
     const handleCloseFile = (e: React.MouseEvent, fileId: string) => {
