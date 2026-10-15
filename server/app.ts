@@ -21,6 +21,7 @@ import systemRoutes from './routes/v1/system.routes';
 import selfExecRoutes from './routes/v1/exec.routes';
 import orchestratorRoutes from './routes/v1/orchestrator.routes';
 import factoryRoutes from './routes/v1/factory.routes';
+import workspaceRoutes from './routes/v1/workspace.routes';
 import legacyRoutes from './routes/v1/legacy.routes';
 import workflowRoutes from './routes/v1/workflow.routes';
 import selfCodeRoutes from './routes/v1/selfcode.routes';
@@ -105,6 +106,7 @@ app.use('/v1/self/exec', selfExecRoutes); // [F3] Command Execution (bubblewrap 
 app.use('/v1/system', doctorRouter); // [DOCTOR] System Diagnostics at /v1/system/doctor
 app.use('/v1/orchestrator', orchestratorRoutes);
 app.use('/v1/factory', factoryRoutes);
+app.use('/v1/workspace', workspaceRoutes); // [AUDIT-B2] Real server workspace for the Workspace tab
 app.use('/v1/workflow', workflowRoutes);
 app.use('/v1/self/code', selfCodeRoutes); // [F2] Self-Code Toolkit (isolated worktree only)
 app.use('/v1/self/dev', selfDevRoutes); // [W2-P0] Self-Dev Cycle (issue->change->tests->verify->approved PR)
