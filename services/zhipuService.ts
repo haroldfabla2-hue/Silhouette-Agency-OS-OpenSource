@@ -158,7 +158,7 @@ export class ZhipuService {
             this.keys.forEach((k, i) => {
                 console.log(`[ZHIPU]    Key #${i + 1}: ${k.purpose.toUpperCase()} (${k.key.substring(0, 8)}...)`);
             });
-            console.log(`[ZHIPU] 🆓 Model: glm-4-flash (FREE)`);
+            console.log(`[ZHIPU] 🆓 Model: ${this.env.ZHIPU_MODEL?.trim() || 'glm-4.5-flash'} (FREE)`);
         } else {
             console.warn('[ZHIPU] ⚠️ No ZHIPU_API_KEYS configured');
         }
@@ -321,7 +321,9 @@ export class ZhipuService {
         purpose: KeyPurpose = 'agents',
         lane?: ZhipuLane
     ): Promise<string> {
-        const model = options.model || 'glm-4-flash'; // [USER-REQUEST] Use Free Flash Model
+        // Env-driven default; 'glm-4.5-flash' verified live 2026-10-15 (HTTP 200).
+        // 'glm-4-flash' returns API 1211 (model does not exist); glm-4.5 needs paid balance.
+        const model = options.model || this.env.ZHIPU_MODEL?.trim() || 'glm-4.5-flash';
         const maxTokens = options.maxTokens || this.CONFIG.DEFAULT_MAX_TOKENS;
 
         // [USER-REQUEST] Enforce Spanish Output
