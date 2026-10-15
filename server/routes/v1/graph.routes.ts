@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { GraphController } from '../../controllers/graphController';
+import neo4j from 'neo4j-driver';
 import { graph } from '../../../services/graphService';
 
 const router = Router();
@@ -27,7 +28,8 @@ router.get('/nodes', async (req, res) => {
         const label = req.query.label as string;
 
         let query: string;
-        const params: Record<string, any> = { skip: offset, limit };
+        // Cypher SKIP/LIMIT require Integer; raw JS numbers serialize as Float ('100.0') and Neo4j rejects them
+        const params: Record<string, any> = { skip: neo4j.int(offset), limit: neo4j.int(limit) };
 
         if (label) {
             // Sanitize label: only allow alphanumeric + underscore (valid Neo4j label chars)

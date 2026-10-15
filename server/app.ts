@@ -135,6 +135,8 @@ app.use('/v1/squads', squadsRoutes); // [SQUADS] Manual Squad Control
 app.use('/v1/admin/api-keys', adminLimiter, apikeysRoutes); // [SECURITY] Admin-only API Key Management
 app.use('/v1/assets', assetsRoutes); // [ASSETS] General file upload
 app.use('/v1/google-auth', googleAuthRoutes); // [GOOGLE] OAuth2 Flow
+import visualRoutes from './routes/v1/visual.routes';
+app.use('/v1/visual', visualRoutes); // [VISUAL CORTEX] Local composition engine (PhotoCraft)
 app.use('/v1/analytics', analyticsRouter); // [ANALYTICS] Privacy-First Telemetry
 app.use('/v1/brain', brainRoutes); // [BRAIN] External silhouette-brain 4-Tier memory
 app.use('/v1/federated', federatedRoutes); // [FEDERATED] P2P memory sync between instances
