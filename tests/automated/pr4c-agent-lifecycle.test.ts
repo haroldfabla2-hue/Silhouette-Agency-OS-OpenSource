@@ -78,11 +78,17 @@ describe('PR-4c: memory tier coercion at the boundary', () => {
 });
 
 describe('PR-4c: spurious provider tool deltas are tolerated', () => {
-    it('empty tool-call delta warns and skips; real one still throws', () => {
+    // Updated by PR-E (2026-10-16): named native tool-call deltas are no longer
+    // thrown away — they are accumulated and re-emitted as [EXECUTE:] markers
+    // that the tool pipeline executes honestly (role gates + fs jail apply).
+    // The throw killed a healthy fallback leg (Ollama Cloud) mid-chat.
+    it('empty tool-call delta warns and skips; named ones become [EXECUTE:] markers', () => {
         const src = read('services/llm/streamAdapters.ts');
         const w = windowAround(src, "event.type === 'tool'", 2000);
         expect(w).toContain('spurious empty tool-call delta');
-        expect(w).toContain('unexpected tool call delta');
+        expect(w).toContain('pendingToolCalls');
+        expect(src).toContain('[EXECUTE: ${call.name.trim()} ${args}]');
+        expect(src).not.toContain('unexpected tool call delta');
     });
 });
 

@@ -16,6 +16,7 @@ import { toolFactory } from './tools/toolFactory';
 import { orchestrator } from './orchestrator'; // Unified Capability Execution
 import { experienceBuffer } from './experienceBuffer';
 import { FunctionDeclaration } from '@google/genai';
+import { extractExecuteMarkers } from './tools/execMarker';
 
 // Patterns to detect tool invocation in chat response
 const TOOL_INVOCATION_PATTERNS = [
@@ -109,6 +110,17 @@ For general questions, respond conversationally without using tools.
                 toolName,
                 args: this.parseArgs(argsString),
                 originalMatch: match[0]
+            });
+        }
+
+        // Pattern 1b: [EXECUTE: name {json}] — emitted by native-tool-call
+        // translation (streamAdapters) and by some models directly. Balanced-brace
+        // extraction: nested args survive; invalid JSON is skipped, never run.
+        for (const marker of extractExecuteMarkers(responseText)) {
+            calls.push({
+                toolName: marker.name,
+                args: marker.args,
+                originalMatch: marker.originalMatch
             });
         }
 
