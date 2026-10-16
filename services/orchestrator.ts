@@ -1471,7 +1471,22 @@ JSON ONLY:
                     this.emitCapabilityResult(capabilityName, denied, requesterId);
                     return denied;
                 }
-            } catch { /* security manager not available — fail open to avoid deadlock */ }
+            } catch (secErr: any) {
+                // [SECURITY] FAIL CLOSED: if the policy engine itself cannot load, the safe
+                // default is to DENY, not to execute unchecked. A fail-open chokepoint means a
+                // broken import silently disables the operator denylist.
+                const denied: CapabilityResult = {
+                    success: false,
+                    data: null,
+                    error: `SECURITY_UNAVAILABLE: security policy engine failed to load (${secErr?.message || secErr}); denying "${capabilityName}" by default`,
+                    executedBy: 'ORCHESTRATOR',
+                    executionTimeMs: Date.now() - startTime,
+                    metadata: { toolName: capabilityName }
+                };
+                console.error('[ORCHESTRATOR] 🚫 securityManager load failure — failing closed:', secErr?.message || secErr);
+                this.emitCapabilityResult(capabilityName, denied, requesterId);
+                return denied;
+            }
 
             // ═══════════════════════════════════════════════════════════════
             // ROUTE 0: Core Tools - Direct routing to toolHandler
