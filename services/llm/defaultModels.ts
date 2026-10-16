@@ -24,6 +24,11 @@ export const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL?.trim() || 'gemini-
  * gemini-3.1-flash-lite non-stream answers 200 with the same key).
  */
 export const DEFAULT_GEMINI_BACKGROUND_MODEL = process.env.GEMINI_BACKGROUND_MODEL?.trim() || 'gemini-3.1-flash-lite';
+/**
+ * 'pro' chat preference: verified present in the key's models.list 2026-10-16
+ * (gemini-1.5-pro, the previous literal, is gone from the API).
+ */
+export const DEFAULT_GEMINI_PRO_MODEL = process.env.GEMINI_PRO_MODEL?.trim() || 'gemini-3.1-pro-preview';
 export const DEFAULT_GROQ_MODEL = 'openai/gpt-oss-120b';
 export const DEFAULT_OPENROUTER_MODEL = 'nvidia/nemotron-3-super-120b-a12b:free';
 export const DEFAULT_GEMINI_EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL?.trim() || 'gemini-embedding-001';
