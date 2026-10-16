@@ -115,7 +115,7 @@ describe('configurable OpenAI-compatible HTTP transport', () => {
         mode = 'ok'; gateway.resetCircuit('TEST'); expect((await gateway.complete('generic')).text).toBe('hello');
     });
     it('retains legacy provider order and rejects overwriting native paths', () => {
-        const registry = new ProviderRegistry(); expect(registry.order().slice(0, 5)).toEqual(['MINIMAX', 'GEMINI', 'GROQ', 'DEEPSEEK', 'OLLAMA']);
+        const registry = new ProviderRegistry(); expect(registry.order().slice(0, 5)).toEqual(['MINIMAX', 'GEMINI', 'GROQ', 'DEEPSEEK', 'OLLAMA_CLOUD']); // PR-4a: local OLLAMA is env-gated (OLLAMA_LOCAL_ENABLED=true), OLLAMA_CLOUD takes the 5th slot by default
         expect(() => registry.register({ ...provider, id: 'GEMINI' })).toThrow('Cannot replace'); expect(registry.get('ZHIPUAI')).toBeDefined();
     });
 });

@@ -568,9 +568,13 @@ export const generateAgentResponse = async (
                     // Primary provider usually has way higher limits, but we can track it too if desired.
                     // For now, we assume Gemini Primary is robust, but let's wrap it to be safe.
 
-                    if (!providerHealth.isAvailable('gemini')) {
-                        console.warn(`[GEMINI] ⏭️ Skipping Gemini Primary (Suspended via Circuit Breaker).`);
-                        throw new Error('Circuit Breaker: Gemini Suspended');
+                    // [PR-4a] Health is tracked PER MODEL: a quota suspension on
+                    // one Gemini model (e.g. a 12h Retry-After on a flash variant)
+                    // must not suspend the provider's other live models.
+                    const geminiHealthId = `gemini:${negotiatedModel}`;
+                    if (!providerHealth.isAvailable(geminiHealthId)) {
+                        console.warn(`[GEMINI] ⏭️ Skipping Gemini Primary model ${negotiatedModel} (Suspended via Circuit Breaker).`);
+                        throw new Error(`Circuit Breaker: Gemini model ${negotiatedModel} Suspended`);
                     }
 
 
@@ -733,8 +737,8 @@ export const generateAgentResponse = async (
                                     rotationAttempts++;
                                     continue; // Retry with new key
                                 }
-                                // No more keys? Report failure and throw to outer loop
-                                providerHealth.reportFailure('gemini', gemError.message);
+                                // No more keys? Report failure (per-model) and throw to outer loop
+                                providerHealth.reportFailure(`gemini:${negotiatedModel}`, gemError.message);
                             }
                             throw gemError; // Non-rotation error or exhausted keys
                         }
@@ -793,7 +797,55 @@ export const generateAgentResponse = async (
                         console.warn("[GEMINI] ⚠️ ZhipuAI failed:", zhipuError.message);
                     }
 
+                    // --- [PR-4a] OLLAMA CLOUD FALLBACK (free tier, OpenAI-compatible) ---
+                    const ollamaCloudKey = process.env.OLLAMA_CLOUD_API_KEY?.trim();
+                    if (ollamaCloudKey && providerHealth.isAvailable('ollama-cloud')) {
+                        try {
+                            console.warn("[GEMINI] ☁️ Trying Ollama Cloud (free tier)...");
+                            const ocResponse = await fetch("https://ollama.com/v1/chat/completions", {
+                                method: "POST",
+                                headers: {
+                                    "Authorization": `Bearer ${ollamaCloudKey}`,
+                                    "Content-Type": "application/json"
+                                },
+                                body: JSON.stringify({
+                                    model: process.env.OLLAMA_CLOUD_MODEL?.trim() || 'gpt-oss:20b',
+                                    messages: [
+                                        { role: "system", content: systemInstruction },
+                                        { role: "user", content: userMessageText }
+                                    ],
+                                    temperature: category === 'MARKETING' ? 0.8 : 0.2,
+                                })
+                            });
+                            if (!ocResponse.ok) {
+                                const ocErr = await ocResponse.text();
+                                if (ocResponse.status === 429 || ocResponse.status === 402) {
+                                    providerHealth.reportFailure('ollama-cloud', `Status ${ocResponse.status}: ${ocErr.slice(0, 200)}`);
+                                }
+                                throw new Error(`Ollama Cloud Error: ${ocResponse.status} - ${ocErr.slice(0, 200)}`);
+                            }
+                            const ocJson = await ocResponse.json();
+                            response = {
+                                text: ocJson.choices[0].message.content,
+                                usageMetadata: {
+                                    totalTokenCount: ocJson.usage?.total_tokens || 0,
+                                    promptTokenCount: ocJson.usage?.prompt_tokens || 0,
+                                    candidatesTokenCount: ocJson.usage?.completion_tokens || 0
+                                }
+                            };
+                            providerHealth.reportSuccess('ollama-cloud');
+                            console.log("[GEMINI] ✅ Ollama Cloud responded successfully");
+                            break; // Success (Ollama Cloud)
+                        } catch (ocError: any) {
+                            console.warn("[GEMINI] ⚠️ Ollama Cloud failed:", ocError.message);
+                        }
+                    }
+
                     // --- ULTIMATE FALLBACK: LOCAL HIVE MIND ---
+                    // [PR-4a] Local Ollama is disabled by default (small server;
+                    // owner decision 2026-10-16). With it disabled we degrade
+                    // HONESTLY with a loud system error instead of burning CPU.
+                    if (process.env.OLLAMA_LOCAL_ENABLED === 'true') {
                     console.warn("[GEMINI] 🌩️ ALL CLOUDS FAILED. Switching to LOCAL HIVE MIND (Ollama).");
                     try {
                         const { ollamaService } = await import('./ollamaService');
@@ -819,6 +871,17 @@ export const generateAgentResponse = async (
                             text: JSON.stringify({
                                 thoughts: ["[SYSTEM ERROR] All AI Circuits Failed. Low Memory/Credits."],
                                 response: "I am experiencing a total cognitive failure. Please check my API credits and local resources."
+                            }),
+                            usageMetadata: { totalTokenCount: 0, promptTokenCount: 0, candidatesTokenCount: 0 }
+                        };
+                        break;
+                    }
+                    } else {
+                        console.error("[GEMINI] 🌩️ ALL CLOUDS FAILED and local Ollama is disabled (OLLAMA_LOCAL_ENABLED!=true). Degrading honestly.");
+                        response = {
+                            text: JSON.stringify({
+                                thoughts: ["[SYSTEM ERROR] All AI providers exhausted (cloud quotas) and local fallback disabled."],
+                                response: "All AI providers are exhausted right now (daily free quotas). Please retry later or add provider credits."
                             }),
                             usageMetadata: { totalTokenCount: 0, promptTokenCount: 0, candidatesTokenCount: 0 }
                         };
