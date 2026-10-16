@@ -23,6 +23,7 @@ import { SystemProtocol, CommunicationLevel, AgentStatus, AgentRoleType, AgentTi
 import { stepDeclaresFileWork, durableFileGrant } from './tools/toolSelection'; // [W3]
 import { evaluatePlanHonesty } from './execution/stepHonesty'; // [W3]
 import { collectWrittenArtifacts } from './execution/artifactLedger'; // [W3]
+import { recordPlanTasks, markTaskRunning, markTaskDone } from './execution/taskLedger'; // [PR-1]
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -77,6 +78,10 @@ class PlanExecutor {
             totalSteps: plan.steps.length
         }, 'PLAN_EXECUTOR');
 
+        // [PR-1] Work as data: one task row per step (observable by query,
+        // not by reading logs). Best-effort; never blocks execution.
+        recordPlanTasks(plan);
+
         // Execute steps in order, respecting dependencies
         for (const step of plan.steps) {
             // 1. Check dependencies are complete
@@ -88,7 +93,9 @@ class PlanExecutor {
 
             // 2. Execute the step with all homeostatic checks
             try {
+                markTaskRunning(plan.id, step); // [PR-1]
                 const result = await this.executeStep(step, plan, results);
+                markTaskDone(plan.id, step, result); // [PR-1]
                 results.set(step.order, result);
 
                 if (!result.success) {
@@ -102,7 +109,7 @@ class PlanExecutor {
                 }
             } catch (e: any) {
                 errors.push(`Step ${step.order} exception: ${e.message}`);
-                results.set(step.order, {
+                const failure = {
                     stepOrder: step.order,
                     agentId: step.agentId,
                     output: '',
@@ -110,7 +117,9 @@ class PlanExecutor {
                     tokensUsed: 0,
                     executionTimeMs: 0,
                     error: e.message
-                });
+                };
+                markTaskDone(plan.id, step, failure); // [PR-1]
+                results.set(step.order, failure);
             }
         }
 
