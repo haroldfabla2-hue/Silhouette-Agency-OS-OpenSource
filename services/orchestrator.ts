@@ -12,7 +12,7 @@ import { sqliteService } from './sqliteService';
 import { workflowEngine } from './workflowEngine';
 import { INITIAL_AGENTS, KERNEL_COMPLEXITY_THRESHOLD } from "../constants";
 import { loadSquads } from "./squads/squadConfig";
-import { resolveSquadName, generateDynamicIds, deriveDynamicCapabilities, buildDynamicLeaderInstruction } from "./squads/dynamicBirth"; // [W1] complete births
+import { resolveSquadName, generateDynamicIds, deriveDynamicCapabilities, buildDynamicLeaderInstruction, validateBirthContract, findReusableAgent, MAX_DYNAMIC_AGENTS, MAX_BIRTHS_PER_HOUR, BirthRateLimiter } from "./squads/dynamicBirth"; // [W1] [PR-4d: birth policy] complete births
 
 const KERNEL_AND_SPECIALISTS = INITIAL_AGENTS;
 import { systemBus, MessageTag, MessagePriority, EnhancedInterAgentMessage } from "./systemBus"; // [PA-041] Enhanced with Tagging
@@ -83,6 +83,7 @@ export class AgentSwarmOrchestrator {
     private knownAgentIds: string[] = [];
 
     private squads: Squad[] = [];
+    private readonly birthRateLimiter = new BirthRateLimiter(); // [PR-4d]
     private currentMode: SystemMode = SystemMode.ECO;
     private currentBusinessPreset: BusinessType = 'GENERAL';
     private smartPagingEnabled: boolean = true; // Always on for Actor Model
@@ -1139,6 +1140,39 @@ JSON ONLY:
         // interpolated `payload.name` directly below, producing the literal
         // "undefined Lead" on double-wrapped mission payloads.
         const name = resolveSquadName(payload);
+
+        // [PR-4d] Birth policy: contract -> reuse -> limits -> create.
+        // Agents are long-lived assets with soul/history; a birth is the
+        // LAST resort when no existing agent can do the work.
+        const contract = validateBirthContract(payload);
+        contract.errors.filter(e => e.startsWith('warn:')).forEach(w =>
+            console.warn(`[ORCHESTRATOR] ⚠️ Birth contract: ${w}`));
+        if (!contract.ok) {
+            console.warn(`[ORCHESTRATOR] ⛔ Dynamic birth rejected: ${contract.errors.join('; ')}`);
+            return;
+        }
+
+        const reusable = findReusableAgent(sqliteService.getAllAgents(), { name, category: payload?.category ?? payload?.payload?.category, role: payload?.role ?? payload?.payload?.role });
+        if (reusable) {
+            console.log(`[ORCHESTRATOR] ♻️ Reusing existing agent ${reusable.id} (${reusable.name}) for squad '${name}' — NO new birth.`);
+            const existingSquad = this.squads.find(s => s.name === name.toUpperCase() && s.category === (payload?.category ?? payload?.payload?.category));
+            if (existingSquad) existingSquad.active = true;
+            this.hydrateAgent(reusable.id);
+            systemBus.emit(SystemProtocol.UI_REFRESH, { source: 'ORCHESTRATOR', message: `Squad '${name}' reactivated with existing agent ${reusable.id} (reuse > birth)` });
+            return;
+        }
+
+        const dynamicAlive = this.knownAgentIds.filter(id => id.startsWith('agt_dyn_')).length;
+        if (dynamicAlive >= MAX_DYNAMIC_AGENTS) {
+            console.warn(`[ORCHESTRATOR] ⛔ Dynamic fleet full (${dynamicAlive}/${MAX_DYNAMIC_AGENTS}). Birth of '${name}' refused — retire agents first.`);
+            systemBus.emit(SystemProtocol.UI_REFRESH, { source: 'SYSTEM_ALERT', message: `Dynamic agent fleet full (${MAX_DYNAMIC_AGENTS}). Birth of '${name}' refused.` });
+            return;
+        }
+        if (!this.birthRateLimiter.allow()) {
+            console.warn(`[ORCHESTRATOR] ⛔ Birth rate limit (${MAX_BIRTHS_PER_HOUR}/hour) reached. Birth of '${name}' refused.`);
+            return;
+        }
+
         console.log(`[ORCHESTRATOR] Executing Expansion Protocol: ${name}`);
 
         // [W1] Whitespace-free IDs (legacy IDs carried a trailing space that
@@ -1173,7 +1207,14 @@ JSON ONLY:
         this.knownAgentIds.push(leaderId);
         this.hydrateAgent(leaderId); // Wake up immediately
 
-        this.squads.unshift({
+        // [PR-4d] Squad identity is stable: an existing squad with the same
+        // name+category is reactivated, never duplicated.
+        const existingSquad = this.squads.find(s => s.name === name.toUpperCase() && s.category === payload.category);
+        if (existingSquad) {
+            existingSquad.active = true;
+            console.log(`[ORCHESTRATOR] ♻️ Squad '${name}' already registered (${existingSquad.id}) — reactivated, not duplicated.`);
+        }
+        const squadEntry = existingSquad ?? {
             id: newSquadId,
             name: name.toUpperCase(),
             leaderId: leaderId,
@@ -1181,7 +1222,8 @@ JSON ONLY:
             category: payload.category,
             active: true,
             port: 9000 + this.squads.length
-        });
+        };
+        if (!existingSquad) this.squads.unshift(squadEntry);
 
         // Notify System
         systemBus.emit(SystemProtocol.UI_REFRESH, { source: 'ORCHESTRATOR', message: 'Swarm Topology Updated' });
