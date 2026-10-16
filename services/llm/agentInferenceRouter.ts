@@ -83,11 +83,17 @@ export function createAgentInferenceRouter(deps: AgentInferenceRouterDeps = {}) 
 
             let emitted = false;
             const thoughts = { buffer: '', emitted: new Set<string>() };
+            // [MODEL LEAK FIX] A model id is provider-specific: a Gemini id sent to
+            // Groq/Ollama Cloud 404s the whole leg. Strip the override when this
+            // provider is not the one the caller scoped it to.
+            const effectivePrepared = prepared.model && prepared.modelProvider && prepared.modelProvider !== id
+                ? { ...prepared, model: undefined }
+                : prepared;
             try {
-                for await (const text of adapter.stream(prepared)) {
+                for await (const text of adapter.stream(effectivePrepared)) {
                     if (!emitted) {
                         emitted = true;
-                        yield { type: 'provider', provider: id, model: adapter.modelFor?.(prepared) };
+                        yield { type: 'provider', provider: id, model: adapter.modelFor?.(effectivePrepared) };
                     }
                     if (!text) continue;
                     emitThoughts(thoughts, text, prepared.agentName);
