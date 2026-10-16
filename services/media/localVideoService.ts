@@ -101,6 +101,50 @@ export class LocalVideoService {
         }
     }
 
+    /**
+     * [HYGIENE] Quarantine legacy jobs with backup-first semantics (never delete):
+     * the FULL queue file is copied to
+     * <SILHOUETTE_QUARANTINE_DIR|data/quarantine>/media-queue-<ts>/ together with
+     * a MANIFEST.json (criteria + ids) BEFORE the live queue is rewritten without
+     * the matching jobs. Criteria: createdAt before `olderThan` (ISO) and/or
+     * explicit ids. Returns the backup dir as evidence.
+     */
+    public quarantineJobs(criteria: { olderThan?: string; ids?: string[] }): { quarantined: number; backupDir: string } {
+        let queue: VideoJob[] = [];
+        try {
+            queue = JSON.parse(fs.readFileSync(this.queuePath, 'utf-8'));
+        } catch (e) {
+            console.error("[LocalVideoService] Failed to read queue for quarantine:", e);
+            return { quarantined: 0, backupDir: '' };
+        }
+        const cutoff = criteria.olderThan ? new Date(criteria.olderThan).getTime() : null;
+        const idSet = criteria.ids ? new Set(criteria.ids) : null;
+        const matches = (j: VideoJob): boolean => {
+            if (idSet && idSet.has(j.id)) return true;
+            if (cutoff !== null && new Date(j.createdAt).getTime() < cutoff) return true;
+            return false;
+        };
+        const victims = queue.filter(matches);
+        if (victims.length === 0) return { quarantined: 0, backupDir: '' };
+
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        const quarantineBase = process.env.SILHOUETTE_QUARANTINE_DIR || 'data/quarantine';
+        const backupDir = path.resolve(process.cwd(), quarantineBase, `media-queue-${ts}`);
+        fs.mkdirSync(backupDir, { recursive: true });
+        fs.writeFileSync(path.join(backupDir, 'video_render_queue.backup.json'), JSON.stringify(queue, null, 2));
+        fs.writeFileSync(path.join(backupDir, 'MANIFEST.json'), JSON.stringify({
+            quarantinedAt: new Date().toISOString(),
+            criteria,
+            quarantinedIds: victims.map(v => v.id),
+            totalJobsBefore: queue.length,
+        }, null, 2));
+
+        const remaining = queue.filter(j => !matches(j));
+        fs.writeFileSync(this.queuePath, JSON.stringify(remaining, null, 2));
+        console.log(`[LocalVideoService] Quarantined ${victims.length} jobs -> ${backupDir}`);
+        return { quarantined: victims.length, backupDir };
+    }
+
     public getQueueStatus(): VideoJob[] {
         try {
             if (fs.existsSync(this.queuePath)) {

@@ -117,6 +117,26 @@ class MediaController {
     };
 
     /**
+     * POST /v1/media/queue/quarantine
+     * Quarantine legacy jobs with backup (never delete).
+     * Body: { olderThan?: ISODateString, ids?: string[] } - at least one required.
+     */
+    public quarantineQueue = async (req: Request, res: Response) => {
+        const { olderThan, ids } = req.body || {};
+        if (!olderThan && (!Array.isArray(ids) || ids.length === 0)) {
+            return res.status(400).json({ success: false, error: 'Provide olderThan (ISO date) and/or non-empty ids[]' });
+        }
+        if (olderThan && isNaN(new Date(olderThan).getTime())) {
+            return res.status(400).json({ success: false, error: 'olderThan must be a valid ISO date' });
+        }
+        if (ids !== undefined && !Array.isArray(ids)) {
+            return res.status(400).json({ success: false, error: 'ids must be an array of strings' });
+        }
+        const result = localVideoService.quarantineJobs({ olderThan, ids });
+        return res.json({ success: true, ...result });
+    };
+
+    /**
      * GET /v1/media/queue
      * Get all queued video jobs
      */

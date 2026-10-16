@@ -8,6 +8,8 @@ const router = Router();
 router.post('/queue', (req, res) => mediaController.queueVideo(req, res));
 // GET /v1/media/queue - Get all queued jobs
 router.get('/queue', (req, res) => mediaController.getQueue(req, res));
+// POST /v1/media/queue/quarantine - Quarantine legacy jobs with backup (never delete)
+router.post('/queue/quarantine', (req, res) => mediaController.quarantineQueue(req, res));
 // [R10] test-cleanup path - removes TEST-origin jobs only (see controller)
 router.delete('/queue/:id', (req, res) => mediaController.removeQueueJob(req, res));
 // GET /v1/media/queue/:id - Get specific job status

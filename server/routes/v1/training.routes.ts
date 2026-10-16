@@ -35,9 +35,15 @@ router.get('/latest', controller.getLatestTrainingData.bind(controller));
 
 /**
  * GET /v1/training/sleep
- * SSE endpoint for real-time sleep cycle progress
+ * Read-only SSE watch of sleep cycle progress (no side effects)
  */
-router.get('/sleep', controller.startSleepCycle.bind(controller));
+router.get('/sleep', controller.streamSleepCycle.bind(controller));
+
+/**
+ * POST /v1/training/sleep
+ * Triggers a sleep cycle and streams its progress over SSE
+ */
+router.post('/sleep', controller.startSleepCycle.bind(controller));
 
 // ==================== STATISTICS ====================
 
