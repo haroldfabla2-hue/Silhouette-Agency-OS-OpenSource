@@ -442,11 +442,11 @@ ${this.getSuggestedActions(rootCause)}
     public async mobilizeSquad(agentId: string, errorLog: string[]) {
         console.log(`[REMEDIATION] 🚨 MOBILIZING SQUADS for Agent ${agentId}...`);
 
-        // 1. Wake up The Inquisitors (QA) to analyze the failure
+        // 1. Wake up The Inquisitors (QA) to analyze the failure.
+        // [PR-3b] Specialists hydrate ON DEMAND at their actual point of use
+        // (research-01 / dev-01 in the needsResearch branch below), never
+        // "for potential use" - pre-hydration was RAM theater.
         orchestrator.hydrateAgent('qa-01');
-        // Pre-hydrate Research and Dev for potential use
-        orchestrator.hydrateAgent('research-01');
-        orchestrator.hydrateAgent('dev-01');
 
         // 3. Diagnosis Phase (QA)
         const diagnosis = await this.runDiagnosis(agentId, errorLog);
@@ -466,10 +466,12 @@ ${this.getSuggestedActions(rootCause)}
         let initialPlan = diagnosis.fixProposal;
 
         if (needsResearch) {
-            // PHASE 1: RESEARCH
+            // PHASE 1: RESEARCH - hydrate the specialist at its point of use
+            orchestrator.hydrateAgent('research-01');
             const researchFindings = await this.consultResearchTeam(errorLog.join('\n'));
 
-            // PHASE 2: COLLABORATIVE PLANNING
+            // PHASE 2: COLLABORATIVE PLANNING - hydrate at point of use
+            orchestrator.hydrateAgent('dev-01');
             initialPlan = await this.planSolution(diagnosis, researchFindings);
 
             // Log the deep fix

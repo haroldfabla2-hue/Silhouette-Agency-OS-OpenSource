@@ -79,7 +79,7 @@ describe('PR-2 event contracts', () => {
     it('mobilizeSquad emits SQUAD_MOBILIZED, never SQUAD_EXPANSION (source audit)', async () => {
         const fs = await import('fs');
         const src = fs.readFileSync('services/orchestrator.ts', 'utf8');
-        const mobilizeBody = src.slice(src.indexOf('fully mobilized') - 400, src.indexOf('fully mobilized') + 200);
+        const mobilizeBody = src.slice(src.indexOf('public async mobilizeSquad(squad: Squad)'), src.indexOf('public async mobilizeSquad(squad: Squad)') + 2000); // [PR-3b] anchor on the method signature with a bounded window (message text changed when drones stopped mass-hydrating; next legit SQUAD_EXPANSION emission is +10k chars away)
         expect(mobilizeBody).toContain('SQUAD_MOBILIZED');
         expect(mobilizeBody).not.toContain('SystemProtocol.SQUAD_EXPANSION');
     });
