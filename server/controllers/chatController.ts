@@ -179,14 +179,20 @@ export class ChatController {
 
             // 3. Generate LLM response (R1: unified fallback chain via the inference router)
             const response = await agentInferenceRouter.completeText(
-                this.buildPrompt(userMessage, recentHistory, profileContext, memoryContext, codeContext),
+                `${this.buildSystemPrompt(codeContext || '')}
+
+${this.buildPrompt(userMessage, recentHistory, profileContext, memoryContext, codeContext)}`,
                 { lane: 'conversational' }
             );
+            // Same tool bridge as /stream: execute [TOOL:] calls under the caller's
+            // role and render honest results (or loud errors) inline.
+            const bridged = await chatToolIntegration.processToolCalls(response, userRole);
+            const finalText = bridged.enhancedResponse;
 
             // 4. Persist Assistant Response
             const assistantMsg = {
                 role: 'assistant',
-                content: response,
+                content: finalText,
                 timestamp: Date.now()
             };
             sqliteService.appendChatMessage(assistantMsg, cleanSessionId);
@@ -343,8 +349,11 @@ export class ChatController {
             // 4. Build the system prompt with PURIFIED context (side-effect: warms prompt cache)
             // (R1: the provider SSE event now reports the provider THAT ANSWERS, emitted
             // by the inference router with the first token — never the attempted one.)
-            this.buildSystemPrompt(purifiedContext.code || '');
-            const fullPrompt = this.buildPromptPurified(userMessage, purifiedContext);
+            // [TOOL BRIDGE FIX] The system prompt carries the [TOOL:] protocol and the
+            // honest-capabilities rules. It was built and DISCARDED, so the model never
+            // saw the protocol and narrated actions instead of invoking tools.
+            const systemPrompt = this.buildSystemPrompt(purifiedContext.code || '');
+            const fullPrompt = `${systemPrompt}\n\n${this.buildPromptPurified(userMessage, purifiedContext)}`;
 
             // 5. Stream LLM response using the Universal Fallback Chain
             let fullResponse = '';
@@ -401,7 +410,7 @@ export class ChatController {
             if (chatToolIntegration.hasToolCalls(fullResponse)) {
                 res.write(`data: ${JSON.stringify({ type: 'status', message: 'Executing tools...' })}\n\n`);
 
-                const { toolResults, enhancedResponse } = await chatToolIntegration.processToolCalls(fullResponse);
+                const { toolResults, enhancedResponse } = await chatToolIntegration.processToolCalls(fullResponse, userRole);
                 finalResponse = enhancedResponse;
 
                 // Send tool results to client
