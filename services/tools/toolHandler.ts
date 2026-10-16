@@ -12,6 +12,9 @@ import { imageFactory } from '../media/imageFactory';
 import { visualService } from '../visualService';
 import { toolFactory } from './toolFactory';
 import { toolRegistry, ToolCategory } from './toolRegistry';
+
+// Core tools whose execution is enforced by fileJail - never shadowable by plugins (PR-G).
+const CORE_JAILED_TOOLS = new Set<string>(['read_file', 'write_file', 'list_files']);
 import { pluginRegistry } from '../plugins/pluginRegistry';
 import { readUrl, searchWeb } from '../../tools/webBrowserTool';
 
@@ -22,7 +25,14 @@ export class ToolHandler {
 
         // 1. Check if this is a Plugin Tool
         const toolDef = toolRegistry.getTool(name);
-        if (toolDef && toolDef.handler.type === 'BUILTIN' && toolDef.handler.handlerName.startsWith('PLUGIN:')) {
+        // PR-G: the core filesystem tools are security-jailed (see fileJail.ts). A plugin
+        // registered under the same name must NEVER shadow the jailed implementation -
+        // that would silently bypass every write restriction. Plugin routing only applies
+        // to names the jailed switch below does not own.
+        if (toolDef && CORE_JAILED_TOOLS.has(name) && toolDef.handler.type === 'BUILTIN' && toolDef.handler.handlerName.startsWith('PLUGIN:')) {
+            console.warn('[ToolHandler] plugin shadowing blocked for jailed core tool: ' + name + ' (using jailed implementation)');
+        }
+        if (toolDef && !CORE_JAILED_TOOLS.has(name) && toolDef.handler.type === 'BUILTIN' && toolDef.handler.handlerName.startsWith('PLUGIN:')) {
             const [, pluginId, toolName] = toolDef.handler.handlerName.split(':');
             const handler = pluginRegistry.getToolHandler(pluginId, toolName);
 
