@@ -11,7 +11,15 @@ export interface ExecMarker {
     originalMatch: string;
 }
 
-const MARKER = /\[EXECUTE:\s*(\w+)\s*/g;
+const MARKER = /\[EXECUTE:\s*([\w.]+)\s*/g;
+
+/**
+ * Providers namespace their native tool names (gpt-oss emits "tool.write_file").
+ * Strip the well-known prefixes so the pipeline resolves the registry name.
+ */
+export function normalizeToolName(name: string): string {
+    return name.replace(/^(tool|tools|functions)\./, '');
+}
 
 export function extractExecuteMarkers(text: string): ExecMarker[] {
     const out: ExecMarker[] = [];
