@@ -150,9 +150,38 @@ export class AgentSwarmOrchestrator {
         this.reputationLedger = new ReputationLedger(defaultReputationLedgerPath());
         this.orgChart = loadOrganization(defaultOrganizationPath(), INITIAL_AGENTS);
 
-        // Listen for Expansion Protocols from the AI
+        // Listen for Expansion Protocols from the AI.
+        // [PR-2] Typed contract: SQUAD_EXPANSION is a BIRTH COMMAND and its
+        // payload must carry name+category (possibly double-wrapped, see
+        // resolveSquadName). Anything else (mobilization notices, hydration
+        // requests) is rejected with a log instead of birthing an
+        // "Unknown Squad Lead" husk — the D3 collision that produced 52+
+        // phantom agents in the 2026-10-15 acceptance run.
         systemBus.subscribe(SystemProtocol.SQUAD_EXPANSION, (event) => {
+            const raw = event?.payload ?? {};
+            const inner = raw?.payload ?? raw;
+            const hasName = typeof inner.name === 'string' && inner.name.trim().length > 0;
+            const hasCategory = typeof inner.category === 'string' && inner.category.trim().length > 0;
+            if (!hasName || !hasCategory) {
+                console.warn(`[ORCHESTRATOR] ⛔ SQUAD_EXPANSION rejected: birth command requires name+category (got keys: ${Object.keys(inner).join(',') || 'none'}). Use SQUAD_MOBILIZED for mobilization notices and AGENT_HYDRATION_REQUEST to wake an existing agent.`);
+                return;
+            }
             this.handleDynamicExpansion(event.payload);
+        });
+
+        // [PR-2] Hydration command: wake ONE existing agent. Unknown ids are
+        // rejected — hydration must never become a backdoor birth channel.
+        systemBus.subscribe(SystemProtocol.AGENT_HYDRATION_REQUEST, (event) => {
+            const agentId = event?.payload?.agentId;
+            if (typeof agentId !== 'string' || !agentId.trim()) {
+                console.warn('[ORCHESTRATOR] ⛔ AGENT_HYDRATION_REQUEST rejected: missing agentId.');
+                return;
+            }
+            if (!this.knownAgentIds.includes(agentId)) {
+                console.warn(`[ORCHESTRATOR] ⛔ AGENT_HYDRATION_REQUEST rejected: unknown agent ${agentId}.`);
+                return;
+            }
+            this.hydrateAgent(agentId).catch(e => console.error(`[ORCHESTRATOR] Hydration failed for ${agentId}:`, e));
         });
 
         // Listen for Async Task Assignments (e.g., Research Requests from Dreamer)
@@ -2289,8 +2318,12 @@ OBJECTIVES:
         }
 
         squad.active = true;
-        systemBus.emit(SystemProtocol.SQUAD_EXPANSION, {
+        // [PR-2] Mobilization is a NOTIFICATION, not a birth command.
+        // Emitting SQUAD_EXPANSION here collided with the birth subscriber
+        // and birthed an "Unknown Squad Lead" phantom per mobilization (D3).
+        systemBus.emit(SystemProtocol.SQUAD_MOBILIZED, {
             source: leader.name,
+            squadId: squad.id,
             message: `${squad.name} fully mobilized with ${drones.length} drones.`
         });
     }
@@ -2534,6 +2567,8 @@ OBJECTIVES:
 
             // Normal priority triggers
             [SystemProtocol.SQUAD_EXPANSION]: { tag: MessageTag.TRIGGER, priority: MessagePriority.NORMAL },
+            [SystemProtocol.SQUAD_MOBILIZED]: { tag: MessageTag.SYSTEM, priority: MessagePriority.LOW },
+            [SystemProtocol.AGENT_HYDRATION_REQUEST]: { tag: MessageTag.TRIGGER, priority: MessagePriority.NORMAL },
             [SystemProtocol.SQUAD_REASSIGNMENT]: { tag: MessageTag.TRIGGER, priority: MessagePriority.NORMAL },
             [SystemProtocol.AGENT_EVOLVED]: { tag: MessageTag.TRIGGER, priority: MessagePriority.NORMAL },
             [SystemProtocol.EPISTEMIC_GAP_DETECTED]: { tag: MessageTag.TRIGGER, priority: MessagePriority.NORMAL },
