@@ -72,9 +72,7 @@ class ContinuumMemorySystem {
 
     private async promoteWorking(node: MemoryNode, tags: string[] = []): Promise<void> {
         const promoted = { ...node, tier: MemoryTier.MEDIUM, tags: [...node.tags, ...tags] };
-        const entry = await memoryTransitions.begin(node, promoted);
-        await memoryTransitions.run(entry);
-        await memoryTransitions.commit(entry);
+        await memoryTransitions.transition(node, promoted);
         // Do not remove a replacement with the same ID that arrived while writing.
         this.working = this.working.filter(n => n !== node);
         this.markDirty();
@@ -209,8 +207,7 @@ class ContinuumMemorySystem {
                             throw new Error(`Source changed before replay: ${entry.key}`);
                         }
                     }
-                    await memoryTransitions.run(entry);
-                    await memoryTransitions.commit(entry);
+                    await memoryTransitions.resume(entry);
                 } else {
                     const stored = await lancedbService.getNodeById(entry.destination.id);
                     if (JSON.stringify(stored) !== JSON.stringify(entry.destination)) {
@@ -732,9 +729,7 @@ class ContinuumMemorySystem {
                 if (ageMs > 30 * 24 * 60 * 60 * 1000 && node.accessCount < 5) {
                     // console.log(`[CONTINUUM] Archiving node ${node.id} to LONG tier.`);
                     const archivedNode = { ...node, tier: MemoryTier.LONG, compressionLevel: 1 };
-                    const entry = await memoryTransitions.begin(node, archivedNode);
-                    await memoryTransitions.run(entry);
-                    await memoryTransitions.commit(entry);
+                    await memoryTransitions.transition(node, archivedNode);
                     archivedCount++;
                 }
             }
@@ -780,9 +775,7 @@ class ContinuumMemorySystem {
 
                 for (const node of batch) {
                     const archived = { ...node, tier: MemoryTier.DEEP, tags: [...new Set([...node.tags, 'ARCHIVED', `archive:${archiveId}`])] };
-                    const entry = await memoryTransitions.begin(node, archived);
-                    await memoryTransitions.run(entry);
-                    await memoryTransitions.commit(entry);
+                    await memoryTransitions.transition(node, archived);
                 }
             }
 
@@ -1075,12 +1068,15 @@ class ContinuumMemorySystem {
         console.log("[CONTINUUM] 🌪️ FORCE CONSOLIDATION INITIATED");
         let count = 0;
 
+        // [PR-4b] Per-node isolation: a failing promotion must not escape as an
+        // unhandled rejection (prod FATAL) nor abort the remaining consolidations.
+        let failed = 0;
         for (const node of [...this.working]) {
-            await this.promoteWorking(node, ['CONSOLIDATED']);
-            count++;
+            try { await this.promoteWorking(node, ['CONSOLIDATED']); count++; }
+            catch (error) { failed++; console.error(`[CONTINUUM] Consolidation failed for ${node.id}; source remains in RAM:`, error); }
         }
 
-        console.log(`[CONTINUUM] 🌪️ Consolidated ${count} memories to L3 (LanceDB). RAM is empty.`);
+        console.log(`[CONTINUUM] 🌪️ Consolidated ${count} memories to L3 (LanceDB). ${failed > 0 ? `⚠️ ${failed} failed (sources kept in RAM).` : 'RAM is empty.'}`);
         return { promoted: count };
     }
 }
