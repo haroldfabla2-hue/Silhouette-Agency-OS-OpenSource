@@ -26,9 +26,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // ---------------------------------------------------------------------------
 const mocks = vi.hoisted(() => {
     const generateGeminiTextPure = vi.fn();
+    const generateTextWithCloudFallbacks = vi.fn();
     const generateContentStream = vi.fn();
     return {
         generateGeminiTextPure,
+        generateTextWithCloudFallbacks,
         generateContentStream,
         geminiClient: { models: { generateContentStream } },
         zhipuIsAvailable: vi.fn(),
@@ -43,7 +45,8 @@ const mocks = vi.hoisted(() => {
 vi.mock('../../services/geminiService', () => ({
     getGeminiClient: () => mocks.geminiClient,
     hasGeminiKey: () => true,
-    generateGeminiTextPure: mocks.generateGeminiTextPure
+    generateGeminiTextPure: mocks.generateGeminiTextPure,
+    generateTextWithCloudFallbacks: mocks.generateTextWithCloudFallbacks
 }));
 
 vi.mock('../../services/zhipuService', () => ({
@@ -73,7 +76,7 @@ vi.mock('../../services/costEstimator', () => ({
 }));
 
 import { geminiAdapter } from '../../services/llm/streamAdapters';
-import { DEFAULT_GEMINI_MODEL } from '../../services/llm/defaultModels';
+import { DEFAULT_GEMINI_MODEL, DEFAULT_GEMINI_BACKGROUND_MODEL } from '../../services/llm/defaultModels';
 import { backgroundLLM } from '../../services/backgroundLLMService';
 
 const preparedBase: any = {
@@ -153,6 +156,7 @@ describe('W6 hotfix — backgroundLLMService Gemini fallback', () => {
     beforeEach(() => {
         saved = process.env[ENV_KEY];
         mocks.generateGeminiTextPure.mockReset();
+        mocks.generateTextWithCloudFallbacks.mockReset();
         mocks.zhipuIsAvailable.mockReset().mockReturnValue(false);
         mocks.ollamaIsAvailable.mockReset();
         mocks.ollamaGenerateCompletion.mockReset();
@@ -163,32 +167,31 @@ describe('W6 hotfix — backgroundLLMService Gemini fallback', () => {
         else process.env[ENV_KEY] = saved;
     });
 
-    it('falls back to Gemini with the env-driven background model when DeepSeek/ZhipuAI are unavailable', async () => {
-        process.env[ENV_KEY] = 'gemini-test-bg';
-        mocks.generateGeminiTextPure.mockResolvedValue('gemini-ok');
+    it('falls back to the cloud failover chain when DeepSeek/ZhipuAI are unavailable', async () => {
+        mocks.generateTextWithCloudFallbacks.mockResolvedValue('cloud-ok');
         mocks.ollamaIsAvailable.mockResolvedValue(true);
 
         const result = await backgroundLLM.generate('do something', { taskType: 'GENERAL' });
 
-        expect(result).toBe('gemini-ok');
-        expect(mocks.generateGeminiTextPure).toHaveBeenCalledWith('do something', 'gemini-test-bg');
-        // Gemini answered: Ollama must never be touched
+        expect(result).toBe('cloud-ok');
+        expect(mocks.generateTextWithCloudFallbacks).toHaveBeenCalledWith(
+            'do something',
+            expect.objectContaining({ maxTokens: expect.any(Number), temperature: expect.any(Number) })
+        );
+        // Cloud chain answered: Ollama must never be touched
         expect(mocks.ollamaGenerateCompletion).not.toHaveBeenCalled();
     });
 
-    it('defaults the background model to gemini-3.5-flash when the env var is unset', async () => {
+    it('defaults the background model to gemini-3.1-flash-lite when the env var is unset', () => {
+        // Per-model quota buckets drain independently (verified live 2026-10-15:
+        // gemini-3.5-flash non-stream 429s while lite answers 200 on the same key),
+        // so the background default is the lite model, not the exhausted 3.5-flash.
         delete process.env[ENV_KEY];
-        mocks.generateGeminiTextPure.mockResolvedValue('gemini-ok');
-        mocks.ollamaIsAvailable.mockResolvedValue(false);
-
-        await backgroundLLM.generate('p', { taskType: 'GENERAL' });
-
-        expect(mocks.generateGeminiTextPure).toHaveBeenCalledWith('p', 'gemini-3.5-flash');
+        expect(DEFAULT_GEMINI_BACKGROUND_MODEL).toBe('gemini-3.1-flash-lite');
     });
 
-    it('degrades honestly to Ollama when the Gemini fallback also fails', async () => {
-        process.env[ENV_KEY] = 'gemini-test-bg';
-        mocks.generateGeminiTextPure.mockRejectedValue(new Error('429 quota'));
+    it('degrades honestly to Ollama (default qwen3:4b) when the whole cloud chain fails', async () => {
+        mocks.generateTextWithCloudFallbacks.mockRejectedValue(new Error('all clouds failed'));
         mocks.ollamaIsAvailable.mockResolvedValue(true);
         mocks.ollamaGenerateCompletion.mockResolvedValue('local-ok');
 
@@ -196,5 +199,22 @@ describe('W6 hotfix — backgroundLLMService Gemini fallback', () => {
 
         expect(result).toBe('local-ok');
         expect(mocks.ollamaGenerateCompletion).toHaveBeenCalledTimes(1);
+        // 5th arg = model; default is qwen3:4b (glm4:light was never provisioned)
+        expect(mocks.ollamaGenerateCompletion.mock.calls[0][4]).toBe('qwen3:4b');
+    });
+
+    it('honors OLLAMA_BACKGROUND_MODEL for the local fallback', async () => {
+        process.env['OLLAMA_BACKGROUND_MODEL'] = 'qwen3:4b-instruct';
+        try {
+            mocks.generateTextWithCloudFallbacks.mockRejectedValue(new Error('all clouds failed'));
+            mocks.ollamaIsAvailable.mockResolvedValue(true);
+            mocks.ollamaGenerateCompletion.mockResolvedValue('local-ok');
+
+            await backgroundLLM.generate('p', { taskType: 'GENERAL' });
+
+            expect(mocks.ollamaGenerateCompletion.mock.calls[0][4]).toBe('qwen3:4b-instruct');
+        } finally {
+            delete process.env['OLLAMA_BACKGROUND_MODEL'];
+        }
     });
 });
