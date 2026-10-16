@@ -5,7 +5,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { Plus, Trash2, Download, RefreshCw, Layers } from 'lucide-react';
-import { api } from '../../utils/api';
+import { api, getAuthHeaders } from '../../utils/api';
 
 type Health = { state: 'loading' | 'ok' | 'unavailable'; commands?: number; reason?: string };
 type TextLayer = { text: string; x: number; y: number; size: number; color: string; font?: string; weight?: number; tracking?: number; italic?: boolean };
@@ -35,6 +35,8 @@ export const VisualComposePanel: React.FC = () => {
 
     const [texts, setTexts] = useState<TextLayer[]>([{ text: 'HEADLINE', x: 120, y: 540, size: 72, color: '#ffffff' }]);
     const [families, setFamilies] = useState<string[]>([]);
+    const [fontUpload, setFontUpload] = useState<string | null>(null);
+    const fontInputRef = React.useRef<HTMLInputElement>(null);
     const [images, setImages] = useState<ImageLayer[]>([]);
     const [format, setFormat] = useState<'png' | 'jpg' | 'webp'>('png');
 
@@ -53,11 +55,29 @@ export const VisualComposePanel: React.FC = () => {
 
     useEffect(checkHealth, []);
 
-    useEffect(() => {
+    const refreshFonts = () => {
         api.get<{ families?: string[] }>('/v1/visual/fonts')
             .then(res => setFamilies(res?.families ?? []))
             .catch(() => { /* picker falls back to free-text font name */ });
-    }, []);
+    };
+    useEffect(refreshFonts, []);
+
+    const uploadFont = async (file: File) => {
+        setFontUpload(`Subiendo ${file.name}…`);
+        try {
+            const res = await fetch('/v1/visual/fonts/upload', {
+                method: 'POST',
+                headers: { ...getAuthHeaders(), 'Content-Type': 'application/octet-stream', 'X-Font-Filename': file.name },
+                body: file,
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data?.success) throw new Error(data?.error || `HTTP ${res.status}`);
+            setFontUpload(`✓ ${data.family} instalada${data.engineVisible ? '' : ' (reinicio pendiente)'}`);
+            refreshFonts();
+        } catch (e: any) {
+            setFontUpload(`✗ ${e?.message || 'upload failed'}`);
+        }
+    };
 
     const applyPreset = (i: number) => {
         setPreset(i); setCustom(false);
@@ -183,7 +203,14 @@ export const VisualComposePanel: React.FC = () => {
                 {/* RIGHT: Text layers + output */}
                 <div className="space-y-4">
                     <div className="space-y-2">
-                        <label className="text-xs font-mono text-slate-400">TEXT LAYERS</label>
+                        <div className="flex items-center justify-between">
+                            <label className="text-xs font-mono text-slate-400">TEXT LAYERS</label>
+                            <button onClick={() => fontInputRef.current?.click()} title="Subir fuente TTF/OTF"
+                                className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 rounded text-[10px] font-bold text-slate-300">+ FONT</button>
+                            <input ref={fontInputRef} type="file" accept=".ttf,.otf,.ttc" className="hidden"
+                                onChange={e => { const f = e.target.files?.[0]; if (f) uploadFont(f); e.target.value = ''; }} />
+                        </div>
+                        {fontUpload && <div className="text-[10px] font-mono text-slate-500">{fontUpload}</div>}
                         {texts.map((t, i) => (
                             <div key={i} className="p-2 bg-slate-950 border border-slate-800 rounded space-y-2">
                                 <div className="flex gap-2">

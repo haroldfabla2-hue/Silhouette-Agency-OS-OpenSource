@@ -53,6 +53,14 @@ router.get('/fonts', async (_req: Request, res: Response) => {
     return res.status(status).json(result.ok ? result.data : { error: result.error, unavailable: result.unavailable });
 });
 
+// POST /v1/visual/fonts/upload — install a user font (raw bytes + X-Font-Filename), server + web editor
+router.post('/fonts/upload', express.raw({ type: 'application/octet-stream', limit: '30mb' }), async (req: Request, res: Response) => {
+    const filename = String(req.headers['x-font-filename'] || '');
+    const result = await visualService.installUserFont(filename, req.body as Buffer);
+    const status = result.unavailable ? 503 : result.ok ? 200 : 400;
+    return res.status(status).json(result.ok ? { success: true, ...result.data } : { success: false, error: result.error });
+});
+
 // POST /v1/visual/convert — format conversion { in, out, quality? }
 router.post('/convert', async (req: Request, res: Response) => {
     const { in: input, out, quality } = req.body || {};
