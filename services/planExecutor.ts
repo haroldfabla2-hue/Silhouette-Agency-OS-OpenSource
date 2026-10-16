@@ -24,6 +24,7 @@ import { stepDeclaresFileWork, durableFileGrant } from './tools/toolSelection'; 
 import { evaluatePlanHonesty } from './execution/stepHonesty'; // [W3]
 import { collectWrittenArtifacts } from './execution/artifactLedger'; // [W3]
 import { recordPlanTasks, markTaskRunning, markTaskDone, closeOpenTasks } from './execution/taskLedger'; // [PR-1] [PR-4c: closeOpenTasks]
+import { extractExecuteMarkers, normalizeToolName } from './tools/execMarker'; // [PR-I]
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -319,6 +320,13 @@ class PlanExecutor {
                             { requesterId: `plan_step_${step.order}`, priority: 'NORMAL' }
                         );
 
+                        // PR-I: handlers sometimes report failure as an { error } payload
+                        // instead of success:false - unwrap it so the plan sees the truth.
+                        const innerError = capResult.success && capResult.data && typeof capResult.data === 'object'
+                            && typeof (capResult.data as any).error === 'string'
+                            ? String((capResult.data as any).error) : null;
+                        if (innerError) { capResult.success = false; capResult.error = innerError; }
+
                         // Inject tool result into output
                         const resultSummary = capResult.success
                             ? `[Tool ${toolCall.name} completed: ${JSON.stringify(capResult.data).substring(0, 200)}]`
@@ -612,28 +620,26 @@ RESPOND NOW:`;
         const calls: Array<{ name: string; args: Record<string, any>; originalMatch: string }> = [];
 
         // Pattern 1: [TOOL: name(args)]
-        const toolPattern = /\[TOOL:\s*(\w+)\((.*?)\)\]/gi;
+        const toolPattern = /\[TOOL:\s*([\w.]+)\((.*?)\)\]/gi;
         let match;
         while ((match = toolPattern.exec(text)) !== null) {
             calls.push({
-                name: match[1],
+                name: normalizeToolName(match[1]),
                 args: this.parseToolArgs(match[2]),
                 originalMatch: match[0]
             });
         }
 
-        // Pattern 2: [EXECUTE: name {json}]
-        const executePattern = /\[EXECUTE:\s*(\w+)\s*(\{.*?\})\]/gi;
-        while ((match = executePattern.exec(text)) !== null) {
-            try {
-                calls.push({
-                    name: match[1],
-                    args: JSON.parse(match[2]),
-                    originalMatch: match[0]
-                });
-            } catch {
-                // Invalid JSON, skip
-            }
+        // Pattern 2: [EXECUTE: name {json}] - PR-I: delegate to the shared
+        // balanced-brace scanner (services/tools/execMarker.ts). The old regex
+        // (\w+)(\{.*?\}) truncated at the first inner '}' (corrupting nested
+        // args) and rejected namespaced provider names like 'tool.write_file'.
+        for (const marker of extractExecuteMarkers(text)) {
+            calls.push({
+                name: normalizeToolName(marker.name),
+                args: marker.args,
+                originalMatch: marker.originalMatch
+            });
         }
 
         return calls;
