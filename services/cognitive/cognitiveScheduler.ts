@@ -3,6 +3,7 @@ import { lancedbService } from '../lancedbService';
 import { generateEmbedding } from '../geminiService';
 import { continuum } from '../continuumMemory';
 import { redisClient } from '../redisClient';
+import { DEFAULT_GEMINI_BACKGROUND_MODEL } from '../llm/defaultModels';
 
 /**
  * 🧠 Silhouette Cognitive Scheduler (Brain Port)
@@ -95,7 +96,7 @@ export class CognitiveScheduler {
             MEMORIES:
             ${factsText}`;
 
-            let responseText = await generateText(prompt, { model: 'gemini-2.5-flash' }); // Fast model 
+            let responseText = await generateText(prompt, { model: DEFAULT_GEMINI_BACKGROUND_MODEL }); // live model from defaultModels (literal gemini-2.5-flash 404'd)
             responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
 
             try {

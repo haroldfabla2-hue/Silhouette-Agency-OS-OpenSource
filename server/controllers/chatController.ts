@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { sqliteService } from '../../services/sqliteService';
 import { agentInferenceRouter } from '../../services/llm/agentInferenceRouter';
+import { DEFAULT_GEMINI_MODEL, DEFAULT_GEMINI_PRO_MODEL } from '../../services/llm/defaultModels';
 import { capabilitiesFromAgentCapabilities } from '../../services/llm/inference';
 import { continuum } from '../../services/continuumMemory';
 import { MemorySource, sourceTag, speakerLabel, shouldExcludeFromChat, wantsSelfIncluded } from '../../services/memory/provenance';
@@ -349,9 +350,13 @@ export class ChatController {
             let fullResponse = '';
 
             // Determine model override based on preference
-            let modelOverride = 'gemini-2.5-flash'; // Default
-            if (modelPreference === 'pro') modelOverride = 'gemini-1.5-pro';
-            if (modelPreference === 'flash') modelOverride = 'gemini-2.0-flash-exp';
+            // Model ids come from the single source of truth (services/llm/defaultModels):
+            // literals here rotted and 404'd in production (gemini-2.5-flash retired for new
+            // keys, gemini-1.5-pro and gemini-2.0-flash-exp removed) while the registry
+            // defaults stayed current. Never pin model names in controllers again.
+            let modelOverride = DEFAULT_GEMINI_MODEL;
+            if (modelPreference === 'pro') modelOverride = DEFAULT_GEMINI_PRO_MODEL;
+            if (modelPreference === 'flash') modelOverride = DEFAULT_GEMINI_MODEL;
 
             const stream = agentInferenceRouter.stream({
                 agentName: 'Silhouette',
