@@ -88,3 +88,32 @@ export function markTaskDone(planId: string, step: PlanStep, result: StepOutcome
         console.warn(`[TASK_LEDGER] mark done failed (non-blocking): ${e?.message}`);
     }
 }
+
+/**
+ * [PR-4c] Close ledger rows a plan abort leaves open. Any step that never
+ * reached execution (still 'pending') or was left mid-flight ('running') is
+ * marked 'failed' with the abort reason - the ledger must never show eternal
+ * "running" for work the executor already abandoned (prod 2026-10-16:
+ * task_plan_d3c00a3e_2 sat "running" after the LLM chain gave up).
+ */
+export function closeOpenTasks(planId: string, executedOrders: Set<number>, reason: string): void {
+    try {
+        const rows = sqliteService.getTasksByPlan(planId);
+        for (const row of rows) {
+            let data: any = {};
+            try { data = row?.data ? JSON.parse(row.data) : {}; } catch { data = {}; }
+            const order = typeof data.stepOrder === 'number' ? data.stepOrder : NaN;
+            if (executedOrders.has(order)) continue;
+            if (row.status !== 'pending' && row.status !== 'running') continue;
+            sqliteService.upsertTask({
+                id: row.id,
+                description: row.description,
+                assigned_to: row.assigned_to,
+                status: 'failed',
+                data: { ...data, finishedAt: Date.now(), error: `aborted: ${reason}`.substring(0, 500) }
+            });
+        }
+    } catch (e: any) {
+        console.warn(`[TASK_LEDGER] close open tasks failed (non-blocking): ${e?.message}`);
+    }
+}

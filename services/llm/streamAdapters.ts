@@ -132,9 +132,18 @@ export function openAICompatibleAdapter(definition: ProviderDefinition, client: 
             })) {
                 if (event.type === 'text') yield event.text;
                 else if (event.type === 'tool') {
-                    // The agent route uses textual tools; a structured tool delta here means the
-                    // provider answered outside the contract. Fail loudly instead of dropping it.
-                    throw new InferenceError(definition.id, 'invalid-response', 'unexpected tool call delta (no tools were requested)');
+                    // [PR-4c] Some OpenAI-compatible providers (gpt-oss:20b on
+                    // Ollama Cloud) emit SPURIOUS empty tool-call deltas on
+                    // plain text streams. An empty delta (no function name) is
+                    // provider noise: warn and skip. A delta carrying a real
+                    // function name still violates the textual tool contract
+                    // and fails loudly (original behavior preserved).
+                    const fnName = event.delta?.function?.name;
+                    if (!fnName || !fnName.trim()) {
+                        console.warn(`[${definition.id}] ⚠️ Ignoring spurious empty tool-call delta from provider (no tools were requested).`);
+                    } else {
+                        throw new InferenceError(definition.id, 'invalid-response', 'unexpected tool call delta (no tools were requested)');
+                    }
                 }
             }
         }

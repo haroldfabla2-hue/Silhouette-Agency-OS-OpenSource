@@ -440,6 +440,24 @@ ${this.getSuggestedActions(rootCause)}
      * Wakes up the necessary specialists to handle the crisis.
      */
     public async mobilizeSquad(agentId: string, errorLog: string[]) {
+        // [PR-4c] Breaker BEFORE any work: same-signature loops die here.
+        const signature = this.mobilizationSignature(agentId, errorLog);
+        const throttle = this.mobilizationThrottle(signature);
+        if (throttle === -1) {
+            console.error(`[REMEDIATION] 🛑 CIRCUIT OPEN for ${agentId}: ${RemediationService.MAX_MOBILIZATIONS_PER_HOUR} mobilizations in the last hour did not fix this failure signature. Marking FAILED and escalating to HUMAN. No further automatic retries.`);
+            sqliteService.log('ERROR', `Auto-repair exhausted for ${agentId} (signature: ${signature}). Manual review required.`, 'remediation');
+            systemBus.emit(SystemProtocol.UI_REFRESH, {
+                source: 'SYSTEM_ALERT',
+                message: `AUTO-REPAIR EXHAUSTED for ${agentId}: same failure ${RemediationService.MAX_MOBILIZATIONS_PER_HOUR}x in 1h. Agent marked FAILED; manual review required.`
+            });
+            try { await orchestrator.markAgentFailed(agentId, `auto-repair exhausted (${signature})`); } catch { /* non-blocking */ }
+            return;
+        }
+        if (throttle > 0) {
+            console.warn(`[REMEDIATION] ⏳ Backoff: skipping duplicate mobilization for ${agentId} (${Math.ceil(throttle / 1000)}s left for this signature).`);
+            return;
+        }
+        this.recordMobilization(signature);
         console.log(`[REMEDIATION] 🚨 MOBILIZING SQUADS for Agent ${agentId}...`);
 
         // 1. Wake up The Inquisitors (QA) to analyze the failure.
@@ -735,6 +753,39 @@ ${this.getSuggestedActions(rootCause)}
     // [FIX] Track zombie reset attempts to prevent infinite loops
     private zombieResetAttempts: Map<string, number> = new Map();
     private readonly MAX_ZOMBIE_RESETS = 3;
+
+    // [PR-4c] Mobilization circuit breaker (pattern: Erlang supervisor
+    // intensity+period, K8s backoffLimit): max N mobilizations per failure
+    // signature per hour, exponential backoff between attempts, and a
+    // terminal FAILED state with a single honest human alert when exhausted.
+    // Prod 2026-10-16: same-signature mobilizations looped 30+ times on
+    // JANITOR_SYSTEM and 717 agent resets burned 346% CPU on a 4-core box.
+    private readonly mobilizationHistory = new Map<string, number[]>();
+    private static readonly MAX_MOBILIZATIONS_PER_HOUR = 3;
+    private static readonly MOBILIZATION_WINDOW_MS = 60 * 60 * 1000;
+    private static readonly MOBILIZATION_BACKOFF_BASE_MS = 60 * 1000;
+
+    private mobilizationSignature(agentId: string, errorLog: string[]): string {
+        const first = (errorLog && errorLog.length > 0) ? String(errorLog[0]).substring(0, 120) : 'unknown';
+        return `${agentId}::${first}`;
+    }
+
+    /** 0 = proceed; >0 = backoff remaining ms; -1 = exhausted for this window. */
+    public mobilizationThrottle(signature: string, now: number = Date.now()): number {
+        const attempts = (this.mobilizationHistory.get(signature) || []).filter(t => now - t < RemediationService.MOBILIZATION_WINDOW_MS);
+        this.mobilizationHistory.set(signature, attempts);
+        if (attempts.length >= RemediationService.MAX_MOBILIZATIONS_PER_HOUR) return -1;
+        if (attempts.length === 0) return 0;
+        const backoff = RemediationService.MOBILIZATION_BACKOFF_BASE_MS * Math.pow(2, attempts.length - 1);
+        const elapsed = now - attempts[attempts.length - 1];
+        return elapsed >= backoff ? 0 : (backoff - elapsed);
+    }
+
+    private recordMobilization(signature: string, now: number = Date.now()): void {
+        const attempts = this.mobilizationHistory.get(signature) || [];
+        attempts.push(now);
+        this.mobilizationHistory.set(signature, attempts);
+    }
 
     // --- PHASE 4: FAST TRACK REMEDIATION (IMMUNE RESPONSE) ---
     public async fastTrackRemediation(agentId: string, actionType: string) {
