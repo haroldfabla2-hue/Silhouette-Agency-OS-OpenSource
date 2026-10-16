@@ -366,6 +366,30 @@ class PlanExecutor {
             ]);
             const stepArtifacts = await collectWrittenArtifacts(stepActors, stepStart - 1000);
 
+            // [PR-4b] Honest success: an empty or error-shaped LLM response is a
+            // FAILURE, not a completed task. generateAgentResponse swallows provider
+            // exhaustion into fixed strings ("An error occurred during agent
+            // processing.", "Error: ...") instead of throwing, so success used to be
+            // recorded for steps where the LLM never answered. Real verified tool
+            // artifacts still count as success even with a thin text output.
+            const trimmedOutput = (finalOutput ?? '').trim();
+            const errorShaped = trimmedOutput.length === 0
+                || /^Error:/.test(trimmedOutput)
+                || /^An error occurred during agent processing\.?$/i.test(trimmedOutput)
+                || /^\{\s*"error"/.test(trimmedOutput);
+            if (errorShaped && stepArtifacts.length === 0) {
+                providerHealth.reportFailure('gemini', 'empty or error-shaped LLM response');
+                return {
+                    stepOrder: step.order,
+                    agentId: step.agentId,
+                    output: finalOutput,
+                    success: false,
+                    tokensUsed: response.usage || 0,
+                    executionTimeMs: Date.now() - stepStart,
+                    error: 'LLM returned no usable content (empty or error-shaped response)'
+                };
+            }
+
             return {
                 stepOrder: step.order,
                 agentId: step.agentId,

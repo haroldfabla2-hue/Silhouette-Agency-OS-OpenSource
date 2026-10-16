@@ -40,7 +40,11 @@ export class MemoryTransitions {
         try {
             const entry = JSON.parse(await fs.readFile(this.file(key), 'utf8')) as MemoryTransition;
             if (JSON.stringify(entry.destination) !== JSON.stringify(destination)) {
-                throw new Error(`Conflicting transition for ${source.id}`);
+                // [PR-4b] Same source state, divergent destination wish (e.g. different
+                // tag sets from concurrent promoters). The journaled transition is
+                // durable and replay is idempotent, so adopt it and continue loudly
+                // instead of throwing into an unhandled rejection (prod FATAL x33).
+                console.warn(`[MEMORY_TRANSITIONS] Conflicting destination for ${source.id}; adopting journaled transition ${entry.key} (divergent wish dropped).`);
             }
             return entry;
         } catch (error: any) {
@@ -64,6 +68,37 @@ export class MemoryTransitions {
         entry.state = 'VERIFIED';
         await this.write(entry);
         return entry;
+    }
+
+    private chains = new Map<string, Promise<unknown>>();
+
+    private enqueue<T>(id: string, fn: () => Promise<T>): Promise<T> {
+        const prev = this.chains.get(id) ?? Promise.resolve();
+        const next = prev.then(fn, fn);
+        // The stored chain must survive individual failures so later work is not blocked.
+        this.chains.set(id, next.catch(() => undefined));
+        return next;
+    }
+
+    /**
+     * [PR-4b] Serialized begin -> run -> commit per memory id. Concurrent promoters
+     * of the same node used to interleave journal reads/writes and crash the process
+     * with an unhandled 'Conflicting transition' rejection.
+     */
+    public async transition(source: MemoryNode, destination: MemoryNode): Promise<void> {
+        return this.enqueue(source.id, async () => {
+            const entry = await this.begin(source, destination);
+            await this.run(entry);
+            await this.commit(entry);
+        });
+    }
+
+    /** [PR-4b] Crash-recovery replay, serialized against live transitions of the same id. */
+    public async resume(entry: MemoryTransition): Promise<void> {
+        return this.enqueue(entry.source.id, async () => {
+            await this.run(entry);
+            await this.commit(entry);
+        });
     }
 
     public async commit(entry: MemoryTransition): Promise<void> {

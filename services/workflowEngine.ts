@@ -159,7 +159,10 @@ class WorkflowEngine {
         // If the 'intent' analysis specifically requested a NEW APP, we go to GENESIS.
         // Otherwise, standard plan.
         const intent = this.pipelineData.intent || "";
-        if (intent.toLowerCase().includes("new app") || intent.toLowerCase().includes("create project")) {
+        // [PR-4b] Multilingual trigger: the English-only substring check silently
+        // skipped GENESIS for Spanish requests ("crea una app", "nuevo proyecto").
+        const genesisTrigger = /(new app|create (a )?(new )?(project|app)|build (an|a) app|nueva? (app|aplicaci[oó]n)|crea(r)? (una? )?(app|aplicaci[oó]n|proyecto)|nuevo proyecto|haz(me)? una (app|aplicaci[oó]n))/i;
+        if (genesisTrigger.test(intent)) {
           this.transitionTo(WorkflowStage.GENESIS);
         } else {
           await this.executeStageTask("Create plan.", "OPS", "Strategos_X", WorkflowStage.EXECUTION);

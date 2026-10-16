@@ -250,13 +250,13 @@ export class PeerReviewService {
      */
     private async registerNewAgent(agentDef: any): Promise<void> {
         try {
-            // Save to filesystem
-            const fs = await import('fs/promises');
-            const path = await import('path');
-            const agentPath = path.join(process.cwd(), 'db', 'agents', `${agentDef.id}.json`);
-
-            await fs.writeFile(agentPath, JSON.stringify(agentDef, null, 2));
-            console.log(`[PEER REVIEW] 💾 Saved agent to ${agentPath}`);
+            // [PR-4b] Persist through the canonical path: agentPersistence.saveAgent
+            // upserts into SQLite AND creates the per-agent directory. The previous
+            // raw fs.writeFile to db/agents/<id>.json crashed with ENOENT (directory
+            // missing in prod: supervisor-01/qa-01 failures) and split-brained
+            // persistence (a JSON file nobody reads vs the canonical SQLite store).
+            agentPersistence.saveAgent(agentDef);
+            console.log(`[PEER REVIEW] 💾 Persisted agent ${agentDef.id} via agentPersistence`);
 
             // Hydrate to make it active
             orchestrator.hydrateAgent(agentDef.id);
