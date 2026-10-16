@@ -50,9 +50,10 @@ describe('PR-4b: peer-review canonical persistence', () => {
 describe('PR-4b: memory transitions', () => {
     const mt = read('services/memoryTransitions.ts');
     const cm = read('services/continuumMemory.ts');
-    it('conflict adopts the journaled transition with a loud warning instead of throwing', () => {
-        expect(mt).toContain('[MEMORY_TRANSITIONS] Conflicting destination for');
-        expect(mt).not.toContain('throw new Error(`Conflicting transition for ${source.id}`)');
+    it('volatile-only conflict adopts the journal with a loud warning; content conflict still rejects (P0 kept)', () => {
+        expect(mt).toContain('[MEMORY_TRANSITIONS] Volatile-only conflict for');
+        expect(mt).toContain("throw new Error(`Conflicting transition for ${source.id}`)");
+        expect(mt).toContain('const volatile = ({ accessCount, lastAccess, tags, ...rest }: any) => rest;');
     });
     it('serializes transitions per memory id and exposes transition/resume', () => {
         expect(mt).toContain('private chains = new Map<string, Promise<unknown>>');
@@ -65,6 +66,10 @@ describe('PR-4b: memory transitions', () => {
         expect(cm).toContain('memoryTransitions.transition(node, archivedNode)');
         expect(cm).toContain('memoryTransitions.transition(node, archived)');
         expect(cm).toContain('memoryTransitions.resume(entry)');
+    });
+    it('consolidateRamImmediate isolates per-node failures (no unhandled rejection, honest count)', () => {
+        expect(cm).toContain('Consolidation failed for ${node.id}; source remains in RAM');
+        expect(cm).toContain('let failed = 0;');
     });
 });
 

@@ -1068,12 +1068,15 @@ class ContinuumMemorySystem {
         console.log("[CONTINUUM] 🌪️ FORCE CONSOLIDATION INITIATED");
         let count = 0;
 
+        // [PR-4b] Per-node isolation: a failing promotion must not escape as an
+        // unhandled rejection (prod FATAL) nor abort the remaining consolidations.
+        let failed = 0;
         for (const node of [...this.working]) {
-            await this.promoteWorking(node, ['CONSOLIDATED']);
-            count++;
+            try { await this.promoteWorking(node, ['CONSOLIDATED']); count++; }
+            catch (error) { failed++; console.error(`[CONTINUUM] Consolidation failed for ${node.id}; source remains in RAM:`, error); }
         }
 
-        console.log(`[CONTINUUM] 🌪️ Consolidated ${count} memories to L3 (LanceDB). RAM is empty.`);
+        console.log(`[CONTINUUM] 🌪️ Consolidated ${count} memories to L3 (LanceDB). ${failed > 0 ? `⚠️ ${failed} failed (sources kept in RAM).` : 'RAM is empty.'}`);
         return { promoted: count };
     }
 }

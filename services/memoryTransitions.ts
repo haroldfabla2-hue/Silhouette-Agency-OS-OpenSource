@@ -40,11 +40,17 @@ export class MemoryTransitions {
         try {
             const entry = JSON.parse(await fs.readFile(this.file(key), 'utf8')) as MemoryTransition;
             if (JSON.stringify(entry.destination) !== JSON.stringify(destination)) {
-                // [PR-4b] Same source state, divergent destination wish (e.g. different
-                // tag sets from concurrent promoters). The journaled transition is
-                // durable and replay is idempotent, so adopt it and continue loudly
-                // instead of throwing into an unhandled rejection (prod FATAL x33).
-                console.warn(`[MEMORY_TRANSITIONS] Conflicting destination for ${source.id}; adopting journaled transition ${entry.key} (divergent wish dropped).`);
+                // [PR-4b] Divergence limited to volatile metadata (tags/access counters)
+                // is the prod case: concurrent promoters (EVICTED vs CONSOLIDATED vs
+                // plain) race the same node. The journaled transition is durable and
+                // replay is idempotent, so adopt it and continue loudly instead of
+                // throwing into an unhandled rejection (prod FATAL x33). A divergence
+                // in real content still rejects (P0 tamper contract kept).
+                const volatile = ({ accessCount, lastAccess, tags, ...rest }: any) => rest;
+                if (JSON.stringify(volatile(entry.destination)) !== JSON.stringify(volatile(destination))) {
+                    throw new Error(`Conflicting transition for ${source.id}`);
+                }
+                console.warn(`[MEMORY_TRANSITIONS] Volatile-only conflict for ${source.id}; adopting journaled transition ${entry.key} (divergent metadata dropped).`);
             }
             return entry;
         } catch (error: any) {
