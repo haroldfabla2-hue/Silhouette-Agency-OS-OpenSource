@@ -25,10 +25,12 @@ export class TrainingController {
         }
     }
 
-    // [GET] /sleep
-    // SSE endpoint for real-time training progress
-    public async startSleepCycle(req: Request, res: Response) {
-        // SSE Setup
+    /**
+     * Shared SSE plumbing for sleep-cycle streaming: subscribes to dreamer
+     * training events on the systemBus and wires disconnect cleanup.
+     * Returns sendEvent + cleanup so error paths can never leak subscriptions.
+     */
+    private attachSleepStream(req: Request, res: Response) {
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
@@ -38,21 +40,11 @@ export class TrainingController {
             res.write(`data: ${JSON.stringify({ type, message })}\n\n`);
         };
 
-        if (trainingService.isBusy()) {
-            sendEvent('error', "Training cycle already in progress.");
-            res.end();
-            return;
-        }
-
-        sendEvent('log', "🌙 Initiating Sleep Cycle...");
-
-        // Subscribe to TRAINING_LOG events from dreamerService
         const unsubscribeLog = systemBus.subscribe(SystemProtocol.TRAINING_LOG, (event) => {
             const { type, message } = event.payload || {};
             sendEvent(type || 'log', message || 'Processing...');
         });
 
-        // Subscribe to TRAINING_COMPLETE to know when it's done
         const unsubscribeComplete = systemBus.subscribe(SystemProtocol.TRAINING_COMPLETE, (event) => {
             const { success, code } = event.payload || {};
             if (success) {
@@ -60,18 +52,39 @@ export class TrainingController {
             } else {
                 sendEvent('error', `❌ Training failed (exit code: ${code})`);
             }
-            // Cleanup subscriptions
             unsubscribeLog();
             unsubscribeComplete();
             res.end();
         });
 
+        const cleanup = () => {
+            unsubscribeLog();
+            unsubscribeComplete();
+        };
+
         // Handle client disconnect
         req.on('close', () => {
             console.log('[TRAINING_CONTROLLER] Client disconnected from SSE');
-            unsubscribeLog();
-            unsubscribeComplete();
+            cleanup();
         });
+
+        return { sendEvent, cleanup };
+    }
+
+    // [POST] /sleep
+    // Triggers a sleep cycle and streams its progress over SSE.
+    // (Side effects belong to POST; see streamSleepCycle for read-only watch.)
+    public async startSleepCycle(req: Request, res: Response) {
+        if (trainingService.isBusy()) {
+            const { sendEvent, cleanup } = this.attachSleepStream(req, res);
+            sendEvent('error', "Training cycle already in progress.");
+            cleanup();
+            res.end();
+            return;
+        }
+
+        const { sendEvent } = this.attachSleepStream(req, res);
+        sendEvent('log', "🌙 Initiating Sleep Cycle...");
 
         try {
             // Start the actual training - this will emit events via systemBus
@@ -79,10 +92,17 @@ export class TrainingController {
             // Note: Don't end response here - wait for TRAINING_COMPLETE event
         } catch (e: any) {
             sendEvent('error', `Training error: ${e.message}`);
-            unsubscribeLog();
-            unsubscribeComplete();
             res.end();
         }
     }
-}
 
+    // [GET] /sleep
+    // Read-only SSE watch of sleep-cycle progress. NEVER starts a cycle:
+    // opening the training panel must not trigger training as a side effect.
+    public async streamSleepCycle(req: Request, res: Response) {
+        const { sendEvent } = this.attachSleepStream(req, res);
+        sendEvent('log', trainingService.isBusy()
+            ? "🌙 Sleep cycle in progress. Streaming..."
+            : "👁 Watching sleep cycles (read-only). No cycle started.");
+    }
+}
