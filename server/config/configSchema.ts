@@ -76,10 +76,10 @@ export interface SilhouetteConfig {
 
     /** Memory system configuration */
     memory: {
-        /** SQLite database path */
-        sqlitePath: string;
-        /** LanceDB directory */
-        lanceDbPath: string;
+        // NOTE (PR-H): sqlitePath and lanceDbPath were removed - nothing ever read them
+        // and their defaults ('./data/silhouette.db', './data/lancedb') lied about where
+        // data lives. The real paths are hardcoded with env overrides in
+        // services/sqliteService.ts (db/silhouette.sqlite) and services/lancedbService.ts.
         /** Neo4j connection */
         neo4j: {
             uri: string;
@@ -232,8 +232,6 @@ export const DEFAULT_CONFIG: SilhouetteConfig = {
         },
     },
     memory: {
-        sqlitePath: './data/silhouette.db',
-        lanceDbPath: './data/lancedb',
         neo4j: {
             uri: 'bolt://localhost:7687',
             user: 'neo4j',
