@@ -23,7 +23,7 @@ import { SystemProtocol, CommunicationLevel, AgentStatus, AgentRoleType, AgentTi
 import { stepDeclaresFileWork, durableFileGrant } from './tools/toolSelection'; // [W3]
 import { evaluatePlanHonesty } from './execution/stepHonesty'; // [W3]
 import { collectWrittenArtifacts } from './execution/artifactLedger'; // [W3]
-import { recordPlanTasks, markTaskRunning, markTaskDone } from './execution/taskLedger'; // [PR-1]
+import { recordPlanTasks, markTaskRunning, markTaskDone, closeOpenTasks } from './execution/taskLedger'; // [PR-1] [PR-4c: closeOpenTasks]
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -143,6 +143,11 @@ class PlanExecutor {
 
         // CRITICAL FIX: Synthesize final output in USER_FACING language
         // This prevents JSON from technical agents leaking into chat
+        // [PR-4c] Close ledger rows left open by an abort: steps never
+        // executed (or abandoned mid-flight) become 'failed' with the reason,
+        // never a silent eternal "running"/"pending".
+        closeOpenTasks(plan.id, new Set(results.keys()), errors.join('; ') || 'plan aborted');
+
         let finalOutput = 'Plan execution failed';
         if (successfulResults.length > 0) {
             finalOutput = await this.synthesizeFinalOutput(

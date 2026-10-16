@@ -946,7 +946,13 @@ export class IntrospectionEngine {
             }
 
             const zombies = agents.filter(a =>
-                a.status === 'WORKING' && // [AgentStatus.WORKING]
+                // [PR-4c] A zombie is a HYDRATED agent (resident in RAM) that
+                // froze mid-work. OFFLINE/HIBERNATED agents are legitimate
+                // power-saving states, not zombies - scanning them resurrected
+                // sleepers in a detect->reset->resurrect round-robin (prod
+                // 2026-10-16: 717 resets over ~41 phantoms, 346% CPU sustained).
+                (a.status === 'WORKING' || a.status === 'THINKING') &&
+                orchestrator.isAgentHydrated(a.id) &&
                 (now - (a.lastActive || 0)) > ZOMBIE_THRESHOLD &&
                 !this.zombieResetCooldown.has(a.id) // [FIX] Skip recently reset zombies
             );

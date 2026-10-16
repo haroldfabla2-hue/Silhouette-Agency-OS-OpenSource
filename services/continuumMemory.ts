@@ -341,6 +341,15 @@ class ContinuumMemorySystem {
     }
 
     public async store(content: string, tier: MemoryTier = MemoryTier.ULTRA_SHORT, tags: string[] = [], skipIngestion: boolean = false, extra?: { parentIds?: string[]; affect?: { valence: number; activation: number; at: number } }): Promise<void> {
+        // [PR-4c] Boundary coercion: an invalid tier (e.g. an LLM emitting the
+        // number 28) must not reach the gatekeeper as a "corruption" event that
+        // mobilizes remediation squads in a loop. Coerce loudly to WORKING;
+        // the zod gatekeeper remains as the second line of defense.
+        if (!(Object.values(MemoryTier) as string[]).includes(tier as unknown as string)) {
+            console.warn(`[CONTINUUM] ⚠️ Invalid memory tier (${JSON.stringify(tier)}) coerced to WORKING. Content prefix: "${String(content).substring(0, 60)}"`);
+            tier = MemoryTier.WORKING;
+        }
+
         // [FIX] Anti-Recursion Guard 1: Block self-referential/recursive content patterns
         for (const pattern of ContinuumMemorySystem.LOOP_PATTERNS) {
             if (pattern.test(content)) {

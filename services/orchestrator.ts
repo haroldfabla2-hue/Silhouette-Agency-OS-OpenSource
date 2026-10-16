@@ -2488,6 +2488,28 @@ OBJECTIVES:
     public async purgeAgent(agentId: string) {
         console.log(`[ORCHESTRATOR] 🗑️ PURGING AGENT: ${agentId} `);
 
+        // 0. [PR-4c] Quarantine the on-disk directory BEFORE any roster/DB
+        // removal: a purge that leaves data/agents/<id> behind RESURRECTS the
+        // agent on the next disk load (reset/hydration re-saves it to sqlite),
+        // which is the immortal-zombie loop found in prod (1048 purges, 212
+        // survivors). Move, never delete - full history (SOUL/IDENTITY/MEMORY)
+        // stays recoverable under data/agents_quarantine/<yyyymmdd>/.
+        try {
+            const fs = await import('fs');
+            const path = await import('path');
+            const { agentFileSystem } = await import('./agents/agentFileSystem');
+            const dir = agentFileSystem.getAgentDir(agentId);
+            if (fs.existsSync(dir)) {
+                const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+                const quarantineRoot = path.join(path.dirname(path.dirname(dir)), 'agents_quarantine', stamp);
+                fs.mkdirSync(quarantineRoot, { recursive: true });
+                fs.renameSync(dir, path.join(quarantineRoot, agentId));
+                console.log(`[ORCHESTRATOR] 📦 Agent ${agentId} directory quarantined to ${quarantineRoot}/${agentId}`);
+            }
+        } catch (qErr: any) {
+            console.warn(`[ORCHESTRATOR] ⚠️ Quarantine move failed for ${agentId} (purge continues): ${qErr?.message}`);
+        }
+
         // 1. Remove from active actors
         this.activeActors.delete(agentId);
 
@@ -2529,6 +2551,34 @@ OBJECTIVES:
         }
 
         console.log(`[ORCHESTRATOR] ✅ Agent ${agentId} permanently purged from system.`);
+    }
+
+    /**
+     * [PR-4c] True only for agents currently hydrated (resident in RAM).
+     * The zombie scan must only look at hydrated agents: OFFLINE/HIBERNATED
+     * agents are legitimate power-saving states, not zombies.
+     */
+    public isAgentHydrated(agentId: string): boolean {
+        return this.activeActors.has(agentId);
+    }
+
+    /**
+     * [PR-4c] Terminal failure state (remediation circuit-breaker exhausted):
+     * the agent stays in the ledger as OFFLINE + disabled with the reason in
+     * its record, off every active roster, no automatic retries. Its on-disk
+     * soul/identity/history is untouched; a human decides what happens next.
+     */
+    public async markAgentFailed(agentId: string, reason: string): Promise<void> {
+        const agent: Agent | undefined = this.activeActors.get(agentId) ?? this.agentCache.get(agentId) ?? agentPersistence.loadAgent(agentId) ?? undefined;
+        if (agent) {
+            agent.status = AgentStatus.OFFLINE;
+            agent.currentTask = undefined;
+            agent.enabled = false;
+            agentPersistence.saveAgent(agent);
+        }
+        this.activeActors.delete(agentId);
+        this.agentCache.delete(agentId);
+        console.error(`[ORCHESTRATOR] ⛔ Agent ${agentId} marked FAILED: ${reason}`);
     }
 
     // ==========================================
