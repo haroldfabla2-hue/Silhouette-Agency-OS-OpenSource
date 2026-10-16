@@ -8,6 +8,7 @@ import { DEFAULT_API_CONFIG } from "../constants";
 import { contextResolver } from './contextResolver';
 import { visualCortex } from './visualCortex';
 import { CommunicationLevel } from "../types"; // Import from types
+import { saveMissionCheckpoint, loadLatestMissionCheckpoint, clearMissionCheckpoint } from "./missionCheckpoint"; // [PR-1]
 // [NEURAL LOOP IMPORTS]
 import { qualityControl } from "./qualityControlService";
 import { remediation } from "./remediationService";
@@ -32,6 +33,7 @@ class WorkflowEngine {
   private readonly RESET_TIMEOUT = 30000;
 
   private pipelineData: any = {};
+  private resumeChecked = false;
 
   constructor() {
 
@@ -102,6 +104,13 @@ class WorkflowEngine {
 
     if (this.checkLimits() || this.isProcessing) return;
 
+    // [PR-1] Resume a mission interrupted by restart (once per process).
+    if (!this.resumeChecked) {
+      this.resumeChecked = true;
+      await this.tryResumeMission();
+      if (this.isProcessing) return; // resume in flight
+    }
+
     switch (this.currentStage) {
       case WorkflowStage.IDLE:
         if (this.config.mode24_7) this.startNewCycle();
@@ -162,7 +171,10 @@ class WorkflowEngine {
         break;
 
       case WorkflowStage.EXECUTION:
-        await this.executeStageTask("Execute plan.", "DEV", "Code_Architect", WorkflowStage.QA_AUDIT);
+        // [PR-1] Real build: the mission runs through planGenerator +
+        // planExecutor (tools, fs jail, artifact verification) instead of
+        // narrating execution with empty capabilities.
+        await this.executeMissionBuild();
         break;
 
       case WorkflowStage.QA_AUDIT:
@@ -302,6 +314,9 @@ class WorkflowEngine {
     this.startNewCycle();
     this.pipelineData.input = mission;
     this.pipelineData.missionSource = 'api';
+    // [PR-1] Durable mission identity + first checkpoint (survives restart).
+    this.pipelineData.missionId = `msn_${Date.now()}`;
+    saveMissionCheckpoint(this.pipelineData.missionId, this.currentStage, this.pipelineData);
     console.log(`[WORKFLOW] Mission seeded (${mission.length} chars). Cycle started.`);
     systemBus.emit(SystemProtocol.WORKFLOW_UPDATE, { stage: this.currentStage, status: 'mission_seeded' });
     // Best-effort audit trail in memory; a store failure never blocks a mission.
@@ -313,6 +328,17 @@ class WorkflowEngine {
     this.currentStage = stage;
     console.log(`[WORKFLOW] 🔄 Transitioning to Stage: ${stage}`);
     systemBus.emit(SystemProtocol.WORKFLOW_UPDATE, { stage: stage, status: 'started' });
+
+    // [PR-1] Checkpoint every transition while a mission is in flight;
+    // a terminal stage retires the checkpoint (best-effort, never blocks).
+    const missionId = this.pipelineData.missionId;
+    if (missionId) {
+      if (stage === WorkflowStage.IDLE) {
+        clearMissionCheckpoint(missionId);
+      } else {
+        saveMissionCheckpoint(missionId, stage, this.pipelineData);
+      }
+    }
 
     // [DISTRIBUTED ORCHESTRATION] Wake up relevant squads
     orchestrator.activateSquadsForStage(stage, this.pipelineData);
@@ -332,9 +358,72 @@ class WorkflowEngine {
 
   private recordSuccess() { this.failures = 0; }
 
+  /**
+   * [PR-1] Mission build: intent -> ExecutionPlan -> planExecutor.
+   * The result (verified artifacts, per-step outcomes) is stored for the
+   * deterministic QA gate; draftResult keeps the synthesized output for
+   * the LLM content audit.
+   */
+  private async executeMissionBuild(remediationContext?: string) {
+    this.isProcessing = true;
+    try {
+      const baseMission = this.pipelineData.intent || this.pipelineData.input || '';
+      const mission = remediationContext
+        ? `${baseMission}\n\nREMEDIATION CONTEXT (the previous attempt failed deterministic verification; fix exactly this):\n${remediationContext}`
+        : baseMission;
+
+      const { planGenerator } = await import('./planGenerator');
+      const { planExecutor } = await import('./planExecutor');
+
+      const plan = await planGenerator.create(mission);
+      this.pipelineData.planId = plan.id;
+      console.log(`[WORKFLOW] 🏗️ Mission build: plan ${plan.id} (${plan.steps.length} steps)`);
+
+      const result = await planExecutor.execute(plan);
+      this.pipelineData.executionResult = {
+        planId: result.planId,
+        success: result.success,
+        artifactsProduced: result.artifactsProduced,
+        finalOutput: result.finalOutput,
+        errors: result.errors,
+        steps: result.steps.map(st => ({ stepOrder: st.stepOrder, agentId: st.agentId, success: st.success, error: st.error }))
+      };
+      this.pipelineData.draftResult = result.finalOutput;
+      this.transitionTo(WorkflowStage.QA_AUDIT);
+    } catch (e) {
+      this.recordFailure();
+      this.transitionTo(WorkflowStage.IDLE);
+    } finally {
+      this.isProcessing = false;
+    }
+  }
+
   private async executeQARound() {
     this.isProcessing = true;
     try {
+      // [PR-1] Deterministic gate BEFORE any LLM audit (tripwire semantics):
+      // a build mission with zero verified artifacts HALTS here with a
+      // structured report; the LLM never audits simulated success.
+      if (this.pipelineData.executionResult) {
+        const { evaluateMissionGate } = await import('./execution/missionGate');
+        const mission = this.pipelineData.intent || this.pipelineData.input || '';
+        const report = evaluateMissionGate(mission, this.pipelineData.executionResult);
+        this.pipelineData.gateReport = report;
+        if (report.verdict === 'HALT') {
+          console.error(`[WORKFLOW] 🛑 GATE HALT: ${report.missing}`);
+          this.remediationAttempts++;
+          if (this.remediationAttempts >= this.MAX_REMEDIATION_ATTEMPTS) {
+            this.pipelineData.executionFailed = true;
+            this.pipelineData.draftResult = `MISSION FAILED VERIFICATION: ${report.missing}`;
+            this.transitionTo(WorkflowStage.OPTIMIZATION);
+          } else {
+            this.transitionTo(WorkflowStage.REMEDIATION);
+          }
+          return;
+        }
+        this.pipelineData.verifiedArtifacts = report.verifiedArtifacts;
+      }
+
       const input = this.pipelineData.draftResult || "No draft.";
       const response = await generateAgentResponse(
         "QA_Inquisitor",
@@ -367,6 +456,18 @@ class WorkflowEngine {
   }
 
   private async executeRemediationRound() {
+    // [PR-1] A gate HALT is not fixed by rewriting prose: re-run the build
+    // with the structured failure report as remediation context.
+    if (this.pipelineData.gateReport?.verdict === 'HALT') {
+      const report = this.pipelineData.gateReport;
+      await this.executeMissionBuild(JSON.stringify({
+        gate: report.gate,
+        missing: report.missing,
+        stepOutcomes: report.stepOutcomes
+      }));
+      return;
+    }
+
     this.isProcessing = true;
     try {
       const combined = `DRAFT:\n${this.pipelineData.draftResult}\n\nREPORT:\n${this.pipelineData.qaReport}`;
@@ -518,6 +619,33 @@ class WorkflowEngine {
       this.tokenUsage += response.usage;
       this.transitionTo(WorkflowStage.ADAPTATION_QA);
     } catch (e) { this.transitionTo(WorkflowStage.IDLE); } finally { this.isProcessing = false; }
+  }
+
+  /**
+   * [PR-1] Resume the latest interrupted mission from its checkpoint.
+   * Unknown schema versions and corrupt state never resume: the engine
+   * stays IDLE and the foreign state is preserved for inspection.
+   */
+  private async tryResumeMission() {
+    try {
+      const checkpoint = loadLatestMissionCheckpoint();
+      if (!checkpoint) return;
+      if (checkpoint.stage === WorkflowStage.IDLE) {
+        clearMissionCheckpoint(checkpoint.missionId);
+        return;
+      }
+      console.log(`[WORKFLOW] ♻️ Resuming mission ${checkpoint.missionId} at stage ${checkpoint.stage} (saved ${new Date(checkpoint.savedAt).toISOString()})`);
+      this.pipelineData = { ...checkpoint.pipelineData, missionId: checkpoint.missionId };
+      this.config.enabled = true;
+      systemBus.emit(SystemProtocol.WORKFLOW_UPDATE, {
+        stage: checkpoint.stage,
+        status: 'mission_resumed',
+        missionId: checkpoint.missionId
+      });
+      this.transitionTo(checkpoint.stage as WorkflowStage);
+    } catch (e) {
+      console.error('[WORKFLOW] Mission resume failed; staying IDLE.', e);
+    }
   }
 
   private performArchival() {

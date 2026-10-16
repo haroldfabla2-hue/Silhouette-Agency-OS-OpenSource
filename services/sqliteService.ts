@@ -970,6 +970,30 @@ export class SqliteService {
     }
 
     /** Close the database connection (for graceful shutdown) */
+    /**
+     * [PR-1] Write path for the tasks table (was write-never since creation).
+     * taskLedger is the sole caller; upsert keeps created_at immutable.
+     */
+    public upsertTask(task: { id: string; description: string; assigned_to: string; status: string; data?: any }): void {
+        const stmt = this.db.prepare(`
+            INSERT INTO tasks (id, description, assigned_to, status, created_at, updated_at, data)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                description = excluded.description,
+                assigned_to = excluded.assigned_to,
+                status = excluded.status,
+                updated_at = excluded.updated_at,
+                data = excluded.data
+        `);
+        const now = Date.now();
+        stmt.run(task.id, task.description, task.assigned_to, task.status, now, now, JSON.stringify(task.data ?? {}));
+    }
+
+    public getTasksByPlan(planId: string): any[] {
+        const stmt = this.db.prepare('SELECT * FROM tasks WHERE id LIKE ? ORDER BY created_at ASC');
+        return stmt.all(`task_${planId}_%`) as any[];
+    }
+
     public close(): void {
         try {
             this.db.close();
