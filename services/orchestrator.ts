@@ -2306,16 +2306,12 @@ OBJECTIVES:
         const leader = this.activeActors.get(squad.leaderId);
         if (!leader) return;
 
-        // Step 2: Leader assesses workload and wakes drones (Workers)
-        console.log(`[LEADER] 🗣️ ${leader.name} commands: "Unit ${squad.name}, ATTENTION! WAKE UP!"`);
-
-        // Filter out the leader from the member list to avoid double-waking
-        const drones = squad.members.filter(m => m !== squad.leaderId);
-
-        // Staggered Wake-up
-        for (const droneId of drones) {
-            await this.hydrateAgent(droneId);
-        }
+        // [PR-3b] Squads are VISUAL TOPOLOGY; execution runs through planExecutor
+        // with specialists hydrated ON DEMAND when the work contract requires them
+        // (industry pattern: specialists only when the contract changes). The old
+        // "staggered wake-up" mass-hydrated every drone on every stage transition -
+        // theater with real RAM cost and zero work assigned. Leader-only wake now.
+        const specialists = squad.members.filter(m => m !== squad.leaderId).length;
 
         squad.active = true;
         // [PR-2] Mobilization is a NOTIFICATION, not a birth command.
@@ -2324,7 +2320,7 @@ OBJECTIVES:
         systemBus.emit(SystemProtocol.SQUAD_MOBILIZED, {
             source: leader.name,
             squadId: squad.id,
-            message: `${squad.name} fully mobilized with ${drones.length} drones.`
+            message: `${squad.name} active (topology). ${specialists} specialists hydrate on demand.`
         });
     }
 
