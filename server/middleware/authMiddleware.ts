@@ -239,7 +239,12 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
     // 5. Compare tokens (constant-time comparison for security)
     const clientToken = parts[1];
     if (serverToken && timingSafeEqual(clientToken, serverToken)) {
-        // 6. Authenticated via API token — proceed
+        // 6. Authenticated via the master API token. This credential already
+        //    authorizes every endpoint (including exec approvals); leaving
+        //    req.user unset silently demoted it to GUEST downstream — chat tool
+        //    execution was blocked for the operator's own key. Give it an
+        //    explicit system identity instead.
+        (req as any).user = { id: 'system:api-token', role: 'CREATOR' };
         next();
         return;
     }

@@ -124,6 +124,11 @@ export function openAICompatibleAdapter(definition: ProviderDefinition, client: 
                 { role: 'user', content: prepared.task }
             ];
             await client.discover(definition);
+            // [NATIVE TOOL CALLS] Some providers (gpt-oss:20b on Ollama Cloud)
+            // answer tool-oriented prompts with NATIVE tool-call deltas. Killing
+            // the leg threw away a healthy provider; accumulate the call instead
+            // and re-emit it as an [EXECUTE:] marker the pipeline runs honestly.
+            const pendingToolCalls = new Map<number, { name: string; args: string }>();
             for await (const event of client.stream(definition, messages, {
                 model: prepared.model,
                 temperature: prepared.temperature,
@@ -132,19 +137,34 @@ export function openAICompatibleAdapter(definition: ProviderDefinition, client: 
             })) {
                 if (event.type === 'text') yield event.text;
                 else if (event.type === 'tool') {
-                    // [PR-4c] Some OpenAI-compatible providers (gpt-oss:20b on
-                    // Ollama Cloud) emit SPURIOUS empty tool-call deltas on
-                    // plain text streams. An empty delta (no function name) is
-                    // provider noise: warn and skip. A delta carrying a real
-                    // function name still violates the textual tool contract
-                    // and fails loudly (original behavior preserved).
+                    // [PR-4c] Empty deltas (no function name AND no args fragment)
+                    // are provider noise: warn and skip.
                     const fnName = event.delta?.function?.name;
-                    if (!fnName || !fnName.trim()) {
+                    const argsPart = event.delta?.function?.arguments;
+                    if ((!fnName || !fnName.trim()) && !argsPart) {
                         console.warn(`[${definition.id}] ⚠️ Ignoring spurious empty tool-call delta from provider (no tools were requested).`);
-                    } else {
-                        throw new InferenceError(definition.id, 'invalid-response', 'unexpected tool call delta (no tools were requested)');
+                        continue;
                     }
+                    const idx = typeof event.index === 'number' ? event.index : 0;
+                    const acc = pendingToolCalls.get(idx) ?? { name: '', args: '' };
+                    if (fnName) acc.name += fnName;
+                    if (typeof argsPart === 'string') acc.args += argsPart;
+                    pendingToolCalls.set(idx, acc);
                 }
+            }
+            // Flush accumulated native tool calls as textual [EXECUTE:] markers.
+            // Args must be complete valid JSON; otherwise the call is discarded
+            // loudly, never half-executed.
+            for (const call of pendingToolCalls.values()) {
+                if (!call.name.trim()) continue;
+                const args = call.args.trim() || '{}';
+                try {
+                    JSON.parse(args);
+                } catch {
+                    console.warn(`[${definition.id}] ⚠️ Discarding native tool call "${call.name}": args are not valid JSON`);
+                    continue;
+                }
+                yield `\n[EXECUTE: ${call.name.trim()} ${args}]\n`;
             }
         }
     };
