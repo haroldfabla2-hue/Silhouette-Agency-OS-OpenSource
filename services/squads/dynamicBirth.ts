@@ -114,3 +114,84 @@ export function buildDynamicLeaderInstruction(name: string, payload: any): strin
         `Coordination: persist durable findings to memory; escalate blockers to the Orchestrator instead of simulating progress.`
     ].join('\n');
 }
+
+/**
+ * [PR-4d] Birth policy (Alberto 2026-10-16): agents are long-lived assets
+ * with soul, identity and history — a new one is born ONLY when no existing
+ * agent can do the work. Order: validate contract -> reuse -> limits -> create.
+ */
+
+export interface BirthContractResult { ok: boolean; errors: string[] }
+
+/**
+ * Birth contract v1. name+category are already enforced by the PR-2 gate;
+ * role drives capabilities, so it is required too. reason/missionId is the
+ * work contract: strongly recommended — missing is allowed (warn) so existing
+ * emitters keep working, and it becomes required in v2.
+ */
+export function validateBirthContract(payload: any): BirthContractResult {
+    const inner = payload?.payload ?? payload ?? {};
+    const errors: string[] = [];
+    if (typeof inner.name !== 'string' || !inner.name.trim()) errors.push('name is required');
+    if (typeof inner.category !== 'string' || !inner.category.trim()) errors.push('category is required');
+    if (typeof inner.role !== 'string' || !inner.role.trim()) errors.push('role is required (it drives capabilities)');
+    const hasReason = typeof inner.reason === 'string' && inner.reason.trim().length > 0;
+    const hasMission = typeof inner.missionId === 'string' && inner.missionId.trim().length > 0;
+    if (!hasReason && !hasMission) errors.push('warn: no reason/missionId — births should carry a work contract (required in v2)');
+    return { ok: errors.filter(e => !e.startsWith('warn:')).length === 0, errors };
+}
+
+export interface ReusableAgentLike {
+    id: string;
+    name: string;
+    category?: string;
+    role?: string;
+    status?: string;
+    enabled?: boolean;
+}
+
+const normalize = (s: string | undefined): string => (s || '').toLowerCase().trim();
+
+/**
+ * Find an existing agent that can do this squad's work instead of birthing a
+ * new one. Match = same category AND role overlap (either contains the other,
+ * or shares a meaningful token >=4 chars). Excludes disabled/retired agents
+ * and dynamic phantoms born without identity ("Unknown Squad Lead").
+ */
+export function findReusableAgent<T extends ReusableAgentLike>(agents: T[], spec: { name: string; category?: string; role?: string }): T | null {
+    const cat = normalize(spec.category);
+    const role = normalize(spec.role);
+    const roleTokens = role.split(/[^a-z0-9]+/).filter(t => t.length >= 4);
+    for (const a of agents) {
+        if (!a || !a.id) continue;
+        if (a.enabled === false) continue; // retired/FAILED
+        if (a.name === 'Unknown Squad Lead') continue; // phantom husk
+        if (cat && normalize(a.category) !== cat) continue;
+        const aRole = normalize(a.role);
+        if (!aRole) continue;
+        const overlap = aRole.includes(role) || role.includes(aRole) ||
+            roleTokens.some(t => aRole.includes(t));
+        if (overlap) return a;
+    }
+    return null;
+}
+
+/** [PR-4d] Fleet limits (fleet = dynamic agents, the agt_dyn_* family). */
+export const MAX_DYNAMIC_AGENTS = 50;
+export const MAX_BIRTHS_PER_HOUR = 5;
+
+/** Sliding-window rate limiter (in-memory; resets on restart — honest v1). */
+export class BirthRateLimiter {
+    private readonly stamps: number[] = [];
+    public allow(now: number = Date.now()): boolean {
+        const windowStart = now - 60 * 60 * 1000;
+        while (this.stamps.length > 0 && this.stamps[0] < windowStart) this.stamps.shift();
+        if (this.stamps.length >= MAX_BIRTHS_PER_HOUR) return false;
+        this.stamps.push(now);
+        return true;
+    }
+    public count(now: number = Date.now()): number {
+        const windowStart = now - 60 * 60 * 1000;
+        return this.stamps.filter(t => t >= windowStart).length;
+    }
+}
