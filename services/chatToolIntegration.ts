@@ -16,14 +16,14 @@ import { toolFactory } from './tools/toolFactory';
 import { orchestrator } from './orchestrator'; // Unified Capability Execution
 import { experienceBuffer } from './experienceBuffer';
 import { FunctionDeclaration } from '@google/genai';
-import { extractExecuteMarkers } from './tools/execMarker';
+import { extractExecuteMarkers, normalizeToolName } from './tools/execMarker';
 
 // Patterns to detect tool invocation in chat response
 const TOOL_INVOCATION_PATTERNS = [
-    // Pattern: [TOOL: tool_name(arg1, arg2)]
-    /\[TOOL:\s*(\w+)\((.*?)\)\]/gi,
+    // Pattern: [TOOL: tool_name(arg1, arg2)] — namespaced names (tool.x) allowed
+    /\[TOOL:\s*([\w.]+)\((.*?)\)\]/gi,
     // Pattern: [EXECUTE: tool_name {args}]
-    /\[EXECUTE:\s*(\w+)\s*(\{.*?\})\]/gi,
+    /\[EXECUTE:\s*([\w.]+)\s*(\{.*?\})\]/gi,
     // Pattern: [IMAGINE: prompt] for images (legacy)
     /\[IMAGINE:\s*(.*?)\]/gi,
     // Pattern: [SEARCH: query] for web search (legacy)
@@ -100,8 +100,8 @@ For general questions, respond conversationally without using tools.
     parseToolCalls(responseText: string): ParsedToolCall[] {
         const calls: ParsedToolCall[] = [];
 
-        // Pattern 1: [TOOL: name(args)]
-        const toolPattern = /\[TOOL:\s*(\w+)\((.*?)\)\]/gi;
+        // Pattern 1: [TOOL: name(args)] — namespaced names (tool.x) allowed
+        const toolPattern = /\[TOOL:\s*([\w.]+)\((.*?)\)\]/gi;
         let match;
         while ((match = toolPattern.exec(responseText)) !== null) {
             const toolName = match[1];
@@ -176,8 +176,11 @@ For general questions, respond conversationally without using tools.
     /**
      * Execute a single tool call
      */
-    async executeTool(toolName: string, args: Record<string, any>, userRole: string = 'GUEST'): Promise<ToolCallResult> {
+    async executeTool(rawToolName: string, args: Record<string, any>, userRole: string = 'GUEST'): Promise<ToolCallResult> {
         const startTime = Date.now();
+        // Providers namespace native tool names ("tool.write_file"): resolve the
+        // registry name before policy checks and execution.
+        const toolName = normalizeToolName(rawToolName);
 
         console.log(`[CHAT_TOOLS] 🔧 Executing tool: ${toolName}`, args);
 
