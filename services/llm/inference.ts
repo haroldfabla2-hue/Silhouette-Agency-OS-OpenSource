@@ -62,6 +62,12 @@ export interface AgentInferenceRequest {
     stage?: WorkflowStage;
     /** Explicit model override (adapter-specific meaning). */
     model?: string;
+    /**
+     * Provider that `model` belongs to. When set, the fallback chain strips the
+     * override for every OTHER provider (a Gemini model id 404s on Groq/Ollama).
+     * Unset preserves legacy behavior (override attempted everywhere).
+     */
+    modelProvider?: string;
     /** Explicit provider preference: attempted first, fallback order preserved afterwards. */
     preferredProvider?: string;
     /** Scheduling lane: conversational traffic preempts background work in provider queues (R2). */
@@ -84,6 +90,7 @@ export interface PreparedAgentRequest {
     relevantMemory: string;
     capabilities: Required<InferenceCapabilities>;
     model?: string;
+    modelProvider?: string;
     temperature: number;
     maxTokens: number;
     toolCaller?: ToolCaller;

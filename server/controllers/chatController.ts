@@ -382,6 +382,7 @@ export class ChatController {
                 ]),
                 temperature: 0.7,
                 model: modelOverride,
+                modelProvider: 'GEMINI',
                 level: CommunicationLevel.USER_FACING
             });
 

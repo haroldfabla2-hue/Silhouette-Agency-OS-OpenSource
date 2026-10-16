@@ -107,6 +107,7 @@ ${context?.relevantMemory || ''}
         relevantMemory: context?.relevantMemory || '',
         capabilities,
         model: req.model,
+        modelProvider: req.modelProvider,
         temperature: req.temperature ?? 0.7,
         maxTokens: req.maxTokens ?? 2048,
         toolCaller: context?.toolCaller,
