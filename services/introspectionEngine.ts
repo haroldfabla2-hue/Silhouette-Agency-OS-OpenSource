@@ -1310,7 +1310,10 @@ export class IntrospectionEngine {
                 break;
             case 'HYDRATE_AGENT' as any:
                 console.log(`[INTROSPECTION] 💧 Proactive Hydration: ${decision.proposedAction.payload.agentId}`);
-                systemBus.emit(SystemProtocol.SQUAD_EXPANSION as any, {
+                // [PR-2] This is a hydration request for an EXISTING agent,
+                // not a squad birth. SQUAD_EXPANSION is birth-only now; the
+                // old emit birthed "Unknown Squad Lead" phantoms (D3).
+                systemBus.emit(SystemProtocol.AGENT_HYDRATION_REQUEST as any, {
                     agentId: decision.proposedAction.payload.agentId,
                     reason: decision.reasoning
                 }, 'INTROSPECTION_ENGINE');

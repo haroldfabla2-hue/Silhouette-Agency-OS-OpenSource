@@ -70,7 +70,9 @@ export enum WorkflowStage {
 // NEW: SYSTEM PROTOCOLS
 export enum SystemProtocol {
   UI_REFRESH = 'PROTOCOL_UI_REFRESH',
-  SQUAD_EXPANSION = 'PROTOCOL_SQUAD_EXPANSION',
+  SQUAD_EXPANSION = 'PROTOCOL_SQUAD_EXPANSION',           // BIRTH COMMAND ONLY: payload MUST carry name+category (validated at the subscriber)
+  SQUAD_MOBILIZED = 'PROTOCOL_SQUAD_MOBILIZED',           // NOTIFICATION: an existing squad finished waking its members; never births agents
+  AGENT_HYDRATION_REQUEST = 'PROTOCOL_AGENT_HYDRATION_REQUEST', // COMMAND: wake ONE existing agent by id; never births agents
   CONFIG_MUTATION = 'PROTOCOL_CONFIG_MUTATION',
   SECURITY_LOCKDOWN = 'PROTOCOL_SECURITY_LOCKDOWN',
   MEMORY_FLUSH = 'PROTOCOL_MEMORY_FLUSH',

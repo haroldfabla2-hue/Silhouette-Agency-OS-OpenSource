@@ -44,6 +44,8 @@ const ProtocolOverlay: React.FC = () => {
                 return { color: 'cyan', icon: RefreshCw, label: 'INTERFACE REFACTOR' };
             case SystemProtocol.SQUAD_EXPANSION:
                 return { color: 'green', icon: Box, label: 'SQUAD DEPLOYMENT' };
+            case SystemProtocol.SQUAD_MOBILIZED:
+                return { color: 'emerald', icon: Box, label: 'SQUAD MOBILIZED' };
             case SystemProtocol.CONFIG_MUTATION:
                 return { color: 'purple', icon: Zap, label: 'SYSTEM MUTATION' };
             case SystemProtocol.SECURITY_LOCKDOWN:
