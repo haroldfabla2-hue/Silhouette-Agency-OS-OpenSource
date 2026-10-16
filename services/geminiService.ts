@@ -1203,6 +1203,90 @@ export const generateGeminiTextPure = async (prompt: string, model?: string): Pr
     return text;
 };
 
+/**
+ * Non-stream text generation with REAL cloud failover (W6 follow-up).
+ * Chain: Gemini background model (own quota bucket) -> Groq -> OpenRouter,
+ * each guarded by the providerHealth circuit breaker. Built for the
+ * background/spawn path, which previously died when a single Gemini model
+ * hit its quota ("[BACKGROUND_LLM] No providers available" with 0 births).
+ * Every default model here was probed live 2026-10-15 (200) with the
+ * project keys: gemini-3.1-flash-lite non-stream, openai/gpt-oss-120b (Groq),
+ * nvidia/nemotron-3-super-120b-a12b:free (OpenRouter).
+ */
+export const generateTextWithCloudFallbacks = async (
+    prompt: string,
+    opts: { maxTokens?: number; temperature?: number } = {}
+): Promise<string> => {
+    const { providerHealth } = await import('./providerHealthManager');
+    const { DEFAULT_GEMINI_BACKGROUND_MODEL, DEFAULT_OPENROUTER_MODEL } = await import('./llm/defaultModels');
+    const errors: string[] = [];
+    const isQuota = (m: string) => /429|quota|rate.?limit|insufficient/i.test(m || '');
+
+    // 1) Gemini background model (non-stream; per-model quota bucket)
+    if (providerHealth.isAvailable('gemini-bg')) {
+        try {
+            const text = await generateGeminiTextPure(prompt, DEFAULT_GEMINI_BACKGROUND_MODEL);
+            providerHealth.reportSuccess('gemini-bg');
+            console.log('[CLOUD_FALLBACK] ✅ Gemini background model responded');
+            return text;
+        } catch (e: any) {
+            errors.push(`gemini-bg: ${e.message}`);
+            if (isQuota(e.message)) providerHealth.reportFailure('gemini-bg', e.message);
+        }
+    } else errors.push('gemini-bg: circuit open');
+
+    // 2) Groq (free tier)
+    if (providerHealth.isAvailable('groq')) {
+        try {
+            const r = await callGroq('', prompt, opts.temperature ?? 0.7);
+            if (r?.text) {
+                providerHealth.reportSuccess('groq');
+                console.log('[CLOUD_FALLBACK] ✅ Groq responded');
+                return r.text;
+            }
+            throw new Error('empty response');
+        } catch (e: any) {
+            errors.push(`groq: ${e.message}`);
+            if (isQuota(e.message)) providerHealth.reportFailure('groq', e.message);
+        }
+    } else errors.push('groq: circuit open');
+
+    // 3) OpenRouter (:free model)
+    if (providerHealth.isAvailable('openrouter')) {
+        try {
+            const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+                    'Content-Type': 'application/json',
+                    'HTTP-Referer': 'https://silhouette.agency',
+                    'X-Title': 'Silhouette Agency OS'
+                },
+                body: JSON.stringify({
+                    model: process.env.OPENROUTER_MODEL?.trim() || DEFAULT_OPENROUTER_MODEL,
+                    messages: [{ role: 'user', content: prompt }],
+                    max_tokens: opts.maxTokens ?? 1024,
+                    temperature: opts.temperature ?? 0.7
+                })
+            });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${(await resp.text()).slice(0, 160)}`);
+            const data: any = await resp.json();
+            const text = data?.choices?.[0]?.message?.content;
+            if (text) {
+                providerHealth.reportSuccess('openrouter');
+                console.log('[CLOUD_FALLBACK] ✅ OpenRouter responded');
+                return text;
+            }
+            throw new Error('empty response');
+        } catch (e: any) {
+            errors.push(`openrouter: ${e.message}`);
+            if (isQuota(e.message)) providerHealth.reportFailure('openrouter', e.message);
+        }
+    } else errors.push('openrouter: circuit open');
+
+    throw new Error(`[CLOUD_FALLBACK] all cloud providers failed -> ${errors.join(' | ')}`);
+};
+
 export const generateText = async (prompt: string, options: { model?: string } = {}): Promise<string> => {
     ensureClient();
     const modelToUse = options.model || DEFAULT_GEMINI_MODEL;

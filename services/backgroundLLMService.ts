@@ -223,30 +223,34 @@ class BackgroundLLMService {
                 console.warn('[BACKGROUND_LLM] ZhipuAI failed:', error.message);
             }
 
-            // [Hotfix W6] Gemini fallback before Ollama: it is the only
-            // configured provider with live quota (DeepSeek/Zhipu keys are
-            // empty, Ollama is unprovisioned). Non-stream transport (the
-            // streaming quota is exhausted separately). PR to follow.
+            // [Fix W6-followup] REAL cloud failover: Gemini background model
+            // (per-model quota bucket; gemini-3.1-flash-lite verified live
+            // 2026-10-15 while 3.5-flash stays 429) -> Groq -> OpenRouter,
+            // circuit-breaker guarded. The previous single-model fallback
+            // died with "No providers available" whenever that model's
+            // bucket was exhausted (W6: 0 births, empty deliverable).
             try {
-                const { generateGeminiTextPure } = await import('./geminiService');
-                // Per-transport model reality (W6): streaming quota and
-                // non-streaming quota drain independently. The background
-                // path is non-streaming, so it gets its own env-driven model.
-                const bgModel = process.env.GEMINI_BACKGROUND_MODEL?.trim() || 'gemini-3.5-flash';
-                const result = await generateGeminiTextPure(prompt, bgModel);
+                const { generateTextWithCloudFallbacks } = await import('./geminiService');
+                const result = await generateTextWithCloudFallbacks(prompt, {
+                    maxTokens: options.maxTokens || 1024,
+                    temperature: options.temperature ?? 0.7
+                });
                 if (result) {
-                    console.log('[BACKGROUND_LLM] ✅ Gemini fallback responded');
+                    console.log('[BACKGROUND_LLM] ✅ Cloud fallback chain responded');
                     return result;
                 }
             } catch (error: any) {
-                console.warn('[BACKGROUND_LLM] Gemini fallback failed:', error.message);
+                console.warn('[BACKGROUND_LLM] Cloud fallback chain failed:', error.message);
             }
 
-            // Fallback to Ollama
+            // Last resort: local Ollama (no quota, no cost). Model is
+            // env-driven; default qwen3:4b (fits the 8GB host; verified
+            // viable on CPU-only 8GB). 'glm4:light' was never provisioned.
             if (await ollamaService.isAvailable()) {
                 console.log('[BACKGROUND_LLM] 🏠 Falling back to Ollama (local)');
                 const bullPriority = options.priority === 'HIGH' ? 50 : 100;
-                return ollamaService.generateCompletion(prompt, [], 'fast', bullPriority);
+                const ollamaModel = process.env.OLLAMA_BACKGROUND_MODEL?.trim() || 'qwen3:4b';
+                return ollamaService.generateCompletion(prompt, [], 'fast', bullPriority, ollamaModel);
             }
 
             throw new Error('[BACKGROUND_LLM] No providers available');

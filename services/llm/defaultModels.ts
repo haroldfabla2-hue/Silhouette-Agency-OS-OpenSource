@@ -18,6 +18,12 @@
  * consumed by the openai-compatible transport via providerRegistry modelEnv.
  */
 export const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL?.trim() || 'gemini-3.8-flash';
+/**
+ * Background/non-stream tasks get their own model: per-model quota buckets drain
+ * independently (verified live 2026-10-15: gemini-3.5-flash non-stream 429s while
+ * gemini-3.1-flash-lite non-stream answers 200 with the same key).
+ */
+export const DEFAULT_GEMINI_BACKGROUND_MODEL = process.env.GEMINI_BACKGROUND_MODEL?.trim() || 'gemini-3.1-flash-lite';
 export const DEFAULT_GROQ_MODEL = 'openai/gpt-oss-120b';
 export const DEFAULT_OPENROUTER_MODEL = 'nvidia/nemotron-3-super-120b-a12b:free';
 export const DEFAULT_GEMINI_EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL?.trim() || 'gemini-embedding-001';
