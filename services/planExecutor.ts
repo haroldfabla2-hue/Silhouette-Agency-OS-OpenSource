@@ -162,7 +162,11 @@ class PlanExecutor {
 
         const executionResult: PlanExecutionResult = {
             planId: plan.id,
-            success: errors.length === 0,
+            // PR-J: zero successful steps is a FAILED plan even when nothing threw.
+            // Live incident 2026-10-16: success:true reached chat with finalOutput
+            // 'Plan execution failed' - a lying success that also poisoned the
+            // experience buffer. Success requires no errors AND real output.
+            success: errors.length === 0 && (plan.steps.length === 0 || successfulResults.length > 0),
             artifactsProduced: allArtifacts,
             steps: Array.from(results.values()),
             finalOutput,
