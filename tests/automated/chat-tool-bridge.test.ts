@@ -36,4 +36,23 @@ describe('chat tool bridge', () => {
         expect(integration).toContain("userRole !== 'ADMIN' && userRole !== 'CREATOR'");
         expect(integration).toContain('auto-creation requires ADMIN/CREATOR');
     });
+
+    it('G1: jailed core fs tools take precedence over plugin shadowing (toolHandler)', () => {
+        const handler = readFileSync(join(ROOT, 'services', 'tools', 'toolHandler.ts'), 'utf8');
+        expect(handler).toContain('CORE_JAILED_TOOLS');
+        expect(handler).toContain("['read_file', 'write_file', 'list_files']");
+        expect(handler).toContain('!CORE_JAILED_TOOLS.has(name)');
+        expect(handler).toContain('plugin shadowing blocked');
+    });
+
+    it('G2: inner {error} payloads unwrap into honest failures (no lying success)', () => {
+        expect(integration).toContain('returned an error payload');
+        expect(integration).toContain('success: false,');
+        expect(integration).toContain('String((result as any).error)');
+    });
+
+    it('G3: tool instructions tell the model the workspace is jailed (relative filenames only)', () => {
+        expect(integration).toContain('secure workspace folder');
+        expect(integration).toContain('plain relative filenames');
+    });
 });

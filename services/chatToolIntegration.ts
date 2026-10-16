@@ -90,6 +90,8 @@ ${toolDescriptions}
 
 IMPORTANT: Only use tools when the user explicitly requests an action that requires them.
 For general questions, respond conversationally without using tools.
+
+File tools (read_file, write_file, list_files) operate inside a secure workspace folder. Always use plain relative filenames like 'report.txt' - never absolute system paths like '/etc/...' or '/work/...'.
 `;
     }
 
@@ -241,6 +243,19 @@ For general questions, respond conversationally without using tools.
 
             // Extract result data
             const result = capabilityResult.data;
+
+            // PR-G: handlers sometimes report failure as an { error: '...' } payload instead
+            // of throwing. An error wrapped in success renders a lying green checkmark and
+            // pollutes the experience buffer with a fake win - unwrap it into honest failure.
+            if (result && typeof result === 'object' && typeof (result as any).error === 'string') {
+                console.error(`[CHAT_TOOLS] ❌ Tool ${toolName} returned an error payload:`, (result as any).error);
+                return {
+                    toolName,
+                    success: false,
+                    error: String((result as any).error),
+                    executionTimeMs: Date.now() - startTime
+                };
+            }
 
             // Record success (already done by orchestrator, but keep for backward compat)
             if (capabilityResult.success) {
