@@ -193,6 +193,17 @@ For general questions, respond conversationally without using tools.
 
             // Check if tool exists
             if (!toolRegistry.hasTool(toolName)) {
+                // [SECURITY] LLM-driven tool auto-creation is ADMIN/CREATOR-only: model
+                // output must not let a GUEST mint new composed tools.
+                if (userRole !== 'ADMIN' && userRole !== 'CREATOR') {
+                    console.warn(`[SECURITY] 🚫 Unknown tool "${toolName}" — auto-creation requires ADMIN/CREATOR (role: ${userRole})`);
+                    return {
+                        toolName,
+                        success: false,
+                        error: `Tool "${toolName}" not found`,
+                        executionTimeMs: Date.now() - startTime
+                    };
+                }
                 console.log(`[CHAT_TOOLS] ⚠️ Tool not found: ${toolName}, attempting auto-creation...`);
 
                 // Try to create the tool dynamically
