@@ -162,7 +162,7 @@ export class OllamaService {
                 // Typed Payload for Generate
                 const { prompt, stop, max_tokens, model } = payload;
                 const response = await this.ollama.generate({
-                    model: model || 'mamba_native',
+                    model: model || process.env.OLLAMA_LOCAL_MODEL?.trim() || 'qwen3:4b',
                     prompt: prompt,
                     stream: false, // We use BullMQ, so streaming is harder. Batch mode for now.
                     options: {
@@ -205,10 +205,10 @@ export class OllamaService {
         stopSequences: string[] = ["User:", "System:"],
         tier: 'fast' | 'smart' | 'legacy' = 'fast',
         priority: number = 0,
-        model: string = 'glm4:light'
+        model: string = process.env.OLLAMA_LOCAL_MODEL?.trim() || 'qwen3:4b'
     ): Promise<string> {
         // [MODIFIED] Support dynamic model selection, defaulting to GLM-4 Light
-        const modelToUse = model || 'glm4:light';
+        const modelToUse = model || process.env.OLLAMA_LOCAL_MODEL?.trim() || 'qwen3:4b';
 
         this.ensureInfra();
         const job = await this.queue!.add('generate', {
@@ -260,7 +260,7 @@ export class OllamaService {
     /**
      * Public API: Direct Streaming for Chat Fallback (Bypasses Queue for Latency)
      */
-    async * generateStream(prompt: string, model: string = 'glm4:light'): AsyncGenerator<string, void, unknown> {
+    async * generateStream(prompt: string, model: string = process.env.OLLAMA_LOCAL_MODEL?.trim() || 'qwen3:4b'): AsyncGenerator<string, void, unknown> {
         // [R2] Errors are thrown, never yielded as content: an error string in the
         // stream used to be persisted as an assistant response and stored as "facts".
         if (!this.checkCircuit()) {
@@ -290,7 +290,7 @@ export class OllamaService {
     /**
      * Public API: Chat Streaming (Messages Array) - Best for Context Retention
      */
-    async * generateChatStream(messages: { role: string, content: string }[], model: string = 'glm4:light'): AsyncGenerator<string, void, unknown> {
+    async * generateChatStream(messages: { role: string, content: string }[], model: string = process.env.OLLAMA_LOCAL_MODEL?.trim() || 'qwen3:4b'): AsyncGenerator<string, void, unknown> {
         // [R2] Errors are thrown, never yielded as content (see generateStream).
         if (!this.checkCircuit()) {
             throw new Error('[Ollama Circuit Open - Local Brain Offline]');

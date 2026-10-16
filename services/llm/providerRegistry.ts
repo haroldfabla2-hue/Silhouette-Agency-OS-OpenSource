@@ -24,7 +24,14 @@ export const builtInProviders: ProviderDefinition[] = [
     { id: 'GEMINI', transport: 'legacy', model: DEFAULT_GEMINI_MODEL, priority: 20 },
     { id: 'GROQ', transport: 'openai-compatible', baseUrl: 'https://api.groq.com/openai/v1', apiKeyEnv: 'GROQ_API_KEY', modelEnv: 'GROQ_MODEL', model: DEFAULT_GROQ_MODEL, discovery: false, priority: 30 },
     { id: 'DEEPSEEK', transport: 'legacy', model: 'deepseek-chat', priority: 40 },
-    { id: 'OLLAMA', transport: 'legacy', model: 'qwen2.5-coder:7b', priority: 50 },
+    // [PR-4a] Ollama Cloud (free tier, OpenAI-compatible, concurrency 1 on Free).
+    { id: 'OLLAMA_CLOUD', transport: 'openai-compatible', baseUrl: 'https://ollama.com/v1', apiKeyEnv: 'OLLAMA_CLOUD_API_KEY', modelEnv: 'OLLAMA_CLOUD_MODEL', model: 'gpt-oss:20b', priority: 55 },
+    // [PR-4a] Local Ollama is OUT of the chain by default (small server; owner
+    // decision 2026-10-16). Re-enable explicitly with OLLAMA_LOCAL_ENABLED=true;
+    // the model comes from OLLAMA_LOCAL_MODEL (no more hardcoded names).
+    ...(process.env.OLLAMA_LOCAL_ENABLED === 'true'
+        ? [{ id: 'OLLAMA', transport: 'legacy' as const, model: process.env.OLLAMA_LOCAL_MODEL?.trim() || 'qwen3:4b', priority: 50 }]
+        : []),
     // Kept explicitly selectable, preserving the previous fallback order.
     { id: 'ZHIPUAI', transport: 'legacy', model: 'glm-4-flash' },
     { id: 'NVIDIA', transport: 'openai-compatible', baseUrl: 'https://integrate.api.nvidia.com/v1', apiKeyEnv: 'NVIDIA_API_KEY', modelEnv: 'NVIDIA_MODEL', baseUrlEnv: 'NVIDIA_BASE_URL', model: 'nvidia/nemotron-3.5-lightning-30b-a3b', discovery: true, priority: 60 },
