@@ -1601,7 +1601,22 @@ JSON ONLY:
                     // Execute the task using the new internal cognitive loop
                     const finalOutput = await standardAgent.executeTask(`Execute capability "${capabilityName}" with arguments: ${JSON.stringify(args)} `);
 
-                    const result: CapabilityResult = {
+                    // PR-M: executeTask signals two failure shapes as ordinary strings -
+                    // the IDLE_CONCLUSION abort sentinel and a blank result. Returning
+                    // them under success:true renders lying green checkmarks downstream
+                    // (same class as the plan/tool fixes in PR-G/PR-J).
+                    const aborted = typeof finalOutput === 'string' && finalOutput.startsWith('Operation aborted:');
+                    const blank = typeof finalOutput !== 'string' || finalOutput.trim().length === 0;
+
+                    const result: CapabilityResult = aborted || blank
+                        ? {
+                            success: false,
+                            error: aborted ? finalOutput : `Agent ${agent.name} returned empty output`,
+                            executedBy: 'AGENT',
+                            executionTimeMs: Date.now() - startTime,
+                            metadata: { agentId, agentName: agent.name }
+                        }
+                        : {
                         success: true,
                         data: finalOutput,
                         executedBy: 'AGENT',
