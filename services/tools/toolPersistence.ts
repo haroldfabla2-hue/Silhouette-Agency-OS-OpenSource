@@ -202,6 +202,51 @@ class ToolPersistence {
     }
 
     /**
+     * Upsert usage stats for ANY registry tool (builtins included). The plain
+     * updateUsage() is a no-op when the row does not exist, and builtins have no
+     * row until their first recorded use - which is why their stats reset on
+     * every restart and the evolution cycle never had data to analyze.
+     */
+    public async recordUsageStats(tool: DynamicTool, success: boolean): Promise<void> {
+        await this.initialize();
+        if (!this.db) return;
+
+        try {
+            const stmt = this.db.prepare(`
+                INSERT INTO dynamic_tools
+                (id, name, description, parameters, handler, category, created_by,
+                 enabled, usage_count, success_count, last_used, created_at, version, tags)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    usage_count = usage_count + 1,
+                    success_count = success_count + ?,
+                    last_used = ?
+            `);
+
+            const now = Date.now();
+            stmt.run(
+                tool.id,
+                tool.name,
+                tool.description,
+                JSON.stringify(tool.parameters),
+                JSON.stringify(tool.handler),
+                tool.category,
+                tool.createdBy,
+                tool.enabled ? 1 : 0,
+                success ? 1 : 0,
+                now,
+                tool.createdAt,
+                tool.version,
+                tool.tags ? JSON.stringify(tool.tags) : null,
+                success ? 1 : 0,
+                now
+            );
+        } catch (error) {
+            console.error(`[ToolPersistence] ❌ Failed to record usage stats for ${tool.name}:`, error);
+        }
+    }
+
+    /**
      * Convert database row to DynamicTool
      */
     private rowToTool(row: any): DynamicTool {
