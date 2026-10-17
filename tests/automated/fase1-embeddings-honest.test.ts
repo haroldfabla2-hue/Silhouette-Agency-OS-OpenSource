@@ -10,13 +10,16 @@ const continuum = fs.readFileSync('services/continuumMemory.ts', 'utf8');
 const routes = fs.readFileSync('server/routes/v1/memory.routes.ts', 'utf8');
 
 describe('embedding pipeline is resilient and honest', () => {
-    it('write path uses the resilient init-order pattern', () => {
-        expect(continuum).toContain('geminiMod.geminiService?.generateEmbedding || geminiMod.generateEmbedding');
-        expect(continuum).toContain("typeof embedFn === 'function'");
+    it('write and query paths share the identity-aware resolver', () => {
+        expect(continuum).toContain('generateEmbeddingWithIdentity');
+        expect(continuum).toContain('geminiMod.geminiService?.generateEmbeddingWithIdentity || geminiMod.generateEmbeddingWithIdentity');
+        expect(continuum).toContain('nodeToStore.embeddingIdentity = embedded.identity');
     });
-    it('distinguishes unavailable provider from env mismatch', () => {
+    it('no env var can label or gate embedding identity anymore', () => {
         expect(continuum).toContain('Embedding UNAVAILABLE');
-        expect(continuum).toContain('env mismatch');
+        expect(continuum).not.toContain('MEMORY_QDRANT_MODEL');
+        expect(continuum).not.toContain('MEMORY_QUERY_MODEL');
+        expect(continuum).not.toContain('MEMORY_WRITE_MODEL');
     });
     it('/v1/memory/state exposes embedding availability', () => {
         expect(routes).toContain('embeddings');
