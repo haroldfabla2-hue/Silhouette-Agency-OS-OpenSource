@@ -221,6 +221,19 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
                         executionTimeMs: Date.now() - startTime
                     };
                 }
+                // PR-J: auto-creation is FAIL-CLOSED. A model typo (live incident 2026-10-16:
+                // the model emitted literal "TOOL" and the system minted + "successfully"
+                // executed a nonsense tool) must fail loudly, never mint a tool. Operators
+                // who want LLM tool synthesis opt in explicitly.
+                if (process.env.CHAT_TOOL_AUTOCREATE !== 'true') {
+                    console.warn(`[SECURITY] 🚫 Unknown tool "${toolName}" — auto-creation disabled (set CHAT_TOOL_AUTOCREATE=true to enable)`);
+                    return {
+                        toolName,
+                        success: false,
+                        error: `Tool "${toolName}" not found`,
+                        executionTimeMs: Date.now() - startTime
+                    };
+                }
                 console.log(`[CHAT_TOOLS] ⚠️ Tool not found: ${toolName}, attempting auto-creation...`);
 
                 // Try to create the tool dynamically
