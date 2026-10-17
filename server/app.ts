@@ -32,6 +32,7 @@ import graphRoutes from './routes/v1/graph.routes';
 import trainingRoutes from './routes/v1/training.routes';
 import { telemetryRouter } from './routes/telemetry'; // [TELEMETRY] Brain Observability
 import chatRoutes from './routes/v1/chat.routes'; // [NEW] Chat API
+import videoRoutes from './routes/v1/video.routes'; // [FASE1] Video Studio briefs
 import memoryRoutes from './routes/v1/memory.routes'; // [NEW] Memory System
 import inboxRoutes from './routes/v1/inbox.routes'; // [DASHBOARD] Mission Control
 import voiceRoutes from './routes/v1/voice.routes'; // [VOICE] Voice Library & Cloning
@@ -132,6 +133,7 @@ app.use('/v1/graph', graphRoutes);
 app.use('/v1/training', trainingRoutes);
 app.use('/v1/telemetry', telemetryRouter); // [TELEMETRY] Brain Observability
 app.use('/v1/chat', chatLimiter, promptSanitizerMiddleware, chatRoutes); // [NEW] + chat rate limit + prompt sanitizer
+app.use('/v1/video', videoRoutes); // [FASE1] Video Studio briefs (auth inside router)
 app.use('/v1/memory', memoryRoutes); // [NEW] Memory System
 app.use('/v1/inbox', inboxRoutes); // [DASHBOARD] Mission Control
 app.use('/v1/voices', voiceRoutes); // [VOICE] Voice Library & Cloning
