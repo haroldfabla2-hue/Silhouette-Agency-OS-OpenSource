@@ -1284,7 +1284,8 @@ export const generateGeminiTextPure = async (prompt: string, model?: string): Pr
 
 /**
  * Non-stream text generation with REAL cloud failover (W6 follow-up).
- * Chain: Gemini background model (own quota bucket) -> Groq -> OpenRouter,
+ * Chain: Gemini background model (own quota bucket) -> Groq -> NVIDIA NIM
+ * (when NVIDIA_API_KEY is set) -> OpenRouter,
  * each guarded by the providerHealth circuit breaker. Built for the
  * background/spawn path, which previously died when a single Gemini model
  * hit its quota ("[BACKGROUND_LLM] No providers available" with 0 births).
@@ -1330,7 +1331,31 @@ export const generateTextWithCloudFallbacks = async (
         }
     } else errors.push('groq: circuit open');
 
-    // 3) OpenRouter (:free model)
+    // 3) NVIDIA NIM (free tier; only when NVIDIA_API_KEY is set)
+    if (process.env.NVIDIA_API_KEY?.trim() && providerHealth.isAvailable('nvidia')) {
+        try {
+            const { ProviderRegistry } = await import('./llm/providerRegistry');
+            const { OpenAICompatibleClient } = await import('./llm/openAICompatible');
+            const definition = ProviderRegistry.fromEnvironment().get('NVIDIA');
+            if (!definition) throw new Error('NVIDIA provider not registered');
+            const client = new OpenAICompatibleClient();
+            const result = await client.complete(definition, [{ role: 'user', content: prompt }], {
+                maxTokens: opts.maxTokens ?? 1024,
+                temperature: opts.temperature ?? 0.7
+            });
+            if (result.text) {
+                providerHealth.reportSuccess('nvidia');
+                console.log('[CLOUD_FALLBACK] ✅ NVIDIA NIM responded');
+                return result.text;
+            }
+            throw new Error('empty response');
+        } catch (e: any) {
+            errors.push(`nvidia: ${e.message}`);
+            if (isQuota(e.message)) providerHealth.reportFailure('nvidia', e.message);
+        }
+    } else errors.push(process.env.NVIDIA_API_KEY?.trim() ? 'nvidia: circuit open' : 'nvidia: no key');
+
+    // 4) OpenRouter (:free model)
     if (providerHealth.isAvailable('openrouter')) {
         try {
             const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
