@@ -597,7 +597,15 @@ class ToolRegistry {
                     name: tool.name,
                     description: tool.description,
                     category: tool.category,
-                    version: tool.version
+                    version: tool.version,
+                    // Consumers (CapabilityAwareness) build their prompt summaries
+                    // from this payload alone: without these fields a freshly
+                    // registered tool was invisible in agent prompts until restart
+                    // (live-proven 2026-10-17: summary omitted a tool registered
+                    // minutes earlier because enabled arrived undefined).
+                    enabled: tool.enabled,
+                    createdBy: tool.createdBy,
+                    parameters: tool.parameters
                 }
             },
             'ToolRegistry'
