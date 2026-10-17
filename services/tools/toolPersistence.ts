@@ -247,6 +247,43 @@ class ToolPersistence {
     }
 
     /**
+     * Register a tool's existence without touching its stats. Builtins only get
+     * a row on first use, so a never-used builtin had nothing to persist: its
+     * createdAt reset to boot time on every restart and the evolver's
+     * unused-sweep (7+ days without use) could never fire. One idempotent row
+     * per tool at boot gives every tool a durable creation time.
+     */
+    public async touchIfAbsent(tool: DynamicTool): Promise<void> {
+        await this.initialize();
+        if (!this.db) return;
+
+        try {
+            const stmt = this.db.prepare(`
+                INSERT INTO dynamic_tools
+                (id, name, description, parameters, handler, category, created_by,
+                 enabled, usage_count, success_count, last_used, created_at, version, tags)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, ?, ?, ?)
+                ON CONFLICT(name) DO NOTHING
+            `);
+            stmt.run(
+                tool.id,
+                tool.name,
+                tool.description,
+                JSON.stringify(tool.parameters),
+                JSON.stringify(tool.handler),
+                tool.category,
+                tool.createdBy,
+                tool.enabled ? 1 : 0,
+                tool.createdAt,
+                tool.version,
+                tool.tags ? JSON.stringify(tool.tags) : null
+            );
+        } catch (error: any) {
+            console.warn(`[ToolPersistence] ⚠️ touchIfAbsent failed for ${tool.name}:`, error?.message || error);
+        }
+    }
+
+    /**
      * Convert database row to DynamicTool
      */
     private rowToTool(row: any): DynamicTool {

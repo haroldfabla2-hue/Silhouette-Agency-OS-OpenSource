@@ -564,6 +564,15 @@ class ToolRegistry {
     private async loadPersistedTools(): Promise<void> {
         try {
             const { toolPersistence } = await import('./toolPersistence');
+
+            // Stamp every registered tool (builtins included) into the stats
+            // store BEFORE loading: a never-used tool had no persisted row, so
+            // its createdAt reset on every boot and the evolver's unused-sweep
+            // (7+ days) could never fire. Idempotent (ON CONFLICT DO NOTHING).
+            for (const tool of this.tools.values()) {
+                await toolPersistence.touchIfAbsent(tool);
+            }
+
             const dynamicTools = await toolPersistence.loadAll();
 
             for (const tool of dynamicTools) {
