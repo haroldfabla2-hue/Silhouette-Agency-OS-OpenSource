@@ -159,6 +159,16 @@ export class ChatController {
 
             const cleanSessionId = sessionId || 'default';
 
+            // [CONFIRMATION GATE v2] Authenticated yes/no for pending external
+            // effects: "CONFIRMAR <token>" / "RECHAZAR <token>" binds to this
+            // authenticated principal + this conversation. The ack reaches the
+            // model so it knows it may re-issue the identical call (once).
+            const { confirmationGate } = await import('../../services/tools/confirmationGate');
+            const gateAck = confirmationGate.handleUserCommand(userMessage, userId, cleanSessionId);
+            const promptMessage = gateAck ? `${userMessage}
+
+${gateAck}` : userMessage;
+
             const userMsg = {
                 role: role || 'user',
                 content: userMessage,
@@ -181,12 +191,12 @@ export class ChatController {
             const response = await agentInferenceRouter.completeText(
                 `${this.buildSystemPrompt(codeContext || '')}
 
-${this.buildPrompt(userMessage, recentHistory, profileContext, memoryContext, codeContext)}`,
+${this.buildPrompt(promptMessage, recentHistory, profileContext, memoryContext, codeContext)}`,
                 { lane: 'conversational' }
             );
             // Same tool bridge as /stream: execute [TOOL:] calls under the caller's
             // role and render honest results (or loud errors) inline.
-            const bridged = await chatToolIntegration.processToolCalls(response, userRole);
+            const bridged = await chatToolIntegration.processToolCalls(response, userRole, { principalId: userId, conversationId: cleanSessionId });
             const finalText = bridged.enhancedResponse;
 
             // 4. Persist Assistant Response
@@ -257,6 +267,14 @@ ${this.buildPrompt(userMessage, recentHistory, profileContext, memoryContext, co
         }
 
         const cleanSessionId = sessionId || 'default';
+
+        // [CONFIRMATION GATE v2] Same authenticated yes/no flow as the
+        // non-stream handler (see above).
+        const { confirmationGate } = await import('../../services/tools/confirmationGate');
+        const gateAck = confirmationGate.handleUserCommand(userMessage, userId, cleanSessionId);
+        const promptMessage = gateAck ? `${userMessage}
+
+${gateAck}` : userMessage;
 
         // Setup SSE headers
         res.setHeader('Content-Type', 'text/event-stream');
@@ -353,7 +371,7 @@ ${this.buildPrompt(userMessage, recentHistory, profileContext, memoryContext, co
             // honest-capabilities rules. It was built and DISCARDED, so the model never
             // saw the protocol and narrated actions instead of invoking tools.
             const systemPrompt = this.buildSystemPrompt(purifiedContext.code || '');
-            const fullPrompt = `${systemPrompt}\n\n${this.buildPromptPurified(userMessage, purifiedContext)}`;
+            const fullPrompt = `${systemPrompt}\n\n${this.buildPromptPurified(promptMessage, purifiedContext)}`;
 
             // 5. Stream LLM response using the Universal Fallback Chain
             let fullResponse = '';
@@ -410,7 +428,7 @@ ${this.buildPrompt(userMessage, recentHistory, profileContext, memoryContext, co
             if (chatToolIntegration.hasToolCalls(fullResponse)) {
                 res.write(`data: ${JSON.stringify({ type: 'status', message: 'Executing tools...' })}\n\n`);
 
-                const { toolResults, enhancedResponse } = await chatToolIntegration.processToolCalls(fullResponse, userRole);
+                const { toolResults, enhancedResponse } = await chatToolIntegration.processToolCalls(fullResponse, userRole, { principalId: userId, conversationId: cleanSessionId });
                 finalResponse = enhancedResponse;
 
                 // Send tool results to client
