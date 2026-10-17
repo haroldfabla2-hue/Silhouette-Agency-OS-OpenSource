@@ -157,12 +157,29 @@ export function jailDenied(r: JailResolution): r is { ok: false; reason: string 
     return !r.ok;
 }
 
+/**
+ * PR-L: anchor relative paths at the PRIMARY root before resolution.
+ * Chat models follow the tool instructions and send bare filenames
+ * ('report.txt'); path.resolve() anchored them at the process CWD instead,
+ * so every relative write landed OUTSIDE the write root and was denied
+ * (live incident 2026-10-16: JAIL_DENIED for 'puente-jail.txt'). Escapes
+ * ('../x') still resolve outside every root and stay denied.
+ */
+function anchorAtPrimaryRoot(rawPath: string, roots: string[]): string {
+    if (typeof rawPath !== 'string' || !rawPath.trim() || path.isAbsolute(rawPath) || roots.length === 0) {
+        return rawPath; // blank stays blank: resolveWithinRoots denies it
+    }
+    return path.join(roots[0], rawPath);
+}
+
 export function resolveWrite(rawPath: string): JailResolution {
-    return resolveWithinRoots(rawPath, writeRoots());
+    const roots = writeRoots();
+    return resolveWithinRoots(anchorAtPrimaryRoot(rawPath, roots), roots);
 }
 
 export function resolveRead(rawPath: string): JailResolution {
-    return resolveWithinRoots(rawPath, readRoots());
+    const roots = readRoots();
+    return resolveWithinRoots(anchorAtPrimaryRoot(rawPath, roots), roots);
 }
 
 export function sha256Of(text: string): string {
