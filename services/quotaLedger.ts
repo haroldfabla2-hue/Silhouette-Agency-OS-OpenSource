@@ -30,7 +30,9 @@ export interface QuotaStatus {
     day: string;
 }
 
-const DEFAULT_BUDGET = 450; // free tier ~500/day/model; keep margin
+const DEFAULT_BUDGET = 450; // generous default; real per-model free limits vary wildly
+// (live 2026-10-17: gemini-3.8-flash = 20/day, gemini-3.1-flash-lite = much larger).
+// Set QUOTA_DAILY_BUDGET_<PROVIDER>_<MODEL> to match the real limit of each model.
 
 function dayKey(now: Date = new Date()): string {
     // America/Los_Angeles calendar day (Google's quota reset boundary)
@@ -70,17 +72,31 @@ export class QuotaLedger {
         return `${dayKey()}:${provider}:${model}`;
     }
 
-    budgetFor(provider: string): number {
-        const env = Number(process.env.QUOTA_DAILY_BUDGET?.trim());
+    /**
+     * Budget resolution, most specific first:
+     *   QUOTA_DAILY_BUDGET_<PROVIDER>_<MODEL>  (e.g. QUOTA_DAILY_BUDGET_GEMINI_GEMINI_3_8_FLASH=15)
+     *   QUOTA_DAILY_BUDGET_<PROVIDER>
+     *   QUOTA_DAILY_BUDGET
+     *   default (450)
+     * Per-model matters: measured live 2026-10-17, gemini-3.8-flash free tier
+     * is 20 requests/day while gemini-3.1-flash-lite has a far larger bucket -
+     * one global number cannot protect both.
+     */
+    budgetFor(provider: string, model?: string): number {
+        const perModel = model
+            ? Number(process.env[`QUOTA_DAILY_BUDGET_${provider.toUpperCase()}_${model.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`]?.trim())
+            : NaN;
+        if (Number.isFinite(perModel) && perModel > 0) return Math.floor(perModel);
         const perProvider = Number(process.env[`QUOTA_DAILY_BUDGET_${provider.toUpperCase()}`]?.trim());
         if (Number.isFinite(perProvider) && perProvider > 0) return Math.floor(perProvider);
+        const env = Number(process.env.QUOTA_DAILY_BUDGET?.trim());
         if (Number.isFinite(env) && env > 0) return Math.floor(env);
         return DEFAULT_BUDGET;
     }
 
     /** Record one attempt BEFORE the API call - attempts are what quota charges. */
     recordAttempt(provider: string, model: string): QuotaStatus {
-        const budget = this.budgetFor(provider);
+        const budget = this.budgetFor(provider, model);
         const data = this.read();
         const key = this.key(provider, model);
         const used = (data[key] || 0) + 1;
@@ -93,7 +109,7 @@ export class QuotaLedger {
     }
 
     status(provider: string, model: string): QuotaStatus {
-        const budget = this.budgetFor(provider);
+        const budget = this.budgetFor(provider, model);
         const used = this.read()[this.key(provider, model)] || 0;
         return { allowed: used < budget, used, budget, day: dayKey() };
     }
