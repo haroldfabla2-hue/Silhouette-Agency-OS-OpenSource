@@ -14,6 +14,7 @@ import { chronos } from "./chronosService";
 import { cfo } from "./cfoService";
 import { contextAssembler } from "./contextAssembler";
 import { localEmbeddingService } from "./localEmbeddingService";
+import { quotaLedger } from './quotaLedger'; // [PR-K]
 
 
 
@@ -641,6 +642,11 @@ export const generateAgentResponse = async (
                         break; // Success
                     }
 
+                    // PR-K: local daily budget check before the real call (fail fast, degrade honest)
+                    const qMain = quotaLedger.recordAttempt('gemini', negotiatedModel);
+                    if (!qMain.allowed) {
+                        throw new Error(`QUOTA_BUDGET_EXCEEDED: local daily budget for gemini:${negotiatedModel} spent (${qMain.used}/${qMain.budget} attempts, day ${qMain.day} America/Los_Angeles). Degrading honestly until quota reset.`);
+                    }
                     console.log(`[GEMINI] Generating with model: ${negotiatedModel}`);
 
 
@@ -1248,6 +1254,13 @@ export function hasGeminiKey(): boolean {
 export const generateGeminiTextPure = async (prompt: string, model?: string): Promise<string> => {
     const client = ensureClient();
     if (!client) throw new Error('GEMINI: API key not configured');
+    // PR-K: fail fast on the local daily budget BEFORE burning a real API
+    // call - the 2026-10-16 429 storm burned the whole free bucket on retries.
+    const quotaModel = model || DEFAULT_GEMINI_MODEL;
+    const q = quotaLedger.recordAttempt('gemini', quotaModel);
+    if (!q.allowed) {
+        throw new Error(`QUOTA_BUDGET_EXCEEDED: local daily budget for gemini:${quotaModel} spent (${q.used}/${q.budget} attempts, day ${q.day} America/Los_Angeles). Degrading honestly until quota reset.`);
+    }
     const result = await client.models.generateContent({
         model: model || DEFAULT_GEMINI_MODEL,
         contents: [{ parts: [{ text: prompt }] }]
