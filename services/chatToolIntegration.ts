@@ -50,6 +50,8 @@ export interface ParsedToolCall {
     originalMatch: string;
 }
 
+import { confirmationGate, EXTERNAL_EFFECT_TOOLS } from './tools/confirmationGate';
+
 class ChatToolIntegration {
     /**
      * Get tool declarations for LLM function calling
@@ -246,6 +248,27 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
                         executionTimeMs: Date.now() - startTime
                     };
                 }
+            }
+
+            // [CONFIRMATION GATE] External effects (email, PRs) never fire on the
+            // model's first call: the action is summarized back to the user and
+            // only an IDENTICAL repeat call (after their explicit OK) executes.
+            if (EXTERNAL_EFFECT_TOOLS.has(toolName) && process.env.CHAT_EFFECT_GATE !== 'off') {
+                const pendingEffect = confirmationGate.gate(toolName, args);
+                if (pendingEffect) {
+                    console.log(`[CONFIRM_GATE] ⏸️ ${toolName} pending user confirmation`);
+                    return {
+                        toolName,
+                        success: true,
+                        result: {
+                            status: 'PENDING_CONFIRMATION',
+                            summary: pendingEffect.summary,
+                            instructions: 'Muestra este resumen al usuario tal cual y pide confirmación explícita. SOLO si el usuario confirma, vuelve a llamar la MISMA herramienta con argumentos IDENTICOS para ejecutar. Cualquier cambio en los argumentos requiere una nueva confirmación.'
+                        },
+                        executionTimeMs: Date.now() - startTime
+                    };
+                }
+                console.log(`[CONFIRM_GATE] ✅ ${toolName} confirmed by user - executing`);
             }
 
             // Execute the tool via orchestrator (unified capability execution)
