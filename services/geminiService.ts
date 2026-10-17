@@ -6,7 +6,7 @@ import { introspection } from "./introspectionEngine";
 import { continuum } from "./continuumMemory";
 import { consciousness } from "./consciousnessEngine";
 import { costEstimator } from "./costEstimator";
-import { DEFAULT_GEMINI_MODEL, DEFAULT_OPENROUTER_MODEL, DEFAULT_GROQ_MODEL, DEFAULT_GEMINI_EMBEDDING_MODEL, FALLBACK_GEMINI_EMBEDDING_MODEL, GEMINI_EMBEDDING_DIMENSIONS } from "./llm/defaultModels";
+import { DEFAULT_GEMINI_MODEL, DEFAULT_GEMINI_BACKGROUND_MODEL, DEFAULT_OPENROUTER_MODEL, DEFAULT_GROQ_MODEL, DEFAULT_GEMINI_EMBEDDING_MODEL, FALLBACK_GEMINI_EMBEDDING_MODEL, GEMINI_EMBEDDING_DIMENSIONS } from "./llm/defaultModels";
 import { promptCompiler } from "./promptCompiler"; // Import Compiler
 import { DONNA_PERSONA } from "../constants/personalities";
 import { narrative } from "./narrativeService";
@@ -227,11 +227,14 @@ export const generateAgentResponse = async (
     try {
         // --- CFO INTERVENTION (BUDGET & MODEL NEGOTIATION) ---
         // 1. Determine preferred model based on task type (Heuristic) or Override
-        let preferredModel = modelOverride || DEFAULT_GEMINI_MODEL; // User Preference or verified live default
-        if (!modelOverride && (category === 'DEV' || category === 'SCIENCE')) preferredModel = DEFAULT_GEMINI_MODEL; // Smarter for code if not forced
+        // PR-N: generateAgentResponse is the AGENT/BACKGROUND entry (chat uses the
+        // stream path with DEFAULT_GEMINI_MODEL). Seed and negotiate on the
+        // background bucket so loops never touch the chat quota.
+        let preferredModel = modelOverride || DEFAULT_GEMINI_BACKGROUND_MODEL;
+        if (!modelOverride && (category === 'DEV' || category === 'SCIENCE')) preferredModel = DEFAULT_GEMINI_BACKGROUND_MODEL;
 
         // 2. Ask CFO for permission and best model
-        const negotiatedModel = cfo.negotiateModel(task, preferredModel, { agentName, category });
+        const negotiatedModel = cfo.negotiateModel(task, preferredModel, { agentName, category, trafficClass: 'background' });
 
         // 3. Check for Anomalies (Cost Spike)
         // We'll check this after execution based on cost, but pre-check is good too if we had history.

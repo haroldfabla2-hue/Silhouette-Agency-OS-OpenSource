@@ -3,7 +3,7 @@ import { SystemProtocol } from "../types";
 import { systemBus } from "./systemBus";
 import { settingsManager } from "./settingsManager";
 import { configLoader } from "../server/config/configLoader"; // [FIX] Import configLoader
-import { DEFAULT_GEMINI_MODEL } from "./llm/defaultModels";
+import { DEFAULT_GEMINI_MODEL, DEFAULT_GEMINI_BACKGROUND_MODEL } from "./llm/defaultModels";
 
 // --- CFO AGENT (Chief Financial Officer) ---
 // The Guardian of the Wallet.
@@ -50,6 +50,14 @@ export class CFOAgent {
      */
     public negotiateModel(prompt: string, preferredModel: string, context: any): string {
         const metrics = costEstimator.getMetrics();
+        // PR-N: traffic-class buckets. Background/agent traffic (trafficClass
+        // 'background', threaded from generateAgentResponse) uses the background
+        // Gemini bucket (GEMINI_BACKGROUND_MODEL, own 500 req/day free quota)
+        // so autonomous loops can never burn the chat bucket - live incident
+        // 2026-10-16: loops exhausted gemini-3.8-flash and chat degraded for hours.
+        const geminiDefault = context?.trafficClass === 'background'
+            ? DEFAULT_GEMINI_BACKGROUND_MODEL
+            : DEFAULT_GEMINI_MODEL;
         const settings = settingsManager.getSettings();
         const agentCategory = context?.category;
         const agentName = context?.agentName || 'unknown';
@@ -72,7 +80,7 @@ export class CFOAgent {
             // 1. VISION -> Gemini (Minimax M2.5 is text-only/focused)
             if (isVisionTask) {
                 console.log(`[CFO] 👁️ Vision Task detected. Delegating to Gemini.`);
-                return DEFAULT_GEMINI_MODEL;
+                return geminiDefault;
             }
 
             // 2. COMPLEXITY ANALYSIS
@@ -90,7 +98,7 @@ export class CFOAgent {
                 return 'abab-6.5s-chat';
             } else {
                 console.log(`[CFO] ⚡ Low-Complexity Task. Offloading to Gemini Flash to save Quota.`);
-                return DEFAULT_GEMINI_MODEL;
+                return geminiDefault;
             }
         }
 
@@ -119,7 +127,7 @@ export class CFOAgent {
             // in prod (measured live 2026-10-15: every such call failed). Until
             // Minimax is provisioned, use the env-driven Gemini default.
             console.log(`[CFO] 🎯 Code task detected${isDevAgent ? ` (Agent: ${agentName}, Category: ${agentCategory})` : ''}. Minimax unprovisioned; using Gemini default.`);
-            return DEFAULT_GEMINI_MODEL;
+            return geminiDefault;
         }
 
         // === MINIMAX FALLBACK → DEEPSEEK ===
@@ -137,13 +145,13 @@ export class CFOAgent {
         // === ZHIPUAI FALLBACK → GEMINI (FREE) ===
         if (isDevAgent || isCode) {
             console.log(`[CFO] ⚠️ ZhipuAI unavailable. Fallback to Gemini.`);
-            return DEFAULT_GEMINI_MODEL;
+            return geminiDefault;
         }
 
         // Note: Ollama is last resort handled by geminiService when all cloud fails
 
         console.log(`[CFO] Defaulting to Gemini default model.`);
-        return DEFAULT_GEMINI_MODEL;
+        return geminiDefault;
 
     }
 
