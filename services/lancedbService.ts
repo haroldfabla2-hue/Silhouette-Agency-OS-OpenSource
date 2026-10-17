@@ -12,6 +12,7 @@ const DB_DIR = path.dirname(DB_PATH);
 const DEFAULT_DIMENSIONS = 768; // Hardcoded default to match the original schema
 
 import { validEmbedding, scopeSql, inScope, type EmbeddingIdentity, type MemoryScope } from './memoryRetrieval';
+import { rankByCosine, maxVectorScanRows } from './vectorScan';
 import { Schema, Field, FixedSizeList, Float32, Utf8, Float64 } from 'apache-arrow';
 
 function adjustVectorDimension(vector: number[], targetDim: number = DEFAULT_DIMENSIONS): number[] {
@@ -323,10 +324,17 @@ export class LanceDbService {
         const name = this.vectorTableName(identity);
         if (!(await this.db.tableNames()).includes(name)) return [];
         const table = await this.db.openTable(name);
-        let query = table.vectorSearch(queryVector).distanceType('cosine').limit(limit);
-        if (filter) query = query.where(filter);
-        const rows = await query.toArray();
-        const current = await Promise.all(rows.map(r => this.getNodeById(r.id)));
+        const rowCount = await table.countRows();
+        const maxScan = maxVectorScanRows();
+        if (rowCount > maxScan) {
+            console.error(`[LANCEDB] Semantic search skipped: projection table ${name} has ${rowCount} rows, above the JS scan limit of ${maxScan} (LANCEDB_SCAN_MAX_ROWS). Native vector search is not portable to every CPU; raise the limit or shard by identity.`);
+            return [];
+        }
+        let scan = table.query();
+        if (filter) scan = scan.where(filter);
+        const rows = await scan.toArray();
+        const ranked = rankByCosine(rows as { vector: unknown; id: string }[], queryVector, limit);
+        const current = await Promise.all(ranked.map(r => this.getNodeById(r.id)));
         return current.filter((n): n is MemoryNode => n !== null);
     }
 
@@ -458,10 +466,15 @@ export class LanceDbService {
 
         try {
             const adjustedVector = adjustVectorDimension(queryVector);
-            const results = await this.knowledgeTable.search(adjustedVector)
-                .limit(limit)
-                .toArray();
-            return results;
+            const rowCount = await this.knowledgeTable.countRows();
+            const maxScan = maxVectorScanRows();
+            if (rowCount > maxScan) {
+                console.error(`[LANCEDB] Knowledge search skipped: universal_knowledge has ${rowCount} rows, above the JS scan limit of ${maxScan} (LANCEDB_SCAN_MAX_ROWS).`);
+                return [];
+            }
+            const rows = await this.knowledgeTable.query().toArray();
+            return rankByCosine(rows as { vector: ArrayLike<number> }[], adjustedVector, limit)
+                .map(({ _score, ...row }) => ({ ...row, _distance: 1 - _score }));
         } catch (e) {
             console.error("[LANCEDB] Knowledge Search Failed", e);
             return [];

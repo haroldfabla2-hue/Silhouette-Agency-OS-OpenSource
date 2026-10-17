@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { LanceDbService } from '../../services/lancedbService';
 import { LexicalHashProvider, MemoryProjectionRollout } from '../../services/memoryProjectionRollout';
 import { MemoryTier, type MemoryNode } from '../../types';
+import { cpuSupportsNativeVectorKernels } from '../../services/vectorScan';
 const dirs: string[] = [];
 afterEach(async () => { for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true }); });
 const node = (id: string, content = 'safety document', ownerId = 'alice'): MemoryNode => ({ id, content, ownerId, timestamp: 1, tier: MemoryTier.MEDIUM, tags: [], accessCount: 0, lastAccess: 1, importance: 0.5 });
@@ -36,7 +37,8 @@ describe('opt-in real projection rollout', () => {
         await db.store(node('bad', 'valid words'));
         expect((await rollout.backfill(provider)).projected).toBe(1);
     });
-    it('uses actual IVF index, preserves exact oracle and blocks owners/hypotheses', async () => {
+    // ANN training/search needs LanceDB native vector kernels (AVX); skip where they would SIGILL.
+    it.skipIf(!cpuSupportsNativeVectorKernels())('uses actual IVF index, preserves exact oracle and blocks owners/hypotheses', async () => {
         const { db, rollout } = await fresh(); const provider = new LexicalHashProvider(16);
         for (let i = 0; i < 80; i++) await db.store(node(`n${i}`, `topic${i} contract memory document word${i}`, i === 0 ? 'bob' : 'alice'));
         await db.store({ ...node('hypothesis'), tags: ['HYPOTHESIS'] });
