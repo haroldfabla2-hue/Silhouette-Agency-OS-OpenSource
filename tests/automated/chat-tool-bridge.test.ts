@@ -20,15 +20,15 @@ describe('chat tool bridge', () => {
     it('stream prompt includes the system prompt (tool protocol)', () => {
         expect(controller).not.toMatch(/^\s*this\.buildSystemPrompt\(purifiedContext\.code \|\| ''\);$/m);
         expect(controller).toContain('const systemPrompt = this.buildSystemPrompt(purifiedContext.code');
-        expect(controller).toContain('`${systemPrompt}\\n\\n${this.buildPromptPurified(userMessage, purifiedContext)}`');
+        expect(controller).toContain('`${systemPrompt}\\n\\n${this.buildPromptPurified(promptMessage, purifiedContext)}`');
     });
 
     it('stream executes inline tool calls under the caller role', () => {
-        expect(controller).toContain('processToolCalls(fullResponse, userRole)');
+        expect(controller).toContain('processToolCalls(fullResponse, userRole, { principalId: userId, conversationId: cleanSessionId })');
     });
 
     it('/message routes through the same bridge', () => {
-        expect(controller).toContain('processToolCalls(response, userRole)');
+        expect(controller).toContain('processToolCalls(response, userRole, { principalId: userId, conversationId: cleanSessionId })');
         expect(controller).toContain('content: finalText,');
     });
 
