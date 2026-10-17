@@ -14,6 +14,7 @@ import { chronos } from "./chronosService";
 import { cfo } from "./cfoService";
 import { contextAssembler } from "./contextAssembler";
 import { localEmbeddingService } from "./localEmbeddingService";
+import { LOCAL_EMBEDDING_IDENTITY, geminiIdentity, type EmbeddingIdentity } from "./embeddingIdentity";
 import { quotaLedger } from './quotaLedger'; // [PR-K]
 
 
@@ -1153,16 +1154,29 @@ let consecutiveEmbeddingFailures = 0;
 let isLocalEmbeddingPrimary = false;
 
 export const generateEmbedding = async (text: string): Promise<number[] | null> => {
+    const embedded = await generateEmbeddingWithIdentity(text);
+    return embedded?.vector ?? null;
+};
+
+/**
+ * Embedding + TRUE identity (the model and dimension that actually produced
+ * the vector: Gemini primary, Gemini fallback, or the local all-MiniLM-L6-v2
+ * engine). Callers that persist or query vectors must use this so write and
+ * read identities can never silently diverge.
+ */
+export const generateEmbeddingWithIdentity = async (text: string): Promise<{ vector: number[]; identity: EmbeddingIdentity } | null> => {
     if (isLocalEmbeddingPrimary) {
         // [PA-048] User requested permanent fallback after 3 strikes
-        return await localEmbeddingService.getEmbedding(text);
+        const localVector = await localEmbeddingService.getEmbedding(text);
+        return localVector ? { vector: localVector, identity: LOCAL_EMBEDDING_IDENTITY } : null;
     }
 
     const client = ensureClient();
     if (!client) {
         // Fallback to local Transformers.js embedding (all-MiniLM-L6-v2)
         console.log("[GeminiService] 🔌 Using Local Embedding Fallback for:", text.substring(0, 30));
-        return await localEmbeddingService.getEmbedding(text);
+        const localVector = await localEmbeddingService.getEmbedding(text);
+        return localVector ? { vector: localVector, identity: LOCAL_EMBEDDING_IDENTITY } : null;
     }
 
     try {
@@ -1178,7 +1192,7 @@ export const generateEmbedding = async (text: string): Promise<number[] | null> 
             const embedding = result.embeddings?.[0]?.values;
             if (embedding) {
                 consecutiveEmbeddingFailures = 0; // Reset on success
-                return embedding;
+                return { vector: embedding, identity: geminiIdentity(DEFAULT_GEMINI_EMBEDDING_MODEL) };
             }
         } catch (e: any) {
             // [ROBUSTNESS] Handle both Error objects and raw JSON error responses
@@ -1196,7 +1210,7 @@ export const generateEmbedding = async (text: string): Promise<number[] | null> 
                     const embedding = result.embeddings?.[0]?.values;
                     if (embedding) {
                         consecutiveEmbeddingFailures = 0; // Reset on success
-                        return embedding;
+                        return { vector: embedding, identity: geminiIdentity(FALLBACK_GEMINI_EMBEDDING_MODEL) };
                     }
                 } catch (fallbackError: any) {
                     consecutiveEmbeddingFailures++;
@@ -1208,7 +1222,8 @@ export const generateEmbedding = async (text: string): Promise<number[] | null> 
                     } else {
                         console.log(`[GeminiService] 🔌 Falling back to Local Embedding Engine (${consecutiveEmbeddingFailures}/3 strikes)...`);
                     }
-                    return await localEmbeddingService.getEmbedding(text);
+                    const localVector = await localEmbeddingService.getEmbedding(text);
+                    return localVector ? { vector: localVector, identity: LOCAL_EMBEDDING_IDENTITY } : null;
                 }
             } else {
                 consecutiveEmbeddingFailures++;
@@ -1220,7 +1235,8 @@ export const generateEmbedding = async (text: string): Promise<number[] | null> 
                 } else {
                     console.log(`[GeminiService] 🔌 Falling back to Local Embedding Engine (${consecutiveEmbeddingFailures}/3 strikes)...`);
                 }
-                return await localEmbeddingService.getEmbedding(text);
+                const localVector = await localEmbeddingService.getEmbedding(text);
+                return localVector ? { vector: localVector, identity: LOCAL_EMBEDDING_IDENTITY } : null;
             }
         }
 
@@ -1235,7 +1251,8 @@ export const generateEmbedding = async (text: string): Promise<number[] | null> 
         } else {
             console.log(`[GeminiService] 🔌 Falling back to Local Embedding Engine (${consecutiveEmbeddingFailures}/3 strikes)...`);
         }
-        return await localEmbeddingService.getEmbedding(text);
+        const localVector = await localEmbeddingService.getEmbedding(text);
+        return localVector ? { vector: localVector, identity: LOCAL_EMBEDDING_IDENTITY } : null;
     }
 };
 
@@ -1678,6 +1695,7 @@ export const geminiService = {
     generateShotlist,
     analyzeImage,
     generateEmbedding,
+    generateEmbeddingWithIdentity,
     generateText,
     createCompletion // [NEW] exposed for visual analysis
 };

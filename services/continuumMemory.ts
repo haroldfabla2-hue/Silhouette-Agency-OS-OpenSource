@@ -453,36 +453,30 @@ class ContinuumMemorySystem {
             } as MemoryNode;
 
             try {
-                // [CHANGED] Use Minimax for Embeddings (Unified Provider)
-                const { minimaxService } = await import('./minimaxService');
-                const { vectorMemory } = await import('./vectorMemoryService');
-
-                // Fallback to Gemini if Minimax not configured? No, user explicitly wants Minimax.
-                // But we should check if it's available.
-                let vector: number[] | null = null;
-
-                if (minimaxService.isAvailable()) {
-                    vector = await minimaxService.getEmbedding(content);
-                } else {
-                    // Fallback to Gemini if Minimax key missing - resilient to
-                    // circular-import init order (same pattern as the query path).
-                    const geminiMod = await import('./geminiService');
-                    const embedFn = geminiMod.geminiService?.generateEmbedding || geminiMod.generateEmbedding;
-                    vector = typeof embedFn === 'function' ? await embedFn(content) : null;
-                }
-
-                if (process.env.MEMORY_WRITE_MODEL && vector) nodeToStore.embeddingIdentity = {
-                    model: process.env.MEMORY_WRITE_MODEL, version: process.env.MEMORY_WRITE_VERSION || '1', dimension: vector.length
-                };
-                await lancedbService.store(nodeToStore, vector || undefined); // Canonical copy before optional vector projection.
-                if (vector) {
-                    await vectorMemory.storeMemory(nodeToStore.id, vector, {
-                        ...nodeToStore,
-                        type: 'MEMORY_NODE'
-                    });
-                } else {
-                    console.warn("[CONTINUUM] Failed to generate embedding for DEEP memory. Storing in LanceDB as fallback.");
-                    await lancedbService.store(nodeToStore);
+                // [FIX 2026-10-17] TRUE per-vector identity. Before: writes
+                // embedded with Minimax while queries embedded with Gemini (the
+                // identities never crossed, so semantic search never matched),
+                // and identity was labeled from an env var instead of the actual
+                // provider. Now one resolver returns vector + the identity that
+                // truly produced it; lancedbService.store projects per identity.
+                const { generateEmbeddingWithIdentity } = await import('./geminiService');
+                const embedded = await generateEmbeddingWithIdentity(content);
+                if (embedded) nodeToStore.embeddingIdentity = embedded.identity;
+                await lancedbService.store(nodeToStore, embedded?.vector); // Canonical copy + automatic per-identity projection.
+                if (!embedded) {
+                    console.warn("[CONTINUUM] No embedding provider available; stored canonically without vector (text search only).");
+                } else if (embedded.identity.dimension === 768) {
+                    // Optional dual-write: Qdrant only when actually connected
+                    // AND the vector meets its 768-dim requirement. Qdrant is
+                    // not part of the prod deployment; LanceDB projections are
+                    // the deep-memory vector store.
+                    const { vectorMemory } = await import('./vectorMemoryService');
+                    if (vectorMemory.isReady()) {
+                        await vectorMemory.storeMemory(nodeToStore.id, embedded.vector, {
+                            ...nodeToStore,
+                            type: 'MEMORY_NODE'
+                        });
+                    }
                 }
             } catch (err) {
                 console.error("[CONTINUUM] Deep storage failed:", err);
@@ -1020,49 +1014,40 @@ class ContinuumMemorySystem {
             const dbResults = await lancedbService.searchByContent(query, 50, scope);
             lists.push(dbResults);
 
-            // 3. Search Deep Memory (SEMANTIC / VECTOR)
-            // Dynamic import to avoid circular dependency
+            // 3. Deep Memory (SEMANTIC / VECTOR)
+            // [FIX 2026-10-17] The query embeds with the SAME resolver as the
+            // write path and searches the per-identity LanceDB projection
+            // matching the vector actually produced - no env var can make write
+            // and query identities diverge again. Qdrant is queried only when
+            // actually connected and the dimension matches its 768 requirement.
             const { vectorMemory } = await import('./vectorMemoryService');
             const geminiMod = await import('./geminiService');
+            const embedWithIdentity = geminiMod.geminiService?.generateEmbeddingWithIdentity || geminiMod.generateEmbeddingWithIdentity;
+            const embedded = typeof embedWithIdentity === 'function' ? await embedWithIdentity(query) : null;
 
-            // Generate Embedding for Query — resilient to circular-import init order
-            // (fall back to the named export, then to no embedding → text search).
-            const embedFn = geminiMod.geminiService?.generateEmbedding || geminiMod.generateEmbedding;
-            const embedding = typeof embedFn === 'function' ? await embedFn(query) : null;
+            if (embedded) {
+                console.log(`[CONTINUUM] Semantic search via ${embedded.identity.model} (${embedded.identity.dimension}d)`);
+                lists.push((await lancedbService.search(embedded.vector, 50, scopeSql(scope), embedded.identity)).filter(n => inScope(n, scope)));
 
-            let deepVectors: any[] = [];
-
-            if (embedding && process.env.MEMORY_QDRANT_MODEL === process.env.MEMORY_QUERY_MODEL && process.env.MEMORY_QUERY_MODEL) {
-                // Semantic Search
-                console.log(`[CONTINUUM] Performing Semantic Search for: "${query}"`);
-                deepVectors = await vectorMemory.searchMemory(embedding, 50, scope.ownerId ? { ownerId: scope.ownerId } : undefined);
-            } else {
-                // Honest reason: no embedding produced vs embedding-model env mismatch.
-                if (!embedding) {
-                    console.warn("[CONTINUUM] Embedding UNAVAILABLE (no embedding provider configured or provider error) - falling back to text search for Deep Memory.");
-                } else {
-                    console.warn("[CONTINUUM] Embedding model env mismatch (MEMORY_QDRANT_MODEL vs MEMORY_QUERY_MODEL) - falling back to text search for Deep Memory.");
+                if (embedded.identity.dimension === 768 && vectorMemory.isReady()) {
+                    const deepVectors = await vectorMemory.searchMemory(embedded.vector, 50, scope.ownerId ? { ownerId: scope.ownerId } : undefined);
+                    const deepNodes = deepVectors.map(v => ({
+                        ...v.payload,
+                        id: v.id,
+                        content: v.payload?.content || "Vector Result",
+                        tier: MemoryTier.DEEP,
+                        timestamp: v.payload?.timestamp || Date.now(),
+                        tags: v.payload?.tags || [],
+                        importance: v.payload?.importance || (v.score ? v.score : 1), // Use vector score if available
+                        decayHealth: 100,
+                        accessCount: 0,
+                        lastAccess: Date.now(),
+                        compressionLevel: 0
+                    }));
+                    lists.push(deepNodes.filter(n => inScope(n, scope)));
                 }
-                deepVectors = await vectorMemory.searchByContent(query, 50, scope.ownerId);
-            }
-
-            const deepNodes = deepVectors.map(v => ({
-                ...v.payload,
-                id: v.id,
-                content: v.payload?.content || "Vector Result",
-                tier: MemoryTier.DEEP,
-                timestamp: v.payload?.timestamp || Date.now(),
-                tags: v.payload?.tags || [],
-                importance: v.payload?.importance || (v.score ? v.score : 1), // Use vector score if available
-                decayHealth: 100,
-                accessCount: 0,
-                lastAccess: Date.now(),
-                compressionLevel: 0
-            }));
-            lists.push(deepNodes.filter(n => inScope(n, scope)));
-            if (embedding && process.env.MEMORY_QUERY_MODEL) {
-                const identity = { model: process.env.MEMORY_QUERY_MODEL, version: process.env.MEMORY_QUERY_VERSION || "1", dimension: embedding.length };
-                lists.push((await lancedbService.search(embedding, 50, scopeSql(scope), identity)).filter(n => inScope(n, scope)));
+            } else {
+                console.warn("[CONTINUUM] Embedding UNAVAILABLE (no provider configured or provider error) - deep memory served by text search only.");
             }
 
         } catch (e) {
@@ -1072,6 +1057,33 @@ class ContinuumMemorySystem {
         // Deduplicate by ID
         return fuseMemories(lists.map(list => list.sort((a, b) => activation(b).score - activation(a).score)), query);
     }
+    /**
+     * Backfill vector projections for canonical memories still in
+     * EMBEDDING_PENDING state (every memory written before per-identity
+     * projections existed). Uses the SAME resolver as the live write path, so
+     * backfilled and new vectors share one identity space. Failures stay
+     * EMBEDDING_PENDING and are retried on the next pass.
+     */
+    public async backfillMemoryEmbeddings(limit = 50): Promise<{ projected: number; failed: number }> {
+        if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new Error('Invalid backfill limit');
+        const { generateEmbeddingWithIdentity } = await import('./geminiService');
+        const pending = await lancedbService.pendingEmbeddings(limit);
+        let projected = 0, failed = 0;
+        for (const node of pending) {
+            try {
+                const embedded = await generateEmbeddingWithIdentity(node.content);
+                if (!embedded) { failed++; continue; }
+                await lancedbService.projectEmbedding(node, embedded.vector, embedded.identity);
+                projected++;
+            } catch (error: any) {
+                failed++;
+                console.warn(`[CONTINUUM] Backfill failed for ${node.id} (stays pending):`, error?.message || error);
+            }
+        }
+        if (projected || failed) console.log(`[CONTINUUM] Embedding backfill: ${projected} projected, ${failed} failed.`);
+        return { projected, failed };
+    }
+
     // --- MANUAL CONSOLIDATION VOID ---
     public async consolidateRamImmediate(): Promise<{ promoted: number }> {
         console.log("[CONTINUUM] 🌪️ FORCE CONSOLIDATION INITIATED");
