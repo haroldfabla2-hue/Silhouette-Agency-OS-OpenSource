@@ -567,6 +567,18 @@ class ToolRegistry {
             const dynamicTools = await toolPersistence.loadAll();
 
             for (const tool of dynamicTools) {
+                const existing = this.tools.get(tool.name);
+                if (existing) {
+                    // Builtin with the same name: the code definition always wins;
+                    // only accumulated stats (and the original creation time, for
+                    // the unused-sweep) carry over across restarts.
+                    existing.usageCount = tool.usageCount ?? 0;
+                    existing.successCount = tool.successCount ?? 0;
+                    existing.lastUsed = tool.lastUsed;
+                    if (tool.createdAt && tool.createdAt < existing.createdAt) existing.createdAt = tool.createdAt;
+                    console.log(`[ToolRegistry] 📦 Merged persisted stats into builtin: ${tool.name} (${existing.usageCount} uses)`);
+                    continue;
+                }
                 this.tools.set(tool.name, tool);
                 console.log(`[ToolRegistry] 📦 Loaded dynamic tool: ${tool.name}`);
             }
@@ -681,6 +693,14 @@ class ToolRegistry {
         tool.usageCount++;
         if (success) tool.successCount++;
         tool.lastUsed = Date.now();
+
+        // Persist stats for EVERY tool (builtins included) so evolution analysis
+        // and the unused-tool sweep survive restarts. Fire-and-forget: stats must
+        // never block or break tool execution. (Root fix: builtins held stats in
+        // memory only, so the evolver's MIN_USAGE_FOR_ANALYSIS was unreachable.)
+        void import('./toolPersistence')
+            .then(({ toolPersistence }) => toolPersistence.recordUsageStats(tool, success))
+            .catch(err => console.warn('[ToolRegistry] ⚠️ Failed to persist usage stats:', err));
     }
 
     /**
