@@ -34,7 +34,11 @@ export const builtInProviders: ProviderDefinition[] = [
         : []),
     // Kept explicitly selectable, preserving the previous fallback order.
     { id: 'ZHIPUAI', transport: 'legacy', model: 'glm-4-flash' },
-    { id: 'NVIDIA', transport: 'openai-compatible', baseUrl: 'https://integrate.api.nvidia.com/v1', apiKeyEnv: 'NVIDIA_API_KEY', modelEnv: 'NVIDIA_MODEL', baseUrlEnv: 'NVIDIA_BASE_URL', model: 'nvidia/nemotron-3.5-lightning-30b-a3b', discovery: true, priority: 60 },
+    // [timeout] NIM free tier queues under load: measured live 2026-10-17,
+    // 56.6s for a 16-token reply (8.7s when idle). The 30s client default made
+    // the leg time out and skip ahead exactly when the provider was busiest.
+    // 90s tolerates the queue without hanging background work indefinitely.
+    { id: 'NVIDIA', transport: 'openai-compatible', baseUrl: 'https://integrate.api.nvidia.com/v1', apiKeyEnv: 'NVIDIA_API_KEY', modelEnv: 'NVIDIA_MODEL', baseUrlEnv: 'NVIDIA_BASE_URL', model: 'nvidia/nemotron-3.5-lightning-30b-a3b', discovery: true, priority: 60, timeoutMs: 90000 },
     { id: 'OPENROUTER', transport: 'openai-compatible', baseUrl: 'https://openrouter.ai/api/v1', apiKeyEnv: 'OPENROUTER_API_KEY', modelEnv: 'OPENROUTER_MODEL', model: DEFAULT_OPENROUTER_MODEL, discovery: true, priority: 70 }
 ];
 export class ProviderRegistry {
