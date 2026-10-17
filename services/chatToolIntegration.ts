@@ -50,6 +50,8 @@ export interface ParsedToolCall {
     originalMatch: string;
 }
 
+import { confirmationGate, EXTERNAL_EFFECT_TOOLS } from './tools/confirmationGate';
+
 class ChatToolIntegration {
     /**
      * Get tool declarations for LLM function calling
@@ -178,7 +180,7 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
     /**
      * Execute a single tool call
      */
-    async executeTool(rawToolName: string, args: Record<string, any>, userRole: string = 'GUEST'): Promise<ToolCallResult> {
+    async executeTool(rawToolName: string, args: Record<string, any>, userRole: string = 'GUEST', gateContext?: { principalId?: string; conversationId?: string }): Promise<ToolCallResult> {
         const startTime = Date.now();
         // Providers namespace native tool names ("tool.write_file"): resolve the
         // registry name before policy checks and execution.
@@ -246,6 +248,52 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
                         executionTimeMs: Date.now() - startTime
                     };
                 }
+            }
+
+            // [CONFIRMATION GATE v2] External effects (email, PRs) execute only
+            // after an EXPLICIT authenticated yes: the first call stores a
+            // pending action (full content shown to the user, one-time token);
+            // the user replies "CONFIRMAR <token>" in this same conversation;
+            // only then does an identical re-issued call execute - once.
+            if (EXTERNAL_EFFECT_TOOLS.has(toolName) && process.env.CHAT_EFFECT_GATE !== 'off') {
+                const decision = confirmationGate.check(toolName, args, gateContext?.principalId, gateContext?.conversationId);
+                if (decision.action === 'PENDING') {
+                    console.log(`[CONFIRM_GATE] ⏸️ ${toolName} pending explicit confirmation (${decision.pending.token})`);
+                    return {
+                        toolName,
+                        success: true,
+                        result: {
+                            status: 'PENDING_CONFIRMATION',
+                            token: decision.pending.token,
+                            expiresAt: new Date(decision.pending.expiresAt).toISOString(),
+                            summary: decision.pending.summary,
+                            instructions: `Muestra al usuario el resumen COMPLETO tal cual y dile: para ejecutarla responde "CONFIRMAR ${decision.pending.token}"; para descartarla, "RECHAZAR ${decision.pending.token}". NO ejecutes nada hasta que el usuario confirme con ese token. Cuando confirme, reemite la MISMA herramienta con argumentos IDENTICOS (se ejecuta una sola vez). Cualquier cambio en los argumentos requiere una nueva confirmación.`
+                        },
+                        executionTimeMs: Date.now() - startTime
+                    };
+                }
+                if (decision.action === 'REJECTED') {
+                    console.log(`[CONFIRM_GATE] ⛔ ${toolName} was rejected by the user`);
+                    return {
+                        toolName,
+                        success: true,
+                        result: {
+                            status: 'REJECTED_BY_USER',
+                            instructions: 'El usuario rechazó esta acción exacta. No la reintenten ni la propongas de nuevo salvo que el usuario lo pida explícitamente.'
+                        },
+                        executionTimeMs: Date.now() - startTime
+                    };
+                }
+                if (decision.action === 'BLOCKED_NO_PRINCIPAL') {
+                    console.warn(`[CONFIRM_GATE] ⛔ ${toolName} blocked: no authenticated principal to bind a confirmation to`);
+                    return {
+                        toolName,
+                        success: false,
+                        error: 'BLOCKED_NO_PRINCIPAL: esta herramienta tiene efectos externos irreversibles y requiere una sesión de chat autenticada donde el usuario pueda confirmarla con un token. No se ejecutó.',
+                        executionTimeMs: Date.now() - startTime
+                    };
+                }
+                console.log(`[CONFIRM_GATE] ✅ ${toolName} confirmed by authenticated user - executing once`);
             }
 
             // Execute the tool via orchestrator (unified capability execution)
@@ -317,7 +365,7 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
     /**
      * Process all tool calls from response text
      */
-    async processToolCalls(responseText: string, userRole: string = 'GUEST'): Promise<{
+    async processToolCalls(responseText: string, userRole: string = 'GUEST', gateContext?: { principalId?: string; conversationId?: string }): Promise<{
         toolResults: ToolCallResult[];
         enhancedResponse: string;
     }> {
@@ -333,7 +381,7 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
         let enhancedResponse = responseText;
 
         for (const call of calls) {
-            const result = await this.executeTool(call.toolName, call.args, userRole);
+            const result = await this.executeTool(call.toolName, call.args, userRole, gateContext);
             results.push(result);
 
             // Replace tool tag with result in response
