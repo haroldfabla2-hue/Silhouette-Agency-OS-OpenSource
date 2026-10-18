@@ -37,7 +37,10 @@ export class LipSyncService {
         };
 
         this.outputDir = path.resolve(process.cwd(), 'public/output/lipsync');
-        this.ensureOutputDir();
+        // Lazy: the output dir is created on first write (generateSpeech), not at
+        // construction. An eager mkdir here killed every read path (getVoices is a
+        // pure ElevenLabs API read) when the dir was missing/unwritable, and the
+        // cached failed dynamic import re-threw until the process restarted.
 
         console.log(`[LipSyncService] Initialized. ElevenLabs: ${this.config.elevenLabsKey ? '✓' : '✗'}, Replicate: ${this.config.replicateKey ? '✓' : '✗'}`);
     }
@@ -87,6 +90,7 @@ export class LipSyncService {
             }
 
             // Save audio file
+            this.ensureOutputDir();
             const audioBuffer = await response.arrayBuffer();
             const audioId = uuidv4();
             const audioPath = path.join(this.outputDir, `${audioId}.mp3`);
