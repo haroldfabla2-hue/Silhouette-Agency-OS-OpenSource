@@ -12,7 +12,9 @@ const DB_DIR = path.dirname(DB_PATH);
 const DEFAULT_DIMENSIONS = 768; // Hardcoded default to match the original schema
 
 import { validEmbedding, scopeSql, inScope, type EmbeddingIdentity, type MemoryScope } from './memoryRetrieval';
-import { rankByCosine, maxVectorScanRows } from './vectorScan';
+import { rankByCosine, toNumericArray, scanPageRows } from './vectorScan';
+import { selectVectorEngine, probeVectorEnvironment, AnnIndex, type UsearchModule, loadUsearchNative } from './vectorEngine';
+import Database from 'better-sqlite3';
 import { Schema, Field, FixedSizeList, Float32, Utf8, Float64 } from 'apache-arrow';
 
 function adjustVectorDimension(vector: number[], targetDim: number = DEFAULT_DIMENSIONS): number[] {
@@ -48,6 +50,12 @@ function knowledgeSchema(): Schema {
 }
 
 export class LanceDbService {
+    private annStatus: ReturnType<typeof selectVectorEngine> | null = null;
+    private annModule: UsearchModule | null = null;
+    private annSqlite: any = null;
+    private annIndexes = new Map<string, AnnIndex>();
+    private annInitLogged = false;
+
     private db: lancedb.Connection | null = null;
     private table: lancedb.Table | null = null; // Memory Table
     private legacyTable: lancedb.Table | null = null;
@@ -170,6 +178,9 @@ export class LanceDbService {
             // [FIX 2026-02] Sanitize ID to prevent SQL injection
             const safeId = id.replace(/'/g, "''");
             for (const table of [this.table, this.legacyTable]) { if (table) await table.delete(`id = '${safeId}'`); }
+            for (const ann of this.annIndexes.values()) {
+                try { ann.remove(id); } catch (e) { console.error(`[VECTOR] ANN remove failed for ${id}`, e); }
+            }
             return true;
         } catch (e) {
             console.error(`[LANCEDB] Failed to delete node ${id}`, e);
@@ -310,6 +321,14 @@ export class LanceDbService {
         const table = names.includes(name) ? await this.db.openTable(name) : await this.db.createTable(name, [record]);
         await table.mergeInsert('id').whenMatchedUpdateAll().whenNotMatchedInsertAll().execute([record]);
         if (this.table) await this.table.update({ where: `id = '${node.id.replace(/'/g, "''")}'`, values: { embedding_state: 'READY' } });
+        if (this.ensureAnnEngine()) {
+            try {
+                const ann = await this.annIndexFor(name, identity.dimension, () => this.projectionRows(table), await table.countRows());
+                ann.upsert(node.id, node.ownerId || 'system', vector);
+            } catch (e) {
+                console.error(`[VECTOR] ANN upsert failed for ${node.id} (${(e as Error).message}); the exact scan still covers this memory and the index self-heals by count mismatch on next open`);
+            }
+        }
     }
     public async pendingEmbeddings(limit = 100): Promise<MemoryNode[]> {
         await this.ensureInitialized();
@@ -317,6 +336,51 @@ export class LanceDbService {
         const rows = await this.table.query().where("embedding_state = 'EMBEDDING_PENDING'").limit(limit).toArray();
         return rows.map(r => JSON.parse(r.json_data));
     }
+    /** Engine selection happens once and is logged loudly: which engine, why, and what this machine offers. */
+    private ensureAnnEngine(): boolean {
+        if (this.annStatus) return this.annStatus.kind === 'usearch-native';
+        const probe = probeVectorEnvironment('/proc/cpuinfo', DB_DIR);
+        this.annModule = loadUsearchNative();
+        this.annStatus = selectVectorEngine(process.env, () => this.annModule, probe);
+        console.log(`[VECTOR] engine=${this.annStatus.kind} - ${this.annStatus.reason} | cpu="${probe.cpuModel}" ram=${probe.ramTotalMB}MB diskFree=${probe.diskFreeMB ?? '?'}MB`);
+        if (this.annStatus.kind === 'usearch-native' && this.annModule) {
+            const annDir = path.join(DB_PATH, 'ann');
+            fs.mkdirSync(annDir, { recursive: true });
+            this.annSqlite = new Database(path.join(annDir, 'ann-keys.sqlite'));
+            this.annSqlite.pragma('journal_mode = WAL');
+        }
+        return this.annStatus.kind === 'usearch-native';
+    }
+
+    /** Extract the owner scope from a scopeSql() filter; null when the filter is not a scope filter (falls back to exact scan). */
+    private static ownerScopeFromFilter(filter?: string): string | null | undefined {
+        if (!filter) return undefined;
+        if (filter.trim() === 'true') return undefined;
+        const m = /^\(`ownerId` = '((?:[^']|'')+)' OR `ownerId` = 'system'\)$/.exec(filter.trim());
+        return m ? m[1].replace(/''/g, "'") : null;
+    }
+
+    private async annIndexFor(name: string, dimensions: number, rowProvider: () => Promise<{ id: string; vector: number[]; ownerId: string }[]>, projectedCount: number): Promise<AnnIndex> {
+        let idx = this.annIndexes.get(name);
+        if (!idx) {
+            idx = new AnnIndex({ dir: path.join(DB_PATH, 'ann'), name, dimensions, Index: this.annModule!.Index, sqlite: this.annSqlite });
+            this.annIndexes.set(name, idx);
+            await idx.open(projectedCount, rowProvider);
+        }
+        return idx;
+    }
+
+    /** Projection rows for (re)building an identity's ANN index from the source of truth. */
+    private async projectionRows(table: any): Promise<{ id: string; vector: number[]; ownerId: string }[]> {
+        const rows = await table.query().toArray();
+        const out: { id: string; vector: number[]; ownerId: string }[] = [];
+        for (const r of rows as any[]) {
+            const vector = toNumericArray(r.vector);
+            if (vector) out.push({ id: r.id, vector, ownerId: r.ownerId || 'system' });
+        }
+        return out;
+    }
+
     public async search(queryVector: number[], limit = 10, filter?: string, identity?: EmbeddingIdentity): Promise<MemoryNode[]> {
         if (!identity || !validEmbedding(queryVector, identity)) return [];
         await this.ensureInitialized();
@@ -325,15 +389,34 @@ export class LanceDbService {
         if (!(await this.db.tableNames()).includes(name)) return [];
         const table = await this.db.openTable(name);
         const rowCount = await table.countRows();
-        const maxScan = maxVectorScanRows();
-        if (rowCount > maxScan) {
-            console.error(`[LANCEDB] Semantic search skipped: projection table ${name} has ${rowCount} rows, above the JS scan limit of ${maxScan} (LANCEDB_SCAN_MAX_ROWS). Native vector search is not portable to every CPU; raise the limit or shard by identity.`);
-            return [];
+        const ownerScope = LanceDbService.ownerScopeFromFilter(filter);
+        if (this.ensureAnnEngine()) {
+            try {
+                const ann = await this.annIndexFor(name, identity.dimension, () => this.projectionRows(table), rowCount);
+                const ids = ann.search(queryVector, limit, ownerScope === null ? undefined : ownerScope);
+                const current = await Promise.all(ids.map(id => this.getNodeById(id)));
+                return current.filter((n): n is MemoryNode => n !== null);
+            } catch (e) {
+                console.error(`[VECTOR] ANN search failed for ${name} (${(e as Error).message}); falling back to exact partitioned scan`);
+            }
         }
-        let scan = table.query();
-        if (filter) scan = scan.where(filter);
-        const rows = await scan.toArray();
-        const ranked = rankByCosine(rows as { vector: unknown; id: string }[], queryVector, limit);
+        if (ownerScope === null && filter) {
+            console.warn(`[VECTOR] filter "${filter}" is not a scope filter; exact partitioned scan handles it`);
+        }
+        // Exact fallback, paged so RAM stays bounded and NO row is ever dropped,
+        // at any table size (eternal memory: a cap must never hide data).
+        const pageRows = scanPageRows();
+        if (rowCount > pageRows) {
+            console.warn(`[VECTOR] ${name}: exact scan of ${rowCount} rows in pages of ${pageRows} - correct at any size, slower at large scale`);
+        }
+        const all: { vector: unknown; id: string }[] = [];
+        for (let offset = 0; offset < rowCount; offset += pageRows) {
+            let scan = table.query().limit(pageRows).offset(offset);
+            if (filter) scan = scan.where(filter);
+            const rows = await scan.toArray();
+            all.push(...(rows as { vector: unknown; id: string }[]));
+        }
+        const ranked = rankByCosine(all, queryVector, limit);
         const current = await Promise.all(ranked.map(r => this.getNodeById(r.id)));
         return current.filter((n): n is MemoryNode => n !== null);
     }
@@ -467,12 +550,11 @@ export class LanceDbService {
         try {
             const adjustedVector = adjustVectorDimension(queryVector);
             const rowCount = await this.knowledgeTable.countRows();
-            const maxScan = maxVectorScanRows();
-            if (rowCount > maxScan) {
-                console.error(`[LANCEDB] Knowledge search skipped: universal_knowledge has ${rowCount} rows, above the JS scan limit of ${maxScan} (LANCEDB_SCAN_MAX_ROWS).`);
-                return [];
+            const pageRows = scanPageRows();
+            const rows: { vector: unknown }[] = [];
+            for (let offset = 0; offset < rowCount; offset += pageRows) {
+                rows.push(...(await this.knowledgeTable.query().limit(pageRows).offset(offset).toArray()) as { vector: unknown }[]);
             }
-            const rows = await this.knowledgeTable.query().toArray();
             return rankByCosine(rows as { vector: ArrayLike<number> }[], adjustedVector, limit)
                 .map(({ _score, ...row }) => ({ ...row, _distance: 1 - _score }));
         } catch (e) {
