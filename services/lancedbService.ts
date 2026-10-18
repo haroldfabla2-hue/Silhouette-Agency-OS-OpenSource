@@ -179,7 +179,7 @@ export class LanceDbService {
             const safeId = id.replace(/'/g, "''");
             for (const table of [this.table, this.legacyTable]) { if (table) await table.delete(`id = '${safeId}'`); }
             for (const ann of this.annIndexes.values()) {
-                try { ann.remove(id); } catch (e) { console.error(`[VECTOR] ANN remove failed for ${id}`, e); }
+                try { ann.queueRemove(id); } catch (e) { console.error(`[VECTOR] ANN remove failed for ${id}`, e); ann.markStale(`queueRemove failed: ${(e as Error).message}`); }
             }
             return true;
         } catch (e) {
@@ -319,16 +319,21 @@ export class LanceDbService {
         const record = { id: node.id, vector, ownerId: node.ownerId || 'system', json_data: JSON.stringify(node) };
         const names = await this.db.tableNames();
         const table = names.includes(name) ? await this.db.openTable(name) : await this.db.createTable(name, [record]);
-        await table.mergeInsert('id').whenMatchedUpdateAll().whenNotMatchedInsertAll().execute([record]);
-        if (this.table) await this.table.update({ where: `id = '${node.id.replace(/'/g, "''")}'`, values: { embedding_state: 'READY' } });
+        // Intent-first: the durable ANN pending row is written BEFORE the
+        // canonical projection, so a crash between the two is replayed on the
+        // next open (pending flush) instead of silently desyncing the index.
+        let ann: AnnIndex | null = null;
         if (this.ensureAnnEngine()) {
             try {
-                const ann = await this.annIndexFor(name, identity.dimension, () => this.projectionRows(table), await table.countRows());
-                ann.upsert(node.id, node.ownerId || 'system', vector);
+                ann = await this.annIndexFor(name, identity.dimension, () => this.projectionRows(table), await table.countRows(), table);
+                ann.queueUpsert(node.id, node.ownerId || 'system', vector);
             } catch (e) {
-                console.error(`[VECTOR] ANN upsert failed for ${node.id} (${(e as Error).message}); the exact scan still covers this memory and the index self-heals by count mismatch on next open`);
+                console.error(`[VECTOR] ANN queue failed for ${node.id} (${(e as Error).message}); exact scan covers this memory until rebuild`);
+                ann?.markStale(`queueUpsert failed: ${(e as Error).message}`);
             }
         }
+        await table.mergeInsert('id').whenMatchedUpdateAll().whenNotMatchedInsertAll().execute([record]);
+        if (this.table) await this.table.update({ where: `id = '${node.id.replace(/'/g, "''")}'`, values: { embedding_state: 'READY' } });
     }
     public async pendingEmbeddings(limit = 100): Promise<MemoryNode[]> {
         await this.ensureInitialized();
@@ -360,14 +365,22 @@ export class LanceDbService {
         return m ? m[1].replace(/''/g, "'") : null;
     }
 
-    private async annIndexFor(name: string, dimensions: number, rowProvider: () => Promise<{ id: string; vector: number[]; ownerId: string }[]>, projectedCount: number): Promise<AnnIndex> {
+    private async annIndexFor(name: string, dimensions: number, rowProvider: () => Promise<{ id: string; vector: number[]; ownerId: string }[]>, projectedCount: number, table: any): Promise<AnnIndex> {
         let idx = this.annIndexes.get(name);
         if (!idx) {
-            idx = new AnnIndex({ dir: path.join(DB_PATH, 'ann'), name, dimensions, Index: this.annModule!.Index, sqlite: this.annSqlite });
+            idx = new AnnIndex({ dir: path.join(DB_PATH, 'ann'), name, dimensions, Index: this.annModule!.Index, sqlite: this.annSqlite, probe: this.annStatus?.probe });
             this.annIndexes.set(name, idx);
-            await idx.open(projectedCount, rowProvider);
+            const idsProvider = async () => (await table.query().select(['id']).toArray()).map((r: any) => r.id as string);
+            await idx.open(projectedCount, rowProvider, idsProvider);
         }
         return idx;
+    }
+
+    /** Bounded top-k merge: keeps at most `limit` entries, so the exact fallback never holds more than one page plus k winners in memory. */
+    private static mergeTopK(top: { id: string; _score: number }[], page: { id: string; _score: number }[], limit: number): { id: string; _score: number }[] {
+        const merged = top.concat(page);
+        merged.sort((a, b) => b._score - a._score);
+        return merged.slice(0, limit);
     }
 
     /** Projection rows for (re)building an identity's ANN index from the source of truth. */
@@ -390,12 +403,17 @@ export class LanceDbService {
         const table = await this.db.openTable(name);
         const rowCount = await table.countRows();
         const ownerScope = LanceDbService.ownerScopeFromFilter(filter);
-        if (this.ensureAnnEngine()) {
+        // Unknown (non-scope) filters go to the exact path BEFORE the ANN:
+        // the ANN key map only understands owner scope, so routing anything
+        // else there would silently bypass the filter (isolation risk).
+        if (ownerScope !== null && this.ensureAnnEngine()) {
             try {
-                const ann = await this.annIndexFor(name, identity.dimension, () => this.projectionRows(table), rowCount);
-                const ids = ann.search(queryVector, limit, ownerScope === null ? undefined : ownerScope);
-                const current = await Promise.all(ids.map(id => this.getNodeById(id)));
-                return current.filter((n): n is MemoryNode => n !== null);
+                const ann = await this.annIndexFor(name, identity.dimension, () => this.projectionRows(table), rowCount, table);
+                if (!ann.isStale()) {
+                    const hits = ann.search(queryVector, limit, ownerScope);
+                    const current = await Promise.all(hits.map(h => this.getNodeById(h.id)));
+                    return current.filter((n): n is MemoryNode => n !== null);
+                }
             } catch (e) {
                 console.error(`[VECTOR] ANN search failed for ${name} (${(e as Error).message}); falling back to exact partitioned scan`);
             }
@@ -403,21 +421,22 @@ export class LanceDbService {
         if (ownerScope === null && filter) {
             console.warn(`[VECTOR] filter "${filter}" is not a scope filter; exact partitioned scan handles it`);
         }
-        // Exact fallback, paged so RAM stays bounded and NO row is ever dropped,
-        // at any table size (eternal memory: a cap must never hide data).
+        // Exact fallback, STREAMING top-k over pages: RAM stays bounded (one
+        // page + k winners) and NO row is ever dropped, at any table size
+        // (eternal memory: a cap must never hide data).
         const pageRows = scanPageRows();
         if (rowCount > pageRows) {
             console.warn(`[VECTOR] ${name}: exact scan of ${rowCount} rows in pages of ${pageRows} - correct at any size, slower at large scale`);
         }
-        const all: { vector: unknown; id: string }[] = [];
+        let top: { id: string; _score: number }[] = [];
         for (let offset = 0; offset < rowCount; offset += pageRows) {
             let scan = table.query().limit(pageRows).offset(offset);
             if (filter) scan = scan.where(filter);
             const rows = await scan.toArray();
-            all.push(...(rows as { vector: unknown; id: string }[]));
+            const pageRanked = rankByCosine(rows as { vector: unknown; id: string }[], queryVector, limit);
+            top = LanceDbService.mergeTopK(top, pageRanked, limit);
         }
-        const ranked = rankByCosine(all, queryVector, limit);
-        const current = await Promise.all(ranked.map(r => this.getNodeById(r.id)));
+        const current = await Promise.all(top.map(r => this.getNodeById(r.id)));
         return current.filter((n): n is MemoryNode => n !== null);
     }
 
@@ -551,12 +570,13 @@ export class LanceDbService {
             const adjustedVector = adjustVectorDimension(queryVector);
             const rowCount = await this.knowledgeTable.countRows();
             const pageRows = scanPageRows();
-            const rows: { vector: unknown }[] = [];
+            let top: any[] = [];
             for (let offset = 0; offset < rowCount; offset += pageRows) {
-                rows.push(...(await this.knowledgeTable.query().limit(pageRows).offset(offset).toArray()) as { vector: unknown }[]);
+                const page = await this.knowledgeTable.query().limit(pageRows).offset(offset).toArray();
+                const pageRanked = rankByCosine(page as { vector: unknown }[], adjustedVector, limit);
+                top = LanceDbService.mergeTopK(top, pageRanked as any, limit);
             }
-            return rankByCosine(rows as { vector: ArrayLike<number> }[], adjustedVector, limit)
-                .map(({ _score, ...row }) => ({ ...row, _distance: 1 - _score }));
+            return top.map(({ _score, ...row }: any) => ({ ...row, _distance: 1 - _score }));
         } catch (e) {
             console.error("[LANCEDB] Knowledge Search Failed", e);
             return [];

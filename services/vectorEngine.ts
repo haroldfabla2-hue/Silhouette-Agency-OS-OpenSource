@@ -8,19 +8,21 @@ import { createHash } from 'node:crypto';
  * Environment-adaptive vector search engine for eternal memory.
  *
  * Design contract (owner requirements, 2026-10-17):
- * - Never degrade: results stay ranked by cosine over the full memory at any
- *   size. No cap may silently drop memories.
- * - Scale to millions: an HNSW ANN index persisted on disk (USearch) serves
- *   searches in milliseconds with bounded RAM (memory-mapped via view()).
- * - Adapt to any environment: CPU features, RAM and disk are probed at
- *   startup; the best engine that actually runs here is chosen and the choice
- *   is logged. USearch's native addon does runtime CPU dispatch (simsimd:
- *   scalar/SSE/AVX), so it runs fast where AVX exists and correctly where it
- *   does not (verified 2026-10-17 on the prod QEMU no-AVX box, where
- *   LanceDB's compile-time-AVX kernels die with SIGILL).
- * - The canonical LanceDB projection table remains the source of truth; the
- *   ANN index is a rebuildable derived structure. Missing/corrupt/mismatched
- *   index files are rebuilt from the projection, loudly.
+ * - Never degrade: full-memory cosine ranking at any size; no cap hides data.
+ * - Scale to millions: HNSW ANN (USearch) persisted on disk.
+ * - Bounded RAM, honestly: reads use a memory-mapped view. Writes NEVER load
+ *   the index on the request path - they go to a durable pending-writes log
+ *   first (crash-safe intent), and a debounced flusher applies them in one
+ *   batch: load (transient RAM spike ~ index size, logged), write, save, and
+ *   drop back to the mmap view unless the probe says the machine can keep a
+ *   resident writable copy. Search merges the (small) pending log exactly, so
+ *   fresh memories are always searchable before the flush.
+ * - Consistency: open() verifies count AND an ids digest of the projection
+ *   (source of truth); mismatch rebuilds. A failed queue write marks the
+ *   index stale: searches fall back to the exact scan until rebuild.
+ * - Adapts anywhere: CPU/RAM/disk probed at startup; USearch native does
+ *   runtime SIMD dispatch (correct and fast with or without AVX); the exact
+ *   paged JS scan is the universal fallback. The choice is logged.
  */
 
 // ---------------------------------------------------------------------------
@@ -106,13 +108,18 @@ export function selectVectorEngine(
 }
 
 // ---------------------------------------------------------------------------
-// Key mapping: memory node ids (uuid strings) <-> u64 ANN keys
+// Key mapping
 // ---------------------------------------------------------------------------
 
-/** Stable u64 key for a memory id: first 8 bytes of sha256. Collision odds at 10M ids: ~10^-7 (birthday bound), and revalidation against canonical memory catches even that. */
+/** Stable u64 key for a memory id: first 8 bytes of sha256. */
 export function memoryIdToU64(id: string): bigint {
     const digest = createHash('sha256').update(id).digest();
     return digest.readBigUInt64BE(0);
+}
+
+function idsDigest(ids: string[]): string {
+    const sorted = [...ids].sort();
+    return createHash('sha256').update(sorted.join('')).digest('hex');
 }
 
 // ---------------------------------------------------------------------------
@@ -121,6 +128,7 @@ export function memoryIdToU64(id: string): bigint {
 
 export interface AnnRow { id: string; vector: number[]; ownerId: string }
 export type AnnRowProvider = () => Promise<AnnRow[]>;
+export type AnnIdsProvider = () => Promise<string[]>;
 
 export interface AnnOpenReport {
     source: 'view' | 'rebuilt' | 'fresh';
@@ -129,19 +137,20 @@ export interface AnnOpenReport {
     fileMB: number;
 }
 
-interface KeyMapRow { u64: string; id: string; owner_id: string }
+interface PendingWrite { u64: string; id: string; owner_id: string; op: 'add' | 'del'; vector: string | null; ts: number }
 
 /**
- * One HNSW index per embedding identity, persisted as <dir>/<name>.usearch
- * with its key map in a shared sqlite file (<dir>/ann-keys.sqlite). The index
- * is opened with view() (memory-mapped): query-time RAM stays bounded
- * regardless of index size. Writes go to a writable Index loaded with load().
+ * One HNSW index per embedding identity (<dir>/<name>.usearch) with its key
+ * map, meta digest and durable pending-writes log in a shared sqlite file.
+ * Reads memory-map the index (bounded RAM at any size). Writes are queued
+ * durably BEFORE the canonical write (intent-first) and applied in batches.
  */
 export class AnnIndex {
     private writable: any | null = null;
     private readable: any | null = null;
-    private dirty = false;
     private flushTimer: NodeJS.Timeout | null = null;
+    private flushing: Promise<void> | null = null;
+    private stale = false;
     public readonly file: string;
 
     constructor(
@@ -152,55 +161,62 @@ export class AnnIndex {
             Index: UsearchModule['Index'];
             sqlite: any; // better-sqlite3 Database
             flushMs?: number;
+            probe?: VectorEnvProbe;
         },
     ) {
         this.file = path.join(opts.dir, `${opts.name}.usearch`);
         opts.sqlite.exec(`CREATE TABLE IF NOT EXISTS "${opts.name}" (u64 TEXT PRIMARY KEY, id TEXT NOT NULL, owner_id TEXT NOT NULL)`);
+        opts.sqlite.exec(`CREATE TABLE IF NOT EXISTS "${opts.name}__meta" (k TEXT PRIMARY KEY, v TEXT NOT NULL)`);
+        opts.sqlite.exec(`CREATE TABLE IF NOT EXISTS "${opts.name}__pending" (u64 TEXT PRIMARY KEY, id TEXT NOT NULL, owner_id TEXT NOT NULL, op TEXT NOT NULL, vector TEXT, ts INTEGER NOT NULL)`);
     }
 
     private get dimensions() { return this.opts.dimensions; }
-
+    private metaGet(k: string): string | null {
+        return (this.opts.sqlite.prepare(`SELECT v FROM "${this.opts.name}__meta" WHERE k = ?`).get(k) as { v: string } | undefined)?.v ?? null;
+    }
+    private metaSet(k: string, v: string): void {
+        this.opts.sqlite.prepare(`INSERT OR REPLACE INTO "${this.opts.name}__meta" (k, v) VALUES (?, ?)`).run(k, v);
+    }
     private mapCount(): number {
         return this.opts.sqlite.prepare(`SELECT COUNT(*) AS c FROM "${this.opts.name}"`).get().c as number;
     }
-    private mapGet(u64: bigint): KeyMapRow | undefined {
-        return this.opts.sqlite.prepare(`SELECT * FROM "${this.opts.name}" WHERE u64 = ?`).get(u64.toString()) as KeyMapRow | undefined;
+    private pendingAll(): PendingWrite[] {
+        return this.opts.sqlite.prepare(`SELECT * FROM "${this.opts.name}__pending" ORDER BY ts ASC`).all() as PendingWrite[];
     }
-    private mapIdsFor(u64s: bigint[], ownerScope?: string): string[] {
-        if (u64s.length === 0) return [];
-        const out: string[] = [];
-        const stmt = this.opts.sqlite.prepare(`SELECT id, owner_id FROM "${this.opts.name}" WHERE u64 = ?`);
-        for (const k of u64s) {
-            const row = stmt.get(k.toString()) as { id: string; owner_id: string } | undefined;
-            if (!row) continue;
-            if (ownerScope && row.owner_id !== ownerScope && row.owner_id !== 'system') continue;
-            out.push(row.id);
-        }
-        return out;
+    private pendingCount(): number {
+        return this.opts.sqlite.prepare(`SELECT COUNT(*) AS c FROM "${this.opts.name}__pending"`).get().c as number;
     }
 
-    /** Open the index: memory-map the persisted file when counts agree with the key map and the projection; otherwise rebuild from the projection (source of truth). */
-    async open(projectedCount: number, rows: AnnRowProvider): Promise<AnnOpenReport> {
+    markStale(reason: string): void {
+        if (!this.stale) console.error(`[VECTOR] ${this.opts.name}: index marked STALE (${reason}); searches use the exact scan until the next rebuild`);
+        this.stale = true;
+    }
+    isStale(): boolean { return this.stale; }
+
+    /** Open: mmap the persisted index when it provably matches the projection (count + ids digest); otherwise rebuild from the projection. Pending intents are always flushed after opening. */
+    async open(projectedCount: number, rows: AnnRowProvider, ids: AnnIdsProvider): Promise<AnnOpenReport> {
         fs.mkdirSync(this.opts.dir, { recursive: true });
-        const expected = projectedCount;
         const mapped = this.mapCount();
         if (fs.existsSync(this.file)) {
             try {
                 const idx = new this.opts.Index({ dimensions: this.dimensions, metric: 'cos' });
                 idx.view(this.file);
-                if (idx.size() === expected && mapped === expected) {
+                const digest = idsDigest(await ids());
+                if (idx.size() === projectedCount && mapped === projectedCount && this.metaGet('idsDigest') === digest) {
                     this.readable = idx;
                     const fileMB = fs.statSync(this.file).size / 1e6;
-                    console.log(`[VECTOR] ${this.opts.name}: memory-mapped ANN index (${expected} vectors, ${fileMB.toFixed(0)}MB on disk, RAM bounded by page cache)`);
-                    return { source: 'view', size: expected, expected, fileMB };
+                    console.log(`[VECTOR] ${this.opts.name}: memory-mapped ANN index (${projectedCount} vectors, ${fileMB.toFixed(0)}MB on disk, RAM bounded by page cache)`);
+                    await this.flushPending();
+                    return { source: 'view', size: projectedCount, expected: projectedCount, fileMB };
                 }
-                console.warn(`[VECTOR] ${this.opts.name}: index/map/projection mismatch (index=${idx.size()}, map=${mapped}, projection=${expected}) - rebuilding from projection`);
+                console.warn(`[VECTOR] ${this.opts.name}: content mismatch (index=${idx.size()}, map=${mapped}, projection=${projectedCount}, digestMatch=${this.metaGet('idsDigest') === digest}) - rebuilding from projection`);
             } catch (e) {
                 console.warn(`[VECTOR] ${this.opts.name}: unreadable index file (${(e as Error).message}) - rebuilding from projection`);
             }
         }
         await this.rebuild(rows);
-        return { source: this.size() > 0 ? 'rebuilt' : 'fresh', size: this.size(), expected, fileMB: fs.existsSync(this.file) ? fs.statSync(this.file).size / 1e6 : 0 };
+        await this.flushPending();
+        return { source: this.size() > 0 ? 'rebuilt' : 'fresh', size: this.size(), expected: projectedCount, fileMB: fs.existsSync(this.file) ? fs.statSync(this.file).size / 1e6 : 0 };
     }
 
     private async rebuild(rows: AnnRowProvider): Promise<void> {
@@ -209,95 +225,172 @@ export class AnnIndex {
         this.opts.sqlite.prepare(`DELETE FROM "${this.opts.name}"`).run();
         const insert = this.opts.sqlite.prepare(`INSERT OR REPLACE INTO "${this.opts.name}" (u64, id, owner_id) VALUES (?, ?, ?)`);
         const vec = new Float32Array(this.dimensions);
+        const ids: string[] = [];
         for (const row of all) {
             if (!Array.isArray(row.vector) || row.vector.length !== this.dimensions) continue;
             for (let i = 0; i < this.dimensions; i++) vec[i] = row.vector[i];
             const key = memoryIdToU64(row.id);
             idx.add(key, vec);
             insert.run(key.toString(), row.id, row.ownerId || 'system');
+            ids.push(row.id);
         }
+        this.metaSet('idsDigest', idsDigest(ids));
         this.writable = idx;
         this.readable = idx;
-        this.dirty = true;
-        this.flush();
+        this.saveNow();
+        this.stale = false;
         console.log(`[VECTOR] ${this.opts.name}: rebuilt ANN index from projection (${idx.size()} vectors)`);
     }
 
     size(): number {
-        return this.readable ? this.readable.size() : 0;
+        return (this.readable ? this.readable.size() : 0) + this.pendingCount();
     }
 
-    /** Insert or replace one vector. Callers must await; failures mark nothing silently - they throw to the caller, which logs and falls back. */
-    upsert(id: string, ownerId: string, vector: ArrayLike<number>): void {
-        if (!this.writable) {
-            if (this.readable && fs.existsSync(this.file)) {
-                this.writable = new this.opts.Index({ dimensions: this.dimensions, metric: 'cos', connectivity: 16, expansion_add: 128, expansion_search: 64 });
-                this.writable.load(this.file);
-                this.readable = this.writable;
-            } else {
-                this.writable = this.readable;
-            }
-        }
-        if (!this.writable) throw new Error('ANN index is not open');
+    /**
+     * Durable intent-first write: the pending row is the recovery record, so
+     * it is committed BEFORE the caller's canonical write. Applied to the HNSW
+     * index by the debounced flusher; searchable immediately via merge.
+     */
+    queueUpsert(id: string, ownerId: string, vector: ArrayLike<number>): void {
         const key = memoryIdToU64(id);
-        const existing = this.mapGet(key);
+        const existing = this.opts.sqlite.prepare(`SELECT id FROM "${this.opts.name}" WHERE u64 = ?`).get(key.toString()) as { id: string } | undefined;
         if (existing && existing.id !== id) {
-            // sha256-prefix collision between two distinct memory ids: keep both searchable by refusing the alias and letting the caller fall back to exact scan for the displaced id.
             throw new Error(`ANN key collision between ${existing.id} and ${id}; exact scan covers both until re-keyed`);
         }
-        this.writable.remove(BigInt(key));
-        const vec = new Float32Array(this.dimensions);
-        for (let i = 0; i < this.dimensions; i++) vec[i] = Number(vector[i]);
-        this.writable.add(BigInt(key), vec);
-        this.opts.sqlite.prepare(`INSERT OR REPLACE INTO "${this.opts.name}" (u64, id, owner_id) VALUES (?, ?, ?)`).run(key.toString(), id, ownerId || 'system');
+        this.opts.sqlite.prepare(`INSERT OR REPLACE INTO "${this.opts.name}__pending" (u64, id, owner_id, op, vector, ts) VALUES (?, ?, ?, 'add', ?, ?)`)
+            .run(key.toString(), id, ownerId || 'system', JSON.stringify(Array.from(vector as ArrayLike<number>)), Date.now());
         this.scheduleFlush();
     }
 
-    remove(id: string): void {
+    queueRemove(id: string): void {
         const key = memoryIdToU64(id);
-        if (!this.mapGet(key)) return;
-        if (this.writable) this.writable.remove(BigInt(key));
-        else if (fs.existsSync(this.file)) {
-            this.writable = new this.opts.Index({ dimensions: this.dimensions, metric: 'cos' });
-            this.writable.load(this.file);
-            this.writable.remove(BigInt(key));
-            this.readable = this.writable;
-        }
-        this.opts.sqlite.prepare(`DELETE FROM "${this.opts.name}" WHERE u64 = ?`).run(key.toString());
+        this.opts.sqlite.prepare(`INSERT OR REPLACE INTO "${this.opts.name}__pending" (u64, id, owner_id, op, vector, ts) VALUES (?, ?, ?, 'del', NULL, ?)`)
+            .run(key.toString(), id, 'system', Date.now());
         this.scheduleFlush();
     }
 
-    /** ANN search: returns memory ids best-first, post-filtered by owner scope through the key map (overfetch to absorb filtering). */
-    search(vector: ArrayLike<number>, limit: number, ownerScope?: string): string[] {
-        if (!this.readable || this.readable.size() === 0) return [];
+    /**
+     * Apply the durable pending log to the index in one batch. This is the
+     * ONLY place a writable index is loaded: transient RAM spike ~= index
+     * file size, logged honestly. Afterwards the writable copy is dropped back
+     * to a memory-mapped view unless the probe says the machine has RAM to
+     * keep it resident (headroom rule: index fits in a quarter of total RAM).
+     */
+    async flushPending(): Promise<void> {
+        if (this.flushing) return this.flushing;
+        this.flushing = this.doFlush().finally(() => { this.flushing = null; });
+        return this.flushing;
+    }
+
+    private async doFlush(): Promise<void> {
+        const pending = this.pendingAll();
+        if (pending.length === 0) return;
+        const fileMB = fs.existsSync(this.file) ? fs.statSync(this.file).size / 1e6 : 0;
+        if (!this.writable) {
+            const t0 = performance.now();
+            const idx = new this.opts.Index({ dimensions: this.dimensions, metric: 'cos', connectivity: 16, expansion_add: 128, expansion_search: 64 });
+            if (fs.existsSync(this.file)) idx.load(this.file);
+            this.writable = idx;
+            console.log(`[VECTOR] ${this.opts.name}: loaded writable index for ${pending.length} pending writes (${fileMB.toFixed(0)}MB transient RAM, load ${(performance.now() - t0).toFixed(0)}ms)`);
+        }
+        const insert = this.opts.sqlite.prepare(`INSERT OR REPLACE INTO "${this.opts.name}" (u64, id, owner_id) VALUES (?, ?, ?)`);
+        const delMap = this.opts.sqlite.prepare(`DELETE FROM "${this.opts.name}" WHERE u64 = ?`);
+        const delPending = this.opts.sqlite.prepare(`DELETE FROM "${this.opts.name}__pending" WHERE u64 = ?`);
+        const idRows = this.opts.sqlite.prepare(`SELECT id FROM "${this.opts.name}"`).all() as { id: string }[];
+        const ids = idRows.map(r => r.id);
         const vec = new Float32Array(this.dimensions);
-        for (let i = 0; i < this.dimensions; i++) vec[i] = Number(vector[i]);
-        const want = Math.min(this.readable.size(), ownerScope ? limit * 5 : limit);
-        const result = this.readable.search(vec, want);
-        const keys: bigint[] = Array.from(result.keys as BigUint64Array);
-        return this.mapIdsFor(keys, ownerScope).slice(0, limit);
+        for (const w of pending) {
+            const key = BigInt(w.u64);
+            this.writable.remove(key);
+            if (w.op === 'add' && w.vector) {
+                const arr = JSON.parse(w.vector) as number[];
+                for (let i = 0; i < this.dimensions; i++) vec[i] = arr[i];
+                this.writable.add(key, vec);
+                insert.run(w.u64, w.id, w.owner_id);
+                if (!ids.includes(w.id)) ids.push(w.id);
+            } else {
+                delMap.run(w.u64);
+                const at = ids.indexOf(w.id);
+                if (at >= 0) ids.splice(at, 1);
+            }
+            delPending.run(w.u64);
+        }
+        this.metaSet('idsDigest', idsDigest(ids));
+        this.saveNow();
+        this.stale = false;
+        const ramMB = this.opts.probe?.ramTotalMB ?? 0;
+        const keepResident = ramMB > 0 && fileMB * 4 < ramMB;
+        if (keepResident) {
+            this.readable = this.writable;
+        } else {
+            // Drop the writable copy: RAM returns to the page cache. Reads continue on the mmap view.
+            const idx = new this.opts.Index({ dimensions: this.dimensions, metric: 'cos' });
+            idx.view(this.file);
+            this.readable = idx;
+            this.writable = null;
+            console.log(`[VECTOR] ${this.opts.name}: writable copy dropped (index ${fileMB.toFixed(0)}MB vs ${ramMB}MB RAM); reads back on memory-mapped view`);
+        }
+    }
+
+    private saveNow(): void {
+        if (!this.writable) return;
+        this.writable.save(this.file);
     }
 
     private scheduleFlush(): void {
-        this.dirty = true;
         if (this.flushTimer) return;
         const ms = this.opts.flushMs ?? 30000;
         this.flushTimer = setTimeout(() => {
             this.flushTimer = null;
-            try {
-                this.flush();
-            } catch (e) {
-                // A failed debounced save must never crash the process; the next
-                // open() detects the count mismatch and rebuilds from the projection.
-                console.error(`[VECTOR] ${this.opts.name}: debounced index save failed (${(e as Error).message}); writes remain in memory and the index self-heals on next open`);
-            }
+            this.flushPending().catch((e) => {
+                this.markStale(`flush failed: ${(e as Error).message}`);
+            });
         }, ms);
         this.flushTimer.unref?.();
     }
 
-    flush(): void {
-        if (!this.dirty || !this.writable) return;
-        this.writable.save(this.file);
-        this.dirty = false;
+    /**
+     * Search: ANN candidates (escalating fetch until the owner-scope filter is
+     * satisfied or the whole index was considered - no starvation) MERGED with
+     * an exact scan of the small durable pending log, so just-written memories
+     * always appear. Returns {id, score} best-first.
+     */
+    search(vector: ArrayLike<number>, limit: number, ownerScope?: string): { id: string; score: number }[] {
+        const vec = new Float32Array(this.dimensions);
+        for (let i = 0; i < this.dimensions; i++) vec[i] = Number(vector[i]);
+        const byId = new Map<string, number>();
+
+        if (this.readable && this.readable.size() > 0) {
+            const mapRow = this.opts.sqlite.prepare(`SELECT id, owner_id FROM "${this.opts.name}" WHERE u64 = ?`);
+            let want = Math.min(this.readable.size(), ownerScope ? Math.max(limit * 5, 64) : limit);
+            for (;;) {
+                const result = this.readable.search(vec, want);
+                const keys: bigint[] = Array.from(result.keys as BigUint64Array);
+                const dists: number[] = Array.from(result.distances as Float32Array);
+                for (let i = 0; i < keys.length; i++) {
+                    const row = mapRow.get(keys[i].toString()) as { id: string; owner_id: string } | undefined;
+                    if (!row) continue;
+                    if (ownerScope && row.owner_id !== ownerScope && row.owner_id !== 'system') continue;
+                    byId.set(row.id, 1 - dists[i]);
+                }
+                if (byId.size >= limit || want >= this.readable.size()) break;
+                want = Math.min(this.readable.size(), want * 10);
+            }
+        }
+
+        // Exact pass over the durable pending log (small: bounded by flush cadence).
+        for (const w of this.pendingAll()) {
+            if (w.op === 'del') { byId.delete(w.id); continue; }
+            if (ownerScope && w.owner_id !== ownerScope && w.owner_id !== 'system') continue;
+            const arr = JSON.parse(w.vector || '[]') as number[];
+            let dot = 0, na = 0, nb = 0;
+            for (let i = 0; i < this.dimensions; i++) { dot += arr[i] * vec[i]; na += arr[i] * arr[i]; nb += vec[i] * vec[i]; }
+            if (na > 0 && nb > 0) byId.set(w.id, dot / (Math.sqrt(na) * Math.sqrt(nb)));
+        }
+
+        return [...byId.entries()]
+            .map(([id, score]) => ({ id, score }))
+            .sort((a, b) => b.score - a.score)
+            .slice(0, limit);
     }
 }
