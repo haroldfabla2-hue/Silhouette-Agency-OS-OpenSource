@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { LanceDbService } from './lancedbService';
 import { validEmbedding, inScope, scopeSql, type MemoryScope, type EmbeddingIdentity } from './memoryRetrieval';
+import { rankByCosine, maxVectorScanRows, assertNativeVectorKernels } from './vectorScan';
 import type { MemoryNode } from '../types';
 
 export interface ProviderIdentity extends EmbeddingIdentity { provider: string }
@@ -64,6 +65,7 @@ export class MemoryProjectionRollout {
     }
     public async trainAnn(identity: ProviderIdentity, partitions = 16): Promise<{ rows: number; partitions: number }> {
         if (!this.flags.annShadow) throw new Error('ANN shadow flag is disabled');
+        assertNativeVectorKernels('ANN index training');
         await this.queue;
         const table = await this.table(identity);
         if (!table) throw new Error('Projection missing');
@@ -78,10 +80,17 @@ export class MemoryProjectionRollout {
         if (mode === 'ann' && !this.flags.annShadow) throw new Error('ANN shadow flag is disabled');
         const table = await this.table(identity);
         if (!table) return [];
-        if (mode === 'ann' && !(await table.listIndices()).some(index => index.columns.includes('vector'))) throw new Error('ANN index has not been trained');
+        if (mode === 'exact') {
+            const rowCount = await table.countRows();
+            const maxScan = maxVectorScanRows();
+            if (rowCount > maxScan) throw new Error(`Projection table has ${rowCount} rows, above the JS scan limit of ${maxScan} (LANCEDB_SCAN_MAX_ROWS)`);
+            const rows = await table.query().where(scopeSql(scope)).toArray() as ProjectionRow[];
+            return rankByCosine(rows, vector, k);
+        }
+        assertNativeVectorKernels('ANN shadow search');
+        if (!(await table.listIndices()).some(index => index.columns.includes('vector'))) throw new Error('ANN index has not been trained');
         if (!Number.isInteger(probes) || probes < 1) throw new Error('Invalid probe count');
-        let query = table.vectorSearch(vector).distanceType('cosine').where(scopeSql(scope)).limit(k);
-        query = mode === 'exact' ? query.bypassVectorIndex() : query.nprobes(probes);
+        const query = table.vectorSearch(vector).distanceType('cosine').where(scopeSql(scope)).limit(k).nprobes(probes);
         return await query.toArray() as ProjectionRow[];
     }
     /** Revalidates owner, hypothesis status, deletion and source revision against canonical memory. */
