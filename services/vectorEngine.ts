@@ -171,6 +171,14 @@ export class AnnIndex {
     }
 
     private get dimensions() { return this.opts.dimensions; }
+    /** Test-only fault injection: throw at a named flush point to simulate a crash. */
+    static faultHook: ((point: 'after-apply-before-save' | 'after-save-before-commit' | 'after-commit', name: string) => void) | null = null;
+    private fault(point: 'after-apply-before-save' | 'after-save-before-commit' | 'after-commit'): void {
+        AnnIndex.faultHook?.(point, this.opts.name);
+    }
+    private generation(): number {
+        return parseInt(this.metaGet('generation') ?? '0', 10);
+    }
     private metaGet(k: string): string | null {
         return (this.opts.sqlite.prepare(`SELECT v FROM "${this.opts.name}__meta" WHERE k = ?`).get(k) as { v: string } | undefined)?.v ?? null;
     }
@@ -299,6 +307,9 @@ export class AnnIndex {
         const idRows = this.opts.sqlite.prepare(`SELECT id FROM "${this.opts.name}"`).all() as { id: string }[];
         const ids = idRows.map(r => r.id);
         const vec = new Float32Array(this.dimensions);
+        // Phase 1: apply every intent to the writable index and the key map.
+        // The durable pending rows are NOT touched here: they are the only
+        // recovery record if the process dies before the index hits the disk.
         for (const w of pending) {
             const key = BigInt(w.u64);
             this.writable.remove(key);
@@ -313,10 +324,22 @@ export class AnnIndex {
                 const at = ids.indexOf(w.id);
                 if (at >= 0) ids.splice(at, 1);
             }
-            delPending.run(w.u64);
         }
         this.metaSet('idsDigest', idsDigest(ids));
+        this.fault('after-apply-before-save');
+        // Phase 2: persist the index. Pending rows survive a crash here, and
+        // replay is idempotent (remove+add under the same u64 key).
         this.saveNow();
+        this.fault('after-save-before-commit');
+        // Phase 3: atomic commit - only once a committed index generation
+        // exists on disk do the journal intents go away, and the generation
+        // bump travels in the same sqlite transaction as the purge.
+        const commit = this.opts.sqlite.transaction(() => {
+            for (const w of pending) delPending.run(w.u64);
+            this.metaSet('generation', String(this.generation() + 1));
+        });
+        commit();
+        this.fault('after-commit');
         this.stale = false;
         const ramMB = this.opts.probe?.ramTotalMB ?? 0;
         const keepResident = ramMB > 0 && fileMB * 4 < ramMB;
