@@ -146,6 +146,7 @@ export class LanceDbService {
 
                 if (tableNames.includes('memory_records_v2')) this.table = await this.db.openTable('memory_records_v2');
                 this.initialized = true;
+                this.startOptimizeLoop();
                 console.log("[LANCEDB] Connected.");
                 return;
 
@@ -308,6 +309,73 @@ export class LanceDbService {
         return null;
     }
 
+    /**
+     * Batched hydration of ranked ids from the canonical tables.
+     * One filtered query per table instead of one full scan per id:
+     * Lance has no secondary index on `id`, so N point lookups cost N full
+     * table scans (the 2026-10-18 production meltdown: 50 lookups/search x
+     * queued searches pinned the tokio threads at ~300% CPU).
+     */
+    private async getNodesByIds(ids: string[]): Promise<Map<string, MemoryNode>> {
+        const found = new Map<string, MemoryNode>();
+        if (!ids.length) return found;
+        for (const table of [this.table, this.legacyTable]) {
+            const missing = ids.filter(id => !found.has(id));
+            if (!table || !missing.length) continue;
+            const quoted = missing.map(id => `'${id.replace(/'/g, "''")}'`).join(', ');
+            const rows = await table.query().where(`id IN (${quoted})`).limit(missing.length * 2).toArray();
+            const seen = new Set<string>();
+            for (const row of rows) {
+                if (seen.has(row.id)) throw new Error(`Duplicate memory ID in LanceDB: ${row.id}`);
+                seen.add(row.id);
+                if (!found.has(row.id)) found.set(row.id, JSON.parse(row.json_data) as MemoryNode);
+            }
+        }
+        return found;
+    }
+
+    /**
+     * Periodic compaction WITHOUT version pruning. Inserts and merge-inserts
+     * append one fragment each; with no compaction the canonical table had
+     * accumulated 4157 fragments and every query opened thousands of files.
+     * Data and history are preserved: old versions are never deleted here
+     * (Alberto's rule: backup and ask before deleting anything).
+     * Set LANCEDB_OPTIMIZE_INTERVAL_MINUTES=0 to disable; default 360 (6h).
+     */
+    private optimizeTimer: ReturnType<typeof setInterval> | null = null;
+    private optimizeRunning = false;
+    private static readonly OPTIMIZE_NO_PRUNE_DATE = new Date('2999-01-01');
+
+    private startOptimizeLoop(): void {
+        if (this.optimizeTimer) return;
+        const raw = process.env.LANCEDB_OPTIMIZE_INTERVAL_MINUTES;
+        const minutes = raw === undefined ? 360 : Number(raw);
+        if (!Number.isFinite(minutes) || minutes <= 0) {
+            console.log('[LANCEDB] Periodic optimize disabled (LANCEDB_OPTIMIZE_INTERVAL_MINUTES).');
+            return;
+        }
+        this.optimizeTimer = setInterval(() => { void this.runOptimizeOnce(); }, minutes * 60_000);
+        this.optimizeTimer.unref?.();
+        console.log(`[LANCEDB] Periodic optimize every ${minutes} minutes (compact only, no version prune).`);
+    }
+
+    public async runOptimizeOnce(): Promise<void> {
+        if (this.optimizeRunning || !this.db) return;
+        this.optimizeRunning = true;
+        try {
+            const names = await this.db.tableNames();
+            for (const n of names.filter(x => x === 'memory_records_v2' || x.startsWith('memory_vectors_'))) {
+                const t = await this.db.openTable(n);
+                await t.optimize({ cleanupOlderThan: LanceDbService.OPTIMIZE_NO_PRUNE_DATE, deleteUnverified: false });
+                console.log(`[LANCEDB] Optimize completed for ${n} (compact only, no version prune).`);
+            }
+        } catch (e) {
+            console.warn('[LANCEDB] Optimize failed; will retry on next interval.', e);
+        } finally {
+            this.optimizeRunning = false;
+        }
+    }
+
     private vectorTableName(identity: EmbeddingIdentity): string {
         return 'memory_vectors_' + createHash('sha256').update(JSON.stringify(identity)).digest('hex').slice(0, 24);
     }
@@ -411,8 +479,9 @@ export class LanceDbService {
                 const ann = await this.annIndexFor(name, identity.dimension, () => this.projectionRows(table), rowCount, table);
                 if (!ann.isStale()) {
                     const hits = ann.search(queryVector, limit, ownerScope);
-                    const current = await Promise.all(hits.map(h => this.getNodeById(h.id)));
-                    return current.filter((n): n is MemoryNode => n !== null);
+                    // Batched hydration (#193): one IN query, never N full scans.
+                    const byId = await this.getNodesByIds(hits.map(h => h.id));
+                    return hits.map(h => byId.get(h.id)).filter((n): n is MemoryNode => n !== null);
                 }
             } catch (e) {
                 console.error(`[VECTOR] ANN search failed for ${name} (${(e as Error).message}); falling back to exact partitioned scan`);
@@ -425,19 +494,27 @@ export class LanceDbService {
         // page + k winners) and NO row is ever dropped, at any table size
         // (eternal memory: a cap must never hide data).
         const pageRows = scanPageRows();
-        if (rowCount > pageRows) {
-            console.warn(`[VECTOR] ${name}: exact scan of ${rowCount} rows in pages of ${pageRows} - correct at any size, slower at large scale`);
-        }
         let top: { id: string; _score: number }[] = [];
-        for (let offset = 0; offset < rowCount; offset += pageRows) {
-            let scan = table.query().limit(pageRows).offset(offset);
+        if (rowCount <= pageRows) {
+            // Single page (every realistic table today): unpaged query, same
+            // shape the scan has always used.
+            let scan = table.query();
             if (filter) scan = scan.where(filter);
             const rows = await scan.toArray();
-            const pageRanked = rankByCosine(rows as { vector: unknown; id: string }[], queryVector, limit);
-            top = LanceDbService.mergeTopK(top, pageRanked, limit);
+            top = rankByCosine(rows as { vector: unknown; id: string }[], queryVector, limit);
+        } else {
+            console.warn(`[VECTOR] ${name}: exact scan of ${rowCount} rows in pages of ${pageRows} - correct at any size, slower at large scale`);
+            for (let offset = 0; offset < rowCount; offset += pageRows) {
+                let scan = table.query().limit(pageRows).offset(offset);
+                if (filter) scan = scan.where(filter);
+                const rows = await scan.toArray();
+                const pageRanked = rankByCosine(rows as { vector: unknown; id: string }[], queryVector, limit);
+                top = LanceDbService.mergeTopK(top, pageRanked, limit);
+            }
         }
-        const current = await Promise.all(top.map(r => this.getNodeById(r.id)));
-        return current.filter((n): n is MemoryNode => n !== null);
+        // Batched hydration (#193): one IN query, never N full scans.
+        const byId = await this.getNodesByIds(top.map(r => r.id));
+        return top.map(r => byId.get(r.id)).filter((n): n is MemoryNode => n !== null);
     }
 
     /**
