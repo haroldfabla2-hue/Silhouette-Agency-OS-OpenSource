@@ -93,13 +93,26 @@ describe('Auth Middleware', () => {
         expect(next).toHaveBeenCalled();
     });
 
-    it('should allow health check endpoints without auth', async () => {
+    it('should require auth for system status/doctor/health (scanner recon surface)', async () => {
         vi.stubEnv('SILHOUETTE_API_TOKEN', 'secret');
         resetTokenCache();
 
-        const healthPaths = ['/v1/system/status', '/v1/system/doctor', '/v1/system/health'];
-        for (const path of healthPaths) {
+        const systemPaths = ['/v1/system/status', '/v1/system/doctor', '/v1/system/health'];
+        for (const path of systemPaths) {
             const { req, res, next } = createMocks({ path });
+            await authMiddleware(req, res, next);
+            expect(next).not.toHaveBeenCalled();
+            expect(res.statusCode).toBe(401);
+        }
+    });
+
+    it('should allow system endpoints with a valid token (frontend SystemControl)', async () => {
+        vi.stubEnv('SILHOUETTE_API_TOKEN', 'secret');
+        resetTokenCache();
+
+        const systemPaths = ['/v1/system/status', '/v1/system/doctor', '/v1/system/health'];
+        for (const path of systemPaths) {
+            const { req, res, next } = createMocks({ path, authorization: 'Bearer secret' });
             await authMiddleware(req, res, next);
             expect(next).toHaveBeenCalled();
         }

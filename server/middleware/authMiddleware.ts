@@ -9,9 +9,9 @@ import { Request, Response, NextFunction } from 'express';
 // ─── Public Endpoints (no auth required) ─────────────────────────────────────
 
 const PUBLIC_PATHS = new Set([
-    '/v1/system/status',
-    '/v1/system/doctor',
-    '/v1/system/health',
+    // NOTE: /v1/system/status|doctor|health removed 2026-10-18 (PR #194):
+    // they leaked the backend connection inventory to unauthenticated
+    // scanners. The frontend always sends the API token, so it is unaffected.
     // Identity - Setup and Auth
     '/v1/identity/setup-status',
     '/v1/identity/setup',
