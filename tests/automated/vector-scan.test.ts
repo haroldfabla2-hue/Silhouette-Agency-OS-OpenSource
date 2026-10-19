@@ -75,7 +75,7 @@ describe('LanceDbService semantic search via portable JS scan', () => {
         tags: ['scan-test'], importance: 0.5, timestamp: Date.now(),
         tier: MemoryTier.DEEP, accessCount: 0, lastAccess: Date.now(), stabilityScore: 0,
     });
-    afterEach(() => { delete process.env.LANCEDB_SCAN_MAX_ROWS; });
+    afterEach(() => { delete process.env.LANCEDB_SCAN_MAX_ROWS; delete process.env.LANCEDB_SCAN_PAGE_ROWS; delete process.env.VECTOR_ENGINE; });
 
     it('returns cosine-ranked nodes, applies SQL scope filters and honors the scan cap', async () => {
         await lancedbService.store(node('scan-a', 'alice') as any);
@@ -91,8 +91,24 @@ describe('LanceDbService semantic search via portable JS scan', () => {
         const scoped = await lancedbService.search([1, 0, 0, 0], 10, scopeSql({ ownerId: 'alice' }), identity);
         expect(scoped.map(n => n.id)).toEqual(['scan-a', 'scan-b']);
 
-        process.env.LANCEDB_SCAN_MAX_ROWS = '1';
-        expect(await lancedbService.search([1, 0, 0, 0], 10, undefined, identity)).toEqual([]);
+        // Paged scan never drops rows: force the scan engine on a fresh instance
+        // (the shared singleton already picked the ANN engine) and page size 1
+        // over 3 vectors must still return all 3, ranked.
+        process.env.VECTOR_ENGINE = 'scan';
+        process.env.LANCEDB_SCAN_PAGE_ROWS = '1';
+        const { LanceDbService } = await import('../../services/lancedbService');
+        const { mkdtempSync } = await import('node:fs');
+        const { join: joinPath } = await import('node:path');
+        const { tmpdir: tmpd } = await import('node:os');
+        const fresh = new LanceDbService(joinPath(mkdtempSync(joinPath(tmpd(), 'paged-')), 'db.lancedb'));
+        await fresh.store(node('paged-a', 'alice') as any);
+        await fresh.store(node('paged-b', 'alice') as any);
+        await fresh.store(node('paged-c', 'bob') as any);
+        await fresh.projectEmbedding(node('paged-a', 'alice') as any, [1, 0, 0, 0], identity);
+        await fresh.projectEmbedding(node('paged-b', 'alice') as any, [0.9, 0.1, 0, 0], identity);
+        await fresh.projectEmbedding(node('paged-c', 'bob') as any, [0, 1, 0, 0], identity);
+        expect((await fresh.search([1, 0, 0, 0], 10, undefined, identity)).map(n => n.id)).toEqual(['paged-a', 'paged-b', 'paged-c']);
+        delete process.env.VECTOR_ENGINE;
     });
 
     it('ranks knowledge rows without the native vector path', async () => {

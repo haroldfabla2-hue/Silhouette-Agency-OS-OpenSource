@@ -19,6 +19,19 @@ export function maxVectorScanRows(env: NodeJS.ProcessEnv = process.env): number 
     return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_VECTOR_SCAN_ROWS;
 }
 
+export const DEFAULT_SCAN_PAGE_ROWS = 25_000;
+
+/**
+ * Page size for the exact fallback scan. This is a RAM bound, never a result
+ * ceiling: the scan always iterates every page, so no memory is dropped at
+ * any table size (owner requirement: eternal memory, 2026-10-17).
+ */
+export function scanPageRows(env: NodeJS.ProcessEnv = process.env): number {
+    const raw = env.LANCEDB_SCAN_PAGE_ROWS;
+    const parsed = raw ? Number.parseInt(raw, 10) : NaN;
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_SCAN_PAGE_ROWS;
+}
+
 /** Cosine similarity, or null when the vectors are not comparable. */
 export function cosineSimilarity(a: ArrayLike<number>, b: ArrayLike<number>): number | null {
     if (!a || !b || a.length !== b.length || a.length === 0) return null;
