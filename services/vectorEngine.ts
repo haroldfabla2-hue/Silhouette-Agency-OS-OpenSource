@@ -118,7 +118,7 @@ export function memoryIdToU64(id: string): bigint {
 }
 
 function idsDigest(ids: string[]): string {
-    const sorted = [...ids].sort();
+    const sorted = [...new Set(ids)].sort();
     return createHash('sha256').update(sorted.join('')).digest('hex');
 }
 
@@ -209,15 +209,21 @@ export class AnnIndex {
             try {
                 const idx = new this.opts.Index({ dimensions: this.dimensions, metric: 'cos' });
                 idx.view(this.file);
-                const digest = idsDigest(await ids());
-                if (idx.size() === projectedCount && mapped === projectedCount && this.metaGet('idsDigest') === digest) {
+                const idList = await ids();
+                const digest = idsDigest(idList);
+                const uniqueCount = new Set(idList).size;
+                if (idx.size() === uniqueCount && mapped === uniqueCount && this.metaGet('idsDigest') === digest) {
                     this.readable = idx;
                     const fileMB = fs.statSync(this.file).size / 1e6;
-                    console.log(`[VECTOR] ${this.opts.name}: memory-mapped ANN index (${projectedCount} vectors, ${fileMB.toFixed(0)}MB on disk, RAM bounded by page cache)`);
+                    console.log(`[VECTOR] ${this.opts.name}: memory-mapped ANN index (${uniqueCount} vectors, ${fileMB.toFixed(0)}MB on disk, RAM bounded by page cache)`);
                     await this.flushPending();
-                    return { source: 'view', size: projectedCount, expected: projectedCount, fileMB };
+                    // A validated reopen (count + ids digest match, pending log
+                    // flushed) proves the on-disk index matches the projection,
+                    // so it clears a stale mark just like a rebuild does.
+                    this.stale = false;
+                    return { source: 'view', size: uniqueCount, expected: projectedCount, fileMB };
                 }
-                console.warn(`[VECTOR] ${this.opts.name}: content mismatch (index=${idx.size()}, map=${mapped}, projection=${projectedCount}, digestMatch=${this.metaGet('idsDigest') === digest}) - rebuilding from projection`);
+                console.warn(`[VECTOR] ${this.opts.name}: content mismatch (index=${idx.size()}, map=${mapped}, projection=${uniqueCount} unique of ${projectedCount} rows, digestMatch=${this.metaGet('idsDigest') === digest}) - rebuilding from projection`);
             } catch (e) {
                 console.warn(`[VECTOR] ${this.opts.name}: unreadable index file (${(e as Error).message}) - rebuilding from projection`);
             }
@@ -234,12 +240,22 @@ export class AnnIndex {
         const insert = this.opts.sqlite.prepare(`INSERT OR REPLACE INTO "${this.opts.name}" (u64, id, owner_id) VALUES (?, ?, ?)`);
         const vec = new Float32Array(this.dimensions);
         const ids: string[] = [];
+        const seenKeys = new Set<string>();
         for (const row of all) {
             if (!Array.isArray(row.vector) || row.vector.length !== this.dimensions) continue;
-            for (let i = 0; i < this.dimensions; i++) vec[i] = row.vector[i];
             const key = memoryIdToU64(row.id);
+            const keyStr = key.toString();
+            if (seenKeys.has(keyStr)) {
+                // The projection can hold a duplicate id (observed in prod
+                // 2026-10-19: one byte-identical row pair). The index is a set:
+                // keep the first copy, log loudly, never crash the rebuild.
+                console.warn(`[VECTOR] ${this.opts.name}: projection holds a duplicate id (${row.id}); keeping the first copy`);
+                continue;
+            }
+            seenKeys.add(keyStr);
+            for (let i = 0; i < this.dimensions; i++) vec[i] = row.vector[i];
             idx.add(key, vec);
-            insert.run(key.toString(), row.id, row.ownerId || 'system');
+            insert.run(keyStr, row.id, row.ownerId || 'system');
             ids.push(row.id);
         }
         this.metaSet('idsDigest', idsDigest(ids));

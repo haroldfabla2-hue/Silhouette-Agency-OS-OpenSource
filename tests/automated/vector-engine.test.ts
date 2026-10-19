@@ -107,6 +107,26 @@ describe('AnnIndex (real USearch native addon)', () => {
         expect(hits.map(h => h.id)).toEqual(['alice-far']);
     });
 
+    it('tolerates duplicate ids in the projection: dedupe with warning, reopen uses the view (no perpetual rebuild)', async () => {
+        const { idx, dir: d } = makeIdx('tdup');
+        const dupRows = [...rows, { id: 'm-2', vector: vec(0.9, 0.1), ownerId: 'alice' }];
+        const dupIds = () => dupRows.map(r => r.id);
+        const warnings: string[] = [];
+        const origWarn = console.warn;
+        console.warn = (m?: unknown) => { warnings.push(String(m)); };
+        try {
+            const report = await idx.open(0, async () => dupRows, dupIds);
+            expect(report.source).toBe('rebuilt');
+            expect(idx.size()).toBe(3);
+            expect(warnings.some(w => w.includes('m-2'))).toBe(true);
+            expect(idx.search(vec(1), 3).map(h => h.id)).toEqual(['m-1', 'm-2', 'm-3']);
+        } finally { console.warn = origWarn; }
+        // Reopen over the SAME duplicated projection must memory-map, not rebuild forever
+        const mod = loadUsearchNative()!;
+        const again = new AnnIndex({ dir: d, name: 'tdup', dimensions: 4, Index: mod.Index, sqlite: new Database(join(d, 'keys.sqlite')) });
+        expect((await again.open(0, async () => dupRows, dupIds)).source).toBe('view');
+    });
+
     it('mmap view keeps RSS bounded; the write flush spikes transiently around index size (measured)', async () => {
         const mod = loadUsearchNative()!;
         const d = dir();
