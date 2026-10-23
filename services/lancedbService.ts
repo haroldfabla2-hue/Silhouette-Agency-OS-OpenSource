@@ -238,6 +238,35 @@ export class LanceDbService {
         return operation;
     }
 
+    /**
+     * A cached Table handle pins the Lance version it was opened at. The
+     * periodic optimizer rewrites fragments during compaction, so a handle
+     * opened before a compaction can reference data files that no longer
+     * exist; every read or merge through it then fails with
+     * LanceError(IO) "Not found" until the process restarts (prod incident
+     * 2026-10-23). Reopening binds the current version, so on that exact
+     * signature the cached handle is replaced once and the operation retried
+     * once. Operation closures must read this.table/this.legacyTable at call
+     * time so the retry uses the fresh handle.
+     */
+    private static isStaleHandleError(error: unknown): boolean {
+        const message = String(error);
+        return message.includes('LanceError(IO)') && message.includes('Not found');
+    }
+
+    private async withCurrentTable<T>(tableName: 'memory_records_v2' | 'memory', operation: () => Promise<T>): Promise<T> {
+        try {
+            return await operation();
+        } catch (error) {
+            if (!this.db || !LanceDbService.isStaleHandleError(error)) throw error;
+            console.warn(`[LANCEDB] Cached handle for '${tableName}' references pruned fragments; reopening and retrying once.`);
+            const fresh = await this.db.openTable(tableName);
+            if (tableName === 'memory_records_v2') { this.table = fresh; this.ftsReady.delete('v2'); }
+            else { this.legacyTable = fresh; this.ftsReady.delete('legacy'); }
+            return await operation();
+        }
+    }
+
     private async writeManyAndVerify(nodes: MemoryNode[]): Promise<{ ok: true; count: number }> {
         await this.ensureInitialized();
         if (!this.db) throw new Error('LanceDB is unavailable');
@@ -250,10 +279,10 @@ export class LanceDbService {
                 : await this.db.createTable('memory_records_v2', records);
         } else {
             // Same atomic merge as store(): update on id match, insert otherwise.
-            await this.table.mergeInsert('id')
+            await this.withCurrentTable('memory_records_v2', () => this.table!.mergeInsert('id')
                 .whenMatchedUpdateAll()
                 .whenNotMatchedInsertAll()
-                .execute(records);
+                .execute(records));
         }
         this.ftsReady.delete('v2');
         // Read-back spot check on the batch edges (first + last). Full per-row
@@ -279,10 +308,10 @@ export class LanceDbService {
                 : await this.db.createTable('memory_records_v2', [record]);
         } else {
             // Atomic merge rather than delete + add, which loses the old row on add failure.
-            await this.table.mergeInsert('id')
+            await this.withCurrentTable('memory_records_v2', () => this.table!.mergeInsert('id')
                 .whenMatchedUpdateAll()
                 .whenNotMatchedInsertAll()
-                .execute([record]);
+                .execute([record]));
         }
         this.ftsReady.delete('v2');
         // Unknown legacy vectors are never guessed into a model collection.
@@ -300,9 +329,12 @@ export class LanceDbService {
     public async getNodeById(id: string): Promise<MemoryNode | null> {
         await this.ensureInitialized();
         const safeId = id.replace(/'/g, "''");
-        for (const table of [this.table, this.legacyTable]) {
-            if (!table) continue;
-            const rows = await table.query().where(`id = '${safeId}'`).limit(2).toArray();
+        for (const tableName of ['memory_records_v2', 'memory'] as const) {
+            const rows = await this.withCurrentTable(tableName, async () => {
+                const current = (tableName === 'memory_records_v2' ? this.table : this.legacyTable);
+                if (!current) return [];
+                return current.query().where(`id = '${safeId}'`).limit(2).toArray();
+            });
             if (rows.length > 1) throw new Error(`Duplicate memory ID in LanceDB: ${id}`);
             if (rows.length) return JSON.parse(rows[0].json_data) as MemoryNode;
         }
@@ -319,11 +351,15 @@ export class LanceDbService {
     private async getNodesByIds(ids: string[]): Promise<Map<string, MemoryNode>> {
         const found = new Map<string, MemoryNode>();
         if (!ids.length) return found;
-        for (const table of [this.table, this.legacyTable]) {
+        for (const tableName of ['memory_records_v2', 'memory'] as const) {
             const missing = ids.filter(id => !found.has(id));
-            if (!table || !missing.length) continue;
+            if (!missing.length) continue;
             const quoted = missing.map(id => `'${id.replace(/'/g, "''")}'`).join(', ');
-            const rows = await table.query().where(`id IN (${quoted})`).limit(missing.length * 2).toArray();
+            const rows = await this.withCurrentTable(tableName, async () => {
+                const current = (tableName === 'memory_records_v2' ? this.table : this.legacyTable);
+                if (!current) return [];
+                return current.query().where(`id IN (${quoted})`).limit(missing.length * 2).toArray();
+            });
             const seen = new Set<string>();
             for (const row of rows) {
                 if (seen.has(row.id)) throw new Error(`Duplicate memory ID in LanceDB: ${row.id}`);
@@ -344,7 +380,20 @@ export class LanceDbService {
      */
     private optimizeTimer: ReturnType<typeof setInterval> | null = null;
     private optimizeRunning = false;
-    private static readonly OPTIMIZE_NO_PRUNE_DATE = new Date('2999-01-01');
+    /**
+     * Compaction WITHOUT version pruning (Alberto's approved design for this
+     * loop: "compact only, no version prune"; his standing rule is backup and
+     * ask before deleting anything). `cleanupOlderThan` is a DELETE threshold:
+     * versions committed before that instant are removed, and the binding's
+     * default (7 days) still prunes history. The epoch instant removes only
+     * "versions older than 1970", i.e. nothing - compaction runs, no version
+     * or fragment is ever deleted automatically. The old '2999-01-01' value
+     * had the semantics inverted and deleted every unreferenced file at each
+     * compaction, breaking every cached handle (prod incident 2026-10-23).
+     * Any future retention policy is Alberto's explicit decision, not a code
+     * default. Disk growth is bounded by table size and reviewed in audits.
+     */
+    private static readonly OPTIMIZE_NEVER_PRUNE_BEFORE = new Date(0);
 
     private startOptimizeLoop(): void {
         if (this.optimizeTimer) return;
@@ -366,7 +415,7 @@ export class LanceDbService {
             const names = await this.db.tableNames();
             for (const n of names.filter(x => x === 'memory_records_v2' || x.startsWith('memory_vectors_'))) {
                 const t = await this.db.openTable(n);
-                await t.optimize({ cleanupOlderThan: LanceDbService.OPTIMIZE_NO_PRUNE_DATE, deleteUnverified: false });
+                await t.optimize({ cleanupOlderThan: LanceDbService.OPTIMIZE_NEVER_PRUNE_BEFORE, deleteUnverified: false });
                 console.log(`[LANCEDB] Optimize completed for ${n} (compact only, no version prune).`);
             }
         } catch (e) {
@@ -401,12 +450,12 @@ export class LanceDbService {
             }
         }
         await table.mergeInsert('id').whenMatchedUpdateAll().whenNotMatchedInsertAll().execute([record]);
-        if (this.table) await this.table.update({ where: `id = '${node.id.replace(/'/g, "''")}'`, values: { embedding_state: 'READY' } });
+        if (this.table) await this.withCurrentTable('memory_records_v2', () => this.table!.update({ where: `id = '${node.id.replace(/'/g, "''")}'`, values: { embedding_state: 'READY' } }));
     }
     public async pendingEmbeddings(limit = 100): Promise<MemoryNode[]> {
         await this.ensureInitialized();
         if (!this.table) return [];
-        const rows = await this.table.query().where("embedding_state = 'EMBEDDING_PENDING'").limit(limit).toArray();
+        const rows = await this.withCurrentTable('memory_records_v2', () => this.table!.query().where("embedding_state = 'EMBEDDING_PENDING'").limit(limit).toArray());
         return rows.map(r => JSON.parse(r.json_data));
     }
     /** Engine selection happens once and is logged loudly: which engine, why, and what this machine offers. */
@@ -533,11 +582,15 @@ export class LanceDbService {
         const nodes = new Map<string, MemoryNode>();
         for (const [name, table] of [['legacy', this.legacyTable], ['v2', this.table]] as const) {
             if (!table) continue;
-            if (!this.ftsReady.has(name)) {
-                await table.createIndex('content', { config: lancedb.Index.fts(), replace: true });
-                this.ftsReady.add(name);
-            }
-            const rows = await table.query().where(scopeSql(scope)).fullTextSearch(textQuery).limit(limit * 3).toArray();
+            const tableName = name === 'v2' ? 'memory_records_v2' : 'memory';
+            const rows = await this.withCurrentTable(tableName, async () => {
+                const current = (name === 'v2' ? this.table : this.legacyTable)!;
+                if (!this.ftsReady.has(name)) {
+                    await current.createIndex('content', { config: lancedb.Index.fts(), replace: true });
+                    this.ftsReady.add(name);
+                }
+                return current.query().where(scopeSql(scope)).fullTextSearch(textQuery).limit(limit * 3).toArray();
+            });
             for (const row of rows) {
                 const node = JSON.parse(row.json_data) as MemoryNode;
                 if (inScope(node, scope)) nodes.set(node.id, node);
@@ -554,9 +607,12 @@ export class LanceDbService {
         }
         try {
             const unique = new Map<string, MemoryNode>();
-            for (const table of [this.legacyTable, this.table]) {
-                if (!table) continue;
-                const rows = await table.query().limit(await table.countRows()).toArray();
+            for (const tableName of ['memory', 'memory_records_v2'] as const) {
+                const rows = await this.withCurrentTable(tableName, async () => {
+                    const current = (tableName === 'memory_records_v2' ? this.table : this.legacyTable);
+                    if (!current) return [];
+                    return current.query().limit(await current.countRows()).toArray();
+                });
                 for (const row of rows) { const node = JSON.parse(row.json_data); unique.set(node.id, node); }
             }
             return [...unique.values()];
