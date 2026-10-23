@@ -448,6 +448,23 @@ export class UnifiedDaemon {
         } catch (e: any) {
             console.warn(`[COGNITIVE: JANITOR] Cycle aborted safely (memory untouched): ${e.message}`);
         }
+
+        // [LEDGER-INTEGRITY] Same-process stale ledger sweep, RUNNING rows
+        // only: a legit plan executes its steps sequentially in-process, so
+        // its future steps sit 'pending' as valid waits - reaping those
+        // would falsify live work. A 'running' row older than the step
+        // bound (SILHOUETTE_STEP_TIMEOUT_MS + margin) is genuinely
+        // abandoned: withStepTimeout settles every live step within the
+        // bound. Dead-executor 'pending' rows are the boot sweep's job.
+        // Never deletes; the mission can be re-run.
+        try {
+            const { reapStaleTasks } = await import('../execution/taskLedger');
+            const stepTimeoutMs = Number(process.env.SILHOUETTE_STEP_TIMEOUT_MS ?? 30 * 60 * 1000);
+            const staleMs = Number(process.env.TASK_LEDGER_STALE_MS ?? stepTimeoutMs + 15 * 60 * 1000);
+            reapStaleTasks(Date.now() - staleMs, `stale: running step older than step-timeout bound (${Math.round(staleMs / 60000)}min), executor abandoned it`, ['running']);
+        } catch (e: any) {
+            console.warn(`[COGNITIVE: JANITOR] stale task sweep failed (non-blocking): ${e?.message}`);
+        }
     }
 
     private async runDreamerTask() {

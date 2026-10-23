@@ -11,6 +11,9 @@
  * Recording is best-effort: a ledger failure must never break execution.
  */
 import { sqliteService } from '../sqliteService';
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
 import type { ExecutionPlan, PlanStep } from '../planGenerator';
 
 export interface StepOutcomeLike {
@@ -21,6 +24,10 @@ export interface StepOutcomeLike {
     artifacts?: string[];
     tokensUsed?: number;
     executionTimeMs?: number;
+    /** [LEDGER-INTEGRITY] Set when this outcome is a TIMEOUT verdict: the
+     *  step's background promise may still be alive. Persisted durably so
+     *  the uncertainty survives restarts; cleared by recordLateSettlement. */
+    abandonedInFlight?: number;
 }
 
 export function taskIdFor(planId: string, order: number): string {
@@ -66,8 +73,61 @@ export function markTaskRunning(planId: string, step: PlanStep): void {
     }
 }
 
+/** Outputs are NEVER omitted by size. Small outputs persist inline in the
+ *  ledger row; large ones spill to a durable file (tmp+fsync+rename) and
+ *  the row carries a clearly marked preview plus a recoverable reference
+ *  (path/bytes/sha256). The per-call LLM token cap does NOT bound
+ *  aggregates or file content, so no maximum is assumed: if the durable
+ *  spill itself fails, the full output stays inline rather than lose a
+ *  single character. */
+const OUTPUT_INLINE_LIMIT_CHARS = 256_000;
+const OUTPUT_PREVIEW_CHARS = 4_000;
+
+function taskOutputDir(): string {
+    return process.env.SILHOUETTE_TASK_OUTPUT_DIR ?? path.resolve(process.cwd(), 'data', 'task-outputs');
+}
+
+function persistOutputForLedger(taskId: string, output: string): { output: string; outputChars: number; extra: Record<string, any> } {
+    const outputChars = output.length;
+    if (outputChars <= OUTPUT_INLINE_LIMIT_CHARS) {
+        return { output, outputChars, extra: {} };
+    }
+    try {
+        const dir = taskOutputDir();
+        fs.mkdirSync(dir, { recursive: true });
+        const file = path.join(dir, `${taskId}.txt`);
+        const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
+        fs.writeFileSync(tmp, output, 'utf8');
+        const fd = fs.openSync(tmp, 'r');
+        try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+        fs.renameSync(tmp, file);
+        const sha256 = crypto.createHash('sha256').update(output, 'utf8').digest('hex');
+        return {
+            output: output.substring(0, OUTPUT_PREVIEW_CHARS) + `\n[PREVIEW ONLY - full output (${outputChars} chars) persisted at ${file} ; sha256:${sha256}]`,
+            outputChars,
+            extra: { outputPreview: true, outputRef: { path: file, bytes: Buffer.byteLength(output, 'utf8'), sha256 } }
+        };
+    } catch (e: any) {
+        console.warn(`[TASK_LEDGER] output spill failed for ${taskId}; keeping FULL output inline (${outputChars} chars): ${e?.message}`);
+        return { output, outputChars, extra: { outputSpillFailed: true } };
+    }
+}
+
 export function markTaskDone(planId: string, step: PlanStep, result: StepOutcomeLike): void {
     try {
+        const output = result.output ?? '';
+        const artifacts = result.artifacts ?? [];
+        // [LEDGER-INTEGRITY] A completion with no persisted evidence (no
+        // output text, no artifacts) is un-auditable - the historical
+        // "hollow completion" (prod 2026-10-16: a cotizador step marked
+        // completed with artifacts:[] and its output never recorded).
+        // Valid no-artifact TEXT outputs stay 'completed' with their output
+        // persisted; only evidence-free completions get flagged, loudly.
+        const noEvidence = result.success === true && output.length === 0 && artifacts.length === 0 && !result.error;
+        if (noEvidence) {
+            console.warn(`[TASK_LEDGER] WARNING: step ${step.order} of ${planId} completed with NO persisted evidence (no output, no artifacts)`);
+        }
+        const persisted = persistOutputForLedger(taskIdFor(planId, step.order), output);
         sqliteService.upsertTask({
             id: taskIdFor(planId, step.order),
             description: step.taskDescription,
@@ -79,13 +139,152 @@ export function markTaskDone(planId: string, step: PlanStep, result: StepOutcome
                 agentRole: step.agentRole,
                 finishedAt: Date.now(),
                 error: result.error,
-                artifacts: result.artifacts ?? [],
+                output: persisted.output,
+                outputChars: persisted.outputChars,
+                ...persisted.extra,
+                artifacts,
                 tokensUsed: result.tokensUsed ?? 0,
-                executionTimeMs: result.executionTimeMs ?? 0
+                executionTimeMs: result.executionTimeMs ?? 0,
+                ...(result.abandonedInFlight ? { abandonedInFlight: { timedOutAt: result.abandonedInFlight } } : {}),
+                ...(noEvidence ? { evidence: 'none' } : {})
             }
         });
     } catch (e: any) {
         console.warn(`[TASK_LEDGER] mark done failed (non-blocking): ${e?.message}`);
+    }
+}
+
+/**
+ * [LEDGER-INTEGRITY] Reap ledger rows whose executor is gone. Rows still
+ * pending/running with updated_at older than `beforeMs` belong to a
+ * dead executor (process restart) or an abandoned step (LLM chain hung
+ * before the abort path could close them; prod 2026-10-16..22 left 8 rows
+ * eternal-running). They are marked failed with an honest reason -
+ * never deleted, never silently completed; the mission can be re-run.
+ * Returns the number of reaped rows.
+ */
+export function reapStaleTasks(beforeMs: number, reason: string, statuses: Array<'pending' | 'running'> = ['pending', 'running']): number {
+    let reaped = 0;
+    try {
+        const rows = sqliteService.getOpenTasksBefore(beforeMs, statuses);
+        for (const row of rows) {
+            try {
+                let data: any = {};
+                try { data = row?.data ? JSON.parse(row.data) : {}; } catch { data = {}; }
+                sqliteService.upsertTask({
+                    id: row.id,
+                    description: row.description,
+                    assigned_to: row.assigned_to,
+                    status: 'failed',
+                    data: { ...data, finishedAt: Date.now(), error: `reaped: ${reason}`.substring(0, 500) }
+                });
+                reaped++;
+            } catch (e: any) {
+                console.warn(`[TASK_LEDGER] reap failed for ${row?.id} (non-blocking): ${e?.message}`);
+            }
+        }
+        if (reaped > 0) console.log(`[TASK_LEDGER] Reaped ${reaped} stale ledger rows (${reason})`);
+    } catch (e: any) {
+        console.warn(`[TASK_LEDGER] stale sweep failed (non-blocking): ${e?.message}`);
+    }
+    return reaped;
+}
+
+/** Durable uncertainty: abandoned-in-flight rows with no settlement and
+ *  no explicit reconciliation. Source of truth is SQLite, so the block
+ *  survives restarts. */
+export function getUnresolvedAbandonedTaskRows(): any[] {
+    try {
+        return sqliteService.getUnresolvedAbandonedTasks();
+    } catch (e: any) {
+        console.warn(`[TASK_LEDGER] unresolved-abandoned query failed (fail-closed: reporting one synthetic blocker): ${e?.message}`);
+        return [{ id: 'unknown', description: 'abandoned-step query failed', data: '{}' }];
+    }
+}
+
+/**
+ * [LEDGER-INTEGRITY] Resolve the attribution for an explicit
+ * reconciliation from the AUTHENTICATED PRINCIPAL (set by the existing
+ * authMiddleware: session user, or the master-token system identity).
+ * The attestation changes how the system treats uncertain state, so it
+ * requires the same level the platform grants to "can modify Silhouette
+ * itself": role CREATOR. The request body is never an identity source.
+ */
+export function reconcileAttributionFor(principal: { id?: string; role?: string } | undefined | null): string {
+    if (!principal?.id || principal.role !== 'CREATOR') {
+        throw Object.assign(new Error('CREATOR-level authenticated operator required for abandoned-step reconciliation'), { statusCode: 403 });
+    }
+    return `user:${principal.id}`;
+}
+
+/**
+ * [LEDGER-INTEGRITY] Explicit, attributed reconciliation of an abandoned
+ * step whose writer is gone but whose PARTIAL EFFECTS are uncertain. An
+ * auditable row alone does not make a re-run safe; a human (or operator
+ * process) must inspect the jailed write roots / memory effects and
+ * attest the review. The attestation is durable (who/when/note). Until
+ * then the retry gate keeps blocking. Throws honest errors when there is
+ * nothing to reconcile or attestation fields are missing.
+ */
+export function reconcileAbandonedStepEffects(planId: string, stepOrder: number, reconciledBy: string, note: string): any {
+    const by = (reconciledBy ?? '').trim();
+    const text = (note ?? '').trim();
+    if (!by || !text) {
+        throw Object.assign(new Error('reconciledBy and note are required - an unattributed reconciliation is not reconciliation'), { statusCode: 400 });
+    }
+    const id = taskIdFor(planId, stepOrder);
+    const row = sqliteService.getTasksByPlan(planId).find((t: any) => t.id === id);
+    if (!row) throw Object.assign(new Error(`no ledger row ${id}`), { statusCode: 404 });
+    let data: any = {};
+    try { data = row.data ? JSON.parse(row.data) : {}; } catch { data = {}; }
+    if (data.lateSettlement) {
+        throw Object.assign(new Error(`step ${stepOrder} of ${planId} already settled late - uncertainty resolved automatically`), { statusCode: 409 });
+    }
+    if (!data.abandonedInFlight) {
+        throw Object.assign(new Error(`step ${stepOrder} of ${planId} has no abandoned-in-flight uncertainty to reconcile`), { statusCode: 409 });
+    }
+    delete data.abandonedInFlight;
+    data.effectsReviewed = { by: by.substring(0, 200), at: Date.now(), note: text.substring(0, 500) };
+    sqliteService.upsertTask({ id, description: row.description, assigned_to: row.assigned_to, status: row.status, data });
+    console.log(`[TASK_LEDGER] Abandoned step ${stepOrder} of ${planId} explicitly reconciled by ${by}`);
+    return { id, status: row.status, data };
+}
+
+/**
+ * [LEDGER-INTEGRITY] Reconcile a TIMED-OUT step that settled late. The
+ * timeout verdict stands (status stays as recorded); the late outcome is
+ * appended as evidence so no effect of the abandoned work vanishes: late
+ * artifacts/output become visible for audit and for de-duplicating a
+ * re-run. A step has no abort handle, so reconciliation - not
+ * cancellation - is the honest containment. Step side effects are
+ * confined to the audited jailed write roots and the memory pipeline;
+ * world-exiting actions (PR, deploy, publish) are gated elsewhere and
+ * unreachable from a step.
+ */
+export function recordLateSettlement(planId: string, stepOrder: number, late: StepOutcomeLike): void {
+    try {
+        const id = taskIdFor(planId, stepOrder);
+        const row = sqliteService.getTasksByPlan(planId).find((t: any) => t.id === id);
+        if (!row) return;
+        let data: any = {};
+        try { data = row.data ? JSON.parse(row.data) : {}; } catch { data = {}; }
+        const persisted = persistOutputForLedger(id, late.output ?? '');
+        // The uncertainty is resolved: drop the durable abandoned flag.
+        delete data.abandonedInFlight;
+        data.reconciledAt = Date.now();
+        data.lateSettlement = {
+            finishedAt: Date.now(),
+            success: late.success === true,
+            outputChars: persisted.outputChars,
+            output: persisted.output,
+            ...persisted.extra,
+            error: late.error,
+            artifacts: late.artifacts ?? []
+        };
+        sqliteService.upsertTask({ id, description: row.description, assigned_to: row.assigned_to, status: row.status, data });
+        console.log(`[TASK_LEDGER] Late settlement reconciled for step ${stepOrder} of ${planId} (success=${late.success === true})`);
+    } catch (e: any) {
+        console.warn(`[TASK_LEDGER] late settlement record failed (non-blocking): ${e?.message}`);
     }
 }
 

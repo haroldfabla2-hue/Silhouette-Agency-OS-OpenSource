@@ -42,6 +42,10 @@ process.on('uncaughtException', async (error: Error) => {
     setTimeout(() => process.exit(1), 1000);
 });
 
+// [LEDGER-INTEGRITY] Captured at process start: ledger rows older than
+// this boot belong to a dead executor and are reaped in the listen callback.
+const PROCESS_STARTED_AT = Date.now();
+
 const server = app.listen(PORT, HOST, async () => {
     console.log(`
     -------------------------------------------
@@ -53,6 +57,22 @@ const server = app.listen(PORT, HOST, async () => {
     ► Environment:  ${process.env.NODE_ENV || 'development'}
     -------------------------------------------
     `);
+
+    // [LEDGER-INTEGRITY] Close ledger rows left open by previous process
+    // lives: a restart strands pending/running rows whose executor is
+    // gone. Signal verified in code: these rows are unambiguous orphans -
+    // the only executor that could advance them ran in the dead process,
+    // and mission resume (workflowEngine.executeMissionBuild) always
+    // generates a NEW planId via planGenerator.create and overwrites
+    // pipelineData.planId, so no resume path ever re-drives a pre-boot
+    // row. They are failed honestly (never deleted); re-running the
+    // mission is the recovery path.
+    try {
+        const { reapStaleTasks } = await import('../services/execution/taskLedger');
+        reapStaleTasks(PROCESS_STARTED_AT, 'executor lost: process restart (ledger row predates this boot)');
+    } catch (e: any) {
+        console.warn('[BOOT] stale task sweep failed (non-blocking):', e?.message);
+    }
 
     // [GATEWAY] Initialize WebSocket Gateway (shares HTTP server)
     try {

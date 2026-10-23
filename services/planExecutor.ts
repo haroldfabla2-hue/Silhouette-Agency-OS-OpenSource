@@ -23,7 +23,7 @@ import { SystemProtocol, CommunicationLevel, AgentStatus, AgentRoleType, AgentTi
 import { stepDeclaresFileWork, durableFileGrant } from './tools/toolSelection'; // [W3]
 import { evaluatePlanHonesty } from './execution/stepHonesty'; // [W3]
 import { collectWrittenArtifacts } from './execution/artifactLedger'; // [W3]
-import { recordPlanTasks, markTaskRunning, markTaskDone, closeOpenTasks } from './execution/taskLedger'; // [PR-1] [PR-4c: closeOpenTasks]
+import { recordPlanTasks, markTaskRunning, markTaskDone, closeOpenTasks, recordLateSettlement, getUnresolvedAbandonedTaskRows } from './execution/taskLedger'; // [PR-1] [PR-4c: closeOpenTasks] [LEDGER-INTEGRITY]
 import { extractExecuteMarkers, normalizeToolName } from './tools/execMarker'; // [PR-I]
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -40,6 +40,41 @@ export interface StepResult {
     error?: string;
     /** [W3] Verified files this step wrote through the fs jail. */
     artifacts?: string[];
+}
+
+// [LEDGER-INTEGRITY] Timed-out steps whose background promise may still
+// be alive. While ANY entry exists, execute() refuses to start a new
+// plan: a retry running concurrently with the abandoned work could
+// write the same jailed files or duplicate memories. There is NO
+// time-based unblock - elapsed time proves nothing about a live promise.
+// Exactly two exits, both confirmed terminations:
+//   1. The abandoned promise SETTLES: it is reconciled into the ledger
+//      (recordLateSettlement, verdict preserved) and the entry clears.
+//   2. The PROCESS DIES: an in-process promise cannot outlive its
+//      process, so a restart is confirmed termination of the writer.
+//      The ledger row keeps a durable abandonedInFlight flag (no
+//      lateSettlement) meaning "partial effects may exist" - auditable
+//      before any re-run. Explicit verifiable recovery for a never-
+//      settling step is therefore: restart the service, inspect the
+//      flagged row, re-run.
+interface AbandonedStep { planId: string; order: number; agentId: string; taskDescription: string; timedOutAt: number; }
+const abandonedInFlight = new Map<string, AbandonedStep>();
+const abandonedKey = (planId: string, order: number) => `${planId}:${order}`;
+
+export function noteStepTimedOut(planId: string, step: PlanStep): void {
+    abandonedInFlight.set(abandonedKey(planId, step.order), {
+        planId, order: step.order, agentId: step.agentId,
+        taskDescription: step.taskDescription ?? '', timedOutAt: Date.now()
+    });
+}
+
+export function clearAbandonedStep(planId: string, order: number): void {
+    abandonedInFlight.delete(abandonedKey(planId, order));
+}
+
+/** Abandoned steps of THIS process still awaiting settlement. */
+export function getAbandonedStepsInFlight(): AbandonedStep[] {
+    return Array.from(abandonedInFlight.values());
 }
 
 export interface PlanExecutionResult {
@@ -72,6 +107,38 @@ class PlanExecutor {
         const results: Map<number, StepResult> = new Map();
         const errors: string[] = [];
 
+        // [LEDGER-INTEGRITY] Retry gate, fail-closed on TWO uncertainty
+        // classes. (a) LIVE: a timed-out step of THIS process may still be
+        // running - blocks until it settles (auto-reconciled). (b) DURABLE:
+        // a row flagged abandonedInFlight with no settlement and no
+        // explicit reconciliation - the writer may be dead (restart), but
+        // dead writers do not roll back partial effects, and an auditable
+        // row alone does not make a re-run safe. Blocks until an
+        // attributed human/operator reconciliation reviews the effects
+        // (POST /v1/orchestrator/tasks/reconcile-abandoned). A restart is
+        // therefore NOT presented as safe recovery by itself.
+        const blocking = getAbandonedStepsInFlight();
+        const durableBlocking = getUnresolvedAbandonedTaskRows();
+        if (blocking.length > 0 || durableBlocking.length > 0) {
+            const liveDetail = blocking.map(b => `step ${b.order} of ${b.planId} ("${(b.taskDescription || '').substring(0, 80)}", timed out ${new Date(b.timedOutAt).toISOString()}, LIVE - blocks until it settles)`);
+            const durableDetail = durableBlocking.map((r: any) => {
+                let d: any = {};
+                try { d = r?.data ? JSON.parse(r.data) : {}; } catch { d = {}; }
+                return `${r.id} ("${(r.description || '').substring(0, 80)}", timed out ${d?.abandonedInFlight?.timedOutAt ? new Date(d.abandonedInFlight.timedOutAt).toISOString() : 'unknown'}, DURABLE - needs explicit reconciliation after reviewing its partial effects)`;
+            });
+            const detail = [...liveDetail, ...durableDetail].join('; ');
+            console.error(`[PLAN_EXECUTOR] Refusing to start plan ${plan.id}: ${blocking.length + durableBlocking.length} unresolved abandoned step(s): ${detail}`);
+            return {
+                planId: plan.id,
+                success: false,
+                steps: [],
+                finalOutput: `Blocked: ${blocking.length + durableBlocking.length} timed-out step(s) from earlier work are unresolved. Live ones unblock automatically when the abandoned work settles (reconciled into the task ledger). Durable ones (writer gone, partial effects uncertain) require an explicit attributed review of those effects first: POST /v1/orchestrator/tasks/reconcile-abandoned {planId, stepOrder, reconciledBy, note}. A restart alone does not make a re-run safe. Detail: ${detail}`,
+                totalTokens: 0,
+                totalTimeMs: 0,
+                errors: [`unresolved abandoned steps: ${detail}`]
+            };
+        }
+
         // Emit plan start
         systemBus.emit(SystemProtocol.WORKFLOW_UPDATE, {
             planId: plan.id,
@@ -95,7 +162,7 @@ class PlanExecutor {
             // 2. Execute the step with all homeostatic checks
             try {
                 markTaskRunning(plan.id, step); // [PR-1]
-                const result = await this.executeStep(step, plan, results);
+                const result = await this.withStepTimeout(plan.id, step, this.executeStep(step, plan, results));
                 markTaskDone(plan.id, step, result); // [PR-1]
                 results.set(step.order, result);
 
@@ -191,6 +258,55 @@ class PlanExecutor {
     /**
      * Execute a single step with all homeostatic checks
      */
+    // [LEDGER-INTEGRITY] Hard ceiling per step: an LLM chain can hang
+    // forever (prod 2026-10-16: a synthesize step hung for days and the
+    // plan never aborted, stranding its ledger rows). The plan must fail
+    // honestly instead. Env-overridable; the 30min default is ~5x the
+    // slowest observed legitimate step (382s). A timed-out step's
+    // background promise is ignored when it eventually settles.
+    private withStepTimeout(planId: string, step: PlanStep, work: Promise<StepResult>): Promise<StepResult> {
+        const timeoutMs = Number(process.env.SILHOUETTE_STEP_TIMEOUT_MS ?? 30 * 60 * 1000);
+        let timer: NodeJS.Timeout | undefined;
+        let timedOut = false;
+        const timeout = new Promise<StepResult>((resolve) => {
+            timer = setTimeout(() => {
+                timedOut = true;
+                noteStepTimedOut(planId, step);
+                console.error(`[PLAN_EXECUTOR] Step ${step.order} timed out after ${timeoutMs}ms - failing honestly`);
+                resolve({
+                    stepOrder: step.order,
+                    agentId: step.agentId,
+                    output: '',
+                    success: false,
+                    tokensUsed: 0,
+                    executionTimeMs: timeoutMs,
+                    error: `step timeout after ${timeoutMs}ms`,
+                    abandonedInFlight: Date.now()
+                } as StepResult);
+            }, timeoutMs);
+            if (typeof timer.unref === 'function') timer.unref();
+        });
+        // [LEDGER-INTEGRITY] Containment is reconciliation, not cancellation:
+        // the step chain holds no abort handle, so when the abandoned work
+        // eventually settles, its outcome is RECORDED on the ledger row
+        // (lateSettlement) - late artifacts/writes stay visible for audit
+        // and for de-duplicating a re-run. Step side effects are confined
+        // to the audited jailed write roots and the memory pipeline;
+        // world-exiting actions are unreachable from a step.
+        work.then(late => {
+            if (!timedOut) return;
+            clearAbandonedStep(planId, step.order);
+            console.warn(`[PLAN_EXECUTOR] Timed-out step ${step.order} of ${planId} settled late (success=${late?.success}) - reconciling ledger row`);
+            recordLateSettlement(planId, step.order, late);
+        }).catch((e: any) => {
+            if (!timedOut) return;
+            clearAbandonedStep(planId, step.order);
+            console.warn(`[PLAN_EXECUTOR] Timed-out step ${step.order} of ${planId} rejected late: ${e?.message}`);
+            recordLateSettlement(planId, step.order, { stepOrder: step.order, success: false, error: `late rejection: ${e?.message}` });
+        });
+        return Promise.race([work, timeout]).finally(() => { if (timer) clearTimeout(timer); });
+    }
+
     private async executeStep(
         step: PlanStep,
         plan: ExecutionPlan,
