@@ -249,6 +249,20 @@ export class LanceDbService {
      * once. Operation closures must read this.table/this.legacyTable at call
      * time so the retry uses the fresh handle.
      */
+    /** Lance commit conflicts (e.g. CreateIndex preempted by a concurrent
+     *  compaction Rewrite) are explicitly retryable: re-open the table to
+     *  rebase onto the latest version and try again. */
+    private static isRetryableCommitConflict(error: unknown): boolean {
+        const message = (error as Error)?.message ?? String(error);
+        return message.includes('Retryable commit conflict');
+    }
+
+    private async reopenTable(tableName: 'memory_records_v2' | 'memory'): Promise<void> {
+        const fresh = await this.db!.openTable(tableName);
+        if (tableName === 'memory_records_v2') { this.table = fresh; this.ftsReady.delete('v2'); }
+        else { this.legacyTable = fresh; this.ftsReady.delete('legacy'); }
+    }
+
     private static isStaleHandleError(error: unknown): boolean {
         const message = String(error);
         return message.includes('LanceError(IO)') && message.includes('Not found');
@@ -260,9 +274,7 @@ export class LanceDbService {
         } catch (error) {
             if (!this.db || !LanceDbService.isStaleHandleError(error)) throw error;
             console.warn(`[LANCEDB] Cached handle for '${tableName}' references pruned fragments; reopening and retrying once.`);
-            const fresh = await this.db.openTable(tableName);
-            if (tableName === 'memory_records_v2') { this.table = fresh; this.ftsReady.delete('v2'); }
-            else { this.legacyTable = fresh; this.ftsReady.delete('legacy'); }
+            await this.reopenTable(tableName);
             return await operation();
         }
     }
@@ -584,10 +596,28 @@ export class LanceDbService {
             if (!table) continue;
             const tableName = name === 'v2' ? 'memory_records_v2' : 'memory';
             const rows = await this.withCurrentTable(tableName, async () => {
-                const current = (name === 'v2' ? this.table : this.legacyTable)!;
+                let current = (name === 'v2' ? this.table : this.legacyTable)!;
                 if (!this.ftsReady.has(name)) {
-                    await current.createIndex('content', { config: lancedb.Index.fts(), replace: true });
-                    this.ftsReady.add(name);
+                    // [FIX] FTS index builds conflict with the periodic
+                    // compaction Rewrite (retryable commit conflict): rebase
+                    // onto a fresh handle and retry, bounded. Without this,
+                    // one conflict left the index unbuilt and EVERY content
+                    // search retried - and failed - forever (prod 2026-10-23).
+                    const maxAttempts = 3;
+                    for (let attempt = 1; ; attempt++) {
+                        try {
+                            // Re-read the handle each attempt: a conflict
+                            // rebase replaces this.table/legacyTable.
+                            current = (name === 'v2' ? this.table : this.legacyTable)!;
+                            await current.createIndex('content', { config: lancedb.Index.fts(), replace: true });
+                            this.ftsReady.add(name);
+                            break;
+                        } catch (e) {
+                            if (!LanceDbService.isRetryableCommitConflict(e) || attempt >= maxAttempts) throw e;
+                            console.warn(`[LANCEDB] FTS createIndex conflict on '${tableName}' (attempt ${attempt}/${maxAttempts}); rebasing on fresh handle.`);
+                            await this.reopenTable(tableName);
+                        }
+                    }
                 }
                 return current.query().where(scopeSql(scope)).fullTextSearch(textQuery).limit(limit * 3).toArray();
             });
