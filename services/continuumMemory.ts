@@ -1131,8 +1131,14 @@ class ContinuumMemorySystem {
      */
     public async maybeRunEmbeddingBackfill(
         ledger: QuotaLedger = quotaLedger,
-        runBackfill: () => Promise<{ projected: number; failed: number }> = () => this.backfillMemoryEmbeddings(),
+        runBackfill: (limit: number) => Promise<{ projected: number; failed: number }> = (l) => this.backfillMemoryEmbeddings(l),
     ): Promise<{ ran: boolean; reason?: string; projected?: number; failed?: number }> {
+        // [QUOTA-COOLDOWN] Real provider 429 (RetryInfo) outranks the local
+        // ledger: skip the pass without burning calls or spamming incidents.
+        const cooldown = ledger.cooldownUntil('gemini', DEFAULT_GEMINI_EMBEDDING_MODEL);
+        if (cooldown) {
+            return { ran: false, reason: `provider cooldown until ${new Date(cooldown).toISOString()} (real 429 RetryInfo); pending embeddings retained` };
+        }
         const status = ledger.status('gemini', DEFAULT_GEMINI_EMBEDDING_MODEL);
         const { incidentRegistry } = await import('./incidentRegistry');
         if (!status.allowed) {
@@ -1140,7 +1146,29 @@ class ContinuumMemorySystem {
                 `local daily budget spent for gemini:${DEFAULT_GEMINI_EMBEDDING_MODEL} (${status.used}/${status.budget} attempts, day ${status.day}). Pending embeddings are retained and retried after quota reset.`);
             return { ran: false, reason: `quota budget spent (${status.used}/${status.budget}, day ${status.day})` };
         }
-        const result = await runBackfill();
+        // [BACKFILL-GOVERNOR] Budget-aware pacing: the backfill shares the
+        // daily budget with LIVE writes/searches (new memories must always
+        // embed). Without a reserve, a large backlog alone can drain the
+        // whole daily provider cap (observed 2026-10-23: cap hit mid-day).
+        // The 20% live reserve is an INITIAL CONFIGURABLE POLICY
+        // (BACKFILL_LIVE_RESERVE), not a user-approved budget. One backfill
+        // item = one provider attempt in this path (no batching).
+        // The batch is RESERVED ATOMICALLY (quotaLedger.reserve) so a
+        // concurrent live write cannot over-assign the same headroom; the
+        // backfill path then skips per-item ledger recording (preReserved)
+        // so attempts are counted exactly once, failures included.
+        const reserve = Number(process.env.BACKFILL_LIVE_RESERVE ?? Math.ceil(status.budget * 0.2));
+        const batchLimit = Math.min(50, Math.max(0, status.budget - status.used - reserve));
+        if (batchLimit <= 0) {
+            incidentRegistry.recordIncident('continuum-embeddings', 'error', 'embedding backfill blocked by quota budget',
+                `daily headroom reserved for live writes (${status.used}/${status.budget} used, reserve ${reserve}, day ${status.day}). Pending embeddings are retained and retried after quota reset.`);
+            return { ran: false, reason: `headroom reserved for live writes (${status.used}/${status.budget}, reserve ${reserve}, day ${status.day})` };
+        }
+        const hold = ledger.reserve('gemini', DEFAULT_GEMINI_EMBEDDING_MODEL, batchLimit);
+        if (!hold.reserved) {
+            return { ran: false, reason: `backfill reservation lost to concurrent consumer (${hold.used}/${hold.budget}); live writes keep priority` };
+        }
+        const result = await runBackfill(batchLimit);
         if (result.projected > 0) {
             incidentRegistry.resolveIncidents('continuum-embeddings', 'error');
         } else if (result.failed > 0) {
@@ -1164,7 +1192,9 @@ class ContinuumMemorySystem {
         let projected = 0, failed = 0;
         for (const node of pending) {
             try {
-                const embedded = await generateEmbeddingWithIdentity(node.content, { allowFallbackIdentity: false });
+                // preReserved: the governor already counted this batch
+                // atomically; per-item recording would double-count.
+                const embedded = await generateEmbeddingWithIdentity(node.content, { allowFallbackIdentity: false, preReserved: true });
                 if (!embedded) { failed++; continue; }
                 await lancedbService.projectEmbedding(node, embedded.vector, embedded.identity);
                 projected++;

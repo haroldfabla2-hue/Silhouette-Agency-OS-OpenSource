@@ -85,6 +85,68 @@ describe('native pipeline recovery', () => {
         expect(isOutstandingTransition({ ...base, state: 'COMMITTED' } as any)).toBe(false);
     });
 
+    it('quota cooldown: real provider 429 blocks backfill without burning calls, expiry reopens', async () => {
+        const fs = await import('fs');
+        const os = await import('os');
+        const path = await import('path');
+        const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'quota-cool-'));
+        const { QuotaLedger } = await import('../../services/quotaLedger');
+        const ledger = new QuotaLedger(path.join(tmp, 'quota.json'));
+        // no cooldown => callable
+        expect(ledger.cooldownUntil('gemini', 'gemini-embedding-001')).toBeNull();
+        // real 429 RetryInfo => durable cooldown, backfill skips without a call
+        ledger.recordCooldown('gemini', 'gemini-embedding-001', Date.now() + 60000, 'test 429');
+        expect(ledger.cooldownUntil('gemini', 'gemini-embedding-001')).toBeGreaterThan(Date.now());
+        const { continuum: continuumMemory } = await import('../../services/continuumMemory');
+        let burned = 0;
+        const r = await continuumMemory.maybeRunEmbeddingBackfill(ledger, async () => { burned++; return { projected: 1, failed: 0 }; });
+        expect(r.ran).toBe(false);
+        expect(r.reason).toContain('cooldown');
+        expect(burned).toBe(0);
+        // expired cooldown => open again (no invented reset: until came from provider).
+        // recordCooldown never SHORTENS an active one (max semantics); write
+        // the expired record directly to test the read path.
+        fs.writeFileSync(path.join(tmp, 'quota-cooldown.json'), JSON.stringify({ 'gemini:gemini-embedding-001': Date.now() - 1 }));
+        expect(ledger.cooldownUntil('gemini', 'gemini-embedding-001')).toBeNull();
+        // and a shorter real 429 must NOT shorten an active longer cooldown
+        const longer = Date.now() + 120000;
+        ledger.recordCooldown('gemini', 'gemini-embedding-001', longer, 'long');
+        ledger.recordCooldown('gemini', 'gemini-embedding-001', Date.now() + 30000, 'short');
+        expect(ledger.cooldownUntil('gemini', 'gemini-embedding-001')).toBe(Math.floor(longer));
+    });
+
+    it('backfill governor: reserves headroom for live writes and caps the batch', async () => {
+        const fs = await import('fs');
+        const os = await import('os');
+        const path = await import('path');
+        const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'quota-gov-'));
+        const { QuotaLedger } = await import('../../services/quotaLedger');
+        const { continuum } = await import('../../services/continuumMemory');
+        process.env.QUOTA_DAILY_BUDGET_GEMINI_GEMINI_EMBEDDING_001 = '10';
+        try {
+            const ledger = new QuotaLedger(path.join(tmp, 'quota.json'));
+            // 5 used of 10, reserve = ceil(10*0.2)=2 => headroom 3 => batch capped at 3
+            for (let i = 0; i < 5; i++) ledger.recordAttempt('gemini', 'gemini-embedding-001');
+            let seenLimit = -1;
+            const r1 = await continuum.maybeRunEmbeddingBackfill(ledger, async (l: number) => { seenLimit = l; return { projected: l, failed: 0 }; });
+            expect(r1.ran).toBe(true);
+            expect(seenLimit).toBe(3);
+            // Atomic reservation: the batch is counted EXACTLY once (5 + 3),
+            // not re-counted per item inside the backfill.
+            expect(ledger.status('gemini', 'gemini-embedding-001').used).toBe(8);
+            // 9 used of 10 => headroom 0 => blocked without burning a call
+            for (let i = 0; i < 1; i++) ledger.recordAttempt('gemini', 'gemini-embedding-001');
+            let burned = 0;
+            const r2 = await continuum.maybeRunEmbeddingBackfill(ledger, async () => { burned++; return { projected: 1, failed: 0 }; });
+            expect(r2.ran).toBe(false);
+            expect(r2.reason).toContain('reserved for live writes');
+            expect(burned).toBe(0);
+            expect(ledger.status('gemini', 'gemini-embedding-001').used).toBe(9);
+        } finally {
+            delete process.env.QUOTA_DAILY_BUDGET_GEMINI_GEMINI_EMBEDDING_001;
+        }
+    });
+
     it('quota gate: ledger blocks honestly when the local daily budget is spent, without burning calls', async () => {
         const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'native-quota-'));
         process.env.QUOTA_DAILY_BUDGET_GEMINI_GEMINI_EMBEDDING_001 = '1';
@@ -119,6 +181,9 @@ describe('native pipeline recovery', () => {
             expect(open.length).toBeGreaterThan(0);
 
             const fresh = new QuotaLedger(path.join(tmp, 'fresh.json'));
+            // Governor: with the reserve (20% of budget) a 1-unit budget has
+            // zero backfill headroom; a realistic budget reopens the pass.
+            process.env.QUOTA_DAILY_BUDGET_GEMINI_GEMINI_EMBEDDING_001 = '10';
             const ok = await continuum.maybeRunEmbeddingBackfill(fresh, async () => ({ projected: 3, failed: 0 }));
             expect(ok.ran).toBe(true);
             expect(ok.projected).toBe(3);
