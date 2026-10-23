@@ -1164,7 +1164,7 @@ export const generateEmbedding = async (text: string): Promise<number[] | null> 
  * engine). Callers that persist or query vectors must use this so write and
  * read identities can never silently diverge.
  */
-export const generateEmbeddingWithIdentity = async (text: string, opts?: { allowFallbackIdentity?: boolean }): Promise<{ vector: number[]; identity: EmbeddingIdentity } | null> => {
+export const generateEmbeddingWithIdentity = async (text: string, opts?: { allowFallbackIdentity?: boolean; preReserved?: boolean }): Promise<{ vector: number[]; identity: EmbeddingIdentity } | null> => {
     // Memory-persistence callers pass allowFallbackIdentity:false: a vector from
     // a DIFFERENT model must never be silently substituted into the canonical
     // memory index (one identity space per collection). Strict mode returns null
@@ -1202,7 +1202,11 @@ export const generateEmbeddingWithIdentity = async (text: string, opts?: { allow
             const localVector = await localEmbeddingService.getEmbedding(text);
             return localVector ? { vector: localVector, identity: LOCAL_EMBEDDING_IDENTITY } : null;
         }
-        const qPrimary = quotaLedger.recordAttempt('gemini', DEFAULT_GEMINI_EMBEDDING_MODEL);
+        // preReserved: caller (backfill governor) already counted this
+        // attempt atomically; recording again would double-count.
+        const qPrimary = opts?.preReserved
+            ? quotaLedger.status('gemini', DEFAULT_GEMINI_EMBEDDING_MODEL)
+            : quotaLedger.recordAttempt('gemini', DEFAULT_GEMINI_EMBEDDING_MODEL);
         if (!qPrimary.allowed) {
             console.warn(`[GeminiService] QUOTA_BUDGET_EXCEEDED: local daily budget for gemini:${DEFAULT_GEMINI_EMBEDDING_MODEL} spent (${qPrimary.used}/${qPrimary.budget} attempts, day ${qPrimary.day}). Degrading honestly until quota reset.`);
             if (!allowFallbackIdentity) return null;
