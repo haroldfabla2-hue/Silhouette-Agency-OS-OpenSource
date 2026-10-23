@@ -24,11 +24,15 @@ router.get('/agents', (req, res) => orchestratorController.getAgents(req, res));
 // [LEDGER-INTEGRITY] Explicit, attributed reconciliation for durable
 // abandoned-step uncertainty (writer gone, partial effects uncertain).
 // The retry gate blocks new plans until this attestation exists.
+// AuthN/Z is inherited from the existing authMiddleware (all /v1 routes);
+// attribution comes from the authenticated principal (session user or the
+// master-token identity), role CREATOR - never from the request body.
 router.post('/tasks/reconcile-abandoned', async (req, res) => {
     try {
-        const { reconcileAbandonedStepEffects } = await import('../../../services/execution/taskLedger');
-        const { planId, stepOrder, reconciledBy, note } = req.body ?? {};
-        const row = reconcileAbandonedStepEffects(String(planId ?? ''), Number(stepOrder), String(reconciledBy ?? ''), String(note ?? ''));
+        const { reconcileAbandonedStepEffects, reconcileAttributionFor } = await import('../../../services/execution/taskLedger');
+        const attributedTo = reconcileAttributionFor((req as any).user);
+        const { planId, stepOrder, note } = req.body ?? {};
+        const row = reconcileAbandonedStepEffects(String(planId ?? ''), Number(stepOrder), attributedTo, String(note ?? ''));
         res.json({ ok: true, task: row });
     } catch (e: any) {
         res.status(e?.statusCode ?? 500).json({ ok: false, error: e?.message });

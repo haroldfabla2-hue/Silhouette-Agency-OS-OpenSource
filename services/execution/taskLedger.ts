@@ -203,6 +203,21 @@ export function getUnresolvedAbandonedTaskRows(): any[] {
 }
 
 /**
+ * [LEDGER-INTEGRITY] Resolve the attribution for an explicit
+ * reconciliation from the AUTHENTICATED PRINCIPAL (set by the existing
+ * authMiddleware: session user, or the master-token system identity).
+ * The attestation changes how the system treats uncertain state, so it
+ * requires the same level the platform grants to "can modify Silhouette
+ * itself": role CREATOR. The request body is never an identity source.
+ */
+export function reconcileAttributionFor(principal: { id?: string; role?: string } | undefined | null): string {
+    if (!principal?.id || principal.role !== 'CREATOR') {
+        throw Object.assign(new Error('CREATOR-level authenticated operator required for abandoned-step reconciliation'), { statusCode: 403 });
+    }
+    return `user:${principal.id}`;
+}
+
+/**
  * [LEDGER-INTEGRITY] Explicit, attributed reconciliation of an abandoned
  * step whose writer is gone but whose PARTIAL EFFECTS are uncertain. An
  * auditable row alone does not make a re-run safe; a human (or operator

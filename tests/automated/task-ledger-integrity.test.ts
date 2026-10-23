@@ -14,7 +14,7 @@ import os from 'os';
 import path from 'path';
 import crypto from 'crypto';
 import { sqliteService } from '../../services/sqliteService';
-import { markTaskDone, reapStaleTasks, recordLateSettlement, reconcileAbandonedStepEffects, getUnresolvedAbandonedTaskRows, taskIdFor } from '../../services/execution/taskLedger';
+import { markTaskDone, reapStaleTasks, recordLateSettlement, reconcileAbandonedStepEffects, reconcileAttributionFor, getUnresolvedAbandonedTaskRows, taskIdFor } from '../../services/execution/taskLedger';
 import { noteStepTimedOut, clearAbandonedStep, getAbandonedStepsInFlight } from '../../services/planExecutor';
 
 const PLAN = 'plan_testledger';
@@ -167,5 +167,15 @@ describe('task ledger integrity', () => {
         expect(r.data.abandonedInFlight).toBeUndefined();
         // reconciling again is an honest 409, not a silent no-op
         expect(() => reconcileAbandonedStepEffects(PLAN, 13, 'alberto', 'again')).toThrow(/no abandoned-in-flight uncertainty/);
+    });
+
+    it('attribution comes from the authenticated principal (CREATOR), never the body', () => {
+        expect(reconcileAttributionFor({ id: 'system:api-token', role: 'CREATOR' })).toBe('user:system:api-token');
+        expect(reconcileAttributionFor({ id: 'u1', role: 'CREATOR' })).toBe('user:u1');
+        expect(() => reconcileAttributionFor({ id: 'u2', role: 'ADMIN' })).toThrow(/CREATOR-level/);
+        expect(() => reconcileAttributionFor({ id: 'u3', role: 'USER' })).toThrow(/CREATOR-level/);
+        expect(() => reconcileAttributionFor(undefined)).toThrow(/CREATOR-level/);
+        expect(() => reconcileAttributionFor(null)).toThrow(/CREATOR-level/);
+        expect(() => reconcileAttributionFor({})).toThrow(/CREATOR-level/);
     });
 });
