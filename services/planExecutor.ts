@@ -23,7 +23,7 @@ import { SystemProtocol, CommunicationLevel, AgentStatus, AgentRoleType, AgentTi
 import { stepDeclaresFileWork, durableFileGrant } from './tools/toolSelection'; // [W3]
 import { evaluatePlanHonesty } from './execution/stepHonesty'; // [W3]
 import { collectWrittenArtifacts } from './execution/artifactLedger'; // [W3]
-import { recordPlanTasks, markTaskRunning, markTaskDone, closeOpenTasks } from './execution/taskLedger'; // [PR-1] [PR-4c: closeOpenTasks]
+import { recordPlanTasks, markTaskRunning, markTaskDone, closeOpenTasks, recordLateSettlement } from './execution/taskLedger'; // [PR-1] [PR-4c: closeOpenTasks] [LEDGER-INTEGRITY: recordLateSettlement]
 import { extractExecuteMarkers, normalizeToolName } from './tools/execMarker'; // [PR-I]
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -95,7 +95,7 @@ class PlanExecutor {
             // 2. Execute the step with all homeostatic checks
             try {
                 markTaskRunning(plan.id, step); // [PR-1]
-                const result = await this.withStepTimeout(step, this.executeStep(step, plan, results));
+                const result = await this.withStepTimeout(plan.id, step, this.executeStep(step, plan, results));
                 markTaskDone(plan.id, step, result); // [PR-1]
                 results.set(step.order, result);
 
@@ -197,11 +197,13 @@ class PlanExecutor {
     // honestly instead. Env-overridable; the 30min default is ~5x the
     // slowest observed legitimate step (382s). A timed-out step's
     // background promise is ignored when it eventually settles.
-    private withStepTimeout(step: PlanStep, work: Promise<StepResult>): Promise<StepResult> {
+    private withStepTimeout(planId: string, step: PlanStep, work: Promise<StepResult>): Promise<StepResult> {
         const timeoutMs = Number(process.env.SILHOUETTE_STEP_TIMEOUT_MS ?? 30 * 60 * 1000);
         let timer: NodeJS.Timeout | undefined;
+        let timedOut = false;
         const timeout = new Promise<StepResult>((resolve) => {
             timer = setTimeout(() => {
+                timedOut = true;
                 console.error(`[PLAN_EXECUTOR] Step ${step.order} timed out after ${timeoutMs}ms - failing honestly`);
                 resolve({
                     stepOrder: step.order,
@@ -214,6 +216,22 @@ class PlanExecutor {
                 } as StepResult);
             }, timeoutMs);
             if (typeof timer.unref === 'function') timer.unref();
+        });
+        // [LEDGER-INTEGRITY] Containment is reconciliation, not cancellation:
+        // the step chain holds no abort handle, so when the abandoned work
+        // eventually settles, its outcome is RECORDED on the ledger row
+        // (lateSettlement) - late artifacts/writes stay visible for audit
+        // and for de-duplicating a re-run. Step side effects are confined
+        // to the audited jailed write roots and the memory pipeline;
+        // world-exiting actions are unreachable from a step.
+        work.then(late => {
+            if (!timedOut) return;
+            console.warn(`[PLAN_EXECUTOR] Timed-out step ${step.order} of ${planId} settled late (success=${late?.success}) - reconciling ledger row`);
+            recordLateSettlement(planId, step.order, late);
+        }).catch((e: any) => {
+            if (!timedOut) return;
+            console.warn(`[PLAN_EXECUTOR] Timed-out step ${step.order} of ${planId} rejected late: ${e?.message}`);
+            recordLateSettlement(planId, step.order, { stepOrder: step.order, success: false, error: `late rejection: ${e?.message}` });
         });
         return Promise.race([work, timeout]).finally(() => { if (timer) clearTimeout(timer); });
     }

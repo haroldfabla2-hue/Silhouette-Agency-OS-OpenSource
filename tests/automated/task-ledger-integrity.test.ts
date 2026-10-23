@@ -10,7 +10,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { sqliteService } from '../../services/sqliteService';
-import { markTaskDone, reapStaleTasks, taskIdFor } from '../../services/execution/taskLedger';
+import { markTaskDone, reapStaleTasks, recordLateSettlement, taskIdFor } from '../../services/execution/taskLedger';
 
 const PLAN = 'plan_testledger';
 
@@ -32,14 +32,25 @@ function row(id: string) {
 }
 
 describe('task ledger integrity', () => {
-    it('markTaskDone persists output (truncated at 4000) and outputChars', () => {
+    it('markTaskDone persists the COMPLETE output (no lossy preview) and outputChars', () => {
         const long = 'x'.repeat(5000);
         markTaskDone(PLAN, step(1), { stepOrder: 1, success: true, output: long, artifacts: [], tokensUsed: 3, executionTimeMs: 10 });
         const r = row(taskIdFor(PLAN, 1))!;
         expect(r.status).toBe('completed');
-        expect(r.data.output.length).toBe(4000);
+        expect(r.data.output).toBe(long);
         expect(r.data.outputChars).toBe(5000);
+        expect(r.data.outputTruncated).toBeUndefined();
         expect(r.data.evidence).toBeUndefined();
+    });
+
+    it('only a pathological >2MB output hits the loud hard ceiling', () => {
+        const huge = 'y'.repeat(2_100_000);
+        markTaskDone(PLAN, step(8), { stepOrder: 8, success: true, output: huge, artifacts: [], tokensUsed: 1, executionTimeMs: 1 });
+        const r = row(taskIdFor(PLAN, 8))!;
+        expect(r.data.outputTruncated).toBe(true);
+        expect(r.data.outputChars).toBe(2_100_000);
+        expect(r.data.output).toContain('OUTPUT HARD CEILING');
+        expect(r.data.output.length).toBeLessThan(2_000_100);
     });
 
     it('text-only completion keeps completed status with its output as evidence', () => {
@@ -79,5 +90,27 @@ describe('task ledger integrity', () => {
         expect(old.data.error).toContain('reaped: test cutoff');
         expect(row(taskIdFor(PLAN, 6))!.status).toBe('running');
         expect(row(taskIdFor(PLAN, 7))!.status).toBe('completed');
+    });
+
+    it('running-only sweep (Janitor mode) never touches a pending wait', () => {
+        const now = Date.now();
+        sqliteService.upsertTask({ id: taskIdFor(PLAN, 9), description: 'old pending wait', assigned_to: 'a', status: 'pending', data: { planId: PLAN, stepOrder: 9 } });
+        sqliteService.upsertTask({ id: taskIdFor(PLAN, 10), description: 'old running', assigned_to: 'a', status: 'running', data: { planId: PLAN, stepOrder: 10 } });
+        (sqliteService as any).db.prepare('UPDATE tasks SET updated_at = ? WHERE id IN (?,?)').run(now - 60000, taskIdFor(PLAN, 9), taskIdFor(PLAN, 10));
+        const reaped = reapStaleTasks(now - 1000, 'janitor cutoff', ['running']);
+        expect(reaped).toBe(1);
+        expect(row(taskIdFor(PLAN, 10))!.status).toBe('failed');
+        expect(row(taskIdFor(PLAN, 9))!.status).toBe('pending'); // legitimate wait preserved
+    });
+
+    it('recordLateSettlement appends evidence, keeps the timeout verdict', () => {
+        markTaskDone(PLAN, step(11), { stepOrder: 11, success: false, output: '', error: 'step timeout after 1800000ms', tokensUsed: 0, executionTimeMs: 1800000 });
+        recordLateSettlement(PLAN, 11, { stepOrder: 11, success: true, output: 'late result text', artifacts: ['workspace/late.txt'], tokensUsed: 9, executionTimeMs: 2000000 });
+        const r = row(taskIdFor(PLAN, 11))!;
+        expect(r.status).toBe('failed'); // verdict stands
+        expect(r.data.error).toContain('step timeout');
+        expect(r.data.lateSettlement.success).toBe(true);
+        expect(r.data.lateSettlement.output).toBe('late result text');
+        expect(r.data.lateSettlement.artifacts).toEqual(['workspace/late.txt']);
     });
 });

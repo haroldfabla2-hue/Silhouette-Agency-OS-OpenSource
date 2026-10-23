@@ -996,9 +996,10 @@ export class SqliteService {
 
     /** [LEDGER-INTEGRITY] Open ledger rows (pending/running) untouched since
      *  `beforeMs` - candidates for the stale-task reaper. */
-    public getOpenTasksBefore(beforeMs: number): any[] {
-        const stmt = this.db.prepare(`SELECT * FROM tasks WHERE status IN ('pending','running') AND updated_at < ? ORDER BY updated_at ASC`);
-        return stmt.all(beforeMs) as any[];
+    public getOpenTasksBefore(beforeMs: number, statuses: string[] = ['pending', 'running']): any[] {
+        const marks = statuses.map(() => '?').join(',');
+        const stmt = this.db.prepare(`SELECT * FROM tasks WHERE status IN (${marks}) AND updated_at < ? ORDER BY updated_at ASC`);
+        return stmt.all(...statuses, beforeMs) as any[];
     }
 
     public close(): void {

@@ -66,9 +66,23 @@ export function markTaskRunning(planId: string, step: PlanStep): void {
     }
 }
 
-/** Persisted-output cap: enough to audit a completion, bounded so a
- *  runaway step cannot bloat the ledger row. */
-const MAX_PERSISTED_OUTPUT_CHARS = 4000;
+/** Outputs are persisted COMPLETE: the ledger is the audit record and a
+ *  preview would silently lose work product. Generation-bound LLM outputs
+ *  (planner max ~8K tokens, ~32KB) never approach this ceiling; it exists
+ *  only to stop a pathological runaway (e.g. a tool stuffing whole files
+ *  into an output) from bloating the SQLite row. Above it, the head is
+ *  kept with an explicit omission marker and outputTruncated:true -
+ *  loudly, never a silent preview. */
+const OUTPUT_HARD_CEILING_CHARS = 2_000_000;
+
+function persistOutputForLedger(output: string): { text: string; truncated: boolean } {
+    if (output.length <= OUTPUT_HARD_CEILING_CHARS) return { text: output, truncated: false };
+    const head = output.substring(0, OUTPUT_HARD_CEILING_CHARS - 200);
+    return {
+        text: `${head}\n[OUTPUT HARD CEILING: ${output.length - head.length} chars omitted - generation-bound outputs never reach this; indicates a runaway step]`,
+        truncated: true
+    };
+}
 
 export function markTaskDone(planId: string, step: PlanStep, result: StepOutcomeLike): void {
     try {
@@ -95,8 +109,9 @@ export function markTaskDone(planId: string, step: PlanStep, result: StepOutcome
                 agentRole: step.agentRole,
                 finishedAt: Date.now(),
                 error: result.error,
-                output: output.substring(0, MAX_PERSISTED_OUTPUT_CHARS),
+                output: persistOutputForLedger(output).text,
                 outputChars: output.length,
+                ...(persistOutputForLedger(output).truncated ? { outputTruncated: true } : {}),
                 artifacts,
                 tokensUsed: result.tokensUsed ?? 0,
                 executionTimeMs: result.executionTimeMs ?? 0,
@@ -117,10 +132,10 @@ export function markTaskDone(planId: string, step: PlanStep, result: StepOutcome
  * never deleted, never silently completed; the mission can be re-run.
  * Returns the number of reaped rows.
  */
-export function reapStaleTasks(beforeMs: number, reason: string): number {
+export function reapStaleTasks(beforeMs: number, reason: string, statuses: Array<'pending' | 'running'> = ['pending', 'running']): number {
     let reaped = 0;
     try {
-        const rows = sqliteService.getOpenTasksBefore(beforeMs);
+        const rows = sqliteService.getOpenTasksBefore(beforeMs, statuses);
         for (const row of rows) {
             try {
                 let data: any = {};
@@ -142,6 +157,41 @@ export function reapStaleTasks(beforeMs: number, reason: string): number {
         console.warn(`[TASK_LEDGER] stale sweep failed (non-blocking): ${e?.message}`);
     }
     return reaped;
+}
+
+/**
+ * [LEDGER-INTEGRITY] Reconcile a TIMED-OUT step that settled late. The
+ * timeout verdict stands (status stays as recorded); the late outcome is
+ * appended as evidence so no effect of the abandoned work vanishes: late
+ * artifacts/output become visible for audit and for de-duplicating a
+ * re-run. A step has no abort handle, so reconciliation - not
+ * cancellation - is the honest containment. Step side effects are
+ * confined to the audited jailed write roots and the memory pipeline;
+ * world-exiting actions (PR, deploy, publish) are gated elsewhere and
+ * unreachable from a step.
+ */
+export function recordLateSettlement(planId: string, stepOrder: number, late: StepOutcomeLike): void {
+    try {
+        const id = taskIdFor(planId, stepOrder);
+        const row = sqliteService.getTasksByPlan(planId).find((t: any) => t.id === id);
+        if (!row) return;
+        let data: any = {};
+        try { data = row.data ? JSON.parse(row.data) : {}; } catch { data = {}; }
+        const persisted = persistOutputForLedger(late.output ?? '');
+        data.lateSettlement = {
+            finishedAt: Date.now(),
+            success: late.success === true,
+            outputChars: (late.output ?? '').length,
+            output: persisted.text,
+            ...(persisted.truncated ? { outputTruncated: true } : {}),
+            error: late.error,
+            artifacts: late.artifacts ?? []
+        };
+        sqliteService.upsertTask({ id, description: row.description, assigned_to: row.assigned_to, status: row.status, data });
+        console.log(`[TASK_LEDGER] Late settlement reconciled for step ${stepOrder} of ${planId} (success=${late.success === true})`);
+    } catch (e: any) {
+        console.warn(`[TASK_LEDGER] late settlement record failed (non-blocking): ${e?.message}`);
+    }
 }
 
 /**

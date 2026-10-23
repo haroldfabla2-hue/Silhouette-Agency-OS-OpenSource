@@ -60,8 +60,13 @@ const server = app.listen(PORT, HOST, async () => {
 
     // [LEDGER-INTEGRITY] Close ledger rows left open by previous process
     // lives: a restart strands pending/running rows whose executor is
-    // gone; they are failed honestly (never deleted) so the ledger never
-    // shows eternal "running" for dead work.
+    // gone. Signal verified in code: these rows are unambiguous orphans -
+    // the only executor that could advance them ran in the dead process,
+    // and mission resume (workflowEngine.executeMissionBuild) always
+    // generates a NEW planId via planGenerator.create and overwrites
+    // pipelineData.planId, so no resume path ever re-drives a pre-boot
+    // row. They are failed honestly (never deleted); re-running the
+    // mission is the recovery path.
     try {
         const { reapStaleTasks } = await import('../services/execution/taskLedger');
         reapStaleTasks(PROCESS_STARTED_AT, 'executor lost: process restart (ledger row predates this boot)');
