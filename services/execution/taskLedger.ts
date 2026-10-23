@@ -24,6 +24,10 @@ export interface StepOutcomeLike {
     artifacts?: string[];
     tokensUsed?: number;
     executionTimeMs?: number;
+    /** [LEDGER-INTEGRITY] Set when this outcome is a TIMEOUT verdict: the
+     *  step's background promise may still be alive. Persisted durably so
+     *  the uncertainty survives restarts; cleared by recordLateSettlement. */
+    abandonedInFlight?: number;
 }
 
 export function taskIdFor(planId: string, order: number): string {
@@ -141,6 +145,7 @@ export function markTaskDone(planId: string, step: PlanStep, result: StepOutcome
                 artifacts,
                 tokensUsed: result.tokensUsed ?? 0,
                 executionTimeMs: result.executionTimeMs ?? 0,
+                ...(result.abandonedInFlight ? { abandonedInFlight: { timedOutAt: result.abandonedInFlight } } : {}),
                 ...(noEvidence ? { evidence: 'none' } : {})
             }
         });
@@ -204,6 +209,9 @@ export function recordLateSettlement(planId: string, stepOrder: number, late: St
         let data: any = {};
         try { data = row.data ? JSON.parse(row.data) : {}; } catch { data = {}; }
         const persisted = persistOutputForLedger(id, late.output ?? '');
+        // The uncertainty is resolved: drop the durable abandoned flag.
+        delete data.abandonedInFlight;
+        data.reconciledAt = Date.now();
         data.lateSettlement = {
             finishedAt: Date.now(),
             success: late.success === true,

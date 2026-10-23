@@ -69,17 +69,27 @@ describe('task ledger integrity', () => {
         }
     });
 
-    it('retry gate: an unexpired abandoned step blocks, settlement clears, cap expires', () => {
+    it('retry gate: NO time-based unblock; only settlement clears (confirmed termination)', () => {
         const p = 'plan_gate_test';
         noteStepTimedOut(p, step(1) as any);
+        // still blocked arbitrarily later - elapsed time proves nothing about a live promise
         expect(getAbandonedStepsInFlight().map(s => s.planId)).toContain(p);
         // settlement clears the entry and unblocks a retry
         clearAbandonedStep(p, 1);
         expect(getAbandonedStepsInFlight().map(s => s.planId)).not.toContain(p);
-        // an entry past the hard cap is expired (loudly) instead of blocking forever
-        noteStepTimedOut(p, step(2) as any);
-        const fiveHoursAhead = Date.now() + 5 * 60 * 60 * 1000;
-        expect(getAbandonedStepsInFlight(fiveHoursAhead).map(s => s.planId)).not.toContain(p);
+    });
+
+    it('abandonment is durable on the row; late settlement clears flag and sets reconciledAt', () => {
+        markTaskDone(PLAN, step(12), { stepOrder: 12, success: false, output: '', error: 'step timeout after 1800000ms', tokensUsed: 0, executionTimeMs: 1800000, abandonedInFlight: 1792780000000 });
+        const before = row(taskIdFor(PLAN, 12))!;
+        expect(before.status).toBe('failed');
+        expect(before.data.abandonedInFlight.timedOutAt).toBe(1792780000000); // survives restarts (SQLite)
+        recordLateSettlement(PLAN, 12, { stepOrder: 12, success: true, output: 'late', tokensUsed: 1, executionTimeMs: 2000000 });
+        const after = row(taskIdFor(PLAN, 12))!;
+        expect(after.data.abandonedInFlight).toBeUndefined(); // uncertainty resolved
+        expect(after.data.reconciledAt).toBeTypeOf('number');
+        expect(after.data.lateSettlement.output).toBe('late');
+        expect(after.status).toBe('failed'); // timeout verdict preserved
     });
 
     it('text-only completion keeps completed status with its output as evidence', () => {

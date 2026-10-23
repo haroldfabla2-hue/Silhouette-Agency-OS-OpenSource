@@ -42,18 +42,24 @@ export interface StepResult {
     artifacts?: string[];
 }
 
-// [LEDGER-INTEGRITY] Timed-out steps whose background promise is still
-// alive. While any unexpired entry exists, execute() refuses to start a
-// new plan: a retry running concurrently with the abandoned work could
-// write the same jailed files or duplicate memories. Settlement (recorded
-// via recordLateSettlement) clears the entry and unblocks retries. An
-// entry expires after SILHOUETTE_ABANDONED_STEP_CAP_MS (default 4h): a
-// promise alive that long is treated as dead, loudly, rather than
-// blocking work forever.
+// [LEDGER-INTEGRITY] Timed-out steps whose background promise may still
+// be alive. While ANY entry exists, execute() refuses to start a new
+// plan: a retry running concurrently with the abandoned work could
+// write the same jailed files or duplicate memories. There is NO
+// time-based unblock - elapsed time proves nothing about a live promise.
+// Exactly two exits, both confirmed terminations:
+//   1. The abandoned promise SETTLES: it is reconciled into the ledger
+//      (recordLateSettlement, verdict preserved) and the entry clears.
+//   2. The PROCESS DIES: an in-process promise cannot outlive its
+//      process, so a restart is confirmed termination of the writer.
+//      The ledger row keeps a durable abandonedInFlight flag (no
+//      lateSettlement) meaning "partial effects may exist" - auditable
+//      before any re-run. Explicit verifiable recovery for a never-
+//      settling step is therefore: restart the service, inspect the
+//      flagged row, re-run.
 interface AbandonedStep { planId: string; order: number; agentId: string; taskDescription: string; timedOutAt: number; }
 const abandonedInFlight = new Map<string, AbandonedStep>();
 const abandonedKey = (planId: string, order: number) => `${planId}:${order}`;
-const ABANDONED_STEP_CAP_MS = Number(process.env.SILHOUETTE_ABANDONED_STEP_CAP_MS ?? 4 * 60 * 60 * 1000);
 
 export function noteStepTimedOut(planId: string, step: PlanStep): void {
     abandonedInFlight.set(abandonedKey(planId, step.order), {
@@ -66,18 +72,9 @@ export function clearAbandonedStep(planId: string, order: number): void {
     abandonedInFlight.delete(abandonedKey(planId, order));
 }
 
-/** Live (unexpired) abandoned steps; expired ones are purged loudly. */
-export function getAbandonedStepsInFlight(now: number = Date.now()): AbandonedStep[] {
-    const live: AbandonedStep[] = [];
-    for (const [key, entry] of abandonedInFlight) {
-        if (now - entry.timedOutAt >= ABANDONED_STEP_CAP_MS) {
-            abandonedInFlight.delete(key);
-            console.error(`[PLAN_EXECUTOR] Abandoned step ${entry.order} of ${entry.planId} exceeded the ${ABANDONED_STEP_CAP_MS}ms cap without settling - treating its promise as dead (any late writes stay confined to the audited jail and reconcile via recordLateSettlement)`);
-            continue;
-        }
-        live.push(entry);
-    }
-    return live;
+/** Abandoned steps of THIS process still awaiting settlement. */
+export function getAbandonedStepsInFlight(): AbandonedStep[] {
+    return Array.from(abandonedInFlight.values());
 }
 
 export interface PlanExecutionResult {
@@ -115,13 +112,13 @@ class PlanExecutor {
         // concurrent execution could double-write jailed files/memories.
         const blocking = getAbandonedStepsInFlight();
         if (blocking.length > 0) {
-            const detail = blocking.map(b => `step ${b.order} of ${b.planId} ("${(b.taskDescription || '').substring(0, 80)}", timed out ${new Date(b.timedOutAt).toISOString()}, auto-expires ${new Date(b.timedOutAt + ABANDONED_STEP_CAP_MS).toISOString()})`).join('; ');
+            const detail = blocking.map(b => `step ${b.order} of ${b.planId} ("${(b.taskDescription || '').substring(0, 80)}", timed out ${new Date(b.timedOutAt).toISOString()})`).join('; ');
             console.error(`[PLAN_EXECUTOR] Refusing to start plan ${plan.id}: ${blocking.length} abandoned step(s) still in flight: ${detail}`);
             return {
                 planId: plan.id,
                 success: false,
                 steps: [],
-                finalOutput: `Blocked: ${blocking.length} timed-out step(s) from earlier work are still running in the background. Retry once they settle (their outcome is reconciled into the task ledger) or after they expire. Detail: ${detail}`,
+                finalOutput: `Blocked: ${blocking.length} timed-out step(s) from earlier work may still be running in the background. A retry is refused until confirmed termination: either the abandoned work settles (reconciled into the task ledger automatically) or the service restarts (a restart is confirmed death of in-process work; the ledger row keeps a durable abandonedInFlight flag so partial effects stay auditable). Detail: ${detail}`,
                 totalTokens: 0,
                 totalTimeMs: 0,
                 errors: [`abandoned steps in flight: ${detail}`]
@@ -269,7 +266,8 @@ class PlanExecutor {
                     success: false,
                     tokensUsed: 0,
                     executionTimeMs: timeoutMs,
-                    error: `step timeout after ${timeoutMs}ms`
+                    error: `step timeout after ${timeoutMs}ms`,
+                    abandonedInFlight: Date.now()
                 } as StepResult);
             }, timeoutMs);
             if (typeof timer.unref === 'function') timer.unref();
