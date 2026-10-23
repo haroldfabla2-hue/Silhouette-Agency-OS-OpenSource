@@ -5,7 +5,9 @@ import { lancedbService } from './lancedbService';
 import { createHash } from 'node:crypto';
 import { fuseMemories, inScope, scopeSql, type MemoryScope } from './memoryRetrieval';
 import { activation, selectSleepBatch } from './memoryCognition';
-import { memoryTransitions } from './memoryTransitions';
+import { memoryTransitions, isOutstandingTransition } from './memoryTransitions';
+import { quotaLedger, QuotaLedger } from './quotaLedger';
+import { DEFAULT_GEMINI_EMBEDDING_MODEL } from './llm/defaultModels';
 import { introspection } from './introspectionEngine';
 import { redisClient } from './redisClient';
 import * as fs from 'fs/promises';
@@ -22,6 +24,12 @@ const SNAPSHOT_PATH = path.join(process.cwd(), 'data', 'memory_snapshot.json');
 // L2: LanceDB MEDIUM (Persistent - Frequently accessed)
 // L3: LanceDB LONG (Archived)
 // L4: Qdrant DEEP (Semantic vectors)
+
+/** Positive integer from env with a documented default (NaN/<=0 falls back). */
+function positiveIntEnv(name: string, fallback: number): number {
+    const v = Number(process.env[name]);
+    return Number.isFinite(v) && v > 0 ? Math.floor(v) : fallback;
+}
 
 class ContinuumMemorySystem {
     // === UNIFIED WORKING MEMORY (RAM - Fast Access) ===
@@ -79,13 +87,38 @@ class ContinuumMemorySystem {
         await this.saveSnapshot();
     }
 
+    // [NATIVE-RECOVERY] Structured failure reporting: promote failures used to
+    // reach console ONLY, so the self-healing channel (incident registry, read
+    // every 15 min) never saw the 969k-failure episode. One incident per
+    // episode (registry dedupes + bumps occurrences); recovery resolves the
+    // SAME incident. 3 consecutive failures debounce transients.
+    private async notePromoteFailure(nodeId: string, error: unknown): Promise<void> {
+        this.consecutivePromoteFailures++;
+        console.error(`[CONTINUUM] Failed to promote ${nodeId}`, error);
+        if (this.consecutivePromoteFailures >= 3) {
+            try {
+                const { incidentRegistry } = await import('./incidentRegistry');
+                incidentRegistry.recordIncident('continuum-promote', 'error', 'memory promotion failing',
+                    `consecutive promote failures: ${this.consecutivePromoteFailures}; last error: ${(error as any)?.message ?? String(error)}`);
+            } catch (e) { console.warn('[CONTINUUM] incident reporting failed (promotion failure still logged above):', e); }
+        }
+    }
+
+    private async notePromoteSuccess(): Promise<void> {
+        this.consecutivePromoteFailures = 0;
+        try {
+            const { incidentRegistry } = await import('./incidentRegistry');
+            incidentRegistry.resolveIncidents('continuum-promote', 'error');
+        } catch { /* reporting must never break memory flow */ }
+    }
+
     private async tickMedium(now: number) {
         const toPromote = this.working.filter(node =>
             now - node.timestamp > 900000 || node.accessCount > 10 || node.importance >= 0.95
         );
         for (const node of toPromote) {
-            try { await this.promoteWorking(node); }
-            catch (e) { console.error(`[CONTINUUM] Failed to promote ${node.id}`, e); }
+            try { await this.promoteWorking(node); await this.notePromoteSuccess(); }
+            catch (e) { await this.notePromoteFailure(node.id, e); }
         }
     }
 
@@ -98,6 +131,14 @@ class ContinuumMemorySystem {
     private readonly HIPPOCAMPUS_CAPACITY = 50; // Trigger dream when full
     private readonly CACHE_TTL = 30000; // 30 Seconds
     private readonly RAM_HARD_CAP = 600; // [FIX 2026-02] Hard limit — force-consolidate above this
+
+    // [NATIVE-RECOVERY] Self-recovery cadences ride the EXISTING maintenance
+    // tick (no new timers). Env-tunable; defaults documented here.
+    private readonly TRANSITION_RECONCILE_INTERVAL_MS = positiveIntEnv('CONTINUUM_RECONCILE_INTERVAL_MS', 15 * 60 * 1000);
+    private readonly EMBEDDING_BACKFILL_INTERVAL_MS = positiveIntEnv('CONTINUUM_EMBEDDING_BACKFILL_INTERVAL_MS', 60 * 60 * 1000);
+    private lastTransitionReconcile = 0;
+    private lastEmbeddingBackfill = 0;
+    private consecutivePromoteFailures = 0;
 
     constructor() {
         // No hydration needed for LanceDB, it's always on disk.
@@ -195,8 +236,15 @@ class ContinuumMemorySystem {
         }
     }
 
-    public async reconcileTransitions(): Promise<void> {
+    /**
+     * Boot scope 'full' preserves the historical verify-everything pass.
+     * Periodic scope 'pending' skips COMMITTED entries: the journal is eternal
+     * (nothing is deleted), so re-verifying all of history every cycle would
+     * grow without bound - outstanding entries are the only work remaining.
+     */
+    public async reconcileTransitions(scope: 'full' | 'pending' = 'full'): Promise<void> {
         for (const entry of await memoryTransitions.pending()) {
+            if (scope === 'pending' && !isOutstandingTransition(entry)) continue;
             try {
                 if (entry.state !== 'COMMITTED') {
                     // Keep a RAM source until the destination is independently verified.
@@ -675,6 +723,23 @@ class ContinuumMemorySystem {
             if (now % 60000 < 1000) await this.tickMedium(now);
             if (now % 300000 < 1000) await this.tickLong(now); // Check every 5 mins for archival
             if (now % 600000 < 1000) await this.tickDeep(now); // Check every 10 mins for Deep Sleep
+
+            // [NATIVE-RECOVERY] Periodic journal reconcile: boot used to be the
+            // ONLY replay pass - a healthy long-lived process never recovered.
+            if (now - this.lastTransitionReconcile >= this.TRANSITION_RECONCILE_INTERVAL_MS) {
+                this.lastTransitionReconcile = now;
+                try { await this.reconcileTransitions('pending'); }
+                catch (e) { console.error('[CONTINUUM] Periodic transition reconcile failed:', e); }
+            }
+
+            // [NATIVE-RECOVERY] Native quota-gated embedding backfill. The
+            // method existed with ZERO in-repo callers (only external scripts
+            // ever ran it) - pending embeddings accumulated structurally.
+            if (now - this.lastEmbeddingBackfill >= this.EMBEDDING_BACKFILL_INTERVAL_MS) {
+                this.lastEmbeddingBackfill = now;
+                try { await this.maybeRunEmbeddingBackfill(); }
+                catch (e) { console.error('[CONTINUUM] Embedding backfill pass failed:', e); }
+            }
         } catch (e) {
             console.error("[CONTINUUM] Maintenance Error", e);
         } finally {
@@ -1058,6 +1123,34 @@ class ContinuumMemorySystem {
         return fuseMemories(lists.map(list => list.sort((a, b) => activation(b).score - activation(a).score)), query);
     }
     /**
+     * [NATIVE-RECOVERY] Native embedding-backfill scheduler, gated on the
+     * OBSERVABLE quota ledger (same mechanism as PR-K text generation; budgets
+     * come from env config, not guessed here). Blocked state is reported
+     * honestly as an incident instead of burning provider calls; recovery
+     * resolves the same incident. No notification leaves the system.
+     */
+    public async maybeRunEmbeddingBackfill(
+        ledger: QuotaLedger = quotaLedger,
+        runBackfill: () => Promise<{ projected: number; failed: number }> = () => this.backfillMemoryEmbeddings(),
+    ): Promise<{ ran: boolean; reason?: string; projected?: number; failed?: number }> {
+        const status = ledger.status('gemini', DEFAULT_GEMINI_EMBEDDING_MODEL);
+        const { incidentRegistry } = await import('./incidentRegistry');
+        if (!status.allowed) {
+            incidentRegistry.recordIncident('continuum-embeddings', 'error', 'embedding backfill blocked by quota budget',
+                `local daily budget spent for gemini:${DEFAULT_GEMINI_EMBEDDING_MODEL} (${status.used}/${status.budget} attempts, day ${status.day}). Pending embeddings are retained and retried after quota reset.`);
+            return { ran: false, reason: `quota budget spent (${status.used}/${status.budget}, day ${status.day})` };
+        }
+        const result = await runBackfill();
+        if (result.projected > 0) {
+            incidentRegistry.resolveIncidents('continuum-embeddings', 'error');
+        } else if (result.failed > 0) {
+            incidentRegistry.recordIncident('continuum-embeddings', 'error', 'embedding backfill pass failed',
+                'provider rejected every attempt this pass; pending rows retained for the next pass');
+        }
+        return { ran: true, ...result };
+    }
+
+    /**
      * Backfill vector projections for canonical memories still in
      * EMBEDDING_PENDING state (every memory written before per-identity
      * projections existed). Uses the SAME resolver as the live write path, so
@@ -1071,7 +1164,7 @@ class ContinuumMemorySystem {
         let projected = 0, failed = 0;
         for (const node of pending) {
             try {
-                const embedded = await generateEmbeddingWithIdentity(node.content);
+                const embedded = await generateEmbeddingWithIdentity(node.content, { allowFallbackIdentity: false });
                 if (!embedded) { failed++; continue; }
                 await lancedbService.projectEmbedding(node, embedded.vector, embedded.identity);
                 projected++;
@@ -1093,8 +1186,8 @@ class ContinuumMemorySystem {
         // unhandled rejection (prod FATAL) nor abort the remaining consolidations.
         let failed = 0;
         for (const node of [...this.working]) {
-            try { await this.promoteWorking(node, ['CONSOLIDATED']); count++; }
-            catch (error) { failed++; console.error(`[CONTINUUM] Consolidation failed for ${node.id}; source remains in RAM:`, error); }
+            try { await this.promoteWorking(node, ['CONSOLIDATED']); count++; await this.notePromoteSuccess(); }
+            catch (error) { failed++; console.error(`[CONTINUUM] Consolidation failed for ${node.id}; source remains in RAM:`, error); await this.notePromoteFailure(node.id, error); }
         }
 
         console.log(`[CONTINUUM] 🌪️ Consolidated ${count} memories to L3 (LanceDB). ${failed > 0 ? `⚠️ ${failed} failed (sources kept in RAM).` : 'RAM is empty.'}`);
