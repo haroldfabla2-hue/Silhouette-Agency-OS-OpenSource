@@ -14,7 +14,7 @@ import os from 'os';
 import path from 'path';
 import crypto from 'crypto';
 import { sqliteService } from '../../services/sqliteService';
-import { markTaskDone, reapStaleTasks, recordLateSettlement, taskIdFor } from '../../services/execution/taskLedger';
+import { markTaskDone, reapStaleTasks, recordLateSettlement, reconcileAbandonedStepEffects, getUnresolvedAbandonedTaskRows, taskIdFor } from '../../services/execution/taskLedger';
 import { noteStepTimedOut, clearAbandonedStep, getAbandonedStepsInFlight } from '../../services/planExecutor';
 
 const PLAN = 'plan_testledger';
@@ -151,5 +151,21 @@ describe('task ledger integrity', () => {
         expect(r.data.lateSettlement.success).toBe(true);
         expect(r.data.lateSettlement.output).toBe('late result text');
         expect(r.data.lateSettlement.artifacts).toEqual(['workspace/late.txt']);
+    });
+
+    it('durable uncertainty blocks until EXPLICIT attributed reconciliation (restart is not recovery)', () => {
+        // simulate a post-restart state: failed row, dead writer, flag durable, no settlement
+        markTaskDone(PLAN, step(13), { stepOrder: 13, success: false, output: '', error: 'step timeout after 1800000ms', tokensUsed: 0, executionTimeMs: 1800000, abandonedInFlight: 1792780000001 });
+        expect(getUnresolvedAbandonedTaskRows().map((r: any) => r.id)).toContain(taskIdFor(PLAN, 13));
+        // unattributed reconciliation is refused honestly
+        expect(() => reconcileAbandonedStepEffects(PLAN, 13, '', '')).toThrow(/reconciledBy and note are required/);
+        // explicit attributed review clears the durable block
+        reconcileAbandonedStepEffects(PLAN, 13, 'alberto', 'inspected jail workspace and memory: no partial writes from the dead step');
+        expect(getUnresolvedAbandonedTaskRows().map((r: any) => r.id)).not.toContain(taskIdFor(PLAN, 13));
+        const r = row(taskIdFor(PLAN, 13))!;
+        expect(r.data.effectsReviewed.by).toBe('alberto');
+        expect(r.data.abandonedInFlight).toBeUndefined();
+        // reconciling again is an honest 409, not a silent no-op
+        expect(() => reconcileAbandonedStepEffects(PLAN, 13, 'alberto', 'again')).toThrow(/no abandoned-in-flight uncertainty/);
     });
 });

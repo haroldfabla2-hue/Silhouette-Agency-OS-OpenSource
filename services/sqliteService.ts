@@ -994,6 +994,21 @@ export class SqliteService {
         return stmt.all(`task_${planId}_%`) as any[];
     }
 
+    /** [LEDGER-INTEGRITY] Rows whose step timed out with work possibly
+     *  still in flight (durable abandonedInFlight flag) and that have been
+     *  neither late-settled nor explicitly reconciled. "The writer is dead"
+     *  (post-restart) does NOT prove emitted partial effects are safe to
+     *  re-run over: these rows block new plans until an explicit,
+     *  attributed reconciliation reviews the effects. */
+    public getUnresolvedAbandonedTasks(): any[] {
+        const stmt = this.db.prepare(`SELECT * FROM tasks
+            WHERE json_extract(data,'$.abandonedInFlight') IS NOT NULL
+              AND json_extract(data,'$.lateSettlement') IS NULL
+              AND json_extract(data,'$.effectsReviewed') IS NULL
+            ORDER BY updated_at ASC`);
+        return stmt.all() as any[];
+    }
+
     /** [LEDGER-INTEGRITY] Open ledger rows (pending/running) untouched since
      *  `beforeMs` - candidates for the stale-task reaper. */
     public getOpenTasksBefore(beforeMs: number, statuses: string[] = ['pending', 'running']): any[] {

@@ -190,6 +190,51 @@ export function reapStaleTasks(beforeMs: number, reason: string, statuses: Array
     return reaped;
 }
 
+/** Durable uncertainty: abandoned-in-flight rows with no settlement and
+ *  no explicit reconciliation. Source of truth is SQLite, so the block
+ *  survives restarts. */
+export function getUnresolvedAbandonedTaskRows(): any[] {
+    try {
+        return sqliteService.getUnresolvedAbandonedTasks();
+    } catch (e: any) {
+        console.warn(`[TASK_LEDGER] unresolved-abandoned query failed (fail-closed: reporting one synthetic blocker): ${e?.message}`);
+        return [{ id: 'unknown', description: 'abandoned-step query failed', data: '{}' }];
+    }
+}
+
+/**
+ * [LEDGER-INTEGRITY] Explicit, attributed reconciliation of an abandoned
+ * step whose writer is gone but whose PARTIAL EFFECTS are uncertain. An
+ * auditable row alone does not make a re-run safe; a human (or operator
+ * process) must inspect the jailed write roots / memory effects and
+ * attest the review. The attestation is durable (who/when/note). Until
+ * then the retry gate keeps blocking. Throws honest errors when there is
+ * nothing to reconcile or attestation fields are missing.
+ */
+export function reconcileAbandonedStepEffects(planId: string, stepOrder: number, reconciledBy: string, note: string): any {
+    const by = (reconciledBy ?? '').trim();
+    const text = (note ?? '').trim();
+    if (!by || !text) {
+        throw Object.assign(new Error('reconciledBy and note are required - an unattributed reconciliation is not reconciliation'), { statusCode: 400 });
+    }
+    const id = taskIdFor(planId, stepOrder);
+    const row = sqliteService.getTasksByPlan(planId).find((t: any) => t.id === id);
+    if (!row) throw Object.assign(new Error(`no ledger row ${id}`), { statusCode: 404 });
+    let data: any = {};
+    try { data = row.data ? JSON.parse(row.data) : {}; } catch { data = {}; }
+    if (data.lateSettlement) {
+        throw Object.assign(new Error(`step ${stepOrder} of ${planId} already settled late - uncertainty resolved automatically`), { statusCode: 409 });
+    }
+    if (!data.abandonedInFlight) {
+        throw Object.assign(new Error(`step ${stepOrder} of ${planId} has no abandoned-in-flight uncertainty to reconcile`), { statusCode: 409 });
+    }
+    delete data.abandonedInFlight;
+    data.effectsReviewed = { by: by.substring(0, 200), at: Date.now(), note: text.substring(0, 500) };
+    sqliteService.upsertTask({ id, description: row.description, assigned_to: row.assigned_to, status: row.status, data });
+    console.log(`[TASK_LEDGER] Abandoned step ${stepOrder} of ${planId} explicitly reconciled by ${by}`);
+    return { id, status: row.status, data };
+}
+
 /**
  * [LEDGER-INTEGRITY] Reconcile a TIMED-OUT step that settled late. The
  * timeout verdict stands (status stays as recorded); the late outcome is

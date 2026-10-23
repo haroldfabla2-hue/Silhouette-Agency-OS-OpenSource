@@ -23,7 +23,7 @@ import { SystemProtocol, CommunicationLevel, AgentStatus, AgentRoleType, AgentTi
 import { stepDeclaresFileWork, durableFileGrant } from './tools/toolSelection'; // [W3]
 import { evaluatePlanHonesty } from './execution/stepHonesty'; // [W3]
 import { collectWrittenArtifacts } from './execution/artifactLedger'; // [W3]
-import { recordPlanTasks, markTaskRunning, markTaskDone, closeOpenTasks, recordLateSettlement } from './execution/taskLedger'; // [PR-1] [PR-4c: closeOpenTasks] [LEDGER-INTEGRITY: recordLateSettlement]
+import { recordPlanTasks, markTaskRunning, markTaskDone, closeOpenTasks, recordLateSettlement, getUnresolvedAbandonedTaskRows } from './execution/taskLedger'; // [PR-1] [PR-4c: closeOpenTasks] [LEDGER-INTEGRITY]
 import { extractExecuteMarkers, normalizeToolName } from './tools/execMarker'; // [PR-I]
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -107,21 +107,35 @@ class PlanExecutor {
         const results: Map<number, StepResult> = new Map();
         const errors: string[] = [];
 
-        // [LEDGER-INTEGRITY] Retry gate: never start a new plan while a
-        // previously timed-out step is still alive in the background -
-        // concurrent execution could double-write jailed files/memories.
+        // [LEDGER-INTEGRITY] Retry gate, fail-closed on TWO uncertainty
+        // classes. (a) LIVE: a timed-out step of THIS process may still be
+        // running - blocks until it settles (auto-reconciled). (b) DURABLE:
+        // a row flagged abandonedInFlight with no settlement and no
+        // explicit reconciliation - the writer may be dead (restart), but
+        // dead writers do not roll back partial effects, and an auditable
+        // row alone does not make a re-run safe. Blocks until an
+        // attributed human/operator reconciliation reviews the effects
+        // (POST /v1/orchestrator/tasks/reconcile-abandoned). A restart is
+        // therefore NOT presented as safe recovery by itself.
         const blocking = getAbandonedStepsInFlight();
-        if (blocking.length > 0) {
-            const detail = blocking.map(b => `step ${b.order} of ${b.planId} ("${(b.taskDescription || '').substring(0, 80)}", timed out ${new Date(b.timedOutAt).toISOString()})`).join('; ');
-            console.error(`[PLAN_EXECUTOR] Refusing to start plan ${plan.id}: ${blocking.length} abandoned step(s) still in flight: ${detail}`);
+        const durableBlocking = getUnresolvedAbandonedTaskRows();
+        if (blocking.length > 0 || durableBlocking.length > 0) {
+            const liveDetail = blocking.map(b => `step ${b.order} of ${b.planId} ("${(b.taskDescription || '').substring(0, 80)}", timed out ${new Date(b.timedOutAt).toISOString()}, LIVE - blocks until it settles)`);
+            const durableDetail = durableBlocking.map((r: any) => {
+                let d: any = {};
+                try { d = r?.data ? JSON.parse(r.data) : {}; } catch { d = {}; }
+                return `${r.id} ("${(r.description || '').substring(0, 80)}", timed out ${d?.abandonedInFlight?.timedOutAt ? new Date(d.abandonedInFlight.timedOutAt).toISOString() : 'unknown'}, DURABLE - needs explicit reconciliation after reviewing its partial effects)`;
+            });
+            const detail = [...liveDetail, ...durableDetail].join('; ');
+            console.error(`[PLAN_EXECUTOR] Refusing to start plan ${plan.id}: ${blocking.length + durableBlocking.length} unresolved abandoned step(s): ${detail}`);
             return {
                 planId: plan.id,
                 success: false,
                 steps: [],
-                finalOutput: `Blocked: ${blocking.length} timed-out step(s) from earlier work may still be running in the background. A retry is refused until confirmed termination: either the abandoned work settles (reconciled into the task ledger automatically) or the service restarts (a restart is confirmed death of in-process work; the ledger row keeps a durable abandonedInFlight flag so partial effects stay auditable). Detail: ${detail}`,
+                finalOutput: `Blocked: ${blocking.length + durableBlocking.length} timed-out step(s) from earlier work are unresolved. Live ones unblock automatically when the abandoned work settles (reconciled into the task ledger). Durable ones (writer gone, partial effects uncertain) require an explicit attributed review of those effects first: POST /v1/orchestrator/tasks/reconcile-abandoned {planId, stepOrder, reconciledBy, note}. A restart alone does not make a re-run safe. Detail: ${detail}`,
                 totalTokens: 0,
                 totalTimeMs: 0,
-                errors: [`abandoned steps in flight: ${detail}`]
+                errors: [`unresolved abandoned steps: ${detail}`]
             };
         }
 
