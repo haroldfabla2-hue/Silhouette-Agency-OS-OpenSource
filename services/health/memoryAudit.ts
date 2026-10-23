@@ -38,6 +38,12 @@ export interface MemoryAuditDeps {
     now: number;
     /** Days without access before an important node counts as stagnant (default 30). */
     stagnantDays?: number;
+    /** [NATIVE-RECOVERY] Journal entries not yet COMMITTED (null = unreadable). */
+    pendingTransitions?: number | null;
+    /** [NATIVE-RECOVERY] Canonical memories still EMBEDDING_PENDING (null = unreadable). */
+    pendingEmbeddings?: number | null;
+    /** [NATIVE-RECOVERY] Observable local quota-ledger state for the embedding model. */
+    embeddingQuota?: { used: number; budget: number; day: string } | null;
 }
 
 // normalizeContent/MIN_DUP_CONTENT_LEN come from exactDuplicateSweep: single
@@ -166,6 +172,35 @@ export function runMemoryAudit(deps: MemoryAuditDeps): AuditCheck[] {
         });
     }
 
+    // [NATIVE-RECOVERY] Memory-pipeline self-recovery visibility: these two
+    // backlogs were invisible until external manual scans found them.
+    if (deps.pendingTransitions !== undefined) {
+        checks.push({
+            name: 'Memory: transition journal outstanding',
+            status: deps.pendingTransitions === null ? 'warning' : deps.pendingTransitions === 0 ? 'ok' : 'warning',
+            message: deps.pendingTransitions === null
+                ? 'Transition journal unreadable - outstanding count unknown (NOT the same as zero)'
+                : deps.pendingTransitions === 0
+                    ? 'No outstanding memory transitions (all journal entries COMMITTED)'
+                    : `${deps.pendingTransitions} transition(s) outstanding - journal retained; periodic reconcile resumes them`,
+            metadata: deps.pendingTransitions === null ? undefined : { outstanding: deps.pendingTransitions }
+        });
+    }
+    if (deps.pendingEmbeddings !== undefined) {
+        const q = deps.embeddingQuota;
+        checks.push({
+            name: 'Memory: embeddings pending',
+            status: deps.pendingEmbeddings === null ? 'warning' : deps.pendingEmbeddings === 0 ? 'ok' : 'warning',
+            message: deps.pendingEmbeddings === null
+                ? 'Embedding-pending count unavailable - NOT the same as zero'
+                : deps.pendingEmbeddings === 0
+                    ? 'All canonical memories have vector projections'
+                    : `${deps.pendingEmbeddings} memor(ies) awaiting embedding (scan cap 10000)` +
+                      (q ? `; local quota ledger gemini embedding: ${q.used}/${q.budget} attempts used (day ${q.day})` : ''),
+            metadata: deps.pendingEmbeddings === null ? undefined : { pending: deps.pendingEmbeddings, embeddingQuota: q ?? undefined }
+        });
+    }
+
     return checks;
 }
 
@@ -209,5 +244,26 @@ export async function collectMemoryAuditDeps(): Promise<MemoryAuditDeps> {
         if (m.totalEntries > 0) janitorMetrics = m;
     } catch { janitorMetrics = null; }
 
-    return { nodes, souls, janitorMetrics, now: Date.now() };
+    // [NATIVE-RECOVERY] Outstanding journal transitions (COMMITTED history is
+    // skipped - the journal is eternal and re-reading it whole every doctor
+    // call would grow without bound).
+    let pendingTransitions: number | null = null;
+    try {
+        const { memoryTransitions } = await import('../memoryTransitions');
+        const { isOutstandingTransition } = await import('../memoryTransitions');
+        pendingTransitions = (await memoryTransitions.pending()).filter(isOutstandingTransition).length;
+    } catch { pendingTransitions = null; }
+
+    let pendingEmbeddings: number | null = null;
+    try { pendingEmbeddings = (await lancedbService.pendingEmbeddings(10000)).length; }
+    catch { pendingEmbeddings = null; }
+
+    let embeddingQuota: { used: number; budget: number; day: string } | null = null;
+    try {
+        const { quotaLedger } = await import('../quotaLedger');
+        const { DEFAULT_GEMINI_EMBEDDING_MODEL } = await import('../llm/defaultModels');
+        embeddingQuota = quotaLedger.status('gemini', DEFAULT_GEMINI_EMBEDDING_MODEL);
+    } catch { embeddingQuota = null; }
+
+    return { nodes, souls, janitorMetrics, now: Date.now(), pendingTransitions, pendingEmbeddings, embeddingQuota };
 }

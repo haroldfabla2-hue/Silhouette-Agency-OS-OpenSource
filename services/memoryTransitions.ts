@@ -13,8 +13,16 @@ export interface MemoryTransition {
 }
 
 /** Durable local journal: a failed or interrupted transition always retains its source. */
+type LanceLike = Pick<typeof lancedbService, 'store' | 'getNodeById'>;
+
+/** A transition whose journal entry still needs recovery work (periodic reconcile scope). */
+export const isOutstandingTransition = (e: MemoryTransition): boolean => e.state !== 'COMMITTED';
+
 export class MemoryTransitions {
-    constructor(private readonly directory = path.join(process.cwd(), 'data', 'memory-transitions')) { }
+    constructor(
+        private readonly directory = path.join(process.cwd(), 'data', 'memory-transitions'),
+        private readonly lance: LanceLike = lancedbService,
+    ) { }
 
     private key(source: MemoryNode, destination: MemoryNode): string {
         return createHash('sha256').update(JSON.stringify([source.id, source.timestamp, source.tier, destination.tier])).digest('hex');
@@ -64,10 +72,10 @@ export class MemoryTransitions {
     public async run(entry: MemoryTransition): Promise<MemoryTransition> {
         if (entry.state === 'COMMITTED') return entry;
         // Replay is safe: LanceDB's merge by ID is atomic and idempotent.
-        await lancedbService.store(entry.destination);
+        await this.lance.store(entry.destination);
         entry.state = 'WRITTEN';
         await this.write(entry);
-        const stored = await lancedbService.getNodeById(entry.destination.id);
+        const stored = await this.lance.getNodeById(entry.destination.id);
         if (JSON.stringify(stored) !== JSON.stringify(entry.destination)) {
             throw new Error(`Destination verification failed for ${entry.destination.id}`);
         }
