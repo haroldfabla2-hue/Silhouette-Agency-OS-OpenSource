@@ -33,6 +33,10 @@ export interface CompletionOptions extends ChatOptions {
     maxTokens?: number;
     systemPrompt?: string;
     preferredProvider?: string;
+    /** When true with preferredProvider set, the call may use ONLY that
+     *  provider - no fallback chain. Autonomous spend uses this so a
+     *  reserved free route can never leak into unmeasured legs. */
+    exclusiveProvider?: boolean;
     skipProviders?: string[];
     timeout?: number;
 }
@@ -113,7 +117,9 @@ export class LLMGatewayService {
         // Build provider order
         let providerOrder = this.providerOrder(options.preferredProvider);
         if (options.preferredProvider) {
-            providerOrder = [options.preferredProvider, ...providerOrder.filter(p => p !== options.preferredProvider)];
+            providerOrder = options.exclusiveProvider
+                ? [options.preferredProvider]
+                : [options.preferredProvider, ...providerOrder.filter(p => p !== options.preferredProvider)];
         }
 
         // Try each provider in order

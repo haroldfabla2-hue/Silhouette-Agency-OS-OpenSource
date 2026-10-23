@@ -1193,6 +1193,15 @@ export const generateEmbeddingWithIdentity = async (text: string, opts?: { allow
         // [PR-K parity] Embedding attempts count against the SAME local daily
         // budget ledger as text generation - attempts are what provider quota
         // charges. Budget spent => degrade honestly BEFORE burning a real call.
+        // [QUOTA-COOLDOWN] A real provider 429 (RetryInfo) outranks the local
+        // ledger: never burn calls against a provider-declared cooldown.
+        const cooldown = quotaLedger.cooldownUntil('gemini', DEFAULT_GEMINI_EMBEDDING_MODEL);
+        if (cooldown) {
+            console.warn(`[GeminiService] provider cooldown active for gemini:${DEFAULT_GEMINI_EMBEDDING_MODEL} until ${new Date(cooldown).toISOString()} (real 429 RetryInfo) - no call burned`);
+            if (!allowFallbackIdentity) return null;
+            const localVector = await localEmbeddingService.getEmbedding(text);
+            return localVector ? { vector: localVector, identity: LOCAL_EMBEDDING_IDENTITY } : null;
+        }
         const qPrimary = quotaLedger.recordAttempt('gemini', DEFAULT_GEMINI_EMBEDDING_MODEL);
         if (!qPrimary.allowed) {
             console.warn(`[GeminiService] QUOTA_BUDGET_EXCEEDED: local daily budget for gemini:${DEFAULT_GEMINI_EMBEDDING_MODEL} spent (${qPrimary.used}/${qPrimary.budget} attempts, day ${qPrimary.day}). Degrading honestly until quota reset.`);
@@ -1257,6 +1266,16 @@ export const generateEmbeddingWithIdentity = async (text: string, opts?: { allow
             } else {
                 consecutiveEmbeddingFailures++;
                 console.error("[GeminiService] ❌ Embedding API Failed:", errorMsg);
+                // [QUOTA-COOLDOWN] Real 429: record the provider-declared
+                // RetryInfo as a durable cooldown so every route (backfill,
+                // live writes, autonomous scheduler) stops burning calls.
+                if (/429|RESOURCE_EXHAUSTED|quota exceeded/i.test(errorMsg)) {
+                    const m = errorMsg.match(/"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/);
+                    if (m) {
+                        quotaLedger.recordCooldown('gemini', DEFAULT_GEMINI_EMBEDDING_MODEL,
+                            Date.now() + Math.ceil(Number(m[1])) * 1000, 'provider 429 RetryInfo');
+                    }
+                }
 
                 if (consecutiveEmbeddingFailures >= 3) {
                     isLocalEmbeddingPrimary = true;

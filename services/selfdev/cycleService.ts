@@ -185,6 +185,13 @@ export class SelfDevCycleService {
         return this.store.cycles.map(c => ({ id: c.id, issue: c.issue, state: c.state, updatedAt: c.updatedAt, pr: c.pr }));
     }
 
+    /** [AUTONOMOUS-SCHEDULER] Count cycles created since an ISO instant,
+     *  optionally filtered by issue prefix (the scheduler marks its own
+     *  issues so its daily budget never counts operator-driven cycles). */
+    public countCreatedSince(sinceIso: string, issuePrefix?: string): number {
+        return this.store.cycles.filter(c => c.createdAt >= sinceIso && (!issuePrefix || c.issue.startsWith(issuePrefix))).length;
+    }
+
     public create(input: { issue?: string; scope?: string[]; acceptance?: { kind?: string; target?: string } }): SelfDevCycle {
         const issue = (input.issue ?? '').trim();
         if (!issue) throw Object.assign(new Error('issue is required'), { statusCode: 400 });
@@ -298,6 +305,8 @@ export class SelfDevCycleService {
             maxTokens: Number(env.SELFDEV_PLANNER_MAX_TOKENS ?? 8192),
         };
         if (env.SELFDEV_PLANNER_PROVIDER) options.preferredProvider = env.SELFDEV_PLANNER_PROVIDER;
+        // [AUTONOMOUS-SCHEDULER] autonomous runs pin the reserved leg only.
+        if (env.SELFDEV_PLANNER_DISABLE_FALLBACK === 'true') options.exclusiveProvider = true;
         if (env.SELFDEV_PLANNER_MODEL) (options as { model?: string }).model = env.SELFDEV_PLANNER_MODEL;
 
         // One repair retry: LLMs occasionally wrap JSON in prose or fences.

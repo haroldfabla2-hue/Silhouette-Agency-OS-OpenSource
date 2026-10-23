@@ -1133,6 +1133,12 @@ class ContinuumMemorySystem {
         ledger: QuotaLedger = quotaLedger,
         runBackfill: () => Promise<{ projected: number; failed: number }> = () => this.backfillMemoryEmbeddings(),
     ): Promise<{ ran: boolean; reason?: string; projected?: number; failed?: number }> {
+        // [QUOTA-COOLDOWN] Real provider 429 (RetryInfo) outranks the local
+        // ledger: skip the pass without burning calls or spamming incidents.
+        const cooldown = ledger.cooldownUntil('gemini', DEFAULT_GEMINI_EMBEDDING_MODEL);
+        if (cooldown) {
+            return { ran: false, reason: `provider cooldown until ${new Date(cooldown).toISOString()} (real 429 RetryInfo); pending embeddings retained` };
+        }
         const status = ledger.status('gemini', DEFAULT_GEMINI_EMBEDDING_MODEL);
         const { incidentRegistry } = await import('./incidentRegistry');
         if (!status.allowed) {

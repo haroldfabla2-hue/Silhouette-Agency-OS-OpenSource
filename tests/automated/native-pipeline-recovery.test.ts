@@ -85,6 +85,36 @@ describe('native pipeline recovery', () => {
         expect(isOutstandingTransition({ ...base, state: 'COMMITTED' } as any)).toBe(false);
     });
 
+    it('quota cooldown: real provider 429 blocks backfill without burning calls, expiry reopens', async () => {
+        const fs = await import('fs');
+        const os = await import('os');
+        const path = await import('path');
+        const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'quota-cool-'));
+        const { QuotaLedger } = await import('../../services/quotaLedger');
+        const ledger = new QuotaLedger(path.join(tmp, 'quota.json'));
+        // no cooldown => callable
+        expect(ledger.cooldownUntil('gemini', 'gemini-embedding-001')).toBeNull();
+        // real 429 RetryInfo => durable cooldown, backfill skips without a call
+        ledger.recordCooldown('gemini', 'gemini-embedding-001', Date.now() + 60000, 'test 429');
+        expect(ledger.cooldownUntil('gemini', 'gemini-embedding-001')).toBeGreaterThan(Date.now());
+        const { continuum: continuumMemory } = await import('../../services/continuumMemory');
+        let burned = 0;
+        const r = await continuumMemory.maybeRunEmbeddingBackfill(ledger, async () => { burned++; return { projected: 1, failed: 0 }; });
+        expect(r.ran).toBe(false);
+        expect(r.reason).toContain('cooldown');
+        expect(burned).toBe(0);
+        // expired cooldown => open again (no invented reset: until came from provider).
+        // recordCooldown never SHORTENS an active one (max semantics); write
+        // the expired record directly to test the read path.
+        fs.writeFileSync(path.join(tmp, 'quota-cooldown.json'), JSON.stringify({ 'gemini:gemini-embedding-001': Date.now() - 1 }));
+        expect(ledger.cooldownUntil('gemini', 'gemini-embedding-001')).toBeNull();
+        // and a shorter real 429 must NOT shorten an active longer cooldown
+        const longer = Date.now() + 120000;
+        ledger.recordCooldown('gemini', 'gemini-embedding-001', longer, 'long');
+        ledger.recordCooldown('gemini', 'gemini-embedding-001', Date.now() + 30000, 'short');
+        expect(ledger.cooldownUntil('gemini', 'gemini-embedding-001')).toBe(Math.floor(longer));
+    });
+
     it('quota gate: ledger blocks honestly when the local daily budget is spent, without burning calls', async () => {
         const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'native-quota-'));
         process.env.QUOTA_DAILY_BUDGET_GEMINI_GEMINI_EMBEDDING_001 = '1';

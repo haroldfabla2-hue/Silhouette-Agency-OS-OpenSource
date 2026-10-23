@@ -113,6 +113,81 @@ export class QuotaLedger {
         const used = this.read()[this.key(provider, model)] || 0;
         return { allowed: used < budget, used, budget, day: dayKey() };
     }
+
+    /**
+     * [QUOTA-COOLDOWN] Durable provider-until timestamp learned from a REAL
+     * provider 429 (RetryInfo). Distinct from the attempt ledger: the ledger
+     * counts what WE sent; a cooldown records what the PROVIDER said. Stored
+     * on disk so a restart does not forget it. Never an invented reset: the
+     * until comes from the provider's own RetryInfo.
+     */
+    private cooldownPath(): string {
+        return path.join(path.dirname(this.file), 'quota-cooldown.json');
+    }
+
+    private readCooldowns(): Record<string, number> {
+        try {
+            if (!fs.existsSync(this.cooldownPath())) return {};
+            return JSON.parse(fs.readFileSync(this.cooldownPath(), 'utf-8'));
+        } catch { return {}; }
+    }
+
+    public recordCooldown(provider: string, model: string, untilMs: number, reason: string): void {
+        try {
+            const data = this.readCooldowns();
+            const key = `${provider}:${model}`;
+            data[key] = Math.max(data[key] || 0, Math.floor(untilMs));
+            fs.mkdirSync(path.dirname(this.cooldownPath()), { recursive: true });
+            fs.writeFileSync(this.cooldownPath(), JSON.stringify(data));
+            console.warn(`[QUOTA] provider cooldown recorded for ${key} until ${new Date(untilMs).toISOString()} (${reason})`);
+        } catch (e: any) {
+            console.warn(`[QUOTA] cooldown write failed (${e.message}) - provider 429 remains as net`);
+        }
+    }
+
+    /** Returns the cooldown-until epoch ms if one is active, else null. */
+    public cooldownUntil(provider: string, model: string): number | null {
+        const until = this.readCooldowns()[`${provider}:${model}`];
+        return (typeof until === 'number' && until > Date.now()) ? until : null;
+    }
+
+    /**
+     * [AUTONOMOUS-SCHEDULER] True only when an operator set an explicit
+     * budget for this provider (per-model or per-provider env). The 450
+     * default is a safety net, NOT knowledge of a real free-tier limit -
+     * autonomous spend must fail closed without an explicit budget.
+     */
+    hasExplicitBudget(provider: string, model?: string): boolean {
+        const perModel = model
+            ? Number(process.env[`QUOTA_DAILY_BUDGET_${provider.toUpperCase()}_${model.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`]?.trim())
+            : NaN;
+        if (Number.isFinite(perModel) && perModel > 0) return true;
+        const perProvider = Number(process.env[`QUOTA_DAILY_BUDGET_${provider.toUpperCase()}`]?.trim());
+        return Number.isFinite(perProvider) && perProvider > 0;
+    }
+
+    /**
+     * [AUTONOMOUS-SCHEDULER] Atomically reserve n attempts against the
+     * daily budget before autonomous work starts, so a concurrent consumer
+     * cannot over-assign the same headroom. Rolls back (no write) when the
+     * reservation would exceed the budget. Conservative by design: actual
+     * provider-chain recordAttempt calls may add on top, so a reservation
+     * is an upper-bound hold, not billing.
+     */
+    reserve(provider: string, model: string, n: number): QuotaStatus & { reserved: boolean } {
+        const budget = this.budgetFor(provider, model);
+        const data = this.read();
+        const key = this.key(provider, model);
+        const used = data[key] || 0;
+        if (used + n > budget) {
+            return { allowed: false, used, budget, day: dayKey(), reserved: false };
+        }
+        const today = dayKey();
+        for (const k of Object.keys(data)) if (!k.startsWith(today)) delete data[k];
+        data[key] = used + n;
+        this.write(data);
+        return { allowed: true, used: used + n, budget, day: today, reserved: true };
+    }
 }
 
 export const quotaLedger = new QuotaLedger();

@@ -90,6 +90,11 @@ export class UnifiedDaemon {
                 execute: async () => this.runJanitorTask()
             },
             {
+                name: 'SelfDev',
+                intervalMs: Number(process.env.SELFDEV_AUTONOMOUS_INTERVAL_MS ?? 6 * 60 * 60 * 1000),
+                execute: async () => this.runSelfDevTask()
+            },
+            {
                 name: 'Dreamer',
                 intervalMs: 24 * 60 * 60 * 1000, // 24 hours
                 execute: async () => this.runDreamerTask()
@@ -447,6 +452,22 @@ export class UnifiedDaemon {
             console.log(`[COGNITIVE: JANITOR] ✅ Cycle done (dryRun=${report.dryRun}): ${report.candidates} candidates, ${report.clusters} clusters, ${report.applied} applied, ${report.proposed} proposed, ${report.abstained} abstained, ${report.errors} errors${report.abortedByCircuitBreaker ? ' [CIRCUIT BREAKER]' : ''} in ${report.durationMs}ms.`);
         } catch (e: any) {
             console.warn(`[COGNITIVE: JANITOR] Cycle aborted safely (memory untouched): ${e.message}`);
+        }
+    }
+
+    // [AUTONOMOUS-SCHEDULER] Self-improvement cycles. The scheduler owns
+    // every gate (master switch SELFDEV_AUTONOMOUS, memory-first quota
+    // deferral, daily cap, one active cycle, human PR gate); this task is
+    // only the timer. It never throws into the daemon loop.
+    private async runSelfDevTask() {
+        try {
+            const { runSelfDevSchedulerOnce } = await import('../selfdev/scheduler');
+            const decision = await runSelfDevSchedulerOnce();
+            if (decision.ran || !decision.reason.startsWith('disabled')) {
+                console.log(`[COGNITIVE: SELFDEV] ${decision.reason}`);
+            }
+        } catch (e: any) {
+            console.warn(`[COGNITIVE: SELFDEV] scheduler error (contained): ${e?.message}`);
         }
     }
 
