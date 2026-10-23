@@ -66,8 +66,24 @@ export function markTaskRunning(planId: string, step: PlanStep): void {
     }
 }
 
+/** Persisted-output cap: enough to audit a completion, bounded so a
+ *  runaway step cannot bloat the ledger row. */
+const MAX_PERSISTED_OUTPUT_CHARS = 4000;
+
 export function markTaskDone(planId: string, step: PlanStep, result: StepOutcomeLike): void {
     try {
+        const output = result.output ?? '';
+        const artifacts = result.artifacts ?? [];
+        // [LEDGER-INTEGRITY] A completion with no persisted evidence (no
+        // output text, no artifacts) is un-auditable - the historical
+        // "hollow completion" (prod 2026-10-16: a cotizador step marked
+        // completed with artifacts:[] and its output never recorded).
+        // Valid no-artifact TEXT outputs stay 'completed' with their output
+        // persisted; only evidence-free completions get flagged, loudly.
+        const noEvidence = result.success === true && output.length === 0 && artifacts.length === 0 && !result.error;
+        if (noEvidence) {
+            console.warn(`[TASK_LEDGER] WARNING: step ${step.order} of ${planId} completed with NO persisted evidence (no output, no artifacts)`);
+        }
         sqliteService.upsertTask({
             id: taskIdFor(planId, step.order),
             description: step.taskDescription,
@@ -79,14 +95,53 @@ export function markTaskDone(planId: string, step: PlanStep, result: StepOutcome
                 agentRole: step.agentRole,
                 finishedAt: Date.now(),
                 error: result.error,
-                artifacts: result.artifacts ?? [],
+                output: output.substring(0, MAX_PERSISTED_OUTPUT_CHARS),
+                outputChars: output.length,
+                artifacts,
                 tokensUsed: result.tokensUsed ?? 0,
-                executionTimeMs: result.executionTimeMs ?? 0
+                executionTimeMs: result.executionTimeMs ?? 0,
+                ...(noEvidence ? { evidence: 'none' } : {})
             }
         });
     } catch (e: any) {
         console.warn(`[TASK_LEDGER] mark done failed (non-blocking): ${e?.message}`);
     }
+}
+
+/**
+ * [LEDGER-INTEGRITY] Reap ledger rows whose executor is gone. Rows still
+ * pending/running with updated_at older than `beforeMs` belong to a
+ * dead executor (process restart) or an abandoned step (LLM chain hung
+ * before the abort path could close them; prod 2026-10-16..22 left 8 rows
+ * eternal-running). They are marked failed with an honest reason -
+ * never deleted, never silently completed; the mission can be re-run.
+ * Returns the number of reaped rows.
+ */
+export function reapStaleTasks(beforeMs: number, reason: string): number {
+    let reaped = 0;
+    try {
+        const rows = sqliteService.getOpenTasksBefore(beforeMs);
+        for (const row of rows) {
+            try {
+                let data: any = {};
+                try { data = row?.data ? JSON.parse(row.data) : {}; } catch { data = {}; }
+                sqliteService.upsertTask({
+                    id: row.id,
+                    description: row.description,
+                    assigned_to: row.assigned_to,
+                    status: 'failed',
+                    data: { ...data, finishedAt: Date.now(), error: `reaped: ${reason}`.substring(0, 500) }
+                });
+                reaped++;
+            } catch (e: any) {
+                console.warn(`[TASK_LEDGER] reap failed for ${row?.id} (non-blocking): ${e?.message}`);
+            }
+        }
+        if (reaped > 0) console.log(`[TASK_LEDGER] Reaped ${reaped} stale ledger rows (${reason})`);
+    } catch (e: any) {
+        console.warn(`[TASK_LEDGER] stale sweep failed (non-blocking): ${e?.message}`);
+    }
+    return reaped;
 }
 
 /**

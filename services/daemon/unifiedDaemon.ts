@@ -448,6 +448,18 @@ export class UnifiedDaemon {
         } catch (e: any) {
             console.warn(`[COGNITIVE: JANITOR] Cycle aborted safely (memory untouched): ${e.message}`);
         }
+
+        // [LEDGER-INTEGRITY] Same-process stale ledger sweep: steps whose
+        // executor hung without an abort (no restart involved) leave
+        // running rows behind; fail them honestly after the staleness
+        // window. Never deletes; the mission can be re-run.
+        try {
+            const { reapStaleTasks } = await import('../execution/taskLedger');
+            const staleMs = Number(process.env.TASK_LEDGER_STALE_MS ?? 6 * 60 * 60 * 1000);
+            reapStaleTasks(Date.now() - staleMs, `stale: no ledger progress for ${Math.round(staleMs / 3600000)}h (executor abandoned step)`);
+        } catch (e: any) {
+            console.warn(`[COGNITIVE: JANITOR] stale task sweep failed (non-blocking): ${e?.message}`);
+        }
     }
 
     private async runDreamerTask() {

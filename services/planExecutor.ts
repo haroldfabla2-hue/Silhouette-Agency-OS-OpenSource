@@ -95,7 +95,7 @@ class PlanExecutor {
             // 2. Execute the step with all homeostatic checks
             try {
                 markTaskRunning(plan.id, step); // [PR-1]
-                const result = await this.executeStep(step, plan, results);
+                const result = await this.withStepTimeout(step, this.executeStep(step, plan, results));
                 markTaskDone(plan.id, step, result); // [PR-1]
                 results.set(step.order, result);
 
@@ -191,6 +191,33 @@ class PlanExecutor {
     /**
      * Execute a single step with all homeostatic checks
      */
+    // [LEDGER-INTEGRITY] Hard ceiling per step: an LLM chain can hang
+    // forever (prod 2026-10-16: a synthesize step hung for days and the
+    // plan never aborted, stranding its ledger rows). The plan must fail
+    // honestly instead. Env-overridable; the 30min default is ~5x the
+    // slowest observed legitimate step (382s). A timed-out step's
+    // background promise is ignored when it eventually settles.
+    private withStepTimeout(step: PlanStep, work: Promise<StepResult>): Promise<StepResult> {
+        const timeoutMs = Number(process.env.SILHOUETTE_STEP_TIMEOUT_MS ?? 30 * 60 * 1000);
+        let timer: NodeJS.Timeout | undefined;
+        const timeout = new Promise<StepResult>((resolve) => {
+            timer = setTimeout(() => {
+                console.error(`[PLAN_EXECUTOR] Step ${step.order} timed out after ${timeoutMs}ms - failing honestly`);
+                resolve({
+                    stepOrder: step.order,
+                    agentId: step.agentId,
+                    output: '',
+                    success: false,
+                    tokensUsed: 0,
+                    executionTimeMs: timeoutMs,
+                    error: `step timeout after ${timeoutMs}ms`
+                } as StepResult);
+            }, timeoutMs);
+            if (typeof timer.unref === 'function') timer.unref();
+        });
+        return Promise.race([work, timeout]).finally(() => { if (timer) clearTimeout(timer); });
+    }
+
     private async executeStep(
         step: PlanStep,
         plan: ExecutionPlan,
