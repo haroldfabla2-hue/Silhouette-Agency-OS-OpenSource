@@ -42,6 +42,44 @@ export interface StepResult {
     artifacts?: string[];
 }
 
+// [LEDGER-INTEGRITY] Timed-out steps whose background promise is still
+// alive. While any unexpired entry exists, execute() refuses to start a
+// new plan: a retry running concurrently with the abandoned work could
+// write the same jailed files or duplicate memories. Settlement (recorded
+// via recordLateSettlement) clears the entry and unblocks retries. An
+// entry expires after SILHOUETTE_ABANDONED_STEP_CAP_MS (default 4h): a
+// promise alive that long is treated as dead, loudly, rather than
+// blocking work forever.
+interface AbandonedStep { planId: string; order: number; agentId: string; taskDescription: string; timedOutAt: number; }
+const abandonedInFlight = new Map<string, AbandonedStep>();
+const abandonedKey = (planId: string, order: number) => `${planId}:${order}`;
+const ABANDONED_STEP_CAP_MS = Number(process.env.SILHOUETTE_ABANDONED_STEP_CAP_MS ?? 4 * 60 * 60 * 1000);
+
+export function noteStepTimedOut(planId: string, step: PlanStep): void {
+    abandonedInFlight.set(abandonedKey(planId, step.order), {
+        planId, order: step.order, agentId: step.agentId,
+        taskDescription: step.taskDescription ?? '', timedOutAt: Date.now()
+    });
+}
+
+export function clearAbandonedStep(planId: string, order: number): void {
+    abandonedInFlight.delete(abandonedKey(planId, order));
+}
+
+/** Live (unexpired) abandoned steps; expired ones are purged loudly. */
+export function getAbandonedStepsInFlight(now: number = Date.now()): AbandonedStep[] {
+    const live: AbandonedStep[] = [];
+    for (const [key, entry] of abandonedInFlight) {
+        if (now - entry.timedOutAt >= ABANDONED_STEP_CAP_MS) {
+            abandonedInFlight.delete(key);
+            console.error(`[PLAN_EXECUTOR] Abandoned step ${entry.order} of ${entry.planId} exceeded the ${ABANDONED_STEP_CAP_MS}ms cap without settling - treating its promise as dead (any late writes stay confined to the audited jail and reconcile via recordLateSettlement)`);
+            continue;
+        }
+        live.push(entry);
+    }
+    return live;
+}
+
 export interface PlanExecutionResult {
     planId: string;
     success: boolean;
@@ -71,6 +109,24 @@ class PlanExecutor {
         const startTime = Date.now();
         const results: Map<number, StepResult> = new Map();
         const errors: string[] = [];
+
+        // [LEDGER-INTEGRITY] Retry gate: never start a new plan while a
+        // previously timed-out step is still alive in the background -
+        // concurrent execution could double-write jailed files/memories.
+        const blocking = getAbandonedStepsInFlight();
+        if (blocking.length > 0) {
+            const detail = blocking.map(b => `step ${b.order} of ${b.planId} ("${(b.taskDescription || '').substring(0, 80)}", timed out ${new Date(b.timedOutAt).toISOString()}, auto-expires ${new Date(b.timedOutAt + ABANDONED_STEP_CAP_MS).toISOString()})`).join('; ');
+            console.error(`[PLAN_EXECUTOR] Refusing to start plan ${plan.id}: ${blocking.length} abandoned step(s) still in flight: ${detail}`);
+            return {
+                planId: plan.id,
+                success: false,
+                steps: [],
+                finalOutput: `Blocked: ${blocking.length} timed-out step(s) from earlier work are still running in the background. Retry once they settle (their outcome is reconciled into the task ledger) or after they expire. Detail: ${detail}`,
+                totalTokens: 0,
+                totalTimeMs: 0,
+                errors: [`abandoned steps in flight: ${detail}`]
+            };
+        }
 
         // Emit plan start
         systemBus.emit(SystemProtocol.WORKFLOW_UPDATE, {
@@ -204,6 +260,7 @@ class PlanExecutor {
         const timeout = new Promise<StepResult>((resolve) => {
             timer = setTimeout(() => {
                 timedOut = true;
+                noteStepTimedOut(planId, step);
                 console.error(`[PLAN_EXECUTOR] Step ${step.order} timed out after ${timeoutMs}ms - failing honestly`);
                 resolve({
                     stepOrder: step.order,
@@ -226,10 +283,12 @@ class PlanExecutor {
         // world-exiting actions are unreachable from a step.
         work.then(late => {
             if (!timedOut) return;
+            clearAbandonedStep(planId, step.order);
             console.warn(`[PLAN_EXECUTOR] Timed-out step ${step.order} of ${planId} settled late (success=${late?.success}) - reconciling ledger row`);
             recordLateSettlement(planId, step.order, late);
         }).catch((e: any) => {
             if (!timedOut) return;
+            clearAbandonedStep(planId, step.order);
             console.warn(`[PLAN_EXECUTOR] Timed-out step ${step.order} of ${planId} rejected late: ${e?.message}`);
             recordLateSettlement(planId, step.order, { stepOrder: step.order, success: false, error: `late rejection: ${e?.message}` });
         });

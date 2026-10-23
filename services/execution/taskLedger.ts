@@ -11,6 +11,9 @@
  * Recording is best-effort: a ledger failure must never break execution.
  */
 import { sqliteService } from '../sqliteService';
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
 import type { ExecutionPlan, PlanStep } from '../planGenerator';
 
 export interface StepOutcomeLike {
@@ -66,22 +69,44 @@ export function markTaskRunning(planId: string, step: PlanStep): void {
     }
 }
 
-/** Outputs are persisted COMPLETE: the ledger is the audit record and a
- *  preview would silently lose work product. Generation-bound LLM outputs
- *  (planner max ~8K tokens, ~32KB) never approach this ceiling; it exists
- *  only to stop a pathological runaway (e.g. a tool stuffing whole files
- *  into an output) from bloating the SQLite row. Above it, the head is
- *  kept with an explicit omission marker and outputTruncated:true -
- *  loudly, never a silent preview. */
-const OUTPUT_HARD_CEILING_CHARS = 2_000_000;
+/** Outputs are NEVER omitted by size. Small outputs persist inline in the
+ *  ledger row; large ones spill to a durable file (tmp+fsync+rename) and
+ *  the row carries a clearly marked preview plus a recoverable reference
+ *  (path/bytes/sha256). The per-call LLM token cap does NOT bound
+ *  aggregates or file content, so no maximum is assumed: if the durable
+ *  spill itself fails, the full output stays inline rather than lose a
+ *  single character. */
+const OUTPUT_INLINE_LIMIT_CHARS = 256_000;
+const OUTPUT_PREVIEW_CHARS = 4_000;
 
-function persistOutputForLedger(output: string): { text: string; truncated: boolean } {
-    if (output.length <= OUTPUT_HARD_CEILING_CHARS) return { text: output, truncated: false };
-    const head = output.substring(0, OUTPUT_HARD_CEILING_CHARS - 200);
-    return {
-        text: `${head}\n[OUTPUT HARD CEILING: ${output.length - head.length} chars omitted - generation-bound outputs never reach this; indicates a runaway step]`,
-        truncated: true
-    };
+function taskOutputDir(): string {
+    return process.env.SILHOUETTE_TASK_OUTPUT_DIR ?? path.resolve(process.cwd(), 'data', 'task-outputs');
+}
+
+function persistOutputForLedger(taskId: string, output: string): { output: string; outputChars: number; extra: Record<string, any> } {
+    const outputChars = output.length;
+    if (outputChars <= OUTPUT_INLINE_LIMIT_CHARS) {
+        return { output, outputChars, extra: {} };
+    }
+    try {
+        const dir = taskOutputDir();
+        fs.mkdirSync(dir, { recursive: true });
+        const file = path.join(dir, `${taskId}.txt`);
+        const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
+        fs.writeFileSync(tmp, output, 'utf8');
+        const fd = fs.openSync(tmp, 'r');
+        try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+        fs.renameSync(tmp, file);
+        const sha256 = crypto.createHash('sha256').update(output, 'utf8').digest('hex');
+        return {
+            output: output.substring(0, OUTPUT_PREVIEW_CHARS) + `\n[PREVIEW ONLY - full output (${outputChars} chars) persisted at ${file} ; sha256:${sha256}]`,
+            outputChars,
+            extra: { outputPreview: true, outputRef: { path: file, bytes: Buffer.byteLength(output, 'utf8'), sha256 } }
+        };
+    } catch (e: any) {
+        console.warn(`[TASK_LEDGER] output spill failed for ${taskId}; keeping FULL output inline (${outputChars} chars): ${e?.message}`);
+        return { output, outputChars, extra: { outputSpillFailed: true } };
+    }
 }
 
 export function markTaskDone(planId: string, step: PlanStep, result: StepOutcomeLike): void {
@@ -98,6 +123,7 @@ export function markTaskDone(planId: string, step: PlanStep, result: StepOutcome
         if (noEvidence) {
             console.warn(`[TASK_LEDGER] WARNING: step ${step.order} of ${planId} completed with NO persisted evidence (no output, no artifacts)`);
         }
+        const persisted = persistOutputForLedger(taskIdFor(planId, step.order), output);
         sqliteService.upsertTask({
             id: taskIdFor(planId, step.order),
             description: step.taskDescription,
@@ -109,9 +135,9 @@ export function markTaskDone(planId: string, step: PlanStep, result: StepOutcome
                 agentRole: step.agentRole,
                 finishedAt: Date.now(),
                 error: result.error,
-                output: persistOutputForLedger(output).text,
-                outputChars: output.length,
-                ...(persistOutputForLedger(output).truncated ? { outputTruncated: true } : {}),
+                output: persisted.output,
+                outputChars: persisted.outputChars,
+                ...persisted.extra,
                 artifacts,
                 tokensUsed: result.tokensUsed ?? 0,
                 executionTimeMs: result.executionTimeMs ?? 0,
@@ -177,13 +203,13 @@ export function recordLateSettlement(planId: string, stepOrder: number, late: St
         if (!row) return;
         let data: any = {};
         try { data = row.data ? JSON.parse(row.data) : {}; } catch { data = {}; }
-        const persisted = persistOutputForLedger(late.output ?? '');
+        const persisted = persistOutputForLedger(id, late.output ?? '');
         data.lateSettlement = {
             finishedAt: Date.now(),
             success: late.success === true,
-            outputChars: (late.output ?? '').length,
-            output: persisted.text,
-            ...(persisted.truncated ? { outputTruncated: true } : {}),
+            outputChars: persisted.outputChars,
+            output: persisted.output,
+            ...persisted.extra,
             error: late.error,
             artifacts: late.artifacts ?? []
         };

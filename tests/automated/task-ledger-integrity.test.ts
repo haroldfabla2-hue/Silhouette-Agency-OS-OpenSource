@@ -9,8 +9,13 @@
  * never recorded) and 8 eternal-"running" rows across 2026-10-16..22.
  */
 import { describe, it, expect } from 'vitest';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import crypto from 'crypto';
 import { sqliteService } from '../../services/sqliteService';
 import { markTaskDone, reapStaleTasks, recordLateSettlement, taskIdFor } from '../../services/execution/taskLedger';
+import { noteStepTimedOut, clearAbandonedStep, getAbandonedStepsInFlight } from '../../services/planExecutor';
 
 const PLAN = 'plan_testledger';
 
@@ -43,14 +48,38 @@ describe('task ledger integrity', () => {
         expect(r.data.evidence).toBeUndefined();
     });
 
-    it('only a pathological >2MB output hits the loud hard ceiling', () => {
-        const huge = 'y'.repeat(2_100_000);
-        markTaskDone(PLAN, step(8), { stepOrder: 8, success: true, output: huge, artifacts: [], tokensUsed: 1, executionTimeMs: 1 });
-        const r = row(taskIdFor(PLAN, 8))!;
-        expect(r.data.outputTruncated).toBe(true);
-        expect(r.data.outputChars).toBe(2_100_000);
-        expect(r.data.output).toContain('OUTPUT HARD CEILING');
-        expect(r.data.output.length).toBeLessThan(2_000_100);
+    it('large outputs spill COMPLETE to durable storage with a recoverable ref (never omitted by size)', () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'task-outputs-'));
+        process.env.SILHOUETTE_TASK_OUTPUT_DIR = dir;
+        try {
+            const huge = 'y'.repeat(300_000); // > 256k inline limit
+            markTaskDone(PLAN, step(8), { stepOrder: 8, success: true, output: huge, artifacts: [], tokensUsed: 1, executionTimeMs: 1 });
+            const r = row(taskIdFor(PLAN, 8))!;
+            expect(r.data.outputPreview).toBe(true);
+            expect(r.data.outputChars).toBe(300_000);
+            expect(r.data.output).toContain('PREVIEW ONLY');
+            const ref = r.data.outputRef;
+            expect(ref.bytes).toBe(Buffer.byteLength(huge, 'utf8'));
+            expect(ref.sha256).toBe(crypto.createHash('sha256').update(huge, 'utf8').digest('hex'));
+            const onDisk = fs.readFileSync(ref.path, 'utf8');
+            expect(onDisk).toBe(huge); // full original recoverable, byte for byte
+        } finally {
+            delete process.env.SILHOUETTE_TASK_OUTPUT_DIR;
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('retry gate: an unexpired abandoned step blocks, settlement clears, cap expires', () => {
+        const p = 'plan_gate_test';
+        noteStepTimedOut(p, step(1) as any);
+        expect(getAbandonedStepsInFlight().map(s => s.planId)).toContain(p);
+        // settlement clears the entry and unblocks a retry
+        clearAbandonedStep(p, 1);
+        expect(getAbandonedStepsInFlight().map(s => s.planId)).not.toContain(p);
+        // an entry past the hard cap is expired (loudly) instead of blocking forever
+        noteStepTimedOut(p, step(2) as any);
+        const fiveHoursAhead = Date.now() + 5 * 60 * 60 * 1000;
+        expect(getAbandonedStepsInFlight(fiveHoursAhead).map(s => s.planId)).not.toContain(p);
     });
 
     it('text-only completion keeps completed status with its output as evidence', () => {
