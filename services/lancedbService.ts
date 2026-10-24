@@ -61,21 +61,6 @@ function knowledgeSchema(): Schema {
  */
 const tableInitFlights = new Map<string, Promise<void>>();
 
-/**
- * Module-scoped write epochs keyed by dbPath+tableName. Every successful
- * memory_records_v2 write through ANY instance of this module bumps the epoch;
- * readers compare it against the epoch their cached handle last saw and reopen
- * ONCE when it advanced. This closes the cross-instance silent miss (a cached
- * handle predating another instance's commit returns [] without throwing, so
- * the pruned-fragment stale-handle retry never fires) without a reopen per
- * read or per miss: steady-state cost is one Map lookup per read. Writes from
- * OTHER PROCESSES do not bump this Map - that boundary is declared, not hidden.
- */
-const tableWriteEpochs = new Map<string, number>();
-const bumpTableWriteEpoch = (key: string): void => {
-    tableWriteEpochs.set(key, (tableWriteEpochs.get(key) ?? 0) + 1);
-};
-
 export class LanceDbService {
     private annStatus: ReturnType<typeof selectVectorEngine> | null = null;
     private annModule: UsearchModule | null = null;
@@ -379,7 +364,6 @@ export class LanceDbService {
                 .execute(records));
         }
         this.ftsReady.delete('v2');
-        bumpTableWriteEpoch(`${this.databasePath}::memory_records_v2`);
         // Read-back spot check on the batch edges (first + last). Full per-row
         // read-back is exactly what makes bulk seeding slow; store() keeps it
         // for single writes.
@@ -405,7 +389,6 @@ export class LanceDbService {
                 .execute([record]));
         }
         this.ftsReady.delete('v2');
-        bumpTableWriteEpoch(`${this.databasePath}::memory_records_v2`);
         // Unknown legacy vectors are never guessed into a model collection.
         if (vector && node.embeddingIdentity && validEmbedding(vector, node.embeddingIdentity)) {
             try { await this.projectEmbedding(node, vector, node.embeddingIdentity); }
@@ -418,28 +401,10 @@ export class LanceDbService {
         return { ok: true, id: node.id, checksum, version: node.timestamp };
     }
 
-    /** Epoch of the last write this instance's cached handles are known to reflect, per dbPath+table key. */
-    private readonly seenWriteEpochs = new Map<string, number>();
-
-    /**
-     * Reopen the cached handle ONCE when another instance of this module has
-     * committed a write since this handle last saw it. No-op in steady state
-     * (single-instance prod, or no external writes): one Map lookup per read.
-     */
-    private async refreshIfExternallyWritten(tableName: 'memory_records_v2' | 'memory'): Promise<void> {
-        const key = `${this.databasePath}::${tableName}`;
-        const epoch = tableWriteEpochs.get(key) ?? 0;
-        if (epoch === (this.seenWriteEpochs.get(key) ?? 0)) return;
-        const current = tableName === 'memory_records_v2' ? this.table : this.legacyTable;
-        if (current && this.db) await this.reopenTable(tableName);
-        this.seenWriteEpochs.set(key, epoch);
-    }
-
     public async getNodeById(id: string): Promise<MemoryNode | null> {
         await this.ensureInitialized();
         const safeId = id.replace(/'/g, "''");
         for (const tableName of ['memory_records_v2', 'memory'] as const) {
-            await this.refreshIfExternallyWritten(tableName);
             const rows = await this.withCurrentTable(tableName, async () => {
                 const current = (tableName === 'memory_records_v2' ? this.table : this.legacyTable);
                 if (!current) return [];

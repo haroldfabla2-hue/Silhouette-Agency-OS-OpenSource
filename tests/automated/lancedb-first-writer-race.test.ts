@@ -97,36 +97,6 @@ describe('LanceDB first-writer race (cross-instance, fresh DB)', () => {
         }
     });
 
-    it('the original first writer reads BOTH rows after the race (coherent cross-instance read, no silent miss)', async () => {
-        const dir = await freshDir();
-        const svcA = new LanceDbService(dir);
-        const svcB = new LanceDbService(dir);
-        await Promise.all([
-            svcA.store(makeNode('coh-a')),
-            svcB.store(makeNode('coh-b')),
-        ]);
-        // Whichever instance won the create race must still observe the
-        // follower's later commit; a cached-handle miss here was the residual
-        // gap the freshness epoch closes.
-        for (const svc of [svcA, svcB]) {
-            expect((await svc.getNodeById('coh-a'))?.id).toBe('coh-a');
-            expect((await svc.getNodeById('coh-b'))?.id).toBe('coh-b');
-        }
-    });
-
-    it('sequential cross-instance writes stay readable from the first instance (epoch-triggered single reopen)', async () => {
-        const dir = await freshDir();
-        const svcA = new LanceDbService(dir);
-        const svcB = new LanceDbService(dir);
-        await svcA.store(makeNode('seq-a1'));
-        await svcA.store(makeNode('seq-a2')); // same-instance writes: no reopen needed
-        await svcB.store(makeNode('seq-b1')); // external write bumps the epoch
-        expect((await svcA.getNodeById('seq-a1'))?.id).toBe('seq-a1');
-        expect((await svcA.getNodeById('seq-a2'))?.id).toBe('seq-a2');
-        expect((await svcA.getNodeById('seq-b1'))?.id).toBe('seq-b1');
-        expect((await svcB.getNodeById('seq-a2'))?.id).toBe('seq-a2');
-    });
-
     it('rows written by racing first writers survive a restart (new instance reopens the table)', async () => {
         const dir = await freshDir();
         const svcA = new LanceDbService(dir);
