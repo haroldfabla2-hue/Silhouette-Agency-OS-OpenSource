@@ -72,10 +72,8 @@ const tableInitFlights = new Map<string, Promise<void>>();
  * OTHER PROCESSES do not bump this Map - that boundary is declared, not hidden.
  */
 const tableWriteEpochs = new Map<string, number>();
-const bumpTableWriteEpoch = (key: string): number => {
-    const next = (tableWriteEpochs.get(key) ?? 0) + 1;
-    tableWriteEpochs.set(key, next);
-    return next;
+const bumpTableWriteEpoch = (key: string): void => {
+    tableWriteEpochs.set(key, (tableWriteEpochs.get(key) ?? 0) + 1);
 };
 
 export class LanceDbService {
@@ -381,8 +379,7 @@ export class LanceDbService {
                 .execute(records));
         }
         this.ftsReady.delete('v2');
-        const epochKey = `${this.databasePath}::memory_records_v2`;
-        this.seenWriteEpochs.set(epochKey, bumpTableWriteEpoch(epochKey));
+        bumpTableWriteEpoch(`${this.databasePath}::memory_records_v2`);
         // Read-back spot check on the batch edges (first + last). Full per-row
         // read-back is exactly what makes bulk seeding slow; store() keeps it
         // for single writes.
@@ -408,8 +405,7 @@ export class LanceDbService {
                 .execute([record]));
         }
         this.ftsReady.delete('v2');
-        const epochKey = `${this.databasePath}::memory_records_v2`;
-        this.seenWriteEpochs.set(epochKey, bumpTableWriteEpoch(epochKey));
+        bumpTableWriteEpoch(`${this.databasePath}::memory_records_v2`);
         // Unknown legacy vectors are never guessed into a model collection.
         if (vector && node.embeddingIdentity && validEmbedding(vector, node.embeddingIdentity)) {
             try { await this.projectEmbedding(node, vector, node.embeddingIdentity); }
