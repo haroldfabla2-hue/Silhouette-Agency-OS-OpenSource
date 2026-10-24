@@ -45,16 +45,8 @@ class CampaignService {
                 const results = await mediaService.searchRealAssets(query);
 
                 if (results && results.length > 0) {
-                    // Attach the best match as the "anchor"
-                    // We'll store it in a new property (we might need to extend ShotSpec or just use 'scoutUrl')
-                    // For now, let's assume we can attach it to the description or a new field if we updated types.
-                    // To avoid type errors without updating types.ts yet, we'll append it to the description for the UI to parse,
-                    // OR better, we just return the shot with a new property if we cast it.
-                    // Let's update types.ts properly in the next step, but for now, let's just log it.
-
-                    // ACTUALLY: Let's use the 'referenceImage' field if it exists, or add it.
-                    // Checking types.ts... ShotSpec doesn't have it.
-                    // I will add a temporary property via casting.
+                    // Attach the best match as the real-world anchor
+                    // (typed ShotSpec.referenceImage / referenceThumb).
                     return { ...shot, referenceImage: results[0].url, referenceThumb: results[0].thumb };
                 }
             } catch (e) {
