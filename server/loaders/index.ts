@@ -18,6 +18,22 @@ export const initServer = async () => {
     await initDatabases();
     await initAIServices();
 
+    // [LIFECYCLE] Dreaming loop starts EXPLICITLY at boot. It previously
+    // started as a hidden side effect of importing continuumMemory, which
+    // also fired in tests/tools (unhandled rejections on module restart;
+    // crashed CI on PR #204). Idempotent and PowerManager-gated inside
+    // startDreamingLoop; only the trigger point moves. NOTE: the autonomy
+    // config ceiling on this route arrives with PR #202 (its
+    // autonomyPolicy/configLoader do not exist on this baseline) - same
+    // security posture as the hidden start it replaces, resolved to PR
+    // #202's stronger version when it lands.
+    try {
+        const { dreamer } = await import('../../services/dreamerService');
+        dreamer.startDreamingLoop();
+    } catch (e: any) {
+        console.warn('[BOOT] Dreaming loop not started (fail-closed, classified):', e?.message || e);
+    }
+
     // [PA-041] Load persisted Context Priority configuration
     await initializeContextConfig();
 

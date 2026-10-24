@@ -44,6 +44,8 @@ export interface MemoryAuditDeps {
     pendingEmbeddings?: number | null;
     /** [NATIVE-RECOVERY] Observable local quota-ledger state for the embedding model. */
     embeddingQuota?: { used: number; budget: number; day: string } | null;
+    /** Journaled introspection concept writes not yet ACKed (null = unreadable). */
+    pendingConceptWrites?: number | null;
 }
 
 // normalizeContent/MIN_DUP_CONTENT_LEN come from exactDuplicateSweep: single
@@ -186,6 +188,18 @@ export function runMemoryAudit(deps: MemoryAuditDeps): AuditCheck[] {
             metadata: deps.pendingTransitions === null ? undefined : { outstanding: deps.pendingTransitions }
         });
     }
+    if (deps.pendingConceptWrites !== undefined) {
+        checks.push({
+            name: 'Memory: concept-write journal outstanding',
+            status: deps.pendingConceptWrites === null ? 'warning' : deps.pendingConceptWrites === 0 ? 'ok' : 'warning',
+            message: deps.pendingConceptWrites === null
+                ? 'Concept-write journal unreadable - outstanding count unknown (NOT the same as zero)'
+                : deps.pendingConceptWrites === 0
+                    ? 'No outstanding concept writes (journal fully ACKed)'
+                    : `${deps.pendingConceptWrites} concept write(s) outstanding - journaled (SQLite, durable); periodic retry driver resumes them`,
+            metadata: deps.pendingConceptWrites === null ? undefined : { outstanding: deps.pendingConceptWrites }
+        });
+    }
     if (deps.pendingEmbeddings !== undefined) {
         const q = deps.embeddingQuota;
         checks.push({
@@ -258,6 +272,12 @@ export async function collectMemoryAuditDeps(): Promise<MemoryAuditDeps> {
     try { pendingEmbeddings = (await lancedbService.pendingEmbeddings(10000)).length; }
     catch { pendingEmbeddings = null; }
 
+    let pendingConceptWrites: number | null = null;
+    try {
+        const { introspection } = await import('../introspectionEngine');
+        pendingConceptWrites = introspection.getPendingContinuumWriteCount();
+    } catch { pendingConceptWrites = null; }
+
     let embeddingQuota: { used: number; budget: number; day: string } | null = null;
     try {
         const { quotaLedger } = await import('../quotaLedger');
@@ -265,5 +285,5 @@ export async function collectMemoryAuditDeps(): Promise<MemoryAuditDeps> {
         embeddingQuota = quotaLedger.status('gemini', DEFAULT_GEMINI_EMBEDDING_MODEL);
     } catch { embeddingQuota = null; }
 
-    return { nodes, souls, janitorMetrics, now: Date.now(), pendingTransitions, pendingEmbeddings, embeddingQuota };
+    return { nodes, souls, janitorMetrics, now: Date.now(), pendingTransitions, pendingEmbeddings, embeddingQuota, pendingConceptWrites };
 }
