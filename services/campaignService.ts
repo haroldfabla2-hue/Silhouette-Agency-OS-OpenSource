@@ -1,6 +1,28 @@
 import { geminiService } from './geminiService';
 import { vectorMemory } from './vectorMemoryService';
 import { mediaService } from './mediaService'; // Import MediaService
+import { quotaLedger } from './quotaLedger';
+import { DEFAULT_GEMINI_MODEL } from './llm/defaultModels';
+import { assertCampaignLlmGenerationAllowed } from './security/externalGenerationPolicy';
+
+/** Shotlist generation was attempted but is unavailable (no key, LLM error,
+ * unparseable output). Distinct from a missing Brand Twin (404). */
+export class CampaignShotlistUnavailableError extends Error {
+    public readonly code = 'SHOTLIST_UNAVAILABLE' as const;
+    constructor() {
+        super('Shotlist generation is unavailable on this deployment (external generation misconfigured or failed).');
+        this.name = 'CampaignShotlistUnavailableError';
+    }
+}
+
+/** Local daily attempt budget spent. Accounting signal, not upstream state. */
+export class CampaignQuotaExceededError extends Error {
+    public readonly code = 'QUOTA_BUDGET_EXCEEDED' as const;
+    constructor(used: number, budget: number, day: string, model: string) {
+        super(`Local daily attempt budget for campaign generation spent (${used}/${budget} attempts for gemini:${model}, day ${day}). Retry after quota reset.`);
+        this.name = 'CampaignQuotaExceededError';
+    }
+}
 import { BrandDigitalTwin, CampaignBlueprint, ShotSpec } from '../types';
 
 class CampaignService {
@@ -21,14 +43,28 @@ class CampaignService {
         // 2. Retrieve Brand Rules (The "Law")
         const rules = await vectorMemory.queryBrandRules(brandId, objective);
 
-        // 3. Generate Shotlist via Gemini (The "Vision")
-        const blueprint = await geminiService.generateShotlist(objective, brand, rules);
+        // 3. Fail-closed gate (CERO COBROS): the shotlist call reaches an
+        // external LLM whose cost is entitlement-dependent and unverifiable
+        // from code. Default is DENY; local preparation above is unaffected.
+        assertCampaignLlmGenerationAllowed();
 
-        if (blueprint) {
-            // 4. AUTO-SCOUT: Find Real-World Anchors for each shot
-            console.log("[CampaignService] Auto-Scouting Real-World Anchors...");
-            blueprint.shotlist = await this.autoScout(blueprint.shotlist, brand.manifesto.emotionalSpectrum.secondary.join(' '));
+        // 3b. Attempt accounting when enabled: the quota budget bounds
+        // attempts but is NOT monetary authorization (declared in the gate).
+        const attempt = quotaLedger.recordAttempt('gemini', DEFAULT_GEMINI_MODEL);
+        if (!attempt.allowed) {
+            throw new CampaignQuotaExceededError(attempt.used, attempt.budget, attempt.day, DEFAULT_GEMINI_MODEL);
         }
+
+        // 4. Generate Shotlist via Gemini (The "Vision"). A null return means
+        // generation was attempted but unavailable - NOT a missing brand.
+        const blueprint = await geminiService.generateShotlist(objective, brand, rules);
+        if (!blueprint) {
+            throw new CampaignShotlistUnavailableError();
+        }
+
+        // 5. AUTO-SCOUT: Find Real-World Anchors for each shot
+        console.log("[CampaignService] Auto-Scouting Real-World Anchors...");
+        blueprint.shotlist = await this.autoScout(blueprint.shotlist, brand.manifesto.emotionalSpectrum.secondary.join(' '));
 
         return blueprint;
     }

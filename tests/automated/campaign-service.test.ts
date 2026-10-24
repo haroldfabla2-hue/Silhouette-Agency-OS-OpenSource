@@ -3,12 +3,16 @@
  * Real service; vectorMemory, geminiService and mediaService are declared
  * doubles - no LLM, no stock API, no effects.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const getBrandTwin = vi.fn();
 const queryBrandRules = vi.fn();
 const generateShotlist = vi.fn();
 const searchRealAssets = vi.fn();
+// Closure-controlled doubles (plain functions, never reset - a vi.fn whose
+// throwing implementation is reset/cleared is mis-flagged by vitest 4.0.16).
+let policyAllows = true;
+let ledgerAllows = true;
 
 vi.mock('../../services/vectorMemoryService', () => ({
     vectorMemory: {
@@ -22,8 +26,27 @@ vi.mock('../../services/geminiService', () => ({
 vi.mock('../../services/mediaService', () => ({
     mediaService: { searchRealAssets: (...a: any[]) => searchRealAssets(...a) }
 }));
+vi.mock('../../services/quotaLedger', () => ({
+    quotaLedger: {
+        recordAttempt: (provider: string, model: string) => ledgerAllows
+            ? { allowed: true, used: 1, budget: 100, day: '2026-10-24' }
+            : { allowed: false, used: 101, budget: 100, day: '2026-10-24' }
+    }
+}));
+vi.mock('../../services/security/externalGenerationPolicy', () => ({
+    assertCampaignLlmGenerationAllowed: () => {
+        if (!policyAllows) {
+            const e: any = new Error('EXTERNAL_GENERATION_DENIED: test denial');
+            e.code = 'EXTERNAL_GENERATION_DENIED';
+            e.name = 'ExternalGenerationDeniedError';
+            throw e;
+        }
+    }
+}));
 
 import { campaignService } from '../../services/campaignService';
+
+afterEach(() => { policyAllows = true; ledgerAllows = true; });
 
 const BRAND = {
     id: 'brand_1', name: 'Acme',
@@ -54,12 +77,34 @@ describe('campaignService.createCampaign', () => {
         expect(searchRealAssets).not.toHaveBeenCalled();
     });
 
-    it('returns null when shotlist generation is unavailable (e.g. no LLM key)', async () => {
+    it('throws SHOTLIST_UNAVAILABLE when generation is attempted but fails (e.g. no LLM key)', async () => {
         getBrandTwin.mockResolvedValue(BRAND);
         queryBrandRules.mockResolvedValue('rules');
         generateShotlist.mockResolvedValue(null);
-        const out = await campaignService.createCampaign('obj', 'brand_1');
-        expect(out).toBeNull();
+        await expect(campaignService.createCampaign('obj', 'brand_1'))
+            .rejects.toMatchObject({ code: 'SHOTLIST_UNAVAILABLE' });
+        expect(searchRealAssets).not.toHaveBeenCalled();
+    });
+
+    it('fail-closed: gate denial skips LLM, budget accounting and scouting (local prep only)', async () => {
+        policyAllows = false;
+        getBrandTwin.mockResolvedValue(BRAND);
+        queryBrandRules.mockResolvedValue('rules');
+        await expect(campaignService.createCampaign('obj', 'brand_1'))
+            .rejects.toMatchObject({ code: 'EXTERNAL_GENERATION_DENIED' });
+        expect(getBrandTwin).toHaveBeenCalledTimes(1); // local prep ran
+        expect(queryBrandRules).toHaveBeenCalledTimes(1);
+        expect(generateShotlist).not.toHaveBeenCalled();
+        expect(searchRealAssets).not.toHaveBeenCalled();
+    });
+
+    it('fail-closed on spent local attempt budget: no LLM call, honest typed error', async () => {
+        ledgerAllows = false;
+        getBrandTwin.mockResolvedValue(BRAND);
+        queryBrandRules.mockResolvedValue('rules');
+        await expect(campaignService.createCampaign('obj', 'brand_1'))
+            .rejects.toMatchObject({ code: 'QUOTA_BUDGET_EXCEEDED' });
+        expect(generateShotlist).not.toHaveBeenCalled();
         expect(searchRealAssets).not.toHaveBeenCalled();
     });
 

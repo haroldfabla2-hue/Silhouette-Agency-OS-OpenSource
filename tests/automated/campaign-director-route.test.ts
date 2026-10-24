@@ -66,17 +66,40 @@ describe('POST /v1/media/campaign/create', () => {
         expect(createCampaign).toHaveBeenCalledWith('Launch product', 'brand_1');
     });
 
-    it('404 when the service returns null (Brand Twin missing / shotlist unavailable)', async () => {
+    it('404 only when the Brand Twin is missing (service returns null)', async () => {
         createCampaign.mockResolvedValue(null);
         const { status, json } = await post({ objective: 'x', brandId: 'ghost' });
         expect(status).toBe(404);
-        expect(json.error).toMatch(/Brand Twin not found|unavailable/);
+        expect(json.code).toBe('BRAND_TWIN_NOT_FOUND');
     });
 
-    it('500 with message when the service throws', async () => {
+    it('503 with code when external generation is denied (fail-closed, CERO COBROS)', async () => {
+        createCampaign.mockImplementation(async () => {
+            const e: any = new Error('EXTERNAL_GENERATION_DENIED: test');
+            e.code = 'EXTERNAL_GENERATION_DENIED';
+            throw e;
+        });
+        const { status, json } = await post({ objective: 'x', brandId: 'b' });
+        expect(status).toBe(503);
+        expect(json.code).toBe('EXTERNAL_GENERATION_DENIED');
+    });
+
+    it('503 with code when shotlist generation is unavailable (distinct from 404)', async () => {
+        createCampaign.mockImplementation(async () => {
+            const e: any = new Error('Shotlist generation is unavailable on this deployment (external generation misconfigured or failed).');
+            e.code = 'SHOTLIST_UNAVAILABLE';
+            throw e;
+        });
+        const { status, json } = await post({ objective: 'x', brandId: 'b' });
+        expect(status).toBe(503);
+        expect(json.code).toBe('SHOTLIST_UNAVAILABLE');
+    });
+
+    it('500 with a generic message when the service throws unexpectedly (no raw internals leak)', async () => {
         createCampaign.mockImplementation(async () => { throw new Error('llm exploded'); });
         const { status, json } = await post({ objective: 'x', brandId: 'b' });
         expect(status).toBe(500);
-        expect(json.error).toBe('llm exploded');
+        expect(json.error).toBe('Campaign planning failed');
+        expect(JSON.stringify(json)).not.toContain('llm exploded');
     });
 });

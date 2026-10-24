@@ -230,12 +230,22 @@ class MediaController {
             console.log(`[MediaController] 🎬 Campaign planning: "${objective}" for brand ${brandId}`);
             const blueprint = await campaignService.createCampaign(objective, brandId);
             if (!blueprint) {
-                return res.status(404).json({ error: 'Brand Twin not found or shotlist generation unavailable' });
+                // Only a missing Brand Twin is a 404.
+                return res.status(404).json({ error: 'Brand Twin not found for the given brandId', code: 'BRAND_TWIN_NOT_FOUND' });
             }
             return res.json(blueprint);
         } catch (error: any) {
+            // Typed, deployment-level unavailability: fail-closed gate
+            // (CERO COBROS), spent local attempt budget, or failed/misconfigured
+            // shotlist generation. Messages are static and safe to show.
+            if (error?.code === 'EXTERNAL_GENERATION_DENIED'
+                || error?.code === 'SHOTLIST_UNAVAILABLE'
+                || error?.code === 'QUOTA_BUDGET_EXCEEDED') {
+                return res.status(503).json({ error: error.message, code: error.code });
+            }
+            // Unexpected: log internals, never leak them to the client.
             console.error('[MediaController] CreateCampaign Error:', error);
-            return res.status(500).json({ error: error.message });
+            return res.status(500).json({ error: 'Campaign planning failed' });
         }
     }
 
