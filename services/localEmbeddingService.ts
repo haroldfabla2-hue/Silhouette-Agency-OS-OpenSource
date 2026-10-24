@@ -10,7 +10,14 @@ class LocalEmbeddingService {
     private initPromise: Promise<void> | null = null;
 
     constructor() {
-        this.initPromise = this.init();
+        // Under the test runner, do NOT start the model download at import
+        // time: a pending download when the worker closes fails the whole
+        // suite ("Closing rpc while fetch was pending"). getEmbedding()
+        // lazily initializes in every environment; production keeps the
+        // boot warm-up.
+        if (!process.env.VITEST) {
+            this.initPromise = this.init();
+        }
     }
 
     private async init() {
@@ -26,6 +33,7 @@ class LocalEmbeddingService {
     }
 
     public async getEmbedding(text: string): Promise<number[] | null> {
+        if (!this.initPromise) this.initPromise = this.init();
         if (!this.isReady) {
             await this.initPromise;
         }
