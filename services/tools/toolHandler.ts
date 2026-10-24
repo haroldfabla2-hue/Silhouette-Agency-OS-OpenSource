@@ -258,6 +258,10 @@ export class ToolHandler {
         // But for Tools, we simulate a "Promise" via the Orchestrator? 
         // Or simpler: We create a "Task Ticket".
 
+        // [SECURITY] No authority travels with a delegation: a grant is
+        // single-use and bound to exact args, so it cannot legitimately cover
+        // whatever the delegated agent later decides to do. Deferred work
+        // gates its own effects on arrival (human confirmation when needed).
         systemBus.emit(SystemProtocol.TASK_ASSIGNMENT, {
             targetRole: args.target_role,
             task: args.task,
@@ -368,6 +372,9 @@ export class ToolHandler {
                 return { error: "Failed to generate image." };
             }
         } catch (e: any) {
+            if (e?.code === 'EFFECT_DENIED') {
+                return { error: e.message, errorCode: 'EFFECT_DENIED' };
+            }
             return { error: `Image generation failed: ${e.message}` };
         }
     }

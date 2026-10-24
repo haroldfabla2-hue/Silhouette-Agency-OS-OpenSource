@@ -296,11 +296,28 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
                 console.log(`[CONFIRM_GATE] ✅ ${toolName} confirmed by authenticated user - executing once`);
             }
 
-            // Execute the tool via orchestrator (unified capability execution)
-            const capabilityResult = await orchestrator.executeCapability(toolName, args, {
-                requesterId: 'chat',
-                priority: 'NORMAL'
-            });
+            // Execute the tool via orchestrator (unified capability execution).
+            // For gated effects the confirmationGate decision above is the
+            // user's explicit yes to THESE EXACT args: issue a single-use,
+            // args-bound grant for this one execution. Anything else (other
+            // args, a second piece, a replay) gates again at the boundary.
+            let capabilityResult;
+            if (EXTERNAL_EFFECT_TOOLS.has(toolName) && process.env.CHAT_EFFECT_GATE !== 'off') {
+                const { issueEffectGrant } = await import('./security/effectGate');
+                const { runWithEffectContext } = await import('./security/effectContext');
+                const grantCtx = issueEffectGrant(toolName as any, args, `chat:${gateContext?.principalId ?? 'unknown'}`);
+                capabilityResult = await runWithEffectContext(grantCtx, () =>
+                    orchestrator.executeCapability(toolName, args, {
+                        requesterId: 'chat',
+                        priority: 'NORMAL'
+                    })
+                );
+            } else {
+                capabilityResult = await orchestrator.executeCapability(toolName, args, {
+                    requesterId: 'chat',
+                    priority: 'NORMAL'
+                });
+            }
 
             // Extract result data
             const result = capabilityResult.data;
