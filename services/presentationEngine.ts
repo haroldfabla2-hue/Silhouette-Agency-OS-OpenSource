@@ -362,7 +362,10 @@ RULES:
                             generationPrompt: slideOutline.title
                         });
                     }
-                } catch (e) {
+                } catch (e: any) {
+                    // A denied effect aborts the deck's image pass: no retry
+                    // slide by slide (each would be new spend).
+                    if (e?.code === 'EFFECT_DENIED') throw e;
                     console.warn(`[PRESENTATION] Image generation failed for slide ${i}:`, e);
                 }
             }

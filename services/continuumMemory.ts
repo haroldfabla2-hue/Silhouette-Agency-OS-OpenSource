@@ -144,16 +144,14 @@ class ContinuumMemorySystem {
         // No hydration needed for LanceDB, it's always on disk.
         // RAM tiers start empty on reboot (Tabula Rasa for short term) UNLESS hydrated explicitly.
 
-        // Connect to Redis (Hybrid Persistence Layer)
-        // Disk/journal recovery must not depend on Redis availability.
-        redisClient.connect().catch(err => console.warn('[CONTINUUM] Redis unavailable:', err));
+        // [LIFECYCLE] Import must be side-effect free: Redis connects lazily
+        // on first operation (redisClient.ensureConnected), and the Dreaming
+        // loop starts explicitly at server boot (server/loaders/index.ts) -
+        // a fire-and-forget connect here raced test-worker teardown and
+        // crashed CI intermittently. Disk/journal recovery never depended on
+        // Redis availability.
         this.loadSnapshot().then(() => this.reconcileTransitions())
             .catch(err => console.error('[CONTINUUM] Failed to recover memory:', err));
-
-        // Start Dreaming Protocol (Subconscious)
-        import('./dreamerService').then(({ dreamer }) => {
-            dreamer.startDreamingLoop();
-        });
     }
 
     // --- PUBLIC API ---

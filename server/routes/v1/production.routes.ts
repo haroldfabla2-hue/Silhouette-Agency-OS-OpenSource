@@ -21,6 +21,11 @@ const router = Router();
  * POST /production/create
  * Start a new video production project
  */
+// [SECURITY] A production run multiplies wallet-bearing generation (images,
+// voice, video). NO blanket grant is issued here: the scope of a run is not
+// knowable upfront, so every piece gates itself at the provider boundary
+// (human confirmation via /v1/autonomy/confirmations when no grant exists).
+// A scoped campaign grant (explicit piece counts + cost cap) is future work.
 router.post('/create', async (req: Request, res: Response) => {
     try {
         const {

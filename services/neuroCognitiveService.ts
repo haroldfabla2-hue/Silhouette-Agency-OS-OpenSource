@@ -68,7 +68,22 @@ class NeuroCognitiveService {
         if (this.heartbeatInterval) return;
 
         console.log("[NEURO] 💓 Starting Proactive Discovery Heartbeat (Every 5m)");
-        this.heartbeatInterval = setInterval(() => {
+        this.heartbeatInterval = setInterval(async () => {
+            // [SECURITY] This heartbeat self-starts from the constructor 30s
+            // after import - a route into proactive discovery that bypasses
+            // both the daemon and the boot loader. The autonomy ceiling must
+            // hold on every route: re-read the operator config each tick.
+            // Fail-closed (authority). PowerManager throttle is fail-open
+            // (resource hint, not authority).
+            try {
+                const { configLoader } = await import('../server/config/configLoader');
+                const { isTaskAllowedByAutonomy } = await import('./daemon/autonomyPolicy');
+                if (!isTaskAllowedByAutonomy('Curiosity', configLoader.getConfig().autonomy as any)) return;
+            } catch { return; }
+            try {
+                const { powerManager } = await import('./powerManager');
+                if (!powerManager.isCuriosityEnabled) return;
+            } catch { /* throttle unavailable -> full capability */ }
             // Only trigger if not already busy and random chance (stochasticity)
             if (!this.isDiscovering && Math.random() > 0.3) {
                 console.log("[NEURO] 💓 Heartbeat triggering spontaneous discovery...");
