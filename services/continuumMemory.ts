@@ -10,6 +10,7 @@ import { quotaLedger, QuotaLedger } from './quotaLedger';
 import { DEFAULT_GEMINI_EMBEDDING_MODEL } from './llm/defaultModels';
 import { introspection } from './introspectionEngine';
 import { redisClient } from './redisClient';
+import { importWhenReady } from './moduleLifecycle';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { systemBus } from './systemBus';
