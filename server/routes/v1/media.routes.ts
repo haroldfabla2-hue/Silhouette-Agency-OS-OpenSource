@@ -17,7 +17,17 @@ router.get('/queue/:id', (req, res) => mediaController.getJobStatus(req, res));
 
 // ==================== IMAGE GENERATION ====================
 // POST /v1/media/generate/image - Generate image from prompt
-router.post('/generate/image', (req, res) => mediaController.generateImage(req, res));
+// [SECURITY] Authenticated, user-initiated generation requests: mark the
+// whole downstream async chain as 'user-http' so provider-boundary guards
+// (imageFactory/videoFactory) treat them as explicit user actions, not
+// autonomous spend. Applied ONLY to the generation endpoints.
+const userHttpEffect = (route: string) => (req: any, res: any, next: any) => {
+    import('../../../services/security/effectContext').then(({ runWithEffectContext }) => {
+        runWithEffectContext({ kind: 'user-http', source: route }, async () => { next(); });
+    }).catch(next);
+};
+
+router.post('/generate/image', userHttpEffect('POST /v1/media/generate/image'), (req, res) => mediaController.generateImage(req, res));
 // POST /v1/media/enhance - Enhance existing image
 router.post('/enhance', (req, res) => mediaController.enhanceImage(req, res));
 // POST /v1/media/upscale - Upscale to 4K

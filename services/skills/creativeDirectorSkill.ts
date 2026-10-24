@@ -150,9 +150,16 @@ class CreativeDirectorSkill {
         for (const msg of messages) {
             try {
                 if (msg.protocol === SystemProtocol.TASK_ASSIGNMENT) {
-                    const { taskType, context } = msg.payload;
+                    const { taskType, context, effectContext } = msg.payload;
                     console.log(`[CreativeDirector] 📨 Received Task: ${taskType}`);
 
+                    // [SECURITY] Re-establish the provenance carried with this
+                    // delegation: chat/http-initiated tasks keep their
+                    // user-initiated identity; tasks without provenance run
+                    // with NO context, so provider-boundary guards require
+                    // human confirmation for wallet-bearing effects.
+                    const { runWithEffectContext } = await import('../security/effectContext');
+                    const dispatch = async () => {
                     let result: any = null;
 
                     if (taskType === 'GENERATE_CAMPAIGN') {
@@ -167,6 +174,11 @@ class CreativeDirectorSkill {
                         const prompt = context.prompt || context.brief;
                         result = await this.generateMotion(prompt, context.imageContext, context.engine);
                     }
+                    return result;
+                    };
+                    const result: any = effectContext
+                        ? await runWithEffectContext(effectContext, dispatch)
+                        : await dispatch();
 
                     // Reply if sender is expecting one (and it's not a fire-and-forget system message)
                     if (msg.senderId && msg.type === 'REQUEST') {

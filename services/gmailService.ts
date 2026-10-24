@@ -367,6 +367,25 @@ class GmailService {
      * Send an email
      */
     async sendEmail(options: SendEmailOptions): Promise<{ success: boolean; messageId?: string; error?: string }> {
+        // [SECURITY] EFFECT GATE (provider boundary): sending email is an
+        // external effect. Callers that bypass executeCapability (e.g. the
+        // MCP server via toolExecutor, or any future direct caller) carry no
+        // EffectContext and must obtain human confirmation via
+        // /v1/autonomy/confirmations. Chat, the gated capability path and
+        // the authenticated UI route arrive with a context and pass once.
+        {
+            const { ensureEffectConsent } = await import('./security/effectGate');
+            const consent = await ensureEffectConsent(
+                'send_email',
+                { to: options.to, cc: (options as any).cc, subject: options.subject, body: options.body },
+                'gmailService.sendEmail'
+            );
+            if (!consent.allowed) {
+                console.warn(`[EFFECT_GATE] ⛔ Email send blocked: ${consent.reason}`);
+                return { success: false, error: `SECURITY_CONSENT_REQUIRED: ${consent.reason}` };
+            }
+        }
+
         if (!this.gmail) throw new Error('Gmail not initialized');
 
         const { driveService } = await import('./driveService');

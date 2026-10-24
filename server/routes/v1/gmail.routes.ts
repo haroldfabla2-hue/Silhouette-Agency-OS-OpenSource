@@ -68,7 +68,13 @@ router.post('/send', async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Missing to, subject, or body' });
         }
 
-        const result = await gmailService.sendEmail({ to, subject, body, isHtml, driveLink });
+        // Authenticated user clicked "send" in the UI: mark the request as
+        // user-initiated so the provider-boundary guard passes THIS send.
+        const { runWithEffectContext } = await import('../../../services/security/effectContext');
+        const result = await runWithEffectContext(
+            { kind: 'user-http', tool: 'send_email', source: 'POST /v1/gmail/send' },
+            () => gmailService.sendEmail({ to, subject, body, isHtml, driveLink })
+        );
 
         if (result.success) {
             return res.json({ success: true, messageId: result.messageId });

@@ -258,11 +258,18 @@ export class ToolHandler {
         // But for Tools, we simulate a "Promise" via the Orchestrator? 
         // Or simpler: We create a "Task Ticket".
 
+        // [SECURITY] Carry the caller's effect context across the async
+        // delegation: a chat-initiated delegation keeps its user-initiated
+        // provenance when the mailbox is processed later (deferred execution
+        // must not silently become "autonomous" and must not silently keep
+        // autonomy either - provenance travels with the task).
+        const { getEffectContext } = await import('../security/effectContext');
         systemBus.emit(SystemProtocol.TASK_ASSIGNMENT, {
             targetRole: args.target_role,
             task: args.task,
             context: args.context,
-            priority: 'HIGH'
+            priority: 'HIGH',
+            effectContext: getEffectContext() ?? null
         }, 'TOOL_HANDLER');
 
         // We return a confirmation. The Agent must know to listen or check status later.

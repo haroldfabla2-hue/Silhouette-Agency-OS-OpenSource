@@ -53,6 +53,25 @@ export class ImageFactory {
             return this.handleStockPhoto(request, start);
         }
 
+        // [SECURITY] EFFECT GATE (provider boundary): cloud image generation
+        // is wallet-bearing (Replicate/OpenAI are attempted BEFORE any quota
+        // error surfaces) and direct callers bypass executeCapability
+        // entirely (creativeDirectorSkill, productionSquad, canvasService,
+        // figureGenerator, ...). Without an upstream approved EffectContext,
+        // a human must confirm via /v1/autonomy/confirmations. Fail-closed.
+        {
+            const { ensureEffectConsent } = await import('../security/effectGate');
+            const consent = await ensureEffectConsent(
+                'generate_image',
+                { prompt: request.prompt, style: request.style, aspectRatio: request.aspectRatio, count: request.count },
+                'imageFactory.createAsset'
+            );
+            if (!consent.allowed) {
+                console.warn(`[EFFECT_GATE] ⛔ Image generation blocked: ${consent.reason}`);
+                return null;
+            }
+        }
+
         let result: ImageAsset | null = null;
 
         // === USER PREFERS LOCAL (Free Mode) ===

@@ -1452,10 +1452,12 @@ JSON ONLY:
 
         try {
             // ═══════════════════════════════════════════════════════════════
-            // [SECURITY] Central enforcement chokepoint
-            // Every capability execution flows through here, so this is where the
-            // operator-configured denylist is actually enforced (previously the
-            // securityManager was initialized but never consulted on this path).
+            // [SECURITY] Denylist enforcement at the capability chokepoint.
+            // Scope note (audit 2026-10-23): NOT every effect flows through
+            // executeCapability - direct provider callers (imageFactory,
+            // gmailService, videoFactory) and the MCP server bypass it. Those
+            // paths are covered by provider-boundary guards in the provider
+            // services themselves (see services/security/effectGate.ts).
             // ═══════════════════════════════════════════════════════════════
             try {
                 const { securityManager } = await import('./security/securityManager');
@@ -1486,6 +1488,39 @@ JSON ONLY:
                 console.error('[ORCHESTRATOR] 🚫 securityManager load failure — failing closed:', secErr?.message || secErr);
                 this.emitCapabilityResult(capabilityName, denied, requesterId);
                 return denied;
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            // [SECURITY] EFFECT GATE: human consent for external / wallet-
+            // bearing effects on EVERY path through this chokepoint.
+            // Chat enters with a confirmed EffectContext (confirmationGate)
+            // and skips re-gating; daemon / scheduler / plan / MCP and any
+            // other caller must obtain human approval via actionExecutor,
+            // decided at /v1/autonomy/confirmations. Fail-closed.
+            // ═══════════════════════════════════════════════════════════════
+            const { isGatedEffect, ensureEffectConsent } = await import('./security/effectGate');
+            const { getEffectContext, runWithEffectContext } = await import('./security/effectContext');
+            if (isGatedEffect(capabilityName) && !getEffectContext()) {
+                const consent = await ensureEffectConsent(capabilityName, args, `executeCapability:${requesterId}`);
+                if (!consent.allowed) {
+                    const deniedFx: CapabilityResult = {
+                        success: false,
+                        data: null,
+                        error: `SECURITY_CONSENT_REQUIRED: ${consent.reason}`,
+                        executedBy: 'ORCHESTRATOR',
+                        executionTimeMs: Date.now() - startTime,
+                        metadata: { toolName: capabilityName }
+                    };
+                    this.emitCapabilityResult(capabilityName, deniedFx, requesterId);
+                    return deniedFx;
+                }
+                // Approved once by a human: re-enter with a confirmed context so
+                // this single execution (and its provider-boundary guards) pass.
+                // The re-entry skips this gate because the context is present.
+                return runWithEffectContext(
+                    { kind: 'confirmed', tool: capabilityName, source: 'actionExecutor' },
+                    () => this.executeCapability(capabilityName, args, context)
+                );
             }
 
             // ═══════════════════════════════════════════════════════════════
@@ -2292,7 +2327,15 @@ OBJECTIVES:
         this.sendTaggedMessage(
             targetAgentId,
             SystemProtocol.TASK_ASSIGNMENT,
-            { taskType, context: enrichedContext, correlationId: crypto.randomUUID() },
+            {
+                taskType,
+                context: enrichedContext,
+                correlationId: crypto.randomUUID(),
+                // [SECURITY] Provenance of the original caller (chat/http/
+                // none), re-established by the inbox consumer so deferred
+                // execution keeps its original permission identity.
+                effectContext: payload.effectContext ?? null
+            },
             {
                 tag: MessageTag.AGENT_DELEGATION,
                 priority: priorityLevel

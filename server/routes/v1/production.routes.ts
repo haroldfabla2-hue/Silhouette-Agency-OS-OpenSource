@@ -21,7 +21,14 @@ const router = Router();
  * POST /production/create
  * Start a new video production project
  */
+// [SECURITY] A production run multiplies wallet-bearing generation (images,
+// voice, video) from one authenticated click. The click is the user's intent,
+// so the route is marked 'user-http'; per-generation consent UX for multiplied
+// production is a declared open decision (see PR), not silently granted here
+// beyond that intent.
 router.post('/create', async (req: Request, res: Response) => {
+    const { runWithEffectContext } = await import('../../../services/security/effectContext');
+    return runWithEffectContext({ kind: 'user-http', source: 'POST /v1/production/create' }, async () => {
     try {
         const {
             brief,
