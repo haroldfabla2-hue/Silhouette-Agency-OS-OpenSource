@@ -240,6 +240,14 @@ export class MediaService {
 
     // --- VOICE GENERATION ---
     public async generateSpeech(text: string, voiceId?: string): Promise<ArrayBuffer> {
+        // [SECURITY] EFFECT GATE (provider boundary): wallet-bearing provider
+        // call (cloud TTS). HARD-BLOCKED in this delivery - pending an
+        // authorized budget/cap mechanism. Typed EffectDeniedError before any
+        // provider request; no fallback, no retry. Code path preserved.
+        {
+            const { ensureEffectConsent } = await import('./security/effectGate');
+            await ensureEffectConsent('generate_voice', { text, voiceId }, 'mediaService.generateSpeech', { providerBoundary: true });
+        }
         const providers = ['ELEVENLABS', 'OPENAI'];
         let lastError = null;
 
@@ -299,6 +307,15 @@ export class MediaService {
     // --- CREATIVE DIRECTOR TOOLS ---
 
     public async enhanceImage(imageUrl: string, prompt: string, strength: number = 0.3): Promise<string> {
+        // [SECURITY] EFFECT GATE (provider boundary): wallet-bearing provider
+        // call (Replicate). HARD-BLOCKED in this delivery - pending an
+        // authorized budget/cap mechanism. Typed EffectDeniedError before any
+        // provider request; no fallback, no retry. Code path preserved, not
+        // dismantled: it resumes once budget authority exists.
+        {
+            const { ensureEffectConsent } = await import('./security/effectGate');
+            await ensureEffectConsent('generate_image', { prompt, imageUrl, strength }, 'mediaService.enhanceImage', { providerBoundary: true });
+        }
         if (!this.config?.replicateKey) throw new Error("Missing Replicate Key for Enhancement.");
 
         // Use a model good for upscaling/refining (e.g., Real-ESRGAN or just img2img with low strength)
@@ -348,6 +365,15 @@ export class MediaService {
     }
 
     public async generateComposite(baseImageUrl: string, prompt: string, options?: { strength?: number, guidance?: number, steps?: number }): Promise<string> {
+        // [SECURITY] EFFECT GATE (provider boundary): wallet-bearing provider
+        // call (Replicate). HARD-BLOCKED in this delivery - pending an
+        // authorized budget/cap mechanism. Typed EffectDeniedError before any
+        // provider request; no fallback, no retry. Code path preserved, not
+        // dismantled: it resumes once budget authority exists.
+        {
+            const { ensureEffectConsent } = await import('./security/effectGate');
+            await ensureEffectConsent('generate_image', { prompt, baseImageUrl }, 'mediaService.generateComposite', { providerBoundary: true });
+        }
         if (!this.config?.replicateKey) throw new Error("Missing Replicate Key for Composite.");
 
         // Use NanoBanana Pro (or similar img2img model)
@@ -397,6 +423,13 @@ export class MediaService {
 
     // --- VIDEO GENERATION ---
     public async generateVideo(prompt: string, imageUrl?: string): Promise<{ url?: string, type: 'AI' | 'SYNTHETIC' | 'APPROVAL_REQUIRED' }> {
+        // [SECURITY] EFFECT GATE (provider boundary): wallet-bearing provider
+        // call. HARD-BLOCKED in this delivery - pending budget/cap. Typed
+        // EffectDeniedError before any provider request; no fallback.
+        {
+            const { ensureEffectConsent } = await import('./security/effectGate');
+            await ensureEffectConsent('generate_video', { prompt, imageUrl }, 'mediaService.generateVideo', { providerBoundary: true });
+        }
 
         // 0. Check for Advanced Models (Veo 3 / NanoBanana)
         const advancedModels = [
@@ -552,6 +585,15 @@ export class MediaService {
      * Optionally uses an 'anchorImage' (Unsplash) to guide the structure/composition.
      */
     public async generateBackgroundFlux(prompt: string, anchorImage?: string): Promise<string> {
+        // [SECURITY] EFFECT GATE (provider boundary): wallet-bearing provider
+        // call (Replicate). HARD-BLOCKED in this delivery - pending an
+        // authorized budget/cap mechanism. Typed EffectDeniedError before any
+        // provider request; no fallback, no retry. Code path preserved, not
+        // dismantled: it resumes once budget authority exists.
+        {
+            const { ensureEffectConsent } = await import('./security/effectGate');
+            await ensureEffectConsent('generate_image', { prompt }, 'mediaService.generateBackgroundFlux', { providerBoundary: true });
+        }
         // CLIENT-SIDE PROXY: If running in browser, delegate to server to avoid CORS
         if (typeof window !== 'undefined') {
             const apiKey = localStorage.getItem('SILHOUETTE_API_KEY') || 'system-override';
@@ -663,6 +705,15 @@ export class MediaService {
      * Takes the composite (Product on Flux Background) and harmonizes the lighting.
      */
     public async relightImageICLight(compositeImage: string, prompt: string): Promise<string> {
+        // [SECURITY] EFFECT GATE (provider boundary): wallet-bearing provider
+        // call (Replicate). HARD-BLOCKED in this delivery - pending an
+        // authorized budget/cap mechanism. Typed EffectDeniedError before any
+        // provider request; no fallback, no retry. Code path preserved, not
+        // dismantled: it resumes once budget authority exists.
+        {
+            const { ensureEffectConsent } = await import('./security/effectGate');
+            await ensureEffectConsent('generate_image', { prompt, compositeImage }, 'mediaService.relightImageICLight', { providerBoundary: true });
+        }
         if (!this.config?.replicateKey) throw new Error("Missing Replicate Key for IC-Light.");
 
         console.log(`[MEDIA] Relighting via IC-Light...`);
@@ -714,6 +765,15 @@ export class MediaService {
      * Upscales the final image to 4K.
      */
     public async upscaleImage(imageUrl: string, scale: number = 4): Promise<string> {
+        // [SECURITY] EFFECT GATE (provider boundary): wallet-bearing provider
+        // call (Replicate). HARD-BLOCKED in this delivery - pending an
+        // authorized budget/cap mechanism. Typed EffectDeniedError before any
+        // provider request; no fallback, no retry. Code path preserved, not
+        // dismantled: it resumes once budget authority exists.
+        {
+            const { ensureEffectConsent } = await import('./security/effectGate');
+            await ensureEffectConsent('generate_image', { imageUrl, scale }, 'mediaService.upscaleImage', { providerBoundary: true });
+        }
         if (!this.config?.replicateKey) throw new Error("Missing Replicate Key for Upscale.");
         console.log(`[MediaService] Upscaling image ${scale}x...`);
 
