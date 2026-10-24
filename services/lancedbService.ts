@@ -523,7 +523,14 @@ export class LanceDbService {
         return out;
     }
 
-    public async search(queryVector: number[], limit = 10, filter?: string, identity?: EmbeddingIdentity): Promise<MemoryNode[]> {
+    /**
+     * opts.withScores: also attach the measured SIMILARITY to each hydrated
+     * node (cosine similarity; both routes - exact rankByCosine _score and
+     * ANN hits (1 - cosine distance) - are normalized to similarity, so band
+     * filters behave identically whichever engine serves the query).
+     * Default (no opts): unchanged behavior, nodes carry no similarity.
+     */
+    public async search(queryVector: number[], limit = 10, filter?: string, identity?: EmbeddingIdentity, opts?: { withScores?: boolean }): Promise<(MemoryNode & { similarity?: number })[]> {
         if (!identity || !validEmbedding(queryVector, identity)) return [];
         await this.ensureInitialized();
         if (!this.db) return [];
@@ -542,7 +549,11 @@ export class LanceDbService {
                     const hits = ann.search(queryVector, limit, ownerScope);
                     // Batched hydration (#193): one IN query, never N full scans.
                     const byId = await this.getNodesByIds(hits.map(h => h.id));
-                    return hits.map(h => byId.get(h.id)).filter((n): n is MemoryNode => n !== null);
+                    return hits.map(h => {
+                        const n = byId.get(h.id);
+                        if (!n) return null;
+                        return opts?.withScores ? Object.assign(n, { similarity: h.score }) : n;
+                    }).filter((n): n is MemoryNode => n !== null);
                 }
             } catch (e) {
                 console.error(`[VECTOR] ANN search failed for ${name} (${(e as Error).message}); falling back to exact partitioned scan`);
@@ -575,7 +586,11 @@ export class LanceDbService {
         }
         // Batched hydration (#193): one IN query, never N full scans.
         const byId = await this.getNodesByIds(top.map(r => r.id));
-        return top.map(r => byId.get(r.id)).filter((n): n is MemoryNode => n !== null);
+        return top.map(r => {
+            const n = byId.get(r.id);
+            if (!n) return null;
+            return opts?.withScores ? Object.assign(n, { similarity: r._score }) : n;
+        }).filter((n): n is MemoryNode => n !== null);
     }
 
     /**
