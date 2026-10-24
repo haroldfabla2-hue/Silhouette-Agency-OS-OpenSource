@@ -134,17 +134,19 @@ describe('OAuth connect (declared-double AS; NOT a vendor login)', () => {
         expect(store.list()).toHaveLength(0);
         store.close();
     });
-    it('SSRF guard (strict mode): private IP literals and private-resolving hosts rejected', async () => {
+    it('SSRF guard (strict mode): server-fetched endpoints pinned to validated public addresses', async () => {
         const { store, tokens } = await setup();
         const strict = new ConnectionManager(store, tokens); // no allowPrivateEndpoints = production posture
+        // private IP literal on a server-fetched endpoint -> rejected when the pinned fetcher is created
         await expect(strict.startOAuthConnect({
             providerId: 'P', accountId: 'a', label: 'l', method: 'device-code',
             config: { clientId: 'c', deviceCodeUrl: 'https://192.168.1.10/dc', tokenUrl: 'https://192.168.1.10/t' },
         }, 'op-1')).rejects.toThrow(/non-public/);
+        // host resolving to loopback on a server-fetched endpoint -> rejected
         await expect(strict.startOAuthConnect({
-            providerId: 'P', accountId: 'a', label: 'l', method: 'oauth-loopback',
-            config: { clientId: 'c', authorizeUrl: 'https://localhost/auth', tokenUrl: 'https://localhost/token' },
-        }, 'op-1')).rejects.toThrow(/non-public/); // localhost resolves to 127.0.0.1
+            providerId: 'P', accountId: 'a', label: 'l', method: 'device-code',
+            config: { clientId: 'c', deviceCodeUrl: 'https://localhost/dc', tokenUrl: 'https://example.com/t' },
+        }, 'op-1')).rejects.toThrow(/non-public/);
         store.close();
     });
     it('pendingId is bound to the initiating principal: another CREATOR cannot complete or cancel', async () => {
