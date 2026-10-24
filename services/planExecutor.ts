@@ -23,7 +23,7 @@ import { SystemProtocol, CommunicationLevel, AgentStatus, AgentRoleType, AgentTi
 import { stepDeclaresFileWork, durableFileGrant } from './tools/toolSelection'; // [W3]
 import { evaluatePlanHonesty } from './execution/stepHonesty'; // [W3]
 import { collectWrittenArtifacts } from './execution/artifactLedger'; // [W3]
-import { recordPlanTasks, markTaskRunning, markTaskDone, closeOpenTasks, recordLateSettlement, getUnresolvedAbandonedTaskRows } from './execution/taskLedger'; // [PR-1] [PR-4c: closeOpenTasks] [LEDGER-INTEGRITY]
+import { recordPlanTasks, markTaskRunning, markTaskPhase, markTaskDone, closeOpenTasks, recordLateSettlement, getUnresolvedAbandonedTaskRows } from './execution/taskLedger'; // [PR-1] [PR-4c: closeOpenTasks] [LEDGER-INTEGRITY]
 import { extractExecuteMarkers, normalizeToolName } from './tools/execMarker'; // [PR-I]
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -318,6 +318,7 @@ class PlanExecutor {
         // ═══════════════════════════════════════════════════════════════════
         // HOMEOSTATIC CHECK 1: Resource Arbiter (RAM/CPU/VRAM)
         // ═══════════════════════════════════════════════════════════════════
+        markTaskPhase(plan.id, step, 'waiting_resources');
         const arbiterApproved = await this.waitForResources(step);
         if (!arbiterApproved) {
             return {
@@ -344,12 +345,14 @@ class PlanExecutor {
         // ═══════════════════════════════════════════════════════════════════
         if (congestionManager.isCongested()) {
             console.log(`[PLAN_EXECUTOR] 🚦 System congested. Pausing...`);
+            markTaskPhase(plan.id, step, 'waiting_congestion');
             await this.pause(this.CONGESTION_PAUSE_MS);
         }
 
         // ═══════════════════════════════════════════════════════════════════
         // HYDRATE AGENT (Load into memory)
         // ═══════════════════════════════════════════════════════════════════
+        markTaskPhase(plan.id, step, 'executing');
         try {
             await orchestrator.hydrateAgent(step.agentId);
         } catch (e) {

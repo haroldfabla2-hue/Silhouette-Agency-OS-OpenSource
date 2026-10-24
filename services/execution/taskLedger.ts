@@ -1,3 +1,4 @@
+import type { TaskPhase } from './taskLoad';
 /**
  * [PR-1] Task ledger: work as DATA, not narrative (pattern: CrewAI Task).
  *
@@ -38,7 +39,7 @@ export function taskIdFor(planId: string, order: number): string {
 export function recordPlanTasks(plan: ExecutionPlan): void {
     for (const step of plan.steps) {
         try {
-            sqliteService.upsertTask({
+            sqliteService.updatePlanTask({
                 id: taskIdFor(plan.id, step.order),
                 description: step.taskDescription,
                 assigned_to: step.agentId,
@@ -50,9 +51,10 @@ export function recordPlanTasks(plan: ExecutionPlan): void {
                     dependsOn: step.dependsOn,
                     priority: step.priority,
                     requiredCapabilities: step.requiredCapabilities,
-                    originalRequest: plan.originalRequest?.substring(0, 500)
+                    originalRequest: plan.originalRequest?.substring(0, 500),
+                    loadPhase: 'admitted', loadPhaseAt: Date.now()
                 }
-            });
+            }, true);
         } catch (e: any) {
             console.warn(`[TASK_LEDGER] record failed for step ${step.order} (non-blocking): ${e?.message}`);
         }
@@ -61,7 +63,7 @@ export function recordPlanTasks(plan: ExecutionPlan): void {
 
 export function markTaskRunning(planId: string, step: PlanStep): void {
     try {
-        sqliteService.upsertTask({
+        sqliteService.updatePlanTask({
             id: taskIdFor(planId, step.order),
             description: step.taskDescription,
             assigned_to: step.agentId,
@@ -315,4 +317,10 @@ export function closeOpenTasks(planId: string, executedOrders: Set<number>, reas
     } catch (e: any) {
         console.warn(`[TASK_LEDGER] close open tasks failed (non-blocking): ${e?.message}`);
     }
+}
+
+/** Observation only; a write failure never changes execution. */
+export function markTaskPhase(planId: string, step: PlanStep, phase: TaskPhase): void {
+    try { sqliteService.updatePlanTaskPhase(taskIdFor(planId, step.order), phase, Date.now()); }
+    catch (e: any) { console.warn(`[TASK_LEDGER] phase observation failed (non-blocking): ${e?.message}`); }
 }

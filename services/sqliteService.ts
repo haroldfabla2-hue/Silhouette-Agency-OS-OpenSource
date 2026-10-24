@@ -1,3 +1,4 @@
+import { mergeTaskMetadata, taskLoadSnapshot, type TaskPhase } from './execution/taskLoad';
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
@@ -987,6 +988,43 @@ export class SqliteService {
         `);
         const now = Date.now();
         stmt.run(task.id, task.description, task.assigned_to, task.status, now, now, JSON.stringify(task.data ?? {}));
+    }
+
+    /** Dedicated admission/running metadata update: IMMEDIATE locks before reading the latest row.
+     * No awaits; unknown columns/JSON survive. Corrupt JSON is never replaced. */
+    public updatePlanTask(task: { id: string; description: string; assigned_to: string; status: string; data: any }, create = false): void {
+        this.db.transaction(() => {
+            const row = this.db.prepare('SELECT status, data FROM tasks WHERE id = ?').get(task.id) as any;
+            if (!row) {
+                if (!create) throw new Error('TASK_ROW_MISSING');
+                this.upsertTask(task);
+                return;
+            }
+            // Re-admission must not overwrite an existing lifecycle, especially uncertain effects.
+            const data = mergeTaskMetadata(row, create ? {} : task.data);
+            if (create) return;
+            if (task.status === 'running' && (data?.abandonedInFlight || data?.lateSettlement || data?.effectsReviewed)) return;
+            if (!['pending', 'running'].includes(row.status)) throw new Error('TASK_ALREADY_TERMINAL');
+            this.db.prepare('UPDATE tasks SET status = ?, updated_at = ?, data = ? WHERE id = ?')
+                .run(task.status, Date.now(), JSON.stringify(data), task.id);
+        }).immediate();
+    }
+
+    public updatePlanTaskPhase(id: string, phase: TaskPhase, observedAt: number): void {
+        this.db.transaction(() => {
+            const row = this.db.prepare('SELECT status, data FROM tasks WHERE id = ?').get(id) as any;
+            if (!row) throw new Error('TASK_ROW_MISSING');
+            const data = mergeTaskMetadata(row, { loadPhase: phase, loadPhaseAt: observedAt }, true);
+            if (data === null) return; // Late wait resolution is NOT a revival.
+            this.db.prepare('UPDATE tasks SET updated_at = ?, data = ? WHERE id = ?')
+                .run(observedAt, JSON.stringify(data), id);
+        }).immediate();
+    }
+
+    public getPlanTaskLoad(observedAt: number) {
+        // Single SELECT snapshot, no reap, resume, or liveness inference.
+        const rows = this.db.prepare("SELECT status, data, updated_at FROM tasks WHERE substr(id, 1, 5) = 'task_'").all() as any[];
+        return taskLoadSnapshot(rows, observedAt);
     }
 
     public getTasksByPlan(planId: string): any[] {

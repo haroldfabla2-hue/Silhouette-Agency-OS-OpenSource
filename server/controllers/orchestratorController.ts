@@ -1,3 +1,4 @@
+import { sqliteService } from '../../services/sqliteService';
 
 import { Request, Response } from 'express';
 import { orchestrator } from '../../services/orchestrator';
@@ -6,7 +7,11 @@ import { qualityControl } from '../../services/qualityControlService';
 export class OrchestratorController {
 
     public getState(req: Request, res: Response) {
+        let taskLoad: unknown;
+        try { taskLoad = sqliteService.getPlanTaskLoad(Date.now()); }
+        catch { taskLoad = { coverage: 'task_prefix_ledger_candidates_not_proven_origin', health: 'unknown', reason: 'READ_FAILED', observedAt: Date.now() }; }
         res.json({
+            taskLoad,
             activeAgents: orchestrator.getActiveCount(),
             mode: orchestrator.getMode(),
             activeCategories: orchestrator.getActiveCategories(),
