@@ -10,7 +10,6 @@ import { quotaLedger, QuotaLedger } from './quotaLedger';
 import { DEFAULT_GEMINI_EMBEDDING_MODEL } from './llm/defaultModels';
 import { introspection } from './introspectionEngine';
 import { redisClient } from './redisClient';
-import { importWhenReady } from './moduleLifecycle';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { systemBus } from './systemBus';
@@ -156,18 +155,10 @@ class ContinuumMemorySystem {
         this.loadSnapshot().then(() => this.reconcileTransitions())
             .catch(err => console.error('[CONTINUUM] Failed to recover memory:', err));
 
-        // Start Dreaming Protocol (Subconscious). Same module-lifecycle
-        // class as the introspection fix: under module restarts the dynamic
-        // import can resolve while the `dreamer` binding is still
-        // uninitialized; dereferencing it then throws an unhandled rejection.
-        // Short budget on purpose (see importWhenReady): in production the
-        // binding is initialized on the first attempt.
-        importWhenReady(
-            '[CONTINUUM] Dreaming loop start',
-            () => import('./dreamerService'),
-            mod => (mod?.dreamer && typeof mod.dreamer.startDreamingLoop === 'function') ? mod.dreamer : undefined,
-            { attempts: 4, stepMs: 25, note: 'NOT a dreamer failure' }
-        ).then(dreamer => dreamer?.startDreamingLoop());
+        // Dreaming loop starts EXPLICITLY at server boot (server/loaders/index.ts).
+        // A hidden fire-and-forget import here raced module lifecycle in tests
+        // (unhandled rejection: undefined dreamer binding) and crashed CI;
+        // import purity keeps this constructor free of cross-module starts.
     }
 
     // --- PUBLIC API ---
