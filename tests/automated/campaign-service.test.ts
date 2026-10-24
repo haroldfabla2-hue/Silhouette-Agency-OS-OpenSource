@@ -1,7 +1,11 @@
 /**
  * CampaignService (the orphaned "Director's Brain" the route now reaches).
- * Real service; vectorMemory, geminiService and mediaService are declared
- * doubles - no LLM, no stock API, no effects.
+ * Real service; vectorMemory, geminiService, mediaService AND the
+ * external-generation gate are declared doubles - no LLM, no stock API,
+ * no effects. The DEPLOYED gate hard-blocks generation (CERO COBROS, no
+ * override); tests that double it as "enabled" verify the PRESERVED
+ * provider-path mechanics for a future designed grant mechanism, not the
+ * behavior deployed today.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
@@ -11,8 +15,9 @@ const generateShotlist = vi.fn();
 const searchRealAssets = vi.fn();
 // Closure-controlled doubles (plain functions, never reset - a vi.fn whose
 // throwing implementation is reset/cleared is mis-flagged by vitest 4.0.16).
-let policyAllows = true;
-let ledgerAllows = true;
+// gateEnabledInTest models a hypothetical FUTURE enabled gate; the real
+// gate in this delivery always denies (see module header).
+let gateEnabledInTest = true;
 
 vi.mock('../../services/vectorMemoryService', () => ({
     vectorMemory: {
@@ -26,16 +31,9 @@ vi.mock('../../services/geminiService', () => ({
 vi.mock('../../services/mediaService', () => ({
     mediaService: { searchRealAssets: (...a: any[]) => searchRealAssets(...a) }
 }));
-vi.mock('../../services/quotaLedger', () => ({
-    quotaLedger: {
-        recordAttempt: (provider: string, model: string) => ledgerAllows
-            ? { allowed: true, used: 1, budget: 100, day: '2026-10-24' }
-            : { allowed: false, used: 101, budget: 100, day: '2026-10-24' }
-    }
-}));
 vi.mock('../../services/security/externalGenerationPolicy', () => ({
     assertCampaignLlmGenerationAllowed: () => {
-        if (!policyAllows) {
+        if (!gateEnabledInTest) {
             const e: any = new Error('EXTERNAL_GENERATION_DENIED: test denial');
             e.code = 'EXTERNAL_GENERATION_DENIED';
             e.name = 'ExternalGenerationDeniedError';
@@ -46,7 +44,7 @@ vi.mock('../../services/security/externalGenerationPolicy', () => ({
 
 import { campaignService } from '../../services/campaignService';
 
-afterEach(() => { policyAllows = true; ledgerAllows = true; });
+afterEach(() => { gateEnabledInTest = true; });
 
 const BRAND = {
     id: 'brand_1', name: 'Acme',
@@ -86,24 +84,14 @@ describe('campaignService.createCampaign', () => {
         expect(searchRealAssets).not.toHaveBeenCalled();
     });
 
-    it('fail-closed: gate denial skips LLM, budget accounting and scouting (local prep only)', async () => {
-        policyAllows = false;
+    it('hard block (deployed behavior): denial skips LLM and scouting; local prep still runs', async () => {
+        gateEnabledInTest = false;
         getBrandTwin.mockResolvedValue(BRAND);
         queryBrandRules.mockResolvedValue('rules');
         await expect(campaignService.createCampaign('obj', 'brand_1'))
             .rejects.toMatchObject({ code: 'EXTERNAL_GENERATION_DENIED' });
         expect(getBrandTwin).toHaveBeenCalledTimes(1); // local prep ran
         expect(queryBrandRules).toHaveBeenCalledTimes(1);
-        expect(generateShotlist).not.toHaveBeenCalled();
-        expect(searchRealAssets).not.toHaveBeenCalled();
-    });
-
-    it('fail-closed on spent local attempt budget: no LLM call, honest typed error', async () => {
-        ledgerAllows = false;
-        getBrandTwin.mockResolvedValue(BRAND);
-        queryBrandRules.mockResolvedValue('rules');
-        await expect(campaignService.createCampaign('obj', 'brand_1'))
-            .rejects.toMatchObject({ code: 'QUOTA_BUDGET_EXCEEDED' });
         expect(generateShotlist).not.toHaveBeenCalled();
         expect(searchRealAssets).not.toHaveBeenCalled();
     });

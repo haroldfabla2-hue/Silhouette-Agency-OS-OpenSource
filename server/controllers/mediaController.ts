@@ -235,12 +235,12 @@ class MediaController {
             }
             return res.json(blueprint);
         } catch (error: any) {
-            // Typed, deployment-level unavailability: fail-closed gate
-            // (CERO COBROS), spent local attempt budget, or failed/misconfigured
+            // Typed, deployment-level unavailability: hard block on
+            // potentially-paid external generation (CERO COBROS) or, once a
+            // designed authorization mechanism exists, failed/misconfigured
             // shotlist generation. Messages are static and safe to show.
             if (error?.code === 'EXTERNAL_GENERATION_DENIED'
-                || error?.code === 'SHOTLIST_UNAVAILABLE'
-                || error?.code === 'QUOTA_BUDGET_EXCEEDED') {
+                || error?.code === 'SHOTLIST_UNAVAILABLE') {
                 return res.status(503).json({ error: error.message, code: error.code });
             }
             // Unexpected: log internals, never leak them to the client.

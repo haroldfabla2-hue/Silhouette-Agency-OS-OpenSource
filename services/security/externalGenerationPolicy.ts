@@ -1,18 +1,23 @@
 /**
- * EXTERNAL GENERATION POLICY - fail-closed control for potentially-paid
- * external generation.
+ * EXTERNAL GENERATION POLICY - hard block on potentially-paid external
+ * generation (CERO COBROS).
  *
- * A campaign shotlist call reaches an external LLM (Gemini) whose cost
- * depends on the account's plan/entitlement. That entitlement cannot be
- * verified from code, and an existing daily quota budget (quotaLedger) is
- * attempt ACCOUNTING, not monetary authorization. CERO COBROS: absent
- * verifiable evidence of zero cost, the default is DENY.
+ * The campaign shotlist call reaches an external LLM (Gemini) whose cost
+ * depends on the account's plan/entitlement - not verifiable from code,
+ * and a quota budget is attempt accounting, not monetary authorization.
+ * With no designed monetary grant mechanism, this delivery BLOCKS the
+ * provider call unconditionally. There is deliberately NO config flag or
+ * generic override: a boolean is not verifiable monetary authority and
+ * would reopen spend (same class of risk as a generic allowPaidEffects).
  *
- * Enabling (CAMPAIGN_LLM_GENERATION=allow) is a reserved owner/ops decision
- * that must follow explicit authorization after entitlement verification;
- * it is never inferred from config presence, quota headroom or an
- * authenticated request. Local preparation (validation, brand DNA, brand
- * rules) never depends on this gate.
+ * Future enablement requires a designed authorization mechanism -
+ * specific, verifiable, non-boolean (e.g. a per-action grant backed by
+ * verified entitlement) - which is a reserved owner decision. A
+ * verifiably zero-cost route (e.g. a local model) is a separate
+ * investigation, never assumed free by budget or defaults.
+ *
+ * Local preparation (request validation, brand DNA, brand rules) never
+ * depends on this gate.
  */
 export class ExternalGenerationDeniedError extends Error {
     public readonly code = 'EXTERNAL_GENERATION_DENIED' as const;
@@ -22,14 +27,8 @@ export class ExternalGenerationDeniedError extends Error {
     }
 }
 
-export function isCampaignLlmGenerationAllowed(): boolean {
-    return process.env.CAMPAIGN_LLM_GENERATION === 'allow';
-}
-
 export function assertCampaignLlmGenerationAllowed(): void {
-    if (!isCampaignLlmGenerationAllowed()) {
-        throw new ExternalGenerationDeniedError(
-            'campaign shotlist generation calls an external LLM whose cost depends on account entitlement this deployment cannot verify (CERO COBROS). Enable CAMPAIGN_LLM_GENERATION=allow only after explicit owner authorization. Local preparation (request validation, brand DNA, brand rules) is unaffected.'
-        );
-    }
+    throw new ExternalGenerationDeniedError(
+        'campaign shotlist generation is blocked in this delivery (CERO COBROS): it calls an external LLM whose cost is entitlement-dependent and unverifiable from code, and no designed monetary authorization mechanism exists yet (a boolean flag is not monetary authority). Local preparation (request validation, brand DNA, brand rules) is unaffected.'
+    );
 }
