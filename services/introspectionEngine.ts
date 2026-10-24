@@ -90,13 +90,124 @@ export class IntrospectionEngine {
      * helper): the constructor runs while the module graph may still be
      * evaluating; see importWhenReady for the race description.
      */
-    private async continuumWhenReady(operation: string): Promise<any | null> {
+    private async continuumWhenReady(
+        operation: string,
+        wait: { attempts: number; stepMs: number } = { attempts: 20, stepMs: 25 },
+    ): Promise<any | null> {
         return importWhenReady(
             `[INTROSPECTION] ${operation}`,
             () => import('./continuumMemory'),
             mod => (mod?.continuum && typeof mod.continuum.store === 'function') ? mod.continuum : undefined,
-            { attempts: 20, stepMs: 25, note: 'NOT a storage failure' }
+            { ...wait, note: 'NOT a storage failure' }
         );
+    }
+
+    /**
+     * JOURNAL-FIRST concept persistence (write-ahead logging).
+     *
+     * Every concept write is journaled to SQLite BEFORE any store attempt, so
+     * a crash mid-attempt can never lose it. An entry leaves the journal only
+     * AFTER the canonical continuum store confirms (ACK). Boot replays any
+     * journaled entries. Delivery is therefore at-least-once; the stored
+     * effect is exactly-one because each entry carries a stable id (minted
+     * once at journal time, never a blind content hash) and the continuum
+     * upserts by id at the working tier / merges by id in LanceDB. This is
+     * NOT a distributed exactly-once claim: it is at-least-once delivery with
+     * an idempotent consumer, the same contract memoryTransitions documents
+     * for tier transitions. The existing infra was evaluated first:
+     * discoveryJournal is a decision audit log (no write recovery) and
+     * memoryTransitions is shaped for source->destination tier moves, so the
+     * pattern is adopted here without force-fitting its machinery.
+     */
+    private pendingContinuumWrites: Array<{ id: string; content: string; tags: string[]; queuedAt: number }> = [];
+    private drainingContinuumWrites = false;
+    private static readonly PENDING_WRITES_KEY = 'pending_concept_writes';
+
+    /** Visible pending-write count (tests / inspection). */
+    public getPendingContinuumWriteCount(): number {
+        return this.pendingContinuumWrites.length;
+    }
+
+    /** Durable journal sync (same SQLite store introspection already uses for goals). */
+    private async persistJournal(): Promise<void> {
+        try {
+            const { sqliteService } = await import('./sqliteService');
+            sqliteService.setConfig(IntrospectionEngine.PENDING_WRITES_KEY, this.pendingContinuumWrites);
+        } catch (e) {
+            console.error('[INTROSPECTION] Journal persist failed; entries held in RAM this session (visible, retried in-process):', e);
+        }
+    }
+
+    /** Journal-first append: durable BEFORE the entry's first store attempt. */
+    private async journalContinuumWrite(content: string, tags: string[]): Promise<void> {
+        this.pendingContinuumWrites.push({ id: crypto.randomUUID(), content, tags, queuedAt: Date.now() });
+        await this.persistJournal();
+    }
+
+    /** Boot replay: recover journaled entries (merge by stable id) and drain. */
+    private replayPendingContinuumWrites(): void {
+        void (async () => {
+            try {
+                const { sqliteService } = await import('./sqliteService');
+                const stored = sqliteService.getConfig(IntrospectionEngine.PENDING_WRITES_KEY);
+                if (Array.isArray(stored) && stored.length > 0) {
+                    const valid = stored.filter(w => w && typeof w.id === 'string' && typeof w.content === 'string');
+                    const known = new Set(this.pendingContinuumWrites.map(w => w.id));
+                    const recovered = valid.filter(w => !known.has(w.id));
+                    if (recovered.length > 0) {
+                        this.pendingContinuumWrites.push(...recovered);
+                        console.log(`[INTROSPECTION] ${recovered.length} journaled concept write(s) recovered from SQLite; replaying (at-least-once, collapse by stable id).`);
+                        await this.drainPendingContinuumWrites();
+                    }
+                }
+            } catch (e) {
+                console.error('[INTROSPECTION] Concept-write journal unreadable (classified; nothing assumed lost):', e);
+            }
+        })();
+    }
+
+    /**
+     * Drain the journal in order. ACK (shift + persist) only AFTER the
+     * canonical continuum store confirms. On failure the entry stays
+     * journaled and is retried on the next continuum access or boot replay -
+     * bounded, visible, never silently dropped.
+     */
+    private async drainPendingContinuumWrites(startedWait?: Promise<any | null>): Promise<void> {
+        if (this.drainingContinuumWrites || this.pendingContinuumWrites.length === 0) return;
+        this.drainingContinuumWrites = true;
+        let failed = false;
+        try {
+            // Cold boot can outlast the default 500ms probe; journaled writes
+            // get a wider (still bounded) 10s window before deferring. The
+            // caller may have already started the wait (constructor path) so
+            // the module access order matches the pre-journal lifecycle flow.
+            const continuum = await (startedWait ?? this.continuumWhenReady('pending concept writes drain', { attempts: 40, stepMs: 250 }));
+            if (!continuum) {
+                console.warn(`[INTROSPECTION] ${this.pendingContinuumWrites.length} journaled concept write(s) still pending; retried on next continuum access or boot replay.`);
+                return;
+            }
+            while (this.pendingContinuumWrites.length > 0) {
+                const write = this.pendingContinuumWrites[0];
+                try {
+                    await continuum.store(write.content, undefined, write.tags, false, { id: write.id, timestamp: write.queuedAt });
+                    this.pendingContinuumWrites.shift(); // ACK only AFTER store confirmation
+                    await this.persistJournal();
+                } catch (e) {
+                    failed = true;
+                    console.error('[INTROSPECTION] Journaled concept write failed at the continuum; kept journaled (durable, retryable):', e);
+                    break; // preserve order; retried on next access / boot
+                }
+            }
+        } catch (e) {
+            failed = true;
+            console.error('[INTROSPECTION] Drain pipeline error; journal intact:', e);
+        } finally {
+            this.drainingContinuumWrites = false;
+            // One extra pass if entries were appended concurrently during a
+            // clean drain; never a retry loop (failure/exhaustion wait for an
+            // external trigger).
+            if (!failed && this.pendingContinuumWrites.length > 0) void this.drainPendingContinuumWrites();
+        }
     }
 
     constructor() {
@@ -104,6 +215,8 @@ export class IntrospectionEngine {
         this.injectConcept("Ethical Alignment", 1.5, 12);
         // Load persisted goals on startup
         this.loadGoalsFromMemory();
+        // Boot replay: journaled concept writes from a previous run drain here.
+        this.replayPendingContinuumWrites();
     }
 
     // --- UTILITIES ---
@@ -213,9 +326,21 @@ export class IntrospectionEngine {
         // Persist to Continuum. The write waits for the continuum module to
         // finish initializing (module lifecycle) instead of racing it; a
         // store rejection is still classified as a storage error.
-        this.continuumWhenReady('concept persistence')
-            .then(continuum => continuum?.store(`[INTROSPECTION] Injected Concept Vector: ${label} (Str: ${strength})`, undefined, ['system', 'concept-vector']))
-            .catch(e => console.error("[INTROSPECTION] Failed to persist concept (storage error):", e));
+        // Journal-first: durable in SQLite BEFORE any store attempt; delivery
+        // is at-least-once and the stable id collapses any replay to exactly
+        // one stored effect (see journalContinuumWrite / drain).
+        void (async () => {
+            // Start the continuum wait BEFORE the journal write: the journal
+            // still gates the store attempt (journal-first is preserved), but
+            // the module access order stays identical to the pre-journal
+            // lifecycle flow this engine was verified with.
+            const wait = this.continuumWhenReady('pending concept writes drain', { attempts: 40, stepMs: 250 });
+            await this.journalContinuumWrite(
+                `[INTROSPECTION] Injected Concept Vector: ${label} (Str: ${strength})`,
+                ['system', 'concept-vector'],
+            );
+            await this.drainPendingContinuumWrites(wait);
+        })().catch(e => console.error('[INTROSPECTION] Concept persistence pipeline error (entry journaled, retryable):', e));
     }
 
 
