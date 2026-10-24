@@ -21,15 +21,11 @@ import type { ApprovalBinding } from './approvalGrants';
 
 export interface EffectContext {
     grant: { token: string; binding: ApprovalBinding };
-    /** Digests (effect+args) already validated against this grant in this chain. */
+    /** Digests (effect+args, defaults-normalized) already validated against
+     *  this grant in this chain: lets ONE approved logical invocation pass
+     *  its own 1:1 wrapper layers (identical normalized args). A second
+     *  piece - different args - never matches and is denied. */
     validated: Set<string>;
-    /**
-     * Effect kinds already validated in this chain. Lets ONE approved logical
-     * generation pass through its own nested wrappers (mediaService ->
-     * imageFactory derives args 1:1). A campaign's independent pieces never
-     * share a chain: they enter with no context and gate individually.
-     */
-    validatedKinds: Set<string>;
     /** Where the grant was issued (audit trail). */
     issuedBy: string;
 }

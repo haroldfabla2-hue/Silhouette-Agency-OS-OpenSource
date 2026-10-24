@@ -80,6 +80,18 @@ export function isGatedEffect(name: string): name is EffectKind {
     return Object.prototype.hasOwnProperty.call(EFFECT_POLICIES, name);
 }
 
+/**
+ * Handler defaults, applied BEFORE binding so every layer of one logical
+ * invocation canonicalizes identically (chat grant on raw args, toolHandler
+ * defaults, provider boundary). MUST match the handlers:
+ * toolHandler.handleGenerateImage (style 'PHOTOREALISTIC', aspectRatio
+ * '16:9') and handleGenerateVideo (engine 'WAN', duration 5).
+ */
+const NORMALIZED_DEFAULTS: Partial<Record<EffectKind, Record<string, any>>> = {
+    generate_image: { style: 'PHOTOREALISTIC', aspectRatio: '16:9' },
+    generate_video: { engine: 'WAN', duration: 5 },
+};
+
 const canonical = (args: Record<string, any>): string => {
     const sorted: Record<string, any> = {};
     for (const k of Object.keys(args).sort()) {
@@ -88,11 +100,15 @@ const canonical = (args: Record<string, any>): string => {
     return JSON.stringify(sorted);
 };
 
-/** Canonical arg subset for an effect's binding (both issuer and boundary use this). */
+/** Canonical arg subset for an effect's binding (both issuer and boundary use
+ *  this). Handler defaults are normalized in so a grant issued on raw args
+ *  matches the boundary's defaulted args for the SAME logical invocation. */
 export function bindingArgsFor(effect: EffectKind, rawArgs: Record<string, any>): Record<string, any> {
+    const defaults = NORMALIZED_DEFAULTS[effect] ?? {};
     const out: Record<string, any> = {};
     for (const k of EFFECT_POLICIES[effect].bindingArgs) {
-        if (rawArgs[k] !== undefined) out[k] = rawArgs[k];
+        const v = rawArgs[k] !== undefined ? rawArgs[k] : defaults[k];
+        if (v !== undefined) out[k] = v;
     }
     return out;
 }
@@ -115,7 +131,7 @@ export function issueEffectGrant(effect: EffectKind, args: Record<string, any>, 
     const binding = effectBinding(effect, args);
     const grant = approvalGrants.issue(binding);
     console.log(`[EFFECT_GATE] 🎟️ grant issued for ${effect} by ${issuedBy} (single-use, args-bound)`);
-    return { grant: { token: grant.token, binding }, validated: new Set(), validatedKinds: new Set(), issuedBy };
+    return { grant: { token: grant.token, binding }, validated: new Set(), issuedBy };
 }
 
 const clip = (v: any, n = 500): string => {
@@ -130,11 +146,11 @@ export function describeEffect(effect: EffectKind, args: Record<string, any>): s
         case 'github_create_pr':
             return `Crear pull request: "${clip(args.title, 200)}" (${args.head ?? args.branch ?? '?'} -> ${args.base ?? 'main'})${args.repo ? ` en ${args.repo}` : ''}`;
         case 'generate_image':
-            return `Generar imagen (coste de proveedor)\nEstilo: ${args.style ?? 'PHOTOREALISTIC'} ${args.aspectRatio ?? ''}\nPrompt: ${clip(args.prompt, 1000)}`;
+            return `Generar imagen (coste de proveedor; coste por pieza NO verificable por el sistema, sin límite de gasto configurado)\nEstilo: ${args.style ?? 'PHOTOREALISTIC'} ${args.aspectRatio ?? ''}\nPrompt: ${clip(args.prompt, 1000)}`;
         case 'generate_video':
-            return `Generar vídeo (coste de proveedor)\nMotor: ${args.engine ?? '?'}\nPrompt: ${clip(args.prompt, 1000)}`;
+            return `Generar vídeo (coste de proveedor; coste por pieza NO verificable por el sistema, sin límite de gasto configurado)\nMotor: ${args.engine ?? '?'}\nPrompt: ${clip(args.prompt, 1000)}`;
         case 'generate_voice':
-            return `Generar voz (coste de proveedor)\nVoz: ${args.voiceId ?? 'default'}\nTexto: ${clip(args.text, 1000)}`;
+            return `Generar voz (coste de proveedor; coste por pieza NO verificable por el sistema, sin límite de gasto configurado)\nVoz: ${args.voiceId ?? 'default'}\nTexto: ${clip(args.text, 1000)}`;
     }
 }
 
@@ -159,13 +175,39 @@ export async function ensureEffectConsent(
     args: Record<string, any>,
     origin: string
 ): Promise<ConsentGranted> {
+    const policy = EFFECT_POLICIES[effect];
+
+    // CERO COBROS: wallet-bearing provider effects stay blocked unless the
+    // operator explicitly authorized uncapped paid generation
+    // (security.allowPaidEffects). The system cannot verify per-piece cost
+    // upfront, so without that flag there is no verifiable cost cap and the
+    // feature remains pending authorization - it does not spend. Fail-closed
+    // when the config cannot be read.
+    if (policy.walletBearing) {
+        let allowed = false;
+        try {
+            const { configLoader } = await import('../../server/config/configLoader');
+            allowed = !!configLoader.getConfig().security?.allowPaidEffects;
+        } catch (cfgErr: any) {
+            console.error('[EFFECT_GATE] ⛔ could not read security config; paid effect denied (fail-closed):', cfgErr?.message || cfgErr);
+        }
+        if (!allowed) {
+            throw new EffectDeniedError(
+                `efecto "${effect}" bloqueado: es de coste y el sistema no puede verificar coste/límite por pieza. ` +
+                `Pendiente de autorización del operador (security.allowPaidEffects en silhouette.config.json). No se gastó nada.`
+            );
+        }
+    }
+
     const binding = effectBinding(effect, args);
     const digest = bindingDigest(binding);
     const ctx = getEffectContext();
 
     if (ctx) {
-        // Same approved logical effect passing through its own 1:1 wrappers.
-        if (ctx.validated.has(digest) || ctx.validatedKinds.has(effect)) return { via: 'grant', digest };
+        // The layers of ONE approved logical invocation share the exact same
+        // normalized digest (mediaService -> imageFactory, executeCapability
+        // re-entry). A second piece - different args - never matches.
+        if (ctx.validated.has(digest)) return { via: 'grant', digest };
         const check = approvalGrants.consume(ctx.grant.token, binding);
         if (!check.ok) {
             throw new EffectDeniedError(
@@ -174,12 +216,10 @@ export async function ensureEffectConsent(
             );
         }
         ctx.validated.add(digest);
-        ctx.validatedKinds.add(effect);
         console.log(`[EFFECT_GATE] ✅ ${effect} grant consumed (issued by ${ctx.issuedBy}, origin: ${origin})`);
         return { via: 'grant', digest };
     }
 
-    const policy = EFFECT_POLICIES[effect];
     const { actionExecutor } = await import('../actionExecutor');
     const action = {
         id: `effect_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,

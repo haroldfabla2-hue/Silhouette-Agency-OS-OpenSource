@@ -68,15 +68,12 @@ router.post('/send', async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Missing to, subject, or body' });
         }
 
-        // The authenticated request body IS the principal's explicit
-        // specification of this exact email: issue a single-use, args-bound
-        // grant for THIS send. It cannot send a different email or a second one.
-        const { issueEffectGrant } = await import('../../../services/security/effectGate');
-        const { runWithEffectContext } = await import('../../../services/security/effectContext');
-        const grantCtx = issueEffectGrant('send_email', { to, subject, body }, 'POST /v1/gmail/send');
-        const result = await runWithEffectContext(grantCtx, () =>
-            gmailService.sendEmail({ to, subject, body, isHtml, driveLink })
-        );
+        // [SECURITY] An authenticated request (possibly agent/MCP/shared
+        // token) is NOT proof of human intent: no grant is issued here. The
+        // provider boundary routes this through actionExecutor: the send
+        // pends at /v1/autonomy/confirmations until a human approves it
+        // (this request waits, up to the confirmation timeout) or is denied.
+        const result = await gmailService.sendEmail({ to, subject, body, isHtml, driveLink });
 
         if (result.success) {
             return res.json({ success: true, messageId: result.messageId });

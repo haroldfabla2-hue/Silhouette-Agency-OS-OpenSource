@@ -175,23 +175,11 @@ class MediaController {
      * POST /v1/media/generate/image
      * Generate an image from prompt with optional style
      */
+    // [SECURITY] No grant is issued by this route: an authenticated request
+    // is not proof of human intent. The generation gates at the provider
+    // boundary (human confirmation via /v1/autonomy/confirmations; paid
+    // cloud generation additionally requires security.allowPaidEffects).
     async generateImage(req: Request, res: Response) {
-        // [SECURITY] The authenticated request body IS the principal's
-        // explicit specification of this exact generation: issue a
-        // single-use, args-bound grant for THIS call. It cannot generate a
-        // different image or a second one.
-        const { issueEffectGrant } = await import('../../services/security/effectGate');
-        const { runWithEffectContext } = await import('../../services/security/effectContext');
-        const { prompt: grantPrompt, style: grantStyle } = req.body ?? {};
-        const grantCtx = issueEffectGrant(
-            'generate_image',
-            grantStyle !== undefined ? { prompt: grantPrompt, style: grantStyle } : { prompt: grantPrompt },
-            'POST /v1/media/generate/image'
-        );
-        return runWithEffectContext(grantCtx, () => this.generateImageHandler(req, res));
-    }
-
-    private async generateImageHandler(req: Request, res: Response) {
         try {
             const { prompt, style } = req.body;
             if (!prompt) {

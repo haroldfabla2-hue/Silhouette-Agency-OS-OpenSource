@@ -7,9 +7,15 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const requestConfirmation = vi.fn();
+const { requestConfirmation, paidAllowed } = vi.hoisted(() => ({
+    requestConfirmation: vi.fn(),
+    paidAllowed: { value: true }
+}));
 vi.mock('../../services/actionExecutor', () => ({
     actionExecutor: { requestConfirmation }
+}));
+vi.mock('../../server/config/configLoader', () => ({
+    configLoader: { getConfig: () => ({ security: { allowPaidEffects: paidAllowed.value } }) }
 }));
 
 import {
@@ -26,6 +32,7 @@ import { runWithEffectContext } from '../../services/security/effectContext';
 
 beforeEach(() => {
     requestConfirmation.mockReset();
+    paidAllowed.value = true;
 });
 
 const IMG = { prompt: 'landing hero', style: 'PHOTOREALISTIC' };
@@ -91,7 +98,7 @@ describe('grant semantics: consume-once, args-bound, no reuse', () => {
         const ctx = issueEffectGrant('generate_image', IMG, 'test');
         await runWithEffectContext(ctx, () => ensureEffectConsent('generate_image', IMG, 'first'));
         // New chain, same token, no prior validation: ALREADY_USED.
-        const replayCtx = { grant: ctx.grant, validated: new Set<string>(), validatedKinds: new Set<string>(), issuedBy: 'attacker-or-bug' };
+        const replayCtx = { grant: ctx.grant, validated: new Set<string>(), issuedBy: 'attacker-or-bug' };
         await expect(runWithEffectContext(replayCtx, () => ensureEffectConsent('generate_image', IMG, 'replay')))
             .rejects.toMatchObject({ code: 'EFFECT_DENIED' });
         await expect(runWithEffectContext(replayCtx, () => ensureEffectConsent('generate_image', IMG, 'replay')))
@@ -109,7 +116,7 @@ describe('grant semantics: consume-once, args-bound, no reuse', () => {
         // Grants are bearer-by-design BUT single-use and args-bound: B cannot
         // use A's grant for anything except the exact approved args, once.
         const ctxA = issueEffectGrant('send_email', { to: 'a@b.c', subject: 's', body: 'b' }, 'chat:principalA');
-        const foreign = { ...ctxA, issuedBy: 'chat:principalB', validated: new Set<string>(), validatedKinds: new Set<string>() };
+        const foreign = { ...ctxA, issuedBy: 'chat:principalB', validated: new Set<string>() };
         await expect(runWithEffectContext(foreign, () =>
             ensureEffectConsent('send_email', { to: 'distinto@b.c', subject: 's', body: 'b' }, 'principalB')))
             .rejects.toThrow(/MISMATCH/);
@@ -121,21 +128,78 @@ describe('grant semantics: consume-once, args-bound, no reuse', () => {
         // consumes the grant, a second chain with the same token is denied.
         const ctx = issueEffectGrant('generate_image', IMG, 'POST /v1/media/generate/image');
         await runWithEffectContext(ctx, () => ensureEffectConsent('generate_image', IMG, 'piece1'));
-        const childCtx = { grant: ctx.grant, validated: new Set<string>(), validatedKinds: new Set<string>(), issuedBy: 'campaign' };
+        const childCtx = { grant: ctx.grant, validated: new Set<string>(), issuedBy: 'campaign' };
         await expect(runWithEffectContext(childCtx, () =>
             ensureEffectConsent('generate_image', { prompt: 'pieza 2', style: 'PHOTOREALISTIC' }, 'piece2')))
             .rejects.toMatchObject({ code: 'EFFECT_DENIED' });
     });
 
-    it('WRAPPER DERIVATION: one approved logical generation passes its own 1:1 nested layers', async () => {
-        // mediaService validates {prompt, style}; imageFactory derives
-        // aspectRatio for the SAME logical image: passes once, same chain.
+    it('WRAPPER 1:1: defaults normalized before binding, wrapper passes only the SAME logical invocation', async () => {
+        // Grant issued on RAW args {prompt, style}; boundary sees handler
+        // defaults applied (aspectRatio '16:9'). Normalized digests match.
         const ctx = issueEffectGrant('generate_image', IMG, 'test');
         await runWithEffectContext(ctx, async () => {
-            await ensureEffectConsent('generate_image', IMG, 'mediaService');
+            await ensureEffectConsent('generate_image', IMG, 'executeCapability');
             const inner = await ensureEffectConsent('generate_image', { ...IMG, aspectRatio: '16:9' }, 'imageFactory');
             expect(inner.via).toBe('grant');
         });
+    });
+
+    it('DEFAULTS: grant issued with bare {prompt} matches boundary defaulted args', async () => {
+        const ctx = issueEffectGrant('generate_image', { prompt: 'x' }, 'chat');
+        const d = await runWithEffectContext(ctx, () =>
+            ensureEffectConsent('generate_image', { prompt: 'x', style: 'PHOTOREALISTIC', aspectRatio: '16:9' }, 'imageFactory'));
+        expect(d.via).toBe('grant');
+    });
+
+    it('SECOND PIECE, sequential same chain: different args after consume -> ALREADY_USED denial', async () => {
+        const ctx = issueEffectGrant('generate_image', IMG, 'test');
+        await runWithEffectContext(ctx, async () => {
+            await ensureEffectConsent('generate_image', IMG, 'piece1');
+            await expect(ensureEffectConsent('generate_image', { prompt: 'pieza 2', style: 'PHOTOREALISTIC' }, 'piece2'))
+                .rejects.toThrow(/ALREADY_USED/);
+        });
+    });
+
+    it('SECOND PIECE, parallel same chain: two simultaneous different-args calls, only one can pass', async () => {
+        const ctx = issueEffectGrant('generate_image', IMG, 'test');
+        const results = await runWithEffectContext(ctx, () => Promise.allSettled([
+            ensureEffectConsent('generate_image', IMG, 'piece1'),
+            ensureEffectConsent('generate_image', { prompt: 'pieza 2', style: 'PHOTOREALISTIC' }, 'piece2')
+        ]));
+        const passed = results.filter(r => r.status === 'fulfilled');
+        const denied = results.filter(r => r.status === 'rejected');
+        expect(passed.length).toBe(1);
+        expect(denied.length).toBe(1);
+    });
+});
+
+describe('CERO COBROS: paid effects blocked without operator authorization', () => {
+    it('wallet-bearing effect denied when security.allowPaidEffects=false, even with a grant', async () => {
+        paidAllowed.value = false;
+        const ctx = issueEffectGrant('generate_image', IMG, 'chat');
+        await expect(runWithEffectContext(ctx, () => ensureEffectConsent('generate_image', IMG, 'boundary')))
+            .rejects.toThrow(/Pendiente de autorización del operador|coste\/límite/);
+    });
+
+    it('wallet-bearing effect denied without asking a human when flag is false', async () => {
+        paidAllowed.value = false;
+        await expect(ensureEffectConsent('generate_voice', { text: 'x' }, 'daemon'))
+            .rejects.toMatchObject({ code: 'EFFECT_DENIED' });
+        expect(requestConfirmation).not.toHaveBeenCalled();
+    });
+
+    it('non-wallet effects (send_email) are NOT blocked by the paid flag', async () => {
+        paidAllowed.value = false;
+        requestConfirmation.mockResolvedValue(true);
+        const d = await ensureEffectConsent('send_email', { to: 'a@b.c', subject: 's', body: 'b' }, 'daemon');
+        expect(d.via).toBe('human-approval');
+    });
+
+    it('config read failure denies paid effects (fail-closed)', async () => {
+        paidAllowed.value = undefined as any;
+        await expect(ensureEffectConsent('generate_video', { prompt: 'x' }, 'daemon'))
+            .rejects.toMatchObject({ code: 'EFFECT_DENIED' });
     });
 });
 

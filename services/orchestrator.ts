@@ -1513,7 +1513,6 @@ JSON ONLY:
                             {
                                 grant: { token: 'human-approved', binding },
                                 validated: new Set([granted.digest]),
-                                validatedKinds: new Set([capabilityName as string]),
                                 issuedBy: 'actionExecutor:/v1/autonomy/confirmations'
                             },
                             () => this.executeCapability(capabilityName, args, context)

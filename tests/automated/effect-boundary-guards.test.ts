@@ -18,6 +18,9 @@ const { requestConfirmation, nanoGenerate, veoGenerate, localQueue } = vi.hoiste
 vi.mock('../../services/actionExecutor', () => ({
     actionExecutor: { requestConfirmation }
 }));
+vi.mock('../../server/config/configLoader', () => ({
+    configLoader: { getConfig: () => ({ security: { allowPaidEffects: true } }) }
+}));
 vi.mock('../../services/media/nanoBananaService', () => ({
     nanoBanana: { generateImage: nanoGenerate }
 }));

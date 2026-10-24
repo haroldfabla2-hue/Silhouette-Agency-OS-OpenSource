@@ -181,6 +181,17 @@ export interface SilhouetteConfig {
         mirrorMemory: boolean;
     };
 
+    /** Security policy */
+    security: {
+        /**
+         * Allow wallet-bearing provider effects (cloud image/video/voice)
+         * whose per-piece cost the system CANNOT verify upfront. Default
+         * false: paid generation stays blocked (pending explicit operator
+         * authorization). CERO COBROS by default.
+         */
+        allowPaidEffects: boolean;
+    };
+
     /** Autonomy settings */
     autonomy: {
         /** Enable autonomous mode */
@@ -280,6 +291,9 @@ export const DEFAULT_CONFIG: SilhouetteConfig = {
         maxConcurrentAgents: 10,
         enableNarrative: false,      // Default disabled
         enableIntrospection: false,  // Default disabled
+    },
+    security: {
+        allowPaidEffects: false,     // Default: paid provider effects blocked
     },
 };
 
