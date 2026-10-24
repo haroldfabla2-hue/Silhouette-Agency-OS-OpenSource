@@ -127,6 +127,19 @@ describe('LanceDB first-writer race (cross-instance, fresh DB)', () => {
         expect((await svcB.getNodeById('seq-a2'))?.id).toBe('seq-a2');
     });
 
+    it('a writer never reopens for its own writes (epoch self-fencing: no spurious ftsReady reset)', async () => {
+        const dir = await freshDir();
+        const svc = new LanceDbService(dir);
+        let reopens = 0;
+        const orig = (svc as any).reopenTable.bind(svc);
+        (svc as any).reopenTable = async (...args: any[]) => { reopens++; return orig(...args); };
+        await svc.store(makeNode('own-1'));
+        await svc.store(makeNode('own-2'));
+        expect((await svc.getNodeById('own-1'))?.id).toBe('own-1');
+        expect((await svc.getNodeById('own-2'))?.id).toBe('own-2');
+        expect(reopens).toBe(0);
+    });
+
     it('rows written by racing first writers survive a restart (new instance reopens the table)', async () => {
         const dir = await freshDir();
         const svcA = new LanceDbService(dir);
