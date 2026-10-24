@@ -201,15 +201,24 @@ describe('grant semantics: consume-once, args-bound, no reuse', () => {
         });
     });
 
-    it('PARALLEL same args, parallel consumers: exactly ONE provider invocation per grant', async () => {
+    it('PARALLEL same args, parallel consumers: exactly ONE provider invocation per grant (counted at the provider edge)', async () => {
+        // Controlled stub transport: the "provider" is only callable after the
+        // boundary authorizes, and every call is counted. Asserts AT-MOST-ONE
+        // authorized invocation per grant (not exactly-once delivery: the
+        // external effect itself is outside this gate's control).
+        let providerInvocations = 0;
+        const stubProvider = async () => { providerInvocations++; return { ok: true }; };
+        const invoke = async (origin: string) => {
+            await ensureEffectConsent('send_email', { to: 'p@x.com', subject: 'S', body: 'B' }, origin, { providerBoundary: true });
+            return stubProvider();
+        };
         const ctx = issueEffectGrant('send_email', { to: 'p@x.com', subject: 'S', body: 'B' }, 'chat');
         const results = await runWithEffectContext(ctx, () => Promise.allSettled([
-            ensureEffectConsent('send_email', { to: 'p@x.com', subject: 'S', body: 'B' }, 'consumerA', { providerBoundary: true }),
-            ensureEffectConsent('send_email', { to: 'p@x.com', subject: 'S', body: 'B' }, 'consumerB', { providerBoundary: true }),
-            ensureEffectConsent('send_email', { to: 'p@x.com', subject: 'S', body: 'B' }, 'consumerC', { providerBoundary: true })
+            invoke('consumerA'), invoke('consumerB'), invoke('consumerC')
         ]));
         expect(results.filter(r => r.status === 'fulfilled').length).toBe(1);
         expect(results.filter(r => r.status === 'rejected').length).toBe(2);
+        expect(providerInvocations).toBe(1);
     });
 
     it('PARALLEL same args through wrappers + boundaries: wrappers all pass, exactly one boundary invocation', async () => {
