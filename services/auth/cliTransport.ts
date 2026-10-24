@@ -11,6 +11,8 @@
  * here (detection, routing, timeout, redaction) are what this module proves.
  */
 import { spawn } from 'node:child_process';
+import { realpathSync, statSync, accessSync, constants } from 'node:fs';
+import { delimiter, join, isAbsolute } from 'node:path';
 import type { ProviderAccount } from './accountStore';
 
 export interface CliInvocation {
@@ -37,33 +39,89 @@ export function redactCliOutput(text: string): string {
 }
 
 /**
+ * Per-vendor home-dir semantics. ONLY vendors with a documented home/config
+ * dir variable may use cli-home routing; the rest must use env: (a bare
+ * assumption that every CLI reads CODEX_HOME would be invented semantics).
+ * codex: CODEX_HOME per https://developers.openai.com/codex/auth/ci-cd-auth/
+ */
+export const vendorHomeEnvVar: Record<string, string | undefined> = {
+    'codex-cli-authjson': 'CODEX_HOME',
+    'claude-setup-token': undefined, // not verified from Anthropic docs: env: only
+    'copilot-official-sdk': undefined, // not verified from GitHub docs: env: only
+};
+
+/** Child env allowlist: the vendor CLI never inherits unrelated secrets. */
+const CHILD_ENV_BASE = ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TERM', 'TMPDIR', 'USER', 'SHELL'];
+
+function minimalChildEnv(baseEnv: NodeJS.ProcessEnv, extra: string[]): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = {};
+    for (const name of [...CHILD_ENV_BASE, ...extra]) {
+        if (baseEnv[name] !== undefined) env[name] = baseEnv[name];
+    }
+    return env;
+}
+
+const DEFAULT_ALLOWED_BIN_DIRS = ['/usr/bin', '/usr/local/bin', '/bin', '/opt/homebrew/bin'];
+
+/**
+ * Resolve a bare executable name to a trusted absolute path: found on PATH,
+ * inside an allowed directory, a regular file (symlinks resolved), owner-
+ * executable. A bare name alone never proves the binary is the official CLI.
+ */
+export function resolveOfficialBin(
+    name: string,
+    env: NodeJS.ProcessEnv = process.env,
+    allowedDirs: string[] = DEFAULT_ALLOWED_BIN_DIRS,
+): string {
+    if (!/^[a-z0-9][a-z0-9_.-]*$/i.test(name)) throw new CliRouteError('bin must be a bare executable name');
+    for (const dir of (env.PATH || '').split(delimiter).filter(Boolean)) {
+        const candidate = join(dir, name);
+        try {
+            accessSync(candidate, constants.X_OK);
+            const real = realpathSync(candidate);
+            if (!statSync(real).isFile()) continue;
+            if (!allowedDirs.some(d => real === join(d, name) || real.startsWith(d + '/'))) {
+                throw new CliRouteError(`${name} resolves outside allowed directories: ${real}`);
+            }
+            return real;
+        } catch (err) {
+            if (err instanceof CliRouteError) throw err;
+            continue;
+        }
+    }
+    throw new CliRouteError(`official binary not found on PATH: ${name}`);
+}
+
+/**
  * Build the invocation for an account. The account's secretRef selects the
- * routing: a dedicated CLI home (login lives in the vendor's own files) or
- * an env var passed only to the child. Anything else is rejected.
+ * routing: a dedicated CLI home (only for vendors with verified home-dir
+ * semantics) or an env var passed only to the child. The child receives a
+ * MINIMAL allowlisted environment - never the server's full env.
  */
 export function buildCliInvocation(
     account: ProviderAccount,
     bin: string,
     args: string[],
     baseEnv: NodeJS.ProcessEnv = process.env,
-    options: { allowAbsoluteBin?: boolean } = {},
+    options: { allowAbsoluteBin?: boolean; routeId?: string } = {},
 ): CliInvocation {
-    // Strict by default: a bare name resolved via PATH, never a path or shell
-    // string. allowAbsoluteBin exists for controlled contexts (test doubles).
     const binOk = options.allowAbsoluteBin ? (bin.startsWith('/') && !bin.includes('..')) : /^[a-z0-9][a-z0-9_.-]*$/i.test(bin);
     if (!binOk) throw new CliRouteError('bin must be a bare executable name, never a path or shell string');
-    const env: NodeJS.ProcessEnv = { ...baseEnv };
     const ref = account.secretRef;
+    let env: NodeJS.ProcessEnv;
     if (ref.startsWith('cli-home:')) {
+        const homeVar = vendorHomeEnvVar[options.routeId ?? ''];
+        if (!homeVar) throw new CliRouteError(`home-dir routing unverified for this vendor route; use env: instead`);
         const home = ref.slice('cli-home:'.length);
         if (!home.startsWith('/') || home.includes('..')) throw new CliRouteError('cli-home must be an absolute path without traversal');
-        env.CODEX_HOME = home; // Codex CLI reads its login from CODEX_HOME (OpenAI CI/CD auth doc)
+        env = minimalChildEnv(baseEnv, []);
+        env[homeVar] = home;
         env.HOME = home;
     } else if (ref.startsWith('env:')) {
         const name = ref.slice(4);
         if (!/^[A-Z][A-Z0-9_]*$/.test(name)) throw new CliRouteError('invalid env var name');
         if (!baseEnv[name]) throw new CliRouteError(`${name} not set in the server environment`);
-        // already present via spread; nothing copied into any store
+        env = minimalChildEnv(baseEnv, [name]);
     } else {
         throw new CliRouteError('CLI routes require cli-home: or env: secretRef');
     }

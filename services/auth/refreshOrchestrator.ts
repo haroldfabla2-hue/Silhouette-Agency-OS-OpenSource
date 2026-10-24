@@ -53,6 +53,11 @@ export async function refreshAccountToken(
 ): Promise<StoredToken> {
     const account = store.list(providerId).find(a => a.accountId === accountId);
     if (!account) throw new Error(`No account ${accountId} for ${providerId}`);
+    // Separation of routes: CLI-managed logins are refreshed by the vendor
+    // binary itself. Silhouette NEVER refreshes or appropriates those tokens.
+    if (account.method === 'command') {
+        throw new Error('CLI-managed account: its tokens live in the vendor CLI and are refreshed by that CLI, never by Silhouette');
+    }
     if (!account.secretRef.startsWith('vault:')) throw new Error('refresh applies to vault-backed accounts');
     const name = account.secretRef.slice(6);
     return withRefreshLock(lockDir, `${providerId}-${accountId}`, async (held) => {

@@ -32,7 +32,7 @@ describe('cliTransport', () => {
         const d = base();
         const home = join(d, 'codex-home-work');
         const bin = fakeBin(d, 'echo "HOME_IS=$CODEX_HOME"; echo "ARGS=$*"');
-        const inv = buildCliInvocation(account(`cli-home:${home}`), bin, ['exec', 'hi'], {} as NodeJS.ProcessEnv, { allowAbsoluteBin: true });
+        const inv = buildCliInvocation(account(`cli-home:${home}`), bin, ['exec', 'hi'], {} as NodeJS.ProcessEnv, { allowAbsoluteBin: true, routeId: 'codex-cli-authjson' });
         expect(inv.env.CODEX_HOME).toBe(home);
         const result = await runOfficialCli(inv);
         expect(result.exitCode).toBe(0);
@@ -47,6 +47,12 @@ describe('cliTransport', () => {
         expect(() => buildCliInvocation(account('vault:nope'), 'claude', [], {} as NodeJS.ProcessEnv)).toThrow(CliRouteError);
         expect(() => buildCliInvocation(account('env:MISSING_VAR'), 'claude', [], {} as NodeJS.ProcessEnv)).toThrow(/not set/);
         expect(() => buildCliInvocation(account('env:X'), '/bin/sh -c evil', [], { X: '1' } as NodeJS.ProcessEnv)).toThrow(/bare executable/);
+        // per-vendor semantics: cli-home is codex-only (verified doc); claude/copilot must use env:
+        expect(() => buildCliInvocation(account('cli-home:/tmp/x'), 'claude', [], {} as NodeJS.ProcessEnv, { routeId: 'claude-setup-token' })).toThrow(/unverified/);
+        // isolation: the child env carries the allowlist only, never unrelated server secrets
+        const isolated = buildCliInvocation(account('env:CLAUDE_OFFICIAL_TOKEN'), 'claude', [], { CLAUDE_OFFICIAL_TOKEN: 't', GEMINI_API_KEY: 'must-not-leak', PATH: '/usr/bin' } as NodeJS.ProcessEnv);
+        expect(isolated.env.GEMINI_API_KEY).toBeUndefined();
+        expect(isolated.env.CLAUDE_OFFICIAL_TOKEN).toBe('t');
     });
     it('kills runaway children at the timeout', async () => {
         const d = base();
@@ -62,6 +68,9 @@ describe('cliTransport', () => {
         const result = await runOfficialCli(inv);
         expect(result.stdout).not.toContain('sk-ABCDEFGHIJ12345');
         expect(result.stdout).not.toContain('ghp_abcdefghijklm');
-        expect(redactCliOutput('eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U')).toBe('<redacted-output>');
+        // Assembled, clearly-fake fixture (GitGuardian 38928553: an inline literal
+        // JWT-looking string in this test was flagged; it was never a credential).
+        const fakeJwt = ['eyJURVNULUZJWFRVUkUtSEVBREVS', 'UEFZTE9BRC1OT1QtUkVBTC1UT0tFTi', 'RkFLRS1TSUdOLTAwMA'].join('.');
+        expect(redactCliOutput(fakeJwt)).toBe('<redacted-output>');
     });
 });
