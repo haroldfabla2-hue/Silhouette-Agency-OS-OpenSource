@@ -1,5 +1,6 @@
 import { verifyClaims, type CitedClaim } from './memoryCognition';
 import { continuum } from './continuumMemory';
+import { pickLeastSimilarMeasured, zoneMembers } from './dream/dreamSelection';
 import { geminiService } from './geminiService';
 import { vectorMemory } from './vectorMemoryService';
 import { CommunicationLevel } from '../types';
@@ -408,6 +409,18 @@ export class DreamerService {
         console.log(`[DREAMER] 🔭 Seed Concept Selected: "${seed.content.substring(0, 50)}..."`);
 
         try {
+            // Canonical zone first (etapa 3): members MEASURED from STORED
+            // vectors of the same identity (zero external calls), filtered to
+            // this path's own band (0.30-0.85 similarity). When the seed has
+            // no stored-vector coverage - or the canonical zone is empty -
+            // the legacy path below runs unchanged (preexisting external
+            // embedding + optional Qdrant mirror + seed/graph fallback).
+            const zone = await zoneMembers(seed, { min: 0.30, max: 0.85 }, 4);
+            if (zone.source === 'canonical' && zone.members.length > 0) {
+                const canonicalNodes = [seed, ...zone.members.map(m => ({ ...m, tags: [...(m.tags || []), 'CONSTELLATION_MEMBER'] }))];
+                return await this.enrichWithNeighbors(canonicalNodes);
+            }
+
             // 2. Find "Constellation Members" (Sim: 0.3 - 0.7)
             // Dynamic Import for Vector Service
             const { vectorMemory } = await import('./vectorMemoryService');
@@ -445,30 +458,25 @@ export class DreamerService {
         const seed = candidates[Math.floor(Math.random() * candidates.length)];
 
         try {
-            const { vectorMemory } = await import('./vectorMemoryService');
-            const { geminiService } = await import('./geminiService');
-
-            const seedVector = await geminiService.generateEmbedding(seed.content);
-            if (!seedVector) return this.fallbackMix(all);
-
-            // Search DISTANT/OPPOSITE (Sim < 0.25) or just Random weighted by distance
-            // Since vector search usually returns closes, we might just pick another random note 
-            // and verify it is NOT close.
-
-            let antiSeed: MemoryNode | null = null;
-            let attempts = 0;
-
-            while (!antiSeed && attempts < 5) {
+            // Exploratory draw preserved: up to 5 distinct random candidates.
+            const drawn: MemoryNode[] = [];
+            const seen = new Set<string>([seed.id]);
+            for (let attempts = 0; attempts < 5 && drawn.length < 5; attempts++) {
                 const candidate = candidates[Math.floor(Math.random() * candidates.length)];
-                if (candidate.id !== seed.id) {
-                    // In a full implementation we would check cosine sim here.
-                    // For now, random selection from different topics is a good proxy for "unrelated".
-                    antiSeed = candidate;
-                }
-                attempts++;
+                if (!seen.has(candidate.id)) { seen.add(candidate.id); drawn.push(candidate); }
             }
+            if (drawn.length === 0) return this.fallbackMix(all);
 
-            if (!antiSeed) return this.fallbackMix(all);
+            // Measured "unrelated": real cosine over STORED vectors (zero
+            // external calls). The previous external embedding of the seed
+            // was computed and NEVER used for selection - removed (dead call).
+            // Without stored-vector coverage the first drawn candidate stands
+            // (declared random proxy; no degradation, nothing dropped).
+            const measured = pickLeastSimilarMeasured(seed, drawn);
+            const antiSeed = measured.pick ?? drawn[0];
+            if (measured.measured) {
+                console.log(`[DREAMER] ⚗️ Paradox anti-seed measured (cosine ${measured.similarity!.toFixed(3)}): "${(antiSeed.content || '').substring(0, 40)}..."`);
+            }
 
             const nodes = [seed, antiSeed];
             // ENRICHMENT: Get Neighbors
@@ -772,38 +780,62 @@ export class DreamerService {
 
             for (const anchor of anchors) {
                 console.log(`[DREAMER] ⚓ Anchor Concept: "${anchor.content.substring(0, 50)}..."`);
-                const embedding = await geminiService.generateEmbedding(anchor.content);
-                if (!embedding) {
-                    console.error("[DREAMER] ❌ Failed to generate embedding for anchor.");
-                    continue;
+
+                // Canonical Goldilocks first (etapa 3): partner MEASURED from
+                // STORED vectors of the same identity (zero external calls),
+                // filtered to this path's own band (0.5-0.85 similarity) and
+                // ranked best-first - same "best fit within filter" semantics
+                // as the legacy path. Without coverage, legacy runs unchanged.
+                let partnerContent: string;
+                let partnerIds: string[] = [];
+                let partnerScore: number | null = null;
+
+                const zone = await zoneMembers(anchor, { min: 0.5, max: 0.85 }, 1, 25);
+                if (zone.source === 'canonical') {
+                    if (zone.members.length === 0) {
+                        console.log("[DREAMER] 🔸 No Goldilocks candidates found for anchor (canonical).");
+                        continue;
+                    }
+                    partnerContent = zone.members[0].content || '';
+                    partnerIds = [zone.members[0].id];
+                    partnerScore = zone.members[0].similarity ?? null;
+                } else {
+                    const embedding = await geminiService.generateEmbedding(anchor.content);
+                    if (!embedding) {
+                        console.error("[DREAMER] ❌ Failed to generate embedding for anchor.");
+                        continue;
+                    }
+
+                    // Search for Goldilocks Candidates (Dist: 0.3 - 0.5)
+                    // Since our vector store might not support range queries natively yet, 
+                    // we fetch top 10 and filter manually by score.
+                    const results = await vectorMemory.searchMemory(embedding, 10);
+
+                    // Filter: Score between 0.5 and 0.7 (simulating distance)
+                    // Note: Cosine Similarity 1.0 is identical. 0.0 is orthogonal.
+                    // We want ~0.6 (Metaphor Zone).
+                    const candidates = results.filter(r => r.score < 0.85 && r.score > 0.5);
+
+                    if (candidates.length === 0) {
+                        console.log("[DREAMER] 🔸 No Goldilocks candidates found for anchor.");
+                        continue;
+                    }
+
+                    const partner = candidates[0]; // Take the best fit
+                    partnerContent = partner.payload?.content || '';
+                    partnerIds = [(partner as any)?.payload?.id, (partner as any)?.id].filter((x): x is string => typeof x === 'string' && x.length > 0);
+                    partnerScore = partner.score;
                 }
-
-                // Search for Goldilocks Candidates (Dist: 0.3 - 0.5)
-                // Since our vector store might not support range queries natively yet, 
-                // we fetch top 10 and filter manually by score.
-                const results = await vectorMemory.searchMemory(embedding, 10);
-
-                // Filter: Score between 0.5 and 0.7 (simulating distance)
-                // Note: Cosine Similarity 1.0 is identical. 0.0 is orthogonal.
-                // We want ~0.6 (Metaphor Zone).
-                const candidates = results.filter(r => r.score < 0.85 && r.score > 0.5);
-
-                if (candidates.length === 0) {
-                    console.log("[DREAMER] 🔸 No Goldilocks candidates found for anchor.");
-                    continue;
-                }
-
-                const partner = candidates[0]; // Take the best fit
-                console.log(`[DREAMER] ⚡ Spark found: "${partner.payload?.content?.substring(0, 50)}..." (Score: ${partner.score.toFixed(2)})`);
+                console.log(`[DREAMER] ⚡ Spark found: "${partnerContent.substring(0, 50)}..." (Score: ${partnerScore?.toFixed(2) ?? 'n/a'})`);
 
                 // 2. Isomorphism Check (The Bridge)
-                const insight = await this.attemptBisociation(anchor.content, partner.payload?.content || '');
+                const insight = await this.attemptBisociation(anchor.content, partnerContent);
 
                 if (insight) {
                     // 3. Adversarial Review (The Critic)
                     const grade = await this.criticReview(insight);
                     if (grade >= 8) {
-                        await this.consolidateIntuition(`[SERENDIPITY] ${insight}`, [anchor?.id, (partner as any)?.payload?.id, (partner as any)?.id].filter((x): x is string => typeof x === 'string' && x.length > 0));
+                        await this.consolidateIntuition(`[SERENDIPITY] ${insight}`, [anchor?.id, ...partnerIds].filter((x): x is string => typeof x === 'string' && x.length > 0));
                         console.log(`[DREAMER] 🏆 DISCOVERY SAVED! Grade: ${grade}/10`);
                     } else {
                         console.log(`[DREAMER] 🗑️ Idea rejected by Critic. Grade: ${grade}/10`);
