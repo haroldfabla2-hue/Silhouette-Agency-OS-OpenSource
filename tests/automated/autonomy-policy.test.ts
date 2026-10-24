@@ -51,4 +51,26 @@ describe('isAutoApplyAllowed (self-healing auto-apply is evolution)', () => {
     it('autonomy.enabled alone does not authorize auto-apply', () => {
         expect(isAutoApplyAllowed({ ...OFF, enabled: true })).toBe(false);
     });
+
+    it('MASTER OFF wins: allowEvolution=true with enabled=false does NOT auto-apply', () => {
+        expect(isAutoApplyAllowed({ ...OFF, enabled: false, allowEvolution: true })).toBe(false);
+    });
+});
+
+describe('master switch precedence over sub-flags', () => {
+    it('enabled=false disables evolution tasks even with allowEvolution=true', () => {
+        for (const t of ['Evolution_Goals', 'Tool_Evolution', 'SelfDev']) {
+            expect(isTaskAllowedByAutonomy(t, { enabled: false, allowEvolution: true, enableNarrative: true, enableIntrospection: true })).toBe(false);
+        }
+    });
+
+    it('enabled=false disables the narrator even with enableNarrative=true', () => {
+        expect(isTaskAllowedByAutonomy('Narrator', { enabled: false, allowEvolution: false, enableNarrative: true, enableIntrospection: false })).toBe(false);
+    });
+
+    it('sub-flags operate only within enabled=true', () => {
+        expect(isTaskAllowedByAutonomy('Narrator', { ...ON, enableNarrative: true })).toBe(true);
+        expect(isTaskAllowedByAutonomy('Tool_Evolution', { ...ON, allowEvolution: true })).toBe(true);
+        expect(isTaskAllowedByAutonomy('Tool_Evolution', { ...ON, allowEvolution: false })).toBe(false);
+    });
 });
