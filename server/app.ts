@@ -19,6 +19,7 @@ import { globalLimiter, chatLimiter, adminLimiter } from './middleware/rateLimit
 // Routes
 import systemRoutes from './routes/v1/system.routes';
 import selfExecRoutes from './routes/v1/exec.routes';
+import { connectionRoutes } from './routes/connections';
 import orchestratorRoutes from './routes/v1/orchestrator.routes';
 import factoryRoutes from './routes/v1/factory.routes';
 import workspaceRoutes from './routes/v1/workspace.routes';
@@ -120,6 +121,7 @@ app.use('/visual-editor', express.static(path.join(process.cwd(), 'tools/photocr
 // ─── ROUTES ──────────────────────────────────────────────────────────────────
 app.use('/v1/system', systemRoutes); // [FIX] Add /system prefix
 app.use('/v1/self/exec', selfExecRoutes); // [F3] Command Execution (bubblewrap isolation, approval-gated)
+app.use('/v1/connections', connectionRoutes()); // [auth-connections] operator connection lifecycle (start/list/switch/close)
 app.use('/v1/system', doctorRouter); // [DOCTOR] System Diagnostics at /v1/system/doctor
 app.use('/v1/orchestrator', orchestratorRoutes);
 app.use('/v1/factory', factoryRoutes);

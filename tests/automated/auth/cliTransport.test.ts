@@ -68,9 +68,11 @@ describe('cliTransport', () => {
         const result = await runOfficialCli(inv);
         expect(result.stdout).not.toContain('sk-ABCDEFGHIJ12345');
         expect(result.stdout).not.toContain('ghp_abcdefghijklm');
-        // Assembled, clearly-fake fixture (GitGuardian 38928553: an inline literal
-        // JWT-looking string in this test was flagged; it was never a credential).
-        const fakeJwt = ['eyJURVNULUZJWFRVUkUtSEVBREVS', 'UEFZTE9BRC1OT1QtUkVBTC1UT0tFTi', 'RkFLRS1TSUdOLTAwMA'].join('.');
+        // Clearly-INVALID literal (readable Spanish: not-a-real-JWT / fake-payload /
+        // fake-signature): does not base64-decode to JSON, so it is not a valid
+        // token and is not constructed to evade detection - it exercises the
+        // scrub pattern while being obviously fake to any reviewer or scanner.
+        const fakeJwt = 'eyJESTEOT-ES-UN-JWT-REAL-0000000.PAYLOAD-FALSO-PARA-PRUEBA-DE-REDACT-0000.FIRMA-FALSA-000000';
         expect(redactCliOutput(fakeJwt)).toBe('<redacted-output>');
     });
 });
