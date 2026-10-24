@@ -2,6 +2,7 @@ import { IntrospectionLayer, IntrospectionResult, ConceptVector, IntrospectionCa
 import { ZOMBIE_THRESHOLD } from "../constants";
 
 import { systemBus } from "./systemBus";
+import { importWhenReady } from "./moduleLifecycle";
 
 // --- ANTHROPIC INTROSPECTION ENGINE V2.0 ---
 // Implements the 5 Core Capabilities:
@@ -82,6 +83,20 @@ export class IntrospectionEngine {
 
     public getDreaming(): boolean {
         return this.isDreaming;
+    }
+
+    /**
+     * Module-lifecycle-aware access to the continuum singleton (shared
+     * helper): the constructor runs while the module graph may still be
+     * evaluating; see importWhenReady for the race description.
+     */
+    private async continuumWhenReady(operation: string): Promise<any | null> {
+        return importWhenReady(
+            `[INTROSPECTION] ${operation}`,
+            () => import('./continuumMemory'),
+            mod => (mod?.continuum && typeof mod.continuum.store === 'function') ? mod.continuum : undefined,
+            { attempts: 20, stepMs: 25, note: 'NOT a storage failure' }
+        );
     }
 
     constructor() {
@@ -195,10 +210,12 @@ export class IntrospectionEngine {
         this.activeConcepts.push(concept);
         this.capabilities.add(IntrospectionCapability.CONCEPT_INJECTION);
 
-        // Persist to Continuum (Simulated Vector Store)
-        import('./continuumMemory').then(({ continuum }) => {
-            continuum.store(`[INTROSPECTION] Injected Concept Vector: ${label} (Str: ${strength})`, undefined, ['system', 'concept-vector']);
-        }).catch(e => console.error("[INTROSPECTION] Failed to persist concept", e));
+        // Persist to Continuum. The write waits for the continuum module to
+        // finish initializing (module lifecycle) instead of racing it; a
+        // store rejection is still classified as a storage error.
+        this.continuumWhenReady('concept persistence')
+            .then(continuum => continuum?.store(`[INTROSPECTION] Injected Concept Vector: ${label} (Str: ${strength})`, undefined, ['system', 'concept-vector']))
+            .catch(e => console.error("[INTROSPECTION] Failed to persist concept (storage error):", e));
     }
 
 
@@ -425,8 +442,11 @@ export class IntrospectionEngine {
                 return;
             }
 
-            // Fallback: Load from ContinuumMemory (legacy/migration)
-            const { continuum } = await import('./continuumMemory');
+            // Fallback: Load from ContinuumMemory (legacy/migration). Same
+            // module-lifecycle wait as concept persistence: the constructor
+            // fires this while the module graph may still be evaluating.
+            const continuum = await this.continuumWhenReady('goal loading');
+            if (!continuum) return;
             const goalMemories = await continuum.retrieve('active goals objectives priorities', undefined, 'GOAL');
 
             for (const mem of goalMemories.slice(0, 10)) {
