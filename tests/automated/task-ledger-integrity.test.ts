@@ -166,7 +166,13 @@ describe('task ledger integrity', () => {
         expect(r.data.effectsReviewed.by).toBe('alberto');
         expect(r.data.abandonedInFlight).toBeUndefined();
         // reconciling again is an honest 409, not a silent no-op
-        expect(() => reconcileAbandonedStepEffects(PLAN, 13, 'alberto', 'again')).toThrow(/no abandoned-in-flight uncertainty/);
+        try {
+            reconcileAbandonedStepEffects(PLAN, 13, 'alberto', 'again');
+            throw new Error('Expected a 409 when no eligible uncertainty remains');
+        } catch (error: any) {
+            expect(error.statusCode).toBe(409);
+            expect(error.candidates).toEqual([]);
+        }
     });
 
     it('attribution comes from the authenticated principal (CREATOR), never the body', () => {

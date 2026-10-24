@@ -23,7 +23,7 @@ import {
     clearMissionCheckpoint,
     MISSION_CHECKPOINT_SCHEMA_VERSION as CP_VERSION
 } from '../../services/missionCheckpoint';
-import { recordPlanTasks, markTaskRunning, markTaskDone, taskIdFor } from '../../services/execution/taskLedger';
+import { recordPlanTasks, markTaskRunning, markTaskDone, recordLateSettlement, getUnresolvedAbandonedTaskRows, taskIdFor } from '../../services/execution/taskLedger';
 import { sqliteService } from '../../services/sqliteService';
 import type { ExecutionPlan } from '../../services/planGenerator';
 
@@ -102,16 +102,16 @@ describe('[PR-1] taskLedger (work as data, D4 fix)', () => {
     };
 
     it('records one pending task per step, then transitions them', () => {
-        recordPlanTasks(plan);
+        const contexts = recordPlanTasks(plan);
         let rows = sqliteService.getTasksByPlan(plan.id);
         expect(rows).toHaveLength(2);
         expect(rows.map((r: any) => r.status)).toEqual(['pending', 'pending']);
         expect(rows[0].id).toBe(taskIdFor(plan.id, 1));
 
         const createdAt = rows[0].created_at;
-        markTaskRunning(plan.id, plan.steps[0]);
-        markTaskDone(plan.id, plan.steps[0], { stepOrder: 1, success: true, artifacts: ['/w/a.html'], tokensUsed: 50, executionTimeMs: 10 });
-        markTaskDone(plan.id, plan.steps[1], { stepOrder: 2, success: false, error: 'boom' });
+        markTaskRunning(plan.id, plan.steps[0], contexts.get(1));
+        markTaskDone(plan.id, plan.steps[0], { stepOrder: 1, success: true, artifacts: ['/w/a.html'], tokensUsed: 50, executionTimeMs: 10 }, contexts.get(1));
+        markTaskDone(plan.id, plan.steps[1], { stepOrder: 2, success: false, error: 'boom' }, contexts.get(2));
 
         rows = sqliteService.getTasksByPlan(plan.id);
         const byOrder = (o: number) => rows.find((r: any) => JSON.parse(r.data).stepOrder === o);
@@ -122,6 +122,21 @@ describe('[PR-1] taskLedger (work as data, D4 fix)', () => {
         // created_at survives upserts (immutable birth record)
         expect(byOrder(1).created_at).toBe(createdAt);
     });
+    it('context-free results on a versioned row are conserved without claiming completion', () => {
+        const isolated = { ...plan, id: 'plan_legacy_context_migration' };
+        const contexts = recordPlanTasks(isolated);
+        markTaskDone(isolated.id, isolated.steps[0], { stepOrder: 1, success: true, output: 'unattributed done' });
+        recordLateSettlement(isolated.id, 1, { stepOrder: 1, success: true, output: 'unattributed late' });
+        const row = sqliteService.getTasksByPlan(isolated.id).find((r: any) => r.id === taskIdFor(isolated.id, 1));
+        const data = JSON.parse(row.data);
+        expect(row.status).toBe('pending');
+        expect(data.taskEvidenceV1.attempts[contexts.get(1)!.attemptId].events.verdict).toBeUndefined();
+        expect(data.taskEvidenceV1.attempts[contexts.get(1)!.attemptId].events.late).toBeUndefined();
+        const evidence = Object.values(data.taskEvidenceV1.unattributed) as any[];
+        expect(evidence.map(e => e.payload.output)).toEqual(['unattributed done', 'unattributed late']);
+        expect(getUnresolvedAbandonedTaskRows().some(r => r.id === row.id)).toBe(true);
+    });
+
 });
 
 describe('[PR-1] missionCheckpoint (durable state, versioned from day one)', () => {

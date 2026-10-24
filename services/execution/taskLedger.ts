@@ -221,7 +221,7 @@ function legacyOutcome(planId: string, order: number, kind: 'verdict' | 'late', 
     const eventId = crypto.randomUUID(); // Unknown caller attempt: never claim historical identity/dedup.
     const digest = crypto.createHash('sha256').update(canonical(result)).digest('hex');
     if (kind === 'verdict') sqliteService.ensureLegacyTask({ id, description: step?.taskDescription ?? '', assigned_to: step?.agentId ?? '', status: 'pending', data: { planId, stepOrder: order } });
-    const ack = sqliteService.mutateTaskEvidence(id, (row, data) => {
+    const ack = sqliteService.mutateTaskEvidence<EvidenceAck>(id, (row, data) => {
         const persisted = persistOutputForLedger(`${id}:legacy-unattributed:${eventId}:${digest}`, result.output ?? '');
         const payload = { ...result, output: persisted.output, outputChars: persisted.outputChars, ...persisted.extra, finishedAt: Date.now(), artifacts: result.artifacts ?? [] };
         if (own(data, 'taskEvidenceV1')) {
