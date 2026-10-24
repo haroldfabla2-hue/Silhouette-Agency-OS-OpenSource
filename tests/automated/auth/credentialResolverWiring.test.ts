@@ -4,7 +4,7 @@ import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AccountStore } from '../../../services/auth/accountStore';
-import { TokenVault } from '../../../services/auth/tokenVault';
+import { TokenFileStore } from '../../../services/auth/tokenFileStore';
 import { CredentialResolver } from '../../../services/auth/credentialResolver';
 import { OpenAICompatibleClient } from '../../../services/llm/openAICompatible';
 import { AdmissionQueue } from '../../../services/llm/admissionQueue';
@@ -36,7 +36,7 @@ describe('credential wiring into real transport', () => {
     it('calls the provider with the ACTIVE account credential from the vault', async () => {
         const d = base();
         const store = new AccountStore(join(d, 'a.db'));
-        const vault = new TokenVault(d);
+        const vault = new TokenFileStore(d, { SILHOUETTE_TOKEN_KEY: 'c'.repeat(64) } as NodeJS.ProcessEnv);
         vault.write('groq-work', { accessToken: 'vault-key-live', obtainedAt: new Date().toISOString() });
         store.add({ providerId: 'GROQ', accountId: 'work', label: 'Work', method: 'api-key', secretRef: 'vault:groq-work' });
         store.activate('GROQ', 'work');
@@ -54,7 +54,7 @@ describe('credential wiring into real transport', () => {
     it('env account resolves from the environment; expired vault tokens fail closed', async () => {
         const d = base();
         const store = new AccountStore(join(d, 'a.db'));
-        const vault = new TokenVault(d);
+        const vault = new TokenFileStore(d, { SILHOUETTE_TOKEN_KEY: 'c'.repeat(64) } as NodeJS.ProcessEnv);
         store.add({ providerId: 'GROQ', accountId: 'envacc', label: 'Env', method: 'env', secretRef: 'env:GROQ_API_KEY' });
         store.activate('GROQ', 'envacc');
         const resolver = new CredentialResolver(store, vault, { GROQ_API_KEY: 'env-key-1' } as NodeJS.ProcessEnv);
@@ -70,7 +70,7 @@ describe('credential wiring into real transport', () => {
     it('without accounts the client falls back to the provider env var (legacy path intact)', async () => {
         const d = base();
         const store = new AccountStore(join(d, 'a.db'));
-        const vault = new TokenVault(d);
+        const vault = new TokenFileStore(d, { SILHOUETTE_TOKEN_KEY: 'c'.repeat(64) } as NodeJS.ProcessEnv);
         const resolver = new CredentialResolver(store, vault, {} as NodeJS.ProcessEnv);
         const seen = { auth: undefined as string | undefined, lanes: [] as string[] };
         const port = await startProvider(seen);

@@ -8,7 +8,7 @@
  */
 import type { ProviderDefinition } from '../llm/providerRegistry';
 import { AccountStore } from './accountStore';
-import { TokenVault } from './tokenVault';
+import { TokenFileStore } from './tokenFileStore';
 
 export interface ResolvedCredential {
     key: string;
@@ -17,7 +17,7 @@ export interface ResolvedCredential {
 }
 
 export class CredentialResolver {
-    constructor(private store: AccountStore, private vault: TokenVault, private env: NodeJS.ProcessEnv = process.env) {}
+    constructor(private store: AccountStore, private tokens: TokenFileStore, private env: NodeJS.ProcessEnv = process.env) {}
 
     /** Resolve the active account's credential; undefined = caller falls back to provider env var. */
     resolve(provider: ProviderDefinition): ResolvedCredential | undefined {
@@ -30,7 +30,7 @@ export class CredentialResolver {
             return { key, source: 'env', accountId: account.accountId };
         }
         if (ref.startsWith('vault:')) {
-            const token = this.vault.read(ref.slice(6));
+            const token = this.tokens.read(ref.slice(6));
             if (!token) { this.store.setStatus(provider.id, account.accountId, 'error', 'token missing'); return undefined; }
             if (token.expiresAt && Date.parse(token.expiresAt) <= Date.now()) {
                 this.store.setStatus(provider.id, account.accountId, 'expired', 'token expired');
