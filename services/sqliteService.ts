@@ -18,6 +18,39 @@ if (!fs.existsSync(DB_DIR)) {
 /** Absolute path of the SQLite database file this service persists to. */
 export const SQLITE_DB_PATH = DB_PATH;
 
+/** Validate only the evidence structures this module reads/mutates. */
+export function validateTaskEvidence(data: any): void {
+    if (!Object.prototype.hasOwnProperty.call(data, 'taskEvidenceV1')) return;
+    const object = (v: any) => !!v && typeof v === 'object' && !Array.isArray(v);
+    const review = (v: any) => object(v) && typeof v.by === 'string' && !!v.by.trim() && typeof v.note === 'string' && !!v.note.trim() && Number.isFinite(v.at);
+    const uuid = (v: any) => typeof v === 'string' && /^[0-9a-f-]{36}$/i.test(v);
+    const n = data.taskEvidenceV1;
+    if (!object(n) || !object(n.attempts) || !uuid(n.currentAttemptId) || !Object.prototype.hasOwnProperty.call(n.attempts, n.currentAttemptId)) throw new Error('TASK_EVIDENCE_INVALID');
+    if (n.baselineLegacy !== undefined) {
+        if (!object(n.baselineLegacy) || typeof n.baselineLegacy.status !== 'string' || !object(n.baselineLegacy.data)) throw new Error('TASK_BASELINE_INVALID');
+        const b = n.baselineLegacy.data;
+        if (b.effectsReviewed !== undefined && !review(b.effectsReviewed)) throw new Error('TASK_REVIEW_INVALID');
+        if (b.lateSettlement !== undefined && !object(b.lateSettlement)) throw new Error('TASK_LATE_INVALID');
+        if (b.abandonedInFlight !== undefined && (!object(b.abandonedInFlight) || !Number.isFinite(b.abandonedInFlight.timedOutAt))) throw new Error('TASK_TIMEOUT_INVALID');
+    }
+    for (const [id, a] of Object.entries(n.attempts) as [string, any][]) {
+        if (!uuid(id) || !object(a) || !object(a.events) || !object(a.eventIds)) throw new Error('TASK_ATTEMPT_INVALID');
+        if (a.effectsReviewed !== undefined && !review(a.effectsReviewed)) throw new Error('TASK_REVIEW_INVALID');
+        for (const kind of ['verdict', 'late', 'reap', 'close']) if (!uuid(a.eventIds[kind])) throw new Error('TASK_EVENT_ID_INVALID');
+        for (const [kind, e] of Object.entries(a.events) as [string, any][]) {
+            if (!['verdict', 'late', 'reap', 'close'].includes(kind) || !object(e) || e.eventId !== a.eventIds[kind] || !object(e.primary) || typeof e.primary.digest !== 'string' || !/^[0-9a-f]{64}$/.test(e.primary.digest) || !object(e.primary.payload) || !object(e.conflicts)) throw new Error('TASK_EVENT_INVALID');
+            for (const [digest, payload] of Object.entries(e.conflicts)) if (!/^[0-9a-f]{64}$/.test(digest) || !object(payload)) throw new Error('TASK_CONFLICT_INVALID');
+            const resolution = (v: any) => review(v) && v.decision === 'reviewed_preserve_verdict' && Array.isArray(v.reviewedDigests) && v.reviewedDigests.every((d: any) => typeof d === 'string' && /^[0-9a-f]{64}$/.test(d)) && v.reviewedDigests.includes(e.primary.digest) && typeof v.selectedDigest === 'string' && v.reviewedDigests.includes(v.selectedDigest);
+            if (e.resolution !== undefined && !resolution(e.resolution)) throw new Error('TASK_RESOLUTION_INVALID');
+            if (e.resolutionHistory !== undefined && (!Array.isArray(e.resolutionHistory) || !e.resolutionHistory.every(resolution))) throw new Error('TASK_RESOLUTION_HISTORY_INVALID');
+        }
+    }
+    if (n.unattributed !== undefined) {
+        if (!object(n.unattributed)) throw new Error('TASK_UNATTRIBUTED_INVALID');
+        for (const [id, e] of Object.entries(n.unattributed) as [string, any][]) if (!uuid(id) || !object(e) || !object(e.payload) || typeof e.digest !== 'string' || (e.resolution !== undefined && !review(e.resolution))) throw new Error('TASK_UNATTRIBUTED_INVALID');
+    }
+}
+
 export class SqliteService {
     public db: Database.Database;
 
@@ -1027,6 +1060,43 @@ export class SqliteService {
         return taskLoadSnapshot(rows, observedAt);
     }
 
+    public ensureLegacyTask(task: { id: string; description: string; assigned_to: string; status: string; data: any }): void {
+        this.db.transaction(() => {
+            if (!this.db.prepare('SELECT id FROM tasks WHERE id = ?').get(task.id)) this.upsertTask(task);
+        }).immediate();
+    }
+
+    public admitTaskAttempt(task: { id: string; description: string; assigned_to: string; status: string; data: any }, prepare: (row: any, data: any) => any): void {
+        this.db.transaction(() => {
+            const row = this.db.prepare('SELECT * FROM tasks WHERE id = ?').get(task.id) as any;
+            const data = row ? JSON.parse(row.data) : task.data;
+            if (!data || Array.isArray(data) || typeof data !== 'object') throw new Error('TASK_METADATA_INVALID');
+            validateTaskEvidence(data);
+            const next = prepare(row, data);
+            if (row) this.db.prepare('UPDATE tasks SET status = ?, updated_at = ?, data = ? WHERE id = ?').run('pending', Date.now(), JSON.stringify(next), task.id);
+            else this.upsertTask({ ...task, data: next });
+        }).immediate();
+    }
+
+    /** Task evidence only. Latest row and predicates are read under a write
+     * lock. Callback is synchronous; no dispatch, providers, or cancellation.
+     * Corrupt metadata is an error, never a replacement empty object. */
+    public mutateTaskEvidence<T>(id: string, mutate: (row: any, data: Record<string, any>) => { data: Record<string, any>; status?: string; value: T; readonly?: boolean } | null): T | null {
+        return this.db.transaction(() => {
+            const row = this.db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as any;
+            if (!row) throw new Error(`TASK_ROW_MISSING:${id}`);
+            const data = JSON.parse(row.data);
+            if (!data || Array.isArray(data) || typeof data !== 'object') throw new Error(`TASK_METADATA_INVALID:${id}`);
+            validateTaskEvidence(data);
+            const change = mutate(row, data);
+            if (!change) return null;
+            if (change.readonly) return change.value;
+            this.db.prepare('UPDATE tasks SET status = ?, updated_at = ?, data = ? WHERE id = ?')
+                .run(change.status ?? row.status, Date.now(), JSON.stringify(change.data), id);
+            return change.value;
+        }).immediate();
+    }
+
     public getTasksByPlan(planId: string): any[] {
         const stmt = this.db.prepare('SELECT * FROM tasks WHERE id LIKE ? ORDER BY created_at ASC');
         return stmt.all(`task_${planId}_%`) as any[];
@@ -1039,12 +1109,38 @@ export class SqliteService {
      *  re-run over: these rows block new plans until an explicit,
      *  attributed reconciliation reviews the effects. */
     public getUnresolvedAbandonedTasks(): any[] {
-        const stmt = this.db.prepare(`SELECT * FROM tasks
-            WHERE json_extract(data,'$.abandonedInFlight') IS NOT NULL
-              AND json_extract(data,'$.lateSettlement') IS NULL
-              AND json_extract(data,'$.effectsReviewed') IS NULL
-            ORDER BY updated_at ASC`);
-        return stmt.all() as any[];
+        // Uncertainty is historical, not merely the current projection.
+        // Corrupt JSON throws; caller retains its existing fail-closed blocker.
+        const rows = this.db.prepare('SELECT * FROM tasks').all() as any[];
+        const blockers: any[] = [];
+        for (const row of rows) {
+            const data = JSON.parse(row.data);
+            if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('TASK_METADATA_INVALID');
+            validateTaskEvidence(data);
+            const versioned = Object.prototype.hasOwnProperty.call(data, 'taskEvidenceV1');
+            if (!versioned) {
+                if (data.abandonedInFlight && !data.lateSettlement && !data.effectsReviewed) blockers.push(row);
+                continue;
+            }
+            const n = data.taskEvidenceV1;
+            if (!n || typeof n !== 'object' || !n.attempts || typeof n.attempts !== 'object' || Array.isArray(n.attempts)) throw new Error('TASK_EVIDENCE_INVALID');
+            for (const [attemptId, a] of Object.entries(n.attempts) as [string, any][]) {
+                if (!a || !a.events || typeof a.events !== 'object') throw new Error('TASK_ATTEMPT_INVALID');
+                const timeout = a.events.verdict?.primary?.payload?.abandonedInFlight;
+                const conflicts = Object.values(a.events).some((e: any) => {
+                    if (!e || typeof e !== 'object' || Array.isArray(e) || !e.primary || typeof e.primary.digest !== 'string' || !e.conflicts || typeof e.conflicts !== 'object' || Array.isArray(e.conflicts)) throw new Error('TASK_EVENT_INVALID');
+                    const variants = Object.keys(e.conflicts);
+                    return variants.length > 0 && (!Array.isArray(e.resolution?.reviewedDigests) || [e.primary.digest, ...variants].some(d => !e.resolution.reviewedDigests.includes(d)));
+                });
+                if (conflicts || (timeout && !a.events.late && !a.effectsReviewed)) blockers.push({ ...row, data: JSON.stringify({ planId: data.planId, stepOrder: data.stepOrder, attemptId, abandonedInFlight: timeout, uncertaintyReason: conflicts ? 'EVIDENCE_CONFLICT' : 'TIMEOUT_UNRESOLVED' }) });
+            }
+            for (const [eventId, e] of Object.entries(n.unattributed ?? {}) as [string, any][]) {
+                if (!e.resolution) blockers.push({ ...row, data: JSON.stringify({ planId: data.planId, stepOrder: data.stepOrder, eventId, uncertaintyReason: 'UNATTRIBUTED_EVIDENCE' }) });
+            }
+            const b = n.baselineLegacy?.data;
+            if (b?.abandonedInFlight && !b.lateSettlement && !b.effectsReviewed) blockers.push({ ...row, data: JSON.stringify(b) });
+        }
+        return blockers;
     }
 
     /** [LEDGER-INTEGRITY] Open ledger rows (pending/running) untouched since

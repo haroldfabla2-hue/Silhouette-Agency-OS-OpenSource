@@ -31,11 +31,12 @@ router.post('/tasks/reconcile-abandoned', async (req, res) => {
     try {
         const { reconcileAbandonedStepEffects, reconcileAttributionFor } = await import('../../../services/execution/taskLedger');
         const attributedTo = reconcileAttributionFor((req as any).user);
-        const { planId, stepOrder, note } = req.body ?? {};
-        const row = reconcileAbandonedStepEffects(String(planId ?? ''), Number(stepOrder), attributedTo, String(note ?? ''));
+        const { planId, stepOrder, note, attemptId, legacy, eventId, digest, decision } = req.body ?? {};
+        if ((attemptId !== undefined && typeof attemptId !== 'string') || (legacy !== undefined && typeof legacy !== 'boolean') || (eventId !== undefined && typeof eventId !== 'string') || (digest !== undefined && typeof digest !== 'string')) return res.status(400).json({ ok: false, error: 'Invalid evidence selector' });
+        const row = reconcileAbandonedStepEffects(String(planId ?? ''), Number(stepOrder), attributedTo, String(note ?? ''), { attemptId, legacy, eventId, digest, decision });
         res.json({ ok: true, task: row });
     } catch (e: any) {
-        res.status(e?.statusCode ?? 500).json({ ok: false, error: e?.message });
+        res.status(e?.statusCode ?? 500).json({ ok: false, error: e?.message, ...(e?.statusCode === 409 && e?.candidates ? { candidates: e.candidates } : {}) });
     }
 });
 

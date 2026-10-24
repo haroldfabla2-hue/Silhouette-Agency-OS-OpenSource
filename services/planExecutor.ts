@@ -23,7 +23,7 @@ import { SystemProtocol, CommunicationLevel, AgentStatus, AgentRoleType, AgentTi
 import { stepDeclaresFileWork, durableFileGrant } from './tools/toolSelection'; // [W3]
 import { evaluatePlanHonesty } from './execution/stepHonesty'; // [W3]
 import { collectWrittenArtifacts } from './execution/artifactLedger'; // [W3]
-import { recordPlanTasks, markTaskRunning, markTaskPhase, markTaskDone, closeOpenTasks, recordLateSettlement, getUnresolvedAbandonedTaskRows } from './execution/taskLedger'; // [PR-1] [PR-4c: closeOpenTasks] [LEDGER-INTEGRITY]
+import { recordPlanTasks, markTaskRunning, markTaskPhase, markTaskDone, closeOpenTasks, recordLateSettlement, getUnresolvedAbandonedTaskRows, type TaskAttemptContext, type StepOutcomeLike } from './execution/taskLedger'; // [PR-1] [PR-4c: closeOpenTasks] [LEDGER-INTEGRITY]
 import { extractExecuteMarkers, normalizeToolName } from './tools/execMarker'; // [PR-I]
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -57,19 +57,19 @@ export interface StepResult {
 //      before any re-run. Explicit verifiable recovery for a never-
 //      settling step is therefore: restart the service, inspect the
 //      flagged row, re-run.
-interface AbandonedStep { planId: string; order: number; agentId: string; taskDescription: string; timedOutAt: number; }
+interface AbandonedStep { attemptId?: string; planId: string; order: number; agentId: string; taskDescription: string; timedOutAt: number; }
 const abandonedInFlight = new Map<string, AbandonedStep>();
-const abandonedKey = (planId: string, order: number) => `${planId}:${order}`;
+const abandonedKey = (planId: string, order: number, attemptId?: string) => `${planId}:${order}:${attemptId ?? 'legacy'}`;
 
-export function noteStepTimedOut(planId: string, step: PlanStep): void {
-    abandonedInFlight.set(abandonedKey(planId, step.order), {
-        planId, order: step.order, agentId: step.agentId,
+export function noteStepTimedOut(planId: string, step: PlanStep, attemptId?: string): void {
+    abandonedInFlight.set(abandonedKey(planId, step.order, attemptId), {
+        attemptId, planId, order: step.order, agentId: step.agentId,
         taskDescription: step.taskDescription ?? '', timedOutAt: Date.now()
     });
 }
 
-export function clearAbandonedStep(planId: string, order: number): void {
-    abandonedInFlight.delete(abandonedKey(planId, order));
+export function clearAbandonedStep(planId: string, order: number, attemptId?: string): void {
+    abandonedInFlight.delete(abandonedKey(planId, order, attemptId));
 }
 
 /** Abandoned steps of THIS process still awaiting settlement. */
@@ -148,7 +148,7 @@ class PlanExecutor {
 
         // [PR-1] Work as data: one task row per step (observable by query,
         // not by reading logs). Best-effort; never blocks execution.
-        recordPlanTasks(plan);
+        const attemptContexts = recordPlanTasks(plan);
 
         // Execute steps in order, respecting dependencies
         for (const step of plan.steps) {
@@ -161,9 +161,10 @@ class PlanExecutor {
 
             // 2. Execute the step with all homeostatic checks
             try {
-                markTaskRunning(plan.id, step); // [PR-1]
-                const result = await this.withStepTimeout(plan.id, step, this.executeStep(step, plan, results));
-                markTaskDone(plan.id, step, result); // [PR-1]
+                markTaskRunning(plan.id, step, attemptContexts.get(step.order)); // [PR-1]
+                const result = await this.withStepTimeout(plan.id, step, this.executeStep(step, plan, results, attemptContexts.get(step.order)), attemptContexts.get(step.order));
+                const doneAck = markTaskDone(plan.id, step, result, attemptContexts.get(step.order));
+                if (doneAck?.persisted && doneAck.releaseReady && !doneAck.conflict) clearAbandonedStep(plan.id, step.order, attemptContexts.get(step.order)?.attemptId);
                 results.set(step.order, result);
 
                 if (!result.success) {
@@ -186,7 +187,7 @@ class PlanExecutor {
                     executionTimeMs: 0,
                     error: e.message
                 };
-                markTaskDone(plan.id, step, failure); // [PR-1]
+                markTaskDone(plan.id, step, failure, attemptContexts.get(step.order)); // [PR-1]
                 results.set(step.order, failure);
             }
         }
@@ -214,7 +215,7 @@ class PlanExecutor {
         // [PR-4c] Close ledger rows left open by an abort: steps never
         // executed (or abandoned mid-flight) become 'failed' with the reason,
         // never a silent eternal "running"/"pending".
-        closeOpenTasks(plan.id, new Set(results.keys()), errors.join('; ') || 'plan aborted');
+        closeOpenTasks(plan.id, new Set(results.keys()), errors.join('; ') || 'plan aborted', attemptContexts);
 
         let finalOutput = 'Plan execution failed';
         if (successfulResults.length > 0) {
@@ -263,15 +264,15 @@ class PlanExecutor {
     // plan never aborted, stranding its ledger rows). The plan must fail
     // honestly instead. Env-overridable; the 30min default is ~5x the
     // slowest observed legitimate step (382s). A timed-out step's
-    // background promise is ignored when it eventually settles.
-    private withStepTimeout(planId: string, step: PlanStep, work: Promise<StepResult>): Promise<StepResult> {
+    // background promise is recorded as late evidence when it settles.
+    private withStepTimeout(planId: string, step: PlanStep, work: Promise<StepResult>, attempt?: TaskAttemptContext): Promise<StepResult> {
         const timeoutMs = Number(process.env.SILHOUETTE_STEP_TIMEOUT_MS ?? 30 * 60 * 1000);
         let timer: NodeJS.Timeout | undefined;
         let timedOut = false;
         const timeout = new Promise<StepResult>((resolve) => {
             timer = setTimeout(() => {
                 timedOut = true;
-                noteStepTimedOut(planId, step);
+                noteStepTimedOut(planId, step, attempt?.attemptId);
                 console.error(`[PLAN_EXECUTOR] Step ${step.order} timed out after ${timeoutMs}ms - failing honestly`);
                 resolve({
                     stepOrder: step.order,
@@ -293,24 +294,27 @@ class PlanExecutor {
         // and for de-duplicating a re-run. Step side effects are confined
         // to the audited jailed write roots and the memory pipeline;
         // world-exiting actions are unreachable from a step.
-        work.then(late => {
-            if (!timedOut) return;
-            clearAbandonedStep(planId, step.order);
-            console.warn(`[PLAN_EXECUTOR] Timed-out step ${step.order} of ${planId} settled late (success=${late?.success}) - reconciling ledger row`);
-            recordLateSettlement(planId, step.order, late);
-        }).catch((e: any) => {
-            if (!timedOut) return;
-            clearAbandonedStep(planId, step.order);
-            console.warn(`[PLAN_EXECUTOR] Timed-out step ${step.order} of ${planId} rejected late: ${e?.message}`);
-            recordLateSettlement(planId, step.order, { stepOrder: step.order, success: false, error: `late rejection: ${e?.message}` });
-        });
+        const recordSettled = (late: StepOutcomeLike) => {
+            try {
+                const ack = recordLateSettlement(planId, step.order, late, attempt);
+                if (ack.persisted && ack.releaseReady && !ack.conflict) clearAbandonedStep(planId, step.order, attempt?.attemptId);
+                else console.error(`[PLAN_EXECUTOR] Late evidence conflict; retaining RAM hold for ${planId}:${step.order}`);
+            } catch (error: any) {
+                // No automatic retry or work replay. If the timeout itself was
+                // not committed, RAM cannot survive a crash: this window remains.
+                console.error(`[PLAN_EXECUTOR] Late evidence not committed; RAM hold retained for ${planId}:${step.order}: ${error?.message}`);
+            }
+        };
+        work.then(late => { if (timedOut) recordSettled(late); },
+            (e: any) => { if (timedOut) recordSettled({ stepOrder: step.order, success: false, error: `late rejection: ${e?.message}` }); });
         return Promise.race([work, timeout]).finally(() => { if (timer) clearTimeout(timer); });
     }
 
     private async executeStep(
         step: PlanStep,
         plan: ExecutionPlan,
-        previousResults: Map<number, StepResult>
+        previousResults: Map<number, StepResult>,
+        attempt?: TaskAttemptContext
     ): Promise<StepResult> {
         const stepStart = Date.now();
         console.log(`[PLAN_EXECUTOR] 📍 Step ${step.order}/${plan.steps.length}: ${step.agentRole}`);
@@ -318,7 +322,7 @@ class PlanExecutor {
         // ═══════════════════════════════════════════════════════════════════
         // HOMEOSTATIC CHECK 1: Resource Arbiter (RAM/CPU/VRAM)
         // ═══════════════════════════════════════════════════════════════════
-        markTaskPhase(plan.id, step, 'waiting_resources');
+        markTaskPhase(plan.id, step, 'waiting_resources', attempt);
         const arbiterApproved = await this.waitForResources(step);
         if (!arbiterApproved) {
             return {
@@ -345,14 +349,14 @@ class PlanExecutor {
         // ═══════════════════════════════════════════════════════════════════
         if (congestionManager.isCongested()) {
             console.log(`[PLAN_EXECUTOR] 🚦 System congested. Pausing...`);
-            markTaskPhase(plan.id, step, 'waiting_congestion');
+            markTaskPhase(plan.id, step, 'waiting_congestion', attempt);
             await this.pause(this.CONGESTION_PAUSE_MS);
         }
 
         // ═══════════════════════════════════════════════════════════════════
         // HYDRATE AGENT (Load into memory)
         // ═══════════════════════════════════════════════════════════════════
-        markTaskPhase(plan.id, step, 'executing');
+        markTaskPhase(plan.id, step, 'executing', attempt);
         try {
             await orchestrator.hydrateAgent(step.agentId);
         } catch (e) {
