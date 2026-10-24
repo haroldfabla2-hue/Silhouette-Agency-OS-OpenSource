@@ -27,7 +27,11 @@ import { lancedbService } from '../../services/lancedbService';
 import { storedVectorCoverage, pickLeastSimilarMeasured, zoneMembers } from '../../services/dream/dreamSelection';
 import { DreamerService } from '../../services/dreamerService';
 
-const IDENTITY = { model: 'test-embed', version: '1', dimension: 768 };
+// Per-run identity: fixed-identity projection tables accumulate stale rows
+// across runs in the shared worker DB (observed: ANN rebuilds over 10..35
+// accumulated rows; first search after rebuild could return 0 - flake).
+const RUN = `dreamsel-${Date.now()}`;
+const IDENTITY = { model: `test-embed-${RUN}`, version: '1', dimension: 768 };
 const OTHER_IDENTITY = { model: 'other-embed', version: '1', dimension: 768 };
 
 const e = (i: number): number[] => { const v = new Array(768).fill(0); v[i] = 1; return v; };
@@ -37,10 +41,10 @@ const norm = (v: number[]): number[] => { const n = Math.sqrt(v.reduce((a, x) =>
 const vA = e(0);                                   // self
 const vB = e(1);                                   // cos 0
 const vC = norm([1, 1, ...new Array(766).fill(0)]); // cos ~0.7071
+const vE = e(2);                                   // cos 0 against vA/vB/vC
 const vF = norm([0.6, 0.8, ...new Array(766).fill(0)]); // cos 0.6
 const vD = e(0);                                   // cos 1.0 (duplicate direction, different node)
 
-const RUN = `dreamsel-${Date.now()}`;
 let seq = 0;
 function node(content: string, vector?: number[], identity = IDENTITY): MemoryNode {
     const n: any = {
@@ -154,13 +158,16 @@ describe('DreamerService rewiring (real selection, declared doubles)', () => {
     it('gatherParadoxes picks the measured-orthogonal partner for ANY random seed', async () => {
         const svc: any = new DreamerService();
         svc.enrichWithNeighbors = async (nodes: MemoryNode[]) => nodes; // declared double
-        const fixtures = [node('pA', vA), node('pB', vB), node('pC', vC)];
+        // Geometry: vA=e0, vB=e1 (cos 0), vC=(e0+e1)/sqrt2 (cos .7071 with
+        // both), vE=e2 (cos 0 with all three). EVERY seed has an orthogonal
+        // partner (the previous 3-fixture version left seed pC without one:
+        // ~1/3 of runs measured cos .7071 - seed-dependent flake, caught in
+        // a parallel run). Seed pC is the discriminating case: only the
+        // MEASURED pick (pE) gives cos 0; a random partner gives 0 just 1/3.
+        const fixtures = [node('pA', vA), node('pB', vB), node('pC', vC), node('pE', vE)];
         const out: MemoryNode[] = await svc.gatherParadoxes({ MEDIUM: fixtures, DEEP: [] });
         expect(out).toHaveLength(2);
         const sim = cosineSimilarity((out[0] as any).embeddingVector, (out[1] as any).embeddingVector);
-        // Every fixture has an orthogonal partner available and all
-        // alternatives are drawn, so the measured pick is always cos 0 -
-        // deterministic outcome despite the random seed (exploration kept).
         expect(sim).toBeCloseTo(0, 5);
     });
 
