@@ -18,7 +18,7 @@ import Database from 'better-sqlite3';
 let dir: string;
 let server: Server;
 let base: string;
-let sessions: Record<'CREATOR' | 'ADMIN' | 'USER', string>;
+let sessions: Record<'CREATOR' | 'CREATOR2' | 'ADMIN' | 'USER', string>;
 let creatorId: string;
 
 beforeAll(async () => {
@@ -30,32 +30,34 @@ beforeAll(async () => {
     const { createConnectionRouter } = await import('../../../server/routes/connections');
     const { ConnectionManager } = await import('../../../services/auth/connectionManager');
     const { AccountStore } = await import('../../../services/auth/accountStore');
+    const { TokenFileStore } = await import('../../../services/auth/tokenFileStore');
     await identityService.init();
     resetTokenCache();
 
     const first = identityService.setupFirstUser('creator', 'fp-c', 'dev');
     creatorId = first.user.id;
-    sessions = { CREATOR: first.session.id, ADMIN: '', USER: '' };
+    sessions = { CREATOR: first.session.id, CREATOR2: '', ADMIN: '', USER: '' };
 
     // Seed ADMIN + USER rows directly (no public role-setting API exists);
     // sessions are REAL via registerDevice + createSession.
     const db = new Database(join(dir, 'identity.sqlite'));
     const now = Date.now();
-    for (const [id, role] of [['u-admin', 'ADMIN'], ['u-user', 'USER']] as const) {
+    for (const [id, role] of [['u-admin', 'ADMIN'], ['u-user', 'USER'], ['u-creator2', 'CREATOR']] as const) {
         db.prepare(`INSERT INTO users (id, email, password_hash, name, avatar_url, role, google_email, created_at, last_login)
                     VALUES (?, ?, NULL, ?, NULL, ?, NULL, ?, ?)`).run(id, `${id}@t.local`, id, role, now, now);
     }
     db.close();
-    for (const id of ['u-admin', 'u-user'] as const) {
+    for (const id of ['u-admin', 'u-user', 'u-creator2'] as const) {
         const device = identityService.registerDevice(id, `fp-${id}`, 'dev');
         const s = identityService.createSession(id, device.id);
-        sessions[id === 'u-admin' ? 'ADMIN' : 'USER'] = s.id;
+        sessions[id === 'u-admin' ? 'ADMIN' : id === 'u-user' ? 'USER' : 'CREATOR2'] = s.id;
     }
 
     const app = express();
     app.use(express.json());
     app.use(authMiddleware);
-    app.use('/v1/connections', createConnectionRouter(new ConnectionManager(new AccountStore(join(dir, 'accounts.db')))));
+    const tokens = new TokenFileStore(dir, { SILHOUETTE_TOKEN_KEY: 'b'.repeat(64) } as NodeJS.ProcessEnv); // test key, tmp dir
+    app.use('/v1/connections', createConnectionRouter(new ConnectionManager(new AccountStore(join(dir, 'accounts.db')), tokens)));
     server = await new Promise<Server>(r => { const s = app.listen(0, '127.0.0.1', () => r(s)); });
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/connections`;
 });
@@ -88,6 +90,23 @@ describe('connection routes through the REAL auth middleware', () => {
         const res = await fetch(base, { headers: { authorization: 'Bearer op-token-authz-test' } });
         expect(res.status).toBe(200);
         expect((await res.json()).principal).toBe('system:api-token');
+    });
+    it('a pending OAuth connect is bound to its initiating principal over HTTP', async () => {
+        // oauth-loopback start performs no outbound call (URL build + loopback waiter only).
+        const start = await fetch(`${base}/oauth/start`, {
+            method: 'POST', headers: { 'content-type': 'application/json', 'x-session-id': sessions.CREATOR },
+            body: JSON.stringify({
+                providerId: 'OPENAI_CODEX', accountId: 'bind-test', label: 'B', method: 'oauth-loopback',
+                config: { clientId: 'c', authorizeUrl: 'https://example.com/authorize', tokenUrl: 'https://example.com/token' },
+            }),
+        });
+        expect(start.status).toBe(201);
+        const { pending } = await start.json();
+        const cancelOther = await fetch(`${base}/oauth/${pending.pendingId}/cancel`, { method: 'POST', headers: { 'x-session-id': sessions.CREATOR2 } });
+        expect(cancelOther.status).toBe(403);
+        expect((await cancelOther.json()).error).toBe('forbidden-principal');
+        const cancelOwner = await fetch(`${base}/oauth/${pending.pendingId}/cancel`, { method: 'POST', headers: { 'x-session-id': sessions.CREATOR } });
+        expect(cancelOwner.status).toBe(200);
     });
     it('a USER session cannot mutate connections either', async () => {
         const res = await fetch(base, {

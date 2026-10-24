@@ -64,21 +64,21 @@ export function createConnectionRouter(manager: ConnectionManager): Router {
     router.post('/oauth/start', async (req, res) => {
         const { providerId, accountId, label, method, config } = req.body ?? {};
         try {
-            const pending = await manager.startOAuthConnect({ providerId, accountId, label, method, config });
+            const pending = await manager.startOAuthConnect({ providerId, accountId, label, method, config }, (req as any).user.id);
             res.status(201).json({ ok: true, pending });
         } catch (err) { handleError(err, res); }
     });
 
     router.post('/oauth/:pendingId/complete', async (req, res) => {
         try {
-            const account = await manager.completeOAuthConnect(req.params.pendingId);
+            const account = await manager.completeOAuthConnect(req.params.pendingId, (req as any).user.id);
             res.json({ ok: true, account });
         } catch (err) { handleError(err, res); }
     });
 
     router.post('/oauth/:pendingId/cancel', (req, res) => {
         try {
-            manager.cancelOAuthConnect(req.params.pendingId);
+            manager.cancelOAuthConnect(req.params.pendingId, (req as any).user.id);
             res.json({ ok: true, cancelled: req.params.pendingId });
         } catch (err) { handleError(err, res); }
     });
@@ -89,6 +89,7 @@ export function createConnectionRouter(manager: ConnectionManager): Router {
 function handleError(err: unknown, res: import('express').Response): void {
     if (err instanceof ConnectionError) {
         const status = err.code === 'not-found' ? 404 : err.code === 'duplicate' ? 409
+            : err.code === 'forbidden-principal' ? 403
             : err.code === 'token-store-unavailable' ? 503 : 400;
         res.status(status).json({ ok: false, error: err.code, message: err.message });
     } else if (err instanceof Error && /OAuthCallbackError|DeviceFlowError/.test(err.name)) {

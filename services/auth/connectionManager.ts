@@ -25,6 +25,8 @@
  * vendor CLI's login in its home dir persists untouched (vendor-managed).
  */
 import { randomBytes } from 'node:crypto';
+import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
 import { AccountStore, type AuthMethod, type ProviderAccount } from './accountStore';
 import { TokenFileStore } from './tokenFileStore';
 import {
@@ -71,6 +73,8 @@ export interface PendingConnectInfo {
 }
 
 interface PendingConnect {
+    /** Principal (req.user.id) that initiated the connect; complete/cancel are bound to it. */
+    principalId: string;
     info: PendingConnectInfo;
     label: string;
     config: OAuthClientConfig;
@@ -83,18 +87,64 @@ interface PendingConnect {
     intervalMs?: number;
 }
 
-function assertHttpsOrLoopback(endpoint: string, field: string): void {
+function isPublicAddress(addr: string): boolean {
+    const v = isIP(addr);
+    if (v === 4) {
+        const p = addr.split('.').map(Number);
+        if (p[0] === 0 || p[0] === 10 || p[0] === 127) return false;
+        if (p[0] === 169 && p[1] === 254) return false;
+        if (p[0] === 172 && p[1] >= 16 && p[1] <= 31) return false;
+        if (p[0] === 192 && p[1] === 168) return false;
+        if (p[0] === 100 && p[1] >= 64 && p[1] <= 127) return false;
+        if (p[0] >= 224) return false; // multicast/reserved
+        return true;
+    }
+    if (v === 6) {
+        const a = addr.toLowerCase();
+        if (a === '::1' || a === '::') return false;
+        if (a.startsWith('fe80:') || a.startsWith('fc') || a.startsWith('fd')) return false;
+        if (a.startsWith('::ffff:')) { const m = a.slice(7); return isIP(m) === 4 ? isPublicAddress(m) : false; }
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Endpoint policy (SSRF guard for operator-supplied OAuth endpoints):
+ * - scheme https; http only toward a loopback host (declared test/dev use);
+ * - unless allowPrivateEndpoints (declared test mode), the host must not BE
+ *   a private/special IP literal nor RESOLVE to one (DNS checked at start);
+ * - redirects are refused by every fetcher downstream (redirect: 'error').
+ * Declared residual limit: DNS re-binding between this check and the actual
+ * request (TOCTOU) is not pinned.
+ */
+async function assertEndpointAllowed(endpoint: string, field: string, allowPrivate: boolean): Promise<void> {
     let url: URL;
     try { url = new URL(endpoint); } catch { throw new ConnectionError('invalid-endpoint', `${field} is not a URL`); }
-    if (url.protocol === 'https:') return;
-    if (url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname)) return;
-    throw new ConnectionError('insecure-endpoint', `${field} must be https (http only for loopback test endpoints)`);
+    const isLoopbackHttp = url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname);
+    if (url.protocol !== 'https:' && !isLoopbackHttp) {
+        throw new ConnectionError('insecure-endpoint', `${field} must be https (http only for loopback test endpoints)`);
+    }
+    if (allowPrivate) return;
+    if (isIP(url.hostname)) {
+        if (!isPublicAddress(url.hostname)) throw new ConnectionError('private-endpoint', `${field} points at a non-public address`);
+        return;
+    }
+    let addresses: { address: string }[];
+    try { addresses = await lookup(url.hostname, { all: true }); } catch { throw new ConnectionError('unresolvable-endpoint', `${field} host does not resolve`); }
+    if (!addresses.length || addresses.some(a => !isPublicAddress(a.address))) {
+        throw new ConnectionError('private-endpoint', `${field} resolves to a non-public address`);
+    }
 }
 
 export class ConnectionManager {
     private pending = new Map<string, PendingConnect>();
 
-    constructor(private readonly store: AccountStore, private readonly tokens?: TokenFileStore) {}
+    constructor(
+        private readonly store: AccountStore,
+        private readonly tokens?: TokenFileStore,
+        private readonly options: { allowPrivateEndpoints?: boolean } = {},
+    ) {}
 
     // ── 1) Account management (pointers to pre-configured credentials) ──────
 
@@ -152,13 +202,15 @@ export class ConnectionManager {
     async startOAuthConnect(input: {
         providerId: string; accountId: string; label: string;
         method: 'oauth-loopback' | 'device-code'; config: OAuthClientConfig;
-    }): Promise<PendingConnectInfo> {
+    }, principalId: string): Promise<PendingConnectInfo> {
+        if (!principalId?.trim()) throw new ConnectionError('invalid-principal', 'initiating principal is required');
         if (!this.tokens) {
             throw new ConnectionError('token-store-unavailable', 'SILHOUETTE_TOKEN_KEY not configured: OAuth token custody unavailable; refusing to start a login whose tokens have nowhere safe to land');
         }
         if (!ACCOUNT_ID.test(input.accountId || '')) throw new ConnectionError('invalid-account-id', 'bad accountId');
         if (!input.config?.clientId?.trim()) throw new ConnectionError('invalid-config', 'config.clientId (operator-registered OAuth app) is required');
-        assertHttpsOrLoopback(input.config.tokenUrl, 'config.tokenUrl');
+        const allowPrivate = this.options.allowPrivateEndpoints === true;
+        await assertEndpointAllowed(input.config.tokenUrl, 'config.tokenUrl', allowPrivate);
         if (this.store.list().some(a => a.providerId === input.providerId && a.accountId === input.accountId)) {
             throw new ConnectionError('duplicate', `account ${input.accountId} already exists for ${input.providerId}`);
         }
@@ -166,11 +218,11 @@ export class ConnectionManager {
         const pendingId = randomBytes(12).toString('hex');
         const abort = new AbortController();
         const base: PendingConnectInfo = { pendingId, providerId: input.providerId, accountId: input.accountId, method: input.method };
-        const entry: PendingConnect = { info: base, label: input.label || input.accountId, config: input.config, abort };
+        const entry: PendingConnect = { principalId, info: base, label: input.label || input.accountId, config: input.config, abort };
 
         if (input.method === 'oauth-loopback') {
             if (!input.config.authorizeUrl) throw new ConnectionError('invalid-config', 'config.authorizeUrl required for oauth-loopback');
-            assertHttpsOrLoopback(input.config.authorizeUrl, 'config.authorizeUrl');
+            await assertEndpointAllowed(input.config.authorizeUrl, 'config.authorizeUrl', allowPrivate);
             const state = generateState();
             const pkce = generatePkce();
             const waiter = await startAuthorizationCodeWaiter({ state, signal: abort.signal });
@@ -186,7 +238,7 @@ export class ConnectionManager {
             });
         } else {
             if (!input.config.deviceCodeUrl) throw new ConnectionError('invalid-config', 'config.deviceCodeUrl required for device-code');
-            assertHttpsOrLoopback(input.config.deviceCodeUrl, 'config.deviceCodeUrl');
+            await assertEndpointAllowed(input.config.deviceCodeUrl, 'config.deviceCodeUrl', allowPrivate);
             const dc = await requestDeviceCode(input.config.deviceCodeUrl, input.config.clientId, input.config.scope);
             entry.deviceCode = dc.deviceCode;
             entry.intervalMs = dc.intervalMs;
@@ -204,9 +256,12 @@ export class ConnectionManager {
      * device grant to completion, stores the tokens in the encrypted store
      * and registers the account with its vault: pointer.
      */
-    async completeOAuthConnect(pendingId: string): Promise<ProviderAccount> {
+    async completeOAuthConnect(pendingId: string, principalId: string): Promise<ProviderAccount> {
         const entry = this.pending.get(pendingId);
         if (!entry) throw new ConnectionError('not-found', `no pending connection ${pendingId}`);
+        if (entry.principalId !== principalId) {
+            throw new ConnectionError('forbidden-principal', 'pending connection belongs to a different principal');
+        }
         try {
             let token: { accessToken: string; refreshToken?: string; expiresInSec?: number; scope?: string };
             if (entry.info.method === 'oauth-loopback') {
@@ -245,9 +300,12 @@ export class ConnectionManager {
     }
 
     /** Cancel a pending connect: aborts the waiter/poll. Vendor side was never touched beyond the initial code request. */
-    cancelOAuthConnect(pendingId: string): void {
+    cancelOAuthConnect(pendingId: string, principalId: string): void {
         const entry = this.pending.get(pendingId);
         if (!entry) throw new ConnectionError('not-found', `no pending connection ${pendingId}`);
+        if (entry.principalId !== principalId) {
+            throw new ConnectionError('forbidden-principal', 'pending connection belongs to a different principal');
+        }
         entry.abort.abort();
         this.pending.delete(pendingId);
     }

@@ -68,7 +68,8 @@ async function setup() {
     const d = mkdtempSync(join(tmpdir(), 'oauth-conn-')); dirs.push(d);
     const store = new AccountStore(join(d, 'a.db'));
     const tokens = new TokenFileStore(d, { SILHOUETTE_TOKEN_KEY: TEST_KEY } as NodeJS.ProcessEnv);
-    return { d, store, tokens, manager: new ConnectionManager(store, tokens) };
+    // allowPrivateEndpoints: DECLARED test mode - the double AS lives on loopback.
+    return { d, store, tokens, manager: new ConnectionManager(store, tokens, { allowPrivateEndpoints: true }) };
 }
 
 describe('OAuth connect (declared-double AS; NOT a vendor login)', () => {
@@ -78,13 +79,13 @@ describe('OAuth connect (declared-double AS; NOT a vendor login)', () => {
         const pending = await manager.startOAuthConnect({
             providerId: 'OPENAI_CODEX', accountId: 'work', label: 'W', method: 'oauth-loopback',
             config: { clientId: 'double-client', authorizeUrl: `${asBase}/authorize`, tokenUrl: `${asBase}/token` },
-        });
+        }, 'op-1');
         expect(pending.authorizationUrl).toContain('code_challenge=');
         // Simulated browser: the provider redirects to the loopback waiter.
         const r = await fetch(pending.authorizationUrl!, { redirect: 'manual' });
         expect(r.status).toBe(302);
         await fetch(r.headers.get('location')!); // lands on the waiter
-        const account = await manager.completeOAuthConnect(pending.pendingId);
+        const account = await manager.completeOAuthConnect(pending.pendingId, 'op-1');
         expect(account.method).toBe('oauth-loopback');
         expect(account.secretRef).toMatch(/^vault:oauth-openai_codex-work$/);
         const saved = tokens.read('oauth-openai_codex-work');
@@ -97,11 +98,11 @@ describe('OAuth connect (declared-double AS; NOT a vendor login)', () => {
         const pending = await manager.startOAuthConnect({
             providerId: 'GITHUB_COPILOT', accountId: 'oss', label: 'O', method: 'device-code',
             config: { clientId: 'double-client', deviceCodeUrl: `${asBase}/device/code`, tokenUrl: `${asBase}/device/token` },
-        });
+        }, 'op-1');
         expect(pending.userCode).toBe('ABCD-EFGH');
         expect(pending.verificationUri).toBe('https://double.example/activate');
         state.deviceApproved = true;
-        const account = await manager.completeOAuthConnect(pending.pendingId);
+        const account = await manager.completeOAuthConnect(pending.pendingId, 'op-1');
         expect(account.method).toBe('device-code');
         expect(tokens.read('oauth-github_copilot-oss')?.accessToken).toBe('atk-device-1');
         store.close();
@@ -112,10 +113,10 @@ describe('OAuth connect (declared-double AS; NOT a vendor login)', () => {
         const pending = await manager.startOAuthConnect({
             providerId: 'OPENAI_CODEX', accountId: 'work', label: 'W', method: 'oauth-loopback',
             config: { clientId: 'double-client', authorizeUrl: `${asBase}/authorize`, tokenUrl: `${asBase}/token` },
-        });
-        manager.cancelOAuthConnect(pending.pendingId);
+        }, 'op-1');
+        manager.cancelOAuthConnect(pending.pendingId, 'op-1');
         expect(store.list()).toHaveLength(0);
-        await expect(manager.completeOAuthConnect(pending.pendingId)).rejects.toThrow(ConnectionError);
+        await expect(manager.completeOAuthConnect(pending.pendingId, 'op-1')).rejects.toThrow(ConnectionError);
         store.close();
     });
     it('close purges the local encrypted token copy but does not claim vendor revocation', async () => {
@@ -124,12 +125,55 @@ describe('OAuth connect (declared-double AS; NOT a vendor login)', () => {
         const pending = await manager.startOAuthConnect({
             providerId: 'GITHUB_COPILOT', accountId: 'oss', label: 'O', method: 'device-code',
             config: { clientId: 'double-client', deviceCodeUrl: `${asBase}/device/code`, tokenUrl: `${asBase}/device/token` },
-        });
+        }, 'op-1');
         state.deviceApproved = true;
-        await manager.completeOAuthConnect(pending.pendingId);
+        await manager.completeOAuthConnect(pending.pendingId, 'op-1');
         const { localTokenPurged } = manager.closeConnection('GITHUB_COPILOT', 'oss');
         expect(localTokenPurged).toBe(true);
         expect(tokens.read('oauth-github_copilot-oss')).toBeUndefined();
+        expect(store.list()).toHaveLength(0);
+        store.close();
+    });
+    it('SSRF guard (strict mode): private IP literals and private-resolving hosts rejected', async () => {
+        const { store, tokens } = await setup();
+        const strict = new ConnectionManager(store, tokens); // no allowPrivateEndpoints = production posture
+        await expect(strict.startOAuthConnect({
+            providerId: 'P', accountId: 'a', label: 'l', method: 'device-code',
+            config: { clientId: 'c', deviceCodeUrl: 'https://192.168.1.10/dc', tokenUrl: 'https://192.168.1.10/t' },
+        }, 'op-1')).rejects.toThrow(/non-public/);
+        await expect(strict.startOAuthConnect({
+            providerId: 'P', accountId: 'a', label: 'l', method: 'oauth-loopback',
+            config: { clientId: 'c', authorizeUrl: 'https://localhost/auth', tokenUrl: 'https://localhost/token' },
+        }, 'op-1')).rejects.toThrow(/non-public/); // localhost resolves to 127.0.0.1
+        store.close();
+    });
+    it('pendingId is bound to the initiating principal: another CREATOR cannot complete or cancel', async () => {
+        const { asBase } = await startDoubleAS();
+        const { store, manager } = await setup();
+        const pending = await manager.startOAuthConnect({
+            providerId: 'OPENAI_CODEX', accountId: 'work', label: 'W', method: 'oauth-loopback',
+            config: { clientId: 'double-client', authorizeUrl: `${asBase}/authorize`, tokenUrl: `${asBase}/token` },
+        }, 'op-1');
+        await expect(manager.completeOAuthConnect(pending.pendingId, 'op-2')).rejects.toThrow(/different principal/);
+        expect(() => manager.cancelOAuthConnect(pending.pendingId, 'op-2')).toThrow(/different principal/);
+        manager.cancelOAuthConnect(pending.pendingId, 'op-1'); // owner can still cancel
+        expect(store.list()).toHaveLength(0);
+        store.close();
+    });
+    it('redirect-refusal: a token endpoint answering 302 aborts the exchange', async () => {
+        const { asBase } = await startDoubleAS();
+        const redirector = createServer((req, res) => { res.writeHead(302, { location: 'https://evil.example/token' }); res.end(); });
+        await new Promise<void>(r => redirector.listen(0, '127.0.0.1', r));
+        servers.push(redirector);
+        const redirBase = `http://127.0.0.1:${(redirector.address() as AddressInfo).port}`;
+        const { store, manager } = await setup();
+        const pending = await manager.startOAuthConnect({
+            providerId: 'OPENAI_CODEX', accountId: 'work', label: 'W', method: 'oauth-loopback',
+            config: { clientId: 'double-client', authorizeUrl: `${asBase}/authorize`, tokenUrl: `${redirBase}/token` },
+        }, 'op-1');
+        const r = await fetch(pending.authorizationUrl!, { redirect: 'manual' });
+        await fetch(r.headers.get('location')!);
+        await expect(manager.completeOAuthConnect(pending.pendingId, 'op-1')).rejects.toThrow();
         expect(store.list()).toHaveLength(0);
         store.close();
     });
@@ -138,12 +182,12 @@ describe('OAuth connect (declared-double AS; NOT a vendor login)', () => {
         await expect(manager.startOAuthConnect({
             providerId: 'P', accountId: 'a', label: 'l', method: 'device-code',
             config: { clientId: 'c', deviceCodeUrl: 'http://169.254.1.1/device', tokenUrl: 'http://169.254.1.1/token' },
-        })).rejects.toThrow(/https/);
+        }, 'op-1')).rejects.toThrow(/https/);
         const noTokens = new ConnectionManager(store); // no TokenFileStore = SILHOUETTE_TOKEN_KEY unset
         await expect(noTokens.startOAuthConnect({
             providerId: 'P', accountId: 'a', label: 'l', method: 'device-code',
             config: { clientId: 'c', deviceCodeUrl: 'https://example.com/dc', tokenUrl: 'https://example.com/t' },
-        })).rejects.toThrow(/SILHOUETTE_TOKEN_KEY/);
+        }, 'op-1')).rejects.toThrow(/SILHOUETTE_TOKEN_KEY/);
         store.close();
     });
 });
