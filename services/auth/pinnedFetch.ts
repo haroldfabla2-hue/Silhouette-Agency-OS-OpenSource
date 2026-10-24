@@ -45,7 +45,13 @@ export interface PinnedFetcher {
  * Validate + pin `endpoint`'s host. allowPrivate is the DECLARED test mode
  * (loopback double AS); production wiring never sets it.
  */
-export async function createPinnedFetcher(endpoint: string, field: string, allowPrivate = false): Promise<PinnedFetcher> {
+export async function createPinnedFetcher(
+    endpoint: string,
+    field: string,
+    allowPrivate = false,
+    /** Injectable resolver (declared test seam; production uses system DNS). */
+    lookupFn: typeof lookup = lookup,
+): Promise<PinnedFetcher> {
     const url = new URL(endpoint);
     const host = url.hostname;
     let pinned: string;
@@ -58,7 +64,7 @@ export async function createPinnedFetcher(endpoint: string, field: string, allow
         family = isIP(host) as 4 | 6;
     } else {
         let addresses: { address: string; family: number }[];
-        try { addresses = await lookup(host, { all: true }); } catch { throw new PinnedFetchError('unresolvable-endpoint', `${field} host does not resolve`); }
+        try { addresses = await lookupFn(host, { all: true }); } catch { throw new PinnedFetchError('unresolvable-endpoint', `${field} host does not resolve`); }
         if (!addresses.length) throw new PinnedFetchError('unresolvable-endpoint', `${field} host does not resolve`);
         if (!allowPrivate && addresses.some(a => !isPublicAddress(a.address))) {
             throw new PinnedFetchError('private-endpoint', `${field} resolves to a non-public address`);
@@ -71,9 +77,10 @@ export async function createPinnedFetcher(endpoint: string, field: string, allow
             // The socket ALWAYS dials the validated address; a changed DNS
             // answer at request time is never consulted. TLS SNI/hostname
             // verification still uses the URL host.
+            // undici calls lookup with all:true -> answer with a records array.
             lookup: (hostname, _opts, cb) => {
-                if (hostname !== host) { cb(new Error('pinned host mismatch'), '' as any, 4); return; }
-                cb(null, pinned, family);
+                if (hostname !== host) { cb(new Error('pinned host mismatch'), []); return; }
+                cb(null, [{ address: pinned, family }]);
             },
         },
     });
