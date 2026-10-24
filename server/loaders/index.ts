@@ -20,13 +20,22 @@ export const initServer = async () => {
 
     // [LIFECYCLE] Dreaming loop starts EXPLICITLY at boot. It previously
     // started as a hidden side effect of importing continuumMemory, which
-    // also fired in tests/tools. Idempotent and PowerManager-gated, exactly
-    // as before; only the trigger point moved.
+    // also fired in tests/tools. Idempotent and PowerManager-gated; only the
+    // trigger point moved. [SECURITY] It now ALSO respects the config
+    // ceiling: the Dreamer daemon task is gated by autonomy.enabled in
+    // unifiedDaemon, and this loop is the same capability by another route -
+    // the ceiling must hold on every route. Fail-closed.
     try {
-        const { dreamer } = await import('../../services/dreamerService');
-        dreamer.startDreamingLoop();
+        const { configLoader } = await import('../config/configLoader');
+        const { isTaskAllowedByAutonomy } = await import('../../services/daemon/autonomyPolicy');
+        if (isTaskAllowedByAutonomy('Dreamer', configLoader.getConfig().autonomy as any)) {
+            const { dreamer } = await import('../../services/dreamerService');
+            dreamer.startDreamingLoop();
+        } else {
+            console.log('[BOOT] 🌙 Dreaming loop NOT started: autonomy.enabled=false (config ceiling).');
+        }
     } catch (e: any) {
-        console.warn('[BOOT] Dreaming loop not started (non-blocking):', e?.message);
+        console.warn('[BOOT] Dreaming loop not started: autonomy config unreadable (fail-closed):', e?.message);
     }
 
     // [PA-041] Load persisted Context Priority configuration

@@ -151,6 +151,7 @@ class RedisService {
     }
 
     public async keys(pattern: string): Promise<string[]> {
+        await this.ensureConnected();
         if (!this.isConnected) return [];
 
         if (this.isMock) {
@@ -171,6 +172,7 @@ class RedisService {
      * @returns boolean True if lock acquired, false if already locked
      */
     public async acquireLock(lockKey: string, ttlMs: number): Promise<boolean> {
+        await this.ensureConnected();
         if (!this.isConnected) return true; // Fallback to allowing execution if no redis
 
         if (this.isMock) {
@@ -198,6 +200,7 @@ class RedisService {
      * Releases a distributed lock.
      */
     public async releaseLock(lockKey: string): Promise<void> {
+        await this.ensureConnected();
         if (!this.isConnected) return;
 
         if (this.isMock) {
