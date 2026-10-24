@@ -37,3 +37,13 @@ export function isTaskAllowedByAutonomy(taskName: string, flags: AutonomyFlags):
     if (!flag) return true;
     return !!flags[flag];
 }
+
+/**
+ * Auto-applying a generated fix IS evolution (it mutates how the system
+ * behaves), so it requires allowEvolution - even when it happens inside a
+ * maintenance task (Self-Healing) that itself always runs. Ingestion and
+ * analysis stay maintenance; the mutation does not.
+ */
+export function isAutoApplyAllowed(flags: AutonomyFlags): boolean {
+    return !!flags.allowEvolution;
+}

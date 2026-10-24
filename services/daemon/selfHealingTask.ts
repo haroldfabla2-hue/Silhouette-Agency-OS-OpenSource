@@ -96,9 +96,26 @@ export const selfHealingTask: DaemonTask = {
             // Trigger an immediate analysis cycle on these fresh errors
             const insights = await learningLoop.analyzeFailures(15 * 60 * 1000); // Last 15 min window
 
+            // [SECURITY] Auto-applying a fix IS evolution: respect the same
+            // operator authority (autonomy.allowEvolution) that gates the
+            // evolution tasks. Ingestion/analysis above stay maintenance and
+            // always run; the mutation does not. Fail-closed if config is
+            // unreadable. Insights are still generated and persisted.
+            let autoApplyAllowed = false;
+            try {
+                const { configLoader } = await import('../../server/config/configLoader');
+                const { isAutoApplyAllowed } = await import('./autonomyPolicy');
+                autoApplyAllowed = isAutoApplyAllowed(configLoader.getConfig().autonomy as any);
+            } catch (cfgErr: any) {
+                daemonLog.error({}, `Self-Healing: could not read autonomy config; auto-apply DISABLED (fail-closed): ${cfgErr?.message || cfgErr}`);
+            }
+
             let appliedCount = 0;
+            if (!autoApplyAllowed && insights.length > 0) {
+                daemonLog.info({}, `Self-Healing: ${insights.length} insight(s) generated; auto-apply DISABLED by autonomy.allowEvolution (recorded, not applied).`);
+            }
             for (const insight of insights) {
-                if (insight.autoApplicable && insight.confidence > 0.75) {
+                if (autoApplyAllowed && insight.autoApplicable && insight.confidence > 0.75) {
                     const applied = await learningLoop.applyInsight(insight);
                     if (applied) appliedCount++;
                 }

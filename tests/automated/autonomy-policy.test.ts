@@ -2,7 +2,7 @@
  * Autonomy task policy - config flags actually govern proactive daemon tasks.
  */
 import { describe, it, expect } from 'vitest';
-import { isTaskAllowedByAutonomy, PROACTIVE_TASK_FLAGS } from '../../services/daemon/autonomyPolicy';
+import { isTaskAllowedByAutonomy, isAutoApplyAllowed, PROACTIVE_TASK_FLAGS } from '../../services/daemon/autonomyPolicy';
 
 const OFF = { enabled: false, allowEvolution: false, enableNarrative: false, enableIntrospection: false };
 const ON = { enabled: true, allowEvolution: true, enableNarrative: true, enableIntrospection: true };
@@ -38,5 +38,17 @@ describe('isTaskAllowedByAutonomy', () => {
         for (const flag of Object.values(PROACTIVE_TASK_FLAGS)) {
             expect(['enabled', 'allowEvolution', 'enableNarrative', 'enableIntrospection']).toContain(flag);
         }
+    });
+});
+
+describe('isAutoApplyAllowed (self-healing auto-apply is evolution)', () => {
+    it('auto-apply of insights requires allowEvolution, even inside maintenance tasks', () => {
+        expect(isAutoApplyAllowed(OFF)).toBe(false);
+        expect(isAutoApplyAllowed({ ...ON, allowEvolution: false })).toBe(false);
+        expect(isAutoApplyAllowed(ON)).toBe(true);
+    });
+
+    it('autonomy.enabled alone does not authorize auto-apply', () => {
+        expect(isAutoApplyAllowed({ ...OFF, enabled: true })).toBe(false);
     });
 });
