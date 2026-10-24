@@ -1,4 +1,8 @@
 import type { ModelProfile, ProviderDefinition } from './providerRegistry';
+/** [auth-connections] Optional credential source: active account from services/auth, env fallback preserved. */
+export interface CredentialSource { resolve(provider: ProviderDefinition): { key: string } | undefined; }
+/** [auth-connections] Optional admission: priority lanes + Retry-After gates (services/llm/admissionQueue). */
+export interface AdmissionGate { run<T>(providerId: string, lane: 'conversational' | 'background', fn: () => Promise<T>, signal?: AbortSignal): Promise<T>; }
 export interface ChatMessage {
     role: 'system' | 'developer' | 'user' | 'assistant' | 'tool';
     content: string | null;
@@ -14,6 +18,8 @@ export interface ChatOptions {
     signal?: AbortSignal;
     tools?: Array<{ type: 'function'; function: { name: string; description?: string; parameters: Record<string, unknown> } }>;
     toolChoice?: 'auto' | 'none' | 'required' | { type: 'function'; function: { name: string } };
+    /** [auth-connections] Scheduling lane when an AdmissionGate is wired; background never preempts conversational. */
+    lane?: 'conversational' | 'background';
 }
 export interface ChatResult {
     text: string;
@@ -26,8 +32,16 @@ export type ChatEvent = { type: 'text'; text: string } | { type: 'tool'; index: 
 export interface ModelDiscovery { ids: string[]; source: 'remote' | 'configured'; error?: string; capabilities: 'unknown'; }
 export class OpenAICompatibleClient {
     private cache = new Map<string, { expires: number; value: ModelDiscovery }>();
-    constructor(private env: NodeJS.ProcessEnv = process.env, private fetcher: typeof fetch = fetch) {}
-    configured(provider: ProviderDefinition): boolean { return !!this.env[provider.apiKeyEnv!]; }
+    constructor(
+        private env: NodeJS.ProcessEnv = process.env,
+        private fetcher: typeof fetch = fetch,
+        private credentials?: CredentialSource,
+        private admission?: AdmissionGate,
+    ) {}
+    private resolveKey(provider: ProviderDefinition): string | undefined {
+        return this.credentials?.resolve(provider)?.key || this.env[provider.apiKeyEnv!];
+    }
+    configured(provider: ProviderDefinition): boolean { return !!this.resolveKey(provider); }
     model(provider: ProviderDefinition, explicit?: string): string {
         return explicit || (provider.modelEnv && this.env[provider.modelEnv]) || provider.model;
     }
@@ -38,7 +52,7 @@ export class OpenAICompatibleClient {
         return base.replace(/\/$/, '') + path;
     }
     private headers(provider: ProviderDefinition): Record<string, string> {
-        const key = this.env[provider.apiKeyEnv!];
+        const key = this.resolveKey(provider);
         if (!key) throw new Error(`${provider.id}: credential not configured`);
         return { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
     }
@@ -61,9 +75,13 @@ export class OpenAICompatibleClient {
         };
     }
     private async request(provider: ProviderDefinition, messages: ChatMessage[], options: ChatOptions, stream: boolean): Promise<Response> {
-        const response = await this.fetcher(this.url(provider, '/chat/completions'), {
+        const doFetch = () => this.fetcher(this.url(provider, '/chat/completions'), {
             method: 'POST', headers: this.headers(provider), body: JSON.stringify(this.body(provider, messages, options, stream)), signal: this.signal(provider, options), redirect: 'error'
         });
+        // [auth-connections] When admission is wired, calls queue by lane instead of firing directly.
+        const response = this.admission
+            ? await this.admission.run(provider.id, options.lane ?? 'background', doFetch, options.signal)
+            : await doFetch();
         // Do not echo vendor response bodies: they may contain keys, prompts or private content.
         if (!response.ok) { await response.body?.cancel(); throw new Error(`${provider.id}: HTTP ${response.status}`); }
         return response;
