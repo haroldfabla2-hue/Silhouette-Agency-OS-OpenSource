@@ -235,9 +235,10 @@ export async function ensureEffectConsent(
                 }
             } else {
                 const check = approvalGrants.consume(ctx.grant.token, binding);
-                if (!check.ok) {
+                if (check.ok !== true) {
+                    const reason = (check as { ok: false; reason: string }).reason;
                     throw new EffectDeniedError(
-                        `grant inválido para ${effect} (${check.reason}; emitido por ${ctx.issuedBy}). ` +
+                        `grant inválido para ${effect} (${reason}; emitido por ${ctx.issuedBy}). ` +
                         `Sin reintento: cada efecto requiere su propia aprobación ligada a sus argumentos exactos.`
                     );
                 }
@@ -257,9 +258,10 @@ export async function ensureEffectConsent(
             return { via: 'grant', digest };
         }
         const check = approvalGrants.validate(ctx.grant.token, binding);
-        if (!check.ok) {
+        if (check.ok !== true) {
+            const reason = (check as { ok: false; reason: string }).reason;
             throw new EffectDeniedError(
-                `grant inválido para ${effect} (${check.reason}; emitido por ${ctx.issuedBy}). ` +
+                `grant inválido para ${effect} (${reason}; emitido por ${ctx.issuedBy}). ` +
                 `Sin reintento: cada efecto requiere su propia aprobación ligada a sus argumentos exactos.`
             );
         }
@@ -271,7 +273,7 @@ export async function ensureEffectConsent(
         id: `effect_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         agentId: origin,
         type: policy.actionType as any,
-        payload: { effect, args: bindingArgsFor(effect, args) },
+        payload: { effect, args: bindingArgsFor(effect, args) } as any,
         status: 'PENDING' as any,
         timestamp: Date.now(),
         requiresApproval: true

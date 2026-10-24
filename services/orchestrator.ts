@@ -1531,7 +1531,7 @@ JSON ONLY:
                             error: gateErr.message,
                             executedBy: 'ORCHESTRATOR',
                             executionTimeMs: Date.now() - startTime,
-                            metadata: { toolName: capabilityName, errorCode: 'EFFECT_DENIED' }
+                            metadata: { toolName: capabilityName }
                         };
                         this.emitCapabilityResult(capabilityName, deniedFx, requesterId);
                         return deniedFx;
