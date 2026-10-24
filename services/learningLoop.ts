@@ -352,6 +352,18 @@ Auto-applicable: ${insight.autoApplicable}
         console.log(`[LEARNING_LOOP] ⏰ Scheduled analysis every ${intervalMs / 3600000}h`);
 
         setInterval(async () => {
+            // [THROTTLE] PowerManager resource modes can pause the periodic
+            // learning loop (isLearningLoopEnabled). The throttle is a
+            // resource hint, not an authority: unreadable -> full capability.
+            // The authority ceiling (autonomy Tool_Evolution / allowEvolution)
+            // is applied where this loop is started (server boot loader).
+            try {
+                const { powerManager } = await import('./powerManager');
+                if (!powerManager.isLearningLoopEnabled) {
+                    console.log('[LEARNING_LOOP] 💤 Scheduled analysis paused by PowerManager mode (throttle).');
+                    return;
+                }
+            } catch { /* throttle unavailable -> full capability */ }
             console.log('[LEARNING_LOOP] ⏰ Running scheduled analysis...');
             await this.analyzeFailures();
         }, intervalMs);

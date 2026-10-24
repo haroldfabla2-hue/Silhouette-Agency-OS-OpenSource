@@ -18,7 +18,10 @@ export interface AutonomyFlags {
     allowEvolution: boolean;
     /** Sub-flag: narrator task. Requires enabled. */
     enableNarrative: boolean;
-    /** Sub-flag: introspection. Requires enabled. */
+    /** Sub-flag: introspection (OODA cognitive cycles). Requires enabled.
+     *  Read at the introspectionEngine.runCognitiveCycle chokepoint, so every
+     *  route into the engine (daemon task, heartbeat job, HTTP trigger) is
+     *  governed. */
     enableIntrospection: boolean;
 }
 
@@ -28,6 +31,7 @@ export const PROACTIVE_TASK_FLAGS: Readonly<Record<string, keyof AutonomyFlags>>
     Curiosity: 'enabled',
     Dreamer: 'enabled',
     Narrator: 'enableNarrative',
+    Introspection: 'enableIntrospection',
     Evolution_Goals: 'allowEvolution',
     Tool_Evolution: 'allowEvolution',
     SelfDev: 'allowEvolution',

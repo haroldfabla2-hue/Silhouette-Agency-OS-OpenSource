@@ -47,19 +47,27 @@ que este PR elimina.
 | Tareas proactivas del daemon (Heartbeat, Curiosity, Dreamer, Narrator, Evolution_Goals, Tool_Evolution, SelfDev) | `enabled` AND sub-flag (scheduling, unifiedDaemon) | powerManager dentro del servicio (dreamer/curiosity/evolution tienen lector) | n/a (no ejecutan efectos externos directos) |
 | Mantenimiento (Janitor, Self-Healing: ingesta + análisis) | siempre (no es autonomía) | n/a | n/a |
 | **Auto-aplicación de fixes (Self-Healing, Tool_Evolution)** | **`enabled` AND `allowEvolution`** (nuevo, este PR) | n/a | mutación interna; sin gasto |
-| Introspección | SIN lector hoy → propuesta: `enabled && enableIntrospection` en sus rutas de invocación | `isIntrospectionEnabled` (hoy muerto) → cablear como freno | n/a |
-| Narrador (powerManager) | cubierto por scheduling | getter muerto → cablear en thoughtNarrator o eliminar | n/a |
+| Introspección (OODA cycles) | `enabled` AND `enableIntrospection` en el chokepoint `runCognitiveCycle` (cubre daemon, heartbeat job y trigger HTTP manual; fail-closed) | `isIntrospectionEnabled` (lector real, mismo chokepoint) | n/a |
+| Narrador (powerManager) | cubierto por scheduling (daemon Narrator) | `isNarrativeEnabled` lector real: pausa el batch processor por tick | n/a |
+| Heartbeat job (server/jobs/heartbeat.ts, boot loader) | `enableIntrospection` (pre-check; chokepoint del engine manda) + `enabled` (Curiosity) para discovery | congestion + throttle dentro de servicios | n/a |
+| Discovery auto-arranque (neuroCognitiveService constructor) | `enabled` (Curiosity) por tick, fail-closed | `isCuriosityEnabled` por tick | n/a |
+| Boot loops de evolución (loaders: learningLoop + toolEvolver) | `enabled` AND `allowEvolution` (Tool_Evolution) al boot, fail-closed | `isLearningLoopEnabled` por tick (learningLoop) | n/a |
+| evolutionScheduler (server/index.ts + reactivación por modo) | cada loop con su task (Tool_Evolution / Evolution_Goals), fail-closed | `isEvolutionEnabled` (preexistente) | n/a |
 | Efectos externos (email, PR, generación) | no aplica | no aplica | grant/confirmación humana; paid hard-block |
 
 ## Lifecycle/imports (CI teardown crash)
 
-Mecanismo confirmado por evidencia (hipótesis del auditor verificada en
-código): `continuumMemory` y `contextAssembler` abrían conexión Redis real
-en CONSTRUCTOR de singleton = en IMPORT. Sin Redis en CI, connect() hace 3
-reintentos (~5-14s) antes del fallback; si el worker de vitest terminaba en
-esa ventana, el cierre de rpc con operación pendiente tumbaba el run
-("Closing rpc while fetch was pending", intermitente). Además el Dreaming
-loop arrancaba como efecto oculto del import de continuum.
+Diagnóstico CANDIDATO (mecanismo plausible verificado en código + timing
+consistente; SIN traza A-B ni reproducción controlada — la causalidad exacta
+del crash no está probada): `continuumMemory` y `contextAssembler` abrían
+conexión Redis real en CONSTRUCTOR de singleton = en IMPORT. Sin Redis en
+CI, connect() hace 3 reintentos (~5-14s) antes del fallback; si el worker
+de vitest terminaba en esa ventana, el cierre de rpc con operación pendiente
+es consistente con el fallo observado ("Closing rpc while fetch was
+pending", intermitente — un rerun del MISMO código salió verde, lo que
+confirma la intermitencia y a la vez limita la fuerza de corridas verdes
+como evidencia). Además el Dreaming loop arrancaba como efecto oculto del
+import de continuum.
 
 Rootfix (sin mocks, sin fabricar verde): redisClient conecta LAZY en la
 primera operación real (ensureConnected en get/set/del; connect sigue
@@ -68,17 +76,39 @@ loop arranca explícito en server/loaders/index.ts (idempotente,
 PowerManager-gated, mismo comportamiento en prod que ya lo conecta vía
 dbLoader). Comportamiento real preservado; el import queda puro.
 
+## Resueltos en esta iteración (cobertura de autonomía)
+
+1. **Getters muertos de powerManager**: cableados como FRENO (throttle), no
+   eliminados — `isLearningLoopEnabled` (tick de learningLoop),
+   `isNarrativeEnabled` (tick del batch processor de narrativeService),
+   `isIntrospectionEnabled` (chokepoint de runCognitiveCycle). Diseño:
+   config=techo (autoridad, fail-closed), power=freno (recursos, fail-open a
+   capacidad plena). Consecuencia declarada: un cambio de modo vía
+   /v1/system puede pausar narrator/learning/introspección sin tocar config;
+   es la semántica pretendida del freno y conserva toda la capacidad en
+   modo CONSCIOUS (default todo activo).
+2. **`enableIntrospection` sin lector**: ahora gobierna el chokepoint
+   `introspectionEngine.runCognitiveCycle` (`Introspection` en
+   PROACTIVE_TASK_FLAGS). Toda ruta al engine queda cubierta: tarea daemon
+   Evolution_Goals, heartbeat job, y el trigger manual HTTP
+   /v1/introspection/cognitive-cycle. Fail-closed.
+3. **Rutas no-daemon auditadas y cerradas**: heartbeat job (ciclo OODA 120s
+   + discovery), auto-arranque del heartbeat de neuroCognitiveService
+   (constructor +30s), boot loops de evolución en loaders (learningLoop,
+   toolEvolver, análisis inicial), evolutionScheduler (boot en index.ts y
+   reactivación por cambio de modo — ambas rutas pasan por
+   activateScheduler, que ahora agenda solo loops permitidos por task).
+4. **cognitiveScheduler (services/cognitive/cognitiveScheduler.ts)**: NO es
+   un agujero — `start()` está deprecado (no-op con warning) y sus métodos
+   run* no tienen callers (verificado por búsqueda estática). Código muerto
+   documentado; se conserva (eliminarlo es decisión de limpieza ajena al
+   rootfix).
+5. Loops internos: estas rutas mueven trabajo cognitivo interno (ciclos
+   OODA, discovery, análisis); no se demostró nuevo gasto externo asociado.
+
 ## Abiertos y tradeoffs
 
-1. **Getters muertos de powerManager** (`isLearningLoopEnabled`,
-   `isNarrativeEnabled`, `isIntrospectionEnabled`): cablear como freno en
-   sus rutas (más control operador) o eliminarlos (menos superficie muerta).
-   Consecuencia de cablear: un cambio de modo puede silenciar narrator/
-   learning sin tocar config — hay que documentarlo en /v1/system.
-2. **`enableIntrospection` sin lector**: cablear en introspectionEngine
-   callers (agentStream, heartbeat job, dreamerService, ...). Consecuencia:
-   introspección se apaga con config; hoy corre cuando esos callers corren.
-3. **Tradeoff genuino de producto (solo si Alberto quiere decidirlo)**:
+1. **Tradeoff genuino de producto (solo si Alberto quiere decidirlo)**:
    instalación fresca con modo CONSCIOUS default = sistema "vivo" sin tocar
    config, vs "quieto por defecto" hasta que el operador habilite. Hoy el
    techo config gana (default false en schema), así que una instalación

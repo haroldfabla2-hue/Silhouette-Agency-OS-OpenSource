@@ -22,6 +22,12 @@ describe('isTaskAllowedByAutonomy', () => {
         }
     });
 
+    it('gates introspection behind enableIntrospection', () => {
+        expect(isTaskAllowedByAutonomy('Introspection', { ...ON, enableIntrospection: false })).toBe(false);
+        expect(isTaskAllowedByAutonomy('Introspection', ON)).toBe(true);
+        expect(isTaskAllowedByAutonomy('Introspection', OFF)).toBe(false);
+    });
+
     it('gates the narrator behind enableNarrative', () => {
         expect(isTaskAllowedByAutonomy('Narrator', { ...ON, enableNarrative: false })).toBe(false);
         expect(isTaskAllowedByAutonomy('Narrator', ON)).toBe(true);
