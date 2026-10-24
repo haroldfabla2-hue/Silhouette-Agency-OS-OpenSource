@@ -4,8 +4,10 @@
  *  A) boot with the ceiling OFF starts NO proactive loop but DOES complete
  *     the full boot (maintenance, persistence, janitor, scheduler all start);
  *  B) boot with the ceiling ON starts EVERY proactive loop (capability
- *     preserved: the OFF->ON transition via config edit + restart restores
- *     full startup);
+ *     preserved at boot-loader level). Scope precision: the OFF->ON flip
+ *     here is an in-memory config snapshot + module-registry reset, NOT a
+ *     real config-file edit + process restart; the end-to-end restart path
+ *     remains untested (declared limit L1).
  *  C) unreadable config fails closed (no proactive loop) without breaking boot.
  *
  * Isolated and free: every database, AI service and network-touching module
@@ -99,7 +101,7 @@ describe('boot OFF -> ON transition (isolated, free)', () => {
         expect(spies.initNervous).toHaveBeenCalledTimes(1);
     });
 
-    it('B) boot with ceiling ON: every proactive loop starts (capability preserved)', async () => {
+    it('B) boot with ceiling ON: every proactive loop starts (loader-level capability check; not a real process restart)', async () => {
         knobs.autonomy = { ...ON };
         await boot();
         expect(spies.startDreamingLoop).toHaveBeenCalledTimes(1);
