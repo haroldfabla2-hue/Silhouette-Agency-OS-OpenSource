@@ -378,7 +378,8 @@ class GmailService {
             await ensureEffectConsent(
                 'send_email',
                 { to: options.to, cc: (options as any).cc, subject: options.subject, body: options.body },
-                'gmailService.sendEmail'
+                'gmailService.sendEmail',
+                { providerBoundary: true }
             );
         } catch (gateErr: any) {
             if (gateErr?.code === 'EFFECT_DENIED') {

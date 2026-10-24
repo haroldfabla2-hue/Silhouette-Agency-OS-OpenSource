@@ -29,7 +29,8 @@ export class ElevenLabsService {
             await ensureEffectConsent(
                 'generate_voice',
                 { text, voiceId },
-                'elevenLabsService.generateSpeech'
+                'elevenLabsService.generateSpeech',
+                { providerBoundary: true }
             );
         }
 

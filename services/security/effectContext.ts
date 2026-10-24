@@ -21,10 +21,10 @@ import type { ApprovalBinding } from './approvalGrants';
 
 export interface EffectContext {
     grant: { token: string; binding: ApprovalBinding };
-    /** Digests (effect+args, defaults-normalized) already validated against
-     *  this grant in this chain: lets ONE approved logical invocation pass
-     *  its own 1:1 wrapper layers (identical normalized args). A second
-     *  piece - different args - never matches and is denied. */
+    /** Digests (effect+args, defaults-normalized) already EXECUTED at a
+     *  provider boundary in this chain: exactly one provider invocation per
+     *  grant. Wrapper layers pass without mutating; the boundary adds the
+     *  digest on consume and denies any second invocation as a retry. */
     validated: Set<string>;
     /** Where the grant was issued (audit trail). */
     issuedBy: string;

@@ -159,9 +159,29 @@ router.post('/goals/derive', async (req: Request, res: Response) => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
+ * [SECURITY] Confirmation decisions require an ATTRIBUTED HUMAN session
+ * (login via /v1/identity/login). The shared system-to-system API token
+ * (req.user.id 'system:api-token') must NOT approve or even read pending
+ * confirmations: it can belong to an agent/MCP process, which would let the
+ * system approve its own effects, and pendings carry full action content.
+ */
+function requireHumanSession(req: Request, res: Response): string | null {
+    const user = (req as any).user;
+    if (!user || !user.id || user.id === 'system:api-token') {
+        res.status(403).json({
+            success: false,
+            error: 'Confirmations require a logged-in human session (x-session-id), not a system token.'
+        });
+        return null;
+    }
+    return String(user.id);
+}
+
+/**
  * GET /confirmations - Get pending confirmations
  */
 router.get('/confirmations', async (req: Request, res: Response) => {
+    if (!requireHumanSession(req, res)) return;
     try {
         const { actionExecutor } = await import('../../../services/actionExecutor');
         const confirmations = actionExecutor.getPendingConfirmations();
@@ -175,9 +195,11 @@ router.get('/confirmations', async (req: Request, res: Response) => {
  * POST /confirmations/:id/approve - Approve an action
  */
 router.post('/confirmations/:id/approve', async (req: Request, res: Response) => {
+    const approver = requireHumanSession(req, res);
+    if (!approver) return;
     try {
         const { actionExecutor } = await import('../../../services/actionExecutor');
-        const approved = actionExecutor.approveAction(req.params.id);
+        const approved = actionExecutor.approveAction(req.params.id, approver);
         res.json({ success: approved });
     } catch (e: any) {
         res.status(500).json({ success: false, error: e.message });
@@ -188,9 +210,11 @@ router.post('/confirmations/:id/approve', async (req: Request, res: Response) =>
  * POST /confirmations/:id/reject - Reject an action
  */
 router.post('/confirmations/:id/reject', async (req: Request, res: Response) => {
+    const approver = requireHumanSession(req, res);
+    if (!approver) return;
     try {
         const { actionExecutor } = await import('../../../services/actionExecutor');
-        const rejected = actionExecutor.rejectAction(req.params.id);
+        const rejected = actionExecutor.rejectAction(req.params.id, approver);
         res.json({ success: rejected });
     } catch (e: any) {
         res.status(500).json({ success: false, error: e.message });

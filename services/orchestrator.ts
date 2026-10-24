@@ -1502,17 +1502,22 @@ JSON ONLY:
             const { runWithEffectContext } = await import('./security/effectContext');
             if (isGatedEffect(capabilityName)) {
                 try {
-                    const granted = await ensureEffectConsent(capabilityName, args, `executeCapability:${requesterId}`);
+                    // Effects without a deeper provider-boundary call site
+                    // (github_create_pr) consume right here at the chokepoint.
+                    const { CAPABILITY_LEVEL_BOUNDARY_EFFECTS } = await import('./security/effectGate');
+                    const granted = await ensureEffectConsent(capabilityName, args, `executeCapability:${requesterId}`,
+                        { providerBoundary: CAPABILITY_LEVEL_BOUNDARY_EFFECTS.has(capabilityName) });
                     if (granted.via === 'human-approval') {
                         // Approved once by a human at /v1/autonomy/confirmations:
-                        // re-enter with a context pre-validated for THIS exact
-                        // effect+args so downstream layers of this single
-                        // execution pass. Any other effect or args gates again.
+                        // re-enter with a pseudo-grant bound to THIS exact
+                        // effect+args. Wrappers validate; the single provider
+                        // boundary of this execution passes once (validated
+                        // set), so the approval yields exactly one invocation.
                         const binding = effectBinding(capabilityName, args);
                         return runWithEffectContext(
                             {
                                 grant: { token: 'human-approved', binding },
-                                validated: new Set([granted.digest]),
+                                validated: new Set(),
                                 issuedBy: 'actionExecutor:/v1/autonomy/confirmations'
                             },
                             () => this.executeCapability(capabilityName, args, context)

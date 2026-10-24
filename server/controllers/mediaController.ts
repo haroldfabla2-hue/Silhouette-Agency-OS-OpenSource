@@ -177,8 +177,8 @@ class MediaController {
      */
     // [SECURITY] No grant is issued by this route: an authenticated request
     // is not proof of human intent. The generation gates at the provider
-    // boundary (human confirmation via /v1/autonomy/confirmations; paid
-    // cloud generation additionally requires security.allowPaidEffects).
+    // boundary; paid cloud generation is hard-blocked in this delivery
+    // (pending an authorized budget/cap mechanism - CERO COBROS).
     async generateImage(req: Request, res: Response) {
         try {
             const { prompt, style } = req.body;

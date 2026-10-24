@@ -1,24 +1,31 @@
 /**
- * EFFECT GATE v2 - specific, single-use authority for external / wallet-
- * bearing effects, on every code path.
+ * EFFECT GATE v4 - specific, single-use authority for external effects, on
+ * every code path. Wallet-bearing provider effects are HARD-BLOCKED here.
  *
- * Review 2026-10-23 (v1 rejected): provenance contexts ("user-chat",
- * "user-http") were NOT consent - an inherited chat context would have let
- * generate_image/video pass with no approval. v2 removes every context-based
- * pass. The ONLY things that let an effect run:
+ * History 2026-10-23: v1 rejected (provenance contexts "user-chat"/"user-http"
+ * are NOT consent). v2/v3 rejected (config flag allowPaidEffects was a
+ * permission slip, not budget authority; any shared-token holder could approve
+ * confirmations; parallel consumers with identical args both passed).
  *
- *  1. A SINGLE-USE grant bound to effect + EXACT canonical args
- *     (ApprovalGrantStore: consume-once, timing-safe, expiring). Issued only:
- *     a. by chatToolIntegration AFTER confirmationGate's EXECUTE decision
- *        (explicit "CONFIRMAR <token>" from the authenticated principal in
- *        the same conversation, exact args - pre-existing chat mechanism,
- *        now covering all gated effects);
- *     b. by an authenticated HTTP route whose request body IS the principal's
- *        explicit specification of those exact args (e.g. composing an email
- *        and clicking send);
- *     c. internally, after a human approves at /v1/autonomy/confirmations
- *        (actionExecutor), for the single approved execution.
- *  2. Nothing else. No chat kind, no http kind, no generic "confirmed".
+ * v4 rules:
+ *  1. WALLET-BEARING effects (cloud image/video/voice): HARD-DENIED in this
+ *     delivery. The system cannot verify per-piece cost and no budget/total/
+ *     cap mechanism exists, so NO flag, grant or human click authorizes spend.
+ *     Pending a real budget/cap design. CERO COBROS.
+ *  2. NON-WALLET gated effects (send_email, github_create_pr) run ONLY with:
+ *     a. a SINGLE-USE grant bound to effect + EXACT canonical args
+ *        (ApprovalGrantStore: consume-once, timing-safe, expiring), issued
+ *        ONLY by chatToolIntegration AFTER confirmationGate's EXECUTE
+ *        decision (explicit "CONFIRMAR <token>" from the authenticated
+ *        principal in the same conversation, exact args); or
+ *     b. a human approval at /v1/autonomy/confirmations (actionExecutor),
+ *        whose endpoints now require an ATTRIBUTED HUMAN SESSION - the shared
+ *        system API token cannot approve or read confirmations.
+ *  3. Consume-once is tied to the PROVIDER INVOCATION: wrapper layers
+ *     validate the grant WITHOUT consuming; the provider-invoking boundary
+ *     consumes atomically. Parallel consumers with identical args: exactly
+ *     one invocation passes. A second invocation at the boundary denies as a
+ *     typed retry.
  *
  * Denial is TYPED: EffectDeniedError (code EFFECT_DENIED). Callers must not
  * retry, fall back to another provider, or retry under another identity on
@@ -130,9 +137,19 @@ export function effectBinding(effect: EffectKind, args: Record<string, any>): Ap
 export function issueEffectGrant(effect: EffectKind, args: Record<string, any>, issuedBy: string): EffectContext {
     const binding = effectBinding(effect, args);
     const grant = approvalGrants.issue(binding);
-    console.log(`[EFFECT_GATE] 🎟️ grant issued for ${effect} by ${issuedBy} (single-use, args-bound)`);
+    console.log(`[EFFECT_GATE] 🎟️ grant issued for ${effect} by ${issuedBy} (single-use, args-bound, one provider invocation)`);
     return { grant: { token: grant.token, binding }, validated: new Set(), issuedBy };
 }
+
+/** Effects whose ONLY gate is the executeCapability chokepoint (no deeper
+ *  provider-boundary call site). For these, the capability-level call IS the
+ *  invocation boundary and must consume the grant. */
+export const CAPABILITY_LEVEL_BOUNDARY_EFFECTS: ReadonlySet<EffectKind> = new Set(['github_create_pr']);
+
+/** Token marking a pseudo-grant minted by the confirmations flow after a
+ *  human approval (no store token; consume-once comes from the single
+ *  resolution of the pending confirmation plus the per-chain validated set). */
+export const HUMAN_APPROVED_TOKEN = 'human-approved';
 
 const clip = (v: any, n = 500): string => {
     const s = String(v ?? '');
@@ -161,10 +178,13 @@ export interface ConsentGranted { via: 'grant' | 'human-approval'; digest: strin
  * approval; THROWS EffectDeniedError on any denial (typed, visible; callers
  * must not retry or fall back).
  *
- * With a context: the grant is consumed against THIS effect+args. A digest
- * already validated in this same chain passes (the layers of ONE approved
- * execution). Anything else - different args, replay, expired, foreign token
- * - denies. One grant never covers a second piece.
+ * With a context: WRAPPER layers (opts.providerBoundary falsy) validate the
+ * grant binding and state WITHOUT consuming - they never invoke the provider.
+ * The PROVIDER-INVOKING BOUNDARY (opts.providerBoundary true) consumes the
+ * grant atomically: exactly ONE provider invocation per grant, even under
+ * parallel consumers with identical args. A digest already consumed in this
+ * same chain denies at the boundary (retry) and passes at wrappers (same
+ * logical invocation travelling outward-in happened before it).
  *
  * Without a context: human approval via actionExecutor (pending at
  * /v1/autonomy/confirmations). Approval executes this piece once; rejection
@@ -173,30 +193,22 @@ export interface ConsentGranted { via: 'grant' | 'human-approval'; digest: strin
 export async function ensureEffectConsent(
     effect: EffectKind,
     args: Record<string, any>,
-    origin: string
+    origin: string,
+    opts: { providerBoundary?: boolean } = {}
 ): Promise<ConsentGranted> {
     const policy = EFFECT_POLICIES[effect];
 
-    // CERO COBROS: wallet-bearing provider effects stay blocked unless the
-    // operator explicitly authorized uncapped paid generation
-    // (security.allowPaidEffects). The system cannot verify per-piece cost
-    // upfront, so without that flag there is no verifiable cost cap and the
-    // feature remains pending authorization - it does not spend. Fail-closed
-    // when the config cannot be read.
+    // CERO COBROS: wallet-bearing provider effects (cloud image/video/voice)
+    // are HARD-BLOCKED in this delivery. The system cannot verify per-piece
+    // cost upfront and no budget/total/cap mechanism exists yet, so NO flag,
+    // grant or human click can authorize spend here - a boolean would be a
+    // permission slip, not budget authority. The feature stays pending a
+    // real budget/cap design; nothing is spent.
     if (policy.walletBearing) {
-        let allowed = false;
-        try {
-            const { configLoader } = await import('../../server/config/configLoader');
-            allowed = !!configLoader.getConfig().security?.allowPaidEffects;
-        } catch (cfgErr: any) {
-            console.error('[EFFECT_GATE] ⛔ could not read security config; paid effect denied (fail-closed):', cfgErr?.message || cfgErr);
-        }
-        if (!allowed) {
-            throw new EffectDeniedError(
-                `efecto "${effect}" bloqueado: es de coste y el sistema no puede verificar coste/límite por pieza. ` +
-                `Pendiente de autorización del operador (security.allowPaidEffects en silhouette.config.json). No se gastó nada.`
-            );
-        }
+        throw new EffectDeniedError(
+            `efecto "${effect}" bloqueado: es de coste y el sistema no puede verificar coste/límite por pieza. ` +
+            `Pendiente de un mecanismo de presupuesto/cap autorizado (no habilitable en esta entrega). No se gastó nada.`
+        );
     }
 
     const binding = effectBinding(effect, args);
@@ -204,19 +216,53 @@ export async function ensureEffectConsent(
     const ctx = getEffectContext();
 
     if (ctx) {
-        // The layers of ONE approved logical invocation share the exact same
-        // normalized digest (mediaService -> imageFactory, executeCapability
-        // re-entry). A second piece - different args - never matches.
+        const pseudo = ctx.grant.token === HUMAN_APPROVED_TOKEN;
+        const bindingMatches = () => bindingDigest(ctx.grant.binding) === digest;
+
+        if (opts.providerBoundary) {
+            // ── Provider-invoking boundary: consume-once lives HERE. ──
+            // Exactly one provider invocation per grant/approval, even with
+            // parallel consumers carrying identical args.
+            if (ctx.validated.has(digest)) {
+                throw new EffectDeniedError(
+                    `reintento denegado: este grant ya ejecutó ${effect} en esta cadena. ` +
+                    `Un grant autoriza exactamente una invocación de proveedor.`
+                );
+            }
+            if (pseudo) {
+                if (!bindingMatches()) {
+                    throw new EffectDeniedError(`aprobación humana no ligada a estos argumentos para ${effect} (MISMATCH).`);
+                }
+            } else {
+                const check = approvalGrants.consume(ctx.grant.token, binding);
+                if (!check.ok) {
+                    throw new EffectDeniedError(
+                        `grant inválido para ${effect} (${check.reason}; emitido por ${ctx.issuedBy}). ` +
+                        `Sin reintento: cada efecto requiere su propia aprobación ligada a sus argumentos exactos.`
+                    );
+                }
+            }
+            ctx.validated.add(digest);
+            console.log(`[EFFECT_GATE] ✅ ${effect} provider invocation authorized (issued by ${ctx.issuedBy}, boundary: ${origin})`);
+            return { via: 'grant', digest };
+        }
+
+        // ── Wrapper layer: validate authority WITHOUT consuming. Wrappers
+        // never invoke the provider; the boundary serializes invocations. ──
         if (ctx.validated.has(digest)) return { via: 'grant', digest };
-        const check = approvalGrants.consume(ctx.grant.token, binding);
+        if (pseudo) {
+            if (!bindingMatches()) {
+                throw new EffectDeniedError(`aprobación humana no ligada a estos argumentos para ${effect} (MISMATCH).`);
+            }
+            return { via: 'grant', digest };
+        }
+        const check = approvalGrants.validate(ctx.grant.token, binding);
         if (!check.ok) {
             throw new EffectDeniedError(
                 `grant inválido para ${effect} (${check.reason}; emitido por ${ctx.issuedBy}). ` +
                 `Sin reintento: cada efecto requiere su propia aprobación ligada a sus argumentos exactos.`
             );
         }
-        ctx.validated.add(digest);
-        console.log(`[EFFECT_GATE] ✅ ${effect} grant consumed (issued by ${ctx.issuedBy}, origin: ${origin})`);
         return { via: 'grant', digest };
     }
 

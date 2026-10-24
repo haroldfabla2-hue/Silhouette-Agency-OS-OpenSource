@@ -62,7 +62,8 @@ export class VideoFactory {
             await ensureEffectConsent(
                 'generate_video',
                 { prompt, duration, engine },
-                'videoFactory.createVideo'
+                'videoFactory.createVideo',
+                { providerBoundary: true }
             );
             console.log('[VideoFactory] 🌐 Routing to Veo 3.1 (Cloud Premium)');
 

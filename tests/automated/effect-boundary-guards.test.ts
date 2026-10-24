@@ -1,7 +1,9 @@
 /**
- * Provider-boundary guards v2: direct callers that bypass executeCapability
+ * Provider-boundary guards v4: direct callers that bypass executeCapability
  * still hit the effect gate; denial is TYPED (EffectDeniedError) and happens
- * BEFORE any provider call, with no fallback and no retry.
+ * BEFORE any provider call, with no fallback and no retry. Wallet-bearing
+ * effects are hard-blocked in this delivery (no budget/cap mechanism), so no
+ * grant or approval lets them through here.
  *
  * DECLARED DOUBLES (mechanics only, no real effects): all provider modules
  * (nanoBanana, veo, local video, elevenLabs client) and the actionExecutor
@@ -17,9 +19,6 @@ const { requestConfirmation, nanoGenerate, veoGenerate, localQueue } = vi.hoiste
 }));
 vi.mock('../../services/actionExecutor', () => ({
     actionExecutor: { requestConfirmation }
-}));
-vi.mock('../../server/config/configLoader', () => ({
-    configLoader: { getConfig: () => ({ security: { allowPaidEffects: true } }) }
 }));
 vi.mock('../../services/media/nanoBananaService', () => ({
     nanoBanana: { generateImage: nanoGenerate }
@@ -58,19 +57,19 @@ describe('imageFactory.createAsset boundary guard', () => {
         expect(nanoGenerate).not.toHaveBeenCalled();
     });
 
-    it('human-approved autonomous call passes the gate (providers still double-mocked unavailable)', async () => {
+    it('human approval does NOT enable wallet-bearing generation: denied pending budget/cap, provider untouched', async () => {
         requestConfirmation.mockResolvedValue(true);
-        const asset = await imageFactory.createAsset({ prompt: 'landing hero', style: 'PHOTOREALISTIC' });
-        expect(asset).toBeNull(); // providers mocked unavailable - assertion is the gate let it THROUGH
-        const [action] = requestConfirmation.mock.calls[0];
-        expect(action.payload.effect).toBe('generate_image');
+        await expect(imageFactory.createAsset({ prompt: 'landing hero', style: 'PHOTOREALISTIC' }))
+            .rejects.toMatchObject({ code: 'EFFECT_DENIED' });
+        expect(nanoGenerate).not.toHaveBeenCalled();
     });
 
-    it('args-bound grant passes; different args in the same chain are denied', async () => {
+    it('args-bound grant does NOT enable paid generation either: a grant is not budget authority', async () => {
         const ctx = issueEffectGrant('generate_image', { prompt: 'x', style: 'ILLUSTRATION' }, 'test');
-        const asset = await runWithEffectContext(ctx, () =>
-            imageFactory.createAsset({ prompt: 'x', style: 'ILLUSTRATION' }));
-        expect(asset).toBeNull(); // providers mocked unavailable; gate passed
+        await expect(runWithEffectContext(ctx, () =>
+            imageFactory.createAsset({ prompt: 'x', style: 'ILLUSTRATION' })))
+            .rejects.toMatchObject({ code: 'EFFECT_DENIED' });
+        expect(nanoGenerate).not.toHaveBeenCalled();
         expect(requestConfirmation).not.toHaveBeenCalled();
     });
 });
@@ -92,12 +91,12 @@ describe('videoFactory.createVideo boundary guard (VEO cloud only)', () => {
         expect(localQueue).toHaveBeenCalledTimes(1);
     });
 
-    it('args-bound grant lets VEO through', async () => {
-        veoGenerate.mockResolvedValue({ videoUrl: 'v', provider: 'VEO', audioUrl: undefined });
+    it('even an args-bound grant cannot enable VEO (paid, no budget/cap in this delivery)', async () => {
         const ctx = issueEffectGrant('generate_video', { prompt: 'clip', duration: 5, engine: 'VEO' }, 'test');
-        const r = await runWithEffectContext(ctx, () => videoFactory.createVideo('clip', 5, undefined, 'VEO'));
-        expect(veoGenerate).toHaveBeenCalledTimes(1);
-        expect(r?.url).toBe('v');
+        await expect(runWithEffectContext(ctx, () => videoFactory.createVideo('clip', 5, undefined, 'VEO')))
+            .rejects.toMatchObject({ code: 'EFFECT_DENIED' });
+        expect(veoGenerate).not.toHaveBeenCalled();
+        expect(localQueue).not.toHaveBeenCalled(); // no silent local fallback on paid denial
     });
 });
 

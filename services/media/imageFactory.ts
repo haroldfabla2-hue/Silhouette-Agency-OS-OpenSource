@@ -72,7 +72,8 @@ export class ImageFactory {
                     negativePrompt: request.negativePrompt,
                     count: request.count
                 },
-                'imageFactory.createAsset'
+                'imageFactory.createAsset',
+                { providerBoundary: true }
             );
         }
 
