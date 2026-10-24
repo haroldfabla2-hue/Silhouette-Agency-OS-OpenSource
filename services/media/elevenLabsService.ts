@@ -19,6 +19,20 @@ export class ElevenLabsService {
     }
 
     public async generateSpeech(text: string, outputPath: string, voiceId?: string): Promise<string | null> {
+        // [SECURITY] EFFECT GATE (provider boundary): ElevenLabs synthesis is
+        // wallet-bearing and callers (campaigns, production, TTS routes) may
+        // bypass executeCapability. Throws EffectDeniedError (typed) on
+        // denial; without a grant a human confirms via
+        // /v1/autonomy/confirmations.
+        {
+            const { ensureEffectConsent } = await import('../security/effectGate');
+            await ensureEffectConsent(
+                'generate_voice',
+                { text, voiceId },
+                'elevenLabsService.generateSpeech'
+            );
+        }
+
         if (!this.client) return null;
         const effectiveVoiceId = voiceId || this.defaultVoiceId;
         if (!effectiveVoiceId) {

@@ -93,7 +93,10 @@ class CreativeDirectorSkill {
                 source: 'Creative_Director'
             });
 
-        } catch (error) {
+        } catch (error: any) {
+            // A denied effect must not be swallowed into a generic failure
+            // that later logic could retry: propagate the typed denial.
+            if (error?.code === 'EFFECT_DENIED') throw error;
             console.error("[CreativeDirector] 💥 Production Error:", error);
         }
 
@@ -116,7 +119,8 @@ class CreativeDirectorSkill {
                 });
                 return imageAsset.url;
             }
-        } catch (e) {
+        } catch (e: any) {
+            if (e?.code === 'EFFECT_DENIED') throw e;
             console.error("[CreativeDirector] Image Gen Failed:", e);
         }
         return null;
@@ -135,7 +139,8 @@ class CreativeDirectorSkill {
                 });
                 return videoJob.url;
             }
-        } catch (e) {
+        } catch (e: any) {
+            if (e?.code === 'EFFECT_DENIED') throw e;
             console.error("[CreativeDirector] Video Gen Failed:", e);
         }
         return null;
@@ -150,16 +155,12 @@ class CreativeDirectorSkill {
         for (const msg of messages) {
             try {
                 if (msg.protocol === SystemProtocol.TASK_ASSIGNMENT) {
-                    const { taskType, context, effectContext } = msg.payload;
+                    const { taskType, context } = msg.payload;
                     console.log(`[CreativeDirector] 📨 Received Task: ${taskType}`);
 
-                    // [SECURITY] Re-establish the provenance carried with this
-                    // delegation: chat/http-initiated tasks keep their
-                    // user-initiated identity; tasks without provenance run
-                    // with NO context, so provider-boundary guards require
-                    // human confirmation for wallet-bearing effects.
-                    const { runWithEffectContext } = await import('../security/effectContext');
-                    const dispatch = async () => {
+                    // [SECURITY] Deferred work carries NO authority: every
+                    // wallet-bearing piece below gates itself at the provider
+                    // boundary (human confirmation when no grant exists).
                     let result: any = null;
 
                     if (taskType === 'GENERATE_CAMPAIGN') {
@@ -174,11 +175,6 @@ class CreativeDirectorSkill {
                         const prompt = context.prompt || context.brief;
                         result = await this.generateMotion(prompt, context.imageContext, context.engine);
                     }
-                    return result;
-                    };
-                    const result: any = effectContext
-                        ? await runWithEffectContext(effectContext, dispatch)
-                        : await dispatch();
 
                     // Reply if sender is expecting one (and it's not a fire-and-forget system message)
                     if (msg.senderId && msg.type === 'REQUEST') {

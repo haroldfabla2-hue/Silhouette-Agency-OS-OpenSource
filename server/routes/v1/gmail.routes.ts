@@ -68,12 +68,14 @@ router.post('/send', async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Missing to, subject, or body' });
         }
 
-        // Authenticated user clicked "send" in the UI: mark the request as
-        // user-initiated so the provider-boundary guard passes THIS send.
+        // The authenticated request body IS the principal's explicit
+        // specification of this exact email: issue a single-use, args-bound
+        // grant for THIS send. It cannot send a different email or a second one.
+        const { issueEffectGrant } = await import('../../../services/security/effectGate');
         const { runWithEffectContext } = await import('../../../services/security/effectContext');
-        const result = await runWithEffectContext(
-            { kind: 'user-http', tool: 'send_email', source: 'POST /v1/gmail/send' },
-            () => gmailService.sendEmail({ to, subject, body, isHtml, driveLink })
+        const grantCtx = issueEffectGrant('send_email', { to, subject, body }, 'POST /v1/gmail/send');
+        const result = await runWithEffectContext(grantCtx, () =>
+            gmailService.sendEmail({ to, subject, body, isHtml, driveLink })
         );
 
         if (result.success) {

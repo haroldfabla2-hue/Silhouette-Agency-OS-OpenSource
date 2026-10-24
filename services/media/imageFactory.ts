@@ -61,15 +61,19 @@ export class ImageFactory {
         // a human must confirm via /v1/autonomy/confirmations. Fail-closed.
         {
             const { ensureEffectConsent } = await import('../security/effectGate');
-            const consent = await ensureEffectConsent(
+            // Throws EffectDeniedError (typed) on denial: callers must not
+            // retry or fall back to another provider for a denied request.
+            await ensureEffectConsent(
                 'generate_image',
-                { prompt: request.prompt, style: request.style, aspectRatio: request.aspectRatio, count: request.count },
+                {
+                    prompt: request.prompt,
+                    style: request.style,
+                    aspectRatio: request.aspectRatio,
+                    negativePrompt: request.negativePrompt,
+                    count: request.count
+                },
                 'imageFactory.createAsset'
             );
-            if (!consent.allowed) {
-                console.warn(`[EFFECT_GATE] ⛔ Image generation blocked: ${consent.reason}`);
-                return null;
-            }
         }
 
         let result: ImageAsset | null = null;

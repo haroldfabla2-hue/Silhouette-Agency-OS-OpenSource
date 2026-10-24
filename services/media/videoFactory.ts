@@ -57,15 +57,13 @@ export class VideoFactory {
             // provider spend). Fail-closed: denial falls back to NOTHING, not
             // to a silent local render of an unapproved cloud request.
             const { ensureEffectConsent } = await import('../security/effectGate');
-            const consent = await ensureEffectConsent(
+            // Throws EffectDeniedError (typed) on denial: NO silent local
+            // fallback for a denied cloud request.
+            await ensureEffectConsent(
                 'generate_video',
                 { prompt, duration, engine },
                 'videoFactory.createVideo'
             );
-            if (!consent.allowed) {
-                console.warn(`[EFFECT_GATE] ⛔ Cloud video generation blocked: ${consent.reason}`);
-                return null;
-            }
             console.log('[VideoFactory] 🌐 Routing to Veo 3.1 (Cloud Premium)');
 
             if (!veoService.isAvailable()) {

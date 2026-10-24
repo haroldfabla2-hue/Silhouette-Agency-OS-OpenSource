@@ -39,9 +39,17 @@ export type GateDecision =
     | { action: 'REJECTED'; pending: PendingEffect }
     | { action: 'BLOCKED_NO_PRINCIPAL' };
 
-/** Chat tools with irreversible external effects. Payments are already gated
- *  human-in-the-loop by financialVault; GUESTs are blocked upstream. */
-export const EXTERNAL_EFFECT_TOOLS = new Set(['send_email', 'github_create_pr']);
+/** Chat tools with external or wallet-bearing effects. Payments are already
+ *  gated human-in-the-loop by financialVault; GUESTs are blocked upstream.
+ *  Image/video/voice generation is wallet-bearing (cloud providers) and is
+ *  confirmed per exact call, like email: no free generation from chat. */
+export const EXTERNAL_EFFECT_TOOLS = new Set([
+    'send_email',
+    'github_create_pr',
+    'generate_image',
+    'generate_video',
+    'generate_voice'
+]);
 
 const DATA_DIR = process.env.CONFIRMATION_GATE_DIR || path.join(process.cwd(), 'data');
 const STORE = path.join(DATA_DIR, 'pending-effects.json');
@@ -70,6 +78,15 @@ export function summarizeEffect(tool: string, args: Record<string, any>): string
     }
     if (tool === 'github_create_pr') {
         return `Pull request: "${args.title}" (${args.head ?? args.branch ?? '?'} -> ${args.base ?? 'main'})${args.repo ? ` en ${args.repo}` : ''}\nDescripción:\n${full(args.body)}`;
+    }
+    if (tool === 'generate_image') {
+        return `Generar imagen (coste de proveedor)\nEstilo: ${args.style ?? 'PHOTOREALISTIC'} ${args.aspectRatio ?? ''}\nPrompt: ${full(args.prompt)}`;
+    }
+    if (tool === 'generate_video') {
+        return `Generar vídeo (coste de proveedor)\nMotor: ${args.engine ?? '?'}\nPrompt: ${full(args.prompt)}`;
+    }
+    if (tool === 'generate_voice') {
+        return `Generar voz (coste de proveedor)\nVoz: ${args.voiceId ?? 'default'}\nTexto: ${full(args.text)}`;
     }
     return `${tool}(${full(canonical(args))})`;
 }

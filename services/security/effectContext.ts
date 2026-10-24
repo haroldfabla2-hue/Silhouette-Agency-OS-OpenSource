@@ -1,35 +1,37 @@
 /**
- * Effect execution context (AsyncLocalStorage).
+ * Effect grant context (AsyncLocalStorage).
  *
- * Marks the current async execution as ALREADY authorized for side effects,
- * so provider-boundary guards (gmailService, imageFactory, videoFactory) do
- * not demand a second consent for a call an upstream gate already approved.
+ * Carries a SINGLE-USE approval grant for one exact effect invocation
+ * (effect + canonical args) across the layers of one execution: the point
+ * where a human (or an authenticated request containing the exact args, which
+ * IS that principal's explicit approval of those args) approved, and the
+ * provider boundary that consumes the grant.
  *
- * Kinds:
- *  - 'confirmed': a consent gate approved THIS effect once
- *    (actionExecutor human confirmation via /v1/autonomy/confirmations,
- *    re-entering executeCapability).
- *  - 'user-chat': an authenticated chat session initiated this work. Chat
- *    applies its own gates (confirmationGate) where they exist; other tools
- *    run as the user's explicit request, as they did before this change.
- *  - 'user-http': an authenticated HTTP route is serving an explicit user
- *    action (the user clicked the button in the UI). Authentication alone is
- *    NOT consent for autonomous flows; this kind only marks direct,
- *    user-initiated requests handled inside the route's own async chain.
+ * A context is NOT a general permission:
+ *  - the grant is consumed on first use (ApprovalGrantStore, timing-safe);
+ *  - it binds effect + exact args (sha256 over canonical args): different
+ *    args mismatch, replay reports ALREADY_USED, expiry denies;
+ *  - one grant never covers a campaign's children: each piece needs its own.
  *
- * Absence of a context means the call originates from an autonomous or
- * unauthenticated flow (daemon, scheduler, plan executor, MCP, direct
- * internal callers) and must obtain human consent before any external or
- * wallet-bearing effect runs.
+ * Absence of a context means the effect must acquire human approval through
+ * actionExecutor (/v1/autonomy/confirmations) or be denied.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
+import type { ApprovalBinding } from './approvalGrants';
 
 export interface EffectContext {
-    kind: 'confirmed' | 'user-chat' | 'user-http';
-    /** Tool/effect the context was granted for (informational). */
-    tool?: string;
-    /** Which gate or route granted it (audit trail). */
-    source?: string;
+    grant: { token: string; binding: ApprovalBinding };
+    /** Digests (effect+args) already validated against this grant in this chain. */
+    validated: Set<string>;
+    /**
+     * Effect kinds already validated in this chain. Lets ONE approved logical
+     * generation pass through its own nested wrappers (mediaService ->
+     * imageFactory derives args 1:1). A campaign's independent pieces never
+     * share a chain: they enter with no context and gate individually.
+     */
+    validatedKinds: Set<string>;
+    /** Where the grant was issued (audit trail). */
+    issuedBy: string;
 }
 
 const als = new AsyncLocalStorage<EffectContext>();

@@ -258,18 +258,15 @@ export class ToolHandler {
         // But for Tools, we simulate a "Promise" via the Orchestrator? 
         // Or simpler: We create a "Task Ticket".
 
-        // [SECURITY] Carry the caller's effect context across the async
-        // delegation: a chat-initiated delegation keeps its user-initiated
-        // provenance when the mailbox is processed later (deferred execution
-        // must not silently become "autonomous" and must not silently keep
-        // autonomy either - provenance travels with the task).
-        const { getEffectContext } = await import('../security/effectContext');
+        // [SECURITY] No authority travels with a delegation: a grant is
+        // single-use and bound to exact args, so it cannot legitimately cover
+        // whatever the delegated agent later decides to do. Deferred work
+        // gates its own effects on arrival (human confirmation when needed).
         systemBus.emit(SystemProtocol.TASK_ASSIGNMENT, {
             targetRole: args.target_role,
             task: args.task,
             context: args.context,
-            priority: 'HIGH',
-            effectContext: getEffectContext() ?? null
+            priority: 'HIGH'
         }, 'TOOL_HANDLER');
 
         // We return a confirmation. The Agent must know to listen or check status later.
@@ -375,6 +372,9 @@ export class ToolHandler {
                 return { error: "Failed to generate image." };
             }
         } catch (e: any) {
+            if (e?.code === 'EFFECT_DENIED') {
+                return { error: e.message, errorCode: 'EFFECT_DENIED' };
+            }
             return { error: `Image generation failed: ${e.message}` };
         }
     }

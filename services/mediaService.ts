@@ -31,6 +31,20 @@ export class MediaService {
 
     // --- IMAGE GENERATION ---
     public async generateImage(prompt: string, style?: string): Promise<string> {
+        // [SECURITY] EFFECT GATE: this public entry reaches wallet-bearing
+        // providers directly (legacy OPENAI/REPLICATE/IMAGINEART loop below)
+        // AND through imageFactory. Gate here so BOTH paths need authority.
+        // The nested imageFactory guard passes via the same validated kind.
+        // Throws EffectDeniedError (typed) on denial.
+        {
+            const { ensureEffectConsent } = await import('./security/effectGate');
+            await ensureEffectConsent(
+                'generate_image',
+                style !== undefined ? { prompt, style } : { prompt },
+                'mediaService.generateImage'
+            );
+        }
+
         // If style is specified, route through imageFactory which handles NanoBanana styles
         if (style && style !== 'none') {
             console.log(`[MEDIA] 🎨 Generating with style: ${style}`);
@@ -86,6 +100,8 @@ export class MediaService {
                     console.log(`[MEDIA] Skipping ${provider} (No Key)`);
                 }
             } catch (e: any) {
+                // Never retry a denied effect under another provider.
+                if (e?.code === 'EFFECT_DENIED') throw e;
                 console.warn(`[MEDIA] ${provider} Image Gen Failed:`, e.message);
                 lastError = e;
             }

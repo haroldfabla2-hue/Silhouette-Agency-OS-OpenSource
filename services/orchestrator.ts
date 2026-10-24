@@ -1498,29 +1498,42 @@ JSON ONLY:
             // other caller must obtain human approval via actionExecutor,
             // decided at /v1/autonomy/confirmations. Fail-closed.
             // ═══════════════════════════════════════════════════════════════
-            const { isGatedEffect, ensureEffectConsent } = await import('./security/effectGate');
-            const { getEffectContext, runWithEffectContext } = await import('./security/effectContext');
-            if (isGatedEffect(capabilityName) && !getEffectContext()) {
-                const consent = await ensureEffectConsent(capabilityName, args, `executeCapability:${requesterId}`);
-                if (!consent.allowed) {
-                    const deniedFx: CapabilityResult = {
-                        success: false,
-                        data: null,
-                        error: `SECURITY_CONSENT_REQUIRED: ${consent.reason}`,
-                        executedBy: 'ORCHESTRATOR',
-                        executionTimeMs: Date.now() - startTime,
-                        metadata: { toolName: capabilityName }
-                    };
-                    this.emitCapabilityResult(capabilityName, deniedFx, requesterId);
-                    return deniedFx;
+            const { isGatedEffect, ensureEffectConsent, effectBinding, EffectDeniedError } = await import('./security/effectGate');
+            const { runWithEffectContext } = await import('./security/effectContext');
+            if (isGatedEffect(capabilityName)) {
+                try {
+                    const granted = await ensureEffectConsent(capabilityName, args, `executeCapability:${requesterId}`);
+                    if (granted.via === 'human-approval') {
+                        // Approved once by a human at /v1/autonomy/confirmations:
+                        // re-enter with a context pre-validated for THIS exact
+                        // effect+args so downstream layers of this single
+                        // execution pass. Any other effect or args gates again.
+                        const binding = effectBinding(capabilityName, args);
+                        return runWithEffectContext(
+                            {
+                                grant: { token: 'human-approved', binding },
+                                validated: new Set([granted.digest]),
+                                validatedKinds: new Set([capabilityName as string]),
+                                issuedBy: 'actionExecutor:/v1/autonomy/confirmations'
+                            },
+                            () => this.executeCapability(capabilityName, args, context)
+                        );
+                    }
+                } catch (gateErr: any) {
+                    if (gateErr instanceof EffectDeniedError || gateErr?.code === 'EFFECT_DENIED') {
+                        const deniedFx: CapabilityResult = {
+                            success: false,
+                            data: null,
+                            error: gateErr.message,
+                            executedBy: 'ORCHESTRATOR',
+                            executionTimeMs: Date.now() - startTime,
+                            metadata: { toolName: capabilityName, errorCode: 'EFFECT_DENIED' }
+                        };
+                        this.emitCapabilityResult(capabilityName, deniedFx, requesterId);
+                        return deniedFx;
+                    }
+                    throw gateErr;
                 }
-                // Approved once by a human: re-enter with a confirmed context so
-                // this single execution (and its provider-boundary guards) pass.
-                // The re-entry skips this gate because the context is present.
-                return runWithEffectContext(
-                    { kind: 'confirmed', tool: capabilityName, source: 'actionExecutor' },
-                    () => this.executeCapability(capabilityName, args, context)
-                );
             }
 
             // ═══════════════════════════════════════════════════════════════
@@ -2327,15 +2340,7 @@ OBJECTIVES:
         this.sendTaggedMessage(
             targetAgentId,
             SystemProtocol.TASK_ASSIGNMENT,
-            {
-                taskType,
-                context: enrichedContext,
-                correlationId: crypto.randomUUID(),
-                // [SECURITY] Provenance of the original caller (chat/http/
-                // none), re-established by the inbox consumer so deferred
-                // execution keeps its original permission identity.
-                effectContext: payload.effectContext ?? null
-            },
+            { taskType, context: enrichedContext, correlationId: crypto.randomUUID() },
             {
                 tag: MessageTag.AGENT_DELEGATION,
                 priority: priorityLevel

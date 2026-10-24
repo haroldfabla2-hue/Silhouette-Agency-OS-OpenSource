@@ -22,13 +22,11 @@ const router = Router();
  * Start a new video production project
  */
 // [SECURITY] A production run multiplies wallet-bearing generation (images,
-// voice, video) from one authenticated click. The click is the user's intent,
-// so the route is marked 'user-http'; per-generation consent UX for multiplied
-// production is a declared open decision (see PR), not silently granted here
-// beyond that intent.
+// voice, video). NO blanket grant is issued here: the scope of a run is not
+// knowable upfront, so every piece gates itself at the provider boundary
+// (human confirmation via /v1/autonomy/confirmations when no grant exists).
+// A scoped campaign grant (explicit piece counts + cost cap) is future work.
 router.post('/create', async (req: Request, res: Response) => {
-    const { runWithEffectContext } = await import('../../../services/security/effectContext');
-    return runWithEffectContext({ kind: 'user-http', source: 'POST /v1/production/create' }, async () => {
     try {
         const {
             brief,

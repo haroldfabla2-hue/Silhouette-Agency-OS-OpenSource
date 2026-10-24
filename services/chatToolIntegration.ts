@@ -297,20 +297,27 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
             }
 
             // Execute the tool via orchestrator (unified capability execution).
-            // Mark this execution as chat-initiated: confirmationGate above
-            // already obtained the user's explicit yes where it applies
-            // (EXTERNAL_EFFECT_TOOLS), and every other tool runs as the
-            // user's explicit chat request. The effect gate in
-            // executeCapability and the provider-boundary guards treat this
-            // context as user-initiated and do not re-gate.
-            const { runWithEffectContext } = await import('./security/effectContext');
-            const capabilityResult = await runWithEffectContext(
-                { kind: 'user-chat', tool: toolName, source: 'chatToolIntegration' },
-                () => orchestrator.executeCapability(toolName, args, {
+            // For gated effects the confirmationGate decision above is the
+            // user's explicit yes to THESE EXACT args: issue a single-use,
+            // args-bound grant for this one execution. Anything else (other
+            // args, a second piece, a replay) gates again at the boundary.
+            let capabilityResult;
+            if (EXTERNAL_EFFECT_TOOLS.has(toolName) && process.env.CHAT_EFFECT_GATE !== 'off') {
+                const { issueEffectGrant } = await import('./security/effectGate');
+                const { runWithEffectContext } = await import('./security/effectContext');
+                const grantCtx = issueEffectGrant(toolName as any, args, `chat:${gateContext?.principalId ?? 'unknown'}`);
+                capabilityResult = await runWithEffectContext(grantCtx, () =>
+                    orchestrator.executeCapability(toolName, args, {
+                        requesterId: 'chat',
+                        priority: 'NORMAL'
+                    })
+                );
+            } else {
+                capabilityResult = await orchestrator.executeCapability(toolName, args, {
                     requesterId: 'chat',
                     priority: 'NORMAL'
-                })
-            );
+                });
+            }
 
             // Extract result data
             const result = capabilityResult.data;
