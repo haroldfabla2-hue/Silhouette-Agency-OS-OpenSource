@@ -141,7 +141,9 @@ describe('deep-memory vector persistence across module restart (real storage, de
         expect(postRestart[0]?.similarity).toBeGreaterThan(0.9999);
         // Same measured similarity before/after the restart (stable read path;
         // tolerance covers exact-scan vs ANN route differences).
-        expect(postRestart[0]?.similarity).toBeCloseTo(preRestart[0]?.similarity!, 4);
+        const preTop = preRestart[0]?.similarity;
+        expect(typeof preTop).toBe('number');
+        expect(postRestart[0]?.similarity).toBeCloseTo(preTop as number, 4);
         // Ranking matches an independent local cosine computation.
         const decoyHit = postRestart.find(h => h.content === DECOY);
         expect(decoyHit?.similarity).toBeCloseTo(cosine(fixtureVector(TARGET), fixtureVector(DECOY)), 3);
