@@ -100,7 +100,16 @@ class RedisService {
         }
     }
 
+    /** Lazy connect: first real operation establishes the connection (or the
+     *  in-memory fallback). Keeps module import side-effect free - a pending
+     *  socket at import time raced test-worker teardown and crashed CI
+     *  intermittently. connect() is idempotent and never throws. */
+    private async ensureConnected(): Promise<void> {
+        if (!this.isConnected) await this.connect();
+    }
+
     public async set(key: string, value: string, ttl?: number) {
+        await this.ensureConnected();
         if (!this.isConnected) return;
 
         if (this.isMock) {
@@ -119,6 +128,7 @@ class RedisService {
     }
 
     public async get(key: string): Promise<string | null> {
+        await this.ensureConnected();
         if (!this.isConnected) return null;
 
         if (this.isMock) {
@@ -129,6 +139,7 @@ class RedisService {
     }
 
     public async del(key: string) {
+        await this.ensureConnected();
         if (!this.isConnected) return;
 
         if (this.isMock) {

@@ -18,6 +18,17 @@ export const initServer = async () => {
     await initDatabases();
     await initAIServices();
 
+    // [LIFECYCLE] Dreaming loop starts EXPLICITLY at boot. It previously
+    // started as a hidden side effect of importing continuumMemory, which
+    // also fired in tests/tools. Idempotent and PowerManager-gated, exactly
+    // as before; only the trigger point moved.
+    try {
+        const { dreamer } = await import('../../services/dreamerService');
+        dreamer.startDreamingLoop();
+    } catch (e: any) {
+        console.warn('[BOOT] Dreaming loop not started (non-blocking):', e?.message);
+    }
+
     // [PA-041] Load persisted Context Priority configuration
     await initializeContextConfig();
 

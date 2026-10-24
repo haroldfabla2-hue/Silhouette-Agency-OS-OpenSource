@@ -51,6 +51,23 @@ que este PR elimina.
 | Narrador (powerManager) | cubierto por scheduling | getter muerto → cablear en thoughtNarrator o eliminar | n/a |
 | Efectos externos (email, PR, generación) | no aplica | no aplica | grant/confirmación humana; paid hard-block |
 
+## Lifecycle/imports (CI teardown crash)
+
+Mecanismo confirmado por evidencia (hipótesis del auditor verificada en
+código): `continuumMemory` y `contextAssembler` abrían conexión Redis real
+en CONSTRUCTOR de singleton = en IMPORT. Sin Redis en CI, connect() hace 3
+reintentos (~5-14s) antes del fallback; si el worker de vitest terminaba en
+esa ventana, el cierre de rpc con operación pendiente tumbaba el run
+("Closing rpc while fetch was pending", intermitente). Además el Dreaming
+loop arrancaba como efecto oculto del import de continuum.
+
+Rootfix (sin mocks, sin fabricar verde): redisClient conecta LAZY en la
+primera operación real (ensureConnected en get/set/del; connect sigue
+siendo idempotente y no lanza); constructores ya no tocan red; el Dreaming
+loop arranca explícito en server/loaders/index.ts (idempotente,
+PowerManager-gated, mismo comportamiento en prod que ya lo conecta vía
+dbLoader). Comportamiento real preservado; el import queda puro.
+
 ## Abiertos y tradeoffs
 
 1. **Getters muertos de powerManager** (`isLearningLoopEnabled`,
