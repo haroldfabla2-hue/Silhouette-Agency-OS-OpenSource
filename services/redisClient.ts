@@ -100,7 +100,16 @@ class RedisService {
         }
     }
 
+    /** Lazy connect: first real operation establishes the connection (or the
+     *  in-memory fallback). Keeps module import side-effect free - a pending
+     *  socket at import time raced test-worker teardown and crashed CI
+     *  intermittently. connect() is idempotent and never throws. */
+    private async ensureConnected(): Promise<void> {
+        if (!this.isConnected) await this.connect();
+    }
+
     public async set(key: string, value: string, ttl?: number) {
+        await this.ensureConnected();
         if (!this.isConnected) return;
 
         if (this.isMock) {
@@ -119,6 +128,7 @@ class RedisService {
     }
 
     public async get(key: string): Promise<string | null> {
+        await this.ensureConnected();
         if (!this.isConnected) return null;
 
         if (this.isMock) {
@@ -129,6 +139,7 @@ class RedisService {
     }
 
     public async del(key: string) {
+        await this.ensureConnected();
         if (!this.isConnected) return;
 
         if (this.isMock) {
@@ -140,6 +151,7 @@ class RedisService {
     }
 
     public async keys(pattern: string): Promise<string[]> {
+        await this.ensureConnected();
         if (!this.isConnected) return [];
 
         if (this.isMock) {
@@ -160,6 +172,7 @@ class RedisService {
      * @returns boolean True if lock acquired, false if already locked
      */
     public async acquireLock(lockKey: string, ttlMs: number): Promise<boolean> {
+        await this.ensureConnected();
         if (!this.isConnected) return true; // Fallback to allowing execution if no redis
 
         if (this.isMock) {
@@ -187,6 +200,7 @@ class RedisService {
      * Releases a distributed lock.
      */
     public async releaseLock(lockKey: string): Promise<void> {
+        await this.ensureConnected();
         if (!this.isConnected) return;
 
         if (this.isMock) {

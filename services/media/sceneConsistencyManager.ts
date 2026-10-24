@@ -298,7 +298,10 @@ class SceneConsistencyManager {
                         await fs.copyFile(result.localPath, destPath);
                         generatedImages.push(destPath);
                     }
-                } catch (e) {
+                } catch (e: any) {
+                    // A denied effect aborts the batch: no retry with other
+                    // angle/expression args (each would be new spend).
+                    if (e?.code === 'EFFECT_DENIED') throw e;
                     console.warn(`[ConsistencyManager] Failed to generate ${angle} ${expression}:`, e);
                 }
             }
