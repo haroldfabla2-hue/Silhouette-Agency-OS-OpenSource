@@ -49,6 +49,18 @@ function knowledgeSchema(): Schema {
     ]);
 }
 
+/**
+ * Module-scoped single-flight for first-table creation, keyed by
+ * dbPath+tableName. The per-instance writeQueue serializes writers within ONE
+ * service instance only; independent instances pointed at the same database
+ * (boot consumers constructed separately, or test engines alongside the module
+ * singleton) are concurrent first writers on a fresh DB. This Map serializes
+ * them within the module. It does NOT cover vitest resetModules or multiple
+ * processes (no shared Map) - ensureV2Table's atomic create-or-open catch is
+ * the backstop for those.
+ */
+const tableInitFlights = new Map<string, Promise<void>>();
+
 export class LanceDbService {
     private annStatus: ReturnType<typeof selectVectorEngine> | null = null;
     private annModule: UsearchModule | null = null;
@@ -279,17 +291,72 @@ export class LanceDbService {
         }
     }
 
+    private static isTableAlreadyExistsError(error: unknown): boolean {
+        const message = String((error as Error)?.message ?? error).toLowerCase();
+        return message.includes('already exists');
+    }
+
+    /**
+     * Atomic create-or-open for memory_records_v2. Returns true only when THIS
+     * call created the table with firstRecords applied (caller must not merge
+     * them again); false when the table pre-existed or was created by a
+     * concurrent winner (caller must merge its own records). Only the specific
+     * 'already exists' outcome of a lost create race is converted into
+     * openTable; every other error is real and propagates unchanged.
+     */
+    private async createOrOpenV2Table(firstRecords: Record<string, unknown>[]): Promise<boolean> {
+        const names = await this.db!.tableNames();
+        if (names.includes('memory_records_v2')) {
+            this.table = await this.db!.openTable('memory_records_v2');
+            return false;
+        }
+        try {
+            this.table = await this.db!.createTable('memory_records_v2', firstRecords);
+            return true;
+        } catch (error) {
+            if (!LanceDbService.isTableAlreadyExistsError(error)) throw error;
+            // Lost a create race to a writer outside this module's flight Map
+            // (post-resetModules module copy, or another process): adopt the
+            // winner's table; the caller still merges its own records.
+            this.table = await this.db!.openTable('memory_records_v2');
+            return false;
+        }
+    }
+
+    /**
+     * Single-flight create-or-open for memory_records_v2. Concurrent first
+     * writers through SEPARATE instances of this class (per-instance
+     * writeQueue cannot serialize them) previously raced check-then-create:
+     * both saw an empty tableNames(), both issued createTable, and the loser
+     * was rejected with 'already exists' - a refused write on a fresh DB.
+     */
+    private async ensureV2Table(firstRecords: Record<string, unknown>[]): Promise<boolean> {
+        if (this.table) return false;
+        const key = `${this.databasePath}::memory_records_v2`;
+        const existing = tableInitFlights.get(key);
+        if (!existing) {
+            const attempt = this.createOrOpenV2Table(firstRecords);
+            tableInitFlights.set(key, attempt.then(() => undefined, () => undefined));
+            try {
+                return await attempt;
+            } finally {
+                tableInitFlights.delete(key);
+            }
+        }
+        // A concurrent instance is creating/opening the table; this instance's
+        // records were NOT applied, so the caller must merge them afterwards.
+        await existing;
+        if (!this.table) this.table = await this.db!.openTable('memory_records_v2');
+        return false;
+    }
+
     private async writeManyAndVerify(nodes: MemoryNode[]): Promise<{ ok: true; count: number }> {
         await this.ensureInitialized();
         if (!this.db) throw new Error('LanceDB is unavailable');
         if (nodes.length === 0) return { ok: true, count: 0 };
         const records = nodes.map(n => this.toRecord(n));
-        if (!this.table) {
-            const names = await this.db.tableNames();
-            this.table = names.includes('memory_records_v2')
-                ? await this.db.openTable('memory_records_v2')
-                : await this.db.createTable('memory_records_v2', records);
-        } else {
+        const createdWithRecords = await this.ensureV2Table(records);
+        if (!createdWithRecords) {
             // Same atomic merge as store(): update on id match, insert otherwise.
             await this.withCurrentTable('memory_records_v2', () => this.table!.mergeInsert('id')
                 .whenMatchedUpdateAll()
@@ -313,12 +380,8 @@ export class LanceDbService {
         const json = JSON.stringify(node);
         const checksum = createHash('sha256').update(json).digest('hex');
         const record = this.toRecord(node, json);
-        if (!this.table) {
-            const names = await this.db.tableNames();
-            this.table = names.includes('memory_records_v2')
-                ? await this.db.openTable('memory_records_v2')
-                : await this.db.createTable('memory_records_v2', [record]);
-        } else {
+        const createdWithRecord = await this.ensureV2Table([record]);
+        if (!createdWithRecord) {
             // Atomic merge rather than delete + add, which loses the old row on add failure.
             await this.withCurrentTable('memory_records_v2', () => this.table!.mergeInsert('id')
                 .whenMatchedUpdateAll()
