@@ -16,7 +16,12 @@ import { systemBus } from './systemBus';
 import { SystemProtocol } from '../types';
 import { MemoryNodeSchema } from './memorySchema'; // Added missing import
 
-const SNAPSHOT_PATH = path.join(process.cwd(), 'data', 'memory_snapshot.json');
+// Vitest workers must not overwrite the same snapshot file concurrently
+// (full-state writes would silently drop other workers' volatile nodes).
+// Same precedent as lancedbService's per-worker DB directory.
+const SNAPSHOT_PATH = path.join(process.cwd(), 'data', process.env.VITEST_WORKER_ID
+    ? `memory_snapshot-worker-${process.env.VITEST_WORKER_ID}.json`
+    : 'memory_snapshot.json');
 
 // --- SILHOUETTE CONTINUUM MEMORY SYSTEM V5.0 (UNIFIED WORKING MEMORY) ---
 // Architecture: 4-Tier Hierarchical Storage
