@@ -122,6 +122,8 @@ export class IntrospectionEngine {
     private pendingContinuumWrites: Array<{ id: string; content: string; tags: string[]; queuedAt: number }> = [];
     private drainingContinuumWrites = false;
     private static readonly PENDING_WRITES_KEY = 'pending_concept_writes';
+    private static readonly PENDING_RETRY_INTERVAL_MS = 60_000;
+    private pendingRetryDriver: ReturnType<typeof setInterval> | null = null;
 
     /** Visible pending-write count (tests / inspection). */
     public getPendingContinuumWriteCount(): number {
@@ -217,6 +219,24 @@ export class IntrospectionEngine {
         this.loadGoalsFromMemory();
         // Boot replay: journaled concept writes from a previous run drain here.
         this.replayPendingContinuumWrites();
+        // Bounded periodic retry driver: entries deferred by an exhausted
+        // wait, a store failure, or the drain-guard race (appended after the
+        // while loop empties but before the guard releases) are retried every
+        // 60s instead of waiting indefinitely for the next access/boot. Silent
+        // while the journal is empty; this is at-least-once best-effort, NOT
+        // a drain guarantee - backlog visibility: getPendingContinuumWriteCount
+        // + health/memoryAudit (concept-write journal outstanding).
+        this.pendingRetryDriver = setInterval(() => {
+            if (this.pendingContinuumWrites.length > 0 && !this.drainingContinuumWrites) {
+                void this.drainPendingContinuumWrites();
+            }
+        }, IntrospectionEngine.PENDING_RETRY_INTERVAL_MS);
+        this.pendingRetryDriver.unref();
+    }
+
+    /** Stop the periodic retry driver (test teardown / orderly shutdown). */
+    public stopPendingRetryDriver(): void {
+        if (this.pendingRetryDriver) { clearInterval(this.pendingRetryDriver); this.pendingRetryDriver = null; }
     }
 
     // --- UTILITIES ---
