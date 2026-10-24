@@ -1,6 +1,17 @@
 import { geminiService } from './geminiService';
 import { vectorMemory } from './vectorMemoryService';
 import { mediaService } from './mediaService'; // Import MediaService
+import { assertCampaignLlmGenerationAllowed } from './security/externalGenerationPolicy';
+
+/** Shotlist generation was attempted but is unavailable (no key, LLM error,
+ * unparseable output). Distinct from a missing Brand Twin (404). */
+export class CampaignShotlistUnavailableError extends Error {
+    public readonly code = 'SHOTLIST_UNAVAILABLE' as const;
+    constructor() {
+        super('Shotlist generation is unavailable on this deployment (external generation misconfigured or failed).');
+        this.name = 'CampaignShotlistUnavailableError';
+    }
+}
 import { BrandDigitalTwin, CampaignBlueprint, ShotSpec } from '../types';
 
 class CampaignService {
@@ -21,14 +32,25 @@ class CampaignService {
         // 2. Retrieve Brand Rules (The "Law")
         const rules = await vectorMemory.queryBrandRules(brandId, objective);
 
-        // 3. Generate Shotlist via Gemini (The "Vision")
-        const blueprint = await geminiService.generateShotlist(objective, brand, rules);
+        // 3. Hard block (CERO COBROS): the shotlist call reaches an external
+        // LLM whose cost is entitlement-dependent and unverifiable from code.
+        // This delivery blocks it unconditionally - deliberately NO boolean
+        // override (a flag is not monetary authority). Steps 4-5 are the
+        // PRESERVED capability: reachable only once a designed, verifiable,
+        // non-boolean monetary authorization mechanism lands (reserved owner
+        // decision). Local preparation above is unaffected by the block.
+        assertCampaignLlmGenerationAllowed();
 
-        if (blueprint) {
-            // 4. AUTO-SCOUT: Find Real-World Anchors for each shot
-            console.log("[CampaignService] Auto-Scouting Real-World Anchors...");
-            blueprint.shotlist = await this.autoScout(blueprint.shotlist, brand.manifesto.emotionalSpectrum.secondary.join(' '));
+        // 4. Generate Shotlist via Gemini (The "Vision"). A null return means
+        // generation was attempted but unavailable - NOT a missing brand.
+        const blueprint = await geminiService.generateShotlist(objective, brand, rules);
+        if (!blueprint) {
+            throw new CampaignShotlistUnavailableError();
         }
+
+        // 5. AUTO-SCOUT: Find Real-World Anchors for each shot
+        console.log("[CampaignService] Auto-Scouting Real-World Anchors...");
+        blueprint.shotlist = await this.autoScout(blueprint.shotlist, brand.manifesto.emotionalSpectrum.secondary.join(' '));
 
         return blueprint;
     }
@@ -45,16 +67,8 @@ class CampaignService {
                 const results = await mediaService.searchRealAssets(query);
 
                 if (results && results.length > 0) {
-                    // Attach the best match as the "anchor"
-                    // We'll store it in a new property (we might need to extend ShotSpec or just use 'scoutUrl')
-                    // For now, let's assume we can attach it to the description or a new field if we updated types.
-                    // To avoid type errors without updating types.ts yet, we'll append it to the description for the UI to parse,
-                    // OR better, we just return the shot with a new property if we cast it.
-                    // Let's update types.ts properly in the next step, but for now, let's just log it.
-
-                    // ACTUALLY: Let's use the 'referenceImage' field if it exists, or add it.
-                    // Checking types.ts... ShotSpec doesn't have it.
-                    // I will add a temporary property via casting.
+                    // Attach the best match as the real-world anchor
+                    // (typed ShotSpec.referenceImage / referenceThumb).
                     return { ...shot, referenceImage: results[0].url, referenceThumb: results[0].thumb };
                 }
             } catch (e) {

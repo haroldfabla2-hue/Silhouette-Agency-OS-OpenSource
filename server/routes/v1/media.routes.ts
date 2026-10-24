@@ -15,6 +15,10 @@ router.delete('/queue/:id', (req, res) => mediaController.removeQueueJob(req, re
 // GET /v1/media/queue/:id - Get specific job status
 router.get('/queue/:id', (req, res) => mediaController.getJobStatus(req, res));
 
+// ==================== CAMPAIGNS ====================
+// POST /v1/media/campaign/create - Director: objective + brand -> shotlist blueprint
+router.post('/campaign/create', (req, res) => mediaController.createCampaign(req, res));
+
 // ==================== IMAGE GENERATION ====================
 // POST /v1/media/generate/image - Generate image from prompt
 router.post('/generate/image', (req, res) => mediaController.generateImage(req, res));
