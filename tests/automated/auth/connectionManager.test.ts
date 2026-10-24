@@ -1,8 +1,9 @@
 /**
  * Operator connection lifecycle: real HTTP through an express app carrying
- * ONLY the connection router (server/app.ts's full boot is out of scope for
- * this suite; operator auth there is the global authMiddleware, verified by
- * mount order). Covers start/list/switch/close + every rejection path.
+ * ONLY the connection router plus a DECLARED fixture principal (a test
+ * middleware stamping role CREATOR). Role enforcement through the REAL
+ * authMiddleware with real sessions lives in connectionAuthz.test.ts; this
+ * suite covers start/list/switch/close mechanics + every rejection path.
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -27,6 +28,7 @@ async function setup() {
     const store = new AccountStore(join(d, 'a.db'));
     const app = express();
     app.use(express.json());
+    app.use((req: any, _res, next) => { req.user = { id: 'fixture-creator', role: 'CREATOR' }; next(); }); // DECLARED fixture principal - not the real middleware
     app.use('/v1/connections', createConnectionRouter(new ConnectionManager(store)));
     const server = await new Promise<Server>(r => { const s = app.listen(0, '127.0.0.1', () => r(s)); });
     servers.push(server);
@@ -54,6 +56,7 @@ describe('operator connection interface', () => {
 
         const del = await (await fetch(`${base}/OPENAI_CODEX/work`, { method: 'DELETE' })).json();
         expect(del.ok).toBe(true);
+        expect(del.localTokenPurged).toBe(false); // cli-home account: no local token copy to purge
         const after = await (await fetch(base)).json();
         expect(after.accounts).toHaveLength(1);
         store.close();

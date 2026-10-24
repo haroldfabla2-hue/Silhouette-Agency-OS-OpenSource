@@ -26,7 +26,7 @@ export function buildAuthorizationUrl(base: string, params: {
     clientId: string; redirectUri: string; state: string; codeChallenge: string; scope?: string;
 }): string {
     const url = new URL(base);
-    if (url.protocol !== 'https:') throw new Error('authorization endpoint must be https');
+    if (!isHttpsOrLoopback(url)) throw new Error('authorization endpoint must be https (http only for loopback test endpoints)');
     url.searchParams.set('response_type', 'code');
     url.searchParams.set('client_id', params.clientId);
     url.searchParams.set('redirect_uri', params.redirectUri);
@@ -113,6 +113,53 @@ export async function waitForAuthorizationCode(options: {
 }): Promise<{ code: string; port: number }> {
     const waiter = await startAuthorizationCodeWaiter(options);
     return waiter.waitForCode;
+}
+
+/** https everywhere; http only toward a loopback host (local test/dev authorization servers). */
+function isHttpsOrLoopback(url: URL): boolean {
+    if (url.protocol === 'https:') return true;
+    return url.protocol === 'http:' && ['127.0.0.1', '::1', 'localhost'].includes(url.hostname);
+}
+
+export interface TokenExchangeResult {
+    accessToken: string;
+    refreshToken?: string;
+    expiresInSec?: number;
+    scope?: string;
+}
+
+/**
+ * RFC 6749 4.1.3 + RFC 7636 verifier: swap the loopback code for tokens at
+ * the provider's token endpoint. Same endpoint policy as the authorize URL.
+ */
+export async function exchangeAuthorizationCode(
+    tokenUrl: string,
+    params: { clientId: string; code: string; redirectUri: string; codeVerifier: string },
+    fetcher: typeof fetch = fetch,
+): Promise<TokenExchangeResult> {
+    const url = new URL(tokenUrl);
+    if (!isHttpsOrLoopback(url)) throw new OAuthCallbackError('token endpoint must be https (http only for loopback test endpoints)');
+    const res = await fetcher(tokenUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+            grant_type: 'authorization_code',
+            client_id: params.clientId,
+            code: params.code,
+            redirect_uri: params.redirectUri,
+            code_verifier: params.codeVerifier,
+        }),
+        redirect: 'error',
+    });
+    if (!res.ok) { await res.body?.cancel(); throw new OAuthCallbackError(`token exchange failed: HTTP ${res.status}`); }
+    const data: any = await res.json();
+    if (typeof data?.access_token !== 'string' || !data.access_token) throw new OAuthCallbackError('invalid token response: missing access_token');
+    return {
+        accessToken: data.access_token,
+        ...(typeof data.refresh_token === 'string' ? { refreshToken: data.refresh_token } : {}),
+        ...(Number.isFinite(Number(data.expires_in)) ? { expiresInSec: Number(data.expires_in) } : {}),
+        ...(typeof data.scope === 'string' ? { scope: data.scope } : {}),
+    };
 }
 
 export function loopbackRedirectUri(port: number, path = '/callback'): string {

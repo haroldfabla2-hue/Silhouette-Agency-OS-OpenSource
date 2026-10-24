@@ -10,7 +10,7 @@
  * Refresh-time writes must pass the refresh lock fence (assertFence) so a
  * stale holder's late write is rejected before it lands.
  */
-import { mkdirSync, readFileSync, writeFileSync, renameSync, chmodSync, statSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, renameSync, chmodSync, statSync, unlinkSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import type { HeldRefreshLock } from './refreshLock';
@@ -65,6 +65,18 @@ export class TokenFileStore {
         const decipher = createDecipheriv('aes-256-gcm', this.key, Buffer.from(parsed.iv, 'base64'));
         decipher.setAuthTag(Buffer.from(parsed.tag, 'base64'));
         return Buffer.concat([decipher.update(Buffer.from(parsed.data, 'base64')), decipher.final()]).toString('utf8');
+    }
+
+    /**
+     * Local custody removal on connection close. This deletes OUR encrypted
+     * copy only; it is NOT a vendor-side revocation - the provider session/
+     * grant stays valid until revoked through the vendor's own flow.
+     */
+    remove(name: string): boolean {
+        const p = this.path(name);
+        if (!existsSync(p)) return false;
+        unlinkSync(p);
+        return true;
     }
 
     /** Write guarded by the refresh fence when one is held (refresh path). */
