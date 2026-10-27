@@ -1169,7 +1169,8 @@ export interface ShotSpec {
   lens: '35mm' | '50mm' | '85mm' | 'WIDE_ANGLE' | 'MACRO';
   composition: 'RULE_OF_THIRDS' | 'CENTERED' | 'SYMMETRICAL' | 'NEGATIVE_SPACE';
   productPlacement: 'HERO_CENTER' | 'CONTEXTUAL_BACKGROUND' | 'HAND_HELD';
-  referenceImage?: string; // URL
+  referenceImage?: string; // URL of the auto-scouted real-world anchor
+  referenceThumb?: string; // Thumbnail URL of the anchor (UI preview)
 }
 
 export interface CampaignBlueprint {

@@ -6,6 +6,7 @@ import { videoFactory } from '../../services/media/videoFactory';
 import { localVideoService } from '../../services/media/localVideoService';
 import { resourceManager } from '../../services/resourceManager';
 import { stockService } from '../../services/stockService';
+import { campaignService } from '../../services/campaignService';
 
 /**
  * MediaController - Handles all /v1/media/* endpoints
@@ -206,6 +207,45 @@ class MediaController {
             return res.json({ url });
         } catch (error: any) {
             return res.status(500).json({ error: error.message });
+        }
+    }
+
+    // ==================== CAMPAIGNS ====================
+
+    /**
+     * POST /v1/media/campaign/create
+     * The MediaStudio "Director" flow: turns an objective + brand into a
+     * CampaignBlueprint shotlist. Operator-initiated (global Bearer auth);
+     * effects are an LLM shotlist (existing quota) plus stock-image scouting
+     * - no wallet-bearing provider call. Shot production afterwards goes
+     * through the normal media endpoints and their own gates.
+     */
+    async createCampaign(req: Request, res: Response) {
+        try {
+            const { objective, brandId } = req.body;
+            if (!objective || !brandId) {
+                return res.status(400).json({ error: 'Missing objective or brandId' });
+            }
+
+            console.log(`[MediaController] 🎬 Campaign planning: "${objective}" for brand ${brandId}`);
+            const blueprint = await campaignService.createCampaign(objective, brandId);
+            if (!blueprint) {
+                // Only a missing Brand Twin is a 404.
+                return res.status(404).json({ error: 'Brand Twin not found for the given brandId', code: 'BRAND_TWIN_NOT_FOUND' });
+            }
+            return res.json(blueprint);
+        } catch (error: any) {
+            // Typed, deployment-level unavailability: hard block on
+            // potentially-paid external generation (CERO COBROS) or, once a
+            // designed authorization mechanism exists, failed/misconfigured
+            // shotlist generation. Messages are static and safe to show.
+            if (error?.code === 'EXTERNAL_GENERATION_DENIED'
+                || error?.code === 'SHOTLIST_UNAVAILABLE') {
+                return res.status(503).json({ error: error.message, code: error.code });
+            }
+            // Unexpected: log internals, never leak them to the client.
+            console.error('[MediaController] CreateCampaign Error:', error);
+            return res.status(500).json({ error: 'Campaign planning failed' });
         }
     }
 
