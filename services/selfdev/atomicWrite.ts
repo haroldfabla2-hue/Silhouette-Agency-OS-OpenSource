@@ -34,6 +34,8 @@ export function atomicWriteFile(destination: string, content: string | Buffer): 
     const temporary = path.join(parent, `.selfcode-${crypto.randomUUID()}.tmp`);
     let fd: number | undefined;
     let renamed = false;
+    let operationError: unknown;
+    let operationFailed = false;
     try {
         fd = fs.openSync(temporary, 'wx', 0o600);
         fs.writeFileSync(fd, bytes);
@@ -63,12 +65,29 @@ export function atomicWriteFile(destination: string, content: string | Buffer): 
         } catch (cause) {
             throw new AtomicWriteAppliedError(digest(bytes), cause);
         }
-    } finally {
-        if (fd !== undefined) fs.closeSync(fd);
-        if (!renamed) {
-            try { fs.unlinkSync(temporary); } catch (error: any) {
-                if (error.code !== 'ENOENT') throw error;
-            }
+    } catch (error) {
+        operationFailed = true;
+        operationError = error;
+    }
+    // Cleanup must never replace the operation's error, especially an error
+    // stating that replacement already happened. Keep every cleanup failure.
+    const cleanupErrors: unknown[] = [];
+    if (fd !== undefined) {
+        try { fs.closeSync(fd); } catch (error) { cleanupErrors.push(error); }
+    }
+    if (!renamed) {
+        try { fs.unlinkSync(temporary); } catch (error: any) {
+            if (error.code !== 'ENOENT') cleanupErrors.push(error);
         }
+    }
+    if (operationFailed) {
+        if (cleanupErrors.length && operationError instanceof Error) {
+            Object.assign(operationError, { cleanupErrors });
+            operationError.message += ' Cleanup also failed; a private temporary file may remain.';
+        }
+        throw operationError;
+    }
+    if (cleanupErrors.length) {
+        throw new AggregateError(cleanupErrors, 'Atomic write cleanup failed; inspect the target and temporary file.');
     }
 }
