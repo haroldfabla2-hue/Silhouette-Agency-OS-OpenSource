@@ -5,6 +5,7 @@ import { ActionExecutor } from '../services/actionExecutor';
 import { systemBus } from '../services/systemBus';
 import { SystemProtocol } from '../types';
 import * as dotenv from 'dotenv';
+import * as path from 'path';
 
 dotenv.config();
 
@@ -34,7 +35,7 @@ async function runAutonomyTest() {
     const dreamer = new DreamerService();
 
     // We listen for the training log to confirm it 'connected' to the python script
-    void new Promise<boolean>((resolve) => {
+    const trainingPromise = new Promise<boolean>((resolve) => {
         const handler = (event: any) => {
             if (event.payload.message && event.payload.message.includes('Spawning Hive Mind')) {
                 console.log("   ✅ Dreamer successfully triggered Training Script (Context Accessible)");

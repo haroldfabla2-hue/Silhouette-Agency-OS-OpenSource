@@ -1,5 +1,6 @@
 
 import { comfyService } from '../services/comfyService';
+import { resourceManager } from '../services/resourceManager';
 
 async function verifyComfyConnection() {
     console.log("🔌 Testing Link to Visual Cortex (ComfyUI)...");

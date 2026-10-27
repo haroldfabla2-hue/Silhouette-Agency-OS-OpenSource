@@ -1,5 +1,6 @@
 
 import { toolHandler } from '../services/tools/toolHandler';
+import { mediaManager } from '../services/mediaManager';
 
 async function verifyTools() {
     console.log("🔍 Verifying Agent Tools...");

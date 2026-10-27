@@ -1,7 +1,10 @@
 
 import { actionExecutor } from '../services/actionExecutor';
+import { resourceManager } from '../services/resourceManager';
 import { ActionType } from '../types';
+import { systemBus } from '../services/systemBus';
 import fs from 'fs/promises';
+import path from 'path';
 
 async function verifyRealWan() {
     console.log("🎬 Starting REAL Wan Video Generation Verification...");

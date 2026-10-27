@@ -4,6 +4,7 @@
  */
 
 import { toolHandler } from '../services/tools/toolHandler';
+import { localVideoService } from '../services/media/localVideoService';
 import { comfyService } from '../services/comfyService';
 import { mediaManager } from '../services/mediaManager';
 
