@@ -2,7 +2,7 @@
  * AUTOMATED TEST SUITE: E2E Agent Flow
  * Tests full agent workflow from creation to task execution
  */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
 describe('Agent System E2E', () => {
     describe('Orchestrator', () => {

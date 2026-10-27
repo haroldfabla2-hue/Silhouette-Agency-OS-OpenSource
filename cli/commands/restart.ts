@@ -3,7 +3,7 @@
 // Graceful restart with automatic recovery
 // ═══════════════════════════════════════════════════════════════
 
-import { C, printCompactBanner, printSection, printCheck, isServerRunning, getProjectRoot, Spinner } from '../utils/ui';
+import { C, printCompactBanner, printSection, printCheck, isServerRunning, Spinner } from '../utils/ui';
 import { startCommand } from './start';
 
 interface RestartOptions {
