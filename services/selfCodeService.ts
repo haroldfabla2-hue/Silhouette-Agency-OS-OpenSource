@@ -19,6 +19,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { execFile } from 'child_process';
 import { applyCycleEdits, CycleEdit } from './selfdev/gates';
+import { atomicWriteFile, AtomicWriteAppliedError } from './selfdev/atomicWrite';
 
 const MAX_READ_BYTES = 512 * 1024;
 const MAX_WRITE_BYTES = 256 * 1024;
@@ -63,11 +64,31 @@ class SelfCodeService {
         return `${this.worktreePath()}.journal.jsonl`;
     }
 
-    private journal(entry: JournalEntry): void {
+    private journal(entry: JournalEntry): boolean {
         try {
             fs.appendFileSync(this.journalPath(), JSON.stringify(entry) + '\n');
+            return true;
         } catch (e) {
             console.warn('[SELFCODE] Journal write failed (non-blocking):', e);
+            return false;
+        }
+    }
+
+    /** Record a replacement that happened even though durability confirmation failed. */
+    private writeAtomically(abs: string, content: string, entry: JournalEntry): void {
+        try {
+            atomicWriteFile(abs, content);
+        } catch (error) {
+            if (error instanceof AtomicWriteAppliedError) {
+                error.journalRecorded = this.journal({
+                    ...entry, shaAfter: error.shaAfter,
+                    detail: 'APPLIED_DURABILITY_UNKNOWN: replacement occurred; directory sync failed'
+                });
+                error.message += error.journalRecorded
+                    ? ' Audit entry recorded (durability not confirmed).'
+                    : ' AUDIT WRITE FAILED: replacement occurred but no journal entry was recorded.';
+            }
+            throw error;
         }
     }
 
@@ -173,7 +194,7 @@ class SelfCodeService {
         const next = applyCycleEdits(current.content, edits);
         const abs = this.confine(relPath);
         const shaBefore = current.sha;
-        fs.writeFileSync(abs, next, 'utf8');
+        this.writeAtomically(abs, next, { ts: new Date().toISOString(), actor: 'api', action: 'edit', path: relPath, rationale, shaBefore });
         const shaAfter = sha256(next);
         this.journal({ ts: new Date().toISOString(), actor: 'api', action: 'edit', path: relPath, rationale, shaBefore, shaAfter });
         return { path: relPath, shaBefore, shaAfter };
@@ -186,7 +207,7 @@ class SelfCodeService {
         const abs = this.confine(relPath);
         const shaBefore = fs.existsSync(abs) ? sha256(fs.readFileSync(abs)) : null;
         fs.mkdirSync(path.dirname(abs), { recursive: true });
-        fs.writeFileSync(abs, content, 'utf8');
+        this.writeAtomically(abs, content, { ts: new Date().toISOString(), actor: 'api', action: 'write', path: relPath, rationale, shaBefore });
         const shaAfter = sha256(content);
         const diff = await run('git', ['diff', '--', relPath], this.worktreePath(), 15000);
         this.journal({ ts: new Date().toISOString(), actor: 'api', action: 'write', path: relPath, rationale, shaBefore, shaAfter });
