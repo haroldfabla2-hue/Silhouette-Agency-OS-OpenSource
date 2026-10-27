@@ -57,8 +57,8 @@ hash), its SHA-256, and an Ed25519 signature. `keyId` is the hash of the public 
 Limits, stated plainly: the signing key lives in the process that runs the ledger,
 so this detects edits to the database file by anyone without the key; it does not
 defend against a compromised process holding the key. Deleting the newest entries
-(truncating the tail) is not detectable from the chain alone; anchor the latest
-`entryHash` somewhere outside the file if that matters. No key rotation or
+(truncating the tail) is not detectable from the chain alone; the external
+anchor support in `docs/RECEIPT_ANCHORS.md` exists for exactly that. No key rotation or
 revocation list yet. Not a hardware attestation.
 
 ## Owner identity: WebAuthn assertion gate (opt-in)
@@ -93,4 +93,4 @@ Limits, stated plainly:
 
 `ledger.verifyChainFromRoot(rootPublicKeyPem)` audits the whole chain from the one public key that started it. It follows each signed rotation and requires every receipt to use the key active at its position. A removed, edited or forged rotation, or a receipt signed by a retired key after its rotation, fails the audit. The existing `verifyChain(trustedKeys)` still works and is unchanged.
 
-Limits: the ledger does not store private keys, so where the new key lives and who may call `rotateSigner` is the caller's decision. Rotation does not help if the old private key was stolen before rotating: an attacker holding it could sign a rotation to their own key. The last entry hash should be anchored outside this database (not implemented here).
+Limits: the ledger does not store private keys, so where the new key lives and who may call `rotateSigner` is the caller's decision. Rotation does not help if the old private key was stolen before rotating: an attacker holding it could sign a rotation to their own key. The last entry hash can be anchored outside this database; see `docs/RECEIPT_ANCHORS.md` (`chainHead`, `buildAnchor`, `verifyAnchor`).
