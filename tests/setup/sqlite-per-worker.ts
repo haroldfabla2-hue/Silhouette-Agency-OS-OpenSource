@@ -24,6 +24,7 @@ import * as path from 'path';
 if (!process.env.SILHOUETTE_DB_PATH) {
     const worker = process.env.VITEST_WORKER_ID || `pid-${process.pid}`;
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'silhouette-test-db-'));
+    process.env.SILHOUETTE_LANCEDB_PATH = path.join(dir, 'memory.lancedb');
     process.env.SILHOUETTE_DB_PATH = path.join(dir, `worker-${worker}.sqlite`);
     process.env.SILHOUETTE_IDENTITY_DB_PATH = path.join(dir, `worker-${worker}-identity.sqlite`);
     process.env.SILHOUETTE_TOOLS_DB_PATH = path.join(dir, `worker-${worker}-tools.db`);
@@ -32,4 +33,10 @@ if (!process.env.SILHOUETTE_DB_PATH) {
             fs.rmSync(dir, { recursive: true, force: true });
         } catch { /* best-effort cleanup */ }
     });
+}
+
+if(!process.env.SILHOUETTE_LANCEDB_PATH){
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'silhouette-test-lancedb-'));
+ process.env.SILHOUETTE_LANCEDB_PATH=path.join(dir,'memory.lancedb');
+ process.on('exit',()=>{try{fs.rmSync(dir,{recursive:true,force:true});}catch{}});
 }

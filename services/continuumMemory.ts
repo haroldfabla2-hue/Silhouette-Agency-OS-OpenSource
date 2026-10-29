@@ -588,7 +588,7 @@ class ContinuumMemorySystem {
     /** Latest exact-tag stored observation, without semantic search, ranking
      * budget, access writes or provider use. Ordinary retrieval is unchanged. */
     public async getLatestObservation(tag:string):Promise<MemoryNode|null>{
-        const persisted=await lancedbService.getLatestObservation(tag);
+        const persisted=await lancedbService.getLatestObservation(tag,this.working.map(n=>n.id));
         const byId=new Map<string,MemoryNode>();
         if(persisted)byId.set(persisted.id,persisted);
         for(const node of this.working)if(node.tags.includes(tag))byId.set(node.id,node);

@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { MemoryNode, MemoryTier } from '../types';
 
 // Vitest workers must not mutate the same LanceDB directory concurrently.
-const DB_PATH = path.resolve(process.cwd(), 'db', process.env.VITEST_WORKER_ID
+const DB_PATH = process.env.SILHOUETTE_LANCEDB_PATH || path.resolve(process.cwd(), 'db', process.env.VITEST_WORKER_ID
     ? `silhouette-test-worker-${process.env.VITEST_WORKER_ID}.lancedb`
     : 'silhouette.lancedb');
 const DB_DIR = path.dirname(DB_PATH);
@@ -56,6 +56,8 @@ export class LanceDbService {
     private annIndexes = new Map<string, AnnIndex>();
     private annInitLogged = false;
 
+    private observationConnection:Promise<lancedb.Connection>|null=null;
+    private observationCache=new Map<string,{version:string;node:MemoryNode|null}>();
     private db: lancedb.Connection | null = null;
     private table: lancedb.Table | null = null; // Memory Table
     private legacyTable: lancedb.Table | null = null;
@@ -632,14 +634,21 @@ export class LanceDbService {
     /** Observation-only path: no initialization, optimization, FTS creation,
      * embedding, provider call, access update or arbitrary result cap. Reads
      * existing canonical tables; legacy then v2, with v2 winning duplicate IDs. */
-    public async getLatestObservation(tag:string):Promise<MemoryNode|null>{
+    public async getLatestObservation(tag:string,excludedIds:string[]=[]):Promise<MemoryNode|null>{
         if(!fs.existsSync(this.databasePath))return null;
-        const db=this.db??await lancedb.connect(this.databasePath);
+        const db=this.db??await (this.observationConnection??=lancedb.connect(this.databasePath).catch(error=>{this.observationConnection=null;throw error;}));
         const names=await db.tableNames();
-        const candidates=new Map<string,MemoryNode>();
+        const tables=[];
         for(const name of ['memory','memory_records_v2']){
-            if(!names.includes(name))continue;
-            const table=await db.openTable(name);
+            if(names.includes(name)){const table=await db.openTable(name);tables.push({name,table,version:await table.version()});}
+        }
+        const version=JSON.stringify(tables.map(t=>[t.name,t.version]));
+        const key=JSON.stringify([tag,[...excludedIds].sort()]);
+        const cached=this.observationCache.get(key);
+        if(cached?.version===version)return cached.node;
+        const excluded=new Set(excludedIds);
+        const candidates=new Map<string,MemoryNode>();
+        for(const {table} of tables){
             const total=await table.countRows();
             const page=scanPageRows();
             for(let offset=0;offset<total;offset+=page){
@@ -648,13 +657,16 @@ export class LanceDbService {
                     const node=JSON.parse(row.json_data) as MemoryNode;
                     // Include all IDs before selecting tag so a v2 update can
                     // remove a tag present in the legacy row.
-                    if(node.tags.includes(tag))candidates.set(node.id,node);
+                    if(!excluded.has(node.id)&&node.tags.includes(tag))candidates.set(node.id,node);
                     else candidates.delete(node.id);
                 }
             }
         }
-        return [...candidates.values()]
+        const node=[...candidates.values()]
             .sort((a,b)=>b.timestamp-a.timestamp||a.id.localeCompare(b.id))[0]??null;
+        this.observationCache.clear(); // cache only latest query, never grow with requests
+        this.observationCache.set(key,{version,node});
+        return node;
     }
 
     public async getAllNodes(): Promise<MemoryNode[]> {
