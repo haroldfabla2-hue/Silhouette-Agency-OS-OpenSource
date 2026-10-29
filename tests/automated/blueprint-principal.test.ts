@@ -5,6 +5,7 @@ import {withAuthenticatedPrincipal} from '../../services/security/principalConte
 import {integrationArchitect as architect} from '../../services/integrationArchitect';
 describe('blueprint service ownership',()=>{
  it('refuses foreign, absent and legacy ownership before any integration effect',async()=>{
+  await expect(architect.generateBlueprint('fixture',{} as any,[])).rejects.toThrow('BLUEPRINT_PRINCIPAL_REQUIRED');
   const map=(architect as any).pendingBlueprints as Map<string,any>;
   const bp={id:'owner-fixture',principalId:'fixture-A',status:'PENDING_APPROVAL',tools:[],credentials:[]};
   map.set(bp.id,bp);map.set('legacy-fixture',{...bp,id:'legacy-fixture',principalId:undefined});

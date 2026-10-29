@@ -64,6 +64,7 @@ describe('real two-user confirmation separation',()=>{
  it('shared system token cannot mint pending ownership or approve',async()=>{
   const start=await fetch(base+'/test/request',{method:'POST',headers:{Authorization:'Bearer temporary-test-api-token'}});
   expect(start.status).toBe(200);
+  expect((await fetch(base+'/v1/autonomy/architect/blueprint',{method:'POST',headers:{Authorization:'Bearer temporary-test-api-token','Content-Type':'application/json'},body:JSON.stringify({platform:'fixture',research:{}})})).status).toBe(403);
   expect((await fetch(base+'/v1/autonomy/architect/blueprint/absent/approve',{method:'POST',headers:{Authorization:'Bearer temporary-test-api-token'}})).status).toBe(403);await expect(decisions[1]).rejects.toMatchObject({code:'CONFIRMATION_UNAVAILABLE',reason:'NO_AUTHENTICATED_PRINCIPAL'});
   const own=await (await request('/v1/autonomy/confirmations',a)).json();expect(own.confirmations).toEqual([]);
  });

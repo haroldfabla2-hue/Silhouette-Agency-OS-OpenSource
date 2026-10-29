@@ -319,6 +319,7 @@ router.post('/architect/research', async (req: Request, res: Response) => {
  * POST /architect/blueprint - Generate an integration blueprint
  */
 router.post('/architect/blueprint', async (req: Request, res: Response) => {
+    if(!requireHumanSession(req,res))return;
     try {
         const { integrationArchitect } = await import('../../../services/integrationArchitect');
         const { platform, research, capabilities } = req.body;

@@ -372,8 +372,8 @@ export class ToolHandler {
                 return { error: "Failed to generate image." };
             }
         } catch (e: any) {
-            if (e?.code === 'EFFECT_DENIED') {
-                return { error: e.message, errorCode: 'EFFECT_DENIED' };
+            if (e?.code === 'EFFECT_DENIED'||e?.code === 'CONFIRMATION_UNAVAILABLE') {
+                return { error: e.message, errorCode:e.code, confirmationReason:e.reason,dispatched:false };
             }
             return { error: `Image generation failed: ${e.message}` };
         }

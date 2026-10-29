@@ -55,6 +55,8 @@ export interface PaymentResult {
     missing?: string[];
     /** True when the human approval gate blocked the operation. */
     securityGated?: boolean;
+    errorCode?:string;
+    confirmationReason?:string;
 }
 
 export interface ProviderStatus {

@@ -227,6 +227,8 @@ Respond with JSON:
         research: ResearchResult,
         capabilities: string[]
     ): Promise<IntegrationBlueprint> {
+        const principalId=currentPrincipal();
+        if(!principalId)throw new Error('BLUEPRINT_PRINCIPAL_REQUIRED');
         console.log(`[INTEGRATION_ARCHITECT] 🏗️ Generating blueprint for: ${platform}`);
 
         const provider = research.providers.find(p => p.name === research.recommendedProvider)
@@ -290,7 +292,7 @@ Response format:
                     status: 'DRAFT'
                 };
 
-                blueprint.principalId=currentPrincipal()??undefined;
+                blueprint.principalId=principalId;
                 this.pendingBlueprints.set(blueprint.id, blueprint);
                 return blueprint;
             }
@@ -325,7 +327,9 @@ Response format:
             return false;
         }
 
-        if(blueprint.status!=='DRAFT'&&blueprint.status!=='PENDING_APPROVAL')return false;
+        if(blueprint.status!=='DRAFT'&&blueprint.status!=='PENDING_APPROVAL'){
+            throw new Error('BLUEPRINT_EXECUTION_NOT_RETRYABLE: prior execution may have partial effects; reconcile before a new decision');
+        }
         if (this.activeBlueprints.size >= this.maxDynamicIntegrations) {
             console.error('[INTEGRATION_ARCHITECT] Max dynamic integrations reached');
             return false;

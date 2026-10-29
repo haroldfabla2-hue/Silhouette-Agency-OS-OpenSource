@@ -1524,14 +1524,14 @@ JSON ONLY:
                         );
                     }
                 } catch (gateErr: any) {
-                    if (gateErr instanceof EffectDeniedError || gateErr?.code === 'EFFECT_DENIED') {
+                    if (gateErr instanceof EffectDeniedError || gateErr?.code === 'EFFECT_DENIED' || gateErr?.code === 'CONFIRMATION_UNAVAILABLE') {
                         const deniedFx: CapabilityResult = {
                             success: false,
                             data: null,
                             error: gateErr.message,
                             executedBy: 'ORCHESTRATOR',
                             executionTimeMs: Date.now() - startTime,
-                            metadata: { toolName: capabilityName }
+                            metadata: { toolName: capabilityName, errorCode:gateErr.code, confirmationReason:gateErr.reason, dispatched:false }
                         };
                         this.emitCapabilityResult(capabilityName, deniedFx, requesterId);
                         return deniedFx;
