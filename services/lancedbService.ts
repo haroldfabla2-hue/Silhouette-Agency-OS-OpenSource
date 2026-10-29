@@ -629,6 +629,34 @@ export class LanceDbService {
         return [...nodes.values()].slice(0, limit);
     }
 
+    /** Observation-only path: no initialization, optimization, FTS creation,
+     * embedding, provider call, access update or arbitrary result cap. Reads
+     * existing canonical tables; legacy then v2, with v2 winning duplicate IDs. */
+    public async getLatestObservation(tag:string):Promise<MemoryNode|null>{
+        if(!fs.existsSync(this.databasePath))return null;
+        const db=this.db??await lancedb.connect(this.databasePath);
+        const names=await db.tableNames();
+        const candidates=new Map<string,MemoryNode>();
+        for(const name of ['memory','memory_records_v2']){
+            if(!names.includes(name))continue;
+            const table=await db.openTable(name);
+            const total=await table.countRows();
+            const page=scanPageRows();
+            for(let offset=0;offset<total;offset+=page){
+                const rows=await table.query().limit(page).offset(offset).toArray();
+                for(const row of rows){
+                    const node=JSON.parse(row.json_data) as MemoryNode;
+                    // Include all IDs before selecting tag so a v2 update can
+                    // remove a tag present in the legacy row.
+                    if(node.tags.includes(tag))candidates.set(node.id,node);
+                    else candidates.delete(node.id);
+                }
+            }
+        }
+        return [...candidates.values()]
+            .sort((a,b)=>b.timestamp-a.timestamp||a.id.localeCompare(b.id))[0]??null;
+    }
+
     public async getAllNodes(): Promise<MemoryNode[]> {
         if (!this.table) await this.init();
         if (!this.table && !this.legacyTable) {
