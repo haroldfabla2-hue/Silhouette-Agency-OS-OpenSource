@@ -14,3 +14,8 @@ OPEN, do not claim security completion:
 - Gateway has system-token sessions, not per-human sessions; pending notification hides details but is not end-to-end multi-user gateway support. Other events remain unaudited.
 - No full suite, typecheck, provider delivery or product boot proof yet. No merge readiness claim for PR202.
 - No memory/autonomy/biomimetic features intentionally removed, no new spending path; paused work/recovery semantics still require caller audit.
+
+## Review follow-up (candidate after 4fca14e)
+Missing principal and expiry now throw ConfirmationUnavailableError rather than false. Only explicit reject resolves false. Narrator preserves an unresolved/not-dispatched proposal on unavailable consent instead of inventing REJECTED_BY_USER; effect gate no longer claims a pending exists before creating it. Other boolean callers receive error, not fake rejection (their outer error contracts still need auditing). Global confirmation events removed from all three producers, including even the existence-only notification. Existing modal polls private endpoint; WS-only consumer migration is not proven.
+
+Integration blueprint routes now require a human session; service binds generated blueprints to authenticated creator, filters lookups/lists and rechecks before approve/reject. Old unattributed persisted blueprints cannot be claimed by guessing a human owner. Approval synchronously claims status before awaiting integration work; partial effects/failed retry recovery remains open. No actual integration creation was run as proof. Caller audit, explicit scoped pending UI and protected issuer still open. No end-to-end integration or narrator claim from static tests.

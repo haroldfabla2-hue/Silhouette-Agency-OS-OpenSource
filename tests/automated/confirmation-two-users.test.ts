@@ -4,6 +4,9 @@
 import {beforeAll,afterAll,describe,it,expect} from 'vitest';
 import express from 'express';
 import type {Server} from 'node:http';
+import {withAuthenticatedPrincipal} from '../../services/security/principalContext';
+import {systemBus} from '../../services/systemBus';
+import {SystemProtocol} from '../../types';
 import {identityService} from '../../services/identityService';
 import {actionExecutor} from '../../services/actionExecutor';
 import {authMiddleware,resetTokenCache} from '../../server/middleware/authMiddleware';
@@ -22,7 +25,8 @@ beforeAll(async()=>{
  // Test-only route enters real middleware context and real pending executor.
  app.post('/test/request',(req,res)=>{
   const action={id:crypto.randomUUID(),type:'SEND_EMAIL',agentId:'fixture-agent',payload:{to:'recipient@fixture.invalid',body:'fixture'},timestamp:Date.now(),requiresApproval:true,status:'PENDING'} as any;
-  decisions.push(actionExecutor.requestConfirmation(action,'two-user isolation fixture'));
+  const work=actionExecutor.requestConfirmation(action,'two-user isolation fixture');
+  void work.catch(()=>{});decisions.push(work);
   res.json({pending:true});
  });
  app.use('/v1/autonomy',autonomyRouter);
@@ -47,9 +51,20 @@ describe('real two-user confirmation separation',()=>{
   expect(await decisions[0]).toBe(true);
   expect(actionExecutor.approveAction(id,userA)).toBe(false);
  });
+ it('expired and unowned proposals are not user rejections and emit no global confirmation payload',async()=>{
+  const emitted:any[]=[];const handler=(event:any)=>emitted.push(event);
+  const unsubscribe=systemBus.subscribe(SystemProtocol.CONFIRMATION_REQUIRED,handler);
+  const before=(actionExecutor as any).confirmationTimeoutMs;(actionExecutor as any).confirmationTimeoutMs=10;
+  try{
+   const work=withAuthenticatedPrincipal(userA,()=>actionExecutor.requestConfirmation({id:'expiry',type:'SEND_EMAIL',payload:{body:'private'},agentId:'fixture'} as any));
+   await expect(work).rejects.toMatchObject({code:'CONFIRMATION_UNAVAILABLE',reason:'EXPIRED'});
+   expect(emitted).toEqual([]);
+  }finally{(actionExecutor as any).confirmationTimeoutMs=before;unsubscribe();}
+ });
  it('shared system token cannot mint pending ownership or approve',async()=>{
   const start=await fetch(base+'/test/request',{method:'POST',headers:{Authorization:'Bearer temporary-test-api-token'}});
-  expect(start.status).toBe(200);expect(await decisions[1]).toBe(false);
+  expect(start.status).toBe(200);
+  expect((await fetch(base+'/v1/autonomy/architect/blueprint/absent/approve',{method:'POST',headers:{Authorization:'Bearer temporary-test-api-token'}})).status).toBe(403);await expect(decisions[1]).rejects.toMatchObject({code:'CONFIRMATION_UNAVAILABLE',reason:'NO_AUTHENTICATED_PRINCIPAL'});
   const own=await (await request('/v1/autonomy/confirmations',a)).json();expect(own.confirmations).toEqual([]);
  });
 });

@@ -1,3 +1,4 @@
+import {currentPrincipal} from './security/principalContext';
 /**
  * INTEGRATION ARCHITECT - Dynamic Integration Discovery & Creation
  * ═══════════════════════════════════════════════════════════════════════════
@@ -63,6 +64,7 @@ export interface WebhookConfig {
 
 export interface IntegrationBlueprint {
     id: string;
+    principalId?:string; // authenticated creator, never model output
     name: string;           // e.g., "whatsapp"
     displayName: string;    // e.g., "WhatsApp Business"
     description: string;
@@ -288,6 +290,7 @@ Response format:
                     status: 'DRAFT'
                 };
 
+                blueprint.principalId=currentPrincipal()??undefined;
                 this.pendingBlueprints.set(blueprint.id, blueprint);
                 return blueprint;
             }
@@ -302,24 +305,12 @@ Response format:
      * Request human approval for an integration
      */
     public async requestApproval(blueprint: IntegrationBlueprint): Promise<string> {
+        const principal=currentPrincipal();
+        if(!principal || blueprint.principalId!==principal)throw new Error('BLUEPRINT_PRINCIPAL_REQUIRED');
         blueprint.status = 'PENDING_APPROVAL';
         this.pendingBlueprints.set(blueprint.id, blueprint);
 
-        // Emit confirmation required event
-        systemBus.emit(SystemProtocol.CONFIRMATION_REQUIRED, {
-            type: 'INTEGRATION_APPROVAL',
-            blueprintId: blueprint.id,
-            summary: `New integration: ${blueprint.displayName}`,
-            details: {
-                provider: blueprint.provider,
-                credentialsNeeded: blueprint.credentials.map(c => c.label),
-                toolsToCreate: blueprint.tools.map(t => t.name),
-                hasWebhook: !!blueprint.webhook
-            },
-            riskLevel: 'MEDIUM',
-            expiresAt: Date.now() + 3600000 // 1 hour
-        }, 'INTEGRATION_ARCHITECT');
-
+        // Pending details are private; never broadcast them on SystemBus.
         console.log(`[INTEGRATION_ARCHITECT] 📝 Approval requested for: ${blueprint.displayName}`);
         return blueprint.id;
     }
@@ -329,16 +320,18 @@ Response format:
      */
     public async approveAndExecute(blueprintId: string): Promise<boolean> {
         const blueprint = this.pendingBlueprints.get(blueprintId);
-        if (!blueprint) {
-            console.error(`[INTEGRATION_ARCHITECT] Blueprint not found: ${blueprintId}`);
+        if (!blueprint || !currentPrincipal() || blueprint.principalId!==currentPrincipal()) {
+            console.error(`[INTEGRATION_ARCHITECT] Blueprint missing or not owned by authenticated principal: ${blueprintId}`);
             return false;
         }
 
+        if(blueprint.status!=='DRAFT'&&blueprint.status!=='PENDING_APPROVAL')return false;
         if (this.activeBlueprints.size >= this.maxDynamicIntegrations) {
             console.error('[INTEGRATION_ARCHITECT] Max dynamic integrations reached');
             return false;
         }
 
+        blueprint.status='APPROVED'; // synchronous claim before any await; no parallel replay
         console.log(`[INTEGRATION_ARCHITECT] ✅ Executing integration: ${blueprint.displayName}`);
 
         try {
@@ -422,6 +415,8 @@ Response format:
      * Reject an integration blueprint
      */
     public rejectBlueprint(blueprintId: string): boolean {
+        const blueprint=this.pendingBlueprints.get(blueprintId);
+        if(!currentPrincipal()||blueprint?.principalId!==currentPrincipal())return false;
         const deleted = this.pendingBlueprints.delete(blueprintId);
         if (deleted) {
             console.log(`[INTEGRATION_ARCHITECT] ❌ Blueprint rejected: ${blueprintId}`);
@@ -629,15 +624,16 @@ return handler(args);
     // ═══════════════════════════════════════════════════════════════════════
 
     public getPendingBlueprints(): IntegrationBlueprint[] {
-        return Array.from(this.pendingBlueprints.values());
+        return Array.from(this.pendingBlueprints.values()).filter(bp=>!!currentPrincipal()&&bp.principalId===currentPrincipal());
     }
 
     public getActiveBlueprints(): IntegrationBlueprint[] {
-        return Array.from(this.activeBlueprints.values());
+        return Array.from(this.activeBlueprints.values()).filter(bp=>!!currentPrincipal()&&bp.principalId===currentPrincipal());
     }
 
     public getBlueprint(id: string): IntegrationBlueprint | undefined {
-        return this.pendingBlueprints.get(id) || this.activeBlueprints.get(id);
+        const blueprint=this.pendingBlueprints.get(id)||this.activeBlueprints.get(id);
+        return currentPrincipal()&&blueprint?.principalId===currentPrincipal()?blueprint:undefined;
     }
 
     public getStats(): {

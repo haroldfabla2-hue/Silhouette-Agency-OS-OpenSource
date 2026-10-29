@@ -327,7 +327,7 @@ export class ThoughtNarrator {
                             console.log(`[NARRATOR] ✅ User APPROVED [${structured.intent}]. Routing now.`);
                             await this.routeByIntent(structured, graphSensory);
                         } else {
-                            console.log(`[NARRATOR] ❌ User REJECTED or timed out [${structured.intent}]. Storing as rejected.`);
+                            console.log(`[NARRATOR] ❌ User explicitly REJECTED [${structured.intent}]. Storing as rejected.`);
                             await continuum.store(
                                 `REJECTED_BY_USER: [${structured.intent}] ${structured.thought}`,
                                 MemoryTier.WORKING,
@@ -336,11 +336,11 @@ export class ThoughtNarrator {
                             );
                         }
                     } catch (e: any) {
-                        console.warn(`[NARRATOR] Confirmation pipeline failed: ${e.message}. Storing as pending.`);
+                        console.warn(`[NARRATOR] Confirmation unavailable: ${e.message}. Preserving unresolved proposal, not a user rejection.`);
                         await continuum.store(
-                            `PENDING_USER_CONSENT: [${structured.intent}] ${structured.thought} | Action: ${JSON.stringify(structured.action)}`,
+                            `CONSENT_UNRESOLVED (${e.code ?? 'PIPELINE_ERROR'}): [${structured.intent}] ${structured.thought} | Action: ${JSON.stringify(structured.action)}`,
                             MemoryTier.WORKING,
-                            ['PENDING_CONSENT', structured.intent, 'awaiting_user', sourceTag(MemorySource.INTROSPECTION)],
+                            ['CONSENT_UNRESOLVED', structured.intent, 'not_dispatched', sourceTag(MemorySource.INTROSPECTION)],
                             true
                         );
                     }

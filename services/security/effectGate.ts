@@ -278,15 +278,15 @@ export async function ensureEffectConsent(
         timestamp: Date.now(),
         requiresApproval: true
     };
-    console.warn(`[EFFECT_GATE] ⏸️ ${effect} from ${origin} requires human confirmation (${policy.category}${policy.walletBearing ? ', wallet-bearing' : ''}). Pending at /v1/autonomy/confirmations`);
+    console.warn(`[EFFECT_GATE] ⏸️ ${effect} from ${origin} requires human confirmation (${policy.category}${policy.walletBearing ? ', wallet-bearing' : ''}). (scoped request may be unavailable; no pending is claimed yet)`);
     const approved = await actionExecutor.requestConfirmation(
         action,
         `${describeEffect(effect, args)}\nOrigen: ${origin}`
     );
     if (!approved) {
-        console.warn(`[EFFECT_GATE] ⛔ ${effect} denied or confirmation expired (origin: ${origin})`);
+        console.warn(`[EFFECT_GATE] ⛔ ${effect} explicitly rejected (origin: ${origin})`);
         throw new EffectDeniedError(
-            `efecto "${effect}" sin consentimiento: rechazado o expiró la confirmación humana (${origin}).`
+            `efecto "${effect}" sin consentimiento: confirmación rechazada explícitamente (${origin}).`
         );
     }
     console.log(`[EFFECT_GATE] ✅ ${effect} approved by human confirmation (origin: ${origin})`);

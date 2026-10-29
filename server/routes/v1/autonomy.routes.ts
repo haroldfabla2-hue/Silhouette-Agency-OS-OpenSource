@@ -343,6 +343,7 @@ router.post('/architect/blueprint', async (req: Request, res: Response) => {
  * POST /architect/blueprint/:id/approve - Approve and execute an integration
  */
 router.post('/architect/blueprint/:id/approve', async (req: Request, res: Response) => {
+    if(!requireHumanSession(req,res))return;
     try {
         const { integrationArchitect } = await import('../../../services/integrationArchitect');
         const success = await integrationArchitect.approveAndExecute(req.params.id);
@@ -356,6 +357,7 @@ router.post('/architect/blueprint/:id/approve', async (req: Request, res: Respon
  * POST /architect/blueprint/:id/reject - Reject a blueprint
  */
 router.post('/architect/blueprint/:id/reject', async (req: Request, res: Response) => {
+    if(!requireHumanSession(req,res))return;
     try {
         const { integrationArchitect } = await import('../../../services/integrationArchitect');
         const success = integrationArchitect.rejectBlueprint(req.params.id);
@@ -369,6 +371,7 @@ router.post('/architect/blueprint/:id/reject', async (req: Request, res: Respons
  * GET /architect/blueprints - Get all blueprints
  */
 router.get('/architect/blueprints', async (req: Request, res: Response) => {
+    if(!requireHumanSession(req,res))return;
     try {
         const { integrationArchitect } = await import('../../../services/integrationArchitect');
         const pending = integrationArchitect.getPendingBlueprints();
@@ -384,6 +387,7 @@ router.get('/architect/blueprints', async (req: Request, res: Response) => {
  * GET /architect/blueprint/:id - Get a specific blueprint
  */
 router.get('/architect/blueprint/:id', async (req: Request, res: Response) => {
+    if(!requireHumanSession(req,res))return;
     try {
         const { integrationArchitect } = await import('../../../services/integrationArchitect');
         const blueprint = integrationArchitect.getBlueprint(req.params.id);

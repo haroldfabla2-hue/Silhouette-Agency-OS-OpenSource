@@ -1,3 +1,4 @@
+import {ConfirmationUnavailableError} from './security/confirmationOutcome';
 import {currentPrincipal} from './security/principalContext';
 
 import fs from 'fs/promises';
@@ -546,7 +547,7 @@ export class ActionExecutor {
         const principalId=currentPrincipal();
         if(!principalId){
             console.warn('[ACTION EXECUTOR] Confirmation unavailable: authenticated principal is missing; no action dispatched.');
-            return false;
+            throw new ConfirmationUnavailableError('NO_AUTHENTICATED_PRINCIPAL');
         }
         const confirmation: PendingConfirmation = {
             principalId,
@@ -563,12 +564,13 @@ export class ActionExecutor {
         // This bus is broadcast to all gateway clients. Never place action
         // arguments or confirmation identifiers on it; clients fetch through
         // the principal-filtered HTTP endpoint.
-        systemBus.emit(SystemProtocol.CONFIRMATION_REQUIRED, {pendingChanged:true}, 'ACTION_EXECUTOR');
+        // No global event: even the existence of another user's pending is private.
+        // ConfirmationModal polls the principal-scoped endpoint.
 
         console.log(`[ACTION EXECUTOR] ⏳ Awaiting confirmation: ${confirmation.id} (Risk: ${riskLevel})`);
 
         // Wait for user response or timeout
-        return new Promise((resolve) => {
+        return new Promise((resolve,reject) => {
             confirmation.resolve = resolve;
 
             // Set timeout
@@ -576,7 +578,7 @@ export class ActionExecutor {
                 if (this.pendingConfirmations.has(confirmation.id)) {
                     console.log(`[ACTION EXECUTOR] ⏰ Confirmation timed out: ${confirmation.id}`);
                     this.pendingConfirmations.delete(confirmation.id);
-                    resolve(false);
+                    reject(new ConfirmationUnavailableError('EXPIRED'));
                 }
             }, this.confirmationTimeoutMs);
         });
