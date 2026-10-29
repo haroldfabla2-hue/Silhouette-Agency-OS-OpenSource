@@ -533,7 +533,8 @@ export class ActionExecutor {
 
     /**
      * Request user confirmation for a critical action
-     * Returns true if approved, false if rejected or timed out
+     * Returns true if approved, false only on explicit rejection. Missing
+     * principal and expiry throw ConfirmationUnavailableError.
      */
     public async requestConfirmation(action: AgentAction, reason?: string): Promise<boolean> {
         const riskLevel = this.assessRiskLevel(action);
@@ -588,7 +589,7 @@ export class ActionExecutor {
      * Request human approval and, if granted, return a single-use grant bound to
      * this exact action (type, destination, amount, currency). The effect must call
      * verifyApproval() with the same binding immediately before it runs.
-     * Returns null when rejected or timed out.
+     * Returns null on explicit rejection; unavailable/expired confirmation throws.
      */
     public async requestApproval(action: AgentAction, binding: ApprovalBinding, reason?: string): Promise<ApprovalGrant | null> {
         const approved = await this.requestConfirmation(action, reason);
