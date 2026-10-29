@@ -38,5 +38,5 @@ if (!process.env.SILHOUETTE_DB_PATH) {
 if(!process.env.SILHOUETTE_LANCEDB_PATH){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'silhouette-test-lancedb-'));
  process.env.SILHOUETTE_LANCEDB_PATH=path.join(dir,'memory.lancedb');
- process.on('exit',()=>{try{fs.rmSync(dir,{recursive:true,force:true});}catch{}});
+ process.on('exit',()=>{try{fs.rmSync(dir,{recursive:true,force:true});}catch{/* cleanup is best-effort on worker exit */}});
 }
