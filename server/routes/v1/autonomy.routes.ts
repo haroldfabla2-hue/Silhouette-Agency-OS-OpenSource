@@ -181,10 +181,11 @@ function requireHumanSession(req: Request, res: Response): string | null {
  * GET /confirmations - Get pending confirmations
  */
 router.get('/confirmations', async (req: Request, res: Response) => {
-    if (!requireHumanSession(req, res)) return;
+    const principalId=requireHumanSession(req,res);
+    if (!principalId) return;
     try {
         const { actionExecutor } = await import('../../../services/actionExecutor');
-        const confirmations = actionExecutor.getPendingConfirmations();
+        const confirmations = actionExecutor.getPendingConfirmations(principalId);
         res.json({ success: true, confirmations });
     } catch (e: any) {
         res.status(500).json({ success: false, error: e.message });

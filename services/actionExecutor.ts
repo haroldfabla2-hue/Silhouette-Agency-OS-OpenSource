@@ -1,3 +1,4 @@
+import {currentPrincipal} from './security/principalContext';
 
 import fs from 'fs/promises';
 import path from 'path';
@@ -21,6 +22,8 @@ import { approvalGrants, ApprovalBinding, ApprovalGrant, GrantCheck } from './se
 interface PendingConfirmation {
     id: string;
     action: AgentAction;
+    principalId:string;
+    timer?:ReturnType<typeof setTimeout>;
     riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
     reason: string;
     createdAt: number;
@@ -540,7 +543,13 @@ export class ActionExecutor {
             return true;
         }
 
+        const principalId=currentPrincipal();
+        if(!principalId){
+            console.warn('[ACTION EXECUTOR] Confirmation unavailable: authenticated principal is missing; no action dispatched.');
+            return false;
+        }
         const confirmation: PendingConfirmation = {
+            principalId,
             id: crypto.randomUUID(),
             action,
             riskLevel,
@@ -551,18 +560,10 @@ export class ActionExecutor {
 
         this.pendingConfirmations.set(confirmation.id, confirmation);
 
-        // Emit event for UI
-        systemBus.emit(SystemProtocol.CONFIRMATION_REQUIRED, {
-            confirmationId: confirmation.id,
-            action: {
-                type: action.type,
-                agentId: action.agentId,
-                payload: action.payload
-            },
-            riskLevel,
-            reason: confirmation.reason,
-            expiresAt: confirmation.expiresAt
-        }, 'ACTION_EXECUTOR');
+        // This bus is broadcast to all gateway clients. Never place action
+        // arguments or confirmation identifiers on it; clients fetch through
+        // the principal-filtered HTTP endpoint.
+        systemBus.emit(SystemProtocol.CONFIRMATION_REQUIRED, {pendingChanged:true}, 'ACTION_EXECUTOR');
 
         console.log(`[ACTION EXECUTOR] ⏳ Awaiting confirmation: ${confirmation.id} (Risk: ${riskLevel})`);
 
@@ -571,7 +572,7 @@ export class ActionExecutor {
             confirmation.resolve = resolve;
 
             // Set timeout
-            setTimeout(() => {
+            confirmation.timer=setTimeout(() => {
                 if (this.pendingConfirmations.has(confirmation.id)) {
                     console.log(`[ACTION EXECUTOR] ⏰ Confirmation timed out: ${confirmation.id}`);
                     this.pendingConfirmations.delete(confirmation.id);
@@ -602,8 +603,9 @@ export class ActionExecutor {
      */
     public approveAction(confirmationId: string, approverId: string = 'unknown'): boolean {
         const confirmation = this.pendingConfirmations.get(confirmationId);
-        if (confirmation && confirmation.resolve) {
+        if (confirmation && confirmation.resolve && confirmation.principalId===approverId && Date.now()<=confirmation.expiresAt) {
             console.log(`[ACTION EXECUTOR] ✅ Approved by ${approverId}: ${confirmationId} (${confirmation.action.type})`);
+            if(confirmation.timer)clearTimeout(confirmation.timer);
             this.pendingConfirmations.delete(confirmationId);
             confirmation.resolve(true);
             return true;
@@ -616,8 +618,9 @@ export class ActionExecutor {
      */
     public rejectAction(confirmationId: string, approverId: string = 'unknown'): boolean {
         const confirmation = this.pendingConfirmations.get(confirmationId);
-        if (confirmation && confirmation.resolve) {
+        if (confirmation && confirmation.resolve && confirmation.principalId===approverId && Date.now()<=confirmation.expiresAt) {
             console.log(`[ACTION EXECUTOR] ❌ Rejected by ${approverId}: ${confirmationId} (${confirmation.action.type})`);
+            if(confirmation.timer)clearTimeout(confirmation.timer);
             this.pendingConfirmations.delete(confirmationId);
             confirmation.resolve(false);
             return true;
@@ -628,14 +631,14 @@ export class ActionExecutor {
     /**
      * Get all pending confirmations
      */
-    public getPendingConfirmations(): Array<{
+    public getPendingConfirmations(principalId:string): Array<{
         id: string;
         action: AgentAction;
         riskLevel: string;
         reason: string;
         expiresAt: number;
     }> {
-        return Array.from(this.pendingConfirmations.values()).map(c => ({
+        return Array.from(this.pendingConfirmations.values()).filter(c=>c.principalId===principalId && Date.now()<=c.expiresAt).map(c => ({
             id: c.id,
             action: c.action,
             riskLevel: c.riskLevel,

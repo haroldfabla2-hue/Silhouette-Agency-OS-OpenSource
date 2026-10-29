@@ -1,3 +1,4 @@
+import {withAuthenticatedPrincipal} from '../../services/security/principalContext';
 // =============================================================================
 // AUTHENTICATION MIDDLEWARE
 // Validates Bearer token on all API requests.
@@ -124,7 +125,7 @@ function isTokenlessBypassAllowed(): boolean {
 export async function authMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
     // 1. Skip auth for public endpoints
     if (isPublicPath(req.path)) {
-        next();
+        withAuthenticatedPrincipal((req as any).user?.id??null,()=>next());
         return;
     }
 
@@ -164,7 +165,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
                     const sessionUser = identityService.validateSessionAndGetUser(sessionId);
                     if (sessionUser) {
                         (req as any).user = sessionUser;
-                        next();
+                        withAuthenticatedPrincipal((req as any).user?.id??null,()=>next());
                         return;
                     }
                 } catch (e) {
@@ -172,7 +173,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
                 }
             }
             (req as any).user = null;
-            next();
+            withAuthenticatedPrincipal((req as any).user?.id??null,()=>next());
             return;
         }
         res.status(401).json({
@@ -198,7 +199,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
                 // Attach the user strictly to this request's lifecycle.
                 // Do NOT rely on identityService.getCurrentUser() later in the pipeline.
                 (req as any).user = sessionUser;
-                next();
+                withAuthenticatedPrincipal((req as any).user?.id??null,()=>next());
                 return;
             }
         } catch (e) {
@@ -212,7 +213,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
             const { identityService } = await import('../../services/identityService');
             if (!identityService.hasAnyUser()) {
                 console.log('[AUTH] 🚦 Database empty. Permitting access for First-Time Setup.');
-                next();
+                withAuthenticatedPrincipal((req as any).user?.id??null,()=>next());
                 return;
             }
         } catch (e) {
@@ -245,7 +246,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
         //    execution was blocked for the operator's own key. Give it an
         //    explicit system identity instead.
         (req as any).user = { id: 'system:api-token', role: 'CREATOR' };
-        next();
+        withAuthenticatedPrincipal((req as any).user?.id??null,()=>next());
         return;
     }
 

@@ -1,3 +1,4 @@
+import {withAuthenticatedPrincipal} from '../../services/security/principalContext';
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
@@ -61,11 +62,11 @@ describe('Action risk registry (fail-closed)', () => {
     it('requestConfirmation does NOT auto-approve payments or unknown types', async () => {
         const ex = new ActionExecutor();
         for (const t of ['EXECUTE_PAYMENT', 'TOTALLY_UNKNOWN']) {
-            const p = ex.requestConfirmation(mkAction(t), 'test');
-            const pending = ex.getPendingConfirmations();
+            const p = withAuthenticatedPrincipal('fixture-risk-user',()=>ex.requestConfirmation(mkAction(t), 'test'));
+            const pending = ex.getPendingConfirmations('fixture-risk-user');
             expect(pending.length).toBe(1);
             expect(['HIGH', 'CRITICAL']).toContain(pending[0].riskLevel);
-            ex.rejectAction(pending[0].id);
+            ex.rejectAction(pending[0].id,'fixture-risk-user');
             expect(await p).toBe(false);
         }
     });
