@@ -192,7 +192,10 @@ class ConfirmationGate {
         // rejection is its own durable DECIDE claim through decide(); nothing
         // is bulk-edited and no one else's records are touched. Only this
         // human-channel path can trigger it - never content or model output.
-        if (/^\s*(rechazar|reject|cancelar)\s+todo\s*\.?\s*$/i.test(message)) {
+        // Deliberately ONLY the explicit commands - a natural phrase like
+        // "cancelar todo" (said about anything else) must never trigger an
+        // irreversible terminal rejection of every pending approval.
+        if (/^\s*(rechazar todo|reject all)\s*\.?\s*$/i.test(message)) {
             const now = Date.now();
             const mine = this.ledger.all()
                 .filter(r => r.principalId === principalId && r.conversationId === conversationId

@@ -669,3 +669,51 @@ describe('R8-v5: durable denial audit, per-tool budget, shedding, gate handling 
         expect(ledger.get('SHEDEX')!.args.to).toBe('x@fixture.invalid');
     });
 });
+
+describe('R8-v6: strict RECHAZAR TODO, cold-expired shedding with reoffer recovery, shed-consumer listing', () => {
+    it('only the exact commands trigger the bulk rejection; natural phrases never do', () => {
+        const args = { to: 'strict-todo@fixture.invalid', subject: 'S', body: 'c' };
+        const d = confirmationGate.check('send_email', args, A.principalId, A.conversationId);
+        if (d.action !== 'PENDING') throw new Error('expected PENDING');
+        // natural phrase about something else: must NOT touch the pending
+        expect(confirmationGate.handleUserCommand('cancelar todo', A.principalId, A.conversationId)).toBeNull();
+        expect(confirmationGate.handleUserCommand('cancela todo lo de mañana', A.principalId, A.conversationId)).toBeNull();
+        const still = confirmationGate.check('send_email', args, A.principalId, A.conversationId);
+        expect(still.action).toBe('PENDING');
+        // the exact command works
+        const msg = confirmationGate.handleUserCommand('RECHAZAR TODO', A.principalId, A.conversationId)!;
+        expect(msg).toContain('rechazadas');
+        expect(confirmationGate.check('send_email', args, A.principalId, A.conversationId).action).toBe('REJECTED');
+    });
+
+    it('a cold EXPIRED record sheds its payload in memory; reoffer recovers it from the on-disk log', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'consent-cold-'));
+        const ledger = new ConsentLedger(dir);
+        const r = record({ token: 'COLD01', expiresAt: Date.now() - 25 * 3600 * 1000 }); // expired past the reoffer window
+        ledger.put(r);
+        ledger.all(); // fold + sweep
+        const cold = ledger.get('COLD01')!;
+        expect(cold.status).toBe('EXPIRED');
+        expect(cold.argsShed).toBe(true);
+        expect(cold.args).toEqual({});
+        // reoffer recovers the real payload from disk
+        const res = ledger.reoffer('COLD01', { token: 'COLD02', expiresAt: Date.now() + 60_000 });
+        expect(res.ok).toBe(true);
+        const reoffered = ledger.get('COLD02')!;
+        expect(reoffered.args.to).toBe('x@fixture.invalid'); // recovered, not the shed tombstone
+        expect(reoffered.status).toBe('PENDING');
+        // a fresh instance sheds identically after its fold sweep
+        const fresh = new ConsentLedger(dir);
+        expect(fresh.get('COLD01')!.argsShed).toBe(true);
+    });
+
+    it('consumers of a shed record: gate check() on its args answers from key/status, never from shed payload', () => {
+        const args = { to: 'shed-consumer@fixture.invalid', subject: 'S', body: 'c' };
+        confirmationGate.check('send_email', args, A.principalId, A.conversationId);
+        confirmationGate.handleUserCommand('RECHAZAR TODO', A.principalId, A.conversationId); // rejects + sheds it
+        // a new call with the SAME args within the cooldown must be answered REJECTED
+        // from key/status (the shed args are gone from memory)
+        const d = confirmationGate.check('send_email', args, A.principalId, A.conversationId);
+        expect(d.action).toBe('REJECTED');
+    });
+});

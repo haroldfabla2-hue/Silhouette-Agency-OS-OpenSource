@@ -143,6 +143,9 @@ type LedgerEvent =
 const PATCHABLE: ReadonlySet<string> = new Set(['expiresAt']);
 
 const WARN_RECORDS = 50_000; // telemetry threshold, not a cap
+/** Expired records older than this shed their in-memory payload (reoffer
+ *  recovers it from the log on demand). */
+const REOFFER_WINDOW_MS = 24 * 3600 * 1000;
 const WARN_BYTES = 50 * 1024 * 1024;  // compaction-debt operational alarm
 
 export class ConsentLedger {
@@ -222,17 +225,38 @@ export class ConsentLedger {
         }
     }
 
-    /** Terminal records (REJECTED, or CONSUMED with outcome recorded) no
-     *  longer need their full args/summary IN MEMORY: shed them, keeping
-     *  key/status/receipts. The on-disk log always keeps the full record;
-     *  audit is never shed. EXPIRED records keep args: reoffer needs them. */
-    private shedIfTerminal(r: ConsentRecord): void {
+    /** Records whose full args/summary no longer need to live IN MEMORY:
+     *  terminal ones (REJECTED, or CONSUMED with outcome recorded) and
+     *  expired-past-reoffer-window ones. The on-disk log always keeps the
+     *  full record; audit is never shed. An expired record can still be
+     *  re-offered: reoffer() recovers its args from the log on demand. */
+    private shedIfCold(r: ConsentRecord, now: number): void {
         if (r.argsShed) return;
-        if (r.status === 'REJECTED' || (r.status === 'CONSUMED' && r.outcome)) {
+        const terminal = r.status === 'REJECTED' || (r.status === 'CONSUMED' && r.outcome);
+        const expiredCold = (r.status === 'PENDING' || r.status === 'APPROVED')
+            && r.expiresAt <= now - REOFFER_WINDOW_MS;
+        if (terminal || expiredCold) {
             r.args = {};
             r.summary = '[contenido completo en el log en disco]';
             r.argsShed = true;
         }
+    }
+
+    /** Recover a shed record's full payload from the on-disk log (the
+     *  audit copy): last PUT/REOFFER carrying that token wins. Streaming
+     *  scan; reoffer is a rare human-initiated path, so the pass is fine. */
+    private recoverFromLog(token: string): ConsentRecord | undefined {
+        let found: ConsentRecord | undefined;
+        foldAppendedLines(this.file, null, () => { /* full scan */ }, (line) => {
+            if (!line) return;
+            try {
+                const ev = JSON.parse(line) as LedgerEvent;
+                if ((ev.op === 'PUT' || ev.op === 'REOFFER') && ev.rec?.token === token) {
+                    found = { ...ev.rec };
+                }
+            } catch { /* torn line: skip */ }
+        });
+        return found;
     }
 
     private foldInto(map: Map<string, ConsentRecord>, events: LedgerEvent[]): void {
@@ -240,7 +264,7 @@ export class ConsentLedger {
             if (ev.op === 'PUT') {
                 if (!map.has(ev.rec.token)) {
                     const rec = { ...ev.rec };
-                    this.shedIfTerminal(rec); // e.g. imported terminal history
+                    this.shedIfCold(rec, Date.now()); // e.g. imported terminal history
                     map.set(ev.rec.token, rec);
                 } // first-wins
             } else if (ev.op === 'PATCH') {
@@ -260,7 +284,7 @@ export class ConsentLedger {
                     if (ev.decision === 'REJECTED' && (r.status === 'PENDING' || r.status === 'APPROVED')) {
                         r.status = 'REJECTED';
                         r.rejectedAt = ev.at;
-                        this.shedIfTerminal(r);
+                        this.shedIfCold(r, ev.at);
                     } else if (ev.decision === 'APPROVED' && r.status === 'PENDING') {
                         r.status = 'APPROVED';
                         r.approvedAt = ev.at;
@@ -292,7 +316,7 @@ export class ConsentLedger {
                 const r = map.get(ev.token);
                 if (r && r.consumedBy && r.consumedBy === ev.by && !r.outcome) {
                     r.outcome = ev.outcome;
-                    this.shedIfTerminal(r);
+                    this.shedIfCold(r, ev.at);
                 }
             }
         }
@@ -321,6 +345,8 @@ export class ConsentLedger {
                 console.warn(`[CONSENT_LEDGER] log is ${size} bytes (>${WARN_BYTES}); compaction is tracked debt - streaming reads keep availability, this is the operational alarm to run it`);
             }
         } catch { /* file removed between read and stat: next read handles it */ }
+        const sweepNow = Date.now();
+        for (const r of this.cache.map.values()) this.shedIfCold(r, sweepNow);
         if (this.cache.map.size > WARN_RECORDS && !this.warnedRecords) {
             this.warnedRecords = true;
             console.warn(`[CONSENT_LEDGER] ${this.cache.map.size} records in memory (>${WARN_RECORDS}); compaction is tracked debt - admission control bounds new pendings, this is the operational alarm`);
@@ -482,8 +508,14 @@ export class ConsentLedger {
         if (original.reofferReceipt) return { ok: false, reason: 'ALREADY_REOFFERED' };
         if (original.status !== 'EXPIRED') return { ok: false, reason: 'NOT_EXPIRED' };
         if (this.rawFold().has(newRecord.token)) return { ok: false, reason: 'TOKEN_COLLISION' };
+        // A cold (args-shed) expired record keeps its full payload only on
+        // disk: recover it so the re-offered pending carries the real args
+        // and summary. If the log itself cannot provide them, refuse -
+        // never re-offer an action whose content cannot be shown.
+        const source = original.argsShed ? this.recoverFromLog(token) : original;
+        if (!source || source.argsShed) return { ok: false, reason: 'UNKNOWN' };
         const record: ConsentRecord = {
-            ...original,
+            ...source,
             token: newRecord.token,
             status: 'PENDING',
             createdAt: at,

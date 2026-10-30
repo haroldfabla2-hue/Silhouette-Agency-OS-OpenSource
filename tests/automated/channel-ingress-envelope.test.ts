@@ -261,3 +261,39 @@ describe('R8-v5: replay admission is typed, audited and never conflated with rep
         expect(store2.checkAndMark('new1', 'n', now + 60_000, now)).toBe('MARKED');
     });
 });
+
+describe('R8-v6: clock-direction fix (review v5 load-bearing) + sampled denial audit', () => {
+    it('a backward wall jump can NEVER make the store forget a live mark, and expiry uses either clock', async () => {
+        const { ReplayStore } = await import('../../services/security/ingressEnvelope');
+        const dir = mkdtempSync(join(tmpdir(), 'replay-clock-'));
+        let wall = 1_000_000;
+        let mono = 1_000_000;
+        const store = new ReplayStore(dir, { wallNow: () => wall, monoNow: () => mono });
+        expect(store.checkAndMark('m1', 'n1', 1_005_000, wall)).toBe('MARKED');
+        // wall jumps BACKWARD 2s while real (monotonic) time advances past exp
+        mono = 1_010_000; wall = 998_000;
+        // the mark is retained (prune needs BOTH clocks dead)...
+        expect(store.checkAndMark('m1', 'n1', 1_005_000, wall)).toBe('REPLAY'); // ...so the replay is caught
+        // and the envelope is expired because EITHER clock says so (fail closed)
+        expect(store.isExpiredByAnyClock(1_005_000)).toBe(true);
+        expect(store.isExpiredByAnyClock(1_020_000)).toBe(false); // alive by both: still verifiable
+    });
+
+    it('replay denial audit is SAMPLED: one META marker per window with the suppressed count', async () => {
+        const { ReplayStore } = await import('../../services/security/ingressEnvelope');
+        const dir = mkdtempSync(join(tmpdir(), 'replay-meta-'));
+        let wall = 2_000_000;
+        const store = new ReplayStore(dir, { maxRows: 1, wallNow: () => wall });
+        const far = 99_000_000_000; // marks never expire during this test
+        expect(store.checkAndMark('m1', 'n1', far, wall)).toBe('MARKED');
+        expect(store.checkAndMark('m2', 'n2', far, wall)).toBe('ADMISSION_FULL');
+        expect(store.checkAndMark('m3', 'n3', far, wall)).toBe('ADMISSION_FULL'); // suppressed
+        wall += 61_000; // next sampling window
+        expect(store.checkAndMark('m4', 'n4', far, wall)).toBe('ADMISSION_FULL'); // META with s:1
+        const metas = readFileSync(join(dir, 'ingress-replay.jsonl'), 'utf8').split('\n').filter(l => l.includes('__META__ADMISSION_FULL__'));
+        expect(metas).toHaveLength(2);
+        expect(metas[1]).toContain('"s":1');
+        // the META markers never became live rows: re-marking m1 still reads as REPLAY
+        expect(store.checkAndMark('m1', 'n1', far, wall)).toBe('REPLAY');
+    });
+});

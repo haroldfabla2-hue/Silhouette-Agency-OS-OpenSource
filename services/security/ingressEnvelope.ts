@@ -124,12 +124,19 @@ export class ReplayStore {
     private warnedSize = false;
     private readerChunkBytes: number;
     private readonly maxRows: number;
+    /** Sampling state for the durable denial audit: one META marker per
+     *  window carrying the suppressed count (in-memory: a crash loses the
+     *  pending suppressed count - the trail proves the abuse existed, it
+     *  is not an exact counter). */
+    private metaAudit = { last: 0, suppressed: 0 };
 
-    constructor(private readonly dir: string, opts: { readerChunkBytes?: number; maxRows?: number } = {}) {
+    constructor(private readonly dir: string, opts: { readerChunkBytes?: number; maxRows?: number; wallNow?: () => number; monoNow?: () => number } = {}) {
         this.file = path.join(dir, 'ingress-replay.jsonl');
         this.legacyFile = path.join(dir, 'ingress-replay.json');
         this.readerChunkBytes = opts.readerChunkBytes ?? 1024 * 1024;
         this.maxRows = opts.maxRows ?? REPLAY_MAX_ROWS;
+        this.wallFn = opts.wallNow ?? (() => Date.now());
+        this.monoFn = opts.monoNow ?? (() => this.wallAtBoot + Number((process.hrtime.bigint() - this.hrAtBoot) / 1_000_000n));
     }
 
     private appendLine(obj: unknown): void {
@@ -178,16 +185,26 @@ export class ReplayStore {
         }
     }
 
-    /** Pruning clock anchored to the monotonic clock: a wall-clock jump
-     *  forward-and-back must NEVER prune still-valid marks early, or a
-     *  replayed envelope could pass after the jump-back. The anchor makes
-     *  the prune clock non-decreasing with process time; a backward wall
-     *  jump can only prune slightly EARLY relative to wall time (bounded
-     *  by the jump), which fails closed, never open. */
+    /** Two clocks, used in the SAFE direction each:
+     *  - PRUNE a mark only when BOTH clocks consider it dead
+     *    (exp <= min(wall, mono)): a backward wall jump then retains marks
+     *    longer (memory cost, never authority). Forgetting a live mark is
+     *    what would reopen a replay window, so retention errs long.
+     *  - EXPIRE an envelope when EITHER clock considers it dead
+     *    (exp <= max(wall, mono)): accepting a dead envelope is the
+     *    authority failure; rejecting a live one costs the sender a
+     *    re-issue with a fresh exp (availability, fails closed).
+     *  mono is anchored to the wall clock at boot (wallAtBoot + hrtime
+     *  delta), so in normal operation both agree. A fresh process
+     *  re-folds the whole log and re-anchors: a restart cannot open a
+     *  replay window, it can only retain more. */
     private readonly wallAtBoot = Date.now();
     private readonly hrAtBoot = process.hrtime.bigint();
-    private monoNow(): number {
-        return this.wallAtBoot + Number((process.hrtime.bigint() - this.hrAtBoot) / 1_000_000n);
+    private readonly wallFn: () => number;
+    private readonly monoFn: () => number;
+    /** Envelope expiry for verification: dead when EITHER clock says so. */
+    public isExpiredByAnyClock(exp: number): boolean {
+        return exp <= Math.max(this.wallFn(), this.monoFn());
     }
 
     private readLive(now: number): ReplayEntry[] {
@@ -214,7 +231,7 @@ export class ReplayStore {
                 console.warn(`[INGRESS] replay log is ${size} bytes; compaction is tracked debt - streaming reads keep verification available, this is the operational alarm to run it`);
             }
         } catch { /* file removed between read and stat: next read handles it */ }
-        const pruneAt = this.monoNow();
+        const pruneAt = Math.min(this.wallFn(), this.monoFn()); // retain while EITHER clock says alive
         this.cache.rows = this.cache.rows.filter(r => r.exp > pruneAt);
         return this.cache.rows;
     }
@@ -235,8 +252,16 @@ export class ReplayStore {
             // working at any size. Rows prune by expiry, so the window drains.
             // The refusal is durable (auditable META marker in the log) and
             // typed - it is never reported as a replay.
-            console.error(`[INGRESS] replay-mark admission full (${this.maxRows} live rows; refusing new mark, existing verification unaffected`);
-            this.appendLine({ m: '__META__ADMISSION_FULL__', n: crypto.randomBytes(6).toString('hex'), e: now + 60_000, c: 'store' });
+            console.error(`[INGRESS] replay-mark admission full (${this.maxRows} live rows); refusing new mark, existing verification unaffected`);
+            // Durable audit, SAMPLED like the ledger: one marker per window
+            // (with the suppressed count), so a flood cannot amplify disk
+            // writes and fsync latency through the audit trail itself.
+            if (now - this.metaAudit.last >= 60_000) {
+                this.appendLine({ m: '__META__ADMISSION_FULL__', n: crypto.randomBytes(6).toString('hex'), e: now + 60_000, c: 'store', s: this.metaAudit.suppressed } as any);
+                this.metaAudit = { last: now, suppressed: 0 };
+            } else {
+                this.metaAudit.suppressed++;
+            }
             return 'ADMISSION_FULL';
         }
         const me = `${process.pid}:${crypto.randomBytes(8).toString('hex')}`;
@@ -326,7 +351,12 @@ export class IngressAuthority {
             return { ok: false, reason: 'BAD_SIGNATURE' };
         }
         const now = this.now();
-        if (now > e.exp!) return { ok: false, reason: 'EXPIRED' };
+        // Expiry and pruning share one notion: the envelope is dead when
+        // EITHER clock says so (max), marks are retained while EITHER says
+        // alive (min). A backward wall jump can never make a dead envelope
+        // valid again, and a live mark is never forgotten while its
+        // envelope could still verify.
+        if (this.replay.isExpiredByAnyClock(e.exp!)) return { ok: false, reason: 'EXPIRED' };
         if (e.channel !== actual.channel) return { ok: false, reason: 'CHANNEL_MISMATCH' };
         if (e.senderId !== actual.senderId) return { ok: false, reason: 'SENDER_MISMATCH' };
         if (e.messageId !== actual.messageId) return { ok: false, reason: 'MESSAGE_MISMATCH' };
