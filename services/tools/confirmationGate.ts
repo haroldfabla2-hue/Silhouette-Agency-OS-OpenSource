@@ -1,6 +1,6 @@
 /**
- * CONFIRMATION GATE v2 - external effects execute only after an EXPLICIT,
- * AUTHENTICATED human yes.
+ * CONFIRMATION GATE v3 - external effects execute only after an EXPLICIT,
+ * AUTHENTICATED human yes, now on a DURABLE consent ledger.
  *
  * v1 flaw (review 2026-10-17): any identical second call after 5s executed -
  * time passing is not consent, and nothing bound the approval to the person
@@ -11,27 +11,22 @@
  * it. Only then does an identical re-issued call execute - once. Any change
  * to the arguments is a new action requiring its own confirmation. Actions
  * expire; rejected actions are refused during a cooldown.
+ *
+ * v3 (R8): records live in the durable ConsentLedger (tmp+rename, 0600,
+ * cross-process lock). Expiry-without-decision is EXPIRED, never a human
+ * rejection. Execution consumes a single atomic permit (APPROVED -> CONSUMED
+ * with receipt): two concurrent final consumers - even in different
+ * processes - get exactly one execution; the loser is told the action was
+ * ALREADY_CONSUMED instead of executing or silently pending again. An
+ * expired proposal can be re-offered as a NEW pending with full provenance;
+ * explicit rejections and consumed permits are never re-offered.
  */
 import { createHash, randomInt } from 'node:crypto';
-import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { ConsentLedger, type ConsentRecord, type ConsentStatus } from '../security/consentLedger';
 
-export type PendingStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
-
-export interface PendingEffect {
-    token: string;
-    key: string;                  // sha256(tool + canonical args)
-    tool: string;
-    args: Record<string, any>;
-    summary: string;              // FULL action content for user review
-    principalId: string;          // authenticated user that triggered it
-    conversationId: string;       // conversation/session it belongs to
-    status: PendingStatus;
-    createdAt: number;
-    expiresAt: number;
-    approvedAt?: number;
-    rejectedAt?: number;
-}
+export type PendingStatus = ConsentStatus;
+export type PendingEffect = ConsentRecord;
 
 export type GateDecision =
     | { action: 'EXECUTE' }
@@ -52,7 +47,6 @@ export const EXTERNAL_EFFECT_TOOLS = new Set([
 ]);
 
 const DATA_DIR = process.env.CONFIRMATION_GATE_DIR || path.join(process.cwd(), 'data');
-const STORE = path.join(DATA_DIR, 'pending-effects.json');
 const TTL_MS = Number(process.env.CONFIRM_GATE_TTL_MS ?? 15 * 60 * 1000) || 15 * 60 * 1000;
 const REJECT_COOLDOWN_MS = Number(process.env.CONFIRM_GATE_REJECT_COOLDOWN_MS ?? 10 * 60 * 1000) || 10 * 60 * 1000;
 const TOKEN_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no 0/O/1/I/L
@@ -92,72 +86,63 @@ export function summarizeEffect(tool: string, args: Record<string, any>): string
 }
 
 class ConfirmationGate {
-    private pending = new Map<string, PendingEffect>(); // by token
-    private loaded = false;
+    private ledger = new ConsentLedger(DATA_DIR);
 
-    private load(): void {
-        if (this.loaded) return;
-        this.loaded = true;
-        try {
-            const rows = JSON.parse(fs.readFileSync(STORE, 'utf8')) as PendingEffect[];
-            const now = Date.now();
-            for (const r of rows) {
-                if (!r || !r.token) continue;
-                const relevant = r.status === 'REJECTED' ? (now - (r.rejectedAt || 0)) < REJECT_COOLDOWN_MS : r.expiresAt > now;
-                if (relevant) this.pending.set(r.token, r);
-            }
-        } catch { /* no store yet */ }
-    }
-
-    private save(): void {
-        try {
-            fs.mkdirSync(DATA_DIR, { recursive: true });
-            fs.writeFileSync(STORE, JSON.stringify([...this.pending.values()], null, 1), { mode: 0o600 });
-        } catch (e: any) {
-            console.warn('[CONFIRM_GATE] persist failed:', e?.message);
-        }
+    /** Records still meaningful for NEW decisions: awaiting a decision,
+     *  approved-not-consumed, or rejected inside the cooldown. EXPIRED,
+     *  CONSUMED and old REJECTED rows stay stored as evidence but never
+     *  block or enable a new call. */
+    private active(now: number): PendingEffect[] {
+        return this.ledger.all(now).filter(r =>
+            r.status === 'PENDING' ||
+            r.status === 'APPROVED' ||
+            (r.status === 'REJECTED' && now - (r.rejectedAt || 0) < REJECT_COOLDOWN_MS));
     }
 
     private newToken(): string {
         let token = '';
         do {
             token = Array.from({ length: 6 }, () => TOKEN_ALPHABET[randomInt(TOKEN_ALPHABET.length)]).join('');
-        } while (this.pending.has(token));
+        } while (this.ledger.get(token));
         return token;
     }
 
-    private findByAction(key: string, principalId: string, conversationId: string): PendingEffect | undefined {
-        for (const p of this.pending.values()) {
-            if (p.key === key && p.principalId === principalId && p.conversationId === conversationId) return p;
-        }
-        return undefined;
+    private findByAction(key: string, principalId: string, conversationId: string, now: number): PendingEffect | undefined {
+        return this.active(now).find(p =>
+            p.key === key && p.principalId === principalId && p.conversationId === conversationId);
     }
 
     /**
      * Decision for a tool call. EXECUTE only when a pending action for THIS
      * principal + THIS conversation + THESE EXACT args was explicitly approved
-     * by the user - then it is consumed (one-time). Otherwise PENDING (created
-     * or existing), REJECTED (inside cooldown), or BLOCKED_NO_PRINCIPAL when no
-     * authenticated principal/conversation exists to bind an approval to.
+     * by the user - then the single execution permit is consumed atomically
+     * (one-time, cross-process). Otherwise PENDING (created or existing),
+     * REJECTED (inside cooldown), ALREADY_CONSUMED (a concurrent final
+     * consumer took the one permit: do NOT execute, do NOT re-pend silently),
+     * or BLOCKED_NO_PRINCIPAL when no authenticated principal/conversation
+     * exists to bind an approval to.
      */
     public check(tool: string, args: Record<string, any>, principalId?: string, conversationId?: string): GateDecision {
-        this.load();
         if (!principalId || !conversationId) return { action: 'BLOCKED_NO_PRINCIPAL' };
         const now = Date.now();
         const key = effectKey(tool, args);
-        const existing = this.findByAction(key, principalId, conversationId);
+        const existing = this.findByAction(key, principalId, conversationId, now);
         if (existing) {
-            if (existing.status === 'REJECTED' && now - (existing.rejectedAt || 0) < REJECT_COOLDOWN_MS) {
+            if (existing.status === 'REJECTED') {
                 return { action: 'REJECTED', pending: existing };
             }
-            if (existing.status === 'REJECTED') this.pending.delete(existing.token); // cooldown over
-            else if (existing.expiresAt <= now) this.pending.delete(existing.token); // expired
-            else if (existing.status === 'APPROVED') {
-                this.pending.delete(existing.token); // one-time consumption
-                this.save();
-                return { action: 'EXECUTE' };
+            if (existing.status === 'APPROVED') {
+                const permit = this.ledger.consumePermit(existing.token, principalId, conversationId, now);
+                if (permit.result === 'CONSUMED') return { action: 'EXECUTE' };
+                // LOST: a concurrent final consumer took the one permit.
+                // Fall through: this identical call becomes a brand-new
+                // pending requiring its own explicit confirmation - the one
+                // approval still produced exactly one execution.
+                // EXPIRED between decision and execution: fall through and
+                // create a fresh pending; anything else is fail-closed.
+                if (permit.result !== 'EXPIRED') return { action: 'BLOCKED_NO_PRINCIPAL' };
             } else {
-                return { action: 'PENDING', pending: existing }; // awaiting the user's explicit yes
+                return { action: 'PENDING', pending: existing };
             }
         }
         const pending: PendingEffect = {
@@ -166,8 +151,7 @@ class ConfirmationGate {
             principalId, conversationId,
             status: 'PENDING', createdAt: now, expiresAt: now + TTL_MS
         };
-        this.pending.set(pending.token, pending);
-        this.save();
+        this.ledger.put(pending);
         return { action: 'PENDING', pending };
     }
 
@@ -177,38 +161,60 @@ class ConfirmationGate {
      * matched a pending action of THIS principal in THIS conversation, else null.
      */
     public handleUserCommand(message: string, principalId: string, conversationId: string): string | null {
-        this.load();
         const m = message.match(/\b(confirmar|confirm|rechazar|reject|cancelar)\s+([A-Za-z0-9]{6})\b/i);
         if (!m) return null;
         const verb = m[1].toLowerCase();
         const token = m[2].toUpperCase();
-        const entry = this.pending.get(token);
-        if (!entry) return null; // not a gate token - normal chat handles it
         const now = Date.now();
+        const entry = this.ledger.get(token, now);
+        if (!entry) return null; // not a gate token - normal chat handles it
         if (entry.principalId !== principalId || entry.conversationId !== conversationId) {
             return `[CONFIRM_GATE] El token ${token} no pertenece a esta conversación o usuario. No se aplicó nada.`;
         }
-        if (entry.expiresAt <= now && entry.status !== 'REJECTED') {
-            this.pending.delete(token);
-            this.save();
-            return `[CONFIRM_GATE] La acción ${token} expiró. Si aún la quieres, pide al asistente que la prepare de nuevo.`;
+        if (entry.status === 'EXPIRED') {
+            return `[CONFIRM_GATE] La acción ${token} expiró sin decisión (no cuenta como rechazo). Si aún la quieres, pide que se te reofrezca o que la prepare de nuevo.`;
+        }
+        if (entry.status === 'CONSUMED') {
+            return `[CONFIRM_GATE] La acción ${token} ya fue ejecutada una vez. No se volverá a ejecutar sin una nueva confirmación explícita.`;
         }
         if (entry.status !== 'PENDING') {
             return `[CONFIRM_GATE] La acción ${token} ya fue ${entry.status === 'APPROVED' ? 'confirmada' : 'rechazada'} antes.`;
         }
         if (verb === 'confirmar' || verb === 'confirm') {
-            entry.status = 'APPROVED';
-            entry.approvedAt = now;
-            this.save();
+            this.ledger.update(token, { status: 'APPROVED', approvedAt: now });
             return `[CONFIRM_GATE] ✅ Acción ${token} (${entry.tool}) confirmada por el usuario. Reemite la llamada con argumentos IDÉNTICOS para ejecutarla UNA vez.`;
         }
-        entry.status = 'REJECTED';
-        entry.rejectedAt = now;
-        this.save();
+        this.ledger.update(token, { status: 'REJECTED', rejectedAt: now });
         return `[CONFIRM_GATE] ❌ Acción ${token} (${entry.tool}) rechazada por el usuario. No la reintentes; si el usuario cambia de opinión, él lo pedirá de nuevo.`;
     }
 
-    public pendingCount(): number { this.load(); return this.pending.size; }
+    /**
+     * Re-offer an EXPIRED action to its original principal + conversation as a
+     * NEW pending token with full provenance (reofferOf + original creation
+     * time). Only time passing is reversible: explicit rejections and
+     * consumed permits are never re-offered. The new token awaits its own
+     * explicit CONFIRMAR - re-offering is not approval.
+     */
+    public reoffer(token: string, principalId: string, conversationId: string): string {
+        const now = Date.now();
+        const entry = this.ledger.get(token, now);
+        if (!entry) return `[CONFIRM_GATE] No existe ninguna acción con el token ${token}.`;
+        if (entry.principalId !== principalId || entry.conversationId !== conversationId) {
+            return `[CONFIRM_GATE] El token ${token} no pertenece a esta conversación o usuario. No se aplicó nada.`;
+        }
+        const result = this.ledger.reoffer(token, { token: this.newToken(), expiresAt: now + TTL_MS }, now);
+        if (!result.ok) {
+            const why = result.reason === 'EXPLICITLY_REJECTED'
+                ? 'fue rechazada explícitamente y no se reofrece; si cambiaste de opinión, pide la acción de nuevo'
+                : result.reason === 'ALREADY_CONSUMED'
+                    ? 'ya fue ejecutada una vez; una repetición es una acción nueva que debes pedir'
+                    : 'aún no ha expirado';
+            return `[CONFIRM_GATE] La acción ${token} no se puede reofrecer: ${why}.`;
+        }
+        return `[CONFIRM_GATE] 🔁 Acción reofrecida como ${result.record.token} (original ${token}, creada ${new Date(entry.createdAt).toISOString()}). Revisa el resumen COMPLETO y responde "CONFIRMAR ${result.record.token}" para ejecutarla una vez o "RECHAZAR ${result.record.token}" para descartarla.\n${result.record.summary}`;
+    }
+
+    public pendingCount(): number { return this.active(Date.now()).length; }
 }
 
 export const confirmationGate = new ConfirmationGate();
