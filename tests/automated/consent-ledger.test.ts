@@ -6,7 +6,7 @@
  * lock file is not a boundary against an attacker with the executor's OS
  * user (infrastructure work, not claimed). */
 import { describe, it, expect } from 'vitest';
-import { appendFileSync, chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, existsSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -15,7 +15,7 @@ import type { ConsentRecord } from '../../services/security/consentLedger';
 process.env.CONFIRMATION_GATE_DIR = mkdtempSync(join(tmpdir(), 'consent-ledger-gate-'));
 process.env.CONFIRM_GATE_TTL_MS = '60000';
 
-const { ConsentLedger } = await import('../../services/security/consentLedger');
+const { ConsentLedger, PendingAdmissionError } = await import('../../services/security/consentLedger');
 const { confirmationGate } = await import('../../services/tools/confirmationGate');
 
 const A = { principalId: 'ledger-user-a', conversationId: 'conv-a-1' };
@@ -432,5 +432,153 @@ describe('R8-v3: adversarial store transitions (review findings 1-5, 7)', () => 
         const late = confirmationGate.handleUserCommand(`CONFIRMAR ${d.pending.token}`, A.principalId, A.conversationId);
         expect(late).toContain('ya fue rechazada antes');
         expect(confirmationGate.check('send_email', args, A.principalId, A.conversationId).action).toBe('REJECTED');
+    });
+});
+
+describe('R8-v4: availability findings A-G (streaming, identity, admission, collision, patch)', () => {
+    const bigRecord = (token: string, pad: number): ConsentRecord => ({
+        ...record({ token }),
+        args: { to: 'big@fixture.invalid', body: 'x'.repeat(pad) }
+    });
+
+    it('A/G: a fresh process loads a log LARGER than 32MB (no restart brick) and decides normally', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'consent-big-'));
+        const file = join(dir, 'consent-ledger.jsonl');
+        // ~36MB of real PUT events (records carry full args+summary)
+        const w = require('node:fs').openSync(file, 'a');
+        for (let i = 0; i < 180; i++) {
+            const ev = { op: 'PUT', rec: bigRecord(`BIG${String(i).padStart(4, '0')}`, 200 * 1024) };
+            require('node:fs').writeSync(w, JSON.stringify(ev) + '\n');
+        }
+        require('node:fs').closeSync(w);
+        const size = require('node:fs').statSync(file).size;
+        expect(size).toBeGreaterThan(32 * 1024 * 1024);
+        const ledger = new ConsentLedger(dir); // fresh instance: full streaming fold
+        expect(ledger.all()).toHaveLength(180);
+        const target = `BIG${String(100).padStart(4, '0')}`;
+        expect(ledger.decide(target, 'APPROVED', A.principalId, A.conversationId)?.status).toBe('APPROVED');
+        expect(ledger.get(target)!.status).toBe('APPROVED');
+    }, 60000);
+
+    it('A: streaming fold is correct across chunk boundaries and ignores a torn tail', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'consent-chunks-'));
+        const ledger = new ConsentLedger(dir, { readerChunkBytes: 1024 }); // 1KB chunks
+        for (let i = 0; i < 12; i++) {
+            ledger.put(bigRecord(`CH${String(i).padStart(3, '0')}`, 3000)); // ~3KB lines cross chunk edges
+        }
+        const fresh = new ConsentLedger(dir, { readerChunkBytes: 1024 });
+        expect(fresh.all()).toHaveLength(12);
+        // torn tail: half-written claim must not fold now, must fold when completed
+        const file = join(dir, 'consent-ledger.jsonl');
+        const ev = JSON.stringify({ op: 'PUT', rec: bigRecord('TORN1', 100) });
+        appendFileSync(file, ev.slice(0, ev.length - 10)); // no newline, truncated JSON
+        expect(fresh.get('TORN1')).toBeUndefined();
+        appendFileSync(file, ev.slice(ev.length - 10) + '\n');
+        expect(fresh.get('TORN1')).toBeDefined();
+    });
+
+    it('C: a replaced file (new inode) is refolded from scratch, not read against stale offsets', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'consent-inode-'));
+        const ledger = new ConsentLedger(dir);
+        const r = record({ status: 'APPROVED', approvedAt: Date.now() });
+        ledger.put(r);
+        ledger.get(r.token); // populate cache
+        // external restore: same path, new inode, extra claim appended offline
+        const file = join(dir, 'consent-ledger.jsonl');
+        const copy = readFileSync(file, 'utf8') + JSON.stringify({ op: 'CONSUME', token: r.token, by: 'restore:xyz', principalId: A.principalId, conversationId: A.conversationId, at: Date.now() }) + '\n';
+        writeFileSync(file + '.incoming', copy);
+        renameSync(file + '.incoming', file); // atomic replace, new inode
+        const after = ledger.get(r.token)!; // must refold: the offline CONSUME is the truth
+        expect(after.status).toBe('CONSUMED');
+        expect(after.consumedBy).toBe('restore:xyz');
+    });
+
+    it('C: a same-inode rewrite is caught by the tail-line continuity hash and refolded', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'consent-rewrite-'));
+        const ledger = new ConsentLedger(dir);
+        const r = record({});
+        ledger.put(r);
+        ledger.get(r.token); // cache at offset
+        const file = join(dir, 'consent-ledger.jsonl');
+        const original = readFileSync(file, 'utf8');
+        // same-inode rewrite: different content (REJECTED decided offline), padded so size grows
+        const rewritten = original
+            + JSON.stringify({ op: 'DECIDE', token: r.token, decision: 'REJECTED', by: 'offline:1', principalId: A.principalId, conversationId: A.conversationId, at: Date.now() }) + '\n';
+        writeFileSync(file, rewritten); // truncates + rewrites in place (same inode)
+        const after = ledger.get(r.token)!;
+        expect(after.status).toBe('REJECTED'); // refolded, not stale-cached
+    });
+
+    it('B: admission control blocks only NEW pendings of the saturated principal; everything else keeps working', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'consent-admit-'));
+        const ledger = new ConsentLedger(dir, { maxLivePendingPerPrincipal: 3 });
+        for (let i = 0; i < 3; i++) ledger.put(record({ token: `FLOOD${i}` }));
+        // 4th NEW pending for the same principal is refused, typed
+        expect(() => ledger.put(record({ token: 'FLOOD3' }))).toThrow(PendingAdmissionError);
+        // existing records: decide + consume still work
+        expect(ledger.decide('FLOOD0', 'APPROVED', A.principalId, A.conversationId)?.status).toBe('APPROVED');
+        expect(ledger.consumePermit('FLOOD0', A.principalId, A.conversationId).result).toBe('CONSUMED');
+        // a REJECTED record leaves the live set...
+        ledger.decide('FLOOD1', 'REJECTED', A.principalId, A.conversationId);
+        // ...so exactly one slot frees up and a new pending is admitted again
+        ledger.put(record({ token: 'FLOOD4' }));
+        // another principal is completely unaffected
+        const B2 = { principalId: 'other-principal', conversationId: 'other-conv' };
+        for (let i = 0; i < 3; i++) ledger.put({ ...record({ token: `OTHER${i}` }), principalId: B2.principalId, conversationId: B2.conversationId });
+        // expired pendings do not consume budget
+        ledger.update('FLOOD4', { expiresAt: Date.now() - 1 });
+        ledger.put(record({ token: 'FLOOD5' }));
+        expect(ledger.all().length).toBe(8); // 3 FLOOD + FLOOD4 + 3 OTHER + FLOOD5 (FLOOD3 was refused)
+    });
+
+    it('D: a REOFFER whose new token already exists overwrites NOTHING and marks NO receipt', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'consent-reoffer-coll-'));
+        const ledger = new ConsentLedger(dir);
+        const expired = record({ token: 'OLDTK1', expiresAt: Date.now() - 1000 });
+        ledger.put(expired);
+        const existing = record({ token: 'NEVTK1', status: 'CONSUMED', consumedAt: Date.now(), consumedBy: 'winner:1' });
+        ledger.put(existing);
+        // forged/racing REOFFER event that reuses NEVTK1 as its new token
+        appendFileSync(join(dir, 'consent-ledger.jsonl'),
+            JSON.stringify({ op: 'REOFFER', token: 'OLDTK1', rec: { ...expired, token: 'NEVTK1', status: 'PENDING' }, by: 'racer:1', at: Date.now() }) + '\n');
+        const after = ledger.get('NEVTK1')!;
+        expect(after.status).toBe('CONSUMED'); // untoucuched
+        expect(after.consumedBy).toBe('winner:1');
+        expect(ledger.get('OLDTK1')!.reofferReceipt).toBeUndefined(); // no receipt for a landing that did not happen
+    });
+
+    it('D: ledger.reoffer refuses a colliding token with TOKEN_COLLISION and the gate retries with a fresh one', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'consent-reoffer-api-'));
+        const ledger = new ConsentLedger(dir);
+        const expired = record({ token: 'OLDTK2', expiresAt: Date.now() - 1000 });
+        ledger.put(expired);
+        const taken = record({ token: 'TAKEN1' });
+        ledger.put(taken);
+        const res = ledger.reoffer('OLDTK2', { token: 'TAKEN1', expiresAt: Date.now() + 60000 });
+        expect(res).toEqual({ ok: false, reason: 'TOKEN_COLLISION' });
+        expect(ledger.get('TAKEN1')!.status).toBe('PENDING'); // untouched
+        expect(ledger.get('OLDTK2')!.reofferReceipt).toBeUndefined();
+        // a free token reoffers normally
+        const ok = ledger.reoffer('OLDTK2', { token: 'FREE01', expiresAt: Date.now() + 60000 });
+        expect(ok.ok).toBe(true);
+        expect(ledger.get('OLDTK2')!.reofferReceipt).toBeDefined();
+    });
+
+    it('E: PATCH expiresAt only applies to a LIVE pending - it never re-arms APPROVED/EXPIRED records', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'consent-patch-guard-'));
+        const ledger = new ConsentLedger(dir);
+        const approved = record({ status: 'APPROVED', approvedAt: Date.now(), expiresAt: Date.now() + 1000 });
+        ledger.put(approved);
+        const futureExpiry = Date.now() + 3_600_000;
+        expect(() => ledger.update(approved.token, { expiresAt: futureExpiry }))
+            .toThrow(/PATCH refused/); // typed refusal, nothing appended
+        const afterApproved = ledger.get(approved.token)!;
+        expect(afterApproved.expiresAt).toBe(approved.expiresAt); // unchanged
+        expect(afterApproved.status).toBe('APPROVED');
+        // pending CAN be maintained (existing behaviour preserved)
+        const pending = record({});
+        ledger.put(pending);
+        ledger.update(pending.token, { expiresAt: futureExpiry });
+        expect(ledger.get(pending.token)!.expiresAt).toBe(futureExpiry);
     });
 });

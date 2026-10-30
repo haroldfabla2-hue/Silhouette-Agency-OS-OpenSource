@@ -27,6 +27,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { identityService, UserRole } from '../identityService';
+import { readAppendedLines, type ReaderState } from './appendLogReader';
 
 export type ProposalOwnerStatus = 'UNRESOLVED_OWNER' | 'ASSIGNED';
 
@@ -93,7 +94,8 @@ export class ProposalOwnerRegistry {
         }
     }
 
-    private cache: { offset: number; map: Map<string, ProposalOwnerRecord> } | null = null;
+    private cache: { reader: ReaderState; map: Map<string, ProposalOwnerRecord> } | null = null;
+    private warnedRecords = false;
 
     private migrateLegacy(): void {
         // Import whenever the legacy file is present: PROPOSE first-wins
@@ -138,38 +140,11 @@ export class ProposalOwnerRegistry {
      *  instead of risking the string-size wall. */
     private load(): Map<string, ProposalOwnerRecord> {
         this.migrateLegacy();
-        let st: fs.Stats;
-        try {
-            st = fs.statSync(this.file);
-        } catch (e: any) {
-            if (e?.code === 'ENOENT') {
-                this.cache = this.cache ?? { offset: 0, map: new Map() };
-                return this.cache.map;
-            }
-            throw e;
-        }
-        if (!this.cache || st.size < this.cache.offset) {
-            this.cache = { offset: 0, map: new Map() };
-        }
-        const start = this.cache.offset;
-        if (st.size > start) {
-            if (st.size - start > 32 * 1024 * 1024) {
-                throw new Error('[PROPOSAL_OWNER] unread log tail exceeds 32MB; refusing to load (compaction needed)');
-            }
-            const fd = fs.openSync(this.file, 'r');
-            let text: string;
-            let consumed: number;
-            try {
-                const buf = Buffer.alloc(st.size - start);
-                fs.readSync(fd, buf, 0, buf.length, start);
-                text = buf.toString('utf8');
-                const lastNl = text.lastIndexOf('\n');
-                consumed = lastNl >= 0 ? lastNl + 1 : 0;
-            } finally {
-                fs.closeSync(fd);
-            }
+        const tail = readAppendedLines(this.file, this.cache?.reader ?? null);
+        if (!this.cache || tail.reset) this.cache = { reader: tail.state, map: new Map() };
+        if (tail.lines.length > 0) {
             const events: OwnerEvent[] = [];
-            for (const line of text.slice(0, consumed).split('\n')) {
+            for (const line of tail.lines) {
                 if (!line) continue;
                 try {
                     const ev = JSON.parse(line) as OwnerEvent;
@@ -177,11 +152,12 @@ export class ProposalOwnerRegistry {
                 } catch { /* torn line from a crash mid-append: skip */ }
             }
             this.foldInto(this.cache.map, events);
-            this.cache.offset = start + consumed;
-            if (this.cache.map.size > 50_000) {
-                throw new Error('[PROPOSAL_OWNER] record cap exceeded; refusing to operate unbounded');
+            if (this.cache.map.size > 50_000 && !this.warnedRecords) {
+                this.warnedRecords = true;
+                console.warn(`[PROPOSAL_OWNER] ${this.cache.map.size} records in memory; compaction is tracked debt - streaming reads keep availability, this is the operational alarm`);
             }
         }
+        this.cache.reader = tail.state;
         return this.cache.map;
     }
 

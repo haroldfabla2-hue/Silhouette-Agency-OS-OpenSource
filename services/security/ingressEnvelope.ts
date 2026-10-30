@@ -28,6 +28,7 @@
 import crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { readAppendedLines, type ReaderState } from './appendLogReader';
 
 export const ENVELOPE_ISSUER = 'channel-ingress' as const;
 export const ENVELOPE_VERSION = 1 as const;
@@ -91,7 +92,6 @@ const canonicalFields = (e: Omit<IngressEnvelope, 'sig'>): string =>
 interface ReplayEntry { messageId: string; nonce: string; exp: number; c: string }
 
 const REPLAY_MAX_ROWS = 100_000;
-const REPLAY_TAIL_CAP_BYTES = 32 * 1024 * 1024;
 const REPLAY_WARN_BYTES = 50 * 1024 * 1024;
 
 /** Durable replay registry: seen (messageId, nonce) pairs persist across
@@ -112,19 +112,21 @@ const REPLAY_WARN_BYTES = 50 * 1024 * 1024;
  *
  *  Reads: incremental by byte offset with a per-instance row cache pruned
  *  of expired entries; a read error other than ENOENT THROWS (never a
- *  silent empty store); an unread tail beyond REPLAY_TAIL_CAP_BYTES and a
+ *  silent empty store); reads are streaming (no file-size limit) and a
  *  live-row count beyond REPLAY_MAX_ROWS throw instead of degrading
  *  silently. Physical compaction remains deferred infrastructure work;
  *  growth past REPLAY_WARN_BYTES logs a one-time warning. */
 class ReplayStore {
     private readonly file: string;
     private readonly legacyFile: string;
-    private cache: { offset: number; rows: ReplayEntry[] } | null = null;
+    private cache: { reader: ReaderState; rows: ReplayEntry[] } | null = null;
     private warnedSize = false;
+    private readerChunkBytes: number;
 
-    constructor(private readonly dir: string) {
+    constructor(private readonly dir: string, opts: { readerChunkBytes?: number } = {}) {
         this.file = path.join(dir, 'ingress-replay.jsonl');
         this.legacyFile = path.join(dir, 'ingress-replay.json');
+        this.readerChunkBytes = opts.readerChunkBytes ?? 1024 * 1024;
     }
 
     private appendLine(obj: unknown): void {
@@ -175,55 +177,26 @@ class ReplayStore {
 
     private readLive(now: number): ReplayEntry[] {
         this.migrateLegacy();
-        let st: fs.Stats;
+        const tail = readAppendedLines(this.file, this.cache?.reader ?? null, this.readerChunkBytes);
+        if (!this.cache || tail.reset) this.cache = { reader: tail.state, rows: [] };
         try {
-            st = fs.statSync(this.file);
-        } catch (e: any) {
-            if (e?.code === 'ENOENT') {
-                this.cache = this.cache ?? { offset: 0, rows: [] };
-                return this.cache.rows;
+            const size = fs.statSync(this.file).size; // telemetry only; ENOENT raced with the reader is fine
+            if (size > REPLAY_WARN_BYTES && !this.warnedSize) {
+                this.warnedSize = true;
+                console.warn(`[INGRESS] replay log is ${size} bytes; compaction is tracked debt - streaming reads keep verification available, this is the operational alarm to run it`);
             }
-            throw e; // a read failure is never an empty store: fail closed
-        }
-        if (st.size > REPLAY_WARN_BYTES && !this.warnedSize) {
-            this.warnedSize = true;
-            console.warn(`[INGRESS] replay log is ${st.size} bytes; physical compaction is deferred infrastructure work and will become necessary`);
-        }
-        if (!this.cache || st.size < this.cache.offset) {
-            this.cache = { offset: 0, rows: [] };
-        }
-        const start = this.cache.offset;
-        if (st.size > start) {
-            if (st.size - start > REPLAY_TAIL_CAP_BYTES) {
-                throw new Error(`[INGRESS] unread replay-log tail exceeds ${REPLAY_TAIL_CAP_BYTES} bytes; refusing to verify (compaction needed)`);
-            }
-            const fd = fs.openSync(this.file, 'r');
-            let text: string;
-            let consumed: number;
+        } catch { /* file removed between read and stat: next read handles it */ }
+        for (const line of tail.lines) {
+            if (!line) continue;
             try {
-                const buf = Buffer.alloc(st.size - start);
-                fs.readSync(fd, buf, 0, buf.length, start);
-                text = buf.toString('utf8');
-                const lastNl = text.lastIndexOf('\n');
-                consumed = lastNl >= 0 ? lastNl + 1 : 0;
-            } finally {
-                fs.closeSync(fd);
-            }
-            for (const line of text.slice(0, consumed).split('\n')) {
-                if (!line) continue;
-                try {
-                    const r = JSON.parse(line);
-                    if (r && typeof r.m === 'string' && typeof r.n === 'string' && typeof r.e === 'number') {
-                        this.cache.rows.push({ messageId: r.m, nonce: r.n, exp: r.e, c: String(r.c ?? '') });
-                    }
-                } catch { /* torn line from a crash mid-append: skip */ }
-            }
-            this.cache.offset = start + consumed;
+                const r = JSON.parse(line);
+                if (r && typeof r.m === 'string' && typeof r.n === 'string' && typeof r.e === 'number') {
+                    this.cache.rows.push({ messageId: r.m, nonce: r.n, exp: r.e, c: String(r.c ?? '') });
+                }
+            } catch { /* torn line from a crash mid-append: skip */ }
         }
+        this.cache.reader = tail.state;
         this.cache.rows = this.cache.rows.filter(r => r.exp > now);
-        if (this.cache.rows.length > REPLAY_MAX_ROWS) {
-            throw new Error(`[INGRESS] live replay rows exceed ${REPLAY_MAX_ROWS}; refusing to verify (compaction needed)`);
-        }
         return this.cache.rows;
     }
 
@@ -234,7 +207,15 @@ class ReplayStore {
      *  every other check passes, so a rejected envelope never burns its
      *  nonce. */
     checkAndMark(messageId: string, nonce: string, exp: number, now: number): boolean {
-        if (this.readLive(now).some(r => r.messageId === messageId && r.nonce === nonce)) return false;
+        const live = this.readLive(now);
+        if (live.some(r => r.messageId === messageId && r.nonce === nonce)) return false;
+        if (live.length >= REPLAY_MAX_ROWS) {
+            // Admission full: refuse only NEW marks (fail-closed deny for the
+            // new message); verification of already-recorded envelopes keeps
+            // working at any size. Rows prune by expiry, so the window drains.
+            console.error(`[INGRESS] replay-mark admission full (${REPLAY_MAX_ROWS} live rows); refusing new mark, existing verification unaffected`);
+            return false;
+        }
         const me = `${process.pid}:${crypto.randomBytes(8).toString('hex')}`;
         this.appendLine({ m: messageId, n: nonce, e: exp, c: me });
         const first = this.readLive(now).find(r => r.messageId === messageId && r.nonce === nonce);

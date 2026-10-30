@@ -71,6 +71,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { randomBytes } from 'node:crypto';
+import { readAppendedLines, type ReaderState } from './appendLogReader';
 
 export type ConsentStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED' | 'CONSUMED';
 
@@ -105,13 +106,24 @@ export interface ConsentRecord {
     reofferCount?: number;
 }
 
+/** New-proposal admission full for ONE principal: reads, decisions,
+ *  consumes and outcomes of existing records are unaffected, and other
+ *  principals are unaffected. Only blocks creating ANOTHER live pending. */
+export class PendingAdmissionError extends Error {
+    public readonly code = 'PENDING_ADMISSION_FULL' as const;
+    constructor(principalId: string, cap: number) {
+        super(`[CONSENT_LEDGER] principal ${principalId} already has ${cap} live pending confirmations; decide or let some expire before proposing new actions`);
+        this.name = 'PendingAdmissionError';
+    }
+}
+
 export type ConsumeResult =
     | { result: 'CONSUMED'; record: ConsentRecord }
     | { result: 'LOST' | 'NOT_APPROVED' | 'WRONG_PRINCIPAL' | 'WRONG_CONVERSATION' | 'EXPIRED' | 'UNKNOWN' };
 
 export type ReofferResult =
     | { ok: true; record: ConsentRecord }
-    | { ok: false; reason: 'UNKNOWN' | 'NOT_EXPIRED' | 'ALREADY_CONSUMED' | 'EXPLICITLY_REJECTED' | 'ALREADY_REOFFERED' };
+    | { ok: false; reason: 'UNKNOWN' | 'NOT_EXPIRED' | 'ALREADY_CONSUMED' | 'EXPLICITLY_REJECTED' | 'ALREADY_REOFFERED' | 'TOKEN_COLLISION' };
 
 type LedgerEvent =
     | { op: 'PUT'; rec: ConsentRecord }
@@ -124,19 +136,23 @@ type LedgerEvent =
 /** Fields owned by claim events; a maintenance PATCH can never move them. */
 const PATCHABLE: ReadonlySet<string> = new Set(['expiresAt']);
 
-const MAX_RECORDS = 50_000;
-const TAIL_CAP_BYTES = 32 * 1024 * 1024;
-const WARN_BYTES = 50 * 1024 * 1024;
+const WARN_RECORDS = 50_000; // telemetry threshold, not a cap
+const WARN_BYTES = 50 * 1024 * 1024;  // compaction-debt operational alarm
 
 export class ConsentLedger {
     private readonly file: string;
     private readonly legacyFile: string;
-    private cache: { offset: number; map: Map<string, ConsentRecord> } | null = null;
+    private cache: { reader: ReaderState; map: Map<string, ConsentRecord> } | null = null;
     private warnedSize = false;
+    private warnedRecords = false;
+    private readerChunkBytes: number;
+    private maxLivePendingPerPrincipal: number;
 
-    constructor(private readonly dir: string) {
+    constructor(private readonly dir: string, opts: { maxLivePendingPerPrincipal?: number; readerChunkBytes?: number } = {}) {
         this.file = path.join(dir, 'consent-ledger.jsonl');
         this.legacyFile = path.join(dir, 'pending-effects.json');
+        this.maxLivePendingPerPrincipal = opts.maxLivePendingPerPrincipal ?? 200;
+        this.readerChunkBytes = opts.readerChunkBytes ?? 1024 * 1024;
     }
 
     private claimant(): string {
@@ -199,7 +215,10 @@ export class ConsentLedger {
                 if (!map.has(ev.rec.token)) map.set(ev.rec.token, { ...ev.rec }); // first-wins
             } else if (ev.op === 'PATCH') {
                 const r = map.get(ev.token);
-                if (r) {
+                // expiresAt maintenance touches ONLY a live pending:
+                // extending an EXPIRED or APPROVED record would re-arm a
+                // dead or decided action without a new human decision.
+                if (r && r.status === 'PENDING' && r.expiresAt > ev.at) {
                     for (const [k, v] of Object.entries(ev.patch)) {
                         if (PATCHABLE.has(k)) (r as any)[k] = v;
                     }
@@ -229,9 +248,12 @@ export class ConsentLedger {
             } else if (ev.op === 'REOFFER') {
                 const r = map.get(ev.token);
                 const expired = r && ((r.status === 'PENDING' || r.status === 'APPROVED') && r.expiresAt <= ev.at);
-                if (r && !r.reofferReceipt && (r.status === 'EXPIRED' || expired)) {
-                    r.reofferReceipt = { by: ev.by, at: ev.at };
+                // The new token is first-wins like PUT: a collision never
+                // overwrites an existing record, and the receipt is marked
+                // only when the new record actually lands.
+                if (r && !r.reofferReceipt && (r.status === 'EXPIRED' || expired) && !map.has(ev.rec.token)) {
                     map.set(ev.rec.token, { ...ev.rec });
+                    r.reofferReceipt = { by: ev.by, at: ev.at };
                 }
             } else if (ev.op === 'OUTCOME') {
                 const r = map.get(ev.token);
@@ -244,42 +266,18 @@ export class ConsentLedger {
      *  offset. Never exposed to callers: load() hands out copies. */
     private rawFold(): Map<string, ConsentRecord> {
         this.migrateLegacy();
-        let st: fs.Stats;
+        const tail = readAppendedLines(this.file, this.cache?.reader ?? null, this.readerChunkBytes);
+        if (!this.cache || tail.reset) this.cache = { reader: tail.state, map: new Map() };
         try {
-            st = fs.statSync(this.file);
-        } catch (e: any) {
-            if (e?.code === 'ENOENT') {
-                this.cache = this.cache ?? { offset: 0, map: new Map() };
-                return this.cache.map;
+            const size = fs.statSync(this.file).size; // stat only for telemetry; ENOENT raced with the reader is fine
+            if (size > WARN_BYTES && !this.warnedSize) {
+                this.warnedSize = true;
+                console.warn(`[CONSENT_LEDGER] log is ${size} bytes (>${WARN_BYTES}); compaction is tracked debt - streaming reads keep availability, this is the operational alarm to run it`);
             }
-            throw e; // a read failure is never an empty store: fail closed
-        }
-        if (st.size > WARN_BYTES && !this.warnedSize) {
-            this.warnedSize = true;
-            console.warn(`[CONSENT_LEDGER] log is ${st.size} bytes (>${WARN_BYTES}); physical compaction is deferred infrastructure work and will become necessary`);
-        }
-        if (!this.cache || st.size < this.cache.offset) {
-            this.cache = { offset: 0, map: new Map() }; // truncated/rotated externally: full re-read
-        }
-        const start = this.cache.offset;
-        if (st.size > start) {
-            if (st.size - start > TAIL_CAP_BYTES) {
-                throw new Error(`[CONSENT_LEDGER] unread log tail exceeds ${TAIL_CAP_BYTES} bytes; refusing to load (compaction needed)`);
-            }
-            const fd = fs.openSync(this.file, 'r');
-            let text: string;
-            let consumed: number;
-            try {
-                const buf = Buffer.alloc(st.size - start);
-                fs.readSync(fd, buf, 0, buf.length, start);
-                text = buf.toString('utf8');
-                const lastNl = text.lastIndexOf('\n');
-                consumed = lastNl >= 0 ? lastNl + 1 : 0; // fold complete lines only
-            } finally {
-                fs.closeSync(fd);
-            }
+        } catch { /* file removed between read and stat: next read handles it */ }
+        if (tail.lines.length > 0) {
             const events: LedgerEvent[] = [];
-            for (const line of text.slice(0, consumed).split('\n')) {
+            for (const line of tail.lines) {
                 if (!line) continue;
                 try {
                     const ev = JSON.parse(line) as LedgerEvent;
@@ -287,11 +285,12 @@ export class ConsentLedger {
                 } catch { /* torn line from a crash mid-append: skip - that writer died before its claim was durable */ }
             }
             this.foldInto(this.cache.map, events);
-            this.cache.offset = start + consumed;
-            if (this.cache.map.size > MAX_RECORDS) {
-                throw new Error(`[CONSENT_LEDGER] record cap ${MAX_RECORDS} exceeded; refusing to operate unbounded (compaction needed)`);
+            if (this.cache.map.size > WARN_RECORDS && !this.warnedRecords) {
+                this.warnedRecords = true;
+                console.warn(`[CONSENT_LEDGER] ${this.cache.map.size} records in memory (>${WARN_RECORDS}); compaction is tracked debt - admission control bounds new pendings, this is the operational alarm`);
             }
         }
+        this.cache.reader = tail.state;
         return this.cache.map;
     }
 
@@ -320,7 +319,26 @@ export class ConsentLedger {
         return [...this.load(now).values()];
     }
 
-    put(record: ConsentRecord): void {
+    /** Live (PENDING, unexpired) proposals of one principal. */
+    private livePendingCount(principalId: string, now: number): number {
+        let n = 0;
+        for (const r of this.rawFold().values()) {
+            if (r.principalId === principalId && r.status === 'PENDING' && r.expiresAt > now) n++;
+        }
+        return n;
+    }
+
+    private admitNewPending(record: ConsentRecord): void {
+        if (record.status !== 'PENDING') return; // decisions/consumes/outcomes are claims, not new proposals
+        const now = Date.now();
+        if (record.expiresAt <= now) return; // dead on arrival: no budget spent
+        if (this.livePendingCount(record.principalId, now) >= this.maxLivePendingPerPrincipal) {
+            throw new PendingAdmissionError(record.principalId, this.maxLivePendingPerPrincipal);
+        }
+    }
+
+    put(record: ConsentRecord, opts: { admission?: boolean } = {}): void {
+        if (opts.admission !== false) this.admitNewPending(record); // migration/import appends directly: audit replay is never blocked
         this.append({ op: 'PUT', rec: record });
         if (!this.get(record.token)) {
             throw new Error('[CONSENT_LEDGER] write verification failed: PUT did not land');
@@ -330,7 +348,13 @@ export class ConsentLedger {
     /** Maintenance patch: expiresAt ONLY. Decisions go through decide();
      *  receipts and outcomes are claim-managed. */
     update(token: string, patch: { expiresAt?: number }): ConsentRecord | undefined {
-        if (!this.get(token)) return undefined;
+        const current = this.get(token);
+        if (!current) return undefined;
+        // Fold-level guard is the backstop; refuse here so an ineligible
+        // PATCH is never even written to the log.
+        if (current.status !== 'PENDING' || current.expiresAt <= Date.now()) {
+            throw new Error(`[CONSENT_LEDGER] PATCH refused for ${token}: expiresAt maintenance applies only to a live pending (status ${current.status}); it never re-arms a decided or expired record`);
+        }
         this.append({ op: 'PATCH', token, patch, at: Date.now() });
         const after = this.get(token);
         if (!after) throw new Error('[CONSENT_LEDGER] write verification failed: PATCH target vanished');
@@ -396,6 +420,7 @@ export class ConsentLedger {
         if (original.status === 'CONSUMED') return { ok: false, reason: 'ALREADY_CONSUMED' };
         if (original.reofferReceipt) return { ok: false, reason: 'ALREADY_REOFFERED' };
         if (original.status !== 'EXPIRED') return { ok: false, reason: 'NOT_EXPIRED' };
+        if (this.rawFold().has(newRecord.token)) return { ok: false, reason: 'TOKEN_COLLISION' };
         const record: ConsentRecord = {
             ...original,
             token: newRecord.token,
@@ -412,6 +437,7 @@ export class ConsentLedger {
             reofferCount: (original.reofferCount ?? 0) + 1,
         };
         const me = this.claimant();
+        this.admitNewPending(record);
         this.append({ op: 'REOFFER', token, rec: record, by: me, at });
         const after = this.get(token, at);
         if (after?.reofferReceipt?.by === me) return { ok: true, record: this.get(record.token, at)! };

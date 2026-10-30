@@ -236,8 +236,16 @@ class ConfirmationGate {
         if (entry.principalId !== principalId || entry.conversationId !== conversationId) {
             return `[CONFIRM_GATE] El token ${token} no pertenece a esta conversación o usuario. No se aplicó nada.`;
         }
-        const result = this.ledger.reoffer(token, { token: this.newToken(), expiresAt: now + TTL_MS }, now);
+        // Token collision (6-char namespace): retry with fresh tokens before
+        // giving up; the fold itself is collision-guarded either way.
+        let result = this.ledger.reoffer(token, { token: this.newToken(), expiresAt: now + TTL_MS }, now);
+        for (let tries = 0; result.ok === false && result.reason === 'TOKEN_COLLISION' && tries < 3; tries++) {
+            result = this.ledger.reoffer(token, { token: this.newToken(), expiresAt: now + TTL_MS }, now);
+        }
         if (result.ok === false) { // equality narrowing: repo tsconfig has strictNullChecks off, so !result.ok does not discriminate the union
+            if (result.reason === 'TOKEN_COLLISION') {
+                return `[CONFIRM_GATE] No se pudo reofrecer la acción ${token}: colisión de token repetida. Inténtalo de nuevo; no se cambió nada.`;
+            }
             const why = result.reason === 'EXPLICITLY_REJECTED'
                 ? 'fue rechazada explícitamente y no se reofrece; si cambiaste de opinión, pide la acción de nuevo'
                 : result.reason === 'ALREADY_CONSUMED'
