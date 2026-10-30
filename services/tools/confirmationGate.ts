@@ -32,6 +32,7 @@ export type GateDecision =
     | { action: 'EXECUTE' }
     | { action: 'PENDING'; pending: PendingEffect }
     | { action: 'REJECTED'; pending: PendingEffect }
+    | { action: 'ALREADY_CONSUMED' }
     | { action: 'BLOCKED_NO_PRINCIPAL' };
 
 /** Chat tools with external or wallet-bearing effects. Payments are already
@@ -116,11 +117,16 @@ class ConfirmationGate {
      * Decision for a tool call. EXECUTE only when a pending action for THIS
      * principal + THIS conversation + THESE EXACT args was explicitly approved
      * by the user - then the single execution permit is consumed atomically
-     * (one-time, cross-process). Otherwise PENDING (created or existing),
-     * REJECTED (inside cooldown), ALREADY_CONSUMED (a concurrent final
-     * consumer took the one permit: do NOT execute, do NOT re-pend silently),
-     * or BLOCKED_NO_PRINCIPAL when no authenticated principal/conversation
-     * exists to bind an approval to.
+     * (one-time, cross-process). Outcomes: PENDING (created or existing),
+     * REJECTED (inside cooldown), EXECUTE (the one permit), ALREADY_CONSUMED
+     * (the record was still APPROVED when read but a concurrent final
+     * consumer took the one permit before the lock: NOTHING executed for
+     * this call and the user is told the truth, never re-asked to confirm an
+     * action that already ran), or BLOCKED_NO_PRINCIPAL when no
+     * authenticated principal/conversation exists to bind an approval to.
+     * A LATER identical call after consumption (record already CONSUMED when
+     * read) is a brand-new pending requiring its own explicit confirmation:
+     * the reviewed v2 contract is unchanged.
      */
     public check(tool: string, args: Record<string, any>, principalId?: string, conversationId?: string): GateDecision {
         if (!principalId || !conversationId) return { action: 'BLOCKED_NO_PRINCIPAL' };
@@ -134,13 +140,23 @@ class ConfirmationGate {
             if (existing.status === 'APPROVED') {
                 const permit = this.ledger.consumePermit(existing.token, principalId, conversationId, now);
                 if (permit.result === 'CONSUMED') return { action: 'EXECUTE' };
-                // LOST: a concurrent final consumer took the one permit.
-                // Fall through: this identical call becomes a brand-new
-                // pending requiring its own explicit confirmation - the one
-                // approval still produced exactly one execution.
+                if (permit.result === 'LOST') return { action: 'ALREADY_CONSUMED' };
+                if (permit.result === 'NOT_APPROVED') {
+                    // Status changed between the fresh read and the lock
+                    // (concurrent decision): report the CURRENT truth.
+                    const current = this.ledger.get(existing.token, now);
+                    if (current?.status === 'PENDING') return { action: 'PENDING', pending: current };
+                    if (current?.status === 'REJECTED') return { action: 'REJECTED', pending: current };
+                    if (current?.status === 'CONSUMED') return { action: 'ALREADY_CONSUMED' };
+                    // EXPIRED: fall through to a fresh pending.
+                }
                 // EXPIRED between decision and execution: fall through and
-                // create a fresh pending; anything else is fail-closed.
-                if (permit.result !== 'EXPIRED') return { action: 'BLOCKED_NO_PRINCIPAL' };
+                // create a fresh pending. WRONG_PRINCIPAL/WRONG_CONVERSATION/
+                // UNKNOWN contradict the fresh read above: fail closed with a
+                // visible error, never a false "no authenticated principal".
+                if (permit.result !== 'EXPIRED' && permit.result !== 'NOT_APPROVED') {
+                    throw new Error(`[CONFIRM_GATE] inconsistent permit result ${permit.result} for a record read as APPROVED moments ago; refusing to decide`);
+                }
             } else {
                 return { action: 'PENDING', pending: existing };
             }
@@ -161,10 +177,13 @@ class ConfirmationGate {
      * matched a pending action of THIS principal in THIS conversation, else null.
      */
     public handleUserCommand(message: string, principalId: string, conversationId: string): string | null {
-        const m = message.match(/\b(confirmar|confirm|rechazar|reject|cancelar)\s+([A-Za-z0-9]{6})\b/i);
+        const m = message.match(/\b(confirmar|confirm|rechazar|reject|cancelar|reofrecer|reoffer)\s+([A-Za-z0-9]{6})\b/i);
         if (!m) return null;
         const verb = m[1].toLowerCase();
         const token = m[2].toUpperCase();
+        if (verb === 'reofrecer' || verb === 'reoffer') {
+            return this.reoffer(token, principalId, conversationId);
+        }
         const now = Date.now();
         const entry = this.ledger.get(token, now);
         if (!entry) return null; // not a gate token - normal chat handles it
@@ -172,7 +191,7 @@ class ConfirmationGate {
             return `[CONFIRM_GATE] El token ${token} no pertenece a esta conversación o usuario. No se aplicó nada.`;
         }
         if (entry.status === 'EXPIRED') {
-            return `[CONFIRM_GATE] La acción ${token} expiró sin decisión (no cuenta como rechazo). Si aún la quieres, pide que se te reofrezca o que la prepare de nuevo.`;
+            return `[CONFIRM_GATE] La acción ${token} expiró sin decisión (no cuenta como rechazo). Si aún la quieres, responde "REOFRECER ${token}" para revisarla de nuevo, o pide la acción de nuevo.`;
         }
         if (entry.status === 'CONSUMED') {
             return `[CONFIRM_GATE] La acción ${token} ya fue ejecutada una vez. No se volverá a ejecutar sin una nueva confirmación explícita.`;

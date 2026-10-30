@@ -284,6 +284,22 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
                         executionTimeMs: Date.now() - startTime
                     };
                 }
+                if (decision.action === 'ALREADY_CONSUMED') {
+                    // The record was APPROVED when read but a concurrent final
+                    // consumer took the single execution permit. Executing
+                    // would duplicate the effect; re-pending would ask the
+                    // user to confirm an action that ALREADY ran. Truth only.
+                    console.warn(`[CONFIRM_GATE] ⛔ ${toolName} not executed: its single permit was consumed by a concurrent call`);
+                    return {
+                        toolName,
+                        success: true,
+                        result: {
+                            status: 'ALREADY_EXECUTED',
+                            instructions: 'Esta acción exacta ya fue ejecutada por otra llamada concurrente (el permiso era de un solo uso). NO la reintentees. Si el usuario quiere repetirla, debe pedirla como una acción nueva que requerirá su propia confirmación.'
+                        },
+                        executionTimeMs: Date.now() - startTime
+                    };
+                }
                 if (decision.action === 'BLOCKED_NO_PRINCIPAL') {
                     console.warn(`[CONFIRM_GATE] ⛔ ${toolName} blocked: no authenticated principal to bind a confirmation to`);
                     return {

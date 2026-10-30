@@ -90,52 +90,85 @@ const canonicalFields = (e: Omit<IngressEnvelope, 'sig'>): string =>
 
 interface ReplayEntry { messageId: string; nonce: string; exp: number }
 
+const REPLAY_LOCK_STALE_MS = 30_000;
+const REPLAY_LOCK_RETRY_MS = 15;
+const REPLAY_LOCK_TIMEOUT_MS = 10_000;
+
 /** Durable replay registry: seen (messageId, nonce) pairs persist across
  *  restarts so a re-emitted signed message never acquires authority twice.
- *  Writes are tmp+rename (no torn state) with mode 0600. */
+ *  checkAndMark is ATOMIC across processes: a fresh disk read and the mark
+ *  happen under an O_EXCL lock (stale-lock recovery), so two verifiers in
+ *  different processes cannot both accept the same envelope. Writes are
+ *  tmp+rename, mode 0600. No in-process cache: another process's marks
+ *  must be visible immediately. */
 class ReplayStore {
-    private seen: ReplayEntry[] | null = null;
     private readonly file: string;
+    private readonly lockFile: string;
 
     constructor(private readonly dir: string) {
         this.file = path.join(dir, 'ingress-replay.json');
+        this.lockFile = `${this.file}.lock`;
     }
 
-    private load(): ReplayEntry[] {
-        if (this.seen) return this.seen;
+    private readDisk(): ReplayEntry[] {
         try {
             const rows = JSON.parse(fs.readFileSync(this.file, 'utf8')) as ReplayEntry[];
-            this.seen = Array.isArray(rows) ? rows : [];
+            return Array.isArray(rows) ? rows : [];
         } catch {
-            this.seen = [];
+            return [];
         }
-        return this.seen;
     }
 
-    private save(): void {
+    private writeDisk(rows: ReplayEntry[]): void {
+        fs.mkdirSync(this.dir, { recursive: true });
+        const tmp = `${this.file}.${process.pid}.${Date.now()}.tmp`;
+        fs.writeFileSync(tmp, JSON.stringify(rows), { mode: 0o600 });
+        fs.renameSync(tmp, this.file);
+    }
+
+    private acquireLock(): void {
+        const start = Date.now();
+        for (;;) {
+            try {
+                const fd = fs.openSync(this.lockFile, 'wx');
+                fs.writeSync(fd, String(process.pid));
+                fs.closeSync(fd);
+                return;
+            } catch (e: any) {
+                if (e?.code === 'EEXIST') {
+                    try {
+                        const st = fs.statSync(this.lockFile);
+                        if (Date.now() - st.mtimeMs > REPLAY_LOCK_STALE_MS) { fs.unlinkSync(this.lockFile); continue; }
+                    } catch { /* vanished: retry */ }
+                    if (Date.now() - start > REPLAY_LOCK_TIMEOUT_MS) throw new Error('[INGRESS] replay lock timeout');
+                    const until = Date.now() + REPLAY_LOCK_RETRY_MS;
+                    while (Date.now() < until) { /* short spin; check+mark is sub-ms */ }
+                    continue;
+                }
+                throw e;
+            }
+        }
+    }
+
+    private releaseLock(): void {
+        try { fs.unlinkSync(this.lockFile); } catch { /* already gone */ }
+    }
+
+    /** Atomic across processes: returns TRUE when this (messageId, nonce)
+     *  was just recorded (first verifier wins), FALSE when it was already
+     *  recorded (replay). Only called AFTER every other check passes, so a
+     *  rejected envelope never burns its nonce. */
+    checkAndMark(messageId: string, nonce: string, exp: number, now: number): boolean {
+        this.acquireLock();
         try {
-            fs.mkdirSync(this.dir, { recursive: true });
-            const tmp = `${this.file}.${process.pid}.tmp`;
-            fs.writeFileSync(tmp, JSON.stringify(this.seen), { mode: 0o600 });
-            fs.renameSync(tmp, this.file);
-        } catch (e: any) {
-            console.warn('[INGRESS] replay store persist failed:', e?.message);
+            const rows = this.readDisk().filter(r => r.exp > now);
+            if (rows.some(r => r.messageId === messageId && r.nonce === nonce)) return false;
+            rows.push({ messageId, nonce, exp });
+            this.writeDisk(rows);
+            return true;
+        } finally {
+            this.releaseLock();
         }
-    }
-
-    /** True when this (messageId, nonce) was already recorded. */
-    has(messageId: string, nonce: string, now: number): boolean {
-        const rows = this.load();
-        return rows.some(r => r.messageId === messageId && r.nonce === nonce && r.exp > now);
-    }
-
-    /** Record a verified message. Only called AFTER every other check passes,
-     *  so a rejected envelope never burns its nonce. */
-    mark(messageId: string, nonce: string, exp: number, now: number): void {
-        const rows = this.load();
-        this.seen = rows.filter(r => r.exp > now);
-        this.seen!.push({ messageId, nonce, exp });
-        this.save();
     }
 }
 
@@ -225,8 +258,9 @@ export class IngressAuthority {
         if (e.messageId !== actual.messageId) return { ok: false, reason: 'MESSAGE_MISMATCH' };
         if (e.conversationId !== actual.conversationId) return { ok: false, reason: 'CONVERSATION_MISMATCH' };
         if (e.contentDigest !== contentDigest(actual.content)) return { ok: false, reason: 'CONTENT_MISMATCH' };
-        if (this.replay.has(e.messageId, e.nonce, now)) return { ok: false, reason: 'REPLAY' };
-        this.replay.mark(e.messageId, e.nonce, e.exp!, now);
+        if (!this.replay.checkAndMark(e.messageId, e.nonce, e.exp!, now)) {
+            return { ok: false, reason: 'REPLAY' };
+        }
         return { ok: true, principalId: e.principalId!, conversationId: e.conversationId! };
     }
 }

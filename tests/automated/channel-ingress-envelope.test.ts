@@ -190,3 +190,33 @@ describe('R7: signed ingress envelope is the only channel authority', () => {
         expect(router).toContain('envelope,');
     });
 });
+
+describe('R7-H3: replay denial is atomic across processes', () => {
+    it('two verifier processes racing the same envelope: exactly one accepts, the other gets REPLAY', async () => {
+        const { writeFileSync } = await import('node:fs');
+        const { spawn } = await import('node:child_process');
+        const dir = mkdtempSync(join(tmpdir(), 'ingress-xproc-'));
+        const key = randomBytes(32);
+        const parent = new IngressAuthority({ key, replayDir: dir });
+        const actual = { channel: 'whatsapp', senderId: 'sender-a', messageId: 'msg-xproc-1', principalId: userA.id, conversationId: 'conv-x', content: 'una sola vez' };
+        const envelope = parent.issue(actual);
+        // The parent must NOT consume the nonce: verify only via children.
+        const payloadFile = join(dir, 'payload.json');
+        writeFileSync(payloadFile, JSON.stringify({ envelope, actual }));
+
+        const runChild = () => new Promise<any>((resolve, reject) => {
+            const child = spawn(process.execPath, ['--import', 'tsx/esm', 'tests/fixtures/ingress-verify-child.ts',
+                key.toString('hex'), dir, payloadFile], { stdio: ['ignore', 'pipe', 'pipe'] });
+            let out = '';
+            child.stdout.on('data', d => { out += d.toString(); });
+            child.on('close', () => {
+                try { resolve(JSON.parse(out.trim().split('\n').pop()!)); } catch (e) { reject(e); }
+            });
+            child.on('error', reject);
+        });
+
+        const verdicts = await Promise.all([runChild(), runChild()]);
+        expect(verdicts.filter(v => v.ok === true)).toHaveLength(1);
+        expect(verdicts.filter(v => v.ok === false && v.reason === 'REPLAY')).toHaveLength(1);
+    }, 30000);
+});

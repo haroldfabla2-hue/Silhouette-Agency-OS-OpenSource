@@ -184,3 +184,50 @@ describe('R8: durable consent ledger', () => {
         expect(ok).toContain('exp@fixture.invalid'); // full summary re-shown
     });
 });
+
+describe('R8-H2: REOFRECER is a real wired command, not an unfulfillable invitation', () => {
+    it('REOFRECER <token> re-offers an expired action to its own principal only, and the new token executes exactly once', () => {
+        const args = { to: 'reoferta@fixture.invalid', subject: 'Reoferta', body: 'c' };
+        const d1 = confirmationGate.check('send_email', args, A.principalId, A.conversationId);
+        expect(d1.action).toBe('PENDING');
+        if (d1.action !== 'PENDING') return;
+        const ledger = new ConsentLedger(process.env.CONFIRMATION_GATE_DIR!);
+        ledger.update(d1.pending.token, { expiresAt: Date.now() - 1 });
+
+        // The expiry ack names the exact, executable command.
+        const expiredAck = confirmationGate.handleUserCommand(`CONFIRMAR ${d1.pending.token}`, A.principalId, A.conversationId);
+        expect(expiredAck).toContain(`REOFRECER ${d1.pending.token}`);
+
+        // Wrong principal cannot re-offer.
+        expect(confirmationGate.handleUserCommand(`REOFRECER ${d1.pending.token}`, B.principalId, A.conversationId)).toContain('no pertenece');
+
+        // Right principal re-offers: new token, full summary re-shown.
+        const ack = confirmationGate.handleUserCommand(`REOFRECER ${d1.pending.token}`, A.principalId, A.conversationId);
+        expect(ack).toContain('reofrecida');
+        expect(ack).toContain('reoferta@fixture.invalid');
+        const newToken = ack!.match(/reofrecida como ([A-Z2-9]{6})/)![1];
+        expect(newToken).not.toBe(d1.pending.token);
+
+        // The re-offered action awaits its own explicit yes, then executes ONCE.
+        expect(confirmationGate.check('send_email', args, A.principalId, A.conversationId).action).toBe('PENDING');
+        confirmationGate.handleUserCommand(`CONFIRMAR ${newToken}`, A.principalId, A.conversationId);
+        expect(confirmationGate.check('send_email', args, A.principalId, A.conversationId).action).toBe('EXECUTE');
+        expect(confirmationGate.check('send_email', args, A.principalId, A.conversationId).action).toBe('PENDING');
+
+        // An explicit rejection is never re-offered.
+        const d2 = confirmationGate.check('send_email', args, A.principalId, A.conversationId);
+        if (d2.action !== 'PENDING') throw new Error('expected PENDING');
+        confirmationGate.handleUserCommand(`RECHAZAR ${d2.pending.token}`, A.principalId, A.conversationId);
+        expect(confirmationGate.handleUserCommand(`REOFRECER ${d2.pending.token}`, A.principalId, A.conversationId)).toContain('rechazada explícitamente');
+    });
+
+    it('wiring guard: the ALREADY_CONSUMED mapping and its truthful message exist (static; the exact race window needs no production seam - the underlying LOST outcome is runtime-proven at ledger level)', () => {
+        const gate = readFileSync('services/tools/confirmationGate.ts', 'utf8');
+        expect(gate).toContain("if (permit.result === 'LOST') return { action: 'ALREADY_CONSUMED' };");
+        expect(gate).toContain("| { action: 'ALREADY_CONSUMED' }");
+        expect(gate).not.toContain("permit.result !== 'EXPIRED') return { action: 'BLOCKED_NO_PRINCIPAL' }");
+        const chat = readFileSync('services/chatToolIntegration.ts', 'utf8');
+        expect(chat).toContain("decision.action === 'ALREADY_CONSUMED'");
+        expect(chat).toContain('ALREADY_EXECUTED');
+    });
+});
