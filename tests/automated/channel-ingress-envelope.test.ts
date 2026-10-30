@@ -10,7 +10,7 @@
  * open). No live Redis server here: the wire-format case proves the envelope
  * survives the adapter's JSON boundary. No provider/model call. */
 import { beforeAll, describe, expect, it } from 'vitest';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -236,5 +236,28 @@ describe('R7-H3b: append-only replay store resilience (no lock, no recovery path
         const actual2 = { ...actual, messageId: 'msg-torn-2', content: 'otro' };
         const envelope2 = authority.issue(actual2);
         expect(authority.verify(envelope2, actual2).ok).toBe(true);
+    });
+});
+
+describe('R8-v5: replay admission is typed, audited and never conflated with replay', () => {
+    it('3: a full replay window refuses NEW marks as ADMISSION_FULL (durable META marker), existing marks still verify', async () => {
+        const { ReplayStore } = await import('../../services/security/ingressEnvelope');
+        const dir = mkdtempSync(join(tmpdir(), 'replay-full-'));
+        const store = new ReplayStore(dir, { maxRows: 2 });
+        const now = Date.now();
+        expect(store.checkAndMark('m1', 'n1', now + 60_000, now)).toBe('MARKED');
+        expect(store.checkAndMark('m2', 'n2', now + 60_000, now)).toBe('MARKED');
+        // full: a NEW mark is refused with its own typed reason, never 'REPLAY'
+        expect(store.checkAndMark('m3', 'n3', now + 60_000, now)).toBe('ADMISSION_FULL');
+        // durable audit: the META marker is in the file and never becomes a live row
+        const text = readFileSync(join(dir, 'ingress-replay.jsonl'), 'utf8');
+        expect(text).toContain('__META__ADMISSION_FULL__');
+        const fresh = new ReplayStore(dir, { maxRows: 2 });
+        expect(fresh.checkAndMark('m1', 'n1', now + 60_000, now)).toBe('REPLAY'); // still verified, not lost
+        // expired rows do not consume the window: after TTL passes, marks are admitted again
+        const old = now - 10_000;
+        const store2 = new ReplayStore(dir + '-2', { maxRows: 1 });
+        store2.checkAndMark('old1', 'n', old + 5_000, old); // already expired by "now"
+        expect(store2.checkAndMark('new1', 'n', now + 60_000, now)).toBe('MARKED');
     });
 });

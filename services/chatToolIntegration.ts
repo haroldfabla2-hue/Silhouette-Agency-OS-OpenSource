@@ -316,6 +316,14 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
                         executionTimeMs: Date.now() - startTime
                     };
                 }
+                if (decision.action === 'ADMISSION_FULL') {
+                    return {
+                        toolName,
+                        success: false,
+                        error: 'ADMISSION_FULL: el usuario tiene demasiadas acciones pendientes de confirmación. Debe confirmar o rechazar algunas (o responder "RECHAZAR TODO" en el chat para descartarlas todas) antes de proponer acciones nuevas. No se ejecutó nada y el rechazo quedó auditado.',
+                        executionTimeMs: Date.now() - startTime
+                    };
+                }
                 if (decision.action === 'BLOCKED_NO_PRINCIPAL') {
                     console.warn(`[CONFIRM_GATE] ⛔ ${toolName} blocked: no authenticated principal to bind a confirmation to`);
                     return {

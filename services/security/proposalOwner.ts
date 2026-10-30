@@ -27,7 +27,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { identityService, UserRole } from '../identityService';
-import { readAppendedLines, type ReaderState } from './appendLogReader';
+import { foldAppendedLines, type ReaderState } from './appendLogReader';
 
 export type ProposalOwnerStatus = 'UNRESOLVED_OWNER' | 'ASSIGNED';
 
@@ -140,24 +140,21 @@ export class ProposalOwnerRegistry {
      *  instead of risking the string-size wall. */
     private load(): Map<string, ProposalOwnerRecord> {
         this.migrateLegacy();
-        const tail = readAppendedLines(this.file, this.cache?.reader ?? null);
-        if (!this.cache || tail.reset) this.cache = { reader: tail.state, map: new Map() };
-        if (tail.lines.length > 0) {
-            const events: OwnerEvent[] = [];
-            for (const line of tail.lines) {
-                if (!line) continue;
+        let map = this.cache?.map;
+        const state = foldAppendedLines(this.file, this.cache?.reader ?? null,
+            () => { map = new Map(); }, // identity/continuity change: rebuild from the lines that follow
+            (line) => {
+                if (!line || !map) return;
                 try {
                     const ev = JSON.parse(line) as OwnerEvent;
-                    if (ev && typeof (ev as any).op === 'string') events.push(ev);
+                    if (ev && typeof (ev as any).op === 'string') this.foldInto(map, [ev]);
                 } catch { /* torn line from a crash mid-append: skip */ }
-            }
-            this.foldInto(this.cache.map, events);
-            if (this.cache.map.size > 50_000 && !this.warnedRecords) {
-                this.warnedRecords = true;
-                console.warn(`[PROPOSAL_OWNER] ${this.cache.map.size} records in memory; compaction is tracked debt - streaming reads keep availability, this is the operational alarm`);
-            }
+            });
+        this.cache = { reader: state, map: map ?? new Map() }; // ENOENT: onReset never fires, start empty
+        if (this.cache.map.size > 50_000 && !this.warnedRecords) {
+            this.warnedRecords = true;
+            console.warn(`[PROPOSAL_OWNER] ${this.cache.map.size} records in memory; compaction is tracked debt - streaming reads keep availability, this is the operational alarm`);
         }
-        this.cache.reader = tail.state;
         return this.cache.map;
     }
 

@@ -28,7 +28,7 @@
 import crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { readAppendedLines, type ReaderState } from './appendLogReader';
+import { foldAppendedLines, type ReaderState } from './appendLogReader';
 
 export const ENVELOPE_ISSUER = 'channel-ingress' as const;
 export const ENVELOPE_VERSION = 1 as const;
@@ -70,7 +70,8 @@ export type EnvelopeRejectReason =
     | 'SENDER_MISMATCH'
     | 'MESSAGE_MISMATCH'
     | 'CONVERSATION_MISMATCH'
-    | 'REPLAY';
+    | 'REPLAY'
+    | 'ADMISSION_FULL';
 
 export type EnvelopeVerdict =
     | { ok: true; principalId: string | null; conversationId: string }
@@ -116,17 +117,19 @@ const REPLAY_WARN_BYTES = 50 * 1024 * 1024;
  *  live-row count beyond REPLAY_MAX_ROWS throw instead of degrading
  *  silently. Physical compaction remains deferred infrastructure work;
  *  growth past REPLAY_WARN_BYTES logs a one-time warning. */
-class ReplayStore {
+export class ReplayStore {
     private readonly file: string;
     private readonly legacyFile: string;
     private cache: { reader: ReaderState; rows: ReplayEntry[] } | null = null;
     private warnedSize = false;
     private readerChunkBytes: number;
+    private readonly maxRows: number;
 
-    constructor(private readonly dir: string, opts: { readerChunkBytes?: number } = {}) {
+    constructor(private readonly dir: string, opts: { readerChunkBytes?: number; maxRows?: number } = {}) {
         this.file = path.join(dir, 'ingress-replay.jsonl');
         this.legacyFile = path.join(dir, 'ingress-replay.json');
         this.readerChunkBytes = opts.readerChunkBytes ?? 1024 * 1024;
+        this.maxRows = opts.maxRows ?? REPLAY_MAX_ROWS;
     }
 
     private appendLine(obj: unknown): void {
@@ -175,10 +178,35 @@ class ReplayStore {
         }
     }
 
+    /** Pruning clock anchored to the monotonic clock: a wall-clock jump
+     *  forward-and-back must NEVER prune still-valid marks early, or a
+     *  replayed envelope could pass after the jump-back. The anchor makes
+     *  the prune clock non-decreasing with process time; a backward wall
+     *  jump can only prune slightly EARLY relative to wall time (bounded
+     *  by the jump), which fails closed, never open. */
+    private readonly wallAtBoot = Date.now();
+    private readonly hrAtBoot = process.hrtime.bigint();
+    private monoNow(): number {
+        return this.wallAtBoot + Number((process.hrtime.bigint() - this.hrAtBoot) / 1_000_000n);
+    }
+
     private readLive(now: number): ReplayEntry[] {
         this.migrateLegacy();
-        const tail = readAppendedLines(this.file, this.cache?.reader ?? null, this.readerChunkBytes);
-        if (!this.cache || tail.reset) this.cache = { reader: tail.state, rows: [] };
+        let rows = this.cache?.rows;
+        const state = foldAppendedLines(this.file, this.cache?.reader ?? null,
+            () => { rows = []; }, // identity/continuity change: rebuild from the lines that follow
+            (line) => {
+                if (!line || !rows) return;
+                try {
+                    const r = JSON.parse(line);
+                    if (r && typeof r.m === 'string' && typeof r.n === 'string' && typeof r.e === 'number') {
+                        if (r.m.startsWith('__META__')) return; // audit markers: durable in the file, never live rows
+                        rows.push({ messageId: r.m, nonce: r.n, exp: r.e, c: String(r.c ?? '') });
+                    }
+                } catch { /* torn line from a crash mid-append: skip */ }
+            },
+            this.readerChunkBytes);
+        this.cache = { reader: state, rows: rows ?? [] }; // ENOENT: onReset never fires, start empty
         try {
             const size = fs.statSync(this.file).size; // telemetry only; ENOENT raced with the reader is fine
             if (size > REPLAY_WARN_BYTES && !this.warnedSize) {
@@ -186,17 +214,8 @@ class ReplayStore {
                 console.warn(`[INGRESS] replay log is ${size} bytes; compaction is tracked debt - streaming reads keep verification available, this is the operational alarm to run it`);
             }
         } catch { /* file removed between read and stat: next read handles it */ }
-        for (const line of tail.lines) {
-            if (!line) continue;
-            try {
-                const r = JSON.parse(line);
-                if (r && typeof r.m === 'string' && typeof r.n === 'string' && typeof r.e === 'number') {
-                    this.cache.rows.push({ messageId: r.m, nonce: r.n, exp: r.e, c: String(r.c ?? '') });
-                }
-            } catch { /* torn line from a crash mid-append: skip */ }
-        }
-        this.cache.reader = tail.state;
-        this.cache.rows = this.cache.rows.filter(r => r.exp > now);
+        const pruneAt = this.monoNow();
+        this.cache.rows = this.cache.rows.filter(r => r.exp > pruneAt);
         return this.cache.rows;
     }
 
@@ -206,20 +225,24 @@ class ReplayStore {
      *  deny). The claim is fsync'd before returning TRUE. Only called AFTER
      *  every other check passes, so a rejected envelope never burns its
      *  nonce. */
-    checkAndMark(messageId: string, nonce: string, exp: number, now: number): boolean {
+    /** TRUE only when THIS call durably recorded the first mark. */
+    checkAndMark(messageId: string, nonce: string, exp: number, now: number): 'MARKED' | 'REPLAY' | 'ADMISSION_FULL' {
         const live = this.readLive(now);
-        if (live.some(r => r.messageId === messageId && r.nonce === nonce)) return false;
-        if (live.length >= REPLAY_MAX_ROWS) {
+        if (live.some(r => r.messageId === messageId && r.nonce === nonce)) return 'REPLAY';
+        if (live.length >= this.maxRows) {
             // Admission full: refuse only NEW marks (fail-closed deny for the
             // new message); verification of already-recorded envelopes keeps
             // working at any size. Rows prune by expiry, so the window drains.
-            console.error(`[INGRESS] replay-mark admission full (${REPLAY_MAX_ROWS} live rows); refusing new mark, existing verification unaffected`);
-            return false;
+            // The refusal is durable (auditable META marker in the log) and
+            // typed - it is never reported as a replay.
+            console.error(`[INGRESS] replay-mark admission full (${this.maxRows} live rows; refusing new mark, existing verification unaffected`);
+            this.appendLine({ m: '__META__ADMISSION_FULL__', n: crypto.randomBytes(6).toString('hex'), e: now + 60_000, c: 'store' });
+            return 'ADMISSION_FULL';
         }
         const me = `${process.pid}:${crypto.randomBytes(8).toString('hex')}`;
         this.appendLine({ m: messageId, n: nonce, e: exp, c: me });
         const first = this.readLive(now).find(r => r.messageId === messageId && r.nonce === nonce);
-        return !!first && first.c === me;
+        return !!first && first.c === me ? 'MARKED' : 'REPLAY';
     }
 }
 
@@ -309,8 +332,9 @@ export class IngressAuthority {
         if (e.messageId !== actual.messageId) return { ok: false, reason: 'MESSAGE_MISMATCH' };
         if (e.conversationId !== actual.conversationId) return { ok: false, reason: 'CONVERSATION_MISMATCH' };
         if (e.contentDigest !== contentDigest(actual.content)) return { ok: false, reason: 'CONTENT_MISMATCH' };
-        if (!this.replay.checkAndMark(e.messageId, e.nonce, e.exp!, now)) {
-            return { ok: false, reason: 'REPLAY' };
+        const mark = this.replay.checkAndMark(e.messageId, e.nonce, e.exp!, now);
+        if (mark !== 'MARKED') {
+            return { ok: false, reason: mark }; // 'REPLAY' or 'ADMISSION_FULL' - typed, never conflated
         }
         return { ok: true, principalId: e.principalId!, conversationId: e.conversationId! };
     }

@@ -582,3 +582,90 @@ describe('R8-v4: availability findings A-G (streaming, identity, admission, coll
         expect(ledger.get(pending.token)!.expiresAt).toBe(futureExpiry);
     });
 });
+
+describe('R8-v5: durable denial audit, per-tool budget, shedding, gate handling (review v4 findings 1-5)', () => {
+    it('1: an admission denial leaves a DURABLE sampled audit event; the fold ignores it as state', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'consent-audit-'));
+        const ledger = new ConsentLedger(dir, { maxLivePendingPerPrincipal: 1, admissionAuditMs: 600_000 });
+        ledger.put(record({ token: 'AUDIT1' }));
+        expect(() => ledger.put(record({ token: 'AUDIT2' }))).toThrow(PendingAdmissionError);
+        expect(() => ledger.put(record({ token: 'AUDIT3' }))).toThrow(PendingAdmissionError); // suppressed by sampling
+        const logText = readFileSync(join(dir, 'consent-ledger.jsonl'), 'utf8');
+        const denials = logText.split('\n').filter(l => l.includes('ADMISSION_DENIED'));
+        expect(denials).toHaveLength(1); // sampled: one durable event, not one per flood hit
+        expect(denials[0]).toContain(A.principalId);
+        expect(denials[0]).toContain('send_email');
+        // a fresh instance folds the audit event as a no-op: state stays correct
+        const fresh = new ConsentLedger(dir);
+        expect(fresh.get('AUDIT1')!.status).toBe('PENDING');
+        expect(fresh.get('AUDIT2')).toBeUndefined();
+    });
+
+    it('2: per-tool sub-budget contains a single flooding flow; other tools of the same principal keep working', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'consent-pertool-'));
+        const ledger = new ConsentLedger(dir, { maxLivePendingPerPrincipal: 10, maxLivePendingPerTool: 2 });
+        ledger.put(record({ token: 'TOOLX1' }));
+        ledger.put(record({ token: 'TOOLX2' }));
+        expect(() => ledger.put(record({ token: 'TOOLX3' }))).toThrow(/tool send_email/);
+        // another tool of the SAME principal is still admitted
+        ledger.put({ ...record({ token: 'TOOLY1' }), tool: 'generate_image' });
+        expect(ledger.get('TOOLY1')!.status).toBe('PENDING');
+    });
+
+    it('1+gate: a saturated principal gets the typed ADMISSION_FULL decision, and human RECHAZAR TODO frees the budget', () => {
+        // shared process-wide gate ledger: start from a clean slate
+        confirmationGate.handleUserCommand('RECHAZAR TODO', A.principalId, A.conversationId);
+        let fullSeen = false;
+        for (let i = 0; i < 250; i++) {
+            const d = confirmationGate.check('send_email', { to: `flood${i}@fixture.invalid`, subject: 'S', body: 'c' }, A.principalId, A.conversationId);
+            if (d.action === 'ADMISSION_FULL') { fullSeen = true; break; }
+        }
+        expect(fullSeen).toBe(true);
+        // the human rejects everything with one channel command; each rejection is a durable DECIDE
+        const msg = confirmationGate.handleUserCommand('RECHAZAR TODO', A.principalId, A.conversationId)!;
+        expect(msg).toContain('rechazadas');
+        // budget free again: a new proposal is admitted
+        const d = confirmationGate.check('send_email', { to: 'after-flood@fixture.invalid', subject: 'S', body: 'c' }, A.principalId, A.conversationId);
+        expect(d.action).toBe('PENDING');
+        // and a RECHAZAR TODO with nothing live says so without changing anything
+        const empty = confirmationGate.handleUserCommand('RECHAZAR TODO', 'no-one', 'no-where')!;
+        expect(empty).toContain('No tienes acciones pendientes');
+        // cleanup so later tests see a quiet ledger
+        confirmationGate.handleUserCommand('RECHAZAR TODO', A.principalId, A.conversationId);
+    }, 30000);
+
+    it('5: terminal records shed args/summary IN MEMORY only; the disk log keeps the full audit', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'consent-shed-'));
+        const ledger = new ConsentLedger(dir);
+        const secretArgs = { to: 'shed@fixture.invalid', body: 'CONTENIDO-LARGO-CONFIDENCIAL-' + 'y'.repeat(5000) };
+        const r = { ...record({}), args: secretArgs, summary: 'resumen completo de la acción' };
+        ledger.put(r);
+        ledger.decide(r.token, 'APPROVED', A.principalId, A.conversationId);
+        const won = ledger.consumePermit(r.token, A.principalId, A.conversationId);
+        if (won.result !== 'CONSUMED') throw new Error('expected CONSUMED');
+        // consumed but no outcome yet: args still available (execution context)
+        expect(ledger.get(r.token)!.argsShed).toBeUndefined();
+        ledger.recordOutcome(r.token, won.record.consumedBy!, 'EXECUTOR_OK');
+        const after = ledger.get(r.token)!;
+        expect(after.argsShed).toBe(true);
+        expect(after.args).toEqual({});
+        expect(after.status).toBe('CONSUMED');
+        expect(after.consumedBy).toBe(won.record.consumedBy); // receipts preserved
+        expect(after.outcome?.status).toBe('EXECUTOR_OK');
+        // the DISK log still carries the full record: audit is never shed
+        const logText = readFileSync(join(dir, 'consent-ledger.jsonl'), 'utf8');
+        expect(logText).toContain('CONTENIDO-LARGO-CONFIDENCIAL-');
+        // a fresh fold sheds identically
+        const fresh = new ConsentLedger(dir);
+        expect(fresh.get(r.token)!.argsShed).toBe(true);
+        // REJECTED sheds too; EXPIRED keeps args (reoffer needs them)
+        const rj = record({ token: 'SHEDRJ' });
+        ledger.put(rj);
+        ledger.decide('SHEDRJ', 'REJECTED', A.principalId, A.conversationId);
+        expect(ledger.get('SHEDRJ')!.argsShed).toBe(true);
+        const ex = record({ token: 'SHEDEX', expiresAt: Date.now() - 1 });
+        ledger.put(ex);
+        expect(ledger.get('SHEDEX')!.argsShed).toBeUndefined();
+        expect(ledger.get('SHEDEX')!.args.to).toBe('x@fixture.invalid');
+    });
+});

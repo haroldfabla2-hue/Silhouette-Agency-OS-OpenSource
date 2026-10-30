@@ -71,7 +71,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { readAppendedLines, type ReaderState } from './appendLogReader';
+import { foldAppendedLines, type ReaderState } from './appendLogReader';
 
 export type ConsentStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED' | 'CONSUMED';
 
@@ -103,6 +103,9 @@ export interface ConsentRecord {
     outcome?: EffectOutcome;
     /** Provenance when this record re-offers an earlier expired one. */
     reofferOf?: string;
+    /** Memory-only: args/summary of a TERMINAL record were shed; the full
+     *  record remains in the on-disk log (audit is never shed). */
+    argsShed?: boolean;
     reofferCount?: number;
 }
 
@@ -111,8 +114,10 @@ export interface ConsentRecord {
  *  principals are unaffected. Only blocks creating ANOTHER live pending. */
 export class PendingAdmissionError extends Error {
     public readonly code = 'PENDING_ADMISSION_FULL' as const;
-    constructor(principalId: string, cap: number) {
-        super(`[CONSENT_LEDGER] principal ${principalId} already has ${cap} live pending confirmations; decide or let some expire before proposing new actions`);
+    constructor(principalId: string, cap: number, tool?: string) {
+        super(tool
+            ? `[CONSENT_LEDGER] principal ${principalId} already has ${cap} live pending confirmations for tool ${tool}; decide or let some expire before proposing new ${tool} actions`
+            : `[CONSENT_LEDGER] principal ${principalId} already has ${cap} live pending confirmations; decide or let some expire before proposing new actions`);
         this.name = 'PendingAdmissionError';
     }
 }
@@ -131,7 +136,8 @@ type LedgerEvent =
     | { op: 'DECIDE'; token: string; decision: 'APPROVED' | 'REJECTED'; by: string; principalId: string; conversationId: string; at: number }
     | { op: 'CONSUME'; token: string; by: string; principalId: string; conversationId: string; at: number }
     | { op: 'REOFFER'; token: string; rec: ConsentRecord; by: string; at: number }
-    | { op: 'OUTCOME'; token: string; outcome: EffectOutcome; by: string; at: number };
+    | { op: 'OUTCOME'; token: string; outcome: EffectOutcome; by: string; at: number }
+    | { op: 'ADMISSION_DENIED'; principalId: string; tool: string; key: string; at: number; suppressed?: number };
 
 /** Fields owned by claim events; a maintenance PATCH can never move them. */
 const PATCHABLE: ReadonlySet<string> = new Set(['expiresAt']);
@@ -147,11 +153,18 @@ export class ConsentLedger {
     private warnedRecords = false;
     private readerChunkBytes: number;
     private maxLivePendingPerPrincipal: number;
+    private maxLivePendingPerTool: number;
+    private admissionAuditMs: number;
+    /** Sampling state for the durable denial audit: one ADMISSION_DENIED
+     *  event per principal per window, carrying the suppressed count. */
+    private deniedAudit = new Map<string, { last: number; suppressed: number }>();
 
-    constructor(private readonly dir: string, opts: { maxLivePendingPerPrincipal?: number; readerChunkBytes?: number } = {}) {
+    constructor(private readonly dir: string, opts: { maxLivePendingPerPrincipal?: number; maxLivePendingPerTool?: number; admissionAuditMs?: number; readerChunkBytes?: number } = {}) {
         this.file = path.join(dir, 'consent-ledger.jsonl');
         this.legacyFile = path.join(dir, 'pending-effects.json');
         this.maxLivePendingPerPrincipal = opts.maxLivePendingPerPrincipal ?? 200;
+        this.maxLivePendingPerTool = opts.maxLivePendingPerTool ?? 50;
+        this.admissionAuditMs = opts.admissionAuditMs ?? 60_000;
         this.readerChunkBytes = opts.readerChunkBytes ?? 1024 * 1024;
     }
 
@@ -209,10 +222,27 @@ export class ConsentLedger {
         }
     }
 
+    /** Terminal records (REJECTED, or CONSUMED with outcome recorded) no
+     *  longer need their full args/summary IN MEMORY: shed them, keeping
+     *  key/status/receipts. The on-disk log always keeps the full record;
+     *  audit is never shed. EXPIRED records keep args: reoffer needs them. */
+    private shedIfTerminal(r: ConsentRecord): void {
+        if (r.argsShed) return;
+        if (r.status === 'REJECTED' || (r.status === 'CONSUMED' && r.outcome)) {
+            r.args = {};
+            r.summary = '[contenido completo en el log en disco]';
+            r.argsShed = true;
+        }
+    }
+
     private foldInto(map: Map<string, ConsentRecord>, events: LedgerEvent[]): void {
         for (const ev of events) {
             if (ev.op === 'PUT') {
-                if (!map.has(ev.rec.token)) map.set(ev.rec.token, { ...ev.rec }); // first-wins
+                if (!map.has(ev.rec.token)) {
+                    const rec = { ...ev.rec };
+                    this.shedIfTerminal(rec); // e.g. imported terminal history
+                    map.set(ev.rec.token, rec);
+                } // first-wins
             } else if (ev.op === 'PATCH') {
                 const r = map.get(ev.token);
                 // expiresAt maintenance touches ONLY a live pending:
@@ -230,6 +260,7 @@ export class ConsentLedger {
                     if (ev.decision === 'REJECTED' && (r.status === 'PENDING' || r.status === 'APPROVED')) {
                         r.status = 'REJECTED';
                         r.rejectedAt = ev.at;
+                        this.shedIfTerminal(r);
                     } else if (ev.decision === 'APPROVED' && r.status === 'PENDING') {
                         r.status = 'APPROVED';
                         r.approvedAt = ev.at;
@@ -255,9 +286,14 @@ export class ConsentLedger {
                     map.set(ev.rec.token, { ...ev.rec });
                     r.reofferReceipt = { by: ev.by, at: ev.at };
                 }
+            } else if (ev.op === 'ADMISSION_DENIED') {
+                // audit-only: no state change
             } else if (ev.op === 'OUTCOME') {
                 const r = map.get(ev.token);
-                if (r && r.consumedBy && r.consumedBy === ev.by && !r.outcome) r.outcome = ev.outcome;
+                if (r && r.consumedBy && r.consumedBy === ev.by && !r.outcome) {
+                    r.outcome = ev.outcome;
+                    this.shedIfTerminal(r);
+                }
             }
         }
     }
@@ -266,8 +302,18 @@ export class ConsentLedger {
      *  offset. Never exposed to callers: load() hands out copies. */
     private rawFold(): Map<string, ConsentRecord> {
         this.migrateLegacy();
-        const tail = readAppendedLines(this.file, this.cache?.reader ?? null, this.readerChunkBytes);
-        if (!this.cache || tail.reset) this.cache = { reader: tail.state, map: new Map() };
+        let map = this.cache?.map;
+        const state = foldAppendedLines(this.file, this.cache?.reader ?? null,
+            () => { map = new Map(); }, // identity/continuity change: rebuild from the lines that follow
+            (line) => {
+                if (!line || !map) return;
+                try {
+                    const ev = JSON.parse(line) as LedgerEvent;
+                    if (ev && typeof (ev as any).op === 'string') this.foldInto(map, [ev]);
+                } catch { /* torn line from a crash mid-append: skip - that writer died before its claim was durable */ }
+            },
+            this.readerChunkBytes);
+        this.cache = { reader: state, map: map ?? new Map() }; // ENOENT: onReset never fires, start empty
         try {
             const size = fs.statSync(this.file).size; // stat only for telemetry; ENOENT raced with the reader is fine
             if (size > WARN_BYTES && !this.warnedSize) {
@@ -275,22 +321,10 @@ export class ConsentLedger {
                 console.warn(`[CONSENT_LEDGER] log is ${size} bytes (>${WARN_BYTES}); compaction is tracked debt - streaming reads keep availability, this is the operational alarm to run it`);
             }
         } catch { /* file removed between read and stat: next read handles it */ }
-        if (tail.lines.length > 0) {
-            const events: LedgerEvent[] = [];
-            for (const line of tail.lines) {
-                if (!line) continue;
-                try {
-                    const ev = JSON.parse(line) as LedgerEvent;
-                    if (ev && typeof (ev as any).op === 'string') events.push(ev);
-                } catch { /* torn line from a crash mid-append: skip - that writer died before its claim was durable */ }
-            }
-            this.foldInto(this.cache.map, events);
-            if (this.cache.map.size > WARN_RECORDS && !this.warnedRecords) {
-                this.warnedRecords = true;
-                console.warn(`[CONSENT_LEDGER] ${this.cache.map.size} records in memory (>${WARN_RECORDS}); compaction is tracked debt - admission control bounds new pendings, this is the operational alarm`);
-            }
+        if (this.cache.map.size > WARN_RECORDS && !this.warnedRecords) {
+            this.warnedRecords = true;
+            console.warn(`[CONSENT_LEDGER] ${this.cache.map.size} records in memory (>${WARN_RECORDS}); compaction is tracked debt - admission control bounds new pendings, this is the operational alarm`);
         }
-        this.cache.reader = tail.state;
         return this.cache.map;
     }
 
@@ -328,11 +362,38 @@ export class ConsentLedger {
         return n;
     }
 
+    private auditAdmissionDenied(record: ConsentRecord, now: number): void {
+        // Durable, auditable trail of refusals, sampled per principal so a
+        // flood cannot grow the log unboundedly THROUGH the audit itself:
+        // one event per principal per window carries the suppressed count.
+        const st = this.deniedAudit.get(record.principalId);
+        if (st && now - st.last < this.admissionAuditMs) {
+            st.suppressed++;
+            return;
+        }
+        const suppressed = st?.suppressed ?? 0;
+        this.deniedAudit.set(record.principalId, { last: now, suppressed: 0 });
+        this.append({ op: 'ADMISSION_DENIED', principalId: record.principalId, tool: record.tool, key: record.key, at: now, ...(suppressed > 0 ? { suppressed } : {}) });
+        // No cache fix-up needed: the next fold picks our own append up via
+        // the reader's continuity check, like every other append.
+    }
+
     private admitNewPending(record: ConsentRecord): void {
         if (record.status !== 'PENDING') return; // decisions/consumes/outcomes are claims, not new proposals
         const now = Date.now();
         if (record.expiresAt <= now) return; // dead on arrival: no budget spent
+        // Per-tool sub-budget first: one flooding flow (same tool, distinct
+        // args) must not consume the principal's whole budget.
+        let perTool = 0;
+        for (const r of this.rawFold().values()) {
+            if (r.principalId === record.principalId && r.status === 'PENDING' && r.expiresAt > now && r.tool === record.tool) perTool++;
+        }
+        if (perTool >= this.maxLivePendingPerTool) {
+            this.auditAdmissionDenied(record, now);
+            throw new PendingAdmissionError(record.principalId, this.maxLivePendingPerTool, record.tool);
+        }
         if (this.livePendingCount(record.principalId, now) >= this.maxLivePendingPerPrincipal) {
+            this.auditAdmissionDenied(record, now);
             throw new PendingAdmissionError(record.principalId, this.maxLivePendingPerPrincipal);
         }
     }

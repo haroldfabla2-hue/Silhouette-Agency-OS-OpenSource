@@ -36,6 +36,7 @@ export type GateDecision =
     | { action: 'PENDING'; pending: PendingEffect }
     | { action: 'REJECTED'; pending: PendingEffect }
     | { action: 'ALREADY_CONSUMED'; token: string }
+    | { action: 'ADMISSION_FULL' }
     | { action: 'BLOCKED_NO_PRINCIPAL' };
 
 /** Chat tools with external or wallet-bearing effects. Payments are already
@@ -171,7 +172,12 @@ class ConfirmationGate {
             principalId, conversationId,
             status: 'PENDING', createdAt: now, expiresAt: now + TTL_MS
         };
-        this.ledger.put(pending);
+        try {
+            this.ledger.put(pending);
+        } catch (e: any) {
+            if (e?.code === 'PENDING_ADMISSION_FULL') return { action: 'ADMISSION_FULL' };
+            throw e;
+        }
         return { action: 'PENDING', pending };
     }
 
@@ -181,6 +187,23 @@ class ConfirmationGate {
      * matched a pending action of THIS principal in THIS conversation, else null.
      */
     public handleUserCommand(message: string, principalId: string, conversationId: string): string | null {
+        // "RECHAZAR TODO": the authenticated human rejects ALL of their live
+        // pendings in THIS conversation (e.g. after a proposal flood). Each
+        // rejection is its own durable DECIDE claim through decide(); nothing
+        // is bulk-edited and no one else's records are touched. Only this
+        // human-channel path can trigger it - never content or model output.
+        if (/^\s*(rechazar|reject|cancelar)\s+todo\s*\.?\s*$/i.test(message)) {
+            const now = Date.now();
+            const mine = this.ledger.all()
+                .filter(r => r.principalId === principalId && r.conversationId === conversationId
+                    && r.status === 'PENDING' && r.expiresAt > now);
+            if (mine.length === 0) return '[CONFIRM_GATE] No tienes acciones pendientes en esta conversación. No se aplicó nada.';
+            let rejected = 0;
+            for (const r of mine) {
+                if (this.ledger.decide(r.token, 'REJECTED', principalId, conversationId)?.status === 'REJECTED') rejected++;
+            }
+            return `[CONFIRM_GATE] ❌ ${rejected} de ${mine.length} acciones pendientes rechazadas por el usuario (decisión definitiva cada una). Tu presupuesto de pendientes queda libre; nada se ejecutó.`;
+        }
         const m = message.match(/\b(confirmar|confirm|rechazar|reject|cancelar|reofrecer|reoffer)\s+([A-Za-z0-9]{6})\b/i);
         if (!m) return null;
         const verb = m[1].toLowerCase();
@@ -238,9 +261,17 @@ class ConfirmationGate {
         }
         // Token collision (6-char namespace): retry with fresh tokens before
         // giving up; the fold itself is collision-guarded either way.
-        let result = this.ledger.reoffer(token, { token: this.newToken(), expiresAt: now + TTL_MS }, now);
-        for (let tries = 0; result.ok === false && result.reason === 'TOKEN_COLLISION' && tries < 3; tries++) {
+        let result;
+        try {
             result = this.ledger.reoffer(token, { token: this.newToken(), expiresAt: now + TTL_MS }, now);
+            for (let tries = 0; result.ok === false && result.reason === 'TOKEN_COLLISION' && tries < 3; tries++) {
+                result = this.ledger.reoffer(token, { token: this.newToken(), expiresAt: now + TTL_MS }, now);
+            }
+        } catch (e: any) {
+            if (e?.code === 'PENDING_ADMISSION_FULL') {
+                return `[CONFIRM_GATE] La acción ${token} no se puede reofrecer ahora: tienes demasiadas acciones pendientes de confirmación. Confirma o rechaza algunas (o responde "RECHAZAR TODO" para descartarlas todas) y vuelve a intentarlo. Nada cambió.`;
+            }
+            throw e;
         }
         if (result.ok === false) { // equality narrowing: repo tsconfig has strictNullChecks off, so !result.ok does not discriminate the union
             if (result.reason === 'TOKEN_COLLISION') {
