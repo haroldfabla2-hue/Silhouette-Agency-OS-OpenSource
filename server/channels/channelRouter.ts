@@ -11,6 +11,7 @@ import { sessionManager } from '../gateway/sessionManager';
 import { gateway } from '../gateway/wsGateway';
 import { nervousSystem } from '../../services/connectionNervousSystem';
 import { identityService, UserRole } from '../../services/identityService';
+import { channelIngress } from '../../services/security/ingressEnvelope';
 
 // ─── Channel Router ──────────────────────────────────────────────────────────
 
@@ -123,10 +124,27 @@ class ChannelRouter {
                 },
             });
 
-            // 3. Forward to SystemBus for orchestrator pickup
+            // 3. Forward to SystemBus for orchestrator pickup.
+            // The `role` field below is an ADVISORY claim for display only.
+            // Authenticated identity travels exclusively in the signed
+            // ingress envelope (issued here, AFTER identity resolution) and is
+            // verified at the consumption point (services/security/
+            // channelAuthority.ts). The envelope binds this exact message
+            // (content digest, stable id, channel+sender) to the resolved
+            // principal and this conversation; it grants NO effect authority
+            // by itself.
+            const envelope = channelIngress.issue({
+                channel: msg.channel,
+                senderId: msg.senderId,
+                messageId: msg.id,
+                principalId: user ? user.id : null,
+                conversationId: sessionId,
+                content: msg.text ?? '',
+            });
             systemBus.emit(SystemProtocol.USER_MESSAGE, {
                 sessionId,
                 message: msg.text,
+                messageId: msg.id,
                 channel: msg.channel,
                 senderId: msg.senderId,
                 senderName: msg.senderName,
@@ -135,7 +153,8 @@ class ChannelRouter {
                 media: msg.media,
                 timestamp: msg.timestamp,
                 isReadOnly: msg.isReadOnly,
-                role: msg.role, // Pass role to Orchestrator
+                role: msg.role, // Advisory claim only; authority = envelope
+                envelope,
             }, `channel:${msg.channel}`);
 
             // 4. Notify WS clients about the channel message

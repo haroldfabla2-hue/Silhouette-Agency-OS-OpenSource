@@ -2,10 +2,14 @@
  * Effect grant context (AsyncLocalStorage).
  *
  * Carries a SINGLE-USE approval grant for one exact effect invocation
- * (effect + canonical args) across the layers of one execution: the point
- * where a human (or an authenticated request containing the exact args, which
- * IS that principal's explicit approval of those args) approved, and the
- * provider boundary that consumes the grant.
+ * (effect + canonical args) across the layers of one execution: from the
+ * point where authority actually exists to the provider boundary that
+ * consumes the grant. An authenticated request BY ITSELF is NOT approval of
+ * the args it carries (they may be model-drafted or tool-authored): the only
+ * issuance points are confirmationGate's EXECUTE decision after the user saw
+ * the FULL action and replied CONFIRMAR in the same conversation, or a human
+ * approval recorded at /v1/autonomy/confirmations by the authenticated
+ * principal the pending belongs to.
  *
  * A context is NOT a general permission:
  *  - the grant is consumed on first use (ApprovalGrantStore, timing-safe);

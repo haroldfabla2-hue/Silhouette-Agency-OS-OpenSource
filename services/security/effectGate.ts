@@ -17,7 +17,9 @@
  *        (ApprovalGrantStore: consume-once, timing-safe, expiring), issued
  *        ONLY by chatToolIntegration AFTER confirmationGate's EXECUTE
  *        decision (explicit "CONFIRMAR <token>" from the authenticated
- *        principal in the same conversation, exact args); or
+ *        principal in the same conversation, after seeing the FULL action).
+ *        Note: an authenticated request carrying args is NOT by itself an
+ *        approval of those args; only these explicit decision paths issue; or
  *     b. a human approval at /v1/autonomy/confirmations (actionExecutor),
  *        whose endpoints now require an ATTRIBUTED HUMAN SESSION - the shared
  *        system API token cannot approve or read confirmations.
