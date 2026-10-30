@@ -90,32 +90,37 @@ const canonicalFields = (e: Omit<IngressEnvelope, 'sig'>): string =>
 
 interface ReplayEntry { messageId: string; nonce: string; exp: number; c: string }
 
+const REPLAY_MAX_ROWS = 100_000;
+const REPLAY_TAIL_CAP_BYTES = 32 * 1024 * 1024;
+const REPLAY_WARN_BYTES = 50 * 1024 * 1024;
+
 /** Durable replay registry: seen (messageId, nonce) pairs persist across
  *  restarts so a re-emitted signed message never acquires authority twice.
  *
- *  ATOMICITY WITHOUT LOCKS (H3-root fix): the store is an append-only
- *  JSONL claim log. A verifier appends its claim and re-reads the file;
- *  the FIRST live claim for a pair wins. O_APPEND gives one total order
- *  of lines and every verifier re-reads after its own append, so the
- *  first appender always sees itself win and any later appender always
- *  sees the earlier claim: exactly one winner, across processes, with NO
- *  lock file and no stale-lock recovery. (The previous O_EXCL lock +
- *  stale-unlink recovery had a stat->unlink TOCTOU where two recoverers
- *  could both hold the lock; that class is eliminated by removing the
- *  lock, not patched.)
+ *  ATOMICITY WITHOUT LOCKS: append-only JSONL claim log; a verifier
+ *  appends its claim and re-reads; the FIRST live claim for a pair wins.
+ *  O_APPEND gives one total order of lines and every verifier re-reads
+ *  after its own append, so the first appender always sees itself win:
+ *  exactly one winner across processes, no lock file, no stale recovery.
  *
- *  Crash semantics, fail-closed: a claim appended by a process that then
- *  dies persists, so the envelope is burned (never double authority); a
- *  torn line from a crash mid-append is skipped on read, and if THIS
- *  verifier's claim cannot be read back the check returns false (deny).
- *  Dead entries (exp <= now) are ignored on read.
+ *  Durability: each claim is ONE write(2) (torn tail healed by prefixing
+ *  the newline in the same write), short writes throw, and the write is
+ *  fsync'd before checkAndMark returns - the mark is durable before the
+ *  envelope acquires authority (covers OS crash, not hardware that lies
+ *  about fsync). A torn final line (crash mid-append) is skipped on read;
+ *  a verifier whose own claim cannot be read back is DENIED (fail-closed).
  *
- *  DECLARED LIMIT: append-only; physical compaction (safe only via
- *  quiescing or generation files) is deferred to the infrastructure
- *  decision - growth is one short line per verified envelope. */
+ *  Reads: incremental by byte offset with a per-instance row cache pruned
+ *  of expired entries; a read error other than ENOENT THROWS (never a
+ *  silent empty store); an unread tail beyond REPLAY_TAIL_CAP_BYTES and a
+ *  live-row count beyond REPLAY_MAX_ROWS throw instead of degrading
+ *  silently. Physical compaction remains deferred infrastructure work;
+ *  growth past REPLAY_WARN_BYTES logs a one-time warning. */
 class ReplayStore {
     private readonly file: string;
     private readonly legacyFile: string;
+    private cache: { offset: number; rows: ReplayEntry[] } | null = null;
+    private warnedSize = false;
 
     constructor(private readonly dir: string) {
         this.file = path.join(dir, 'ingress-replay.jsonl');
@@ -124,60 +129,110 @@ class ReplayStore {
 
     private appendLine(obj: unknown): void {
         fs.mkdirSync(this.dir, { recursive: true });
-        // O_APPEND + torn-tail healing: a crash mid-append leaves a partial
-        // line without a newline; close it or the next claim merges into
-        // the fragment and is skipped with it (fail-closed but burned).
+        const existed = fs.existsSync(this.file);
         const fd = fs.openSync(this.file, 'a+', 0o600);
         try {
             const st = fs.fstatSync(fd);
+            let prefix = '';
             if (st.size > 0) {
                 const last = Buffer.alloc(1);
                 fs.readSync(fd, last, 0, 1, st.size - 1);
-                if (last[0] !== 0x0a) fs.writeSync(fd, '\n');
+                if (last[0] !== 0x0a) prefix = '\n';
             }
-            fs.writeSync(fd, JSON.stringify(obj) + '\n');
+            const data = Buffer.from(prefix + JSON.stringify(obj) + '\n', 'utf8');
+            if (fs.writeSync(fd, data, 0, data.length) !== data.length) {
+                throw new Error('[INGRESS] short write: replay claim is not durable');
+            }
+            fs.fsyncSync(fd);
         } finally {
             fs.closeSync(fd);
+        }
+        if (!existed) {
+            const dfd = fs.openSync(this.dir, 'r');
+            try { fs.fsyncSync(dfd); } finally { fs.closeSync(dfd); }
+        }
+    }
+
+    private migrateLegacy(): void {
+        let raw: string;
+        try {
+            raw = fs.readFileSync(this.legacyFile, 'utf8');
+        } catch {
+            return;
+        }
+        try {
+            const rows = JSON.parse(raw) as { messageId: string; nonce: string; exp: number }[];
+            for (const r of Array.isArray(rows) ? rows : []) {
+                if (r && typeof r.messageId === 'string' && typeof r.nonce === 'string') {
+                    this.appendLine({ m: r.messageId, n: r.nonce, e: r.exp, c: 'migrated' });
+                }
+            }
+            fs.renameSync(this.legacyFile, `${this.legacyFile}.imported`);
+        } catch {
+            try { fs.renameSync(this.legacyFile, `${this.legacyFile}.unreadable-${Date.now()}`); } catch { /* keep as-is */ }
         }
     }
 
     private readLive(now: number): ReplayEntry[] {
-        // One-time continuity import of the pre-append-log store.
-        if (!fs.existsSync(this.file) && fs.existsSync(this.legacyFile)) {
-            try {
-                const rows = JSON.parse(fs.readFileSync(this.legacyFile, 'utf8')) as { messageId: string; nonce: string; exp: number }[];
-                for (const r of Array.isArray(rows) ? rows : []) {
-                    if (r && typeof r.messageId === 'string' && typeof r.nonce === 'string') {
-                        this.appendLine({ m: r.messageId, n: r.nonce, e: r.exp, c: 'migrated' });
-                    }
-                }
-                fs.renameSync(this.legacyFile, `${this.legacyFile}.imported`);
-            } catch { /* unreadable legacy: start empty, keep the file as-is */ }
-        }
-        let raw: string;
+        this.migrateLegacy();
+        let st: fs.Stats;
         try {
-            raw = fs.readFileSync(this.file, 'utf8');
-        } catch {
-            return [];
+            st = fs.statSync(this.file);
+        } catch (e: any) {
+            if (e?.code === 'ENOENT') {
+                this.cache = this.cache ?? { offset: 0, rows: [] };
+                return this.cache.rows;
+            }
+            throw e; // a read failure is never an empty store: fail closed
         }
-        const rows: ReplayEntry[] = [];
-        for (const line of raw.split('\n')) {
-            if (!line) continue;
+        if (st.size > REPLAY_WARN_BYTES && !this.warnedSize) {
+            this.warnedSize = true;
+            console.warn(`[INGRESS] replay log is ${st.size} bytes; physical compaction is deferred infrastructure work and will become necessary`);
+        }
+        if (!this.cache || st.size < this.cache.offset) {
+            this.cache = { offset: 0, rows: [] };
+        }
+        const start = this.cache.offset;
+        if (st.size > start) {
+            if (st.size - start > REPLAY_TAIL_CAP_BYTES) {
+                throw new Error(`[INGRESS] unread replay-log tail exceeds ${REPLAY_TAIL_CAP_BYTES} bytes; refusing to verify (compaction needed)`);
+            }
+            const fd = fs.openSync(this.file, 'r');
+            let text: string;
+            let consumed: number;
             try {
-                const r = JSON.parse(line);
-                if (r && typeof r.m === 'string' && typeof r.n === 'string' && typeof r.e === 'number' && r.e > now) {
-                    rows.push({ messageId: r.m, nonce: r.n, exp: r.e, c: String(r.c ?? '') });
-                }
-            } catch { /* torn line from a crash mid-append: skip - that writer died before deciding */ }
+                const buf = Buffer.alloc(st.size - start);
+                fs.readSync(fd, buf, 0, buf.length, start);
+                text = buf.toString('utf8');
+                const lastNl = text.lastIndexOf('\n');
+                consumed = lastNl >= 0 ? lastNl + 1 : 0;
+            } finally {
+                fs.closeSync(fd);
+            }
+            for (const line of text.slice(0, consumed).split('\n')) {
+                if (!line) continue;
+                try {
+                    const r = JSON.parse(line);
+                    if (r && typeof r.m === 'string' && typeof r.n === 'string' && typeof r.e === 'number') {
+                        this.cache.rows.push({ messageId: r.m, nonce: r.n, exp: r.e, c: String(r.c ?? '') });
+                    }
+                } catch { /* torn line from a crash mid-append: skip */ }
+            }
+            this.cache.offset = start + consumed;
         }
-        return rows;
+        this.cache.rows = this.cache.rows.filter(r => r.exp > now);
+        if (this.cache.rows.length > REPLAY_MAX_ROWS) {
+            throw new Error(`[INGRESS] live replay rows exceed ${REPLAY_MAX_ROWS}; refusing to verify (compaction needed)`);
+        }
+        return this.cache.rows;
     }
 
-    /** Atomic across processes: returns TRUE when this (messageId, nonce)
-     *  was just recorded (first verifier wins), FALSE when it was already
-     *  recorded (replay) or the claim did not land durably (fail-closed
-     *  deny). Only called AFTER every other check passes, so a rejected
-     *  envelope never burns its nonce. */
+    /** Atomic across processes: TRUE when this (messageId, nonce) was just
+     *  recorded (first verifier wins); FALSE when already recorded (replay)
+     *  or when THIS verifier's claim cannot be read back (fail-closed
+     *  deny). The claim is fsync'd before returning TRUE. Only called AFTER
+     *  every other check passes, so a rejected envelope never burns its
+     *  nonce. */
     checkAndMark(messageId: string, nonce: string, exp: number, now: number): boolean {
         if (this.readLive(now).some(r => r.messageId === messageId && r.nonce === nonce)) return false;
         const me = `${process.pid}:${crypto.randomBytes(8).toString('hex')}`;

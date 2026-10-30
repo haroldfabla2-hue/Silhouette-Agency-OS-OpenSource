@@ -5,6 +5,8 @@
  *    race             - consumePermit once, print JSON result, exit
  *    reoffer          - reoffer(token) once with argv[7] as the new token,
  *                       print JSON result, exit (cross-process reoffer race)
+ *    decide           - decide(token, argv[7]) once, print resulting status,
+ *                       exit (cross-process decision race)
  *    consume-then-hang- consumePermit once, print JSON result, then hang
  *                       (parent kill -9s it: permit receipt must survive)
  *    hang-forever     - print READY then hang WITHOUT consuming
@@ -14,6 +16,12 @@ import { ConsentLedger } from '../../services/security/consentLedger';
 const [dir, token, principalId, conversationId, mode] = process.argv.slice(2);
 const ledger = new ConsentLedger(dir);
 
+if (mode === 'decide') {
+    // argv: <dir> <token> <principalId> <conversationId> decide <APPROVED|REJECTED>
+    const after = ledger.decide(token, process.argv[7] as any, principalId, conversationId);
+    console.log(JSON.stringify({ status: after?.status ?? null }));
+    process.exit(0);
+}
 if (mode === 'reoffer') {
     // argv: <dir> <token> <principalId> <conversationId> reoffer <newToken>
     console.log(JSON.stringify(ledger.reoffer(token, { token: process.argv[7], expiresAt: Date.now() + 60_000 }, Date.now())));

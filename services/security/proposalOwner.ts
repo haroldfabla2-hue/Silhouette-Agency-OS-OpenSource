@@ -67,51 +67,56 @@ export class ProposalOwnerRegistry {
 
     private append(event: OwnerEvent): void {
         fs.mkdirSync(this.dir, { recursive: true });
-        // O_APPEND + torn-tail healing (see ConsentLedger.append).
+        // ONE write for (torn-tail-healing newline) + event + newline; short
+        // writes throw; fsync before returning (see ConsentLedger.append).
+        const existed = fs.existsSync(this.file);
         const fd = fs.openSync(this.file, 'a+', 0o600);
         try {
             const st = fs.fstatSync(fd);
+            let prefix = '';
             if (st.size > 0) {
                 const last = Buffer.alloc(1);
                 fs.readSync(fd, last, 0, 1, st.size - 1);
-                if (last[0] !== 0x0a) fs.writeSync(fd, '\n');
+                if (last[0] !== 0x0a) prefix = '\n';
             }
-            fs.writeSync(fd, JSON.stringify(event) + '\n');
+            const data = Buffer.from(prefix + JSON.stringify(event) + '\n', 'utf8');
+            if (fs.writeSync(fd, data, 0, data.length) !== data.length) {
+                throw new Error('[PROPOSAL_OWNER] short write: event is not durable');
+            }
+            fs.fsyncSync(fd);
         } finally {
             fs.closeSync(fd);
         }
+        if (!existed) {
+            const dfd = fs.openSync(this.dir, 'r');
+            try { fs.fsyncSync(dfd); } finally { fs.closeSync(dfd); }
+        }
     }
 
-    private readEvents(): OwnerEvent[] {
-        // One-time continuity import of the pre-event-sourced store.
-        if (!fs.existsSync(this.file) && fs.existsSync(this.legacyFile)) {
-            try {
-                const rows = JSON.parse(fs.readFileSync(this.legacyFile, 'utf8')) as ProposalOwnerRecord[];
-                for (const r of Array.isArray(rows) ? rows : []) {
-                    if (r && typeof r.initiativeId === 'string') this.append({ op: 'PROPOSE', rec: r });
-                }
-                fs.renameSync(this.legacyFile, `${this.legacyFile}.imported`);
-            } catch { /* unreadable legacy: start empty, keep the file as-is */ }
-        }
+    private cache: { offset: number; map: Map<string, ProposalOwnerRecord> } | null = null;
+
+    private migrateLegacy(): void {
+        // Import whenever the legacy file is present: PROPOSE first-wins
+        // makes a repeated or concurrent import a no-op, and a crash
+        // mid-import is completed by the next reader. No marker, no lock.
         let raw: string;
         try {
-            raw = fs.readFileSync(this.file, 'utf8');
+            raw = fs.readFileSync(this.legacyFile, 'utf8');
         } catch {
-            return [];
+            return;
         }
-        const events: OwnerEvent[] = [];
-        for (const line of raw.split('\n')) {
-            if (!line) continue;
-            try {
-                const ev = JSON.parse(line) as OwnerEvent;
-                if (ev && typeof (ev as any).op === 'string') events.push(ev);
-            } catch { /* torn line from a crash mid-append: skip */ }
+        try {
+            const rows = JSON.parse(raw) as ProposalOwnerRecord[];
+            for (const r of Array.isArray(rows) ? rows : []) {
+                if (r && typeof r.initiativeId === 'string') this.append({ op: 'PROPOSE', rec: r });
+            }
+            fs.renameSync(this.legacyFile, `${this.legacyFile}.imported`);
+        } catch {
+            try { fs.renameSync(this.legacyFile, `${this.legacyFile}.unreadable-${Date.now()}`); } catch { /* keep as-is */ }
         }
-        return events;
     }
 
-    private fold(events: OwnerEvent[]): Map<string, ProposalOwnerRecord> {
-        const map = new Map<string, ProposalOwnerRecord>();
+    private foldInto(map: Map<string, ProposalOwnerRecord>, events: OwnerEvent[]): void {
         for (const ev of events) {
             if (ev.op === 'PROPOSE') {
                 if (!map.has(ev.rec.initiativeId)) map.set(ev.rec.initiativeId, { ...ev.rec, decisions: [...(ev.rec.decisions ?? [])] });
@@ -126,11 +131,58 @@ export class ProposalOwnerRegistry {
                 }
             }
         }
-        return map;
     }
 
+    /** Incremental fold by byte offset; read failures other than ENOENT
+     *  THROW (never a silent empty store); an oversized unread tail throws
+     *  instead of risking the string-size wall. */
     private load(): Map<string, ProposalOwnerRecord> {
-        return this.fold(this.readEvents());
+        this.migrateLegacy();
+        let st: fs.Stats;
+        try {
+            st = fs.statSync(this.file);
+        } catch (e: any) {
+            if (e?.code === 'ENOENT') {
+                this.cache = this.cache ?? { offset: 0, map: new Map() };
+                return this.cache.map;
+            }
+            throw e;
+        }
+        if (!this.cache || st.size < this.cache.offset) {
+            this.cache = { offset: 0, map: new Map() };
+        }
+        const start = this.cache.offset;
+        if (st.size > start) {
+            if (st.size - start > 32 * 1024 * 1024) {
+                throw new Error('[PROPOSAL_OWNER] unread log tail exceeds 32MB; refusing to load (compaction needed)');
+            }
+            const fd = fs.openSync(this.file, 'r');
+            let text: string;
+            let consumed: number;
+            try {
+                const buf = Buffer.alloc(st.size - start);
+                fs.readSync(fd, buf, 0, buf.length, start);
+                text = buf.toString('utf8');
+                const lastNl = text.lastIndexOf('\n');
+                consumed = lastNl >= 0 ? lastNl + 1 : 0;
+            } finally {
+                fs.closeSync(fd);
+            }
+            const events: OwnerEvent[] = [];
+            for (const line of text.slice(0, consumed).split('\n')) {
+                if (!line) continue;
+                try {
+                    const ev = JSON.parse(line) as OwnerEvent;
+                    if (ev && typeof (ev as any).op === 'string') events.push(ev);
+                } catch { /* torn line from a crash mid-append: skip */ }
+            }
+            this.foldInto(this.cache.map, events);
+            this.cache.offset = start + consumed;
+            if (this.cache.map.size > 50_000) {
+                throw new Error('[PROPOSAL_OWNER] record cap exceeded; refusing to operate unbounded');
+            }
+        }
+        return this.cache.map;
     }
 
     /** Record a daemon initiative with NO owner. Idempotent: an existing

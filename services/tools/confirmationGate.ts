@@ -32,7 +32,7 @@ export type PendingStatus = ConsentStatus;
 export type PendingEffect = ConsentRecord;
 
 export type GateDecision =
-    | { action: 'EXECUTE'; token: string }
+    | { action: 'EXECUTE'; token: string; receipt: string }
     | { action: 'PENDING'; pending: PendingEffect }
     | { action: 'REJECTED'; pending: PendingEffect }
     | { action: 'ALREADY_CONSUMED'; token: string }
@@ -143,7 +143,7 @@ class ConfirmationGate {
             }
             if (existing.status === 'APPROVED') {
                 const permit = this.ledger.consumePermit(existing.token, principalId, conversationId, now);
-                if (permit.result === 'CONSUMED') return { action: 'EXECUTE', token: existing.token };
+                if (permit.result === 'CONSUMED') return { action: 'EXECUTE', token: existing.token, receipt: permit.record.consumedBy! };
                 if (permit.result === 'LOST') return { action: 'ALREADY_CONSUMED', token: existing.token };
                 if (permit.result === 'NOT_APPROVED') {
                     // Status changed between the fresh read and the lock
@@ -209,11 +209,17 @@ class ConfirmationGate {
             return `[CONFIRM_GATE] La acción ${token} ya fue ${entry.status === 'APPROVED' ? 'confirmada' : 'rechazada'} antes.`;
         }
         if (verb === 'confirmar' || verb === 'confirm') {
-            this.ledger.update(token, { status: 'APPROVED', approvedAt: now });
-            return `[CONFIRM_GATE] ✅ Acción ${token} (${entry.tool}) confirmada por el usuario. Reemite la llamada con argumentos IDÉNTICOS para ejecutarla UNA vez.`;
+            const after = this.ledger.decide(token, 'APPROVED', principalId, conversationId);
+            if (after?.status === 'APPROVED') {
+                return `[CONFIRM_GATE] ✅ Acción ${token} (${entry.tool}) confirmada por el usuario. Reemite la llamada con argumentos IDÉNTICOS para ejecutarla UNA vez.`;
+            }
+            return `[CONFIRM_GATE] Tu confirmación NO se aplicó: la acción ${token} ya está ${this.describeStatus(after)}. No se ejecutó nada desde este mensaje.`;
         }
-        this.ledger.update(token, { status: 'REJECTED', rejectedAt: now });
-        return `[CONFIRM_GATE] ❌ Acción ${token} (${entry.tool}) rechazada por el usuario. No la reintentes; si el usuario cambia de opinión, él lo pedirá de nuevo.`;
+        const after = this.ledger.decide(token, 'REJECTED', principalId, conversationId);
+        if (after?.status === 'REJECTED') {
+            return `[CONFIRM_GATE] ❌ Acción ${token} (${entry.tool}) rechazada por el usuario (decisión definitiva). No la reintentes; si el usuario cambia de opinión, él lo pedirá de nuevo.`;
+        }
+        return `[CONFIRM_GATE] Tu rechazo NO se aplicó: la acción ${token} ya está ${this.describeStatus(after)}. Nada cambió desde este mensaje.`;
     }
 
     /**
@@ -231,7 +237,7 @@ class ConfirmationGate {
             return `[CONFIRM_GATE] El token ${token} no pertenece a esta conversación o usuario. No se aplicó nada.`;
         }
         const result = this.ledger.reoffer(token, { token: this.newToken(), expiresAt: now + TTL_MS }, now);
-        if (!result.ok) {
+        if (result.ok === false) { // equality narrowing: repo tsconfig has strictNullChecks off, so !result.ok does not discriminate the union
             const why = result.reason === 'EXPLICITLY_REJECTED'
                 ? 'fue rechazada explícitamente y no se reofrece; si cambiaste de opinión, pide la acción de nuevo'
                 : result.reason === 'ALREADY_CONSUMED'
@@ -244,10 +250,22 @@ class ConfirmationGate {
         return `[CONFIRM_GATE] 🔁 Acción reofrecida como ${result.record.token} (original ${token}, creada ${new Date(entry.createdAt).toISOString()}). Revisa el resumen COMPLETO y responde "CONFIRMAR ${result.record.token}" para ejecutarla una vez o "RECHAZAR ${result.record.token}" para descartarla.\n${result.record.summary}`;
     }
 
-    /** Record what the executor OBSERVED after spending the permit
-     *  (reconciliation evidence; first record wins, never rewritten). */
-    public recordOutcome(token: string, ok: boolean, detail?: string): boolean {
-        return this.ledger.recordOutcome(token, ok ? 'EXECUTOR_OK' : 'EXECUTOR_FAILED', detail);
+    private describeStatus(r: PendingEffect | undefined): string {
+        if (!r) return 'desconocida';
+        switch (r.status) {
+            case 'REJECTED': return 'rechazada';
+            case 'CONSUMED': return 'con su permiso ya consumido';
+            case 'EXPIRED': return `expirada (si aún la quieres, responde "REOFRECER ${r.token}")`;
+            case 'PENDING': return 'pendiente';
+            default: return r.status;
+        }
+    }
+
+    /** Record what the permit WINNER observed after spending the permit
+     *  (reconciliation evidence; receipt-bound, first record wins, never
+     *  rewritten). */
+    public recordOutcome(token: string, receipt: string, ok: boolean, detail?: string): boolean {
+        return this.ledger.recordOutcome(token, receipt, ok ? 'EXECUTOR_OK' : 'EXECUTOR_FAILED', detail);
     }
 
     /** The recorded outcome of a consumed permit, if any. Absent = unknown. */

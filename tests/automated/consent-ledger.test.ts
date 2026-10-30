@@ -6,7 +6,7 @@
  * lock file is not a boundary against an attacker with the executor's OS
  * user (infrastructure work, not claimed). */
 import { describe, it, expect } from 'vitest';
-import { appendFileSync, mkdtempSync, readFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -283,13 +283,14 @@ describe('R8-eventlog: append-only store semantics (H3-root fix on the ledger)',
         const d = confirmationGate.check('send_email', args, A.principalId, A.conversationId);
         if (d.action !== 'PENDING') throw new Error('expected PENDING');
         // no outcome before consumption
-        expect(confirmationGate.recordOutcome(d.pending.token, true)).toBe(false);
+        expect(confirmationGate.recordOutcome(d.pending.token, 'nobody', true)).toBe(false);
         confirmationGate.handleUserCommand(`CONFIRMAR ${d.pending.token}`, A.principalId, A.conversationId);
         const exec = confirmationGate.check('send_email', args, A.principalId, A.conversationId);
         expect(exec.action).toBe('EXECUTE');
         if (exec.action !== 'EXECUTE') return;
-        expect(confirmationGate.recordOutcome(exec.token, false, 'SMTP rechazado')).toBe(true);
-        expect(confirmationGate.recordOutcome(exec.token, true)).toBe(false); // never rewritten
+        expect(confirmationGate.recordOutcome(exec.token, exec.receipt, false, 'SMTP rechazado')).toBe(true);
+        expect(confirmationGate.recordOutcome(exec.token, exec.receipt, true)).toBe(false); // never rewritten
+        expect(confirmationGate.recordOutcome(exec.token, 'not-the-winner', true)).toBe(false); // only the permit winner reports
         const ack = confirmationGate.handleUserCommand(`CONFIRMAR ${d.pending.token}`, A.principalId, A.conversationId);
         expect(ack).toContain('FALLO de ejecución');
         expect(ack).toContain('SMTP rechazado');
@@ -302,5 +303,134 @@ describe('R8-eventlog: append-only store semantics (H3-root fix on the ledger)',
         const ack2 = confirmationGate.handleUserCommand(`CONFIRMAR ${d2.pending.token}`, A.principalId, A.conversationId);
         expect(ack2).toContain('sin resultado registrado');
         expect(ack2).not.toContain('ejecutada una vez');
+    });
+});
+
+describe('R8-v3: adversarial store transitions (review findings 1-5, 7)', () => {
+    it('REJECTED is terminal: a later CONFIRMAR never overrides it, and no permit is minted', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'consent-terminal-'));
+        const ledger = new ConsentLedger(dir);
+        const r = record({});
+        ledger.put(r);
+        expect(ledger.decide(r.token, 'REJECTED', A.principalId, A.conversationId)?.status).toBe('REJECTED');
+        expect(ledger.decide(r.token, 'APPROVED', A.principalId, A.conversationId)?.status).toBe('REJECTED');
+        expect(ledger.consumePermit(r.token, A.principalId, A.conversationId).result).toBe('NOT_APPROVED');
+    });
+
+    it('decision races: two processes, CONFIRMAR vs RECHAZAR - exactly one decision stands and the state never contradicts the receipt', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'consent-decide-race-'));
+        const ledger = new ConsentLedger(dir);
+        const r = record({});
+        ledger.put(r);
+        const runDecide = (decision: string) => new Promise<any>((resolve, reject) => {
+            const child = spawn(process.execPath, ['--import', 'tsx/esm', 'tests/fixtures/consent-ledger-child.ts',
+                dir, r.token, A.principalId, A.conversationId, 'decide', decision], { stdio: ['ignore', 'pipe', 'pipe'] });
+            let out = '';
+            child.stdout.on('data', d => { out += d.toString(); });
+            child.on('close', () => {
+                try { resolve(JSON.parse(out.trim().split('\n').pop()!)); } catch (e) { reject(e); }
+            });
+            child.on('error', reject);
+        });
+        const [a, b] = await Promise.all([runDecide('APPROVED'), runDecide('REJECTED')]);
+        const finalStatus = new ConsentLedger(dir).get(r.token)!.status;
+        expect([a.status, b.status]).toContain(finalStatus);
+        expect(['APPROVED', 'REJECTED']).toContain(finalStatus);
+        if (finalStatus === 'REJECTED') {
+            expect(ledger.decide(r.token, 'APPROVED', A.principalId, A.conversationId)?.status).toBe('REJECTED');
+        }
+    }, 30000);
+
+    it('RECHAZAR after a valid CONSUME does not rewrite the record: it stays CONSUMED with its receipt and outcome', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'consent-consume-then-reject-'));
+        const ledger = new ConsentLedger(dir);
+        const r = record({ status: 'APPROVED', approvedAt: Date.now() });
+        ledger.put(r);
+        const won = ledger.consumePermit(r.token, A.principalId, A.conversationId);
+        if (won.result !== 'CONSUMED') throw new Error('expected CONSUMED');
+        expect(ledger.recordOutcome(r.token, won.record.consumedBy!, 'EXECUTOR_OK')).toBe(true);
+        const after = ledger.decide(r.token, 'REJECTED', A.principalId, A.conversationId)!;
+        expect(after.status).toBe('CONSUMED');
+        expect(after.consumedBy).toBe(won.record.consumedBy);
+        expect(after.outcome?.status).toBe('EXECUTOR_OK');
+    });
+
+    it('a duplicate PUT never resurrects a decided/consumed record (first-wins)', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'consent-put-firstwins-'));
+        const ledger = new ConsentLedger(dir);
+        const r = record({ status: 'APPROVED', approvedAt: Date.now() });
+        ledger.put(r);
+        ledger.consumePermit(r.token, A.principalId, A.conversationId);
+        ledger.put({ ...r, status: 'PENDING', consumedBy: undefined, consumedAt: undefined, args: { to: 'attacker@fixture.invalid' } });
+        const after = ledger.get(r.token)!;
+        expect(after.status).toBe('CONSUMED');
+        expect(after.args.to).toBe('x@fixture.invalid');
+    });
+
+    it('migration resumes after a crash mid-import and never duplicates (PUT first-wins)', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'consent-migration-'));
+        // legacy store with two records, one already CONSUMED
+        const consumed = record({ token: 'LEGAC1', status: 'CONSUMED', consumedAt: Date.now(), consumedBy: 'old:abc' });
+        const pending = record({ token: 'LEGAC2' });
+        writeFileSync(join(dir, 'pending-effects.json'), JSON.stringify([consumed, pending]));
+        // simulated crashed earlier import: LEGAC1 already imported, legacy not renamed
+        appendFileSync(join(dir, 'consent-ledger.jsonl'), JSON.stringify({ op: 'PUT', rec: consumed }) + '\n');
+        const ledger = new ConsentLedger(dir);
+        const all = ledger.all();
+        expect(all.filter(x => x.token === 'LEGAC1')).toHaveLength(1);
+        expect(all.find(x => x.token === 'LEGAC1')?.status).toBe('CONSUMED');
+        expect(all.find(x => x.token === 'LEGAC2')?.status).toBe('PENDING');
+        expect(existsSync(join(dir, 'pending-effects.json'))).toBe(false);
+        expect(existsSync(join(dir, 'pending-effects.json.imported'))).toBe(true);
+        // the consumed legacy permit does not re-arm
+        expect(ledger.consumePermit('LEGAC1', A.principalId, A.conversationId).result).toBe('LOST');
+    });
+
+    it('a read failure THROWS (fail-closed), never a silent empty store', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'consent-readfail-'));
+        const ledger = new ConsentLedger(dir);
+        ledger.put(record({}));
+        chmodSync(join(dir, 'consent-ledger.jsonl'), 0o000);
+        expect(() => new ConsentLedger(dir).all()).toThrow();
+        chmodSync(join(dir, 'consent-ledger.jsonl'), 0o600);
+    });
+
+    it('an instance sees another instance\'s appends via incremental tail reads (no full re-parse)', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'consent-incremental-'));
+        const a1 = new ConsentLedger(dir);
+        const a2 = new ConsentLedger(dir);
+        a1.put(record({ token: 'INCR01' }));
+        a1.put(record({ token: 'INCR02' }));
+        expect(a2.get('INCR01')).toBeDefined(); // first tail read
+        a1.put(record({ token: 'INCR03' }));
+        const after = a2.all().map(x => x.token);
+        expect(after).toContain('INCR03'); // second read folds only the new tail
+    });
+
+    it('outcome binding: a non-winner receipt can never record the outcome', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'consent-outcome-bind-'));
+        const ledger = new ConsentLedger(dir);
+        const r = record({ status: 'APPROVED', approvedAt: Date.now() });
+        ledger.put(r);
+        const won = ledger.consumePermit(r.token, A.principalId, A.conversationId);
+        if (won.result !== 'CONSUMED') throw new Error('expected CONSUMED');
+        expect(ledger.recordOutcome(r.token, 'someone-else', false, 'mentira')).toBe(false);
+        expect(ledger.get(r.token)!.outcome).toBeUndefined();
+        expect(ledger.recordOutcome(r.token, won.record.consumedBy!, false, 'falló de verdad')).toBe(true);
+        expect(ledger.get(r.token)!.outcome?.detail).toBe('falló de verdad');
+    });
+
+    it('gate: a CONFIRMAR that loses a race reports the CURRENT truth, not a false confirmation', () => {
+        const args = { to: 'race-truth@fixture.invalid', subject: 'S', body: 'c' };
+        const d = confirmationGate.check('send_email', args, A.principalId, A.conversationId);
+        if (d.action !== 'PENDING') throw new Error('expected PENDING');
+        // reject first (terminal), then a late CONFIRMAR must not claim success
+        confirmationGate.handleUserCommand(`RECHAZAR ${d.pending.token}`, A.principalId, A.conversationId);
+        // pre-check path: the entry is already REJECTED, so the gate reports
+        // that truth directly; the decide() race path is covered by the
+        // cross-process decision-race test above.
+        const late = confirmationGate.handleUserCommand(`CONFIRMAR ${d.pending.token}`, A.principalId, A.conversationId);
+        expect(late).toContain('ya fue rechazada antes');
+        expect(confirmationGate.check('send_email', args, A.principalId, A.conversationId).action).toBe('REJECTED');
     });
 });

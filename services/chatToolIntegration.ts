@@ -256,9 +256,10 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
             // the user replies "CONFIRMAR <token>" in this same conversation;
             // only then does an identical re-issued call execute - once.
             let gatePermitToken: string | undefined;
+            let gatePermitReceipt: string | undefined;
             if (EXTERNAL_EFFECT_TOOLS.has(toolName) && process.env.CHAT_EFFECT_GATE !== 'off') {
                 const decision = confirmationGate.check(toolName, args, gateContext?.principalId, gateContext?.conversationId);
-                if (decision.action === 'EXECUTE') gatePermitToken = decision.token;
+                if (decision.action === 'EXECUTE') { gatePermitToken = decision.token; gatePermitReceipt = decision.receipt; }
                 if (decision.action === 'PENDING') {
                     console.log(`[CONFIRM_GATE] ⏸️ ${toolName} pending explicit confirmation (${decision.pending.token})`);
                     return {
@@ -304,7 +305,10 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
                     console.warn(`[CONFIRM_GATE] ⛔ ${toolName} not executed: this call holds no permit (concurrent consumer won); recorded outcome: ${recorded?.status ?? 'unknown'}`);
                     return {
                         toolName,
-                        success: true,
+                        // Neutral, NOT success: this call executed nothing; a
+                        // planner must not count the action as accomplished.
+                        success: false,
+                        error: `NOT_EXECUTED_PERMIT_SPENT: esta llamada no ejecutó ${toolName} (permiso único ya consumido por otra llamada).`,
                         result: {
                             status: recorded ? 'PERMIT_CONSUMED_OUTCOME_RECORDED' : 'PERMIT_CONSUMED_UNCONFIRMED',
                             instructions: `Esta llamada NO obtuvo el permiso de un solo uso de esta acción exacta (lo tomó otra llamada concurrente); esta llamada NO ejecutó nada. ${outcomeTxt} Si el usuario quiere la acción, debe pedirla como una acción nueva que requerirá su propia confirmación.`
@@ -356,7 +360,7 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
             if (result && typeof result === 'object' && typeof (result as any).error === 'string') {
                 console.error(`[CHAT_TOOLS] ❌ Tool ${toolName} returned an error payload:`, (result as any).error);
                 if (gatePermitToken) {
-                    try { confirmationGate.recordOutcome(gatePermitToken, false, String((result as any).error).substring(0, 200)); }
+                    try { confirmationGate.recordOutcome(gatePermitToken, gatePermitReceipt!, false, String((result as any).error).substring(0, 200)); }
                     catch (e: any) { console.warn(`[CONFIRM_GATE] ⚠️ outcome record failed for ${gatePermitToken}: ${e?.message}`); }
                 }
                 return {
@@ -380,7 +384,7 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
             );
 
             if (gatePermitToken) {
-                try { confirmationGate.recordOutcome(gatePermitToken, true); }
+                try { confirmationGate.recordOutcome(gatePermitToken, gatePermitReceipt!, true); }
                 catch (e: any) { console.warn(`[CONFIRM_GATE] ⚠️ outcome record failed for ${gatePermitToken}: ${e?.message}`); }
             }
             console.log(`[CHAT_TOOLS] ✅ Tool ${toolName} completed in ${Date.now() - startTime}ms`);
@@ -395,7 +399,7 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
         } catch (error: any) {
             console.error(`[CHAT_TOOLS] ❌ Tool ${toolName} failed:`, error);
             if (gatePermitToken) {
-                try { confirmationGate.recordOutcome(gatePermitToken, false, String(error?.message ?? error).substring(0, 200)); }
+                try { confirmationGate.recordOutcome(gatePermitToken, gatePermitReceipt!, false, String(error?.message ?? error).substring(0, 200)); }
                 catch (e: any) { console.warn(`[CONFIRM_GATE] ⚠️ outcome record failed for ${gatePermitToken}: ${e?.message}`); }
             }
 
