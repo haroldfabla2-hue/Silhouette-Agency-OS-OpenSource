@@ -175,6 +175,10 @@ class MediaController {
      * POST /v1/media/generate/image
      * Generate an image from prompt with optional style
      */
+    // [SECURITY] No grant is issued by this route: an authenticated request
+    // is not proof of human intent. The generation gates at the provider
+    // boundary; paid cloud generation is hard-blocked in this delivery
+    // (pending an authorized budget/cap mechanism - CERO COBROS).
     async generateImage(req: Request, res: Response) {
         try {
             const { prompt, style } = req.body;

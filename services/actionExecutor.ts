@@ -600,10 +600,10 @@ export class ActionExecutor {
     /**
      * Approve a pending action
      */
-    public approveAction(confirmationId: string): boolean {
+    public approveAction(confirmationId: string, approverId: string = 'unknown'): boolean {
         const confirmation = this.pendingConfirmations.get(confirmationId);
         if (confirmation && confirmation.resolve) {
-            console.log(`[ACTION EXECUTOR] ✅ User approved: ${confirmationId}`);
+            console.log(`[ACTION EXECUTOR] ✅ Approved by ${approverId}: ${confirmationId} (${confirmation.action.type})`);
             this.pendingConfirmations.delete(confirmationId);
             confirmation.resolve(true);
             return true;
@@ -614,10 +614,10 @@ export class ActionExecutor {
     /**
      * Reject a pending action
      */
-    public rejectAction(confirmationId: string): boolean {
+    public rejectAction(confirmationId: string, approverId: string = 'unknown'): boolean {
         const confirmation = this.pendingConfirmations.get(confirmationId);
         if (confirmation && confirmation.resolve) {
-            console.log(`[ACTION EXECUTOR] ❌ User rejected: ${confirmationId}`);
+            console.log(`[ACTION EXECUTOR] ❌ Rejected by ${approverId}: ${confirmationId} (${confirmation.action.type})`);
             this.pendingConfirmations.delete(confirmationId);
             confirmation.resolve(false);
             return true;

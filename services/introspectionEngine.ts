@@ -1496,6 +1496,35 @@ export class IntrospectionEngine {
     public async runCognitiveCycle() {
         if (this.isDreaming) return; // Don't interrupt dream state
 
+        // [SECURITY] Authority ceiling: proactive introspection is governed by
+        // autonomy.enableIntrospection under the master autonomy.enabled. This
+        // is the single chokepoint - every route into the engine passes here:
+        // the daemon 'Evolution_Goals' task, the heartbeat job, and the manual
+        // HTTP trigger /v1/introspection/cognitive-cycle. Fail-closed: if the
+        // operator config cannot be read, the cycle does not run.
+        try {
+            const { configLoader } = await import('../server/config/configLoader');
+            const { isTaskAllowedByAutonomy } = await import('./daemon/autonomyPolicy');
+            if (!isTaskAllowedByAutonomy('Introspection', configLoader.getConfig().autonomy as any)) {
+                console.log('[INTROSPECTION] ⛔ Cognitive cycle skipped: disabled by autonomy ceiling (autonomy.enabled / enableIntrospection).');
+                return;
+            }
+        } catch (cfgErr: any) {
+            console.warn('[INTROSPECTION] ⛔ Cognitive cycle skipped: autonomy config unreadable (fail-closed):', cfgErr?.message || cfgErr);
+            return;
+        }
+
+        // [THROTTLE] PowerManager resource modes can pause introspection to
+        // save quota (ECO). The throttle is a resource hint, not an authority:
+        // if it cannot be read the engine runs at full capability.
+        try {
+            const { powerManager } = await import('./powerManager');
+            if (!powerManager.isIntrospectionEnabled) {
+                console.log('[INTROSPECTION] 💤 Cognitive cycle skipped: paused by PowerManager mode (throttle).');
+                return;
+            }
+        } catch { /* throttle unavailable -> full capability */ }
+
         const obs = await this.observe();
         const orientation = this.orient(obs);
         const decision = this.decide(orientation);
