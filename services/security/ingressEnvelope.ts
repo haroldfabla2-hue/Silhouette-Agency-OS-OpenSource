@@ -136,6 +136,8 @@ export class ReplayStore {
         this.readerChunkBytes = opts.readerChunkBytes ?? 1024 * 1024;
         this.maxRows = opts.maxRows ?? REPLAY_MAX_ROWS;
         this.wallFn = opts.wallNow ?? (() => Date.now());
+        this.wallAtBoot = this.wallFn();
+        this.hrAtBoot = process.hrtime.bigint();
         this.monoFn = opts.monoNow ?? (() => this.wallAtBoot + Number((process.hrtime.bigint() - this.hrAtBoot) / 1_000_000n));
     }
 
@@ -186,6 +188,10 @@ export class ReplayStore {
     }
 
     /** Two clocks, used in the SAFE direction each:
+     *  - ISSUE and EXPIRE on the SAME notion (max(wall, mono), see
+     *    validityNow): emission and verification can never disagree, so a
+     *    backward wall jump past the TTL does NOT make every new envelope
+     *    EXPIRED until restart (mono stays ahead; a restart re-anchors).
      *  - PRUNE a mark only when BOTH clocks consider it dead
      *    (exp <= min(wall, mono)): a backward wall jump then retains marks
      *    longer (memory cost, never authority). Forgetting a live mark is
@@ -198,13 +204,18 @@ export class ReplayStore {
      *  delta), so in normal operation both agree. A fresh process
      *  re-folds the whole log and re-anchors: a restart cannot open a
      *  replay window, it can only retain more. */
-    private readonly wallAtBoot = Date.now();
-    private readonly hrAtBoot = process.hrtime.bigint();
+    private readonly wallAtBoot: number;
+    private readonly hrAtBoot: bigint;
     private readonly wallFn: () => number;
     private readonly monoFn: () => number;
+    /** The ONE validity notion shared by issuance and verification:
+     *  max(wall, mono). Issuance stamps iat/exp from this same clock. */
+    public validityNow(): number {
+        return Math.max(this.wallFn(), this.monoFn());
+    }
     /** Envelope expiry for verification: dead when EITHER clock says so. */
     public isExpiredByAnyClock(exp: number): boolean {
-        return exp <= Math.max(this.wallFn(), this.monoFn());
+        return exp <= this.validityNow();
     }
 
     private readLive(now: number): ReplayEntry[] {
@@ -279,7 +290,7 @@ export class IngressAuthority {
     private readonly now: () => number;
     private readonly ephemeral: boolean;
 
-    constructor(opts: { key?: Buffer; keyFile?: string; replayDir: string; ttlMs?: number; now?: () => number }) {
+    constructor(opts: { key?: Buffer; keyFile?: string; replayDir: string; ttlMs?: number; now?: () => number; monoNow?: () => number }) {
         if (opts.key) {
             this.key = opts.key;
             this.ephemeral = false;
@@ -293,7 +304,9 @@ export class IngressAuthority {
                 'Envelopes do not survive restarts (fail-closed UNKNOWN_KEY). A pinned, protected issuer key is infrastructure work not claimed here.');
         }
         this.keyId = crypto.createHash('sha256').update(this.key).digest('hex').slice(0, 16);
-        this.replay = new ReplayStore(opts.replayDir);
+        // The authority's clocks ARE the store's clocks: issuance and
+        // verification share one validity notion through the store.
+        this.replay = new ReplayStore(opts.replayDir, { wallNow: opts.now, monoNow: opts.monoNow });
         this.ttlMs = opts.ttlMs ?? DEFAULT_ENVELOPE_TTL_MS;
         this.now = opts.now ?? Date.now;
     }
@@ -307,7 +320,9 @@ export class IngressAuthority {
     /** Issue a provenance envelope for one resolved incoming message. A null
      *  principalId is a GUEST message: authentic, and still without authority. */
     issue(input: EnvelopeInput): IngressEnvelope {
-        const iat = this.now();
+        // max(wall, mono) - the SAME notion verify() expires by: a backward
+        // wall jump past the TTL then never makes every new envelope EXPIRED.
+        const iat = this.replay.validityNow();
         const fields: Omit<IngressEnvelope, 'sig'> = {
             v: ENVELOPE_VERSION,
             iss: ENVELOPE_ISSUER,

@@ -717,3 +717,56 @@ describe('R8-v6: strict RECHAZAR TODO, cold-expired shedding with reoffer recove
         expect(d.action).toBe('REJECTED');
     });
 });
+describe('R8-v7: reoffer recovery is first-wins and identity-bound (review v6 finding 1)', () => {
+    it('an ignored duplicate PUT never supplies payload or provenance to a reoffer', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'consent-dupe-'));
+        const ledger = new ConsentLedger(dir);
+        const r = record({ token: 'DUPE01', expiresAt: Date.now() - 25 * 3600 * 1000 });
+        ledger.put(r);
+        ledger.all(); // fold + sweep: DUPE01 is EXPIRED and cold-shed
+        expect(ledger.get('DUPE01')!.argsShed).toBe(true);
+        // a duplicate the fold ignores (token collision / migration dupe):
+        // same token, DIFFERENT key, payload and principal, appended later
+        const dupe = record({
+            token: 'DUPE01', key: 'k2',
+            args: { to: 'attacker@fixture.invalid', body: 'OTRO' }, summary: 'DUPE',
+            principalId: 'p-other', conversationId: 'c-other',
+        });
+        appendFileSync(join(dir, 'consent-ledger.jsonl'), JSON.stringify({ op: 'PUT', rec: dupe }) + '\n');
+        const res = ledger.reoffer('DUPE01', { token: 'DUPE02', expiresAt: Date.now() + 60_000 });
+        expect(res.ok).toBe(true);
+        const reoffered = ledger.get('DUPE02')!;
+        // the FIRST record's payload and provenance - never the ignored dupe
+        expect(reoffered.args.to).toBe('x@fixture.invalid');
+        expect(reoffered.principalId).toBe(A.principalId);
+        expect(reoffered.conversationId).toBe(A.conversationId);
+    });
+
+    it('recovery is REFUSED (UNKNOWN) when the log line and the folded original silently disagree (in-place rewrite, the reader\'s declared blind spot)', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'consent-mism-'));
+        const ledger = new ConsentLedger(dir);
+        ledger.put(record({ token: 'MISM01', expiresAt: Date.now() - 25 * 3600 * 1000 }));
+        ledger.put(record({ token: 'OTHER1' })); // keeps the file tail stable
+        ledger.all(); // fold + sweep: MISM01 EXPIRED and cold-shed; reader cached at EOF
+        expect(ledger.get('MISM01')!.argsShed).toBe(true);
+        // In-place rewrite of ONLY the first line: same inode, same size,
+        // same last line - the divergence the incremental reader declares it
+        // cannot detect. The canonical in-memory record stays; the log's
+        // first line for the token now claims a different principal.
+        const file = join(dir, 'consent-ledger.jsonl');
+        const orig = readFileSync(file, 'utf8').split('\n')[0];
+        const foreign = record({
+            token: 'MISM01', key: 'q', args: { to: 'a@b.c', body: 'd' },
+            summary: 's', principalId: 'p', conversationId: 'c',
+        });
+        const padLen = orig.length - JSON.stringify({ op: 'PUT', rec: foreign }).length - 9; // room for ',"pad":"..."'
+        expect(padLen).toBeGreaterThan(0);
+        (foreign as Record<string, unknown>).pad = 'p'.repeat(padLen);
+        const padded = JSON.stringify({ op: 'PUT', rec: foreign });
+        expect(padded.length).toBe(orig.length);
+        writeFileSync(file, Buffer.from(padded), { flag: 'r+' }); // position 0, NO truncate: tail and size intact
+        const res = ledger.reoffer('MISM01', { token: 'MISM02', expiresAt: Date.now() + 60_000 });
+        expect(res.ok).toBe(false);
+        expect((res as { reason?: string }).reason).toBe('UNKNOWN');
+    });
+});

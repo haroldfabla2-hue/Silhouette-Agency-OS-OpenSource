@@ -297,3 +297,26 @@ describe('R8-v6: clock-direction fix (review v5 load-bearing) + sampled denial a
         expect(store.checkAndMark('m1', 'n1', far, wall)).toBe('REPLAY');
     });
 });
+describe('R8-v7: issuance/verification clock coherence (review v6 finding 2)', () => {
+    it('issuance and verification share ONE validity clock: a backward wall jump past the TTL never makes every new envelope EXPIRED', async () => {
+        const { IngressAuthority } = await import('../../services/security/ingressEnvelope');
+        const dir = mkdtempSync(join(tmpdir(), 'ingress-coherence-'));
+        let wall = 1_000_000;
+        let mono = 1_000_000;
+        const auth = new IngressAuthority({ key: randomBytes(32), replayDir: dir, ttlMs: 60_000, now: () => wall, monoNow: () => mono });
+        const input = { channel: 'whatsapp', senderId: '+51999999999', principalId: 'p1', conversationId: 'c1', content: 'hola' };
+        // wall jumps BACKWARD 10 minutes (> the 60s TTL) while real time advances 1 minute
+        wall = 400_000; mono = 1_060_000;
+        const env = auth.issue({ ...input, messageId: 'm2' });
+        // stamped with max(wall, mono) - with wall-only stamping (the v6
+        // defect) exp would be 460_000, already dead by mono: EXPIRED forever
+        expect(env.iat).toBe(1_060_000);
+        expect(env.exp).toBe(1_120_000);
+        const verdict = auth.verify(env, { ...input, messageId: 'm2' });
+        expect(verdict.ok).toBe(true);
+        // and the shared notion does NOT reopen replay: the same envelope twice is caught
+        const again = auth.verify(env, { ...input, messageId: 'm2' });
+        expect(again.ok).toBe(false);
+        expect((again as { reason?: string }).reason).toBe('REPLAY');
+    });
+});

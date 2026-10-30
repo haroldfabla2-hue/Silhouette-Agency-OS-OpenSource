@@ -243,12 +243,18 @@ export class ConsentLedger {
     }
 
     /** Recover a shed record's full payload from the on-disk log (the
-     *  audit copy): last PUT/REOFFER carrying that token wins. Streaming
+     *  audit copy). FIRST PUT/REOFFER carrying that token wins - the same
+     *  rule the fold applies - and the recovered line must BE the canonical
+     *  record: key, principalId and conversationId identical to the folded
+     *  `original`. A later duplicate the fold ignored (token collision,
+     *  migration dupe) is never a payload source, and on any identity
+     *  mismatch recovery is refused (UNKNOWN) rather than re-offering
+     *  another record's content under this token's provenance. Streaming
      *  scan; reoffer is a rare human-initiated path, so the pass is fine. */
-    private recoverFromLog(token: string): ConsentRecord | undefined {
+    private recoverFromLog(token: string, original: ConsentRecord): ConsentRecord | undefined {
         let found: ConsentRecord | undefined;
         foldAppendedLines(this.file, null, () => { /* full scan */ }, (line) => {
-            if (!line) return;
+            if (!line || found) return; // first-wins, like the fold
             try {
                 const ev = JSON.parse(line) as LedgerEvent;
                 if ((ev.op === 'PUT' || ev.op === 'REOFFER') && ev.rec?.token === token) {
@@ -256,6 +262,10 @@ export class ConsentLedger {
                 }
             } catch { /* torn line: skip */ }
         });
+        if (!found) return undefined;
+        const f = found as ConsentRecord;
+        if (f.key !== original.key || f.principalId !== original.principalId
+            || f.conversationId !== original.conversationId) return undefined;
         return found;
     }
 
@@ -512,7 +522,7 @@ export class ConsentLedger {
         // disk: recover it so the re-offered pending carries the real args
         // and summary. If the log itself cannot provide them, refuse -
         // never re-offer an action whose content cannot be shown.
-        const source = original.argsShed ? this.recoverFromLog(token) : original;
+        const source = original.argsShed ? this.recoverFromLog(token, original) : original;
         if (!source || source.argsShed) return { ok: false, reason: 'UNKNOWN' };
         const record: ConsentRecord = {
             ...source,
