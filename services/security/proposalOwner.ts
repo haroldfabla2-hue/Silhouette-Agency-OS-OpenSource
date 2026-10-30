@@ -12,8 +12,12 @@
  * role is never trusted). Assignment is recorded with provenance; it is NOT an
  * approval of the proposal's effects (those keep their own consent gates).
  *
- * Durability: tmp+rename writes (0600) and the same cross-process lock
- * discipline as the consent ledger; denied attempts are recorded as evidence.
+ * Durability: append-only JSONL event log (0600, one O_APPEND write per
+ * event; no lock file, no stale-lock recovery - the same root fix as the
+ * consent ledger). Every write is verified by re-reading; a torn line from
+ * a crash mid-append is skipped (that writer died before its record was
+ * durable) and a write that cannot be read back throws visibly. Denied
+ * attempts are recorded as evidence.
  *
  * Declared limits: same-host store; file permissions are not a boundary
  * against a writer with the executor's OS user (protected issuer/owner
@@ -48,100 +52,108 @@ export type AssignResult =
     | { ok: true; record: ProposalOwnerRecord }
     | { ok: false; reason: 'UNKNOWN_INITIATIVE' | 'NOT_AUTHORIZED' | 'UNKNOWN_OWNER' };
 
-const LOCK_STALE_MS = 30_000;
-const LOCK_RETRY_MS = 15;
-const LOCK_TIMEOUT_MS = 10_000;
+type OwnerEvent =
+    | { op: 'PROPOSE'; rec: ProposalOwnerRecord }
+    | { op: 'DECISION'; initiativeId: string; decision: OwnerDecision };
 
 export class ProposalOwnerRegistry {
     private readonly file: string;
-    private readonly lockFile: string;
+    private readonly legacyFile: string;
 
     constructor(private readonly dir: string) {
-        this.file = path.join(dir, 'proposal-owners.json');
-        this.lockFile = `${this.file}.lock`;
+        this.file = path.join(dir, 'proposal-owners.jsonl');
+        this.legacyFile = path.join(dir, 'proposal-owners.json');
     }
 
-    private readDisk(): Map<string, ProposalOwnerRecord> {
-        try {
-            const rows = JSON.parse(fs.readFileSync(this.file, 'utf8')) as ProposalOwnerRecord[];
-            const map = new Map<string, ProposalOwnerRecord>();
-            for (const r of Array.isArray(rows) ? rows : []) {
-                if (r && typeof r.initiativeId === 'string') map.set(r.initiativeId, r);
-            }
-            return map;
-        } catch {
-            return new Map();
-        }
-    }
-
-    private writeDisk(map: Map<string, ProposalOwnerRecord>): void {
+    private append(event: OwnerEvent): void {
         fs.mkdirSync(this.dir, { recursive: true });
-        const tmp = `${this.file}.${process.pid}.${Date.now()}.tmp`;
-        fs.writeFileSync(tmp, JSON.stringify([...map.values()], null, 1), { mode: 0o600 });
-        fs.renameSync(tmp, this.file);
+        // O_APPEND + torn-tail healing (see ConsentLedger.append).
+        const fd = fs.openSync(this.file, 'a+', 0o600);
+        try {
+            const st = fs.fstatSync(fd);
+            if (st.size > 0) {
+                const last = Buffer.alloc(1);
+                fs.readSync(fd, last, 0, 1, st.size - 1);
+                if (last[0] !== 0x0a) fs.writeSync(fd, '\n');
+            }
+            fs.writeSync(fd, JSON.stringify(event) + '\n');
+        } finally {
+            fs.closeSync(fd);
+        }
     }
 
-    private acquireLock(): void {
-        const start = Date.now();
-        for (;;) {
+    private readEvents(): OwnerEvent[] {
+        // One-time continuity import of the pre-event-sourced store.
+        if (!fs.existsSync(this.file) && fs.existsSync(this.legacyFile)) {
             try {
-                const fd = fs.openSync(this.lockFile, 'wx');
-                fs.writeSync(fd, String(process.pid));
-                fs.closeSync(fd);
-                return;
-            } catch (e: any) {
-                if (e?.code === 'EEXIST') {
-                    try {
-                        const st = fs.statSync(this.lockFile);
-                        if (Date.now() - st.mtimeMs > LOCK_STALE_MS) { fs.unlinkSync(this.lockFile); continue; }
-                    } catch { /* vanished: retry */ }
-                    if (Date.now() - start > LOCK_TIMEOUT_MS) throw new Error('[PROPOSAL_OWNER] lock timeout');
-                    const until = Date.now() + LOCK_RETRY_MS;
-                    while (Date.now() < until) { /* short spin */ }
-                    continue;
+                const rows = JSON.parse(fs.readFileSync(this.legacyFile, 'utf8')) as ProposalOwnerRecord[];
+                for (const r of Array.isArray(rows) ? rows : []) {
+                    if (r && typeof r.initiativeId === 'string') this.append({ op: 'PROPOSE', rec: r });
                 }
-                throw e;
+                fs.renameSync(this.legacyFile, `${this.legacyFile}.imported`);
+            } catch { /* unreadable legacy: start empty, keep the file as-is */ }
+        }
+        let raw: string;
+        try {
+            raw = fs.readFileSync(this.file, 'utf8');
+        } catch {
+            return [];
+        }
+        const events: OwnerEvent[] = [];
+        for (const line of raw.split('\n')) {
+            if (!line) continue;
+            try {
+                const ev = JSON.parse(line) as OwnerEvent;
+                if (ev && typeof (ev as any).op === 'string') events.push(ev);
+            } catch { /* torn line from a crash mid-append: skip */ }
+        }
+        return events;
+    }
+
+    private fold(events: OwnerEvent[]): Map<string, ProposalOwnerRecord> {
+        const map = new Map<string, ProposalOwnerRecord>();
+        for (const ev of events) {
+            if (ev.op === 'PROPOSE') {
+                if (!map.has(ev.rec.initiativeId)) map.set(ev.rec.initiativeId, { ...ev.rec, decisions: [...(ev.rec.decisions ?? [])] });
+            } else if (ev.op === 'DECISION') {
+                const r = map.get(ev.initiativeId);
+                if (r) {
+                    r.decisions.push(ev.decision);
+                    if (ev.decision.type === 'OWNER_ASSIGNED') {
+                        r.status = 'ASSIGNED';
+                        r.owner = ev.decision.owner;
+                    }
+                }
             }
         }
+        return map;
     }
 
-    private releaseLock(): void {
-        try { fs.unlinkSync(this.lockFile); } catch { /* already gone */ }
-    }
-
-    private mutate<T>(fn: (map: Map<string, ProposalOwnerRecord>) => { out: T; dirty: boolean }): T {
-        this.acquireLock();
-        try {
-            const map = this.readDisk();
-            const { out, dirty } = fn(map);
-            if (dirty) this.writeDisk(map);
-            return out;
-        } finally {
-            this.releaseLock();
-        }
+    private load(): Map<string, ProposalOwnerRecord> {
+        return this.fold(this.readEvents());
     }
 
     /** Record a daemon initiative with NO owner. Idempotent: an existing
      *  record is returned unchanged (re-recording never resets decisions). */
     propose(input: { initiativeId: string; origin: string; summary: string }, now: number = Date.now()): ProposalOwnerRecord {
-        return this.mutate(map => {
-            const existing = map.get(input.initiativeId);
-            if (existing) return { out: existing, dirty: false };
-            const record: ProposalOwnerRecord = {
-                initiativeId: input.initiativeId,
-                origin: input.origin,
-                summary: input.summary,
-                createdAt: now,
-                status: 'UNRESOLVED_OWNER',
-                decisions: [],
-            };
-            map.set(record.initiativeId, record);
-            return { out: { ...record }, dirty: true };
-        });
+        const existing = this.get(input.initiativeId);
+        if (existing) return existing;
+        const record: ProposalOwnerRecord = {
+            initiativeId: input.initiativeId,
+            origin: input.origin,
+            summary: input.summary,
+            createdAt: now,
+            status: 'UNRESOLVED_OWNER',
+            decisions: [],
+        };
+        this.append({ op: 'PROPOSE', rec: record });
+        const landed = this.get(input.initiativeId);
+        if (!landed) throw new Error('[PROPOSAL_OWNER] write verification failed: PROPOSE did not land');
+        return { ...landed };
     }
 
     get(initiativeId: string): ProposalOwnerRecord | undefined {
-        return this.readDisk().get(initiativeId);
+        return this.load().get(initiativeId);
     }
 
     /**
@@ -158,31 +170,32 @@ export class ProposalOwnerRegistry {
             try { return identityService.getUserById(ownerPrincipalId) !== null; } catch { return false; }
         })();
 
-        return this.mutate(map => {
-            const record = map.get(initiativeId);
-            const deny = (reason: 'UNKNOWN_INITIATIVE' | 'NOT_AUTHORIZED' | 'UNKNOWN_OWNER', why: string): { out: AssignResult; dirty: boolean } => {
-                if (record) {
-                    record.decisions.push({ type: 'OWNER_ASSIGN_DENIED', by: assignerPrincipalId, owner: ownerPrincipalId, at: now, reason: why });
-                    map.set(initiativeId, record);
-                }
-                return { out: { ok: false, reason }, dirty: !!record };
-            };
-            if (!record) return { out: { ok: false, reason: 'UNKNOWN_INITIATIVE' } as AssignResult, dirty: false };
-            if (assignerRole !== UserRole.CREATOR) return deny('NOT_AUTHORIZED', `assigner role is ${assignerRole ?? 'unknown'}, requires CREATOR (re-derived at decision time)`);
-            if (!ownerExists) return deny('UNKNOWN_OWNER', `owner ${ownerPrincipalId} is not an existing user`);
-            record.status = 'ASSIGNED';
-            record.owner = ownerPrincipalId;
-            record.decisions.push({ type: 'OWNER_ASSIGNED', by: assignerPrincipalId, owner: ownerPrincipalId, at: now });
-            map.set(initiativeId, record);
-            return { out: { ok: true, record: { ...record, decisions: [...record.decisions] } } as AssignResult, dirty: true };
-        });
+        const record = this.get(initiativeId);
+        const apply = (decision: OwnerDecision): void => {
+            this.append({ op: 'DECISION', initiativeId, decision });
+            const after = this.get(initiativeId);
+            if (!after?.decisions.some(d => d.at === decision.at && d.by === decision.by && d.type === decision.type)) {
+                throw new Error('[PROPOSAL_OWNER] write verification failed: DECISION did not land');
+            }
+        };
+        if (!record) return { ok: false, reason: 'UNKNOWN_INITIATIVE' };
+        if (assignerRole !== UserRole.CREATOR) {
+            apply({ type: 'OWNER_ASSIGN_DENIED', by: assignerPrincipalId, owner: ownerPrincipalId, at: now, reason: `assigner role is ${assignerRole ?? 'unknown'}, requires CREATOR (re-derived at decision time)` });
+            return { ok: false, reason: 'NOT_AUTHORIZED' };
+        }
+        if (!ownerExists) {
+            apply({ type: 'OWNER_ASSIGN_DENIED', by: assignerPrincipalId, owner: ownerPrincipalId, at: now, reason: `owner ${ownerPrincipalId} is not an existing user` });
+            return { ok: false, reason: 'UNKNOWN_OWNER' };
+        }
+        apply({ type: 'OWNER_ASSIGNED', by: assignerPrincipalId, owner: ownerPrincipalId, at: now });
+        return { ok: true, record: { ...this.get(initiativeId)!, decisions: [...this.get(initiativeId)!.decisions] } };
     }
 
     /** An initiative is dispatchable only with an explicitly assigned owner
      *  who is still an existing user. Anything else - unresolved, unknown,
      *  dangling - is NOT dispatchable. Fail-closed. */
     isDispatchable(initiativeId: string): boolean {
-        const record = this.readDisk().get(initiativeId);
+        const record = this.load().get(initiativeId);
         if (!record || record.status !== 'ASSIGNED' || !record.owner) return false;
         try { return identityService.getUserById(record.owner) !== null; } catch { return false; }
     }

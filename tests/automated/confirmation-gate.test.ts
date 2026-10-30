@@ -88,8 +88,9 @@ describe('gate v2: approval bound to principal + conversation + exact action', (
     });
 
     it('persists pending actions to disk (restart-safe)', () => {
-        const store = join(process.env.CONFIRMATION_GATE_DIR!, 'pending-effects.json');
-        const rows = JSON.parse(readFileSync(store, 'utf8'));
+        const store = join(process.env.CONFIRMATION_GATE_DIR!, 'consent-ledger.jsonl');
+        const events = readFileSync(store, 'utf8').trim().split('\n').map(l => JSON.parse(l));
+        const rows = events.filter(ev => ev.op === 'PUT').map(ev => ev.rec);
         expect(rows.length).toBeGreaterThan(0);
         expect(rows[0].token).toBeDefined();
         expect(rows[0].principalId).toBeDefined();

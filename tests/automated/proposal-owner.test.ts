@@ -79,8 +79,8 @@ describe('R9: durable explicit proposal ownership', () => {
         const stored = fresh.get('janitor:run2:def')!;
         expect(stored.status).toBe('ASSIGNED');
         expect(stored.decisions.length).toBeGreaterThanOrEqual(3);
-        const rows = JSON.parse(readFileSync(join(process.env.PROPOSAL_OWNER_DIR!, 'proposal-owners.json'), 'utf8'));
-        expect(rows.find((r: any) => r.initiativeId === 'janitor:run2:def')).toBeDefined();
+        const lines = readFileSync(join(process.env.PROPOSAL_OWNER_DIR!, 'proposal-owners.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+        expect(lines.find((ev: any) => ev.op === 'PROPOSE' && ev.rec.initiativeId === 'janitor:run2:def')).toBeDefined();
     });
 
     it('wiring guard: janitor dry-run records every verified proposal as ownerless (static; janitor cycle needs provider models, not run here)', () => {
@@ -88,5 +88,21 @@ describe('R9: durable explicit proposal ownership', () => {
         const dryRun = src.slice(src.indexOf('// Layer 3'));
         expect(dryRun).toContain('proposalOwners.propose({');
         expect(dryRun).toContain("origin: 'janitor'");
+    });
+});
+
+describe('R9-eventlog: append-only owner store resilience', () => {
+    it('a torn line (crash mid-append) is skipped; records and assignment keep working', async () => {
+        const { appendFileSync } = await import('node:fs');
+        const { mkdtempSync } = await import('node:fs');
+        const { tmpdir } = await import('node:os');
+        const { join } = await import('node:path');
+        const dir = mkdtempSync(join(tmpdir(), 'proposal-torn-'));
+        const { ProposalOwnerRegistry } = await import('../../services/security/proposalOwner');
+        const registry = new ProposalOwnerRegistry(dir);
+        registry.propose({ initiativeId: 'init-torn-1', origin: 'janitor', summary: 's' });
+        appendFileSync(join(dir, 'proposal-owners.jsonl'), '{"op":"DECISION","initiativeId":"init-torn');
+        expect(registry.get('init-torn-1')?.status).toBe('UNRESOLVED_OWNER');
+        expect(registry.isDispatchable('init-torn-1')).toBe(false);
     });
 });

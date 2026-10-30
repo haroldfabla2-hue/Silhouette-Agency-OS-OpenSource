@@ -220,3 +220,21 @@ describe('R7-H3: replay denial is atomic across processes', () => {
         expect(verdicts.filter(v => v.ok === false && v.reason === 'REPLAY')).toHaveLength(1);
     }, 30000);
 });
+
+describe('R7-H3b: append-only replay store resilience (no lock, no recovery path)', () => {
+    it('a torn line (crash mid-append) is skipped; replay protection keeps working', async () => {
+        const { appendFileSync } = await import('node:fs');
+        const dir = mkdtempSync(join(tmpdir(), 'ingress-torn-'));
+        const key = randomBytes(32);
+        const authority = new IngressAuthority({ key, replayDir: dir });
+        const actual = { channel: 'whatsapp', senderId: 'sender-a', messageId: 'msg-torn-1', principalId: userA.id, conversationId: 'conv-x', content: 'contenido' };
+        const envelope = authority.issue(actual);
+        expect(authority.verify(envelope, actual).ok).toBe(true);
+        expect(authority.verify(envelope, actual)).toMatchObject({ ok: false, reason: 'REPLAY' });
+        appendFileSync(join(dir, 'ingress-replay.jsonl'), '{"m":"msg-torn-');
+        expect(authority.verify(envelope, actual)).toMatchObject({ ok: false, reason: 'REPLAY' });
+        const actual2 = { ...actual, messageId: 'msg-torn-2', content: 'otro' };
+        const envelope2 = authority.issue(actual2);
+        expect(authority.verify(envelope2, actual2).ok).toBe(true);
+    });
+});

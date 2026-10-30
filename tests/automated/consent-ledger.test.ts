@@ -6,7 +6,7 @@
  * lock file is not a boundary against an attacker with the executor's OS
  * user (infrastructure work, not claimed). */
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -116,9 +116,15 @@ describe('R8: durable consent ledger', () => {
         expect(stored.status).toBe('EXPIRED');
         expect(stored.rejectedAt).toBeUndefined();
         expect(after.consumePermit(r.token, A.principalId, A.conversationId).result).toBe('EXPIRED');
-        // on-disk truth
-        const rows = JSON.parse(readFileSync(join(dir, 'pending-effects.json'), 'utf8')) as ConsentRecord[];
-        expect(rows.find(x => x.token === r.token)?.status).toBe('EXPIRED');
+        // on-disk truth: the append-only event log holds the record with its
+        // (past) expiry; EXPIRED is the reconciled read-side view, never a
+        // stored human rejection
+        const lines = readFileSync(join(dir, 'consent-ledger.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+        const put = lines.find(ev => ev.op === 'PUT' && ev.rec.token === r.token);
+        expect(put).toBeDefined();
+        expect(put.rec.status).toBe('PENDING');
+        expect(put.rec.expiresAt).toBeLessThanOrEqual(Date.now());
+        expect(lines.some(ev => ev.rec?.rejectedAt || ev.patch?.rejectedAt)).toBe(false);
     });
 
     it('reoffer: only EXPIRED, as a NEW token with full provenance; rejections and consumed permits never re-offer', () => {
@@ -223,12 +229,78 @@ describe('R8-H2: REOFRECER is a real wired command, not an unfulfillable invitat
 
     it('wiring guard: the ALREADY_CONSUMED mapping and its truthful message exist (static; the exact race window needs no production seam - the underlying LOST outcome is runtime-proven at ledger level)', () => {
         const gate = readFileSync('services/tools/confirmationGate.ts', 'utf8');
-        expect(gate).toContain("if (permit.result === 'LOST') return { action: 'ALREADY_CONSUMED' };");
-        expect(gate).toContain("| { action: 'ALREADY_CONSUMED' }");
+        expect(gate).toContain("if (permit.result === 'LOST') return { action: 'ALREADY_CONSUMED', token: existing.token };");
+        expect(gate).toContain("| { action: 'ALREADY_CONSUMED'; token: string }");
         expect(gate).not.toContain("permit.result !== 'EXPIRED') return { action: 'BLOCKED_NO_PRINCIPAL' }");
         const chat = readFileSync('services/chatToolIntegration.ts', 'utf8');
         expect(chat).toContain("decision.action === 'ALREADY_CONSUMED'");
         expect(chat).toContain('PERMIT_CONSUMED_UNCONFIRMED');
         expect(chat).not.toContain('ya fue ejecutada por otra llamada');
+    });
+});
+
+describe('R8-eventlog: append-only store semantics (H3-root fix on the ledger)', () => {
+    it('a torn line (crash mid-append) is skipped and never blocks later truth', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'consent-torn-'));
+        const ledger = new ConsentLedger(dir);
+        const r = record({ status: 'APPROVED', approvedAt: Date.now() });
+        ledger.put(r);
+        appendFileSync(join(dir, 'consent-ledger.jsonl'), '{"op":"CONSUME","token":"TO');
+        const res = new ConsentLedger(dir).consumePermit(r.token, A.principalId, A.conversationId);
+        expect(res.result).toBe('CONSUMED');
+        expect(new ConsentLedger(dir).consumePermit(r.token, A.principalId, A.conversationId).result).toBe('LOST');
+    });
+
+    it('two processes racing to re-offer the same expired token produce exactly ONE new pending (the pre-eventlog code minted two)', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'consent-reoffer-race-'));
+        const ledger = new ConsentLedger(dir);
+        const r = record({ expiresAt: Date.now() - 1 });
+        ledger.put(r);
+        const runReoffer = (newToken: string) => new Promise<any>((resolve, reject) => {
+            const child = spawn(process.execPath, ['--import', 'tsx/esm', 'tests/fixtures/consent-ledger-child.ts',
+                dir, r.token, A.principalId, A.conversationId, 'reoffer', newToken], { stdio: ['ignore', 'pipe', 'pipe'] });
+            let out = '';
+            child.stdout.on('data', d => { out += d.toString(); });
+            child.on('close', () => {
+                try { resolve(JSON.parse(out.trim().split('\n').pop()!)); } catch (e) { reject(e); }
+            });
+            child.on('error', reject);
+        });
+        const [r1, r2] = await Promise.all([runReoffer('NTOK1A'), runReoffer('NTOK1B')]);
+        const wins = [r1, r2].filter(x => x.ok === true);
+        const losses = [r1, r2].filter(x => x.ok === false);
+        expect(wins).toHaveLength(1);
+        expect(losses).toHaveLength(1);
+        expect(losses[0].reason).toBe('ALREADY_REOFFERED');
+        // exactly one new pending exists, and the original is not re-offerable again
+        const fresh = new ConsentLedger(dir);
+        expect(fresh.all().filter(x => x.reofferOf === r.token)).toHaveLength(1);
+        expect(fresh.reoffer(r.token, { token: 'NTOK3X', expiresAt: Date.now() + 60_000 })).toMatchObject({ ok: false, reason: 'ALREADY_REOFFERED' });
+    }, 30000);
+
+    it('outcome recording: only after consumption, first record wins, never rewritten; the gate reports it truthfully', () => {
+        const args = { to: 'outcome@fixture.invalid', subject: 'Outcome', body: 'c' };
+        const d = confirmationGate.check('send_email', args, A.principalId, A.conversationId);
+        if (d.action !== 'PENDING') throw new Error('expected PENDING');
+        // no outcome before consumption
+        expect(confirmationGate.recordOutcome(d.pending.token, true)).toBe(false);
+        confirmationGate.handleUserCommand(`CONFIRMAR ${d.pending.token}`, A.principalId, A.conversationId);
+        const exec = confirmationGate.check('send_email', args, A.principalId, A.conversationId);
+        expect(exec.action).toBe('EXECUTE');
+        if (exec.action !== 'EXECUTE') return;
+        expect(confirmationGate.recordOutcome(exec.token, false, 'SMTP rechazado')).toBe(true);
+        expect(confirmationGate.recordOutcome(exec.token, true)).toBe(false); // never rewritten
+        const ack = confirmationGate.handleUserCommand(`CONFIRMAR ${d.pending.token}`, A.principalId, A.conversationId);
+        expect(ack).toContain('FALLO de ejecución');
+        expect(ack).toContain('SMTP rechazado');
+        // unknown outcome says unknown, never "executed"
+        const args2 = { ...args, subject: 'Outcome 2' };
+        const d2 = confirmationGate.check('send_email', args2, A.principalId, A.conversationId);
+        if (d2.action !== 'PENDING') throw new Error('expected PENDING');
+        confirmationGate.handleUserCommand(`CONFIRMAR ${d2.pending.token}`, A.principalId, A.conversationId);
+        confirmationGate.check('send_email', args2, A.principalId, A.conversationId);
+        const ack2 = confirmationGate.handleUserCommand(`CONFIRMAR ${d2.pending.token}`, A.principalId, A.conversationId);
+        expect(ack2).toContain('sin resultado registrado');
+        expect(ack2).not.toContain('ejecutada una vez');
     });
 });

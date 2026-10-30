@@ -88,87 +88,102 @@ const canonicalFields = (e: Omit<IngressEnvelope, 'sig'>): string =>
         contentDigest: e.contentDigest,
     });
 
-interface ReplayEntry { messageId: string; nonce: string; exp: number }
-
-const REPLAY_LOCK_STALE_MS = 30_000;
-const REPLAY_LOCK_RETRY_MS = 15;
-const REPLAY_LOCK_TIMEOUT_MS = 10_000;
+interface ReplayEntry { messageId: string; nonce: string; exp: number; c: string }
 
 /** Durable replay registry: seen (messageId, nonce) pairs persist across
  *  restarts so a re-emitted signed message never acquires authority twice.
- *  checkAndMark is ATOMIC across processes: a fresh disk read and the mark
- *  happen under an O_EXCL lock (stale-lock recovery), so two verifiers in
- *  different processes cannot both accept the same envelope. Writes are
- *  tmp+rename, mode 0600. No in-process cache: another process's marks
- *  must be visible immediately. */
+ *
+ *  ATOMICITY WITHOUT LOCKS (H3-root fix): the store is an append-only
+ *  JSONL claim log. A verifier appends its claim and re-reads the file;
+ *  the FIRST live claim for a pair wins. O_APPEND gives one total order
+ *  of lines and every verifier re-reads after its own append, so the
+ *  first appender always sees itself win and any later appender always
+ *  sees the earlier claim: exactly one winner, across processes, with NO
+ *  lock file and no stale-lock recovery. (The previous O_EXCL lock +
+ *  stale-unlink recovery had a stat->unlink TOCTOU where two recoverers
+ *  could both hold the lock; that class is eliminated by removing the
+ *  lock, not patched.)
+ *
+ *  Crash semantics, fail-closed: a claim appended by a process that then
+ *  dies persists, so the envelope is burned (never double authority); a
+ *  torn line from a crash mid-append is skipped on read, and if THIS
+ *  verifier's claim cannot be read back the check returns false (deny).
+ *  Dead entries (exp <= now) are ignored on read.
+ *
+ *  DECLARED LIMIT: append-only; physical compaction (safe only via
+ *  quiescing or generation files) is deferred to the infrastructure
+ *  decision - growth is one short line per verified envelope. */
 class ReplayStore {
     private readonly file: string;
-    private readonly lockFile: string;
+    private readonly legacyFile: string;
 
     constructor(private readonly dir: string) {
-        this.file = path.join(dir, 'ingress-replay.json');
-        this.lockFile = `${this.file}.lock`;
+        this.file = path.join(dir, 'ingress-replay.jsonl');
+        this.legacyFile = path.join(dir, 'ingress-replay.json');
     }
 
-    private readDisk(): ReplayEntry[] {
+    private appendLine(obj: unknown): void {
+        fs.mkdirSync(this.dir, { recursive: true });
+        // O_APPEND + torn-tail healing: a crash mid-append leaves a partial
+        // line without a newline; close it or the next claim merges into
+        // the fragment and is skipped with it (fail-closed but burned).
+        const fd = fs.openSync(this.file, 'a+', 0o600);
         try {
-            const rows = JSON.parse(fs.readFileSync(this.file, 'utf8')) as ReplayEntry[];
-            return Array.isArray(rows) ? rows : [];
+            const st = fs.fstatSync(fd);
+            if (st.size > 0) {
+                const last = Buffer.alloc(1);
+                fs.readSync(fd, last, 0, 1, st.size - 1);
+                if (last[0] !== 0x0a) fs.writeSync(fd, '\n');
+            }
+            fs.writeSync(fd, JSON.stringify(obj) + '\n');
+        } finally {
+            fs.closeSync(fd);
+        }
+    }
+
+    private readLive(now: number): ReplayEntry[] {
+        // One-time continuity import of the pre-append-log store.
+        if (!fs.existsSync(this.file) && fs.existsSync(this.legacyFile)) {
+            try {
+                const rows = JSON.parse(fs.readFileSync(this.legacyFile, 'utf8')) as { messageId: string; nonce: string; exp: number }[];
+                for (const r of Array.isArray(rows) ? rows : []) {
+                    if (r && typeof r.messageId === 'string' && typeof r.nonce === 'string') {
+                        this.appendLine({ m: r.messageId, n: r.nonce, e: r.exp, c: 'migrated' });
+                    }
+                }
+                fs.renameSync(this.legacyFile, `${this.legacyFile}.imported`);
+            } catch { /* unreadable legacy: start empty, keep the file as-is */ }
+        }
+        let raw: string;
+        try {
+            raw = fs.readFileSync(this.file, 'utf8');
         } catch {
             return [];
         }
-    }
-
-    private writeDisk(rows: ReplayEntry[]): void {
-        fs.mkdirSync(this.dir, { recursive: true });
-        const tmp = `${this.file}.${process.pid}.${Date.now()}.tmp`;
-        fs.writeFileSync(tmp, JSON.stringify(rows), { mode: 0o600 });
-        fs.renameSync(tmp, this.file);
-    }
-
-    private acquireLock(): void {
-        const start = Date.now();
-        for (;;) {
+        const rows: ReplayEntry[] = [];
+        for (const line of raw.split('\n')) {
+            if (!line) continue;
             try {
-                const fd = fs.openSync(this.lockFile, 'wx');
-                fs.writeSync(fd, String(process.pid));
-                fs.closeSync(fd);
-                return;
-            } catch (e: any) {
-                if (e?.code === 'EEXIST') {
-                    try {
-                        const st = fs.statSync(this.lockFile);
-                        if (Date.now() - st.mtimeMs > REPLAY_LOCK_STALE_MS) { fs.unlinkSync(this.lockFile); continue; }
-                    } catch { /* vanished: retry */ }
-                    if (Date.now() - start > REPLAY_LOCK_TIMEOUT_MS) throw new Error('[INGRESS] replay lock timeout');
-                    const until = Date.now() + REPLAY_LOCK_RETRY_MS;
-                    while (Date.now() < until) { /* short spin; check+mark is sub-ms */ }
-                    continue;
+                const r = JSON.parse(line);
+                if (r && typeof r.m === 'string' && typeof r.n === 'string' && typeof r.e === 'number' && r.e > now) {
+                    rows.push({ messageId: r.m, nonce: r.n, exp: r.e, c: String(r.c ?? '') });
                 }
-                throw e;
-            }
+            } catch { /* torn line from a crash mid-append: skip - that writer died before deciding */ }
         }
-    }
-
-    private releaseLock(): void {
-        try { fs.unlinkSync(this.lockFile); } catch { /* already gone */ }
+        return rows;
     }
 
     /** Atomic across processes: returns TRUE when this (messageId, nonce)
      *  was just recorded (first verifier wins), FALSE when it was already
-     *  recorded (replay). Only called AFTER every other check passes, so a
-     *  rejected envelope never burns its nonce. */
+     *  recorded (replay) or the claim did not land durably (fail-closed
+     *  deny). Only called AFTER every other check passes, so a rejected
+     *  envelope never burns its nonce. */
     checkAndMark(messageId: string, nonce: string, exp: number, now: number): boolean {
-        this.acquireLock();
-        try {
-            const rows = this.readDisk().filter(r => r.exp > now);
-            if (rows.some(r => r.messageId === messageId && r.nonce === nonce)) return false;
-            rows.push({ messageId, nonce, exp });
-            this.writeDisk(rows);
-            return true;
-        } finally {
-            this.releaseLock();
-        }
+        if (this.readLive(now).some(r => r.messageId === messageId && r.nonce === nonce)) return false;
+        const me = `${process.pid}:${crypto.randomBytes(8).toString('hex')}`;
+        this.appendLine({ m: messageId, n: nonce, e: exp, c: me });
+        const first = this.readLive(now).find(r => r.messageId === messageId && r.nonce === nonce);
+        return !!first && first.c === me;
     }
 }
 

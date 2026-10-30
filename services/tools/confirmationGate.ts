@@ -12,8 +12,8 @@
  * to the arguments is a new action requiring its own confirmation. Actions
  * expire; rejected actions are refused during a cooldown.
  *
- * v3 (R8): records live in the durable ConsentLedger (tmp+rename, 0600,
- * cross-process lock). Expiry-without-decision is EXPIRED, never a human
+ * v3 (R8): records live in the durable event-sourced ConsentLedger
+ * (append-only JSONL, first-valid-claim-wins, no lock file). Expiry-without-decision is EXPIRED, never a human
  * rejection. Execution consumes a single atomic permit (APPROVED -> CONSUMED
  * with receipt): two concurrent final consumers - even in different
  * processes - get exactly one execution PERMIT; the loser is told its
@@ -32,10 +32,10 @@ export type PendingStatus = ConsentStatus;
 export type PendingEffect = ConsentRecord;
 
 export type GateDecision =
-    | { action: 'EXECUTE' }
+    | { action: 'EXECUTE'; token: string }
     | { action: 'PENDING'; pending: PendingEffect }
     | { action: 'REJECTED'; pending: PendingEffect }
-    | { action: 'ALREADY_CONSUMED' }
+    | { action: 'ALREADY_CONSUMED'; token: string }
     | { action: 'BLOCKED_NO_PRINCIPAL' };
 
 /** Chat tools with external or wallet-bearing effects. Payments are already
@@ -143,15 +143,15 @@ class ConfirmationGate {
             }
             if (existing.status === 'APPROVED') {
                 const permit = this.ledger.consumePermit(existing.token, principalId, conversationId, now);
-                if (permit.result === 'CONSUMED') return { action: 'EXECUTE' };
-                if (permit.result === 'LOST') return { action: 'ALREADY_CONSUMED' };
+                if (permit.result === 'CONSUMED') return { action: 'EXECUTE', token: existing.token };
+                if (permit.result === 'LOST') return { action: 'ALREADY_CONSUMED', token: existing.token };
                 if (permit.result === 'NOT_APPROVED') {
                     // Status changed between the fresh read and the lock
                     // (concurrent decision): report the CURRENT truth.
                     const current = this.ledger.get(existing.token, now);
                     if (current?.status === 'PENDING') return { action: 'PENDING', pending: current };
                     if (current?.status === 'REJECTED') return { action: 'REJECTED', pending: current };
-                    if (current?.status === 'CONSUMED') return { action: 'ALREADY_CONSUMED' };
+                    if (current?.status === 'CONSUMED') return { action: 'ALREADY_CONSUMED', token: existing.token };
                     // EXPIRED: fall through to a fresh pending.
                 }
                 // EXPIRED between decision and execution: fall through and
@@ -198,7 +198,12 @@ class ConfirmationGate {
             return `[CONFIRM_GATE] La acción ${token} expiró sin decisión (no cuenta como rechazo). Si aún la quieres, responde "REOFRECER ${token}" para revisarla de nuevo, o pide la acción de nuevo.`;
         }
         if (entry.status === 'CONSUMED') {
-            return `[CONFIRM_GATE] El permiso de la acción ${token} ya fue consumido (una sola vez); el gate no puede confirmar si su efecto llegó a ejecutarse. Este token no ejecutará nada más: una repetición es una acción nueva que debes pedir.`;
+            const outcome = entry.outcome
+                ? (entry.outcome.status === 'EXECUTOR_OK'
+                    ? 'el ejecutor registró ejecución correcta (su propia observación, no una garantía de entrega)'
+                    : `el ejecutor registró FALLO de ejecución${entry.outcome.detail ? ` (${entry.outcome.detail})` : ''}`)
+                : 'sin resultado registrado (la ejecución pudo completarse, fallar o no haber ocurrido tras consumir el permiso)';
+            return `[CONFIRM_GATE] El permiso de la acción ${token} ya fue consumido (una sola vez); resultado: ${outcome}. Este token no ejecutará nada más: una repetición es una acción nueva que debes pedir.`;
         }
         if (entry.status !== 'PENDING') {
             return `[CONFIRM_GATE] La acción ${token} ya fue ${entry.status === 'APPROVED' ? 'confirmada' : 'rechazada'} antes.`;
@@ -231,10 +236,23 @@ class ConfirmationGate {
                 ? 'fue rechazada explícitamente y no se reofrece; si cambiaste de opinión, pide la acción de nuevo'
                 : result.reason === 'ALREADY_CONSUMED'
                     ? 'su permiso ya fue consumido y el gate no puede confirmar si el efecto se ejecutó; una repetición es una acción nueva que debes pedir'
-                    : 'aún no ha expirado';
+                    : result.reason === 'ALREADY_REOFFERED'
+                        ? 'ya fue reofrecida y existe un token nuevo vigente; revisa ese aviso'
+                        : 'aún no ha expirado';
             return `[CONFIRM_GATE] La acción ${token} no se puede reofrecer: ${why}.`;
         }
         return `[CONFIRM_GATE] 🔁 Acción reofrecida como ${result.record.token} (original ${token}, creada ${new Date(entry.createdAt).toISOString()}). Revisa el resumen COMPLETO y responde "CONFIRMAR ${result.record.token}" para ejecutarla una vez o "RECHAZAR ${result.record.token}" para descartarla.\n${result.record.summary}`;
+    }
+
+    /** Record what the executor OBSERVED after spending the permit
+     *  (reconciliation evidence; first record wins, never rewritten). */
+    public recordOutcome(token: string, ok: boolean, detail?: string): boolean {
+        return this.ledger.recordOutcome(token, ok ? 'EXECUTOR_OK' : 'EXECUTOR_FAILED', detail);
+    }
+
+    /** The recorded outcome of a consumed permit, if any. Absent = unknown. */
+    public outcomeOf(token: string): import('../security/consentLedger').EffectOutcome | undefined {
+        return this.ledger.get(token)?.outcome;
     }
 
     public pendingCount(): number { return this.active(Date.now()).length; }

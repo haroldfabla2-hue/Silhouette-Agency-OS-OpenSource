@@ -255,8 +255,10 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
             // pending action (full content shown to the user, one-time token);
             // the user replies "CONFIRMAR <token>" in this same conversation;
             // only then does an identical re-issued call execute - once.
+            let gatePermitToken: string | undefined;
             if (EXTERNAL_EFFECT_TOOLS.has(toolName) && process.env.CHAT_EFFECT_GATE !== 'off') {
                 const decision = confirmationGate.check(toolName, args, gateContext?.principalId, gateContext?.conversationId);
+                if (decision.action === 'EXECUTE') gatePermitToken = decision.token;
                 if (decision.action === 'PENDING') {
                     console.log(`[CONFIRM_GATE] ⏸️ ${toolName} pending explicit confirmation (${decision.pending.token})`);
                     return {
@@ -285,21 +287,27 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
                     };
                 }
                 if (decision.action === 'ALREADY_CONSUMED') {
-                    // The record was APPROVED when read but a concurrent final
-                    // consumer took the single execution permit. What the gate
-                    // can prove stops at the permit: whether that winner's
-                    // EFFECT actually ran is UNCONFIRMED (it may have crashed
-                    // after consuming). So: executing here could duplicate a
-                    // completed effect; re-pending would ask the user to
-                    // confirm a spent permit; claiming 'already executed'
-                    // would assert an effect nobody verified. Truth only.
-                    console.warn(`[CONFIRM_GATE] ⛔ ${toolName} not executed: its single permit was consumed by a concurrent call; effect outcome unconfirmed`);
+                    // This call holds NO permit: the single permit was taken
+                    // by a concurrent call (or its durable claim failed
+                    // safe). What the gate proves stops at the permit; the
+                    // EFFECT outcome is whatever the winner recorded (or
+                    // UNKNOWN until it does). So: executing here could
+                    // duplicate a completed effect; re-pending would ask the
+                    // user to confirm a spent permit; claiming 'already
+                    // executed' would assert an effect nobody verified.
+                    const recorded = confirmationGate.outcomeOf(decision.token);
+                    const outcomeTxt = recorded
+                        ? (recorded.status === 'EXECUTOR_OK'
+                            ? 'La llamada que consumió el permiso registró ejecución correcta (su propia observación, no una garantía de entrega): NO repetir.'
+                            : `La llamada que consumió el permiso registró FALLO de ejecución${recorded.detail ? ` (${recorded.detail})` : ''}. Aun así NO se reintenta automáticamente; si el usuario quiere repetirla, debe pedirla de nuevo.`)
+                        : 'La llamada que consumió el permiso aún no registró resultado (puede seguir en ejecución o haber fallado antes de registrarlo).';
+                    console.warn(`[CONFIRM_GATE] ⛔ ${toolName} not executed: this call holds no permit (concurrent consumer won); recorded outcome: ${recorded?.status ?? 'unknown'}`);
                     return {
                         toolName,
                         success: true,
                         result: {
-                            status: 'PERMIT_CONSUMED_UNCONFIRMED',
-                            instructions: 'El permiso de un solo uso de esta acción exacta ya fue consumido por otra llamada concurrente; el gate no puede confirmar si el efecto llegó a ejecutarse (esa llamada pudo fallar después de consumirlo). NO la reintentees: si el efecto sí se ejecutó, reintentar lo duplicaría. Si el usuario quiere repetirla, debe pedirla como una acción nueva que requerirá su propia confirmación.'
+                            status: recorded ? 'PERMIT_CONSUMED_OUTCOME_RECORDED' : 'PERMIT_CONSUMED_UNCONFIRMED',
+                            instructions: `Esta llamada NO obtuvo el permiso de un solo uso de esta acción exacta (lo tomó otra llamada concurrente); esta llamada NO ejecutó nada. ${outcomeTxt} Si el usuario quiere la acción, debe pedirla como una acción nueva que requerirá su propia confirmación.`
                         },
                         executionTimeMs: Date.now() - startTime
                     };
@@ -347,6 +355,10 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
             // pollutes the experience buffer with a fake win - unwrap it into honest failure.
             if (result && typeof result === 'object' && typeof (result as any).error === 'string') {
                 console.error(`[CHAT_TOOLS] ❌ Tool ${toolName} returned an error payload:`, (result as any).error);
+                if (gatePermitToken) {
+                    try { confirmationGate.recordOutcome(gatePermitToken, false, String((result as any).error).substring(0, 200)); }
+                    catch (e: any) { console.warn(`[CONFIRM_GATE] ⚠️ outcome record failed for ${gatePermitToken}: ${e?.message}`); }
+                }
                 return {
                     toolName,
                     success: false,
@@ -367,6 +379,10 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
                 'CHAT'
             );
 
+            if (gatePermitToken) {
+                try { confirmationGate.recordOutcome(gatePermitToken, true); }
+                catch (e: any) { console.warn(`[CONFIRM_GATE] ⚠️ outcome record failed for ${gatePermitToken}: ${e?.message}`); }
+            }
             console.log(`[CHAT_TOOLS] ✅ Tool ${toolName} completed in ${Date.now() - startTime}ms`);
 
             return {
@@ -378,6 +394,10 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
 
         } catch (error: any) {
             console.error(`[CHAT_TOOLS] ❌ Tool ${toolName} failed:`, error);
+            if (gatePermitToken) {
+                try { confirmationGate.recordOutcome(gatePermitToken, false, String(error?.message ?? error).substring(0, 200)); }
+                catch (e: any) { console.warn(`[CONFIRM_GATE] ⚠️ outcome record failed for ${gatePermitToken}: ${e?.message}`); }
+            }
 
             // Record failure
             toolRegistry.recordUsage(toolName, false);
