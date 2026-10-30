@@ -228,6 +228,7 @@ describe('R8-H2: REOFRECER is a real wired command, not an unfulfillable invitat
         expect(gate).not.toContain("permit.result !== 'EXPIRED') return { action: 'BLOCKED_NO_PRINCIPAL' }");
         const chat = readFileSync('services/chatToolIntegration.ts', 'utf8');
         expect(chat).toContain("decision.action === 'ALREADY_CONSUMED'");
-        expect(chat).toContain('ALREADY_EXECUTED');
+        expect(chat).toContain('PERMIT_CONSUMED_UNCONFIRMED');
+        expect(chat).not.toContain('ya fue ejecutada por otra llamada');
     });
 });

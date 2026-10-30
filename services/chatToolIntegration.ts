@@ -286,16 +286,20 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
                 }
                 if (decision.action === 'ALREADY_CONSUMED') {
                     // The record was APPROVED when read but a concurrent final
-                    // consumer took the single execution permit. Executing
-                    // would duplicate the effect; re-pending would ask the
-                    // user to confirm an action that ALREADY ran. Truth only.
-                    console.warn(`[CONFIRM_GATE] ⛔ ${toolName} not executed: its single permit was consumed by a concurrent call`);
+                    // consumer took the single execution permit. What the gate
+                    // can prove stops at the permit: whether that winner's
+                    // EFFECT actually ran is UNCONFIRMED (it may have crashed
+                    // after consuming). So: executing here could duplicate a
+                    // completed effect; re-pending would ask the user to
+                    // confirm a spent permit; claiming 'already executed'
+                    // would assert an effect nobody verified. Truth only.
+                    console.warn(`[CONFIRM_GATE] ⛔ ${toolName} not executed: its single permit was consumed by a concurrent call; effect outcome unconfirmed`);
                     return {
                         toolName,
                         success: true,
                         result: {
-                            status: 'ALREADY_EXECUTED',
-                            instructions: 'Esta acción exacta ya fue ejecutada por otra llamada concurrente (el permiso era de un solo uso). NO la reintentees. Si el usuario quiere repetirla, debe pedirla como una acción nueva que requerirá su propia confirmación.'
+                            status: 'PERMIT_CONSUMED_UNCONFIRMED',
+                            instructions: 'El permiso de un solo uso de esta acción exacta ya fue consumido por otra llamada concurrente; el gate no puede confirmar si el efecto llegó a ejecutarse (esa llamada pudo fallar después de consumirlo). NO la reintentees: si el efecto sí se ejecutó, reintentar lo duplicaría. Si el usuario quiere repetirla, debe pedirla como una acción nueva que requerirá su propia confirmación.'
                         },
                         executionTimeMs: Date.now() - startTime
                     };

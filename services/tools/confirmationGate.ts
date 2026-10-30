@@ -16,8 +16,11 @@
  * cross-process lock). Expiry-without-decision is EXPIRED, never a human
  * rejection. Execution consumes a single atomic permit (APPROVED -> CONSUMED
  * with receipt): two concurrent final consumers - even in different
- * processes - get exactly one execution; the loser is told the action was
- * ALREADY_CONSUMED instead of executing or silently pending again. An
+ * processes - get exactly one execution PERMIT; the loser is told its
+ * call's permit is ALREADY_CONSUMED instead of executing or silently
+ * pending again. Permit consumption is all the gate can prove: whether
+ * the winner's EFFECT actually ran is unconfirmed (it may crash after
+ * consuming), so nothing downstream may claim 'already executed'. An
  * expired proposal can be re-offered as a NEW pending with full provenance;
  * explicit rejections and consumed permits are never re-offered.
  */
@@ -121,8 +124,9 @@ class ConfirmationGate {
      * REJECTED (inside cooldown), EXECUTE (the one permit), ALREADY_CONSUMED
      * (the record was still APPROVED when read but a concurrent final
      * consumer took the one permit before the lock: NOTHING executed for
-     * this call and the user is told the truth, never re-asked to confirm an
-     * action that already ran), or BLOCKED_NO_PRINCIPAL when no
+     * THIS call, and whether the winner's effect ran is UNCONFIRMED (it may
+     * have crashed after consuming) - the user is told exactly that, never
+     * re-asked to confirm a spent permit), or BLOCKED_NO_PRINCIPAL when no
      * authenticated principal/conversation exists to bind an approval to.
      * A LATER identical call after consumption (record already CONSUMED when
      * read) is a brand-new pending requiring its own explicit confirmation:
@@ -194,7 +198,7 @@ class ConfirmationGate {
             return `[CONFIRM_GATE] La acción ${token} expiró sin decisión (no cuenta como rechazo). Si aún la quieres, responde "REOFRECER ${token}" para revisarla de nuevo, o pide la acción de nuevo.`;
         }
         if (entry.status === 'CONSUMED') {
-            return `[CONFIRM_GATE] La acción ${token} ya fue ejecutada una vez. No se volverá a ejecutar sin una nueva confirmación explícita.`;
+            return `[CONFIRM_GATE] El permiso de la acción ${token} ya fue consumido (una sola vez); el gate no puede confirmar si su efecto llegó a ejecutarse. Este token no ejecutará nada más: una repetición es una acción nueva que debes pedir.`;
         }
         if (entry.status !== 'PENDING') {
             return `[CONFIRM_GATE] La acción ${token} ya fue ${entry.status === 'APPROVED' ? 'confirmada' : 'rechazada'} antes.`;
@@ -226,7 +230,7 @@ class ConfirmationGate {
             const why = result.reason === 'EXPLICITLY_REJECTED'
                 ? 'fue rechazada explícitamente y no se reofrece; si cambiaste de opinión, pide la acción de nuevo'
                 : result.reason === 'ALREADY_CONSUMED'
-                    ? 'ya fue ejecutada una vez; una repetición es una acción nueva que debes pedir'
+                    ? 'su permiso ya fue consumido y el gate no puede confirmar si el efecto se ejecutó; una repetición es una acción nueva que debes pedir'
                     : 'aún no ha expirado';
             return `[CONFIRM_GATE] La acción ${token} no se puede reofrecer: ${why}.`;
         }
