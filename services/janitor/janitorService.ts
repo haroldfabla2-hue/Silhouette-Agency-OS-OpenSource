@@ -306,6 +306,20 @@ export class JanitorService {
         // Layer 3 — dry-run: record the proposal, touch nothing
         if (this.config.dryRun) {
             this.log({ ts: this.deps.now(), runId, event: 'PROPOSED', action: verdict.action, clusterIds: memberIds, metaTruthContent: verdict.metaTruth, detector: detectorVerdict, verifier: verifierVerdict, dryRun: true, reason: `Dry-run proposal (verified by ${ver.provider}): ${verdict.reason}` });
+            // [OWNER R9] A daemon initiative has no source-grounded owner by
+            // default: record it UNRESOLVED_OWNER. It cannot be dispatched,
+            // rejected or auto-approved until a current CREATOR explicitly
+            // assigns an owner (a decision separate from any approval).
+            try {
+                const { proposalOwners } = await import('../security/proposalOwner');
+                proposalOwners.propose({
+                    initiativeId: `janitor:${runId}:${crypto.createHash('sha256').update(memberIds.join(',')).digest('hex').slice(0, 16)}`,
+                    origin: 'janitor',
+                    summary: `${verdict.action}: ${verdict.metaTruth}`.slice(0, 2000),
+                });
+            } catch (e: any) {
+                console.warn(`[COGNITIVE: JANITOR] owner registry record failed (non-blocking): ${e?.message}`);
+            }
             return 'proposed';
         }
 
