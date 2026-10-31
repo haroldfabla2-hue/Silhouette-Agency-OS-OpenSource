@@ -16,7 +16,12 @@ import { systemBus } from './systemBus';
 import { SystemProtocol } from '../types';
 import { MemoryNodeSchema } from './memorySchema'; // Added missing import
 
-const SNAPSHOT_PATH = path.join(process.cwd(), 'data', 'memory_snapshot.json');
+// Vitest workers must not overwrite the same snapshot file concurrently
+// (full-state writes would silently drop other workers' volatile nodes).
+// Same precedent as lancedbService's per-worker DB directory.
+const SNAPSHOT_PATH = path.join(process.cwd(), 'data', process.env.VITEST_WORKER_ID
+    ? `memory_snapshot-worker-${process.env.VITEST_WORKER_ID}.json`
+    : 'memory_snapshot.json');
 
 // --- SILHOUETTE CONTINUUM MEMORY SYSTEM V5.0 (UNIFIED WORKING MEMORY) ---
 // Architecture: 4-Tier Hierarchical Storage
@@ -150,10 +155,10 @@ class ContinuumMemorySystem {
         this.loadSnapshot().then(() => this.reconcileTransitions())
             .catch(err => console.error('[CONTINUUM] Failed to recover memory:', err));
 
-        // Start Dreaming Protocol (Subconscious)
-        import('./dreamerService').then(({ dreamer }) => {
-            dreamer.startDreamingLoop();
-        });
+        // Dreaming loop starts EXPLICITLY at server boot (server/loaders/index.ts).
+        // A hidden fire-and-forget import here raced module lifecycle in tests
+        // (unhandled rejection: undefined dreamer binding) and crashed CI;
+        // import purity keeps this constructor free of cross-module starts.
     }
 
     // --- PUBLIC API ---
@@ -388,7 +393,7 @@ class ContinuumMemorySystem {
         }
     }
 
-    public async store(content: string, tier: MemoryTier = MemoryTier.ULTRA_SHORT, tags: string[] = [], skipIngestion: boolean = false, extra?: { parentIds?: string[]; affect?: { valence: number; activation: number; at: number } }): Promise<void> {
+    public async store(content: string, tier: MemoryTier = MemoryTier.ULTRA_SHORT, tags: string[] = [], skipIngestion: boolean = false, extra?: { parentIds?: string[]; affect?: { valence: number; activation: number; at: number }; id?: string; timestamp?: number }): Promise<void> {
         // [PR-4c] Boundary coercion: an invalid tier (e.g. an LLM emitting the
         // number 28) must not reach the gatekeeper as a "corruption" event that
         // mobilizes remediation squads in a loop. Coerce loudly to WORKING;
@@ -423,10 +428,12 @@ class ContinuumMemorySystem {
         // [FIX] Identity Re-Perspectiver: Transform user first-person statements
         const transformedContent = this.transformUserPerspective(content, tags);
 
-        const timestamp = Date.now();
+        // A caller-supplied stable id/timestamp (e.g. a journaled write replay)
+        // makes re-delivery collapse to the same node instead of a duplicate.
+        const timestamp = extra?.timestamp ?? Date.now();
 
         const rawNode = {
-            id: crypto.randomUUID(),
+            id: extra?.id ?? crypto.randomUUID(),
             content: transformedContent, // Use transformed content
             originalContent: content, // Keep original for reference
             timestamp: timestamp,
@@ -480,7 +487,12 @@ class ContinuumMemorySystem {
         if (tierStr === 'WORKING' || tierStr === 'ULTRA_SHORT' || tierStr === 'SHORT') {
             // Save the incoming memory first. Failure to evict an older node may exceed
             // the soft capacity, but must never discard the new memory or its source.
-            this.working.push(node as MemoryNode);
+            // Replay-safe upsert: a re-delivered node with the same stable id
+            // replaces its working-tier copy (mirrors LanceDB merge-by-ID),
+            // so a crash between store-confirm and journal ACK cannot duplicate it.
+            const existingIdx = this.working.findIndex(n => n.id === node.id);
+            if (existingIdx >= 0) { this.working[existingIdx] = node as MemoryNode; }
+            else { this.working.push(node as MemoryNode); }
             this.markDirty();
             await this.saveSnapshot();
             if (this.working.length > this.RAM_HARD_CAP) {
