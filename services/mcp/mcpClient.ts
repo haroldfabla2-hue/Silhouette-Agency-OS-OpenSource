@@ -239,6 +239,16 @@ class MCPClient {
 
         console.log(`[MCPClient] 🔧 Executing ${toolName} on ${serverName}...`);
 
+        // EFFECT GATE (2026-11-05): tools on EXTERNAL MCP servers are unknown
+        // external effects - they classify 'unclassified', which gates
+        // fail-closed. Human approval at /v1/autonomy/confirmations is
+        // required; denial returns an honest error, never a simulated result.
+        const { executeWithEffectConsent } = await import('../security/gatedExecution');
+        try {
+            return await executeWithEffectConsent(
+                `mcp_external:${serverName}:${toolName}`, args ?? {},
+                `mcpClient:outbound:${serverName}`,
+                async () => {
         try {
             const response = await fetch(`${config.url}/messages`, {
                 method: 'POST',
@@ -273,6 +283,11 @@ class MCPClient {
         } catch (error: any) {
             console.error(`[MCPClient] Tool execution failed:`, error.message);
             return { error: error.message };
+        }
+                });
+        } catch (gateErr: any) {
+            // Gated external effect without human consent: honest error, no execution.
+            return { error: gateErr.message, blocked: true };
         }
     }
 

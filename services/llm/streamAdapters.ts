@@ -265,12 +265,25 @@ DO NOT hallucinate fake media urls. Use the tool.
                         if (payload.tool && payload.args) {
                             systemBus.emit(SystemProtocol.THOUGHT_EMISSION, { thoughts: [`[Universal Fallback] 🛠️ Local Tool Call: ${payload.tool}`] }, prepared.agentName);
 
-                            // Execute
-                            const toolResult = await toolHandler.handleFunctionCall(payload.tool, payload.args, prepared.toolCaller);
-
-                            // Report back
-                            const output = JSON.stringify(toolResult, null, 2);
-                            yield `\n\n[SYSTEM]: Tool Executed.\nResult: ${output}`;
+                            // EFFECT GATE (2026-11-05): this local-fallback tool call is a DIRECT
+                            // path - model-emitted JSON executed tools with no confirmation. Route
+                            // through the consent helper; denial is reported honestly, never faked.
+                            const { executeWithEffectConsent } = await import('../security/gatedExecution');
+                            const { EffectDeniedError } = await import('../security/effectGate');
+                            try {
+                                const toolResult = await executeWithEffectConsent(
+                                    payload.tool, payload.args,
+                                    `streamAdapters:local-fallback:${prepared.agentName ?? 'unknown'}`,
+                                    () => toolHandler.handleFunctionCall(payload.tool, payload.args, prepared.toolCaller));
+                                const output = JSON.stringify(toolResult, null, 2);
+                                yield `\n\n[SYSTEM]: Tool Executed.\nResult: ${output}`;
+                            } catch (gateErr: any) {
+                                if (gateErr instanceof EffectDeniedError || gateErr?.code === 'EFFECT_DENIED' || gateErr?.code === 'CONFIRMATION_UNAVAILABLE') {
+                                    yield `\n\n[SYSTEM]: Tool NOT executed - human confirmation required and not granted: ${gateErr.message}`;
+                                } else {
+                                    throw gateErr;
+                                }
+                            }
                         }
                     } else {
                         // Failed to parse, yield raw buffer

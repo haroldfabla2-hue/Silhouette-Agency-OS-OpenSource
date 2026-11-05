@@ -156,4 +156,14 @@ describe('tool effect classification (plugin gate root fix)', () => {
             expect(valid.has(cls), `${name} has invalid class ${cls}`).toBe(true);
         }
     });
+
+    it('direct paths: ungated effect passes through executeWithEffectConsent without consent infra', async () => {
+        const { executeWithEffectConsent } = await import('../../services/security/gatedExecution');
+        const r = await executeWithEffectConsent('query_x_db_y', { q: 1 }, 'test-origin', () => Promise.resolve(42));
+        expect(r).toBe(42);
+    });
+
+    it('direct paths: external MCP tool names gate fail-closed (unclassified)', () => {
+        expect(isGatedEffect('mcp_external:instagram:post')).toBe(true);
+    });
 });

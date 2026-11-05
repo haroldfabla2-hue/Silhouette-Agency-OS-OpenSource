@@ -41,8 +41,16 @@ export class MCPWrapper {
                 async (args: Record<string, unknown>) => {
                     console.log(`[MCP] 📞 External Client calling tool: ${tool.name}`);
                     try {
-                        // Special handling for some tools if needed, otherwise generic execution
-                        const result = await toolExecutor.execute(tool.name, args);
+                        // EFFECT GATE (2026-11-05): external MCP clients reached every registered
+                        // tool through toolExecutor with only an API key - no human confirmation
+                        // for gated effects. Route through the consent helper: ungated tools pass;
+                        // gated effects require human approval at /v1/autonomy/confirmations;
+                        // denial surfaces as an honest MCP error (caught below, isError: true).
+                        const { executeWithEffectConsent } = await import("../../services/security/gatedExecution");
+                        const result = await executeWithEffectConsent(
+                            tool.name, args as Record<string, any>,
+                            'mcpServer:external-client',
+                            () => toolExecutor.execute(tool.name, args));
 
                         // Ensure result is formatted for MCP (CallToolResult)
                         // If result is already a CallToolResult (has explicit content/isError), use it
