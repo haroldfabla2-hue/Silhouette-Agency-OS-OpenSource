@@ -30,9 +30,12 @@
  *    direct geminiService/streamAdapters callers: covered only where the
  *    provider service itself enforces a boundary; NOT audited here.
  *  - 'domain_gated' tools (payments_*, vault_*, browser_autofill_payment):
- *    the human loop is asserted to live in paymentGateway/financialVault,
- *    which already wires approvalGrants/effectGate. That assertion is NOT
- *    re-verified in this cut; it is an audit item for the next batch.
+ *    the human loop lives in their domain boundary, VERIFIED in source on
+ *    2026-11-05: paymentGateway.gated() binds provider+destination+amount;
+ *    financialVault.requestVirtualCard goes through
+ *    actionExecutor.requestConfirmation; browser autofill requires an
+ *    attributed approval at the visualBrowserEngine boundary (added in
+ *    this branch - previously it had NO deep gate).
  *  - Classification is metadata: a plugin that LIES about its effects is
  *    out of scope for this fix (declared limit, same as v4's declared
  *    limits). Absence of metadata is enforcement (fail closed); false
@@ -158,10 +161,15 @@ export const CORE_TOOL_EFFECTS: Readonly<Record<string, ToolEffectClass>> = Obje
 });
 
 /** Dynamic-name patterns (tools registered at runtime whose names are not
- *  enumerable). query_*_db_* executes caller SQL against LOCAL app
- *  databases: local side effects, honest class 'internal'. */
+ *  enumerable). query_*_db_* is 'read_only' ONLY because of the CURRENT
+ *  Safe Mode, verified in source 2026-11-05: dbIntrospector.executeQuery
+ *  opens every connection with { readonly: true } AND rejects any
+ *  non-SELECT statement (dbIntrospector.ts:164-170). If Safe Mode ever
+ *  becomes configurable or write-capable, this classification MUST be
+ *  revisited - the real boundary is the readonly connection, not this
+ *  label. */
 export const PATTERN_CLASSES: ReadonlyArray<{ matches: (name: string) => boolean; effects: ToolEffectClass }> = Object.freeze([
-    { matches: (n) => n.startsWith('query_') && n.includes('_db_'), effects: 'internal' },
+    { matches: (n) => n.startsWith('query_') && n.includes('_db_'), effects: 'read_only' },
 ]);
 
 /** Only these classes run without a human confirmation (legacy behavior).

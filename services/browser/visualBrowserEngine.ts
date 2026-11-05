@@ -611,6 +611,26 @@ export class VisualBrowserEngine {
         }
 
         const page = await this.init();
+
+        // HUMAN APPROVAL (2026-11-05): autofilling credentials prepares a
+        // payment on an external page and must never happen without an
+        // attributed human yes. Bound to THIS page (host) + THIS card
+        // reference via the ActionExecutor grant path; the descriptor
+        // carries url + card reference + last4 only - never PAN/CVV. This
+        // is the engine boundary every caller traverses, so direct callers
+        // of browserService/toolHandler cannot bypass it.
+        const approved = await this.approvalProvider({
+            url: page.url(),
+            instruction: `Autofill virtual card ${cardId} (****${card.last4}) into the payment form on this page`,
+            elementText: 'payment form (card number, expiry, CVV, cardholder name)',
+            elementType: 'form'
+        });
+        if (!approved) {
+            let host = 'this page';
+            try { host = new URL(page.url()).host || host; } catch { /* keep fallback */ }
+            return { success: false, fieldsInjected: [], error: `Autofill blocked: human approval required and not granted for ${host}. Nothing was typed.` };
+        }
+
         const fieldsInjected: string[] = [];
 
         // 1. Card Number field

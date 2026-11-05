@@ -1882,13 +1882,20 @@ export class ToolHandler {
                 });
             } else {
                 result = { ...envMap, ...configJson };
-                // Hide sensitive keys if returning ALL without explicit request
-                Object.keys(result).forEach(k => {
-                    if (k.toLowerCase().includes('key') || k.toLowerCase().includes('token') || k.toLowerCase().includes('password')) {
-                        result[k] = '********';
-                    }
-                });
             }
+
+            // SECRET LEAK FIX (2026-11-05): sensitive values are masked on
+            // EVERY path, including explicit args.keys requests - an explicit
+            // request is NOT authority to reveal a secret into chat/logs.
+            // The model only ever sees '********', so no raw secret reaches
+            // the tool result, logs, or any downstream grant/binding.
+            Object.keys(result).forEach(k => {
+                const lk = k.toLowerCase();
+                if (lk.includes('key') || lk.includes('token') || lk.includes('password')
+                    || lk.includes('secret') || lk.includes('credential') || lk.includes('cvv')) {
+                    result[k] = '********';
+                }
+            });
 
             return {
                 status: "success",

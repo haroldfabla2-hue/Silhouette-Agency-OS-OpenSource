@@ -27,7 +27,7 @@ import {
 } from '../../services/security/effectGate';
 import trelloPlugin from '../../services/plugins/integrations/trelloPlugin';
 import notionPlugin from '../../services/plugins/integrations/notionPlugin';
-import googleWorkspacePlugin from '../../services/plugins/integrations/googleWorkspacePlugin';
+import { buildGoogleWorkspaceTools } from '../../services/plugins/integrations/googleWorkspacePlugin';
 
 const stubTool = (name: string, effects?: any) => ({
     id: `test_${name}`,
@@ -48,19 +48,24 @@ const stubTool = (name: string, effects?: any) => ({
 beforeAll(() => {
     // Register the REAL plugin metadata (not handlers): exactly what
     // pluginRegistry.initialize() propagates to toolRegistry at boot.
-    for (const plugin of [trelloPlugin, notionPlugin, googleWorkspacePlugin]) {
-        for (const t of plugin.tools) {
-            toolRegistry.registerTool(stubTool(t.name, (t as any).effects));
-        }
+    // trello/notion expose static tool arrays; google's plugin.tools
+    // getter is EMPTY until onInit reads real config, so the test uses
+    // the pure buildGoogleWorkspaceTools() builder (no config, no I/O).
+    for (const t of [...trelloPlugin.tools, ...notionPlugin.tools, ...buildGoogleWorkspaceTools()]) {
+        toolRegistry.registerTool(stubTool(t.name, (t as any).effects));
     }
 });
 
 describe('tool effect classification (plugin gate root fix)', () => {
     it('every bundled plugin tool DECLARES its effects (registration metadata present)', () => {
-        for (const plugin of [trelloPlugin, notionPlugin, googleWorkspacePlugin]) {
-            for (const t of plugin.tools) {
-                expect((t as any).effects, `${plugin.id}:${t.name} missing effects declaration`).toBeTruthy();
-            }
+        const all = [
+            ...trelloPlugin.tools.map(t => ({ plugin: 'trello', t })),
+            ...notionPlugin.tools.map(t => ({ plugin: 'notion', t })),
+            ...buildGoogleWorkspaceTools().map(t => ({ plugin: 'google-workspace', t })),
+        ];
+        expect(all.length).toBe(18); // 3 trello + 2 notion + 13 google - a vacuous pass is a failure
+        for (const { plugin, t } of all) {
+            expect((t as any).effects, `${plugin}:${t.name} missing effects declaration`).toBeTruthy();
         }
     });
 
@@ -109,8 +114,8 @@ describe('tool effect classification (plugin gate root fix)', () => {
         expect(isGatedEffect('never_registered_xyz')).toBe(true);
     });
 
-    it('dynamic DB tools resolve via pattern as internal (legacy preserved)', () => {
-        expect(getToolEffectClass('query_customers_db_main')).toBe('internal');
+    it('dynamic DB tools resolve via pattern as read_only (current Safe Mode: readonly connection + SELECT-only)', () => {
+        expect(getToolEffectClass('query_customers_db_main')).toBe('read_only');
         expect(isGatedEffect('query_customers_db_main')).toBe(false);
     });
 

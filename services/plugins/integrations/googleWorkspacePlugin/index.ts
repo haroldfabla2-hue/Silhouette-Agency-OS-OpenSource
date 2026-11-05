@@ -479,6 +479,15 @@ const SERVICE_MAP: Record<string, () => PluginToolDefinition[]> = {
     slides: slidesTools
 };
 
+/** Pure: every tool definition of every service. No config read, no I/O -
+ *  safe to import anywhere (tests, metadata consumers). The live plugin
+ *  keeps its per-service enable/disable filtering in onInit. */
+export function buildGoogleWorkspaceTools(): PluginToolDefinition[] {
+    const all: PluginToolDefinition[] = [];
+    for (const generator of Object.values(SERVICE_MAP)) all.push(...generator());
+    return all;
+}
+
 // Dynamically load enabled services from plugins.json
 let enabledTools: PluginToolDefinition[] = [];
 
