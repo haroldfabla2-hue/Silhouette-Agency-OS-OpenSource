@@ -86,7 +86,7 @@ export class MCPWrapper {
             }
         );
 
-        console.log(`[MCP] 🚀 Server initialized with ${tools.length} tools, Toolsets, Prompts, and Resources enabled.`);
+        console.log('[MCP] 🚀 Server initialized: 0 tools exposed (temporarily unavailable for API-token clients), Prompts resource enabled.');
     }
 
     /**
