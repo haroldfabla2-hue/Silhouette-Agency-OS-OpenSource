@@ -241,8 +241,9 @@ class MCPClient {
 
         // EFFECT GATE (2026-11-05): tools on EXTERNAL MCP servers are unknown
         // external effects - they classify 'unclassified', which gates
-        // fail-closed. Human approval at /v1/autonomy/confirmations is
-        // required; denial returns an honest error, never a simulated result.
+        // fail-closed. With a human principal present the consent flow asks
+        // at /v1/autonomy/confirmations; WITHOUT one it DENIES outright.
+        // Denial returns an honest error, never a simulated result.
         const { executeWithEffectConsent } = await import('../security/gatedExecution');
         try {
             return await executeWithEffectConsent(

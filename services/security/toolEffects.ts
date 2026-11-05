@@ -199,3 +199,16 @@ export function getToolEffectClass(toolName: string): ToolEffectClass {
     }
     return 'unclassified';
 }
+
+/** External-client exposure boundary (2026-11-05, correccion de revision):
+ *  callers authenticated by API key (MCP server clients) are NOT human
+ *  principals. Effect classes model risk for the user's OWN agents; for an
+ *  external caller, 'internal' tools (execute_code, write_file) are
+ *  RCE-equivalent, and gated classes can never obtain human approval in
+ *  that channel (no session principal exists). Only pure read classes may
+ *  be exposed externally. Internal use (chat, orchestrator, capability
+ *  paths) is unaffected by this predicate. */
+export function isExternallyExposable(toolName: string): boolean {
+    const cls = getToolEffectClass(toolName);
+    return cls === 'read_only' || cls === 'external_read';
+}

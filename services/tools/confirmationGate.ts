@@ -78,7 +78,7 @@ export function summarizeEffect(tool: string, args: Record<string, any>): string
         return s.length > 8000 ? s.slice(0, 8000) + `\n[... truncado en pantalla: ${s.length} caracteres totales; el token cubre el contenido COMPLETO]` : s;
     };
     if (tool === 'send_email') {
-        return `Para: ${args.to}${args.cc ? `\nCC: ${args.cc}` : ''}\nAsunto: ${args.subject}\nCuerpo:\n${full(args.body)}`;
+        return `Para: ${args.to}${args.cc ? `\nCC: ${args.cc}` : ''}${args.driveLink ? `\nAdjunto (Drive): ${args.driveLink}` : ''}\nAsunto: ${args.subject}\nCuerpo:\n${full(args.body)}`;
     }
     if (tool === 'github_create_pr') {
         return `Pull request: "${args.title}" (${args.head ?? args.branch ?? '?'} -> ${args.base ?? 'main'})${args.repo ? ` en ${args.repo}` : ''}\nDescripción:\n${full(args.body)}`;

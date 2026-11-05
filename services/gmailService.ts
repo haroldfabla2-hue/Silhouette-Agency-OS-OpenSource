@@ -30,6 +30,7 @@ export interface EmailMessage {
 
 export interface SendEmailOptions {
     to: string;
+    cc?: string;
     subject: string;
     body: string;
     isHtml?: boolean;
@@ -377,7 +378,7 @@ class GmailService {
             const { ensureEffectConsent } = await import('./security/effectGate');
             await ensureEffectConsent(
                 'send_email',
-                { to: options.to, cc: (options as any).cc, subject: options.subject, body: options.body },
+                { to: options.to, cc: options.cc, subject: options.subject, body: options.body, driveLink: options.driveLink },
                 'gmailService.sendEmail',
                 { providerBoundary: true }
             );
@@ -407,6 +408,7 @@ class GmailService {
             const messageParts = [
                 `From: ${userEmail}`,
                 `To: ${options.to}`,
+                ...(options.cc ? [`Cc: ${options.cc}`] : []),
                 `Subject: ${options.subject}`,
                 `Content-Type: ${options.isHtml ? 'text/html' : 'text/plain'}; charset=utf-8`,
                 '',

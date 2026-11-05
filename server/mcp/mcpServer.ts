@@ -41,11 +41,21 @@ export class MCPWrapper {
                 async (args: Record<string, unknown>) => {
                     console.log(`[MCP] 📞 External Client calling tool: ${tool.name}`);
                     try {
-                        // EFFECT GATE (2026-11-05): external MCP clients reached every registered
-                        // tool through toolExecutor with only an API key - no human confirmation
-                        // for gated effects. Route through the consent helper: ungated tools pass;
-                        // gated effects require human approval at /v1/autonomy/confirmations;
-                        // denial surfaces as an honest MCP error (caught below, isError: true).
+                        // TRUST BOUNDARY + EFFECT GATE (2026-11-05, correccion de revision):
+                        // an MCP API key is NOT a human principal. Effect classes model risk
+                        // for the user's OWN agents; for an external caller, 'internal' tools
+                        // (execute_code, write_file) are RCE-equivalent, and gated effects can
+                        // never obtain human approval in this channel (no session principal
+                        // exists, so the consent flow DENIES - no approval is promised here).
+                        // Expose ONLY read classes to external clients; deny the rest honestly.
+                        const { isExternallyExposable, getToolEffectClass } = await import("../../services/security/toolEffects");
+                        if (!isExternallyExposable(tool.name)) {
+                            return {
+                                content: [{ type: "text", text: `Tool "${tool.name}" denegado para clientes MCP externos (clase "${getToolEffectClass(tool.name)}"): una API key no es un principal humano; por este canal solo se exponen herramientas de lectura.` }],
+                                isError: true
+                            };
+                        }
+                        // Defense in depth for the read classes that remain.
                         const { executeWithEffectConsent } = await import("../../services/security/gatedExecution");
                         const result = await executeWithEffectConsent(
                             tool.name, args as Record<string, any>,

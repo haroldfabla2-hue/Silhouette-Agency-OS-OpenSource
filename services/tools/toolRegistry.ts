@@ -287,6 +287,7 @@ class ToolRegistry {
                     type: 'OBJECT',
                     properties: {
                         to: { type: 'STRING', description: 'Recipient email address' },
+                        cc: { type: 'STRING', description: 'Optional CC recipient email address' },
                         subject: { type: 'STRING', description: 'Email subject line' },
                         body: { type: 'STRING', description: 'Email body content' },
                         driveLink: { type: 'STRING', description: 'Optional Google Drive link to include' }

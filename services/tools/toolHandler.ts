@@ -935,7 +935,7 @@ export class ToolHandler {
 
     // ==================== COMMUNICATION TOOLS (Gmail) ====================
 
-    private async handleSendEmail(args: { to: string; subject: string; body: string; driveLink?: string }): Promise<any> {
+    private async handleSendEmail(args: { to: string; cc?: string; subject: string; body: string; driveLink?: string }): Promise<any> {
         if (!args.to || !args.subject || !args.body) {
             return { error: "Missing required arguments (to, subject, body)" };
         }
@@ -950,6 +950,7 @@ export class ToolHandler {
 
             const result = await gmailService.sendEmail({
                 to: args.to,
+                cc: args.cc,
                 subject: args.subject,
                 body: args.body,
                 driveLink: args.driveLink

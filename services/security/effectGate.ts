@@ -66,7 +66,7 @@ export interface EffectPolicy {
 export const EFFECT_POLICIES: Readonly<Record<EffectKind, EffectPolicy>> = Object.freeze({
     send_email: {
         actionType: 'SEND_EMAIL', category: 'EXTERNAL_COMMS', walletBearing: false,
-        bindingArgs: ['to', 'cc', 'subject', 'body']
+        bindingArgs: ['to', 'cc', 'subject', 'body', 'driveLink']
     },
     github_create_pr: {
         actionType: 'GITHUB_CREATE_PR', category: 'EXTERNAL_PUBLISH', walletBearing: false,
@@ -203,7 +203,7 @@ const clip = (v: any, n = 500): string => {
 export function describeEffect(effect: string, args: Record<string, any>): string {
     switch (effect as EffectKind) {
         case 'send_email':
-            return `Enviar email\nPara: ${args.to}${args.cc ? `\nCC: ${args.cc}` : ''}\nAsunto: ${clip(args.subject)}\nCuerpo:\n${clip(args.body, 4000)}`;
+            return `Enviar email\nPara: ${args.to}${args.cc ? `\nCC: ${args.cc}` : ''}${args.driveLink ? `\nAdjunto (Drive): ${args.driveLink}` : ''}\nAsunto: ${clip(args.subject)}\nCuerpo:\n${clip(args.body, 4000)}`;
         case 'github_create_pr':
             return `Crear pull request: "${clip(args.title, 200)}" (${args.head ?? args.branch ?? '?'} -> ${args.base ?? 'main'})${args.repo ? ` en ${args.repo}` : ''}`;
         case 'generate_image':

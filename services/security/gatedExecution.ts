@@ -11,8 +11,11 @@
  *
  * Semantica identica al chokepoint: efecto no gateado pasa directo; efecto
  * gateado sin contexto pide aprobacion humana en /v1/autonomy/confirmations
- * y, aprobada, re-entra con pseudo-grant ligado a efecto+args exactos;
- * denegacion lanza EffectDeniedError (sin reintento, sin exito simulado).
+ * CUANDO existe un principal humano; si no existe (llamadas por API token,
+ * daemons sin sesion), el flujo DENIEGA - ninguna aprobacion es alcanzable
+ * ni prometida ahi. Aprobada, re-entra con pseudo-grant ligado a
+ * efecto+args exactos; denegacion lanza EffectDeniedError (sin reintento,
+ * sin exito simulado).
  */
 import {
     isGatedEffect,
