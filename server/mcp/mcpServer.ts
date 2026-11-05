@@ -12,8 +12,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { toolRegistry } from "../../services/tools/toolRegistry";
-import { toolExecutor } from "../../services/tools/toolExecutor";
-import { webhookManager } from "../../services/webhookManager";
 import { z } from "zod";
 import type { Application, Request, Response } from "express";
 
@@ -32,107 +30,26 @@ export class MCPWrapper {
         const tools = toolRegistry.getAllTools();
 
         // 1. Register Tools
-        for (const tool of tools) {
-            const paramsSchema = this.mapSchemaToZod(tool.parameters);
-            this.server.tool(
-                tool.name,
-                tool.description || "No description provided",
-                paramsSchema,
-                async (args: Record<string, unknown>) => {
-                    console.log(`[MCP] 📞 External Client calling tool: ${tool.name}`);
-                    try {
-                        // TRUST BOUNDARY + EFFECT GATE (2026-11-05, correccion de revision):
-                        // an MCP API key is NOT a human principal. Effect classes model risk
-                        // for the user's OWN agents; for an external caller, 'internal' tools
-                        // (execute_code, write_file) are RCE-equivalent, and gated effects can
-                        // never obtain human approval in this channel (no session principal
-                        // exists, so the consent flow DENIES - no approval is promised here).
-                        // Expose ONLY read classes to external clients; deny the rest honestly.
-                        const { isExternallyExposable, getToolEffectClass } = await import("../../services/security/toolEffects");
-                        if (!isExternallyExposable(tool.name)) {
-                            return {
-                                content: [{ type: "text", text: `Tool "${tool.name}" denegado para clientes MCP externos (clase "${getToolEffectClass(tool.name)}"): una API key no es un principal humano; por este canal solo se exponen herramientas de lectura.` }],
-                                isError: true
-                            };
-                        }
-                        // Defense in depth for the read classes that remain.
-                        const { executeWithEffectConsent } = await import("../../services/security/gatedExecution");
-                        const result = await executeWithEffectConsent(
-                            tool.name, args as Record<string, any>,
-                            'mcpServer:external-client',
-                            () => toolExecutor.execute(tool.name, args));
+        // EXTERNAL EXPOSURE DISABLED (2026-11-05, correccion de revision R2):
+        // NO registered tool is verified safe for API-token clients:
+        // read_only discloses user data (inbox/files/memory), external_read
+        // enables SSRF/internal-net/authenticated-browser reuse and provider
+        // quota spend, internal is RCE-equivalent, and gated effects have no
+        // reachable human approval in this channel. tools/list must also NOT
+        // announce excluded tools to the token, so ZERO tools are registered:
+        // tools/list answers empty (honest), tools/call fails as unknown
+        // tool (no simulated success). Internal paths (chat, orchestrator,
+        // capability) never go through this server and are unaffected.
+        // Policy lives in toolEffects.ts (EXTERNALLY_EXPOSED_TOOLS, empty,
+        // fail-closed). Endpoints/auth stay intact.
+        console.log(`[MCP] 🔒 External tool exposure disabled: 0 of ${tools.length} registered tools exposed (none verified safe for API-token clients).`);
 
-                        // Ensure result is formatted for MCP (CallToolResult)
-                        // If result is already a CallToolResult (has explicit content/isError), use it
-                        if (result && typeof result === 'object' && 'content' in result && Array.isArray(result.content)) {
-                            return result;
-                        }
-
-                        // Otherwise wrap it
-                        const resultText = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
-                        return {
-                            content: [{ type: "text", text: resultText }],
-                            isError: false
-                        };
-                    } catch (error: any) {
-                        console.error(`[MCP] ❌ Tool execution failed: ${error.message}`);
-                        return {
-                            content: [{ type: "text", text: `Error: ${error.message}` }],
-                            isError: true
-                        };
-                    }
-                }
-            );
-        }
-
-        // 2. Register Resources (Webhooks & System State)
-        this.server.resource(
-            "active_webhooks",
-            "webhook://list",
-            async (uri) => {
-                const webhooks = webhookManager.getActiveWebhooks();
-                return {
-                    contents: [{
-                        uri: uri.href,
-                        text: JSON.stringify(webhooks, null, 2)
-                    }]
-                };
-            }
-        );
-
-        // 3. [NEW] Register Toolsets Resource (Google MCP Pattern)
-        // Allows clients to load grouped tools by category
-        this.server.resource(
-            "toolsets",
-            "mcp://toolsets",
-            async (uri) => {
-                const allTools = toolRegistry.getAllTools();
-
-                // Group tools by category/prefix
-                const toolsets: Record<string, string[]> = {
-                    media: allTools.filter(t =>
-                        t.name.includes('image') || t.name.includes('video') || t.name.includes('audio')
-                    ).map(t => t.name),
-                    research: allTools.filter(t =>
-                        t.name.includes('search') || t.name.includes('web') || t.name.includes('arxiv')
-                    ).map(t => t.name),
-                    code: allTools.filter(t =>
-                        t.name.includes('code') || t.name.includes('file') || t.name.includes('execute')
-                    ).map(t => t.name),
-                    memory: allTools.filter(t =>
-                        t.name.includes('memory') || t.name.includes('store') || t.name.includes('recall')
-                    ).map(t => t.name),
-                    all: allTools.map(t => t.name)
-                };
-
-                return {
-                    contents: [{
-                        uri: uri.href,
-                        text: JSON.stringify(toolsets, null, 2)
-                    }]
-                };
-            }
-        );
+        // 2-3. Resources active_webhooks and toolsets REMOVED (2026-11-05,
+        // R2): they disclosed private webhook state and the full tool
+        // inventory (payments/vault/shell) to any API-token holder. The
+        // external surface must not announce private data nor excluded
+        // tools. The prompts resource below serves repo-public prompt
+        // files only (repo is public), so it stays.
 
         // 4. [NEW] Register Prompts Resource (Google MCP Pattern)
         // Exposes universal prompts for LLM interactions

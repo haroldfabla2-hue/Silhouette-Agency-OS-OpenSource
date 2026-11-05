@@ -200,15 +200,21 @@ export function getToolEffectClass(toolName: string): ToolEffectClass {
     return 'unclassified';
 }
 
-/** External-client exposure boundary (2026-11-05, correccion de revision):
+/** External-client exposure boundary (2026-11-05, correccion de revision R2):
  *  callers authenticated by API key (MCP server clients) are NOT human
- *  principals. Effect classes model risk for the user's OWN agents; for an
- *  external caller, 'internal' tools (execute_code, write_file) are
- *  RCE-equivalent, and gated classes can never obtain human approval in
- *  that channel (no session principal exists). Only pure read classes may
- *  be exposed externally. Internal use (chat, orchestrator, capability
- *  paths) is unaffected by this predicate. */
+ *  principals, and NO registered tool is verified safe for them today:
+ *  - 'read_only' tools disclose USER DATA to the token holder (inbox,
+ *    files, memory): confidentiality is a separate axis from side effects;
+ *  - 'external_read' tools (browser_navigate/extract/screenshot/read_url,
+ *    web_search) enable SSRF into the internal network, reuse of the user's
+ *    authenticated browser sessions, and paid-provider quota consumption;
+ *  - 'internal' tools (execute_code, write_file) are RCE-equivalent for an
+ *    external caller;
+ *  - gated classes have no reachable human approval in that channel.
+ *  The exposed set is therefore EMPTY and fail-closed: a tool becomes
+ *  exposable only by explicit, verified addition to this set. Internal
+ *  paths (chat, orchestrator, capability) never consult this predicate. */
+export const EXTERNALLY_EXPOSED_TOOLS: ReadonlySet<string> = new Set([]);
 export function isExternallyExposable(toolName: string): boolean {
-    const cls = getToolEffectClass(toolName);
-    return cls === 'read_only' || cls === 'external_read';
+    return EXTERNALLY_EXPOSED_TOOLS.has(toolName);
 }

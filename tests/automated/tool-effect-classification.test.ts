@@ -167,14 +167,14 @@ describe('tool effect classification (plugin gate root fix)', () => {
         expect(isGatedEffect('mcp_external:instagram:post')).toBe(true);
     });
 
-    it('external-client boundary: only read classes are exposable to API-key clients', async () => {
-        const { isExternallyExposable } = await import('../../services/security/toolEffects');
-        expect(isExternallyExposable('execute_code')).toBe(false);   // internal -> RCE-equivalent for external callers
-        expect(isExternallyExposable('write_file')).toBe(false);     // internal
-        expect(isExternallyExposable('send_email')).toBe(false);     // external_comms, gated
-        expect(isExternallyExposable('never_registered_xyz')).toBe(false); // unclassified fail-closed
-        expect(isExternallyExposable('query_x_db_y')).toBe(true);    // read_only
-        expect(isExternallyExposable('web_search')).toBe(true);      // read_only
+    it('external-client boundary: NOTHING is exposable to API-key clients (fail-closed empty set)', async () => {
+        const { isExternallyExposable, EXTERNALLY_EXPOSED_TOOLS } = await import('../../services/security/toolEffects');
+        expect(EXTERNALLY_EXPOSED_TOOLS.size).toBe(0);
+        for (const t of ['execute_code', 'write_file', 'send_email', 'query_x_db_y', 'web_search',
+                         'browser_navigate', 'browser_extract', 'browser_screenshot', 'read_url',
+                         'read_inbox', 'get_emails', 'never_registered_xyz']) {
+            expect(isExternallyExposable(t), `${t} must not be externally exposable`).toBe(false);
+        }
     });
 
     it('send_email binding covers driveLink: a link change is a different approval', () => {
