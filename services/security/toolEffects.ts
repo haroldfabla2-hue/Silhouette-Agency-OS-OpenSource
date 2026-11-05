@@ -29,13 +29,15 @@
  *    audit note names imageFactory, gmailService, videoFactory) and any
  *    direct geminiService/streamAdapters callers: covered only where the
  *    provider service itself enforces a boundary; NOT audited here.
- *  - 'domain_gated' tools (payments_*, vault_*, browser_autofill_payment):
- *    the human loop lives in their domain boundary, VERIFIED in source on
- *    2026-11-05: paymentGateway.gated() binds provider+destination+amount;
+ *  - 'domain_gated' tools (payments_*, vault_*): the human loop lives in
+ *    their domain boundary, VERIFIED in source on 2026-11-05:
+ *    paymentGateway.gated() binds provider+destination+amount;
  *    financialVault.requestVirtualCard goes through
- *    actionExecutor.requestConfirmation; browser autofill requires an
- *    attributed approval at the visualBrowserEngine boundary (added in
- *    this branch - previously it had NO deep gate).
+ *    actionExecutor.requestConfirmation.
+ *  - browser_autofill_payment is NOT domain_gated: it is BLOCKED at the
+ *    engine boundary (visualBrowserEngine.autofillPayment) pending a
+ *    navigation-proof approval design - its class below is inert while
+ *    the block stands.
  *  - Classification is metadata: a plugin that LIES about its effects is
  *    out of scope for this fix (declared limit, same as v4's declared
  *    limits). Absence of metadata is enforcement (fail closed); false
@@ -72,7 +74,7 @@ export const CORE_TOOL_EFFECTS: Readonly<Record<string, ToolEffectClass>> = Obje
     payments_payout: 'domain_gated',
     vault_request_vcard: 'domain_gated',
     vault_burn_card: 'domain_gated',
-    browser_autofill_payment: 'domain_gated',
+    browser_autofill_payment: 'external_publish', // INERT: blocked at the engine boundary pending navigation-proof approval
     // External comms as the user (telephony)
     telephony_dial_phone: 'external_comms',
     telephony_barge_in: 'external_comms',

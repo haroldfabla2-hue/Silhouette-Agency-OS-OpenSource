@@ -599,130 +599,19 @@ export class VisualBrowserEngine {
      * WITHOUT exposing raw card data into LLM context logs.
      */
     public async autofillPayment(cardId: string): Promise<{ success: boolean; fieldsInjected: string[]; maskedLast4?: string; error?: string }> {
-        const { financialVault } = await import('../vault/financialVault');
-        const card = financialVault.getCardForAutofill(cardId);
-
-        if (!card) {
-            return {
-                success: false,
-                fieldsInjected: [],
-                error: `Active virtual card ${cardId} not found or expired.`
-            };
-        }
-
-        const page = await this.init();
-
-        // HUMAN APPROVAL (2026-11-05): autofilling credentials prepares a
-        // payment on an external page and must never happen without an
-        // attributed human yes. Bound to THIS page (host) + THIS card
-        // reference via the ActionExecutor grant path; the descriptor
-        // carries url + card reference + last4 only - never PAN/CVV. This
-        // is the engine boundary every caller traverses, so direct callers
-        // of browserService/toolHandler cannot bypass it.
-        const approved = await this.approvalProvider({
-            url: page.url(),
-            instruction: `Autofill virtual card ${cardId} (****${card.last4}) into the payment form on this page`,
-            elementText: 'payment form (card number, expiry, CVV, cardholder name)',
-            elementType: 'form'
-        });
-        if (!approved) {
-            let host = 'this page';
-            try { host = new URL(page.url()).host || host; } catch { /* keep fallback */ }
-            return { success: false, fieldsInjected: [], error: `Autofill blocked: human approval required and not granted for ${host}. Nothing was typed.` };
-        }
-
-        // NAVIGATION RE-CHECK (2026-11-05): consent is bound to this host.
-        // Re-verify immediately before EVERY field and abort on any frame
-        // navigation during the fill - the approved document must be the
-        // one that receives the credentials. HONEST RESIDUAL RACE: a
-        // navigation within the same event-loop turn as a keystroke cannot
-        // be excluded; atomicity is NOT claimed. An abort can leave a
-        // partial fill on the ORIGINAL page (never on a new host); the
-        // error says so explicitly.
-        const approvedHost = (() => { try { return new URL(page.url()).host; } catch { return ''; } })();
-        let navigated = false;
-        const onNav = () => { navigated = true; };
-        page.on('framenavigated', onNav);
-        const navigationAbort = (): string | null => {
-            let host = '';
-            try { host = new URL(page.url()).host; } catch { /* unreadable */ }
-            if (navigated || !host || host !== approvedHost) {
-                return `Autofill aborted: page navigated after approval (approved host: ${approvedHost || 'unknown'}, current: ${host || 'unknown'}). Partial fill may exist on the original page only; nothing more was typed.`;
-            }
-            return null;
-        };
-
-        const fieldsInjected: string[] = [];
-
-        // 1. Card Number field
-        { const abort = navigationAbort(); if (abort) { page.off('framenavigated', onNav); return { success: false, fieldsInjected, error: abort }; } }
-        const numSelector = 'input[autocomplete*="cc-number" i], input[name*="cardnumber" i], input[name*="card_num" i], input[name*="card" i], input[placeholder*="card number" i], input[id*="card" i]';
-        const numElement = await page.$(numSelector);
-        if (numElement) {
-            await numElement.click();
-            await page.keyboard.type(card.cardNumber, { delay: 35 });
-            fieldsInjected.push('cardNumber');
-        }
-
-        // 2. Expiration Date (Single field or split)
-        { const abort = navigationAbort(); if (abort) { page.off('framenavigated', onNav); return { success: false, fieldsInjected, error: abort }; } }
-        const expSelector = 'input[autocomplete*="cc-exp" i], input[name*="exp" i], input[placeholder*="mm/yy" i], input[placeholder*="mm / yy" i]';
-        const expElement = await page.$(expSelector);
-        if (expElement) {
-            await expElement.click();
-            await page.keyboard.type(`${card.expMonth}${card.expYear}`, { delay: 35 });
-            fieldsInjected.push('expiration');
-        } else {
-            // Split month / year
-            const monthEl = await page.$('input[name*="month" i], select[name*="month" i]');
-            const yearEl = await page.$('input[name*="year" i], select[name*="year" i]');
-            if (monthEl) {
-                await monthEl.fill(card.expMonth);
-                fieldsInjected.push('expMonth');
-            }
-            if (yearEl) {
-                await yearEl.fill(`20${card.expYear}`);
-                fieldsInjected.push('expYear');
-            }
-        }
-
-        // 3. CVV / Security Code
-        { const abort = navigationAbort(); if (abort) { page.off('framenavigated', onNav); return { success: false, fieldsInjected, error: abort }; } }
-        const cvvSelector = 'input[autocomplete*="cc-csc" i], input[name*="cvv" i], input[name*="cvc" i], input[placeholder*="cvv" i], input[placeholder*="cvc" i], input[placeholder*="security code" i]';
-        const cvvElement = await page.$(cvvSelector);
-        if (cvvElement) {
-            await cvvElement.click();
-            await page.keyboard.type(card.cvv, { delay: 35 });
-            fieldsInjected.push('cvv');
-        }
-
-        // 4. Cardholder Name
-        { const abort = navigationAbort(); if (abort) { page.off('framenavigated', onNav); return { success: false, fieldsInjected, error: abort }; } }
-        const nameSelector = 'input[autocomplete*="cc-name" i], input[name*="cardholder" i], input[name*="holder" i], input[placeholder*="name on card" i]';
-        const nameElement = await page.$(nameSelector);
-        if (nameElement) {
-            await nameElement.click();
-            await page.keyboard.type(card.cardholderName, { delay: 35 });
-            fieldsInjected.push('cardholderName');
-        }
-
-        page.off('framenavigated', onNav);
-
-        // Audit without screenshot (card digits may be visible) and with redacted DOM; never log card values
-        await this.auditAction(page, { actionType: 'autofillPayment', description: `autofill fields: ${fieldsInjected.join(',')} (card ****${card.last4})`, screenshot: false });
-
-        systemBus.emit(SystemProtocol.TELEMETRY_LOG, {
-            service: 'VisualBrowserEngine',
-            event: 'PAYMENT_FORM_AUTOFILLED',
-            cardId,
-            last4: card.last4,
-            fieldsInjected
-        });
-
+        // SECURITY BLOCK (2026-11-05, review-mandated): card autofill is
+        // TEMPORARILY UNAVAILABLE. No mechanism in this codebase can today
+        // guarantee that the document approved by a human is the document
+        // that receives the credentials (post-approval navigation race).
+        // Rather than accept a race that can deliver a PAN/CVV to an
+        // unapproved host, the function blocks BEFORE retrieving,
+        // decrypting or typing any card data. The API is preserved and a
+        // clear message explains the state; the feature returns when a
+        // navigation-proof approval design lands. Never simulate success.
         return {
-            success: fieldsInjected.length > 0,
-            fieldsInjected,
-            maskedLast4: `•••• ${card.last4}`
+            success: false,
+            fieldsInjected: [],
+            error: 'Card autofill temporarily disabled for security: no mechanism currently guarantees the human-approved page is the one that would receive the credentials (post-approval navigation race). Pending a navigation-proof approval design. No card data was retrieved, decrypted or typed.'
         };
     }
 

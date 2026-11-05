@@ -1885,21 +1885,13 @@ export class ToolHandler {
             }
 
             // SECRET LEAK FIX (2026-11-05, root): values from env/config
-            // files are PRIVATE BY DEFAULT. No raw value leaves this
-            // handler unless its key is in PUBLIC_CONFIG_KEYS, an explicit
-            // code-level list of keys whose values are demonstrated
-            // non-secret operational settings. Everything else - known
-            // secret names, unknown custom names, future variables, PAN/
-            // auth/cookie/DSN/private-key material under ANY name -
-            // returns presence only. This is not a blacklist: absence from
-            // the public list is what masks, so naming tricks cannot leak.
-            // The model, logs and any downstream grant/binding only ever
-            // see '********' for non-public keys.
-            const PUBLIC_CONFIG_KEYS = new Set([
-                'NODE_ENV', 'APP_ENV', 'PORT', 'HOST', 'LOG_LEVEL', 'PUBLIC_URL', 'APP_URL'
-            ]);
+            // files are private. This tool returns PRESENCE ONLY: every
+            // key is listed, every value is '********'. No whitelist of
+            // "public" values is assumed - even URLs can carry userinfo or
+            // secret query parameters. The model, logs and any downstream
+            // grant/binding only ever see the mask.
             Object.keys(result).forEach(k => {
-                if (!PUBLIC_CONFIG_KEYS.has(k)) result[k] = '********';
+                result[k] = '********';
             });
 
             return {
