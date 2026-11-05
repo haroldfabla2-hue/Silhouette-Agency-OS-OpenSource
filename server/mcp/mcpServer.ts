@@ -5,14 +5,17 @@
  * 
  * This enables external clients (Claude Desktop, Cursor, etc.) to
  * connect to Silhouette and use its tools.
+ *
+ * 2026-11-05 (R2): tool exposure TEMPORARILY UNAVAILABLE - no tool is
+ * verified safe for API-token clients, so zero tools are registered
+ * (tools/list empty). Endpoints and auth remain; internal paths never
+ * use this server. See toolEffects.ts EXTERNALLY_EXPOSED_TOOLS.
  * 
  * Uses proper SDK types for full type safety - no workarounds.
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-import { toolRegistry } from "../../services/tools/toolRegistry";
-import { z } from "zod";
 import type { Application, Request, Response } from "express";
 
 export class MCPWrapper {
@@ -27,22 +30,18 @@ export class MCPWrapper {
     }
 
     public async initialize() {
-        const tools = toolRegistry.getAllTools();
-
         // 1. Register Tools
-        // EXTERNAL EXPOSURE DISABLED (2026-11-05, correccion de revision R2):
-        // NO registered tool is verified safe for API-token clients:
-        // read_only discloses user data (inbox/files/memory), external_read
-        // enables SSRF/internal-net/authenticated-browser reuse and provider
-        // quota spend, internal is RCE-equivalent, and gated effects have no
-        // reachable human approval in this channel. tools/list must also NOT
-        // announce excluded tools to the token, so ZERO tools are registered:
-        // tools/list answers empty (honest), tools/call fails as unknown
-        // tool (no simulated success). Internal paths (chat, orchestrator,
-        // capability) never go through this server and are unaffected.
-        // Policy lives in toolEffects.ts (EXTERNALLY_EXPOSED_TOOLS, empty,
+        // EXTERNAL EXPOSURE TEMPORARILY DISABLED (2026-11-05, correccion de
+        // revision R2): NO registered tool is verified safe for API-token
+        // clients (reads disclose user data; external_read enables SSRF/
+        // sessions/quota; internal is RCE-equivalent; gated has no reachable
+        // approval here), and tools/list must not ANNOUNCE excluded tools.
+        // ZERO tools are registered: tools/list answers empty (honest),
+        // tools/call fails as unknown tool (no simulated success). Internal
+        // paths (chat, orchestrator, capability) never go through this
+        // server. Policy: toolEffects.ts EXTERNALLY_EXPOSED_TOOLS (empty,
         // fail-closed). Endpoints/auth stay intact.
-        console.log(`[MCP] 🔒 External tool exposure disabled: 0 of ${tools.length} registered tools exposed (none verified safe for API-token clients).`);
+        console.log('[MCP] 🔒 External tools temporarily unavailable: none verified safe for API-token clients (tools/list empty).');
 
         // 2-3. Resources active_webhooks and toolsets REMOVED (2026-11-05,
         // R2): they disclosed private webhook state and the full tool
@@ -88,53 +87,6 @@ export class MCPWrapper {
         );
 
         console.log(`[MCP] 🚀 Server initialized with ${tools.length} tools, Toolsets, Prompts, and Resources enabled.`);
-    }
-
-    /**
-     * Maps internal FunctionDeclarationSchema to Zod raw shape
-     * Returns the raw shape object that the MCP SDK expects
-     */
-    private mapSchemaToZod(schema: unknown): z.ZodRawShape {
-        const shape: z.ZodRawShape = {};
-
-        const schemaObj = schema as { properties?: Record<string, { type?: string; description?: string }> };
-
-        if (schemaObj?.properties) {
-            for (const [key, prop] of Object.entries(schemaObj.properties)) {
-                // Determine Zod type based on schema type
-                let zodType: z.ZodTypeAny;
-
-                switch (prop.type?.toUpperCase()) {
-                    case 'STRING':
-                        zodType = z.string();
-                        break;
-                    case 'NUMBER':
-                        zodType = z.number();
-                        break;
-                    case 'BOOLEAN':
-                        zodType = z.boolean();
-                        break;
-                    case 'ARRAY':
-                        zodType = z.array(z.unknown());
-                        break;
-                    case 'OBJECT':
-                        zodType = z.record(z.unknown());
-                        break;
-                    default:
-                        zodType = z.unknown();
-                }
-
-                if (prop.description) {
-                    zodType = zodType.describe(prop.description);
-                }
-
-                // Make all parameters optional for flexibility
-                // Required validation should happen in toolExecutor
-                shape[key] = zodType.optional();
-            }
-        }
-
-        return shape;
     }
 
     /**
