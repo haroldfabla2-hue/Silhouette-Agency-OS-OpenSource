@@ -631,9 +631,31 @@ export class VisualBrowserEngine {
             return { success: false, fieldsInjected: [], error: `Autofill blocked: human approval required and not granted for ${host}. Nothing was typed.` };
         }
 
+        // NAVIGATION RE-CHECK (2026-11-05): consent is bound to this host.
+        // Re-verify immediately before EVERY field and abort on any frame
+        // navigation during the fill - the approved document must be the
+        // one that receives the credentials. HONEST RESIDUAL RACE: a
+        // navigation within the same event-loop turn as a keystroke cannot
+        // be excluded; atomicity is NOT claimed. An abort can leave a
+        // partial fill on the ORIGINAL page (never on a new host); the
+        // error says so explicitly.
+        const approvedHost = (() => { try { return new URL(page.url()).host; } catch { return ''; } })();
+        let navigated = false;
+        const onNav = () => { navigated = true; };
+        page.on('framenavigated', onNav);
+        const navigationAbort = (): string | null => {
+            let host = '';
+            try { host = new URL(page.url()).host; } catch { /* unreadable */ }
+            if (navigated || !host || host !== approvedHost) {
+                return `Autofill aborted: page navigated after approval (approved host: ${approvedHost || 'unknown'}, current: ${host || 'unknown'}). Partial fill may exist on the original page only; nothing more was typed.`;
+            }
+            return null;
+        };
+
         const fieldsInjected: string[] = [];
 
         // 1. Card Number field
+        { const abort = navigationAbort(); if (abort) { page.off('framenavigated', onNav); return { success: false, fieldsInjected, error: abort }; } }
         const numSelector = 'input[autocomplete*="cc-number" i], input[name*="cardnumber" i], input[name*="card_num" i], input[name*="card" i], input[placeholder*="card number" i], input[id*="card" i]';
         const numElement = await page.$(numSelector);
         if (numElement) {
@@ -643,6 +665,7 @@ export class VisualBrowserEngine {
         }
 
         // 2. Expiration Date (Single field or split)
+        { const abort = navigationAbort(); if (abort) { page.off('framenavigated', onNav); return { success: false, fieldsInjected, error: abort }; } }
         const expSelector = 'input[autocomplete*="cc-exp" i], input[name*="exp" i], input[placeholder*="mm/yy" i], input[placeholder*="mm / yy" i]';
         const expElement = await page.$(expSelector);
         if (expElement) {
@@ -664,6 +687,7 @@ export class VisualBrowserEngine {
         }
 
         // 3. CVV / Security Code
+        { const abort = navigationAbort(); if (abort) { page.off('framenavigated', onNav); return { success: false, fieldsInjected, error: abort }; } }
         const cvvSelector = 'input[autocomplete*="cc-csc" i], input[name*="cvv" i], input[name*="cvc" i], input[placeholder*="cvv" i], input[placeholder*="cvc" i], input[placeholder*="security code" i]';
         const cvvElement = await page.$(cvvSelector);
         if (cvvElement) {
@@ -673,6 +697,7 @@ export class VisualBrowserEngine {
         }
 
         // 4. Cardholder Name
+        { const abort = navigationAbort(); if (abort) { page.off('framenavigated', onNav); return { success: false, fieldsInjected, error: abort }; } }
         const nameSelector = 'input[autocomplete*="cc-name" i], input[name*="cardholder" i], input[name*="holder" i], input[placeholder*="name on card" i]';
         const nameElement = await page.$(nameSelector);
         if (nameElement) {
@@ -680,6 +705,8 @@ export class VisualBrowserEngine {
             await page.keyboard.type(card.cardholderName, { delay: 35 });
             fieldsInjected.push('cardholderName');
         }
+
+        page.off('framenavigated', onNav);
 
         // Audit without screenshot (card digits may be visible) and with redacted DOM; never log card values
         await this.auditAction(page, { actionType: 'autofillPayment', description: `autofill fields: ${fieldsInjected.join(',')} (card ****${card.last4})`, screenshot: false });

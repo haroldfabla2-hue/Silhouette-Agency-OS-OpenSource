@@ -1884,17 +1884,22 @@ export class ToolHandler {
                 result = { ...envMap, ...configJson };
             }
 
-            // SECRET LEAK FIX (2026-11-05): sensitive values are masked on
-            // EVERY path, including explicit args.keys requests - an explicit
-            // request is NOT authority to reveal a secret into chat/logs.
-            // The model only ever sees '********', so no raw secret reaches
-            // the tool result, logs, or any downstream grant/binding.
+            // SECRET LEAK FIX (2026-11-05, root): values from env/config
+            // files are PRIVATE BY DEFAULT. No raw value leaves this
+            // handler unless its key is in PUBLIC_CONFIG_KEYS, an explicit
+            // code-level list of keys whose values are demonstrated
+            // non-secret operational settings. Everything else - known
+            // secret names, unknown custom names, future variables, PAN/
+            // auth/cookie/DSN/private-key material under ANY name -
+            // returns presence only. This is not a blacklist: absence from
+            // the public list is what masks, so naming tricks cannot leak.
+            // The model, logs and any downstream grant/binding only ever
+            // see '********' for non-public keys.
+            const PUBLIC_CONFIG_KEYS = new Set([
+                'NODE_ENV', 'APP_ENV', 'PORT', 'HOST', 'LOG_LEVEL', 'PUBLIC_URL', 'APP_URL'
+            ]);
             Object.keys(result).forEach(k => {
-                const lk = k.toLowerCase();
-                if (lk.includes('key') || lk.includes('token') || lk.includes('password')
-                    || lk.includes('secret') || lk.includes('credential') || lk.includes('cvv')) {
-                    result[k] = '********';
-                }
+                if (!PUBLIC_CONFIG_KEYS.has(k)) result[k] = '********';
             });
 
             return {
