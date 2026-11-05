@@ -12,6 +12,7 @@
 
 import { FunctionDeclaration, Type } from "@google/genai";
 import { systemBus } from "../systemBus";
+import type { ToolEffectClass } from "../security/toolEffects";
 import { SystemProtocol } from "../../types";
 
 // ==================== INTERFACES ====================
@@ -31,6 +32,11 @@ export interface DynamicTool {
     createdAt: number;
     version: string;
     tags?: string[];
+    /** Effect classification (2026-11-05): what kind of side effect this
+     *  tool can cause. Absent resolves to 'unclassified' at the effect gate,
+     *  which FAILS CLOSED: every invocation requires human confirmation.
+     *  Plugin authors declare it in PluginToolDefinition.effects. */
+    effects?: ToolEffectClass;
 }
 
 export interface FunctionDeclarationSchema {
@@ -606,6 +612,13 @@ class ToolRegistry {
             console.log(`[ToolRegistry] 🔄 Updating tool: ${tool.name}`);
         } else {
             console.log(`[ToolRegistry] ➕ Registering new tool: ${tool.name} (${tool.category})`);
+        }
+
+        if (!tool.effects) {
+            // Fail closed (2026-11-05): undeclared tools resolve to
+            // 'unclassified' at the effect gate and require human
+            // confirmation on every invocation until classified.
+            console.warn(`[ToolRegistry] WARN: tool "${tool.name}" registered without an effect class; it requires human confirmation until classified`);
         }
 
         this.tools.set(tool.name, tool);

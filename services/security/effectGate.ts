@@ -43,6 +43,7 @@
 import crypto from 'node:crypto';
 import { approvalGrants, bindingDigest, type ApprovalBinding } from './approvalGrants';
 import { getEffectContext, type EffectContext } from './effectContext';
+import { getToolEffectClass, requiresHumanConfirmation } from './toolEffects';
 
 export class EffectDeniedError extends Error {
     public readonly code = 'EFFECT_DENIED' as const;
@@ -85,8 +86,44 @@ export const EFFECT_POLICIES: Readonly<Record<EffectKind, EffectPolicy>> = Objec
     },
 });
 
-export function isGatedEffect(name: string): name is EffectKind {
-    return Object.prototype.hasOwnProperty.call(EFFECT_POLICIES, name);
+/** Gated effects are the dedicated five PLUS any tool whose effect class
+ *  requires human confirmation (classification-driven, 2026-11-05). Plugin
+ *  tools with external side effects and undeclared ('unclassified') tools
+ *  gate here too: the fixed-list predicate was the plugin bypass, because
+ *  every unlisted tool default-allowed on every path. */
+export function isGatedEffect(name: string): boolean {
+    if (Object.prototype.hasOwnProperty.call(EFFECT_POLICIES, name)) return true;
+    return requiresHumanConfirmation(getToolEffectClass(name));
+}
+
+/** Policy for classification-gated effects WITHOUT a dedicated record
+ *  (plugin tools, unclassified tools). Non-wallet, publish-class; binding
+ *  covers the FULL canonical args (no per-effect subset is known, and
+ *  exact-args is the enforceable binding). */
+const GENERIC_EXTERNAL_POLICY: EffectPolicy = Object.freeze({
+    actionType: 'PLUGIN_EXTERNAL', category: 'EXTERNAL_PUBLISH', walletBearing: false, bindingArgs: []
+});
+
+function policyFor(effect: string): EffectPolicy {
+    if (Object.prototype.hasOwnProperty.call(EFFECT_POLICIES, effect)) {
+        return EFFECT_POLICIES[effect as EffectKind];
+    }
+    if (getToolEffectClass(effect) === 'wallet_bearing') {
+        // A tool DECLARED wallet-bearing but lacking a dedicated policy is
+        // held to the same CERO COBROS hard rule as cloud generation.
+        return { actionType: 'WALLET_UNVERIFIABLE', category: 'COSTLY_GENERATION', walletBearing: true, bindingArgs: [] };
+    }
+    return GENERIC_EXTERNAL_POLICY;
+}
+
+/** Capability-level boundary: effects with no deeper provider-boundary call
+ *  site consume their grant at the executeCapability chokepoint. True for
+ *  github_create_pr and for every classification-gated effect without a
+ *  dedicated policy (plugin tools, unclassified): their handlers are
+ *  arbitrary code with no consumable boundary inside. */
+export function isCapabilityLevelBoundary(effect: string): boolean {
+    if (CAPABILITY_LEVEL_BOUNDARY_EFFECTS.has(effect as EffectKind)) return true;
+    return !Object.prototype.hasOwnProperty.call(EFFECT_POLICIES, effect);
 }
 
 /**
@@ -112,10 +149,15 @@ const canonical = (args: Record<string, any>): string => {
 /** Canonical arg subset for an effect's binding (both issuer and boundary use
  *  this). Handler defaults are normalized in so a grant issued on raw args
  *  matches the boundary's defaulted args for the SAME logical invocation. */
-export function bindingArgsFor(effect: EffectKind, rawArgs: Record<string, any>): Record<string, any> {
-    const defaults = NORMALIZED_DEFAULTS[effect] ?? {};
+export function bindingArgsFor(effect: string, rawArgs: Record<string, any>): Record<string, any> {
+    if (!Object.prototype.hasOwnProperty.call(EFFECT_POLICIES, effect)) {
+        // No dedicated policy (plugin/unclassified effect): bind the FULL
+        // args so the grant matches exactly one logical invocation.
+        return { ...rawArgs };
+    }
+    const defaults = (NORMALIZED_DEFAULTS as Record<string, Record<string, any>>)[effect] ?? {};
     const out: Record<string, any> = {};
-    for (const k of EFFECT_POLICIES[effect].bindingArgs) {
+    for (const k of EFFECT_POLICIES[effect as EffectKind].bindingArgs) {
         const v = rawArgs[k] !== undefined ? rawArgs[k] : defaults[k];
         if (v !== undefined) out[k] = v;
     }
@@ -123,7 +165,7 @@ export function bindingArgsFor(effect: EffectKind, rawArgs: Record<string, any>)
 }
 
 /** Binding for one exact invocation: type = effect, destination = digest of effect+canonical args. */
-export function effectBinding(effect: EffectKind, args: Record<string, any>): ApprovalBinding {
+export function effectBinding(effect: string, args: Record<string, any>): ApprovalBinding {
     const subset = bindingArgsFor(effect, args);
     return {
         type: effect,
@@ -136,7 +178,7 @@ export function effectBinding(effect: EffectKind, args: Record<string, any>): Ap
  * authority exists: after confirmationGate EXECUTE (chat), or in an
  * authenticated route whose body is the principal's exact specification.
  */
-export function issueEffectGrant(effect: EffectKind, args: Record<string, any>, issuedBy: string): EffectContext {
+export function issueEffectGrant(effect: string, args: Record<string, any>, issuedBy: string): EffectContext {
     const binding = effectBinding(effect, args);
     const grant = approvalGrants.issue(binding);
     console.log(`[EFFECT_GATE] 🎟️ grant issued for ${effect} by ${issuedBy} (single-use, args-bound, one provider invocation)`);
@@ -158,8 +200,8 @@ const clip = (v: any, n = 500): string => {
     return s.length > n ? s.slice(0, n) + `… [${s.length} chars]` : s;
 };
 
-export function describeEffect(effect: EffectKind, args: Record<string, any>): string {
-    switch (effect) {
+export function describeEffect(effect: string, args: Record<string, any>): string {
+    switch (effect as EffectKind) {
         case 'send_email':
             return `Enviar email\nPara: ${args.to}${args.cc ? `\nCC: ${args.cc}` : ''}\nAsunto: ${clip(args.subject)}\nCuerpo:\n${clip(args.body, 4000)}`;
         case 'github_create_pr':
@@ -170,6 +212,10 @@ export function describeEffect(effect: EffectKind, args: Record<string, any>): s
             return `Generar vídeo (coste de proveedor; coste por pieza NO verificable por el sistema, sin límite de gasto configurado)\nMotor: ${args.engine ?? '?'}\nPrompt: ${clip(args.prompt, 1000)}`;
         case 'generate_voice':
             return `Generar voz (coste de proveedor; coste por pieza NO verificable por el sistema, sin límite de gasto configurado)\nVoz: ${args.voiceId ?? 'default'}\nTexto: ${clip(args.text, 1000)}`;
+        default:
+            // Classification-gated effect without a dedicated description
+            // (plugin tool, unclassified tool): show the FULL action.
+            return `Ejecutar "${effect}" (efecto externo de plugin)\nArgumentos completos:\n${clip(JSON.stringify(args, null, 2), 4000)}`;
     }
 }
 
@@ -193,12 +239,12 @@ export interface ConsentGranted { via: 'grant' | 'human-approval'; digest: strin
  * or timeout denies.
  */
 export async function ensureEffectConsent(
-    effect: EffectKind,
+    effect: string,
     args: Record<string, any>,
     origin: string,
     opts: { providerBoundary?: boolean } = {}
 ): Promise<ConsentGranted> {
-    const policy = EFFECT_POLICIES[effect];
+    const policy = policyFor(effect);
 
     // CERO COBROS: wallet-bearing provider effects (cloud image/video/voice)
     // are HARD-BLOCKED in this delivery. The system cannot verify per-piece

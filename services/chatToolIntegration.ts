@@ -50,7 +50,7 @@ export interface ParsedToolCall {
     originalMatch: string;
 }
 
-import { confirmationGate, EXTERNAL_EFFECT_TOOLS } from './tools/confirmationGate';
+import { confirmationGate } from './tools/confirmationGate';
 
 class ChatToolIntegration {
     /**
@@ -257,7 +257,12 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
             // only then does an identical re-issued call execute - once.
             let gatePermitToken: string | undefined;
             let gatePermitReceipt: string | undefined;
-            if (EXTERNAL_EFFECT_TOOLS.has(toolName) && process.env.CHAT_EFFECT_GATE !== 'off') {
+            // Classification-driven (2026-11-05): isGatedEffect covers the
+            // dedicated five AND every tool whose effect class requires
+            // confirmation (plugin mutations, unclassified tools). The fixed
+            // EXTERNAL_EFFECT_TOOLS list was the plugin bypass.
+            const { isGatedEffect } = await import('./security/effectGate');
+            if (isGatedEffect(toolName) && process.env.CHAT_EFFECT_GATE !== 'off') {
                 const decision = confirmationGate.check(toolName, args, gateContext?.principalId, gateContext?.conversationId);
                 if (decision.action === 'EXECUTE') { gatePermitToken = decision.token; gatePermitReceipt = decision.receipt; }
                 if (decision.action === 'PENDING') {
@@ -342,10 +347,10 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
             // args-bound grant for this one execution. Anything else (other
             // args, a second piece, a replay) gates again at the boundary.
             let capabilityResult;
-            if (EXTERNAL_EFFECT_TOOLS.has(toolName) && process.env.CHAT_EFFECT_GATE !== 'off') {
+            if (isGatedEffect(toolName) && process.env.CHAT_EFFECT_GATE !== 'off') {
                 const { issueEffectGrant } = await import('./security/effectGate');
                 const { runWithEffectContext } = await import('./security/effectContext');
-                const grantCtx = issueEffectGrant(toolName as any, args, `chat:${gateContext?.principalId ?? 'unknown'}`);
+                const grantCtx = issueEffectGrant(toolName, args, `chat:${gateContext?.principalId ?? 'unknown'}`);
                 capabilityResult = await runWithEffectContext(grantCtx, () =>
                     orchestrator.executeCapability(toolName, args, {
                         requesterId: 'chat',

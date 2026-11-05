@@ -50,6 +50,11 @@ export const EXTERNAL_EFFECT_TOOLS = new Set([
     'generate_video',
     'generate_voice'
 ]);
+// NOTE (2026-11-05): this set is the DEDICATED-policy subset only. The
+// gating predicate is isGatedEffect() (services/security/effectGate.ts),
+// driven by tool effect classification (services/security/toolEffects.ts):
+// plugin tools and unclassified tools gate too. Do NOT add plugin names
+// here - declare `effects` in the plugin's PluginToolDefinition instead.
 
 const DATA_DIR = process.env.CONFIRMATION_GATE_DIR || path.join(process.cwd(), 'data');
 const TTL_MS = Number(process.env.CONFIRM_GATE_TTL_MS ?? 15 * 60 * 1000) || 15 * 60 * 1000;

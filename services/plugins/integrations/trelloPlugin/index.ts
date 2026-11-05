@@ -19,6 +19,7 @@ const trelloPlugin: IPlugin = {
     tools: [
         {
             name: 'trello_list_boards',
+            effects: 'read_only',
             description: 'Lists all Trello boards the user has access to.',
             category: 'WORKFLOW',
             parameters: { type: 'OBJECT', properties: {} } as any,
@@ -33,6 +34,7 @@ const trelloPlugin: IPlugin = {
         },
         {
             name: 'trello_list_cards',
+            effects: 'read_only',
             description: 'Lists all cards on a specific Trello board or list.',
             category: 'WORKFLOW',
             parameters: {
@@ -57,6 +59,7 @@ const trelloPlugin: IPlugin = {
         },
         {
             name: 'trello_create_card',
+            effects: 'external_publish',
             description: 'Creates a new card on a Trello list.',
             category: 'WORKFLOW',
             parameters: {

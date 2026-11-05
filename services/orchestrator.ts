@@ -1539,9 +1539,9 @@ JSON ONLY:
                 try {
                     // Effects without a deeper provider-boundary call site
                     // (github_create_pr) consume right here at the chokepoint.
-                    const { CAPABILITY_LEVEL_BOUNDARY_EFFECTS } = await import('./security/effectGate');
+                    const { isCapabilityLevelBoundary } = await import('./security/effectGate');
                     const granted = await ensureEffectConsent(capabilityName, args, `executeCapability:${requesterId}`,
-                        { providerBoundary: CAPABILITY_LEVEL_BOUNDARY_EFFECTS.has(capabilityName) });
+                        { providerBoundary: isCapabilityLevelBoundary(capabilityName) });
                     if (granted.via === 'human-approval') {
                         // Approved once by a human at /v1/autonomy/confirmations:
                         // re-enter with a pseudo-grant bound to THIS exact

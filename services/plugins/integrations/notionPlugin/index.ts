@@ -20,6 +20,7 @@ const notionPlugin: IPlugin = {
     tools: [
         {
             name: 'notion_search',
+            effects: 'read_only',
             description: 'Search for pages and databases in the user\'s Notion workspace.',
             category: 'UTILITY',
             parameters: {
@@ -55,6 +56,7 @@ const notionPlugin: IPlugin = {
         },
         {
             name: 'notion_create_page',
+            effects: 'external_publish',
             description: 'Creates a new page in a Notion database or as a child of another page.',
             category: 'UTILITY',
             parameters: {
