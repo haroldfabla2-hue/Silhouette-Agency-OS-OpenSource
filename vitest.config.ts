@@ -31,7 +31,7 @@ export default defineConfig({
     },
     resolve: {
         alias: {
-            '@': resolve(__dirname, './')
+            '@': resolve(process.cwd(), './')
         }
     }
 });
