@@ -38,6 +38,7 @@ export function resolveChannelAuthority(payload: any, ingress: IngressAuthority 
         channel: String(payload.channel ?? ''),
         senderId: String(payload.senderId ?? ''),
         messageId: String(payload.messageId ?? ''),
+        principalId: payload.principalId != null ? String(payload.principalId) : null,
         conversationId: String(payload.sessionId ?? ''),
         content: String(payload.message ?? ''),
     });

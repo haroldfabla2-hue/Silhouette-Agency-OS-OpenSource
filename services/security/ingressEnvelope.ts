@@ -74,7 +74,7 @@ export type EnvelopeRejectReason =
     | 'ADMISSION_FULL';
 
 export type EnvelopeVerdict =
-    | { ok: true; principalId: string | null; conversationId: string }
+    | { ok: true; principalId: string | null; conversationId: string; reason?: undefined }
     | { ok: false; reason: EnvelopeRejectReason };
 
 const contentDigest = (content: string): string =>

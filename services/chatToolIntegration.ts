@@ -188,6 +188,9 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
 
         console.log(`[CHAT_TOOLS] 🔧 Executing tool: ${toolName}`, args);
 
+        let gatePermitToken: string | undefined;
+        let gatePermitReceipt: string | undefined;
+
         try {
             // [ANTI-PROMPT INJECTION] Hard Security Enforcement
             // NOTE: code execution (execute_code/code_execution), git operations and
@@ -255,8 +258,6 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
             // pending action (full content shown to the user, one-time token);
             // the user replies "CONFIRMAR <token>" in this same conversation;
             // only then does an identical re-issued call execute - once.
-            let gatePermitToken: string | undefined;
-            let gatePermitReceipt: string | undefined;
             // Classification-driven (2026-11-05): isGatedEffect covers the
             // dedicated five AND every tool whose effect class requires
             // confirmation (plugin mutations, unclassified tools). The fixed
