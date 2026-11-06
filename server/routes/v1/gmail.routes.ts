@@ -68,6 +68,11 @@ router.post('/send', async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Missing to, subject, or body' });
         }
 
+        // [SECURITY] An authenticated request (possibly agent/MCP/shared
+        // token) is NOT proof of human intent: no grant is issued here. The
+        // provider boundary routes this through actionExecutor: the send
+        // pends at /v1/autonomy/confirmations until a human approves it
+        // (this request waits, up to the confirmation timeout) or is denied.
         const result = await gmailService.sendEmail({ to, subject, body, isHtml, driveLink });
 
         if (result.success) {

@@ -707,7 +707,28 @@ export const generateAgentResponse = async (
                                     // executing agent, never from model-supplied args.
                                     const toolCaller = projectContext?.toolCaller
                                         ?? { requesterId: agentName, requesterRole: agentRole };
-                                    const toolResult = await toolHandler.handleFunctionCall(calls[0].name, calls[0].args, toolCaller);
+                                    // EFFECT GATE (2026-11-05): provider function-calling is a DIRECT
+                                    // path that never crossed the confirmation chokepoints - a model
+                                    // response could fire gated effects (email, plugins, wallet) with
+                                    // no human in the loop. Route through the same consent helper as
+                                    // orchestrator: ungated tools pass; gated effects require human
+                                    // approval at /v1/autonomy/confirmations; denial is reported to
+                                    // the model honestly, never simulated success.
+                                    const { executeWithEffectConsent } = await import('./security/gatedExecution');
+                                    const { EffectDeniedError } = await import('./security/effectGate');
+                                    let toolResult: any;
+                                    try {
+                                        toolResult = await executeWithEffectConsent(
+                                            calls[0].name, calls[0].args,
+                                            `geminiService:function-call:${agentName}`,
+                                            () => toolHandler.handleFunctionCall(calls[0].name, calls[0].args, toolCaller));
+                                    } catch (gateErr: any) {
+                                        if (gateErr instanceof EffectDeniedError || gateErr?.code === 'EFFECT_DENIED' || gateErr?.code === 'CONFIRMATION_UNAVAILABLE') {
+                                            toolResult = { error: gateErr.message, blocked: true, tool: calls[0].name };
+                                        } else {
+                                            throw gateErr;
+                                        }
+                                    }
 
                                     currentContents.push({
                                         role: 'function',

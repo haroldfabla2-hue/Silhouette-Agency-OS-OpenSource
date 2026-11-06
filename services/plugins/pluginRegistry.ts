@@ -115,7 +115,8 @@ class PluginRegistry {
                         successCount: 0,
                         createdAt: Date.now(),
                         version: plugin.version,
-                        tags: ['plugin', plugin.id]
+                        tags: ['plugin', plugin.id],
+                        effects: toolDef.effects // fail-closed when absent (see security/toolEffects)
                     };
 
                     // We need a way to pass the actual handler function to the ToolHandler

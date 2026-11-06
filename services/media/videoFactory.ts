@@ -50,6 +50,21 @@ export class VideoFactory {
 
         // === CLOUD ROUTING: VEO 3.1 ===
         if (engine === 'VEO') {
+            // [SECURITY] EFFECT GATE (provider boundary): Veo is a billed cloud
+            // provider and direct callers bypass executeCapability. Without an
+            // upstream approved EffectContext, a human must confirm via
+            // /v1/autonomy/confirmations. Local engines stay ungated (no
+            // provider spend). Fail-closed: denial falls back to NOTHING, not
+            // to a silent local render of an unapproved cloud request.
+            const { ensureEffectConsent } = await import('../security/effectGate');
+            // Throws EffectDeniedError (typed) on denial: NO silent local
+            // fallback for a denied cloud request.
+            await ensureEffectConsent(
+                'generate_video',
+                { prompt, duration, engine },
+                'videoFactory.createVideo',
+                { providerBoundary: true }
+            );
             console.log('[VideoFactory] 🌐 Routing to Veo 3.1 (Cloud Premium)');
 
             if (!veoService.isAvailable()) {

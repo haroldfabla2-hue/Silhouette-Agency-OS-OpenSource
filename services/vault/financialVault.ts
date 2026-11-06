@@ -157,7 +157,7 @@ export class FinancialVault {
      * Requests the issuance of a new single-use virtual card.
      * Enforces daily ceilings and triggers Human-in-the-Loop approval if required.
      */
-    public async requestVirtualCard(request: CreateCardRequest): Promise<{ card?: VirtualCard; error?: string; approvalRequired?: boolean; capabilityState?: CapabilityState }> {
+    public async requestVirtualCard(request: CreateCardRequest): Promise<{ card?: VirtualCard; error?: string; approvalRequired?: boolean; capabilityState?: CapabilityState; errorCode?:string; confirmationReason?:string }> {
         this.initializeSchema();
 
         // 0. Truthfulness gate: no card issuer integration exists yet, so a card can only be
@@ -181,7 +181,8 @@ export class FinancialVault {
         // 2. Human-in-the-loop Gate (Critical Risk)
         const requireApproval = request.requireHumanApproval ?? true;
         if (requireApproval) {
-            const approved = await actionExecutor.requestConfirmation({
+            let approved:boolean;
+            try{approved = await actionExecutor.requestConfirmation({
                 id: crypto.randomUUID(),
                 type: 'EXECUTE_PAYMENT' as any,
                 agentId: 'financial-vault',
@@ -195,6 +196,9 @@ export class FinancialVault {
                 timestamp: Date.now()
             }, `Issue Virtual Card of max $${(request.maxAmountCents / 100).toFixed(2)} for merchant "${request.merchant}" (${request.purpose})`);
 
+            }catch(error:any){
+                return {error:error?.message??'Approval pipeline unavailable',approvalRequired:true,errorCode:error?.code??'APPROVAL_PIPELINE_ERROR',confirmationReason:error?.reason};
+            }
             if (!approved) {
                 systemBus.emit(SystemProtocol.TELEMETRY_LOG, {
                     service: 'FinancialVault',

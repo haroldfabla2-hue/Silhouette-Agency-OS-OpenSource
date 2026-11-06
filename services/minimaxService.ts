@@ -384,6 +384,14 @@ Be introspective, deep, and analytical.`
 
     // --- AUDIO GENERATION (T2A V2) ---
     public async generateSpeech(text: string, voiceId?: string): Promise<string | null> {
+        // [SECURITY] EFFECT GATE (provider boundary): wallet-bearing provider
+        // call (cloud TTS). HARD-BLOCKED in this delivery - pending an
+        // authorized budget/cap mechanism. Typed EffectDeniedError before any
+        // provider request; no fallback, no retry. Code path preserved.
+        {
+            const { ensureEffectConsent } = await import('./security/effectGate');
+            await ensureEffectConsent('generate_voice', { text, voiceId }, 'minimaxService.generateSpeech', { providerBoundary: true });
+        }
         if (!this.isAvailable()) return null;
         if (!this.checkQuota()) return null;
 

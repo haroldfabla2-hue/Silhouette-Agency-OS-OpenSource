@@ -175,7 +175,8 @@ class FigureGenerator {
                 order: this.figureCount,
                 altText: description
             };
-        } catch (error) {
+        } catch (error: any) {
+            if (error?.code === 'EFFECT_DENIED') throw error;
             console.error('[FIGURES] Error generating concept diagram:', error);
             return null;
         }

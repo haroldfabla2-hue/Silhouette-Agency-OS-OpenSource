@@ -258,6 +258,10 @@ export class ToolHandler {
         // But for Tools, we simulate a "Promise" via the Orchestrator? 
         // Or simpler: We create a "Task Ticket".
 
+        // [SECURITY] No authority travels with a delegation: a grant is
+        // single-use and bound to exact args, so it cannot legitimately cover
+        // whatever the delegated agent later decides to do. Deferred work
+        // gates its own effects on arrival (human confirmation when needed).
         systemBus.emit(SystemProtocol.TASK_ASSIGNMENT, {
             targetRole: args.target_role,
             task: args.task,
@@ -368,6 +372,9 @@ export class ToolHandler {
                 return { error: "Failed to generate image." };
             }
         } catch (e: any) {
+            if (e?.code === 'EFFECT_DENIED'||e?.code === 'CONFIRMATION_UNAVAILABLE') {
+                return { error: e.message, errorCode:e.code, confirmationReason:e.reason,dispatched:false };
+            }
             return { error: `Image generation failed: ${e.message}` };
         }
     }
@@ -928,7 +935,7 @@ export class ToolHandler {
 
     // ==================== COMMUNICATION TOOLS (Gmail) ====================
 
-    private async handleSendEmail(args: { to: string; subject: string; body: string; driveLink?: string }): Promise<any> {
+    private async handleSendEmail(args: { to: string; cc?: string; subject: string; body: string; driveLink?: string }): Promise<any> {
         if (!args.to || !args.subject || !args.body) {
             return { error: "Missing required arguments (to, subject, body)" };
         }
@@ -943,6 +950,7 @@ export class ToolHandler {
 
             const result = await gmailService.sendEmail({
                 to: args.to,
+                cc: args.cc,
                 subject: args.subject,
                 body: args.body,
                 driveLink: args.driveLink
@@ -1875,13 +1883,17 @@ export class ToolHandler {
                 });
             } else {
                 result = { ...envMap, ...configJson };
-                // Hide sensitive keys if returning ALL without explicit request
-                Object.keys(result).forEach(k => {
-                    if (k.toLowerCase().includes('key') || k.toLowerCase().includes('token') || k.toLowerCase().includes('password')) {
-                        result[k] = '********';
-                    }
-                });
             }
+
+            // SECRET LEAK FIX (2026-11-05, root): values from env/config
+            // files are private. This tool returns PRESENCE ONLY: every
+            // key is listed, every value is '********'. No whitelist of
+            // "public" values is assumed - even URLs can carry userinfo or
+            // secret query parameters. The model, logs and any downstream
+            // grant/binding only ever see the mask.
+            Object.keys(result).forEach(k => {
+                result[k] = '********';
+            });
 
             return {
                 status: "success",

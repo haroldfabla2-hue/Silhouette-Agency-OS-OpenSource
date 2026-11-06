@@ -230,7 +230,14 @@ class NarrativeService {
 
     private startBatchProcessor() {
         // Process queue every BATCH_INTERVAL
-        this.batchTimer = setInterval(() => {
+        this.batchTimer = setInterval(async () => {
+            // [THROTTLE] PowerManager resource modes can pause narration
+            // (isNarrativeEnabled). Resource hint, not authority: unreadable
+            // -> full capability. Queued items are processed on a later tick.
+            try {
+                const { powerManager } = await import('./powerManager');
+                if (!powerManager.isNarrativeEnabled) return;
+            } catch { /* throttle unavailable -> full capability */ }
             this.processNarrationBatch().catch(e =>
                 console.error("[NARRATIVE] Batch processing error:", e)
             );

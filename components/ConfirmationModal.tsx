@@ -29,15 +29,18 @@ interface ConfirmationModalProps {
 const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, onClose }) => {
     const [confirmations, setConfirmations] = useState<PendingConfirmation[]>([]);
     const [loading, setLoading] = useState(false);
+    const [error,setError]=useState<string|null>(null);
+    const [needsRefresh,setNeedsRefresh]=useState(false);
 
     // Fetch pending confirmations
     const fetchConfirmations = async () => {
         try {
             const res = await api.get('/v1/autonomy/confirmations') as any;
-            if (res.success) {
-                setConfirmations(res.confirmations || []);
-            }
+            if(!res.success)throw new Error(res.error||'Could not load confirmations');
+            setConfirmations(res.confirmations || []);
+            setNeedsRefresh(false);setError(null);
         } catch (e) {
+            setError('Could not load confirmations. No decision has been sent.');
             console.error('[CONFIRMATION] Failed to fetch:', e);
         }
     };
@@ -51,27 +54,24 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, onClose }
         }
     }, [isOpen]);
 
-    const handleApprove = async (id: string) => {
-        setLoading(true);
-        try {
-            await api.post(`/v1/autonomy/confirmations/${id}/approve`, {});
-            setConfirmations(prev => prev.filter(c => c.id !== id));
-        } catch (e) {
-            console.error('[CONFIRMATION] Approve failed:', e);
-        }
-        setLoading(false);
+    const decide=async(id:string,decision:'approve'|'reject')=>{
+        setLoading(true);setError(null);
+        try{
+            const result=await api.post(`/v1/autonomy/confirmations/${id}/${decision}`,{}) as {success?:boolean};
+            if(result.success!==true){
+                setNeedsRefresh(true);
+                setError('Decision was not accepted. It may have expired or no longer be available. Refresh before trying again.');
+                return;
+            }
+            setConfirmations(prev=>prev.filter(c=>c.id!==id));
+        }catch{
+            // Transport uncertainty is not rejection or successful approval.
+            setNeedsRefresh(true);
+            setError('Could not confirm the decision. Refresh the list before trying again.');
+        }finally{setLoading(false);}
     };
-
-    const handleReject = async (id: string) => {
-        setLoading(true);
-        try {
-            await api.post(`/v1/autonomy/confirmations/${id}/reject`, {});
-            setConfirmations(prev => prev.filter(c => c.id !== id));
-        } catch (e) {
-            console.error('[CONFIRMATION] Reject failed:', e);
-        }
-        setLoading(false);
-    };
+    const handleApprove=(id:string)=>decide(id,'approve');
+    const handleReject=(id:string)=>decide(id,'reject');
 
     const getRiskColor = (level: string) => {
         switch (level) {
@@ -125,11 +125,12 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, onClose }
 
                 {/* Content */}
                 <div className="p-4 overflow-y-auto max-h-[60vh] custom-scrollbar space-y-3">
+                    {error&&<div role="alert" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-200">{error}<button className="block mt-2 underline" onClick={fetchConfirmations}>Refresh list</button></div>}
                     {confirmations.length === 0 ? (
                         <div className="text-center py-12">
                             <Check className="mx-auto text-green-500 mb-3" size={40} />
                             <p className="text-slate-400 text-sm">No pending confirmations</p>
-                            <p className="text-slate-500 text-xs mt-1">All actions are running smoothly</p>
+                            <p className="text-slate-500 text-xs mt-1">No decisions are waiting in this session.</p>
                         </div>
                     ) : (
                         confirmations.map(conf => (
@@ -173,7 +174,7 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, onClose }
                                 <div className="flex gap-2">
                                     <button
                                         onClick={() => handleApprove(conf.id)}
-                                        disabled={loading}
+                                        disabled={loading||needsRefresh}
                                         className="flex-1 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
                                     >
                                         <Check size={14} />
@@ -181,7 +182,7 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, onClose }
                                     </button>
                                     <button
                                         onClick={() => handleReject(conf.id)}
-                                        disabled={loading}
+                                        disabled={loading||needsRefresh}
                                         className="flex-1 py-2 bg-red-600/20 hover:bg-red-600/40 text-red-400 border border-red-500/30 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
                                     >
                                         <X size={14} />
@@ -196,7 +197,7 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, onClose }
                 {/* Footer */}
                 <div className="p-4 border-t border-slate-800 bg-slate-950 flex justify-between items-center">
                     <p className="text-xs text-slate-500">
-                        Actions expire after 5 minutes and are auto-rejected
+                        Expired requests are not approved or rejected by the user.
                     </p>
                     <button
                         onClick={fetchConfirmations}

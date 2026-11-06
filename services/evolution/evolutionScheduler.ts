@@ -97,35 +97,73 @@ class EvolutionScheduler {
     private activateScheduler(): void {
         if (this.isRunning) return;
 
-        console.log('[EVOLUTION] 🧬 Starting Proactive Self-Evolution Scheduler...');
-        this.isRunning = true;
+        // [SECURITY] Authority ceiling before scheduling anything. These loops
+        // are the SAME capabilities the daemon runs as its gated
+        // 'Tool_Evolution' and 'Evolution_Goals' tasks - this scheduler is a
+        // second route into them (boot at server/index.ts plus PowerManager
+        // mode-change reactivation, both funnel through here). Each loop is
+        // scheduled only when the operator config allows its task. Fail-closed:
+        // unreadable config schedules nothing and leaves isRunning=false so a
+        // later mode change can retry.
+        Promise.all([
+            import('../../server/config/configLoader'),
+            import('../daemon/autonomyPolicy')
+        ]).then(([{ configLoader }, { isTaskAllowedByAutonomy }]) => {
+            if (this.isRunning) return;
+            let flags: any;
+            try {
+                flags = configLoader.getConfig().autonomy;
+            } catch (cfgErr: any) {
+                console.warn('[EVOLUTION] ⛔ Autonomy config unreadable; evolution loops NOT scheduled (fail-closed):', cfgErr?.message || cfgErr);
+                return;
+            }
+            const allowToolEvolution = isTaskAllowedByAutonomy('Tool_Evolution', flags);
+            const allowGoals = isTaskAllowedByAutonomy('Evolution_Goals', flags);
+            if (!allowToolEvolution && !allowGoals) {
+                console.log('[EVOLUTION] ⛔ Disabled by autonomy ceiling (Tool_Evolution / Evolution_Goals). No loops scheduled.');
+                return;
+            }
 
-        // Schedule periodic tool analysis
-        this.toolEvolutionInterval = setInterval(
-            () => this.runToolEvolutionCycle(),
-            this.config.toolEvolutionIntervalMs
-        );
+            console.log('[EVOLUTION] 🧬 Starting Proactive Self-Evolution Scheduler...');
+            this.isRunning = true;
 
-        // Schedule periodic goal execution
-        this.goalExecutionInterval = setInterval(
-            () => this.executeActiveGoals(),
-            this.config.goalExecutionIntervalMs
-        );
+            // Schedule periodic tool analysis
+            if (allowToolEvolution) {
+                this.toolEvolutionInterval = setInterval(
+                    () => this.runToolEvolutionCycle(),
+                    this.config.toolEvolutionIntervalMs
+                );
 
-        // Run initial analysis after a short delay (let system stabilize)
-        setTimeout(() => {
-            this.runToolEvolutionCycle();
-        }, 30000); // 30 seconds after start
+                // Run initial analysis after a short delay (let system stabilize)
+                setTimeout(() => {
+                    this.runToolEvolutionCycle();
+                }, 30000); // 30 seconds after start
+            } else {
+                console.log('[EVOLUTION] ⛔ Tool evolution loop skipped: autonomy ceiling (allowEvolution).');
+            }
 
-        // Emit startup event using valid SystemProtocol
-        systemBus.emit(SystemProtocol.WORKFLOW_UPDATE, {
-            step: 'EVOLUTION_SCHEDULER',
-            status: 'STARTED',
-            config: this.config,
-            timestamp: Date.now()
+            // Schedule periodic goal execution
+            if (allowGoals) {
+                this.goalExecutionInterval = setInterval(
+                    () => this.executeActiveGoals(),
+                    this.config.goalExecutionIntervalMs
+                );
+            } else {
+                console.log('[EVOLUTION] ⛔ Goal execution loop skipped: autonomy ceiling (allowEvolution).');
+            }
+
+            // Emit startup event using valid SystemProtocol
+            systemBus.emit(SystemProtocol.WORKFLOW_UPDATE, {
+                step: 'EVOLUTION_SCHEDULER',
+                status: 'STARTED',
+                config: this.config,
+                timestamp: Date.now()
+            });
+
+            console.log('[EVOLUTION] ✅ Scheduler active. Tool analysis every 6h, goal check every 30min (only loops allowed by the autonomy ceiling).');
+        }).catch((e) => {
+            console.warn('[EVOLUTION] ⛔ Autonomy policy import failed; evolution loops NOT scheduled (fail-closed):', e?.message || e);
         });
-
-        console.log('[EVOLUTION] ✅ Scheduler active. Tool analysis every 6h, goal check every 30min.');
     }
 
     /**

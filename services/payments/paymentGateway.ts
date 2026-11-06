@@ -101,7 +101,10 @@ export class PaymentGateway {
         const binding = bindingFor(p.id, direction, req);
         const summary = `${operation.toUpperCase()} via ${p.id}${st.mode ? ` (${st.mode})` : ''}: ${(req.amountCents / 100).toFixed(2)} ${req.currency.toUpperCase()} ${direction === 'payout' ? 'to' : 'from/for'} ${req.destination}${req.purpose ? ` - ${req.purpose}` : ''}`;
         let ok = false;
-        try { ok = await this.approve({ provider: p.id, direction, operation, request: req, binding, summary }); } catch { ok = false; }
+        try { ok = await this.approve({ provider: p.id, direction, operation, request: req, binding, summary }); } catch(error:any) {
+            return {provider:p.id,state:'FAILED',mode:st.mode,operation,securityGated:true,
+                error:error?.message??'Approval pipeline unavailable',errorCode:error?.code??'APPROVAL_PIPELINE_ERROR',confirmationReason:error?.reason};
+        }
         if (!ok) {
             return { provider: p.id, state: 'FAILED', mode: st.mode, operation, securityGated: true, error: 'Blocked: this payment needs explicit human approval for this exact amount and destination.' };
         }

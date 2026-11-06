@@ -4,8 +4,6 @@
 // Comprehensive security model for autonomous agents.
 // =============================================================================
 
-import { systemBus } from '../systemBus';
-import { SystemProtocol } from '../../types';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -140,14 +138,7 @@ class SecurityManager {
             const approvalId = this.createApprovalRequest(toolName, args, requestedBy);
             this.log('PENDING_APPROVAL', toolName, 'Requires human approval');
 
-            // Emit event for UI to show approval dialog
-            systemBus.emit(SystemProtocol.CONFIRMATION_REQUIRED, {
-                approvalId,
-                toolName,
-                args,
-                requestedBy,
-                message: `Tool "${toolName}" requires approval before execution`,
-            }, 'SecurityManager');
+            // Pending details are private; never broadcast them on SystemBus.
 
             return {
                 allowed: false,

@@ -50,7 +50,7 @@ export interface ParsedToolCall {
     originalMatch: string;
 }
 
-import { confirmationGate, EXTERNAL_EFFECT_TOOLS } from './tools/confirmationGate';
+import { confirmationGate } from './tools/confirmationGate';
 
 class ChatToolIntegration {
     /**
@@ -188,6 +188,9 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
 
         console.log(`[CHAT_TOOLS] 🔧 Executing tool: ${toolName}`, args);
 
+        let gatePermitToken: string | undefined;
+        let gatePermitReceipt: string | undefined;
+
         try {
             // [ANTI-PROMPT INJECTION] Hard Security Enforcement
             // NOTE: code execution (execute_code/code_execution), git operations and
@@ -255,8 +258,14 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
             // pending action (full content shown to the user, one-time token);
             // the user replies "CONFIRMAR <token>" in this same conversation;
             // only then does an identical re-issued call execute - once.
-            if (EXTERNAL_EFFECT_TOOLS.has(toolName) && process.env.CHAT_EFFECT_GATE !== 'off') {
+            // Classification-driven (2026-11-05): isGatedEffect covers the
+            // dedicated five AND every tool whose effect class requires
+            // confirmation (plugin mutations, unclassified tools). The fixed
+            // EXTERNAL_EFFECT_TOOLS list was the plugin bypass.
+            const { isGatedEffect } = await import('./security/effectGate');
+            if (isGatedEffect(toolName) && process.env.CHAT_EFFECT_GATE !== 'off') {
                 const decision = confirmationGate.check(toolName, args, gateContext?.principalId, gateContext?.conversationId);
+                if (decision.action === 'EXECUTE') { gatePermitToken = decision.token; gatePermitReceipt = decision.receipt; }
                 if (decision.action === 'PENDING') {
                     console.log(`[CONFIRM_GATE] ⏸️ ${toolName} pending explicit confirmation (${decision.pending.token})`);
                     return {
@@ -284,6 +293,43 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
                         executionTimeMs: Date.now() - startTime
                     };
                 }
+                if (decision.action === 'ALREADY_CONSUMED') {
+                    // This call holds NO permit: the single permit was taken
+                    // by a concurrent call (or its durable claim failed
+                    // safe). What the gate proves stops at the permit; the
+                    // EFFECT outcome is whatever the winner recorded (or
+                    // UNKNOWN until it does). So: executing here could
+                    // duplicate a completed effect; re-pending would ask the
+                    // user to confirm a spent permit; claiming 'already
+                    // executed' would assert an effect nobody verified.
+                    const recorded = confirmationGate.outcomeOf(decision.token);
+                    const outcomeTxt = recorded
+                        ? (recorded.status === 'EXECUTOR_OK'
+                            ? 'La llamada que consumió el permiso registró ejecución correcta (su propia observación, no una garantía de entrega): NO repetir.'
+                            : `La llamada que consumió el permiso registró FALLO de ejecución${recorded.detail ? ` (${recorded.detail})` : ''}. Aun así NO se reintenta automáticamente; si el usuario quiere repetirla, debe pedirla de nuevo.`)
+                        : 'La llamada que consumió el permiso aún no registró resultado (puede seguir en ejecución o haber fallado antes de registrarlo).';
+                    console.warn(`[CONFIRM_GATE] ⛔ ${toolName} not executed: this call holds no permit (concurrent consumer won); recorded outcome: ${recorded?.status ?? 'unknown'}`);
+                    return {
+                        toolName,
+                        // Neutral, NOT success: this call executed nothing; a
+                        // planner must not count the action as accomplished.
+                        success: false,
+                        error: `NOT_EXECUTED_PERMIT_SPENT: esta llamada no ejecutó ${toolName} (permiso único ya consumido por otra llamada).`,
+                        result: {
+                            status: recorded ? 'PERMIT_CONSUMED_OUTCOME_RECORDED' : 'PERMIT_CONSUMED_UNCONFIRMED',
+                            instructions: `Esta llamada NO obtuvo el permiso de un solo uso de esta acción exacta (lo tomó otra llamada concurrente); esta llamada NO ejecutó nada. ${outcomeTxt} Si el usuario quiere la acción, debe pedirla como una acción nueva que requerirá su propia confirmación.`
+                        },
+                        executionTimeMs: Date.now() - startTime
+                    };
+                }
+                if (decision.action === 'ADMISSION_FULL') {
+                    return {
+                        toolName,
+                        success: false,
+                        error: 'ADMISSION_FULL: el usuario tiene demasiadas acciones pendientes de confirmación. Debe confirmar o rechazar algunas (o responder "RECHAZAR TODO" en el chat para descartarlas todas) antes de proponer acciones nuevas. No se ejecutó nada y el rechazo quedó auditado.',
+                        executionTimeMs: Date.now() - startTime
+                    };
+                }
                 if (decision.action === 'BLOCKED_NO_PRINCIPAL') {
                     console.warn(`[CONFIRM_GATE] ⛔ ${toolName} blocked: no authenticated principal to bind a confirmation to`);
                     return {
@@ -296,11 +342,28 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
                 console.log(`[CONFIRM_GATE] ✅ ${toolName} confirmed by authenticated user - executing once`);
             }
 
-            // Execute the tool via orchestrator (unified capability execution)
-            const capabilityResult = await orchestrator.executeCapability(toolName, args, {
-                requesterId: 'chat',
-                priority: 'NORMAL'
-            });
+            // Execute the tool via orchestrator (unified capability execution).
+            // For gated effects the confirmationGate decision above is the
+            // user's explicit yes to THESE EXACT args: issue a single-use,
+            // args-bound grant for this one execution. Anything else (other
+            // args, a second piece, a replay) gates again at the boundary.
+            let capabilityResult;
+            if (isGatedEffect(toolName) && process.env.CHAT_EFFECT_GATE !== 'off') {
+                const { issueEffectGrant } = await import('./security/effectGate');
+                const { runWithEffectContext } = await import('./security/effectContext');
+                const grantCtx = issueEffectGrant(toolName, args, `chat:${gateContext?.principalId ?? 'unknown'}`);
+                capabilityResult = await runWithEffectContext(grantCtx, () =>
+                    orchestrator.executeCapability(toolName, args, {
+                        requesterId: 'chat',
+                        priority: 'NORMAL'
+                    })
+                );
+            } else {
+                capabilityResult = await orchestrator.executeCapability(toolName, args, {
+                    requesterId: 'chat',
+                    priority: 'NORMAL'
+                });
+            }
 
             // Extract result data
             const result = capabilityResult.data;
@@ -310,6 +373,10 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
             // pollutes the experience buffer with a fake win - unwrap it into honest failure.
             if (result && typeof result === 'object' && typeof (result as any).error === 'string') {
                 console.error(`[CHAT_TOOLS] ❌ Tool ${toolName} returned an error payload:`, (result as any).error);
+                if (gatePermitToken) {
+                    try { confirmationGate.recordOutcome(gatePermitToken, gatePermitReceipt!, false, String((result as any).error).substring(0, 200)); }
+                    catch (e: any) { console.warn(`[CONFIRM_GATE] ⚠️ outcome record failed for ${gatePermitToken}: ${e?.message}`); }
+                }
                 return {
                     toolName,
                     success: false,
@@ -330,6 +397,10 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
                 'CHAT'
             );
 
+            if (gatePermitToken) {
+                try { confirmationGate.recordOutcome(gatePermitToken, gatePermitReceipt!, true); }
+                catch (e: any) { console.warn(`[CONFIRM_GATE] ⚠️ outcome record failed for ${gatePermitToken}: ${e?.message}`); }
+            }
             console.log(`[CHAT_TOOLS] ✅ Tool ${toolName} completed in ${Date.now() - startTime}ms`);
 
             return {
@@ -341,6 +412,10 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
 
         } catch (error: any) {
             console.error(`[CHAT_TOOLS] ❌ Tool ${toolName} failed:`, error);
+            if (gatePermitToken) {
+                try { confirmationGate.recordOutcome(gatePermitToken, gatePermitReceipt!, false, String(error?.message ?? error).substring(0, 200)); }
+                catch (e: any) { console.warn(`[CONFIRM_GATE] ⚠️ outcome record failed for ${gatePermitToken}: ${e?.message}`); }
+            }
 
             // Record failure
             toolRegistry.recordUsage(toolName, false);

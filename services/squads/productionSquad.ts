@@ -275,7 +275,9 @@ class ProductionOrchestrator {
                                 );
                                 project.generatedAssets.masterImages.set(character.id, result.localPath);
                             }
-                        } catch (e) {
+                        } catch (e: any) {
+                            // A denied effect must not be retried per character.
+                            if (e?.code === 'EFFECT_DENIED') throw e;
                             console.warn(`[Production] Failed to generate master for ${character.name}:`, e);
                         }
                     }
@@ -368,7 +370,9 @@ class ProductionOrchestrator {
                                 project.generatedAssets.clips.set(shotKey, videoResult.url);
                             }
                         }
-                    } catch (e) {
+                    } catch (e: any) {
+                        // A denied effect must not be retried shot by shot.
+                        if (e?.code === 'EFFECT_DENIED') throw e;
                         console.warn(`[Production] Failed to generate ${shotKey}:`, e);
                         project.errors.push(`Failed: ${shotKey}`);
                     }

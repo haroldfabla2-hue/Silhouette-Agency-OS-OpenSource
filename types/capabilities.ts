@@ -27,6 +27,9 @@ export type CapabilityExecutor = 'TOOL' | 'AGENT' | 'WORKFLOW' | 'DIRECT' | 'TOO
  */
 export interface CapabilityMetadata {
     toolName?: string;
+    errorCode?:string;
+    confirmationReason?:string;
+    dispatched?:boolean;
     agentId?: string;
     agentName?: string;
     planId?: string;

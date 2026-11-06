@@ -49,6 +49,21 @@ export class ApprovalGrantStore {
         return { token, expiresAt };
     }
 
+    /** Verify WITHOUT consuming: same checks as consume, no mutation. Used by
+     *  wrapper layers that must validate authority but do not invoke the
+     *  provider; only the provider-invoking boundary consumes. */
+    validate(token: unknown, binding: ApprovalBinding): GrantCheck {
+        if (typeof token !== 'string' || token.length === 0) return { ok: false, reason: 'INVALID' };
+        const rec = this.grants.get(token);
+        if (!rec) return { ok: false, reason: 'UNKNOWN' };
+        if (rec.used) return { ok: false, reason: 'ALREADY_USED' };
+        if (this.now() > rec.expiresAt) { this.grants.delete(token); return { ok: false, reason: 'EXPIRED' }; }
+        const a = Buffer.from(rec.digest);
+        const b = Buffer.from(bindingDigest(binding));
+        if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return { ok: false, reason: 'MISMATCH' };
+        return { ok: true };
+    }
+
     /** Verify and consume in one step. A valid grant works exactly once. */
     consume(token: unknown, binding: ApprovalBinding): GrantCheck {
         if (typeof token !== 'string' || token.length === 0) return { ok: false, reason: 'INVALID' };

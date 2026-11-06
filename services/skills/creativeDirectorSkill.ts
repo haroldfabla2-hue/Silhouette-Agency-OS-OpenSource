@@ -93,7 +93,10 @@ class CreativeDirectorSkill {
                 source: 'Creative_Director'
             });
 
-        } catch (error) {
+        } catch (error: any) {
+            // A denied effect must not be swallowed into a generic failure
+            // that later logic could retry: propagate the typed denial.
+            if (error?.code === 'EFFECT_DENIED') throw error;
             console.error("[CreativeDirector] 💥 Production Error:", error);
         }
 
@@ -116,7 +119,8 @@ class CreativeDirectorSkill {
                 });
                 return imageAsset.url;
             }
-        } catch (e) {
+        } catch (e: any) {
+            if (e?.code === 'EFFECT_DENIED') throw e;
             console.error("[CreativeDirector] Image Gen Failed:", e);
         }
         return null;
@@ -135,7 +139,8 @@ class CreativeDirectorSkill {
                 });
                 return videoJob.url;
             }
-        } catch (e) {
+        } catch (e: any) {
+            if (e?.code === 'EFFECT_DENIED') throw e;
             console.error("[CreativeDirector] Video Gen Failed:", e);
         }
         return null;
@@ -153,6 +158,9 @@ class CreativeDirectorSkill {
                     const { taskType, context } = msg.payload;
                     console.log(`[CreativeDirector] 📨 Received Task: ${taskType}`);
 
+                    // [SECURITY] Deferred work carries NO authority: every
+                    // wallet-bearing piece below gates itself at the provider
+                    // boundary (human confirmation when no grant exists).
                     let result: any = null;
 
                     if (taskType === 'GENERATE_CAMPAIGN') {

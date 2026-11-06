@@ -25,6 +25,7 @@ function calendarTools(): PluginToolDefinition[] {
     return [
         {
             name: 'google_calendar_list_events',
+            effects: 'read_only',
             description: 'Lists upcoming events from the user\'s Google Calendar.',
             category: 'UTILITY',
             parameters: {
@@ -54,6 +55,7 @@ function calendarTools(): PluginToolDefinition[] {
         },
         {
             name: 'google_calendar_create_event',
+            effects: 'external_publish',
             description: 'Creates a new event on Google Calendar.',
             category: 'UTILITY',
             parameters: {
@@ -89,6 +91,7 @@ function driveTools(): PluginToolDefinition[] {
     return [
         {
             name: 'google_drive_list_files',
+            effects: 'read_only',
             description: 'Lists files in Google Drive.',
             category: 'UTILITY',
             parameters: {
@@ -114,6 +117,7 @@ function driveTools(): PluginToolDefinition[] {
         },
         {
             name: 'google_drive_read_file',
+            effects: 'read_only',
             description: 'Reads text content of a Google Drive document.',
             category: 'UTILITY',
             parameters: {
@@ -143,6 +147,7 @@ function docsTools(): PluginToolDefinition[] {
     return [
         {
             name: 'google_docs_create',
+            effects: 'external_publish',
             description: 'Creates a new Google Docs document.',
             category: 'UTILITY',
             parameters: {
@@ -176,6 +181,7 @@ function sheetsTools(): PluginToolDefinition[] {
     return [
         {
             name: 'google_sheets_read',
+            effects: 'read_only',
             description: 'Reads data from a Google Sheets spreadsheet.',
             category: 'UTILITY',
             parameters: {
@@ -198,6 +204,7 @@ function sheetsTools(): PluginToolDefinition[] {
         },
         {
             name: 'google_sheets_write',
+            effects: 'external_publish',
             description: 'Writes data to a Google Sheets spreadsheet.',
             category: 'UTILITY',
             parameters: {
@@ -229,6 +236,7 @@ function gmailTools(): PluginToolDefinition[] {
     return [
         {
             name: 'google_gmail_list',
+            effects: 'read_only',
             description: 'Lists recent emails from the user\'s Gmail inbox.',
             category: 'COMMUNICATION',
             parameters: {
@@ -262,6 +270,7 @@ function gmailTools(): PluginToolDefinition[] {
         },
         {
             name: 'google_gmail_send',
+            effects: 'external_comms',
             description: 'Sends an email via Gmail.',
             category: 'COMMUNICATION',
             parameters: {
@@ -291,6 +300,7 @@ function placesTools(): PluginToolDefinition[] {
     return [
         {
             name: 'google_places_search',
+            effects: 'read_only',
             description: 'Searches for places/businesses using Google Places API.',
             category: 'RESEARCH',
             parameters: {
@@ -327,6 +337,7 @@ function meetTools(): PluginToolDefinition[] {
     return [
         {
             name: 'google_meet_create',
+            effects: 'external_publish',
             description: 'Creates a Google Meet video conference link via Calendar event.',
             category: 'COMMUNICATION',
             parameters: {
@@ -370,6 +381,7 @@ function formsTools(): PluginToolDefinition[] {
     return [
         {
             name: 'google_forms_list_responses',
+            effects: 'read_only',
             description: 'Lists responses from a Google Form.',
             category: 'UTILITY',
             parameters: {
@@ -398,6 +410,7 @@ function slidesTools(): PluginToolDefinition[] {
     return [
         {
             name: 'google_slides_create',
+            effects: 'external_publish',
             description: 'Creates a new Google Slides presentation.',
             category: 'MEDIA',
             parameters: {
@@ -465,6 +478,15 @@ const SERVICE_MAP: Record<string, () => PluginToolDefinition[]> = {
     forms: formsTools,
     slides: slidesTools
 };
+
+/** Pure: every tool definition of every service. No config read, no I/O -
+ *  safe to import anywhere (tests, metadata consumers). The live plugin
+ *  keeps its per-service enable/disable filtering in onInit. */
+export function buildGoogleWorkspaceTools(): PluginToolDefinition[] {
+    const all: PluginToolDefinition[] = [];
+    for (const generator of Object.values(SERVICE_MAP)) all.push(...generator());
+    return all;
+}
 
 // Dynamically load enabled services from plugins.json
 let enabledTools: PluginToolDefinition[] = [];

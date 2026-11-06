@@ -173,7 +173,8 @@ export class ThoughtNarrator {
         // Cold start (e.g. after restart): recover the newest stored epiphany
         // from ContinuumMemory without generating anything.
         try {
-            const stored = await continuum.retrieve('EPIPHANY', 'epiphany');
+            const latest = await continuum.getLatestObservation('epiphany');
+            const stored = latest ? [latest] : [];
             if (stored && stored.length > 0) {
                 const newest = [...stored].sort((a, b) => b.timestamp - a.timestamp)[0];
                 this.lastNarrative = {
@@ -303,6 +304,7 @@ export class ThoughtNarrator {
 
                     // Push into the ActionExecutor's confirmation queue
                     // This is polled by GET /v1/autonomy/confirmations → shown in ConfirmationModal
+                    let dispatchStarted=false;
                     try {
                         const { actionExecutor } = await import('../actionExecutor');
                         const agentAction = {
@@ -325,9 +327,10 @@ export class ThoughtNarrator {
 
                         if (approved) {
                             console.log(`[NARRATOR] ✅ User APPROVED [${structured.intent}]. Routing now.`);
+                            dispatchStarted=true;
                             await this.routeByIntent(structured, graphSensory);
                         } else {
-                            console.log(`[NARRATOR] ❌ User REJECTED or timed out [${structured.intent}]. Storing as rejected.`);
+                            console.log(`[NARRATOR] ❌ User explicitly REJECTED [${structured.intent}]. Storing as rejected.`);
                             await continuum.store(
                                 `REJECTED_BY_USER: [${structured.intent}] ${structured.thought}`,
                                 MemoryTier.WORKING,
@@ -336,11 +339,16 @@ export class ThoughtNarrator {
                             );
                         }
                     } catch (e: any) {
-                        console.warn(`[NARRATOR] Confirmation pipeline failed: ${e.message}. Storing as pending.`);
+                        if(dispatchStarted){
+                            // Routing may already have made effects; do not label it not-dispatched.
+                            console.error(`[NARRATOR] Approved routing failed; outcome unknown: ${e.message}`);
+                            throw e;
+                        }
+                        console.warn(`[NARRATOR] Confirmation unavailable: ${e.message}. Preserving unresolved proposal, not a user rejection.`);
                         await continuum.store(
-                            `PENDING_USER_CONSENT: [${structured.intent}] ${structured.thought} | Action: ${JSON.stringify(structured.action)}`,
+                            `CONSENT_UNRESOLVED (${e.code ?? 'PIPELINE_ERROR'}): [${structured.intent}] ${structured.thought} | Action: ${JSON.stringify(structured.action)}`,
                             MemoryTier.WORKING,
-                            ['PENDING_CONSENT', structured.intent, 'awaiting_user', sourceTag(MemorySource.INTROSPECTION)],
+                            ['CONSENT_UNRESOLVED', structured.intent, 'not_dispatched', sourceTag(MemorySource.INTROSPECTION)],
                             true
                         );
                     }

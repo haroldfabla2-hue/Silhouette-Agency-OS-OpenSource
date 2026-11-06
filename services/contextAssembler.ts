@@ -111,8 +111,9 @@ class ContextAssembler {
 
     constructor() {
         console.log("[CONTEXT ASSEMBLER] 🧠 Initializing Omniscient Cortex...");
-        // Ensure Redis is connected for caching
-        redisClient.connect();
+        // [LIFECYCLE] No network at import: Redis connects lazily on first
+        // cache operation (redisClient.ensureConnected); server boot connects
+        // it earlier via dbLoader.
     }
 
     /**

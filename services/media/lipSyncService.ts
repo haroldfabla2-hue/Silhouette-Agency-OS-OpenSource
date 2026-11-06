@@ -55,6 +55,14 @@ export class LipSyncService {
      * Generate speech from text using ElevenLabs
      */
     public async generateSpeech(text: string, voiceId?: string): Promise<{ audioUrl: string; duration: number } | null> {
+        // [SECURITY] EFFECT GATE (provider boundary): wallet-bearing provider
+        // call (cloud TTS). HARD-BLOCKED in this delivery - pending an
+        // authorized budget/cap mechanism. Typed EffectDeniedError before any
+        // provider request; no fallback, no retry. Code path preserved.
+        {
+            const { ensureEffectConsent } = await import('../security/effectGate');
+            await ensureEffectConsent('generate_voice', { text, voiceId }, 'lipSyncService.generateSpeech', { providerBoundary: true });
+        }
         if (!this.config.elevenLabsKey) {
             console.error('[LipSyncService] ❌ ElevenLabs API key not configured');
             return null;

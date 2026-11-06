@@ -17,6 +17,7 @@ import { evolutionScheduler } from '../evolution/evolutionScheduler';
 import { redisClient } from '../redisClient';
 import { daemonLog } from '../logger';
 import { selfHealingTask } from './selfHealingTask';
+import { isTaskAllowedByAutonomy, PROACTIVE_TASK_FLAGS, AutonomyFlags } from './autonomyPolicy';
 
 // ─── TYPES ─────────────────────────────────────────────────────────────
 
@@ -117,6 +118,29 @@ export class UnifiedDaemon {
 
         console.log('[DAEMON] 🔋 Starting Unified Cognitive Daemon...');
         await this.loadState();
+
+        // [SECURITY] Real readers for autonomy config: proactive tasks (the
+        // ones that wake agents, evolve the system or narrate) run ONLY when
+        // the operator enabled them in silhouette.config.json. Previously
+        // autonomy.enabled=false had zero readers and every task ran anyway.
+        // Maintenance tasks (Self_Healing, Janitor) are not autonomy and
+        // always run. Fail-closed: if the config cannot be read, proactive
+        // tasks stay disabled.
+        try {
+            const { configLoader } = await import('../../server/config/configLoader');
+            const autonomy = configLoader.getConfig().autonomy as AutonomyFlags;
+            for (const task of this.tasks) {
+                if (!isTaskAllowedByAutonomy(task.name, autonomy)) {
+                    task.enabled = false;
+                    console.log(`[DAEMON] ⛔ Task "${task.name}" disabled by config: autonomy.${PROACTIVE_TASK_FLAGS[task.name]}=false`);
+                }
+            }
+        } catch (cfgErr: any) {
+            console.error('[DAEMON] ⛔ Could not read autonomy config; proactive tasks DISABLED (fail-closed):', cfgErr?.message || cfgErr);
+            for (const task of this.tasks) {
+                if (PROACTIVE_TASK_FLAGS[task.name]) task.enabled = false;
+            }
+        }
 
         // Start internal tick system
         this.checkInterval = setInterval(() => this.tick(), this.TICK_INTERVAL_MS);

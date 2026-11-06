@@ -12,6 +12,14 @@ export interface PluginToolDefinition {
     category: ToolCategory;
     parameters: FunctionDeclarationSchema;
     handler: (args: any) => Promise<any>;
+    /**
+     * Effect classification (2026-11-05, REQUIRED for new plugins).
+     * What kind of side effect this tool can cause. Registered without it,
+     * the tool resolves to 'unclassified' and EVERY invocation requires
+     * explicit human confirmation (fail closed - the plugin gate bypass
+     * fix). See services/security/toolEffects.ts.
+     */
+    effects?: import('../security/toolEffects').ToolEffectClass;
 }
 
 /**

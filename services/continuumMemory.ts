@@ -144,16 +144,14 @@ class ContinuumMemorySystem {
         // No hydration needed for LanceDB, it's always on disk.
         // RAM tiers start empty on reboot (Tabula Rasa for short term) UNLESS hydrated explicitly.
 
-        // Connect to Redis (Hybrid Persistence Layer)
-        // Disk/journal recovery must not depend on Redis availability.
-        redisClient.connect().catch(err => console.warn('[CONTINUUM] Redis unavailable:', err));
+        // [LIFECYCLE] Import must be side-effect free: Redis connects lazily
+        // on first operation (redisClient.ensureConnected), and the Dreaming
+        // loop starts explicitly at server boot (server/loaders/index.ts) -
+        // a fire-and-forget connect here raced test-worker teardown and
+        // crashed CI intermittently. Disk/journal recovery never depended on
+        // Redis availability.
         this.loadSnapshot().then(() => this.reconcileTransitions())
             .catch(err => console.error('[CONTINUUM] Failed to recover memory:', err));
-
-        // Start Dreaming Protocol (Subconscious)
-        import('./dreamerService').then(({ dreamer }) => {
-            dreamer.startDreamingLoop();
-        });
     }
 
     // --- PUBLIC API ---
@@ -585,6 +583,16 @@ class ContinuumMemorySystem {
         await lancedbService.store(updated);
         const index = this.working.findIndex(n => n.id === id);
         if (index >= 0) { this.working[index] = updated; this.markDirty(); await this.saveSnapshot(); }
+    }
+
+    /** Latest exact-tag stored observation, without semantic search, ranking
+     * budget, access writes or provider use. Ordinary retrieval is unchanged. */
+    public async getLatestObservation(tag:string):Promise<MemoryNode|null>{
+        const persisted=await lancedbService.getLatestObservation(tag,this.working.map(n=>n.id));
+        const byId=new Map<string,MemoryNode>();
+        if(persisted)byId.set(persisted.id,persisted);
+        for(const node of this.working)if(node.tags.includes(tag))byId.set(node.id,node);
+        return [...byId.values()].sort((a,b)=>b.timestamp-a.timestamp||a.id.localeCompare(b.id))[0]??null;
     }
 
     public async retrieve(query: string, filterTag?: string, agentId?: string): Promise<MemoryNode[]> {
