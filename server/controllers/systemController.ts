@@ -258,8 +258,11 @@ export class SystemController {
                 const { thoughtNarrator } = await import('../../services/cognitive/thoughtNarrator');
                 const memStats = await continuum.getStats();
                 const narrative = await thoughtNarrator.generateNarrative();
+                const workingMemoryItems = memStats?.working ?? memStats?.workingMemoryItems ?? 0;
+                const totalMemoryItems = memStats?.total ?? 0;
                 brainStats = {
-                    workingMemoryItems: memStats.workingMemoryItems,
+                    workingMemoryItems,
+                    totalMemoryItems,
                     latestNarrative: narrative
                 };
             } catch (e) {
@@ -332,14 +335,15 @@ export class SystemController {
     private async refreshTelemetryCache() {
         const now = Date.now();
         const si = await import('systeminformation');
+        const { cpuLoadService } = await import('../../services/system/cpuLoadService');
 
         let cpu, mem, gpu;
 
         try {
-            cpu = await si.currentLoad();
+            cpu = await cpuLoadService.getCurrentLoadPercent();
         } catch (e) {
             console.warn("[TELEMETRY] CPU fetch failed", e);
-            cpu = { currentLoad: 0 };
+            cpu = 0;
         }
 
         try {
@@ -375,7 +379,7 @@ export class SystemController {
         }
 
         const telemetry = {
-            cpu: cpu.currentLoad,
+            cpu,
             ram: { active: mem.active, total: mem.total },
             gpu: { vramUsed, vramTotal },
             activeAgents: 0,

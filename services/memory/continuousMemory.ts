@@ -16,6 +16,11 @@ import fs from 'fs';
 import path from 'path';
 import { agentFileSystem } from '../agents/agentFileSystem';
 
+function getPositiveEnvNumber(name: string, fallback: number): number {
+    const raw = Number.parseInt(process.env[name] || '', 10);
+    return Number.isFinite(raw) && raw > 0 ? raw : fallback;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════
@@ -23,6 +28,7 @@ import { agentFileSystem } from '../agents/agentFileSystem';
 const WAL_DIR = path.resolve(process.cwd(), 'data', 'wal');
 const WAL_FILE = path.join(WAL_DIR, 'memory_wal.json');
 const WAL_MAX_ENTRIES = 500; // [FIX 2026-02] Hard cap to prevent unbounded WAL growth
+const CONSOLIDATION_INTERVAL_MS = getPositiveEnvNumber('CONTINUOUS_MEMORY_CONSOLIDATION_INTERVAL_MS', 30000);
 
 // ═══════════════════════════════════════════════════════════════
 // TYPES
@@ -84,10 +90,10 @@ export class ContinuousMemoryService {
             this.replayPendingEntries(pendingEntries);
         }
 
-        // Start periodic consolidation (every 30 seconds)
+        // Start periodic consolidation
         this.consolidationInterval = setInterval(() => {
             this.periodicConsolidation();
-        }, 30000);
+        }, CONSOLIDATION_INTERVAL_MS);
 
         console.log(`[CONTINUOUS_MEM] ✅ Continuous Memory Service initialized`);
     }

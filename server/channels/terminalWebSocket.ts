@@ -6,11 +6,11 @@ import { v4 as uuidv4 } from 'uuid';
 export class TerminalGateway {
     private static wss: WebSocketServer;
     private static service = TerminalService.getInstance();
+    private static readonly PATH = '/api/terminal/ws';
 
-    public static initialize(server: Server, path: string = '/api/terminal/ws') {
+    public static initialize(_server?: Server, path: string = TerminalGateway.PATH) {
         this.wss = new WebSocketServer({
-            server,
-            path
+            noServer: true
         });
 
         console.log(`[Terminal] 🚀 WebSocket Endpoint initialized on ${path}`);
@@ -29,6 +29,28 @@ export class TerminalGateway {
 
             this.handleConnection(ws);
         });
+    }
+
+    public static canHandle(pathname: string): boolean {
+        return pathname === this.PATH;
+    }
+
+    public static handleUpgrade(req: any, socket: any, head: any): boolean {
+        if (!this.wss) {
+            socket.destroy();
+            return false;
+        }
+
+        const pathname = new URL(req.url || '', 'http://localhost').pathname;
+        if (!this.canHandle(pathname)) {
+            return false;
+        }
+
+        this.wss.handleUpgrade(req, socket, head, (ws) => {
+            this.wss.emit('connection', ws, req);
+        });
+
+        return true;
     }
 
     private static handleConnection(ws: WebSocket) {

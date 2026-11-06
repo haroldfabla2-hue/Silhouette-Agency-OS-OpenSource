@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { api } from '../utils/api';
+import { generateFingerprint, getDeviceName } from '../utils/fingerprint';
 
 interface LocalLoginProps {
     onComplete: (session: any, user: any) => void;
@@ -20,7 +21,9 @@ export const LocalLogin: React.FC<LocalLoginProps> = ({ onComplete, onGoogleLogi
             setLoading(true);
             const data = await api.post<any>('/v1/identity/login', {
                 email,
-                password
+                password,
+                fingerprint: generateFingerprint(),
+                deviceName: getDeviceName()
             });
 
             // Persist session for subsequent API requests (api.ts reads this)

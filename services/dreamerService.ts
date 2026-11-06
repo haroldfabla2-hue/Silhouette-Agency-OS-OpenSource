@@ -8,6 +8,7 @@ import { AgentStatus, AgentRoleType, AgentTier, SystemProtocol } from '../types'
 import { v4 as uuidv4 } from 'uuid';
 import { systemBus } from './systemBus';
 import * as si from 'systeminformation'; // NEW: For Resource Monitoring
+import { cpuLoadService } from './system/cpuLoadService';
 
 export class DreamerService {
     private isDreaming: boolean = false;
@@ -1003,13 +1004,13 @@ export class DreamerService {
     // --- NOCTURNAL PLASTICITY (SLEEP MODE DETECTION) ---
     public async checkSleepConditions(): Promise<boolean> {
         try {
-            const cpu = await si.currentLoad();
+            const cpuLoad = await cpuLoadService.getCurrentLoadPercent();
             const mem = await si.mem();
 
             // Criteria (STRICT):
             // 1. CPU Idle (< 10% Load) - Stricter to avoid blocking frontend
             // 2. RAM Available (> 4GB free) for training overhead
-            const isCpuIdle = cpu.currentLoad < 10;
+            const isCpuIdle = cpuLoad < 10;
             const hasRam = mem.free > 4 * 1024 * 1024 * 1024; // 4GB
 
             // Optional: Check for user inactivity (Requires OS permission/support)

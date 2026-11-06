@@ -10,8 +10,10 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import { checkDeviceTrust, startGoogleAuth } from '../utils/fingerprint';
+import { api } from '../utils/api';
 import LocalLogin from './LocalLogin';
 import SetupWizard from './SetupWizard';
+import { AuthenticatedUser, AuthProvider, DEFAULT_AUTH_CONTEXT } from './authContext';
 
 interface LoginGateProps {
     children: React.ReactNode;
@@ -21,24 +23,54 @@ type ScreenState =
     | { type: 'loading' }
     | { type: 'setup' }
     | { type: 'login'; googleLinked: boolean }
-    | { type: 'authenticated'; user: { email: string | null; name: string; role: string }; isCreator: boolean; googleLinked: boolean };
+    | { type: 'authenticated'; user: AuthenticatedUser; isCreator: boolean; googleLinked: boolean };
 
 export const LoginGate: React.FC<LoginGateProps> = ({ children }) => {
     const [screen, setScreen] = useState<ScreenState>({ type: 'loading' });
 
+    const toAuthenticatedScreen = useCallback((
+        user: AuthenticatedUser,
+        isCreator = false,
+        googleLinked = false
+    ): ScreenState => ({
+        type: 'authenticated',
+        user,
+        isCreator,
+        googleLinked
+    }), []);
+
     // Check auth state on mount
     useEffect(() => {
         const checkAuth = async () => {
+            try {
+                const status = await api.get<{
+                    authenticated: boolean;
+                    user: AuthenticatedUser | null;
+                    isCreator: boolean;
+                    googleLinked: boolean;
+                }>('/v1/identity/status');
+
+                if (status.authenticated && status.user) {
+                    setScreen(toAuthenticatedScreen(
+                        status.user,
+                        status.isCreator || status.user.role === 'CREATOR',
+                        status.googleLinked || false
+                    ));
+                    return;
+                }
+            } catch (error) {
+                console.warn('[LoginGate] Session status check failed, falling back to device trust');
+            }
+
             // First try auto-login via device fingerprint
             const result = await checkDeviceTrust();
 
             if (result.trusted && result.user) {
-                setScreen({
-                    type: 'authenticated',
-                    user: result.user,
-                    isCreator: result.isCreator || false,
-                    googleLinked: result.googleLinked || false
-                });
+                setScreen(toAuthenticatedScreen(
+                    result.user,
+                    result.isCreator || false,
+                    result.googleLinked || false
+                ));
                 return;
             }
 
@@ -53,7 +85,7 @@ export const LoginGate: React.FC<LoginGateProps> = ({ children }) => {
         };
 
         checkAuth();
-    }, []);
+    }, [toAuthenticatedScreen]);
 
     // Listen for OAuth popup success (both login and link modes)
     useEffect(() => {
@@ -62,22 +94,30 @@ export const LoginGate: React.FC<LoginGateProps> = ({ children }) => {
             if (event.origin !== window.location.origin) return;
 
             if (event.data?.type === 'GOOGLE_AUTH_SUCCESS') {
-                setScreen({
-                    type: 'authenticated',
-                    user: {
+                setScreen(toAuthenticatedScreen(
+                    {
                         email: event.data.email,
                         name: event.data.name || event.data.email?.split('@')[0] || 'User',
-                        role: event.data.isCreator ? 'CREATOR' : 'USER'
+                        role: event.data.role || (event.data.isCreator ? 'CREATOR' : 'USER')
                     },
-                    isCreator: event.data.isCreator,
-                    googleLinked: true
-                });
+                    event.data.isCreator,
+                    true
+                ));
             }
         };
 
         window.addEventListener('message', handleMessage);
         return () => window.removeEventListener('message', handleMessage);
-    }, []);
+    }, [toAuthenticatedScreen]);
+
+    const authValue = screen.type === 'authenticated'
+        ? {
+            authenticated: true,
+            user: screen.user,
+            isCreator: screen.isCreator,
+            googleLinked: screen.googleLinked
+        }
+        : DEFAULT_AUTH_CONTEXT;
 
     const handleGoogleLogin = useCallback(() => {
         startGoogleAuth();
@@ -86,69 +126,75 @@ export const LoginGate: React.FC<LoginGateProps> = ({ children }) => {
     // ─── Loading ────────────────────────────────────────────────
     if (screen.type === 'loading') {
         return (
-            <div className="h-screen w-screen bg-slate-950 flex items-center justify-center">
-                <div className="text-center">
-                    <div className="relative w-20 h-20 mx-auto mb-4">
-                        <img
-                            src="/logo/isotipo-oscuro.png"
-                            alt="Silhouette"
-                            className="w-20 h-20 object-contain"
-                            style={{
-                                filter: 'drop-shadow(0 0 20px rgba(6, 182, 212, 0.4))',
-                                animation: 'logoGlow 2s ease-in-out infinite'
-                            }}
-                        />
-                        <div
-                            className="absolute inset-0 border-2 border-cyan-500/30 rounded-full animate-spin"
-                            style={{ animationDuration: '3s' }}
-                        />
+            <AuthProvider value={authValue}>
+                <div className="h-screen w-screen bg-slate-950 flex items-center justify-center">
+                    <div className="text-center">
+                        <div className="relative w-20 h-20 mx-auto mb-4">
+                            <img
+                                src="/logo/isotipo-oscuro.png"
+                                alt="Silhouette"
+                                className="w-20 h-20 object-contain"
+                                style={{
+                                    filter: 'drop-shadow(0 0 20px rgba(6, 182, 212, 0.4))',
+                                    animation: 'logoGlow 2s ease-in-out infinite'
+                                }}
+                            />
+                            <div
+                                className="absolute inset-0 border-2 border-cyan-500/30 rounded-full animate-spin"
+                                style={{ animationDuration: '3s' }}
+                            />
+                        </div>
+                        <p className="text-slate-400 text-sm tracking-wider uppercase">Loading OS Kernel...</p>
+                        <style>{`
+                            @keyframes logoGlow {
+                                0%, 100% { filter: drop-shadow(0 0 20px rgba(6, 182, 212, 0.3)); transform: scale(1); }
+                                50% { filter: drop-shadow(0 0 30px rgba(6, 182, 212, 0.6)); transform: scale(1.05); }
+                            }
+                        `}</style>
                     </div>
-                    <p className="text-slate-400 text-sm tracking-wider uppercase">Loading OS Kernel...</p>
-                    <style>{`
-                        @keyframes logoGlow {
-                            0%, 100% { filter: drop-shadow(0 0 20px rgba(6, 182, 212, 0.3)); transform: scale(1); }
-                            50% { filter: drop-shadow(0 0 30px rgba(6, 182, 212, 0.6)); transform: scale(1.05); }
-                        }
-                    `}</style>
                 </div>
-            </div>
+            </AuthProvider>
         );
     }
 
     // ─── First-time Setup ───────────────────────────────────────
     if (screen.type === 'setup') {
         return (
-            <SetupWizard
-                onComplete={(session, user) => setScreen({
-                    type: 'authenticated',
-                    user: user,
-                    isCreator: user.role === 'CREATOR',
-                    googleLinked: false
-                })}
-            />
+            <AuthProvider value={authValue}>
+                <SetupWizard
+                    onComplete={(session, user) => setScreen(toAuthenticatedScreen(
+                        user,
+                        user.role === 'CREATOR',
+                        false
+                    ))}
+                />
+            </AuthProvider>
         );
     }
 
     // ─── Local Login (n8n style) ────────────────────────────────
     if (screen.type === 'login') {
         return (
-            <LocalLogin
-                onComplete={(session, user) => setScreen({
-                    type: 'authenticated',
-                    user: user,
-                    isCreator: user.role === 'CREATOR',
-                    googleLinked: user.googleLinked || false
-                })}
-                onGoogleLogin={handleGoogleLogin}
-            />
+            <AuthProvider value={authValue}>
+                <LocalLogin
+                    onComplete={(session, user) => setScreen(toAuthenticatedScreen(
+                        user,
+                        user.role === 'CREATOR',
+                        user.googleLinked || false
+                    ))}
+                    onGoogleLogin={handleGoogleLogin}
+                />
+            </AuthProvider>
         );
     }
 
     // ─── Authenticated ──────────────────────────────────────────
     return (
-        <div className="relative min-h-screen">
-            {children}
-        </div>
+        <AuthProvider value={authValue}>
+            <div className="relative min-h-screen">
+                {children}
+            </div>
+        </AuthProvider>
     );
 };
 

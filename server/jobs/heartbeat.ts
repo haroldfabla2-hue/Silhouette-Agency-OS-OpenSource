@@ -1,8 +1,13 @@
 
 import { introspection } from '../../services/introspectionEngine';
 
-const HEARTBEAT_INTERVAL = 120000; // 120s (0.5 RPM - optimized for z.ai limits)
-const DISCOVERY_INTERVAL = 10; // Every 10 cycles (~5 min), trigger autonomous discovery
+function getPositiveEnvNumber(name: string, fallback: number): number {
+    const raw = Number.parseInt(process.env[name] || '', 10);
+    return Number.isFinite(raw) && raw > 0 ? raw : fallback;
+}
+
+const HEARTBEAT_INTERVAL = getPositiveEnvNumber('AUTONOMOUS_HEARTBEAT_INTERVAL_MS', 120000);
+const DISCOVERY_INTERVAL = getPositiveEnvNumber('AUTONOMOUS_DISCOVERY_CYCLE_COUNT', 10);
 
 let cycleCount = 0;
 

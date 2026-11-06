@@ -26,6 +26,8 @@ const PROJECT_ROOT = path.resolve(__dirname, '..');
 
 const isWindows = process.platform === 'win32';
 const npmCmd = isWindows ? 'npm.cmd' : 'npm';
+const isProduction = (process.env.NODE_ENV || '').toLowerCase() === 'production';
+const uiPort = process.env.UI_PORT || '5173';
 
 function printHeader() {
     console.log(`\n${CS.BLU}=======================================================${CS.RES}`);
@@ -35,9 +37,16 @@ function printHeader() {
 }
 
 const processes: ChildProcess[] = [];
+let isShuttingDown = false;
+let shutdownTimer: NodeJS.Timeout | null = null;
+let pendingExitCode = 0;
 
 function startProcess(name: string, command: string, args: string[], color: string, prefix: string) {
-    const child = spawn(command, args, { cwd: PROJECT_ROOT, shell: true });
+    const child = spawn(command, args, {
+        cwd: PROJECT_ROOT,
+        env: process.env,
+        shell: isWindows,
+    });
 
     child.stdout?.on('data', (data) => {
         const lines = data.toString().split('\n');
@@ -57,15 +66,26 @@ function startProcess(name: string, command: string, args: string[], color: stri
         }
     });
 
-    child.on('close', (code) => {
-        console.log(`${color}[${prefix}]${CS.RES} Process exited with code ${code}`);
+    child.on('close', (code, signal) => {
+        const exitDetails = signal ? `signal ${signal}` : `code ${code}`;
+        console.log(`${color}[${prefix}]${CS.RES} Process exited with ${exitDetails}`);
+
+        if (!isShuttingDown) {
+            const normalizedCode = typeof code === 'number' && code !== 0 ? code : 1;
+            console.log(`${CS.RED}[SYSTEM]${CS.RES} ${name} exited unexpectedly. Shutting down boot supervisor.`);
+            shutdown(normalizedCode);
+        }
     });
 
     processes.push(child);
     return child;
 }
 
-function shutdown() {
+function shutdown(exitCode: number = 0) {
+    pendingExitCode = pendingExitCode || exitCode;
+    if (isShuttingDown) return;
+
+    isShuttingDown = true;
     console.log(`\n${CS.YLW}[SYSTEM] Shutdown signal received. Halting cognitive OS gracefully...${CS.RES}`);
     for (const p of processes) {
         if (!p.killed) {
@@ -74,9 +94,9 @@ function shutdown() {
             p.kill('SIGINT');
         }
     }
-    setTimeout(() => {
+    shutdownTimer = setTimeout(() => {
         console.log(`${CS.YLW}[SYSTEM] Forced exit.${CS.RES}`);
-        process.exit(0);
+        process.exit(pendingExitCode);
     }, 3000);
 }
 
@@ -93,7 +113,10 @@ async function main() {
     // Slight delay to let backend start occupying port 3005 before UI
     setTimeout(() => {
         // Spawn UI (Frontend)
-        startProcess('UI', npmCmd, ['run', 'dev'], CS.CYN, '  UI  ');
+        const uiArgs = isProduction
+            ? ['run', 'preview', '--', '--host', '0.0.0.0', '--port', uiPort]
+            : ['run', 'dev', '--', '--host', '0.0.0.0', '--port', uiPort];
+        startProcess('UI', npmCmd, uiArgs, CS.CYN, '  UI  ');
     }, 1500);
 }
 

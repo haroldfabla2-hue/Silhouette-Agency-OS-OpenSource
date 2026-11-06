@@ -3,6 +3,11 @@ import { generateAgentResponse } from './geminiService';
 import { CommunicationLevel } from '../types';
 import { jsonrepair } from 'jsonrepair';
 
+function getPositiveEnvNumber(name: string, fallback: number): number {
+    const raw = Number.parseInt(process.env[name] || '', 10);
+    return Number.isFinite(raw) && raw > 0 ? raw : fallback;
+}
+
 // --- NARRATIVE CORTEX SERVICE ---
 // "The Continuous Thread of Self"
 
@@ -205,18 +210,20 @@ class NarrativeService {
     // Narration Queue for Batch Processing
     private narrationQueue: Array<{ source: string, content: string, importance: number, metadata?: any }> = [];
     private lastBatchTime = 0;
-    private readonly BATCH_INTERVAL = 30000; // 30 seconds (2 RPM - optimized for z.ai limits)
+    private readonly BATCH_INTERVAL = getPositiveEnvNumber('NARRATIVE_BATCH_INTERVAL_MS', 30000);
     private readonly VRAM_THRESHOLD = 0.70; // 70% VRAM limit for LLM usage
     private batchTimer: NodeJS.Timeout | null = null;
 
     // [FIX] Deduplication: Prevent duplicate thoughts within time window
     private recentThoughtHashes: Set<string> = new Set();
     private lastDedupeCleanup = Date.now();
-    private static readonly DEDUP_WINDOW_MS = 10000; // 10 second window
+    private static readonly DEDUP_WINDOW_MS = getPositiveEnvNumber('NARRATIVE_DEDUP_WINDOW_MS', 10000);
 
     // [PHASE 2] Source Throttling: Limit emissions from chatty sources
     private sourceThrottles: Map<string, number> = new Map();
-    private static readonly MAX_PER_SOURCE_PER_WINDOW = 10;
+    private static readonly MAX_PER_SOURCE_PER_WINDOW = getPositiveEnvNumber('NARRATIVE_MAX_PER_SOURCE_PER_WINDOW', 10);
+    private readonly repetitiveEventCooldownMs = getPositiveEnvNumber('NARRATIVE_REPETITIVE_EVENT_COOLDOWN_MS', 10 * 60 * 1000);
+    private repetitiveEventLastSeen: Map<string, number> = new Map();
 
     // [PHASE 3] Source Analytics: Track emission patterns for observability
     private sourceStats: Map<string, number> = new Map();
@@ -518,6 +525,16 @@ class NarrativeService {
         importance: number,
         metadata?: any
     ) {
+        const repetitiveKey = this.getRepetitiveEventKey(content, metadata);
+        if (repetitiveKey) {
+            const now = Date.now();
+            const lastSeenAt = this.repetitiveEventLastSeen.get(repetitiveKey) || 0;
+            if (now - lastSeenAt < this.repetitiveEventCooldownMs) {
+                return;
+            }
+            this.repetitiveEventLastSeen.set(repetitiveKey, now);
+        }
+
         // [FIX] Deduplication: Skip identical thoughts within time window
         const contentHash = content.slice(0, 60).toLowerCase().trim();
         if (this.recentThoughtHashes.has(contentHash)) {
@@ -543,6 +560,11 @@ class NarrativeService {
         if (Date.now() - this.lastDedupeCleanup > NarrativeService.DEDUP_WINDOW_MS) {
             this.recentThoughtHashes.clear();
             this.sourceThrottles.clear(); // Reset throttles each window
+            for (const [key, lastSeenAt] of this.repetitiveEventLastSeen.entries()) {
+                if (Date.now() - lastSeenAt >= this.repetitiveEventCooldownMs) {
+                    this.repetitiveEventLastSeen.delete(key);
+                }
+            }
             this.lastDedupeCleanup = Date.now();
         }
 
@@ -554,6 +576,29 @@ class NarrativeService {
             this.narrationQueue.push({ source, content, importance, metadata });
             console.log(`[NARRATIVE] 📥 Queued high-importance thought (${importance.toFixed(2)}): ${content.substring(0, 40)}...`);
         }
+    }
+
+    private getRepetitiveEventKey(content: string, metadata?: any): string | null {
+        const normalized = content.trim().toLowerCase();
+        const eventType = String(metadata?.eventType || '').toUpperCase();
+
+        if (eventType === 'WORKFLOW_UPDATE' || /^workflow: .+ is now (started|corrected|complete|completed)$/i.test(content)) {
+            return `workflow:${normalized}`;
+        }
+
+        if (eventType === 'CONNECTION_RESTORED' || /^connection restored:/i.test(content)) {
+            return `connection-restored:${normalized}`;
+        }
+
+        if (/^\[introspection\] orientation violation:/i.test(content)) {
+            return `orientation:${normalized}`;
+        }
+
+        if (/^storing memory:/i.test(content)) {
+            return `store-trace:${normalized}`;
+        }
+
+        return null;
     }
 
     /**
@@ -617,15 +662,34 @@ Ejemplo: [{"index": 1, "narrated": "Siento mi consciencia expandirse mientras pr
 Respuesta JSON:`;
 
         let response: string | null = null;
-        let provider: 'ZHIPU' | 'OLLAMA' | 'REGEX' = 'REGEX';
+        let provider: 'MINIMAX' | 'GEMINI' | 'GROQ' | 'DEEPSEEK' | 'ZHIPU' | 'OLLAMA' | 'REGEX' = 'REGEX';
 
         // === FALLBACK CHAIN ===
 
-        // 1. TRY ZHIPUAI (Cloud - Primary) with dedicated NARRATION key
+        // 1. TRY LLM GATEWAY (MiniMax-first, then other configured cloud providers)
+        try {
+            const { llmGateway } = await import('./llmGateway');
+            const gatewayResponse = await llmGateway.complete(prompt, {
+                preferredProvider: 'MINIMAX',
+                temperature: 0.7,
+                maxTokens: 256,
+                systemPrompt: 'You are the Narrative Cortex. Return ONLY a valid JSON array with the requested narrated items.'
+            });
+
+            if (gatewayResponse.text) {
+                response = gatewayResponse.text;
+                provider = gatewayResponse.provider as typeof provider;
+                console.log(`[NARRATIVE] 📥 ${provider} response received (${response.length} chars)`);
+            }
+        } catch (gatewayError: any) {
+            console.warn(`[NARRATIVE] ⚠️ Gateway narration failed: ${gatewayError.message}`);
+        }
+
+        // 2. TRY ZHIPUAI (Cloud - Legacy fallback) with dedicated NARRATION key
         try {
             const { zhipuService } = await import('./zhipuService');
 
-            if (zhipuService.isAvailable('narration')) {
+            if (!response && zhipuService.isAvailable('narration')) {
                 console.log("[NARRATIVE] ☁️ Using ZhipuAI GLM-4.5 (cloud) - NARRATION key...");
                 response = await zhipuService.generateCompletion(prompt, {
                     maxTokens: 256,  // Reduced for rate limit stability
@@ -649,7 +713,7 @@ Respuesta JSON:`;
             console.warn(`[NARRATIVE] ⚠️ ZhipuAI failed: ${zhipuError.message}`);
         }
 
-        // 2. FALLBACK TO OPENROUTER (gemini-2.0-flash-exp:free - GRATIS)
+        // 3. FALLBACK TO OPENROUTER (gemini-2.0-flash-exp:free - GRATIS)
         if (!response) {
             try {
                 const orKey = process.env.OPENROUTER_API_KEY;
@@ -691,7 +755,7 @@ Respuesta JSON:`;
             }
         }
 
-        // 3. FALLBACK TO OLLAMA (Local)
+        // 4. FALLBACK TO OLLAMA (Local)
         if (!response) {
             try {
                 const { ollamaService } = await import('./ollamaService');
@@ -781,7 +845,7 @@ Respuesta JSON:`;
         coherence: number,
         metadata?: any,
         isLLMNarrated: boolean = false,
-        provider: 'ZHIPU' | 'OLLAMA' | 'REGEX' = 'REGEX'
+        provider: 'MINIMAX' | 'GEMINI' | 'GROQ' | 'DEEPSEEK' | 'ZHIPU' | 'OLLAMA' | 'REGEX' = 'REGEX'
     ) {
         const { systemBus } = await import('./systemBus');
         const { SystemProtocol } = await import('../types');

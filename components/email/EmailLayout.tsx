@@ -32,10 +32,10 @@ export const EmailLayout: React.FC<EmailLayoutProps> = ({
     className
 }) => {
     return (
-        <div className={`flex h-full bg-slate-900/90 text-slate-200 overflow-hidden ${className}`}>
+        <div className={`flex h-full flex-col md:flex-row bg-slate-900/90 text-slate-200 overflow-hidden ${className}`}>
             {/* --- SIDEBAR --- */}
-            <div className="w-64 bg-slate-950/50 flex flex-col border-r border-slate-800">
-                <div className="p-4">
+            <div className="w-full md:w-64 bg-slate-950/50 flex flex-col border-b md:border-b-0 md:border-r border-slate-800">
+                <div className="p-3 sm:p-4">
                     <button
                         onClick={onCompose}
                         className="w-full flex items-center justify-center gap-2 bg-slate-100 hover:bg-white text-slate-900 font-medium py-3 rounded-2xl transition-all shadow-lg hover:shadow-cyan-500/20"
@@ -45,7 +45,7 @@ export const EmailLayout: React.FC<EmailLayoutProps> = ({
                     </button>
                 </div>
 
-                <nav className="flex-1 px-2 space-y-1">
+                <nav className="flex-1 flex gap-1 overflow-x-auto px-2 pb-3 custom-scrollbar md:block md:space-y-1 md:pb-0">
                     <SidebarItem
                         icon={<Mail size={18} />}
                         label="Inbox"
@@ -73,7 +73,7 @@ export const EmailLayout: React.FC<EmailLayoutProps> = ({
                     />
                 </nav>
 
-                <div className="p-4 mt-auto border-t border-slate-800">
+                <div className="hidden md:block p-4 mt-auto border-t border-slate-800">
                     <h3 className="text-xs font-bold text-slate-500 uppercase mb-2">Labels</h3>
                     <div className="space-y-2">
                         <LabelItem color="bg-emerald-500" label="Project Alpha" />
@@ -84,10 +84,10 @@ export const EmailLayout: React.FC<EmailLayoutProps> = ({
             </div>
 
             {/* --- EMAIL LIST --- */}
-            <div className={`${selectedEmail ? 'w-80 hidden md:flex' : 'flex-1'} flex flex-col border-r border-slate-800 transition-all duration-300`}>
+            <div className={`${selectedEmail ? 'hidden md:flex md:w-80 lg:w-96' : 'flex-1'} flex flex-col border-r border-slate-800 transition-all duration-300`}>
                 {/* Toolbar */}
-                <div className="h-16 flex items-center justify-between px-4 border-b border-slate-800 bg-slate-900/50 backdrop-blur">
-                    <div className="relative flex-1 mr-4">
+                    <div className="h-16 flex items-center justify-between px-4 border-b border-slate-800 bg-slate-900/50 backdrop-blur">
+                        <div className="relative flex-1 mr-4">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
                         <input
                             type="text"
@@ -173,10 +173,10 @@ export const EmailLayout: React.FC<EmailLayoutProps> = ({
                     </div>
 
                     {/* Content */}
-                    <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+                    <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 custom-scrollbar">
                         <h1 className="text-xl font-medium text-white mb-6">{selectedEmail.subject}</h1>
 
-                        <div className="flex items-center gap-4 mb-8">
+                        <div className="flex items-center gap-4 mb-6 sm:mb-8">
                             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-white font-bold text-sm">
                                 {selectedEmail.from.charAt(0).toUpperCase()}
                             </div>
@@ -206,7 +206,7 @@ export const EmailLayout: React.FC<EmailLayoutProps> = ({
 
                     {/* Reply Box Mockup */}
                     <div className="p-4 border-t border-slate-800 bg-slate-950/30">
-                        <div className="flex gap-4 items-center text-slate-400 text-sm border border-slate-700 rounded-lg p-4 hover:border-slate-500 cursor-text transition-colors">
+                        <div className="flex gap-3 items-center text-slate-400 text-sm border border-slate-700 rounded-lg p-4 hover:border-slate-500 cursor-text transition-colors">
                             <img src="/avatars/me.jpg" className="w-6 h-6 rounded-full bg-slate-700" alt="" />
                             <span>Reply to {selectedEmail.from.split('<')[0].trim()}...</span>
                         </div>
@@ -226,7 +226,7 @@ const SidebarItem = ({ icon, label, active, count, onClick }: any) => (
     <button
         onClick={onClick}
         className={`
-            w-full flex items-center justify-between px-4 py-2 text-sm font-medium rounded-r-full transition-colors mr-2
+            min-w-max md:w-full flex items-center justify-between px-4 py-2 text-sm font-medium rounded-full md:rounded-r-full transition-colors md:mr-2
             ${active
                 ? 'bg-cyan-900/30 text-cyan-400 border-l-4 border-cyan-500'
                 : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border-l-4 border-transparent'}

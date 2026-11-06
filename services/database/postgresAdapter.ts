@@ -6,7 +6,7 @@
 // =============================================================================
 
 import { Pool, PoolClient } from 'pg';
-import { IDatabaseAdapter, DbUser, DbDevice, DbSession, UserRole } from './databaseAdapter';
+import { IDatabaseAdapter, DbUser, DbDevice, DbSession, MemoryNodeCounts, UserRole } from './databaseAdapter';
 import { Agent, MemoryNode, MemoryTier } from '../../types';
 
 const DEFAULT_VECTOR_DIM = 768;
@@ -713,20 +713,23 @@ export class PostgresAdapter implements IDatabaseAdapter {
     // ─── Vector Memory Operations (pgvector) ───────────────────────────
 
     async storeVector(node: MemoryNode, vector?: number[]): Promise<void> {
-        const embedding = vector ? this.padVector(vector) : new Array(DEFAULT_VECTOR_DIM).fill(0);
+        const embedding = vector ? this.padVector(vector) : null;
         const nodeAny = node as any;
         await this.pool.query(`
             INSERT INTO memory_vectors (id, content, tier, importance, access_count, tags, metadata, source, category, created_at, last_accessed, embedding)
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::vector)
             ON CONFLICT (id) DO UPDATE SET
                 content = EXCLUDED.content, tier = EXCLUDED.tier, importance = EXCLUDED.importance,
-                tags = EXCLUDED.tags, metadata = EXCLUDED.metadata, embedding = EXCLUDED.embedding
+                access_count = EXCLUDED.access_count, tags = EXCLUDED.tags, metadata = EXCLUDED.metadata,
+                source = EXCLUDED.source, category = EXCLUDED.category, created_at = EXCLUDED.created_at,
+                last_accessed = EXCLUDED.last_accessed,
+                embedding = COALESCE(EXCLUDED.embedding, memory_vectors.embedding)
         `, [
             node.id, node.content, node.tier, node.importance || 0.5, node.accessCount || 0,
             JSON.stringify(node.tags || []), JSON.stringify(nodeAny.metadata || {}),
             nodeAny.source || '', nodeAny.category || '',
             node.timestamp || Date.now(), node.lastAccess || Date.now(),
-            this.formatVector(embedding)
+            embedding ? this.formatVector(embedding) : null
         ]);
     }
 
@@ -738,9 +741,9 @@ export class PostgresAdapter implements IDatabaseAdapter {
         `;
         const params: any[] = [this.formatVector(padded)];
 
-        if (filter) {
-            query += ` WHERE ${filter}`;
-        }
+        const conditions = ['embedding IS NOT NULL'];
+        if (filter) conditions.push(filter);
+        query += ` WHERE ${conditions.join(' AND ')}`;
         query += ` ORDER BY embedding <=> $1::vector LIMIT $${params.length + 1}`;
         params.push(limit);
 
@@ -751,11 +754,12 @@ export class PostgresAdapter implements IDatabaseAdapter {
     async findSimilarNodes(nodeId: string, limit: number = 5): Promise<(MemoryNode & { similarity?: number })[]> {
         const { rows: nodeRows } = await this.pool.query('SELECT embedding FROM memory_vectors WHERE id = $1', [nodeId]);
         if (nodeRows.length === 0) return [];
+        if (!nodeRows[0].embedding) return [];
 
         const { rows } = await this.pool.query(`
             SELECT *, 1 - (embedding <=> $1::vector) as similarity
             FROM memory_vectors
-            WHERE id != $2
+            WHERE id != $2 AND embedding IS NOT NULL
             ORDER BY embedding <=> $1::vector
             LIMIT $3
         `, [nodeRows[0].embedding, nodeId, limit]);
@@ -772,16 +776,42 @@ export class PostgresAdapter implements IDatabaseAdapter {
     }
 
     async getAllNodes(): Promise<MemoryNode[]> {
-        const { rows } = await this.pool.query('SELECT * FROM memory_vectors');
+        const { rows } = await this.pool.query('SELECT * FROM memory_vectors ORDER BY created_at DESC');
+        return rows.map(r => this.rowToMemoryNode(r));
+    }
+
+    async getRecentNodes(limit: number = 200): Promise<MemoryNode[]> {
+        const { rows } = await this.pool.query(
+            'SELECT * FROM memory_vectors ORDER BY created_at DESC LIMIT $1',
+            [limit]
+        );
         return rows.map(r => this.rowToMemoryNode(r));
     }
 
     async getNodesByTier(tier: MemoryTier, limit: number = 1000): Promise<MemoryNode[]> {
         const { rows } = await this.pool.query(
-            'SELECT * FROM memory_vectors WHERE tier = $1 LIMIT $2',
+            'SELECT * FROM memory_vectors WHERE tier = $1 ORDER BY created_at DESC LIMIT $2',
             [tier, limit]
         );
         return rows.map(r => this.rowToMemoryNode(r));
+    }
+
+    async getNodeCounts(): Promise<MemoryNodeCounts> {
+        const { rows } = await this.pool.query(`
+            SELECT tier, COUNT(*)::int AS count
+            FROM memory_vectors
+            GROUP BY tier
+        `);
+
+        const counts: MemoryNodeCounts = { total: 0 };
+        for (const row of rows) {
+            const tier = row.tier as MemoryTier | null;
+            const count = Number(row.count) || 0;
+            if (tier) counts[tier] = count;
+            counts.total += count;
+        }
+
+        return counts;
     }
 
     async deleteNode(id: string): Promise<boolean> {
@@ -790,6 +820,8 @@ export class PostgresAdapter implements IDatabaseAdapter {
     }
 
     private rowToMemoryNode(row: any): MemoryNode {
+        const metadata = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : (row.metadata || {});
+        const tags = Array.isArray(row.tags) ? row.tags : (typeof row.tags === 'string' ? JSON.parse(row.tags) : []);
         return {
             id: row.id,
             content: row.content,
@@ -797,9 +829,13 @@ export class PostgresAdapter implements IDatabaseAdapter {
             tier: row.tier as MemoryTier,
             importance: row.importance,
             accessCount: row.access_count,
-            tags: row.tags || [],
-            lastAccess: row.last_accessed
-        };
+            tags,
+            lastAccess: row.last_accessed,
+            ...(metadata ? { metadata } : {}),
+            ...(row.source ? { source: row.source } : {}),
+            ...(row.category ? { category: row.category } : {}),
+            ...(row.similarity !== undefined ? { similarity: parseFloat(row.similarity) } : {})
+        } as MemoryNode;
     }
 
     // ─── Knowledge Indexing ────────────────────────────────────────────

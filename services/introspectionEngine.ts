@@ -3,6 +3,11 @@ import { ZOMBIE_THRESHOLD } from "../constants";
 
 import { systemBus } from "./systemBus";
 
+function getPositiveEnvNumber(name: string, fallback: number): number {
+    const raw = Number.parseInt(process.env[name] || '', 10);
+    return Number.isFinite(raw) && raw > 0 ? raw : fallback;
+}
+
 // --- ANTHROPIC INTROSPECTION ENGINE V2.0 ---
 // Implements the 5 Core Capabilities:
 // 1. Concept Injection
@@ -44,6 +49,9 @@ export class IntrospectionEngine {
     // [FIX] Zombie Reset Cooldown - prevents infinite reset loop
     private zombieResetCooldown: Map<string, number> = new Map();
     private readonly ZOMBIE_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes cooldown after reset
+    private readonly orientationThoughtCooldownMs = getPositiveEnvNumber('INTROSPECTION_ORIENTATION_COOLDOWN_MS', 10 * 60 * 1000);
+    private lastOrientationThoughtKey: string = '';
+    private lastOrientationThoughtAt: number = 0;
 
     public setDreaming(status: boolean) {
         this.isDreaming = status;
@@ -164,10 +172,33 @@ export class IntrospectionEngine {
         this.activeConcepts.push(concept);
         this.capabilities.add(IntrospectionCapability.CONCEPT_INJECTION);
 
-        // Persist to Continuum (Simulated Vector Store)
-        import('./continuumMemory').then(({ continuum }) => {
-            continuum.store(`[INTROSPECTION] Injected Concept Vector: ${label} (Str: ${strength})`, undefined, ['system', 'concept-vector']);
-        }).catch(e => console.error("[INTROSPECTION] Failed to persist concept", e));
+        void this.persistConceptToContinuum(label, strength);
+    }
+
+    private async persistConceptToContinuum(label: string, strength: number, attempt: number = 0): Promise<void> {
+        try {
+            const continuumModule = await import('./continuumMemory');
+            const continuum = continuumModule?.continuum;
+
+            if (!continuum || typeof continuum.store !== 'function') {
+                throw new Error('Continuum memory not ready');
+            }
+
+            await continuum.store(
+                `[INTROSPECTION] Injected Concept Vector: ${label} (Str: ${strength})`,
+                undefined,
+                ['system', 'concept-vector']
+            );
+        } catch (e) {
+            if (attempt < 3) {
+                setTimeout(() => {
+                    void this.persistConceptToContinuum(label, strength, attempt + 1);
+                }, 250 * (attempt + 1));
+                return;
+            }
+
+            console.error("[INTROSPECTION] Failed to persist concept", e);
+        }
     }
 
 
@@ -785,10 +816,10 @@ export class IntrospectionEngine {
             activeAgents = orchestrator.getActiveCount();
 
             // Use systeminformation or built-in node usage
-            const { currentLoad, mem } = await import('systeminformation');
-            const load = await currentLoad();
+            const { mem } = await import('systeminformation');
+            const { cpuLoadService } = await import('./system/cpuLoadService');
             const ram = await mem();
-            cpu = load.currentLoad;
+            cpu = await cpuLoadService.getCurrentLoadPercent();
             memory = ram.active / (1024 * 1024); // MB
         } catch (e) {
             // Fallback for mock/test environments
@@ -990,7 +1021,19 @@ export class IntrospectionEngine {
         // RECORD ORIENTATION THOUGHTS
         if (violatedAxioms.length > 0) {
             const thought = `[INTROSPECTION] Orientation Violation: ${violatedAxioms.join(', ')}`;
-            this.processNeuralOutput(`<thought>${thought}</thought>`); // Re-uses existing thought ingestion
+            const now = Date.now();
+            const thoughtKey = thought.toLowerCase();
+            const shouldEmit =
+                thoughtKey !== this.lastOrientationThoughtKey
+                || now - this.lastOrientationThoughtAt >= this.orientationThoughtCooldownMs;
+
+            if (shouldEmit) {
+                this.lastOrientationThoughtKey = thoughtKey;
+                this.lastOrientationThoughtAt = now;
+                this.processNeuralOutput(`<thought>${thought}</thought>`); // Re-uses existing thought ingestion
+            }
+        } else {
+            this.lastOrientationThoughtKey = '';
         }
 
         // Drift Score Calculation

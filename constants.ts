@@ -61,7 +61,7 @@ export const KERNEL_HEROS: Agent[] = [
     enabled: true,
     cpuUsage: 12, ramUsage: 150, lastActive: Date.now(),
     memoryLocation: 'VRAM',
-    capabilities: [AgentCapability.SYSTEM_DESIGN, AgentCapability.CONTEXT_MANAGEMENT, AgentCapability.TOOL_WEB_SEARCH, AgentCapability.TOOL_MEMORY_WRITE],
+    capabilities: [AgentCapability.SYSTEM_DESIGN, AgentCapability.CONTEXT_MANAGEMENT, AgentCapability.TOOL_WEB_SEARCH, AgentCapability.TOOL_MEMORY_WRITE, AgentCapability.TOOL_CODE_EXECUTION],
     tier: AgentTier.CORE,
     preferredMemory: 'VRAM'
   },

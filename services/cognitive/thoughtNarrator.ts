@@ -53,6 +53,13 @@ export class ThoughtNarrator {
         let extractedCount = 0;
 
         try {
+            await graph.createNode('User', {
+                id: userId,
+                name: userId,
+                type: 'SESSION_USER',
+                lastSeenAt: Date.now()
+            }, 'id');
+
             // 1. Extract Names
             for (const pattern of this.extractionPatterns.name) {
                 const match = message.match(pattern);
@@ -795,4 +802,3 @@ If you have NOTHING meaningful to say, respond with: {"thought":"","intent":"REF
 }
 
 export const thoughtNarrator = new ThoughtNarrator();
-

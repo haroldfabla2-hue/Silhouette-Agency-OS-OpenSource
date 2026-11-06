@@ -1,0 +1,32 @@
+FROM node:20-bookworm-slim
+
+WORKDIR /app
+
+# Native module toolchain for packages like better-sqlite3.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    make \
+    g++ \
+    git \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ARG SILHOUETTE_API_KEY=
+ARG VITE_BACKEND_URL=https://silhouette.albertofarah.com
+ENV SILHOUETTE_API_KEY=${SILHOUETTE_API_KEY}
+ENV VITE_SILHOUETTE_API_KEY=${SILHOUETTE_API_KEY}
+ENV VITE_API_KEY=${SILHOUETTE_API_KEY}
+ENV VITE_BACKEND_URL=${VITE_BACKEND_URL}
+
+COPY package*.json ./
+RUN npm install
+
+COPY . .
+RUN npm run build
+ENV NODE_ENV=production
+
+EXPOSE 3006 5173
+
+CMD ["npm", "run", "boot"]

@@ -136,6 +136,30 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
     }
 });
 
+server.on('upgrade', async (req, socket, head) => {
+    try {
+        const pathname = new URL(req.url || '', 'http://localhost').pathname;
+
+        if (pathname === '/ws') {
+            const { gateway } = await import('./gateway');
+            if (gateway.handleUpgrade(req, socket, head)) {
+                return;
+            }
+        }
+
+        if (pathname === '/api/terminal/ws') {
+            const { TerminalGateway } = await import('./channels/terminalWebSocket');
+            if (TerminalGateway.handleUpgrade(req, socket, head)) {
+                return;
+            }
+        }
+    } catch (error) {
+        console.error('[GATEWAY] Upgrade routing failed:', error);
+    }
+
+    socket.destroy();
+});
+
 // ═══════════════════════════════════════════════════════════════
 // GRACEFUL SHUTDOWN - Clean up all resources properly
 // ═══════════════════════════════════════════════════════════════

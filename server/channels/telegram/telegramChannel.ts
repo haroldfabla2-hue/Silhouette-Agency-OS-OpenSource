@@ -8,8 +8,7 @@
 import { IChannel, IncomingMessage, OutgoingMessage, ChannelStatus, MessageHandler } from '../channelInterface';
 import { Bot, Context, InputFile } from 'grammy';
 import { geminiService } from '../../../services/geminiService';
-import fs from 'fs';
-import path from 'path';
+import { mutateConfigFile } from '../../config/configSchema';
 
 const logger = {
     info: (msg: string, ...args: any[]) => console.log(`[Telegram] ℹ️ ${msg}`, ...args),
@@ -204,21 +203,30 @@ export class TelegramChannel implements IChannel {
                     logger.info(`🛡️ First-contact secured! Trusting user ${userId} (@${ctx.from.username || 'unknown'}) as Primary Admin.`);
                     this.config.allowedChatIds = [userId];
 
-                    // Persist to .env.local to survive reboots
+                    // Persist to the canonical JSON config used by this deployment.
                     try {
-                        const envPath = path.join(process.cwd(), '.env.local');
-                        if (fs.existsSync(envPath)) {
-                            let envContent = fs.readFileSync(envPath, 'utf8');
-                            if (envContent.includes('TELEGRAM_ALLOWED_IDS=')) {
-                                envContent = envContent.replace(/TELEGRAM_ALLOWED_IDS=.*/g, `TELEGRAM_ALLOWED_IDS=${userId}`);
-                            } else {
-                                envContent += `\nTELEGRAM_ALLOWED_IDS=${userId}\n`;
-                            }
-                            fs.writeFileSync(envPath, envContent, 'utf8');
-                            logger.info(`🔒 Allowed ID ${userId} permanently saved to .env.local`);
-                        }
+                        mutateConfigFile((config) => {
+                            config.channels = config.channels ?? {};
+                            config.channels.telegram = config.channels.telegram ?? {};
+
+                            const existing = Array.isArray(config.channels.telegram.allowedChatIds)
+                                ? config.channels.telegram.allowedChatIds
+                                : config.channels.telegram.allowedIds;
+
+                            const nextIds = Array.from(
+                                new Set(
+                                    [userId, ...(Array.isArray(existing) ? existing : [])]
+                                        .map((id) => parseInt(String(id).trim(), 10))
+                                        .filter((id) => !Number.isNaN(id))
+                                )
+                            );
+
+                            config.channels.telegram.allowedChatIds = nextIds;
+                            delete config.channels.telegram.allowedIds;
+                        });
+                        logger.info(`🔒 Allowed ID ${userId} permanently saved to silhouette.config.json`);
                     } catch (e) {
-                        logger.warn(`Failed to persist ID to .env.local:`, e);
+                        logger.warn(`Failed to persist ID to silhouette.config.json:`, e);
                     }
 
                     await next();

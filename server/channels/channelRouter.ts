@@ -106,7 +106,12 @@ class ChannelRouter {
     private async handleIncoming(msg: IncomingMessage): Promise<void> {
         try {
             // 0. Lookup User Identity and Role
-            const user = identityService.getUserByChannelId(msg.channel, msg.senderId);
+            await identityService.init();
+
+            let user = identityService.getUserByChannelId(msg.channel, msg.senderId);
+            if (!user && ['telegram', 'discord', 'whatsapp'].includes(msg.channel)) {
+                user = identityService.bootstrapPrimaryChannelOwner(msg.channel, msg.senderId);
+            }
             msg.role = user ? user.role : UserRole.GUEST;
 
             // 1. Get or create a session for this chat

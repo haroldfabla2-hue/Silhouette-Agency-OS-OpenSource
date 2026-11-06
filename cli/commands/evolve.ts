@@ -3,7 +3,7 @@
 // Trigger manual evolution cycle for agents
 // ═══════════════════════════════════════════════════════════════
 
-import { C, printCompactBanner, printSection, printCheck, isServerRunning, Spinner } from '../utils/ui';
+import { C, printCompactBanner, printSection, printCheck, isServerRunning, Spinner, getApiBaseUrl } from '../utils/ui';
 
 interface EvolveOptions {
     all?: boolean;
@@ -13,6 +13,7 @@ interface EvolveOptions {
 export async function evolveCommand(agentId: string | undefined, options: EvolveOptions) {
     printCompactBanner();
     printSection('Agent Evolution', '🧬');
+    const apiBaseUrl = getApiBaseUrl();
 
     if (!await isServerRunning()) {
         printCheck('fail', 'Server is not running');
@@ -25,19 +26,19 @@ export async function evolveCommand(agentId: string | undefined, options: Evolve
         spinner.start();
 
         try {
-            const res = await fetch('http://localhost:3005/v1/orchestrator/agents', { signal: AbortSignal.timeout(5000) });
+            const res = await fetch(`${apiBaseUrl}/v1/orchestrator/agents`, { signal: AbortSignal.timeout(5000) });
             const data = await res.json() as any;
             const agents = Array.isArray(data) ? data : data?.agents || [];
             spinner.stop(`Found ${agents.length} agents`, 'ok');
 
             for (const agent of agents) {
-                await evolveAgent(agent.id, agent.name, options.dryRun);
+                await evolveAgent(agent.id, agent.name, apiBaseUrl, options.dryRun);
             }
         } catch (err: any) {
             spinner.stop('Failed to fetch agents', 'fail');
         }
     } else if (agentId) {
-        await evolveAgent(agentId, agentId, options.dryRun);
+        await evolveAgent(agentId, agentId, apiBaseUrl, options.dryRun);
     } else {
         console.log(`    ${C.YELLOW}Usage:${C.RESET}`);
         console.log(`    ${C.WHITE}silhouette evolve <agentId>${C.RESET}     Evolve specific agent`);
@@ -45,14 +46,14 @@ export async function evolveCommand(agentId: string | undefined, options: Evolve
     }
 }
 
-async function evolveAgent(id: string, name: string, dryRun?: boolean) {
+async function evolveAgent(id: string, name: string, apiBaseUrl: string, dryRun?: boolean) {
     if (dryRun) {
         printCheck('ok', `[DRY RUN] Would evolve: ${name} (${id})`);
         return;
     }
 
     try {
-        const res = await fetch(`http://localhost:3005/v1/orchestrator/evolve/${id}`, {
+        const res = await fetch(`${apiBaseUrl}/v1/orchestrator/evolve/${id}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             signal: AbortSignal.timeout(15000)

@@ -35,6 +35,70 @@ const LEGACY_TAG_MAP: Record<string, string> = {
     'SEARCH': 'web_search',
 };
 
+const PRIVILEGED_ROLES = new Set(['CREATOR', 'ADMIN']);
+const PUBLIC_TOOL_ALLOWLIST = new Set([
+    'web_search',
+    'read_url',
+    'academic_search',
+    'conduct_research',
+    'generate_image',
+    'generate_video',
+    'create_presentation',
+    'navigate_to',
+    'ui_action',
+]);
+const PRIVILEGED_TOOL_NAMES = new Set([
+    'read_file',
+    'write_file',
+    'list_files',
+    'execute_code',
+    'system_execute_command',
+    'system_open_app',
+    'system_get_screenshot',
+    'system_get_info',
+    'get_system_config',
+    'update_system_config',
+    'read_architecture',
+    'read_system_logs',
+    'analyze_and_repair',
+    'browser_navigate',
+    'browser_action',
+    'browser_extract',
+    'browser_screenshot',
+    'github_create_pr',
+    'github_list_prs',
+    'github_check_pr',
+    'request_collaboration',
+]);
+
+function isPrivilegedRole(userRole: string = 'GUEST'): boolean {
+    return PRIVILEGED_ROLES.has(userRole);
+}
+
+function isToolVisibleToRole(tool: DynamicTool, userRole: string = 'GUEST'): boolean {
+    if (isPrivilegedRole(userRole)) {
+        return true;
+    }
+
+    if (PRIVILEGED_TOOL_NAMES.has(tool.name)) {
+        return false;
+    }
+
+    return PUBLIC_TOOL_ALLOWLIST.has(tool.name);
+}
+
+function isToolExecutableByRole(toolName: string, userRole: string = 'GUEST'): boolean {
+    if (isPrivilegedRole(userRole)) {
+        return true;
+    }
+
+    if (PRIVILEGED_TOOL_NAMES.has(toolName)) {
+        return false;
+    }
+
+    return PUBLIC_TOOL_ALLOWLIST.has(toolName);
+}
+
 export interface ToolCallResult {
     toolName: string;
     success: boolean;
@@ -67,8 +131,10 @@ class ChatToolIntegration {
      * Get tool descriptions for system prompt injection
      * Use this when direct function calling isn't supported
      */
-    getToolInstructionsForPrompt(): string {
-        const tools = toolRegistry.getAllTools().filter(t => t.enabled);
+    getToolInstructionsForPrompt(userRole: string = 'GUEST'): string {
+        const tools = toolRegistry
+            .getAllTools()
+            .filter(t => t.enabled && isToolVisibleToRole(t, userRole));
 
         if (tools.length === 0) return '';
 
@@ -170,14 +236,13 @@ For general questions, respond conversationally without using tools.
         console.log(`[CHAT_TOOLS] 🔧 Executing tool: ${toolName}`, args);
 
         try {
-            // [ANTI-PROMPT INJECTION] Hard Security Enforcement
-            const highRiskTools = ['execute_command', 'write_file', 'janus_repair', 'delete_file', 'shell', 'spawn_agent', 'git_commit', 'git_push'];
-            if (userRole === 'GUEST' && highRiskTools.includes(toolName.toLowerCase())) {
+            // [ANTI-PROMPT INJECTION] Hard role-based tool enforcement
+            if (!isToolExecutableByRole(toolName, userRole)) {
                 console.error(`[SECURITY] 🚨 Blocked high-risk tool "${toolName}" for GUEST user`);
                 return {
                     toolName,
                     success: false,
-                    error: `SECURITY_VIOLATION: Insufficient privileges (GUEST). This action is prohibited.`,
+                    error: `SECURITY_VIOLATION: Insufficient privileges for tool "${toolName}".`,
                     executionTimeMs: Date.now() - startTime
                 };
             }

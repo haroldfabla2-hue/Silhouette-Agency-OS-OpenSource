@@ -109,16 +109,18 @@ export async function checkPostgres(projectRoot: string): Promise<CheckResult> {
 // ─── Configuration Checks ────────────────────────────────────
 export function checkEnvFile(projectRoot: string): CheckResult {
     const envPath = path.join(projectRoot, '.env.local');
+    const serverEnvPath = path.join(projectRoot, '.env.server');
     const configPath = path.join(projectRoot, 'silhouette.config.json');
 
     if (fs.existsSync(envPath)) return { name: 'Environment File', status: 'ok', message: '.env.local found' };
+    if (fs.existsSync(serverEnvPath)) return { name: 'Environment File', status: 'ok', message: '.env.server found' };
     if (fs.existsSync(configPath)) return { name: 'Environment File', status: 'warn', message: 'silhouette.config.json found, no .env.local', detail: 'Run silhouette setup for full config' };
     return { name: 'Environment File', status: 'fail', message: 'No configuration found', detail: 'Run silhouette setup', fixable: true, fixCommand: 'silhouette setup' };
 }
 
 export function checkApiKeys(projectRoot: string): CheckResult {
     const env = readEnvFile(projectRoot);
-    const keys = ['GEMINI_API_KEY', 'OPENAI_API_KEY', 'GROQ_API_KEY', 'OPENROUTER_API_KEY', 'DEEPSEEK_API_KEY'];
+    const keys = ['GEMINI_API_KEY', 'MINIMAX_API_KEY', 'OPENAI_API_KEY', 'GROQ_API_KEY', 'OPENROUTER_API_KEY', 'DEEPSEEK_API_KEY'];
     const found = keys.filter(k => env[k] && env[k].length > 5);
     
     if (found.length >= 1) return { name: 'LLM API Keys', status: 'ok', message: `${found.length} provider(s) configured`, detail: found.join(', ') };
@@ -235,7 +237,7 @@ export function checkEvolutionScheduler(projectRoot: string): CheckResult {
 // ─── Utility Functions ───────────────────────────────────────
 function readEnvFile(projectRoot: string): Record<string, string> {
     const result: Record<string, string> = {};
-    const envPaths = [path.join(projectRoot, '.env.local'), path.join(projectRoot, '.env')];
+    const envPaths = [path.join(projectRoot, '.env.local'), path.join(projectRoot, '.env.server'), path.join(projectRoot, '.env')];
 
     for (const envPath of envPaths) {
         if (fs.existsSync(envPath)) {
@@ -256,13 +258,43 @@ function readEnvFile(projectRoot: string): Record<string, string> {
     if (fs.existsSync(configPath)) {
         try {
             const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+            if (config.system?.port) {
+                result['PORT'] = result['PORT'] || String(config.system.port);
+            }
+            if (config.memory?.neo4j?.uri) {
+                result['NEO4J_URI'] = result['NEO4J_URI'] || config.memory.neo4j.uri;
+            }
+            if (config.memory?.redis?.host) {
+                const redisPort = config.memory?.redis?.port || 6379;
+                result['REDIS_URL'] = result['REDIS_URL'] || `redis://${config.memory.redis.host}:${redisPort}`;
+            }
             if (config.llm?.providers?.gemini?.apiKey && config.llm.providers.gemini.apiKey !== 'LOADED_FROM_ENV') {
                 result['GEMINI_API_KEY'] = result['GEMINI_API_KEY'] || config.llm.providers.gemini.apiKey;
+            }
+            if (config.llm?.providers?.minimax?.apiKey) {
+                result['MINIMAX_API_KEY'] = result['MINIMAX_API_KEY'] || config.llm.providers.minimax.apiKey;
             }
             if (config.channels?.telegram?.botToken) {
                 result['TELEGRAM_BOT_TOKEN'] = result['TELEGRAM_BOT_TOKEN'] || config.channels.telegram.botToken;
             }
         } catch { /* ignore parse errors */ }
+    }
+
+    const passthroughKeys = [
+        'PORT',
+        'NODE_ENV',
+        'NEO4J_URI',
+        'REDIS_URL',
+        'DATABASE_URL',
+        'GEMINI_API_KEY',
+        'MINIMAX_API_KEY',
+        'TELEGRAM_BOT_TOKEN'
+    ] as const;
+
+    for (const key of passthroughKeys) {
+        if (process.env[key]) {
+            result[key] = process.env[key] as string;
+        }
     }
 
     return result;
@@ -288,6 +320,9 @@ export async function runAllChecks(projectRoot: string): Promise<{
     connectivity: CheckResult[];
     autonomy: CheckResult[];
 }> {
+    const env = readEnvFile(projectRoot);
+    const configuredPort = parseInt(env['PORT'] || '3005', 10);
+
     return {
         runtime: [
             checkNodeVersion(),
@@ -311,7 +346,7 @@ export async function runAllChecks(projectRoot: string): Promise<{
             checkRBAC(projectRoot),
         ],
         connectivity: [
-            await checkServerHealth(),
+            await checkServerHealth(configuredPort),
             await checkGeminiApi(projectRoot),
         ],
         autonomy: [

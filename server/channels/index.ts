@@ -40,7 +40,9 @@ export async function initializeChannels(): Promise<void> {
             const { TelegramChannel } = await import('./telegram/telegramChannel');
             const tg = new TelegramChannel({
                 botToken: config.channels.telegram.botToken,
-                allowedChatIds: config.channels.telegram.allowedChatIds, // fixed config property
+                allowedChatIds: config.channels.telegram.allowedChatIds,
+                accessMode: config.channels.telegram.accessMode,
+                responseMode: config.channels.telegram.responseMode,
             });
             channelRouter.register(tg);
             registered++;

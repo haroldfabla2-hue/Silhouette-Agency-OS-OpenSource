@@ -7,6 +7,12 @@ import { Router, Request, Response } from 'express';
 
 const router = Router();
 
+function serializeUser(user: any | null) {
+    if (!user) return null;
+    const { passwordHash, ...safeUser } = user;
+    return safeUser;
+}
+
 // GET /v1/identity/setup-status - Check if initial setup is needed
 router.get('/setup-status', async (_req: Request, res: Response) => {
     try {
@@ -39,7 +45,42 @@ router.get('/status', async (_req: Request, res: Response) => {
     try {
         const { identityService } = await import('../../../services/identityService');
         await identityService.init();
-        return res.json(identityService.getStatus());
+
+        const req = _req as Request & { user?: any };
+        const requestUser = req.user;
+        if (requestUser) {
+            const googleStatus = identityService.getUserGoogleStatus(requestUser.id);
+            return res.json({
+                authenticated: true,
+                user: serializeUser(requestUser),
+                device: null,
+                isCreator: requestUser.role === 'CREATOR',
+                googleLinked: googleStatus.linked
+            });
+        }
+
+        const sessionId = req.headers['x-session-id'] as string | undefined;
+        if (sessionId) {
+            const sessionUser = identityService.validateSessionAndGetUser(sessionId);
+            if (sessionUser) {
+                const googleStatus = identityService.getUserGoogleStatus(sessionUser.id);
+                return res.json({
+                    authenticated: true,
+                    user: serializeUser(sessionUser),
+                    device: null,
+                    isCreator: sessionUser.role === 'CREATOR',
+                    googleLinked: googleStatus.linked
+                });
+            }
+        }
+
+        return res.json({
+            authenticated: false,
+            user: null,
+            device: null,
+            isCreator: false,
+            googleLinked: false
+        });
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
@@ -62,7 +103,7 @@ router.post('/setup', async (req: Request, res: Response) => {
         const { identityService } = await import('../../../services/identityService');
         await identityService.init();
 
-        const { email, password, name, gitToken, gitOwner, gitRepo } = req.body;
+        const { email, password, name, gitToken, gitOwner, gitRepo, fingerprint, deviceName } = req.body;
 
         if (!email || !password || !name) {
             return res.status(400).json({ error: 'Missing email, password, or name' });
@@ -179,12 +220,12 @@ router.post('/setup', async (req: Request, res: Response) => {
         const user = await identityService.registerInitialAdmin(email, passwordHash, name);
 
         // Auto-login after setup
-        const fingerprint = req.headers['user-agent'] || 'unknown-device';
-        const deviceName = 'Initial Setup Device';
-        const device = identityService.registerDevice(user.id, fingerprint, deviceName, true);
+        const trustedFingerprint = fingerprint || req.headers['user-agent'] || 'unknown-device';
+        const trustedDeviceName = deviceName || 'Initial Setup Device';
+        const device = identityService.registerDevice(user.id, trustedFingerprint, trustedDeviceName, true);
         const session = identityService.createSession(user.id, device.id);
 
-        return res.json({ success: true, user, session });
+        return res.json({ success: true, user: serializeUser(user), session });
     } catch (error: any) {
         return res.status(400).json({ error: error.message }); // 400 for bad request like "already setup"
     }
@@ -196,7 +237,7 @@ router.post('/login', async (req: Request, res: Response) => {
         const { identityService } = await import('../../../services/identityService');
         await identityService.init();
 
-        const { email, password } = req.body;
+        const { email, password, fingerprint, deviceName } = req.body;
 
         if (!email || !password) {
             return res.status(400).json({ error: 'Missing email or password' });
@@ -208,12 +249,13 @@ router.post('/login', async (req: Request, res: Response) => {
         const user = await identityService.loginLocal(email, passwordHash);
 
         if (user) {
-            const fingerprint = req.headers['user-agent'] || 'unknown-device';
-            const device = identityService.registerDevice(user.id, fingerprint, 'Browser Login', true);
+            const trustedFingerprint = fingerprint || req.headers['user-agent'] || 'unknown-device';
+            const trustedDeviceName = deviceName || 'Browser Login';
+            const device = identityService.registerDevice(user.id, trustedFingerprint, trustedDeviceName, true);
             const session = identityService.createSession(user.id, device.id);
             return res.json({
                 success: true,
-                user,
+                user: serializeUser(user),
                 device,
                 session,
                 isCreator: user && user.role === 'CREATOR'
@@ -243,7 +285,7 @@ router.post('/auto-login', async (req: Request, res: Response) => {
         if (user) {
             return res.json({
                 success: true,
-                user,
+                user: serializeUser(user),
                 device: identityService.getDeviceByFingerprint(fingerprint),
                 isCreator: user && user.role === 'CREATOR',
                 googleLinked: user && user.googleLinked

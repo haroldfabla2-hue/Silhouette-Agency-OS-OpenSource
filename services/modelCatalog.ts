@@ -78,8 +78,8 @@ export const modelCatalog: ModelCatalogEntry[] = [
 
     // --- MINIMAX ---
     {
-        id: 'abab6.5s-chat',
-        name: 'MiniMax 6.5s',
+        id: 'MiniMax-M2.5',
+        name: 'MiniMax M2.5',
         provider: 'MINIMAX',
         contextWindow: 128000,
         capabilities: { vision: false, reasoning: false, toolUse: true, streaming: true },

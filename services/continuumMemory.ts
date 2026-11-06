@@ -10,6 +10,11 @@ import { MemoryNodeSchema } from './memorySchema'; // Added missing import
 
 const SNAPSHOT_PATH = path.join(process.cwd(), 'data', 'memory_snapshot.json');
 
+function getPositiveEnvNumber(name: string, fallback: number): number {
+    const raw = Number.parseInt(process.env[name] || '', 10);
+    return Number.isFinite(raw) && raw > 0 ? raw : fallback;
+}
+
 // --- SILHOUETTE CONTINUUM MEMORY SYSTEM V5.0 (UNIFIED WORKING MEMORY) ---
 // Architecture: 4-Tier Hierarchical Storage
 // L1: RAM (WORKING - Unified Fast Access)
@@ -42,6 +47,8 @@ class ContinuumMemorySystem {
         /I'm aware of: Storing memory/i,
         /NARRATIVE.*NARRATIVE/i
     ];
+    private readonly internalTraceCooldownMs = getPositiveEnvNumber('MEMORY_INTERNAL_TRACE_COOLDOWN_MS', 10 * 60 * 1000);
+    private lastInternalTraceAt: Map<string, number> = new Map();
 
     // [FIX] Identity Re-Perspectiver: Transforms first-person user statements to third-person
     // Prevents Silhouette from confusing user identity with her own
@@ -117,6 +124,39 @@ class ContinuumMemorySystem {
     public async forceConsolidation() {
         console.log("[CONTINUUM] 🧠 Forcing Memory Consolidation...");
         return await this.consolidateRamImmediate();
+    }
+
+    private shouldEmitStoreTrace(content: string, tags: string[] = []): boolean {
+        const normalized = content.trim().toLowerCase();
+        const normalizedTags = tags.map(tag => String(tag).toLowerCase());
+
+        if (!normalized) return false;
+
+        const isInternalTrace =
+            normalized.startsWith('[introspection]')
+            || normalized.startsWith('[narrative]')
+            || normalizedTags.includes('system')
+            || normalizedTags.includes('concept-vector')
+            || normalizedTags.includes('narrative');
+
+        if (!isInternalTrace) {
+            return true;
+        }
+
+        const traceKey = normalized.startsWith('[introspection]')
+            ? 'internal:introspection'
+            : normalized.startsWith('[narrative]')
+                ? 'internal:narrative'
+                : 'internal:system';
+
+        const now = Date.now();
+        const lastSeenAt = this.lastInternalTraceAt.get(traceKey) || 0;
+        if (now - lastSeenAt < this.internalTraceCooldownMs) {
+            return false;
+        }
+
+        this.lastInternalTraceAt.set(traceKey, now);
+        return true;
     }
 
     // --- PERSISTENCE SNAPSHOTS ---
@@ -283,6 +323,122 @@ class ContinuumMemorySystem {
         }
 
         return nodes;
+    }
+
+    public async getExplorerNodes(limitPerTier: number = 40): Promise<Record<MemoryTier, MemoryNode[]>> {
+        const state = await this.getExplorerState(limitPerTier);
+        return state.nodes;
+    }
+
+    private estimateNodesSize(memoryNodes: MemoryNode[]): number {
+        return memoryNodes.reduce((total, node) => {
+            const contentBytes = typeof node?.content === 'string' ? node.content.length * 2 : 0;
+            const tagBytes = Array.isArray(node?.tags) ? node.tags.join('').length * 2 : 0;
+            return total + contentBytes + tagBytes + 128;
+        }, 0);
+    }
+
+    public async getExplorerState(limitPerTier: number = 40) {
+        const safeLimit = Math.max(10, Math.min(limitPerTier, 200));
+        const now = Date.now();
+        const nodes: Record<MemoryTier, MemoryNode[]> = {
+            [MemoryTier.WORKING]: [...this.working]
+                .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+                .slice(0, safeLimit),
+            [MemoryTier.MEDIUM]: [],
+            [MemoryTier.LONG]: [],
+            [MemoryTier.DEEP]: []
+        };
+
+        try {
+            const { vectorMemory } = await import('./vectorMemoryService');
+            const [mediumNodes, longNodes, deepArchived, deepVectors, stats] = await Promise.all([
+                lancedbService.getNodesByTier(MemoryTier.MEDIUM, safeLimit),
+                lancedbService.getNodesByTier(MemoryTier.LONG, safeLimit),
+                lancedbService.getNodesByTier(MemoryTier.DEEP, safeLimit),
+                vectorMemory.getAllNodes(safeLimit),
+                this.getStats(true),
+            ]);
+
+            nodes[MemoryTier.MEDIUM] = mediumNodes;
+            nodes[MemoryTier.LONG] = longNodes;
+
+            const deepFromVector = deepVectors.map(v => ({
+                id: v.id,
+                content: v.content || '',
+                tier: MemoryTier.DEEP,
+                timestamp: v.timestamp || now,
+                tags: v.tags || [],
+                importance: v.importance ?? 0.5,
+                decayHealth: (v as any).decayHealth || 100,
+                accessCount: v.accessCount || 0,
+                lastAccess: v.lastAccess || now,
+                compressionLevel: (v as any).compressionLevel || 0,
+                timeGrid: (v as any).timeGrid,
+                raptorLevel: (v as any).raptorLevel,
+            } as MemoryNode));
+
+            const deepMap = new Map<string, MemoryNode>();
+            deepArchived.forEach(node => deepMap.set(node.id, node));
+            deepFromVector.forEach(node => deepMap.set(node.id, node));
+
+            nodes[MemoryTier.DEEP] = Array.from(deepMap.values())
+                .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+                .slice(0, safeLimit);
+
+            const meta = {
+                [MemoryTier.WORKING]: {
+                    total: stats.working || 0,
+                    visible: nodes[MemoryTier.WORKING]?.length || 0,
+                    approxSizeBytes: this.estimateNodesSize(nodes[MemoryTier.WORKING] || [])
+                },
+                [MemoryTier.MEDIUM]: {
+                    total: stats.medium || 0,
+                    visible: nodes[MemoryTier.MEDIUM]?.length || 0,
+                    approxSizeBytes: this.estimateNodesSize(nodes[MemoryTier.MEDIUM] || [])
+                },
+                [MemoryTier.LONG]: {
+                    total: stats.long || 0,
+                    visible: nodes[MemoryTier.LONG]?.length || 0,
+                    approxSizeBytes: this.estimateNodesSize(nodes[MemoryTier.LONG] || [])
+                },
+                [MemoryTier.DEEP]: {
+                    total: stats.deep || 0,
+                    visible: nodes[MemoryTier.DEEP]?.length || 0,
+                    approxSizeBytes: this.estimateNodesSize(nodes[MemoryTier.DEEP] || [])
+                }
+            };
+
+            return { nodes, stats, meta, limit: safeLimit };
+        } catch (e) {
+            console.error("[CONTINUUM] Failed to fetch explorer nodes:", e);
+        }
+
+        const stats = await this.getStats(true);
+        const meta = {
+            [MemoryTier.WORKING]: {
+                total: stats.working || 0,
+                visible: nodes[MemoryTier.WORKING]?.length || 0,
+                approxSizeBytes: this.estimateNodesSize(nodes[MemoryTier.WORKING] || [])
+            },
+            [MemoryTier.MEDIUM]: {
+                total: stats.medium || 0,
+                visible: nodes[MemoryTier.MEDIUM]?.length || 0,
+                approxSizeBytes: this.estimateNodesSize(nodes[MemoryTier.MEDIUM] || [])
+            },
+            [MemoryTier.LONG]: {
+                total: stats.long || 0,
+                visible: nodes[MemoryTier.LONG]?.length || 0,
+                approxSizeBytes: this.estimateNodesSize(nodes[MemoryTier.LONG] || [])
+            },
+            [MemoryTier.DEEP]: {
+                total: stats.deep || 0,
+                visible: nodes[MemoryTier.DEEP]?.length || 0,
+                approxSizeBytes: this.estimateNodesSize(nodes[MemoryTier.DEEP] || [])
+            }
+        };
+
+        return { nodes, stats, meta, limit: safeLimit };
     }
 
     public clearHippocampus(nodeIds: string[]) {
@@ -459,7 +615,9 @@ class ContinuumMemorySystem {
         // skipIngestion=true indicates this is an internal/narrative store that should not cascade
         if (!skipIngestion) {
             // 3. Update Introspection about new thought (but NOT for narrative persistence)
-            introspection.setRecentThoughts([`Storing memory: ${content.substring(0, 30)}...`]);
+            if (this.shouldEmitStoreTrace(content, node.tags || [])) {
+                introspection.setRecentThoughts([`Storing memory: ${content.substring(0, 30)}...`]);
+            }
 
             // 4. Notify Dreamer (Event-Driven) - with null check
             import('./dreamerService').then(({ dreamer }) => {
@@ -799,44 +957,50 @@ class ContinuumMemorySystem {
     private cachedStats: any = null;
     private lastStatsCacheTime = 0;
 
-    public async getStats() {
+    public async getStats(forceRefresh: boolean = false) {
         const now = Date.now();
-        if (this.cachedStats && (now - this.lastStatsCacheTime < this.CACHE_TTL)) {
+        if (!forceRefresh && this.cachedStats && (now - this.lastStatsCacheTime < this.CACHE_TTL)) {
             return this.cachedStats;
         }
 
-        // Fetch real stats from Vector Memory (Deep Tier)
-        let vectorStats = { count: 0, vectorsCount: 0 };
+        let vectorCounts: { total: number; [key: string]: number } = { total: 0 };
         try {
-            // Dynamic import to avoid circular dependencies
             const { vectorMemory } = await import('./vectorMemoryService');
-            vectorStats = await vectorMemory.getStats();
+            vectorCounts = await vectorMemory.getNodeCounts() as { total: number; [key: string]: number };
         } catch (e) {
             console.error("[CONTINUUM] Failed to fetch stats from Vector Memory", e);
         }
 
-        // Fetch real stats from LanceDB (Medium/Long Tiers)
-        let dbNodes: MemoryNode[] = [];
+        let tierCounts: Record<MemoryTier, number> = {
+            [MemoryTier.WORKING]: 0,
+            [MemoryTier.MEDIUM]: 0,
+            [MemoryTier.LONG]: 0,
+            [MemoryTier.DEEP]: 0,
+        };
         try {
-            dbNodes = await lancedbService.getAllNodes();
+            tierCounts = await lancedbService.getTierCounts();
         } catch (e) {
             console.error("[CONTINUUM] Failed to fetch stats from LanceDB", e);
         }
 
-        const mediumCount = dbNodes.filter(n => n.tier === MemoryTier.MEDIUM || !n.tier).length;
-        const longCount = dbNodes.filter(n => n.tier === MemoryTier.LONG).length;
-
-        // [FIX 2026-02] Use working.length directly (ultraShort/short are aliases — was double-counting)
         const workingCount = this.working.length;
+        const mediumCount = tierCounts[MemoryTier.MEDIUM] || 0;
+        const longCount = tierCounts[MemoryTier.LONG] || 0;
+        const deepArchivedCount = tierCounts[MemoryTier.DEEP] || 0;
+        const vectorTierTotal = Object.entries(vectorCounts)
+            .filter(([key]) => key !== 'total')
+            .reduce((sum, [, value]) => sum + (Number(value) || 0), 0);
+        const deepVectorCount = (vectorCounts[MemoryTier.DEEP] ?? vectorTierTotal ?? vectorCounts.total ?? 0) as number;
+        const deepCount = deepArchivedCount + deepVectorCount;
+
         this.cachedStats = {
             working: workingCount,
-            // Legacy fields (kept for backward compat, both report the unified count)
             ultra: workingCount,
             short: 0,
             medium: mediumCount,
             long: longCount,
-            deep: vectorStats.count,
-            total: workingCount + mediumCount + longCount + vectorStats.count,
+            deep: deepCount,
+            total: workingCount + mediumCount + longCount + deepCount,
             avgHealth: 100,
             archivedNodes: longCount
         };
@@ -900,10 +1064,17 @@ class ContinuumMemorySystem {
             // 3. Search Deep Memory (SEMANTIC / VECTOR)
             // Dynamic import to avoid circular dependency
             const { vectorMemory } = await import('./vectorMemoryService');
-            const { geminiService } = await import('./geminiService');
+            const geminiModule = await import('./geminiService');
+            const embed =
+                geminiModule.generateEmbedding
+                || geminiModule.geminiService?.generateEmbedding;
+
+            if (!vectorMemory) {
+                throw new Error('Vector memory service not available');
+            }
 
             // Generate Embedding for Query
-            const embedding = await geminiService.generateEmbedding(query);
+            const embedding = embed ? await embed(query) : null;
 
             let deepVectors: any[] = [];
 

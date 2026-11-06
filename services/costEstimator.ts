@@ -48,6 +48,7 @@ export class CostEstimator {
             'deepseek-chat': { input: 0.14, output: 0.28 },      // General chat
 
             // --- LLMs: MiniMax 2.5 (Direct) ---
+            'MiniMax-M2.5': { input: 0.15, output: 0.60 },       // Approx cost
             'abab-6.5s-chat': { input: 0.15, output: 0.60 },     // Approx cost (lower than OR)
             'minimax-m2.1': { input: 0.30, output: 1.20 },       // Legacy
 

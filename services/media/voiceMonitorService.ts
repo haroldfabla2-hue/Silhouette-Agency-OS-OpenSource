@@ -44,10 +44,20 @@ class VoiceMonitorService {
     private checkIntervalMs = 30000; // 30 seconds
     private maxConsecutiveFailures = 3;
 
+    private isLocalVoiceEngineEnabled(): boolean {
+        return process.env.ENABLE_VOICE_ENGINE === 'true'
+            && (process.env.VOICE_PROVIDER || 'local').toLowerCase() === 'local';
+    }
+
     /**
      * Start the monitoring loop
      */
     startMonitoring(): void {
+        if (!this.isLocalVoiceEngineEnabled()) {
+            console.log('[VoiceMonitor] Local voice engine disabled; monitoring not started');
+            return;
+        }
+
         if (this.healthCheckInterval) {
             console.log('[VoiceMonitor] Already running');
             return;
@@ -75,7 +85,7 @@ class VoiceMonitorService {
      * Check voice engine health
      */
     async checkHealth(): Promise<VoiceEngineHealth> {
-        if (process.env.ENABLE_VOICE_ENGINE !== 'true') {
+        if (!this.isLocalVoiceEngineEnabled()) {
             this.lastHealthStatus = 'OFFLINE';
             return { status: 'OFFLINE', lastCheck: Date.now() };
         }
@@ -653,5 +663,4 @@ export interface VoiceDiagnostics {
 }
 
 export const voiceMonitor = new VoiceMonitorService();
-
 

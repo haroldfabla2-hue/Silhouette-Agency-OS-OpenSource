@@ -47,6 +47,18 @@ const DANGEROUS_TOOLS = new Set([
     'execute_code',
     'write_file',
     'shell_exec',
+    'system_execute_command',
+    'system_open_app',
+    'system_get_screenshot',
+    'system_get_info',
+    'get_system_config',
+    'update_system_config',
+    'read_system_logs',
+    'analyze_and_repair',
+    'browser_navigate',
+    'browser_action',
+    'browser_extract',
+    'browser_screenshot',
     'github_create_pr',
     'send_email',
     'workspace_create',
@@ -60,8 +72,6 @@ const DANGEROUS_TOOLS = new Set([
  */
 const SAFE_TOOLS = new Set([
     'web_search',
-    'read_file',
-    'list_files',
     'list_my_tools',
     'workspace_read',
     'workspace_list',
@@ -72,6 +82,11 @@ const SAFE_TOOLS = new Set([
     'search_assets',
     'preview_asset',
     'read_inbox',
+    'read_url',
+    'academic_search',
+    'conduct_research',
+    'navigate_to',
+    'ui_action',
 ]);
 
 // ─── Security Manager ────────────────────────────────────────────────────────

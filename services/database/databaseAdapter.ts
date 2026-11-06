@@ -49,6 +49,10 @@ export interface DbSession {
     createdAt: number;
 }
 
+export type MemoryNodeCounts = Partial<Record<MemoryTier, number>> & {
+    total: number;
+};
+
 // ─── Main Interface ──────────────────────────────────────────────────────────
 
 export interface IDatabaseAdapter {
@@ -124,7 +128,9 @@ export interface IDatabaseAdapter {
     findSimilarNodes(nodeId: string, limit?: number): Promise<(MemoryNode & { similarity?: number })[]>;
     searchByContent(textQuery: string, limit?: number): Promise<MemoryNode[]>;
     getAllNodes(): Promise<MemoryNode[]>;
+    getRecentNodes(limit?: number): Promise<MemoryNode[]>;
     getNodesByTier(tier: MemoryTier, limit?: number): Promise<MemoryNode[]>;
+    getNodeCounts(): Promise<MemoryNodeCounts>;
     deleteNode(id: string): Promise<boolean>;
 
     // ─── Knowledge Indexing ────────────────────────────────────────────

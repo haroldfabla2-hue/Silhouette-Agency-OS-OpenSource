@@ -5,6 +5,7 @@ import screenshot from 'screenshot-desktop';
 
 
 import si from 'systeminformation';
+import { cpuLoadService } from './cpuLoadService';
 
 const execAsync = promisify(exec);
 
@@ -175,11 +176,12 @@ export class SystemControlService {
 
     public async getSystemInfo(): Promise<any> {
         try {
-            const [cpu, mem, osInfo, processes] = await Promise.all([
+            const [cpu, mem, osInfo, processes, cpuLoad] = await Promise.all([
                 si.cpu(),
                 si.mem(),
                 si.osInfo(),
-                si.processes()
+                si.processes(),
+                cpuLoadService.getCurrentLoadPercent()
             ]);
 
             return {
@@ -192,7 +194,7 @@ export class SystemControlService {
                     hostname: osInfo.hostname
                 },
                 cpu: {
-                    load: (await si.currentLoad()).currentLoad.toFixed(2) + '%',
+                    load: cpuLoad.toFixed(2) + '%',
                     cores: cpu.cores,
                     brand: cpu.brand
                 },

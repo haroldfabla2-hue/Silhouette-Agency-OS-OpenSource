@@ -13,33 +13,43 @@ export interface VoiceConfig {
     voiceId?: string;
     volume: number;
     provider: 'local' | 'minimax'; // NEW PROXY
+    localEngineEnabled: boolean;
 }
 
 export class TTSService {
     private static instance: TTSService;
     private pythonEngineUrl = 'http://localhost:8100';
     private isEngineAwake = false;
+    private healthCheckTimer: NodeJS.Timeout | null = null;
 
     // Config default
     private config: VoiceConfig = {
-        enabled: true,
+        enabled: process.env.VOICE_ENABLED !== 'false',
         autoSpeak: false,
         volume: 1.0,
-        provider: 'minimax' // Set Minimax as default provider to save VRAM
+        provider: 'minimax', // Set Minimax as default provider to save VRAM
+        localEngineEnabled: process.env.ENABLE_VOICE_ENGINE === 'true'
     };
 
     private constructor() {
-        console.log('[TTS] Service Initialized. Connecting to Voice Engine...');
-        this.loadConfig(); // Load from DB
-        this.checkEngineHealth();
-
-        // Periodic Health Check
-        setInterval(() => this.checkEngineHealth(), 30000);
+        console.log('[TTS] Service Initialized.');
+        this.loadConfig(); // Load from DB and sync health monitoring
     }
 
     private async loadConfig() {
         try {
+            const normalizeVoiceConfig = () => {
+                const originalVoiceId = this.config.voiceId;
+                if (this.config.provider === 'minimax') {
+                    this.config.voiceId = minimaxService.normalizeVoiceId(this.config.voiceId);
+                }
+                return originalVoiceId !== this.config.voiceId;
+            };
+
             // 1. Load baseline from CLI Setup (.env.local)
+            if (process.env.VOICE_ENABLED !== undefined) {
+                this.config.enabled = process.env.VOICE_ENABLED === 'true';
+            }
             if (process.env.VOICE_PROVIDER) {
                 this.config.provider = process.env.VOICE_PROVIDER as 'local' | 'minimax';
             }
@@ -47,7 +57,7 @@ export class TTSService {
                 this.config.voiceId = process.env.VOICE_ID;
             }
             if (process.env.ENABLE_VOICE_ENGINE !== undefined) {
-                this.config.enabled = process.env.ENABLE_VOICE_ENGINE === 'true';
+                this.config.localEngineEnabled = process.env.ENABLE_VOICE_ENGINE === 'true';
             }
 
             // 2. Allow SQLite runtime overrides (Web UI/Telegram settings)
@@ -55,6 +65,12 @@ export class TTSService {
             const savedConfig = sqliteService.getConfig('voice_settings');
             if (savedConfig) {
                 this.config = { ...this.config, ...savedConfig };
+            }
+
+            const normalized = normalizeVoiceConfig();
+            this.syncHealthMonitoring();
+            if (normalized) {
+                await this.saveConfig();
             }
         } catch (e) {
             console.warn('[TTS] Failed to load config', e);
@@ -75,6 +91,28 @@ export class TTSService {
             TTSService.instance = new TTSService();
         }
         return TTSService.instance;
+    }
+
+    private shouldUseLocalEngine(): boolean {
+        return this.config.provider === 'local' && this.config.localEngineEnabled;
+    }
+
+    private syncHealthMonitoring(): void {
+        if (this.shouldUseLocalEngine()) {
+            if (!this.healthCheckTimer) {
+                console.log('[TTS] Local voice engine enabled. Starting health checks.');
+                this.checkEngineHealth();
+                this.healthCheckTimer = setInterval(() => this.checkEngineHealth(), 30000);
+            }
+            return;
+        }
+
+        if (this.healthCheckTimer) {
+            clearInterval(this.healthCheckTimer);
+            this.healthCheckTimer = null;
+        }
+        this.isEngineAwake = false;
+        console.log(`[TTS] Using ${this.config.provider} voice provider without local engine.`);
     }
 
     /**
@@ -120,15 +158,19 @@ export class TTSService {
                 if (audioUrl) {
                     return audioUrl;
                 }
-                console.warn('[TTS] ⚠️ Minimax Audio Engine returned null. Falling back to Local Python Engine...');
+                console.warn('[TTS] ⚠️ Minimax Audio Engine returned null.');
             } catch (error) {
-                console.warn('[TTS] ⚠️ Minimax Audio Engine failed. Falling back to Local Python Engine...', error);
+                console.warn('[TTS] ⚠️ Minimax Audio Engine failed.', error);
             }
-            // Temporarily set provider to 'local' for this run if minimax failed entirely? 
-            // Better to just let it fallback gracefully below.
+            return null;
         }
 
         // --- LOCAL PYTHON ENGINE ---
+        if (!this.shouldUseLocalEngine()) {
+            console.warn('[TTS] Local voice engine requested but disabled.');
+            return null;
+        }
+
         // Auto-wake if engine is sleeping
         if (!this.isEngineAwake) {
             console.log('[TTS] ⚡ Local engine sleeping - attempting to wake...');
@@ -182,6 +224,33 @@ export class TTSService {
     }
 
     public async getVoices(): Promise<{ default_models: string[], cloned_voices: string[] }> {
+        if (this.config.provider === 'minimax') {
+            try {
+                const voices = await minimaxService.listVoices();
+                return {
+                    default_models: voices.map((voice) => voice.id),
+                    cloned_voices: []
+                };
+            } catch (error) {
+                console.warn('[TTS] Failed to list MiniMax voices', error);
+                return {
+                    default_models: [
+                        minimaxService.getDefaultVoiceId(),
+                        'English_CalmWoman',
+                        'English_magnetic_voiced_man'
+                    ],
+                    cloned_voices: []
+                };
+            }
+        }
+
+        if (!this.shouldUseLocalEngine()) {
+            return {
+                default_models: [minimaxService.getDefaultVoiceId()],
+                cloned_voices: []
+            };
+        }
+
         try {
             const res = await axios.get(`${this.pythonEngineUrl}/voices`);
             return res.data;
@@ -192,6 +261,10 @@ export class TTSService {
     }
 
     public async cloneVoice(file: any, name: string): Promise<any> {
+        if (!this.shouldUseLocalEngine()) {
+            throw new Error('Voice cloning requires the local voice engine.');
+        }
+
         try {
             const FormDataModule = await import('form-data');
             const FormDataClass = (FormDataModule.default || FormDataModule) as any;
@@ -210,6 +283,11 @@ export class TTSService {
     }
 
     public async sleep() {
+        if (!this.shouldUseLocalEngine()) {
+            console.log('[TTS] Sleep skipped: local voice engine disabled.');
+            return;
+        }
+
         try {
             await axios.post(`${this.pythonEngineUrl}/sleep`);
             this.isEngineAwake = false;
@@ -220,6 +298,11 @@ export class TTSService {
     }
 
     public async wake() {
+        if (!this.shouldUseLocalEngine()) {
+            console.log('[TTS] Wake skipped: local voice engine disabled.');
+            return;
+        }
+
         try {
             await axios.post(`${this.pythonEngineUrl}/wake`);
             this.isEngineAwake = true;
@@ -230,6 +313,11 @@ export class TTSService {
     }
 
     private async checkEngineHealth() {
+        if (!this.shouldUseLocalEngine()) {
+            this.isEngineAwake = false;
+            return;
+        }
+
         try {
             await axios.get(`${this.pythonEngineUrl}/`);
             this.isEngineAwake = true;
@@ -240,13 +328,19 @@ export class TTSService {
 
     public getHealth() {
         return {
-            status: this.isEngineAwake ? 'ONLINE' : 'OFFLINE/SLEEPING',
+            status: this.config.provider === 'minimax'
+                ? 'CLOUD'
+                : (this.isEngineAwake ? 'ONLINE' : 'OFFLINE/SLEEPING'),
             config: this.config
         };
     }
 
     public updateConfig(newConfig: Partial<VoiceConfig>) {
         this.config = { ...this.config, ...newConfig };
+        if (this.config.provider === 'minimax') {
+            this.config.voiceId = minimaxService.normalizeVoiceId(this.config.voiceId);
+        }
+        this.syncHealthMonitoring();
         this.saveConfig();
     }
 

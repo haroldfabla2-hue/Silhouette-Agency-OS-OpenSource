@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
-import { SilhouetteConfig, DEFAULT_CONFIG } from './configSchema';
+import { SilhouetteConfig, DEFAULT_CONFIG, loadConfig } from './configSchema';
 import { PATHS } from './paths';
 
 // Load .env files for initial migration
@@ -51,18 +51,15 @@ export class ConfigLoader {
     private loadOrMigrate(): SilhouetteConfig {
         if (fs.existsSync(CONFIG_PATH)) {
             try {
-                const raw = fs.readFileSync(CONFIG_PATH, 'utf-8');
-                const loaded = JSON.parse(raw);
-                console.log('[CONFIG] ✅ Loaded silhouette.config.json');
-                // Shallow merge with defaults to ensure new fields flow in
-                return { ...DEFAULT_CONFIG, ...loaded };
+                return loadConfig(process.cwd());
             } catch (error) {
                 console.error('[CONFIG] ⚠️ Corrupt config file, falling back to defaults/env:', error);
             }
         }
 
         console.log('[CONFIG] 🚀 initializing from ENV (First Run / Migration)...');
-        return this.migrateFromEnv();
+        this.migrateFromEnv();
+        return loadConfig(process.cwd());
     }
 
     /**
@@ -109,7 +106,8 @@ export class ConfigLoader {
             config.llm.providers.minimax = {
                 apiKey: process.env.MINIMAX_API_KEY,
                 groupId: process.env.MINIMAX_GROUP_ID,
-                model: 'abab-6.5s-chat'
+                model: process.env.MINIMAX_MODEL || 'MiniMax-M2.5',
+                baseUrl: process.env.MINIMAX_BASE_URL
             };
         }
 

@@ -106,7 +106,7 @@ const NotificationCenter: React.FC = () => {
 
             {/* Dropdown Panel */}
             {isOpen && (
-                <div className="absolute right-0 top-12 w-80 max-h-96 overflow-hidden bg-slate-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl z-50">
+                <div className="absolute right-0 top-12 w-[min(20rem,calc(100vw-1.5rem))] max-h-[min(24rem,calc(100dvh-5rem))] overflow-hidden bg-slate-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl z-50">
                     {/* Header */}
                     <div className="flex items-center justify-between p-3 border-b border-white/10">
                         <span className="text-sm font-medium text-white/80">Notifications</span>

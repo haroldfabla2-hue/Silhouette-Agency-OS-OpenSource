@@ -8,8 +8,9 @@ console.log('🧪 Testing Minimax Integration...');
 async function runTest() {
     // 1. Verify Config Load
     const config = configLoader.getConfig();
-    if (!config.llm.providers.minimax?.apiKey) {
-        console.error('❌ Minimax API Key NOT FOUND in config');
+    const hasMinimax = !!(process.env.MINIMAX_API_KEY || config.llm.providers.minimax?.apiKey);
+    if (!hasMinimax) {
+        console.error('❌ Minimax API Key NOT FOUND in env/config');
         process.exit(1);
     }
     console.log('✅ Config loaded');

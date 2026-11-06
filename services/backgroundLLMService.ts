@@ -17,6 +17,7 @@
 import { deepSeekService } from './deepSeekService';
 import { ollamaService } from './ollamaService';
 import { costEstimator } from './costEstimator';
+import { minimaxService } from './minimaxService';
 
 export type BackgroundPriority = 'HIGH' | 'MEDIUM' | 'LOW';
 export type TaskType = 'CODE' | 'GENERAL' | 'ANALYSIS';
@@ -200,6 +201,20 @@ class BackgroundLLMService {
         options: BackgroundLLMOptions
     ): Promise<string> {
         return this.queueZhipuRequest(async () => {
+            if (minimaxService.isAvailable()) {
+                console.log('[BACKGROUND_LLM] 🌐 Using MiniMax fallback');
+                return minimaxService.chat([
+                    {
+                        role: 'system',
+                        content: 'You are a background reasoning service. Return direct, concise output. If JSON is requested, output only valid JSON.'
+                    },
+                    { role: 'user', content: prompt }
+                ], {
+                    maxTokens: options.maxTokens || 1024,
+                    temperature: options.temperature || 0.4
+                });
+            }
+
             try {
                 const { zhipuService } = await import('./zhipuService');
 

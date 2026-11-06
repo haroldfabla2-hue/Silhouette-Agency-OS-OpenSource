@@ -64,11 +64,11 @@ class PluginRegistry {
         // Check Power/CPU State for Auto-Disable
         let highLoadMode = false;
         try {
-            const si = await import('systeminformation');
-            const load = await si.currentLoad();
+            const { cpuLoadService } = await import('../system/cpuLoadService');
+            const load = await cpuLoadService.getCurrentLoadPercent();
             const threshold = pluginConfig.auto_disable_threshold_cpu || 80;
-            if (load.currentLoad > threshold) {
-                console.warn(`[PluginRegistry] 🔥 High CPU Load (${load.currentLoad.toFixed(1)}% > ${threshold}%). Activating Adaptive Plugin Throttling.`);
+            if (load > threshold) {
+                console.warn(`[PluginRegistry] 🔥 High CPU Load (${load.toFixed(1)}% > ${threshold}%). Activating Adaptive Plugin Throttling.`);
                 highLoadMode = true;
             }
         } catch (e) {

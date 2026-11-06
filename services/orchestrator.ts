@@ -112,6 +112,8 @@ class AgentSwarmOrchestrator {
         reject: (error: any) => void;
     }> = new Map();
 
+    private loopStarted: boolean = false;
+
     // Core Services State (Real Monitoring)
     private coreServices: ServiceStatus[] = [
         { id: 'api_gateway', name: 'API Gateway', port: 3000, status: 'ONLINE', latency: 0, uptime: 100 }, // Self
@@ -210,6 +212,8 @@ class AgentSwarmOrchestrator {
         systemBus.subscribe(SystemProtocol.AGENT_DEBATE_MESSAGE, (event) => {
             this.handleAgentDebateMessage(event.payload);
         });
+
+        this.startLoop();
     }
 
     // ...
@@ -295,6 +299,9 @@ class AgentSwarmOrchestrator {
     }
 
     private startLoop() {
+        if (this.loopStarted) return;
+        this.loopStarted = true;
+
         const loop = async () => {
             try {
                 // [PHASE 10] Adaptive Speed
@@ -896,6 +903,11 @@ ${payload.message}
             const { chatToolIntegration } = await import('./chatToolIntegration');
             const tools = await toolRegistry.getToolDeclarations();
 
+            const communicationLevel =
+                payload.role === 'CREATOR' || payload.role === 'ADMIN'
+                    ? CommunicationLevel.EXECUTIVE
+                    : CommunicationLevel.USER_FACING;
+
             const response = await generateAgentResponse(
                 agent.name,
                 agent.role,
@@ -907,7 +919,7 @@ ${payload.message}
                 { useWebSearch: true },
                 {},
                 agent.capabilities || [],
-                CommunicationLevel.USER_FACING
+                communicationLevel
             );
 
             // 5. Process Tool Calls and Parallel Operations

@@ -21,7 +21,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { Command } from 'commander';
-import { printBanner, printSmartRecommendations, isConfigured, isServerRunning, getVersion, C, printSection, printRecommendation } from './utils/ui';
+import { printBanner, printSmartRecommendations, isConfigured, isServerRunning, getVersion, C, printSection, printRecommendation, getApiBaseUrl } from './utils/ui';
 import { loadConfig, validateConfig, saveConfig } from '../server/config/configSchema';
 
 const program = new Command();
@@ -158,10 +158,11 @@ program
     .action(async (action, id) => {
         const { printCompactBanner, printSection, printCheck } = await import('./utils/ui');
         printCompactBanner();
+        const apiBaseUrl = getApiBaseUrl();
 
         if (!action || action === 'list') {
             try {
-                const res = await fetch('http://localhost:3005/v1/squads');
+                const res = await fetch(`${apiBaseUrl}/v1/squads`);
                 if (!res.ok) throw new Error(`Server returned ${res.status}`);
                 const data: any = await res.json();
                 if (data.success) {
@@ -178,7 +179,7 @@ program
             }
         } else if (action === 'wake' && id) {
             try {
-                const res = await fetch(`http://localhost:3005/v1/squads/${id}/wake`, { method: 'POST' });
+                const res = await fetch(`${apiBaseUrl}/v1/squads/${id}/wake`, { method: 'POST' });
                 const data: any = await res.json();
                 if (data.success) printCheck('ok', data.message);
                 else printCheck('fail', data.error);
@@ -203,7 +204,7 @@ program
             const config = loadConfig();
             saveConfig(config);
             printCheck('ok', 'silhouette.config.json created');
-            console.log(`    ${C.GRAY}Edit it to customize. Secrets via .env.local${C.RESET}\n`);
+            console.log(`    ${C.GRAY}Edit it to customize. Secrets via .env.local or .env.server${C.RESET}\n`);
         } else if (action === 'mode') {
             if (value !== 'lite' && value !== 'full') {
                 console.log(`    ${C.GRAY}Usage: silhouette config mode <lite|full>${C.RESET}`);

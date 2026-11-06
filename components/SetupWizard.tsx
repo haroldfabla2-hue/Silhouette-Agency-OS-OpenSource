@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { api } from '../utils/api';
+import { generateFingerprint, getDeviceName } from '../utils/fingerprint';
 
 interface SetupWizardProps {
     onComplete: (session: any, user: any) => void;
@@ -65,6 +66,8 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 email,
                 name,
                 password,
+                fingerprint: generateFingerprint(),
+                deviceName: getDeviceName(),
                 gitToken: enableEvo ? gitToken : undefined,
                 gitOwner: enableEvo ? gitOwner : undefined,
                 gitRepo: enableEvo ? gitRepo : undefined

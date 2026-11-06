@@ -5,7 +5,7 @@
 // When DATABASE_URL is absent, the system uses this adapter by default.
 // =============================================================================
 
-import { IDatabaseAdapter, DbUser, DbDevice, DbSession, UserRole } from './databaseAdapter';
+import { IDatabaseAdapter, DbUser, DbDevice, DbSession, MemoryNodeCounts, UserRole } from './databaseAdapter';
 import { Agent, MemoryNode, MemoryTier } from '../../types';
 import Database from 'better-sqlite3';
 import path from 'path';
@@ -259,9 +259,28 @@ export class SqliteAdapter implements IDatabaseAdapter {
         return lancedbService.getAllNodes();
     }
 
+    async getRecentNodes(limit: number = 200): Promise<MemoryNode[]> {
+        const { lancedbService } = await import('../lancedbService');
+        const nodes = await lancedbService.getAllNodes();
+        return nodes
+            .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+            .slice(0, limit);
+    }
+
     async getNodesByTier(tier: MemoryTier, limit: number = 1000): Promise<MemoryNode[]> {
         const { lancedbService } = await import('../lancedbService');
         return lancedbService.getNodesByTier(tier, limit);
+    }
+
+    async getNodeCounts(): Promise<MemoryNodeCounts> {
+        const { lancedbService } = await import('../lancedbService');
+        const counts = await lancedbService.getTierCounts();
+        return {
+            [MemoryTier.MEDIUM]: counts[MemoryTier.MEDIUM] || 0,
+            [MemoryTier.LONG]: counts[MemoryTier.LONG] || 0,
+            [MemoryTier.DEEP]: counts[MemoryTier.DEEP] || 0,
+            total: (counts[MemoryTier.MEDIUM] || 0) + (counts[MemoryTier.LONG] || 0) + (counts[MemoryTier.DEEP] || 0)
+        };
     }
 
     async deleteNode(id: string): Promise<boolean> {

@@ -152,7 +152,7 @@ export const EmailPanel: React.FC<EmailPanelProps> = ({ isOpen = true, onClose }
     if (!connected) {
         return (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/90 backdrop-blur">
-                <div className="bg-slate-800 p-8 rounded-2xl border border-slate-700 text-center max-w-md">
+                <div className="bg-slate-800 p-6 sm:p-8 rounded-2xl border border-slate-700 text-center w-[calc(100%-2rem)] max-w-md">
                     <h2 className="text-xl font-bold text-white mb-4">Connect Gmail</h2>
                     <p className="text-slate-400 mb-6">Link your Google account to access the full Agency Email Client.</p>
                     <button onClick={checkConnection} className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg transition-colors">
@@ -167,10 +167,11 @@ export const EmailPanel: React.FC<EmailPanelProps> = ({ isOpen = true, onClose }
     }
 
     return (
-        <div className="fixed inset-6 z-40 rounded-2xl overflow-hidden shadow-2xl border border-slate-700 ring-1 ring-black/50">
+        <div className="fixed inset-0 sm:inset-4 lg:inset-6 z-40 rounded-none sm:rounded-2xl overflow-hidden shadow-2xl border border-slate-700 ring-1 ring-black/50">
             {/* Window Controls */}
             <div className="absolute top-0 right-0 p-2 z-50 flex gap-2">
-                <button onClick={onClose} className="bg-red-500/80 hover:bg-red-500 text-white p-1 rounded-full w-4 h-4 flex items-center justify-center text-[10px]">
+                <button onClick={onClose} className="bg-red-500/80 hover:bg-red-500 text-white p-1 rounded-full w-7 h-7 flex items-center justify-center text-[10px]">
+                    <X size={14} />
                 </button>
             </div>
 
@@ -191,7 +192,7 @@ export const EmailPanel: React.FC<EmailPanelProps> = ({ isOpen = true, onClose }
 
             {/* Compose Modal Overlay (Simple version for now) */}
             {composeOpen && (
-                <div className="absolute bottom-0 right-10 w-[500px] bg-slate-900 border border-slate-700 rounded-t-lg shadow-2xl flex flex-col z-50">
+                <div className="absolute bottom-0 left-2 right-2 mx-auto w-auto sm:left-auto sm:right-6 sm:mx-0 sm:w-[min(32rem,calc(100%-3rem))] bg-slate-900 border border-slate-700 rounded-t-lg shadow-2xl flex flex-col z-50">
                     <div className="bg-slate-800 p-3 flex justify-between items-center rounded-t-lg border-b border-slate-700">
                         <span className="font-bold text-sm text-white">New Message</span>
                         <button onClick={() => setComposeOpen(false)}><X size={16} className="text-slate-400 hover:text-white" /></button>
@@ -199,7 +200,7 @@ export const EmailPanel: React.FC<EmailPanelProps> = ({ isOpen = true, onClose }
                     <div className="p-4 space-y-3">
                         <input type="text" placeholder="Recipients" className="w-full bg-transparent border-b border-slate-700 pb-1 text-sm text-white focus:outline-none focus:border-cyan-500" />
                         <input type="text" placeholder="Subject" className="w-full bg-transparent border-b border-slate-700 pb-1 text-sm text-white focus:outline-none focus:border-cyan-500" />
-                        <textarea className="w-full h-64 bg-transparent resize-none text-sm text-white focus:outline-none" placeholder="Message body..."></textarea>
+                        <textarea className="w-full h-48 sm:h-64 bg-transparent resize-none text-sm text-white focus:outline-none" placeholder="Message body..."></textarea>
                     </div>
                     <div className="p-3 border-t border-slate-700 flex justify-between items-center bg-slate-800/50">
                         <button className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-full text-sm">Send</button>

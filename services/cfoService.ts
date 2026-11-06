@@ -86,7 +86,7 @@ export class CFOAgent {
 
             if (isHighValue) {
                 console.log(`[CFO] 🧠 High-Value Task (Code/Reasoning). Using Minimax Prime.`);
-                return 'abab-6.5s-chat';
+                return 'MiniMax-M2.5';
             } else {
                 console.log(`[CFO] ⚡ Low-Complexity Task. Offloading to Gemini Flash to save Quota.`);
                 return 'gemini-2.0-flash';
@@ -114,7 +114,7 @@ export class CFOAgent {
         // === CASE A: DEV AGENT OR CODE TASK → MINIMAX 2.5 (Direct) ===
         if ((isDevAgent || isCode) && hasOpenRouter) {
             console.log(`[CFO] 🎯 Code task detected${isDevAgent ? ` (Agent: ${agentName}, Category: ${agentCategory})` : ''}. Using MiniMax 2.5.`);
-            return 'abab-6.5s-chat';
+            return 'MiniMax-M2.5';
         }
 
         // === MINIMAX FALLBACK → DEEPSEEK ===
@@ -173,12 +173,12 @@ export class CFOAgent {
         switch (taskType) {
             case 'CODE':
                 // Minimax Prime
-                return ['abab-6.5s-chat', 'deepseek-coder', 'gemini-1.5-pro', 'glm-4.5-flash'];
+                return ['MiniMax-M2.5', 'deepseek-coder', 'gemini-1.5-pro', 'glm-4.5-flash'];
             case 'CREATIVE':
-                return ['abab-6.5s-chat', 'gemini-1.5-pro', 'glm-4.5-flash'];
+                return ['MiniMax-M2.5', 'gemini-1.5-pro', 'glm-4.5-flash'];
             case 'GENERAL':
             default:
-                return ['abab-6.5s-chat', 'gemini-1.5-flash', 'glm-4.5-flash'];
+                return ['MiniMax-M2.5', 'gemini-1.5-flash', 'glm-4.5-flash'];
         }
     }
 

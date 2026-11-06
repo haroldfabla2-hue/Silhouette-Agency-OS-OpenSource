@@ -387,20 +387,26 @@ export async function initializeNervousSystem(): Promise<void> {
     if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
         try {
             const { driveService } = await import('./driveService');
-            nervousSystem.register({
-                id: 'google_apis',
-                name: 'Google APIs',
-                type: 'CLOUD',
-                isRequired: false,
-                checkHealth: async () => {
-                    await driveService.init();
-                    return driveService.isAuthenticated();
-                },
-                reconnect: async () => {
-                    await driveService.init();
-                    return driveService.isAuthenticated();
-                }
-            });
+            await driveService.init();
+
+            if (driveService.isAuthenticated()) {
+                nervousSystem.register({
+                    id: 'google_apis',
+                    name: 'Google APIs',
+                    type: 'CLOUD',
+                    isRequired: false,
+                    checkHealth: async () => {
+                        await driveService.init();
+                        return driveService.isAuthenticated();
+                    },
+                    reconnect: async () => {
+                        await driveService.init();
+                        return driveService.isAuthenticated();
+                    }
+                });
+            } else {
+                console.log("[NERVOUS] ℹ️ Google OAuth credentials present but no authenticated session yet — skipping monitoring");
+            }
         } catch (e: any) {
             console.warn("[NERVOUS] Google Drive service not available for monitoring:", e.message);
         }
@@ -487,22 +493,9 @@ export async function initializeNervousSystem(): Promise<void> {
                 return !!process.env.MINIMAX_API_KEY;
             },
             reconnect: async () => {
-                // On reconnect, do a real API call to verify reachability
                 try {
-                    const response = await fetch('https://api.minimax.chat/v1/text/chatcompletion_v2', {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${process.env.MINIMAX_API_KEY}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            model: 'MiniMax-Text-01',
-                            messages: [{ role: 'user', content: 'ping' }],
-                            max_tokens: 1
-                        }),
-                        signal: AbortSignal.timeout(5000)
-                    });
-                    return response.ok || response.status === 429;
+                    const { minimaxService } = await import('./minimaxService');
+                    return await minimaxService.checkHealth();
                 } catch {
                     return false;
                 }

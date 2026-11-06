@@ -3,7 +3,7 @@
 // Token usage, costs, and budget tracking
 // ═══════════════════════════════════════════════════════════════
 
-import { C, printCompactBanner, printSection, printTable, printCheck, isServerRunning, Spinner } from '../utils/ui';
+import { C, printCompactBanner, printSection, printTable, printCheck, isServerRunning, Spinner, getApiBaseUrl } from '../utils/ui';
 
 interface TokensOptions {
     json?: boolean;
@@ -22,9 +22,10 @@ export async function tokensCommand(options: TokensOptions) {
 
     const spinner = new Spinner('Fetching telemetry data...');
     spinner.start();
+    const apiBaseUrl = getApiBaseUrl();
 
     try {
-        const res = await fetch('http://localhost:3005/v1/telemetry/stats', { signal: AbortSignal.timeout(5000) });
+        const res = await fetch(`${apiBaseUrl}/v1/telemetry/stats`, { signal: AbortSignal.timeout(5000) });
         const data = res.ok ? await res.json() as any : null;
 
         spinner.stop('Telemetry data retrieved', 'ok');

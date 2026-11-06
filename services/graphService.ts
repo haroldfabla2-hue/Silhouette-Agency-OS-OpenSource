@@ -59,11 +59,15 @@ class GraphService {
                     console.log("[GRAPH] 🔗 Connecting to Neo4j...");
                 }
 
+                const neo4jUri = process.env.NEO4J_URI || config.memory.neo4j.uri || 'bolt://127.0.0.1:7687';
+                const neo4jUser = process.env.NEO4J_USER || config.memory.neo4j.user || 'neo4j';
+                const neo4jPassword = process.env.NEO4J_PASSWORD || config.memory.neo4j.password || 'changeme_on_first_run';
+
                 this.driver = neo4j.driver(
-                    process.env.NEO4J_URI || 'bolt://127.0.0.1:7787',
+                    neo4jUri,
                     neo4j.auth.basic(
-                        process.env.NEO4J_USER || 'neo4j',
-                        process.env.NEO4J_PASSWORD || 'changeme_on_first_run'
+                        neo4jUser,
+                        neo4jPassword
                     ),
                     {
                         maxConnectionLifetime: 30 * 60 * 1000,
@@ -184,7 +188,7 @@ class GraphService {
     }
 
     public async runQuery(cypher: string, params: any = {}) {
-        if (!this.isConnected || !this.driver) {
+        if (!this._isConnected || !this.driver) {
             await this.connect();
             if (!this.driver) throw new Error("Graph Database not available.");
         }
@@ -235,8 +239,16 @@ class GraphService {
     // --- HELPER METHODS ---
 
     public async createNode(label: string, properties: any, mergeKey: string = 'id') {
+        if (!properties[mergeKey]) {
+            properties[mergeKey] = crypto.randomUUID();
+        }
+
         // Ensure ID exists
-        if (!properties.id) properties.id = crypto.randomUUID();
+        if (!properties.id) {
+            properties.id = mergeKey === 'id'
+                ? properties[mergeKey]
+                : String(properties[mergeKey]);
+        }
 
         // Dynamic MERGE based on the provided key (id, name, etc.)
         const query = `
@@ -258,13 +270,27 @@ class GraphService {
 
 
     public async createRelationship(fromId: string, toId: string, type: string, properties: any = {}) {
+        const safeType = /^[A-Z][A-Z0-9_]*$/.test(type)
+            ? type
+            : type
+                .toUpperCase()
+                .replace(/[^A-Z0-9_]/g, '_')
+                .replace(/^([^A-Z])/, 'REL_$1');
+
         const query = `
-            MATCH (a {id: $fromId}), (b {id: $toId})
-            MERGE (a)-[r:${type}]->(b)
+            MATCH (a)
+            WHERE a.id = $fromRef OR a.name = $fromRef
+            WITH a
+            LIMIT 1
+            MATCH (b)
+            WHERE b.id = $toRef OR b.name = $toRef
+            WITH a, b
+            LIMIT 1
+            MERGE (a)-[r:${safeType}]->(b)
             SET r += $props, r.lastUpdated = timestamp()
             RETURN r
         `;
-        return this.runQuery(query, { fromId, toId, props: properties });
+        return this.runQuery(query, { fromRef: fromId, toRef: toId, props: properties });
     }
 
     public async createDiscoveryRelationship(fromId: string, toId: string, type: 'CAUSES' | 'INHIBITS' | 'IMPLIES', confidence: number, source: string) {

@@ -18,11 +18,10 @@ const router = Router();
 // GET /v1/memory/state - Returns current memory state for the ContinuumMemoryExplorer
 router.get('/state', async (req, res) => {
     try {
-        // Get all nodes from the 5-tier memory system
-        const nodes = await continuum.getAllNodes();
-        const stats = continuum.getStats();
-
-        res.json({ nodes, stats });
+        const requestedLimit = Number.parseInt(req.query.limit as string, 10);
+        const limit = Number.isFinite(requestedLimit) ? Math.max(10, Math.min(requestedLimit, 200)) : 40;
+        const state = await continuum.getExplorerState(limit);
+        res.json(state);
     } catch (error: any) {
         console.error('[MEMORY] Error fetching memory state:', error);
         res.status(500).json({ error: 'Failed to fetch memory state', details: error.message });
@@ -124,7 +123,7 @@ router.delete('/:nodeId', async (req, res) => {
 // GET /v1/memory/stats - Get memory system statistics
 router.get('/stats', async (req, res) => {
     try {
-        const stats = continuum.getStats();
+        const stats = await continuum.getStats();
         res.json({ stats });
     } catch (error: any) {
         console.error('[MEMORY] Error fetching stats:', error);
@@ -241,4 +240,3 @@ router.get('/feedback/stats', async (req, res) => {
 });
 
 export default router;
-

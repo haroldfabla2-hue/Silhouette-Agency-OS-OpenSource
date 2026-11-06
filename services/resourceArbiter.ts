@@ -3,6 +3,7 @@ import { Agent, AgentStatus, SystemMode } from "../types";
 import * as si from 'systeminformation';
 import { exec } from 'child_process';
 import * as util from 'util';
+import { cpuLoadService } from './system/cpuLoadService';
 
 const execAsync = util.promisify(exec);
 
@@ -223,19 +224,19 @@ class ResourceArbiter {
 
         if (this.isServer) {
             try {
-                const [load, mem, gpu] = await Promise.all([
-                    si.currentLoad(),
+                const [cpuLoad, mem, gpu] = await Promise.all([
+                    cpuLoadService.getCurrentLoadPercent(),
                     si.mem(),
                     this.getGpuMetrics() // [NEW] Real GPU Audit
                 ]);
 
                 // Debug Log (Throttled)
-                if (load.currentLoad >= 99 && Math.random() > 0.95) {
-                    console.warn(`[ARBITER] CPU Load High: ${load.currentLoad.toFixed(1)}%. Process: ${process.cpuUsage().user}`);
+                if (cpuLoad >= 99 && Math.random() > 0.95) {
+                    console.warn(`[ARBITER] CPU Load High: ${cpuLoad.toFixed(1)}%. Process: ${process.cpuUsage().user}`);
                 }
 
                 const metrics = {
-                    cpuLoad: load.currentLoad,
+                    cpuLoad,
                     ramUsed: mem.used,
                     ramTotal: mem.total,
                     vramUsed: gpu.used, // [NEW] Real Value

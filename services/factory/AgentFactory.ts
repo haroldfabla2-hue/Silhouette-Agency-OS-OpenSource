@@ -28,6 +28,15 @@ export interface ImprovementSuggestion {
 }
 
 export class AgentFactory {
+    private async completeStructuredPrompt(prompt: string): Promise<string> {
+        const { llmGateway } = await import('../llmGateway');
+        const result = await llmGateway.complete(prompt, {
+            preferredProvider: 'MINIMAX',
+            systemPrompt: 'You are an expert AI systems architect. Output ONLY valid JSON. No markdown. No commentary.',
+            temperature: 0.2
+        });
+        return result.text;
+    }
 
     /**
      * Get Silhouette's organizational structure context for agent creation
@@ -179,7 +188,7 @@ BEST PRACTICES FOR NEW AGENTS:
         }
         `;
 
-        const response = await geminiService.generateText(systemPrompt);
+        const response = await this.completeStructuredPrompt(systemPrompt);
 
         try {
             // Clean markdown code blocks
@@ -274,7 +283,7 @@ OUTPUT FORMAT (JSON ONLY):
 `;
 
         try {
-            const response = await geminiService.generateText(analysisPrompt);
+            const response = await this.completeStructuredPrompt(analysisPrompt);
             const jsonMatch = response.match(/\{[\s\S]*\}/);
 
             if (!jsonMatch) {
@@ -359,7 +368,7 @@ OUTPUT FORMAT (JSON ONLY):
 `;
 
         try {
-            const response = await geminiService.generateText(evolutionPrompt);
+            const response = await this.completeStructuredPrompt(evolutionPrompt);
             const jsonMatch = response.match(/\{[\s\S]*\}/);
 
             if (!jsonMatch) {
@@ -518,4 +527,3 @@ Respond with JSON:
 }
 
 export const agentFactory = new AgentFactory();
-

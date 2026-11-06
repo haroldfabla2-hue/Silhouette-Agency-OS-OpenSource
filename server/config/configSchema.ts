@@ -57,7 +57,7 @@ export interface SilhouetteConfig {
             gemini?: { apiKey: string; model: string };
             groq?: { apiKey: string; model: string };
             deepseek?: { apiKey: string; model: string };
-            minimax?: { apiKey: string; groupId?: string; model: string };
+            minimax?: { apiKey: string; groupId?: string; model: string; baseUrl?: string };
             ollama?: { baseUrl: string; model: string };
             openrouter?: { apiKey: string; model: string };
         };
@@ -283,6 +283,37 @@ function deepMerge(target: any, source: any): any {
     return target;
 }
 
+function normalizeNumberList(values: unknown): number[] {
+    if (!Array.isArray(values)) return [];
+
+    return Array.from(
+        new Set(
+            values
+                .map(value => parseInt(String(value).trim(), 10))
+                .filter(value => !Number.isNaN(value))
+        )
+    );
+}
+
+function normalizeLegacyConfig(config: any): void {
+    const telegram = config?.channels?.telegram;
+    if (telegram) {
+        const normalizedIds = normalizeNumberList(
+            Array.isArray(telegram.allowedChatIds)
+                ? telegram.allowedChatIds
+                : telegram.allowedIds
+        );
+
+        if (normalizedIds.length > 0) {
+            telegram.allowedChatIds = normalizedIds;
+        }
+
+        if ('allowedIds' in telegram) {
+            delete telegram.allowedIds;
+        }
+    }
+}
+
 /**
  * Apply environment variable overrides.
  * Convention: SILHOUETTE__SECTION__KEY → config.section.key
@@ -304,6 +335,24 @@ function applyEnvOverrides(config: SilhouetteConfig): void {
         'DEEPSEEK_API_KEY': (v) => {
             if (!config.llm.providers.deepseek) config.llm.providers.deepseek = { apiKey: '', model: 'deepseek-chat' };
             config.llm.providers.deepseek.apiKey = v;
+        },
+        'MINIMAX_API_KEY': (v) => {
+            if (!config.llm.providers.minimax) {
+                config.llm.providers.minimax = { apiKey: '', model: 'MiniMax-M2.5' };
+            }
+            config.llm.providers.minimax.apiKey = v;
+        },
+        'MINIMAX_MODEL': (v) => {
+            if (!config.llm.providers.minimax) {
+                config.llm.providers.minimax = { apiKey: '', model: 'MiniMax-M2.5' };
+            }
+            config.llm.providers.minimax.model = v;
+        },
+        'MINIMAX_BASE_URL': (v) => {
+            if (!config.llm.providers.minimax) {
+                config.llm.providers.minimax = { apiKey: '', model: 'MiniMax-M2.5' };
+            }
+            config.llm.providers.minimax.baseUrl = v;
         },
         'OLLAMA_BASE_URL': (v) => {
             if (!config.llm.providers.ollama) config.llm.providers.ollama = { baseUrl: v, model: 'llama3:8b' };
@@ -423,6 +472,7 @@ export function loadConfig(projectRoot?: string): SilhouetteConfig {
     if (fs.existsSync(configPath)) {
         try {
             const fileConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+            normalizeLegacyConfig(fileConfig);
             deepMerge(config, fileConfig);
             console.log(`[Config] 📄 Loaded ${CONFIG_FILENAME}`);
         } catch (err) {
@@ -432,8 +482,27 @@ export function loadConfig(projectRoot?: string): SilhouetteConfig {
 
     // Layer 3: Environment overrides (highest priority for secrets)
     applyEnvOverrides(config);
+    normalizeLegacyConfig(config);
 
     return config;
+}
+
+export function mutateConfigFile(mutator: (config: any) => void, projectRoot?: string): void {
+    const root = projectRoot ?? process.cwd();
+    const configPath = path.join(root, CONFIG_FILENAME);
+
+    let rawConfig: any = {};
+    if (fs.existsSync(configPath)) {
+        rawConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    }
+
+    normalizeLegacyConfig(rawConfig);
+    mutator(rawConfig);
+    normalizeLegacyConfig(rawConfig);
+
+    fs.writeFileSync(configPath, `${JSON.stringify(rawConfig, null, 2)}\n`, 'utf-8');
+    _config = loadConfig(root);
+    console.log(`[Config] 💾 Updated ${CONFIG_FILENAME}`);
 }
 
 /**

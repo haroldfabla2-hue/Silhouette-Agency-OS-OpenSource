@@ -3,7 +3,7 @@
 // Live service dashboard + agent overview
 // ═══════════════════════════════════════════════════════════════
 
-import { C, printCompactBanner, printSection, printTable, printCheck, isServerRunning, getProjectRoot } from '../utils/ui';
+import { C, printCompactBanner, printSection, printTable, printCheck, isServerRunning, getServerPort, getApiBaseUrl } from '../utils/ui';
 
 interface StatusOptions {
     json?: boolean;
@@ -26,7 +26,7 @@ export async function statusCommand(options: StatusOptions) {
 }
 
 async function renderStatus(json?: boolean) {
-    const port = 3005;
+    const port = getServerPort();
     const running = await isServerRunning(port);
 
     if (json) {
@@ -90,20 +90,30 @@ async function renderStatus(json?: boolean) {
 }
 
 async function fetchStatusData(port: number): Promise<any> {
+    const apiBaseUrl = getApiBaseUrl(port);
     const result: any = { status: 'online' };
 
     try {
-        const stateRes = await fetch(`http://localhost:${port}/v1/orchestrator/state`, { signal: AbortSignal.timeout(3000) });
+        const stateRes = await fetch(`${apiBaseUrl}/v1/orchestrator/state`, { signal: AbortSignal.timeout(3000) });
         if (stateRes.ok) {
             const state = await stateRes.json() as any;
-            result.agents = state.agents || [];
-            result.services = state.services || {};
+            result.orchestrator = state;
         }
     } catch { /* endpoint may not exist */ }
 
     try {
-        const consRes = await fetch(`http://localhost:${port}/v1/consciousness`, { signal: AbortSignal.timeout(3000) });
-        if (consRes.ok) result.consciousness = await consRes.json();
+        const fullStateRes = await fetch(`${apiBaseUrl}/v1/system/full-state`, { signal: AbortSignal.timeout(3000) });
+        if (fullStateRes.ok) {
+            const fullState = await fullStateRes.json() as any;
+            result.services = fullState.telemetry || {};
+            result.agents = fullState.orchestrator?.agents || [];
+            result.brain = fullState.telemetry?.brain || null;
+        }
+    } catch { /* endpoint may not exist */ }
+
+    try {
+        const introspectionRes = await fetch(`${apiBaseUrl}/v1/introspection/state`, { signal: AbortSignal.timeout(3000) });
+        if (introspectionRes.ok) result.consciousness = await introspectionRes.json();
     } catch { /* endpoint may not exist */ }
 
     return result;

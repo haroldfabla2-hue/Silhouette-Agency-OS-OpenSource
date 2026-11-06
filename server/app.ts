@@ -49,6 +49,12 @@ import { initServer } from './loaders';
 
 export const app = express();
 
+// This deployment runs behind a single reverse proxy (Traefik/Coolify).
+// Required so express-rate-limit uses X-Forwarded-For safely.
+const trustProxyValue = process.env.TRUST_PROXY || '1';
+const parsedTrustProxy = Number.parseInt(trustProxyValue, 10);
+app.set('trust proxy', Number.isNaN(parsedTrustProxy) ? trustProxyValue : parsedTrustProxy);
+
 // ─── SECURITY MIDDLEWARE ─────────────────────────────────────────────────────
 
 // CORS: Restrict to configured origins (default: localhost dev server)

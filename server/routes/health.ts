@@ -1,7 +1,7 @@
 /**
  * HEALTH CHECK ENDPOINT
  * 
- * Returns service status for Neo4j, Redis, Qdrant, and SQLite.
+ * Returns service status for Neo4j, Redis, the vector backend, and SQLite.
  * Mounted BEFORE auth middleware so Docker HEALTHCHECK can hit it without a token.
  */
 
@@ -44,18 +44,20 @@ healthRouter.get('/', async (_req: Request, res: Response) => {
         overallHealthy = false;
     }
 
-    // 3. Qdrant (Vector Memory)
+    // 3. Vector Memory backend
     try {
         const start = Date.now();
         const { vectorMemory } = await import('../../services/vectorMemoryService');
-        if (vectorMemory) {
-            checks.qdrant = { status: 'up', latencyMs: Date.now() - start };
+        const vectorKey = process.env.DATABASE_URL ? 'pgvector' : 'qdrant';
+        if (vectorMemory.isReady()) {
+            checks[vectorKey] = { status: 'up', latencyMs: Date.now() - start };
         } else {
-            checks.qdrant = { status: 'down', error: 'Not initialized' };
+            checks[vectorKey] = { status: 'down', error: 'Not initialized' };
             overallHealthy = false;
         }
     } catch (e: any) {
-        checks.qdrant = { status: 'down', error: e.message };
+        const vectorKey = process.env.DATABASE_URL ? 'pgvector' : 'qdrant';
+        checks[vectorKey] = { status: 'down', error: e.message };
         overallHealthy = false;
     }
 

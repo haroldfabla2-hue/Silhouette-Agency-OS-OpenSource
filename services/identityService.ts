@@ -417,11 +417,8 @@ class IdentityService {
     getUserByChannelId(channel: string, channelId: string): User | null {
         if (!this.db) return null;
 
-        let query = '';
-        if (channel === 'telegram') query = 'SELECT * FROM users WHERE telegram_id = ?';
-        else if (channel === 'discord') query = 'SELECT * FROM users WHERE discord_id = ?';
-        else if (channel === 'whatsapp') query = 'SELECT * FROM users WHERE whatsapp_id = ?';
-        else return null;
+        const column = this.getChannelColumn(channel);
+        const query = `SELECT * FROM users WHERE ${column} = ?`;
 
         const row = this.db.prepare(query).get(channelId) as any;
         if (!row) return null;
@@ -441,11 +438,7 @@ class IdentityService {
             throw new Error(`This ${channel} ID is already linked to another user`);
         }
 
-        let column = '';
-        if (channel === 'telegram') column = 'telegram_id';
-        else if (channel === 'discord') column = 'discord_id';
-        else if (channel === 'whatsapp') column = 'whatsapp_id';
-        else throw new Error(`Unsupported channel: ${channel}`);
+        const column = this.getChannelColumn(channel);
 
         this.db.prepare(`UPDATE users SET ${column} = ? WHERE id = ?`).run(channelId, userId);
 
@@ -458,6 +451,49 @@ class IdentityService {
 
         console.log(`[IdentityService] Linked ${channel} ID ${channelId} to user ${userId}`);
         return updated;
+    }
+
+    /**
+     * Auto-link a trusted external channel to the single obvious owner account.
+     * This prevents Telegram/Discord/WhatsApp messages from falling back to GUEST
+     * when the instance already has one clear CREATOR or ADMIN.
+     */
+    bootstrapPrimaryChannelOwner(channel: string, channelId: string): User | null {
+        if (!this.db) return null;
+
+        const existing = this.getUserByChannelId(channel, channelId);
+        if (existing) return existing;
+
+        const column = this.getChannelColumn(channel);
+
+        for (const role of [UserRole.CREATOR, UserRole.ADMIN]) {
+            const rows = this.db.prepare(
+                `SELECT * FROM users
+                 WHERE role = ?
+                   AND (${column} IS NULL OR ${column} = '')
+                 ORDER BY created_at ASC`
+            ).all(role) as any[];
+
+            if (rows.length === 1) {
+                const user = this.rowToUser(rows[0]);
+                console.log(`[IdentityService] Bootstrapping ${channel} ID ${channelId} to ${role} user ${user.name}`);
+                return this.linkChannelId(user.id, channel, channelId);
+            }
+
+            if (rows.length > 1) {
+                console.warn(`[IdentityService] Cannot auto-link ${channel} ID ${channelId}: multiple ${role} users are eligible`);
+                return null;
+            }
+        }
+
+        return null;
+    }
+
+    private getChannelColumn(channel: string): string {
+        if (channel === 'telegram') return 'telegram_id';
+        if (channel === 'discord') return 'discord_id';
+        if (channel === 'whatsapp') return 'whatsapp_id';
+        throw new Error(`Unsupported channel: ${channel}`);
     }
 
     /**

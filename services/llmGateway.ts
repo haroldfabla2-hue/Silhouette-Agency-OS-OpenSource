@@ -13,8 +13,6 @@
  *   const stream = llmGateway.stream("Your prompt here");
  */
 
-import { modelCatalog, ModelCatalogEntry, getModelById } from './modelCatalog';
-
 // Provider status for circuit breaker
 interface ProviderStatus {
     name: string;
@@ -71,7 +69,7 @@ class LLMGatewayService {
         ['GROQ', { name: 'GROQ', failures: 0, lastFailure: 0, circuitOpen: false, totalCalls: 0, totalLatencyMs: 0, currentModel: 'llama-3.3-70b-versatile' }],
         ['DEEPSEEK', { name: 'DEEPSEEK', failures: 0, lastFailure: 0, circuitOpen: false, totalCalls: 0, totalLatencyMs: 0, currentModel: 'deepseek-chat' }],
         ['OLLAMA', { name: 'OLLAMA', failures: 0, lastFailure: 0, circuitOpen: false, totalCalls: 0, totalLatencyMs: 0, currentModel: 'qwen2.5-coder:7b' }],
-        ['MINIMAX', { name: 'MINIMAX', failures: 0, lastFailure: 0, circuitOpen: false, totalCalls: 0, totalLatencyMs: 0, currentModel: 'abab6.5s-chat' }],
+        ['MINIMAX', { name: 'MINIMAX', failures: 0, lastFailure: 0, circuitOpen: false, totalCalls: 0, totalLatencyMs: 0, currentModel: 'MiniMax-M2.5' }],
         ['ZHIPUAI', { name: 'ZHIPUAI', failures: 0, lastFailure: 0, circuitOpen: false, totalCalls: 0, totalLatencyMs: 0, currentModel: 'glm-4-flash' }]
     ]);
 
@@ -231,8 +229,13 @@ class LLMGatewayService {
 
             case 'MINIMAX': {
                 const { minimaxService } = await import('./minimaxService');
-                text = await minimaxService.generateCompletion(prompt, {
-                    // System prompt handled inside service
+                text = await minimaxService.chat([
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: prompt }
+                ], {
+                    temperature,
+                    maxTokens: options.maxTokens,
+                    model: modelId
                 });
                 break;
             }

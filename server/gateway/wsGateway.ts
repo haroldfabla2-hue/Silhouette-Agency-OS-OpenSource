@@ -27,6 +27,7 @@ import { SystemProtocol } from '../../types';
 // ─── Configuration ───────────────────────────────────────────────────────────
 
 const CONFIG = {
+    PATH: '/ws',
     HEARTBEAT_INTERVAL_MS: 30_000,
     MAX_PAYLOAD_BYTES: 10 * 1024 * 1024, // 10MB
     HANDSHAKE_TIMEOUT_MS: 5_000,
@@ -52,10 +53,9 @@ class SilhouetteGateway {
      * Attach the WebSocket server to an existing HTTP server.
      * This allows WS to share the same port as the Express API.
      */
-    initialize(httpServer: HTTPServer): void {
+    initialize(_httpServer?: HTTPServer): void {
         this.wss = new WebSocketServer({
-            server: httpServer,
-            path: '/ws',
+            noServer: true,
             maxPayload: CONFIG.MAX_PAYLOAD_BYTES,
         });
 
@@ -127,7 +127,29 @@ class SilhouetteGateway {
         // Bridge SystemBus events to WS clients
         this.bridgeSystemBusEvents();
 
-        console.log(`[Gateway] 🚀 WebSocket Gateway initialized on /ws`);
+        console.log(`[Gateway] 🚀 WebSocket Gateway initialized on ${CONFIG.PATH}`);
+    }
+
+    canHandle(pathname: string): boolean {
+        return pathname === CONFIG.PATH;
+    }
+
+    handleUpgrade(req: any, socket: any, head: any): boolean {
+        if (!this.wss) {
+            socket.destroy();
+            return false;
+        }
+
+        const pathname = new URL(req.url || '', 'http://localhost').pathname;
+        if (!this.canHandle(pathname)) {
+            return false;
+        }
+
+        this.wss.handleUpgrade(req, socket, head, (ws) => {
+            this.wss?.emit('connection', ws, req);
+        });
+
+        return true;
     }
 
     // ── Handshake ─────────────────────────────────────────────────────────

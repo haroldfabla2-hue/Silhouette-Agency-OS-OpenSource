@@ -1,0 +1,142 @@
+services:
+  silhouette-neo4j:
+    image: neo4j:5.15.0-community
+    container_name: silhouette-neo4j
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-silhouette}
+      NEO4J_apoc_export_file_enabled: "true"
+      NEO4J_apoc_import_file_enabled: "true"
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_memory_heap_initial__size: "256m"
+      NEO4J_dbms_memory_heap_max__size: "768m"
+    volumes:
+      - ./data/neo4j/data:/data
+      - ./data/neo4j/plugins:/plugins
+
+  silhouette-redis:
+    image: redis:7-alpine
+    container_name: silhouette-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    restart: unless-stopped
+    volumes:
+      - ./data/redis:/data
+
+  silhouette-postgres:
+    image: pgvector/pgvector:pg16
+    container_name: silhouette-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: silhouette
+      POSTGRES_USER: silhouette
+      POSTGRES_PASSWORD: <set-at-deploy>
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U silhouette -d silhouette"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  silhouette-reasoning-engine:
+    build:
+      context: ./reasoning_engine
+    container_name: silhouette-reasoning-engine
+    restart: unless-stopped
+    environment:
+      NEO4J_URI: bolt://silhouette-neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-silhouette}
+    depends_on:
+      silhouette-neo4j:
+        condition: service_started
+
+  silhouette-agency-os:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+      args:
+        SILHOUETTE_API_KEY: ${SILHOUETTE_API_KEY:-<set-at-deploy>}
+        VITE_BACKEND_URL: ${VITE_BACKEND_URL:-https://silhouette.albertofarah.com}
+    container_name: silhouette-agency-os
+    restart: unless-stopped
+    env_file:
+      - .env.server
+    environment:
+      NODE_ENV: production
+      SILHOUETTE_API_KEY: ${SILHOUETTE_API_KEY:-<set-at-deploy>}
+      NEO4J_URI: bolt://silhouette-neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-silhouette}
+      REDIS_URL: redis://silhouette-redis:6379
+      DATABASE_URL: postgresql://silhouette:silhouette@silhouette-postgres:5432/silhouette
+      REASONING_ENGINE_URL: http://silhouette-reasoning-engine:8000
+      UI_PORT: "5173"
+      VITE_BACKEND_URL: ${VITE_BACKEND_URL:-https://silhouette.albertofarah.com}
+      WORKFLOW_TICK_INTERVAL_MS: "5000"
+      COST_METRICS_SAVE_INTERVAL_MS: "60000"
+      AUTONOMOUS_HEARTBEAT_INTERVAL_MS: "600000"
+      AUTONOMOUS_DISCOVERY_CYCLE_COUNT: "6"
+      NARRATIVE_BATCH_INTERVAL_MS: "600000"
+      NARRATIVE_DEDUP_WINDOW_MS: "600000"
+      NARRATIVE_REPETITIVE_EVENT_COOLDOWN_MS: "600000"
+      NARRATIVE_MAX_PER_SOURCE_PER_WINDOW: "3"
+      INTROSPECTION_ORIENTATION_COOLDOWN_MS: "600000"
+      MEMORY_INTERNAL_TRACE_COOLDOWN_MS: "600000"
+      CONTINUOUS_MEMORY_CONSOLIDATION_INTERVAL_MS: "600000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3006/health').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    ports:
+      - "3006:3006"
+      - "5173:5173"
+    volumes:
+      - ./data:/app/data
+      - ./db:/app/db
+      - ./logs:/app/logs
+      - ./silhouette.config.json:/app/silhouette.config.json
+    networks:
+      - default
+      - coolify
+    depends_on:
+      silhouette-neo4j:
+        condition: service_started
+      silhouette-redis:
+        condition: service_started
+      silhouette-postgres:
+        condition: service_healthy
+      silhouette-reasoning-engine:
+        condition: service_started
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=coolify
+      - traefik.http.routers.silhouette_ui_http.rule=Host(`silhouette.albertofarah.com`)
+      - traefik.http.routers.silhouette_ui_http.entrypoints=http
+      - traefik.http.routers.silhouette_ui_http.middlewares=redirect-to-https@file
+      - traefik.http.routers.silhouette_ui_http.service=silhouette_ui
+      - traefik.http.routers.silhouette_ui_https.rule=Host(`silhouette.albertofarah.com`)
+      - traefik.http.routers.silhouette_ui_https.entrypoints=https
+      - traefik.http.routers.silhouette_ui_https.priority=10
+      - traefik.http.routers.silhouette_ui_https.tls=true
+      - traefik.http.routers.silhouette_ui_https.tls.certresolver=letsencrypt
+      - traefik.http.routers.silhouette_ui_https.service=silhouette_ui
+      - traefik.http.services.silhouette_ui.loadbalancer.server.port=5173
+      - traefik.http.routers.silhouette_api_http.rule=Host(`silhouette.albertofarah.com`) && (PathPrefix(`/v1`) || PathPrefix(`/api/terminal/ws`) || Path(`/ws`) || PathPrefix(`/oauth`) || PathPrefix(`/uploads`) || PathPrefix(`/health`) || PathPrefix(`/webhooks`) || PathPrefix(`/mcp`))
+      - traefik.http.routers.silhouette_api_http.entrypoints=http
+      - traefik.http.routers.silhouette_api_http.middlewares=redirect-to-https@file
+      - traefik.http.routers.silhouette_api_http.priority=100
+      - traefik.http.routers.silhouette_api_http.service=silhouette_api
+      - traefik.http.routers.silhouette_api_https.rule=Host(`silhouette.albertofarah.com`) && (PathPrefix(`/v1`) || PathPrefix(`/api/terminal/ws`) || Path(`/ws`) || PathPrefix(`/oauth`) || PathPrefix(`/uploads`) || PathPrefix(`/health`) || PathPrefix(`/webhooks`) || PathPrefix(`/mcp`))
+      - traefik.http.routers.silhouette_api_https.entrypoints=https
+      - traefik.http.routers.silhouette_api_https.priority=100
+      - traefik.http.routers.silhouette_api_https.tls=true
+      - traefik.http.routers.silhouette_api_https.tls.certresolver=letsencrypt
+      - traefik.http.routers.silhouette_api_https.service=silhouette_api
+      - traefik.http.services.silhouette_api.loadbalancer.server.port=3006
+
+networks:
+  coolify:
+    external: true

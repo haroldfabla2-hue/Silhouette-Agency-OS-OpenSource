@@ -5,6 +5,7 @@
 
 import { systemBus } from './systemBus';
 import { SystemProtocol } from '../types';
+import { cpuLoadService } from './system/cpuLoadService';
 
 export enum PowerMode {
     MINIMAL = 'MINIMAL',
@@ -120,9 +121,7 @@ class PowerManager {
         // Check CPU every 30 seconds and adjust throttle
         this.throttleCheckInterval = setInterval(async () => {
             try {
-                const si = await import('systeminformation');
-                const load = await si.currentLoad();
-                this.cpuLoad = load.currentLoad;
+                this.cpuLoad = await cpuLoadService.getCurrentLoadPercent();
 
                 // Calculate throttle multiplier based on CPU load
                 if (this.cpuLoad > 80) {

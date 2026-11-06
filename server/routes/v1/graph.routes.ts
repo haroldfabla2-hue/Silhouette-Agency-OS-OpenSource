@@ -5,6 +5,14 @@ import { graph } from '../../../services/graphService';
 const router = Router();
 const controller = new GraphController();
 
+function neo4jIntToNumber(value: any): number {
+    if (typeof value === 'number') return value;
+    if (typeof value?.toNumber === 'function') return value.toNumber();
+    if (typeof value?.low === 'number') return value.low;
+    const coerced = Number(value);
+    return Number.isFinite(coerced) ? coerced : 0;
+}
+
 /**
  * GRAPH ROUTES V2.0 - Extended Graph Database Access
  * 
@@ -69,8 +77,8 @@ router.get('/stats', async (req, res) => {
         ]);
 
         res.json({
-            nodeCount: nodeResult[0]?.nodeCount || 0,
-            relationshipCount: relResult[0]?.relCount || 0,
+            nodeCount: neo4jIntToNumber(nodeResult[0]?.nodeCount),
+            relationshipCount: neo4jIntToNumber(relResult[0]?.relCount),
             labels: labelsResult[0]?.labels || [],
             relationshipTypes: typesResult[0]?.types || []
         });
@@ -249,4 +257,3 @@ router.get('/topology', async (req, res) => {
 });
 
 export default router;
-

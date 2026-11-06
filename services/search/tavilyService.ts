@@ -16,13 +16,14 @@ export class TavilyService {
         if (apiKey) {
             this.client = tavily({ apiKey });
             console.log("[Tavily] Service Initialized.");
-        } else {
-            console.warn("[Tavily] ⚠️ TAVILY_API_KEY missing. Deep search disabled.");
         }
     }
 
     public async searchContext(query: string, maxResults: number = 3): Promise<SearchResult[]> {
-        if (!this.client) return [];
+        if (!this.client) {
+            console.log("[Tavily] Deep search skipped: TAVILY_API_KEY not configured.");
+            return [];
+        }
 
         console.log(`[Tavily] 🔍 Deep Search: "${query}"`);
 

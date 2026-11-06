@@ -61,12 +61,17 @@ class AdvancedDiscoveryService {
         if (!graph.isConnectedStatus()) return 0.0;
 
         const query = `
-            MATCH (n {id: $nodeId})-[r1]-(n1)
-            WITH n, count(DISTINCT n1) as k
+            MATCH (n {id: $nodeId})-[]-(neighbor)
+            WITH collect(DISTINCT neighbor) as neighbors, count(DISTINCT neighbor) as k
             WHERE k > 1
-            MATCH (n)-[]-(n1)-[r2]-(n2)-[]-(n)
-            RETURN CASE 
-                WHEN k > 1 THEN toFloat(count(r2)) / 2.0 / (k * (k - 1) / 2.0)
+            UNWIND neighbors as n1
+            UNWIND neighbors as n2
+            WITH k, n1, n2
+            WHERE id(n1) < id(n2)
+            OPTIONAL MATCH (n1)-[r2]-(n2)
+            WITH k, count(DISTINCT r2) as linksBetweenNeighbors
+            RETURN CASE
+                WHEN k > 1 THEN toFloat(linksBetweenNeighbors) / (k * (k - 1) / 2.0)
                 ELSE 0.0 
             END as clustering
         `;
@@ -89,6 +94,7 @@ class AdvancedDiscoveryService {
      */
     public async calculateGlobalClusteringCoefficient(sampleSize: number = 30): Promise<number> {
         if (!graph.isConnectedStatus()) return 0.0;
+        const safeSampleSize = Math.max(1, Math.floor(sampleSize));
 
         const query = `
             MATCH (n)
@@ -97,11 +103,11 @@ class AdvancedDiscoveryService {
             WHERE degree >= 2
             RETURN n.id as id
             ORDER BY rand()
-            LIMIT $sampleSize
+            LIMIT ${safeSampleSize}
         `;
 
         try {
-            const candidates = await graph.runQuery(query, { sampleSize });
+            const candidates = await graph.runQuery(query);
             if (candidates.length === 0) return 0.0;
 
             const coefficients = await Promise.all(
@@ -122,22 +128,23 @@ class AdvancedDiscoveryService {
      */
     public async calculateAveragePathLength(samplePairs: number = 50): Promise<number> {
         if (!graph.isConnectedStatus()) return Infinity;
+        const safeSamplePairs = Math.max(1, Math.floor(samplePairs));
 
         const query = `
             MATCH (a), (b)
             WHERE a.id IS NOT NULL AND b.id IS NOT NULL
               AND a <> b AND rand() < 0.05
             WITH a, b
-            LIMIT $samplePairs
+            LIMIT ${safeSamplePairs}
             MATCH path = shortestPath((a)-[*..15]-(b))
             RETURN length(path) as pathLength
         `;
 
         try {
-            const results = await graph.runQuery(query, { samplePairs });
+            const results = await graph.runQuery(query);
             if (results.length === 0) return Infinity;
 
-            const totalLength = results.reduce((sum: number, r: any) => sum + (r.pathLength || 0), 0);
+            const totalLength = results.reduce((sum: number, r: any) => sum + Number(r.pathLength || 0), 0);
             return totalLength / results.length;
         } catch (e) {
             logger.warn('Failed to calculate average path length:', e);
@@ -182,8 +189,8 @@ class AdvancedDiscoveryService {
 
         try {
             const stats = await graph.runQuery(statsQuery);
-            const N = stats[0]?.N || 0;
-            const E = stats[0]?.E || 0;
+            const N = Number(stats[0]?.N || 0);
+            const E = Number(stats[0]?.E || 0);
 
             if (N < 5) {
                 logger.info(`Graph too small for σ (N=${N}). Need ≥5 nodes.`);

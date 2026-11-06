@@ -3,7 +3,7 @@
 // 4-tier memory inspection: Working → Short → Long → Deep
 // ═══════════════════════════════════════════════════════════════
 
-import { C, printCompactBanner, printSection, printTable, printCheck, isServerRunning, Spinner } from '../utils/ui';
+import { C, printCompactBanner, printSection, printTable, printCheck, isServerRunning, Spinner, getApiBaseUrl } from '../utils/ui';
 
 interface MemoryOptions {
     tier?: string;
@@ -23,10 +23,11 @@ export async function memoryCommand(options: MemoryOptions) {
 
     const spinner = new Spinner('Reading memory banks...');
     spinner.start();
+    const apiBaseUrl = getApiBaseUrl();
 
     try {
         // Fetch memory stats
-        const statsRes = await fetch('http://localhost:3005/v1/memory/stats', { signal: AbortSignal.timeout(5000) });
+        const statsRes = await fetch(`${apiBaseUrl}/v1/memory/stats`, { signal: AbortSignal.timeout(5000) });
         const stats = statsRes.ok ? await statsRes.json() as any : null;
 
         spinner.stop('Memory banks accessed', 'ok');
@@ -74,7 +75,7 @@ export async function memoryCommand(options: MemoryOptions) {
             searchSpinner.start();
 
             try {
-                const searchRes = await fetch(`http://localhost:3005/v1/memory/search?q=${encodeURIComponent(options.search)}&limit=5`, {
+                const searchRes = await fetch(`${apiBaseUrl}/v1/memory/search?q=${encodeURIComponent(options.search)}&limit=5`, {
                     signal: AbortSignal.timeout(10000)
                 });
                 const results = searchRes.ok ? await searchRes.json() as any : [];

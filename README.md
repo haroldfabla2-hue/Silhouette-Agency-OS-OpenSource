@@ -107,7 +107,7 @@ The emergence of Large Language Models (LLMs) has created new possibilities for 
 | **Specialists** | Agent Pool (500+) | Domain-specific task execution |
 | **Capabilities** | ToolExecutor | External world interaction |
 | **Communication** | Telegram, WhatsApp, Discord | Multi-channel messaging |
-| **Production** | Coolify, Docker, Traefik, Caddy | Supervision, Host-aware deployment, SSL |
+| **Production** | Docker Compose, Coolify network, Traefik | Supervision, host-aware deployment, SSL |
 
 ---
 
@@ -285,8 +285,8 @@ npx tsx scripts/setup.ts
 The wizard guides you through:
 1. **LLM Providers** — Gemini, OpenAI, Groq, DeepSeek, Ollama
 2. **Messaging Channels** — Telegram, WhatsApp, Discord
-3. **Deployment Mode** — Local, Docker, VPS, Coolify
-4. **Domain & SSL** — Auto-provisioned via Caddy + Let's Encrypt
+3. **Deployment Mode** — Local or Docker-based deployment
+4. **Domain & SSL** — Reverse-proxy routing via Traefik / Coolify-compatible setups
 5. **Google Workspace** — OAuth2 credentials
 
 ### Starting the System
@@ -295,7 +295,7 @@ The wizard guides you through:
 |------|---------|----------|
 | **Local** | `npm run boot` | Development (Janus supervisor) |
 | **Docker Base** | `docker-compose up -d` | Local containerized deployment |
-| **Coolify (SaaS)** | Git Link → Docker Compose | **Recommended**: Paste GitHub repo into Coolify and enable Traefik Reverse Proxy |
+| **Server Canonical** | `docker compose -f docker-compose.server.yml up -d --build` | Live server deployment with Traefik on the `coolify` network |
 
 **Note on Host-Aware Docker:** Silhouette's Compose file intentionally mounts `/var/run/docker.sock` and `/host` to empower the AGI to manage its own VPS host environments. Do not deploy on shared un-trusted clouds without caution.
 
@@ -304,7 +304,7 @@ For architecture details, see **[ARCHITECTURE.md](ARCHITECTURE.md)**.
 
 This starts:
 - Frontend (React) on `http://localhost:5173`
-- Backend (Node.js) on `http://localhost:3005`
+- Backend (Node.js) on `http://localhost:3006`
 
 ### Interacting with Silhouette
 

@@ -3,9 +3,15 @@ dist
 .env
 .env.*
 .git
+.github
 db
 data
 output
 ComfyUI
 temp_openclaw
+logs
+tests
+docs
+*.md
+*.m4a
 *.log

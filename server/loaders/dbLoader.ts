@@ -58,13 +58,15 @@ export const initDatabases = async () => {
 
     await Promise.allSettled(initPromises);
 
-    // 6. Initialize Qdrant Vector Memory (non-blocking, optional)
+    // 6. Initialize Vector Memory backend (pgvector or Qdrant, non-blocking)
     try {
         const { vectorMemory } = await import('../../services/vectorMemoryService');
         await vectorMemory.connect();
-        console.log('[LOADER] VectorMemory (Qdrant) Ready.');
+        const backend = vectorMemory.getBackend() || (process.env.DATABASE_URL ? 'pgvector' : 'qdrant');
+        console.log(`[LOADER] VectorMemory (${backend}) Ready.`);
     } catch (e: any) {
-        console.warn('[LOADER] VectorMemory (Qdrant) optional:', e.message);
+        const backend = process.env.DATABASE_URL ? 'pgvector' : 'qdrant';
+        console.warn(`[LOADER] VectorMemory (${backend}) optional:`, e.message);
     }
 
     // 7. Initialize Continuous Memory WAL (crash recovery + periodic consolidation)

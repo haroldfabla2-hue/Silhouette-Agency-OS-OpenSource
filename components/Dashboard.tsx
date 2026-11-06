@@ -116,23 +116,23 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, projects, onCreateProjec
   };
 
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-[1600px] mx-auto animate-in fade-in duration-500">
+    <div className="p-3 sm:p-4 lg:p-6 space-y-4 sm:space-y-6 max-w-[1600px] mx-auto animate-in fade-in duration-500">
 
       {/* CONFIRMATION MODAL */}
       <ConfirmationModal isOpen={showConfirmations} onClose={() => setShowConfirmations(false)} />
 
       {/* HEADER SECTION */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-center">
         <div>
           <h1 className="text-3xl md:text-4xl font-light tracking-tight text-white mb-2">
             Agency <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400 font-normal">Command</span>
           </h1>
           <p className="text-white/40 font-mono text-sm">Orchestrating {metrics.activeAgents} autonomous units</p>
         </div>
-        <div className="flex gap-4">
+        <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap xl:w-auto xl:justify-end">
           <button
             onClick={() => setShowConfirmations(true)}
-            className={`glass-button px-4 py-2 flex items-center gap-2 border-amber-500/30 hover:bg-amber-500/10 transition-colors rounded-lg relative ${pendingCount > 0 ? 'text-amber-400 animate-pulse' : 'text-amber-300/50'}`}
+            className={`glass-button w-full justify-center px-4 py-2 flex items-center gap-2 border-amber-500/30 hover:bg-amber-500/10 transition-colors rounded-lg relative sm:w-auto ${pendingCount > 0 ? 'text-amber-400 animate-pulse' : 'text-amber-300/50'}`}
           >
             <ShieldAlert className="w-4 h-4" />
             <span>Confirmations</span>
@@ -142,11 +142,11 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, projects, onCreateProjec
               </span>
             )}
           </button>
-          <button className="glass-button px-4 py-2 flex items-center gap-2 text-cyan-300 border-cyan-500/30 hover:bg-cyan-500/10 transition-colors rounded-lg">
+          <button className="glass-button w-full justify-center px-4 py-2 flex items-center gap-2 text-cyan-300 border-cyan-500/30 hover:bg-cyan-500/10 transition-colors rounded-lg sm:w-auto">
             <Terminal className="w-4 h-4" />
             <span>System Logs</span>
           </button>
-          <button onClick={onCreateProject} className="w-full md:w-auto bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white px-6 py-2 rounded-lg font-medium shadow-[0_0_20px_rgba(6,182,212,0.3)] transition-all transform hover:scale-105 flex items-center justify-center gap-2">
+          <button onClick={onCreateProject} className="w-full sm:w-auto bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white px-6 py-2 rounded-lg font-medium shadow-[0_0_20px_rgba(6,182,212,0.3)] transition-all transform hover:scale-[1.02] sm:hover:scale-105 flex items-center justify-center gap-2">
             <Plus className="w-4 h-4" />
             New Project
           </button>
@@ -192,7 +192,7 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, projects, onCreateProjec
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
         {/* LEFT: MISSION CONTROL (BRIEF SENDER) */}
-        <div className="lg:col-span-2 glass-panel p-6 rounded-2xl border border-white/10 flex flex-col gap-4 relative overflow-hidden group">
+        <div className="lg:col-span-2 glass-panel p-4 sm:p-6 rounded-2xl border border-white/10 flex flex-col gap-4 relative overflow-hidden group">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 opacity-30 group-hover:opacity-100 transition-opacity" />
           <h3 className="text-lg font-medium text-white/80 flex items-center gap-2">
             <MessageSquare className="w-5 h-5 text-indigo-400" />
@@ -205,8 +205,8 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, projects, onCreateProjec
               placeholder="Broadcast a mission brief to the Agency Swarm... (e.g., 'Research active competitors for Client X')"
               className="w-full bg-transparent border-none focus:ring-0 text-white placeholder-white/20 resize-none h-24 font-mono text-sm outline-none"
             />
-            <div className="flex justify-between items-center">
-              <div className="flex gap-2">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap gap-2">
                 {['Research', 'Code', 'Design', 'Marketing'].map(tag => (
                   <span key={tag} className="px-2 py-1 rounded bg-white/5 text-[10px] text-white/40 border border-white/5 cursor-pointer hover:bg-white/10 hover:text-white/70 transition-colors">
                     #{tag}
@@ -216,7 +216,7 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, projects, onCreateProjec
               <button
                 onClick={handleSendBrief}
                 disabled={isSending || !brief.trim()}
-                className={`px-4 py-2 rounded-lg flex items-center gap-2 font-medium text-sm transition-all shadow-lg ${brief.trim()
+                className={`w-full sm:w-auto justify-center px-4 py-2 rounded-lg flex items-center gap-2 font-medium text-sm transition-all shadow-lg ${brief.trim()
                   ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/20'
                   : 'bg-white/5 text-white/20 cursor-not-allowed'
                   }`}
@@ -229,7 +229,7 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, projects, onCreateProjec
         </div>
 
         {/* RIGHT: REAL-TIME CHART */}
-        <div className="glass-panel p-6 rounded-2xl border border-white/10 flex flex-col">
+        <div className="glass-panel p-4 sm:p-6 rounded-2xl border border-white/10 flex flex-col min-h-[240px] sm:min-h-[280px]">
           <h3 className="text-lg font-medium text-white/80 mb-4 flex items-center gap-2">
             <Zap className="w-5 h-5 text-amber-400" />
             Live Token Velocity
@@ -290,12 +290,12 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, projects, onCreateProjec
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {projects.map((project) => (
-                <div key={project.id} className="glass-panel p-5 rounded-xl border border-white/10 hover:border-white/20 transition-all cursor-pointer group relative overflow-hidden bg-white/[0.02]">
+                <div key={project.id} className="glass-panel p-4 sm:p-5 rounded-xl border border-white/10 hover:border-white/20 transition-all cursor-pointer group relative overflow-hidden bg-white/[0.02]">
                   {/* Dynamic Glow based on status */}
                   <div className={`absolute top-0 right-0 w-24 h-24 blur-[80px] rounded-full opacity-0 group-hover:opacity-30 transition-opacity ${project.status === 'active' ? 'bg-emerald-500' : 'bg-blue-500'
                     }`} />
 
-                  <div className="flex justify-between items-start mb-3 relative z-10">
+                  <div className="flex items-start justify-between gap-3 mb-3 relative z-10">
                     <div className="p-2 rounded-lg bg-white/5 border border-white/5">
                       <Layout className="w-5 h-5 text-white/70" />
                     </div>
@@ -314,7 +314,7 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, projects, onCreateProjec
                       style={{ width: `${project.progress}%` }}
                     />
                   </div>
-                  <div className="flex justify-between text-[10px] text-white/30 relative z-10 font-mono">
+                  <div className="flex items-center justify-between gap-3 text-[10px] text-white/30 relative z-10 font-mono">
                     <span>PROGRESS</span>
                     <span>{project.progress}%</span>
                   </div>
@@ -333,7 +333,7 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, projects, onCreateProjec
         </div>
 
         {/* DREAM EXPLORER WIDGET */}
-        <div className="glass-panel p-0 rounded-2xl border border-white/10 overflow-hidden flex flex-col">
+        <div className="glass-panel min-h-[320px] lg:min-h-0 p-0 rounded-2xl border border-white/10 overflow-hidden flex flex-col">
           <div className="p-4 border-b border-white/5 bg-white/5">
             <h3 className="text-sm font-medium text-white/80 flex items-center gap-2">
               <BrainCircuitIcon className="w-4 h-4 text-purple-400" />
@@ -351,11 +351,11 @@ const Dashboard: React.FC<DashboardProps> = ({ metrics, projects, onCreateProjec
 
 // Simple Metric Card Component
 const MetricCard = ({ icon: Icon, label, value, subValue, color, trend }: any) => (
-  <div className="glass-panel p-5 rounded-xl border border-white/10 flex items-center justify-between group hover:border-white/20 hover:bg-white/[0.03] transition-all">
-    <div>
+  <div className="glass-panel p-4 sm:p-5 rounded-xl border border-white/10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between group hover:border-white/20 hover:bg-white/[0.03] transition-all">
+    <div className="min-w-0">
       <p className="text-white/40 text-xs font-mono uppercase tracking-wider mb-1">{label}</p>
       <div className="flex items-baseline gap-2">
-        <h4 className="text-2xl font-light text-white">{value}</h4>
+        <h4 className="text-xl sm:text-2xl font-light text-white break-all">{value}</h4>
         {trend && (
           <span className={`text-xs ${trend > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
             {trend > 0 ? '+' : ''}{trend}%
@@ -364,7 +364,7 @@ const MetricCard = ({ icon: Icon, label, value, subValue, color, trend }: any) =
       </div>
       {subValue && <p className={`text-xs mt-1 opacity-60 ${color}`}>{subValue}</p>}
     </div>
-    <div className={`p-3 rounded-lg bg-white/5 border border-white/5 group-hover:scale-110 transition-transform ${color}`}>
+    <div className={`self-start sm:self-auto p-3 rounded-lg bg-white/5 border border-white/5 group-hover:scale-110 transition-transform ${color}`}>
       <Icon className="w-6 h-6" />
     </div>
   </div>

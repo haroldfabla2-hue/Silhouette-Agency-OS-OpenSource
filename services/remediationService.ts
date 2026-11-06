@@ -102,8 +102,11 @@ export class RemediationService {
     private failureCounts: Map<string, number> = new Map();
 
     private constructor() {
-        // PA-008: Subscribe to voice engine incidents for auto-repair
-        this.subscribeToVoiceIncidents();
+        if (this.isLocalVoiceEngineEnabled()) {
+            this.subscribeToVoiceIncidents();
+        } else {
+            console.log('[REMEDIATION] 🎤 Local voice engine disabled; voice auto-repair subscription skipped');
+        }
     }
 
     public static getInstance(): RemediationService {
@@ -111,6 +114,11 @@ export class RemediationService {
             RemediationService.instance = new RemediationService();
         }
         return RemediationService.instance;
+    }
+
+    private isLocalVoiceEngineEnabled(): boolean {
+        return process.env.ENABLE_VOICE_ENGINE === 'true'
+            && (process.env.VOICE_PROVIDER || 'local').toLowerCase() === 'local';
     }
 
     /**
@@ -134,6 +142,11 @@ export class RemediationService {
      * Tier 4: Human Escalation (last resort)
      */
     private async handleVoiceEngineIncident(payload: any): Promise<void> {
+        if (!this.isLocalVoiceEngineEnabled()) {
+            console.log('[REMEDIATION] Ignoring voice engine incident because local voice is disabled');
+            return;
+        }
+
         console.log('[REMEDIATION] 🎤 Voice Engine incident detected - initiating 4-tier repair protocol...');
         sqliteService.log('INFO', 'Voice engine 4-tier repair protocol initiated', 'remediation');
 

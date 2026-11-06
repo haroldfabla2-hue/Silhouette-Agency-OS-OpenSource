@@ -47,7 +47,7 @@ interface LinkPredictionResponse {
 }
 
 class NeuroCognitiveService {
-    private readonly REASONING_ENGINE_URL = 'http://localhost:8000';
+    private readonly REASONING_ENGINE_URL = process.env.REASONING_ENGINE_URL || 'http://localhost:8000';
     private isDiscovering: boolean = false;
     private heartbeatInterval: NodeJS.Timeout | null = null;
 

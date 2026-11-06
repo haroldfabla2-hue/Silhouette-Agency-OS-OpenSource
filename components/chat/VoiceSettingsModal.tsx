@@ -9,6 +9,8 @@ interface VoiceConfig {
     autoSpeak: boolean;
     voiceId?: string;
     volume: number;
+    provider?: 'local' | 'minimax';
+    localEngineEnabled?: boolean;
 }
 
 interface VoiceSettingsModalProps {
@@ -37,6 +39,7 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({ isOpen, 
             loadVoices();
             checkHealth();
             setConfig(currentConfig);
+            setSelectedVoiceName(currentConfig.voiceId ? currentConfig.voiceId.replace('.wav', '').replace(/_/g, ' ') : 'Default Voice');
         }
     }, [isOpen]);
 
@@ -107,6 +110,8 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({ isOpen, 
         onClose();
     };
 
+    const isLocalVoiceMode = config.provider === 'local' && config.localEngineEnabled;
+
     if (!isOpen) return null;
 
     return (
@@ -129,13 +134,13 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({ isOpen, 
                     <div className="p-6 space-y-6 overflow-y-auto">
 
                         {/* Status Check */}
-                        <div className={`flex items-center gap-2 text-xs font-mono p-2 rounded ${health.includes('ONLINE') ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
-                            <div className={`w-2 h-2 rounded-full ${health.includes('ONLINE') ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+                        <div className={`flex items-center gap-2 text-xs font-mono p-2 rounded ${health.includes('ONLINE') || health === 'CLOUD' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+                            <div className={`w-2 h-2 rounded-full ${health.includes('ONLINE') || health === 'CLOUD' ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
                             ENGINE STATUS: {health}
                         </div>
 
                         {/* Quick Actions - NEW */}
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className={`grid gap-3 ${isLocalVoiceMode ? 'grid-cols-2' : 'grid-cols-1'}`}>
                             <button
                                 onClick={() => setShowLibrary(true)}
                                 className="flex items-center justify-center gap-2 p-4 bg-gradient-to-br from-purple-600/20 to-blue-600/20 border border-purple-500/30 rounded-lg hover:border-purple-500/50 transition-all group"
@@ -143,13 +148,15 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({ isOpen, 
                                 <Library className="w-5 h-5 text-purple-400 group-hover:scale-110 transition-transform" />
                                 <span className="text-sm font-medium text-white">Voice Library</span>
                             </button>
-                            <button
-                                onClick={() => setShowCloneWizard(true)}
-                                className="flex items-center justify-center gap-2 p-4 bg-gradient-to-br from-pink-600/20 to-purple-600/20 border border-pink-500/30 rounded-lg hover:border-pink-500/50 transition-all group"
-                            >
-                                <Sparkles className="w-5 h-5 text-pink-400 group-hover:scale-110 transition-transform" />
-                                <span className="text-sm font-medium text-white">Clone Voice</span>
-                            </button>
+                            {isLocalVoiceMode && (
+                                <button
+                                    onClick={() => setShowCloneWizard(true)}
+                                    className="flex items-center justify-center gap-2 p-4 bg-gradient-to-br from-pink-600/20 to-purple-600/20 border border-pink-500/30 rounded-lg hover:border-pink-500/50 transition-all group"
+                                >
+                                    <Sparkles className="w-5 h-5 text-pink-400 group-hover:scale-110 transition-transform" />
+                                    <span className="text-sm font-medium text-white">Clone Voice</span>
+                                </button>
+                            )}
                         </div>
 
                         {/* Current Voice Display - NEW */}
@@ -220,6 +227,23 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({ isOpen, 
                                         {!config.voiceId && <div className="w-2 h-2 rounded-full bg-purple-500" />}
                                     </button>
 
+                                    {voices.default_models.map((voice) => (
+                                        <button
+                                            key={voice}
+                                            onClick={() => handleVoiceSelect(voice)}
+                                            className={`flex items-center justify-between p-3 rounded-lg border text-left transition-all ${config.voiceId === voice
+                                                ? 'bg-purple-500/20 border-purple-500/50 text-white'
+                                                : 'bg-white/5 border-transparent text-white/60 hover:bg-white/10'
+                                                }`}
+                                        >
+                                            <div className="flex flex-col">
+                                                <span className="text-sm truncate">☁️ {voice.replace(/_/g, ' ')}</span>
+                                                <span className="text-xs text-white/30 uppercase">{config.provider === 'minimax' ? 'MiniMax Cloud' : 'Built-in'}</span>
+                                            </div>
+                                            {config.voiceId === voice && <div className="w-2 h-2 rounded-full bg-purple-500" />}
+                                        </button>
+                                    ))}
+
                                     {/* Cloned Voices */}
                                     {voices.cloned_voices.map((voice) => (
                                         <button
@@ -239,7 +263,7 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({ isOpen, 
                                     ))}
 
                                     {/* Show more prompt */}
-                                    {voices.cloned_voices.length === 0 && (
+                                    {voices.default_models.length === 0 && voices.cloned_voices.length === 0 && (
                                         <div className="text-center py-4 text-white/40 text-sm">
                                             <p>No custom voices yet</p>
                                             <button
@@ -255,7 +279,8 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({ isOpen, 
                         </div>
 
                         {/* Quick Clone Section (Simplified) */}
-                        <div className="bg-white/5 rounded-lg p-4 border border-white/10 space-y-3">
+                        {isLocalVoiceMode && (
+                            <div className="bg-white/5 rounded-lg p-4 border border-white/10 space-y-3">
                             <div className="flex items-center gap-2 text-sm font-medium text-purple-300">
                                 <Upload size={16} />
                                 <span>Quick Upload (6-15 sec WAV)</span>
@@ -289,7 +314,8 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({ isOpen, 
                             <p className="text-xs text-white/30 text-center">
                                 For better results, use the <button onClick={() => setShowCloneWizard(true)} className="text-purple-400 hover:underline">Voice Cloning Wizard</button>
                             </p>
-                        </div>
+                            </div>
+                        )}
                     </div>
 
                     {/* Footer */}
@@ -332,4 +358,3 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({ isOpen, 
         </>
     );
 };
-

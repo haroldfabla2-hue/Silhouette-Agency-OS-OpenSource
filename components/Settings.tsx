@@ -241,23 +241,23 @@ const Settings: React.FC = () => {
 
         return (
             <div className={`p-4 rounded-xl border transition-all ${schema.isConnected ? 'bg-slate-900/50 border-green-900/50' : 'bg-slate-950 border-slate-800'}`}>
-                <div className="flex justify-between items-start mb-3">
-                    <div className="flex gap-3">
+                <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex min-w-0 gap-3">
                         <div className={`p-2 rounded-lg ${schema.isConnected ? 'bg-green-900/20 text-green-400' : 'bg-slate-800 text-slate-500'}`}>
                             <CategoryIcon size={20} />
                         </div>
-                        <div>
+                        <div className="min-w-0">
                             <h4 className="text-sm font-bold text-white flex items-center gap-2">
                                 {schema.name}
                                 {schema.isConnected && <span className="text-[9px] bg-green-500 text-black px-1.5 py-0.5 rounded font-bold">ACTIVE</span>}
                             </h4>
-                            <p className="text-[10px] text-slate-500">{schema.description}</p>
+                            <p className="text-[10px] text-slate-500 break-words">{schema.description}</p>
                         </div>
                     </div>
                     {!isEditing ? (
                         <button
                             onClick={() => setEditingIntegration(schema.id)}
-                            className="text-xs bg-slate-800 hover:bg-slate-700 text-white px-3 py-1.5 rounded transition-colors"
+                            className="w-full text-xs bg-slate-800 hover:bg-slate-700 text-white px-3 py-1.5 rounded transition-colors sm:w-auto"
                         >
                             {schema.isConnected ? 'CONFIGURE' : 'CONNECT'}
                         </button>
@@ -275,14 +275,14 @@ const Settings: React.FC = () => {
                     <div className="mt-4 space-y-4 bg-black/20 p-4 rounded border border-slate-800 animate-in fade-in slide-in-from-top-2">
                         {/* OAuth2 Connect Button */}
                         {schema.authType === 'OAUTH2' && (
-                            <div className="mb-4 p-3 bg-cyan-900/10 border border-cyan-500/20 rounded flex justify-between items-center">
+                            <div className="mb-4 p-3 bg-cyan-900/10 border border-cyan-500/20 rounded flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                 <div>
                                     <span className="text-xs font-bold text-white block">OAuth2 Authorization</span>
                                     <p className="text-[10px] text-slate-400">Requires browser redirect to authenticate.</p>
                                 </div>
                                 <button
                                     onClick={() => startOAuthFlow(schema)}
-                                    className="px-3 py-1.5 bg-white text-black text-xs font-bold rounded hover:bg-slate-200 flex items-center gap-2"
+                                    className="w-full justify-center px-3 py-1.5 bg-white text-black text-xs font-bold rounded hover:bg-slate-200 flex items-center gap-2 sm:w-auto"
                                 >
                                     <Globe size={12} /> CONNECT WITH {schema.name.toUpperCase()}
                                 </button>
@@ -301,7 +301,7 @@ const Settings: React.FC = () => {
 
                             return (
                                 <div key={field.key}>
-                                    <div className="flex justify-between items-end mb-1">
+                                    <div className="mb-1 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                                         <label className="text-[10px] uppercase text-slate-500 font-bold flex items-center gap-1">
                                             {field.label} {field.required && <span className="text-red-400">*</span>}
                                         </label>
@@ -338,18 +338,18 @@ const Settings: React.FC = () => {
                             );
                         })}
 
-                        <div className="flex justify-end gap-2 mt-4 pt-3 border-t border-slate-800/50">
+                        <div className="mt-4 flex flex-col-reverse gap-2 pt-3 border-t border-slate-800/50 sm:flex-row sm:justify-end">
                             {schema.isConnected && (
                                 <button
                                     onClick={() => { settingsManager.disconnectIntegration(schema.id); refreshSettings(); setEditingIntegration(null); }}
-                                    className="px-3 py-1.5 text-red-400 hover:bg-red-900/20 rounded text-xs transition-colors"
+                                    className="w-full px-3 py-1.5 text-red-400 hover:bg-red-900/20 rounded text-xs transition-colors sm:w-auto"
                                 >
                                     DISCONNECT
                                 </button>
                             )}
                             <button
                                 onClick={() => handleIntegrationSave(schema.id)}
-                                className="px-4 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded text-xs font-bold shadow-lg shadow-green-900/20"
+                                className="w-full px-4 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded text-xs font-bold shadow-lg shadow-green-900/20 sm:w-auto"
                             >
                                 SAVE CONFIGURATION
                             </button>
@@ -361,10 +361,10 @@ const Settings: React.FC = () => {
     };
 
     return (
-        <div className="h-full flex flex-col gap-6">
+        <div className="h-full min-h-0 flex flex-col gap-4 sm:gap-6">
 
             {/* Header */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 glass-panel p-4 md:p-6 rounded-xl">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 glass-panel p-4 sm:p-5 lg:p-6 rounded-xl">
                 <div>
                     <h1 className="text-2xl font-bold text-white flex items-center gap-3">
                         <Sliders className="text-cyan-400" /> System Configuration
@@ -379,7 +379,7 @@ const Settings: React.FC = () => {
                             <button
                                 key={tab}
                                 onClick={() => setActiveTab(tab as any)}
-                                className={`px-4 py-2 rounded-md text-xs font-bold transition-all ${activeTab === tab
+                                className={`whitespace-nowrap px-4 py-2 rounded-md text-xs font-bold transition-all ${activeTab === tab
                                     ? 'bg-cyan-600 text-white shadow-lg'
                                     : 'text-slate-400 hover:text-white hover:bg-slate-800'
                                     }`}
@@ -397,11 +397,11 @@ const Settings: React.FC = () => {
             </div>
 
             {/* Content Area */}
-            <div className="flex-1 glass-panel rounded-xl p-6 overflow-y-auto custom-scrollbar">
+            <div className="flex-1 min-h-0 glass-panel rounded-xl p-4 sm:p-5 lg:p-6 overflow-y-auto custom-scrollbar">
 
                 {/* GENERAL SETTINGS */}
                 {activeTab === 'GENERAL' && (
-                    <div className="max-w-3xl space-y-8">
+                    <div className="max-w-4xl space-y-8">
                         <section>
                             <h3 className="text-sm font-bold text-white border-b border-slate-800 pb-2 mb-4 flex items-center gap-2">
                                 <Palette size={16} className="text-purple-400" /> Appearance
@@ -543,7 +543,7 @@ const Settings: React.FC = () => {
                                         {/* Advanced Model Config */}
                                         <div className="mt-4 pt-4 border-t border-slate-800">
                                             <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-3">Advanced Video Models (Replicate IDs)</h4>
-                                            <div className="grid grid-cols-2 gap-3">
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                                 <div>
                                                     <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Google Veo 3.1 ID</label>
                                                     <input
@@ -607,7 +607,7 @@ const Settings: React.FC = () => {
 
                 {/* WEBHOOKS */}
                 {activeTab === 'WEBHOOKS' && (
-                    <div className="max-w-3xl space-y-8">
+                    <div className="max-w-4xl space-y-8">
                         <section>
                             <h3 className="text-sm font-bold text-white border-b border-slate-800 pb-2 mb-4 flex items-center gap-2">
                                 <Globe size={16} className="text-blue-400" /> External Webhook Subscriptions
@@ -619,7 +619,7 @@ const Settings: React.FC = () => {
 
                                 <div className="space-y-4">
                                     <div className="p-3 bg-slate-950 border border-slate-800 rounded flex flex-col gap-2">
-                                        <div className="flex justify-between items-center">
+                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                             <div className="flex items-center gap-2">
                                                 <div className="w-2 h-2 rounded-full bg-pink-500"></div>
                                                 <span className="text-sm font-bold text-white">Slack Events API</span>
@@ -635,7 +635,7 @@ const Settings: React.FC = () => {
                                     </div>
 
                                     <div className="p-3 bg-slate-950 border border-slate-800 rounded flex flex-col gap-2">
-                                        <div className="flex justify-between items-center">
+                                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                             <div className="flex items-center gap-2">
                                                 <div className="w-2 h-2 rounded-full bg-slate-100"></div>
                                                 <span className="text-sm font-bold text-white">GitHub Webhooks</span>
@@ -651,7 +651,7 @@ const Settings: React.FC = () => {
                                     </div>
 
                                     <div className="p-3 bg-slate-950 border border-slate-800 rounded flex flex-col gap-2">
-                                        <div className="flex justify-between items-center">
+                                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                             <div className="flex items-center gap-2">
                                                 <div className="w-2 h-2 rounded-full bg-cyan-500"></div>
                                                 <span className="text-sm font-bold text-white">Custom Payload (Generic)</span>
@@ -901,11 +901,11 @@ const Settings: React.FC = () => {
                         <div className="space-y-6">
 
                             {/* DREAMER CONFIGURATION */}
-                            <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-xl">
+                            <div className="bg-slate-900/50 border border-slate-800 p-4 sm:p-6 rounded-xl">
                                 <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
                                     <Cloud size={16} className="text-cyan-400" /> Dreamer Configuration
                                 </h3>
-                                <div className="flex items-center justify-between p-4 bg-black/20 rounded border border-slate-800">
+                                <div className="flex flex-col gap-4 p-4 bg-black/20 rounded border border-slate-800 sm:flex-row sm:items-center sm:justify-between">
                                     <div>
                                         <span className="text-xs text-white font-bold block">Operational Mode</span>
                                         <span className="text-[10px] text-slate-500">
@@ -932,8 +932,8 @@ const Settings: React.FC = () => {
                             </div>
 
                             {/* CLOUD AUTO-EVOLUTION */}
-                            <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-xl">
-                                <h3 className="text-sm font-bold text-white mb-4 flex items-center justify-between">
+                            <div className="bg-slate-900/50 border border-slate-800 p-4 sm:p-6 rounded-xl">
+                                <h3 className="text-sm font-bold text-white mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                                     <span className="flex items-center gap-2"><Github size={16} className="text-white" /> Cloud Auto-Evolution Matrix</span>
                                     {gitConfig.configured ? (
                                         <span className="bg-green-500/20 text-green-400 text-[10px] px-2 py-1 rounded-full font-bold flex items-center gap-1 border border-green-500/30">
@@ -970,7 +970,7 @@ const Settings: React.FC = () => {
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-2 gap-4">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                         <div>
                                             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Repository Owner / Org</label>
                                             <input
@@ -993,11 +993,11 @@ const Settings: React.FC = () => {
                                         </div>
                                     </div>
 
-                                    <div className="flex justify-end pt-3">
+                                    <div className="flex justify-stretch pt-3 sm:justify-end">
                                         <button
                                             onClick={handleSaveAutoEvolution}
                                             disabled={isSyncingCloud}
-                                            className={`px-4 py-2 bg-white text-black text-xs font-bold rounded flex items-center gap-2 hover:bg-slate-200 transition-colors shadow-lg ${isSyncingCloud ? 'opacity-70 cursor-wait' : ''}`}
+                                            className={`w-full px-4 py-2 bg-white text-black text-xs font-bold rounded flex items-center justify-center gap-2 hover:bg-slate-200 transition-colors shadow-lg sm:w-auto ${isSyncingCloud ? 'opacity-70 cursor-wait' : ''}`}
                                         >
                                             <Cloud size={14} className={isSyncingCloud ? 'animate-bounce' : ''} />
                                             {isSyncingCloud ? 'SYNCING CLOUD...' : 'SAVE & SYNC OVERRIDE'}
@@ -1006,33 +1006,33 @@ const Settings: React.FC = () => {
                                 </div>
                             </div>
 
-                            <div className="bg-red-900/10 border border-red-900/50 p-6 rounded-xl">
+                            <div className="bg-red-900/10 border border-red-900/50 p-4 sm:p-6 rounded-xl">
                                 <h3 className="text-sm font-bold text-red-400 mb-4 flex items-center gap-2">
                                     <AlertTriangle size={16} /> Danger Zone
                                 </h3>
-                                <div className="flex items-center justify-between p-4 bg-black/20 rounded border border-red-900/30 mb-4">
+                                <div className="mb-4 flex flex-col gap-4 p-4 bg-black/20 rounded border border-red-900/30 sm:flex-row sm:items-center sm:justify-between">
                                     <div>
                                         <span className="text-xs text-white font-bold block">Factory Reset</span>
                                         <span className="text-[10px] text-slate-500">Wipes all continuum memory, logs, and custom settings.</span>
                                     </div>
-                                    <button onClick={handleFactoryReset} className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded flex items-center gap-2">
+                                    <button onClick={handleFactoryReset} className="w-full px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded flex items-center justify-center gap-2 sm:w-auto">
                                         <Trash2 size={14} /> PURGE SYSTEM
                                     </button>
                                 </div>
-                                <div className="flex items-center justify-between p-4 bg-black/20 rounded border border-red-900/30">
+                                <div className="flex flex-col gap-4 p-4 bg-black/20 rounded border border-red-900/30 sm:flex-row sm:items-center sm:justify-between">
                                     <div>
                                         <span className="text-xs text-white font-bold block">Force Kernel Restart</span>
                                         <span className="text-[10px] text-slate-500">Restarts the Node.js backend process immediately.</span>
                                     </div>
-                                    <button onClick={() => window.location.reload()} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded flex items-center gap-2">
+                                    <button onClick={() => window.location.reload()} className="w-full px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded flex items-center justify-center gap-2 sm:w-auto">
                                         <RotateCcw size={14} /> REBOOT
                                     </button>
                                 </div>
                             </div>
 
-                            <div className="p-6 bg-slate-900/50 rounded-xl border border-slate-800">
+                            <div className="p-4 sm:p-6 bg-slate-900/50 rounded-xl border border-slate-800">
                                 <h3 className="text-sm font-bold text-white mb-2">System Info</h3>
-                                <div className="grid grid-cols-2 gap-4 text-xs font-mono text-slate-400">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-mono text-slate-400">
                                     <div>Version: <span className="text-cyan-400">4.2.0-Enterprise</span></div>
                                     <div>Build ID: <span className="text-purple-400">sha-29f8a1</span></div>
                                     <div>Environment: <span className="text-green-400">Production</span></div>

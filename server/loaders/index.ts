@@ -54,12 +54,16 @@ export const initServer = async () => {
     }, 30000);
 
     // === VOICE ENGINE MONITORING ===
-    // Start voice engine health monitoring (checks every 30s) if enabled
-    if (process.env.ENABLE_VOICE_ENGINE === 'true') {
+    // Local voice engine only makes sense when explicitly enabled and selected.
+    const shouldMonitorLocalVoiceEngine =
+        process.env.ENABLE_VOICE_ENGINE === 'true' &&
+        (process.env.VOICE_PROVIDER || 'local').toLowerCase() === 'local';
+
+    if (shouldMonitorLocalVoiceEngine) {
         voiceMonitor.startMonitoring();
         console.log("[LOADER] 🎤 Voice Engine monitoring started");
     } else {
-        console.log("[LOADER] 🎤 Voice Engine monitoring disabled (ENABLE_VOICE_ENGINE != true)");
+        console.log("[LOADER] 🎤 Voice Engine monitoring disabled (local engine not selected)");
     }
 
     // === CONNECTION NERVOUS SYSTEM ===

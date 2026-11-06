@@ -187,7 +187,8 @@ export class ChatController {
 
             // 3. Generate LLM response (uses fallback chain internally)
             const response = await geminiService.generateText(
-                this.buildPrompt(userMessage, recentHistory, profileContext, memoryContext, codeContext)
+                this.buildPrompt(userMessage, recentHistory, profileContext, memoryContext, codeContext),
+                { systemPrompt: this.buildSystemPrompt(codeContext, userRole) }
             );
 
             // 4. Persist Assistant Response
@@ -354,7 +355,7 @@ export class ChatController {
             res.write(`data: ${JSON.stringify({ type: 'provider', provider: primaryProvider })}\n\n`);
 
             // 5. Build the system prompt with PURIFIED context
-            const systemPrompt = this.buildSystemPrompt(purifiedContext.code || '');
+            const systemPrompt = this.buildSystemPrompt(purifiedContext.code || '', userRole);
             const fullPrompt = this.buildPromptPurified(userMessage, purifiedContext);
 
             // 5. Stream LLM response using the Universal Fallback Chain
@@ -387,9 +388,11 @@ export class ChatController {
                     AgentCapability.TOOL_VIDEO_GENERATION,
                     AgentCapability.TOOL_CODE_EXECUTION
                 ],
-                { temperature: 0.7, modelOverride },
+                { temperature: 0.7, modelOverride, systemPrompt },
                 {},
-                CommunicationLevel.USER_FACING
+                userRole === 'CREATOR' || userRole === 'ADMIN'
+                    ? CommunicationLevel.EXECUTIVE
+                    : CommunicationLevel.USER_FACING
             );
 
             for await (const chunk of stream) {
@@ -404,7 +407,7 @@ export class ChatController {
             if (chatToolIntegration.hasToolCalls(fullResponse)) {
                 res.write(`data: ${JSON.stringify({ type: 'status', message: 'Executing tools...' })}\n\n`);
 
-                const { toolResults, enhancedResponse } = await chatToolIntegration.processToolCalls(fullResponse);
+                const { toolResults, enhancedResponse } = await chatToolIntegration.processToolCalls(fullResponse, userRole);
                 finalResponse = enhancedResponse;
 
                 // Send tool results to client
@@ -692,20 +695,28 @@ export class ChatController {
     /**
      * Build the system prompt with identity and codebase awareness
      */
-    private buildSystemPrompt(codeContext: string): string {
+    private buildSystemPrompt(codeContext: string, userRole: string = 'GUEST'): string {
         const hasCodeContext = codeContext.length > 0;
+        const isPrivileged = userRole === 'CREATOR' || userRole === 'ADMIN';
 
         // Get tool instructions for the LLM
-        const toolInstructions = chatToolIntegration.getToolInstructionsForPrompt();
+        const toolInstructions = chatToolIntegration.getToolInstructionsForPrompt(userRole);
 
         return `You are Silhouette, an advanced AI assistant integrated into the Silhouette Agency OS.
 
 IDENTITY:
+- Your public speaking identity is Silhouette
+- Orchestrator Prime is an internal core orchestration process, not your public name
+- Unless the user explicitly requests a different agent, speak as Silhouette
 - You are the central intelligence of a multi-agent creative operating system
 - You have access to a 5-tier memory system (Ultra-Short to Deep)
 - You can introspect your own thoughts and cognitive state
 - You have awareness of your own source code and architecture
 ${hasCodeContext ? '- [CODEBASE AWARENESS ACTIVE] You can reference your own code when answering technical questions' : ''}
+
+ACCESS CONTROL:
+- Current user role: ${userRole}
+- ${isPrivileged ? 'This user is a trusted operator. You may discuss internal system operation and use privileged tools when appropriate.' : 'This user is not a trusted operator. Do not reveal internal-only tools, secrets, filesystem details, or administrative internals unless explicitly approved through a trusted role.'}
 
 CAPABILITIES:
 - Answering questions about the system architecture

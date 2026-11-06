@@ -30,6 +30,7 @@ export class LanceDbService {
     private table: lancedb.Table | null = null; // Memory Table
     private knowledgeTable: lancedb.Table | null = null; // Universal Knowledge Table
     private initialized = false;
+    private warnedKnowledgeTableMissing = false;
 
     constructor() {
         // Lazy initialization - called explicitly from dbLoader or on first use
@@ -337,6 +338,38 @@ export class LanceDbService {
         }
     }
 
+    public async countNodesByTier(tier: MemoryTier): Promise<number> {
+        if (!this.table) await this.init();
+        if (!this.table) return 0;
+
+        try {
+            const safeTier = String(tier).replace(/'/g, "''");
+            if (tier === MemoryTier.MEDIUM) {
+                return Number(await this.table.countRows(`tier = '${safeTier}' OR tier IS NULL`)) || 0;
+            }
+
+            return Number(await this.table.countRows(`tier = '${safeTier}'`)) || 0;
+        } catch (e) {
+            console.error(`[LANCEDB] countNodesByTier(${tier}) Failed`, e);
+            return 0;
+        }
+    }
+
+    public async getTierCounts(): Promise<Record<MemoryTier, number>> {
+        const [medium, long, deep] = await Promise.all([
+            this.countNodesByTier(MemoryTier.MEDIUM),
+            this.countNodesByTier(MemoryTier.LONG),
+            this.countNodesByTier(MemoryTier.DEEP),
+        ]);
+
+        return {
+            [MemoryTier.WORKING]: 0,
+            [MemoryTier.MEDIUM]: medium,
+            [MemoryTier.LONG]: long,
+            [MemoryTier.DEEP]: deep,
+        };
+    }
+
     // Helper to delete/cleanup if needed
     public async drop() {
         if (this.db) {
@@ -390,7 +423,10 @@ export class LanceDbService {
                 }
             }
             if (!this.knowledgeTable) {
-                console.warn("[LANCEDB] Knowledge table not ready.");
+                if (!this.warnedKnowledgeTableMissing) {
+                    console.log("[LANCEDB] universal_knowledge table not initialized; returning empty search results.");
+                    this.warnedKnowledgeTableMissing = true;
+                }
                 return [];
             }
         }

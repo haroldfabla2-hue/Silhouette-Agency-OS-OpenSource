@@ -25,7 +25,7 @@ const LLM_PROVIDERS = [
     { id: 'openai', name: 'OpenAI', envKey: 'OPENAI_API_KEY', model: 'gpt-4o-mini', requiresKey: true },
     { id: 'deepseek', name: 'DeepSeek', envKey: 'DEEPSEEK_API_KEY', model: 'deepseek-coder', requiresKey: true },
     { id: 'openrouter', name: 'OpenRouter (Multi-Model Routing)', envKey: 'OPENROUTER_API_KEY', model: 'google/gemini-2.0-flash-exp:free', requiresKey: true },
-    { id: 'minimax', name: 'Minimax (Native Audio/Vision)', envKey: 'MINIMAX_API_KEY', model: 'abab-6.5s-chat', requiresKey: true },
+    { id: 'minimax', name: 'Minimax (Native Audio/Vision)', envKey: 'MINIMAX_API_KEY', model: 'MiniMax-M2.5', requiresKey: true },
     { id: 'ollama', name: 'Ollama (Local Offline)', envKey: '', model: 'llama3:8b', requiresKey: false }
 ];
 
@@ -539,7 +539,7 @@ ${domain} {
     let voiceEnabled = false;
     let voiceProvider = 'minimax';
     let minimaxVoiceApiKey = '';
-    let voiceId = 'female-chatty';
+    let voiceId = 'English_radiant_girl';
 
     const setupVoice = await confirm({
         message: 'Do you want to configure the Voice Engine (TTS/STT) for auditory capabilities?',
@@ -571,9 +571,9 @@ ${domain} {
             voiceId = await select({
                 message: 'Choose a default Voice Profile:',
                 options: [
-                    { value: 'female-chatty', label: 'Chatty Girl (Expressive, energetic, young female)', hint: 'Ideal for Personas' },
-                    { value: 'presenter_female', label: 'Professional Female (Calm, articulate, clear)' },
-                    { value: 'male-qn-qingse', label: 'Default Male (Standard masculine voice)' },
+                    { value: 'English_radiant_girl', label: 'Radiant Girl (Expressive, energetic)', hint: 'Official MiniMax system voice' },
+                    { value: 'English_CalmWoman', label: 'Calm Woman (Professional, articulate)' },
+                    { value: 'English_magnetic_voiced_man', label: 'Magnetic-voiced Male (Standard masculine voice)' },
                     { value: 'custom', label: 'Custom Voice ID (Enter manually)' }
                 ]
             }) as string;
@@ -610,7 +610,12 @@ ${domain} {
                 botToken: telegramToken || '',
                 accessMode: telegramAccessMode,
                 responseMode: telegramResponseMode,
-                allowedIds: telegramAllowedIds ? telegramAllowedIds.split(',').map(id => id.trim()) : []
+                allowedChatIds: telegramAllowedIds
+                    ? telegramAllowedIds
+                        .split(',')
+                        .map(id => parseInt(id.trim(), 10))
+                        .filter(id => !Number.isNaN(id))
+                    : []
             },
             whatsapp: {
                 enabled: whatsappEnabled,
@@ -692,10 +697,14 @@ ${domain} {
     // Write Voice ENV
     envLines.push('');
     envLines.push(`# Voice Configuration`);
-    envLines.push(`ENABLE_VOICE_ENGINE=${voiceEnabled}`);
+    envLines.push(`VOICE_ENABLED=${voiceEnabled}`);
+    envLines.push(`ENABLE_VOICE_ENGINE=${voiceEnabled && voiceProvider === 'local'}`);
     if (voiceEnabled) {
         envLines.push(`VOICE_PROVIDER=${voiceProvider}`);
         envLines.push(`VOICE_ID=${voiceId}`);
+        if (voiceProvider === 'minimax') {
+            envLines.push(`MINIMAX_BASE_URL=https://api.minimax.io/v1`);
+        }
         if (minimaxVoiceApiKey) {
             envLines.push(`MINIMAX_VOICE_API_KEY=${minimaxVoiceApiKey}`);
         }

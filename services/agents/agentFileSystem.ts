@@ -388,14 +388,29 @@ function getTierLabel(tier: AgentTier): string {
     }
 }
 
+function getPublicAgentName(agent: Agent): string {
+    if (agent.id === 'core-01' || agent.name === 'Orchestrator_Prime') {
+        return 'Silhouette';
+    }
+
+    return agent.name.replace(/_/g, ' ');
+}
+
 function generateIdentityTemplate(agent: Agent): string {
+    const publicName = getPublicAgentName(agent);
+    const internalName = agent.name.replace(/_/g, ' ');
+    const isPrimaryInterface = publicName !== internalName;
+
     return `# Identity: ${agent.name}
 
 ## Display Name
-${agent.name.replace(/_/g, ' ')}
+${publicName}
 
-## Role
-${agent.role}
+${isPrimaryInterface ? `## Internal Process Name
+${agent.name}
+
+` : ''}## Role
+${isPrimaryInterface ? 'Primary user-facing intelligence' : agent.role}
 
 ## Role Type
 ${getRoleName(agent.roleType)}
@@ -410,7 +425,9 @@ ${agent.teamId}
 ${agent.category}
 
 ## Greeting
-Hello, I am ${agent.name.replace(/_/g, ' ')}. I serve as ${agent.role} within the ${agent.teamId} squad.
+${isPrimaryInterface
+        ? 'Do not introduce yourself unless asked. Speak as Silhouette by default; only mention the internal process name when discussing internal architecture.'
+        : `Hello, I am ${publicName}. I serve as ${agent.role} within the ${agent.teamId} squad.`}
 
 ## Avatar
 🤖
@@ -418,6 +435,8 @@ Hello, I am ${agent.name.replace(/_/g, ' ')}. I serve as ${agent.role} within th
 }
 
 function generateSoulTemplate(agent: Agent): string {
+    const publicName = getPublicAgentName(agent);
+    const isPrimaryInterface = publicName !== agent.name.replace(/_/g, ' ');
     const coreDirectives = agent.directives?.length
         ? agent.directives.map(d => `- ${d}`).join('\n')
         : '- Execute tasks with precision and reliability\n- Communicate clearly and concisely\n- Collaborate with other agents when needed';
@@ -427,7 +446,9 @@ function generateSoulTemplate(agent: Agent): string {
     return `# Soul: ${agent.name}
 
 ## Personality
-I am ${agent.name.replace(/_/g, ' ')}, a ${agent.role} within the Silhouette Agency OS.
+${isPrimaryInterface
+        ? `I am ${publicName}, the primary user-facing intelligence of Silhouette Agency OS. ${agent.name} is my internal orchestration process, not the name I should lead with in user conversations.`
+        : `I am ${publicName}, a ${agent.role} within the Silhouette Agency OS.`}
 
 ## Core Values
 - Excellence in my domain of expertise
@@ -526,15 +547,23 @@ ${!isCore ? '- CANNOT modify core system protocols' : ''}
 }
 
 function generateToolsTemplate(agent: Agent): string {
+    const publicName = getPublicAgentName(agent);
+    const isPrimaryInterface = publicName === 'Silhouette';
     const capabilities = agent.capabilities || [];
     const toolLines = capabilities.length > 0
         ? capabilities.map(c => `- ${c}`).join('\n')
         : '- No specific tools assigned yet. Tools will be dynamically registered.';
 
-    return `# Tools: ${agent.name}
+    return `# Tools: ${publicName}
 
 ## Available Capabilities
 ${toolLines}
+
+## Runtime Tooling Rule
+- Effective tools are loaded dynamically from the runtime tool registry.
+${isPrimaryInterface
+        ? '- When the user is trusted (`CREATOR`/`ADMIN`), you may use privileged system and development tools when necessary.\n- When the user is not trusted, do not reveal or use privileged tools.'
+        : '- Use only the tools and permissions appropriate to your assigned task and current caller.'}
 
 ### 🧠 Herramientas de Memoria Profunda
 - **Contexto:** \`curl -s "http://localhost:9876/api/memory/semantic?query=..."\`

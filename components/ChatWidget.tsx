@@ -51,7 +51,7 @@ import type { ParsedAsset } from './chat/AssetRenderer';
 
 interface ChatWidgetProps {
     currentUserRole: UserRole;
-    onChangeRole: (role: UserRole) => void;
+    currentUserName?: string;
     systemMetrics?: any;
     onUpdateThoughts?: (thoughts: string[]) => void;
     onAgentThought?: (agentId: string, thoughts: string[], role: string) => void;
@@ -134,7 +134,7 @@ const TerminalBlock: React.FC<{ content: string }> = ({ content }) => {
     );
 };
 
-const ChatWidget: React.FC<ChatWidgetProps> = ({ currentUserRole, onChangeRole, systemMetrics, onUpdateThoughts, onAgentThought }) => {
+const ChatWidget: React.FC<ChatWidgetProps> = ({ currentUserRole, currentUserName, systemMetrics, onUpdateThoughts, onAgentThought }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
@@ -452,28 +452,22 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ currentUserRole, onChangeRole, 
     if (currentUserRole === UserRole.VISITOR) return null;
 
     return (
-        <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-4">
+        <div className="fixed bottom-24 right-4 md:bottom-6 md:right-6 z-50 flex max-w-[calc(100vw-1rem)] flex-col items-end gap-3 sm:gap-4">
 
-            {/* Role Switcher */}
-            <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-700 backdrop-blur-md flex items-center gap-2 shadow-xl">
-                <User size={14} className="text-slate-400" />
-                <select
-                    value={currentUserRole}
-                    onChange={(e) => onChangeRole(e.target.value as UserRole)}
-                    className="bg-transparent text-xs text-white border-none outline-none cursor-pointer"
-                >
-                    {Object.values(UserRole).map(role => (
-                        <option key={role} value={role}>{role}</option>
-                    ))}
-                </select>
+            <div className="bg-slate-900/80 px-3 py-2 rounded-lg border border-slate-700 backdrop-blur-md flex items-center gap-3 shadow-xl max-w-full">
+                <User size={14} className="text-cyan-300" />
+                <div className="min-w-0">
+                    <div className="text-[11px] font-medium text-white truncate">{currentUserName || 'Operator'}</div>
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-slate-400">{currentUserRole.replace(/_/g, ' ')}</div>
+                </div>
             </div>
 
             {isOpen && (
-                <div className="w-[95vw] md:w-[800px] h-[85vh] md:h-[600px] bg-slate-950 border border-slate-800 rounded-xl shadow-2xl flex overflow-hidden animate-in fade-in slide-in-from-bottom-10 relative">
+                <div className="w-[calc(100vw-1rem)] max-w-[960px] h-[min(82dvh,720px)] md:h-[600px] bg-slate-950 border border-slate-800 rounded-xl shadow-2xl flex overflow-hidden animate-in fade-in slide-in-from-bottom-10 relative">
 
                     {/* SIDEBAR */}
                     {/* Mobile: Absolute overlay. Desktop: Relative side-by-side */}
-                    <div className={`${isSidebarOpen ? 'w-3/4 md:w-64 translate-x-0' : 'w-0 -translate-x-full'} absolute md:relative z-20 h-full bg-slate-900 border-r border-slate-800 transition-all duration-300 flex flex-col overflow-hidden`}>
+                    <div className={`${isSidebarOpen ? 'w-[82vw] max-w-[18rem] md:w-64 translate-x-0' : 'w-0 -translate-x-full'} absolute md:relative z-20 h-full bg-slate-900 border-r border-slate-800 transition-all duration-300 flex flex-col overflow-hidden`}>
                         <div className="p-3 border-b border-slate-800 flex justify-between items-center">
                             <span className="text-xs font-bold text-slate-400">SESSIONS</span>
                             <button onClick={createNewSession} className="text-cyan-400 hover:text-cyan-300">
@@ -571,7 +565,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ currentUserRole, onChangeRole, 
 
                                 return (
                                     <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
-                                        <div className={`max-w-[85%] p-3 rounded-lg text-sm ${m.role === 'user'
+                                        <div className={`max-w-[92%] sm:max-w-[85%] p-3 rounded-lg text-sm ${m.role === 'user'
                                             ? 'bg-cyan-600 text-white rounded-br-none'
                                             : 'bg-slate-800/80 text-slate-300 rounded-bl-none border border-slate-700/50'
                                             }`}>
@@ -700,7 +694,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ currentUserRole, onChangeRole, 
 
                         {/* INPUT AREA */}
                         <div className="p-4 border-t border-slate-800 bg-slate-900/30">
-                            <div className="flex gap-2">
+                            <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                 <input
                                     type="text"
                                     value={input}
@@ -708,7 +702,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ currentUserRole, onChangeRole, 
                                     onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                                     placeholder={isConnected ? "Escribe tu comando a Silhouette..." : isLocalMode ? "Modo Local (Sin conexión al Hive Mind)..." : "Conectando..."}
                                     disabled={!isConnected && !isLocalMode}
-                                    className="flex-1 bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-cyan-500 focus:outline-none disabled:opacity-50 shadow-inner"
+                                    className="min-w-0 flex-1 basis-full sm:basis-auto bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-cyan-500 focus:outline-none disabled:opacity-50 shadow-inner"
                                 />
                                 <button
                                     onClick={() => setIsWebSearchEnabled(!isWebSearchEnabled)}

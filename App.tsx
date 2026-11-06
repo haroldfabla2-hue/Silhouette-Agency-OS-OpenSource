@@ -1,10 +1,11 @@
 import React, { useState, useEffect, Suspense } from 'react';
-import Sidebar from './components/Sidebar';
+import Sidebar, { navigationItems } from './components/Sidebar';
 import { Agent, SystemMode, AutonomousConfig, WorkflowStage, IntrospectionLayer, UserRole, Project, MorphPayload, SystemMetrics, SystemProtocol } from './types';
 import { DEFAULT_AUTONOMOUS_CONFIG, DEFAULT_API_CONFIG } from './constants';
 import { api } from './utils/api';
 import { systemBus } from './services/systemBus';
-import LoginGate from './components/LoginGate';
+import { useAuth } from './components/authContext';
+import { SystemErrorBoundary } from './components/SystemErrorBoundary';
 
 // CRITICAL COMPONENTS - Eager load for fast initial render
 // [OPTIMIZATION] Dashboard is now Lazy Loaded to defer Recharts/Charts bundle
@@ -41,9 +42,7 @@ declare global {
 }
 
 const App: React.FC = () => {
-  // ... (state definitions unchanged) ...
-
-  const [currentUserRole, setCurrentUserRole] = useState<UserRole>(UserRole.ADMIN);
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -86,6 +85,21 @@ const App: React.FC = () => {
   const [logs, setLogs] = useState<string[]>([]);
   const [driveOpen, setDriveOpen] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
+
+  const mapBackendRoleToUiRole = (role?: string): UserRole => {
+    switch (role) {
+      case 'CREATOR':
+        return UserRole.SUPER_ADMIN;
+      case 'ADMIN':
+        return UserRole.ADMIN;
+      case 'USER':
+        return UserRole.CLIENT;
+      default:
+        return UserRole.VISITOR;
+    }
+  };
+
+  const currentUserRole = mapBackendRoleToUiRole(user?.role);
 
   // ... (effects unchanged) ...
 
@@ -324,7 +338,7 @@ const App: React.FC = () => {
           )}
         </div>
         <div style={{ display: activeTab === 'memory' ? 'block' : 'none', height: '100%' }}>
-          {visitedTabs.has('memory') && <ContinuumMemoryExplorer />}
+          {activeTab === 'memory' && <ContinuumMemoryExplorer isActive />}
         </div>
         <div style={{ display: activeTab === 'dynamic_workspace' ? 'block' : 'none', height: '100%' }}>
           {visitedTabs.has('dynamic_workspace') && <DynamicWorkspace initialProjectId={pendingProjectId} />}
@@ -350,66 +364,138 @@ const App: React.FC = () => {
   const density = uiOverride?.density || (appSettings.theme?.density || 'comfortable');
 
   const borderClass = uiOverride?.mode === 'DEFENSE' ? 'border-4 border-red-900' : '';
-  const paddingClass = density === 'compact' ? 'p-4' : 'p-8';
+  const contentPaddingClass = density === 'compact'
+    ? 'px-3 pb-24 pt-3 sm:px-5 sm:pt-5 md:px-6 md:pb-8 md:pt-5'
+    : 'px-4 pb-28 pt-4 sm:px-6 sm:pt-6 md:px-8 md:pb-10 md:pt-6';
+  const activeNavigation = navigationItems.find(item => item.id === activeTab) || navigationItems[0];
+  const ActiveTabIcon = activeNavigation.icon;
+  const mobileQuickTabs = navigationItems.filter(item => ['dashboard', 'orchestrator', 'dynamic_workspace', 'settings'].includes(item.id));
+  const mobileLabelMap: Record<string, string> = {
+    dashboard: 'Home',
+    orchestrator: 'Swarm',
+    dynamic_workspace: 'Work',
+    settings: 'Settings',
+  };
+
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab);
+    setIsMobileMenuOpen(false);
+  };
 
   return (
-    <div className={`flex h-screen bg-slate-950 overflow-hidden relative ${mode} ${borderClass}`}>
+    <div className={`relative flex min-h-[100dvh] bg-slate-950 overflow-hidden ${mode} ${borderClass}`}>
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.12),transparent_28%),radial-gradient(circle_at_top_right,rgba(59,130,246,0.08),transparent_24%),linear-gradient(180deg,rgba(15,23,42,0.94),rgba(2,6,23,1))]" />
+      <div className="pointer-events-none absolute inset-0 opacity-[0.07] [background-image:linear-gradient(rgba(148,163,184,0.14)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.14)_1px,transparent_1px)] [background-size:32px_32px]" />
       <ProtocolOverlay />
 
       {/* HEADLESS SENSORS - Wrapped in Suspense */}
-      <Suspense fallback={null}>
-        <VisualCortex />
-      </Suspense>
+      <SystemErrorBoundary name="visual cortex" compact>
+        <Suspense fallback={null}>
+          <VisualCortex />
+        </Suspense>
+      </SystemErrorBoundary>
 
-      <Suspense fallback={null}>
-        <ChatWidget
-          currentUserRole={currentUserRole}
-          onChangeRole={setCurrentUserRole}
-          systemMetrics={metrics}
-          onUpdateThoughts={setLiveThoughts}
-          onAgentThought={handleAgentThought}
-        />
-      </Suspense>
+      <SystemErrorBoundary name="chat widget" compact>
+        <Suspense fallback={null}>
+          <ChatWidget
+            currentUserRole={currentUserRole}
+            currentUserName={user?.name}
+            systemMetrics={metrics}
+            onUpdateThoughts={setLiveThoughts}
+            onAgentThought={handleAgentThought}
+          />
+        </Suspense>
+      </SystemErrorBoundary>
 
       <Sidebar 
         activeTab={activeTab} 
-        setActiveTab={(tab) => {
-          setActiveTab(tab);
-          setIsMobileMenuOpen(false); // Close on mobile after click
-        }} 
+        setActiveTab={handleTabChange}
         isMobileOpen={isMobileMenuOpen}
         onCloseMobile={() => setIsMobileMenuOpen(false)}
         onDriveClick={() => setDriveOpen(true)} 
         onEmailClick={() => setEmailOpen(true)} 
       />
 
-      <main className={`flex-1 ${paddingClass} overflow-y-auto relative pt-16 md:pt-8 w-full`}>
-        {/* Mobile Header */}
-        <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-slate-950/80 backdrop-blur border-b border-cyan-900/50 z-30 flex items-center justify-between px-4">
-          <div className="font-bold text-cyan-400 tracking-wider">SILHOUETTE</div>
-          <button 
-            onClick={() => setIsMobileMenuOpen(true)}
-            className="p-2 text-cyan-400 hover:bg-cyan-900/30 rounded"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" />
-            </svg>
-          </button>
+      <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="sticky top-0 z-30 border-b border-white/5 bg-slate-950/75 backdrop-blur-xl supports-[backdrop-filter]:bg-slate-950/60">
+          <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6 md:px-8">
+            <div className="flex min-w-0 items-center gap-3">
+              <button
+                onClick={() => setIsMobileMenuOpen(true)}
+                className="md:hidden rounded-xl border border-cyan-900/40 bg-slate-900/70 p-2 text-cyan-300 hover:bg-cyan-950/40 transition-colors"
+                aria-label="Open navigation"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" />
+                </svg>
+              </button>
+
+              <div className="min-w-0">
+                <div className="text-[11px] font-mono uppercase tracking-[0.28em] text-cyan-400/70">Silhouette Agency OS</div>
+                <div className="mt-1 flex min-w-0 items-center gap-2 text-white">
+                  <ActiveTabIcon className="h-4 w-4 shrink-0 text-cyan-300" />
+                  <span className="truncate text-sm font-medium sm:text-base">{activeNavigation.label}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 sm:gap-3">
+              {user && (
+                <div className="hidden rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1.5 text-[11px] font-mono uppercase tracking-[0.18em] text-cyan-200 lg:flex">
+                  {user.name} · {user.role}
+                </div>
+              )}
+              <div className="hidden rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-mono uppercase tracking-[0.2em] text-white/50 md:flex">
+                {metrics.currentMode}
+              </div>
+              <NotificationCenter />
+            </div>
+          </div>
         </div>
 
-        {/* Notification Center in mt-mobile to avoid overlapping Header */}
-        <div className="absolute top-20 md:top-4 right-4 z-40">
-          <NotificationCenter />
-        </div>
-        <div className="absolute top-16 md:top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 via-purple-500 to-cyan-500 opacity-50"></div>
-        <Suspense fallback={
-          <div className="flex items-center justify-center h-full text-cyan-400">
-            Loading module...
+        <div className="relative flex-1 overflow-y-auto custom-scrollbar">
+          <div className="pointer-events-none absolute top-0 left-0 h-1 w-full bg-gradient-to-r from-cyan-500/60 via-blue-500/30 to-cyan-500/60" />
+          <div className={`mx-auto flex min-h-full w-full max-w-[1720px] flex-col ${contentPaddingClass}`}>
+            <SystemErrorBoundary name={activeNavigation.label}>
+              <Suspense fallback={
+                <div className="flex min-h-[50vh] items-center justify-center text-cyan-400">
+                  Loading module...
+                </div>
+              }>
+                {renderContent()}
+              </Suspense>
+            </SystemErrorBoundary>
           </div>
-        }>
-          {renderContent()}
-        </Suspense>
+        </div>
       </main>
+
+      <div className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden">
+        <div className="mx-auto grid max-w-md grid-cols-5 gap-1 rounded-2xl border border-white/10 bg-slate-950/90 p-2 shadow-[0_20px_40px_rgba(2,6,23,0.55)] backdrop-blur-xl">
+          {mobileQuickTabs.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => handleTabChange(item.id)}
+                className={`flex min-w-0 flex-col items-center gap-1 rounded-xl px-2 py-2 text-[10px] font-mono transition-colors ${isActive ? 'bg-cyan-500/15 text-cyan-300' : 'text-white/45 hover:text-white hover:bg-white/5'}`}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                <span className="truncate">{mobileLabelMap[item.id] || item.label}</span>
+              </button>
+            );
+          })}
+          <button
+            onClick={() => setIsMobileMenuOpen(true)}
+            className="flex flex-col items-center gap-1 rounded-xl px-2 py-2 text-[10px] font-mono text-white/45 transition-colors hover:text-white hover:bg-white/5"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" />
+            </svg>
+            <span>More</span>
+          </button>
+        </div>
+      </div>
 
       {/* Drive Panel (Lazy Loaded) */}
       <Suspense fallback={null}>

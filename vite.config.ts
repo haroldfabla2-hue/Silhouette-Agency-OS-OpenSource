@@ -4,12 +4,17 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
+  const allowedHosts = (env.VITE_ALLOWED_HOSTS || process.env.VITE_ALLOWED_HOSTS || 'silhouette.albertofarah.com')
+    .split(',')
+    .map((host) => host.trim())
+    .filter(Boolean);
   return {
     server: {
       host: '0.0.0.0',
+      allowedHosts,
       proxy: {
         '/v1': {
-          target: process.env.VITE_API_TARGET || 'http://127.0.0.1:3005',
+          target: env.VITE_API_TARGET || process.env.VITE_API_TARGET || 'http://127.0.0.1:3005',
           changeOrigin: true,
         }
       }
@@ -18,44 +23,10 @@ export default defineConfig(({ mode }) => {
     // NOTE: API keys are intentionally NOT injected into the frontend bundle.
     // All LLM calls must go through the backend proxy at /v1/*.
     build: {
-      chunkSizeWarningLimit: 1300, // Increased for vendor libs (three.js ~1.2MB)
-      rollupOptions: {
-        output: {
-          manualChunks(id) {
-            if (id.includes('node_modules')) {
-              // 3D/Graphics - largest libraries
-              if (id.includes('three') || id.includes('3d-force')) {
-                return 'vendor-3d';
-              }
-              if (id.includes('force-graph')) {
-                return 'vendor-force-graph';
-              }
-              // React ecosystem
-              if (id.includes('react-dom') || id.includes('react-router') || id.includes('scheduler')) {
-                return 'vendor-react';
-              }
-              // Charts/D3
-              if (id.includes('recharts') || id.includes('d3-')) {
-                return 'vendor-charts';
-              }
-              // UI libraries
-              if (id.includes('framer-motion') || id.includes('lucide') || id.includes('@radix-ui')) {
-                return 'vendor-ui';
-              }
-              // Monaco editor
-              if (id.includes('monaco')) {
-                return 'vendor-monaco';
-              }
-              // Redis (externalized for browser)
-              if (id.includes('redis')) {
-                return 'vendor-redis';
-              }
-            }
-          }
-        }
-      }
+      chunkSizeWarningLimit: 1300, // Large vendor bundles are acceptable; runtime stability matters more here.
     },
     resolve: {
+      dedupe: ['react', 'react-dom'],
       alias: [
         // Specific alias for agentPersistence to force mock in browser
         { find: '@/services/agentPersistence', replacement: path.resolve(__dirname, './mocks/agentPersistence.ts') },
@@ -82,4 +53,3 @@ export default defineConfig(({ mode }) => {
     }
   };
 });
-

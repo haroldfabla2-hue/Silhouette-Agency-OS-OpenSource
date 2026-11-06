@@ -119,6 +119,20 @@ class ToolRegistry {
             GITHUB_CREATE_PR_TOOL,
             GITHUB_LIST_PRS_TOOL,
             GITHUB_CHECK_PR_TOOL,
+            SYSTEM_EXECUTE_COMMAND_TOOL,
+            SYSTEM_OPEN_APP_TOOL,
+            SYSTEM_GET_SCREENSHOT_TOOL,
+            SYSTEM_GET_INFO_TOOL,
+            GET_SYSTEM_CONFIG_TOOL,
+            UPDATE_SYSTEM_CONFIG_TOOL,
+            READ_ARCHITECTURE_TOOL,
+            READ_SYSTEM_LOGS_TOOL,
+            ANALYZE_AND_REPAIR_TOOL,
+            BROWSER_NAVIGATE_TOOL,
+            BROWSER_ACTION_TOOL,
+            BROWSER_EXTRACT_TOOL,
+            BROWSER_SCREENSHOT_TOOL,
+            REQUEST_COLLABORATION_TOOL,
             ARCHITECT_AUDIT_TOOL,
             INTROSPECT_DATABASE_TOOL
         } = await import('./definitions');
@@ -467,6 +481,118 @@ class ToolRegistry {
                 },
                 handler: { type: 'BUILTIN', handlerName: 'handleExecuteCode' },
                 category: 'DEV'
+            },
+            {
+                id: 'tool_system_execute_command',
+                name: 'system_execute_command',
+                description: SYSTEM_EXECUTE_COMMAND_TOOL.description || '',
+                parameters: SYSTEM_EXECUTE_COMMAND_TOOL.parameters as unknown as FunctionDeclarationSchema,
+                handler: { type: 'BUILTIN', handlerName: 'handleSystemExecuteCommand' },
+                category: 'DEV'
+            },
+            {
+                id: 'tool_system_open_app',
+                name: 'system_open_app',
+                description: SYSTEM_OPEN_APP_TOOL.description || '',
+                parameters: SYSTEM_OPEN_APP_TOOL.parameters as unknown as FunctionDeclarationSchema,
+                handler: { type: 'BUILTIN', handlerName: 'handleSystemOpenApp' },
+                category: 'DEV'
+            },
+            {
+                id: 'tool_system_get_screenshot',
+                name: 'system_get_screenshot',
+                description: SYSTEM_GET_SCREENSHOT_TOOL.description || '',
+                parameters: SYSTEM_GET_SCREENSHOT_TOOL.parameters as unknown as FunctionDeclarationSchema,
+                handler: { type: 'BUILTIN', handlerName: 'handleSystemGetScreenshot' },
+                category: 'UTILITY'
+            },
+            {
+                id: 'tool_system_get_info',
+                name: 'system_get_info',
+                description: SYSTEM_GET_INFO_TOOL.description || '',
+                parameters: SYSTEM_GET_INFO_TOOL.parameters as unknown as FunctionDeclarationSchema,
+                handler: { type: 'BUILTIN', handlerName: 'handleSystemGetInfo' },
+                category: 'UTILITY'
+            },
+            {
+                id: 'tool_get_system_config',
+                name: 'get_system_config',
+                description: GET_SYSTEM_CONFIG_TOOL.description || '',
+                parameters: GET_SYSTEM_CONFIG_TOOL.parameters as unknown as FunctionDeclarationSchema,
+                handler: { type: 'BUILTIN', handlerName: 'handleGetSystemConfig' },
+                category: 'DEV'
+            },
+            {
+                id: 'tool_update_system_config',
+                name: 'update_system_config',
+                description: UPDATE_SYSTEM_CONFIG_TOOL.description || '',
+                parameters: UPDATE_SYSTEM_CONFIG_TOOL.parameters as unknown as FunctionDeclarationSchema,
+                handler: { type: 'BUILTIN', handlerName: 'handleUpdateSystemConfig' },
+                category: 'DEV'
+            },
+            {
+                id: 'tool_read_architecture',
+                name: 'read_architecture',
+                description: READ_ARCHITECTURE_TOOL.description || '',
+                parameters: READ_ARCHITECTURE_TOOL.parameters as unknown as FunctionDeclarationSchema,
+                handler: { type: 'BUILTIN', handlerName: 'handleReadArchitecture' },
+                category: 'DEV'
+            },
+            {
+                id: 'tool_read_system_logs',
+                name: 'read_system_logs',
+                description: READ_SYSTEM_LOGS_TOOL.description || '',
+                parameters: READ_SYSTEM_LOGS_TOOL.parameters as unknown as FunctionDeclarationSchema,
+                handler: { type: 'BUILTIN', handlerName: 'handleReadSystemLogs' },
+                category: 'DEV'
+            },
+            {
+                id: 'tool_analyze_and_repair',
+                name: 'analyze_and_repair',
+                description: ANALYZE_AND_REPAIR_TOOL.description || '',
+                parameters: ANALYZE_AND_REPAIR_TOOL.parameters as unknown as FunctionDeclarationSchema,
+                handler: { type: 'BUILTIN', handlerName: 'handleAnalyzeAndRepair' },
+                category: 'DEV'
+            },
+            {
+                id: 'tool_browser_navigate',
+                name: 'browser_navigate',
+                description: BROWSER_NAVIGATE_TOOL.description || '',
+                parameters: BROWSER_NAVIGATE_TOOL.parameters as unknown as FunctionDeclarationSchema,
+                handler: { type: 'BUILTIN', handlerName: 'handleBrowserNavigate' },
+                category: 'DEV'
+            },
+            {
+                id: 'tool_browser_action',
+                name: 'browser_action',
+                description: BROWSER_ACTION_TOOL.description || '',
+                parameters: BROWSER_ACTION_TOOL.parameters as unknown as FunctionDeclarationSchema,
+                handler: { type: 'BUILTIN', handlerName: 'handleBrowserAction' },
+                category: 'DEV'
+            },
+            {
+                id: 'tool_browser_extract',
+                name: 'browser_extract',
+                description: BROWSER_EXTRACT_TOOL.description || '',
+                parameters: BROWSER_EXTRACT_TOOL.parameters as unknown as FunctionDeclarationSchema,
+                handler: { type: 'BUILTIN', handlerName: 'handleBrowserExtract' },
+                category: 'DEV'
+            },
+            {
+                id: 'tool_browser_screenshot',
+                name: 'browser_screenshot',
+                description: BROWSER_SCREENSHOT_TOOL.description || '',
+                parameters: BROWSER_SCREENSHOT_TOOL.parameters as unknown as FunctionDeclarationSchema,
+                handler: { type: 'BUILTIN', handlerName: 'handleBrowserScreenshot' },
+                category: 'DEV'
+            },
+            {
+                id: 'tool_request_collaboration',
+                name: 'request_collaboration',
+                description: REQUEST_COLLABORATION_TOOL.description || '',
+                parameters: REQUEST_COLLABORATION_TOOL.parameters as unknown as FunctionDeclarationSchema,
+                handler: { type: 'BUILTIN', handlerName: 'handleRequestCollaboration' },
+                category: 'WORKFLOW'
             },
             // ==================== UI CONTROL TOOLS (Omnipresent Silhouette) ====================
             {

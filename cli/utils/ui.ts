@@ -198,14 +198,56 @@ export class Spinner {
 export function isConfigured(): boolean {
     const projectRoot = path.resolve(__dirname, '../..');
     return fs.existsSync(path.join(projectRoot, '.env.local')) ||
+           fs.existsSync(path.join(projectRoot, '.env.server')) ||
            fs.existsSync(path.join(projectRoot, 'silhouette.config.json'));
 }
 
+function getConfiguredPortFromFiles(projectRoot: string): number | null {
+    const envCandidates = ['.env.local', '.env.server', '.env']
+        .map(file => path.join(projectRoot, file))
+        .filter(file => fs.existsSync(file));
+
+    for (const envFile of envCandidates) {
+        const content = fs.readFileSync(envFile, 'utf-8');
+        const match = content.match(/^PORT=(\d+)$/m);
+        if (match) {
+            const parsed = Number(match[1]);
+            if (Number.isFinite(parsed) && parsed > 0) return parsed;
+        }
+    }
+
+    const configPath = path.join(projectRoot, 'silhouette.config.json');
+    if (fs.existsSync(configPath)) {
+        try {
+            const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+            const parsed = Number(config?.system?.port);
+            if (Number.isFinite(parsed) && parsed > 0) return parsed;
+        } catch {
+            return null;
+        }
+    }
+
+    return null;
+}
+
+export function getServerPort(defaultPort: number = 3005): number {
+    const raw = process.env.PORT;
+    const parsed = raw ? Number(raw) : NaN;
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+
+    const configuredPort = getConfiguredPortFromFiles(path.resolve(__dirname, '../..'));
+    return configuredPort ?? defaultPort;
+}
+
+export function getApiBaseUrl(port: number = getServerPort()): string {
+    return `http://127.0.0.1:${port}`;
+}
+
 // ─── Check if Server is Running ──────────────────────────────
-export async function isServerRunning(port: number = 3005): Promise<boolean> {
+export async function isServerRunning(port: number = getServerPort()): Promise<boolean> {
     try {
-        const response = await fetch(`http://localhost:${port}/health`, { signal: AbortSignal.timeout(2000) });
-        return response.ok;
+        await fetch(`${getApiBaseUrl(port)}/health`);
+        return true;
     } catch {
         return false;
     }

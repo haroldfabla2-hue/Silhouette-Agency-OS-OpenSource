@@ -1,70 +1,104 @@
 import { QDRANT_CONFIG } from '../constants';
-import { BrandDigitalTwin } from '../types';
+import { BrandDigitalTwin, MemoryNode, MemoryTier } from '../types';
+import type { IDatabaseAdapter, MemoryNodeCounts } from './database/databaseAdapter';
 
-// Browser-safe Qdrant Client Wrapper
+type LegacyVectorResult = {
+    id: string;
+    payload: Record<string, any>;
+    content?: string;
+    timestamp?: number;
+    tier?: MemoryTier;
+    importance?: number;
+    tags?: string[];
+    accessCount?: number;
+    lastAccess?: number;
+    source?: string;
+    category?: string;
+    score?: number;
+};
+
 class VectorMemoryService {
     private client: any;
-    private isConnected: boolean = false;
+    private adapter: IDatabaseAdapter | null = null;
+    private isConnected = false;
     private collectionName = QDRANT_CONFIG.collectionName;
+    private connecting = false;
+    private backend: 'pgvector' | 'qdrant' | null = null;
 
-    constructor() {
-        // Lazy init
-    }
-
-    /** Check if Qdrant is connected and ready for queries */
     public isReady(): boolean {
         return this.isConnected;
     }
 
-    private connecting = false;
+    public getBackend(): 'pgvector' | 'qdrant' | null {
+        return this.backend;
+    }
+
+    private shouldUsePostgres(): boolean {
+        return !!process.env.DATABASE_URL;
+    }
+
+    private async ensureConnected(): Promise<boolean> {
+        if (!this.isConnected) {
+            await this.connect();
+        }
+        return this.isConnected;
+    }
 
     public async connect() {
-        if (typeof window !== 'undefined') return; // Browser safety
-        if (this.isConnected || this.connecting) return; // Already connected or in progress
+        if (typeof window !== 'undefined') return;
+        if (this.isConnected || this.connecting) return;
 
         this.connecting = true;
         try {
-            // [PA-058] Lite Mode Check
-            const { configLoader } = await import('../server/config/configLoader');
-            const config = configLoader.getConfig();
-            if (config.modules.vectorDB === false) {
-                console.log("[VECTOR_MEM] VectorDB module disabled in config (Lite Mode). Using LanceDB only.");
+            try {
+                const { configLoader } = await import('../server/config/configLoader');
+                const config = configLoader.getConfig();
+                if (config.modules.vectorDB === false) {
+                    console.log('[VECTOR_MEM] VectorDB module disabled in config (Lite Mode). Using LanceDB only.');
+                    return;
+                }
+            } catch {
+                // Config not available yet, proceed with default behavior.
+            }
+
+            if (this.shouldUsePostgres()) {
+                const { getDatabaseAdapter } = await import('./database/adapterFactory');
+                this.adapter = await getDatabaseAdapter();
+                this.backend = 'pgvector';
+                this.isConnected = true;
+                console.log('[VECTOR_MEM] Connected to PostgreSQL + pgvector');
                 return;
             }
-        } catch {
-            // Config not available yet, proceed with default
-        }
 
-        if (!this.client) {
-            try {
-                // Dynamic import to prevent bundling
-                const { QdrantClient } = await import('@qdrant/js-client-rest');
-
-                console.log(`[VECTOR_MEM] Connecting to Qdrant at ${QDRANT_CONFIG.url} (Collection: ${this.collectionName})`);
-                this.client = new QdrantClient({
-                    url: QDRANT_CONFIG.url,
-                    checkCompatibility: false
-                });
-
-                // Check connectivity
-                const collections = await this.client.getCollections();
-                console.log('✅ Qdrant Connected (Eternal Memory Active)', collections);
-                this.isConnected = true;
-
-                // Ensure collection exists
-                await this.ensureCollection();
-            } catch (e) {
-                console.error("[VECTOR_MEM] Failed to initialize Qdrant client:", e);
-            } finally {
-                this.connecting = false;
-            }
-        } else {
+            await this.connectQdrant();
+        } catch (e) {
+            console.error('[VECTOR_MEM] Failed to initialize vector backend:', e);
+        } finally {
             this.connecting = false;
         }
     }
 
+    private async connectQdrant() {
+        if (this.client) return;
+
+        const { QdrantClient } = await import('@qdrant/js-client-rest');
+
+        console.log(`[VECTOR_MEM] Connecting to Qdrant at ${QDRANT_CONFIG.url} (Collection: ${this.collectionName})`);
+        this.client = new QdrantClient({
+            url: QDRANT_CONFIG.url,
+            checkCompatibility: false
+        });
+
+        const collections = await this.client.getCollections();
+        console.log('✅ Qdrant Connected (Eternal Memory Active)', collections);
+        this.backend = 'qdrant';
+        this.isConnected = true;
+
+        await this.ensureCollection();
+    }
+
     private async ensureCollection() {
-        if (!this.isConnected) return;
+        if (!this.isConnected || !this.client) return;
         try {
             const result = await this.client.getCollections();
             const exists = result.collections.some((c: any) => c.name === this.collectionName);
@@ -73,32 +107,150 @@ class VectorMemoryService {
                 console.log(`[QDRANT] Creating collection: ${this.collectionName}`);
                 await this.client.createCollection(this.collectionName, {
                     vectors: {
-                        size: 768, // Default for many embedding models (e.g. Gemini/Vertex)
+                        size: 768,
                         distance: 'Cosine',
                     },
                 });
             }
         } catch (e) {
-            console.error("Failed to ensure Qdrant collection", e);
+            console.error('Failed to ensure Qdrant collection', e);
         }
     }
 
-    public async storeMemory(id: string, vector: number[], payload: any) {
-        if (!this.isConnected || !this.client) return;
+    private escapeSqlValue(value: unknown): string {
+        return String(value).replace(/'/g, "''");
+    }
 
-        // [ROBUSTNESS] Hard Guard: Never store empty/undefined thoughts.
+    private buildSqlFilter(filter?: Record<string, unknown>): string | undefined {
+        if (!filter) return undefined;
+
+        const topLevelColumns = new Set(['id', 'content', 'tier', 'source', 'category']);
+        const clauses: string[] = [];
+
+        for (const [rawKey, rawValue] of Object.entries(filter)) {
+            if (rawValue === undefined || rawValue === null) continue;
+
+            const key = rawKey.replace(/[^a-zA-Z0-9_]/g, '');
+            if (!key) continue;
+
+            const value = this.escapeSqlValue(rawValue);
+            if (topLevelColumns.has(key)) {
+                clauses.push(`${key} = '${value}'`);
+            } else {
+                clauses.push(`metadata->>'${key}' = '${value}'`);
+            }
+        }
+
+        return clauses.length > 0 ? clauses.join(' AND ') : undefined;
+    }
+
+    private payloadToMemoryNode(id: string, payload: Record<string, any>): MemoryNode {
+        const timestamp = payload.timestamp || Date.now();
+        return {
+            id,
+            content: payload.content || '',
+            originalContent: payload.originalContent,
+            timestamp,
+            tier: payload.tier || MemoryTier.DEEP,
+            importance: payload.importance ?? 0.5,
+            tags: payload.tags || [],
+            accessCount: payload.accessCount || 0,
+            lastAccess: payload.lastAccess || timestamp,
+            decayHealth: payload.decayHealth,
+            compressionLevel: payload.compressionLevel,
+            ownerId: payload.ownerId,
+            nestingLevel: payload.nestingLevel,
+            stabilityScore: payload.stabilityScore,
+            raptorLevel: payload.raptorLevel,
+            timeGrid: payload.timeGrid,
+            ...(payload.source ? { source: payload.source } : {}),
+            ...(payload.category || payload.type ? { category: payload.category || payload.type } : {}),
+            metadata: payload
+        } as MemoryNode;
+    }
+
+    private buildLegacyResult(id: string, payload: Record<string, any>, score?: number): LegacyVectorResult {
+        const normalizedPayload: Record<string, any> = {
+            ...payload,
+            id: payload.id || id,
+            content: payload.content || '',
+            timestamp: payload.timestamp || Date.now(),
+            tier: payload.tier || MemoryTier.DEEP,
+            importance: payload.importance ?? 0.5,
+            tags: payload.tags || [],
+            accessCount: payload.accessCount ?? 0,
+            lastAccess: payload.lastAccess ?? payload.timestamp ?? Date.now()
+        };
+
+        return {
+            id,
+            payload: normalizedPayload,
+            content: normalizedPayload.content,
+            timestamp: normalizedPayload.timestamp,
+            tier: normalizedPayload.tier,
+            importance: normalizedPayload.importance,
+            tags: normalizedPayload.tags,
+            accessCount: normalizedPayload.accessCount,
+            lastAccess: normalizedPayload.lastAccess,
+            ...(normalizedPayload.source ? { source: normalizedPayload.source } : {}),
+            ...(normalizedPayload.category || normalizedPayload.type ? { category: normalizedPayload.category || normalizedPayload.type } : {}),
+            ...(typeof score === 'number' ? { score } : {})
+        };
+    }
+
+    private adapterNodeToLegacyResult(node: any): LegacyVectorResult {
+        const metadata = node?.metadata || {};
+        return this.buildLegacyResult(node.id, {
+            ...metadata,
+            id: metadata.id || node.id,
+            content: node.content || metadata.content || '',
+            timestamp: node.timestamp || metadata.timestamp || Date.now(),
+            tier: node.tier || metadata.tier || MemoryTier.DEEP,
+            importance: node.importance ?? metadata.importance ?? 0.5,
+            tags: node.tags || metadata.tags || [],
+            accessCount: node.accessCount ?? metadata.accessCount ?? 0,
+            lastAccess: node.lastAccess ?? metadata.lastAccess ?? Date.now(),
+            ...(node.source || metadata.source ? { source: node.source || metadata.source } : {}),
+            ...(node.category || metadata.category || metadata.type ? { category: node.category || metadata.category || metadata.type } : {})
+        }, typeof node.similarity === 'number' ? node.similarity : undefined);
+    }
+
+    private normalizeQdrantResult(point: any): LegacyVectorResult {
+        return this.buildLegacyResult(String(point.id), point.payload || {}, typeof point.score === 'number' ? point.score : undefined);
+    }
+
+    private mapAdapterResults(nodes: any[]): LegacyVectorResult[] {
+        return nodes.map(node => this.adapterNodeToLegacyResult(node));
+    }
+
+    private async findBrandPoint(brandId: string): Promise<LegacyVectorResult | null> {
+        const points = await this.getAllNodes(1000);
+        return points.find((point: any) => point.id === brandId || point.payload?.id === brandId) || null;
+    }
+
+    public async storeMemory(id: string, vector: number[], payload: any) {
+        if (!(await this.ensureConnected())) return;
+
         if (!payload || !payload.content || payload.content === 'undefined' || payload.content.trim().length === 0) {
-            console.warn(`[VECTOR_MEM] 🛡️ BLOCKED Corrupt Node Write (Empty Content). ID: ${id}`);
+            console.warn(`[VECTOR_MEM] BLOCKED Corrupt Node Write (Empty Content). ID: ${id}`);
+            return;
+        }
+
+        if (this.shouldUsePostgres()) {
+            try {
+                const node = this.payloadToMemoryNode(id, payload);
+                await this.adapter!.storeVector(node, vector);
+            } catch (e) {
+                console.error('Failed to store vector memory in pgvector', e);
+            }
             return;
         }
 
         try {
-            // FRACTAL INDEXING (L7)
-            // Inject Time Grid for O(1) Temporal Retrieval
             const date = new Date(payload.timestamp || Date.now());
             const timeGrid = {
                 year: date.getFullYear(),
-                month: date.getMonth() + 1, // 1-12
+                month: date.getMonth() + 1,
                 day: date.getDate(),
                 hour: date.getHours(),
                 weekday: date.getDay()
@@ -113,24 +265,36 @@ class VectorMemoryService {
                             vector,
                             payload: {
                                 ...payload,
-                                ...timeGrid // Flatten grid into top-level payload for filtering
+                                ...timeGrid
                             }
                         }
                     ]
                 });
             });
         } catch (e) {
-            console.error("Failed to store vector memory", e);
+            console.error('Failed to store vector memory', e);
         }
     }
 
-    public async searchMemory(vector: number[], limit: number = 5, filter?: any) {
-        if (!this.isConnected || !this.client) return [];
+    public async searchMemory(vector: number[], limit: number = 5, filter?: any): Promise<LegacyVectorResult[]> {
+        if (!(await this.ensureConnected())) return [];
+
+        if (this.shouldUsePostgres()) {
+            try {
+                const sqlFilter = this.buildSqlFilter(filter);
+                const candidateLimit = sqlFilter ? Math.max(limit * 5, 25) : limit;
+                const results = await this.adapter!.searchVectors(vector, candidateLimit, sqlFilter);
+                return this.mapAdapterResults(results).slice(0, limit);
+            } catch (e) {
+                console.error('Failed to search pgvector memory', e);
+                return [];
+            }
+        }
+
         try {
             return await this.retry(async () => {
                 let qdrantFilter = undefined;
 
-                // Transform simple key-value filter to Qdrant 'must' clause
                 if (filter) {
                     const must = Object.entries(filter).map(([key, value]) => ({
                         key,
@@ -141,15 +305,16 @@ class VectorMemoryService {
                     }
                 }
 
-                return await this.client.search(this.collectionName, {
+                const results = await this.client.search(this.collectionName, {
                     vector,
                     limit,
                     filter: qdrantFilter,
                     with_payload: true
                 });
+                return results.map((result: any) => this.normalizeQdrantResult(result));
             });
         } catch (e) {
-            console.error("Failed to search vector memory", e);
+            console.error('Failed to search vector memory', e);
             return [];
         }
     }
@@ -159,9 +324,7 @@ class VectorMemoryService {
             return await operation();
         } catch (e: any) {
             if (retries > 0) {
-                // Exponential Backoff with Cap (Max 5s)
                 const nextDelay = Math.min(delay * 2, 5000);
-                // console.warn(`[VECTOR_MEM] Operation failed, retrying in ${delay}ms... (${retries} left)`);
                 await new Promise(resolve => setTimeout(resolve, delay));
                 return this.retry(operation, retries - 1, nextDelay);
             }
@@ -169,63 +332,106 @@ class VectorMemoryService {
         }
     }
 
-    public async getRecentMemories(limit: number = 20): Promise<any[]> {
-        if (!this.isConnected || !this.client) {
-            return [];
+    public async getRecentMemories(limit: number = 20): Promise<LegacyVectorResult[]> {
+        return this.getAllNodes(limit);
+    }
+
+    public async getAllNodes(limit: number = 200): Promise<LegacyVectorResult[]> {
+        if (!(await this.ensureConnected())) return [];
+
+        if (this.shouldUsePostgres()) {
+            try {
+                const nodes = await this.adapter!.getRecentNodes(limit);
+                return this.mapAdapterResults(nodes)
+                    .sort((a, b) => (b.payload?.timestamp || 0) - (a.payload?.timestamp || 0));
+            } catch (e) {
+                console.error('Failed to read pgvector nodes', e);
+                return [];
+            }
         }
+
         try {
             return await this.retry(async () => {
-                // FETCH FIX: Scroll returns arbitrary order (by ID).
-                // We must fetch a larger pool and sort client-side to emulate "Recent".
                 const fetchSize = Math.max(limit * 5, 200);
-
                 const result = await this.client.scroll(this.collectionName, {
                     limit: fetchSize,
                     with_payload: true,
                     with_vector: false
                 });
 
-                // Sort by Timestamp Descending (Newest First)
                 return result.points
                     .sort((a: any, b: any) => (b.payload?.timestamp || 0) - (a.payload?.timestamp || 0))
-                    .slice(0, limit);
+                    .slice(0, limit)
+                    .map((point: any) => this.normalizeQdrantResult(point));
             });
-        } catch (e) {
-            // CRITICAL FIX: Do not crash the server if Qdrant is down.
-            // console.error("[VECTOR_MEM] Failed to get recent memories (Qdrant might be offline)", e);
+        } catch {
             return [];
         }
     }
 
-    public async getAllNodes(limit: number = 200): Promise<any[]> {
-        if (!this.isConnected || !this.client) return [];
-        return this.getRecentMemories(limit);
-    }
+    public async getNodeCounts(): Promise<MemoryNodeCounts> {
+        if (!(await this.ensureConnected())) return { total: 0 };
 
-    public async getStats(): Promise<{ count: number; vectorsCount: number }> {
-        if (!this.isConnected || !this.client) return { count: 0, vectorsCount: 0 };
+        if (this.shouldUsePostgres()) {
+            try {
+                return await this.adapter!.getNodeCounts();
+            } catch (e) {
+                console.error('Failed to get pgvector node counts', e);
+                return { total: -1 };
+            }
+        }
+
         try {
             return await this.retry(async () => {
                 const collectionInfo = await this.client.getCollection(this.collectionName);
+                const count = collectionInfo.points_count || 0;
                 return {
-                    count: collectionInfo.points_count || 0,
-                    vectorsCount: collectionInfo.vectors_count || 0
+                    [MemoryTier.DEEP]: count,
+                    total: count
                 };
             });
         } catch (e) {
-            console.error("Failed to get vector stats", e);
+            console.error('Failed to get vector node counts', e);
+            return { total: -1 };
+        }
+    }
+
+    public async getStats(): Promise<{ count: number; vectorsCount: number }> {
+        if (!(await this.ensureConnected())) return { count: 0, vectorsCount: 0 };
+
+        try {
+            const counts = await this.getNodeCounts();
+            const tierCounts = Object.entries(counts)
+                .filter(([key]) => key !== 'total')
+                .reduce((sum, [, value]) => sum + (Number(value) || 0), 0);
+            const count = (counts[MemoryTier.DEEP] ?? tierCounts ?? counts.total ?? 0) as number;
+            return {
+                count,
+                vectorsCount: counts.total || count
+            };
+        } catch (e) {
+            console.error('Failed to get vector stats', e);
             return { count: -1, vectorsCount: -1 };
         }
     }
 
-    public async searchByContent(query: string, limit: number = 20): Promise<any[]> {
-        if (!this.isConnected || !this.client) return [];
+    public async searchByContent(query: string, limit: number = 20): Promise<LegacyVectorResult[]> {
+        if (!(await this.ensureConnected())) return [];
+
+        if (this.shouldUsePostgres()) {
+            try {
+                const nodes = await this.adapter!.searchByContent(query, limit);
+                return this.mapAdapterResults(nodes);
+            } catch (e) {
+                console.error('Failed to search pgvector memory by content', e);
+                return [];
+            }
+        }
+
         try {
-            // Scroll through recent memories and filter by content
-            // NOTE: Ideally we should use Qdrant Full Text Search, but for now this is robust enough for <10k items
             return await this.retry(async () => {
                 const result = await this.client.scroll(this.collectionName, {
-                    limit: 500, // Fetch broader context
+                    limit: 500,
                     with_payload: true,
                     with_vector: false
                 });
@@ -234,57 +440,70 @@ class VectorMemoryService {
                 const points = result.points || [];
 
                 return points
-                    .filter((p: any) => (p.payload?.content || "").toLowerCase().includes(queryLower))
-                    .slice(0, limit);
+                    .filter((p: any) => (p.payload?.content || '').toLowerCase().includes(queryLower))
+                    .slice(0, limit)
+                    .map((point: any) => this.normalizeQdrantResult(point));
             });
         } catch (e) {
-            console.error("Failed to search vector memory by content", e);
+            console.error('Failed to search vector memory by content', e);
             return [];
         }
     }
 
-    // --- BISOCIATION SUPPORT (GOLDILOCKS ZONE) ---
-    public async searchDistantMemories(vector: number[], minScore: number = 0.35, maxScore: number = 0.65, limit: number = 5): Promise<any[]> {
-        if (!this.isConnected || !this.client) return [];
+    public async searchDistantMemories(vector: number[], minScore: number = 0.35, maxScore: number = 0.65, limit: number = 5): Promise<LegacyVectorResult[]> {
+        if (!(await this.ensureConnected())) return [];
+
+        if (this.shouldUsePostgres()) {
+            try {
+                const results = await this.searchMemory(vector, 50);
+                return results
+                    .filter((res: any) => typeof res.score === 'number' && res.score >= minScore && res.score <= maxScore)
+                    .slice(0, limit);
+            } catch (e) {
+                console.error('Bisociation Search Failed:', e);
+                return [];
+            }
+        }
+
         try {
-            // Qdrant doesn't support "Range Score" natively in simple search.
-            // Strategy: Search slightly deeper (top 50) and filter client-side for the score range.
             return await this.retry(async () => {
                 const results = await this.client.search(this.collectionName, {
                     vector,
-                    limit: 50, // Get a larger candidate pool
+                    limit: 50,
                     with_payload: true,
-                    score_threshold: minScore // Minimum cutoff
+                    score_threshold: minScore
                 });
 
-                // Filter for "Not Too Close" (Goldilocks)
                 return results
                     .filter((res: any) => res.score <= maxScore)
-                    .slice(0, limit);
+                    .slice(0, limit)
+                    .map((result: any) => this.normalizeQdrantResult(result));
             });
         } catch (e) {
-            console.error("Bisociation Search Failed:", e);
+            console.error('Bisociation Search Failed:', e);
             return [];
         }
     }
 
-    // --- REAL BRAND TWIN METHODS ---
-
     public async getBrandTwin(brandId: string): Promise<BrandDigitalTwin | null> {
-        if (!this.isConnected || !this.client) return null;
+        if (!(await this.ensureConnected())) return null;
+
+        if (this.shouldUsePostgres()) {
+            const point = await this.findBrandPoint(brandId);
+            return point ? point.payload as BrandDigitalTwin : null;
+        }
+
         try {
-            // 1. Try direct retrieval if ID is UUID
             try {
                 const points = await this.client.retrieve(this.collectionName, { ids: [brandId] });
                 if (points.length > 0) return points[0].payload as BrandDigitalTwin;
-            } catch (e) {
-                // Ignore invalid UUID error, proceed to filter
+            } catch {
+                // Ignore invalid UUID error and continue with payload lookup.
             }
 
-            // 2. Search by payload 'id' field
             const result = await this.client.scroll(this.collectionName, {
                 filter: {
-                    must: [{ key: "id", match: { value: brandId } }]
+                    must: [{ key: 'id', match: { value: brandId } }]
                 },
                 limit: 1,
                 with_payload: true
@@ -295,18 +514,15 @@ class VectorMemoryService {
             }
             return null;
         } catch (e) {
-            console.error("Failed to get brand twin", e);
+            console.error('Failed to get brand twin', e);
             return null;
         }
     }
 
-    public async queryBrandRules(brandId: string, query: string): Promise<string> {
-        // In a full RAG system, we would embed the query and search the brand's knowledge base.
-        // For now, we retrieve the Brand Twin and return its core manifesto rules.
+    public async queryBrandRules(brandId: string, _query: string): Promise<string> {
         const brand = await this.getBrandTwin(brandId);
-        if (!brand) return "Brand rules not found.";
+        if (!brand) return 'Brand rules not found.';
 
-        // Return the Design System Rules from the Manifesto
         const rules = [
             `Tone of Voice: ${brand.manifesto.toneOfVoice.join(', ')}`,
             `Typography Rules: ${brand.designSystem.typography.usageRules}`,
@@ -316,42 +532,32 @@ class VectorMemoryService {
     }
 
     public async updateManifesto(brandId: string, feedback: string): Promise<boolean> {
-        if (!this.isConnected || !this.client) return false;
-        try {
-            const brand = await this.getBrandTwin(brandId);
-            if (!brand) return false;
+        if (!(await this.ensureConnected())) return false;
 
-            // Append feedback to the brand's evolution log (simplified)
-            // In reality, we would use an LLM to synthesize the feedback into the manifesto.
+        try {
+            const point = await this.findBrandPoint(brandId);
+            const brand = point?.payload as BrandDigitalTwin | undefined;
+            if (!brand || !point) return false;
+
             const updatedBrand = {
                 ...brand,
                 lastUpdated: Date.now(),
                 evolutionLog: [...(brand.evolutionLog || []), { date: Date.now(), feedback }]
             };
 
-            // Upsert back to Qdrant (requires existing vector, or we generate a new one? 
-            // For now, we assume we keep the existing vector or use a zero vector if just updating payload)
-            // We need the point ID.
-
-            // Find the point ID first
-            const result = await this.client.scroll(this.collectionName, {
-                filter: {
-                    must: [{ key: "id", match: { value: brandId } }]
-                },
-                limit: 1
-            });
-
-            if (result.points.length > 0) {
-                const pointId = result.points[0].id;
-                await this.client.setPayload(this.collectionName, {
-                    payload: updatedBrand,
-                    points: [pointId]
-                });
+            if (this.shouldUsePostgres()) {
+                const node = this.payloadToMemoryNode(String(point.id), updatedBrand);
+                await this.adapter!.storeVector(node);
                 return true;
             }
-            return false;
+
+            await this.client.setPayload(this.collectionName, {
+                payload: updatedBrand,
+                points: [point.id]
+            });
+            return true;
         } catch (e) {
-            console.error("Failed to update manifesto", e);
+            console.error('Failed to update manifesto', e);
             return false;
         }
     }
