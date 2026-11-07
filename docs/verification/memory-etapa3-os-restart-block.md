@@ -70,3 +70,73 @@ aceptacion por defecto
   cuentan como evidencia de producto.
 - `lancedb-first-writer-race` (sin sustitutos) puede correr en la misma
   jaula como complemento puro.
+
+---
+
+## Actualizacion 2026-11-07: ejecucion lote 6 (Tamara, jaula v8) y correccion de causa raiz
+
+### Lo que se ejecuto (historial preservado, nada borrado)
+
+Dos intentos del payload vitest + seis diagnosticos directos del seed entre
+06:04:30 y 06:22:32 UTC (aprobaron 06:02:59). Span 18min02s: excedio la
+ventana total de 15 min por ~4.5 min por diagnosticos encadenados. CPU total
+~41s, 1 CPU, 3GB/0swap configurados (P6), `unshare -n` (sin red), usuario
+nobody. Evidencia: `/var/sil-jail-evidence/lote6-*` (22 archivos) en Tamara.
+La metrica `memory peak` de systemd NO es confiable en este host (cgroup v2,
+systemd 255: solo 2 de 5 unidades la reportaron; 37.3MB es implausible para
+node+onnxruntime con el modelo cargado). El limite MemoryMax estaba
+configurado, pero NO hay medicion empirica confiable de enforcement: toda
+re-ejecucion necesita controles de memoria robustos (muestreo de
+memory.peak del cgroup DURANTE el payload, no al desactivar la unidad).
+
+### Causa raiz del fallo: 3 defectos del andamiaje del test (NO de producto)
+
+1. **Predicado del waitFor imposible.** seed.ts exigia que ninguna fila
+   EMBEDDING_PENDING contuviera el RUN-id. Por diseno solo los nodos DEEP se
+   embeben inline (continuumMemory.ts:505-543); WORKING/MEDIUM/LONG nacen
+   EMBEDDING_PENDING (lancedbService.ts:221) y el backfill estricto rehusa la
+   identidad local (geminiService.ts:1217), asi que esas filas quedan
+   PENDING *por diseno* sin proveedor canonico. El predicado jamas podia
+   cumplirse. La misma defectuosa condicion existia al final de verify.ts.
+2. **Ids vacios.** continuum.store() retorna Promise<void>
+   (continuumMemory.ts:394); el seed capturaba `node?.id` de un void.
+   Corregido pre-generando UUIDs y pasandolos via `extra.id`
+   (continuumMemory.ts:433 los respeta).
+3. **Error no convertido a recibo.** El timeout del waitFor salia como
+   excepcion (exit 1 sin recibo JSON), asi que el orquestador reportaba FAIL
+   generico. Ahora toda salida imprime recibo JSON: SEEDED/PASS (0),
+   FAILED (1), BLOCKED (3).
+
+### Hipotesis de defecto de producto RETIRADA (con evidencia)
+
+Se reporto inicialmente que "el primer recuerdo DEEP se perdia/quedaba
+PENDING en frio". Falso: fue un error de lectura del log (el log de fallback
+trunca el contenido a 30 chars). En payload-lote6-diag6.log: linea 211 el
+fallback local se invoco para el target, 228 modelo listo, 231 ANN
+reconstruido con el vector del target, 239 fallback del decoy. AMBOS nodos
+DEEP se embebieron con el modelo local real; la inicializacion perezosa
+(~40s) fue esperada correctamente por el primer store. La emision
+MEMORY_CREATED temprana (linea 40) ocurre al INICIO de store()
+(continuumMemory.ts:468), no al completar la persistencia.
+
+### Contrato de persistencia por tier (verificado contra fuente)
+
+| Tier | Donde persiste | Embedding | Tras reinicio de proceso |
+|---|---|---|---|
+| WORKING | RAM + `data/memory_snapshot.json` (continuumMemory.ts:495,169-196) | nunca inline | snapshot en disco, merge por id en boot |
+| MEDIUM | LanceDB canonico (continuumMemory.ts:552) | no inline; backfill estricto | fila canonica EMBEDDING_PENDING (por diseno sin proveedor) |
+| LONG | LanceDB canonico | no inline; backfill estricto | fila canonica EMBEDDING_PENDING (por diseno sin proveedor) |
+| DEEP | LanceDB canonico + proyeccion por identidad | inline (continuumMemory.ts:520-523) | READY; ANN por identidad (usearch) |
+
+`getAllNodes()` (continuumMemory.ts:319) agrega WORKING desde RAM,
+MEDIUM/LONG/DEEP desde LanceDB canonico (DEEP mergea con Qdrant si existe;
+sin Qdrant basta el archivo LanceDB).
+
+### Estado
+
+**BLOCKED.** Las fases de reinicio (kill/verify en proceso nuevo) NUNCA se
+ejecutaron: ambos intentos se detuvieron en la fase seed por el defecto (1).
+Lo unico demostrado: embedding inline DEEP con el modelo local real funciona
+dentro de UN proceso. Nada verificado aun sobre persistencia tras reinicio.
+Correcciones de andamiaje en este commit; re-ejecucion requiere alcance y
+permiso nuevos, con controles de memoria robustos y ventana total explicita.

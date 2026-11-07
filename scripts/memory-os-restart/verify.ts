@@ -106,9 +106,16 @@ async function main() {
     const wrong = await lancedbService.search(targetVec, 5, undefined, wrongIdentity as any, { withScores: true });
     if (wrong.length !== 0) fail('identity binding broken: foreign identity served rows');
 
-    // No re-embedding needed after restart: nothing seeded is PENDING.
+    // No re-embedding of stored DEEP nodes after restart: the two DEEP rows
+    // (the only tier embedded inline by design) must not be PENDING.
     const pending = await lancedbService.pendingEmbeddings(500);
-    if (pending.some((n: any) => n.content?.includes(RUN))) fail('seeded nodes still EMBEDDING_PENDING after restart');
+    if (pending.some((n: any) => n.content === TARGET || n.content === DECOY)) fail('DEEP nodes still EMBEDDING_PENDING after restart');
+    // MEDIUM/LONG stay EMBEDDING_PENDING by design in this hermetic
+    // no-provider block (strict backfill refuses the local identity) - the
+    // canonical rows serve text retrieval. Assert the designed state openly
+    // instead of hiding it.
+    if (!pending.some((n: any) => n.content === `${RUN} receta de sopa de pollo con verduras y papa`)) fail('MEDIUM row unexpectedly not PENDING (designed state changed?)');
+    if (!pending.some((n: any) => n.content === `${RUN} historial de mantenimiento del servidor de produccion`)) fail('LONG row unexpectedly not PENDING (designed state changed?)');
 
     console.log(JSON.stringify({ status: 'PASS', run: RUN, top1Similarity: hits[0].similarity, dimension: targetVec.length }));
 }
