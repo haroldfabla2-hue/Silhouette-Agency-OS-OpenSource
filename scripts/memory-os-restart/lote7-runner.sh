@@ -78,9 +78,25 @@ accounting() {
 
 # ---------- preflight (todo falla BLOCKED, nunca sustituye) ----------
 preflight() {
-    # 1. residuos de una corrida muerta a la fuerza (SIGKILL/OOM host)
+    # 1. residuos de una corrida muerta a la fuerza (SIGKILL/OOM host).
+    # SOLO la jaula designada y SOLO con identidad verificada (main 7-nov):
+    # un cleanup generico no autoriza borrar recursos de otros proyectos.
     if findmnt | grep -q "$JAIL" || [ -d "$JAIL" ]; then
-        say "RESIDUO de corrida previa detectado: limpieza segura"
+        # Identidad del residuo: TODAS las fuentes montadas bajo $JAIL deben
+        # pertenecer al conjunto conocido de la jaula. Fuente ajena = NO TOCAR.
+        local src ajena=0
+        while read -r _ src _; do
+            case "$src" in
+                /opt/silhouette-tools/node22*|/opt/silhouette-tools/models*|\
+                /root/apps/silhouette-agency-os*|tmpfs*|overlay*|"") ;;
+                *) ajena=1; say "RESIDUO con fuente AJENA: $src" ;;
+            esac
+        done < <(findmnt | grep "$JAIL" || true)
+        if [ "$ajena" = 1 ]; then
+            say "BLOCKED: residuo bajo $JAIL de identidad NO verificada (fuentes ajenas). No se toca; requiere revision humana."
+            exit 3
+        fi
+        say "RESIDUO de jaula propia verificado (fuentes conocidas): limpieza"
         findmnt | grep "$JAIL" | awk '{print $1}' | sed 's/^..//' \
             | awk '{print length, $0}' | sort -rn | cut -d' ' -f2- \
             | while read -r m; do umount "$m" 2>/dev/null || true; done
