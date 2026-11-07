@@ -1,16 +1,13 @@
 #!/usr/bin/env bash
 # lote7-runner.sh - UNA corrida congelada del test OS-restart bajo UNA ventana
-# Uso: lote7-runner.sh <commit-pin-revisado>  (invocar por RUTA, nunca stdin)
-# Materializacion (dentro de la ventana aprobada, son hostwrites):
-#   git -C /root/apps/silhouette-agency-os show <pin>:scripts/memory-os-restart/lote7-runner.sh > /root/sil-jail-v4/lote7-runner.sh
-#   git -C /root/apps/silhouette-agency-os show <pin>:scripts/memory-os-restart/sil-jail-setup.sh > /root/sil-jail-v4/sil-jail-setup.sh && chmod +x /root/sil-jail-v4/sil-jail-setup.sh
-# v6: --configLoader runner (vitest 4.0.16 solo acepta bundle|runner, F2) y
-#   reloj anclado al primer hostwrite via LOTE7_T0_EPOCH con auditoria mtime.
-#   Runbook de la ventana aprobada (900s LITERALES desde el primer hostwrite):
-#     export LOTE7_T0_EPOCH=$(date +%s)
-#     <materializar runner+setup desde el pin (comandos de abajo)>
-#     bash /root/sil-jail-v4/lote7-runner.sh <pin>
-# v5 (revision de raiz F1-F7): pin por argumento verificado contra los blobs
+# Uso: NO invocar directamente - la entrada es lote7-launch.sh <pin> (reloj
+# unico desde antes de la materializacion). Este runner exige LOTE7_T0_EPOCH.
+# v7: ENTRADA UNICA via lote7-launch.sh (ancla OBLIGATORIA: el reloj unico
+#   arranca antes de la materializacion y el cap global 900s la cubre; este
+#   runner sin LOTE7_T0_EPOCH sale BLOCKED). --configLoader runner: vite 6.4.1
+#   admite tambien native, pero depende del soporte TS nativo del minor de
+#   Node 22 (no verificado); runner transforma TS sin esa dependencia (F2).
+# v5/v6: pin por argumento verificado contra los blobs
 #   del worktree (runner+setup) y archivado en la jaula (F3); rotacion de la
 #   evidencia lote7-* anterior con sufijo .<epoch> sin borrar nada (F4); causa
 #   raiz de lanzamiento ANTES del chequeo de medicion (F5); env -i allowlist
@@ -48,8 +45,8 @@ LEDGER=$EVID/lote7-budget-ledger.tsv
 TIMELINE=$EVID/lote7-memory-timeline.tsv
 ACCOUNTING=$EVID/lote7-accounting.md
 SAMPLER_PID=""
-# T0 lo fija el bloque (0b): ancla LOTE7_T0_EPOCH (primer hostwrite) o inicio propio.
-T0=${LOTE7_T0_EPOCH:-$(date +%s)}
+# T0 lo fija el bloque (0b) desde la ancla OBLIGATORIA LOTE7_T0_EPOCH.
+T0=${LOTE7_T0_EPOCH:-}
 
 # --- (0) pin revisado como argumento (F3: sin autorreferencia) + ruta (F7) ---
 PIN="${1:-}"
@@ -57,50 +54,28 @@ PIN="${1:-}"
 RUNNER_PATH=$(readlink -f "$0" 2>/dev/null || true)
 [ -n "$RUNNER_PATH" ] && [ -f "$RUNNER_PATH" ] || { echo "BLOCKED: invocar por ruta de archivo, no por stdin"; exit 3; }
 
-# --- (0b) reloj: la ventana 900s empieza en el PRIMER hostwrite (materializacion).
-# El operador exporta LOTE7_T0_EPOCH=$(date +%s) ANTES de materializar; el
-# runner audita que la materializacion sea POSTERIOR al ancla (mtime >= ancla),
-# asi un ancla tramposa hacia el futuro queda BLOCKED. Sin ancla: T0 propio.
-if [ -n "${LOTE7_T0_EPOCH:-}" ]; then
-    [[ "$LOTE7_T0_EPOCH" =~ ^[0-9]+$ ]] || { echo "BLOCKED: LOTE7_T0_EPOCH no es epoch"; exit 3; }
-    NOW=$(date +%s)
-    [ "$LOTE7_T0_EPOCH" -le "$NOW" ] || { echo "BLOCKED: ancla T0 en el futuro"; exit 3; }
-    [ "$(stat -c %Y "$RUNNER_PATH")" -ge "$LOTE7_T0_EPOCH" ] || { echo "BLOCKED: ancla T0 posterior a la materializacion del runner"; exit 3; }
-    [ -f "$SETUP_SCRIPT" ] && [ "$(stat -c %Y "$SETUP_SCRIPT")" -ge "$LOTE7_T0_EPOCH" ] || { echo "BLOCKED: ancla T0 posterior a la materializacion del setup"; exit 3; }
-    T0=$LOTE7_T0_EPOCH
-else
-    T0=$(date +%s)
-fi
+# --- (0b) ancla OBLIGATORIA (revisor r3): la ventana 900s empieza en el
+# primer hostwrite del LANZADOR. Sin ancla no hay reloj confiable: BLOCKED.
+# La auditoria mtime >= ancla bloquea una ancla tramposa hacia el futuro.
+[ -n "${LOTE7_T0_EPOCH:-}" ] || { echo "BLOCKED: falta LOTE7_T0_EPOCH - la entrada es lote7-launch.sh <pin>"; exit 3; }
+[[ "$LOTE7_T0_EPOCH" =~ ^[0-9]+$ ]] || { echo "BLOCKED: LOTE7_T0_EPOCH no es epoch"; exit 3; }
+NOW=$(date +%s)
+[ "$LOTE7_T0_EPOCH" -le "$NOW" ] || { echo "BLOCKED: ancla T0 en el futuro"; exit 3; }
+[ "$(stat -c %Y "$RUNNER_PATH")" -ge "$LOTE7_T0_EPOCH" ] || { echo "BLOCKED: ancla T0 posterior a la materializacion del runner"; exit 3; }
+[ -f "$SETUP_SCRIPT" ] && [ "$(stat -c %Y "$SETUP_SCRIPT")" -ge "$LOTE7_T0_EPOCH" ] || { echo "BLOCKED: ancla T0 posterior a la materializacion del setup"; exit 3; }
+T0=$LOTE7_T0_EPOCH
 REMAINING=$(( T0 + WINDOW_S - $(date +%s) ))
 [ "$REMAINING" -gt $(( PAYLOAD_MIN_S + TEARDOWN_RESERVE_S )) ] || { echo "BLOCKED: ventana remanente desde el ancla insuficiente (${REMAINING}s)"; exit 3; }
 
-# --- (1) autoenvoltura del watchdog global: la ventana TOTAL en codigo ---
-# La ancla SOLO se propaga si vino de fuera (auditoria mtime valida); sin
-# ancla externa la copia envuelta toma su propio T0 (deriva despreciable).
+# --- (1) autoenvoltura del watchdog global: remanente de la ventana TOTAL ---
 if [ "${LOTE7_WRAPPED:-}" != "1" ]; then
-    if [ -n "${LOTE7_T0_EPOCH:-}" ]; then
-        exec env LOTE7_WRAPPED=1 LOTE7_T0_EPOCH="$T0" timeout --kill-after=5s "${REMAINING}s" bash "$RUNNER_PATH" "$@"
-    else
-        exec env LOTE7_WRAPPED=1 timeout --kill-after=5s "${REMAINING}s" bash "$RUNNER_PATH" "$@"
-    fi
+    exec env LOTE7_WRAPPED=1 LOTE7_T0_EPOCH="$T0" timeout --kill-after=5s "${REMAINING}s" bash "$RUNNER_PATH" "$@"
 fi
 
 say()  { printf '[runner %s] %s\n' "$(date -u +%H:%M:%S)" "$*" | tee -a "$LEDGER"; }
 left() { echo $(( T0 + WINDOW_S - $(date +%s) )); }
 
-# F4: la evidencia de intentos anteriores se ROTA (nunca se borra ni se mezcla)
-rotar_evidencia() {
-    mkdir -p "$EVID"
-    local f ts
-    for f in lote7-payload.log lote7-memory-timeline.tsv lote7-setup.log lote7-accounting.md \
-             lote7-budget-ledger.tsv lote7-weights-sha256.txt lote7-P0a-libs.txt lote7-P1-fs.txt \
-             lote7-P2-caps.txt lote7-P4-secret-candidates.txt lote7-P5-donor.txt lote7-P-mounts.txt; do
-        if [ -f "$EVID/$f" ]; then
-            ts=$(date -u -r "$EVID/$f" +%Y%m%dT%H%M%SZ)
-            mv "$EVID/$f" "$EVID/$f.$ts"
-        fi
-    done
-}
+# F4: la rotacion de evidencia la hace el LANZADOR antes de materializar.
 
 # Fuentes de montaje EXACTAS de la jaula (sil-jail-setup.sh: DONOR/NODE22/MODELS). Ni una mas.
 fuente_conocida() {
@@ -273,8 +248,7 @@ run_payload() {
 }
 
 # --- main ---
-rotar_evidencia
-say "T0 ventana TOTAL ${WINDOW_S}s desde ancla $( [ -n "${LOTE7_T0_EPOCH:-}" ] && echo "LOTE7_T0_EPOCH=$T0 (primer hostwrite)" || echo "propia" ) (corte lanzamientos T0+$((WINDOW_S-PAYLOAD_MIN_S-TEARDOWN_RESERVE_S))s) pin=$PIN"
+say "T0 ventana TOTAL ${WINDOW_S}s desde ancla LOTE7_T0_EPOCH=$T0 (lanzador, primer hostwrite; corte lanzamientos T0+$((WINDOW_S-PAYLOAD_MIN_S-TEARDOWN_RESERVE_S))s) pin=$PIN"
 preflight
 run_payload
 RC=$?

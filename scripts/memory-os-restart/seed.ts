@@ -114,7 +114,7 @@ async function main() {
         try { walk(path.join(REPO_ROOT, dir), ''); } catch { /* ausente */ }
         return out;
     };
-    receipt('SEEDED', { ids, storage: {
+    receipt('SEEDED', { ids, node: process.version, storage: {
         overrides: {
             SILHOUETTE_LANCEDB_PATH: process.env.SILHOUETTE_LANCEDB_PATH ?? null,
             SILHOUETTE_DB_PATH: process.env.SILHOUETTE_DB_PATH ?? null,

@@ -104,12 +104,22 @@ describe('memoria sobrevive reinicio real de proceso OS (storage real + embeddin
         if (seed.code !== 0) throw new Error(`fase seed fallo rc=${seed.code}\n${seed.tail}`);
         expect(seed.code).toBe(0);
         expect(seed.receipt?.status).toBe('SEEDED');
+        // PASS invalido si el storage no fue el canonico real (revisor r3):
+        // overrides DEBEN ser null y el fs real de la jaula DEBE tener datos.
+        const EXPECTED_OVERRIDES = {
+            SILHOUETTE_LANCEDB_PATH: null, SILHOUETTE_DB_PATH: null,
+            SILHOUETTE_IDENTITY_DB_PATH: null, SILHOUETTE_TOOLS_DB_PATH: null,
+        };
+        expect(seed.receipt?.storage?.overrides).toEqual(EXPECTED_OVERRIDES);
+        expect((seed.receipt?.storage?.dbFiles?.length ?? 0) + (seed.receipt?.storage?.dataFiles?.length ?? 0)).toBeGreaterThan(0);
 
         const verify = runPhase('scripts/memory-os-restart/verify.ts');
         if (verify.code === 3) throw new Error(`BLOCKED: ${verify.receipt?.reason ?? verify.tail}`);
         if (verify.code !== 0) throw new Error(`fase verify fallo rc=${verify.code}\n${verify.tail}`);
         expect(verify.code).toBe(0);
         expect(verify.receipt?.status).toBe('PASS');
+        expect(verify.receipt?.storage?.overrides).toEqual(EXPECTED_OVERRIDES);
+        expect((verify.receipt?.storage?.dbFiles?.length ?? 0) + (verify.receipt?.storage?.dataFiles?.length ?? 0)).toBeGreaterThan(0);
         expect(verify.receipt?.top1Similarity).toBeGreaterThan(0.9999);
         expect(verify.receipt?.dimension).toBe(384);
     }, 660_000);

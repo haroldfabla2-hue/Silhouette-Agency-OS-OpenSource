@@ -37,7 +37,7 @@ revisor lo rechazo y se corrige asi:
   que detiene la unidad y luego desmonta, recuperacion residual en preflight
   SOLO con identidad verificada por whitelist EXACTA de fuentes
   (setup-v8:15-17), sampler con PID rastreado, oom_kill derivado del
-  timeline porque el ControlGroup desaparece al morir el scope, y
+  timeline porque el ControlGroup desaparece al morir la unidad, y
   contabilidad con clasificacion PASS/FAIL/BLOCKED parseando el payload).
   UNA corrida congelada: sin diagnosticos encadenados; si el payload falla,
   evidencia + reporte. La estimacion ~9 min NO es garantia: si la ventana

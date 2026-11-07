@@ -132,7 +132,7 @@ async function main() {
         try { walk(path.join(REPO_ROOT, dir), ''); } catch { /* ausente */ }
         return out;
     };
-    console.log('OS_RESTART_RECEIPT ' + JSON.stringify({ status: 'PASS', run: RUN, top1Similarity: hits[0].similarity, dimension: targetVec.length, storage: {
+    console.log('OS_RESTART_RECEIPT ' + JSON.stringify({ status: 'PASS', run: RUN, node: process.version, top1Similarity: hits[0].similarity, dimension: targetVec.length, storage: {
         overrides: {
             SILHOUETTE_LANCEDB_PATH: process.env.SILHOUETTE_LANCEDB_PATH ?? null,
             SILHOUETTE_DB_PATH: process.env.SILHOUETTE_DB_PATH ?? null,

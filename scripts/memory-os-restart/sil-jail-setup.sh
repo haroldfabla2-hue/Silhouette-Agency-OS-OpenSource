@@ -6,10 +6,11 @@
 #
 # v7 + bind RO de pesos MiniLM staged en /opt/silhouette-tools/models +
 # /repo/{db,data} escribibles SOLO para nobody (datos de prueba efimeros).
-# Aprobacion original lote6 (7-nov 01:02:59) verificada en el canal; CADA
-# corrida requiere aprobacion NUEVA del usuario (el runner la exige afuera).
-# Alcance de la corrida: 15min/1CPU/3GB, sin red durante la prueba, sin
-# credenciales/datos reales, teardown temporal + evidencia, main/prod intactos.
+# Autoridad: NINGUNA aprobacion historica autoriza una corrida; cada corrida
+# requiere aprobacion NUEVA y explicita del usuario, gestionada fuera de este
+# script (entrada: lote7-launch.sh). Alcance de la corrida: 15min/1CPU/3GB,
+# sin red durante la prueba, sin credenciales/datos reales, teardown temporal
+# + evidencia, main/prod intactos.
 # No imprime secretos. Evidencia en /var/sil-jail-evidence (root-only).
 set -euo pipefail
 
