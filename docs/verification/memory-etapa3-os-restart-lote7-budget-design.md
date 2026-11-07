@@ -21,12 +21,24 @@ revisor lo rechazo y se corrige asi:
   veces), teardown+contabilidad ~1 min; total ~9 min < 15 min: la ventana
   total es viable. Si la estimacion se rompe en la practica, el runner
   declara BLOCKED (ventana insuficiente), no extiende.
+- Contrato UNICO (runner == este doc, revisor #4): WINDOW_S=900 total,
+  TEARDOWN_RESERVE_S=180, PAYLOAD_MIN_S=420; corte de lanzamientos: ningun
+  payload nuevo si left < 420+180 (con los valores declarados: nada nuevo
+  tras T0+12:00). Enforcement global EN CODIGO: autoenvoltura
+  `timeout --kill-after=5s 900s` del propio runner + `systemctl stop $UNIT`
+  en el trap (si el runner muere, el scope de systemd seguiria vivo:
+  systemd-run --wait no lo mata). RuntimeMaxSec NO se usa: su soporte en
+  scopes es inconsistente; el enforcement real es la envoltura + stop.
 - Implementacion de referencia: scripts/memory-os-restart/lote7-runner.sh
-  (ledger T0, regla de lanzamiento, RuntimeMaxSec acotado por lo restante,
-  timeout global, trap EXIT idempotente con recuperacion residual segura en
-  preflight, sampler con PID rastreado y matado en toda salida, contabilidad
-  automatica). UNA corrida congelada: sin diagnosticos encadenados; si el
-  payload falla, evidencia + reporte.
+  (ledger T0, regla de lanzamiento, watchdog autoenvuelto, trap TERM/EXIT
+  que detiene la unidad y luego desmonta, recuperacion residual en preflight
+  SOLO con identidad verificada por whitelist EXACTA de fuentes
+  (setup-v8:15-17), sampler con PID rastreado, oom_kill derivado del
+  timeline porque el ControlGroup desaparece al morir el scope, y
+  contabilidad con clasificacion PASS/FAIL/BLOCKED parseando el payload).
+  UNA corrida congelada: sin diagnosticos encadenados; si el payload falla,
+  evidencia + reporte. La estimacion ~9 min NO es garantia: si la ventana
+  no alcanza, BLOCKED declarado.
 - Regla de lanzamiento: antes de CADA unidad, el runner calcula
   `restante = T0 + 900 - ahora - RESERVA_TEARDOWN`. Si `restante` es menor
   que el minimo estimado de esa fase, NO lanza y pasa a teardown con motivo

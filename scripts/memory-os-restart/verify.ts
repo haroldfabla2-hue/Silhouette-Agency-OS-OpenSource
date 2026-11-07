@@ -132,4 +132,11 @@ main()
         } catch { /* drain best-effort */ }
         process.exit(0);
     })
-    .catch(async (e) => { console.error(e); try { const { redisClient } = await import('../../services/redisClient'); await redisClient.disconnect().catch(() => {}); } catch {} process.exit(1); });
+    .catch(async (e) => {
+        console.error(e);
+        // Recibo prefijado SIEMPRE (revisor #5): un error no atrapado sin
+        // recibo dejaba al orquestador sin clasificacion.
+        console.log('OS_RESTART_RECEIPT ' + JSON.stringify({ status: 'FAILED', reason: String(e?.message ?? e) }));
+        try { const { redisClient } = await import('../../services/redisClient'); await redisClient.disconnect().catch(() => {}); } catch {}
+        process.exit(1);
+    });

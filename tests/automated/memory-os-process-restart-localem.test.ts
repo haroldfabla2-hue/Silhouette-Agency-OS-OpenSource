@@ -60,7 +60,11 @@ function runPhase(script: string): { code: number | null; receipt: any; tail: st
         cwd: CWD, env: childEnv(), encoding: 'utf8', timeout: 300_000, maxBuffer: 16 * 1024 * 1024,
     });
     const out = `${res.stdout ?? ''}`;
-    const tail = out.trim().split('\n').slice(-8).join('\n');
+    const serr = `${res.stderr ?? ''}`;
+    // stderr del hijo tambien entra al tail (revisor #5): sin el, un fallo
+    // fuera de stdout quedaba invisible para la clasificacion.
+    const tail = out.trim().split('\n').slice(-8).join('\n')
+        + (serr.trim() ? `\n[stderr]\n${serr.trim().split('\n').slice(-4).join('\n')}` : '');
     // Recibo por prefijo unico: el cleanup del hijo puede logear despues del
     // recibo, asi que "ultima linea JSON" no es garantia (revisor lote 7, #2).
     // Se toma la ULTIMA linea prefijada (la definitiva del proceso).
