@@ -26,10 +26,12 @@ revisor lo rechazo y se corrige asi:
   payload nuevo si left < 420+180 (con los valores declarados: nada nuevo
   tras T0+5:00: la regla es left < PAYLOAD_MIN+RESERVE = 600s, no
   solo la reserva). Enforcement global EN CODIGO: autoenvoltura
-  `timeout --kill-after=5s 900s` del propio runner + `systemctl stop $UNIT`
-  en el trap (si el runner muere, el scope de systemd seguiria vivo:
-  systemd-run --wait no lo mata). RuntimeMaxSec NO se usa: su soporte en
-  scopes es inconsistente; el enforcement real es la envoltura + stop.
+  `timeout --kill-after=5s <restante>` del propio runner + `systemctl stop $UNIT`
+  en el trap. La unidad es un transient SERVICE (--wait propaga el exit code;
+  --scope era incompatible con --wait) con RuntimeMaxSec dinamico
+  (=left-RESERVE); la envoltura + stop son la red de seguridad. El reloj se
+  ancla al primer hostwrite via LOTE7_T0_EPOCH (auditado por mtimes), asi la
+  materializacion tambien consume la ventana de 900s.
 - Implementacion de referencia: scripts/memory-os-restart/lote7-runner.sh (uso: `lote7-runner.sh <commit-pin-revisado>`; verifica runner+setup+jaula contra el pin y rota evidencia anterior sin borrarla)
   (ledger T0, regla de lanzamiento, watchdog autoenvuelto, trap TERM/EXIT
   que detiene la unidad y luego desmonta, recuperacion residual en preflight

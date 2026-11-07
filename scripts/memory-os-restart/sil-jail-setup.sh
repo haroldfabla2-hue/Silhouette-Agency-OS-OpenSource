@@ -92,8 +92,15 @@ done
   echo 'OK si vacio arriba'; } > "$EV/${PFX}P2-caps.txt"
 grep -rIlE '(BEGIN [A-Z ]*PRIVATE KEY|api[_-]?key|secret|token|password)' "$JAIL/repo" \
   --exclude-dir=docs --exclude='*.md' > "$EV/${PFX}P4-secret-candidates.txt" || true
-{ git -C "$WORKTREE" show "$COMMIT:package-lock.json" | md5sum; md5sum /opt/silhouette/app/package-lock.json;
-  "$NODE22/bin/node" -e "console.log('vitest', require('/opt/silhouette/app/node_modules/vitest/package.json').version); console.log('tsx', require('/opt/silhouette/app/node_modules/tsx/package.json').version); console.log('xenova', require('/opt/silhouette/app/node_modules/@xenova/transformers/package.json').version)"; } > "$EV/${PFX}P5-donor.txt"
+MD5_PIN=$(git -C "$WORKTREE" show "$COMMIT:package-lock.json" | md5sum | cut -d' ' -f1)
+MD5_DONOR=$(md5sum /opt/silhouette/app/package-lock.json | cut -d' ' -f1)
+{ echo "pin $COMMIT package-lock: $MD5_PIN"; echo "donor package-lock:       $MD5_DONOR";
+  for p in vitest tsx @xenova/transformers; do
+    printf '%s %s\n' "$p" "$(grep -m1 '"version"' "/opt/silhouette/app/node_modules/$p/package.json" | sed -E 's/.*: *"([^"]+)".*/\1/')"
+  done; } > "$EV/${PFX}P5-donor.txt"
+# Sin waiver: si el lockfile del pin difiere del donor, las dependencias de la
+# jaula son ajenas al codigo archivado y la corrida no es honesta.
+[ "$MD5_PIN" = "$MD5_DONOR" ] || { echo "ABORT: package-lock del pin != donor (dependencias ajenas al pin)" >&2; exit 1; }
 grep '^' /proc/self/mounts | grep "$JAIL" > "$EV/${PFX}P-mounts.txt"
 echo "=== setup ${PFX} OK ==="
 

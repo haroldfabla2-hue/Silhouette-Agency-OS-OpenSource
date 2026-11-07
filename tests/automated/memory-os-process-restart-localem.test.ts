@@ -45,6 +45,13 @@ const SCRUBBED_KEYS = [
     'API_KEY', 'GEMINI_API_KEY', 'GROQ_API_KEY', 'NVIDIA_API_KEY',
     'OPENROUTER_API_KEY', 'OPENROUTER_MODEL', 'OLLAMA_CLOUD_API_KEY',
     'OLLAMA_CLOUD_MODEL', 'OLLAMA_LOCAL_ENABLED',
+    // F10 (revisor): el setup por-worker de vitest redirige el storage a
+    // mkdtemp(os.tmpdir()) - en la jaula eso es /scratch, tmpfs en RAM, y la
+    // prueba de persistencia entre procesos correria sobre RAM en vez del fs
+    // real de la jaula (/repo/db, /repo/data). Los hijos usan las rutas
+    // CANONICAS por defecto (los defaults de produccion no se tocan).
+    'SILHOUETTE_LANCEDB_PATH', 'SILHOUETTE_DB_PATH',
+    'SILHOUETTE_IDENTITY_DB_PATH', 'SILHOUETTE_TOOLS_DB_PATH',
 ];
 
 function childEnv(): NodeJS.ProcessEnv {

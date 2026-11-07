@@ -99,7 +99,31 @@ async function main() {
         return !pending.some((n: any) => n.content === TARGET || n.content === DECOY);
     });
 
-    receipt('SEEDED', { ids });
+    // F10: la evidencia debe mostrar las rutas REALES usadas - overrides de
+    // entorno (deben ser null tras el scrub) y los archivos creados en el fs
+    // real de la jaula (/repo/db, /repo/data), no en tmpfs.
+    const rel = (dir: string): string[] => {
+        const out: string[] = [];
+        const walk = (d: string, p: string) => {
+            for (const f of fs.readdirSync(d, { withFileTypes: true })) {
+                if (out.length >= 40) return;
+                const rel2 = p ? `${p}/${f.name}` : f.name;
+                if (f.isDirectory()) walk(path.join(d, f.name), rel2); else out.push(rel2);
+            }
+        };
+        try { walk(path.join(REPO_ROOT, dir), ''); } catch { /* ausente */ }
+        return out;
+    };
+    receipt('SEEDED', { ids, storage: {
+        overrides: {
+            SILHOUETTE_LANCEDB_PATH: process.env.SILHOUETTE_LANCEDB_PATH ?? null,
+            SILHOUETTE_DB_PATH: process.env.SILHOUETTE_DB_PATH ?? null,
+            SILHOUETTE_IDENTITY_DB_PATH: process.env.SILHOUETTE_IDENTITY_DB_PATH ?? null,
+            SILHOUETTE_TOOLS_DB_PATH: process.env.SILHOUETTE_TOOLS_DB_PATH ?? null,
+        },
+        cwd: process.cwd(), tmpdir: process.env.TMPDIR ?? null,
+        dbFiles: rel('db'), dataFiles: rel('data'),
+    } });
 }
 
 main()

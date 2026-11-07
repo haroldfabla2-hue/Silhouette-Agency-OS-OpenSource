@@ -119,7 +119,29 @@ async function main() {
     if (!pending.some((n: any) => n.content === `${RUN} receta de sopa de pollo con verduras y papa`)) fail('MEDIUM row unexpectedly not PENDING (designed state changed?)');
     if (!pending.some((n: any) => n.content === `${RUN} historial de mantenimiento del servidor de produccion`)) fail('LONG row unexpectedly not PENDING (designed state changed?)');
 
-    console.log('OS_RESTART_RECEIPT ' + JSON.stringify({ status: 'PASS', run: RUN, top1Similarity: hits[0].similarity, dimension: targetVec.length }));
+    // F10: evidencia de rutas reales en el proceso NUEVO (ver seed.ts).
+    const rel = (dir: string): string[] => {
+        const out: string[] = [];
+        const walk = (d: string, p: string) => {
+            for (const f of fs.readdirSync(d, { withFileTypes: true })) {
+                if (out.length >= 40) return;
+                const rel2 = p ? `${p}/${f.name}` : f.name;
+                if (f.isDirectory()) walk(path.join(d, f.name), rel2); else out.push(rel2);
+            }
+        };
+        try { walk(path.join(REPO_ROOT, dir), ''); } catch { /* ausente */ }
+        return out;
+    };
+    console.log('OS_RESTART_RECEIPT ' + JSON.stringify({ status: 'PASS', run: RUN, top1Similarity: hits[0].similarity, dimension: targetVec.length, storage: {
+        overrides: {
+            SILHOUETTE_LANCEDB_PATH: process.env.SILHOUETTE_LANCEDB_PATH ?? null,
+            SILHOUETTE_DB_PATH: process.env.SILHOUETTE_DB_PATH ?? null,
+            SILHOUETTE_IDENTITY_DB_PATH: process.env.SILHOUETTE_IDENTITY_DB_PATH ?? null,
+            SILHOUETTE_TOOLS_DB_PATH: process.env.SILHOUETTE_TOOLS_DB_PATH ?? null,
+        },
+        cwd: process.cwd(), tmpdir: process.env.TMPDIR ?? null,
+        dbFiles: rel('db'), dataFiles: rel('data'),
+    } }));
 }
 
 main()
