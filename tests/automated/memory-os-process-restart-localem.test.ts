@@ -73,6 +73,10 @@ function runPhase(script: string): { code: number | null; receipt: any; tail: st
         if (!line.startsWith('OS_RESTART_RECEIPT ')) continue;
         try { receipt = JSON.parse(line.slice('OS_RESTART_RECEIPT '.length)); } catch { /* corrupta */ }
     }
+    // Re-emision al log del orquestador (revisor lote 7, F1): el recibo del
+    // hijo debe quedar en la evidencia del payload aunque la fase pase - sin
+    // esto la clasificacion del ledger caia al fallback por rc sin recibo.
+    if (receipt) console.log('OS_RESTART_RECEIPT ' + JSON.stringify(receipt));
     // Timeout/kill del spawn dentro de una ventana presupuestada: la fase no
     // pudo completarse por entorno/ventana -> BLOCKED declarado, no FAIL de
     // producto (revisor lote 7, #2).

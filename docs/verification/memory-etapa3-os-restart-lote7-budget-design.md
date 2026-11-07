@@ -30,7 +30,7 @@ revisor lo rechazo y se corrige asi:
   en el trap (si el runner muere, el scope de systemd seguiria vivo:
   systemd-run --wait no lo mata). RuntimeMaxSec NO se usa: su soporte en
   scopes es inconsistente; el enforcement real es la envoltura + stop.
-- Implementacion de referencia: scripts/memory-os-restart/lote7-runner.sh
+- Implementacion de referencia: scripts/memory-os-restart/lote7-runner.sh (uso: `lote7-runner.sh <commit-pin-revisado>`; verifica runner+setup+jaula contra el pin y rota evidencia anterior sin borrarla)
   (ledger T0, regla de lanzamiento, watchdog autoenvuelto, trap TERM/EXIT
   que detiene la unidad y luego desmonta, recuperacion residual en preflight
   SOLO con identidad verificada por whitelist EXACTA de fuentes
@@ -51,7 +51,7 @@ revisor lo rechazo y se corrige asi:
   finalizacion de evidencia y contabilidad.
 - Watchdog global: el runner es secuencial (unidades con --wait) y chequea
   el presupuesto entre unidades; ademas cada unidad lleva
-  `RuntimeMaxSec = min(900, restante)` y el runner entero corre bajo
+  `RuntimeMaxSec = restante - RESERVA_TEARDOWN` (reserva garantizada) y el runner entero corre bajo
   `timeout --kill-after=5s 900s` desde T0. Si el watchdog mata a media
   fase, el teardown corre igual (trap EXIT) y el resultado se declara
   BLOCKED (ventana insuficiente), nunca PASS parcial.

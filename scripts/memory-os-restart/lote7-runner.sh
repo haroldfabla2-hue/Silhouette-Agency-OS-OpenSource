@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
 # lote7-runner.sh - UNA corrida congelada del test OS-restart bajo UNA ventana
+# Uso: lote7-runner.sh <commit-pin-revisado>  (invocar por RUTA, nunca stdin)
+# Materializacion (dentro de la ventana aprobada, son hostwrites):
+#   git -C /root/apps/silhouette-agency-os show <pin>:scripts/memory-os-restart/lote7-runner.sh > /root/sil-jail-v4/lote7-runner.sh
+#   git -C /root/apps/silhouette-agency-os show <pin>:scripts/memory-os-restart/sil-jail-setup.sh > /root/sil-jail-v4/sil-jail-setup.sh && chmod +x /root/sil-jail-v4/sil-jail-setup.sh
+# v5 (revision de raiz F1-F7): pin por argumento verificado contra los blobs
+#   del worktree (runner+setup) y archivado en la jaula (F3); rotacion de la
+#   evidencia lote7-* anterior con sufijo .<epoch> sin borrar nada (F4); causa
+#   raiz de lanzamiento ANTES del chequeo de medicion (F5); env -i allowlist
+#   del lote6 en la cadena del payload; ruta absoluta en la autoenvoltura (F7).
 # TOTAL de 900s (incluye prep, probes, payload y teardown). CODIGO para
 # revision estatica: NO ejecutar sin alcance+permiso del usuario.
 #
@@ -26,7 +35,8 @@ PAYLOAD_MIN_S=420
 JAIL=/var/sil-jail
 EVID=/var/sil-jail-evidence
 UNIT=sil-jail-lote7-memosrestart
-SETUP_SCRIPT=/root/sil-jail-v4/sil-jail-setup-v8.sh
+SETUP_SCRIPT=/root/sil-jail-v4/sil-jail-setup.sh
+WORKTREE=/root/apps/silhouette-agency-os
 MEMMAX_BYTES=3221225472
 LEDGER=$EVID/lote7-budget-ledger.tsv
 TIMELINE=$EVID/lote7-memory-timeline.tsv
@@ -34,15 +44,35 @@ ACCOUNTING=$EVID/lote7-accounting.md
 SAMPLER_PID=""
 T0=$(date +%s)
 
+# --- (0) pin revisado como argumento (F3: sin autorreferencia) + ruta (F7) ---
+PIN="${1:-}"
+[[ "$PIN" =~ ^[0-9a-f]{40}$ ]] || { echo "BLOCKED: uso: lote7-runner.sh <commit-pin-revisado> (sha1 40 hex)"; exit 3; }
+RUNNER_PATH=$(readlink -f "$0" 2>/dev/null || true)
+[ -n "$RUNNER_PATH" ] && [ -f "$RUNNER_PATH" ] || { echo "BLOCKED: invocar por ruta de archivo, no por stdin"; exit 3; }
+
 # --- (1) autoenvoltura del watchdog global: la ventana TOTAL en codigo ---
 if [ "${LOTE7_WRAPPED:-}" != "1" ]; then
-    exec env LOTE7_WRAPPED=1 timeout --kill-after=5s "${WINDOW_S}s" bash "$0" "$@"
+    exec env LOTE7_WRAPPED=1 timeout --kill-after=5s "${WINDOW_S}s" bash "$RUNNER_PATH" "$@"
 fi
 
 say()  { printf '[runner %s] %s\n' "$(date -u +%H:%M:%S)" "$*" | tee -a "$LEDGER"; }
 left() { echo $(( T0 + WINDOW_S - $(date +%s) )); }
 
-# Fuentes de montaje EXACTAS de la jaula (setup-v8:15-17). Ni una mas.
+# F4: la evidencia de intentos anteriores se ROTA (nunca se borra ni se mezcla)
+rotar_evidencia() {
+    mkdir -p "$EVID"
+    local f ts
+    for f in lote7-payload.log lote7-memory-timeline.tsv lote7-setup.log lote7-accounting.md \
+             lote7-budget-ledger.tsv lote7-weights-sha256.txt lote7-P0a-libs.txt lote7-P1-fs.txt \
+             lote7-P2-caps.txt lote7-P4-secret-candidates.txt lote7-P5-donor.txt lote7-P-mounts.txt; do
+        if [ -f "$EVID/$f" ]; then
+            ts=$(date -u -r "$EVID/$f" +%Y%m%dT%H%M%SZ)
+            mv "$EVID/$f" "$EVID/$f.$ts"
+        fi
+    done
+}
+
+# Fuentes de montaje EXACTAS de la jaula (sil-jail-setup.sh: DONOR/NODE22/MODELS). Ni una mas.
 fuente_conocida() {
     case "$1" in
         tmpfs|/opt/silhouette-tools/node22|/opt/silhouette-tools/models|/opt/silhouette/app/node_modules) return 0 ;;
@@ -98,6 +128,16 @@ accounting() {
 
 # --- preflight: residuo SOLO con identidad verificada (#3), peak, pesos ---
 preflight() {
+    # F3: el pin revisado gobierna los TRES artefactos (runner, setup, jaula)
+    git -C "$WORKTREE" cat-file -e "$PIN^{commit}" 2>/dev/null \
+        || { say "BLOCKED: pin $PIN ausente en worktree (sin fetch en esta fase)"; exit 3; }
+    [ "$(git -C "$WORKTREE" show "$PIN:scripts/memory-os-restart/sil-jail-setup.sh" 2>/dev/null | sha256sum | cut -d' ' -f1)" \
+      = "$(sha256sum "$SETUP_SCRIPT" 2>/dev/null | cut -d' ' -f1)" ] \
+        || { say "BLOCKED: setup materializado != blob del pin (rematerializar desde $PIN)"; exit 3; }
+    [ "$(git -C "$WORKTREE" show "$PIN:scripts/memory-os-restart/lote7-runner.sh" 2>/dev/null | sha256sum | cut -d' ' -f1)" \
+      = "$(sha256sum "$RUNNER_PATH" | cut -d' ' -f1)" ] \
+        || { say "BLOCKED: runner materializado != blob del pin (rematerializar desde $PIN)"; exit 3; }
+    say "pin verificado contra worktree: runner+setup == blobs de $PIN (la jaula archiva ese mismo pin)"
     if findmnt -rn -o TARGET | grep -q "^$JAIL" || [ -d "$JAIL" ]; then
         local src ajena=0
         while read -r src; do
@@ -122,8 +162,8 @@ preflight() {
     [ "$ok" = 1 ] || exit 3
     sha256sum "$base"/{config.json,tokenizer.json,tokenizer_config.json,vocab.txt,onnx/model_quantized.onnx} \
         > "$EVID/lote7-weights-sha256.txt"
-    [ -x "$SETUP_SCRIPT" ] || { say "BLOCKED: setup script ausente"; exit 3; }
-    "$SETUP_SCRIPT" >> "$EVID/lote7-setup.log" 2>&1 || { say "BLOCKED: setup fallo"; exit 3; }
+    [ -x "$SETUP_SCRIPT" ] || { say "BLOCKED: setup script ausente o no ejecutable"; exit 3; }
+    "$SETUP_SCRIPT" "$PIN" lote7- >> "$EVID/lote7-setup.log" 2>&1 || { say "BLOCKED: setup fallo"; exit 3; }
     say "preflight OK ($(left)s restantes)"
 }
 
@@ -168,7 +208,9 @@ run_payload() {
     systemd-run --unit="$UNIT" -q --wait --collect \
         -p MemoryMax=$MEMMAX_BYTES -p MemorySwapMax=0 -p CPUQuota=100% \
         -p TasksMax=256 -p TimeoutStartSec=300 -p RuntimeMaxSec=$(( $(left) - TEARDOWN_RESERVE_S )) \
-        -- /usr/bin/unshare -n -- /usr/bin/env -u INVOCATION_ID \
+        -- /usr/bin/unshare -n -- /usr/bin/env -i \
+           PATH=/node22/bin HOME=/scratch TMPDIR=/scratch NODE_ENV=test CI=true \
+           REDIS_URL=redis://127.0.0.1:1 NEO4J_URI=bolt://127.0.0.1:1 \
            /usr/sbin/chroot --userspec=65534:65534 "$JAIL" \
            /node22/bin/node /node_modules/vitest/vitest.mjs run \
            tests/automated/memory-os-process-restart-localem.test.ts \
@@ -178,6 +220,13 @@ run_payload() {
     sampler "$UNIT" & SAMPLER_PID=$!
     wait "$payload_pid"; PAYLOAD_RC=$?
     kill "$SAMPLER_PID" 2>/dev/null; wait "$SAMPLER_PID" 2>/dev/null; SAMPLER_PID=""
+
+    # F5: causa raiz primero - un lanzamiento/ejecucion fallido SIN recibo se
+    # declara como tal (con el tail del payload log), no como fallo de medicion.
+    if [ "$PAYLOAD_RC" != "0" ] && ! grep -q '^OS_RESTART_RECEIPT ' "$EVID/lote7-payload.log" 2>/dev/null; then
+        say "BLOCKED: payload sin recibo (rc=$PAYLOAD_RC) - lanzamiento/ejecucion fallo; causa: $(tail -n 1 "$EVID/lote7-payload.log" 2>/dev/null | cut -c1-160)"
+        exit 3
+    fi
 
     # enforcement de memoria: del timeline, nunca del cgroup muerto
     local ok; ok=$(ultimo_oom_kill)
@@ -194,7 +243,8 @@ run_payload() {
 }
 
 # --- main ---
-say "T0 ventana TOTAL ${WINDOW_S}s (prep+payload+teardown; corte lanzamientos T0+$((WINDOW_S-PAYLOAD_MIN_S-TEARDOWN_RESERVE_S))s)"
+rotar_evidencia
+say "T0 ventana TOTAL ${WINDOW_S}s (prep+payload+teardown; corte lanzamientos T0+$((WINDOW_S-PAYLOAD_MIN_S-TEARDOWN_RESERVE_S))s) pin=$PIN"
 preflight
 run_payload
 RC=$?
