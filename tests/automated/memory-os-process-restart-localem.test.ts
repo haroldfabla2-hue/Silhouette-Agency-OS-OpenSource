@@ -33,7 +33,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const RUN = `osrestart-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
-const CWD = process.cwd();
+const CWD = fs.existsSync('/repo/package.json') ? '/repo' : process.cwd();
 const TSX = path.join(CWD, 'node_modules', 'tsx', 'dist', 'cli.mjs');
 const MODEL_DIR = path.join(CWD, 'models', 'Xenova', 'all-MiniLM-L6-v2');
 const REQUIRED_MODEL_FILES = ['config.json', 'tokenizer.json', path.join('onnx', 'model_quantized.onnx')];
