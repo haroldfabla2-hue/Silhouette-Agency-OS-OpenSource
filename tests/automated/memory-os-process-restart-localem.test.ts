@@ -79,11 +79,13 @@ describe('memoria sobrevive reinicio real de proceso OS (storage real + embeddin
 
         const seed = runPhase('scripts/memory-os-restart/seed.ts');
         if (seed.code === 3) throw new Error(`BLOCKED: ${seed.receipt?.reason ?? seed.tail}`);
+        if (seed.code !== 0) throw new Error(`fase seed fallo rc=${seed.code}\n${seed.tail}`);
         expect(seed.code).toBe(0);
         expect(seed.receipt?.status).toBe('SEEDED');
 
         const verify = runPhase('scripts/memory-os-restart/verify.ts');
         if (verify.code === 3) throw new Error(`BLOCKED: ${verify.receipt?.reason ?? verify.tail}`);
+        if (verify.code !== 0) throw new Error(`fase verify fallo rc=${verify.code}\n${verify.tail}`);
         expect(verify.code).toBe(0);
         expect(verify.receipt?.status).toBe('PASS');
         expect(verify.receipt?.top1Similarity).toBeGreaterThan(0.9999);

@@ -21,11 +21,18 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// Anclaje al repo: los servicios resuelven almacenamiento relativo al cwd
+// (db/, data/). El script se auto-ancla a la raiz del repo sin importar el
+// cwd de lanzamiento (en jaula el chroot arranca en /).
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+process.chdir(REPO_ROOT);
 
 const RUN = process.env.MEMORY_OS_RESTART_RUN;
 if (!RUN) { console.error('MEMORY_OS_RESTART_RUN missing'); process.exit(1); }
 
-const MODEL_DIR = path.join(process.cwd(), 'models', 'Xenova', 'all-MiniLM-L6-v2');
+const MODEL_DIR = path.join(REPO_ROOT, 'models', 'Xenova', 'all-MiniLM-L6-v2');
 const REQUIRED = ['config.json', 'tokenizer.json', path.join('onnx', 'model_quantized.onnx')];
 const missing = REQUIRED.filter(f => !fs.existsSync(path.join(MODEL_DIR, f)));
 if (missing.length) {
