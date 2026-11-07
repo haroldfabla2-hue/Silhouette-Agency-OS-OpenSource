@@ -8,12 +8,12 @@
 #   ningun payload nuevo si left < PAYLOAD_MIN_S + RESERVE (=> nada nuevo
 #   tras T0+5:00 con los valores declarados: left < 420+180=600).
 #   Enforcement global: autoenvoltura `timeout --kill-after=5s 900s` (abajo,
-#   en codigo). Si el runner muere, el scope de systemd SEGUIRIA vivo:
-#   por eso el trap TERM/EXIT hace `systemctl stop $UNIT` ANTES del
-#   teardown. RuntimeMaxSec NO se usa (soporte inconsistente en scopes).
+#   en codigo) + `systemctl stop $UNIT` en trap TERM/EXIT + RuntimeMaxSec dinamico
+#   (=left-TEARDOWN_RESERVE_S) en la unidad (ahora SERVICE: soporta --wait, exit code y RuntimeMaxSec;
+#   --scope era incompatible con --wait - fallo del intento 1 lote 7).
 #
 # Lecciones: oom_kill se deriva del TIMELINE del sampler (el ControlGroup
-# desaparece al morir el scope - revisor #2); whitelist EXACTA de fuentes
+# desaparece al morir la unidad - revisor #2); whitelist EXACTA de fuentes
 # (revisor #3, == setup-v8 lineas 15-17); findmnt -rn sin parsear caracteres
 # de arbol (revisor #7); ledger clasifica PASS/FAIL/BLOCKED parseando el
 # payload (#6). UNA corrida: sin diagnosticos encadenados.
@@ -156,14 +156,18 @@ ultimo_oom_kill() {
 }
 
 # --- payload UNICO y congelado ---
+# SERVICE transient (no --scope): --scope es incompatible con --wait (fallo
+# del intento 1). La unidad service soporta --wait (propaga el exit code) y
+# RuntimeMaxSec dinamico; las fronteras de aislamiento/medicion son IDENTICAS:
+# mismos limites cgroup, unshare -n, chroot nobody, sampler por ControlGroup.
 run_payload() {
     if [ "$(left)" -lt $(( PAYLOAD_MIN_S + TEARDOWN_RESERVE_S )) ]; then
         say "BLOCKED: ventana insuficiente para payload ($(left)s < $((PAYLOAD_MIN_S+TEARDOWN_RESERVE_S))s)"
         exit 3
     fi
-    systemd-run --unit="$UNIT" --scope -q --wait \
+    systemd-run --unit="$UNIT" -q --wait --collect \
         -p MemoryMax=$MEMMAX_BYTES -p MemorySwapMax=0 -p CPUQuota=100% \
-        -p TasksMax=256 -p TimeoutStartSec=300 \
+        -p TasksMax=256 -p TimeoutStartSec=300 -p RuntimeMaxSec=$(( $(left) - TEARDOWN_RESERVE_S )) \
         -- /usr/bin/unshare -n -- /usr/bin/env -u INVOCATION_ID \
            /usr/sbin/chroot --userspec=65534:65534 "$JAIL" \
            /node22/bin/node /node_modules/vitest/vitest.mjs run \
