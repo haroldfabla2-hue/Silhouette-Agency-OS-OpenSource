@@ -6,7 +6,9 @@
 # v7/v8: ENTRADA UNICA = comando wrapper minimo (ancla exportada y cap 900s
 #   de timeout ANTES del primer hostwrite - el git show del lanzador ya ocurre
 #   dentro del cap; sin archivo previo ni supuesto de tiempo despreciable).
-#   Sin LOTE7_T0_EPOCH este runner sale BLOCKED. --configLoader runner: vite 6.4.1
+#   Sin LOTE7_T0_EPOCH este runner sale BLOCKED. Margen duro: TERM<=T0+894,
+#   KILL<=T0+899 (kill-after 5s + 1s slack DENTRO de los 900). --configLoader
+#   runner: vite 6.4.1
 #   admite tambien native, pero depende del soporte TS nativo del minor de
 #   Node 22 (no verificado); runner transforma TS sin esa dependencia (F2).
 # v5/v6: pin por argumento verificado contra los blobs
@@ -35,6 +37,7 @@ set -u
 export LC_ALL=C
 
 WINDOW_S=900
+HARD_KILL_MARGIN_S=6
 TEARDOWN_RESERVE_S=180
 PAYLOAD_MIN_S=420
 JAIL=/var/sil-jail
@@ -66,12 +69,14 @@ NOW=$(date +%s)
 [ "$(stat -c %Y "$RUNNER_PATH")" -ge "$LOTE7_T0_EPOCH" ] || { echo "BLOCKED: ancla T0 posterior a la materializacion del runner"; exit 3; }
 [ -f "$SETUP_SCRIPT" ] && [ "$(stat -c %Y "$SETUP_SCRIPT")" -ge "$LOTE7_T0_EPOCH" ] || { echo "BLOCKED: ancla T0 posterior a la materializacion del setup"; exit 3; }
 T0=$LOTE7_T0_EPOCH
-REMAINING=$(( T0 + WINDOW_S - $(date +%s) ))
-[ "$REMAINING" -gt $(( PAYLOAD_MIN_S + TEARDOWN_RESERVE_S )) ] || { echo "BLOCKED: ventana remanente desde el ancla insuficiente (${REMAINING}s)"; exit 3; }
+# Margen duro compartido con el wrapper/lanzador: TERM <= T0+894, KILL <=
+# T0+899 (5s kill-after + 1s slack fork/exec) - NUNCA tras T0+900.
+TERM_BUDGET=$(( T0 + WINDOW_S - HARD_KILL_MARGIN_S - $(date +%s) ))
+[ "$TERM_BUDGET" -gt $(( PAYLOAD_MIN_S + TEARDOWN_RESERVE_S )) ] || { echo "BLOCKED: ventana remanente desde el ancla insuficiente (${TERM_BUDGET}s)"; exit 3; }
 
 # --- (1) autoenvoltura del watchdog global: remanente de la ventana TOTAL ---
 if [ "${LOTE7_WRAPPED:-}" != "1" ]; then
-    exec env LOTE7_WRAPPED=1 LOTE7_T0_EPOCH="$T0" timeout --kill-after=5s "${REMAINING}s" bash "$RUNNER_PATH" "$@"
+    exec env LOTE7_WRAPPED=1 LOTE7_T0_EPOCH="$T0" timeout --kill-after=5s "${TERM_BUDGET}s" bash "$RUNNER_PATH" "$@"
 fi
 
 say()  { printf '[runner %s] %s\n' "$(date -u +%H:%M:%S)" "$*" | tee -a "$LEDGER"; }

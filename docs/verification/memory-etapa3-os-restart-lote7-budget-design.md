@@ -26,15 +26,20 @@ revisor lo rechazo y se corrige asi:
   payload nuevo si left < 420+180 (con los valores declarados: nada nuevo
   tras T0+5:00: la regla es left < PAYLOAD_MIN+RESERVE = 600s, no
   solo la reserva). Enforcement global EN CODIGO: autoenvoltura
-  `timeout --kill-after=5s <restante>` del propio runner + `systemctl stop $UNIT`
+  `timeout --kill-after=5s <TERM budget>` del propio runner + `systemctl stop $UNIT`
   en el trap. La unidad es un transient SERVICE (--wait propaga el exit code;
   --scope era incompatible con --wait) con RuntimeMaxSec dinamico
   (=left-RESERVE); la envoltura + stop son la red de seguridad. El reloj es
   UNO y arranca ANTES del primer hostwrite: la entrada es un comando wrapper
-  minimo (export LOTE7_T0_EPOCH && timeout 900s bash -c '<git show del
-  lanzador desde el pin && exec lanzador>', texto exacto en la cabecera de
-  scripts/memory-os-restart/lote7-launch.sh); el git show del lanzador ya
-  ocurre dentro del cap, y runner+setup quedan auditados por mtime>=ancla.
+  minimo (texto exacto en la cabecera de scripts/memory-os-restart/lote7-launch.sh);
+  el git show del lanzador ya ocurre dentro del cap, y lanzador+runner+setup
+  quedan auditados por mtime>=ancla. Margen duro compartido: TERM a mas tardar
+  T0+894 y KILL a mas tardar T0+899 (5s kill-after + 1s slack fork/exec DENTRO
+  de los 900, nunca fuera). Si el KILL interrumpe el trap, el teardown ya
+  hizo los umounts antes que la contabilidad y el residuo se declara
+  RESIDUO (recuperacion verificada por whitelist en el preflight siguiente);
+  no se garantiza ausencia de residuo por estatica. La rotacion de evidencia
+  la hace el lanzador antes de materializar (nunca borra).
 - Implementacion de referencia: scripts/memory-os-restart/lote7-runner.sh (uso: `lote7-runner.sh <commit-pin-revisado>`; verifica runner+setup+jaula contra el pin y rota evidencia anterior sin borrarla)
   (ledger T0, regla de lanzamiento, watchdog autoenvuelto, trap TERM/EXIT
   que detiene la unidad y luego desmonta, recuperacion residual en preflight

@@ -4,8 +4,10 @@
 # ENTRADA UNICA (comando wrapper minimo, verificable: ancla y cap global ANTES
 # del primer hostwrite, sin archivo previo ni supuestos de tiempo despreciable):
 #
-#   export LOTE7_T0_EPOCH=$(date +%s) && timeout --kill-after=5s 900s \
+#   T0=$(date +%s); export LOTE7_T0_EPOCH=$T0; timeout --kill-after=5s $(( 894 - ( $(date +%s) - T0 ) ))s \
 #     bash -c 'git -C /root/apps/silhouette-agency-os show "$1":scripts/memory-os-restart/lote7-launch.sh > /root/sil-jail-v4/lote7-launch.sh && exec bash /root/sil-jail-v4/lote7-launch.sh "$1"' _ <pin-sha1-40hex>
+# Margen duro: TERM a mas tardar T0+894 y KILL a mas tardar T0+899 (5s de
+# kill-after + 1s de slack fork/exec DENTRO de los 900s, nunca fuera).
 #
 # Orden garantizado: el ancla se exporta antes de que arranque timeout, y el
 # primer hostwrite (git show) ocurre ya DENTRO del cap de 900s. Este script NO
@@ -14,6 +16,7 @@
 # payload, teardown) consume esa misma ventana.
 set -u
 WINDOW_S=900
+HARD_KILL_MARGIN_S=6
 WORKTREE=/root/apps/silhouette-agency-os
 DIR=/root/sil-jail-v4
 EVID=/var/sil-jail-evidence
@@ -29,12 +32,15 @@ SELF=$(readlink -f "$0" 2>/dev/null || true)
 [[ "$LOTE7_T0_EPOCH" =~ ^[0-9]+$ ]] || { echo "BLOCKED: LOTE7_T0_EPOCH no es epoch"; exit 3; }
 [ "$LOTE7_T0_EPOCH" -le "$(date +%s)" ] || { echo "BLOCKED: ancla T0 en el futuro"; exit 3; }
 T0=$LOTE7_T0_EPOCH
-REMAINING=$(( T0 + WINDOW_S - $(date +%s) ))
-[ "$REMAINING" -gt 60 ] || { echo "BLOCKED: ventana remanente insuficiente para materializar (${REMAINING}s)"; exit 3; }
+# El propio lanzador fue materializado por el wrapper DESPUES del ancla.
+[ "$(stat -c %Y "$SELF")" -ge "$T0" ] || { echo "BLOCKED: ancla T0 posterior a la materializacion del lanzador"; exit 3; }
+# TERM budget: el KILL (TERM+5s) nunca cae tras T0+900 (margen duro 6s).
+TERM_BUDGET=$(( T0 + WINDOW_S - HARD_KILL_MARGIN_S - $(date +%s) ))
+[ "$TERM_BUDGET" -gt 60 ] || { echo "BLOCKED: ventana remanente insuficiente para materializar (${TERM_BUDGET}s)"; exit 3; }
 
 # Cap propio sobre el remanente (red de seguridad si se invoca sin el wrapper).
 if [ "${LOTE7_LAUNCH_WRAPPED:-}" != "1" ]; then
-    exec env LOTE7_LAUNCH_WRAPPED=1 LOTE7_T0_EPOCH="$T0" timeout --kill-after=5s "${REMAINING}s" bash "$SELF" "$@"
+    exec env LOTE7_LAUNCH_WRAPPED=1 LOTE7_T0_EPOCH="$T0" timeout --kill-after=5s "${TERM_BUDGET}s" bash "$SELF" "$@"
 fi
 
 say() { printf '[launch %s] %s\n' "$(date -u +%H:%M:%S)" "$*" | tee -a "$LEDGER"; }
@@ -55,7 +61,7 @@ for f in lote7-launch.log lote7-payload.log lote7-memory-timeline.tsv lote7-setu
     fi
 done
 exec > >(tee -a "$EVID/lote7-launch.log") 2>&1
-say "ancla LOTE7_T0_EPOCH=$T0 adoptada (cap ${WINDOW_S}s del wrapper + remanente ${REMAINING}s propio; pin=$PIN)"
+say "ancla LOTE7_T0_EPOCH=$T0 adoptada (TERM budget ${TERM_BUDGET}s, KILL <= T0+$((WINDOW_S-1))s; pin=$PIN)"
 
 # Materializacion (hostwrites) dentro de la ventana; el runner audita sus mtimes.
 git -C "$WORKTREE" show "$PIN:scripts/memory-os-restart/lote7-runner.sh" > "$DIR/lote7-runner.sh" \
