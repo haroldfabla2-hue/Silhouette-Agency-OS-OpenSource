@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
-# lote7-launch.sh - ENTRADA UNICA de la ventana aprobada (900s LITERALES).
-# El reloj UNICO arranca en la primera linea ejecutada (T0); TODO lo demas -
-# verificacion, materializacion (hostwrites), runner, payload y teardown -
-# consume esa misma ventana. No hay reloj nuevo ni cap externo dependiente
-# del operador: la autoenvoltura timeout cubre hasta una materializacion
-# colgada. Uso (ventana aprobada por el usuario):
-#   git -C /root/apps/silhouette-agency-os show <pin>:scripts/memory-os-restart/lote7-launch.sh > /root/sil-jail-v4/lote7-launch.sh
-#   bash /root/sil-jail-v4/lote7-launch.sh <pin>
-# (ese unico git show previo es local al worktree y tarda <1s; el lanzador se
-#  autoverifica contra el blob del pin antes de cualquier otro hostwrite).
+# lote7-launch.sh - materializacion + arranque bajo el reloj UNICO de la ventana.
+#
+# ENTRADA UNICA (comando wrapper minimo, verificable: ancla y cap global ANTES
+# del primer hostwrite, sin archivo previo ni supuestos de tiempo despreciable):
+#
+#   export LOTE7_T0_EPOCH=$(date +%s) && timeout --kill-after=5s 900s \
+#     bash -c 'git -C /root/apps/silhouette-agency-os show "$1":scripts/memory-os-restart/lote7-launch.sh > /root/sil-jail-v4/lote7-launch.sh && exec bash /root/sil-jail-v4/lote7-launch.sh "$1"' _ <pin-sha1-40hex>
+#
+# Orden garantizado: el ancla se exporta antes de que arranque timeout, y el
+# primer hostwrite (git show) ocurre ya DENTRO del cap de 900s. Este script NO
+# arranca un reloj nuevo: adopta LOTE7_T0_EPOCH o sale BLOCKED. Todo lo demas
+# (autoverificacion, rotacion, materializacion de runner/setup, runner,
+# payload, teardown) consume esa misma ventana.
 set -u
-T0=$(date +%s)
 WINDOW_S=900
 WORKTREE=/root/apps/silhouette-agency-os
 DIR=/root/sil-jail-v4
@@ -18,13 +20,21 @@ EVID=/var/sil-jail-evidence
 LEDGER=$EVID/lote7-budget-ledger.tsv
 
 PIN="${1:-}"
-[[ "$PIN" =~ ^[0-9a-f]{40}$ ]] || { echo "BLOCKED: uso: lote7-launch.sh <commit-pin-revisado> (sha1 40 hex)"; exit 3; }
+[[ "$PIN" =~ ^[0-9a-f]{40}$ ]] || { echo "BLOCKED: uso: wrapper de la cabecera con <commit-pin-revisado>"; exit 3; }
 SELF=$(readlink -f "$0" 2>/dev/null || true)
 [ -n "$SELF" ] && [ -f "$SELF" ] || { echo "BLOCKED: invocar por ruta de archivo, no por stdin"; exit 3; }
 
-# Cap global: 900s literales desde T0 cubren TAMBIEN la materializacion.
+# Ancla OBLIGATORIA (revisor r3/r4): sin reloj externo verificable no hay ventana.
+[ -n "${LOTE7_T0_EPOCH:-}" ] || { echo "BLOCKED: falta LOTE7_T0_EPOCH - usar el comando wrapper de la cabecera"; exit 3; }
+[[ "$LOTE7_T0_EPOCH" =~ ^[0-9]+$ ]] || { echo "BLOCKED: LOTE7_T0_EPOCH no es epoch"; exit 3; }
+[ "$LOTE7_T0_EPOCH" -le "$(date +%s)" ] || { echo "BLOCKED: ancla T0 en el futuro"; exit 3; }
+T0=$LOTE7_T0_EPOCH
+REMAINING=$(( T0 + WINDOW_S - $(date +%s) ))
+[ "$REMAINING" -gt 60 ] || { echo "BLOCKED: ventana remanente insuficiente para materializar (${REMAINING}s)"; exit 3; }
+
+# Cap propio sobre el remanente (red de seguridad si se invoca sin el wrapper).
 if [ "${LOTE7_LAUNCH_WRAPPED:-}" != "1" ]; then
-    exec env LOTE7_LAUNCH_WRAPPED=1 timeout --kill-after=5s "${WINDOW_S}s" bash "$SELF" "$@"
+    exec env LOTE7_LAUNCH_WRAPPED=1 LOTE7_T0_EPOCH="$T0" timeout --kill-after=5s "${REMAINING}s" bash "$SELF" "$@"
 fi
 
 say() { printf '[launch %s] %s\n' "$(date -u +%H:%M:%S)" "$*" | tee -a "$LEDGER"; }
@@ -45,7 +55,7 @@ for f in lote7-launch.log lote7-payload.log lote7-memory-timeline.tsv lote7-setu
     fi
 done
 exec > >(tee -a "$EVID/lote7-launch.log") 2>&1
-say "T0=$T0 ventana ${WINDOW_S}s literales desde este instante (pin=$PIN)"
+say "ancla LOTE7_T0_EPOCH=$T0 adoptada (cap ${WINDOW_S}s del wrapper + remanente ${REMAINING}s propio; pin=$PIN)"
 
 # Materializacion (hostwrites) dentro de la ventana; el runner audita sus mtimes.
 git -C "$WORKTREE" show "$PIN:scripts/memory-os-restart/lote7-runner.sh" > "$DIR/lote7-runner.sh" \

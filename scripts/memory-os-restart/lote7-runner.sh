@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # lote7-runner.sh - UNA corrida congelada del test OS-restart bajo UNA ventana
-# Uso: NO invocar directamente - la entrada es lote7-launch.sh <pin> (reloj
-# unico desde antes de la materializacion). Este runner exige LOTE7_T0_EPOCH.
-# v7: ENTRADA UNICA via lote7-launch.sh (ancla OBLIGATORIA: el reloj unico
-#   arranca antes de la materializacion y el cap global 900s la cubre; este
-#   runner sin LOTE7_T0_EPOCH sale BLOCKED). --configLoader runner: vite 6.4.1
+# Uso: NO invocar directamente - la entrada es el comando wrapper minimo
+# documentado en la cabecera de lote7-launch.sh (ancla + cap 900s ANTES del
+# primer hostwrite). Este runner exige LOTE7_T0_EPOCH.
+# v7/v8: ENTRADA UNICA = comando wrapper minimo (ancla exportada y cap 900s
+#   de timeout ANTES del primer hostwrite - el git show del lanzador ya ocurre
+#   dentro del cap; sin archivo previo ni supuesto de tiempo despreciable).
+#   Sin LOTE7_T0_EPOCH este runner sale BLOCKED. --configLoader runner: vite 6.4.1
 #   admite tambien native, pero depende del soporte TS nativo del minor de
 #   Node 22 (no verificado); runner transforma TS sin esa dependencia (F2).
 # v5/v6: pin por argumento verificado contra los blobs
@@ -57,7 +59,7 @@ RUNNER_PATH=$(readlink -f "$0" 2>/dev/null || true)
 # --- (0b) ancla OBLIGATORIA (revisor r3): la ventana 900s empieza en el
 # primer hostwrite del LANZADOR. Sin ancla no hay reloj confiable: BLOCKED.
 # La auditoria mtime >= ancla bloquea una ancla tramposa hacia el futuro.
-[ -n "${LOTE7_T0_EPOCH:-}" ] || { echo "BLOCKED: falta LOTE7_T0_EPOCH - la entrada es lote7-launch.sh <pin>"; exit 3; }
+[ -n "${LOTE7_T0_EPOCH:-}" ] || { echo "BLOCKED: falta LOTE7_T0_EPOCH - la entrada es el wrapper de lote7-launch.sh"; exit 3; }
 [[ "$LOTE7_T0_EPOCH" =~ ^[0-9]+$ ]] || { echo "BLOCKED: LOTE7_T0_EPOCH no es epoch"; exit 3; }
 NOW=$(date +%s)
 [ "$LOTE7_T0_EPOCH" -le "$NOW" ] || { echo "BLOCKED: ancla T0 en el futuro"; exit 3; }
