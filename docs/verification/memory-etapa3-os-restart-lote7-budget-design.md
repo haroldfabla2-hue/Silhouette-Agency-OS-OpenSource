@@ -24,7 +24,8 @@ revisor lo rechazo y se corrige asi:
 - Contrato UNICO (runner == este doc, revisor #4): WINDOW_S=900 total,
   TEARDOWN_RESERVE_S=180, PAYLOAD_MIN_S=420; corte de lanzamientos: ningun
   payload nuevo si left < 420+180 (con los valores declarados: nada nuevo
-  tras T0+12:00). Enforcement global EN CODIGO: autoenvoltura
+  tras T0+5:00: la regla es left < PAYLOAD_MIN+RESERVE = 600s, no
+  solo la reserva). Enforcement global EN CODIGO: autoenvoltura
   `timeout --kill-after=5s 900s` del propio runner + `systemctl stop $UNIT`
   en el trap (si el runner muere, el scope de systemd seguiria vivo:
   systemd-run --wait no lo mata). RuntimeMaxSec NO se usa: su soporte en
@@ -44,7 +45,7 @@ revisor lo rechazo y se corrige asi:
   que el minimo estimado de esa fase, NO lanza y pasa a teardown con motivo
   registrado. Estimaciones declaradas por fase (seed 180s, verify 180s,
   vitest total 660s tope interno) - la regla manda sobre la estimacion.
-- RESERVA_TEARDOWN = 180s. Ningun payload nuevo tras T0+12:00; teardown
+- RESERVA_TEARDOWN = 180s. Ningun payload nuevo tras T0+5:00 (regla left < 420+180=600); teardown
   (desmontar binds, borrar raiz temporal, cerrar ledger) termina dentro de
   la ventana. El desmontaje real tarda segundos; la reserva absorbe
   finalizacion de evidencia y contabilidad.

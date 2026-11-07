@@ -6,7 +6,7 @@
 # Contrato UNICO de ventana (runner == doc, revisor #4):
 #   WINDOW_S=900 total | TEARDOWN_RESERVE_S=180 | corte de lanzamientos:
 #   ningun payload nuevo si left < PAYLOAD_MIN_S + RESERVE (=> nada nuevo
-#   tras T0+12:00 con los valores declarados).
+#   tras T0+5:00 con los valores declarados: left < 420+180=600).
 #   Enforcement global: autoenvoltura `timeout --kill-after=5s 900s` (abajo,
 #   en codigo). Si el runner muere, el scope de systemd SEGUIRIA vivo:
 #   por eso el trap TERM/EXIT hace `systemctl stop $UNIT` ANTES del
@@ -190,7 +190,7 @@ run_payload() {
 }
 
 # --- main ---
-say "T0 ventana TOTAL ${WINDOW_S}s (prep+payload+teardown; corte lanzamientos T0+$((WINDOW_S-TEARDOWN_RESERVE_S))s)"
+say "T0 ventana TOTAL ${WINDOW_S}s (prep+payload+teardown; corte lanzamientos T0+$((WINDOW_S-PAYLOAD_MIN_S-TEARDOWN_RESERVE_S))s)"
 preflight
 run_payload
 RC=$?
