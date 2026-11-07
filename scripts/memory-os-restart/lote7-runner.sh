@@ -23,7 +23,7 @@
 #   WINDOW_S=900 total | TEARDOWN_RESERVE_S=180 | corte de lanzamientos:
 #   ningun payload nuevo si left < PAYLOAD_MIN_S + RESERVE (=> nada nuevo
 #   tras T0+5:00 con los valores declarados: left < 420+180=600).
-#   Enforcement global: autoenvoltura `timeout --kill-after=5s 900s` (abajo,
+#   Enforcement global: autoenvoltura `timeout --kill-after=5s <TERM budget>` (abajo,
 #   en codigo) + `systemctl stop $UNIT` en trap TERM/EXIT + RuntimeMaxSec dinamico
 #   (=left-TEARDOWN_RESERVE_S) en la unidad (ahora SERVICE: soporta --wait, exit code y RuntimeMaxSec;
 #   --scope era incompatible con --wait - fallo del intento 1 lote 7).

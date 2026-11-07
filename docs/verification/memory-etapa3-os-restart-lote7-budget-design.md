@@ -62,7 +62,7 @@ revisor lo rechazo y se corrige asi:
 - Watchdog global: el runner es secuencial (unidades con --wait) y chequea
   el presupuesto entre unidades; ademas cada unidad lleva
   `RuntimeMaxSec = restante - RESERVA_TEARDOWN` (reserva garantizada) y el runner entero corre bajo
-  `timeout --kill-after=5s 900s` desde T0. Si el watchdog mata a media
+  `timeout --kill-after=5s <TERM budget>` desde el ancla (TERM<=T0+894, KILL<=T0+899). Si el watchdog mata a media
   fase, el teardown corre igual (trap EXIT) y el resultado se declara
   BLOCKED (ventana insuficiente), nunca PASS parcial.
 
