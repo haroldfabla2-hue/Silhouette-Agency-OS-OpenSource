@@ -47,10 +47,12 @@ const RUN = process.env.MEMORY_OS_RESTART_RUN;
 if (!RUN) { console.error('MEMORY_OS_RESTART_RUN missing'); process.exit(1); }
 
 const receipt = (status: string, extra: Record<string, unknown> = {}) =>
-    console.log(JSON.stringify({ status, run: RUN, ...extra }));
+    console.log('OS_RESTART_RECEIPT ' + JSON.stringify({ status, run: RUN, ...extra }));
 
 const MODEL_DIR = path.join(REPO_ROOT, 'models', 'Xenova', 'all-MiniLM-L6-v2');
-const REQUIRED = ['config.json', 'tokenizer.json', path.join('onnx', 'model_quantized.onnx')];
+// Los 5 archivos del modelo que el staging registra (lote6-P1-fs.txt);
+// alineado con el doc (revisor lote 7, hallazgo 1).
+const REQUIRED = ['config.json', 'tokenizer.json', 'tokenizer_config.json', 'vocab.txt', path.join('onnx', 'model_quantized.onnx')];
 const missing = REQUIRED.filter(f => !fs.existsSync(path.join(MODEL_DIR, f)));
 if (missing.length) {
     receipt('BLOCKED', { reason: `local model weights not staged at ./models/Xenova/all-MiniLM-L6-v2 (missing: ${missing.join(', ')})` });

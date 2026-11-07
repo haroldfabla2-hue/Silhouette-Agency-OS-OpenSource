@@ -61,11 +61,18 @@ function runPhase(script: string): { code: number | null; receipt: any; tail: st
     });
     const out = `${res.stdout ?? ''}`;
     const tail = out.trim().split('\n').slice(-8).join('\n');
+    // Recibo por prefijo unico: el cleanup del hijo puede logear despues del
+    // recibo, asi que "ultima linea JSON" no es garantia (revisor lote 7, #2).
+    // Se toma la ULTIMA linea prefijada (la definitiva del proceso).
     let receipt: any = null;
-    for (const line of out.trim().split('\n').reverse()) {
-        try { const j = JSON.parse(line); if (j && j.status) { receipt = j; break; } } catch { /* log lines */ }
+    for (const line of out.split('\n')) {
+        if (!line.startsWith('OS_RESTART_RECEIPT ')) continue;
+        try { receipt = JSON.parse(line.slice('OS_RESTART_RECEIPT '.length)); } catch { /* corrupta */ }
     }
-    if (res.error) throw new Error(`fase ${script} no completo: ${res.error.message}\n${tail}`);
+    // Timeout/kill del spawn dentro de una ventana presupuestada: la fase no
+    // pudo completarse por entorno/ventana -> BLOCKED declarado, no FAIL de
+    // producto (revisor lote 7, #2).
+    if (res.error) throw new Error(`BLOCKED: fase ${script} no completo (spawn: ${res.error.message}) - ventana/entorno, no evidencia de producto\n${tail}`);
     return { code: res.status, receipt, tail };
 }
 

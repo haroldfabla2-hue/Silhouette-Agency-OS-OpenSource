@@ -5,14 +5,28 @@ instalado. Requiere revision del andamiaje + alcance/permiso nuevos antes de
 cualquier corrida. Responde a las lecciones del lote 6 (ventana excedida
 18:02 vs 15:00; metrica de memoria no confiable; FAIL/BLOCKED confundidos).
 
-## 1. Presupuesto unico de 15 min, medido desde el PRIMER PAYLOAD
+## 1. Presupuesto unico de 15 min como ventana TOTAL (correccion del revisor)
 
-- Staging (descarga de pesos), montaje de jaula y probes de barrera son
-  PREPARACION: ocurren antes de T0 y fuera del presupuesto (tienen red solo
-  en staging; los payloads nunca).
-- T0 = timestamp del primer lanzamiento de payload (cualquier unidad que
-  ejecute codigo del repo: vitest, seed, verify). El runner lo registra en
-  `evidence/budget-ledger.tsv` (unit, t_start, t_end, wall_s, cpu_s, rc).
+La primera version de este diseno media la ventana desde el primer payload y
+dejaba la preparacion fuera: eso redefine "15 min" escondiendo trabajo. El
+revisor lo rechazo y se corrige asi:
+
+- T0 = inicio del runner. La ventana de 900s incluye TODO: montaje de la
+  jaula, probes de barrera, el payload unico y el teardown. El staging de
+  pesos (descarga ~25MB) ya esta hecho y preservado desde lote 6; si hubiera
+  que re-descargar, se declara como prep estimada y se pide aprobacion de la
+  duracion total resultante - no se presenta como "los mismos 15 min".
+- Estimacion con mediciones lote 6: prep ~2-3 min (sin descarga), payload
+  ~5 min (vitest: seed -> fin de proceso -> verify; el modelo carga dos
+  veces), teardown+contabilidad ~1 min; total ~9 min < 15 min: la ventana
+  total es viable. Si la estimacion se rompe en la practica, el runner
+  declara BLOCKED (ventana insuficiente), no extiende.
+- Implementacion de referencia: scripts/memory-os-restart/lote7-runner.sh
+  (ledger T0, regla de lanzamiento, RuntimeMaxSec acotado por lo restante,
+  timeout global, trap EXIT idempotente con recuperacion residual segura en
+  preflight, sampler con PID rastreado y matado en toda salida, contabilidad
+  automatica). UNA corrida congelada: sin diagnosticos encadenados; si el
+  payload falla, evidencia + reporte.
 - Regla de lanzamiento: antes de CADA unidad, el runner calcula
   `restante = T0 + 900 - ahora - RESERVA_TEARDOWN`. Si `restante` es menor
   que el minimo estimado de esa fase, NO lanza y pasa a teardown con motivo

@@ -25,14 +25,16 @@ const RUN = process.env.MEMORY_OS_RESTART_RUN;
 if (!RUN) { console.error('MEMORY_OS_RESTART_RUN missing'); process.exit(1); }
 
 const MODEL_DIR = path.join(REPO_ROOT, 'models', 'Xenova', 'all-MiniLM-L6-v2');
-const REQUIRED = ['config.json', 'tokenizer.json', path.join('onnx', 'model_quantized.onnx')];
+// Los 5 archivos del modelo que el staging registra (lote6-P1-fs.txt);
+// alineado con el doc (revisor lote 7, hallazgo 1).
+const REQUIRED = ['config.json', 'tokenizer.json', 'tokenizer_config.json', 'vocab.txt', path.join('onnx', 'model_quantized.onnx')];
 const missing = REQUIRED.filter(f => !fs.existsSync(path.join(MODEL_DIR, f)));
 if (missing.length) {
-    console.log(JSON.stringify({ status: 'BLOCKED', reason: `local model weights not staged at ./models/Xenova/all-MiniLM-L6-v2 (missing: ${missing.join(', ')})` }));
+    console.log('OS_RESTART_RECEIPT ' + JSON.stringify({ status: 'BLOCKED', reason: `local model weights not staged at ./models/Xenova/all-MiniLM-L6-v2 (missing: ${missing.join(', ')})` }));
     process.exit(3);
 }
 
-function fail(msg: string): never { console.log(JSON.stringify({ status: 'FAIL', reason: msg })); process.exit(1); }
+function fail(msg: string): never { console.log('OS_RESTART_RECEIPT ' + JSON.stringify({ status: 'FAIL', reason: msg })); process.exit(1); }
 
 function cosine(a: number[], b: number[]): number {
     let dot = 0, na = 0, nb = 0;
@@ -117,7 +119,7 @@ async function main() {
     if (!pending.some((n: any) => n.content === `${RUN} receta de sopa de pollo con verduras y papa`)) fail('MEDIUM row unexpectedly not PENDING (designed state changed?)');
     if (!pending.some((n: any) => n.content === `${RUN} historial de mantenimiento del servidor de produccion`)) fail('LONG row unexpectedly not PENDING (designed state changed?)');
 
-    console.log(JSON.stringify({ status: 'PASS', run: RUN, top1Similarity: hits[0].similarity, dimension: targetVec.length }));
+    console.log('OS_RESTART_RECEIPT ' + JSON.stringify({ status: 'PASS', run: RUN, top1Similarity: hits[0].similarity, dimension: targetVec.length }));
 }
 
 main()
