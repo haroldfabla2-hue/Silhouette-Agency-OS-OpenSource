@@ -12,10 +12,11 @@
  * 6. Optionally auto-apply safe improvements
  */
 
+import crypto from 'node:crypto';
 import { backgroundLLM } from './backgroundLLMService';
 import { continuum } from './continuumMemory';
 import { systemBus } from './systemBus';
-import { SystemProtocol, MemoryTier } from '../types';
+import { SystemProtocol } from '../types';
 import type { Experience as RecordedExperience, ExperienceType } from './experienceBuffer';
 
 interface Experience {
@@ -36,6 +37,14 @@ interface LearningInsight {
     suggestedFix: string;
     confidence: number; // 0-1
     autoApplicable: boolean;
+}
+
+export interface LearningOutcome {
+    stage: 'REJECTED' | 'UNHANDLED' | 'PROPOSAL_RECORDED' | 'FIX_GENERATED'
+        | 'REMEDIATION_RETURNED' | 'CONFIG_SUGGESTION_EMITTED' | 'FAILED';
+    applied: false;
+    proposalMemoryId?: string;
+    detail?: string;
 }
 
 interface LearningStats {
@@ -59,7 +68,7 @@ class LearningLoop {
     private readonly AUTO_APPLY_MIN_FAILURES = 5;
 
     private constructor() {
-        console.log('[LEARNING_LOOP] 🧠 Initialized - Autonomous improvement active');
+        console.log('[LEARNING_LOOP] Initialized; proposal routing is not verified application');
     }
 
     public static getInstance(): LearningLoop {
@@ -251,24 +260,37 @@ Auto-applicable: ${insight.autoApplicable}
      * Apply a learning insight (if safe)
      */
     public async applyInsight(insight: LearningInsight): Promise<boolean> {
+        return (await this.routeInsight(insight)).applied;
+    }
+
+    /** Reports the actual boundary reached. No participant currently supplies
+     * verified application evidence, so none of these outcomes is APPLIED. */
+    public async routeInsight(insight: LearningInsight): Promise<LearningOutcome> {
         // Safety checks
         if (!insight.autoApplicable) {
             console.log('[LEARNING_LOOP] ⚠️ Insight not marked as auto-applicable');
-            return false;
+            return { stage: 'REJECTED', applied: false };
         }
 
         if (insight.confidence < this.AUTO_APPLY_CONFIDENCE) {
             console.log(`[LEARNING_LOOP] ⚠️ Confidence too low: ${insight.confidence}`);
-            return false;
+            return { stage: 'REJECTED', applied: false };
         }
 
         if (insight.failureCount < this.AUTO_APPLY_MIN_FAILURES) {
             console.log(`[LEARNING_LOOP] ⚠️ Not enough failures to auto-apply: ${insight.failureCount}`);
-            return false;
+            return { stage: 'REJECTED', applied: false };
         }
 
-        console.log(`[LEARNING_LOOP] 🔧 Auto-applying insight for: ${insight.context}`);
+        console.log(`[LEARNING_LOOP] Routing improvement proposal for: ${insight.context}`);
 
+        const recordProposal = async (content: string, tags: string[]): Promise<string> => {
+            const receiptTag = `learning-proposal:${crypto.createHash('sha256').update(content).digest('hex')}`;
+            await continuum.store(content, undefined, [...tags, receiptTag]);
+            const readback = await continuum.getLatestObservation(receiptTag);
+            if (!readback || readback.content !== content) throw new Error('Learning proposal persistence unverified');
+            return readback.id;
+        };
         try {
             if (insight.context.includes('tool') || insight.context.includes('TOOL')) {
                 // Route to autoCorrection for actual code-level fixes
@@ -281,26 +303,26 @@ Auto-applicable: ${insight.autoApplicable}
                     if (fixes && fixes.length > 0) {
                         console.log(`[LEARNING_LOOP] ✅ AutoCorrection generated ${fixes.length} fix(es) for: ${insight.context}`);
                         // Store the fix for the next git push cycle
-                        await continuum.store(
-                            `AUTO_FIX_GENERATED: ${insight.context}\n${fixes.map(f => `${f.path}: ${f.message}`).join('\n')}`,
-                            undefined,
-                            ['LEARNING', 'AUTO_FIX', 'APPLIED', insight.context]
+                        const proposalMemoryId = await recordProposal(
+                            `AUTO_FIX_GENERATED: ${insight.context}\n${JSON.stringify(fixes)}`,
+                            ['LEARNING', 'AUTO_FIX', 'PROPOSED', insight.context]
                         );
+                        return { stage: 'FIX_GENERATED', applied: false, proposalMemoryId };
                     } else {
                         // Fallback: store as knowledge for manual review
-                        await continuum.store(
+                        const proposalMemoryId = await recordProposal(
                             `TOOL_IMPROVEMENT: ${insight.context}\nFix: ${insight.suggestedFix}\nConfidence: ${insight.confidence}`,
-                            undefined,
                             ['LEARNING', 'TOOL_IMPROVEMENT', insight.context]
                         );
+                        return { stage: 'PROPOSAL_RECORDED', applied: false, proposalMemoryId };
                     }
                 } catch (acError: any) {
                     console.warn(`[LEARNING_LOOP] AutoCorrection unavailable: ${acError.message}. Storing as knowledge.`);
-                    await continuum.store(
+                    const proposalMemoryId = await recordProposal(
                         `TOOL_IMPROVEMENT: ${insight.context}\nFix: ${insight.suggestedFix}`,
-                        undefined,
                         ['LEARNING', 'TOOL_IMPROVEMENT', insight.context]
                     );
+                    return { stage: 'PROPOSAL_RECORDED', applied: false, proposalMemoryId };
                 }
 
             } else if (insight.context.includes('agent') || insight.context.includes('AGENT')) {
@@ -313,22 +335,26 @@ Auto-applicable: ${insight.autoApplicable}
                         `Root Cause: ${insight.rootCause}`,
                         `Suggested Fix: ${insight.suggestedFix}`
                     ]);
-                    console.log(`[LEARNING_LOOP] ✅ Remediation squad mobilized for: ${insight.context}`);
+                    // The participant returns void even for backoff/skipped work.
+                    return { stage: 'REMEDIATION_RETURNED', applied: false,
+                        detail: 'Participant returned without an application receipt' };
                 } catch (remError: any) {
                     console.warn(`[LEARNING_LOOP] Remediation unavailable: ${remError.message}`);
-                    systemBus.emit(SystemProtocol.AGENT_EVOLVED, {
+                    systemBus.emit(SystemProtocol.LEARNING_UPDATE, {
                         improvement: insight.suggestedFix,
                         source: 'LEARNING_LOOP',
+                        status: 'proposal_not_applied',
                         confidence: insight.confidence
                     }, 'LEARNING_LOOP');
+                    return { stage: 'FAILED', applied: false, detail: remError.message };
                 }
 
             } else if (insight.context.includes('prompt') || insight.context.includes('PROMPT')) {
-                await continuum.store(
+                const proposalMemoryId = await recordProposal(
                     `PROMPT_REFINEMENT: ${insight.suggestedFix}`,
-                    undefined,
                     ['LEARNING', 'PROMPT_IMPROVEMENT', insight.context]
                 );
+                return { stage: 'PROPOSAL_RECORDED', applied: false, proposalMemoryId };
 
             } else if (insight.context.includes('rate') || insight.context.includes('throttle')) {
                 systemBus.emit(SystemProtocol.CONFIG_MUTATION, {
@@ -336,14 +362,14 @@ Auto-applicable: ${insight.autoApplicable}
                     suggestion: insight.suggestedFix,
                     confidence: insight.confidence
                 }, 'LEARNING_LOOP');
+                return { stage: 'CONFIG_SUGGESTION_EMITTED', applied: false };
             }
 
-            this.stats.autoApplied++;
-            return true;
+            return { stage: 'UNHANDLED', applied: false };
 
         } catch (applyError: any) {
             console.error(`[LEARNING_LOOP] ❌ Failed to apply insight:`, applyError.message);
-            return false;
+            return { stage: 'FAILED', applied: false, detail: applyError.message };
         }
     }
 

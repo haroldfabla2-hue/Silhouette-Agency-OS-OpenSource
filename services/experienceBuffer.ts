@@ -9,7 +9,7 @@
  */
 
 import { continuum } from './continuumMemory';
-import { MemoryTier } from '../types';
+import { MemoryTier, type MemoryNode } from '../types';
 
 export type ExperienceType = 'SUCCESS' | 'FAILURE' | 'LEARNING' | 'INSIGHT';
 
@@ -22,6 +22,9 @@ export interface Experience {
     lesson?: string;       // Optional: What was learned
     agentId?: string;      // Which agent had this experience
     timestamp: number;
+    /** Legacy text had no original experience UUID/time. These fields then
+     * identify the actual memory node, not a recovered original experience. */
+    identityProvenance?: 'legacy-memory-node';
 }
 
 class ExperienceBufferService {
@@ -38,12 +41,6 @@ class ExperienceBufferService {
             timestamp: Date.now()
         };
 
-        // Add to RAM buffer
-        this.buffer.unshift(experience);
-        if (this.buffer.length > this.MAX_BUFFER) {
-            this.buffer.pop();
-        }
-
         // Format for storage
         const content = this.formatExperience(experience);
 
@@ -52,11 +49,16 @@ class ExperienceBufferService {
             await continuum.store(
                 content,
                 MemoryTier.LONG,  // Long-term = permanent
-                ['EXPERIENCE', experience.type, `agent:${exp.agentId || 'SYSTEM'}`]
+                ['EXPERIENCE', experience.type, `agent:${exp.agentId || 'SYSTEM'}`, `experience:${experience.id}`]
             );
+            const readback = await continuum.getLatestObservation(`experience:${experience.id}`);
+            if (!readback || readback.content !== content) throw new Error('Experience persistence unverified');
+            this.buffer.unshift(experience);
+            if (this.buffer.length > this.MAX_BUFFER) this.buffer.pop();
             console.log(`[EXPERIENCE] 📝 Recorded ${exp.type}: "${exp.context.substring(0, 30)}..."`);
         } catch (e) {
             console.warn('[EXPERIENCE] Failed to persist:', e);
+            throw e;
         }
     }
 
@@ -119,7 +121,7 @@ class ExperienceBufferService {
     async getRelevant(context: string, count: number = 5): Promise<Experience[]> {
         try {
             const memories = await continuum.retrieve(context, 'EXPERIENCE', undefined);
-            return memories.slice(0, count).map(m => this.parseExperience(m.content));
+            return memories.slice(0, count).map(m => this.parseExperience(m)).filter((e): e is Experience => e !== null);
         } catch (e) {
             console.warn('[EXPERIENCE] Failed to retrieve:', e);
             return [];
@@ -130,28 +132,49 @@ class ExperienceBufferService {
      * Format experience for storage
      */
     private formatExperience(exp: Experience): string {
-        return `[EXPERIENCE:${exp.type}] Context: ${exp.context} | Action: ${exp.action} | Outcome: ${exp.outcome}${exp.lesson ? ` | Lesson: ${exp.lesson}` : ''}`;
+        // Versioned original identity/time survive readback. A textual type
+        // prefix remains searchable; JSON preserves delimiters and newlines.
+        return `[EXPERIENCE:${exp.type}] V2 ${JSON.stringify(exp)}`;
     }
 
     /**
      * Parse experience from stored string
      */
-    private parseExperience(content: string): Experience {
-        // Basic parsing - robust enough for our format
-        const typeMatch = content.match(/\[EXPERIENCE:(\w+)\]/);
+    private parseExperience(memory: MemoryNode): Experience | null {
+        const content = memory.content;
+        const versioned = content.match(/^\[EXPERIENCE:(SUCCESS|FAILURE|LEARNING|INSIGHT)\] V2 ([\s\S]+)$/);
+        if (versioned) {
+            try {
+                const exp = JSON.parse(versioned[2]);
+                if (typeof exp.id !== 'string' || !exp.id || exp.type !== versioned[1]
+                    || !Number.isFinite(exp.timestamp) || exp.timestamp <= 0
+                    || !['context', 'action', 'outcome'].every(k => typeof exp[k] === 'string')
+                    || (exp.lesson !== undefined && typeof exp.lesson !== 'string')
+                    || (exp.agentId !== undefined && typeof exp.agentId !== 'string')) return null;
+                return { id: exp.id, type: exp.type, context: exp.context, action: exp.action,
+                    outcome: exp.outcome, lesson: exp.lesson, agentId: exp.agentId, timestamp: exp.timestamp };
+            } catch { return null; }
+        }
+        // Legacy content did not store the experience UUID/time. Preserve
+        // the real memory record identity/time instead of inventing new ones.
+        if (!memory.id || !Number.isFinite(memory.timestamp) || memory.timestamp <= 0) return null;
+        const typeMatch = content.match(/\[EXPERIENCE:(SUCCESS|FAILURE|LEARNING|INSIGHT)\]/);
+        if (!typeMatch) return null;
         const contextMatch = content.match(/Context: ([^|]+)/);
         const actionMatch = content.match(/Action: ([^|]+)/);
         const outcomeMatch = content.match(/Outcome: ([^|]+)/);
         const lessonMatch = content.match(/Lesson: (.+)$/);
 
         return {
-            id: crypto.randomUUID(),
-            type: (typeMatch?.[1] as ExperienceType) || 'LEARNING',
+            id: memory.id,
+            type: typeMatch[1] as ExperienceType,
+            identityProvenance: 'legacy-memory-node',
             context: contextMatch?.[1]?.trim() || content,
             action: actionMatch?.[1]?.trim() || '',
             outcome: outcomeMatch?.[1]?.trim() || '',
             lesson: lessonMatch?.[1]?.trim(),
-            timestamp: Date.now()
+            agentId: memory.tags?.find(t => t.startsWith('agent:'))?.slice(6),
+            timestamp: memory.timestamp
         };
     }
 
