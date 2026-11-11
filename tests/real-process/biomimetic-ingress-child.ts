@@ -30,7 +30,18 @@ if (mode === 'learning') {
     assert.ok(found.every(n => !n.tags.includes('source:USER_SAID') && !n.tags.includes('source:INTROSPECTION')));
     console.log(JSON.stringify({ mode, original_events_remembered: found.length,
         narration_queued: 2, raw_system_provenance: true, provider_generation_executed: false }));
+} else if (mode === 'dream-empty') {
+    const { DreamerService } = await import('../../services/dreamerService');
+    const { readDreamState, loadDreamTriggerConfig } = await import('../../services/dream/dreamTriggers');
+    const { continuum } = await import('../../services/continuumMemory');
+    const all = await continuum.getAllNodes();
+    assert.equal(Object.values(all).flat().length, 0, 'empty disposable store required');
+    const dreamer = new DreamerService();
+    await dreamer.attemptDream();
+    const state = readDreamState(loadDreamTriggerConfig().statePath);
+    assert.equal(state.cycles, 0, 'empty attempt must not claim a completed dream');
+    console.log(JSON.stringify({ mode, completed_cycles: state.cycles, provider_generation_executed: false }));
 } else {
-    throw new Error('Explicit learning or narrative probe mode required');
+    throw new Error('Explicit learning, narrative or dream-empty probe mode required');
 }
 process.exit(0);
