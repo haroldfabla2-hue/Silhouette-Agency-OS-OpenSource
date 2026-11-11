@@ -19,6 +19,7 @@ if (!disabled) {
     sqliteService.setConfig('secretsVault_example', { token: sentinel });
     sqliteService.setConfig('plain-preference', 'keep');
 }
+assert.equal(process.env.SILHOUETTE_CORS_ORIGIN, 'https://explicit-fixture.example.invalid');
 assert.equal(process.env.SILHOUETTE_API_KEY, 'isolated-local-api-auth-not-a-real-key');
 assert.equal(process.env.SILHOUETTE_API_TOKEN, 'isolated-local-api-token-not-a-real-key');
 const config = configLoader.getConfig();
