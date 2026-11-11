@@ -57,6 +57,19 @@ jobs:
             --ro-bind "$PWD" /tmp/project \
             /bin/bash -c 'ip link set lo up; cd /tmp/project; env -i PATH="$PATH" HOME=/tmp python3 tests/real-process/run-boot-checks.py /tmp/project/node_modules/.bin/tsx'
 
+      - name: Production provider-OFF local API authentication (disposable data)
+        run: |
+          fixture=$(mktemp -d)
+          git archive HEAD | tar -xf - -C "$fixture"
+          rm -f "$fixture/.env" "$fixture/.env.local"
+          mkdir -p "$fixture/db"
+          touch "$fixture/FIXTURE_ONLY"
+          ln -s "$PWD/node_modules" "$fixture/node_modules"
+          bwrap --unshare-user --uid 0 --gid 0 --unshare-net --cap-add CAP_NET_ADMIN \
+            --ro-bind / / --proc /proc --dev-bind /dev /dev --tmpfs /tmp \
+            --bind "$fixture" /tmp/work \
+            /bin/bash -c 'ip link set lo up; env -i PATH="$PATH" HOME=/tmp python3 /tmp/work/tests/real-process/production-off-auth.py'
+
       - name: Unit tests
         run: npm test
 

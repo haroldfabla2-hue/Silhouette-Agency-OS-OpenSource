@@ -2,7 +2,10 @@
 Checks real authenticated requests remain usable with providers OFF. No real keys.
 """
 import pathlib,os,json,subprocess,time,signal,urllib.request,urllib.error,hashlib,sqlite3
-root=pathlib.Path('/tmp/work');key='local-api-auth-fixture-not-a-real-credential'
+root=pathlib.Path('/tmp/work')
+assert (root/'FIXTURE_ONLY').is_file(), 'Refusing to modify a non-fixture working tree'
+(root/'silhouette.config.json').write_text(json.dumps({'system':{'port':33005,'env':'production'},'scheduler':{'enabled':False},'autonomy':{'enabled':False,'allowEvolution':False,'enableNarrative':False,'enableIntrospection':False},'llm':{'providers':{},'fallbackChain':[]},'channels':{},'modules':{'graph':False,'vectorDB':False,'redis':False,'browser':False},'brain':{'enabled':False,'mirrorMemory':False}}))
+key='local-api-auth-fixture-not-a-real-credential'
 envfile=root/'.env';envfile.write_text('SILHOUETTE_API_KEY='+key+'\nGEMINI_API_KEY=external-provider-fixture-must-stay-masked\n')
 before=hashlib.sha256(envfile.read_bytes()).hexdigest()
 report={'node_env':'production','provider_policy':'off','production_data_or_credentials':False,'external_network':False,'cycles':[]}
