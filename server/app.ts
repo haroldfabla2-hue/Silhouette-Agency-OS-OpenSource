@@ -1,12 +1,11 @@
+import { loadRuntimeEnvironment } from './config/runtimeCredentials';
 // ═══════════════════════════════════════════════════════════════
 // CRITICAL: Load environment variables FIRST, before any imports
 // Services like geminiService read process.env at import time
 // ═══════════════════════════════════════════════════════════════
-import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
-dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
-dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+loadRuntimeEnvironment();
 
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';

@@ -1,11 +1,10 @@
+import { acceptanceBoot, configForRuntime, loadRuntimeEnvironment } from './runtimeCredentials';
 import fs from 'fs';
 import path from 'path';
-import dotenv from 'dotenv';
 import { SilhouetteConfig, DEFAULT_CONFIG } from './configSchema';
 
 // Load .env files for initial migration
-dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
-dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+loadRuntimeEnvironment();
 
 const CONFIG_PATH = path.join(process.cwd(), 'silhouette.config.json');
 
@@ -28,13 +27,14 @@ export class ConfigLoader {
      * Main config accessor
      */
     public getConfig(): SilhouetteConfig {
-        return this.config;
+        return configForRuntime(this.config);
     }
 
     /**
      * Save config updates to disk
      */
     public saveConfig(newConfig: Partial<SilhouetteConfig>): void {
+        if (acceptanceBoot()) throw new Error('Config writes disabled during acceptance boot');
         this.config = { ...this.config, ...newConfig };
         try {
             fs.writeFileSync(CONFIG_PATH, JSON.stringify(this.config, null, 4), 'utf-8');
@@ -61,6 +61,7 @@ export class ConfigLoader {
         }
 
         console.log('[CONFIG] 🚀 initializing from ENV (First Run / Migration)...');
+        if (acceptanceBoot()) return configForRuntime(JSON.parse(JSON.stringify(DEFAULT_CONFIG)));
         return this.migrateFromEnv();
     }
 

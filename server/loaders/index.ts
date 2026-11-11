@@ -114,8 +114,11 @@ export const initServer = async () => {
     setTimeout(async () => {
         try {
             const { schedulerService } = await import('../../services/schedulerService');
-            schedulerService.start();
-            console.log("[LOADER] ⏰ Autonomous Scheduler online");
+            if (schedulerService.start()) {
+                console.log('[LOADER] Autonomous Scheduler online');
+            } else {
+                console.log('[LOADER] Scheduler not started: scheduler/autonomy ceiling disabled');
+            }
         } catch (e) {
             console.warn("[LOADER] Scheduler initialization deferred:", e);
         }
