@@ -43,6 +43,16 @@
       "configUnchanged": true
     },
     {
+      "realCronChecks": [
+        "autonomy-off",
+        "enabled-actual-loopback-http",
+        "scheduler-disabled-after-start"
+      ],
+      "requests": 1,
+      "pendingJobPreserved": true,
+      "timerTest": false
+    },
+    {
       "mode": "normal",
       "sources": [
         "inherited-custom-env",

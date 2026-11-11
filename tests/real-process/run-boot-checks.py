@@ -27,6 +27,7 @@ with tempfile.TemporaryDirectory(prefix='silhouette-real-boot-') as d:
   if scenario=='goals-off':config['autonomy']['enableIntrospection']=False
   if scenario=='malformed':config['autonomy']=None
   (p/'silhouette.config.json').write_text(json.dumps(config));run('scheduler-child.ts',scenario,p)
+ p=parent/'cron';p.mkdir();(p/'silhouette.config.json').write_text(json.dumps(base));run('cron-child.ts','cron',p)
  p=parent/'credentials';p.mkdir();(p/'silhouette.config.json').write_text(json.dumps(base))
  (p/'.env').write_text('GEMINI_API_KEY=isolated-credential-not-a-real-key\n')
  extra={'CUSTOM_PROVIDER_CREDENTIAL':'isolated-credential-not-a-real-key','SILHOUETTE_HOST':'0.0.0.0'}
