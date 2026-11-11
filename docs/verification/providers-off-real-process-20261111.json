@@ -1,0 +1,122 @@
+{
+  "real_process_checks": [
+    {
+      "scenario": "scheduler-off",
+      "events": 0,
+      "persistedEnabled": true,
+      "configUnchanged": true
+    },
+    {
+      "scenario": "autonomy-off",
+      "events": 0,
+      "persistedEnabled": true,
+      "configUnchanged": true
+    },
+    {
+      "scenario": "goals-off",
+      "events": 0,
+      "persistedEnabled": true,
+      "configUnchanged": true
+    },
+    {
+      "scenario": "on",
+      "events": 1,
+      "persistedEnabled": false,
+      "configUnchanged": true
+    },
+    {
+      "scenario": "stop",
+      "events": 0,
+      "persistedEnabled": true,
+      "configUnchanged": true
+    },
+    {
+      "scenario": "revoke",
+      "events": 0,
+      "persistedEnabled": true,
+      "configUnchanged": false
+    },
+    {
+      "scenario": "malformed",
+      "events": 0,
+      "persistedEnabled": true,
+      "configUnchanged": true
+    },
+    {
+      "realCronChecks": [
+        "autonomy-off",
+        "enabled-actual-loopback-http",
+        "scheduler-disabled-after-start"
+      ],
+      "requests": 1,
+      "pendingJobPreserved": true,
+      "timerTest": false
+    },
+    {
+      "mode": "normal",
+      "sources": [
+        "inherited-custom-env",
+        "dotenv-file",
+        "config-json-both-loaders",
+        "sqlite-config",
+        "active-account-env",
+        "encrypted-token-file",
+        "explicit-client-env"
+      ],
+      "credentialsAvailable": true,
+      "persistedCredentialUnchanged": true,
+      "accountUnchanged": true,
+      "configUnchanged": true,
+      "localStoresConfigured": false
+    },
+    {
+      "mode": "acceptance",
+      "sources": [
+        "inherited-custom-env",
+        "dotenv-file",
+        "config-json-both-loaders",
+        "sqlite-config",
+        "active-account-env",
+        "encrypted-token-file",
+        "explicit-client-env"
+      ],
+      "credentialsAvailable": false,
+      "persistedCredentialUnchanged": true,
+      "accountUnchanged": true,
+      "configUnchanged": true,
+      "localStoresConfigured": false
+    },
+    {
+      "mode": "providers-off",
+      "sources": [
+        "inherited-custom-env",
+        "dotenv-file",
+        "config-json-both-loaders",
+        "sqlite-config",
+        "active-account-env",
+        "encrypted-token-file",
+        "explicit-client-env"
+      ],
+      "credentialsAvailable": false,
+      "persistedCredentialUnchanged": true,
+      "accountUnchanged": true,
+      "configUnchanged": true,
+      "localStoresConfigured": true
+    },
+    {
+      "mode": "providers-on",
+      "actual_loopback_requests": 1,
+      "mocked_fetch": false,
+      "real_provider_or_charge": false
+    },
+    {
+      "mode": "providers-off",
+      "actual_loopback_requests": 0,
+      "mocked_fetch": false,
+      "real_provider_or_charge": false
+    }
+  ],
+  "full_application_boot_tested": false,
+  "production_data": false,
+  "provider_calls": false
+}

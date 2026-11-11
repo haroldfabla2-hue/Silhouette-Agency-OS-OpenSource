@@ -1,4 +1,4 @@
-import { acceptanceBoot, credentialConfigKey } from '../server/config/runtimeCredentials';
+import { externalProvidersDisabled, credentialConfigKey } from '../server/config/runtimeCredentials';
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
@@ -494,8 +494,8 @@ export class SqliteService {
     // --- SYSTEM CONFIG OPERATIONS ---
 
     public setConfig(key: string, value: any): void {
-        if (acceptanceBoot() && credentialConfigKey(key)) {
-            throw new Error('Credential writes disabled during acceptance boot');
+        if (externalProvidersDisabled() && credentialConfigKey(key)) {
+            throw new Error('Credential writes disabled while external providers are disabled');
         }
         const stmt = this.db.prepare(`
             INSERT INTO system_config (key, value, updated_at)
@@ -508,7 +508,7 @@ export class SqliteService {
     }
 
     public getConfig(key: string): any | null {
-        if (acceptanceBoot() && credentialConfigKey(key)) return null;
+        if (externalProvidersDisabled() && credentialConfigKey(key)) return null;
         const stmt = this.db.prepare('SELECT value FROM system_config WHERE key = ?');
         const row = stmt.get(key) as { value: string } | undefined;
         if (!row) return null;
@@ -520,7 +520,7 @@ export class SqliteService {
         const rows = stmt.all() as { key: string, value: string }[];
         const config: Record<string, any> = {};
         rows.forEach(row => {
-            if (acceptanceBoot() && credentialConfigKey(row.key)) return;
+            if (externalProvidersDisabled() && credentialConfigKey(row.key)) return;
             config[row.key] = JSON.parse(row.value);
         });
         return config;

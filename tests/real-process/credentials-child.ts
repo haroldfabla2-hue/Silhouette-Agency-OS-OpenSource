@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { acceptanceBoot } from '../../server/config/runtimeCredentials';
+import { acceptanceBoot, externalProvidersDisabled } from '../../server/config/runtimeCredentials';
 import { configLoader } from '../../server/config/configLoader';
 import { loadConfig } from '../../server/config/configSchema';
 import { sqliteService } from '../../services/sqliteService';
@@ -10,7 +10,8 @@ import { TokenFileStore } from '../../services/auth/tokenFileStore';
 import { CredentialResolver } from '../../services/auth/credentialResolver';
 import { OpenAICompatibleClient } from '../../services/llm/openAICompatible';
 
-const disabled = acceptanceBoot();
+const disabled = externalProvidersDisabled();
+const acceptance = acceptanceBoot();
 const before = fs.readFileSync('silhouette.config.json');
 const sentinel = 'isolated-credential-not-a-real-key';
 if (!disabled) {
@@ -52,15 +53,45 @@ const client = new OpenAICompatibleClient({ CUSTOM_PROVIDER_CREDENTIAL: sentinel
 assert.equal(client.configured(provider), !disabled); // Explicit custom env cannot bypass acceptance.
 if (disabled) {
     await assert.rejects(() => client.complete(provider, [{ role: 'user', content: 'isolated' }]), /credential not configured/);
-    assert.equal(config.autonomy.enabled, false);
-    assert.equal(config.scheduler.enabled, false);
+    assert.equal(config.autonomy.enabled, !acceptance);
+    assert.equal(config.scheduler.enabled, !acceptance);
+    if (!acceptance) {
+        assert.equal(config.modules.graph, true);
+        assert.equal(config.modules.redis, true);
+        assert.equal(config.modules.vectorDB, true);
+        assert.equal(config.memory.neo4j.uri, 'bolt://127.0.0.1:17687');
+        assert.equal(config.memory.neo4j.password, 'isolated-local-store-not-a-real-key');
+        assert.equal(process.env.NEO4J_URI, 'bolt://127.0.0.1:17687');
+        assert.equal(process.env.NEO4J_PASSWORD, 'isolated-local-store-not-a-real-key');
+        assert.equal(process.env.REDIS_URL, 'redis://127.0.0.1:16379');
+        const { BrainClient } = await import('../../services/brain/brainClient');
+        const relay = new BrainClient({ enabled: true, baseUrl: 'http://127.0.0.1:1', apiKey: sentinel });
+        assert.equal(relay.isEnabled(), false);
+        relay.reconfigure({ enabled: true, apiKey: sentinel });
+        assert.equal(relay.isEnabled(), false);
+        const { configureGenAI, hasGeminiKey, generateText } = await import('../../services/geminiService');
+        assert.throws(() => configureGenAI(sentinel), /disabled/);
+        await assert.rejects(() => generateText('fixture must not reach fallback'), /disabled/);
+        const { llmGateway } = await import('../../services/llmGateway');
+        await assert.rejects(() => llmGateway.complete('fixture denied before router'), /disabled/);
+        process.env.GEMINI_API_KEY = sentinel; // Late env mutation cannot bypass native SDK gate.
+        assert.equal(hasGeminiKey(), false);
+        delete process.env.GEMINI_API_KEY;
+        process.env.SILHOUETTE_PROVIDERS = 'on';
+        assert.equal(externalProvidersDisabled(), true); // Latched until restart.
+        sqliteService.setConfig('local-memory-marker', { content: 'fixture-preserved' });
+        assert.deepEqual(sqliteService.getConfig('local-memory-marker'), { content: 'fixture-preserved' });
+    }
     assert.deepEqual(config.channels, {});
     assert.equal(config.brain.enabled, false);
     assert.equal(process.env.SILHOUETTE_HOST, '127.0.0.1');
-    assert.throws(() => sqliteService.setConfig('systemApiKey', 'changed'), /acceptance/);
-    assert.throws(() => configLoader.saveConfig({ system: config.system }), /acceptance/);
+    assert.throws(() => sqliteService.setConfig('systemApiKey', 'changed'), /disabled/);
+    assert.throws(() => configLoader.saveConfig({ system: config.system }), /disabled/);
 }
 assert.equal(fs.readFileSync('silhouette.config.json').equals(before), true);
 assert.equal(fs.readFileSync('.env').toString().includes(sentinel), true);
 store.close();sqliteService.db.close();
-console.log(JSON.stringify({ mode: disabled ? 'acceptance' : 'normal', sources: ['inherited-custom-env','dotenv-file','config-json-both-loaders','sqlite-config','active-account-env','encrypted-token-file','explicit-client-env'], credentialsAvailable: !disabled, persistedCredentialUnchanged: true, accountUnchanged: true, configUnchanged: true }));
+console.log(JSON.stringify({ mode: acceptance ? 'acceptance' : disabled ? 'providers-off' : 'normal', sources: ['inherited-custom-env','dotenv-file','config-json-both-loaders','sqlite-config','active-account-env','encrypted-token-file','explicit-client-env'], credentialsAvailable: !disabled, persistedCredentialUnchanged: true, accountUnchanged: true, configUnchanged: true, localStoresConfigured: disabled && !acceptance }));
+// Native Gemini module imports legacy interval services. Assertions above are
+// awaited; terminate this fixture child instead of leaving those loops alive.
+process.exit(0);

@@ -1,3 +1,4 @@
+import { externalProvidersDisabled } from './security/bootMode';
 
 import { GenesisConfig } from '../types';
 import { stockService } from './stockService';
@@ -20,12 +21,13 @@ export class MediaService {
     private config: ExtendedMediaConfig;
 
     constructor(config: ExtendedMediaConfig) {
-        this.config = config || { executionMode: 'CLIENT' };
+        this.config = externalProvidersDisabled() ? { executionMode: 'SERVER' } : config || { executionMode: 'CLIENT' };
         // Default to CLIENT if not specified, but we'll set SERVER in backend
         if (!this.config.executionMode) this.config.executionMode = 'CLIENT';
     }
 
     public updateConfig(newConfig: ExtendedMediaConfig) {
+        if (externalProvidersDisabled()) throw new Error('External providers disabled by process policy');
         this.config = { ...this.config, ...newConfig };
     }
 

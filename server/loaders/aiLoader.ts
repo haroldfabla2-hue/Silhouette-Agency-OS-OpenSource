@@ -1,4 +1,4 @@
-import { acceptanceBoot, loadRuntimeEnvironment } from '../config/runtimeCredentials';
+import { externalProvidersDisabled, loadRuntimeEnvironment } from '../config/runtimeCredentials';
 
 
 // Load environment variables from .env.local (priority) and .env
@@ -50,7 +50,7 @@ export const initAIServices = async () => {
     }
 
     // 2. Hydrate GenAI Config
-    const apiKey = acceptanceBoot() ? undefined : sqliteService.getConfig('systemApiKey') || process.env.GEMINI_API_KEY;
+    const apiKey = externalProvidersDisabled() ? undefined : sqliteService.getConfig('systemApiKey') || process.env.GEMINI_API_KEY;
     if (apiKey) {
         configureGenAI(apiKey);
         console.log("[LOADER] ✅ GenAI Configured from Persistence.");

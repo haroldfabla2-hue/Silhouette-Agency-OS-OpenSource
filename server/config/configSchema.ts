@@ -1,4 +1,4 @@
-import { acceptanceBoot, configForRuntime } from './runtimeCredentials';
+import { externalProvidersDisabled, configForRuntime } from './runtimeCredentials';
 // =============================================================================
 // SILHOUETTE CENTRALIZED CONFIGURATION SCHEMA
 // Centralized configuration management. Defines the full config tree
@@ -478,7 +478,7 @@ export function loadConfig(projectRoot?: string): SilhouetteConfig {
  * Save current config to disk (excluding secrets).
  */
 export function saveConfig(config: SilhouetteConfig, projectRoot?: string): void {
-    if (acceptanceBoot()) throw new Error('Config writes disabled during acceptance boot');
+    if (externalProvidersDisabled()) throw new Error('Config writes disabled while external providers are disabled');
     const root = projectRoot ?? process.cwd();
     const configPath = path.join(root, CONFIG_FILENAME);
 

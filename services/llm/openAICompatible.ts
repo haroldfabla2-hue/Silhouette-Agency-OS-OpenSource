@@ -1,4 +1,4 @@
-import { acceptanceBoot } from '../security/bootMode';
+import { externalProvidersDisabled } from '../security/bootMode';
 import type { ModelProfile, ProviderDefinition } from './providerRegistry';
 /** [auth-connections] Optional credential source: active account from services/auth, env fallback preserved. */
 export interface CredentialSource { resolve(provider: ProviderDefinition): { key: string } | undefined; }
@@ -40,7 +40,7 @@ export class OpenAICompatibleClient {
         private admission?: AdmissionGate,
     ) {}
     private resolveKey(provider: ProviderDefinition): string | undefined {
-        if (acceptanceBoot()) return undefined;
+        if (externalProvidersDisabled()) return undefined;
         return this.credentials?.resolve(provider)?.key || this.env[provider.apiKeyEnv!];
     }
     configured(provider: ProviderDefinition): boolean { return !!this.resolveKey(provider); }

@@ -50,6 +50,13 @@ jobs:
       - name: F0 verification coverage and hermetic legacy checks
         run: npx vitest run tests/automated/help-protocol.test.ts tests/automated/legacy-hermetic.test.ts tests/automated/verification-inventory.test.ts
 
+      - name: Real process boot gates and provider OFF/ON transport
+        run: |
+          bwrap --unshare-user --uid 0 --gid 0 --unshare-net --cap-add CAP_NET_ADMIN \
+            --ro-bind / / --proc /proc --dev-bind /dev /dev --tmpfs /tmp \
+            --ro-bind "$PWD" /tmp/project \
+            /bin/bash -c 'ip link set lo up; cd /tmp/project; env -i PATH="$PATH" HOME=/tmp python3 tests/real-process/run-boot-checks.py /tmp/project/node_modules/.bin/tsx'
+
       - name: Unit tests
         run: npm test
 

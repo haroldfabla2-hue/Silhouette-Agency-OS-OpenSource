@@ -4,7 +4,7 @@ Uses real HTTP, actual app processes and fixture-only WORKING memory.
 Not a production test or a four-tier persistence proof.
 """
 import subprocess,time,pathlib,json,urllib.request,urllib.error,os,signal
-root=pathlib.Path('/tmp/work'); marker='isolated-restart-memory-fixture-20261111'; report={'production_data':False,'network_namespace':True,'fixture':marker,'cycles':[]}
+root=pathlib.Path('/tmp/work'); marker='isolated-restart-memory-fixture-20261111'; report={'production_data':False,'network_namespace':True,'fixture':marker,'provider_policy':os.environ.get('SILHOUETTE_PROVIDERS','default'),'boot_mode':os.environ.get('SILHOUETTE_BOOT_MODE','acceptance'),'cycles':[]}
 def request(path,body=None):
  data=json.dumps(body).encode() if body is not None else None
  req=urllib.request.Request('http://127.0.0.1:33005'+path,data=data,headers={'Content-Type':'application/json'})
@@ -17,7 +17,7 @@ def nodes(value):
   for v in value:yield from nodes(v)
 for cycle in [1,2]:
  with (root/('restart-cycle-'+str(cycle)+'.log')).open('w') as log:
-  p=subprocess.Popen(['node','--import','tsx','server/index.ts'],cwd=root,env={'PATH':os.environ['PATH'],'HOME':'/tmp/isolated-home','NODE_ENV':'test','SILHOUETTE_BOOT_MODE':'acceptance','SILHOUETTE_DB_PATH':'/tmp/work/db/probe.sqlite','SILHOUETTE_LANCEDB_PATH':'/tmp/work/db/probe.lancedb'},stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
+  p=subprocess.Popen(['node','--import','tsx','server/index.ts'],cwd=root,env={'PATH':os.environ['PATH'],'HOME':'/tmp/isolated-home','NODE_ENV':'test','SILHOUETTE_BOOT_MODE':os.environ.get('SILHOUETTE_BOOT_MODE','acceptance'),'SILHOUETTE_PROVIDERS':os.environ.get('SILHOUETTE_PROVIDERS','on'),'SILHOUETTE_DB_PATH':'/tmp/work/db/probe.sqlite','SILHOUETTE_LANCEDB_PATH':'/tmp/work/db/probe.lancedb'},stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
   try:
    end=time.monotonic()+45;state=None
    while p.poll() is None and time.monotonic()<end:

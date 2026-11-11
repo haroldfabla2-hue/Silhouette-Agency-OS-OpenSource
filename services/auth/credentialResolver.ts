@@ -1,4 +1,4 @@
-import { acceptanceBoot } from '../security/bootMode';
+import { externalProvidersDisabled } from '../security/bootMode';
 /**
  * [auth-connections] Connects account management to the real transport:
  * resolves the credential for a provider's ACTIVE account so
@@ -22,7 +22,7 @@ export class CredentialResolver {
 
     /** Resolve the active account's credential; undefined = caller falls back to provider env var. */
     resolve(provider: ProviderDefinition): ResolvedCredential | undefined {
-        if (acceptanceBoot()) return undefined;
+        if (externalProvidersDisabled()) return undefined;
         const account = this.store.active(provider.id);
         if (!account) return undefined;
         const ref = account.secretRef;

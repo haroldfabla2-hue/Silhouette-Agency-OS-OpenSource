@@ -1,3 +1,4 @@
+import { assertExternalProvidersEnabled } from './security/bootMode';
 /**
  * LLM GATEWAY SERVICE - Unified Multi-Provider Access
  * 
@@ -86,6 +87,7 @@ export class LLMGatewayService {
         return preferred ? [preferred, ...order.filter(p => p !== preferred)] : order;
     }
     public async discoverModels(provider: string, refresh = false) {
+        assertExternalProvidersEnabled();
         const definition = this.registry.get(provider);
         if (!definition) throw new Error(`Unknown provider: ${provider}`);
         if (definition.transport === 'legacy') return { ids: [definition.model], source: 'configured' as const, capabilities: 'unknown' as const };
@@ -93,6 +95,7 @@ export class LLMGatewayService {
     }
     /** Structured tool calls are returned, never executed here. No lossy legacy conversion. */
     public async chat(provider: string, messages: ChatMessage[], options: ChatOptions = {}): Promise<ChatResult> {
+        assertExternalProvidersEnabled();
         this.providerOrder();
         const definition = this.registry.get(provider);
         if (definition?.transport !== 'openai-compatible') throw new Error('Structured chat requires a configured OpenAI-compatible provider');
@@ -111,6 +114,7 @@ export class LLMGatewayService {
      * Complete a prompt using the best available provider
      */
     public async complete(prompt: string, options: CompletionOptions = {}): Promise<CompletionResult> {
+        assertExternalProvidersEnabled();
         if (options.tools?.length) throw new Error('Use chat() for structured tools');
         const skipProviders = new Set(options.skipProviders || []);
 
@@ -152,6 +156,7 @@ export class LLMGatewayService {
      * Stream a completion (returns async generator)
      */
     public async *stream(prompt: string, options: CompletionOptions = {}): AsyncGenerator<string, void, unknown> {
+        assertExternalProvidersEnabled();
         if (options.tools?.length) throw new Error('Use OpenAICompatibleClient.stream() for structured tools');
         const skipProviders = new Set(options.skipProviders || []);
         let providerOrder = this.providerOrder(options.preferredProvider);
