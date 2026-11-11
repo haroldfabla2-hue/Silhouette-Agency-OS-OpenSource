@@ -293,6 +293,8 @@ export class DreamerService {
             introspection.setDreaming(true);
         });
 
+        let cycleCompleted = false;
+        this.lastCycleMemoryCount = null;
         try {
             // 2. Gather "Day Residue" (Random L2/L3 memories)
             const allNodes = await continuum.getAllNodes();
@@ -354,6 +356,9 @@ export class DreamerService {
             continuum.clearHippocampus(processedIds);
 
             this.lastCycleMemoryCount = memories.length;
+            // An actual synthesis verdict plus processed source memories is
+            // a completed cycle. Empty/failed attempts are not evidence.
+            cycleCompleted = result != null;
 
             // 6. RAPTOR INGESTION (Hierarchical Consolidation)
             // If we have enough memories, build a tree structure for today's context.
@@ -370,13 +375,16 @@ export class DreamerService {
             console.error("[DREAMER] Nightmare (Error):", e);
         } finally {
             this.isDreaming = false;
-            this.memoriesAccumulated = 0; // Reset Entropy
-            // Record the cycle for event-based triggers (roadmap item 8).
-            // Fire-and-forget: a state-write failure must never break the dreamer.
-            import('./dream/dreamTriggers').then(({ recordDreamCycle, loadDreamTriggerConfig }) => {
-                recordDreamCycle(loadDreamTriggerConfig().statePath, this.pendingTriggerReasons, this.lastCycleMemoryCount);
-                this.pendingTriggerReasons = [];
-            }).catch(() => { /* non-fatal */ });
+            if (cycleCompleted) {
+                this.memoriesAccumulated = 0;
+                try {
+                    const { recordDreamCycle, loadDreamTriggerConfig } = await import('./dream/dreamTriggers');
+                    recordDreamCycle(loadDreamTriggerConfig().statePath, this.pendingTriggerReasons, this.lastCycleMemoryCount);
+                    this.pendingTriggerReasons = [];
+                } catch (e) {
+                    console.warn('[DREAMER] Completed-cycle metrics persistence failed:', e);
+                }
+            }
             // Update Introspection Engine Status
             import('./introspectionEngine').then(({ introspection }) => {
                 introspection.setDreaming(false);
