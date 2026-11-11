@@ -526,8 +526,15 @@ class NarrativeService {
         importance: number,
         metadata?: any
     ) {
-        // [FIX] Deduplication: Skip identical thoughts within time window
-        const contentHash = content.slice(0, 60).toLowerCase().trim();
+        // Record the original event before presentation dedupe, throttle or
+        // provider work. Provider failure must not erase the source event.
+        const { routeThought, shouldRecord } = await import('./narrativeFillerPolicy');
+        if (shouldRecord(importance)) {
+            await this.persistNarrativeEvent(crypto.randomUUID(), source, content, importance,
+                { ...metadata, recordKind: 'RAW_SYSTEM_EVENT' });
+        }
+        // Presentation dedupe compares the entire event, never just a prefix.
+        const contentHash = JSON.stringify([source, metadata?.source || metadata?.eventType || '', content]);
         if (this.recentThoughtHashes.has(contentHash)) {
             // Silent skip - don't log to reduce noise
             return;
@@ -559,23 +566,9 @@ class NarrativeService {
         // for importance >= SILHOUETTE_NARRATIVE_MIN_IMPORTANCE (0.7).
         // Dropped thoughts remain in memory — narration is presentation,
         // not record. No fabricated first-person prose, no quota burn.
-        const { routeThought, shouldRecord } = await import('./narrativeFillerPolicy');
         const route = routeThought(importance);
         if (route === 'DROP') {
-            // [W5b] Presentation may be dropped; the record is not. Thoughts
-            // at/above the memory floor persist RAW (no LLM call, no
-            // fabricated voice): interpretation -> memory always, narration
-            // aloud almost never. Only sub-floor noise (heartbeats) is
-            // dropped entirely. Persisted raw content keeps its real source
-            // and importance tags; narrated copies (route != DROP) keep
-            // flowing through emitNarrativeUpdate as before.
-            if (shouldRecord(importance)) {
-                const eventId = crypto.randomUUID();
-                this.persistNarrativeEvent(eventId, source, content, importance, metadata).catch(e =>
-                    console.error("[NARRATIVE] Raw persistence failed:", e)
-                );
-            }
-            return; // honest silence
+            return; // presentation only; original event already recorded
         }
         if (route === 'REGEX') {
             // Legacy path (filler explicitly enabled): low importance regex
@@ -969,12 +962,16 @@ Respuesta JSON:`;
             // 1. Store in ContinuumMemory for semantic search
             const { continuum } = await import('./continuumMemory');
             const { MemoryTier } = await import('../types');
+            const { MemorySource, sourceTag } = await import('./memory/provenance');
 
-            // Use SHORT tier for accessibility, with NARRATIVE tag for filtering
+            // An observed raw system event is not the user's speech, and is
+            // not itself an interpreted insight or a proven epiphany.
             await continuum.store(
                 content,
                 MemoryTier.SHORT,
-                ['NARRATIVE', source, `importance:${importance.toFixed(2)}`],
+                ['NARRATIVE', source, `importance:${importance.toFixed(2)}`,
+                    sourceTag(metadata?.recordKind === 'RAW_SYSTEM_EVENT' ? MemorySource.SYSTEM : MemorySource.INTROSPECTION),
+                    metadata?.recordKind === 'RAW_SYSTEM_EVENT' ? 'RAW_SYSTEM_EVENT' : 'NARRATED_SYSTEM_EVENT'],
                 true // [FIX] Skip ingestion to break recursion: store() -> introspection -> THOUGHT_EMISSION -> persist -> store()
             );
 

@@ -16,6 +16,7 @@ import { backgroundLLM } from './backgroundLLMService';
 import { continuum } from './continuumMemory';
 import { systemBus } from './systemBus';
 import { SystemProtocol, MemoryTier } from '../types';
+import type { Experience as RecordedExperience, ExperienceType } from './experienceBuffer';
 
 interface Experience {
     timestamp: number;
@@ -130,21 +131,22 @@ class LearningLoop {
      * Get recent failures from experience buffer
      */
     private async getRecentFailures(
-        experienceBuffer: any,
+        experienceBuffer: { getRecent(count: number, type?: ExperienceType): RecordedExperience[] },
         timeWindowMs: number
     ): Promise<Experience[]> {
-        const cutoff = Date.now() - timeWindowMs;
-
-        // Try to get failures from buffer
-        if (typeof experienceBuffer.getRecentExperiences === 'function') {
-            const all = await experienceBuffer.getRecentExperiences(100);
-            return all.filter((e: Experience) =>
-                e.result === 'FAILURE' && e.timestamp > cutoff
-            );
+        if (!Number.isFinite(timeWindowMs) || timeWindowMs <= 0) {
+            throw new Error('Learning failure window must be finite and positive');
         }
-
-        // Fallback: search memory for failure patterns
-        return [];
+        const cutoff = Date.now() - timeWindowMs;
+        // Use the actual ExperienceBuffer contract. It records `type` and
+        // `outcome`, not a nonexistent getRecentExperiences/result API.
+        // This is explicitly the bounded current-process buffer, not a
+        // claim to recover all durable experiences after a restart.
+        return experienceBuffer.getRecent(100, 'FAILURE')
+            .filter(e => e.type === 'FAILURE' && e.timestamp > cutoff)
+            .map(e => ({ timestamp: e.timestamp, context: e.context,
+                action: e.action, result: 'FAILURE', error: e.outcome,
+                solution: e.lesson, source: e.agentId || 'SYSTEM' }));
     }
 
     /**
