@@ -1,3 +1,4 @@
+import { externalProvidersDisabled } from '../security/bootMode';
 // ═══════════════════════════════════════════════════════════════════════════
 // SILHOUETTE BRAIN CLIENT
 // ───────────────────────────────────────────────────────────────────────────
@@ -102,9 +103,9 @@ function readEnvConfig(): BrainClientConfig {
     const baseUrl = (env.BRAIN_API_URL || env.SILHOUETTE_BRAIN_URL || 'http://localhost:9876').replace(/\/+$/, '');
     // Enabled if explicitly requested, or implicitly when a non-default URL is provided.
     const explicit = env.BRAIN_API_ENABLED ?? env.SILHOUETTE_BRAIN_ENABLED;
-    const enabled = explicit !== undefined
+    const enabled = !externalProvidersDisabled() && (explicit !== undefined
         ? /^(1|true|yes|on)$/i.test(explicit)
-        : Boolean(env.BRAIN_API_URL || env.SILHOUETTE_BRAIN_URL);
+        : Boolean(env.BRAIN_API_URL || env.SILHOUETTE_BRAIN_URL));
     return {
         baseUrl,
         enabled,
@@ -120,6 +121,7 @@ export class BrainClient {
 
     constructor(config?: Partial<BrainClientConfig>) {
         this.config = { ...readEnvConfig(), ...config };
+        if (externalProvidersDisabled()) this.config = { ...this.config, enabled: false, apiKey: undefined };
         if (this.config.enabled) {
             log.info({ baseUrl: this.config.baseUrl }, '🧠 Silhouette Brain integration enabled');
         }
@@ -128,11 +130,12 @@ export class BrainClient {
     /** Reload configuration (e.g. after settings change). */
     public reconfigure(config?: Partial<BrainClientConfig>): void {
         this.config = { ...readEnvConfig(), ...config };
+        if (externalProvidersDisabled()) this.config = { ...this.config, enabled: false, apiKey: undefined };
         this.availabilityCache = null;
     }
 
     public isEnabled(): boolean {
-        return this.config.enabled;
+        return !externalProvidersDisabled() && this.config.enabled;
     }
 
     public getBaseUrl(): string {
@@ -158,7 +161,7 @@ export class BrainClient {
         path: string,
         opts: { params?: Record<string, any>; body?: any; signal?: AbortSignal } = {},
     ): Promise<T | null> {
-        if (!this.config.enabled) return null;
+        if (externalProvidersDisabled() || !this.config.enabled) return null;
 
         const url = this.buildUrl(path, opts.params);
         const controller = new AbortController();

@@ -14,6 +14,7 @@
  */
 
 import os from 'os';
+import { acceptanceBoot, externalProvidersDisabled } from './security/bootMode';
 import net from 'net';
 import { execFile } from 'child_process';
 
@@ -27,6 +28,7 @@ export interface SubsystemProbe {
 
 export interface EnvironmentReport {
     generatedAt: string;
+    providerPolicy: { externalProviders: 'on' | 'off'; credentialMasking: boolean; localStoresPreserved: boolean };
     host: {
         platform: string;
         arch: string;
@@ -155,6 +157,7 @@ class EnvironmentService {
 
         return {
             generatedAt: new Date().toISOString(),
+            providerPolicy: { externalProviders: externalProvidersDisabled() ? 'off' : 'on', credentialMasking: externalProvidersDisabled(), localStoresPreserved: !acceptanceBoot() },
             host: {
                 platform: os.platform(),
                 arch: os.arch(),

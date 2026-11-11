@@ -6,6 +6,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import { checkRedisHealth } from '../../services/health/redisHealth';
 
 export const healthRouter = Router();
 
@@ -49,13 +50,9 @@ healthRouter.get('/', async (_req: Request, res: Response) => {
 
     // 1. Redis
     try {
-        const start = Date.now();
         const { redisClient } = await import('../../services/redisClient');
-        // Redis has no ping() — use a set/get roundtrip as liveness check
-        await redisClient.set('health:check', 'ok', 10);
-        const val = await redisClient.get('health:check');
-        checks.redis = { status: val === 'ok' ? 'up' : 'down', latencyMs: Date.now() - start };
-        if (val !== 'ok') overallHealthy = false;
+        checks.redis = await checkRedisHealth(redisClient);
+        if (checks.redis.status !== 'up') overallHealthy = false;
     } catch (e: any) {
         checks.redis = { status: 'down', error: e.message };
         overallHealthy = false;

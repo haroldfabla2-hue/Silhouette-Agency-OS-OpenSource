@@ -1,3 +1,4 @@
+import { externalProvidersDisabled, assertExternalProvidersEnabled } from './security/bootMode';
 import { ToolCaller } from './communication/helpProtocol';
 import { GoogleGenAI } from "@google/genai";
 import { IntrospectionLayer, AgentRoleType, WorkflowStage, SensoryData, AgentCategory, CommunicationLevel, AgentCapability, SystemProtocol } from "../types";
@@ -27,6 +28,7 @@ let apiKey: string | null = null;
 let ai: GoogleGenAI | null = null;
 
 function ensureClient(): GoogleGenAI | null {
+    if (externalProvidersDisabled()) return null;
     // Lazy load API key on first use (after dotenv has loaded)
     if (ai === null) {
         // Load Primary and Rotation Keys
@@ -63,6 +65,7 @@ function getAI(): GoogleGenAI | null {
 
 // [ROBUST] Lazy getter for Groq key
 function getGroqKey(): string {
+    if (externalProvidersDisabled()) return '';
     return process.env.GROQ_API_KEY || '';
 }
 
@@ -73,6 +76,7 @@ const callGroq = async (
     temperature: number,
     imageBase64?: string
 ): Promise<{ text: string; usage: any } | null> => {
+    if (externalProvidersDisabled()) return null;
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) return null;
 
@@ -182,6 +186,7 @@ const callGroq = async (
 };
 
 export const configureGenAI = (key: string) => {
+    if (externalProvidersDisabled()) throw new Error('External providers disabled by process policy');
     apiKey = key;
     ai = new GoogleGenAI({ apiKey });
     console.log("[GEMINI] API Key updated dynamically.");
@@ -1349,6 +1354,7 @@ export function hasGeminiKey(): boolean {
  * use this pure transport and the router owns fallback.
  */
 export const generateGeminiTextPure = async (prompt: string, model?: string): Promise<string> => {
+    assertExternalProvidersEnabled();
     const client = ensureClient();
     if (!client) throw new Error('GEMINI: API key not configured');
     // PR-K: fail fast on the local daily budget BEFORE burning a real API
@@ -1391,6 +1397,7 @@ export const generateTextWithCloudFallbacks = async (
     prompt: string,
     opts: { maxTokens?: number; temperature?: number } = {}
 ): Promise<string> => {
+    assertExternalProvidersEnabled();
     const { providerHealth } = await import('./providerHealthManager');
     const { DEFAULT_GEMINI_BACKGROUND_MODEL, DEFAULT_OPENROUTER_MODEL } = await import('./llm/defaultModels');
     const errors: string[] = [];
@@ -1486,6 +1493,7 @@ export const generateTextWithCloudFallbacks = async (
 };
 
 export const generateText = async (prompt: string, options: { model?: string } = {}): Promise<string> => {
+    assertExternalProvidersEnabled();
     ensureClient();
     const modelToUse = options.model || DEFAULT_GEMINI_MODEL;
 

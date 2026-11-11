@@ -6,6 +6,7 @@
 
 import { systemBus } from '../systemBus';
 import { SystemProtocol } from '../../types';
+import { configLoader } from '../../server/config/configLoader';
 
 // ─── Cron Expression Parser ──────────────────────────────────────────────────
 
@@ -95,12 +96,14 @@ export interface WebhookJob {
 
 // ─── Enhanced Scheduler ──────────────────────────────────────────────────────
 
-class CronScheduler {
+export class CronScheduler {
     private webhookJobs: Map<string, WebhookJob> = new Map();
     private interval: NodeJS.Timeout | null = null;
     private readonly CHECK_INTERVAL_MS = 60_000; // Check every minute
 
     initialize(): void {
+        if (!this.executionAllowed()) { this.shutdown(); return; }
+        if (this.interval) return;
         this.interval = setInterval(() => this.tick(), this.CHECK_INTERVAL_MS);
         console.log('[CronScheduler] ⏰ Started');
     }
@@ -143,10 +146,19 @@ class CronScheduler {
     /**
      * Tick: check all cron jobs and execute those that match.
      */
+    private executionAllowed(): boolean {
+        try {
+            const config = configLoader.getConfig();
+            return config.scheduler?.enabled === true && config.autonomy?.enabled === true;
+        } catch { return false; }
+    }
+
     private async tick(): Promise<void> {
+        if (!this.executionAllowed()) { this.shutdown(); return; }
         const now = new Date();
 
         for (const job of this.webhookJobs.values()) {
+            if (!this.executionAllowed()) break;
             if (!job.enabled) continue;
             if (!matchesCron(job.cronExpression, now)) continue;
 
@@ -161,6 +173,7 @@ class CronScheduler {
      * Fire a webhook job.
      */
     private async fireWebhook(job: WebhookJob): Promise<void> {
+        if (!this.executionAllowed()) return;
         const start = Date.now();
 
         try {

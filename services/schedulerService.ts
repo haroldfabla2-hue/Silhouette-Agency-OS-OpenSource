@@ -12,6 +12,7 @@
 
 import { SystemProtocol } from '../types';
 import { systemBus } from './systemBus';
+import { configLoader } from '../server/config/configLoader';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -38,20 +39,24 @@ export interface ScheduledTask {
 // SCHEDULER SERVICE
 // ═══════════════════════════════════════════════════════════════════════════
 
-class SchedulerService {
+export class SchedulerService {
     private tasks: Map<string, ScheduledTask> = new Map();
     private checkInterval: NodeJS.Timeout | null = null;
+    private initialCheck: NodeJS.Timeout | null = null;
+    private readonly storageReady: Promise<void>;
+    private checking = false;
     private readonly CHECK_INTERVAL_MS = 60000; // Check every minute
 
     constructor() {
-        this.loadTasksFromStorage();
+        this.storageReady = this.loadTasksFromStorage();
     }
 
     /**
      * Start the scheduler daemon
      */
-    public start(): void {
-        if (this.checkInterval) return;
+    public start(): boolean {
+        if (!this.executionAllowed()) { this.stop(); return false; }
+        if (this.checkInterval) return true;
 
         console.log('[SCHEDULER] ⏰ Autonomous Scheduler Started');
 
@@ -60,13 +65,21 @@ class SchedulerService {
         }, this.CHECK_INTERVAL_MS);
 
         // Initial check on startup
-        setTimeout(() => this.checkAndExecuteDueTasks(), 5000);
+        this.initialCheck = setTimeout(() => {
+            this.initialCheck = null;
+            void this.checkAndExecuteDueTasks();
+        }, 5000);
+        return true;
     }
 
     /**
      * Stop the scheduler
      */
     public stop(): void {
+        if (this.initialCheck) {
+            clearTimeout(this.initialCheck);
+            this.initialCheck = null;
+        }
         if (this.checkInterval) {
             clearInterval(this.checkInterval);
             this.checkInterval = null;
@@ -193,43 +206,63 @@ class SchedulerService {
     // PRIVATE METHODS
     // ═══════════════════════════════════════════════════════════════════════
 
-    private async checkAndExecuteDueTasks(): Promise<void> {
-        const now = Date.now();
-
-        for (const [id, task] of this.tasks) {
-            if (!task.enabled || !task.nextRun) continue;
-
-            if (task.nextRun <= now) {
-                console.log(`[SCHEDULER] 🚀 Executing: "${task.name}"`);
-
-                // Emit event for execution
-                systemBus.emit(SystemProtocol.SCHEDULED_TASK_TRIGGER, {
-                    taskId: id,
-                    taskName: task.name,
-                    action: task.action
-                }, 'SCHEDULER');
-
-                // Execute based on action type
-                await this.executeTask(task);
-
-                // Update last run
-                task.lastRun = now;
-
-                // Calculate next run for recurring tasks
-                if (task.recurrence) {
-                    task.nextRun = this.calculateNextRun(task);
-                    console.log(`[SCHEDULER] 🔄 Next run: ${new Date(task.nextRun).toLocaleString()}`);
-                } else {
-                    // One-time task - disable after execution
-                    task.enabled = false;
-                }
-
-                this.persistTasks();
-            }
+    private executionAllowed(task?: ScheduledTask): boolean {
+        try {
+            const config = configLoader.getConfig();
+            return config.scheduler?.enabled === true && config.autonomy?.enabled === true
+                && (task?.action.type !== 'GOAL_CHECK' || config.autonomy.enableIntrospection === true);
+        } catch {
+            return false;
         }
     }
 
-    private async executeTask(task: ScheduledTask): Promise<void> {
+    private async checkAndExecuteDueTasks(): Promise<void> {
+        if (this.checking) return;
+        if (!this.executionAllowed()) { this.stop(); return; }
+        this.checking = true;
+        try {
+            await this.storageReady;
+            const now = Date.now();
+
+            for (const [id, task] of this.tasks) {
+                if (!this.executionAllowed()) break;
+                if (!task.enabled || !task.nextRun || !this.executionAllowed(task)) continue;
+
+                if (task.nextRun <= now) {
+                    console.log(`[SCHEDULER] 🚀 Executing: "${task.name}"`);
+
+                    // Emit event for execution
+                    systemBus.emit(SystemProtocol.SCHEDULED_TASK_TRIGGER, {
+                        taskId: id,
+                        taskName: task.name,
+                        action: task.action
+                    }, 'SCHEDULER');
+
+                    // Execute based on action type
+                    if (!await this.executeTask(task)) continue;
+
+                    // Update last run
+                    task.lastRun = now;
+
+                    // Calculate next run for recurring tasks
+                    if (task.recurrence) {
+                        task.nextRun = this.calculateNextRun(task);
+                        console.log(`[SCHEDULER] 🔄 Next run: ${new Date(task.nextRun).toLocaleString()}`);
+                    } else {
+                        // One-time task - disable after execution
+                        task.enabled = false;
+                    }
+
+                    await this.persistTasks();
+                }
+            }
+        } finally {
+            this.checking = false;
+        }
+    }
+
+    private async executeTask(task: ScheduledTask): Promise<boolean> {
+        if (!this.executionAllowed(task)) return false;
         try {
             switch (task.action.type) {
                 case 'PLAN_EXECUTION':
@@ -254,6 +287,7 @@ class SchedulerService {
         } catch (e) {
             console.error(`[SCHEDULER] ❌ Task "${task.name}" failed:`, e);
         }
+        return true;
     }
 
     private calculateNextRun(task: Partial<ScheduledTask>): number {
@@ -300,9 +334,10 @@ class SchedulerService {
         }
     }
 
-    private persistTasks(): void {
+    private async persistTasks(): Promise<void> {
         try {
-            const sqliteService = require('./sqliteService').sqliteService;
+            await this.storageReady;
+            const { sqliteService } = await import('./sqliteService');
 
             // Persist as single config value (leveraging existing architecture)
             const tasksArray = Array.from(this.tasks.values());

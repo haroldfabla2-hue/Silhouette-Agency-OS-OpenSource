@@ -1,3 +1,4 @@
+import { externalProvidersDisabled, configForRuntime } from './runtimeCredentials';
 // =============================================================================
 // SILHOUETTE CENTRALIZED CONFIGURATION SCHEMA
 // Centralized configuration management. Defines the full config tree
@@ -470,13 +471,14 @@ export function loadConfig(projectRoot?: string): SilhouetteConfig {
     // Layer 3: Environment overrides (highest priority for secrets)
     applyEnvOverrides(config);
 
-    return config;
+    return configForRuntime(config);
 }
 
 /**
  * Save current config to disk (excluding secrets).
  */
 export function saveConfig(config: SilhouetteConfig, projectRoot?: string): void {
+    if (externalProvidersDisabled()) throw new Error('Config writes disabled while external providers are disabled');
     const root = projectRoot ?? process.cwd();
     const configPath = path.join(root, CONFIG_FILENAME);
 

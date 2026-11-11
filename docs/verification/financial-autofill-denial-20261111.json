@@ -1,0 +1,13 @@
+{
+  "scope": "existing unconditional rejection, not functional card autofill or payment-provider validation",
+  "fixture": "DEMO-only local numbers, disposable SQLite and data-URL form",
+  "network_namespace": true,
+  "inherited_environment": "empty except PATH/HOME/browser path/NODE_ENV",
+  "production_data_or_credentials": false,
+  "test_files_passed": 1,
+  "tests_passed": 7,
+  "tests_failed": 0,
+  "retries": 0,
+  "checks": ["valid and invalid IDs reject", "ciphertext fault proves no decrypt on deny path", "all four real Chromium input values empty", "no fieldsInjected or maskedLast4", "card row restored unchanged", "transaction rows unchanged"],
+  "unverified": ["payment provider", "real card issuance", "functional autofill", "full CI on aligned head"]
+}
