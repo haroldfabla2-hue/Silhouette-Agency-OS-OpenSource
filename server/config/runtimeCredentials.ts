@@ -14,7 +14,7 @@ export { acceptanceBoot, externalProvidersDisabled } from '../../services/securi
 // Keep local API authentication, isolated storage paths and runtime essentials.
 const ACCEPTANCE_ENV = new Set([
     'PATH', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'HOME', 'TMPDIR', 'TEMP', 'TMP',
-    'NODE_ENV', 'SILHOUETTE_BOOT_MODE', 'SILHOUETTE_PROVIDERS', 'SILHOUETTE_API_TOKEN',
+    'NODE_ENV', 'SILHOUETTE_BOOT_MODE', 'SILHOUETTE_PROVIDERS', 'SILHOUETTE_API_TOKEN', 'SILHOUETTE_API_KEY',
     'SILHOUETTE_DB_PATH', 'SILHOUETTE_LANCEDB_PATH', 'PORT', 'SILHOUETTE_HOST',
 ]);
 
