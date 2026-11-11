@@ -9,6 +9,7 @@ loadRuntimeEnvironment();
 
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import { isAllowedRequestOrigin } from './security/corsPolicy';
 
 // Security Middleware
 import { authMiddleware } from './middleware/authMiddleware';
@@ -70,17 +71,15 @@ const allowedOrigins = (process.env.SILHOUETTE_CORS_ORIGIN || 'http://localhost:
     .split(',')
     .map(o => o.trim());
 
-app.use(cors({
-    origin: (origin, callback) => {
-        // Allow requests with no origin (server-to-server, curl, etc.)
-        if (!origin) return callback(null, true);
-        if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
-            return callback(null, true);
+app.use(cors<Request>((req, callback) => callback(null, {
+    origin: (origin, done) => {
+        if (isAllowedRequestOrigin(origin, req.protocol, req.get('host'), allowedOrigins)) {
+            return done(null, true);
         }
-        callback(new Error(`CORS: Origin ${origin} not allowed`));
+        done(new Error(`CORS: Origin ${origin} not allowed`));
     },
     credentials: true,
-}));
+})));
 
 // Body parser with reasonable limit
 app.use(express.json({ limit: '10mb' }));

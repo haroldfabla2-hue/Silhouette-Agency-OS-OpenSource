@@ -30,7 +30,7 @@ with tempfile.TemporaryDirectory(prefix='silhouette-real-boot-') as d:
  p=parent/'cron';p.mkdir();(p/'silhouette.config.json').write_text(json.dumps(base));run('cron-child.ts','cron',p)
  p=parent/'credentials';p.mkdir();(p/'silhouette.config.json').write_text(json.dumps(base))
  (p/'.env').write_text('GEMINI_API_KEY=isolated-credential-not-a-real-key\nNEO4J_URI=bolt://127.0.0.1:17687\nNEO4J_PASSWORD=isolated-local-store-not-a-real-key\nREDIS_URL=redis://127.0.0.1:16379\n')
- extra={'SILHOUETTE_API_KEY':'isolated-local-api-auth-not-a-real-key','SILHOUETTE_API_TOKEN':'isolated-local-api-token-not-a-real-key','CUSTOM_PROVIDER_CREDENTIAL':'isolated-credential-not-a-real-key','SILHOUETTE_HOST':'0.0.0.0'}
+ extra={'SILHOUETTE_CORS_ORIGIN':'https://explicit-fixture.example.invalid','SILHOUETTE_API_KEY':'isolated-local-api-auth-not-a-real-key','SILHOUETTE_API_TOKEN':'isolated-local-api-token-not-a-real-key','CUSTOM_PROVIDER_CREDENTIAL':'isolated-credential-not-a-real-key','SILHOUETTE_HOST':'0.0.0.0'}
  run('credentials-child.ts','normal',p,{**extra,'SILHOUETTE_PROVIDERS':'on'})
  run('credentials-child.ts','acceptance',p,{**extra,'SILHOUETTE_BOOT_MODE':'acceptance'})
  run('credentials-child.ts','providers-off',p,{**extra,'SILHOUETTE_PROVIDERS':'off'})
