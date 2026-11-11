@@ -108,7 +108,7 @@ describe('FinancialVault & Autonomous Checkout System (Phase 22)', () => {
         expect(burnedCard?.status).toBe('REVOKED');
     });
 
-    it('autofills payment form in browser using virtual card without leaking details', async () => {
+    it('refuses disabled card autofill before decrypting or typing and leaves payment state unchanged', async () => {
         // Mint a dedicated checkout card
         const cardRes = await financialVault.requestVirtualCard({
             merchant: 'AirlineCheckout.com',
@@ -118,7 +118,7 @@ describe('FinancialVault & Autonomous Checkout System (Phase 22)', () => {
         });
         const checkoutCardId = cardRes.card!.id;
 
-        // Render mock checkout page
+        // Real browser fixture only. No merchant or real card/provider.
         const checkoutHtml = `
             <!DOCTYPE html>
             <html>
@@ -139,14 +139,38 @@ describe('FinancialVault & Autonomous Checkout System (Phase 22)', () => {
         const dataUrl = `data:text/html;charset=utf-8,${encodeURIComponent(checkoutHtml)}`;
         await visualBrowserEngine.goto(dataUrl);
 
-        // Autofill payment fields
-        const autofillResult = await browserService.autofillPayment(checkoutCardId);
+        const page = await visualBrowserEngine.init();
+        const values = () => page.locator('input').evaluateAll(inputs =>
+            inputs.map(input => (input as HTMLInputElement).value));
+        expect(await values()).toEqual(['', '', '', '']);
+        const cardBefore = sqliteService.db.prepare('SELECT * FROM financial_cards WHERE id=?').get(checkoutCardId) as any;
+        const transactionsBefore = sqliteService.db.prepare('SELECT * FROM financial_transactions').all();
 
-        expect(autofillResult.success).toBe(true);
-        expect(autofillResult.fieldsInjected).toContain('cardNumber');
-        expect(autofillResult.fieldsInjected).toContain('expiration');
-        expect(autofillResult.fieldsInjected).toContain('cvv');
-        expect(autofillResult.fieldsInjected).toContain('cardholderName');
-        expect(autofillResult.maskedLast4).toContain('••••');
+        // A real unreadable ciphertext proves the deny path does not decrypt:
+        // opening this envelope with FinancialVault would throw. Restore it in
+        // finally so this negative fault does not alter the fixture card state.
+        sqliteService.db.prepare('UPDATE financial_cards SET encrypted_number=? WHERE id=?')
+            .run('not-an-encrypted-card-envelope', checkoutCardId);
+        try {
+            expect(() => financialVault.getCardForAutofill(checkoutCardId)).toThrow();
+            for (const id of [checkoutCardId, 'invalid-card-does-not-exist']) {
+                const result = await browserService.autofillPayment(id);
+                expect(result.success).toBe(false);
+                expect(result.fieldsInjected).toEqual([]);
+                expect(result.maskedLast4).toBeUndefined();
+                expect(result.error).toContain('temporarily disabled for security');
+                expect(result.error).toContain('No card data was retrieved, decrypted or typed');
+                expect(await values()).toEqual(['', '', '', '']);
+            }
+            const whileBlocked = sqliteService.db.prepare('SELECT * FROM financial_cards WHERE id=?').get(checkoutCardId) as any;
+            expect(whileBlocked).toEqual({ ...cardBefore, encrypted_number: 'not-an-encrypted-card-envelope' });
+            expect(sqliteService.db.prepare('SELECT * FROM financial_transactions').all()).toEqual(transactionsBefore);
+        } finally {
+            sqliteService.db.prepare('UPDATE financial_cards SET encrypted_number=? WHERE id=?')
+                .run(cardBefore.encrypted_number, checkoutCardId);
+        }
+        expect(sqliteService.db.prepare('SELECT * FROM financial_cards WHERE id=?').get(checkoutCardId)).toEqual(cardBefore);
+        expect(await values()).toEqual(['', '', '', '']);
+
     });
 });
