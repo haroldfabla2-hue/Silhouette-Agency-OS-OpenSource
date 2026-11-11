@@ -378,7 +378,7 @@ export class UnifiedDaemon {
                 const nodeA = gap.nodeA?.name || gap.nodeA?.id || 'Unknown';
                 const nodeB = gap.nodeB?.name || gap.nodeB?.id || 'Unknown';
                 const bridge = gap.bridge?.name || gap.bridge?.id || 'Unknown';
-                curiosity.addGap(
+                await curiosity.addGap(
                     `${nodeA} ↔ ${nodeB} via ${bridge}`,
                     `"${nodeA}" and "${nodeB}" are both connected to "${bridge}" but not to each other. What is the relationship between them?`,
                     0.7
@@ -392,7 +392,7 @@ export class UnifiedDaemon {
         if (bridges && bridges.length > 0) {
             for (const b of bridges) {
                 const nodeName = b.name;
-                curiosity.addGap(
+                await curiosity.addGap(
                     `Bridge Concept: ${nodeName}`,
                     `The concept "${nodeName}" acts as a major bridge between different knowledge domains (Clustering: ${b.clustering.toFixed(2)}). What is its foundational nature?`,
                     0.8
@@ -419,7 +419,7 @@ export class UnifiedDaemon {
 
             // If σ < 1, the graph needs more cross-domain connections 
             if (report.sigma > 0 && report.sigma < 1.0 && report.totalNodes > 10) {
-                curiosity.addGap(
+                await curiosity.addGap(
                     'Network Topology Optimization',
                     `The knowledge graph has σ=${report.sigma.toFixed(2)} (below 1.0), meaning it lacks the small-world property. We need more cross-domain bridges to improve information flow. What concepts from different domains could be connected?`,
                     0.9
@@ -443,19 +443,8 @@ export class UnifiedDaemon {
             const insights = await learningLoop.analyzeFailures(24 * 60 * 60 * 1000);
             for (const insight of insights) {
                 if (insight.autoApplicable && insight.confidence > 0.75) {
-                    const applied = await learningLoop.applyInsight(insight);
-                    if (applied) {
-                        console.log(`[COGNITIVE: LEARNING] ✅ Auto-applied insight: ${insight.pattern}`);
-                        const { systemBus } = await import('../systemBus');
-                        const { SystemProtocol } = await import('../../types');
-                        systemBus.emit(SystemProtocol.THOUGHT_EMISSION, {
-                            agentId: 'LEARNING_LOOP',
-                            agentName: 'Learning System',
-                            thoughts: [`I learned from a recurring failure pattern: "${insight.pattern}". Root cause: ${insight.rootCause}. I auto-applied a fix: ${insight.suggestedFix}`],
-                            role: 'LEARNING',
-                            isInsight: true
-                        });
-                    }
+                    const outcome = await learningLoop.routeInsight(insight);
+                    console.log(`[COGNITIVE: LEARNING] ${outcome.stage}: ${insight.pattern} (applied=${outcome.applied})`);
                 }
             }
         } catch (e: any) {

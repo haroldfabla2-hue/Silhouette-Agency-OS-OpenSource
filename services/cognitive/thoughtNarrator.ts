@@ -558,13 +558,13 @@ export class ThoughtNarrator {
                     const { curiosity } = await import('../curiosityService');
                     const topic = action?.params?.topic || thought.substring(0, 60);
                     const question = action?.params?.question || thought;
-                    curiosity.addGap(topic, question, confidence);
+                    await curiosity.addGap(topic, question, confidence);
                     // Also feed any graph triangles
                     for (const t of graphSensory.triangles) {
                         const a = t.nodeA?.name || t.nodeA?.id || 'Unknown';
                         const b = t.nodeB?.name || t.nodeB?.id || 'Unknown';
                         const bridge = t.bridge?.name || t.bridge?.id || 'Unknown';
-                        curiosity.addGap(`${a} ↔ ${b}`, `"${a}" and "${b}" share bridge "${bridge}". Investigate.`, 0.8);
+                        await curiosity.addGap(`${a} ↔ ${b}`, `"${a}" and "${b}" share bridge "${bridge}". Investigate.`, 0.8);
                     }
                     console.log(`[NARRATOR → CURIOSITY] 🔍 Knowledge gap queued: "${topic}"`);
                     break;

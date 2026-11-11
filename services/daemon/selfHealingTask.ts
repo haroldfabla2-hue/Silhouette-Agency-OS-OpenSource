@@ -116,8 +116,9 @@ export const selfHealingTask: DaemonTask = {
             }
             for (const insight of insights) {
                 if (autoApplyAllowed && insight.autoApplicable && insight.confidence > 0.75) {
-                    const applied = await learningLoop.applyInsight(insight);
-                    if (applied) appliedCount++;
+                    const outcome = await learningLoop.routeInsight(insight);
+                    if (outcome.applied) appliedCount++;
+                    daemonLog.info({}, `Self-Healing: insight ${outcome.stage}; applied=${outcome.applied}.`);
                 }
             }
 

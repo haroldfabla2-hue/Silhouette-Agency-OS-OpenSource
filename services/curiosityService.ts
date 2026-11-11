@@ -12,6 +12,10 @@
 
 import { systemBus } from './systemBus';
 import { SystemProtocol } from '../types';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { atomicWriteFile } from './utils/atomicWrite';
 
 interface KnowledgeGap {
     topic: string;
@@ -47,36 +51,67 @@ class CuriosityService {
         MAX_CONCURRENT_RESEARCH: 3                   // Process up to 3 gaps per cycle
     };
 
-    private readonly GAPS_FILE = require('path').resolve(process.cwd(), 'data', 'curiosity_gaps.json');
+    private readonly GAPS_FILE = path.resolve(process.cwd(), 'data', 'curiosity_gaps.json');
 
     private knowledgeGaps: KnowledgeGap[] = [];
     private topicFrequency: Map<string, TopicFrequency> = new Map();
     private explorationInterval: NodeJS.Timeout | null = null;
     private lastResearchTime: number = 0;
     private isExploring: boolean = false;
+    private readonly loaded: Promise<void>;
+    private persistence: Promise<void> = Promise.resolve();
+    private events: Promise<void> = Promise.resolve();
 
     constructor() {
+        this.loaded = this.loadGaps();
+        // Keep failure observable to every awaited entry point without an unhandled rejection.
+        void this.loaded.catch(e => logger.warn('Snapshot unavailable; mutations blocked:', e));
         // Listen for topic mentions
         systemBus.subscribe(SystemProtocol.MEMORY_CREATED, (payload: any) => {
-            this.trackTopicFromMemory(payload);
+            this.queueTopicEvent(() => this.trackTopicFromMemory(payload.payload));
         });
 
         systemBus.subscribe(SystemProtocol.THOUGHT_EMISSION, (payload: any) => {
-            this.trackTopicFromThought(payload);
+            this.queueTopicEvent(() => this.trackTopicFromThought(payload.payload));
         });
 
-        // Restore persisted gaps from disk
-        this.loadGaps().catch(() => {});
+        // Mutating entry points await this.loaded before editing restored state.
 
         logger.info('Initialized. Curiosity is the engine of discovery.');
     }
 
+    private queueTopicEvent(update: () => Promise<void>): void {
+        this.events = this.events.catch(() => {}).then(update);
+        void this.events.catch(e => logger.warn('Topic persistence failed:', e));
+    }
+
+    /** Wait for initial restore and all events received before this call. */
+    public async waitForPersistence(): Promise<void> {
+        await this.loaded;
+        await this.events;
+        await this.persistence;
+    }
+
     private async loadGaps(): Promise<void> {
         try {
-            const fs = require('fs/promises');
             const data = await fs.readFile(this.GAPS_FILE, 'utf-8');
             const saved = JSON.parse(data);
-            if (saved.gaps) this.knowledgeGaps = saved.gaps;
+            if (!Array.isArray(saved.gaps) || !saved.topics || typeof saved.topics !== 'object') {
+                throw new Error('Invalid curiosity snapshot; refusing to overwrite');
+            }
+            if (!saved.gaps.every((g: any) => g && typeof g.topic === 'string'
+                && typeof g.question === 'string' && Number.isFinite(g.priority)
+                && Number.isFinite(g.detectedAt) && Number.isFinite(g.attempts)
+                && ['PENDING', 'RESEARCHING', 'RESOLVED', 'FAILED'].includes(g.status))
+                || !Object.values(saved.topics).every((t: any) => t && typeof t.topic === 'string'
+                    && Number.isFinite(t.count) && Number.isFinite(t.lastAccessed) && typeof t.hasDepth === 'boolean')) {
+                throw new Error('Invalid curiosity record; refusing to overwrite');
+            }
+            this.knowledgeGaps = saved.gaps;
+            // A prior process cannot still own an in-flight research attempt.
+            for (const gap of this.knowledgeGaps) {
+                if (gap.status === 'RESEARCHING') gap.status = 'PENDING';
+            }
             if (saved.topics) {
                 for (const [k, v] of Object.entries(saved.topics)) {
                     this.topicFrequency.set(k, v as TopicFrequency);
@@ -84,24 +119,19 @@ class CuriosityService {
             }
             logger.info(`Restored ${this.knowledgeGaps.length} gaps and ${this.topicFrequency.size} topics from disk.`);
         } catch (e: any) {
-            if (e.code !== 'ENOENT') logger.warn('Failed to load gaps:', e.message);
+            if (e.code !== 'ENOENT') throw e;
         }
     }
 
     private async saveGaps(): Promise<void> {
-        try {
-            const fs = require('fs/promises');
-            const path = require('path');
+        const data = JSON.stringify({ gaps: this.knowledgeGaps,
+            topics: Object.fromEntries(this.topicFrequency), savedAt: Date.now() }, null, 2);
+        const write = this.persistence.catch(() => {}).then(async () => {
             await fs.mkdir(path.dirname(this.GAPS_FILE), { recursive: true });
-            const data = {
-                gaps: this.knowledgeGaps,
-                topics: Object.fromEntries(this.topicFrequency),
-                savedAt: Date.now()
-            };
-            await fs.writeFile(this.GAPS_FILE, JSON.stringify(data, null, 2), 'utf-8');
-        } catch (e: any) {
-            logger.warn('Failed to save gaps:', e.message);
-        }
+            await atomicWriteFile(this.GAPS_FILE, data);
+        });
+        this.persistence = write;
+        return write;
     }
 
     /**
@@ -124,11 +154,11 @@ class CuriosityService {
         if (this.explorationInterval) return;
         logger.info('Starting Exploration Loop (Every 15 min)');
         this.explorationInterval = setInterval(() => {
-            this.runExplorationCycle();
+            void this.runExplorationCycle().catch(e => logger.warn('Exploration persistence failed:', e));
         }, this.CONFIG.GAP_DETECTION_INTERVAL_MS);
 
         // Initial run after 2 minutes
-        setTimeout(() => this.runExplorationCycle(), 2 * 60 * 1000);
+        setTimeout(() => { void this.runExplorationCycle().catch(e => logger.warn('Exploration persistence failed:', e)); }, 2 * 60 * 1000);
     }
 
     /**
@@ -146,6 +176,7 @@ class CuriosityService {
      * Main exploration cycle
      */
     private async runExplorationCycle() {
+        await this.loaded;
         if (this.isExploring) return;
         this.isExploring = true;
 
@@ -166,25 +197,30 @@ class CuriosityService {
             logger.warn('Exploration cycle error:', e);
         } finally {
             this.isExploring = false;
+            await this.saveGaps();
         }
     }
 
     /**
      * Track topic mentions from memory events
      */
-    private trackTopicFromMemory(payload: any) {
+    private async trackTopicFromMemory(payload: any) {
+        await this.loaded;
         if (!payload?.content) return;
         this.extractAndTrackTopics(payload.content);
+        await this.saveGaps();
     }
 
     /**
      * Track topic mentions from thought events
      */
-    private trackTopicFromThought(payload: any) {
+    private async trackTopicFromThought(payload: any) {
+        await this.loaded;
         if (!payload?.thoughts) return;
         for (const thought of payload.thoughts) {
             this.extractAndTrackTopics(thought);
         }
+        await this.saveGaps();
     }
 
     /**
@@ -370,6 +406,7 @@ class CuriosityService {
         gap.status = 'RESEARCHING';
         gap.attempts++;
         this.lastResearchTime = Date.now();
+        await this.saveGaps();
 
         logger.info(`Researching: "${gap.question}"`);
 
@@ -425,6 +462,8 @@ class CuriosityService {
             } else {
                 gap.status = 'PENDING'; // Retry later
             }
+        } finally {
+            await this.saveGaps();
         }
     }
 
@@ -432,33 +471,24 @@ class CuriosityService {
      * Store a discovery in memory and graph
      */
     private async storeDiscovery(topic: string, question: string, answer: string) {
-        try {
-            const { continuum } = await import('./continuumMemory');
-            const { MemoryTier } = await import('../types');
+        if (!answer.trim()) throw new Error('Empty discovery cannot resolve a knowledge gap');
+        const { continuum } = await import('./continuumMemory');
+        const { MemoryTier } = await import('../types');
+        const content = `[CURIOSITY DISCOVERY] Topic: ${topic}\nQ: ${question}\nA: ${answer}`;
+        const receiptTag = `curiosity-discovery:${crypto.createHash('sha256').update(content).digest('hex')}`;
+        await continuum.store(content, MemoryTier.MEDIUM,
+            ['DISCOVERY', 'CURIOSITY', topic.toUpperCase(), receiptTag]);
+        // store() may reject/dedupe without throwing. A resolved gap requires
+        // actual canonical readback with this attempt's receipt, not a void return.
+        const readback = await continuum.getLatestObservation(receiptTag);
+        if (!readback || readback.content !== content) throw new Error('Discovery persistence unverified');
 
-            // Store in long-term memory
-            await continuum.store(
-                `[CURIOSITY DISCOVERY] Topic: ${topic}\nQ: ${question}\nA: ${answer}`,
-                MemoryTier.MEDIUM,
-                ['DISCOVERY', 'CURIOSITY', topic.toUpperCase()]
-            );
-
-            // Store in graph
-            const { graph } = await import('./graphService');
-            if (graph.isConnectedStatus()) {
-                const discoveryId = `curiosity_${Date.now()}`;
-                await graph.createNode('Discovery', {
-                    id: discoveryId,
-                    topic,
-                    question,
-                    answer: answer.substring(0, 500),
-                    source: 'CURIOSITY_SERVICE',
-                    timestamp: Date.now()
-                }, 'id');
-            }
-
-        } catch (e) {
-            logger.warn('Failed to store discovery:', e);
+        const { graph } = await import('./graphService');
+        if (graph.isConnectedStatus()) {
+            await graph.createNode('Discovery', {
+                id: receiptTag, topic, question, answer: answer.substring(0, 500),
+                source: 'CURIOSITY_SERVICE', timestamp: Date.now()
+            }, 'id');
         }
     }
 
@@ -489,7 +519,8 @@ class CuriosityService {
     /**
      * Manually add a knowledge gap (for user-driven curiosity)
      */
-    public addGap(topic: string, question: string, priority: number = 0.5) {
+    public async addGap(topic: string, question: string, priority: number = 0.5): Promise<void> {
+        await this.loaded;
         const gap: KnowledgeGap = {
             topic,
             question,
@@ -500,6 +531,7 @@ class CuriosityService {
         };
 
         this.knowledgeGaps.push(gap);
+        await this.saveGaps();
         logger.info(`Manual gap added: "${question}"`);
     }
 
@@ -507,6 +539,7 @@ class CuriosityService {
      * Trigger immediate research (for testing)
      */
     public async triggerResearch() {
+        await this.loaded;
         const pendingGaps = this.knowledgeGaps
             .filter(g => g.status === 'PENDING')
             .sort((a, b) => b.priority - a.priority)
