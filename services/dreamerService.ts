@@ -2,16 +2,16 @@ import { unifiedVectorMemory } from './unifiedVectorMemory';
 import { embedMemoryText } from './memoryVectorContract';
 import { DreamMemoryQueries } from './dream/dreamMemoryQueries';
 import { verifyClaims, type CitedClaim } from './memoryCognition';
-import { continuum } from './continuumMemory';
-import { geminiService } from './geminiService';
 import { CommunicationLevel } from '../types';
 import { MemoryNode, MemoryTier } from '../types';
-import { resourceArbiter } from './resourceArbiter';
 import { AgentStatus, AgentRoleType, AgentTier, SystemProtocol } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { systemBus } from './systemBus';
 import * as si from 'systeminformation'; // NEW: For Resource Monitoring
 
+// Importing retrieval/inspection must not boot the agent swarm, seed memory,
+// start resource timers or download models. Heavy services are loaded by the
+// operation that needs them, not by this module's singleton construction.
 export class DreamerService {
     private readonly retrieval = new DreamMemoryQueries(unifiedVectorMemory, embedMemoryText);
 
@@ -56,7 +56,7 @@ export class DreamerService {
                 return;
             }
             this.activateDreamLoop();
-        });
+        }).catch(e => console.error('[DREAMER] Unable to start dreaming loop:', e));
     }
 
     private activateDreamLoop() {
@@ -66,7 +66,7 @@ export class DreamerService {
         // Check every 5 minutes if we should dream
         this.dreamInterval = setInterval(async () => {
             if (this.memoriesAccumulated >= this.threshold) {
-                this.attemptDream();
+                this.attemptDream().catch(e => console.error('[DREAMER] Scheduled dream failed:', e));
             }
 
             // Event-based triggers (roadmap item 8): epiphanies, milestones,
@@ -113,6 +113,7 @@ export class DreamerService {
 
         if (options.consolidate) {
             systemBus.emit(SystemProtocol.TRAINING_LOG, { type: 'log', message: "🧠 Consolidating Short-Term Memory..." }, 'DREAMER_SERVICE');
+            const { continuum } = await import('./continuumMemory');
             await continuum.forceConsolidation();
             systemBus.emit(SystemProtocol.TRAINING_LOG, { type: 'log', message: "✅ Memory Snapshot Saved." }, 'DREAMER_SERVICE');
         }
@@ -133,6 +134,7 @@ export class DreamerService {
     }
 
     private async triggerNeuralTraining() {
+        const { resourceArbiter } = await import('./resourceArbiter');
         console.log("[DREAMER] 🌋 SYNAPTIC FORGE: Conditions met for Neural Update.");
 
         // HOMEOSTATIC CHECK: Request admission from ResourceArbiter
@@ -266,40 +268,41 @@ export class DreamerService {
 
     public async attemptDream() {
         if (this.isDreaming) return;
-
-        // 1. Check Real System Load via Arbiter
-        // Verify if we have spare compute to dream
-        const admission = await resourceArbiter.requestAdmission({
-            id: 'dreamer',
-            name: 'Dreamer Service',
-            role: 'Subconscious',
-            status: AgentStatus.WORKING,
-            cpuUsage: 0,
-            ramUsage: 0,
-            memoryLocation: 'RAM',
-            lastActive: Date.now(),
-            teamId: 'CORE',
-            category: 'CORE',
-            roleType: AgentRoleType.WORKER,
-            enabled: true,
-            tier: AgentTier.WORKER,
-            preferredMemory: 'RAM'
-        }, 'LOW');
-
-        if (!admission) {
-            console.log("[DREAMER] 🛑 Insufficient resources to dream right now.");
-            return;
-        }
-
-        this.isDreaming = true;
-        // Update Introspection Engine Status
-        import('./introspectionEngine').then(({ introspection }) => {
-            introspection.setDreaming(true);
-        });
-
+        this.isDreaming = true; // Reserve through imports AND resource admission.
+        let activeIntrospection: typeof import('./introspectionEngine').introspection | undefined;
         let cycleCompleted = false;
         this.lastCycleMemoryCount = null;
         try {
+            const { resourceArbiter } = await import('./resourceArbiter');
+            const { continuum } = await import('./continuumMemory');
+
+            // 1. Check Real System Load via Arbiter
+            // Verify if we have spare compute to dream
+            const admission = await resourceArbiter.requestAdmission({
+                id: 'dreamer',
+                name: 'Dreamer Service',
+                role: 'Subconscious',
+                status: AgentStatus.WORKING,
+                cpuUsage: 0,
+                ramUsage: 0,
+                memoryLocation: 'RAM',
+                lastActive: Date.now(),
+                teamId: 'CORE',
+                category: 'CORE',
+                roleType: AgentRoleType.WORKER,
+                enabled: true,
+                tier: AgentTier.WORKER,
+                preferredMemory: 'RAM'
+            }, 'LOW');
+
+            if (!admission) {
+                console.log("[DREAMER] 🛑 Insufficient resources to dream right now.");
+                return;
+            }
+
+            const { introspection } = await import('./introspectionEngine');
+            activeIntrospection = introspection;
+            introspection.setDreaming(true);
             // 2. Gather "Day Residue" (Random L2/L3 memories)
             const allNodes = await continuum.getAllNodes();
             // FIX: 'gatherDayResidue' is async now, must await
@@ -307,7 +310,6 @@ export class DreamerService {
 
             if (memories.length < 2) { // Allow pairs for Bisociation
                 // Not enough to dream about
-                this.isDreaming = false;
                 return;
             }
 
@@ -348,7 +350,7 @@ export class DreamerService {
                         graph.createDiscoveryRelationship('DREAMER', 'MYSTERY_BOX', 'IMPLIES', result.veracity, 'CURIOSITY_ENGINE')
                             .then(() => console.log("[DREAMER] Mystery Node Created"))
                             .catch(e => console.warn(e));
-                    });
+                    }).catch(e => console.error('[DREAMER] Graph discovery import failed:', e));
                 }
 
             } else {
@@ -371,12 +373,13 @@ export class DreamerService {
                 import('./semanticMemory').then(({ semanticMemory }) => {
                     const combinedText = memories.map(m => `[${new Date(m.timestamp).toLocaleTimeString()}] ${m.content}`).join('\n');
                     const dayTitle = `Dream_Cycle_${new Date().toISOString().split('T')[0]}_${Date.now()}`;
-                    semanticMemory.ingestDocument(dayTitle, combinedText).catch(e => console.error("[DREAMER] RAPTOR Failed:", e));
-                });
+                    return semanticMemory.ingestDocument(dayTitle, combinedText);
+                }).catch(e => console.error("[DREAMER] RAPTOR Failed:", e));
             }
 
         } catch (e) {
             console.error("[DREAMER] Nightmare (Error):", e);
+            throw e;
         } finally {
             this.isDreaming = false;
             if (cycleCompleted) {
@@ -390,9 +393,7 @@ export class DreamerService {
                 }
             }
             // Update Introspection Engine Status
-            import('./introspectionEngine').then(({ introspection }) => {
-                introspection.setDreaming(false);
-            });
+            activeIntrospection?.setDreaming(false);
         }
     }
 
@@ -519,7 +520,8 @@ export class DreamerService {
         };
     }
 
-    private fallbackMix(all: any): MemoryNode[] {
+    private async fallbackMix(all: any): Promise<MemoryNode[]> {
+        const { continuum } = await import('./continuumMemory');
         // Original Stochastic Mix
         const signalCandidates = [...(all.SHORT || []), ...(all.MEDIUM || [])]
             .filter((n: MemoryNode) => n.importance > 0.7 || n.tags.includes('CRITICAL'));
@@ -537,6 +539,7 @@ export class DreamerService {
     }
 
     private async synthesizePatterns(nodes: MemoryNode[]): Promise<{ content: string; veracity: number; outcome: 'ACCEPTED' | 'REJECTED' | 'MYSTERY' | 'INSUFFICIENT_DATA' }> {
+        const { geminiService } = await import('./geminiService');
         // Truncate content to prevent Context Limit Exceeded
         const MAX_CHARS_PER_NODE = 1500;
         const context = nodes.map((n, index) => {
@@ -644,6 +647,7 @@ export class DreamerService {
         `;
 
         try {
+            const { geminiService } = await import('./geminiService');
             const response = await geminiService.generateAgentResponse(
                 "Dreamer", "Skeptic", "CORE", prompt, null, undefined, undefined,
                 { useWebSearch: false }, {}, [], CommunicationLevel.TECHNICAL
@@ -685,6 +689,7 @@ export class DreamerService {
     }
 
     private async consolidateIntuition(content: string, sourceNodeIds: string[] = []) {
+        const { continuum } = await import('./continuumMemory');
         console.log(`[DREAMER] ✨ Epiphany Candidate: ${content}`);
 
         // 1. Semantic Deduplication (The "Anti-Loop" Mechanism)
@@ -741,10 +746,11 @@ export class DreamerService {
     // --- PHASE 7: SERENDIPITY (Active Dreaming) ---
     public async synthesizeDeepConnections() {
         if (this.isDreaming) return;
-        this.isDreaming = true;
+        this.isDreaming = true; // Acquire before the first await.
         console.log("[DREAMER] 🌌 Entering Deep Dream (Serendipity Mode)...");
 
         try {
+            const { continuum } = await import('./continuumMemory');
             // 1. Goldilocks Selection
             // Pick a random "Core Concept" from Vector DB (Simulated by grabbing a random memory for now)
             // In a real vector DB we'd grab a random Point ID. 
@@ -830,15 +836,17 @@ export class DreamerService {
 
         } catch (e) {
             console.error("[DREAMER] Deep Dream Error:", e);
+            throw e;
         } finally {
             this.isDreaming = false;
         }
 
         // After deep dream, check for Structural Gaps (Eurekas)
-        setTimeout(() => this.generateNeuralEurekas(), 5000);
+        setTimeout(() => this.generateNeuralEurekas().catch(e => console.error('[DREAMER] Deferred Eureka failed:', e)), 5000);
     }
 
     private async attemptBisociation(conceptA: string, conceptB: string): Promise<string | null> {
+        const { geminiService } = await import('./geminiService');
         const prompt = `
         You are the Polymath System Architect.
         Concept A: "${conceptA.substring(0, 300)}"
@@ -907,6 +915,7 @@ export class DreamerService {
     }
 
     private async criticReview(insight: string): Promise<number> {
+        const { geminiService } = await import('./geminiService');
         const prompt = `
         You are the Rules Lawyer (The Grand Inquisitor).
         Hypothesis: "${insight}"
@@ -934,6 +943,7 @@ export class DreamerService {
     }
 
     private async generateDeepSummary(context: string): Promise<string | null> {
+        const { geminiService } = await import('./geminiService');
         const prompt = `
         You are the Archivist. Select important exact spans from the raw memories. Do not paraphrase or invent claims. Return JSON {"claims":[{"text":"exact source span","parentIds":["source id"]}]}. Every claim needs evidence.
         

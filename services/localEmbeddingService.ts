@@ -1,27 +1,15 @@
-import { pipeline, env } from '@xenova/transformers';
-
-// Suppress local file warnings in production
-env.localModelPath = './models';
-env.allowRemoteModels = true; // Auto-download model on first run
-
+// Runtime/model loading is an operation, never an import side effect. In
+// particular, importing a consumer outside Vitest must not download a model.
 class LocalEmbeddingService {
     private isReady: boolean = false;
     private extractor: any = null;
     private initPromise: Promise<void> | null = null;
 
-    constructor() {
-        // Under the test runner, do NOT start the model download at import
-        // time: a pending download when the worker closes fails the whole
-        // suite ("Closing rpc while fetch was pending"). getEmbedding()
-        // lazily initializes in every environment; production keeps the
-        // boot warm-up.
-        if (!process.env.VITEST) {
-            this.initPromise = this.init();
-        }
-    }
-
     private async init() {
         try {
+            const { pipeline, env } = await import('@xenova/transformers');
+            env.localModelPath = './models';
+            env.allowRemoteModels = true; // Explicit getEmbedding first-use policy unchanged.
             console.log('[LOCAL_EMBED] 🔄 Initializing all-MiniLM-L6-v2 Transformer...');
             // Load the feature extraction pipeline
             this.extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
