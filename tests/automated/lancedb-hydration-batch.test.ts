@@ -80,6 +80,20 @@ describe('Lance canonical hydration on real storage (no service doubles)', () =>
         });
         expect(output).toContain('PUBLIC_DUPLICATE_PROJECTION_PASS');
     });
+    it('prefilters only wrong projected identity and still rejects wrong canonical identity', async () => {
+        const dir = await mkdtemp(path.join(tmpdir(), 'canonical-prefilter-real-'));
+        dirs.push(dir);
+        for (const mode of ['projected-wrong', 'canonical-wrong']) {
+            const data = path.join(dir, mode);
+            const output = execFileSync(process.execPath, ['--import', 'tsx',
+                path.resolve('tests/integration/canonical-projected-identity-prefilter.real.ts'), data, mode], {
+                env: { ...process.env, VECTOR_ENGINE: 'scan', LANCEDB_OPTIMIZE_INTERVAL_MINUTES: '0',
+                    SILHOUETTE_LANCEDB_PATH: data }, encoding: 'utf8', timeout: 25000,
+            });
+            expect(output).toContain('"lateValidReturned":10');
+            expect(output).toContain('"sourceReadOnly":true');
+        }
+    }, 60000);
     it('passes paged stale identity/content/owner, malformed and scope regression', () => {
         const parent = path.join(tmpdir(), 'canonical-subprocess-' + crypto.randomUUID());
         dirs.push(parent);

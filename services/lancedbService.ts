@@ -559,6 +559,15 @@ export class LanceDbService {
         // scores had unspecified scan order; no historical tie-order claim.
         const before = (a: Candidate, b: Candidate) => b.score - a.score || a.id.localeCompare(b.id);
         const candidates = (rows: any[]): Candidate[] => rows.flatMap(row => {
+            // Necessary, not sufficient: a projected payload that cannot match
+            // the query identity can never pass the later full validation.
+            // Parse one physical page only. Never infer or relabel identity
+            // from the partition; canonical identity is still checked later.
+            let projected: MemoryNode;
+            try { projected = JSON.parse(row.json_data); } catch { return []; }
+            if (projected?.embeddingIdentity?.model !== identity.model ||
+                projected?.embeddingIdentity?.version !== identity.version ||
+                projected?.embeddingIdentity?.dimension !== identity.dimension) return [];
             const vector = toNumericArray(row.vector);
             const score = vector && cosineSimilarity(vector, queryVector);
             return score === null ? [] : [{ id: row.id, ownerId: row.ownerId,
