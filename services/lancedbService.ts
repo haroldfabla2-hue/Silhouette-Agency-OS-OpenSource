@@ -354,29 +354,43 @@ export class LanceDbService {
     }
 
     /**
-     * Batched hydration of ranked ids from the canonical tables.
-     * One filtered query per table instead of one full scan per id:
+     * Batched canonical hydration before vector ranking.
+     * One hydration query (+ one scope query when filtered) per table/batch,
+     * instead of one full scan per id:
      * Lance has no secondary index on `id`, so N point lookups cost N full
      * table scans (the 2026-10-18 production meltdown: 50 lookups/search x
      * queued searches pinned the tokio threads at ~300% CPU).
      */
-    private async getNodesByIds(ids: string[]): Promise<Map<string, MemoryNode>> {
+    private async getNodesByIds(ids: string[], filter?: string): Promise<Map<string, MemoryNode>> {
         const found = new Map<string, MemoryNode>();
-        if (!ids.length) return found;
+        if (!ids.length || !this.db) return found;
+        const names = await this.db.tableNames();
+        const resolved = new Set<string>();
         for (const tableName of ['memory_records_v2', 'memory'] as const) {
-            const missing = ids.filter(id => !found.has(id));
+            const missing = [...new Set(ids)].filter(id => !resolved.has(id));
             if (!missing.length) continue;
             const quoted = missing.map(id => `'${id.replace(/'/g, "''")}'`).join(', ');
-            const rows = await this.withCurrentTable(tableName, async () => {
-                const current = (tableName === 'memory_records_v2' ? this.table : this.legacyTable);
-                if (!current) return [];
-                return current.query().where(`id IN (${quoted})`).limit(missing.length * 2).toArray();
-            });
+            if (!names.includes(tableName)) continue;
+            // A cached writer handle may predate another process's canonical
+            // update. Open the current table for each batch, without mutation.
+            const current = await this.db.openTable(tableName);
+            const rows = await current.query().where(`id IN (${quoted})`).limit(missing.length * 2).toArray();
+            // Evaluate arbitrary SQL filters on canonical columns as well as
+            // projection columns. Resolve IDs even if filtered or malformed so
+            // an older legacy row cannot replace a newer excluded v2 record.
+            const eligible = filter ? new Set((await current.query()
+                .where(`id IN (${quoted}) AND (${filter})`).limit(missing.length * 2).toArray())
+                .map(row => row.id)) : null;
             const seen = new Set<string>();
             for (const row of rows) {
                 if (seen.has(row.id)) throw new Error(`Duplicate memory ID in LanceDB: ${row.id}`);
                 seen.add(row.id);
-                if (!found.has(row.id)) found.set(row.id, JSON.parse(row.json_data) as MemoryNode);
+                resolved.add(row.id);
+                if (eligible && !eligible.has(row.id)) continue;
+                try {
+                    const node = JSON.parse(row.json_data) as MemoryNode;
+                    if (node && node.id === row.id) found.set(row.id, node);
+                } catch { /* Malformed canonical payload is not vector evidence. */ }
             }
         }
         return found;
@@ -524,58 +538,53 @@ export class LanceDbService {
     }
 
     public async search(queryVector: number[], limit = 10, filter?: string, identity?: EmbeddingIdentity): Promise<MemoryNode[]> {
-        if (!identity || !validEmbedding(queryVector, identity)) return [];
+        if (!identity || !validEmbedding(queryVector, identity) || !Number.isInteger(limit) || limit < 1) return [];
         await this.ensureInitialized();
         if (!this.db) return [];
         const name = this.vectorTableName(identity);
         if (!(await this.db.tableNames()).includes(name)) return [];
         const table = await this.db.openTable(name);
         const rowCount = await table.countRows();
-        const ownerScope = LanceDbService.ownerScopeFromFilter(filter);
-        // Unknown (non-scope) filters go to the exact path BEFORE the ANN:
-        // the ANN key map only understands owner scope, so routing anything
-        // else there would silently bypass the filter (isolation risk).
-        if (ownerScope !== null && this.ensureAnnEngine()) {
-            try {
-                const ann = await this.annIndexFor(name, identity.dimension, () => this.projectionRows(table), rowCount, table);
-                if (!ann.isStale()) {
-                    const hits = ann.search(queryVector, limit, ownerScope);
-                    // Batched hydration (#193): one IN query, never N full scans.
-                    const byId = await this.getNodesByIds(hits.map(h => h.id));
-                    return hits.map(h => byId.get(h.id)).filter((n): n is MemoryNode => n !== null);
-                }
-            } catch (e) {
-                console.error(`[VECTOR] ANN search failed for ${name} (${(e as Error).message}); falling back to exact partitioned scan`);
-            }
-        }
-        if (ownerScope === null && filter) {
-            console.warn(`[VECTOR] filter "${filter}" is not a scope filter; exact partitioned scan handles it`);
-        }
-        // Exact fallback, STREAMING top-k over pages: RAM stays bounded (one
-        // page + k winners) and NO row is ever dropped, at any table size
-        // (eternal memory: a cap must never hide data).
+        // ANN IDs alone cannot prove that the projected payload still matches
+        // canonical content/identity. Use the paged exact read until that path
+        // can validate candidates before top-k without losing later valid hits.
+        // This is read-time payload validation, not a generation/ABA guarantee.
         const pageRows = scanPageRows();
         let top: { id: string; _score: number }[] = [];
-        if (rowCount <= pageRows) {
-            // Single page (every realistic table today): unpaged query, same
-            // shape the scan has always used.
-            let scan = table.query();
+        const winners = new Map<string, MemoryNode>();
+        for (let offset = 0; offset < rowCount; offset += pageRows) {
+            let scan = table.query().limit(pageRows).offset(offset);
             if (filter) scan = scan.where(filter);
             const rows = await scan.toArray();
-            top = rankByCosine(rows as { vector: unknown; id: string }[], queryVector, limit);
-        } else {
-            console.warn(`[VECTOR] ${name}: exact scan of ${rowCount} rows in pages of ${pageRows} - correct at any size, slower at large scale`);
-            for (let offset = 0; offset < rowCount; offset += pageRows) {
-                let scan = table.query().limit(pageRows).offset(offset);
-                if (filter) scan = scan.where(filter);
-                const rows = await scan.toArray();
-                const pageRanked = rankByCosine(rows as { vector: unknown; id: string }[], queryVector, limit);
-                top = LanceDbService.mergeTopK(top, pageRanked, limit);
-            }
+            const byId = await this.getNodesByIds(rows.map(row => row.id), filter);
+            const valid = rows.filter(row => {
+                const current = byId.get(row.id);
+                if (!current) return false;
+                let projected: MemoryNode;
+                try { projected = JSON.parse(row.json_data); } catch { return false; }
+                const matchesIdentity = (node: MemoryNode) =>
+                    node.embeddingIdentity?.model === identity.model &&
+                    node.embeddingIdentity?.version === identity.version &&
+                    node.embeddingIdentity?.dimension === identity.dimension;
+                return projected?.id === row.id && current.id === row.id &&
+                    matchesIdentity(projected) && matchesIdentity(current) &&
+                    typeof projected.content === 'string' && typeof current.content === 'string' &&
+                    projected.content === current.content &&
+                    (projected.ownerId || 'system') === (current.ownerId || 'system') &&
+                    row.ownerId === (current.ownerId || 'system') &&
+                    Array.isArray(projected.tags) && Array.isArray(current.tags) &&
+                    JSON.stringify(projected.tags) === JSON.stringify(current.tags);
+            });
+            const ranked = rankByCosine(valid as { vector: unknown; id: string }[], queryVector, limit);
+            top = LanceDbService.mergeTopK(top, ranked, limit);
+            // Retain only k canonical snapshots, not every scanned memory.
+            for (const row of ranked) winners.set(row.id, byId.get(row.id)!);
+            const retained = new Set(top.map(row => row.id));
+            for (const id of winners.keys()) if (!retained.has(id)) winners.delete(id);
         }
-        // Batched hydration (#193): one IN query, never N full scans.
-        const byId = await this.getNodesByIds(top.map(r => r.id));
-        return top.map(r => byId.get(r.id)).filter((n): n is MemoryNode => n !== null);
+        // Return the very payload validated above, not a later unvalidated
+        // re-hydration. Concurrent writes after the read are not fenced here.
+        return top.map(row => winners.get(row.id)!);
     }
 
     /**

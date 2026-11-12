@@ -1,93 +1,56 @@
-import { describe, it, expect } from 'vitest';
-import { createHash } from 'node:crypto';
+import { afterEach, describe, it, expect } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+import * as lance from '@lancedb/lancedb';
 import { LanceDbService } from '../../services/lancedbService';
-import type { EmbeddingIdentity } from '../../services/memoryRetrieval';
+import { MemoryTier, type MemoryNode } from '../../types';
 
-const IDENTITY: EmbeddingIdentity = { model: 'gemini-embedding-001', version: '1', dimension: 768 };
-const TABLE_NAME = 'memory_vectors_' + createHash('sha256').update(JSON.stringify(IDENTITY)).digest('hex').slice(0, 24);
-
-function unitVector(dim: number, seed: number): number[] {
-    const v = Array.from({ length: dim }, (_, i) => ((i * 31 + seed * 17) % 13) / 13);
-    const norm = Math.sqrt(v.reduce((a, x) => a + x * x, 0));
-    return v.map(x => x / norm);
+const identity = { model: 'PUBLIC_BATCH_FIXTURE', version: '1', dimension: 3 };
+const dirs: string[] = [];
+afterEach(async () => {
+    await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true })));
+});
+async function fixture() {
+    const dir = await mkdtemp(path.join(tmpdir(), 'canonical-batch-real-'));
+    dirs.push(dir);
+    return { dir, service: new LanceDbService(dir) };
+}
+function node(id: string, content = 'Public fixture'): MemoryNode {
+    return { id, content, embeddingIdentity: identity, ownerId: 'PUBLIC', tags: ['PUBLIC'],
+        tier: MemoryTier.DEEP, timestamp: 1, importance: 0.1, accessCount: 0, lastAccess: 1 };
 }
 
-function fakeQuery(rows: any[], counter: { queries: number }) {
-    return {
-        where() { return this; },
-        limit() { return this; },
-        async toArray() { counter.queries++; return rows; }
-    };
-}
-
-function makeService(opts: { projectionRows: any[]; canonicalRows: any[] }) {
-    const canonicalCounter = { queries: 0 };
-    const projectionCounter = { queries: 0 };
-    const canonicalTable = { query: () => fakeQuery(opts.canonicalRows, canonicalCounter) };
-    const projectionTable = {
-        countRows: async () => opts.projectionRows.length,
-        query: () => fakeQuery(opts.projectionRows, projectionCounter)
-    };
-    const fakeDb = {
-        async tableNames() { return [TABLE_NAME]; },
-        async openTable(name: string) {
-            if (name === TABLE_NAME) return projectionTable;
-            return canonicalTable;
-        }
-    };
-    const svc = new LanceDbService('/tmp/nonexistent-lancedb-test') as any;
-    svc.db = fakeDb;
-    svc.table = canonicalTable;
-    svc.legacyTable = null;
-    svc.initialized = true;
-    return { svc, canonicalCounter };
-}
-
-describe('LanceDbService batched hydration', () => {
-    it('hydrates 50 ranked results with a single canonical query (not 50 full scans)', async () => {
-        const n = 50;
-        const nodes = Array.from({ length: n }, (_, i) => ({ id: `m${i}`, content: `memory ${i}` }));
-        const projectionRows = nodes.map((node, i) => ({ id: node.id, vector: unitVector(768, i + 1) }));
-        const canonicalRows = nodes.map(node => ({ id: node.id, json_data: JSON.stringify(node) }));
-        const { svc, canonicalCounter } = makeService({ projectionRows, canonicalRows });
-
-        const results = await svc.search(unitVector(768, 0), n, undefined, IDENTITY);
-
-        expect(results.length).toBe(n);
-        expect(canonicalCounter.queries).toBe(1);
+describe('Lance canonical hydration on real storage (no service doubles)', () => {
+    it('returns 50 identified memories in cosine order', async () => {
+        const { service } = await fixture();
+        for (let i = 0; i < 50; i++) await service.store(node(`public-${i}`), [1, i / 50, 0]);
+        const results = await service.search([1, 0, 0], 50, undefined, identity);
+        expect(results.map(n => n.id)).toEqual(Array.from({ length: 50 }, (_, i) => `public-${i}`));
+        // Actual retrieval, not a claim of measured internal query-call count.
     });
-
-    it('preserves cosine ranking order in the hydrated results', async () => {
-        const query = unitVector(768, 0);
-        const near = { id: 'near', content: 'close' };
-        const far = { id: 'far', content: 'distant' };
-        const projectionRows = [
-            { id: far.id, vector: unitVector(768, 999) },
-            { id: near.id, vector: [...query] }
-        ];
-        const canonicalRows = [near, far].map(node => ({ id: node.id, json_data: JSON.stringify(node) }));
-        const { svc } = makeService({ projectionRows, canonicalRows });
-
-        const results = await svc.search(query, 2, undefined, IDENTITY);
-
-        expect(results.map((r: any) => r.id)).toEqual(['near', 'far']);
+    it('rejects actual duplicate canonical IDs', async () => {
+        const { dir, service } = await fixture();
+        await service.store(node('public-duplicate'), [1, 0, 0]);
+        const conn = await lance.connect(dir);
+        const table = await conn.openTable('memory_records_v2');
+        const rows = await table.query().toArray();
+        await table.add(rows.map(row => ({ ...row, tags: Array.from(row.tags) })));
+        await expect(service.search([1, 0, 0], 1, undefined, identity)).rejects.toThrow('Duplicate memory ID');
     });
-
-    it('throws on duplicate memory ids instead of silently picking one', async () => {
-        const projectionRows = [{ id: 'dup', vector: unitVector(768, 1) }];
-        const canonicalRows = [
-            { id: 'dup', json_data: '{"id":"dup","content":"a"}' },
-            { id: 'dup', json_data: '{"id":"dup","content":"b"}' }
-        ];
-        const { svc } = makeService({ projectionRows, canonicalRows });
-
-        await expect(svc.search(unitVector(768, 0), 1, undefined, IDENTITY)).rejects.toThrow('Duplicate memory ID');
+    it('returns empty when the projection identity is absent', async () => {
+        const { service } = await fixture();
+        expect(await service.search([1, 0, 0], 5, undefined, identity)).toEqual([]);
     });
-
-    it('returns [] when the projection table for the identity does not exist', async () => {
-        const { svc } = makeService({ projectionRows: [], canonicalRows: [] });
-        svc.db = { async tableNames() { return []; }, async openTable() { throw new Error('no table'); } };
-        const results = await svc.search(unitVector(768, 0), 5, undefined, IDENTITY);
-        expect(results).toEqual([]);
+    it('passes paged stale identity/content/owner, malformed and scope regression', () => {
+        const parent = path.join(tmpdir(), 'canonical-subprocess-' + crypto.randomUUID());
+        dirs.push(parent);
+        const output = execFileSync(process.execPath, ['--import', 'tsx',
+            path.resolve('tests/integration/canonical-projection-identity.real.ts')], {
+            env: { ...process.env, CANONICAL_IDENTITY_TEST_DIR: parent, VECTOR_ENGINE: 'scan',
+                LANCEDB_OPTIMIZE_INTERVAL_MINUTES: '0' }, encoding: 'utf8', timeout: 25000,
+        });
+        expect(output).toContain('CANONICAL_PROJECTION_IDENTITY_REAL_PASS');
     });
 });
