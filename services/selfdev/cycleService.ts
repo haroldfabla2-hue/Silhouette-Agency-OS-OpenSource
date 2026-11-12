@@ -191,7 +191,7 @@ export class SelfDevCycleService {
      *  optionally filtered by issue prefix (the scheduler marks its own
      *  issues so its daily budget never counts operator-driven cycles). */
     public countCreatedSince(sinceIso: string, issuePrefix?: string): number {
-        return this.store.cycles.filter(c => c.createdAt >= sinceIso && (!issuePrefix || c.issue.startsWith(issuePrefix))).length;
+        return this.store.cycles.filter(c => !c.learningProposal && c.createdAt >= sinceIso && (!issuePrefix || c.issue.startsWith(issuePrefix))).length;
     }
 
     public create(input: { issue?: string; scope?: string[]; acceptance?: { kind?: string; target?: string } }, learningProposal?: SelfDevCycle['learningProposal']): SelfDevCycle {
@@ -210,8 +210,8 @@ export class SelfDevCycleService {
             throw Object.assign(new Error('another cycle is already active (shared selfwork clone): finish or abandon it first'), { statusCode: 409 });
         }
         const today = new Date().toISOString().slice(0, 10);
-        const todays = this.store.cycles.filter(c => c.createdAt.startsWith(today)).length;
-        if (todays >= this.maxCyclesPerDay) {
+        const todays = this.store.cycles.filter(c => !c.learningProposal && c.createdAt.startsWith(today)).length;
+        if (!learningProposal && todays >= this.maxCyclesPerDay) {
             throw Object.assign(new Error(`daily cycle cap reached (${this.maxCyclesPerDay})`), { statusCode: 429 });
         }
         const at = new Date().toISOString();
@@ -240,6 +240,13 @@ export class SelfDevCycleService {
             const durable = disk.cycles.find(c => c.id === prior.id);
             if (!durable || JSON.stringify(durable.learningProposal) !== JSON.stringify(prior.learningProposal)) throw new Error('proposal linkage persistence unverified');
             return prior;
+        }
+        // Proposal storage is bounded separately; it cannot consume execution slots.
+        // Replays above remain readable even at the cap. Abandon retains prior evidence.
+        const today = new Date().toISOString().slice(0, 10);
+        if (this.store.cycles.filter(c => c.learningProposal && c.createdAt.startsWith(today)).length >= 5
+            || this.store.cycles.filter(c => c.state === 'PROPOSAL_PENDING').length >= 5) {
+            throw new Error('pending proposal storage cap reached (5/day and 5 unresolved); review or abandon pending proposals');
         }
         // Persist linkage with creation, before returning, so replay cannot create a second cycle.
         const c = this.create({ issue: input.issue, scope: mapping.scope, acceptance: { kind: 'vitest', target: mapping.acceptance } },
@@ -662,7 +669,7 @@ export class SelfDevCycleService {
 
     public abandon(id: string, reason?: string): SelfDevCycle {
         const c = this.get(id);
-        if (!ACTIVE_STATES.includes(c.state)) throw Object.assign(new Error(`cannot abandon from ${c.state}`), { statusCode: 409 });
+        if (!ACTIVE_STATES.includes(c.state) && c.state !== 'PROPOSAL_PENDING') throw Object.assign(new Error(`cannot abandon from ${c.state}`), { statusCode: 409 });
         this.transition(c, 'ABANDONED', reason ?? 'abandoned by operator');
         return c;
     }

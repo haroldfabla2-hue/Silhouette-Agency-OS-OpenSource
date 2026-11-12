@@ -29,6 +29,12 @@ describe('isolated selfdev evidence and pending-learning boundaries (real git)',
    expect(()=>restarted.requestPR(c.id,'fixture-operator')).toThrow(/independent baseline/);expect(fs.readdirSync(path.join(dir,'pr-requests'))).toHaveLength(0);
    expect(()=>restarted.createLearningProposal({...input,source:'unknown'})).toThrow(/declared repair mapping/);expect(()=>restarted.createLearningProposal({...input,incidentId:'conflicting'})).toThrow(/conflicts/);
    const mapping=memoryRepairMapping(input.source)!;mapping.scope.push('security');expect(memoryRepairMapping(input.source)!.scope).not.toContain('security');expect(memoryRepairMapping('__proto__')).toBeUndefined();
+   for(let i=1;i<5;i++)restarted.createLearningProposal({...input,memoryId:'authored-memory-'+i,incidentId:'authored-incident-'+i});
+   expect(()=>restarted.createLearningProposal({...input,memoryId:'sixth',incidentId:'sixth'})).toThrow(/storage cap/);
+   expect(restarted.countCreatedSince('1970-01-01T00:00:00Z')).toBe(0);
+   expect(restarted.abandon(c.id,'Operator-authored lifecycle probe').state).toBe('ABANDONED');
+   const recovered=new SelfDevCycleService({dir});expect(recovered.createLearningProposal(input).state).toBe('ABANDONED');
+   expect(recovered.journalEntries(c.id).some((e:any)=>e.to==='ABANDONED')).toBe(true);
    const ordinary=restarted.create({issue:'Independent ordinary cycle remains available',scope:['src'],acceptance:{kind:'vitest',target:'tests/authored.test.ts'}});expect(ordinary.state).toBe('PLANNED');restarted.abandon(ordinary.id,'authored no-execution fixture');
   }finally{for(const k of names){if(saved[k]===undefined)delete process.env[k];else process.env[k]=saved[k];}fs.rmSync(root,{recursive:true,force:true});}
  });

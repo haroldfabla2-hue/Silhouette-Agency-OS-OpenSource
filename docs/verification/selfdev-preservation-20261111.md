@@ -30,7 +30,7 @@ SQLite incident and read-back proposal memory link to a durable cycle.
 
 The non-reserving PROPOSAL_PENDING cycle records HUMAN_APPROVAL_PENDING, applied:false and
 BASELINE_ORACLE_REQUIRED. Restart/replay reuses the durable memory and cycle IDs.
-It calls no planner, accepts no patch and creates no PR request. Pending proposals do not reserve the shared clone or block ordinary existing cycles. It cannot report
+It calls no planner, accepts no patch and creates no PR request. Pending proposals do not reserve the shared clone or consume ordinary execution caps. Their independent storage bound is five new proposals/day and five unresolved proposals. They can be abandoned through the existing lifecycle, retaining linkage and journal; replay never resurrects an abandoned proposal. Execution caps are unchanged. It cannot report
 PATCH_VERIFIED_ISOLATED or APPLIED_RUNTIME, and never increments autoApplied.
 The present deep-memory-identity acceptance target contains static checks and is
 not an independent functional oracle. The pending link deliberately refuses
