@@ -2,7 +2,7 @@
 import { ConsciousnessLevel, ConsciousnessMetrics, QualiaMap, MemoryNode } from "../types";
 import { continuum } from "./continuumMemory";
 import { introspection } from "./introspectionEngine";
-import { workflowEngine } from "./workflowEngine";
+type WorkflowSignals = typeof import("./workflowEngine").workflowEngine;
 
 // --- SILHOUETTE COGNITIVE-STATE ENGINE ---
 // NOTE (honesty): this is NOT a claim of machine consciousness. "Phi" here is a
@@ -69,10 +69,11 @@ class ConsciousnessEngine {
         await this.maintainIdentity();
 
         // 4. EMERGENCE DETECTION
-        this.detectEmergence();
+        const { workflowEngine } = await import("./workflowEngine");
+        this.detectEmergence(workflowEngine);
 
         // 5. Phi (Integrated Information) Calculation
-        await this.calculatePhi();
+        await this.calculatePhi(workflowEngine);
 
         return this.metrics;
     }
@@ -134,7 +135,7 @@ class ConsciousnessEngine {
     }
 
     // Capability 6: Emergence Detection
-    private detectEmergence() {
+    private detectEmergence(workflowEngine: WorkflowSignals) {
         // [R13] Emergence requires an EVALUATED result. The quality score used
         // to initialize at 100, so an idle system's emergence rose by default.
         const score = workflowEngine.getLastQualityScore();
@@ -153,7 +154,7 @@ class ConsciousnessEngine {
     }
 
     // Composite cognitive-integration index (NOT IIT). Derived from real signals.
-    private async calculatePhi() {
+    private async calculatePhi(workflowEngine: WorkflowSignals) {
         // 1. Memory Density (Real Graph Connectivity)
         const memoryStats = await continuum.getStats();
         const memoryFactor = Math.min(1.0, memoryStats.total / 500); // Saturation at 500 nodes
