@@ -13,6 +13,7 @@ import { workflowEngine } from "./workflowEngine";
 
 class ConsciousnessEngine {
     private metrics: ConsciousnessMetrics;
+    private readonly identityInitialization: Promise<void>;
     private operationHistory: number[] = []; // Track latencies
     private recursionDepth: number = 1;
     // Last computed Phi component factors (for transparency / debugging / UI).
@@ -36,7 +37,16 @@ class ConsciousnessEngine {
         };
 
         // Initialize Identity if empty
-        this.initializeIdentity();
+        this.identityInitialization = this.initializeIdentity();
+        // Observe immediately without replacing the rejected promise callers own.
+        void this.identityInitialization.catch(error => {
+            console.error('[CONSCIOUSNESS] Identity initialization failed', error);
+        });
+    }
+
+    /** Initial identity operation only; not listener/tick/global drainage. */
+    public ready(): Promise<void> {
+        return this.identityInitialization;
     }
 
     private async initializeIdentity() {
