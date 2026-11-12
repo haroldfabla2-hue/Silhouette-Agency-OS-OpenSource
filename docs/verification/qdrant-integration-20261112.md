@@ -99,3 +99,30 @@ The finite Qdrant engine experiment stopped at 08:39, before the 30-minute ceili
 Accumulated evidence/test stores are about 1.80 GB, below 2 GB. No further engine
 runs are claimed or scheduled by this checkpoint. No production installation,
 configuration, service startup, merge, deployment or provider invocation occurred.
+
+
+## Independent review follow-up (after 20d446d)
+
+Review found a real missing recovery path: canonical store could acknowledge while
+Lance vector projection failed, but replay repaired only Qdrant. The fix makes
+replay repair Lance first even when Qdrant is disabled. Unified ingestion requires
+a real local projection receipt before activating Code RAG or completing a leaf
+write. Canonical data and prepared intent remain when indexing is pending.
+
+A real filesystem obstruction (regular file where the Lance projection directory
+must be) caused Not-a-directory. Indexing rejected, no activation marker appeared,
+and canonical content survived. After removing only the public test obstruction,
+reopening and replaying with Qdrant disabled created the projection row BEFORE any
+index retry; retry then activated the file and its query recovered. No method was
+mocked to succeed or fail.
+
+Canonical consumer run now has 21 checks including empty-file deactivation and a
+slow old embedding arriving before a newer file event. Same-file writes serialize
+across service instances in one process. This is NOT a cross-process CAS guarantee.
+Unchanged-file hash caching was removed because per-instance caches could outlive a
+newer marker written by another instance. This correctness change has a reindex
+cost; performance acceptance remains pending. Projection replay is explicit at
+loader/timer boundaries, not launched concurrently from each canonical receipt.
+
+These fixes require a new source pin and independent review. They do not inherit
+final Qdrant acceptance from the earlier 15-check engine run.

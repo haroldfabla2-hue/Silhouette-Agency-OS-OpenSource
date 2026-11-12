@@ -33,6 +33,8 @@ node --max-old-space-size=256 \
 
 - `canonical-consumers.real.ts`: real LanceDB and real consumers with explicitly
   disabled Qdrant. Does not start an engine or prove Qdrant replay.
+- `local-projection-recovery.real.ts`: real filesystem projection failure, canonical
+  retention, no premature activation, reopen and Lance repair with Qdrant disabled.
 - `qdrant-backend.real.ts`: real local Qdrant backend lifecycle/schema/ID/filter/
   Brand compatibility checks. This rewritten final split test is not yet executed.
 - `unified-memory.real.ts`: real LanceDB and Qdrant down/up, replay/reopen and consumers.

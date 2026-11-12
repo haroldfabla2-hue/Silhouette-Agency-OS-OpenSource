@@ -19,6 +19,10 @@ export class UnifiedVectorMemory {
             compressionLevel: payload.compressionLevel ?? 0, embeddingIdentity: identity
         };
         await this.canonical.store(node, vector);
+        // Code version activation and ingestion completion require a real local
+        // projection receipt, not just canonical acknowledgement. Canonical data
+        // and durable intent remain intact if this independent projection fails.
+        await this.canonical.ensureLocalVectorProjection(node, vector, identity);
     }
     async searchMemory(vector: number[], limit = 5, filter?: Record<string, any>, identity?: EmbeddingIdentity) {
         if (!identity || !validEmbedding(vector, identity)) throw new Error('Verified query identity required');

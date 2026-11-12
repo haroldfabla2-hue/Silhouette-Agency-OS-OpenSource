@@ -368,9 +368,8 @@ export class LanceDbService {
             try { this.journal().canonicalVerified(intent.key); }
             catch { console.warn('[LANCEDB] Canonical receipt retained; prepared projection will verify on replay'); }
         }
-        if (intent) void this.replayVectorProjections(10).catch(() => {
-            console.warn('[LANCEDB] Optional Qdrant projection pending; canonical success preserved');
-        });
+        // Replay is an explicit loader/timer task. Do not race a consumer's
+        // local projection receipt with a second asynchronous merge here.
         return { ok: true, id: node.id, checksum, version: node.timestamp };
     }
 
@@ -402,26 +401,28 @@ export class LanceDbService {
         const vectorMemory = this.projectionTarget || (await import('./vectorMemoryService')).vectorMemory;
         let completed = 0;
         const batch = journal.pending(limit);
-        // A disabled backend retains intent; it does not silently discard work.
-        if ((await vectorMemory.connect()).state !== 'ready') return { completed, pending: batch.length };
+        // Repair the LOCAL projection first, even when Qdrant is disabled or
+        // unavailable. The journal covers both projections, not only the mirror.
+        let mirrorReady: boolean | undefined;
         for (const intent of batch) {
             const current = await this.getNodeById(intent.id);
-            if (!current) continue; // Prepared before write, crash/failed source: do not publish.
+            if (!current) continue;
             if (canonicalChecksum(current) !== intent.checksum) {
-                // Prepared may be concurrent with its canonical write. It is
-                // NOT superseded until a verified committed version diverges.
                 if (intent.phase !== 'prepared') journal.superseded(intent.key);
                 continue;
             }
             journal.canonicalVerified(intent.key);
-            if (intent.identity.dimension !== 768) { journal.retainedUnsupported(intent.key); continue; } // Unsupported collection, not a fake successful projection.
             try {
+                await this.projectEmbedding(current, intent.vector, intent.identity);
+                if (intent.identity.dimension !== 768) { journal.retainedUnsupported(intent.key); continue; }
+                mirrorReady ??= (await vectorMemory.connect()).state === 'ready';
+                if (!mirrorReady) continue;
                 await vectorMemory.storeMemory(intent.id, intent.vector, { ...current, type: (current as any).type || 'MEMORY_NODE',
                     _embeddingModel: intent.identity.model, _embeddingVersion: intent.identity.version,
                     _embeddingDimension: intent.identity.dimension });
                 journal.completed(intent.key);
                 completed++;
-            } catch { journal.failed(intent.key); break; }
+            } catch { journal.failed(intent.key); }
         }
         return { completed, pending: journal.pending(limit).length };
     }
@@ -664,6 +665,15 @@ export class LanceDbService {
         // Batched hydration (#193): one IN query, never N full scans.
         const byId = await this.getNodesByIds(top.map(r => r.id));
         return top.flatMap(r => { const node = byId.get(r.id); return node ? [{ ...node, similarity: r._score }] : []; });
+    }
+
+    public async ensureLocalVectorProjection(node: MemoryNode, vector: number[], identity: EmbeddingIdentity): Promise<void> {
+        await this.projectEmbedding(node, vector, identity);
+        const table = await this.db!.openTable(this.vectorTableName(identity));
+        const rows = await table.query().where(`id = '${node.id.replace(/'/g, "''")}'`).limit(2).toArray();
+        if (rows.length !== 1 || JSON.parse(rows[0].json_data).content !== node.content) {
+            throw new Error('Canonical memory retained; local vector projection is pending');
+        }
     }
 
     /** Complete identity-partitioned application query, with payload and score.

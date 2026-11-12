@@ -13,8 +13,8 @@ import * as crypto from 'crypto';
 // Listens for VFS changes, chunks code, and updates Vector Memory.
 
 export class CodebaseAwarenessService {
+    private static readonly fileWrites = new Map<string, Promise<void>>();
     private isIndexing: boolean = false;
-    private fileHashes: Map<string, string> = new Map(); // Cache for change detection
     private readonly COLLECTION_PREFIX = "code_";
 
     constructor(private readonly dependencies: { memory: Pick<typeof unifiedVectorMemory, 'storeMemory' | 'searchMemory' | 'commitCodeVersion'>; embed: EmbedText } = {
@@ -79,18 +79,29 @@ export class CodebaseAwarenessService {
      * 2. Chunks content.
      * 3. Embeds and stores in Vector DB.
      */
-    public async indexFile(node: FileNode) {
-        if (!node.content) return;
+    public indexFile(node: FileNode): Promise<void> {
+        // Snapshot the arrival and serialize same-file writes across service
+        // instances in this process. A slow old embedding cannot activate after
+        // a newer accepted file event. Cross-process writers need stronger CAS.
+        const snapshot = { ...node };
+        const previous = CodebaseAwarenessService.fileWrites.get(node.id) || Promise.resolve();
+        const operation = previous.catch(() => undefined).then(() => this.indexFileOnce(snapshot));
+        CodebaseAwarenessService.fileWrites.set(node.id, operation);
+        void operation.finally(() => {
+            if (CodebaseAwarenessService.fileWrites.get(node.id) === operation) CodebaseAwarenessService.fileWrites.delete(node.id);
+        }).catch(() => undefined);
+        return operation;
+    }
+
+    private async indexFileOnce(node: FileNode): Promise<void> {
+        if (typeof node.content !== 'string') throw new Error('Code file content unavailable; version not changed');
 
         // Filter for code files only
         if (!node.name.match(/\.(ts|tsx|js|jsx|py|css|html)$/)) return;
 
         // 1. Change Detection
         const hash = crypto.createHash('md5').update(node.content).digest('hex');
-        if (this.fileHashes.get(node.id) === hash) {
-            // No change
-            return;
-        }
+
 
         console.log(`[CODEBASE AWARENESS] Indexing file: ${node.name}`);
 
@@ -142,7 +153,7 @@ export class CodebaseAwarenessService {
             }
         }
         await this.dependencies.memory.commitCodeVersion(node.id, hash);
-        this.fileHashes.set(node.id, hash); // Only after every chunk was acknowledged.
+
     }
 
     /**
