@@ -1,127 +1,128 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { telephonyService, mapProviderStatus, canTransition } from '../../services/telephony/telephonyService';
+import { describe, it, expect } from 'vitest';
+import { spawn, spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
-const svc: any = telephonyService;
-const realFetch = globalThis.fetch;
-const resp = (status: number, json: any = {}) => ({ ok: status >= 200 && status < 300, status, json: async () => json }) as any;
+const loader = pathToFileURL(resolve('node_modules/tsx/dist/loader.mjs')).href;
+const script = resolve('tests/real-process/telephony-truthfulness-child.ts');
 
-describe('Telephony: no false successes (regressions)', () => {
-    beforeEach(() => {
-        delete process.env.SILHOUETTE_DEMO_MODE;
-        svc.accountSid = 'ACtest'; svc.authToken = 'tok';
-        // Fixture sender number: real calls now require a configured
-        // TWILIO_PHONE_NUMBER (no fabricated default since Tanda 8).
-        svc.defaultFromNumber = '+15550199000';
-        process.env.SILHOUETTE_VOICE_WEBHOOK = 'https://example.test/v1/voices/twiml';
-    });
-    afterEach(() => { globalThis.fetch = realFetch; svc.accountSid = null; svc.authToken = null; svc.defaultFromNumber = null; svc.setMediaStreamSender(null); delete process.env.SILHOUETTE_VOICE_WEBHOOK; });
-
-    it('Twilio 401 => FAILED, no SID, error returned (used to stay IN_PROGRESS)', async () => {
-        globalThis.fetch = vi.fn(async () => resp(401)) as any;
-        const r = await telephonyService.dial({ toNumber: '+15550100', purpose: 'x' });
-        expect(r.call.status).toBe('FAILED');
-        expect(r.call.providerCallSid).toBeUndefined();
-        expect(r.error).toMatch(/401/);
-        expect(telephonyService.getCall(r.call.id)?.status).toBe('FAILED');
-    });
-
-    it('network error => FAILED', async () => {
-        globalThis.fetch = vi.fn(async () => { throw new Error('ECONNREFUSED'); }) as any;
-        const r = await telephonyService.dial({ toNumber: '+15550100', purpose: 'x' });
-        expect(r.call.status).toBe('FAILED');
-        expect(r.error).toMatch(/ECONNREFUSED/);
-    });
-
-    it('2xx without SID => FAILED; with SID => QUEUED (not IN_PROGRESS) until provider callback', async () => {
-        globalThis.fetch = vi.fn(async () => resp(201, {})) as any;
-        expect((await telephonyService.dial({ toNumber: '+15550100', purpose: 'x' })).call.status).toBe('FAILED');
-        globalThis.fetch = vi.fn(async () => resp(201, { sid: 'CA123' })) as any;
-        const ok = await telephonyService.dial({ toNumber: '+15550100', purpose: 'x' });
-        expect(ok.call.status).toBe('QUEUED');
-        expect(ok.call.isSimulated).toBe(false);
-        expect(telephonyService.applyProviderStatus('CA123', 'ringing')?.status).toBe('RINGING');
-        expect(telephonyService.applyProviderStatus('CA123', 'in-progress')?.status).toBe('IN_PROGRESS');
-        expect(telephonyService.applyProviderStatus('CA123', 'ringing')).toBeNull(); // no going backwards
-    });
-
-    it('missing webhook URL => FAILED (no localhost default)', async () => {
-        delete process.env.SILHOUETTE_VOICE_WEBHOOK;
-        globalThis.fetch = vi.fn() as any;
-        const r = await telephonyService.dial({ toNumber: '+15550100', purpose: 'x' });
-        expect(r.call.status).toBe('FAILED');
-        expect(globalThis.fetch).not.toHaveBeenCalled();
-    });
-
-    it('no credentials and no demo mode => FAILED/UNAVAILABLE, never a fake live call', async () => {
-        svc.accountSid = null; svc.authToken = null;
-        const r = await telephonyService.dial({ toNumber: '+15550100', purpose: 'x' });
-        expect(r.call.status).toBe('FAILED');
-        expect(r.error).toMatch(/UNAVAILABLE/);
-    });
-
-    it('explicit demo mode => labelled simulation', async () => {
-        svc.accountSid = null; svc.authToken = null; process.env.SILHOUETTE_DEMO_MODE = '1';
-        const r = await telephonyService.dial({ toNumber: '+15550100', purpose: 'x' });
-        expect(r.call.isSimulated).toBe(true);
-    });
-
-    let n = 0;
-    const liveCall = async () => {
-        const sid = `CAlive${++n}`;
-        globalThis.fetch = vi.fn(async () => resp(201, { sid })) as any;
-        const r = await telephonyService.dial({ toNumber: '+15550100', purpose: 'x' });
-        telephonyService.applyProviderStatus(sid, 'in-progress');
-        return r.call.id;
+// The parent owns the entire fixture process boundary. Forced termination is
+// always failure, including after a receipt: success requires natural exit.
+async function runFixture(mode: string): Promise<void> {
+    let directory: string | undefined;
+    let child: ReturnType<typeof spawn> | undefined;
+    let leaderReaped = false;
+    let groupGone = false;
+    let timedOut = false;
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    let reapDeadline: ReturnType<typeof setTimeout> | undefined;
+    const failures: unknown[] = [];
+    const started = Date.now();
+    const finalAt = started + 18000;
+    const verifyGroup = (): boolean => {
+        if (!child?.pid) return leaderReaped;
+        if (process.platform === 'win32') return false; // UNKNOWN, never PASS.
+        try { process.kill(-child.pid, 0); return false; }
+        catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ESRCH') return true;
+            failures.push(error); // EPERM/unknown is not absence.
+            return false;
+        }
     };
+    const killOwnedTree = () => {
+        if (!child?.pid) return;
+        if (process.platform === 'win32') {
+            const result = spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
+                timeout: Math.max(1, Math.min(2000, finalAt - Date.now())), encoding: 'utf8'
+            });
+            if (result.error || result.status !== 0) failures.push(new Error(`Tree termination failed: ${result.error || result.stderr}`));
+        } else {
+            try { process.kill(-child.pid, 'SIGKILL'); }
+            catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') failures.push(error); }
+        }
+    };
+    try {
+        directory = mkdtempSync(join(tmpdir(), 'telephony-truthfulness-'));
+        // A Windows tree cannot be verified with this reviewed harness. Fail
+        // explicitly before spawn; do not silently skip or claim equivalence.
+        if (process.platform === 'win32') throw new Error('Fixture tree verification UNKNOWN on Windows');
+        child = spawn(process.execPath, ['--import', loader, script, mode], {
+            cwd: directory, detached: true, stdio: ['ignore', 'inherit', 'inherit'],
+            env: {
+                PATH: process.env.PATH, HOME: directory, TMPDIR: directory,
+                TEMP: directory, TMP: directory, NODE_ENV: 'test',
+                SILHOUETTE_PROVIDERS: 'off', SILHOUETTE_BOOT_MODE: 'normal',
+                SILHOUETTE_DB_PATH: join(directory, 'fixture.sqlite')
+            }
+        });
+        const leader = child;
+        deadline = setTimeout(() => {
+            timedOut = true;
+            failures.push(new Error(`Fixture ${mode} exceeded 15000ms; termination is NOT success`));
+            killOwnedTree();
+        }, Math.max(1, started + 15000 - Date.now()));
+        const result = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolveResult, reject) => {
+            reapDeadline = setTimeout(() => {
+                killOwnedTree();
+                reject(new Error('Fixture leader not reaped within 18000ms; cleanup unverified'));
+            }, Math.max(1, finalAt - Date.now()));
+            leader.once('error', error => {
+                // Failed spawn has no PID and therefore no owned OS leader.
+                if (!leader.pid) leaderReaped = true;
+                reject(error);
+            });
+            leader.once('close', (code, signal) => {
+                leaderReaped = true;
+                resolveResult({ code, signal });
+            });
+        });
+        if (deadline) clearTimeout(deadline);
+        if (reapDeadline) clearTimeout(reapDeadline);
+        groupGone = verifyGroup();
+        expect(timedOut).toBe(false);
+        expect(result).toEqual({ code: 0, signal: null });
+        expect(groupGone, 'Natural leader exit left live/unknown owned group').toBe(true);
+        expect(JSON.parse(readFileSync(join(directory, 'receipt.json'), 'utf8'))).toEqual({ mode, passed: true, cleanup: true });
+    } catch (error) { failures.push(error); }
+    finally {
+        if (deadline) clearTimeout(deadline);
+        if (reapDeadline) clearTimeout(reapDeadline);
+        // One cleanup path owns termination, direct-child reap observation and
+        // POSIX group nonexistence. Leader close alone never permits deletion.
+        if (!child) {
+            leaderReaped = true;
+            groupGone = true; // No spawn attempted, no OS owner exists.
+        } else {
+            groupGone = verifyGroup();
+            if (!leaderReaped || !groupGone) killOwnedTree();
+            while ((!leaderReaped || !groupGone) && Date.now() < finalAt) {
+                groupGone = verifyGroup();
+                if (leaderReaped && groupGone) break;
+                await new Promise(resolveWait => setTimeout(resolveWait, Math.min(20, Math.max(1, finalAt - Date.now()))));
+            }
+            groupGone = verifyGroup();
+        }
+        if (!leaderReaped || !groupGone) {
+            failures.push(new Error(`Cleanup UNKNOWN: leaderReaped=${leaderReaped}, groupGone=${groupGone}; retained ${directory}`));
+        } else if (directory) {
+            try { rmSync(directory, { recursive: true, force: true }); } catch (error) { failures.push(error); }
+        }
+    }
+    if (failures.length) throw new AggregateError(failures, `Fixture ${mode} failed; leaderReaped=${leaderReaped}; groupGone=${groupGone}; evidence=${directory}`);
+}
 
-    it('DTMF: failed HTTP => success:false and nothing recorded', async () => {
-        const id = await liveCall();
-        globalThis.fetch = vi.fn(async () => resp(500)) as any;
-        const r = await telephonyService.sendDtmf(id, '1');
-        expect(r.success).toBe(false);
-        expect(telephonyService.getCall(id)?.transcript.some(t => t.dtmfDigits)).toBe(false);
-    });
-
-    it('hangup: provider failure => NOT completed, error says call may be live', async () => {
-        const id = await liveCall();
-        globalThis.fetch = vi.fn(async () => resp(503)) as any;
-        const r = await telephonyService.hangup(id);
-        expect(r.error).toMatch(/NOT confirmed/);
-        expect(telephonyService.getCall(id)?.status).toBe('IN_PROGRESS');
-    });
-
-    it('hangup: provider confirms => COMPLETED', async () => {
-        const id = await liveCall();
-        globalThis.fetch = vi.fn(async () => resp(200, {})) as any;
-        const r = await telephonyService.hangup(id);
-        expect(r.error).toBeUndefined();
-        expect(r.call?.status).toBe('COMPLETED');
-    });
-
-    it('barge-in on a real call without a media stream => UNAVAILABLE, not success', async () => {
-        const id = await liveCall();
-        const r = await telephonyService.triggerBargeIn(id);
-        expect(r.success).toBe(false);
-        expect(r.error).toMatch(/UNAVAILABLE/);
-    });
-
-    it('barge-in is really sent to the media stream when connected', async () => {
-        const id = await liveCall();
-        const sent: any[] = [];
-        telephonyService.setMediaStreamSender(async (cid, msg) => { sent.push([cid, msg]); return true; });
-        const r = await telephonyService.triggerBargeIn(id);
-        expect(r.success).toBe(true);
-        expect(sent).toEqual([[id, { event: 'clear' }]]);
-    });
-});
-
-describe('call state machine (pure)', () => {
-    it('maps provider statuses and only moves forward', () => {
-        expect(mapProviderStatus('no-answer')).toBe('FAILED');
-        expect(mapProviderStatus('weird')).toBeNull();
-        expect(canTransition('QUEUED', 'RINGING')).toBe(true);
-        expect(canTransition('IN_PROGRESS', 'RINGING')).toBe(false);
-        expect(canTransition('COMPLETED', 'IN_PROGRESS')).toBe(false);
-        expect(canTransition('FAILED', 'COMPLETED')).toBe(false);
-    });
+// Simulated Twilio classification + real SQLite under summary-provider OFF.
+// This is NOT real provider/PSTN or user functional acceptance.
+describe('Legacy telephony classification in isolated OFF processes', () => {
+    // Ordinary non-concurrent Vitest cases: one owned child/DB/receipt per case.
+    for (const scenario of [
+        '401 fails', 'network error fails', 'SID and callbacks', 'missing webhook',
+        'no credentials unavailable', 'demo labelled', 'DTMF rejection',
+        'hangup rejected remains active', 'hangup confirmed and OFF summary',
+        'barge-in without stream', 'barge-in stream clear', 'pure state transitions'
+    ]) {
+        it(scenario, async () => { await runFixture(scenario); });
+    }
 });
