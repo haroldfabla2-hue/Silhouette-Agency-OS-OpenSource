@@ -185,7 +185,13 @@ export class LanceDbService {
         }
     }
 
-    public async deleteNode(id: string): Promise<boolean> {
+    public deleteNode(id: string): Promise<boolean> {
+        const operation = this.writeQueue.then(() => this.deleteNodeSerialized(id));
+        this.writeQueue = operation.then(() => undefined, () => undefined);
+        return operation;
+    }
+
+    private async deleteNodeSerialized(id: string): Promise<boolean> {
         if (!this.table) await this.init();
         if (!this.table && !this.legacyTable) return false;
         try {
@@ -359,7 +365,7 @@ export class LanceDbService {
         this.ftsReady.delete('v2');
         // Unknown legacy vectors are never guessed into a model collection.
         if (vector && node.embeddingIdentity && validEmbedding(vector, node.embeddingIdentity)) {
-            try { await this.projectEmbedding(node, vector, node.embeddingIdentity); }
+            try { await this.projectEmbeddingSerialized(node, vector, node.embeddingIdentity); }
             catch (error) { console.warn('[LANCEDB] Vector projection pending; canonical memory preserved', error); }
         }
         const stored = await this.getNodeById(node.id);
@@ -421,7 +427,7 @@ export class LanceDbService {
             journal.canonicalVerified(intent.key);
             await this.projectionCheckpoint?.('source_verified', intent.id);
             try {
-                await this.projectEmbedding(current, intent.vector, intent.identity);
+                await this.projectEmbeddingSerialized(current, intent.vector, intent.identity);
                 if (intent.identity.dimension !== 768) { journal.retainedUnsupported(intent.key); continue; }
                 mirrorReady ??= (await vectorMemory.connect()).state === 'ready';
                 if (!mirrorReady) continue;
@@ -545,7 +551,14 @@ export class LanceDbService {
         }
     }
 
-    public async projectEmbedding(node: MemoryNode, vector: number[], identity: EmbeddingIdentity): Promise<void> {
+    /** External projection callers use the same source-verified queue as consumers.
+     * Internal store/replay callers already hold it and use the private method. */
+    public projectEmbedding(node: MemoryNode, vector: number[], identity: EmbeddingIdentity): Promise<void> {
+        if (!validEmbedding(vector, identity)) return Promise.reject(new Error('Invalid or incompatible embedding'));
+        return this.ensureLocalVectorProjection(node, vector, identity);
+    }
+
+    private async projectEmbeddingSerialized(node: MemoryNode, vector: number[], identity: EmbeddingIdentity): Promise<void> {
         if (!validEmbedding(vector, identity)) throw new Error('Invalid or incompatible embedding');
         await this.ensureInitialized();
         if (!this.db) throw new Error('LanceDB is unavailable');
@@ -699,7 +712,7 @@ export class LanceDbService {
             if (!current || canonicalChecksum(current) !== canonicalChecksum(node)) {
                 throw new Error('Canonical version changed; stale local projection receipt refused');
             }
-            await this.projectEmbedding(node, vector, identity);
+            await this.projectEmbeddingSerialized(node, vector, identity);
             const table = await this.db!.openTable(this.vectorTableName(identity));
             const rows = await table.query().where(`id = '${node.id.replace(/'/g, "''")}'`).limit(2).toArray();
             if (rows.length !== 1 || JSON.parse(rows[0].json_data).content !== node.content) {

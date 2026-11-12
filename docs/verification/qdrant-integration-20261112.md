@@ -190,3 +190,22 @@ point reads now open an independent latest handle before verifying checksums; th
 final strengthened test must pass before this fix is treated as evidence.
 
 After latest independent point-read fix, all four real component tests passed, including stale receipt rejection. Focused Vitest 41 tests passed before that final point-read change and are not represented as a full suite.
+
+## Final public-entry audit and dense-vector coverage
+
+Dense 768-dimensional sin/cos fractions deliberately not exactly representable in
+Float32 passed the physical-version/reopen test without a dtype repair. Observed
+Arrow schema was FixedSizeList[768]<Float32>. This extends, not replaces, the unit
+vector test. Direct production projectEmbedding callers were only the three
+internal store/replay/receipt calls; external callers found were tests. Public
+projectEmbedding now uses the source-verified queue; internal callers use a private
+method to avoid recursive queue deadlock. Public deleteNode has production callers
+in continuumMemory, database/sqliteAdapter and cognitiveScheduler; deletion now
+uses the same queue. A real deterministic delete-vs-replay barrier verifies no
+resurrection from an older intent. Stale direct projection is also rejected.
+
+The vector-scan fixture now projects the actual stored canonical node instead of
+regenerating its Date.now fields, with its assertions unchanged. Focused five-file
+41-test suite passed after this final entry-point change. This is not the full suite.
+Cross-process CAS, other maintenance writers, full app lifecycle, legacy identity,
+full cognitive flows, ANN failure and large-scale latency/disk remain open.

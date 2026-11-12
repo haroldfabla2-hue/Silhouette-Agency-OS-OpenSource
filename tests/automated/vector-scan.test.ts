@@ -81,9 +81,9 @@ describe('LanceDbService semantic search via portable JS scan', () => {
         await lancedbService.store(node('scan-a', 'alice') as any);
         await lancedbService.store(node('scan-b', 'alice') as any);
         await lancedbService.store(node('scan-c', 'bob') as any);
-        await lancedbService.projectEmbedding(node('scan-a', 'alice') as any, [1, 0, 0, 0], identity);
-        await lancedbService.projectEmbedding(node('scan-b', 'alice') as any, [0.9, 0.1, 0, 0], identity);
-        await lancedbService.projectEmbedding(node('scan-c', 'bob') as any, [0, 1, 0, 0], identity);
+        await lancedbService.projectEmbedding((await lancedbService.getNodeById('scan-a'))!, [1, 0, 0, 0], identity);
+        await lancedbService.projectEmbedding((await lancedbService.getNodeById('scan-b'))!, [0.9, 0.1, 0, 0], identity);
+        await lancedbService.projectEmbedding((await lancedbService.getNodeById('scan-c'))!, [0, 1, 0, 0], identity);
 
         const ranked = await lancedbService.search([1, 0, 0, 0], 10, undefined, identity);
         expect(ranked.map(n => n.id)).toEqual(['scan-a', 'scan-b', 'scan-c']);
@@ -104,9 +104,9 @@ describe('LanceDbService semantic search via portable JS scan', () => {
         await fresh.store(node('paged-a', 'alice') as any);
         await fresh.store(node('paged-b', 'alice') as any);
         await fresh.store(node('paged-c', 'bob') as any);
-        await fresh.projectEmbedding(node('paged-a', 'alice') as any, [1, 0, 0, 0], identity);
-        await fresh.projectEmbedding(node('paged-b', 'alice') as any, [0.9, 0.1, 0, 0], identity);
-        await fresh.projectEmbedding(node('paged-c', 'bob') as any, [0, 1, 0, 0], identity);
+        await fresh.projectEmbedding((await fresh.getNodeById('paged-a'))!, [1, 0, 0, 0], identity);
+        await fresh.projectEmbedding((await fresh.getNodeById('paged-b'))!, [0.9, 0.1, 0, 0], identity);
+        await fresh.projectEmbedding((await fresh.getNodeById('paged-c'))!, [0, 1, 0, 0], identity);
         expect((await fresh.search([1, 0, 0, 0], 10, undefined, identity)).map(n => n.id)).toEqual(['paged-a', 'paged-b', 'paged-c']);
         delete process.env.VECTOR_ENGINE;
     });
