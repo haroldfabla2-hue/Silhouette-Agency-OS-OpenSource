@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { validEmbedding, type EmbeddingIdentity } from './memoryRetrieval';
 
 export interface ProjectionIntent {
@@ -38,9 +38,12 @@ export class VectorProjectionJournal {
     prepare(node: any, vector: number[], identity: EmbeddingIdentity): ProjectionIntent {
         if (!node?.id || !validEmbedding(vector, identity)) throw new Error('Invalid projection intent');
         const checksum = canonicalChecksum(node);
-        const key = canonicalChecksum({ id: node.id, checksum, identity, vectorDigest: canonicalChecksum(vector) });
+        // One durable event per canonical write attempt, not per content value.
+        // A -> B -> exact A must not reuse A's terminal receipt. Never reset an
+        // old event that may still be in flight; preserve its original history.
+        const key = randomUUID();
         const intent = { key, id: node.id, checksum, node, vector, identity };
-        this.db.prepare('INSERT OR IGNORE INTO projection_intents(key,id,checksum,body) VALUES(?,?,?,?)')
+        this.db.prepare('INSERT INTO projection_intents(key,id,checksum,body) VALUES(?,?,?,?)')
             .run(key, node.id, checksum, JSON.stringify(intent));
         return intent;
     }

@@ -209,3 +209,19 @@ regenerating its Date.now fields, with its assertions unchanged. Focused five-fi
 41-test suite passed after this final entry-point change. This is not the full suite.
 Cross-process CAS, other maintenance writers, full app lifecycle, legacy identity,
 full cognitive flows, ANN failure and large-scale latency/disk remain open.
+
+## Delivery event reactivation, exact A -> B -> A
+
+A new real-ledger test first failed against 9a32bc9: after terminal event A,
+terminal B and exact restored A, pending count was zero. The terminal content-key
+was being reused. Each prepare now allocates a new UUID delivery event and uses
+INSERT, not INSERT OR IGNORE. Source checksum remains validation data, not event
+identity. No terminal/in-flight row is reset or deleted. Existing historical keys
+remain readable; no schema migration or memory rewrite is required.
+
+The test uses actual SQLite terminal-state fixtures explicitly, not a successful
+mirror double: terminal ACKs are setup for the historical scenario. It verifies
+new pending event identity after complete and superseded histories, exact original
+payload/timestamp/vector preserved, reopen, actual Lance replay with mirror disabled,
+canonical/local A and honestly still-pending mirror. This proves the ledger/local
+reactivation regression, NOT final mirror payload acceptance. Qdrant remains closed.
