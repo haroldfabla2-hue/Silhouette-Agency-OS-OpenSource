@@ -316,9 +316,25 @@ export class LanceDbService {
         return { ok: true, count: nodes.length };
     }
 
+    /** A payload-only update can reuse only a proven projection of the SAME
+     * content and identity. Never generate or infer a vector for this path. */
+    private async vectorForUnchangedContent(node: MemoryNode): Promise<number[] | undefined> {
+        if (!node.embeddingIdentity || !this.db) return undefined;
+        const name = this.vectorTableName(node.embeddingIdentity);
+        if (!(await this.db.tableNames()).includes(name)) return undefined;
+        const table = await this.db.openTable(name);
+        const rows = await table.query().where(`id = '${node.id.replace(/'/g, "''")}'`).limit(2).toArray();
+        if (rows.length !== 1) return undefined;
+        const source = JSON.parse(rows[0].json_data);
+        if (source.content !== node.content || JSON.stringify(source.embeddingIdentity) !== JSON.stringify(node.embeddingIdentity)) return undefined;
+        const vector = toNumericArray(rows[0].vector);
+        return vector && validEmbedding(vector, node.embeddingIdentity) ? vector : undefined;
+    }
+
     private async writeAndVerify(node: MemoryNode, vector?: number[]): Promise<{ ok: true; id: string; checksum: string; version: number }> {
         await this.ensureInitialized();
         if (!this.db) throw new Error('LanceDB is unavailable');
+        vector ||= await this.vectorForUnchangedContent(node);
         const intent = vector && node.embeddingIdentity && validEmbedding(vector, node.embeddingIdentity)
             ? this.journal().prepare(node, vector, node.embeddingIdentity) : null;
         const json = JSON.stringify(node);
@@ -348,6 +364,10 @@ export class LanceDbService {
         }
         // The intent is already durable. Projection delivery is separate from
         // the caller's canonical success and never re-runs the source operation.
+        if (intent) {
+            try { this.journal().canonicalVerified(intent.key); }
+            catch { console.warn('[LANCEDB] Canonical receipt retained; prepared projection will verify on replay'); }
+        }
         if (intent) void this.replayVectorProjections(10).catch(() => {
             console.warn('[LANCEDB] Optional Qdrant projection pending; canonical success preserved');
         });
@@ -369,7 +389,7 @@ export class LanceDbService {
         if (this.projectionTimer) clearInterval(this.projectionTimer);
         this.projectionTimer = null;
     }
-    public getVectorProjectionStatus(): Record<string, number> { return this.journal().stats(); }
+    public getVectorProjectionStatus(): Record<string, number> { return this.projectionJournal?.stats() || {}; }
 
     /** Finite replay with source verification. No fabricated legacy identity. */
     public replayVectorProjections(limit = 50): Promise<{ completed: number; pending: number }> {
@@ -387,7 +407,13 @@ export class LanceDbService {
         for (const intent of batch) {
             const current = await this.getNodeById(intent.id);
             if (!current) continue; // Prepared before write, crash/failed source: do not publish.
-            if (canonicalChecksum(current) !== intent.checksum) { journal.superseded(intent.key); continue; }
+            if (canonicalChecksum(current) !== intent.checksum) {
+                // Prepared may be concurrent with its canonical write. It is
+                // NOT superseded until a verified committed version diverges.
+                if (intent.phase !== 'prepared') journal.superseded(intent.key);
+                continue;
+            }
+            journal.canonicalVerified(intent.key);
             if (intent.identity.dimension !== 768) { journal.retainedUnsupported(intent.key); continue; } // Unsupported collection, not a fake successful projection.
             try {
                 await vectorMemory.storeMemory(intent.id, intent.vector, { ...current, type: (current as any).type || 'MEMORY_NODE',

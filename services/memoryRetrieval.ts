@@ -5,7 +5,8 @@ export interface EmbeddingIdentity { model: string; version: string; dimension: 
 export const LEGACY_EMBEDDING: EmbeddingIdentity = { model: 'legacy-unverified', version: '0', dimension: 768 };
 
 export function validEmbedding(vector: number[], identity: EmbeddingIdentity): boolean {
-    return !!identity.model && !!identity.version && Number.isInteger(identity.dimension) && identity.dimension > 0
+    return typeof identity?.model === 'string' && identity.model.length > 0
+        && typeof identity.version === 'string' && identity.version.length > 0 && Array.isArray(vector) && Number.isInteger(identity.dimension) && identity.dimension > 0
         && vector.length === identity.dimension && vector.every(Number.isFinite)
         && vector.some(value => value !== 0);
 }

@@ -6,6 +6,7 @@ import { UnifiedVectorMemory } from '../../services/unifiedVectorMemory.ts';
 import { VectorMemoryService } from '../../services/vectorMemoryService.ts';
 import { CodebaseAwarenessService } from '../../services/codebaseAwareness.ts';
 import { SemanticMemoryService } from '../../services/semanticMemory.ts';
+import { VectorProjectionJournal } from '../../services/vectorProjectionJournal.ts';
 import { DreamMemoryQueries } from '../../services/dream/dreamMemoryQueries.ts';
 const root = process.env.UNIFIED_MEMORY_TEST_DIR;
 assert.ok(root?.includes('/qdrant-eval-'));
@@ -59,6 +60,9 @@ function check(name: string, value: unknown) { assert.ok(value, name); tests.pus
     check('brand_rules_without_qdrant', (await memory.queryBrandRules('PUBLIC_BRAND', 'public')).includes('calm'));
     check('brand_feedback_no_inference', await memory.updateManifesto('PUBLIC_BRAND', 'Public feedback'));
     check('brand_feedback_persists', (await memory.getBrandTwin('PUBLIC_BRAND'))?.evolutionLog[0]?.feedback === 'Public feedback');
+    const journal = new VectorProjectionJournal(path.join(directory, 'vector-projection-intents.sqlite'));
+    check('payload_feedback_retains_replay_intent', journal.pending(500).some(i => i.id === 'PUBLIC_BRAND' && i.node.evolutionLog?.[0]?.feedback === 'Public feedback'));
+    journal.close();
     const localIdentity = { model: 'PUBLIC_PRECOMPUTED_LOCAL', version: '1', dimension: 384 };
     const local = Array(384).fill(0); local[0] = 1;
     await memory.storeMemory('PUBLIC_LOCAL_384', local, { content: 'Public local identity preserved' }, localIdentity);

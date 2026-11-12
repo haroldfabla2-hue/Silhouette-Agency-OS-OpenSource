@@ -35,10 +35,10 @@ Branch checkpoint, NOT deployment acceptance. Production and main are unchanged.
 2. Real LanceDB plus real Qdrant outage/reopen/replay: 15 checks passed at 08:39.
    Later code-version markers, stale-vector checks, replay timer and validation edits
    were not rerun against a Qdrant engine. Final replay acceptance remains pending.
-3. Final canonical consumer run: 18 checks passed at 08:43 with real LanceDB,
+3. Canonical consumer run: 19 checks passed at 08:46 with real LanceDB,
    explicitly disabled Qdrant and public precomputed vectors. Includes multi-chunk
    indexing, shrink, preserved history, reopen, an actual invalid-vector mid-write
-   failure, inactive partial version and successful retry, RAPTOR leaf recall,
+   failure, inactive partial version and successful retry, payload-only feedback replay intent, RAPTOR leaf recall,
    Dreamer duplicate query, identity and owner isolation, band ranking, stale-vector
    exclusion, Brand reads/feedback and 384-dimensional retrieval. This does not
    exercise the entire Dreamer, introspection or campaign execution path.
@@ -75,7 +75,10 @@ runs logged only guard installation, no blocked import or off-test fetch.
 ## Acceptance blockers, not waived
 
 - Full typecheck/build/full suite.
-- Final-version Qdrant replay, crash-boundary and recovery acceptance. Opening a new
+- Final-version Qdrant replay, crash-boundary and recovery acceptance.
+  Static review found a prepare-before-commit race: prepared intents now remain
+  distinct until canonical read-back; a concurrent old source cannot supersede
+  an in-flight write. Recovery verifies prepared intents against canonical data. Opening a new
   Lance instance and replaying is not a complete process-crash fault matrix.
 - Entire production consumer flows: multi-level RAPTOR generation/parent links,
   Dreamer cycle/graph, introspection/chat, Brand context/campaign preparation, and
@@ -85,8 +88,8 @@ runs logged only guard installation, no blocked import or off-test fetch.
 - Optional projection failures retain durable intent, but disk-full/readback failures
   still need injected process-level acceptance. Unsupported vectors are observable,
   not falsely marked projected.
-- Canonical Brand feedback written without a new vector can leave mirror metadata
-  pending a designed payload-only projection path. It is not synchronized magically.
+- Payload-only projection now reuses a validated same-content/same-identity vector
+  without inference. Its final real-Qdrant replay acceptance remains pending.
 - Semantic legacy digest extraction was a no-op; it now fails explicitly instead of
   claiming to have extracted zero useful insights. Actual extraction remains pending.
 - Unknown legacy code chunks without activation markers are preserved but excluded

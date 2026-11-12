@@ -6,6 +6,7 @@ import { validEmbedding, type EmbeddingIdentity } from './memoryRetrieval';
 
 export interface ProjectionIntent {
     key: string;
+    phase?: string;
     id: string;
     checksum: string;
     node: any;
@@ -28,7 +29,7 @@ export class VectorProjectionJournal {
         this.db.pragma('synchronous = FULL');
         this.db.exec(`CREATE TABLE IF NOT EXISTS projection_intents (
             key TEXT PRIMARY KEY, id TEXT NOT NULL, checksum TEXT NOT NULL,
-            body TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending',
+            body TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'prepared',
             attempts INTEGER NOT NULL DEFAULT 0, last_failure TEXT
         )`);
     }
@@ -42,8 +43,11 @@ export class VectorProjectionJournal {
         return intent;
     }
     pending(limit = 50): ProjectionIntent[] {
-        return this.db.prepare("SELECT body FROM projection_intents WHERE state = 'pending' ORDER BY rowid LIMIT ?")
-            .all(Math.max(1, Math.min(500, limit))).map((r: any) => JSON.parse(r.body));
+        return this.db.prepare("SELECT body,state FROM projection_intents WHERE state IN ('prepared','pending') ORDER BY CASE state WHEN 'pending' THEN 0 ELSE 1 END, rowid LIMIT ?")
+            .all(Math.max(1, Math.min(500, limit))).map((r: any) => ({ ...JSON.parse(r.body), phase: r.state }));
+    }
+    canonicalVerified(key: string): void {
+        this.db.prepare("UPDATE projection_intents SET state = 'pending' WHERE key = ? AND state = 'prepared'").run(key);
     }
     completed(key: string): void {
         this.db.prepare("UPDATE projection_intents SET state = 'complete', last_failure = NULL WHERE key = ?").run(key);
