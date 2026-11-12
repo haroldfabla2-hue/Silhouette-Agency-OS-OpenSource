@@ -60,7 +60,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22.18.0'
-          cache: npm
 
       - name: Existing pinned lock install
         shell: bash
@@ -110,6 +109,69 @@ jobs:
           if test "$result" = 0; then printf 'STATIC_PASS\n' > "$EVIDENCE/static-pass.txt"; fi
           exit "$result"
 
+      - name: Reviewed Ubuntu sandbox setup on ephemeral VM
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_setup() {
+            name=$1
+            shift
+            set +e
+            timeout --signal=TERM --kill-after=5s 120s "$@" 2>&1 | tee "$EVIDENCE/$name.log"
+            codes=("${PIPESTATUS[@]}")
+            set -e
+            printf '%s\n' "${codes[0]}" > "$EVIDENCE/$name.exit"
+            printf '%s\n' "${codes[1]}" > "$EVIDENCE/$name.tee-exit"
+            test "${codes[0]}" = 0
+            test "${codes[1]}" = 0
+          }
+          . /etc/os-release
+          test "$ID:$VERSION_ID:$(dpkg --print-architecture)" = ubuntu:24.04:amd64
+          # Default signed Ubuntu repositories only. No PPA, curl or new source.
+          source=/etc/apt/sources.list.d/ubuntu.sources
+          run_setup sandbox-sources python3 -c 'import pathlib,re; p=pathlib.Path("/etc/apt/sources.list.d/ubuntu.sources"); t=p.read_text(); urls=[u for line in t.splitlines() if line.startswith("URIs:") for u in line[5:].split()]; assert urls and all(re.fullmatch(r"https?://(?:[a-z0-9.-]+\.)?ubuntu\.com/ubuntu/?",u) for u in urls), "Unexpected Ubuntu source URI"; assert "Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg" in t and not re.search(r"(?im)^(?:Trusted|Allow-Insecure|Allow-Weak):\s*yes",t), "Unexpected trust options"; print(t)'
+          # Only this verified existing Ubuntu source file, no other default vendor sources.
+          # Package lists stay ephemeral outside retained evidence.
+          lists="$RUNNER_TEMP/initial-owner-ubuntu-lists"
+          mkdir "$lists"
+          apt_options=(-o "Dir::Etc::sourcelist=$source" -o Dir::Etc::sourceparts=- -o "Dir::State::lists=$lists")
+          missing=()
+          command -v bwrap >/dev/null || missing+=(bubblewrap)
+          command -v ip >/dev/null || missing+=(iproute2)
+          if test "${#missing[@]}" != 0; then
+            run_setup sandbox-apt-update sudo -n apt-get "${apt_options[@]}" update
+            pins=()
+            for pkg in "${missing[@]}"; do
+              apt-cache "${apt_options[@]}" policy "$pkg" | tee "$EVIDENCE/sandbox-$pkg-policy.log"
+              candidate=$(apt-cache "${apt_options[@]}" policy "$pkg" | awk '/Candidate:/ {print $2}')
+              test -n "$candidate" && test "$candidate" != '(none)'
+              pins+=("$pkg=$candidate")
+            done
+            run_setup sandbox-apt-simulate apt-get "${apt_options[@]}" --simulate --no-install-recommends --no-upgrade --no-remove install "${pins[@]}"
+            # Do not upgrade installed dependencies or remove packages.
+            while read -r pkg; do
+              if dpkg-query -W -f='${db:Status-Status}' "$pkg" 2>/dev/null | grep -qx installed; then
+                printf 'BLOCKED: proposed upgrade of installed %s\n' "$pkg"
+                exit 1
+              fi
+            done < <(awk '$1=="Inst" {print $2}' "$EVIDENCE/sandbox-apt-simulate.log")
+            run_setup sandbox-apt-install sudo -n apt-get "${apt_options[@]}" --yes --no-install-recommends --no-upgrade --no-remove install "${pins[@]}"
+          fi
+          run_setup sandbox-package-versions dpkg-query -W -f='${Package} ${Version} ${Architecture}\n' bubblewrap iproute2
+          run_setup sandbox-bwrap-version bwrap --version
+          run_setup sandbox-ip-version ip -Version
+          key=kernel.apparmor_restrict_unprivileged_userns
+          run_setup sandbox-apparmor-before sysctl -n "$key"
+          before=$(tail -n1 "$EVIDENCE/sandbox-apparmor-before.log")
+          case "$before" in
+            0) ;;
+            1) run_setup sandbox-apparmor-set sudo -n sysctl -w "$key=0" ;;
+            *) printf 'BLOCKED: unexpected AppArmor sysctl value\n'; exit 1 ;;
+          esac
+          run_setup sandbox-apparmor-after sysctl -n "$key"
+          test "$(tail -n1 "$EVIDENCE/sandbox-apparmor-after.log")" = 0
+          printf 'SETUP_COMPLETE_NOT_RUNTIME_PASS\n' > "$EVIDENCE/sandbox-setup.txt"
+
       - name: Exact two-case runtime trial after static PASS
         shell: bash
         run: |
@@ -137,11 +199,30 @@ jobs:
           fi
           printf 'PASS\n' > "$EVIDENCE/runtime-status.txt"
 
-      - name: Always collect static and trial evidence
+      - name: Always retain bounded evidence in job logs only
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: initial-owner-static-runtime-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/initial-owner-static-evidence
-          if-no-files-found: warn
-          retention-days: 7
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Job logs do not count toward artifact storage allowance. No upload/cache.
+          python3 - "$EVIDENCE" <<'PY'
+          import base64, hashlib, io, pathlib, sys, tarfile
+          root = pathlib.Path(sys.argv[1])
+          files = sorted(p for p in root.rglob('*') if p.is_file() and not p.is_symlink())
+          if len(files) > 128 or sum(p.stat().st_size for p in files) > 2 * 1024 * 1024:
+              raise SystemExit('EVIDENCE_LIMIT_FAIL: too many files or more than2MiB raw')
+          out = io.BytesIO()
+          with tarfile.open(fileobj=out, mode='w:gz') as archive:
+              for file in files:
+                  archive.add(file, arcname=str(file.relative_to(root)), recursive=False)
+          data = out.getvalue()
+          if len(data) > 512 * 1024:
+              raise SystemExit('EVIDENCE_LIMIT_FAIL: compressed evidence above512KiB')
+          print('FOCUSED_EVIDENCE_SHA256:' + hashlib.sha256(data).hexdigest())
+          print('FOCUSED_EVIDENCE_BYTES:' + str(len(data)))
+          print('FOCUSED_EVIDENCE_BASE64_BEGIN')
+          text = base64.b64encode(data).decode('ascii')
+          for start in range(0, len(text), 4096):
+              print(text[start:start + 4096])
+          print('FOCUSED_EVIDENCE_BASE64_END')
+          PY
