@@ -30,7 +30,10 @@ const obstruction = path.join(directory, table + '.lance');
     assert.ok(retained, 'canonical copy survives failed projection');
     fs.unlinkSync(obstruction); // Delete ONLY the identified public-test obstruction.
     const reopened = new LanceDbService(directory, target);
-    await reopened.replayVectorProjections(50); // Qdrant remains disabled.
+    await reopened.startVectorProjectionReplay(); // Actual production startup entry, Qdrant remains disabled.
+    const loader = fs.readFileSync(new URL('../../server/loaders/dbLoader.ts', import.meta.url), 'utf8');
+    assert.ok(loader.includes('await lancedbService.startVectorProjectionReplay()'));
+    assert.ok(!loader.includes("state.state !== 'disabled'"), 'app wiring must not gate local recovery on Qdrant');
     const connection = await lancedb.connect(directory);
     const repairedTable = await connection.openTable(table);
     assert.equal(await repairedTable.countRows(), 1, 'replay itself repaired local projection before index retry');
@@ -43,6 +46,7 @@ const obstruction = path.join(directory, table + '.lance');
     const retry = new CodebaseAwarenessService({ memory: new UnifiedVectorMemory(reopened), embed: async () => ({ vector, identity }) }, false);
     await retry.indexFile(file);
     assert.ok((await retry.query('public')).includes('retained canonical'));
+    reopened.stopVectorProjectionReplay();
     console.log(JSON.stringify({ real_filesystem_fault: true, failed_index_not_activated: true, canonical_preserved: true,
         replay_with_qdrant_disabled: true, recovered_after_reopen_and_retry: true }));
     process.exit(0);

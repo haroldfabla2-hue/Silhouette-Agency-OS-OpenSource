@@ -155,3 +155,29 @@ confinement: direct http/https/net, child_process, and fetch redirects require a
 sandbox boundary. No-model static/import inspection plus this guard is useful
 additional evidence, but is not a substitute for final reviewed namespace/seccomp
 isolation or a full-consumer no-startup check.
+
+
+## Wiring and replay-order follow-up
+
+- Production dbLoader now starts local projection recovery regardless of Qdrant's
+  disabled state. The startup entry performs an immediate finite batch, then an
+  unref timer. The real filesystem-fault test invokes that exact startup entry and
+  checks the loader source wiring. Full app boot remains a separate unpassed gate.
+- Owner-less public records normalize to system for filtering, consistent with
+  canonical column normalization. Scope tags filter before semantic ranking.
+- Context lexical lookup now scans all pinned pages with bounded winners, canonical
+  hydration and owner/tag/type exclusions before top-k. A mixed corpus with 65 code
+  and marker distractors still returns the valid scoped/tagged memory at limit one.
+  This favors completeness, not a demonstrated large-scale latency improvement.
+- Store, replay and consumer projection receipts serialize on a shared per-database
+  queue across service instances in this process. A stale consumer receipt checks
+  canonical checksum before touching projection. Cross-process CAS remains open.
+- Persisted equal payload/vector rows plus READY state are an idempotent local
+  receipt. Four retries with mirror disabled, including reopen, leave canonical
+  and projection table versions and row counts unchanged.
+- The deterministic replay ordering test pauses the actual replayer at a test-only
+  scheduling checkpoint after source verification. It does not replace or fake I/O.
+  A newer write from another real Lance service instance waits, then its content
+  and vector stay current; an older receipt is rejected.
+
+These are focused real storage/component tests, not full app/OS-isolation acceptance.

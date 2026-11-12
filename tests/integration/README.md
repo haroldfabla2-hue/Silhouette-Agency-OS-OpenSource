@@ -39,6 +39,9 @@ node --max-old-space-size=256 \
   retention, no premature activation, reopen and Lance repair with Qdrant disabled.
 - `projection-fairness.real.ts`: 101 prepared orphans, durable scan cursor across
   reopen and valid 384-dimensional local replay behind them; no Qdrant engine.
+- `projection-ordering.real.ts`: deterministic scheduling barrier in actual replay,
+  newer same-ID write from a second service instance, stale receipt rejection and
+  stable Lance versions/counts across down-mirror retries and reopen. No mocked I/O.
 - `qdrant-backend.real.ts`: real local Qdrant backend lifecycle/schema/ID/filter/
   Brand compatibility checks. This rewritten final split test is not yet executed.
 - `unified-memory.real.ts`: real LanceDB and Qdrant down/up, replay/reopen and consumers.

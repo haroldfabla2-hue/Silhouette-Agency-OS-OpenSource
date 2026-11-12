@@ -63,11 +63,10 @@ export const initDatabases = async () => {
         const state = await vectorMemory.connect();
         console.log(`[LOADER] VectorMemory (Qdrant): ${state.state}`);
         const { lancedbService } = await import('../../services/lancedbService');
-        if (state.state !== 'disabled') lancedbService.startVectorProjectionReplay();
-        if (state.state === 'ready') {
-            const replay = await lancedbService.replayVectorProjections(50);
-            console.log(`[LOADER] Qdrant projection replay: ${replay.completed} completed, ${replay.pending} pending in bounded batch`);
-        }
+        // Local Lance repair is required even when the optional Qdrant
+        // backend is disabled. The replayer handles mirror availability itself.
+        const replay = await lancedbService.startVectorProjectionReplay();
+        console.log(`[LOADER] Vector projection replay: ${replay.completed} mirrors completed, ${replay.pending} pending`);
     } catch (e: any) {
         console.warn('[LOADER] VectorMemory (Qdrant) optional:', e.message);
     }

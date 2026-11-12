@@ -1,3 +1,4 @@
+import { lexicalScore } from './lexicalMatch';
 import { VectorProjectionJournal, canonicalChecksum } from './vectorProjectionJournal';
 import * as lancedb from '@lancedb/lancedb';
 import path from 'path';
@@ -71,10 +72,13 @@ export class LanceDbService {
     private ftsReady = new Set<string>();
     private knowledgeTable: lancedb.Table | null = null; // Universal Knowledge Table
     private initialized = false;
-    private writeQueue: Promise<void> = Promise.resolve();
+    private static readonly databaseWrites = new Map<string, Promise<void>>();
+    private get writeQueue(): Promise<void> { return LanceDbService.databaseWrites.get(path.resolve(this.databasePath)) || Promise.resolve(); }
+    private set writeQueue(value: Promise<void>) { LanceDbService.databaseWrites.set(path.resolve(this.databasePath), value); }
     private initPromise: Promise<void> | null = null;
 
-    constructor(private readonly databasePath = DB_PATH, private readonly projectionTarget?: Pick<typeof import('./vectorMemoryService').vectorMemory, 'connect' | 'storeMemory'>) {
+    constructor(private readonly databasePath = DB_PATH, private readonly projectionTarget?: Pick<typeof import('./vectorMemoryService').vectorMemory, 'connect' | 'storeMemory'>,
+        private readonly projectionCheckpoint?: (phase: 'source_verified', id: string) => Promise<void>) {
         // Lazy initialization - called explicitly from dbLoader or on first use
     }
 
@@ -375,14 +379,15 @@ export class LanceDbService {
 
     private projectionTimer: ReturnType<typeof setInterval> | null = null;
     /** Called explicitly by the app loader. No model calls, no provisioning. */
-    public startVectorProjectionReplay(): void {
-        if (this.projectionTimer) return;
+    public startVectorProjectionReplay(): Promise<{ completed: number; pending: number }> {
+        if (this.projectionTimer) return this.replayVectorProjections(50);
         this.projectionTimer = setInterval(() => {
             void this.replayVectorProjections(50).catch(() => {
                 console.warn('[LANCEDB] Qdrant projection retry unavailable; intent retained');
             });
         }, 60_000);
         this.projectionTimer.unref?.();
+        return this.replayVectorProjections(50);
     }
     public stopVectorProjectionReplay(): void {
         if (this.projectionTimer) clearInterval(this.projectionTimer);
@@ -393,7 +398,9 @@ export class LanceDbService {
     /** Finite replay with source verification. No fabricated legacy identity. */
     public replayVectorProjections(limit = 50): Promise<{ completed: number; pending: number }> {
         if (this.projectionReplay) return this.projectionReplay;
-        this.projectionReplay = this.replayProjectionBatch(limit).finally(() => { this.projectionReplay = null; });
+        const operation = this.writeQueue.then(() => this.replayProjectionBatch(limit));
+        this.writeQueue = operation.then(() => undefined, () => undefined);
+        this.projectionReplay = operation.finally(() => { this.projectionReplay = null; });
         return this.projectionReplay;
     }
     private async replayProjectionBatch(limit: number): Promise<{ completed: number; pending: number }> {
@@ -412,6 +419,7 @@ export class LanceDbService {
                 continue;
             }
             journal.canonicalVerified(intent.key);
+            await this.projectionCheckpoint?.('source_verified', intent.id);
             try {
                 await this.projectEmbedding(current, intent.vector, intent.identity);
                 if (intent.identity.dimension !== 768) { journal.retainedUnsupported(intent.key); continue; }
@@ -529,6 +537,15 @@ export class LanceDbService {
     private vectorTableName(identity: EmbeddingIdentity): string {
         return 'memory_vectors_' + createHash('sha256').update(JSON.stringify(identity)).digest('hex').slice(0, 24);
     }
+    private async markLocalEmbeddingReady(id: string): Promise<void> {
+        if (!this.table) return;
+        const where = `id = '${id.replace(/'/g, "''")}'`;
+        const rows = await this.withCurrentTable('memory_records_v2', () => this.table!.query().where(where).select(['embedding_state']).limit(1).toArray());
+        if (rows[0]?.embedding_state !== 'READY') {
+            await this.withCurrentTable('memory_records_v2', () => this.table!.update({ where, values: { embedding_state: 'READY' } }));
+        }
+    }
+
     public async projectEmbedding(node: MemoryNode, vector: number[], identity: EmbeddingIdentity): Promise<void> {
         if (!validEmbedding(vector, identity)) throw new Error('Invalid or incompatible embedding');
         await this.ensureInitialized();
@@ -537,6 +554,16 @@ export class LanceDbService {
         const record = { id: node.id, vector, ownerId: node.ownerId || 'system', json_data: JSON.stringify(node) };
         const names = await this.db.tableNames();
         const table = names.includes(name) ? await this.db.openTable(name) : await this.db.createTable(name, [record]);
+        const previous = await table.query().where(`id = '${node.id.replace(/'/g, "''")}'`).limit(2).toArray();
+        const storedVector = previous.length === 1 ? toNumericArray(previous[0].vector) : null;
+        const normalized = Array.from(Float32Array.from(vector));
+        if (previous.length === 1 && previous[0].json_data === record.json_data && storedVector
+            && storedVector.length === normalized.length && storedVector.every((v, index) => v === normalized[index])) {
+            // Persisted projection itself is the verifiable local receipt.
+            // A down optional mirror must not append identical Lance versions.
+            await this.markLocalEmbeddingReady(node.id);
+            return;
+        }
         // Intent-first: the durable ANN pending row is written BEFORE the
         // canonical projection, so a crash between the two is replayed on the
         // next open (pending flush) instead of silently desyncing the index.
@@ -551,7 +578,7 @@ export class LanceDbService {
             }
         }
         await table.mergeInsert('id').whenMatchedUpdateAll().whenNotMatchedInsertAll().execute([record]);
-        if (this.table) await this.withCurrentTable('memory_records_v2', () => this.table!.update({ where: `id = '${node.id.replace(/'/g, "''")}'`, values: { embedding_state: 'READY' } }));
+        await this.markLocalEmbeddingReady(node.id);
     }
     public async pendingEmbeddings(limit = 100): Promise<MemoryNode[]> {
         await this.ensureInitialized();
@@ -667,13 +694,21 @@ export class LanceDbService {
         return top.flatMap(r => { const node = byId.get(r.id); return node ? [{ ...node, similarity: r._score }] : []; });
     }
 
-    public async ensureLocalVectorProjection(node: MemoryNode, vector: number[], identity: EmbeddingIdentity): Promise<void> {
-        await this.projectEmbedding(node, vector, identity);
-        const table = await this.db!.openTable(this.vectorTableName(identity));
-        const rows = await table.query().where(`id = '${node.id.replace(/'/g, "''")}'`).limit(2).toArray();
-        if (rows.length !== 1 || JSON.parse(rows[0].json_data).content !== node.content) {
-            throw new Error('Canonical memory retained; local vector projection is pending');
-        }
+    public ensureLocalVectorProjection(node: MemoryNode, vector: number[], identity: EmbeddingIdentity): Promise<void> {
+        const operation = this.writeQueue.then(async () => {
+            const current = await this.getNodeById(node.id);
+            if (!current || canonicalChecksum(current) !== canonicalChecksum(node)) {
+                throw new Error('Canonical version changed; stale local projection receipt refused');
+            }
+            await this.projectEmbedding(node, vector, identity);
+            const table = await this.db!.openTable(this.vectorTableName(identity));
+            const rows = await table.query().where(`id = '${node.id.replace(/'/g, "''")}'`).limit(2).toArray();
+            if (rows.length !== 1 || JSON.parse(rows[0].json_data).content !== node.content) {
+                throw new Error('Canonical memory retained; local vector projection is pending');
+            }
+        });
+        this.writeQueue = operation.then(() => undefined, () => undefined);
+        return operation;
     }
 
     /** Complete identity-partitioned application query, with payload and score.
@@ -732,7 +767,8 @@ export class LanceDbService {
                 return !filter || Object.entries(filter).every(([key, value]) => {
                     if (key === '$excludeTypes') return !value.includes((node as any).type);
                     if (key === '$excludeTags') return !(node.tags || []).some(tag => value.includes(tag));
-                    const actual = (node as any)[key];
+                    if (key === '$tagIncludes') return (node.tags || []).some(tag => tag.includes(value));
+                    const actual = key === 'ownerId' ? (node.ownerId || 'system') : (node as any)[key];
                     return Array.isArray(value) ? value.includes(actual) : Array.isArray(actual) ? actual.includes(value) : actual === value;
                 });
             });
@@ -752,6 +788,50 @@ export class LanceDbService {
         if (!node?.embeddingIdentity || !node.embeddingVector) return [];
         const neighbors = await this.search(Array.from(node.embeddingVector), limit + 1, undefined, node.embeddingIdentity);
         return neighbors.filter(n => n.id !== nodeId).slice(0, limit);
+    }
+
+    /** Bounded exhaustive lexical context query. Unlike legacy FTS candidate
+     * truncation, context/owner/type/tag filters precede top-k, with v2 canonical
+     * hydration overriding any old matching legacy payload. No model call. */
+    public async searchContextByContent(query: string, limit = 20, scope: MemoryScope = {}): Promise<MemoryNode[]> {
+        if (!query.trim()) return [];
+        await this.ensureInitialized();
+        if (!this.db) throw new Error('LanceDB unavailable');
+        const names = await this.db.tableNames();
+        const tables: lancedb.Table[] = [];
+        for (const name of ['memory_records_v2', 'memory']) {
+            if (!names.includes(name)) continue;
+            const table = await this.db.openTable(name);
+            await table.checkout(await table.version());
+            tables.push(table);
+        }
+        const canonicalRows = async (ids: string[]) => {
+            const result = new Map<string, MemoryNode>();
+            if (!ids.length) return result;
+            const quoted = ids.map(id => `'${id.replace(/'/g, "''")}'`).join(', ');
+            for (const table of tables) {
+                for (const row of await table.query().where(`id IN (${quoted})`).toArray()) {
+                    if (!result.has(row.id)) result.set(row.id, JSON.parse(row.json_data));
+                }
+            }
+            return result;
+        };
+        let top: { node: MemoryNode; score: number }[] = [];
+        for (const table of tables) {
+            const count = await table.countRows();
+            for (let offset = 0; offset < count; offset += scanPageRows()) {
+                const rows = await table.query().limit(scanPageRows()).offset(offset).toArray();
+                const current = await canonicalRows(rows.map(row => row.id));
+                const best = new Map(top.map(hit => [hit.node.id, hit]));
+                for (const node of current.values()) {
+                    if (['CODE_CHUNK','CODE_FILE_VERSION'].includes((node as any).type) || !inScope(node, scope)) continue;
+                    const score = lexicalScore(node.content, query);
+                    if (score > 0) best.set(node.id, { node, score });
+                }
+                top = [...best.values()].sort((a, b) => b.score - a.score || a.node.id.localeCompare(b.node.id)).slice(0, limit);
+            }
+        }
+        return top.map(hit => hit.node);
     }
 
     public async searchByContent(textQuery: string, limit = 20, scope: MemoryScope = {}): Promise<MemoryNode[]> {

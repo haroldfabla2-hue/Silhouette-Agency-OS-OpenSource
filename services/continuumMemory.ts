@@ -1,4 +1,4 @@
-import { queryCanonicalContext, isContextMemory } from './canonicalContextSearch';
+import { queryCanonicalContext, queryCanonicalTextContext, isContextMemory } from './canonicalContextSearch';
 import { lexicalMatches, lexicalScore } from './lexicalMatch';
 import { atomicWriteFile } from './utils/atomicWrite';
 import { MemoryNode, MemoryTier } from "../types";
@@ -1073,7 +1073,7 @@ class ContinuumMemorySystem {
         try {
             // 2. Search LanceDB (Semantic or Text)
             // For now, still text based fallback for LanceDB until we add embedding there too
-            const dbResults = await lancedbService.searchByContent(query, 50, scope);
+            const dbResults = await queryCanonicalTextContext(lancedbService, query, scope);
             lists.push(dbResults.filter(isContextMemory));
 
             // 3. Deep Memory (SEMANTIC / VECTOR)
