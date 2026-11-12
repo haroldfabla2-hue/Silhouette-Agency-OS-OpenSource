@@ -1,9 +1,10 @@
+import { queryCanonicalContext, isContextMemory } from './canonicalContextSearch';
 import { lexicalMatches, lexicalScore } from './lexicalMatch';
 import { atomicWriteFile } from './utils/atomicWrite';
 import { MemoryNode, MemoryTier } from "../types";
 import { lancedbService } from './lancedbService';
 import { createHash } from 'node:crypto';
-import { fuseMemories, inScope, scopeSql, type MemoryScope } from './memoryRetrieval';
+import { fuseMemories, inScope, type MemoryScope } from './memoryRetrieval';
 import { activation, selectSleepBatch } from './memoryCognition';
 import { memoryTransitions, isOutstandingTransition } from './memoryTransitions';
 import { quotaLedger, QuotaLedger } from './quotaLedger';
@@ -1073,7 +1074,7 @@ class ContinuumMemorySystem {
             // 2. Search LanceDB (Semantic or Text)
             // For now, still text based fallback for LanceDB until we add embedding there too
             const dbResults = await lancedbService.searchByContent(query, 50, scope);
-            lists.push(dbResults);
+            lists.push(dbResults.filter(isContextMemory));
 
             // 3. Deep Memory (SEMANTIC / VECTOR)
             // [FIX 2026-10-17] The query embeds with the SAME resolver as the
@@ -1081,32 +1082,16 @@ class ContinuumMemorySystem {
             // matching the vector actually produced - no env var can make write
             // and query identities diverge again. Qdrant is queried only when
             // actually connected and the dimension matches its 768 requirement.
-            const { vectorMemory } = await import('./vectorMemoryService');
             const geminiMod = await import('./geminiService');
             const embedWithIdentity = geminiMod.geminiService?.generateEmbeddingWithIdentity || geminiMod.generateEmbeddingWithIdentity;
             const embedded = typeof embedWithIdentity === 'function' ? await embedWithIdentity(query) : null;
 
             if (embedded) {
                 console.log(`[CONTINUUM] Semantic search via ${embedded.identity.model} (${embedded.identity.dimension}d)`);
-                lists.push((await lancedbService.search(embedded.vector, 50, scopeSql(scope), embedded.identity)).filter(n => inScope(n, scope)));
-
-                if (embedded.identity.dimension === 768 && vectorMemory.isReady()) {
-                    const deepVectors = await vectorMemory.searchMemory(embedded.vector, 50, { ...(scope.ownerId ? { ownerId: scope.ownerId } : {}), _embeddingModel: embedded.identity.model, _embeddingVersion: embedded.identity.version, _embeddingDimension: embedded.identity.dimension });
-                    const deepNodes = deepVectors.map(v => ({
-                        ...v.payload,
-                        id: v.id,
-                        content: v.payload?.content || "Vector Result",
-                        tier: MemoryTier.DEEP,
-                        timestamp: v.payload?.timestamp || Date.now(),
-                        tags: v.payload?.tags || [],
-                        importance: v.payload?.importance || (v.score ? v.score : 1), // Use vector score if available
-                        decayHealth: 100,
-                        accessCount: 0,
-                        lastAccess: Date.now(),
-                        compressionLevel: 0
-                    }));
-                    lists.push(deepNodes.filter(n => inScope(n, scope)));
-                }
+                lists.push(await queryCanonicalContext(lancedbService, embedded.vector, embedded.identity, scope));
+                // Optional mirrors do not supply unhydrated memories. New
+                // application writes are canonical; legacy mirror-only content
+                // remains visible in inspection, not silently trusted as facts.
             } else {
                 console.warn("[CONTINUUM] Embedding UNAVAILABLE (no provider configured or provider error) - deep memory served by text search only.");
             }

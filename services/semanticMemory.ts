@@ -14,6 +14,7 @@ export interface SemanticInsight {
     content: string;
     entities: string[];
     confidence: number;
+    similarity?: number;
     sourceNodeId: string;
     timestamp: number;
     // RAPTOR Fields
@@ -203,14 +204,15 @@ OUTPUT FORMAT: ["entity1", "entity2", "entity3"]
         const embedded = await this.dependencies.embed(query);
         if (!embedded) throw new Error('Semantic recall embedding unavailable');
 
-        const results = await this.dependencies.memory.searchMemory(embedded.vector, limit, undefined, embedded.identity);
+        const results = await this.dependencies.memory.searchMemory(embedded.vector, limit, { type: ['FACT', 'EVENT', 'PREFERENCE', 'RELATIONSHIP', 'RAPTOR_NODE'] }, embedded.identity);
         return results.map((r: any) => ({
             id: r.id,
             type: r.payload.type,
             content: r.payload.content,
-            entities: r.payload.entities,
-            confidence: r.score,
-            sourceNodeId: r.payload.source,
+            entities: r.payload.entities || [],
+            confidence: r.payload.confidence ?? 0,
+            similarity: r.score,
+            sourceNodeId: r.payload.sourceNodeId || r.payload.source,
             timestamp: r.payload.timestamp,
             level: r.payload.level,
             childrenIds: r.payload.childrenIds,

@@ -35,13 +35,13 @@ describe('deep memory write and read share one identity resolver', () => {
         expect(continuum).not.toContain('minimaxService');
     });
     it('query path searches the per-identity LanceDB projection', () => {
-        expect(continuum).toContain('lancedbService.search(embedded.vector, 50, scopeSql(scope), embedded.identity)');
+        expect(continuum).toContain('queryCanonicalContext(lancedbService, embedded.vector, embedded.identity, scope)');
         expect(continuum).not.toContain('MEMORY_QDRANT_MODEL');
         expect(continuum).not.toContain('MEMORY_QUERY_MODEL');
     });
-    it('qdrant is only touched when connected and the dimension matches', () => {
-        expect(continuum).toContain('vectorMemory.isReady()');
-        expect(continuum).toContain('embedded.identity.dimension === 768');
+    it('semantic context never trusts raw Qdrant payloads over canonical records', () => {
+        expect(continuum).toContain('queryCanonicalContext(lancedbService');
+        expect(continuum).not.toContain('const deepNodes = deepVectors.map');
     });
     it('geminiService has a single embedding path that reports its true source', () => {
         expect(gemini).toContain('generateEmbeddingWithIdentity');

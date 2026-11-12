@@ -31,7 +31,9 @@ export class VectorProjectionJournal {
             key TEXT PRIMARY KEY, id TEXT NOT NULL, checksum TEXT NOT NULL,
             body TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'prepared',
             attempts INTEGER NOT NULL DEFAULT 0, last_failure TEXT
-        )`);
+        ); CREATE TABLE IF NOT EXISTS projection_scan_cursor (
+            singleton INTEGER PRIMARY KEY CHECK(singleton = 1), after_rowid INTEGER NOT NULL
+        ); INSERT OR IGNORE INTO projection_scan_cursor VALUES(1,0)`);
     }
     prepare(node: any, vector: number[], identity: EmbeddingIdentity): ProjectionIntent {
         if (!node?.id || !validEmbedding(vector, identity)) throw new Error('Invalid projection intent');
@@ -43,8 +45,14 @@ export class VectorProjectionJournal {
         return intent;
     }
     pending(limit = 50): ProjectionIntent[] {
-        return this.db.prepare("SELECT body,state FROM projection_intents WHERE state IN ('prepared','pending') ORDER BY CASE state WHEN 'pending' THEN 0 ELSE 1 END, rowid LIMIT ?")
-            .all(Math.max(1, Math.min(500, limit))).map((r: any) => ({ ...JSON.parse(r.body), phase: r.state }));
+        const cursor = (this.db.prepare('SELECT after_rowid FROM projection_scan_cursor WHERE singleton = 1').get() as any).after_rowid;
+        const rows = this.db.prepare("SELECT rowid,body,state FROM projection_intents WHERE state IN ('prepared','pending') ORDER BY CASE WHEN rowid > ? THEN 0 ELSE 1 END, rowid LIMIT ?")
+            .all(cursor, Math.max(1, Math.min(500, limit))) as any[];
+        if (rows.length) this.db.prepare('UPDATE projection_scan_cursor SET after_rowid = ? WHERE singleton = 1').run(rows[rows.length - 1].rowid);
+        return rows.map(row => ({ ...JSON.parse(row.body), phase: row.state }));
+    }
+    pendingCount(): number {
+        return (this.db.prepare("SELECT COUNT(*) AS count FROM projection_intents WHERE state IN ('prepared','pending')").get() as any).count;
     }
     canonicalVerified(key: string): void {
         this.db.prepare("UPDATE projection_intents SET state = 'pending' WHERE key = ? AND state = 'prepared'").run(key);

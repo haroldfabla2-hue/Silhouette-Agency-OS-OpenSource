@@ -3,7 +3,9 @@
 These are explicit standalone tests, not automatically discovered Vitest tests.
 They use public deterministic precomputed vectors, never generated embeddings.
 A safety loader rejects model/bootstrap imports and fetches outside the provided
-loopback Qdrant URL. No service is mocked by this loader.
+loopback Qdrant URL. No service is mocked by this loader. It is PARTIAL DEFENSE, not OS isolation:
+direct net/http, child_process and redirects are not confined by it. Final
+acceptance needs an independently reviewed namespace/process boundary.
 
 Required before running any engine-backed script: an independently approved finite
 sandbox and resource/disk/time budget, a disposable empty Qdrant store, an existing
@@ -35,6 +37,8 @@ node --max-old-space-size=256 \
   disabled Qdrant. Does not start an engine or prove Qdrant replay.
 - `local-projection-recovery.real.ts`: real filesystem projection failure, canonical
   retention, no premature activation, reopen and Lance repair with Qdrant disabled.
+- `projection-fairness.real.ts`: 101 prepared orphans, durable scan cursor across
+  reopen and valid 384-dimensional local replay behind them; no Qdrant engine.
 - `qdrant-backend.real.ts`: real local Qdrant backend lifecycle/schema/ID/filter/
   Brand compatibility checks. This rewritten final split test is not yet executed.
 - `unified-memory.real.ts`: real LanceDB and Qdrant down/up, replay/reopen and consumers.

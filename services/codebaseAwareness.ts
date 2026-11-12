@@ -26,6 +26,10 @@ export class CodebaseAwarenessService {
     private initialize() {
         // Subscribe to File System Updates
         systemBus.subscribe(SystemProtocol.FILESYSTEM_UPDATE, async (event) => {
+            if (event.payload.action === 'DELETE' && event.payload.fileId) {
+                await this.deleteFile(event.payload.fileId);
+                return;
+            }
             if (event.payload.action === 'UPDATE' || event.payload.action === 'CREATE') {
                 // We need the file ID or path. The event payload might need adjustment if it only sends ID.
                 // Assuming payload has { projectId, fileId, action }
@@ -79,6 +83,16 @@ export class CodebaseAwarenessService {
      * 2. Chunks content.
      * 3. Embeds and stores in Vector DB.
      */
+    public deleteFile(fileId: string): Promise<void> {
+        const previous = CodebaseAwarenessService.fileWrites.get(fileId) || Promise.resolve();
+        const operation = previous.catch(() => undefined).then(() => this.dependencies.memory.commitCodeVersion(fileId, 'DELETED'));
+        CodebaseAwarenessService.fileWrites.set(fileId, operation);
+        void operation.finally(() => {
+            if (CodebaseAwarenessService.fileWrites.get(fileId) === operation) CodebaseAwarenessService.fileWrites.delete(fileId);
+        }).catch(() => undefined);
+        return operation;
+    }
+
     public indexFile(node: FileNode): Promise<void> {
         // Snapshot the arrival and serialize same-file writes across service
         // instances in this process. A slow old embedding cannot activate after

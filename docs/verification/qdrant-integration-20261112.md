@@ -126,3 +126,32 @@ loader/timer boundaries, not launched concurrently from each canonical receipt.
 
 These fixes require a new source pin and independent review. They do not inherit
 final Qdrant acceptance from the earlier 15-check engine run.
+
+
+## Additional review follow-up
+
+- Prepared-intent selection now uses a persisted round-robin cursor. A real test
+  retained 101 old prepared intents, reopened the journal cursor, and recovered a
+  valid prepared 384-dimensional vector behind them in batches of 50, with Qdrant
+  disabled. Status counts no longer rotate the cursor. This is not a process-kill
+  acceptance matrix.
+- Continuum's actual semantic query now delegates to canonicalContextSearch, which
+  uses fresh canonical/identity/owner-checked points instead of the old Lance.search
+  hydration and raw Qdrant payload union. Code and hypothesis filters apply before
+  top-k. The real extracted query component is tested; importing full Continuum /
+  Dreamer / introspection without unrelated bootstrap remains an acceptance gap.
+- Paged point queries use independent pinned table handles for canonical payloads,
+  activation markers and projection rows. No shared mutable writer handle is checked
+  out. Concurrent cross-process activation still needs final runtime acceptance.
+- Code DELETE uses a retained deletion marker. Empty contents deactivate older code;
+  same-file events are serialized in this process, across service instances.
+- Semantic recall filters its supported insight types before ranking. A mixed corpus
+  test excludes code/brands and checks entities/source/type. Cosine similarity is
+  reported separately from stored confidence. Multilevel parent-link completeness
+  remains unverified and unresolved; it is not proved by a leaf recall test.
+
+The test loader/fetch guard is PARTIAL DEFENSE ONLY. It is NOT network/process
+confinement: direct http/https/net, child_process, and fetch redirects require an OS
+sandbox boundary. No-model static/import inspection plus this guard is useful
+additional evidence, but is not a substitute for final reviewed namespace/seccomp
+isolation or a full-consumer no-startup check.

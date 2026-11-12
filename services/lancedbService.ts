@@ -424,7 +424,7 @@ export class LanceDbService {
                 completed++;
             } catch { journal.failed(intent.key); }
         }
-        return { completed, pending: journal.pending(limit).length };
+        return { completed, pending: journal.pendingCount() };
     }
 
     public async getNodeById(id: string): Promise<MemoryNode | null> {
@@ -690,14 +690,36 @@ export class LanceDbService {
         const name = this.vectorTableName(identity);
         if (!(await this.db.tableNames()).includes(name)) return [];
         const table = await this.db.openTable(name);
+        // Independent handles pinned once for the whole query. Do not checkout
+        // the shared mutable writer handles. All pages and activation markers
+        // observe the same canonical version, not a per-page moving target.
+        const snapshots: lancedb.Table[] = [];
+        const names = await this.db.tableNames();
+        for (const canonicalName of ['memory_records_v2', 'memory']) {
+            if (!names.includes(canonicalName)) continue;
+            const snapshot = await this.db.openTable(canonicalName);
+            await snapshot.checkout(await snapshot.version());
+            snapshots.push(snapshot);
+        }
+        await table.checkout(await table.version());
+        const readSnapshot = async (ids: string[]) => {
+            const found = new Map<string, MemoryNode>();
+            if (!ids.length) return found;
+            const quoted = ids.map(id => `'${id.replace(/'/g, "''")}'`).join(', ');
+            for (const snapshot of snapshots) {
+                const rows = await snapshot.query().where(`id IN (${quoted})`).toArray();
+                for (const row of rows) if (!found.has(row.id)) found.set(row.id, JSON.parse(row.json_data));
+            }
+            return found;
+        };
         const count = await table.countRows();
         const pageSize = scanPageRows();
         let best: any[] = [];
         for (let offset = 0; offset < count; offset += pageSize) {
             const rows = await table.query().limit(pageSize).offset(offset).toArray();
-            const byId = await this.getNodesByIds(rows.map((r: any) => r.id));
+            const byId = await readSnapshot(rows.map((r: any) => r.id));
             const fileIds = [...new Set([...byId.values()].filter((node: any) => node.type === 'CODE_CHUNK' && node.fileId).map((node: any) => `code_file_version:${node.fileId}`))];
-            const codeVersions = await this.getNodesByIds(fileIds);
+            const codeVersions = await readSnapshot(fileIds);
             const eligible = rows.filter((row: any) => {
                 const node = byId.get(row.id);
                 if (!node || JSON.stringify(node.embeddingIdentity) !== JSON.stringify(identity)) return false;
@@ -708,8 +730,10 @@ export class LanceDbService {
                 const projected = JSON.parse(row.json_data);
                 if (projected.content !== node.content) return false; // Stale embedding is not current evidence.
                 return !filter || Object.entries(filter).every(([key, value]) => {
+                    if (key === '$excludeTypes') return !value.includes((node as any).type);
+                    if (key === '$excludeTags') return !(node.tags || []).some(tag => value.includes(tag));
                     const actual = (node as any)[key];
-                    return Array.isArray(actual) ? actual.includes(value) : actual === value;
+                    return Array.isArray(value) ? value.includes(actual) : Array.isArray(actual) ? actual.includes(value) : actual === value;
                 });
             });
             const scored = rankByCosine(eligible as any, vector, eligible.length)
