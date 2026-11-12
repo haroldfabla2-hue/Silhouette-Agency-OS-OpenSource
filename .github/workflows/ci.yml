@@ -39,7 +39,11 @@ jobs:
 
       - name: Install real Linux sandbox dependencies
         run: |
-          sudo apt-get update
+          # Keep the runner's official Ubuntu HTTPS fallbacks and Signed-By.
+          # No resolver rewrite, unsigned package or omitted sandbox check.
+          python3 tests/real-process/test_ci_official_apt_mirrors.py
+          sudo python3 scripts/ci_official_apt_mirrors.py
+          sudo apt-get update --error-on=any
           sudo apt-get install -y bubblewrap libseccomp2
           # Ubuntu AppArmor otherwise denies CI runner user namespaces.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
