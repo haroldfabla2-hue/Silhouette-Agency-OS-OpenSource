@@ -25,8 +25,12 @@ describe('P1 real LanceDB retrieval', () => {
         await expect(db.projectEmbedding(node('bad-vector'), [0, 0, 0], identity)).rejects.toThrow('Invalid');
         await expect(db.projectEmbedding(node('bad-vector'), [NaN, 1, 2], identity)).rejects.toThrow('Invalid');
         await expect(db.projectEmbedding(node('bad-vector'), [1, 2], identity)).rejects.toThrow('Invalid');
-        await db.store(node('good-vector'));
-        await db.projectEmbedding(node('good-vector'), [1, 0, 0], identity);
+        const identified = { ...node('good-vector'), embeddingIdentity: identity };
+        await db.store(identified);
+        await db.projectEmbedding(identified, [1, 0, 0], identity);
+        // A partition name/argument cannot authenticate an unidentified payload.
+        await db.store(node('unidentified-vector'));
+        await db.projectEmbedding(node('unidentified-vector'), [1, 0, 0], identity);
         expect((await db.search([1, 0, 0], 10, undefined, identity)).map(n => n.id)).toEqual(['good-vector']);
         expect(await db.search([1, 0, 0], 10, undefined, { ...identity, model: 'other-model' })).toEqual([]);
         expect((await db.pendingEmbeddings()).length).toBeGreaterThan(0);

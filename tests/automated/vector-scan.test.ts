@@ -71,7 +71,7 @@ describe('native vector kernel preflight', () => {
 describe('LanceDbService semantic search via portable JS scan', () => {
     const identity: EmbeddingIdentity = { model: 'scan-test', version: '1', dimension: 4 };
     const node = (id: string, ownerId: string) => ({
-        id, ownerId, content: `content of ${id}`, originalContent: '',
+        id, ownerId, embeddingIdentity: identity, content: `content of ${id}`, originalContent: '',
         tags: ['scan-test'], importance: 0.5, timestamp: Date.now(),
         tier: MemoryTier.DEEP, accessCount: 0, lastAccess: Date.now(), stabilityScore: 0,
     });
@@ -84,6 +84,10 @@ describe('LanceDbService semantic search via portable JS scan', () => {
         await lancedbService.projectEmbedding(node('scan-a', 'alice') as any, [1, 0, 0, 0], identity);
         await lancedbService.projectEmbedding(node('scan-b', 'alice') as any, [0.9, 0.1, 0, 0], identity);
         await lancedbService.projectEmbedding(node('scan-c', 'bob') as any, [0, 1, 0, 0], identity);
+
+        const unidentified = { ...node('scan-unidentified', 'alice'), embeddingIdentity: undefined };
+        await lancedbService.store(unidentified as any);
+        await lancedbService.projectEmbedding(unidentified as any, [1, 0, 0, 0], identity);
 
         const ranked = await lancedbService.search([1, 0, 0, 0], 10, undefined, identity);
         expect(ranked.map(n => n.id)).toEqual(['scan-a', 'scan-b', 'scan-c']);
