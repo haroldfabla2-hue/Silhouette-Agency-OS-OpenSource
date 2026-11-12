@@ -246,3 +246,26 @@ was measured on a separate real SQLite ledger: ten identical dense-vector prepar
 attempts grew the closed database from 16,384 to 196,608 bytes (+180,224 bytes).
 This is a fixture measurement, not a production capacity bound; no history was
 pruned. Repeated canonical writes are distinct events, not globally exactly-once.
+
+## Payload-only and bulk composition
+
+A real filesystem obstruction now tests V2 canonical commit with failed local
+projection, restoration of the old V1 projection directory, then a metadata-only
+write BEFORE replay. The old implementation reproduced stale-V1 overwrite. Reuse
+now first reads the immutable intent named by the active canonical event, checks
+its checksum against the current canonical node and checks content/identity. It
+can reuse V2 even while its local delivery is pending. Local projection is a
+fallback only for genuinely unkeyed records, not a new keyed generation.
+
+Bulk updates of existing vector-bearing nodes also reuse that checked active
+vector, prepare a new event before the one bulk merge, and commit its event key
+alongside each node. Local delivery happens after canonical read-back. If a bulk
+replacement changes content/identity so no supported vector can be reused, it is
+rejected before the bulk canonical merge with an explicit instruction to use
+identified single-store with an explicit vector. Prepared intents from a rejected
+batch may remain for forensic recovery; no canonical mutation or history deletion
+is hidden. Unidentified seed/import batches keep their existing behavior.
+
+The composition test covers existing-ID bulk restore, persisted cursor/reopen,
+exact V2 vector retained and unsupported bulk replacement rejected with canonical
+node unchanged. No Qdrant mirror has been started for these tests.

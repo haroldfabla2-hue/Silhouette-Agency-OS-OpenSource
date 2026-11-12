@@ -323,7 +323,18 @@ export class LanceDbService {
         if (!this.db) throw new Error('LanceDB is unavailable');
         if (nodes.length === 0) return { ok: true, count: 0 };
         await this.ensureProjectionEventColumn();
-        const records = nodes.map(n => this.toRecord(n));
+        const prepared: { node: MemoryNode; vector?: number[]; intent: ReturnType<VectorProjectionJournal['prepare']> | null }[] = [];
+        // Validate the whole bulk before any canonical change. Vector-bearing
+        // replacements use active-intent vectors, never a possibly stale local row.
+        for (const node of nodes) {
+            const vector = await this.vectorForUnchangedContent(node);
+            if (!vector && await this.canonicalProjectionEventKey(node.id)) {
+                throw new Error('Bulk replacement cannot discard an active vector generation; use identified store with an explicit vector');
+            }
+            const intent = vector && node.embeddingIdentity ? this.journal().prepare(node, vector, node.embeddingIdentity) : null;
+            prepared.push({ node, vector, intent });
+        }
+        const records = prepared.map(({ node, intent }) => this.toRecord(node, undefined, intent?.key));
         if (!this.table) {
             const names = await this.db.tableNames();
             this.table = names.includes('memory_records_v2')
@@ -344,6 +355,14 @@ export class LanceDbService {
             const stored = await this.getNodeById(edge.id);
             if (!stored) throw new Error(`LanceDB bulk read-back verification failed for ${edge.id}`);
         }
+        for (const { node, vector, intent } of prepared) {
+            if (!intent || !vector || !node.embeddingIdentity) continue;
+            const stored = await this.getNodeById(node.id);
+            if (!stored || canonicalChecksum(stored) !== intent.checksum) throw new Error('Bulk vector canonical read-back failed');
+            this.journal().canonicalVerified(intent.key);
+            try { await this.projectEmbeddingSerialized(node, vector, node.embeddingIdentity); }
+            catch { console.warn('[LANCEDB] Bulk canonical retained; local vector repair pending'); }
+        }
         return { ok: true, count: nodes.length };
     }
 
@@ -352,6 +371,16 @@ export class LanceDbService {
     private async vectorForUnchangedContent(node: MemoryNode): Promise<number[] | undefined> {
         if (!node.embeddingIdentity || !this.db) return undefined;
         const name = this.vectorTableName(node.embeddingIdentity);
+        const activeEvent = await this.canonicalProjectionEventKey(node.id);
+        if (activeEvent) {
+            const intent = this.journal().get(activeEvent);
+            const current = await this.getNodeById(node.id);
+            if (!intent || !current || intent.checksum !== canonicalChecksum(current)) {
+                throw new Error('Active canonical vector receipt is unverifiable; refusing stale reuse');
+            }
+            if (intent.node.content !== node.content || canonicalChecksum(intent.identity) !== canonicalChecksum(node.embeddingIdentity)) return undefined;
+            return validEmbedding(intent.vector, intent.identity) ? intent.vector : undefined;
+        }
         if (!(await this.db.tableNames()).includes(name)) return undefined;
         const table = await this.db.openTable(name);
         const rows = await table.query().where(`id = '${node.id.replace(/'/g, "''")}'`).limit(2).toArray();

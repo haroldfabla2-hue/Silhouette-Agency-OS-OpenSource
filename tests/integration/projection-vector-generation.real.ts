@@ -40,6 +40,37 @@ const node: any = { id: 'PUBLIC_SAME_PAYLOAD', content: 'Public unchanged exact 
     assert.equal(journal.stats().pending, 1);
     assert.equal(journal.pending(50)[0].key, current.projection_event_key, 'canonical commit binds exact pending delivery event');
     journal.close();
+    const faultDirectory = path.join(directory,'metadata-fault');
+    const faultWriter = new LanceDbService(faultDirectory,target);
+    await faultWriter.store(node,v1);
+    const projectionPath = path.join(faultDirectory,name+'.lance');
+    const heldPath = projectionPath+'.held-public-fixture';
+    fs.renameSync(projectionPath,heldPath);
+    fs.writeFileSync(projectionPath,'PUBLIC FILESYSTEM OBSTRUCTION');
+    try {
+        await faultWriter.store(node,v2); // Canonical V2 succeeds; actual local I/O fails.
+    } finally {
+        fs.unlinkSync(projectionPath); fs.renameSync(heldPath,projectionPath);
+    }
+    const metadataNode = { ...node, accessCount: 2 };
+    await faultWriter.store(metadataNode); // Fault removed, but stale local V1 remains. No replay yet.
+    const faultReopened = new LanceDbService(faultDirectory,target);
+    await faultReopened.replayVectorProjections(50);
+    const faultConnection = await lancedb.connect(faultDirectory);
+    const faultRows = await (await faultConnection.openTable(name)).query().toArray();
+    assert.deepEqual(Array.from(faultRows[0].vector.toArray()),Array.from(Float32Array.from(v2)), 'metadata after real V2 fault must retain V2');
+    await faultReopened.storeMany([node]); // Existing exact node bulk update binds reused current V2.
+    const bulkRow = (await (await faultConnection.openTable('memory_records_v2')).query().toArray())[0];
+    assert.ok(bulkRow.projection_event_key,'new bulk write must not regress to unkeyed history');
+    let bulkJournal = new VectorProjectionJournal(path.join(faultDirectory,'vector-projection-intents.sqlite'));
+    assert.deepEqual(bulkJournal.get(bulkRow.projection_event_key)!.vector,v2);
+    bulkJournal.pending(1); bulkJournal.close(); // Adversarial persisted cursor.
+    const bulkReopened = new LanceDbService(faultDirectory,target);
+    for(let i=0;i<6;i++) await bulkReopened.replayVectorProjections(1);
+    const afterBulk = (await (await faultConnection.openTable(name)).query().toArray())[0];
+    assert.deepEqual(Array.from(afterBulk.vector.toArray()),Array.from(Float32Array.from(v2)));
+    await assert.rejects(()=>bulkReopened.storeMany([{...node,content:'different unsupported bulk content'}]),/Bulk replacement cannot discard/);
+    assert.deepEqual(await bulkReopened.getNodeById(node.id),node,'unsupported vector-bearing bulk replacement rejects before canonical modification');
     const migratedDirectory = path.join(directory,'old-schema');
     const migrated = await lancedb.connect(migratedDirectory);
     const oldRow = { ...current, tags: Array.from(current.tags) }; delete oldRow.projection_event_key;
@@ -59,7 +90,7 @@ const node: any = { id: 'PUBLIC_SAME_PAYLOAD', content: 'Public unchanged exact 
     assert.equal(measure.stats().prepared,10); measure.close();
     const bytesAfter = fs.statSync(measureFile).size;
     console.log(JSON.stringify({ same_payload_V1_V2_cursor_reopen: true, latest_local_vector_exact: true,
-        canonical_event_binding: true, stale_receipt_vector_rejected: true, old_schema_additive_upgrade_preserves_node: true, stale_event_superseded: true, identical_attempt_events: 10,
+        canonical_event_binding: true, real_V2_fault_metadata_reuses_active_V2: true, bulk_existing_generation_coherent: true, stale_receipt_vector_rejected: true, old_schema_additive_upgrade_preserves_node: true, stale_event_superseded: true, identical_attempt_events: 10,
         actual_ledger_bytes_before: bytesBefore, actual_ledger_bytes_after: bytesAfter,
         actual_added_bytes: bytesAfter-bytesBefore, mirror: 'disabled; final Qdrant acceptance NOT RUN' }));
     process.exit(0);
