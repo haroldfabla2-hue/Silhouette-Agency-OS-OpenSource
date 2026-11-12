@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import * as lancedb from '@lancedb/lancedb';
 import { VectorProjectionJournal } from '../../services/vectorProjectionJournal.ts';
 import { LanceDbService } from '../../services/lancedbService.ts';
 import { UnifiedVectorMemory } from '../../services/unifiedVectorMemory.ts';
@@ -16,13 +17,18 @@ const node = (id: string) => ({ id, content: 'Public fairness ' + id, tags: [], 
     const filename = path.join(directory, 'vector-projection-intents.sqlite');
     let journal = new VectorProjectionJournal(filename);
     for (let i = 0; i < 101; i++) journal.prepare(node('PUBLIC_ORPHAN_' + i), vector, identity);
-    journal.prepare(node('PUBLIC_RECOVERABLE'), vector, identity);
+    const recoverable = journal.prepare(node('PUBLIC_RECOVERABLE'), vector, identity);
     journal.close();
     const target = new VectorMemoryService({ enabled: async () => false });
     const canonical = new LanceDbService(directory, target);
     // Actual prepared journal followed by canonical commit with no projection,
     // the durable state of an interruption before local-vector delivery.
     await canonical.store(node('PUBLIC_RECOVERABLE'));
+    // Exact interrupted-write fixture: real store would atomically commit the
+    // prepared event key beside its canonical row before local projection.
+    const fixtureConnection = await lancedb.connect(directory);
+    const fixtureTable = await fixtureConnection.openTable('memory_records_v2');
+    await fixtureTable.update({ where: "id = 'PUBLIC_RECOVERABLE'", values: { projection_event_key: recoverable.key } });
     await canonical.replayVectorProjections(50);
     journal = new VectorProjectionJournal(filename);
     const secondBatch = journal.pending(50);

@@ -3,7 +3,7 @@ import { VectorProjectionJournal, canonicalChecksum } from './vectorProjectionJo
 import * as lancedb from '@lancedb/lancedb';
 import path from 'path';
 import fs from 'fs';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { MemoryNode, MemoryTier } from '../types';
 
 // Vitest workers must not mutate the same LanceDB directory concurrently.
@@ -238,7 +238,7 @@ export class LanceDbService {
         return rows[0].projection_event_key || null;
     }
 
-    private toRecord(node: MemoryNode, json?: string, projectionEventKey = '') {
+    private toRecord(node: MemoryNode, json?: string, projectionEventKey = 'unembedded:' + randomUUID()) {
         const jsonData = json ?? JSON.stringify(node);
         return {
             id: node.id,
@@ -328,7 +328,8 @@ export class LanceDbService {
         // replacements use active-intent vectors, never a possibly stale local row.
         for (const node of nodes) {
             const vector = await this.vectorForUnchangedContent(node);
-            if (!vector && await this.canonicalProjectionEventKey(node.id)) {
+            const previousEvent = await this.canonicalProjectionEventKey(node.id);
+            if (!vector && previousEvent && !previousEvent.startsWith('unembedded:')) {
                 throw new Error('Bulk replacement cannot discard an active vector generation; use identified store with an explicit vector');
             }
             const intent = vector && node.embeddingIdentity ? this.journal().prepare(node, vector, node.embeddingIdentity) : null;
@@ -372,7 +373,7 @@ export class LanceDbService {
         if (!node.embeddingIdentity || !this.db) return undefined;
         const name = this.vectorTableName(node.embeddingIdentity);
         const activeEvent = await this.canonicalProjectionEventKey(node.id);
-        if (activeEvent) {
+        if (activeEvent && !activeEvent.startsWith('unembedded:')) {
             const intent = this.journal().get(activeEvent);
             const current = await this.getNodeById(node.id);
             if (!intent || !current || intent.checksum !== canonicalChecksum(current)) {
@@ -381,6 +382,7 @@ export class LanceDbService {
             if (intent.node.content !== node.content || canonicalChecksum(intent.identity) !== canonicalChecksum(node.embeddingIdentity)) return undefined;
             return validEmbedding(intent.vector, intent.identity) ? intent.vector : undefined;
         }
+        if (activeEvent?.startsWith('unembedded:')) return undefined;
         if (!(await this.db.tableNames()).includes(name)) return undefined;
         const table = await this.db.openTable(name);
         const rows = await table.query().where(`id = '${node.id.replace(/'/g, "''")}'`).limit(2).toArray();
@@ -769,7 +771,7 @@ export class LanceDbService {
                 throw new Error('Canonical version changed; stale local projection receipt refused');
             }
             const activeEvent = await this.canonicalProjectionEventKey(node.id);
-            if (activeEvent) {
+            if (activeEvent && !activeEvent.startsWith('unembedded:')) {
                 const intent = this.journal().get(activeEvent);
                 if (!intent || canonicalChecksum(intent.identity) !== canonicalChecksum(identity)
                     || canonicalChecksum(Array.from(Float32Array.from(intent.vector))) !== canonicalChecksum(Array.from(Float32Array.from(vector)))) {

@@ -269,3 +269,10 @@ is hidden. Unidentified seed/import batches keep their existing behavior.
 The composition test covers existing-ID bulk restore, persisted cursor/reopen,
 exact V2 vector retained and unsupported bulk replacement rejected with canonical
 node unchanged. No Qdrant mirror has been started for these tests.
+
+New writes without an available vector now commit an explicit unembedded:UUID
+invalidation marker, not an empty legacy key. Historical empty keys remain the
+only checksum fallback. This prevents a new vector-less single/bulk write from
+accidentally pretending to be pre-generation history. The fairness crash fixture
+now writes its prepared event key into the canonical row explicitly, matching the
+actual atomic pre-projection crash state, rather than relying on an unkeyed store.

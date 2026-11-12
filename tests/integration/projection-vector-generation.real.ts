@@ -62,7 +62,7 @@ const node: any = { id: 'PUBLIC_SAME_PAYLOAD', content: 'Public unchanged exact 
     await faultReopened.storeMany([node]); // Existing exact node bulk update binds reused current V2.
     const bulkRow = (await (await faultConnection.openTable('memory_records_v2')).query().toArray())[0];
     assert.ok(bulkRow.projection_event_key,'new bulk write must not regress to unkeyed history');
-    let bulkJournal = new VectorProjectionJournal(path.join(faultDirectory,'vector-projection-intents.sqlite'));
+    const bulkJournal = new VectorProjectionJournal(path.join(faultDirectory,'vector-projection-intents.sqlite'));
     assert.deepEqual(bulkJournal.get(bulkRow.projection_event_key)!.vector,v2);
     bulkJournal.pending(1); bulkJournal.close(); // Adversarial persisted cursor.
     const bulkReopened = new LanceDbService(faultDirectory,target);
@@ -71,6 +71,12 @@ const node: any = { id: 'PUBLIC_SAME_PAYLOAD', content: 'Public unchanged exact 
     assert.deepEqual(Array.from(afterBulk.vector.toArray()),Array.from(Float32Array.from(v2)));
     await assert.rejects(()=>bulkReopened.storeMany([{...node,content:'different unsupported bulk content'}]),/Bulk replacement cannot discard/);
     assert.deepEqual(await bulkReopened.getNodeById(node.id),node,'unsupported vector-bearing bulk replacement rejects before canonical modification');
+    const unembeddedNode = {...node, content:'Changed content without inference', timestamp:3};
+    await bulkReopened.store(unembeddedNode);
+    const noVectorRow = (await (await faultConnection.openTable('memory_records_v2')).query().toArray())[0];
+    assert.ok(noVectorRow.projection_event_key.startsWith('unembedded:'),'new vector-less writes invalidate old generation without entering legacy fallback');
+    await bulkReopened.replayVectorProjections(50);
+    assert.deepEqual(await bulkReopened.getNodeById(node.id),unembeddedNode);
     const migratedDirectory = path.join(directory,'old-schema');
     const migrated = await lancedb.connect(migratedDirectory);
     const oldRow = { ...current, tags: Array.from(current.tags) }; delete oldRow.projection_event_key;
