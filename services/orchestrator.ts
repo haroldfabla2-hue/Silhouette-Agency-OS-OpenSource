@@ -923,9 +923,33 @@ Format each gap as:
         const { resolveChannelAuthority } = await import('./security/channelAuthority');
         const authority = resolveChannelAuthority(payload);
 
+        let walId: string | null = null;
+        let replyAttempted = false;
+        const deliver = async (text: string, media?: any[]): Promise<string | null> => {
+            replyAttempted = true;
+            let deliveryId: string | null;
+            if (typeof payload.replyRoute === 'string') {
+                const { gateway } = await import('../server/gateway/wsGateway');
+                deliveryId = await gateway.deliverReply(payload.replyRoute, text, media);
+            } else {
+                const { channelRouter } = await import('../server/channels/channelRouter');
+                deliveryId = await channelRouter.send(payload.channel, {chatId:payload.chatId,text,media});
+            }
+            if (!deliveryId) {
+                console.error('[ORCHESTRATOR] Reply delivery unverified; no transport receipt, do not resend:', {walId});
+                return null;
+            }
+            try {
+                if (walId) continuousMemory.commitEntry(walId, text, {id:deliveryId,transport:typeof payload.replyRoute==='string'?'websocket':String(payload.channel)});
+            } catch (memoryError) {
+                console.error('[ORCHESTRATOR] Reply delivered; WAL commit unverified, do not resend:', {walId,error:memoryError});
+            }
+            return deliveryId;
+        };
+
         try {
             // [EVOLUTION] WAL: Log BEFORE processing for crash recovery
-            const walId = continuousMemory.logBeforeProcessing(
+            walId = continuousMemory.logBeforeProcessing(
                 'core-01',
                 'MESSAGE_RECEIVED',
                 { input: payload.message, sessionId: payload.sessionId }
@@ -950,8 +974,7 @@ Format each gap as:
                     authority.conversationId ?? payload.sessionId
                 );
                 if (gateAck) {
-                    const { channelRouter: gateRouter } = await import('../server/channels/channelRouter');
-                    await gateRouter.send(payload.channel, { chatId: payload.chatId, text: gateAck });
+                    await deliver(gateAck);
                     return;
                 }
             }
@@ -959,7 +982,6 @@ Format each gap as:
             // 1. Initial "Thinking" feedback for improved UX
             // [UX FIX] Removed the literal "_Silhouette is thinking..._" text message.
             // Channels like Telegram already have native typing indicators handled at the channel ingestion level.
-            const { channelRouter } = await import('../server/channels/channelRouter');
 
             // 2. Determine Agent, Complexity & Hydrate
             const complexityInfo = await this.analyzeComplexity(payload.message);
@@ -972,11 +994,7 @@ Format each gap as:
                 const debateResult = await this.formSquadAndDebate(payload.message, payload.sessionId);
                 
                 // Directly send the consensus back to the user
-                const { channelRouter } = await import('../server/channels/channelRouter');
-                await channelRouter.send(payload.channel, {
-                    chatId: payload.chatId,
-                    text: debateResult
-                });
+                await deliver(debateResult);
                 return;
             }
 
@@ -1109,41 +1127,18 @@ ${payload.message}
                 }
             }
 
-            // 6. Final Reply
-            const deliveryId = await channelRouter.send(payload.channel, {
-                chatId: payload.chatId,
-                text: finalOutput,
-                media: outboundMedia.length > 0 ? outboundMedia : undefined
-            });
-
-            if (!deliveryId) {
-                // A missing receipt cannot prove non-delivery. Keep the WAL
-                // pending and never issue a second reply to repair uncertainty.
-                console.error('[ORCHESTRATOR] Reply delivery unverified; no channel message ID, do not resend:', {walId});
-                return;
-            }
-
-            console.log(`[ORCHESTRATOR] 📤 Sent reply to ${payload.channel}`);
-
-            // [EVOLUTION] WAL: Commit after successful processing
-            try {
-                continuousMemory.commitEntry(walId, finalOutput);
-            } catch (memoryError) {
-                // The channel has already accepted the reply. A memory failure
-                // must not send a second error reply or repeat external effects.
-                // The uncommitted WAL remains pending for honest interruption
-                // recovery; do not manufacture a completed-memory receipt.
-                console.error('[ORCHESTRATOR] Reply delivered; WAL commit unverified, do not resend:', {walId, error: memoryError});
-            }
+            // Every reply path shares the same transport/receipt boundary.
+            await deliver(finalOutput, outboundMedia.length > 0 ? outboundMedia : undefined);
 
         } catch (error: any) {
             console.error(`[ORCHESTRATOR] ❌ Message handling error:`, error);
-            // Notify transition error via same channel
-            const { channelRouter } = await import('../server/channels/channelRouter');
-            await channelRouter.send(payload.channel, {
-                chatId: payload.chatId,
-                text: `⚠️ I encountered an internal error: ${error.message}`
-            });
+            // No second reply after an attempted send: an exception cannot
+            // prove that the original transport did not accept the message.
+            if (!replyAttempted) {
+                try { await deliver(`⚠️ I encountered an internal error: ${error.message}`); }
+                catch (deliveryError) { console.error('[ORCHESTRATOR] Error response delivery unverified:', deliveryError); }
+            }
+
         }
     }
 

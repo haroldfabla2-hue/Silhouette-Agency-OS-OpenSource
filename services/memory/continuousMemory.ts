@@ -170,17 +170,20 @@ export class ContinuousMemoryService {
      * Commit a WAL entry after successful processing.
      * This triggers micro-consolidation.
      */
-    public commitEntry(walId: string, output?: string): void {
+    public commitEntry(walId: string, output?: string, deliveryReceipt?: {id:string;transport:string}): void {
         this.ensureReady();
         const entry = this.wal.find(e => e.id === walId);
         if (!entry) throw new Error(`Unknown WAL entry ${walId}`);
+        if (deliveryReceipt && (!deliveryReceipt.id || !deliveryReceipt.transport)) throw new Error('Invalid delivery receipt');
         if (entry.status === 'COMMITTED') {
+            if (deliveryReceipt && (entry.data.metadata?.deliveryReceipt?.id !== deliveryReceipt.id || entry.data.metadata?.deliveryReceipt?.transport !== deliveryReceipt.transport)) throw new Error('Conflicting delivery receipt retry');
             if (output !== undefined && output !== entry.data.output) throw new Error('Conflicting WAL commit retry');
             return;
         }
         const previous = JSON.parse(JSON.stringify(entry)) as WALEntry;
         try {
             if (output !== undefined) entry.data.output = output;
+            if (deliveryReceipt) entry.data.metadata = {...entry.data.metadata, deliveryReceipt:{...deliveryReceipt}};
             this.microConsolidate(entry);
             entry.status = 'COMMITTED';
             this.persistWAL();
@@ -220,7 +223,7 @@ export class ContinuousMemoryService {
 
             case 'MESSAGE_RECEIVED':
                 const input = entry.data.input || 'No input';
-                return `**Message Processed**\n${input.length > 200 ? input.substring(0, 200) + '...' : input}`;
+                return `**Message Processed**\n${input.length > 200 ? input.substring(0, 200) + '...' : input}${entry.data.metadata?.deliveryReceipt ? `\nDelivery receipt: ${entry.data.metadata.deliveryReceipt.transport}:${entry.data.metadata.deliveryReceipt.id}` : ''}`;
 
             case 'SESSION_CREATED':
                 return `**Session Created**: ${entry.data.sessionId || 'Unknown session'}`;

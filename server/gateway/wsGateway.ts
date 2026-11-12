@@ -41,6 +41,7 @@ class SilhouetteGateway {
     private connections: Map<string, { ws: WebSocket; conn: ClientConnection }> = new Map();
     private idempotencyCache: Map<string, { result: unknown; expiresAt: number }> = new Map();
     private eventSeq = 0;
+    private replyRoutes = new Map<string, {connectionId:string;sessionId:string;expiresAt:number}>();
     private heartbeatInterval: NodeJS.Timeout | null = null;
     private sweepInterval: NodeJS.Timeout | null = null;
     private idempotencyCleanupInterval: NodeJS.Timeout | null = null;
@@ -205,7 +206,7 @@ class SilhouetteGateway {
 
         // Check idempotency cache
         if (idempotencyKey) {
-            const cached = this.idempotencyCache.get(idempotencyKey);
+            const cached = this.idempotencyCache.get(`${connectionId}:${idempotencyKey}`);
             if (cached && cached.expiresAt > Date.now()) {
                 ws.send(JSON.stringify(createResponse(id, cached.result)));
                 return;
@@ -217,7 +218,7 @@ class SilhouetteGateway {
 
             // Cache result if idempotency key provided
             if (idempotencyKey) {
-                this.idempotencyCache.set(idempotencyKey, {
+                this.idempotencyCache.set(`${connectionId}:${idempotencyKey}`, {
                     result,
                     expiresAt: Date.now() + CONFIG.IDEMPOTENCY_TTL_MS,
                 });
@@ -282,6 +283,12 @@ class SilhouetteGateway {
                 // Route user message to the orchestrator via SystemBus
                 const sessionId = (params.sessionId as string) ?? conn.sessionId;
                 const message = params.message as string;
+                if (!sessionManager.getSession(sessionId)) throw new Error('Reply session unavailable');
+                if (typeof message !== 'string' || !message.trim()) throw new Error('Message text is required');
+                // The return route is issued here, never accepted from params.
+                // Bind to this connection, not the shared personal session.
+                const replyRoute = this.issueReplyRoute(conn.id, sessionId);
+                if (!replyRoute) throw new Error('Reply connection unavailable');
 
                 // Add to session history
                 sessionManager.addMessage(sessionId, {
@@ -295,6 +302,7 @@ class SilhouetteGateway {
                     sessionId,
                     message,
                     clientId: conn.clientId,
+                    replyRoute,
                     channel: conn.clientType,
                     timestamp: Date.now(),
                 }, conn.clientId);
@@ -573,6 +581,38 @@ class SilhouetteGateway {
         }
     }
 
+    /** Internal ingress helper. A connection route never grants tool authority. */
+    issueReplyRoute(connectionId:string, sessionId?:string):string|null {
+        const entry=this.connections.get(connectionId);
+        if(!entry || entry.ws.readyState!==WebSocket.OPEN) return null;
+        const destinationSession=sessionId ?? entry.conn.sessionId;
+        if(!sessionManager.getSession(destinationSession)) return null;
+        const token=uuidv4();
+        this.replyRoutes.set(token,{connectionId,sessionId:destinationSession,expiresAt:Date.now()+10*60_000});
+        return token;
+    }
+
+    /** One-shot route from an accepted gateway connection. A successful send
+     * callback is transport acceptance only, not remote read acknowledgement. */
+    async deliverReply(replyRoute:string, text:string, media?:unknown[]):Promise<string|null> {
+        const route=this.replyRoutes.get(replyRoute);
+        this.replyRoutes.delete(replyRoute); // Uncertainty must never cause a retry.
+        if(!route || route.expiresAt<Date.now()) return null;
+        const entry=this.connections.get(route.connectionId);
+        if(!entry || entry.ws.readyState!==WebSocket.OPEN || !sessionManager.getSession(route.sessionId)) return null;
+        const message={id:uuidv4(),role:'agent',content:text,timestamp:Date.now()};
+        const frame=createEvent('session.message',{sessionId:route.sessionId,message,...(media?{media}:{})},++this.eventSeq);
+        const accepted=await new Promise<boolean>(resolve=>{
+            const deadline=setTimeout(()=>resolve(false),2000);
+            try{entry.ws.send(JSON.stringify(frame),error=>{clearTimeout(deadline);resolve(!error);});}
+            catch{clearTimeout(deadline);resolve(false);}
+        });
+        if(!accepted) return null;
+        try{sessionManager.addMessage(route.sessionId,{role:'agent',content:text,metadata:{channel:entry.conn.clientType}});}
+        catch(error){console.error('[Gateway] Reply accepted; session history receipt unverified, do not resend:',error);}
+        return message.id;
+    }
+
     // ── Heartbeat ─────────────────────────────────────────────────────────
 
     private sendHeartbeats(): void {
@@ -604,12 +644,14 @@ class SilhouetteGateway {
             console.log(`[Gateway] 🔌 Client disconnected: ${entry.conn.clientId} (code: ${code}, reason: ${reason})`);
         }
         this.connections.delete(connectionId);
+        for(const [token,route] of this.replyRoutes) if(route.connectionId===connectionId) this.replyRoutes.delete(token);
     }
 
     // ── Cleanup ───────────────────────────────────────────────────────────
 
     private cleanIdempotencyCache(): void {
         const now = Date.now();
+        for(const [token,route] of this.replyRoutes) if(route.expiresAt<now) this.replyRoutes.delete(token);
         for (const [key, entry] of this.idempotencyCache.entries()) {
             if (entry.expiresAt < now) {
                 this.idempotencyCache.delete(key);
@@ -634,6 +676,7 @@ class SilhouetteGateway {
             ws.close(1001, 'Server shutting down');
         }
         this.connections.clear();
+        this.replyRoutes.clear();
 
         if (this.wss) {
             this.wss.close();
