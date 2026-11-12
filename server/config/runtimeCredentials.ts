@@ -14,7 +14,7 @@ export { acceptanceBoot, externalProvidersDisabled } from '../../services/securi
 // Keep local API authentication, isolated storage paths and runtime essentials.
 const ACCEPTANCE_ENV = new Set([
     'PATH', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'HOME', 'TMPDIR', 'TEMP', 'TMP',
-    'NODE_ENV', 'SILHOUETTE_CORS_ORIGIN', 'SILHOUETTE_BOOT_MODE', 'SILHOUETTE_PROVIDERS', 'SILHOUETTE_API_TOKEN', 'SILHOUETTE_API_KEY',
+    'NODE_ENV', 'SILHOUETTE_INFERENCE_MODE', 'SILHOUETTE_CORS_ORIGIN', 'SILHOUETTE_BOOT_MODE', 'SILHOUETTE_PROVIDERS', 'SILHOUETTE_API_TOKEN', 'SILHOUETTE_API_KEY',
     'SILHOUETTE_DB_PATH', 'SILHOUETTE_LANCEDB_PATH', 'PORT', 'SILHOUETTE_HOST',
 ]);
 
@@ -48,6 +48,9 @@ export function loadRuntimeEnvironment(): void {
             }
         }
         process.env.SILHOUETTE_HOST = '127.0.0.1';
+        if (process.env.SILHOUETTE_INFERENCE_MODE === 'cloud-only') {
+            console.info('[RUNTIME_POLICY] cloud-only preserved after provider-OFF environment scrub');
+        }
         return;
     }
     dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
