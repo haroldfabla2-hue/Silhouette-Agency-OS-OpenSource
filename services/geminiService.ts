@@ -1,3 +1,4 @@
+import { localInferenceAllowed } from './security/localInferencePolicy';
 import { externalProvidersDisabled, assertExternalProvidersEnabled } from './security/bootMode';
 import { ToolCaller } from './communication/helpProtocol';
 import { GoogleGenAI } from "@google/genai";
@@ -881,7 +882,7 @@ export const generateAgentResponse = async (
                     // [PR-4a] Local Ollama is disabled by default (small server;
                     // owner decision 2026-10-16). With it disabled we degrade
                     // HONESTLY with a loud system error instead of burning CPU.
-                    if (process.env.OLLAMA_LOCAL_ENABLED === 'true') {
+                    if (localInferenceAllowed() && process.env.OLLAMA_LOCAL_ENABLED === 'true') {
                     console.warn("[GEMINI] 🌩️ ALL CLOUDS FAILED. Switching to LOCAL HIVE MIND (Ollama).");
                     try {
                         const { ollamaService } = await import('./ollamaService');
@@ -1620,7 +1621,8 @@ export const generateText = async (prompt: string, options: { model?: string } =
         console.warn("[GeminiService] ⚠️ ZhipuAI fallback failed:", zhipuError?.message);
     }
 
-    // Final Fallback: Local Ollama
+    // Final Fallback: Local Ollama, never in a cloud-only deployment.
+    if (!localInferenceAllowed()) throw new Error('INFERENCE_UNAVAILABLE: All cloud AI providers failed or unavailable; local inference is disabled.');
     try {
         const { ollamaService } = await import('./ollamaService');
         if (await ollamaService.isAvailable()) {
@@ -1632,7 +1634,7 @@ export const generateText = async (prompt: string, options: { model?: string } =
         console.error("[GeminiService] ❌ Local Ollama fallback also failed:", localError?.message);
     }
 
-    return "Error: All AI providers failed or unavailable.";
+    throw new Error('INFERENCE_UNAVAILABLE: All AI providers failed or unavailable.');
 };
 
 /**

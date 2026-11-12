@@ -1,4 +1,5 @@
-import * as lancedb from '@lancedb/lancedb';
+import type * as lancedb from '@lancedb/lancedb';
+const loadLanceRuntime = () => import('@lancedb/lancedb');
 import path from 'path';
 import fs from 'fs';
 import { createHash } from 'node:crypto';
@@ -8,7 +9,6 @@ import { MemoryNode, MemoryTier } from '../types';
 const DB_PATH = process.env.SILHOUETTE_LANCEDB_PATH || path.resolve(process.cwd(), 'db', process.env.VITEST_WORKER_ID
     ? `silhouette-test-worker-${process.env.VITEST_WORKER_ID}.lancedb`
     : 'silhouette.lancedb');
-const DB_DIR = path.dirname(DB_PATH);
 const DEFAULT_DIMENSIONS = 768; // Hardcoded default to match the original schema
 
 import { validEmbedding, scopeSql, inScope, type EmbeddingIdentity, type MemoryScope } from './memoryRetrieval';
@@ -24,9 +24,6 @@ function adjustVectorDimension(vector: number[], targetDim: number = DEFAULT_DIM
     return vector;
 }
 
-if (!fs.existsSync(DB_DIR)) {
-    fs.mkdirSync(DB_DIR, { recursive: true });
-}
 
 /**
  * [Ticket W7] universal_knowledge table — canonical vector dimension.
@@ -129,7 +126,8 @@ export class LanceDbService {
                     console.log(`[LANCEDB] Connecting to: ${DB_PATH}`);
                 }
 
-                this.db = await lancedb.connect(this.databasePath);
+                fs.mkdirSync(path.dirname(this.databasePath), { recursive: true });
+                this.db = await (await loadLanceRuntime()).connect(this.databasePath);
                 const tableNames = await this.db.tableNames();
 
                 // 1. Memory Table
@@ -475,7 +473,7 @@ export class LanceDbService {
     /** Engine selection happens once and is logged loudly: which engine, why, and what this machine offers. */
     private ensureAnnEngine(): boolean {
         if (this.annStatus) return this.annStatus.kind === 'usearch-native';
-        const probe = probeVectorEnvironment('/proc/cpuinfo', DB_DIR);
+        const probe = probeVectorEnvironment('/proc/cpuinfo', path.dirname(this.databasePath));
         this.annModule = loadUsearchNative();
         this.annStatus = selectVectorEngine(process.env, () => this.annModule, probe);
         console.log(`[VECTOR] engine=${this.annStatus.kind} - ${this.annStatus.reason} | cpu="${probe.cpuModel}" ram=${probe.ramTotalMB}MB diskFree=${probe.diskFreeMB ?? '?'}MB`);
@@ -611,7 +609,7 @@ export class LanceDbService {
                             // Re-read the handle each attempt: a conflict
                             // rebase replaces this.table/legacyTable.
                             current = (name === 'v2' ? this.table : this.legacyTable)!;
-                            await current.createIndex('content', { config: lancedb.Index.fts(), replace: true });
+                            await current.createIndex('content', { config: (await loadLanceRuntime()).Index.fts(), replace: true });
                             this.ftsReady.add(name);
                             break;
                         } catch (e) {
@@ -637,8 +635,16 @@ export class LanceDbService {
     public async getRecentObservations(tag:string|string[],limit:number,excludedIds:string[]=[]):Promise<MemoryNode[]>{
         const tags=Array.isArray(tag)?tag:[tag];
         if(!tags.length || !tags.every(t=>typeof t==='string' && t.length>0) || !Number.isInteger(limit) || limit < 1 || limit > 1000) throw new Error('Observation tags and bounded limit required');
-        if(!fs.existsSync(this.databasePath))return [];
-        const db=this.db??await (this.observationConnection??=lancedb.connect(this.databasePath).catch(error=>{this.observationConnection=null;throw error;}));
+        // Absence is an empty corpus; an unreadable or non-directory storage
+        // path is not. This is a shape check, not protection against TOCTOU.
+        let storage: fs.Stats;
+        try { storage = fs.statSync(this.databasePath); }
+        catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+            throw error;
+        }
+        if (!storage.isDirectory()) throw new Error('Observation storage path must be a directory');
+        const db=this.db??await (this.observationConnection??=loadLanceRuntime().then(runtime=>runtime.connect(this.databasePath)).catch(error=>{this.observationConnection=null;throw error;}));
         const names=await db.tableNames();
         const tables=[];
         for(const name of ['memory','memory_records_v2']){
