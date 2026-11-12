@@ -2,7 +2,7 @@
  * Stagehand perception layer ("eyes with AI") for the browser tools.
  *
  * Contract:
- *  - REAL: STAGEHAND_MODEL and STAGEHAND_MODEL_API_KEY are configured (and, for the remote browser,
+ *  - REAL: STAGEHAND_MODEL satisfies the SDK ModelConfig schema and STAGEHAND_MODEL_API_KEY is configured (and, for the remote browser,
  *    BROWSERBASE_API_KEY). Calls go to the real Stagehand runtime and the real model.
  *  - UNAVAILABLE: anything missing. The status carries the exact missing settings. Callers fall back
  *    to the built-in engine (provider "builtin"); nothing is ever simulated here.
@@ -13,12 +13,13 @@
  * Stagehand owns its own browser session (it is not the built-in Playwright session).
  */
 
+import { StagehandClientCreateConfigSchema, type ModelConfig } from '@browserbasehq/stagehand';
 import { requiresPaymentApproval, ClickDescriptor } from './paymentGate';
 
 export type PerceptionStatus = 'REAL' | 'UNAVAILABLE';
 
 export interface StagehandSettings {
-    model: string;
+    model: ModelConfig['modelName'];
     modelApiKey: string;
     browser: 'local' | 'browserbase';
     browserbaseApiKey?: string;
@@ -51,11 +52,17 @@ export function resolveStagehandStatus(env: Record<string, string | undefined> =
     if (missing.length) {
         return { status: 'UNAVAILABLE', reason: `Stagehand is not configured: missing ${missing.join(', ')}`, missing };
     }
+    // The product uses ModelConfig, not the SDK's alternative ClientLLM route.
+    // Public SDK schema validation is synchronous and runs before browser launch.
+    const parsedModel = StagehandClientCreateConfigSchema.shape.model.safeParse({ modelName: model, apiKey: modelApiKey });
+    if (!parsedModel.success || !parsedModel.data || !('modelName' in parsedModel.data)) {
+        return { status: 'UNAVAILABLE', reason: 'Invalid STAGEHAND_MODEL configuration for the SDK ModelConfig route', missing: [] };
+    }
     return {
         status: 'REAL',
         missing: [],
         settings: {
-            model,
+            model: parsedModel.data.modelName,
             modelApiKey,
             browser: browserRaw,
             browserbaseApiKey: browserbaseApiKey || undefined,
@@ -77,15 +84,45 @@ export interface StagehandLike {
 export type StagehandFactory = (s: StagehandSettings) => Promise<StagehandLike>;
 
 export const realStagehandFactory: StagehandFactory = async (s) => {
-    const sdk: any = await import('@browserbasehq/stagehand');
+    const sdk = await import('@browserbasehq/stagehand');
+    // Revalidate direct factory callers too, before owning any browser resource.
+    const model = sdk.StagehandClientCreateConfigSchema.shape.model.parse({ modelName: s.model, apiKey: s.modelApiKey });
+    if (!model || !('modelName' in model)) throw new Error('Expected SDK ModelConfig');
     const browser = s.browser === 'browserbase'
         ? await sdk.browserbase.launch({ apiKey: s.browserbaseApiKey })
         : await sdk.localBrowser.launch({ headless: s.headless });
-    return await sdk.Stagehand.create({
-        browser,
-        model: { modelName: s.model, apiKey: s.modelApiKey },
-    });
+    try {
+        const runtime = await sdk.Stagehand.create({ browser, model });
+        return ownStagehandRuntime(runtime, browser);
+    } catch (originalError) {
+        try { await browser.close(); }
+        catch { console.warn('[StagehandPerception] Browser cleanup failed after initialization failure'); }
+        throw originalError;
+    }
 };
+
+/** Own both SDK context and launched browser; close once, preserving first error. */
+export function ownStagehandRuntime(runtime: StagehandLike, browser: { close(): Promise<void> }): StagehandLike {
+    let closing: Promise<void> | undefined;
+    return {
+        act: runtime.act.bind(runtime),
+        observe: runtime.observe.bind(runtime),
+        extract: runtime.extract.bind(runtime),
+        browser: runtime.browser,
+        close() {
+            if (!closing) closing = (async () => {
+                let failed = false;
+                let originalError: unknown;
+                try { await runtime.close(); }
+                catch (error) { failed = true; originalError = error; }
+                try { await browser.close(); }
+                catch (error) { if (!failed) { failed = true; originalError = error; } }
+                if (failed) throw originalError;
+            })();
+            return closing;
+        },
+    };
+}
 
 export interface PerceivedAction { description: string; selector?: string; method?: string }
 

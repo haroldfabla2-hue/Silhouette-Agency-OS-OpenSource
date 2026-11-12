@@ -98,12 +98,10 @@ jobs:
           PUPPETEER_SKIP_DOWNLOAD: 'true'
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 'true'
 
-      - name: NPM Audit
-        run: npm audit --audit-level=high || true
-
-      - name: Check for known vulnerabilities
-        run: npx audit-ci --high
-        continue-on-error: true
+      # All production and development dependencies remain in scope.
+      # Remaining high/critical findings must fail this job, even during repair.
+      - name: Dependency audit (fail closed)
+        run: npm audit --audit-level=high
 
   build-check:
     name: Windows Build Verification (frontend + server)
