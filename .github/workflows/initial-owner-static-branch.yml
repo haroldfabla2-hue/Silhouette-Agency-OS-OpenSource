@@ -1,4 +1,4 @@
-name: Ubuntu source inspection only (exact isolated branch)
+name: Ubuntu complete apt chain inspection only (exact isolated branch)
 on:
   push:
     branches:
@@ -16,7 +16,7 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
           fetch-depth: 1
-      - name: Verify source and inspect existing Ubuntu file only
+      - name: Verify source and inspect complete existing Ubuntu chain only
         shell: bash
         env:
           EXPECTED_COMMIT_SHA: ${{ github.sha }}
@@ -26,41 +26,115 @@ jobs:
           printf 'INSPECTION_HEAD=%s\n' "$EXPECTED_COMMIT_SHA"
           sha256sum --check tests/real-process/introspection-initial/reviewed-inputs.sha256
           set +e
-          timeout --signal=TERM --kill-after=5s 15s python3 - > "$RUNNER_TEMP/source-inspection.log" 2>&1 <<'INSPECT'
-          import datetime, hashlib, json, os, pathlib, re, urllib.parse
-          p = pathlib.Path('/etc/apt/sources.list.d/ubuntu.sources')
-          data = p.read_bytes()
-          if len(data) > 16384:
-              raise SystemExit('INCOMPLETE: source above16KiB, no truncation')
-          text = data.decode('utf8', errors='strict')
-          print('UBUNTU_SOURCES_BYTES=' + str(len(data)), flush=True)
-          print('UBUNTU_SOURCES_SHA256=' + hashlib.sha256(data).hexdigest(), flush=True)
-          # A newly allocated VM is not the failed historical VM.
+          timeout --signal=TERM --kill-after=5s 30s python3 - > "$RUNNER_TEMP/source-inspection.log" 2>&1 <<'INSPECT'
+          import datetime, hashlib, json, os, pathlib, re, stat, subprocess, urllib.parse
+          SOURCES = pathlib.Path('/etc/apt/sources.list.d/ubuntu.sources')
+          MIRRORS = pathlib.Path('/etc/apt/apt-mirrors.txt')
+          KEYRING = pathlib.Path('/usr/share/keyrings/ubuntu-archive-keyring.gpg')
+          EXPECTED = [
+              ['http://azure.archive.ubuntu.com/ubuntu/', 'priority:1'],
+              ['https://archive.ubuntu.com/ubuntu/', 'priority:2'],
+              ['https://security.ubuntu.com/ubuntu/', 'priority:3'],
+          ]
+
+          def capture(path, limit, include_text):
+              meta = path.lstat()
+              if not stat.S_ISREG(meta.st_mode) or meta.st_size > limit:
+                  raise SystemExit('FAIL: expected capped regular file: ' + str(path))
+              data = path.read_bytes()
+              if len(data) > limit:
+                  raise SystemExit('FAIL: file grew beyond cap: ' + str(path))
+              record = {'path': str(path), 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest(),
+                        'uid': meta.st_uid, 'mode': oct(stat.S_IMODE(meta.st_mode))}
+              if include_text:
+                  text = data.decode('utf8', errors='strict')
+                  for value in re.findall(r'[A-Za-z][A-Za-z0-9+.-]*://[^\s]+', text):
+                      parsed = urllib.parse.urlsplit(value)
+                      if parsed.username is not None or parsed.password is not None or parsed.query or parsed.fragment:
+                          raise SystemExit('FAIL_REDACTED: unexpected URI credential/query/fragment; bodies withheld')
+                  record['text'] = text
+              return record
+
+          def read_command(args, cap=16384):
+              value = subprocess.run(args, capture_output=True, timeout=5)
+              if len(value.stdout) + len(value.stderr) > cap:
+                  raise SystemExit('INCOMPLETE: diagnostic command output above cap')
+              return {'argv': args, 'exit': value.returncode, 'stdout': value.stdout.decode('utf8', errors='strict'),
+                      'stderr': value.stderr.decode('utf8', errors='strict')}
+
+          # Read this entire fixed chain once, before any trust assertion or apt update/install.
+          source = capture(SOURCES, 16384, True)
+          mirrors = capture(MIRRORS, 8192, True)
+          keyring = capture(KEYRING, 262144, False)
+          os_release = pathlib.Path('/etc/os-release').read_text()
+          if len(os_release.encode()) > 4096:
+              raise SystemExit('INCOMPLETE: os-release above4KiB')
+          owner = read_command(['dpkg-query', '-S', str(KEYRING)])
+          package = read_command(['dpkg-query', '-W', '-f=${Package} ${Version} ${Architecture} ${Status}\n', 'ubuntu-keyring'])
+          verification = read_command(['dpkg', '--verify', 'ubuntu-keyring'])
+          # Filter only security fields, never print full apt config, auth config, proxies or environment.
+          config_result = subprocess.run(['apt-config', 'dump'], capture_output=True, timeout=5)
+          if config_result.returncode != 0 or len(config_result.stdout) > 1048576:
+              raise SystemExit('INCOMPLETE: apt-config read failed or too large')
+          security_prefixes = ('Acquire::AllowInsecureRepositories', 'Acquire::AllowWeakRepositories',
+                               'Acquire::AllowDowngradeToInsecureRepositories', 'Acquire::Check-Valid-Until',
+                               'Acquire::Check-Date', 'APT::Get::AllowUnauthenticated',
+                               'Acquire::http::AllowRedirect', 'Acquire::https::AllowRedirect',
+                               'Acquire::https::Verify-Peer', 'Acquire::https::Verify-Host')
+          security_lines = [line for line in config_result.stdout.decode('utf8').splitlines()
+                            if any(line.startswith(prefix + ' ') for prefix in security_prefixes)]
+          if sum(len(line) for line in security_lines) > 4096:
+              raise SystemExit('INCOMPLETE: security fields above4KiB')
           context = {'timestamp_utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
                      'image_os': os.environ.get('ImageOS'), 'image_version': os.environ.get('ImageVersion'),
-                     'os_release': pathlib.Path('/etc/os-release').read_text()}
-          if len(context['os_release']) > 4096:
-              raise SystemExit('INCOMPLETE: os-release above4KiB')
-          print('INSPECTION_NEW_VM_CONTEXT=' + json.dumps(context, ensure_ascii=True), flush=True)
-          # Never print an unexpected credential-bearing URI, even in raw source.
-          for candidate in re.findall(r'[A-Za-z][A-Za-z0-9+.-]*://[^\s]+', text):
-              parsed = urllib.parse.urlsplit(candidate)
-              if parsed.username is not None or parsed.password is not None or parsed.query or parsed.fragment:
-                  print('SOURCE_REDACTED: unexpected URI userinfo/query/fragment', flush=True)
-                  raise SystemExit('FAIL: sensitive URI shape, source body withheld')
-          print('UBUNTU_SOURCES_RAW_JSON=' + json.dumps(text, ensure_ascii=True), flush=True)
-          uris = [u for line in text.splitlines() if line.startswith('URIs:') for u in line[5:].split()]
-          signed_by = [line[10:].strip() for line in text.splitlines() if line.startswith('Signed-By:')]
-          print('PARSED_URIS=' + json.dumps(uris, ensure_ascii=True), flush=True)
-          print('PARSED_SIGNED_BY=' + json.dumps(signed_by, ensure_ascii=True), flush=True)
-          flags = [line for line in text.splitlines() if re.match(r'(?i)^(?:Trusted|Allow-Insecure|Allow-Weak):', line)]
-          print('PARSED_TRUST_OPTION_FLAGS=' + json.dumps(flags, ensure_ascii=True), flush=True)
-          # Actual Included Software link is emitted in the runner Set up job log.
-          print('INCLUDED_SOFTWARE_LINK_SOURCE=runner Set up job / Runner Image / Included Software', flush=True)
-          # Existing guard is deliberately unchanged, not a broader allowlist.
-          assert uris and all(re.fullmatch(r'https?://(?:[a-z0-9.-]+\.)?ubuntu\.com/ubuntu/?', u) for u in uris), 'Unexpected Ubuntu source URI'
-          assert 'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' in text and not re.search(r'(?im)^(?:Trusted|Allow-Insecure|Allow-Weak):\s*yes', text), 'Unexpected trust options'
-          print('CURRENT_SOURCE_GUARD_PASS_NOT_RUNTIME_PASS', flush=True)
+                     'os_release': os_release, 'new_vm_not_historical': True}
+          record = {'context': context, 'sources': source, 'mirrors': mirrors, 'keyring': keyring,
+                    'keyring_owner': owner, 'keyring_package': package, 'keyring_package_verify': verification,
+                    'apt_security_config_explicit_fields': security_lines,
+                    'absent_config_field': 'APT default, not proven explicit; future setup must force secure values',
+                    'included_software_link': 'recover literal from this run Set up job',
+                    'release_packages_deb_signature_chain': 'NOT_TESTED: no apt update/download/install'}
+          print('APT_CHAIN_CAPTURE_JSON=' + json.dumps(record, ensure_ascii=True), flush=True)
+
+          # Strict deb822 parser. Reject unknown fields, duplicate keys and continuations.
+          stanzas = []
+          current = {}
+          for line in source['text'].splitlines() + ['']:
+              if line.startswith('#'):
+                  continue
+              if not line.strip():
+                  if current:
+                      stanzas.append(current)
+                      current = {}
+                  continue
+              assert not line[0].isspace() and ':' in line, 'Unexpected deb822 continuation or syntax'
+              key, value = line.split(':', 1)
+              assert key not in current, 'Duplicate deb822 field'
+              current[key] = value.strip()
+          print('PARSED_DEB822_JSON=' + json.dumps(stanzas, ensure_ascii=True), flush=True)
+          entries = []
+          for line in mirrors['text'].splitlines():
+              if not line.strip() or line.startswith('#'):
+                  continue
+              assert '\t' in line, 'Mirror metadata must follow tab'
+              uri, metadata = line.split('\t', 1)
+              entries.append([uri, metadata.strip()])
+          print('PARSED_MIRROR_ENTRIES_JSON=' + json.dumps(entries, ensure_ascii=True), flush=True)
+          assert len(stanzas) == 2, 'Unexpected stanza count'
+          for index, stanza in enumerate(stanzas):
+              assert set(stanza) == {'Types', 'URIs', 'Suites', 'Components', 'Signed-By'}, 'Unknown source/trust field'
+              assert stanza['Types'] == 'deb', 'Only deb binary sources'
+              assert stanza['URIs'] == 'mirror+file:/etc/apt/apt-mirrors.txt', 'Unexpected mirror transport/path'
+              assert stanza['Signed-By'] == str(KEYRING), 'Unexpected signing keyring'
+              assert stanza['Components'].split() == ['main', 'universe', 'restricted', 'multiverse'], 'Unexpected components'
+              assert stanza['Suites'].split() == (['noble', 'noble-updates', 'noble-backports'] if index == 0 else ['noble-security']), 'Unexpected suites'
+          assert entries == EXPECTED, 'Mirror set/order/priority differs from exact official image source'
+          for file in [source, mirrors, keyring]:
+              assert file['uid'] == 0 and int(file['mode'], 8) & 0o022 == 0, 'Chain file not root-owned or is writable by group/others'
+          assert owner['exit'] == 0 and owner['stdout'].strip() == 'ubuntu-keyring: ' + str(KEYRING), 'Unexpected keyring owner'
+          assert package['exit'] == 0 and 'install ok installed' in package['stdout'], 'Keyring package not installed'
+          assert verification['exit'] == 0 and not verification['stdout'].strip(), 'Keyring installed package verification failed'
+          print('STRUCTURAL_CHAIN_PASS_ONLY_SIGNATURE_VERIFICATION_NOT_RUN', flush=True)
           INSPECT
           code=$?
           set -e
