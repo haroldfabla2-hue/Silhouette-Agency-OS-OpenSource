@@ -36,17 +36,7 @@ export interface SchedulerDecision {
 
 const AUTO_ISSUE_PREFIX = '[auto] ';
 
-/** Declared source -> cycle input mappings. Never guess a scope. */
-const INCIDENT_MAPPINGS: Record<string, { scope: string[]; acceptance: string }> = {
-    'continuum-promote': {
-        scope: ['services/continuumMemory.ts', 'services/memoryTransitions.ts'],
-        acceptance: 'tests/automated/deep-memory-identity.test.ts'
-    },
-    'continuum-embeddings': {
-        scope: ['services/continuumMemory.ts'],
-        acceptance: 'tests/automated/deep-memory-identity.test.ts'
-    }
-};
+import { memoryRepairMapping } from './incidentMappings';
 
 function enabled(): boolean {
     return process.env.SELFDEV_AUTONOMOUS === 'true';
@@ -147,13 +137,13 @@ export async function runSelfDevSchedulerOnce(): Promise<SchedulerDecision> {
 
     // Issue source: oldest open incident with a DECLARED mapping.
     const candidates = incidentRegistry.getOpenIncidents()
-        .filter(i => INCIDENT_MAPPINGS[i.source])
+        .filter(i => memoryRepairMapping(i.source))
         .sort((a, b) => a.firstSeen - b.firstSeen);
     if (candidates.length === 0) {
         return { ran: false, reason: 'no open incidents with a declared scope mapping (never guessing a scope)' };
     }
     const incident = candidates[0];
-    const mapping = INCIDENT_MAPPINGS[incident.source];
+    const mapping = memoryRepairMapping(incident.source)!;
     if (!fs.existsSync(path.resolve(process.cwd(), mapping.acceptance))) {
         return { ran: false, reason: `deferred: acceptance target ${mapping.acceptance} missing for source ${incident.source}` };
     }

@@ -76,18 +76,18 @@ describe('worktree freshness sync (hermetic upstream)', () => {
         expect(fs.existsSync(path.join(worktree, 'newfile.ts'))).toBe(true);
     });
 
-    it('discards dirty worktree leftovers and reports the head', async () => {
+    it('preserves dirty candidate and refuses reset until explicit review', async () => {
         const s = svc.selfCodeService;
         await s.ensureWorktree();
         fs.writeFileSync(path.join(worktree, 'leftover.ts'), 'junk');
         fs.writeFileSync(path.join(worktree, 'hello.ts'), 'export const x = 999;\n');
 
-        const head = git(upstreamWork, ['rev-parse', 'HEAD']);
-        const r = await s.syncWithUpstream();
-        expect(r.syncedTo).toBe(head);
-        expect(fs.readFileSync(path.join(worktree, 'hello.ts'), 'utf8')).toContain('x = 2');
-        expect(fs.existsSync(path.join(worktree, 'leftover.ts'))).toBe(false);
-        expect(git(worktree, ['status', '--porcelain'])).toBe('');
+        const head = git(worktree, ['rev-parse', 'HEAD']);
+        await expect(s.syncWithUpstream()).rejects.toThrow(/dirty candidate preserved/);
+        expect(git(worktree, ['rev-parse', 'HEAD'])).toBe(head);
+        expect(fs.readFileSync(path.join(worktree, 'hello.ts'), 'utf8')).toContain('x = 999');
+        expect(fs.readFileSync(path.join(worktree, 'leftover.ts'), 'utf8')).toBe('junk');
+        expect(fs.readdirSync(worktree + '.preserved-candidates')).toHaveLength(1);
     });
 
     it('fail-closed: throws when the upstream URL is not configured', async () => {
@@ -105,9 +105,10 @@ describe('worktree freshness sync (hermetic upstream)', () => {
         const att = await s.attempt(c.id, [{ op: 'write', path: 'src/x.ts', content: 'export const x = 1;\n', rationale: 'op' }]);
         expect(att.state).toBe('ATTEMPTED');
         const ex = await s.execute(c.id);
-        // ops landed (auditable in the clone) but verification is honestly blocked
-        expect(fs.readFileSync(path.join(worktree, 'src', 'x.ts'), 'utf8')).toContain('x = 1');
-        expect(ex.state).toBe('EXECUTED');
+        // Existing dirty candidate must not be reset or overwritten by a new cycle.
+        expect(fs.existsSync(path.join(worktree, 'src', 'x.ts'))).toBe(false);
+        expect(fs.readFileSync(path.join(worktree, 'hello.ts'), 'utf8')).toContain('x = 999');
+        expect(ex.state).toBe('ATTEMPTED');
         expect(ex.lastError).toMatch(/verification unavailable \(worktree sync\)/);
         s.abandon(c.id, 'test done');
         process.env.SELF_REPO_UPSTREAM_URL = upstreamBare;

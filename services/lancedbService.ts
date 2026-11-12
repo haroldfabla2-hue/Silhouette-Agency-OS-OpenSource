@@ -267,7 +267,7 @@ export class LanceDbService {
 
     private static isStaleHandleError(error: unknown): boolean {
         const message = String(error);
-        return message.includes('LanceError(IO)') && message.includes('Not found');
+        return message.includes('LanceError(IO)') && /not found/i.test(message);
     }
 
     private async withCurrentTable<T>(tableName: 'memory_records_v2' | 'memory', operation: () => Promise<T>): Promise<T> {

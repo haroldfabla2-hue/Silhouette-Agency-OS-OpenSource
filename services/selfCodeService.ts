@@ -41,11 +41,12 @@ function sha256(buf: Buffer | string): string {
     return crypto.createHash('sha256').update(buf).digest('hex');
 }
 
-function run(cmd: string, args: string[], cwd: string, timeoutMs: number): Promise<{ code: number; out: string }> {
+function run(cmd: string, args: string[], cwd: string, timeoutMs: number, preserveOutput = false): Promise<{ code: number; out: string }> {
     return new Promise((resolve) => {
         execFile(cmd, args, { cwd, timeout: timeoutMs, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
             const code = err && typeof (err as any).code === 'number' ? (err as any).code : err ? 1 : 0;
-            resolve({ code, out: `${stdout}${stderr ? `\n${stderr}` : ''}`.trim() });
+            const output = `${stdout}${stderr ? `\n${stderr}` : ''}`;
+            resolve({ code, out: preserveOutput ? output : output.trim() });
         });
     });
 }
@@ -111,6 +112,13 @@ class SelfCodeService {
             if (fileName.startsWith(prefix)) throw new Error(`path denied: ${fileName}`);
         }
         if (rel.startsWith('public' + path.sep + 'output')) throw new Error('path denied: public/output');
+        if (fs.existsSync(base)) {
+            const realBase = fs.realpathSync(base);
+            let ancestor = resolved;
+            while (!fs.existsSync(ancestor)) ancestor = path.dirname(ancestor);
+            const real = fs.realpathSync(ancestor);
+            if (real !== realBase && !real.startsWith(realBase + path.sep)) throw new Error('path escapes the worktree through a symlink');
+        }
         return resolved;
     }
 
@@ -134,8 +142,64 @@ class SelfCodeService {
         return { path: wt, created: true };
     }
 
+    /** Before any reset/clean, preserve dirty candidate bytes and refuse to discard them.
+     * Snapshots are local audit evidence, not an approval, executable archive or rollback.
+     * Fail closed on unreadable/oversized/special paths. Never copy denied data/secrets. */
+    private async guardCleanForSync(root: string): Promise<void> {
+        try { await this.inspectCleanForSync(root); }
+        catch (error) { throw new Error(`sync blocked: ${(error as Error).message}`, { cause: error }); }
+    }
+
+    private async inspectCleanForSync(root: string): Promise<void> {
+        const status = await run('git', ['status', '--porcelain=v1', '-z', '--untracked-files=all'], root, 15000, true);
+        if (status.code !== 0) throw new Error('sync blocked: cannot inspect candidate status');
+        if (root === this.worktreePath()) {
+            const ignored = await run('git', ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'], root, 15000, true);
+            if (ignored.code !== 0 || ignored.out.split('\0').filter(Boolean).some(p => p !== 'node_modules/' && p !== 'node_modules')) {
+                throw new Error('ignored candidate artifacts present; preserve in place, no reset');
+            }
+        }
+        if (!status.out) return;
+        // Capture the diff and exact changed regular files (including untracked).
+        // Use NUL-delimited git paths; porcelain text quoting is not a path parser.
+        const changes = await run('git', ['diff', '--binary', 'HEAD'], root, 15000, true);
+        const tracked = await run('git', ['diff', '--name-only', '-z', 'HEAD'], root, 15000, true);
+        const untracked = await run('git', ['ls-files', '--others', '--exclude-standard', '-z'], root, 15000, true);
+        if ([changes, tracked, untracked].some(r => r.code !== 0)) throw new Error('sync blocked: cannot preserve candidate diff');
+        const files: { path: string; contentBase64?: string; sha256?: string; deleted?: true; withheld?: true }[] = [];
+        let bytes = Buffer.byteLength(changes.out);
+        for (const rel of new Set((tracked.out + '\0' + untracked.out).split('\0').filter(Boolean))) {
+            const segments = rel.split('/');
+            if (segments.some(x => DENIED_SEGMENTS.includes(x) || x.startsWith('.env')) || rel.startsWith('public/output/')) {
+                // Do not copy private artifacts to an audit snapshot. Refuse the sync either way.
+                throw new Error('sync blocked: candidate includes denied private path; preserve it in place');
+            }
+            const absolute = path.resolve(root, rel);
+            if (!absolute.startsWith(path.resolve(root) + path.sep)) throw new Error('sync blocked: candidate path escapes root');
+            if (!fs.existsSync(absolute)) { files.push({ path: rel, deleted: true }); continue; }
+            const stat = fs.lstatSync(absolute);
+            if (!stat.isFile() || stat.nlink !== 1 || !fs.realpathSync(absolute).startsWith(fs.realpathSync(root) + path.sep)) {
+                throw new Error('sync blocked: candidate includes unsafe file; preserved in place');
+            }
+            bytes += stat.size;
+            if (bytes > 4 * 1024 * 1024) throw new Error('sync blocked: candidate exceeds evidence cap; preserved in place');
+            const content = fs.readFileSync(absolute);
+            files.push({ path: rel, contentBase64: content.toString('base64'), sha256: sha256(content) });
+        }
+        const base = await run('git', ['rev-parse', 'HEAD'], root, 15000);
+        if (base.code !== 0) throw new Error('sync blocked: cannot pin candidate base');
+        const evidence = JSON.stringify({ version: 1, root, baseSha: base.out, status: status.out, diff: changes.out, files });
+        const digest = sha256(evidence);
+        const directory = `${root}.preserved-candidates`;
+        fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+        const destination = path.join(directory, digest + '.json');
+        if (!fs.existsSync(destination)) atomicWriteFile(destination, evidence);
+        if (sha256(fs.readFileSync(destination)) !== digest) throw new Error('sync blocked: candidate preservation readback mismatch');
+        throw new Error(`sync blocked: dirty candidate preserved in place and evidence ${digest}; explicit review required before cleanup`);
+    }
+
     /**
-     * Sync the local clone AND the selfwork worktree to the upstream default
+     * Fetch upstream objects and sync ONLY the clean isolated selfwork tree to the default
      * branch. The planner and the acceptance gates must operate on current
      * code: a stale clone makes the shrink gate compare against ghosts and
      * lets the planner rewrite files that no longer look the way it thinks.
@@ -147,23 +211,24 @@ class SelfCodeService {
         const url = (process.env.SELF_REPO_UPSTREAM_URL || '').trim();
         if (!url) throw new Error('worktree sync unavailable: SELF_REPO_UPSTREAM_URL not configured');
         const repo = this.repoPath();
+        await this.guardCleanForSync(repo);
+        const wt = (await this.ensureWorktree()).path;
+        await this.guardCleanForSync(wt);
         const fetchRes = await run('git', ['fetch', url, 'main'], repo, 120000);
         if (fetchRes.code !== 0) throw new Error(`worktree sync fetch failed: ${fetchRes.out.slice(-300)}`);
         const shaRes = await run('git', ['rev-parse', 'FETCH_HEAD'], repo, 15000);
         if (shaRes.code !== 0) throw new Error(`worktree sync rev-parse failed: ${shaRes.out.slice(-300)}`);
         const sha = shaRes.out.trim();
-        const resetRepo = await run('git', ['reset', '--hard', sha], repo, 60000);
-        if (resetRepo.code !== 0) throw new Error(`worktree sync repo reset failed: ${resetRepo.out.slice(-300)}`);
-        const wt = (await this.ensureWorktree()).path;
-        const dirty = await run('git', ['status', '--porcelain'], wt, 15000);
-        const discarded = dirty.out ? dirty.out.split('\n').filter(Boolean).length : 0;
+        // Recheck after fetch: no concurrent candidate may be silently discarded.
+        await this.guardCleanForSync(repo);
+        await this.guardCleanForSync(wt);
+        // The source checkout is never reset. Only the separate selfwork clone moves.
         const resetWt = await run('git', ['reset', '--hard', sha], wt, 60000);
         if (resetWt.code !== 0) throw new Error(`worktree sync worktree reset failed: ${resetWt.out.slice(-300)}`);
-        // keep the node_modules symlink (tests need it); drop every other leftover
-        await run('git', ['clean', '-fd', '-e', 'node_modules'], wt, 60000);
+        // Never git-clean a candidate: ignored artifacts and evidence are not disposable.
         this.journal({
             ts: new Date().toISOString(), actor: 'api', action: 'sync',
-            detail: `worktree synced to ${sha.slice(0, 8)}${discarded ? ` (discarded ${discarded} leftover entries)` : ''}`
+            detail: `clean isolated worktree synced to ${sha}; source checkout unchanged; no cleanup`
         });
         return { syncedTo: sha };
     }

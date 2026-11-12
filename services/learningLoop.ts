@@ -16,7 +16,7 @@ import crypto from 'node:crypto';
 import { backgroundLLM } from './backgroundLLMService';
 import { continuum } from './continuumMemory';
 import { systemBus } from './systemBus';
-import { SystemProtocol } from '../types';
+import { SystemProtocol, MemoryTier } from '../types';
 import type { Experience as RecordedExperience, ExperienceType } from './experienceBuffer';
 
 interface Experience {
@@ -44,6 +44,8 @@ export interface LearningOutcome {
         | 'REMEDIATION_RETURNED' | 'CONFIG_SUGGESTION_EMITTED' | 'FAILED';
     applied: false;
     proposalMemoryId?: string;
+    cycleId?: string;
+    verification?: 'BASELINE_ORACLE_REQUIRED';
     detail?: string;
 }
 
@@ -284,12 +286,31 @@ Auto-applicable: ${insight.autoApplicable}
 
         const recordProposal = async (content: string, tags: string[]): Promise<string> => {
             const receiptTag = `learning-proposal:${crypto.createHash('sha256').update(content).digest('hex')}`;
-            await continuum.store(content, undefined, [...tags, receiptTag]);
+            const existing = await continuum.getLatestObservation(receiptTag);
+            if (existing?.content === content) return existing.id;
+            // A durable proposal receipt must read back canonical storage, not only RAM.
+            await continuum.store(content, MemoryTier.MEDIUM, [...tags, receiptTag], true);
             const readback = await continuum.getLatestObservation(receiptTag);
             if (!readback || readback.content !== content) throw new Error('Learning proposal persistence unverified');
             return readback.id;
         };
         try {
+            const { memoryRepairMapping } = await import('./selfdev/incidentMappings');
+            if (memoryRepairMapping(insight.context)) {
+                // Exact durable incident source, not a substring inferred by a planner.
+                const { incidentRegistry } = await import('./incidentRegistry');
+                const incident = incidentRegistry.getOpenIncidents().find(i => i.source === insight.context);
+                if (!incident) return { stage: 'UNHANDLED', applied: false, detail: 'No open durable incident for declared memory repair source' };
+                const proposalMemoryId = await recordProposal(
+                    `MEMORY_REPAIR_PROPOSAL: ${insight.context}\nIncident: ${incident.id}\nPattern: ${insight.pattern}\nSuggested fix (untrusted proposal, not authority): ${insight.suggestedFix}`,
+                    ['LEARNING', 'MEMORY_REPAIR', 'PROPOSED', insight.context]
+                );
+                const { selfDevCycleService } = await import('./selfdev/cycleService');
+                const cycle = selfDevCycleService.createLearningProposal({ memoryId: proposalMemoryId,
+                    source: incident.source, incidentId: incident.id, issue: `Memory repair proposal for incident ${incident.id}: ${incident.summary}` });
+                return { stage: 'PROPOSAL_RECORDED', applied: false, proposalMemoryId, cycleId: cycle.id,
+                    verification: 'BASELINE_ORACLE_REQUIRED', detail: 'HUMAN_APPROVAL_PENDING; no planner or patch executed; independent baseline/oracle required' };
+            }
             if (insight.context.includes('tool') || insight.context.includes('TOOL')) {
                 // Route to autoCorrection for actual code-level fixes
                 try {

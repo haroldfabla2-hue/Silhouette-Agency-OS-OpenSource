@@ -32,6 +32,8 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { selfCodeService } from '../selfCodeService';
+import { memoryRepairMapping } from './incidentMappings';
+import { atomicWriteFile } from './atomicWrite';
 import { llmGateway, CompletionOptions } from '../llmGateway';
 
 export type CycleState =
@@ -69,6 +71,7 @@ export interface SelfDevCycle {
     runs: CycleRun[];
     pr?: { approvedBy: string; requestedAt: string; url?: string; number?: number };
     outcome?: { state: 'merged' | 'closed-unmerged' | 'open'; mergedAt?: string; closedAt?: string; syncedAt: string };
+    learningProposal?: { memoryId: string; source: string; incidentId: string; stage: 'HUMAN_APPROVAL_PENDING'; applied: false; verification: 'BASELINE_ORACLE_REQUIRED' };
     lastError?: string;
     createdAt: string;
     updatedAt: string;
@@ -121,10 +124,9 @@ export class SelfDevCycleService {
     }
 
     private save() {
-        const tmp = `${this.statePath()}.tmp`;
-        fs.writeFileSync(tmp, JSON.stringify(this.store, null, 2), 'utf-8');
-        const fd = fs.openSync(tmp, 'r+'); fs.fsyncSync(fd); fs.closeSync(fd);
-        fs.renameSync(tmp, this.statePath());
+        const payload = JSON.stringify(this.store, null, 2);
+        atomicWriteFile(this.statePath(), payload);
+        if (fs.readFileSync(this.statePath(), 'utf8') !== payload) throw new Error('selfdev state readback mismatch');
     }
 
     private journal(entry: Record<string, unknown>) {
@@ -192,7 +194,7 @@ export class SelfDevCycleService {
         return this.store.cycles.filter(c => c.createdAt >= sinceIso && (!issuePrefix || c.issue.startsWith(issuePrefix))).length;
     }
 
-    public create(input: { issue?: string; scope?: string[]; acceptance?: { kind?: string; target?: string } }): SelfDevCycle {
+    public create(input: { issue?: string; scope?: string[]; acceptance?: { kind?: string; target?: string } }, learningProposal?: SelfDevCycle['learningProposal']): SelfDevCycle {
         const issue = (input.issue ?? '').trim();
         if (!issue) throw Object.assign(new Error('issue is required'), { statusCode: 400 });
         const scope = input.scope ?? [];
@@ -215,6 +217,7 @@ export class SelfDevCycleService {
         const at = new Date().toISOString();
         const c: SelfDevCycle = {
             id: crypto.randomUUID(), issue, scope, acceptance: { kind: 'vitest', target },
+            ...(learningProposal ? { learningProposal } : {}),
             state: 'PLANNED', runs: [], createdAt: at, updatedAt: at,
             history: [{ from: null, to: 'PLANNED', at, note: 'cycle created' }]
         };
@@ -224,7 +227,35 @@ export class SelfDevCycleService {
         return c;
     }
 
+    /** A proposal links to an existing product domain, never a scope chosen by the LLM.
+     * It does not run a planner, tests, publish a PR, or count as applied learning. */
+    public createLearningProposal(input: { memoryId: string; source: string; incidentId: string; issue: string }): SelfDevCycle {
+        const mapping = memoryRepairMapping(input.source);
+        if (!mapping) throw new Error('learning source has no declared repair mapping');
+        if (!input.memoryId.trim() || !input.incidentId.trim()) throw new Error('durable proposal and incident IDs required');
+        const prior = this.store.cycles.find(c => c.learningProposal?.memoryId === input.memoryId);
+        if (prior) {
+            if (prior.learningProposal?.source !== input.source || prior.learningProposal?.incidentId !== input.incidentId) throw new Error('proposal ID conflicts with original linkage');
+            const disk = JSON.parse(fs.readFileSync(this.statePath(), 'utf8')) as CycleStore;
+            const durable = disk.cycles.find(c => c.id === prior.id);
+            if (!durable || JSON.stringify(durable.learningProposal) !== JSON.stringify(prior.learningProposal)) throw new Error('proposal linkage persistence unverified');
+            return prior;
+        }
+        // Persist linkage with creation, before returning, so replay cannot create a second cycle.
+        const c = this.create({ issue: input.issue, scope: mapping.scope, acceptance: { kind: 'vitest', target: mapping.acceptance } },
+            { memoryId: input.memoryId, source: input.source, incidentId: input.incidentId,
+                stage: 'HUMAN_APPROVAL_PENDING', applied: false, verification: 'BASELINE_ORACLE_REQUIRED' });
+        this.journal({ ts: new Date().toISOString(), cycleId: c.id, event: 'LEARNING_PROPOSAL_LINKED', ...c.learningProposal });
+        return c;
+    }
+
     public async attempt(id: string, ops?: CycleOp[]): Promise<SelfDevCycle> {
+        const linked = this.get(id);
+        if (linked.learningProposal) {
+            linked.lastError = 'BASELINE_ORACLE_REQUIRED: proposal pending; no planner called or patch accepted';
+            this.save();
+            return linked;
+        }
         // Freshness sync (best effort): the planner should see current code.
         // If the sync is unavailable here, execute() still hard-blocks any
         // VERIFIED without a fresh worktree, so a stale plan can never be
@@ -362,6 +393,12 @@ export class SelfDevCycleService {
         const c = this.get(id);
         if (c.state !== 'ATTEMPTED' || !c.patch) throw Object.assign(new Error(`execute requires ATTEMPTED (current: ${c.state})`), { statusCode: 409 });
 
+        if (c.learningProposal) {
+            c.lastError = 'BASELINE_ORACLE_REQUIRED: existing editable acceptance tests cannot independently verify useful learning; no patch executed';
+            this.save();
+            return c;
+        }
+
         // Freshness sync (again): main may have moved between attempt and
         // execute. VERIFIED is impossible without current code: if the sync
         // is unavailable we still land the ops (auditable in the clone) but
@@ -372,6 +409,11 @@ export class SelfDevCycleService {
         } catch (err) {
             stale = true;
             this.journal({ ts: new Date().toISOString(), cycleId: c.id, event: 'ERROR', detail: `worktree sync unavailable at execute: ${(err as Error).message}` });
+            if ((err as Error).message.includes('sync blocked:')) {
+                c.lastError = `verification unavailable (worktree sync): ${(err as Error).message}; candidate left unchanged`;
+                c.updatedAt = new Date().toISOString(); this.save();
+                return c;
+            }
         }
 
         // GATE 1+2 (pre-write, pure): scope containment + anti-gut shrink check.
@@ -502,6 +544,7 @@ export class SelfDevCycleService {
 
     public requestPR(id: string, approvedBy?: string): SelfDevCycle {
         const c = this.get(id);
+        if (c.learningProposal) throw new Error('learning proposal requires independent baseline/oracle verification before PR approval');
         const by = (approvedBy ?? '').trim();
         if (!by) throw Object.assign(new Error('approvedBy is required: PR creation is operator-approved'), { statusCode: 400 });
         if (c.state !== 'VERIFIED') throw Object.assign(new Error(`pr requires VERIFIED (current: ${c.state})`), { statusCode: 409 });
