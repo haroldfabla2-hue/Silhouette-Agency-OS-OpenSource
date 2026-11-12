@@ -1,7 +1,7 @@
 // Proposed focused native-SQLite fixture, NOT RUN. Run one case per fresh child.
 import rawAssert from 'node:assert/strict';
 let assertionCount = 0;
-const assert = new Proxy(rawAssert, {
+const assert: typeof rawAssert = new Proxy(rawAssert, {
     get(target, key) {
         const value = Reflect.get(target, key);
         return typeof value === 'function' ? (...args: any[]) => { assertionCount++; return value(...args); } : value;
