@@ -95,13 +95,13 @@ try {
         service.applyProviderStatus(expectedSid, 'in-progress');
         return result.call.id;
     };
-    async function scenario(name: string, operation: () => Promise<void> | void) {
+    const scenario = async (name: string, operation: () => Promise<void> | void) => {
         if (name !== mode) return;
         reset();
         try { await bounded(name, Promise.resolve().then(operation)); }
         finally { assert.deepEqual(unexpectedRequests, [], 'Unexpected requests cannot be hidden by product catch'); }
         scenarios++;
-    }
+    };
     await scenario('401 fails', async () => {
         respond(401); const result = await dial();
         assert.equal(result.call.status, 'FAILED'); assert.equal(result.call.providerCallSid, undefined);
