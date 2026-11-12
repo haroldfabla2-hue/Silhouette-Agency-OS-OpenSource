@@ -122,13 +122,22 @@ export class MemoryTransitions {
     }
 
     public async pending(): Promise<MemoryTransition[]> {
+        let names: string[];
         try {
-            const names = (await fs.readdir(this.directory)).filter(n => n.endsWith('.json'));
-            return await Promise.all(names.map(async name => JSON.parse(await fs.readFile(path.join(this.directory, name), 'utf8'))));
+            names = await fs.readdir(this.directory);
         } catch (error: any) {
+            // Only an absent directory means an empty journal. A disappeared
+            // entry after enumeration is unknown recovery state, never empty.
             if (error.code === 'ENOENT') return [];
             throw error;
         }
+        return await Promise.all(names.filter(name => name.endsWith('.json')).map(async name => {
+            try {
+                return JSON.parse(await fs.readFile(path.join(this.directory, name), 'utf8'));
+            } catch (cause) {
+                throw new Error(`Cannot read transition entry ${name}`, { cause });
+            }
+        }));
     }
 }
 

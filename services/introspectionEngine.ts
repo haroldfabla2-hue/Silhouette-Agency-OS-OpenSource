@@ -11,7 +11,43 @@ import { systemBus } from "./systemBus";
 // 4. Unintended Output Detection
 // 5. Intentional State Control
 
+export interface InitialIntrospectionStatus {
+    state: 'PENDING' | 'COMPLETE' | 'FAILED';
+    error?: string;
+    coreOutcome?: 'COMPLETE' | 'DEGRADED' | 'FAILED';
+}
+
 export class IntrospectionEngine {
+    private readonly initialConceptOwner: Promise<void>;
+    private readonly initialGoalLoadOwner: Promise<void>;
+    private readonly initialStatus: Record<'concept' | 'goals', InitialIntrospectionStatus> = {
+        concept: { state: 'PENDING' }, goals: { state: 'PENDING' }
+    };
+    private goalsWriteTail: Promise<void> = Promise.resolve();
+
+    private observeOwnedWork(owner: Promise<void>, status: InitialIntrospectionStatus): Promise<void> {
+        // Observe without replacing the original rejecting task owner.
+        void owner.then(() => { status.state = 'COMPLETE'; }, error => {
+            status.state = 'FAILED';
+            status.error = error instanceof Error ? error.message : String(error);
+            console.error('[INTROSPECTION] Initial work failed:', error);
+        });
+        return owner;
+    }
+
+    public getInitialWorkStatus() {
+        return { concept: { ...this.initialStatus.concept }, goals: { ...this.initialStatus.goals } };
+    }
+
+    public getInitialOwners() {
+        return { concept: this.initialConceptOwner, goals: this.initialGoalLoadOwner };
+    }
+
+    public async readyInitial() {
+        await Promise.allSettled([this.initialConceptOwner, this.initialGoalLoadOwner]);
+        return this.getInitialWorkStatus();
+    }
+
     private currentLayer: IntrospectionLayer = IntrospectionLayer.OPTIMAL;
     private activeConcepts: ConceptVector[] = [];
     private recentThoughts: string[] = []; // Central Store for UI
@@ -86,9 +122,10 @@ export class IntrospectionEngine {
 
     constructor() {
         // Initialize with a default safety concept
-        this.injectConcept("Ethical Alignment", 1.5, 12);
-        // Load persisted goals on startup
-        this.loadGoalsFromMemory();
+        this.initialConceptOwner = this.observeOwnedWork(
+            this.injectInitialConcept(), this.initialStatus.concept);
+        // Preserve autostart. Goal loading has its own original promise/status.
+        this.initialGoalLoadOwner = this.observeOwnedWork(this.loadGoalsFromMemory(), this.initialStatus.goals);
     }
 
     // --- UTILITIES ---
@@ -180,6 +217,35 @@ export class IntrospectionEngine {
         if (strength > 0.8) {
             this.injectConcept(content.substring(0, 30), strength, 20); // Inject into middle layers
         }
+    }
+
+    private injectInitialConcept(): Promise<void> {
+        const label = 'Ethical Alignment';
+        const strength = 1.5;
+        const layer = 12;
+        const id = crypto.randomUUID();
+        const concept: ConceptVector = {
+            id,
+            label,
+            strength: Math.min(3.0, Math.max(0.1, strength)),
+            layer,
+            active: true
+        };
+        this.activeConcepts.push(concept);
+        this.capabilities.add(IntrospectionCapability.CONCEPT_INJECTION);
+
+        return import('./continuumMemory').then(async ({ continuum }) => {
+            try {
+                const core = await continuum.readyCore();
+                this.initialStatus.concept.coreOutcome = core.outcome;
+            } catch (error) {
+                this.initialStatus.concept.coreOutcome = 'FAILED';
+                throw error;
+            }
+            // Store completion is not a canonical persistence receipt; store
+            // can currently skip. Preserve that limitation, do not rename it.
+            return continuum.store(`[INTROSPECTION] Injected Concept Vector: ${label} (Str: ${strength})`, undefined, ['system', 'concept-vector']);
+        });
     }
 
     // --- CAPABILITY 1: CONCEPT INJECTION ---
@@ -414,7 +480,7 @@ export class IntrospectionEngine {
     // === GOAL-SETTING METHODS (AUTONOMY) ===
 
     private async loadGoalsFromMemory(): Promise<void> {
-        try {
+        {
             // Primary: Load from SQLite for full persistence
             const { sqliteService } = await import('./sqliteService');
             const storedGoals = sqliteService.getConfig('active_goals');
@@ -427,6 +493,13 @@ export class IntrospectionEngine {
 
             // Fallback: Load from ContinuumMemory (legacy/migration)
             const { continuum } = await import('./continuumMemory');
+            try {
+                const core = await continuum.readyCore();
+                this.initialStatus.goals.coreOutcome = core.outcome;
+            } catch (error) {
+                this.initialStatus.goals.coreOutcome = 'FAILED';
+                throw error;
+            }
             const goalMemories = await continuum.retrieve('active goals objectives priorities', undefined, 'GOAL');
 
             for (const mem of goalMemories.slice(0, 10)) {
@@ -444,20 +517,30 @@ export class IntrospectionEngine {
 
             if (this.activeGoals.length > 0) {
                 console.log(`[INTROSPECTION] 🎯 Migrated ${this.activeGoals.length} goals from ContinuumMemory`);
-                this.persistGoals(); // Persist to SQLite for future
+                await this.writeGoalsSnapshot(); // Await initial migration readback
             }
-        } catch (e) {
-            // Non-critical - continue without persisted goals
         }
     }
 
+    private writeGoalsSnapshot(): Promise<void> {
+        const payload = JSON.stringify(this.activeGoals);
+        const owner = this.goalsWriteTail.then(async () => {
+            const { sqliteService } = await import('./sqliteService');
+            sqliteService.setConfig('active_goals', JSON.parse(payload));
+            if (JSON.stringify(sqliteService.getConfig('active_goals')) !== payload) {
+                throw new Error('Initial goal migration SQLite read-back mismatch');
+            }
+        });
+        this.goalsWriteTail = owner.catch(() => undefined);
+        return owner;
+    }
+
+    // Legacy later callers remain void/log-only here. No new HTTP rejection,
+    // accepted-work ledger, exact goal-version receipt or global drain contract.
     private persistGoals(): void {
-        try {
-            const sqliteService = require('./sqliteService').sqliteService;
-            sqliteService.setConfig('active_goals', this.activeGoals);
-        } catch (e) {
-            // Non-critical
-        }
+        void this.writeGoalsSnapshot().catch(error => {
+            console.error('[INTROSPECTION] Failed to persist goals:', error);
+        });
     }
 
     /**

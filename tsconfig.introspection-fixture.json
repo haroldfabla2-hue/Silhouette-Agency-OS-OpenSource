@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [
+    "tests/real-process/introspection-initial/initial-status-consumer.mts"
+  ],
+  "exclude": ["node_modules", "dist", "ComfyUI", "silhouette", "uploads"]
+}

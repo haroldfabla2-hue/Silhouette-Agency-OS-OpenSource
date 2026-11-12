@@ -18,6 +18,35 @@ import { MemoryNodeSchema } from './memorySchema'; // Added missing import
 
 const SNAPSHOT_PATH = path.join(process.cwd(), 'data', 'memory_snapshot.json');
 
+export interface CoreRecoveryReport {
+    outcome: 'COMPLETE' | 'DEGRADED' | 'FAILED';
+    source: 'DISK' | 'REDIS' | 'EMPTY';
+    snapshotLoaded: boolean;
+    journalVerified: number;
+    unresolved: { key: string; sourceRetained: boolean; error: string }[];
+    errors: string[];
+}
+
+export interface SnapshotReceipt {
+    sequence: number;
+    dirtyRevision: number;
+    checksum: string;
+    disk: 'CONFIRMED';
+    redis: 'SETTLED_UNVERIFIED' | 'FAILED';
+    redisError?: string;
+}
+
+export interface SnapshotOperation {
+    sequence: number;
+    dirtyRevision: number;
+    checksum: string;
+    state: 'PENDING' | 'FAILED';
+    error?: string;
+}
+
+const recoveryError = (error: unknown): string =>
+    error instanceof Error ? error.message : String(error);
+
 // --- SILHOUETTE CONTINUUM MEMORY SYSTEM V5.0 (UNIFIED WORKING MEMORY) ---
 // Architecture: 4-Tier Hierarchical Storage
 // L1: RAM (WORKING - Unified Fast Access)
@@ -46,6 +75,16 @@ class ContinuumMemorySystem {
 
     // Dirty Flag for Persistence Optimization
     private isDirty: boolean = false;
+    private dirtyRevision = 0;
+    private readonly coreRecovery: Promise<CoreRecoveryReport>;
+    private readonly hydrationOwner: Promise<void>;
+    private hydrationState: 'PENDING' | 'VALID' | 'FAILED' = 'PENDING';
+    private coreRecoveryReport: CoreRecoveryReport | undefined;
+    private snapshotSequence = 0;
+    private snapshotTail: Promise<void> = Promise.resolve();
+    private readonly snapshotOperations = new Map<number, SnapshotOperation & { payload: string }>();
+    private readonly SNAPSHOT_OPERATION_LIMIT = 128;
+    private lastSnapshotReceipt: SnapshotReceipt | undefined;
 
     // [FIX] Anti-Recursion: Hash-based deduplication to prevent infinite loops
     private recentHashes: Set<string> = new Set();
@@ -144,14 +183,22 @@ class ContinuumMemorySystem {
         // No hydration needed for LanceDB, it's always on disk.
         // RAM tiers start empty on reboot (Tabula Rasa for short term) UNLESS hydrated explicitly.
 
-        // [LIFECYCLE] Import must be side-effect free: Redis connects lazily
-        // on first operation (redisClient.ensureConnected), and the Dreaming
-        // loop starts explicitly at server boot (server/loaders/index.ts) -
-        // a fire-and-forget connect here raced test-worker teardown and
-        // crashed CI intermittently. Disk/journal recovery never depended on
-        // Redis availability.
-        this.loadSnapshot().then(() => this.reconcileTransitions())
-            .catch(err => console.error('[CONTINUUM] Failed to recover memory:', err));
+        // Retain constructor autostart, now with an observable original owner.
+        // A missing disk can consult Redis; this is not import-purity or a
+        // global startup/drain barrier. Dreaming still starts at server boot.
+        const report: CoreRecoveryReport = {
+            outcome: 'COMPLETE', source: 'EMPTY', snapshotLoaded: false,
+            journalVerified: 0, unresolved: [], errors: []
+        };
+        this.hydrationOwner = this.loadSnapshot(report).then(() => {
+            this.hydrationState = 'VALID';
+        }, error => {
+            this.hydrationState = 'FAILED';
+            throw error;
+        });
+        this.coreRecovery = this.recoverCore(report);
+        // Observe immediately; retain the original rejecting owner for callers.
+        void this.coreRecovery.catch(err => console.error('[CONTINUUM] Failed to recover memory:', err));
     }
 
     // --- PUBLIC API ---
@@ -161,77 +208,213 @@ class ContinuumMemorySystem {
     }
 
     // --- PERSISTENCE SNAPSHOTS ---
-    private async saveSnapshot() {
+    /** Core recovery only: settlement, outcome and later writes are distinct. */
+    public readyCore(): Promise<CoreRecoveryReport> {
+        return this.coreRecovery;
+    }
+
+    public getCoreRecoveryReport(): CoreRecoveryReport | undefined {
+        if (!this.coreRecoveryReport) return undefined;
+        return {
+            ...this.coreRecoveryReport,
+            unresolved: this.coreRecoveryReport.unresolved.map(entry => ({ ...entry })),
+            errors: [...this.coreRecoveryReport.errors]
+        };
+    }
+
+    private async recoverCore(report: CoreRecoveryReport): Promise<CoreRecoveryReport> {
         try {
-            // [REFACTOR 2026-01-07] Use unified 'working' key for new format
-            // Also save legacy keys for backward compatibility with older code
-            const data = {
-                working: this.working,
-                // Legacy keys (for backward compatibility if rollback needed)
-                ultraShort: this.working,
-                short: []
-            };
-            const payload = JSON.stringify(data, null, 2);
-
-            // 1. Primary: Redis (Fast, Distributed)
-            try { await redisClient.set('continuum:volatile', payload, 3600); }
-            catch (error) { console.warn('[CONTINUUM] Redis snapshot unavailable:', error); }
-
-            // 2. Secondary: Disk (Permanent, Local)
-            await fs.mkdir(path.dirname(SNAPSHOT_PATH), { recursive: true });
-            await atomicWriteFile(SNAPSHOT_PATH, payload);
-
-            // console.log("[CONTINUUM] Volatile memory snapshot saved (V5.0 format).");
+            await this.hydrationOwner;
+            const journal = await this.reconcileTransitions();
+            report.journalVerified = journal.verified;
+            report.unresolved = journal.unresolved;
+            if (journal.unresolved.length || report.errors.length) report.outcome = 'DEGRADED';
+            this.coreRecoveryReport = report;
+            return this.getCoreRecoveryReport()!;
         } catch (error) {
-            console.error("[CONTINUUM] Failed to save snapshot:", error);
+            report.outcome = 'FAILED';
+            report.errors.push(recoveryError(error));
+            this.coreRecoveryReport = report;
             throw error;
         }
     }
 
-    private async loadSnapshot() {
+    public getSnapshotOperations(): SnapshotOperation[] {
+        return Array.from(this.snapshotOperations.values(), ({ payload: _payload, ...entry }) => ({ ...entry }));
+    }
+
+    public getLastSnapshotReceipt(): SnapshotReceipt | undefined {
+        return this.lastSnapshotReceipt ? { ...this.lastSnapshotReceipt } : undefined;
+    }
+
+    /** Explicit acknowledgement removes only an already terminal failure. */
+    public acknowledgeSnapshotFailure(sequence: number): boolean {
+        if (this.snapshotOperations.get(sequence)?.state !== 'FAILED') return false;
+        return this.snapshotOperations.delete(sequence);
+    }
+
+    private snapshotPayload(): string {
+        return JSON.stringify({ working: this.working, ultraShort: this.working, short: [] }, null, 2);
+    }
+
+    private snapshotFingerprint(): string {
+        return createHash('sha256').update(this.snapshotPayload()).digest('hex');
+    }
+
+    private snapshotAdmissionError(): Error | undefined {
+        if (this.hydrationState !== 'VALID') {
+            return new Error(`Snapshot rejected before admission: hydration ${this.hydrationState}`);
+        }
+        if (this.coreRecoveryReport?.outcome === 'FAILED') {
+            return new Error('Snapshot rejected: failed core recovery requires explicit repair outside this cut');
+        }
+        return undefined;
+    }
+
+    private saveSnapshot(): Promise<SnapshotReceipt> {
+        const error = this.snapshotAdmissionError();
+        if (error) return Promise.reject(error);
+        return this.captureSnapshot();
+    }
+
+    private saveRecoverySnapshot(): Promise<SnapshotReceipt> {
+        // Recovery cannot await its own readyCore. Hydration must already be valid.
+        if (this.hydrationState !== 'VALID' || this.coreRecoveryReport?.outcome === 'FAILED') {
+            return Promise.reject(new Error('Recovery snapshot rejected: hydration/core recovery not valid'));
+        }
+        return this.captureSnapshot();
+    }
+
+    private captureSnapshot(): Promise<SnapshotReceipt> {
+        // Capacity is checked before sequence admission or any backend operation.
+        if (this.snapshotOperations.size >= this.SNAPSHOT_OPERATION_LIMIT) {
+            return Promise.reject(new Error('Snapshot admission full: acknowledge retained failures first'));
+        }
+        // Serialize now, not when the queued worker runs: no mutable node alias.
+        const payload = this.snapshotPayload();
+        const checksum = createHash('sha256').update(payload).digest('hex');
+        const sequence = ++this.snapshotSequence;
+        const dirtyRevision = this.dirtyRevision;
+        const record: SnapshotOperation & { payload: string } = { sequence, dirtyRevision, checksum, state: 'PENDING', payload };
+        this.snapshotOperations.set(sequence, record);
+        return this.enqueueSnapshot(record);
+    }
+
+    public retrySnapshotFailure(sequence: number): Promise<SnapshotReceipt> {
+        const admissionError = this.snapshotAdmissionError();
+        if (admissionError) return Promise.reject(admissionError);
+        const record = this.snapshotOperations.get(sequence);
+        if (!record || record.state !== 'FAILED') {
+            return Promise.reject(new Error('No retained failed snapshot for explicit retry'));
+        }
+        if (sequence !== this.snapshotSequence || record.dirtyRevision !== this.dirtyRevision
+            || record.checksum !== this.snapshotFingerprint()) {
+            this.isDirty = true;
+            return Promise.reject(new Error('Retry would regress newer state; use forceSave for current data'));
+        }
+        record.state = 'PENDING';
+        delete record.error;
+        return this.enqueueSnapshot(record);
+    }
+
+    private enqueueSnapshot(record: SnapshotOperation & { payload: string }): Promise<SnapshotReceipt> {
+        const { sequence, dirtyRevision, checksum, payload } = record;
+        const task = this.snapshotTail.then(async (): Promise<SnapshotReceipt> => {
+            const admissionError = this.snapshotAdmissionError();
+            if (admissionError) throw admissionError;
+            let redis: SnapshotReceipt['redis'] = 'SETTLED_UNVERIFIED';
+            let redisError: string | undefined;
+            // Preserve historical Redis -> disk ordering, per captured payload.
+            try { await redisClient.set('continuum:volatile', payload, 3600); }
+            catch (error) {
+                redis = 'FAILED';
+                redisError = recoveryError(error);
+                console.warn('[CONTINUUM] Redis snapshot unavailable:', error);
+            }
+            const commitError = this.snapshotAdmissionError();
+            if (commitError) throw commitError;
+            await fs.mkdir(path.dirname(SNAPSHOT_PATH), { recursive: true });
+            await atomicWriteFile(SNAPSHOT_PATH, payload);
+            const readback = await fs.readFile(SNAPSHOT_PATH);
+            if (createHash('sha256').update(readback).digest('hex') !== checksum) {
+                throw new Error(`Snapshot read-back mismatch for sequence ${sequence}`);
+            }
+            const receipt: SnapshotReceipt = {
+                sequence, dirtyRevision, checksum, disk: 'CONFIRMED', redis, redisError
+            };
+            const payloadStillCurrent = this.snapshotFingerprint() === checksum;
+            this.lastSnapshotReceipt = receipt;
+            this.snapshotOperations.delete(sequence);
+            if (!payloadStillCurrent) this.isDirty = true;
+            if (payloadStillCurrent && this.dirtyRevision === dirtyRevision
+                && !Array.from(this.snapshotOperations.values()).some(entry => entry.state === 'FAILED')) {
+                this.isDirty = false;
+            }
+            return { ...receipt };
+        });
+        // The queue survives failure; the original task still rejects visibly.
+        this.snapshotTail = task.then(() => undefined, error => {
+            this.isDirty = true;
+            record.state = 'FAILED';
+            record.error = recoveryError(error);
+            console.error('[CONTINUUM] Failed to save snapshot:', error);
+        });
+        return task;
+    }
+
+    private async loadSnapshot(report: CoreRecoveryReport): Promise<void> {
+        let snapshot: any;
+        let payload: string | null;
+        report.source = 'DISK';
         try {
-            let snapshot: any = null;
-            let source = '';
-
-            // Disk is the durable authority; Redis can be stale after a disk failure.
-            try {
-                snapshot = JSON.parse(await fs.readFile(SNAPSHOT_PATH, 'utf-8'));
-                source = 'DISK';
-            } catch (error: any) {
-                if (error.code !== 'ENOENT') throw error;
-                const redisData = await redisClient.get('continuum:volatile');
-                if (redisData) { snapshot = JSON.parse(redisData); source = 'REDIS'; }
-            }
-
-            if (!snapshot) return;
-
-            // [REFACTOR 2026-01-07] Handle both V5.0 and legacy formats
-            // V5.0 format has 'working' key
-            // Legacy format has 'ultraShort' and 'short' keys
-            const existingIds = new Set(this.working.map(n => n.id));
-
-            if (snapshot.working && Array.isArray(snapshot.working)) {
-                // New V5.0 format - MERGE instead of overwrite to prevent race conditions during boot
-                const snapshotNodes = snapshot.working.filter((n: any) => !existingIds.has(n.id));
-                this.working.push(...snapshotNodes);
-                console.log(`[CONTINUUM] Restored Memory from ${source} (V5.0 format): ${snapshotNodes.length} merged into WORKING tier`);
-            } else {
-                // Legacy format - merge ultraShort + short into working
-                const legacyNodes: MemoryNode[] = [];
-                if (snapshot.ultraShort && Array.isArray(snapshot.ultraShort)) {
-                    legacyNodes.push(...snapshot.ultraShort.filter((n: any) => !existingIds.has(n.id)));
-                }
-                if (snapshot.short && Array.isArray(snapshot.short)) {
-                    legacyNodes.push(...snapshot.short.filter((n: any) => !existingIds.has(n.id)));
-                }
-                this.working.push(...legacyNodes);
-                console.log(`[CONTINUUM] 🔄 MIGRATED Legacy Snapshot from ${source}: ${legacyNodes.length} nodes merged into WORKING tier`);
-            }
-        } catch (error: any) {
-            if (error.code !== 'ENOENT') {
-                console.error("[CONTINUUM] Error loading snapshot:", error);
+            payload = await fs.readFile(SNAPSHOT_PATH, 'utf-8');
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+            // Redis is consulted ONLY when disk is absent, never corrupt/unreadable.
+            report.source = 'REDIS';
+            payload = await redisClient.get('continuum:volatile');
+            report.source = payload === null ? 'EMPTY' : 'REDIS';
+            if (redisClient.isMockMode()) {
+                report.errors.push('Disk absent; Redis is volatile in-memory fallback, not durable recovery evidence');
             }
         }
+        if (payload === null) return;
+        snapshot = JSON.parse(payload);
+        if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
+            throw new Error('Malformed memory snapshot');
+        }
+        for (const key of ['working', 'ultraShort', 'short']) {
+            if (snapshot[key] !== undefined && !Array.isArray(snapshot[key])) {
+                throw new Error('Malformed memory snapshot tier array');
+            }
+        }
+        let nodes: MemoryNode[];
+        if (Array.isArray(snapshot.working)) nodes = snapshot.working;
+        else if (Array.isArray(snapshot.ultraShort) || Array.isArray(snapshot.short)) {
+            nodes = [...(snapshot.ultraShort ?? []), ...(snapshot.short ?? [])];
+        } else throw new Error('Memory snapshot has no recognized tier arrays');
+        for (const node of nodes) {
+            if (!this.isRecoveryNode(node)) throw new Error('Malformed memory snapshot node');
+        }
+        const existingIds = new Set(this.working.map(node => node.id));
+        let merged = 0;
+        for (const node of nodes) {
+            if (existingIds.has(node.id)) continue;
+            this.working.push(node);
+            existingIds.add(node.id);
+            merged++;
+        }
+        if (merged > 0) this.markDirty();
+        report.snapshotLoaded = true;
+        console.log(`[CONTINUUM] Restored Memory from ${report.source}: ${merged} merged into WORKING tier`);
+    }
+
+    private isRecoveryNode(node: any): node is MemoryNode {
+        // Validate shape without rewriting legacy fields or embedding metadata.
+        return !!node && typeof node.id === 'string' && node.id.length > 0
+            && typeof node.content === 'string' && Number.isFinite(node.timestamp)
+            && typeof node.tier === 'string' && Array.isArray(node.tags)
+            && node.tags.every((tag: unknown) => typeof tag === 'string');
     }
 
     /**
@@ -240,13 +423,34 @@ class ContinuumMemorySystem {
      * (nothing is deleted), so re-verifying all of history every cycle would
      * grow without bound - outstanding entries are the only work remaining.
      */
-    public async reconcileTransitions(scope: 'full' | 'pending' = 'full'): Promise<void> {
-        for (const entry of await memoryTransitions.pending()) {
+    public async reconcileTransitions(scope: 'full' | 'pending' = 'full'): Promise<{
+        verified: number;
+        unresolved: CoreRecoveryReport['unresolved'];
+    }> {
+        if (this.hydrationState !== 'VALID') throw new Error('Reconcile requires valid hydration');
+        const entries = await memoryTransitions.pending();
+        // Reject the whole malformed journal before replay mutates any entry.
+        for (const entry of entries) {
+            if (!entry || !this.isRecoveryNode(entry.source) || !this.isRecoveryNode(entry.destination)
+                || entry.source.id !== entry.destination.id
+                || !['PENDING', 'WRITTEN', 'VERIFIED', 'COMMITTED'].includes(entry.state)) {
+                throw new Error('Malformed memory transition journal');
+            }
+            const expectedKey = createHash('sha256').update(JSON.stringify([
+                entry.source.id, entry.source.timestamp, entry.source.tier, entry.destination.tier
+            ])).digest('hex');
+            if (entry.key !== expectedKey) throw new Error('Malformed memory transition key');
+        }
+        const result: { verified: number; unresolved: CoreRecoveryReport['unresolved'] } = {
+            verified: 0, unresolved: []
+        };
+        for (const entry of entries) {
             if (scope === 'pending' && !isOutstandingTransition(entry)) continue;
             try {
                 if (entry.state !== 'COMMITTED') {
-                    // Keep a RAM source until the destination is independently verified.
-                    if (entry.source.tier === MemoryTier.WORKING && !this.working.some(n => n.id === entry.source.id)) this.working.push(entry.source);
+                    if (entry.source.tier === MemoryTier.WORKING && !this.working.some(n => n.id === entry.source.id)) {
+                        this.working.push(entry.source);
+                    }
                     if (entry.source.tier !== MemoryTier.WORKING) {
                         const current = await lancedbService.getNodeById(entry.source.id);
                         if (!current || (current.tier !== entry.source.tier && current.tier !== entry.destination.tier)) {
@@ -262,11 +466,22 @@ class ContinuumMemorySystem {
                 }
                 if (entry.source.tier === MemoryTier.WORKING) this.working = this.working.filter(n => n.id !== entry.source.id);
                 this.markDirty();
-                await this.saveSnapshot();
+                await this.saveRecoverySnapshot();
+                result.verified++;
             } catch (error) {
+                // Preserve the journal's original source payload even for a
+                // COMMITTED record whose destination can no longer be verified.
+                if (entry.source.tier === MemoryTier.WORKING && !this.working.some(n => n.id === entry.source.id)) {
+                    this.working.push(entry.source);
+                    this.markDirty();
+                }
+                // sourceRetained refers to the unchanged journal source, not
+                // a claim that a non-WORKING canonical row was restored.
+                result.unresolved.push({ key: entry.key, sourceRetained: true, error: recoveryError(error) });
                 console.error(`[CONTINUUM] Recovery deferred for ${entry.key}:`, error);
             }
         }
+        return result;
     }
 
     // --- PERSISTENCE HELPERS ---
@@ -736,7 +951,6 @@ class ContinuumMemorySystem {
                 // Snapshot check (Lazy Persistence)
                 if (this.isDirty) {
                     await this.saveSnapshot();
-                    this.isDirty = false;
                 }
             }
             if (now % 60000 < 1000) await this.tickMedium(now);
@@ -961,6 +1175,7 @@ class ContinuumMemorySystem {
     private writeRevision = 0;
     private markDirty() {
         this.isDirty = true;
+        this.dirtyRevision++;
         this.writeRevision++;
     }
 
@@ -1049,8 +1264,9 @@ class ContinuumMemorySystem {
     // --- DEBUG / ADMIN METHODS ---
     public async forceSave() {
         // Persist volatile memory to Redis/Disk immediately
-        await this.saveSnapshot();
+        const receipt = await this.saveSnapshot();
         console.log("[CONTINUUM] forceSave completed.");
+        return receipt;
     }
 
     public async debug_forceTick(tier?: string) {

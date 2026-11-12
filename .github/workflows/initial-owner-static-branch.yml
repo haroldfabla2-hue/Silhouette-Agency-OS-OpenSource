@@ -1,0 +1,111 @@
+name: Initial-owner static only (exact isolated branch)
+
+on:
+  push:
+    branches:
+      - validation/initial-owner-static-reviewed-20261112
+
+permissions:
+  contents: read
+
+jobs:
+  focused-static:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      EXPECTED_COMMIT_SHA: ${{ github.sha }}
+      EVIDENCE: ${{ runner.temp }}/initial-owner-static-evidence
+    steps:
+      - name: Checkout exact pushed candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify pushed commit and reviewed bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE"
+          test -w "$EVIDENCE"
+          printf 'EVIDENCE_WRITABLE\n' > "$EVIDENCE/write-check.txt"
+          actual=$(git rev-parse HEAD)
+          printf '%s\n' "$actual" > "$EVIDENCE/head.txt"
+          printf '%s\n' "$EXPECTED_COMMIT_SHA" > "$EVIDENCE/expected-head.txt"
+          [[ "$EXPECTED_COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$EXPECTED_COMMIT_SHA"
+          git status --porcelain > "$EVIDENCE/checkout-status.txt"
+          sha256sum package.json package-lock.json services/continuumMemory.ts services/memoryTransitions.ts services/introspectionEngine.ts tsconfig.json tsconfig.introspection-fixture.json tests/real-process/introspection-initial/initial-status-consumer.mts tests/real-process/introspection-initial/run-two.py tests/real-process/introspection-initial/run-runtime.sh > "$EVIDENCE/input-sha256.txt"
+          set +e
+          sha256sum --check tests/real-process/introspection-initial/reviewed-inputs.sha256 2>&1 | tee "$EVIDENCE/reviewed-input-check.log"
+          codes=("${PIPESTATUS[@]}")
+          set -e
+          printf '%s\n' "${codes[0]}" > "$EVIDENCE/reviewed-input-check.exit"
+          printf '%s\n' "${codes[1]}" > "$EVIDENCE/reviewed-input-check.tee-exit"
+          test "${codes[0]}" = 0
+          test "${codes[1]}" = 0
+          printf 'PUSH_HEAD_AND_REVIEWED_BYTES_MATCH\n' > "$EVIDENCE/head-check.txt"
+
+      - name: Setup exact existing CI Node floor
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+          cache: npm
+
+      - name: Existing pinned lock install
+        shell: bash
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 'true'
+        run: |
+          set -euo pipefail
+          test -w "$EVIDENCE"
+          node --version > "$EVIDENCE/node-version.txt"
+          npm --version > "$EVIDENCE/npm-version.txt"
+          set +e
+          timeout --signal=TERM --kill-after=5s 300s npm ci 2>&1 | tee "$EVIDENCE/npm-ci.log"
+          codes=("${PIPESTATUS[@]}")
+          set -e
+          printf '%s\n' "${codes[0]}" > "$EVIDENCE/npm-ci.exit"
+          printf '%s\n' "${codes[1]}" > "$EVIDENCE/npm-ci.tee-exit"
+          test "${codes[0]}" = 0
+          test "${codes[1]}" = 0
+
+      - name: All three static checks, aggregate failure
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -w "$EVIDENCE"
+          run_check() {
+            name=$1
+            shift
+            set +e
+            timeout --signal=TERM --kill-after=5s 180s "$@" 2>&1 | tee "$EVIDENCE/$name.log"
+            codes=("${PIPESTATUS[@]}")
+            set -e
+            printf '%s\n' "${codes[0]}" > "$EVIDENCE/$name.exit"
+            printf '%s\n' "${codes[1]}" > "$EVIDENCE/$name.tee-exit"
+          }
+          # Deliberate diagnostic policy: run all three even if lint/TSC fail.
+          # Recording/tee failures never turn a nonzero command into success.
+          run_check lint npm run lint
+          run_check tsc-production npm run typecheck
+          run_check tsc-fixture node node_modules/typescript/bin/tsc --project tsconfig.introspection-fixture.json
+          result=0
+          for name in lint tsc-production tsc-fixture; do
+            test "$(cat "$EVIDENCE/$name.exit")" = 0 || result=1
+            test "$(cat "$EVIDENCE/$name.tee-exit")" = 0 || result=1
+          done
+          printf '%s\n' "$result" > "$EVIDENCE/aggregate.exit"
+          if test "$result" = 0; then printf 'STATIC_PASS\n' > "$EVIDENCE/static-pass.txt"; fi
+          exit "$result"
+
+      - name: Always collect static evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: initial-owner-static-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/initial-owner-static-evidence
+          if-no-files-found: warn
+          retention-days: 7
