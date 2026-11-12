@@ -1,7 +1,7 @@
-name: Selfdev isolated suite mountpoint gate once
+name: Selfdev exhaustive isolated contract gates once
 on:
   push:
-    branches: [validation/silhouette-selfdev-suite-mounts-once-20261111]
+    branches: [validation/silhouette-selfdev-contracts-once-20261111]
 permissions:
   contents: read
 jobs:
@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: bc5a6d0f3c560b9233b14ec2ac2575e48ebce60e
+          ref: ca4778de4a1237995b61d5c80c3e5a1ad461bc78
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -23,7 +23,7 @@ jobs:
         run: |
           set -eu
           test "$REPOSITORY_PRIVATE" = false
-          test "$(git rev-parse HEAD)" = bc5a6d0f3c560b9233b14ec2ac2575e48ebce60e
+          test "$(git rev-parse HEAD)" = ca4778de4a1237995b61d5c80c3e5a1ad461bc78
           test -z "$(git status --porcelain)"
           test ! -e .env && test ! -e .env.local
           node --version
@@ -49,17 +49,66 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bubblewrap iproute2
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      - name: Whole suite in disposable OFF offline namespace, zero retries
+      - name: Exact-source TypeScript gate in read-only offline namespace
         run: |
           set -eu
-          # bwrap cannot create child mountpoints after the parent is read-only.
+          node_bin=$(command -v node)
+          bwrap --unshare-all --die-with-parent --ro-bind / / --tmpfs /root --tmpfs /home --tmpfs /opt --tmpfs /tmp --tmpfs /run --ro-bind "$GITHUB_WORKSPACE" /tmp/project --ro-bind "$node_bin" /tmp/node --proc /proc --dev /dev --chdir /tmp/project /usr/bin/env -i PATH=/usr/bin:/bin HOME=/tmp NODE_OPTIONS=--max-old-space-size=2560 /usr/bin/timeout 300 /tmp/node node_modules/typescript/bin/tsc --noEmit --skipLibCheck
+          test -z "$(git status --porcelain)"
+      - name: Prepare exact-source exhaustive contract harness
+        run: |
+          set -eu
           mkdir -p node_modules/.vite-temp node_modules/.vite
-          test -d node_modules/.vite-temp && test -d node_modules/.vite
           test -d "$RUNNER_TEMP/silhouette-test-browsers"
           fixture="$RUNNER_TEMP/silhouette-selfdev-fixture"
-          mkdir -p "$fixture"
-          git archive bc5a6d0f3c560b9233b14ec2ac2575e48ebce60e | tar -x -C "$fixture"
+          mkdir -p "$fixture/home/.cache"
+          git archive ca4778de4a1237995b61d5c80c3e5a1ad461bc78 | tar -x -C "$fixture"
+          test ! -e "$fixture/.env" && test ! -e "$fixture/.env.local"
           ln -s /tmp/project/node_modules "$fixture/node_modules"
-          node_bin=$(command -v node)
-          bwrap --unshare-user --uid 0 --gid 0 --unshare-net --cap-add ALL --cap-drop CAP_DAC_OVERRIDE --cap-drop CAP_DAC_READ_SEARCH --die-with-parent --ro-bind / / --tmpfs /root --tmpfs /home --tmpfs /opt --tmpfs /tmp --tmpfs /run --ro-bind "$GITHUB_WORKSPACE" /tmp/project --tmpfs /tmp/project/node_modules/.vite-temp --tmpfs /tmp/project/node_modules/.vite --ro-bind "$node_bin" /tmp/bin/node --ro-bind "$RUNNER_TEMP/silhouette-test-browsers" /tmp/browsers --bind "$fixture" /tmp/work --proc /proc --dev /dev --chdir /tmp/work /bin/bash -c 'set -eu; ip link set lo up; exec /usr/bin/env -i PATH=/tmp/bin:/usr/bin:/bin HOME=/tmp/work/home NODE_ENV=test SILHOUETTE_PROVIDERS=off PLAYWRIGHT_BROWSERS_PATH=/tmp/browsers NODE_OPTIONS=--max-old-space-size=1100 /usr/bin/timeout 360 /tmp/bin/node node_modules/vitest/vitest.mjs run --maxWorkers 5 --retry=0'
+          # Default browser path is needed after OFF deliberately scrubs the env knob.
+          ln -s /tmp/browsers "$fixture/home/.cache/ms-playwright"
+          node_prefix=$(dirname "$(dirname "$(command -v node)")")
+          test -x "$node_prefix/bin/npm" && test -x "$node_prefix/bin/npx"
+          cat > "$RUNNER_TEMP/verify-contracts.cjs" <<'NODE'
+          // Verification harness only. No product-policy changes or remote services.
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const {spawnSync} = require('node:child_process');
+          const root = '/tmp/work';
+          const manifest = JSON.parse(fs.readFileSync(path.join(root,'docs/verification/selfdev-test-contracts-20261111.json'),'utf8'));
+          function files(dir){return fs.readdirSync(dir,{withFileTypes:true}).flatMap(e=>e.isDirectory()?files(path.join(dir,e.name)):e.name.endsWith('.test.ts')?[path.relative(root,path.join(dir,e.name))]:[]);}
+          const actual=files(path.join(root,'tests/automated')).sort();
+          const listed=[...manifest.legacy_fixture_files,...manifest.off_files].sort();
+          if(actual.length!==232||listed.length!==232||new Set(listed).size!==232||JSON.stringify(actual)!==JSON.stringify(listed)||manifest.legacy_fixture_files.length!==5||manifest.off_files.length!==227)throw new Error('Contract coverage is not disjoint/exhaustive232files');
+          const basic={PATH:'/tmp/node/bin:/usr/bin:/bin',HOME:'/tmp/work/home',NODE_ENV:'test',PLAYWRIGHT_BROWSERS_PATH:'/tmp/browsers',NODE_OPTIONS:'--max-old-space-size=1100'};
+          function run(args,seconds,env){const r=spawnSync('/tmp/node/bin/node',args,{cwd:root,env,stdio:'inherit',timeout:seconds*1000,killSignal:'SIGKILL'});if(r.error)throw r.error;return r.status===0;}
+          for(const phase of ['legacy','off']){
+           const include=phase==='legacy'?manifest.legacy_fixture_files:manifest.off_files;
+           fs.writeFileSync(path.join(root,`vitest.contract-${phase}.mjs`),`import base from './vitest.config.ts'; export default {...base,test:{...base.test,include:${JSON.stringify(include)},retry:0}};\n`);
+          }
+          // Keep the source config private-file-free; all fixtures come from the archive.
+          if(fs.existsSync(path.join(root,'.env'))||fs.existsSync(path.join(root,'.env.local'))||fs.existsSync(path.join(root,'silhouette.config.json')))throw new Error('Private config or dotenv unexpectedly present');
+          console.log('CONTRACT_COVERAGE:232files,5legacy_fixture_regression_only,227OFF,no_duplicates_or_omissions');
+          let ok=true;
+          console.log('LEGACY_FIXTURE_PHASE:noOFFflag;existingauthoredfixturesonly;OSexternalnetworkclosed;notprovideracceptance');
+          ok=run(['node_modules/vitest/vitest.mjs','run','--config','vitest.contract-legacy.mjs','--maxWorkers','2','--retry=0'],120,basic)&&ok;
+          console.log('OFF_PHASE:globalprovidersOFF;actualbootprocessesremainOFF;OSexternalnetworkclosed');
+          ok=run(['node_modules/vitest/vitest.mjs','run','--config','vitest.contract-off.mjs','--maxWorkers','5','--retry=0'],300,{...basic,SILHOUETTE_PROVIDERS:'off'})&&ok;
+          console.log('CONTRACT_PHASES_COMPLETE:both_executed_without_test_exclusions_or_retries,success='+ok);
+          process.exit(ok?0:1);
+          NODE
+          printf '%s\n' "$node_prefix" > "$RUNNER_TEMP/silhouette-node-prefix"
+      - name: Exact-source lint and builds OFF in disposable offline namespace
+        run: |
+          set -eu
+          fixture="$RUNNER_TEMP/silhouette-selfdev-fixture"
+          node_prefix=$(cat "$RUNNER_TEMP/silhouette-node-prefix")
+          bwrap --unshare-all --die-with-parent --ro-bind / / --tmpfs /root --tmpfs /home --tmpfs /opt --tmpfs /tmp --tmpfs /run --ro-bind "$GITHUB_WORKSPACE" /tmp/project --tmpfs /tmp/project/node_modules/.vite-temp --tmpfs /tmp/project/node_modules/.vite --ro-bind "$node_prefix" /tmp/node --bind "$fixture" /tmp/work --proc /proc --dev /dev --chdir /tmp/work /usr/bin/env -i PATH=/tmp/node/bin:/usr/bin:/bin HOME=/tmp/work/home NODE_ENV=test SILHOUETTE_PROVIDERS=off NODE_OPTIONS=--max-old-space-size=1400 /usr/bin/timeout 120 /bin/bash -c 'set -eu; node node_modules/eslint/bin/eslint.js . --ext .ts,.tsx,.js,.jsx --max-warnings 500; node node_modules/vite/bin/vite.js build; node node_modules/vite/bin/vite.js build --config vite.server.config.ts'
+          test -z "$(git status --porcelain)"
+      - name: All232 regression files by explicit contracts, no retries, OS external network closed
+        run: |
+          set -eu
+          fixture="$RUNNER_TEMP/silhouette-selfdev-fixture"
+          node_prefix=$(cat "$RUNNER_TEMP/silhouette-node-prefix")
+          bwrap --unshare-user --uid 0 --gid 0 --unshare-net --cap-add ALL --cap-drop CAP_DAC_OVERRIDE --cap-drop CAP_DAC_READ_SEARCH --die-with-parent --ro-bind / / --tmpfs /root --tmpfs /home --tmpfs /opt --tmpfs /tmp --tmpfs /run --ro-bind "$GITHUB_WORKSPACE" /tmp/project --tmpfs /tmp/project/node_modules/.vite-temp --tmpfs /tmp/project/node_modules/.vite --ro-bind "$node_prefix" /tmp/node --ro-bind "$RUNNER_TEMP/silhouette-test-browsers" /tmp/browsers --ro-bind "$RUNNER_TEMP/verify-contracts.cjs" /tmp/verify-contracts.cjs --bind "$fixture" /tmp/work --proc /proc --dev /dev --chdir /tmp/work /bin/bash -c 'set -eu; ip link set lo up; exec /usr/bin/env -i PATH=/tmp/node/bin:/usr/bin:/bin HOME=/tmp/work/home /usr/bin/timeout 360 /tmp/node/bin/node /tmp/verify-contracts.cjs'
           test -z "$(git status --porcelain)"
