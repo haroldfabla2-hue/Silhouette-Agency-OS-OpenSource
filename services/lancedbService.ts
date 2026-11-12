@@ -770,7 +770,14 @@ export class LanceDbService {
             if (!current || canonicalChecksum(current) !== canonicalChecksum(node)) {
                 throw new Error('Canonical version changed; stale local projection receipt refused');
             }
-            const activeEvent = await this.canonicalProjectionEventKey(node.id);
+            let activeEvent = await this.canonicalProjectionEventKey(node.id);
+            if (!activeEvent || activeEvent.startsWith('unembedded:')) {
+                // Explicit external projection is an identified durable write,
+                // not a bypass around canonical intent/generation accounting.
+                node = { ...current, embeddingIdentity: identity };
+                await this.writeAndVerify(node, vector);
+                activeEvent = await this.canonicalProjectionEventKey(node.id);
+            }
             if (activeEvent && !activeEvent.startsWith('unembedded:')) {
                 const intent = this.journal().get(activeEvent);
                 if (!intent || canonicalChecksum(intent.identity) !== canonicalChecksum(identity)
@@ -815,13 +822,17 @@ export class LanceDbService {
             snapshots.push(snapshot);
         }
         await table.checkout(await table.version());
+        const eventKeys = new Map<string, string>();
         const readSnapshot = async (ids: string[]) => {
             const found = new Map<string, MemoryNode>();
             if (!ids.length) return found;
             const quoted = ids.map(id => `'${id.replace(/'/g, "''")}'`).join(', ');
             for (const snapshot of snapshots) {
                 const rows = await snapshot.query().where(`id IN (${quoted})`).toArray();
-                for (const row of rows) if (!found.has(row.id)) found.set(row.id, JSON.parse(row.json_data));
+                for (const row of rows) if (!found.has(row.id)) {
+                    found.set(row.id, JSON.parse(row.json_data));
+                    eventKeys.set(row.id, row.projection_event_key || '');
+                }
             }
             return found;
         };
@@ -842,6 +853,15 @@ export class LanceDbService {
                 }
                 const projected = JSON.parse(row.json_data);
                 if (projected.content !== node.content) return false; // Stale embedding is not current evidence.
+                const eventKey = eventKeys.get(row.id);
+                if (eventKey?.startsWith('unembedded:')) return false;
+                if (eventKey) {
+                    const intent = this.journal().get(eventKey);
+                    const localVector = toNumericArray(row.vector);
+                    if (!intent || intent.checksum !== canonicalChecksum(node)
+                        || canonicalChecksum(intent.identity) !== canonicalChecksum(identity)
+                        || !localVector || canonicalChecksum(localVector) !== canonicalChecksum(Array.from(Float32Array.from(intent.vector)))) return false;
+                }
                 return !filter || Object.entries(filter).every(([key, value]) => {
                     if (key === '$excludeTypes') return !value.includes((node as any).type);
                     if (key === '$excludeTags') return !(node.tags || []).some(tag => value.includes(tag));

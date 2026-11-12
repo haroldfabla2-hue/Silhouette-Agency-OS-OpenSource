@@ -52,6 +52,7 @@ const node: any = { id: 'PUBLIC_SAME_PAYLOAD', content: 'Public unchanged exact 
     } finally {
         fs.unlinkSync(projectionPath); fs.renameSync(heldPath,projectionPath);
     }
+    assert.equal((await faultWriter.searchVectorPoints(v1,identity,5)).length,0,'old V1 is not current evidence before replay of V2');
     const metadataNode = { ...node, accessCount: 2 };
     await faultWriter.store(metadataNode); // Fault removed, but stale local V1 remains. No replay yet.
     const faultReopened = new LanceDbService(faultDirectory,target);
@@ -77,6 +78,8 @@ const node: any = { id: 'PUBLIC_SAME_PAYLOAD', content: 'Public unchanged exact 
     assert.ok(noVectorRow.projection_event_key.startsWith('unembedded:'),'new vector-less writes invalidate old generation without entering legacy fallback');
     await bulkReopened.replayVectorProjections(50);
     assert.deepEqual(await bulkReopened.getNodeById(node.id),unembeddedNode);
+    await bulkReopened.store(node); // Same old content returns, but no vector generation supplied.
+    assert.equal((await bulkReopened.searchVectorPoints(v2,identity,5)).length,0,'content reversal cannot revive invalidated projection');
     const migratedDirectory = path.join(directory,'old-schema');
     const migrated = await lancedb.connect(migratedDirectory);
     const oldRow = { ...current, tags: Array.from(current.tags) }; delete oldRow.projection_event_key;
@@ -87,6 +90,18 @@ const node: any = { id: 'PUBLIC_SAME_PAYLOAD', content: 'Public unchanged exact 
     assert.ok((await upgraded.schema()).fields.some(f=>f.name==='projection_event_key'));
     assert.equal(await upgraded.countRows(),1);
     assert.deepEqual(await writerForOldSchema.getNodeById(node.id),node);
+    const explicitProjectionDirectory = path.join(directory,'external-project');
+    const external = new LanceDbService(explicitProjectionDirectory,target);
+    const untyped = {...node,id:'PUBLIC_EXTERNAL_PROJECT',embeddingIdentity:undefined};
+    await external.store(untyped);
+    await external.projectEmbedding((await external.getNodeById(untyped.id))!,v2,identity);
+    const externalConnection = await lancedb.connect(explicitProjectionDirectory);
+    const externalRow = (await (await externalConnection.openTable('memory_records_v2')).query().toArray())[0];
+    assert.ok(externalRow.projection_event_key && !externalRow.projection_event_key.startsWith('unembedded:'));
+    const externalJournal = new VectorProjectionJournal(path.join(explicitProjectionDirectory,'vector-projection-intents.sqlite'));
+    assert.deepEqual(externalJournal.get(externalRow.projection_event_key)!.vector,v2);
+    externalJournal.close();
+    assert.equal((await external.searchVectorPoints(v2,identity,1))[0]?.id,untyped.id);
     // Actual ledger growth, no removal or compaction, ten identical write attempts.
     const measureFile = path.join(directory, 'cost-ledger.sqlite');
     let measure = new VectorProjectionJournal(measureFile); measure.close();

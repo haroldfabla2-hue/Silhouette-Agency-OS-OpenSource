@@ -276,3 +276,28 @@ only checksum fallback. This prevents a new vector-less single/bulk write from
 accidentally pretending to be pre-generation history. The fairness crash fixture
 now writes its prepared event key into the canonical row explicitly, matching the
 actual atomic pre-projection crash state, rather than relying on an unkeyed store.
+
+## Retrieval generation and public projection durability
+
+The strengthened filesystem test first reproduced the retrieval bug against
+40b1daa: after canonical V2 with failed local projection, query before replay
+returned stale V1 (one result where zero was required). searchVectorPoints now
+captures event keys from the SAME pinned canonical snapshots used for payload
+hydration. A keyed row must have the immutable event's canonical checksum,
+identity and exact Float32-normalized vector. unembedded generations are excluded;
+empty historical keys retain their documented legacy fallback. Content equality
+alone no longer revives a stale keyed vector. Tests query before replay and after
+content reversal without a supplied embedding, then verify normal recovery.
+
+Public projectEmbedding on an unembedded/historical canonical source now performs
+an identified durable canonical write with intent/event before requiring the
+local receipt. It is no longer a public no-journal bypass. A real external-entry
+test checks its canonical event key, SQLite vector receipt and retrieval.
+
+Full-tree grep at 40b1daa (TS/TSX/JS/MJS/CJS) found external projectEmbedding uses
+only in vector-scan, memory-retrieval-p1 and projection-ordering tests; storeMany
+uses in automated tests, canonical/vector-generation integration tests and
+real-process/biomimetic-continuity-child.ts. No production callers were found in
+that complete pinned tree search. This is source inventory, not runtime coverage.
+Bulk rejection preserves PAYLOAD, not schema/ledger history: additive schema and
+prepared intents can precede the rejected merge. Do not call it globally nonmutating.
