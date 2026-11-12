@@ -516,12 +516,18 @@ class ContinuumMemorySystem {
                     // AND the vector meets its 768-dim requirement. Qdrant is
                     // not part of the prod deployment; LanceDB projections are
                     // the deep-memory vector store.
-                    const { vectorMemory } = await import('./vectorMemoryService');
-                    if (vectorMemory.isReady()) {
-                        await vectorMemory.storeMemory(nodeToStore.id, embedded.vector, {
-                            ...nodeToStore,
-                            type: 'MEMORY_NODE'
-                        });
+                    try {
+                        const { vectorMemory } = await import('./vectorMemoryService');
+                        if (vectorMemory.isReady()) {
+                            await vectorMemory.storeMemory(nodeToStore.id, embedded.vector, {
+                                ...nodeToStore,
+                                type: 'MEMORY_NODE'
+                            });
+                        }
+                    } catch {
+                        // Canonical storage and its identified vector already succeeded.
+                        // Optional Qdrant failure must not overwrite them without a vector.
+                        console.warn('[CONTINUUM] Canonical deep memory retained; optional Qdrant projection unavailable.');
                     }
                 }
             } catch (err) {

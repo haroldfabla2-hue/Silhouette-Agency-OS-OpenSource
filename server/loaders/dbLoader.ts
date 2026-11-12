@@ -60,8 +60,9 @@ export const initDatabases = async () => {
     // 6. Initialize Qdrant Vector Memory (non-blocking, optional)
     try {
         const { vectorMemory } = await import('../../services/vectorMemoryService');
-        await vectorMemory.connect();
-        console.log('[LOADER] VectorMemory (Qdrant) Ready.');
+        const state = await vectorMemory.connect();
+        if (state.state === 'ready') console.log('[LOADER] VectorMemory (Qdrant) Ready.');
+        else console.warn('[LOADER] VectorMemory (Qdrant): ' + state.state);
     } catch (e: any) {
         console.warn('[LOADER] VectorMemory (Qdrant) optional:', e.message);
     }

@@ -2,115 +2,106 @@ import { lexicalMatches } from './lexicalMatch';
 import { QDRANT_CONFIG } from '../constants';
 import { BrandDigitalTwin } from '../types';
 
-// Browser-safe Qdrant Client Wrapper
-class VectorMemoryService {
+export type VectorConnection = { state: 'ready' | 'disabled' | 'unavailable'; reason?: string };
+export class VectorMemoryUnavailableError extends Error {
+    readonly code = 'VECTOR_MEMORY_UNAVAILABLE';
+    constructor() { super('Qdrant is unavailable or its collection is incompatible'); }
+}
+
+/** Explicit dependency state. Normal boot and health never provision storage. */
+export class VectorMemoryService {
     private client: any;
-    private healthClient: any;
-    private isConnected: boolean = false;
-    private collectionName = QDRANT_CONFIG.collectionName;
+    private isConnected = false;
+    private pendingConnection: Promise<VectorConnection> | null = null;
+    private state: VectorConnection = { state: 'unavailable', reason: 'not_checked' };
+    private readonly collectionName: string;
+    private readonly url: string;
+    private readonly enabled: () => Promise<boolean>;
 
-    constructor() {
-        // Lazy init
+    constructor(options: { url?: string; collectionName?: string; enabled?: () => Promise<boolean> } = {}) {
+        this.url = options.url || QDRANT_CONFIG.url;
+        this.collectionName = options.collectionName || QDRANT_CONFIG.collectionName;
+        this.enabled = options.enabled || (async () => {
+            const { configLoader } = await import('../server/config/configLoader');
+            return configLoader.getConfig().modules.vectorDB !== false;
+        });
     }
 
-    /** Check if Qdrant is connected and ready for queries */
-    public isReady(): boolean {
-        return this.isConnected;
+    public isReady(): boolean { return this.isConnected; }
+    public getConnectionState(): VectorConnection { return { ...this.state }; }
+
+    private async newClient() {
+        const { QdrantClient } = await import('@qdrant/js-client-rest');
+        return new QdrantClient({ url: this.url, timeout: 1000, maxConnections: 2, checkCompatibility: false });
     }
 
-    /** Observation only: never connect, create a collection, or run embedding. */
-    public async getHealth(): Promise<{ status: 'up' | 'down'; backend: 'qdrant' | 'disabled'; note?: string; latencyMs?: number }> {
-        const { configLoader } = await import('../server/config/configLoader');
-        if (configLoader.getConfig().modules.vectorDB === false) {
-            return { status: 'up', backend: 'disabled', note: 'Vector database disabled by config; no Qdrant availability claimed.' };
+    // Preserve the existing createCollection/storeMemory 768/Cosine contract.
+    // The legacy constants embeddingSize=384 mismatch is not relabeled here.
+    private async validate(client: any): Promise<void> {
+        const collection = await client.getCollection(this.collectionName);
+        const vectors = collection.config?.params?.vectors;
+        if (!vectors || vectors.size !== 768 || vectors.distance !== 'Cosine') {
+            throw new Error('incompatible_collection');
         }
-        if (!this.isConnected || !this.client) return { status: 'down', backend: 'qdrant', note: 'Qdrant not connected' };
+        if (collection.status === 'red' || collection.optimizer_status !== 'ok') throw new Error('collection_not_ready');
+    }
+
+    private unavailable(reason: string): VectorConnection {
+        this.client = undefined;
+        this.isConnected = false;
+        this.state = { state: 'unavailable', reason };
+        return this.getConnectionState();
+    }
+
+    public connect(): Promise<VectorConnection> {
+        if (this.pendingConnection) return this.pendingConnection;
+        this.pendingConnection = this.connectOnce().finally(() => { this.pendingConnection = null; });
+        return this.pendingConnection;
+    }
+
+    private async connectOnce(): Promise<VectorConnection> {
+        if (typeof window !== 'undefined') return this.unavailable('browser_only');
+        try {
+            if (!await this.enabled()) {
+                this.client = undefined;
+                this.isConnected = false;
+                this.state = { state: 'disabled' };
+                return this.getConnectionState();
+            }
+            const candidate = await this.newClient();
+            await this.validate(candidate);
+            this.client = candidate;
+            this.isConnected = true;
+            this.state = { state: 'ready' };
+            return this.getConnectionState();
+        } catch {
+            // Do not log raw exceptions: URLs and provider payloads can contain secrets.
+            return this.unavailable('connection_or_collection_check_failed');
+        }
+    }
+
+    /** Observation only: no connect, collection creation, embedding or writes. */
+    public async getHealth(): Promise<{ status: 'up' | 'down'; backend: 'qdrant' | 'disabled'; note?: string; latencyMs?: number }> {
         const start = Date.now();
         try {
-            if (!this.healthClient) {
-                const { QdrantClient } = await import('@qdrant/js-client-rest');
-                this.healthClient = new QdrantClient({url: QDRANT_CONFIG.url,
-                    timeout: 1000, maxConnections: 1, checkCompatibility: false});
-            }
-            // SDK timeout aborts the request; a Promise.race alone would leave
-            // the 300-second default request running after the health timeout.
-            await this.healthClient.getCollections();
+            if (!await this.enabled()) return { status: 'up', backend: 'disabled', note: 'Vector database disabled by config; no Qdrant availability claimed.' };
+            await this.validate(await this.newClient());
             return { status: 'up', backend: 'qdrant', latencyMs: Date.now() - start };
         } catch {
-            return { status: 'down', backend: 'qdrant', note: 'Qdrant read probe failed', latencyMs: Date.now() - start };
+            this.unavailable('connection_or_collection_check_failed');
+            return { status: 'down', backend: 'qdrant', note: 'Qdrant or its expected collection is unavailable or incompatible', latencyMs: Date.now() - start };
         }
     }
 
-    private connecting = false;
-
-    public async connect() {
-        if (typeof window !== 'undefined') return; // Browser safety
-        if (this.isConnected || this.connecting) return; // Already connected or in progress
-
-        this.connecting = true;
-        try {
-            // [PA-058] Lite Mode Check
-            const { configLoader } = await import('../server/config/configLoader');
-            const config = configLoader.getConfig();
-            if (config.modules.vectorDB === false) {
-                console.log("[VECTOR_MEM] VectorDB module disabled in config (Lite Mode). Using LanceDB only.");
-                return;
-            }
-        } catch {
-            // Config not available yet, proceed with default
-        }
-
-        if (!this.client) {
-            try {
-                // Dynamic import to prevent bundling
-                const { QdrantClient } = await import('@qdrant/js-client-rest');
-
-                console.log(`[VECTOR_MEM] Connecting to Qdrant at ${QDRANT_CONFIG.url} (Collection: ${this.collectionName})`);
-                this.client = new QdrantClient({
-                    url: QDRANT_CONFIG.url,
-                    checkCompatibility: false
-                });
-
-                // Check connectivity
-                const collections = await this.client.getCollections();
-                console.log('✅ Qdrant Connected (Eternal Memory Active)', collections);
-                this.isConnected = true;
-
-                // Ensure collection exists
-                await this.ensureCollection();
-            } catch (e) {
-                console.error("[VECTOR_MEM] Failed to initialize Qdrant client:", e);
-            } finally {
-                this.connecting = false;
-            }
-        } else {
-            this.connecting = false;
-        }
-    }
-
-    private async ensureCollection() {
-        if (!this.isConnected) return;
-        try {
-            const result = await this.client.getCollections();
-            const exists = result.collections.some((c: any) => c.name === this.collectionName);
-
-            if (!exists) {
-                console.log(`[QDRANT] Creating collection: ${this.collectionName}`);
-                await this.client.createCollection(this.collectionName, {
-                    vectors: {
-                        size: 768, // Default for many embedding models (e.g. Gemini/Vertex)
-                        distance: 'Cosine',
-                    },
-                });
-            }
-        } catch (e) {
-            console.error("Failed to ensure Qdrant collection", e);
-        }
+    private async requireClient(): Promise<any> {
+        const state = await this.connect();
+        if (state.state !== 'ready' || !this.client) throw new VectorMemoryUnavailableError();
+        return this.client;
     }
 
     public async storeMemory(id: string, vector: number[], payload: any) {
         if (!vector || vector.length !== 768 || !vector.every(Number.isFinite) || !vector.some(v => v !== 0)) throw new Error('Invalid Qdrant vector');
-        if (!this.isConnected || !this.client) return;
+        const client = await this.requireClient();
 
         // [ROBUSTNESS] Hard Guard: Never store empty/undefined thoughts.
         if (!payload || !payload.content || payload.content === 'undefined' || payload.content.trim().length === 0) {
@@ -131,7 +122,7 @@ class VectorMemoryService {
             };
 
             await this.retry(async () => {
-                await this.client.upsert(this.collectionName, {
+                await client.upsert(this.collectionName, {
                     wait: true,
                     points: [
                         {
@@ -146,12 +137,13 @@ class VectorMemoryService {
                 });
             });
         } catch (e) {
-            console.error("Failed to store vector memory", e);
+            this.unavailable('operation_failed');
+            throw new VectorMemoryUnavailableError();
         }
     }
 
     public async searchMemory(vector: number[], limit: number = 5, filter?: any) {
-        if (!this.isConnected || !this.client) return [];
+        const client = await this.requireClient();
         try {
             return await this.retry(async () => {
                 let qdrantFilter = undefined;
@@ -167,7 +159,7 @@ class VectorMemoryService {
                     }
                 }
 
-                return await this.client.search(this.collectionName, {
+                return await client.search(this.collectionName, {
                     vector,
                     limit,
                     filter: qdrantFilter,
@@ -175,8 +167,8 @@ class VectorMemoryService {
                 });
             });
         } catch (e) {
-            console.error("Failed to search vector memory", e);
-            return [];
+            this.unavailable('operation_failed');
+            throw new VectorMemoryUnavailableError();
         }
     }
 
@@ -191,6 +183,7 @@ class VectorMemoryService {
                 await new Promise(resolve => setTimeout(resolve, delay));
                 return this.retry(operation, retries - 1, nextDelay);
             }
+            this.unavailable('operation_failed');
             throw e;
         }
     }
