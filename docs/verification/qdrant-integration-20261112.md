@@ -301,3 +301,16 @@ real-process/biomimetic-continuity-child.ts. No production callers were found in
 that complete pinned tree search. This is source inventory, not runtime coverage.
 Bulk rejection preserves PAYLOAD, not schema/ledger history: additive schema and
 prepared intents can precede the rejected merge. Do not call it globally nonmutating.
+
+## Page-local generation receipt storage
+
+Generation eventKeys initially lived outside the query page loop and accumulated
+one entry per corpus ID. It is now allocated inside each page and marker hydration
+does not populate it. A real eight-row query forced to page size two records four
+page observations and asserts receipt cardinality <= current page row count and
+winners <= k. An optional count-only observer exposes actual structure sizes for
+this deterministic test, without replacing storage or query results. A source
+structure assertion separately prevents moving the allocation outside the loop.
+This is bounded temporary receipt storage, not a demonstrated latency/throughput
+bound: per-candidate SQLite lookup and vector hashing still have an unbenchmarked
+cost. Canonical snapshots remain pinned for the whole query.

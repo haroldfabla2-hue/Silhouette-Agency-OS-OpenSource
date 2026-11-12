@@ -78,7 +78,8 @@ export class LanceDbService {
     private initPromise: Promise<void> | null = null;
 
     constructor(private readonly databasePath = DB_PATH, private readonly projectionTarget?: Pick<typeof import('./vectorMemoryService').vectorMemory, 'connect' | 'storeMemory'>,
-        private readonly projectionCheckpoint?: (phase: 'source_verified', id: string) => Promise<void>) {
+        private readonly projectionCheckpoint?: (phase: 'source_verified', id: string) => Promise<void>,
+        private readonly queryPageObserver?: (counts: { rows: number; eventKeys: number; winners: number }) => void) {
         // Lazy initialization - called explicitly from dbLoader or on first use
     }
 
@@ -822,8 +823,7 @@ export class LanceDbService {
             snapshots.push(snapshot);
         }
         await table.checkout(await table.version());
-        const eventKeys = new Map<string, string>();
-        const readSnapshot = async (ids: string[]) => {
+        const readSnapshot = async (ids: string[], eventKeys?: Map<string, string>) => {
             const found = new Map<string, MemoryNode>();
             if (!ids.length) return found;
             const quoted = ids.map(id => `'${id.replace(/'/g, "''")}'`).join(', ');
@@ -831,7 +831,7 @@ export class LanceDbService {
                 const rows = await snapshot.query().where(`id IN (${quoted})`).toArray();
                 for (const row of rows) if (!found.has(row.id)) {
                     found.set(row.id, JSON.parse(row.json_data));
-                    eventKeys.set(row.id, row.projection_event_key || '');
+                    eventKeys?.set(row.id, row.projection_event_key || '');
                 }
             }
             return found;
@@ -841,7 +841,10 @@ export class LanceDbService {
         let best: any[] = [];
         for (let offset = 0; offset < count; offset += pageSize) {
             const rows = await table.query().limit(pageSize).offset(offset).toArray();
-            const byId = await readSnapshot(rows.map((r: any) => r.id));
+            // Page-local generation receipts. Never retain corpus IDs or marker
+            // IDs across pages; only top-k payloads survive this iteration.
+            const eventKeys = new Map<string, string>();
+            const byId = await readSnapshot(rows.map((r: any) => r.id), eventKeys);
             const fileIds = [...new Set([...byId.values()].filter((node: any) => node.type === 'CODE_CHUNK' && node.fileId).map((node: any) => `code_file_version:${node.fileId}`))];
             const codeVersions = await readSnapshot(fileIds);
             const eligible = rows.filter((row: any) => {
@@ -874,6 +877,7 @@ export class LanceDbService {
                 .filter(hit => !band || (hit._score >= band.min && hit._score <= band.max))
                 .map(hit => ({ id: hit.id, score: hit._score, payload: byId.get(hit.id) }));
             best = best.concat(scored).sort((a, b) => b.score - a.score || a.id.localeCompare(b.id)).slice(0, limit);
+            this.queryPageObserver?.({ rows: rows.length, eventKeys: eventKeys.size, winners: best.length });
         }
         return best;
     }

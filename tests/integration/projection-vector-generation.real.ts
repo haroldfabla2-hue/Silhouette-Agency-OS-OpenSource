@@ -102,6 +102,18 @@ const node: any = { id: 'PUBLIC_SAME_PAYLOAD', content: 'Public unchanged exact 
     assert.deepEqual(externalJournal.get(externalRow.projection_event_key)!.vector,v2);
     externalJournal.close();
     assert.equal((await external.searchVectorPoints(v2,identity,1))[0]?.id,untyped.id);
+    const serviceSource = fs.readFileSync(new URL('../../services/lancedbService.ts',import.meta.url),'utf8');
+    const querySource = serviceSource.slice(serviceSource.indexOf('public async searchVectorPoints'), serviceSource.indexOf('public async findSimilarNodes'));
+    const loopPosition = querySource.indexOf('for (let offset');
+    assert.ok(loopPosition>=0 && querySource.indexOf('const eventKeys = new Map')>loopPosition,'event receipts must be allocated inside each page, not retained across corpus');
+    assert.ok(querySource.includes('readSnapshot(rows.map((r: any) => r.id), eventKeys)'));
+    assert.ok(querySource.includes('const codeVersions = await readSnapshot(fileIds);'),'marker hydration must not enter receipt map');
+    for(let i=0;i<7;i++) await external.store({...node,id:'PUBLIC_MULTIPAGE_'+i},v2);
+    const pageCounts: {rows:number;eventKeys:number;winners:number}[]=[];
+    const observedQuery = new LanceDbService(explicitProjectionDirectory,target,undefined,counts=>pageCounts.push(counts));
+    assert.equal((await observedQuery.searchVectorPoints(v2,identity,20)).length,8,'actual page-size-two query returns every valid node across four pages');
+    assert.equal(pageCounts.length,4);
+    assert.ok(pageCounts.every(p=>p.rows<=2 && p.eventKeys<=p.rows && p.winners<=20),'actual event receipt map cardinality stays at page size, never accumulates corpus IDs');
     // Actual ledger growth, no removal or compaction, ten identical write attempts.
     const measureFile = path.join(directory, 'cost-ledger.sqlite');
     let measure = new VectorProjectionJournal(measureFile); measure.close();
