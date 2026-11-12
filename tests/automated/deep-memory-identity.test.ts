@@ -52,6 +52,6 @@ describe('deep memory write and read share one identity resolver', () => {
     it('backfill reuses the live resolver and keeps failures pending', () => {
         expect(continuum).toContain('backfillMemoryEmbeddings');
         expect(continuum).toContain('pendingEmbeddings');
-        expect(continuum).toContain('projectEmbedding(node, embedded.vector, embedded.identity)');
+        expect(continuum).toContain('lancedbService.store({ ...node, embeddingIdentity: embedded.identity }, embedded.vector)');
     });
 });

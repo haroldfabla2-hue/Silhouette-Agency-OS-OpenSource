@@ -1,5 +1,8 @@
-import { vectorMemory } from './vectorMemoryService';
-import { generateAgentResponse, generateEmbedding } from './geminiService';
+import type { EmbedText } from './memoryVectorContract';
+import { unifiedVectorMemory } from './unifiedVectorMemory';
+import { embedMemoryText } from './memoryVectorContract';
+const generateAgentResponse: typeof import('./geminiService').generateAgentResponse = async (...args) =>
+    (await import('./geminiService')).generateAgentResponse(...args);
 import { CommunicationLevel } from '../types';
 import { MemoryNode } from '../types';
 import { v4 as uuidv4 } from 'uuid';
@@ -20,6 +23,8 @@ export interface SemanticInsight {
 }
 
 export class SemanticMemoryService {
+    constructor(private readonly dependencies: { memory: Pick<typeof unifiedVectorMemory, 'storeMemory' | 'searchMemory'>; embed: EmbedText } = { memory: unifiedVectorMemory, embed: embedMemoryText }) {}
+
 
     // --- RAPTOR: RECURSIVE ABSTRACTIVE PROCESSING ---
     // The "Infinite Reader" Engine
@@ -31,6 +36,7 @@ export class SemanticMemoryService {
      * 3. Recursively summarizes summaries until a Root Node is reached.
      */
     public async ingestDocument(title: string, fullText: string): Promise<void> {
+        if (!fullText.trim()) throw new Error('Empty RAPTOR document rejected');
         console.log(`[RAPTOR] 🦖 Starting ingestion for: "${title}"`);
 
         // 1. Level 0: Chunking
@@ -134,6 +140,7 @@ export class SemanticMemoryService {
             'gemini-1.5-flash' // FORCE FLASH FOR RAPTOR (Speed/Cost efficiency)
         );
 
+        if (!response?.output?.trim()) throw new Error('RAPTOR summary unavailable; ingestion is incomplete');
         return `[${title}][L${level}]: ${response.output}`;
     }
 
@@ -193,10 +200,10 @@ OUTPUT FORMAT: ["entity1", "entity2", "entity3"]
     }
 
     public async recall(query: string, limit: number = 5): Promise<SemanticInsight[]> {
-        const vector = await generateEmbedding(query);
-        if (!vector) return [];
+        const embedded = await this.dependencies.embed(query);
+        if (!embedded) throw new Error('Semantic recall embedding unavailable');
 
-        const results = await vectorMemory.searchMemory(vector, limit);
+        const results = await this.dependencies.memory.searchMemory(embedded.vector, limit, undefined, embedded.identity);
         return results.map((r: any) => ({
             id: r.id,
             type: r.payload.type,
@@ -205,21 +212,22 @@ OUTPUT FORMAT: ["entity1", "entity2", "entity3"]
             confidence: r.score,
             sourceNodeId: r.payload.source,
             timestamp: r.payload.timestamp,
-            level: r.payload.level
+            level: r.payload.level,
+            childrenIds: r.payload.childrenIds,
+            parentId: r.payload.parentId
         }));
     }
 
     private async extractInsights(text: string): Promise<SemanticInsight[]> {
-        // ... (Legacy implementation kept for now)
-        // For brevity in this edit, I'm simplifying. In production, keep the full logic.
-        return [];
+        throw new Error('Semantic legacy digestion is not implemented; no extracted insights committed');
     }
 
     private async storeInsight(insight: SemanticInsight) {
-        const vector = await generateEmbedding(insight.content);
-        if (!vector) return;
+        const embedded = await this.dependencies.embed(insight.content);
+        if (!embedded) throw new Error('Semantic memory embedding unavailable; ingestion not saved');
 
-        await vectorMemory.storeMemory(insight.id, vector, {
+        await this.dependencies.memory.storeMemory(insight.id, embedded.vector, {
+            ...insight,
             type: insight.type,
             content: insight.content,
             entities: insight.entities,
@@ -228,7 +236,7 @@ OUTPUT FORMAT: ["entity1", "entity2", "entity3"]
             level: insight.level,
             childrenIds: insight.childrenIds,
             parentId: insight.parentId
-        });
+        }, embedded.identity);
     }
 }
 

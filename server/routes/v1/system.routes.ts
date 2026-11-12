@@ -395,7 +395,8 @@ router.get('/health', async (req, res) => {
     // Qdrant
     try {
         const { vectorMemory } = await import('../../../services/vectorMemoryService');
-        health.qdrant = { status: vectorMemory.isReady() ? 'ok' : 'disconnected' };
+        const observed = await vectorMemory.getHealth();
+        health.qdrant = { status: observed.status === 'up' ? (observed.backend === 'disabled' ? 'disabled' : 'ok') : 'disconnected', details: observed.note };
     } catch (e: any) {
         health.qdrant = { status: 'error', details: e.message };
     }

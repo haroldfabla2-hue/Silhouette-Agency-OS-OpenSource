@@ -19,8 +19,8 @@ const searchRealAssets = vi.fn();
 // gate in this delivery always denies (see module header).
 let gateEnabledInTest = true;
 
-vi.mock('../../services/vectorMemoryService', () => ({
-    vectorMemory: {
+vi.mock('../../services/unifiedVectorMemory', () => ({
+    unifiedVectorMemory: {
         getBrandTwin: (...a: any[]) => getBrandTwin(...a),
         queryBrandRules: (...a: any[]) => queryBrandRules(...a),
     }

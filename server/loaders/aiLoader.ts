@@ -43,8 +43,8 @@ export const initAIServices = async () => {
 
     // 1. Vector Memory
     try {
-        await vectorMemory.connect();
-        console.log("[LOADER] ✅ Vector Memory Connected.");
+        const state = await vectorMemory.connect();
+        console.log(`[LOADER] Vector Memory: ${state.state}`);
     } catch (e) {
         console.error("[LOADER] ❌ Failed to connect to Vector Memory:", e);
     }

@@ -180,7 +180,7 @@ export const INITIAL_AGENTS: Agent[] = [...KERNEL_HEROS];
 export const QDRANT_CONFIG = {
   url: getEnvVar('QDRANT_URL', 'http://localhost:6433'), // matches docker-compose.yml published REST port
   collectionName: 'silhouette_memory_v1',
-  embeddingSize: 384 // using all-MiniLM-L6-v2
+  embeddingSize: 768 // Existing Qdrant collection; never relabel 384d vectors to fit
 };
 
 export const DEFAULT_AUTONOMOUS_CONFIG: AutonomousConfig = {

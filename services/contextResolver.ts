@@ -1,5 +1,5 @@
 import { CreativeContext, BrandDigitalTwin, GenesisTemplate } from '../types';
-import { vectorMemory } from './vectorMemoryService';
+import { unifiedVectorMemory as vectorMemory } from './unifiedVectorMemory';
 
 class ContextResolver {
 

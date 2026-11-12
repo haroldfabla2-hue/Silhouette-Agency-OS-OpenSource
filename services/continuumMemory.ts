@@ -329,7 +329,7 @@ class ContinuumMemorySystem {
             // 3. Deep Tier (Hybrid: Qdrant + LanceDB Archive)
             // Fetch live vectors from Qdrant
             const { vectorMemory } = await import('./vectorMemoryService');
-            const deepVectors = await vectorMemory.getAllNodes(100);
+            const deepVectors = await vectorMemory.getAllNodes(100).catch(() => []);
 
             // Fetch archived DEEP nodes from LanceDB (that were moved from LONG)
             const deepArchived = dbNodes.filter(n => n.tier === MemoryTier.DEEP);
@@ -337,21 +337,21 @@ class ContinuumMemorySystem {
             // Map Qdrant points
             const deepFromQdrant = deepVectors.map(v => ({
                 id: v.id,
-                content: v.content,
+                content: v.payload?.content,
                 tier: MemoryTier.DEEP,
-                timestamp: v.timestamp,
-                tags: v.tags,
-                importance: v.importance,
+                timestamp: v.payload?.timestamp,
+                tags: v.payload?.tags || [],
+                importance: v.payload?.importance,
                 decayHealth: (v as any).decayHealth || 100,
                 accessCount: 0,
                 lastAccess: Date.now(),
                 compressionLevel: 0
             }));
 
-            // Merge Qdrant + LanceDB Archive (Deduplicate by ID, preferring Qdrant)
+            // Canonical source wins; legacy mirror-only records remain visible.
             const deepMap = new Map<string, MemoryNode>();
             deepArchived.forEach(n => deepMap.set(n.id, n));
-            deepFromQdrant.forEach(n => deepMap.set(n.id, n));
+            deepFromQdrant.forEach(n => { if (!deepMap.has(n.id) && n.content) deepMap.set(n.id, n); });
 
             nodes[MemoryTier.DEEP] = Array.from(deepMap.values());
         } catch (e) {
@@ -498,36 +498,19 @@ class ContinuumMemorySystem {
                 timestamp: node.timestamp || Date.now()
             } as MemoryNode;
 
+            // Embedding failure must not prevent a text-only canonical write.
+            // Conversely a mirror failure after a canonical success must never
+            // rewrite that success with a second unembedded version.
+            let embedded: Awaited<ReturnType<typeof import('./geminiService').generateEmbeddingWithIdentity>> = null;
             try {
-                // [FIX 2026-10-17] TRUE per-vector identity. Before: writes
-                // embedded with Minimax while queries embedded with Gemini (the
-                // identities never crossed, so semantic search never matched),
-                // and identity was labeled from an env var instead of the actual
-                // provider. Now one resolver returns vector + the identity that
-                // truly produced it; lancedbService.store projects per identity.
                 const { generateEmbeddingWithIdentity } = await import('./geminiService');
-                const embedded = await generateEmbeddingWithIdentity(content);
-                if (embedded) nodeToStore.embeddingIdentity = embedded.identity;
-                await lancedbService.store(nodeToStore, embedded?.vector); // Canonical copy + automatic per-identity projection.
-                if (!embedded) {
-                    console.warn("[CONTINUUM] No embedding provider available; stored canonically without vector (text search only).");
-                } else if (embedded.identity.dimension === 768) {
-                    // Optional dual-write: Qdrant only when actually connected
-                    // AND the vector meets its 768-dim requirement. Qdrant is
-                    // not part of the prod deployment; LanceDB projections are
-                    // the deep-memory vector store.
-                    const { vectorMemory } = await import('./vectorMemoryService');
-                    if (vectorMemory.isReady()) {
-                        await vectorMemory.storeMemory(nodeToStore.id, embedded.vector, {
-                            ...nodeToStore,
-                            type: 'MEMORY_NODE'
-                        });
-                    }
-                }
-            } catch (err) {
-                console.error("[CONTINUUM] Deep storage failed:", err);
-                await lancedbService.store(nodeToStore);
+                embedded = await generateEmbeddingWithIdentity(content);
+            } catch {
+                console.warn('[CONTINUUM] Embedding unavailable; retaining canonical text');
             }
+            if (embedded) nodeToStore.embeddingIdentity = embedded.identity;
+            await lancedbService.store(nodeToStore, embedded?.vector);
+
         }
         // L3/L4: LanceDB Persistence
         else {
@@ -995,7 +978,7 @@ class ContinuumMemorySystem {
         let deepCount = vectorStats.count;
         try {
             const { vectorMemory } = await import('./vectorMemoryService');
-            const deepVectors = await vectorMemory.getAllNodes(100);
+            const deepVectors = await vectorMemory.getAllNodes(100).catch(() => []);
             const deepArchived = dbNodes.filter(n => n.tier === MemoryTier.DEEP);
             const deepMap = new Map<string, any>();
             deepArchived.forEach(n => deepMap.set(n.id, n));
@@ -1108,7 +1091,7 @@ class ContinuumMemorySystem {
                 lists.push((await lancedbService.search(embedded.vector, 50, scopeSql(scope), embedded.identity)).filter(n => inScope(n, scope)));
 
                 if (embedded.identity.dimension === 768 && vectorMemory.isReady()) {
-                    const deepVectors = await vectorMemory.searchMemory(embedded.vector, 50, scope.ownerId ? { ownerId: scope.ownerId } : undefined);
+                    const deepVectors = await vectorMemory.searchMemory(embedded.vector, 50, { ...(scope.ownerId ? { ownerId: scope.ownerId } : {}), _embeddingModel: embedded.identity.model, _embeddingVersion: embedded.identity.version, _embeddingDimension: embedded.identity.dimension });
                     const deepNodes = deepVectors.map(v => ({
                         ...v.payload,
                         id: v.id,
@@ -1209,7 +1192,7 @@ class ContinuumMemorySystem {
                 // atomically; per-item recording would double-count.
                 const embedded = await generateEmbeddingWithIdentity(node.content, { allowFallbackIdentity: false, preReserved: true });
                 if (!embedded) { failed++; continue; }
-                await lancedbService.projectEmbedding(node, embedded.vector, embedded.identity);
+                await lancedbService.store({ ...node, embeddingIdentity: embedded.identity }, embedded.vector);
                 projected++;
             } catch (error: any) {
                 failed++;

@@ -699,24 +699,25 @@ export class IntrospectionEngine {
 
         try {
             // Lazy load to avoid circular deps
-            const { vectorMemory } = await import('./vectorMemoryService');
-            const { generateEmbedding } = await import('./geminiService');
+            const { unifiedVectorMemory: vectorMemory } = await import('./unifiedVectorMemory');
+            const { generateEmbeddingWithIdentity } = await import('./geminiService');
 
             // 1. Codebase Awareness Check
             codebaseBlock = await this.injectCodebaseContext(context);
 
             // 2. Generate "Feeling" vector from current context
-            const feelingVector = await generateEmbedding(context.substring(0, 500));
+            const feelingVector = await generateEmbeddingWithIdentity(context.substring(0, 500));
             if (feelingVector) {
-                const intuition = await vectorMemory.searchMemory(feelingVector, 3, { type: 'INTUITION' });
-                if (intuition.length > 0) {
+                const intuition = await vectorMemory.searchMemory(feelingVector.vector, 3, { tags: 'INTUITION' }, feelingVector.identity);
+                const groundedIntuition = intuition.filter((i: any) => !(i.payload.tags || []).includes('HYPOTHESIS'));
+                if (groundedIntuition.length > 0) {
                     // Store for UI
-                    this.currentIntuition = intuition.map((i: any) => i.payload.content);
+                    this.currentIntuition = groundedIntuition.map((i: any) => i.payload.content);
 
                     intuitionBlock = `
                     [SUBCONSCIOUS INTUITION]:
-                    The following are deep-seated feelings based on past experiences. Trust them.
-                    ${intuition.map((i: any) => `- ${i.payload.content} (Confidence: ${(i.score * 100).toFixed(0)}%)`).join('\n')}
+                    Related stored experiences are context, not proof. Similarity is not confidence in their truth.
+                    ${groundedIntuition.map((i: any) => `- ${i.payload.content} (Similarity: ${(i.score * 100).toFixed(0)}%)`).join('\n')}
                     `;
                 } else {
                     this.currentIntuition = [];

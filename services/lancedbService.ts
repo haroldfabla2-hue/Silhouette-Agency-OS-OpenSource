@@ -1,3 +1,4 @@
+import { VectorProjectionJournal, canonicalChecksum } from './vectorProjectionJournal';
 import * as lancedb from '@lancedb/lancedb';
 import path from 'path';
 import fs from 'fs';
@@ -50,6 +51,12 @@ function knowledgeSchema(): Schema {
 }
 
 export class LanceDbService {
+    private projectionJournal: VectorProjectionJournal | null = null;
+    private projectionReplay: Promise<{ completed: number; pending: number }> | null = null;
+    private journal(): VectorProjectionJournal {
+        return this.projectionJournal ||= new VectorProjectionJournal(path.join(this.databasePath, 'vector-projection-intents.sqlite'));
+    }
+
     private annStatus: ReturnType<typeof selectVectorEngine> | null = null;
     private annModule: UsearchModule | null = null;
     private annSqlite: any = null;
@@ -67,7 +74,7 @@ export class LanceDbService {
     private writeQueue: Promise<void> = Promise.resolve();
     private initPromise: Promise<void> | null = null;
 
-    constructor(private readonly databasePath = DB_PATH) {
+    constructor(private readonly databasePath = DB_PATH, private readonly projectionTarget?: Pick<typeof import('./vectorMemoryService').vectorMemory, 'connect' | 'storeMemory'>) {
         // Lazy initialization - called explicitly from dbLoader or on first use
     }
 
@@ -126,7 +133,7 @@ export class LanceDbService {
                     console.log(`[LANCEDB] 🔄 Retry attempt ${attempt + 1}/${retries}...`);
                     await new Promise(r => setTimeout(r, delayMs * Math.pow(2, attempt - 1)));
                 } else {
-                    console.log(`[LANCEDB] Connecting to: ${DB_PATH}`);
+                    console.log(`[LANCEDB] Connecting to: ${this.databasePath}`);
                 }
 
                 this.db = await lancedb.connect(this.databasePath);
@@ -312,6 +319,8 @@ export class LanceDbService {
     private async writeAndVerify(node: MemoryNode, vector?: number[]): Promise<{ ok: true; id: string; checksum: string; version: number }> {
         await this.ensureInitialized();
         if (!this.db) throw new Error('LanceDB is unavailable');
+        const intent = vector && node.embeddingIdentity && validEmbedding(vector, node.embeddingIdentity)
+            ? this.journal().prepare(node, vector, node.embeddingIdentity) : null;
         const json = JSON.stringify(node);
         const checksum = createHash('sha256').update(json).digest('hex');
         const record = this.toRecord(node, json);
@@ -337,7 +346,58 @@ export class LanceDbService {
         if (!stored || createHash('sha256').update(JSON.stringify(stored)).digest('hex') !== checksum) {
             throw new Error(`LanceDB read-back verification failed for ${node.id}`);
         }
+        // The intent is already durable. Projection delivery is separate from
+        // the caller's canonical success and never re-runs the source operation.
+        if (intent) void this.replayVectorProjections(10).catch(() => {
+            console.warn('[LANCEDB] Optional Qdrant projection pending; canonical success preserved');
+        });
         return { ok: true, id: node.id, checksum, version: node.timestamp };
+    }
+
+    private projectionTimer: ReturnType<typeof setInterval> | null = null;
+    /** Called explicitly by the app loader. No model calls, no provisioning. */
+    public startVectorProjectionReplay(): void {
+        if (this.projectionTimer) return;
+        this.projectionTimer = setInterval(() => {
+            void this.replayVectorProjections(50).catch(() => {
+                console.warn('[LANCEDB] Qdrant projection retry unavailable; intent retained');
+            });
+        }, 60_000);
+        this.projectionTimer.unref?.();
+    }
+    public stopVectorProjectionReplay(): void {
+        if (this.projectionTimer) clearInterval(this.projectionTimer);
+        this.projectionTimer = null;
+    }
+    public getVectorProjectionStatus(): Record<string, number> { return this.journal().stats(); }
+
+    /** Finite replay with source verification. No fabricated legacy identity. */
+    public replayVectorProjections(limit = 50): Promise<{ completed: number; pending: number }> {
+        if (this.projectionReplay) return this.projectionReplay;
+        this.projectionReplay = this.replayProjectionBatch(limit).finally(() => { this.projectionReplay = null; });
+        return this.projectionReplay;
+    }
+    private async replayProjectionBatch(limit: number): Promise<{ completed: number; pending: number }> {
+        const journal = this.journal();
+        const vectorMemory = this.projectionTarget || (await import('./vectorMemoryService')).vectorMemory;
+        let completed = 0;
+        const batch = journal.pending(limit);
+        // A disabled backend retains intent; it does not silently discard work.
+        if ((await vectorMemory.connect()).state !== 'ready') return { completed, pending: batch.length };
+        for (const intent of batch) {
+            const current = await this.getNodeById(intent.id);
+            if (!current) continue; // Prepared before write, crash/failed source: do not publish.
+            if (canonicalChecksum(current) !== intent.checksum) { journal.superseded(intent.key); continue; }
+            if (intent.identity.dimension !== 768) { journal.retainedUnsupported(intent.key); continue; } // Unsupported collection, not a fake successful projection.
+            try {
+                await vectorMemory.storeMemory(intent.id, intent.vector, { ...current, type: (current as any).type || 'MEMORY_NODE',
+                    _embeddingModel: intent.identity.model, _embeddingVersion: intent.identity.version,
+                    _embeddingDimension: intent.identity.dimension });
+                journal.completed(intent.key);
+                completed++;
+            } catch { journal.failed(intent.key); break; }
+        }
+        return { completed, pending: journal.pending(limit).length };
     }
 
     public async getNodeById(id: string): Promise<MemoryNode | null> {
@@ -480,7 +540,7 @@ export class LanceDbService {
         this.annStatus = selectVectorEngine(process.env, () => this.annModule, probe);
         console.log(`[VECTOR] engine=${this.annStatus.kind} - ${this.annStatus.reason} | cpu="${probe.cpuModel}" ram=${probe.ramTotalMB}MB diskFree=${probe.diskFreeMB ?? '?'}MB`);
         if (this.annStatus.kind === 'usearch-native' && this.annModule) {
-            const annDir = path.join(DB_PATH, 'ann');
+            const annDir = path.join(this.databasePath, 'ann');
             fs.mkdirSync(annDir, { recursive: true });
             this.annSqlite = new Database(path.join(annDir, 'ann-keys.sqlite'));
             this.annSqlite.pragma('journal_mode = WAL');
@@ -499,7 +559,7 @@ export class LanceDbService {
     private async annIndexFor(name: string, dimensions: number, rowProvider: () => Promise<{ id: string; vector: number[]; ownerId: string }[]>, projectedCount: number, table: any): Promise<AnnIndex> {
         let idx = this.annIndexes.get(name);
         if (!idx) {
-            idx = new AnnIndex({ dir: path.join(DB_PATH, 'ann'), name, dimensions, Index: this.annModule!.Index, sqlite: this.annSqlite, probe: this.annStatus?.probe });
+            idx = new AnnIndex({ dir: path.join(this.databasePath, 'ann'), name, dimensions, Index: this.annModule!.Index, sqlite: this.annSqlite, probe: this.annStatus?.probe });
             this.annIndexes.set(name, idx);
             const idsProvider = async () => (await table.query().select(['id']).toArray()).map((r: any) => r.id as string);
             await idx.open(projectedCount, rowProvider, idsProvider);
@@ -544,7 +604,7 @@ export class LanceDbService {
                     const hits = ann.search(queryVector, limit, ownerScope);
                     // Batched hydration (#193): one IN query, never N full scans.
                     const byId = await this.getNodesByIds(hits.map(h => h.id));
-                    return hits.map(h => byId.get(h.id)).filter((n): n is MemoryNode => n !== null);
+                    return hits.flatMap(h => { const node = byId.get(h.id); return node ? [{ ...node, similarity: h.score }] : []; });
                 }
             } catch (e) {
                 console.error(`[VECTOR] ANN search failed for ${name} (${(e as Error).message}); falling back to exact partitioned scan`);
@@ -577,7 +637,51 @@ export class LanceDbService {
         }
         // Batched hydration (#193): one IN query, never N full scans.
         const byId = await this.getNodesByIds(top.map(r => r.id));
-        return top.map(r => byId.get(r.id)).filter((n): n is MemoryNode => n !== null);
+        return top.flatMap(r => { const node = byId.get(r.id); return node ? [{ ...node, similarity: r._score }] : []; });
+    }
+
+    /** Complete identity-partitioned application query, with payload and score.
+     * Filters and score bands apply BEFORE top-k, so no top-50 cutoff can hide
+     * a valid distant memory. Canonical hydration prevents stale mirror payloads.
+     */
+    public async searchVectorPoints(vector: number[], identity: EmbeddingIdentity, limit = 5,
+        filter?: Record<string, any>, band?: { min: number; max: number }): Promise<any[]> {
+        if (!validEmbedding(vector, identity)) throw new Error('Invalid identified query');
+        if (!Number.isInteger(limit) || limit < 1 || limit > 10000) throw new Error('Invalid query limit');
+        if (band && (!Number.isFinite(band.min) || !Number.isFinite(band.max) || band.min > band.max)) throw new Error('Invalid score band');
+        await this.ensureInitialized();
+        if (!this.db) throw new Error('LanceDB unavailable');
+        const name = this.vectorTableName(identity);
+        if (!(await this.db.tableNames()).includes(name)) return [];
+        const table = await this.db.openTable(name);
+        const count = await table.countRows();
+        const pageSize = scanPageRows();
+        let best: any[] = [];
+        for (let offset = 0; offset < count; offset += pageSize) {
+            const rows = await table.query().limit(pageSize).offset(offset).toArray();
+            const byId = await this.getNodesByIds(rows.map((r: any) => r.id));
+            const fileIds = [...new Set([...byId.values()].filter((node: any) => node.type === 'CODE_CHUNK' && node.fileId).map((node: any) => `code_file_version:${node.fileId}`))];
+            const codeVersions = await this.getNodesByIds(fileIds);
+            const eligible = rows.filter((row: any) => {
+                const node = byId.get(row.id);
+                if (!node || JSON.stringify(node.embeddingIdentity) !== JSON.stringify(identity)) return false;
+                if ((node as any).type === 'CODE_CHUNK') {
+                    const active = codeVersions.get(`code_file_version:${(node as any).fileId}`) as any;
+                    if (!active || active.hash !== (node as any).hash) return false;
+                }
+                const projected = JSON.parse(row.json_data);
+                if (projected.content !== node.content) return false; // Stale embedding is not current evidence.
+                return !filter || Object.entries(filter).every(([key, value]) => {
+                    const actual = (node as any)[key];
+                    return Array.isArray(actual) ? actual.includes(value) : actual === value;
+                });
+            });
+            const scored = rankByCosine(eligible as any, vector, eligible.length)
+                .filter(hit => !band || (hit._score >= band.min && hit._score <= band.max))
+                .map(hit => ({ id: hit.id, score: hit._score, payload: byId.get(hit.id) }));
+            best = best.concat(scored).sort((a, b) => b.score - a.score || a.id.localeCompare(b.id)).slice(0, limit);
+        }
+        return best;
     }
 
     /**

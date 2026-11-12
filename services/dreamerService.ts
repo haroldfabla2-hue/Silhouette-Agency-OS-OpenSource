@@ -1,7 +1,9 @@
+import { unifiedVectorMemory } from './unifiedVectorMemory';
+import { embedMemoryText } from './memoryVectorContract';
+import { DreamMemoryQueries } from './dream/dreamMemoryQueries';
 import { verifyClaims, type CitedClaim } from './memoryCognition';
 import { continuum } from './continuumMemory';
 import { geminiService } from './geminiService';
-import { vectorMemory } from './vectorMemoryService';
 import { CommunicationLevel } from '../types';
 import { MemoryNode, MemoryTier } from '../types';
 import { resourceArbiter } from './resourceArbiter';
@@ -11,6 +13,8 @@ import { systemBus } from './systemBus';
 import * as si from 'systeminformation'; // NEW: For Resource Monitoring
 
 export class DreamerService {
+    private readonly retrieval = new DreamMemoryQueries(unifiedVectorMemory, embedMemoryText);
+
     private isDreaming: boolean = false;
     private isTraining: boolean = false; // Prevent concurrent training
     private dreamInterval: NodeJS.Timeout | null = null;
@@ -418,14 +422,12 @@ export class DreamerService {
         try {
             // 2. Find "Constellation Members" (Sim: 0.3 - 0.7)
             // Dynamic Import for Vector Service
-            const { vectorMemory } = await import('./vectorMemoryService');
-            const { geminiService } = await import('./geminiService');
 
-            const seedVector = await geminiService.generateEmbedding(seed.content);
+            const seedVector = await this.retrieval.embed(seed.content);
             if (!seedVector) return this.fallbackMix(all);
 
             // We look for 3 to 5 related concepts
-            const distantMatches = await vectorMemory.searchDistantMemories(seedVector, 0.30, 0.85, 4);
+            const distantMatches = await this.retrieval.memory.searchDistantMemories(seedVector.vector, 0.30, 0.85, 4, seedVector.identity);
 
             // Prepare nodes
             let nodes = [seed];
@@ -453,10 +455,8 @@ export class DreamerService {
         const seed = candidates[Math.floor(Math.random() * candidates.length)];
 
         try {
-            const { vectorMemory } = await import('./vectorMemoryService');
-            const { geminiService } = await import('./geminiService');
 
-            const seedVector = await geminiService.generateEmbedding(seed.content);
+            const seedVector = await this.retrieval.embed(seed.content);
             if (!seedVector) return this.fallbackMix(all);
 
             // Search DISTANT/OPPOSITE (Sim < 0.25) or just Random weighted by distance
@@ -703,27 +703,7 @@ export class DreamerService {
     }
 
     private async isRedundant(content: string): Promise<boolean> {
-        try {
-            const vector = await geminiService.generateEmbedding(content);
-            if (!vector) return false;
-
-            // Search for similar memories in the 'INTUITION' namespace (implied by content similarity)
-            // We search globally in vector memory for now
-            const results = await vectorMemory.searchMemory(vector, 1);
-
-            if (results.length > 0) {
-                const bestMatch = results[0];
-                // Threshold: 0.90 (90% Similarity means it's basically the same thought)
-                if (bestMatch.score > 0.90) {
-                    console.log(`[DREAMER] Redundancy Detected (Score: ${bestMatch.score.toFixed(4)}) with: "${bestMatch.payload?.content?.substring(0, 50)}..."`);
-                    return true;
-                }
-            }
-            return false;
-        } catch (e) {
-            console.error("[DREAMER] Redundancy check failed:", e);
-            return false; // Fail safe: assume new
-        }
+        return this.retrieval.isRedundant(content);
     }
     // --- DEEP SLEEP PROTOCOL (Consolidation) ---
     public async consolidateLongTerm(nodes: MemoryNode[]): Promise<string> {
@@ -780,7 +760,7 @@ export class DreamerService {
 
             for (const anchor of anchors) {
                 console.log(`[DREAMER] ⚓ Anchor Concept: "${anchor.content.substring(0, 50)}..."`);
-                const embedding = await geminiService.generateEmbedding(anchor.content);
+                const embedding = await this.retrieval.embed(anchor.content);
                 if (!embedding) {
                     console.error("[DREAMER] ❌ Failed to generate embedding for anchor.");
                     continue;
@@ -789,7 +769,7 @@ export class DreamerService {
                 // Search for Goldilocks Candidates (Dist: 0.3 - 0.5)
                 // Since our vector store might not support range queries natively yet, 
                 // we fetch top 10 and filter manually by score.
-                const results = await vectorMemory.searchMemory(embedding, 10);
+                const results = await this.retrieval.memory.searchDistantMemories(embedding.vector, 0.5, 0.85, 10, embedding.identity);
 
                 // Filter: Score between 0.5 and 0.7 (simulating distance)
                 // Note: Cosine Similarity 1.0 is identical. 0.0 is orthogonal.

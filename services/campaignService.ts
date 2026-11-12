@@ -1,5 +1,5 @@
 import { geminiService } from './geminiService';
-import { vectorMemory } from './vectorMemoryService';
+import { unifiedVectorMemory as vectorMemory } from './unifiedVectorMemory';
 import { mediaService } from './mediaService'; // Import MediaService
 import { assertCampaignLlmGenerationAllowed } from './security/externalGenerationPolicy';
 

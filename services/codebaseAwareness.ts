@@ -1,22 +1,26 @@
+import type { EmbedText } from './memoryVectorContract';
 
 import { SystemProtocol, FileNode, CodeChunk, IntrospectionCapability } from "../types";
 import { systemBus } from "./systemBus";
 import { vfs } from "./virtualFileSystem";
-import { vectorMemory } from "./vectorMemoryService";
-import { geminiService } from "./geminiService";
+import { unifiedVectorMemory } from "./unifiedVectorMemory";
+import { embedMemoryText } from "./memoryVectorContract";
+
 import * as crypto from 'crypto';
 
 // --- CODEBASE AWARENESS SERVICE ---
 // Gives Silhouette the ability to "know" its own code via RAG.
 // Listens for VFS changes, chunks code, and updates Vector Memory.
 
-class CodebaseAwarenessService {
+export class CodebaseAwarenessService {
     private isIndexing: boolean = false;
     private fileHashes: Map<string, string> = new Map(); // Cache for change detection
     private readonly COLLECTION_PREFIX = "code_";
 
-    constructor() {
-        this.initialize();
+    constructor(private readonly dependencies: { memory: Pick<typeof unifiedVectorMemory, 'storeMemory' | 'searchMemory' | 'commitCodeVersion'>; embed: EmbedText } = {
+        memory: unifiedVectorMemory, embed: embedMemoryText
+    }, subscribe = true) {
+        if (subscribe) this.initialize();
     }
 
     private initialize() {
@@ -38,34 +42,35 @@ class CodebaseAwarenessService {
     }
 
     /**
-     * Scans the entire project and indexes it. 
+     * Scans the entire project and indexes it.
      * Expensive! Use sparingly (e.g., on first boot or explicit request).
      */
     public async indexProject(projectId: string) {
         if (this.isIndexing) return;
         this.isIndexing = true;
-        console.log(`[CODEBASE AWARENESS] Starting full index for project: ${projectId}`);
+        try {
+            console.log(`[CODEBASE AWARENESS] Starting full index for project: ${projectId}`);
 
-        const processNode = async (nodeId: string) => {
-            const node = vfs.getNode(nodeId);
-            if (!node) return;
+            const processNode = async (nodeId: string) => {
+                const node = vfs.getNode(nodeId);
+                if (!node) return;
 
-            if (node.type === 'FOLDER' && node.children) {
-                for (const childId of node.children) {
-                    await processNode(childId);
+                if (node.type === 'FOLDER' && node.children) {
+                    for (const childId of node.children) {
+                        await processNode(childId);
+                    }
+                } else if (node.type === 'FILE') {
+                    await this.indexFile(node);
                 }
-            } else if (node.type === 'FILE') {
-                await this.indexFile(node);
+            };
+
+            const project = vfs.getProjects().find(p => p.id === projectId);
+            if (project) {
+                await processNode(project.rootFolderId);
             }
-        };
 
-        const project = vfs.getProjects().find(p => p.id === projectId);
-        if (project) {
-            await processNode(project.rootFolderId);
-        }
-
-        this.isIndexing = false;
-        console.log(`[CODEBASE AWARENESS] Full index complete.`);
+            console.log(`[CODEBASE AWARENESS] Full index complete.`);
+        } finally { this.isIndexing = false; }
     }
 
     /**
@@ -86,7 +91,6 @@ class CodebaseAwarenessService {
             // No change
             return;
         }
-        this.fileHashes.set(node.id, hash);
 
         console.log(`[CODEBASE AWARENESS] Indexing file: ${node.name}`);
 
@@ -115,7 +119,7 @@ class CodebaseAwarenessService {
             if (content.includes('interface ')) tags.push('type:interface');
 
             chunks.push({
-                id: `${node.id}_chunk_${i}`,
+                id: `${node.id}_${hash}_chunk_${i}`,
                 filePath: node.name, // We should ideally have full path, but name is ok for flat VFS
                 startLine: i + 1,
                 endLine: end,
@@ -128,24 +132,27 @@ class CodebaseAwarenessService {
 
         // 3. Embedding & Storage
         for (const chunk of chunks) {
-            const vector = await geminiService.generateEmbedding(chunk.content);
-            if (vector) {
-                await vectorMemory.storeMemory(chunk.id, vector, {
+            const embedded = await this.dependencies.embed(chunk.content);
+            if (!embedded) throw new Error('Code RAG embedding unavailable; file remains pending');
+            if (embedded) {
+                await this.dependencies.memory.storeMemory(chunk.id, embedded.vector, {
                     type: 'CODE_CHUNK',
-                    ...chunk
-                });
+                    ...chunk, fileId: node.id
+                }, embedded.identity);
             }
         }
+        await this.dependencies.memory.commitCodeVersion(node.id, hash);
+        this.fileHashes.set(node.id, hash); // Only after every chunk was acknowledged.
     }
 
     /**
      * Queries the codebase for relevant snippets.
      */
     public async query(userQuery: string, limit: number = 3): Promise<string> {
-        const vector = await geminiService.generateEmbedding(userQuery);
-        if (!vector) return "";
+        const embedded = await this.dependencies.embed(userQuery);
+        if (!embedded) throw new Error('Code RAG query embedding unavailable');
 
-        const results = await vectorMemory.searchMemory(vector, limit, { type: 'CODE_CHUNK' });
+        const results = await this.dependencies.memory.searchMemory(embedded.vector, limit, { type: 'CODE_CHUNK' }, embedded.identity);
 
         if (results.length === 0) return "";
 

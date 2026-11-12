@@ -60,8 +60,14 @@ export const initDatabases = async () => {
     // 6. Initialize Qdrant Vector Memory (non-blocking, optional)
     try {
         const { vectorMemory } = await import('../../services/vectorMemoryService');
-        await vectorMemory.connect();
-        console.log('[LOADER] VectorMemory (Qdrant) Ready.');
+        const state = await vectorMemory.connect();
+        console.log(`[LOADER] VectorMemory (Qdrant): ${state.state}`);
+        const { lancedbService } = await import('../../services/lancedbService');
+        if (state.state !== 'disabled') lancedbService.startVectorProjectionReplay();
+        if (state.state === 'ready') {
+            const replay = await lancedbService.replayVectorProjections(50);
+            console.log(`[LOADER] Qdrant projection replay: ${replay.completed} completed, ${replay.pending} pending in bounded batch`);
+        }
     } catch (e: any) {
         console.warn('[LOADER] VectorMemory (Qdrant) optional:', e.message);
     }
