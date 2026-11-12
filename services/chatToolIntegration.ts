@@ -42,6 +42,7 @@ export interface ToolCallResult {
     result?: any;
     error?: string;
     executionTimeMs: number;
+    audit?: { experience: 'failed'; warning: string };
 }
 
 export interface ParsedToolCall {
@@ -365,6 +366,12 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
                 });
             }
 
+            // A capability-level denial may have data:null with its error on
+            // the envelope. Never turn that into a green tool success.
+            if (!capabilityResult.success) {
+                throw new Error(capabilityResult.error || 'Capability execution failed without a confirmed result');
+            }
+
             // Extract result data
             const result = capabilityResult.data;
 
@@ -390,12 +397,18 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
                 toolRegistry.recordUsage(toolName, true);
             }
 
-            await experienceBuffer.recordSuccess(
-                `Tool ${toolName}`,
-                JSON.stringify(args).substring(0, 100),
-                'Chat tool execution succeeded',
-                'CHAT'
-            );
+            let audit: ToolCallResult['audit'];
+            try {
+                await experienceBuffer.recordSuccess(
+                    `Tool ${toolName}`,
+                    JSON.stringify(args).substring(0, 100),
+                    'Chat tool execution succeeded',
+                    'CHAT'
+                );
+            } catch (error) {
+                audit = {experience:'failed', warning:'The tool result was returned, but its learning-memory receipt could not be verified. Do not repeat the tool to repair this audit failure.'};
+                console.warn('[CHAT_TOOLS] Completed tool has an unverified experience receipt:', error);
+            }
 
             if (gatePermitToken) {
                 try { confirmationGate.recordOutcome(gatePermitToken, gatePermitReceipt!, true); }
@@ -407,6 +420,7 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
                 toolName,
                 success: true,
                 result,
+                ...(audit ? { audit } : {}),
                 executionTimeMs: Date.now() - startTime
             };
 
@@ -420,17 +434,24 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
             // Record failure
             toolRegistry.recordUsage(toolName, false);
 
-            await experienceBuffer.recordFailure(
-                `Tool ${toolName}`,
-                JSON.stringify(args).substring(0, 100),
-                error.message,
-                `Investigate ${toolName} implementation`,
-                'CHAT'
-            );
+            let audit: ToolCallResult['audit'];
+            try {
+                await experienceBuffer.recordFailure(
+                    `Tool ${toolName}`,
+                    JSON.stringify(args).substring(0, 100),
+                    error.message,
+                    `Investigate ${toolName} implementation`,
+                    'CHAT'
+                );
+            } catch (auditError) {
+                audit = {experience:'failed', warning:'The tool failure is unchanged; its learning-memory receipt could not be verified.'};
+                console.warn('[CHAT_TOOLS] Failed tool also has an unverified experience receipt:', auditError);
+            }
 
             return {
                 toolName,
                 success: false,
+                ...(audit ? { audit } : {}),
                 error: error.message,
                 executionTimeMs: Date.now() - startTime
             };
@@ -460,7 +481,8 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
             results.push(result);
 
             // Replace tool tag with result in response
-            const resultText = this.formatResultForDisplay(call.toolName, result);
+            const resultText = this.formatResultForDisplay(call.toolName, result)
+                + (result.audit ? `\n[Learning-memory warning: ${result.audit.warning}]` : '');
             enhancedResponse = enhancedResponse.replace(call.originalMatch, resultText);
         }
 

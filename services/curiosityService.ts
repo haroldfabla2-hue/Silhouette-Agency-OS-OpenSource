@@ -61,6 +61,10 @@ class CuriosityService {
     private readonly loaded: Promise<void>;
     private persistence: Promise<void> = Promise.resolve();
     private events: Promise<void> = Promise.resolve();
+    private storageState: 'loading' | 'ready' | 'ready-legacy' | 'blocked' = 'loading';
+    private storageError: string | null = null;
+    private legacyOriginal: string | null = null;
+
 
     constructor() {
         this.loaded = this.loadGaps();
@@ -88,6 +92,7 @@ class CuriosityService {
     /** Wait for initial restore and all events received before this call. */
     public async waitForPersistence(): Promise<void> {
         await this.loaded;
+        if (this.storageState === 'blocked') throw new Error('Curiosity storage blocked; original retained, recovery required');
         await this.events;
         await this.persistence;
     }
@@ -96,17 +101,21 @@ class CuriosityService {
         try {
             const data = await fs.readFile(this.GAPS_FILE, 'utf-8');
             const saved = JSON.parse(data);
-            if (!Array.isArray(saved.gaps) || !saved.topics || typeof saved.topics !== 'object') {
+            if (!saved || !Array.isArray(saved.gaps) || (saved.topics !== undefined && (!saved.topics || typeof saved.topics !== 'object' || Array.isArray(saved.topics)))) {
                 throw new Error('Invalid curiosity snapshot; refusing to overwrite');
             }
             if (!saved.gaps.every((g: any) => g && typeof g.topic === 'string'
                 && typeof g.question === 'string' && Number.isFinite(g.priority)
                 && Number.isFinite(g.detectedAt) && Number.isFinite(g.attempts)
                 && ['PENDING', 'RESEARCHING', 'RESOLVED', 'FAILED'].includes(g.status))
-                || !Object.values(saved.topics).every((t: any) => t && typeof t.topic === 'string'
+                || !Object.values(saved.topics ?? {}).every((t: any) => t && typeof t.topic === 'string'
                     && Number.isFinite(t.count) && Number.isFinite(t.lastAccessed) && typeof t.hasDepth === 'boolean')) {
                 throw new Error('Invalid curiosity record; refusing to overwrite');
             }
+            // The historic writer allowed gaps-only snapshots. Absence of
+            // topic counters is not corruption and must not discard questions.
+            if (saved.topics === undefined) { this.legacyOriginal = data; this.storageState = 'ready-legacy'; }
+            else this.storageState = 'ready';
             this.knowledgeGaps = saved.gaps;
             // A prior process cannot still own an in-flight research attempt.
             for (const gap of this.knowledgeGaps) {
@@ -119,7 +128,10 @@ class CuriosityService {
             }
             logger.info(`Restored ${this.knowledgeGaps.length} gaps and ${this.topicFrequency.size} topics from disk.`);
         } catch (e: any) {
-            if (e.code !== 'ENOENT') throw e;
+            if (e.code !== 'ENOENT') {
+                this.storageState = 'blocked'; this.storageError = String(e.message || e); throw e;
+            }
+            this.storageState = 'ready';
         }
     }
 
@@ -128,10 +140,21 @@ class CuriosityService {
             topics: Object.fromEntries(this.topicFrequency), savedAt: Date.now() }, null, 2);
         const write = this.persistence.catch(() => {}).then(async () => {
             await fs.mkdir(path.dirname(this.GAPS_FILE), { recursive: true });
+            // Preserve exact legacy bytes before the first approved local
+            // mutation upgrades its shape. Restoration itself is read-only.
+            if (this.legacyOriginal !== null) {
+                const backup = `${this.GAPS_FILE}.legacy-${crypto.createHash('sha256').update(this.legacyOriginal).digest('hex')}.json`;
+                try { await fs.writeFile(backup, this.legacyOriginal, {flag:'wx',mode:0o600}); }
+                catch (error: any) { if (error.code !== 'EEXIST') throw error; }
+                if (await fs.readFile(backup,'utf8') !== this.legacyOriginal) throw new Error('Legacy snapshot backup verification failed');
+            }
             await atomicWriteFile(this.GAPS_FILE, data);
+            this.legacyOriginal = null; this.storageState = 'ready'; this.storageError = null;
         });
-        this.persistence = write;
-        return write;
+        this.persistence = write.catch(error => {
+            this.storageState = 'blocked'; this.storageError = String(error.message || error); throw error;
+        });
+        return this.persistence;
     }
 
     /**
@@ -177,6 +200,7 @@ class CuriosityService {
      */
     private async runExplorationCycle() {
         await this.loaded;
+        if (this.storageState === 'blocked') throw new Error('Curiosity storage blocked; original retained, recovery required');
         if (this.isExploring) return;
         this.isExploring = true;
 
@@ -206,6 +230,7 @@ class CuriosityService {
      */
     private async trackTopicFromMemory(payload: any) {
         await this.loaded;
+        if (this.storageState === 'blocked') throw new Error('Curiosity storage blocked; original retained, recovery required');
         if (!payload?.content) return;
         this.extractAndTrackTopics(payload.content);
         await this.saveGaps();
@@ -216,6 +241,7 @@ class CuriosityService {
      */
     private async trackTopicFromThought(payload: any) {
         await this.loaded;
+        if (this.storageState === 'blocked') throw new Error('Curiosity storage blocked; original retained, recovery required');
         if (!payload?.thoughts) return;
         for (const thought of payload.thoughts) {
             this.extractAndTrackTopics(thought);
@@ -500,12 +526,15 @@ class CuriosityService {
         pendingGaps: number;
         resolvedGaps: number;
         trackedTopics: number;
+        storage: {state: string; mutationsAllowed: boolean; recoveryRequired: boolean; error: string | null};
     } {
         return {
             isExploring: this.isExploring,
             pendingGaps: this.knowledgeGaps.filter(g => g.status === 'PENDING').length,
             resolvedGaps: this.knowledgeGaps.filter(g => g.status === 'RESOLVED').length,
-            trackedTopics: this.topicFrequency.size
+            trackedTopics: this.topicFrequency.size,
+            storage: {state:this.storageState, mutationsAllowed:this.storageState === 'ready' || this.storageState === 'ready-legacy',
+                recoveryRequired:this.storageState === 'blocked', error:this.storageError}
         };
     }
 
@@ -521,6 +550,7 @@ class CuriosityService {
      */
     public async addGap(topic: string, question: string, priority: number = 0.5): Promise<void> {
         await this.loaded;
+        if (this.storageState === 'blocked') throw new Error('Curiosity storage blocked; original retained, recovery required');
         const gap: KnowledgeGap = {
             topic,
             question,
@@ -540,6 +570,7 @@ class CuriosityService {
      */
     public async triggerResearch() {
         await this.loaded;
+        if (this.storageState === 'blocked') throw new Error('Curiosity storage blocked; original retained, recovery required');
         const pendingGaps = this.knowledgeGaps
             .filter(g => g.status === 'PENDING')
             .sort((a, b) => b.priority - a.priority)

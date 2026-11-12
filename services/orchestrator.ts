@@ -1110,16 +1110,31 @@ ${payload.message}
             }
 
             // 6. Final Reply
-            await channelRouter.send(payload.channel, {
+            const deliveryId = await channelRouter.send(payload.channel, {
                 chatId: payload.chatId,
                 text: finalOutput,
                 media: outboundMedia.length > 0 ? outboundMedia : undefined
             });
 
+            if (!deliveryId) {
+                // A missing receipt cannot prove non-delivery. Keep the WAL
+                // pending and never issue a second reply to repair uncertainty.
+                console.error('[ORCHESTRATOR] Reply delivery unverified; no channel message ID, do not resend:', {walId});
+                return;
+            }
+
             console.log(`[ORCHESTRATOR] 📤 Sent reply to ${payload.channel}`);
 
             // [EVOLUTION] WAL: Commit after successful processing
-            continuousMemory.commitEntry(walId, finalOutput);
+            try {
+                continuousMemory.commitEntry(walId, finalOutput);
+            } catch (memoryError) {
+                // The channel has already accepted the reply. A memory failure
+                // must not send a second error reply or repeat external effects.
+                // The uncommitted WAL remains pending for honest interruption
+                // recovery; do not manufacture a completed-memory receipt.
+                console.error('[ORCHESTRATOR] Reply delivered; WAL commit unverified, do not resend:', {walId, error: memoryError});
+            }
 
         } catch (error: any) {
             console.error(`[ORCHESTRATOR] ❌ Message handling error:`, error);
