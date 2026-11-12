@@ -57,6 +57,18 @@ describe('Lance canonical hydration on real storage (no service doubles)', () =>
         expect(output).toContain('"scaleReadPass":true');
         // RSS is recorded, not a portable substitute for a real cgroup cap.
     });
+    it('resumes beyond stale tied windows with scopes and k larger than a window', async () => {
+        const dir = await mkdtemp(path.join(tmpdir(), 'canonical-window-real-'));
+        dirs.push(dir);
+        const data = path.join(dir, 'lance');
+        const output = execFileSync(process.execPath, ['--import', 'tsx',
+            path.resolve('tests/integration/canonical-projection-window.real.ts'), data], {
+            env: { ...process.env, VECTOR_ENGINE: 'scan', LANCEDB_OPTIMIZE_INTERVAL_MINUTES: '0',
+                SILHOUETTE_LANCEDB_PATH: data }, encoding: 'utf8', timeout: 25000,
+        });
+        expect(output).toContain('"equalScoreStaleScopeLatePageCases":8,"pass":true');
+        expect(output).toContain('"allStaleReturned":0');
+    });
     it('passes paged stale identity/content/owner, malformed and scope regression', () => {
         const parent = path.join(tmpdir(), 'canonical-subprocess-' + crypto.randomUUID());
         dirs.push(parent);

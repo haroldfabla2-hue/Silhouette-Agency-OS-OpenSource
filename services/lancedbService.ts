@@ -16,7 +16,7 @@ const DEFAULT_DIMENSIONS = 768; // Hardcoded default to match the original schem
 const CANONICAL_VECTOR_PAGE_ROWS = 256;
 
 import { validEmbedding, scopeSql, inScope, type EmbeddingIdentity, type MemoryScope } from './memoryRetrieval';
-import { rankByCosine, toNumericArray, scanPageRows } from './vectorScan';
+import { cosineSimilarity, rankByCosine, toNumericArray, scanPageRows } from './vectorScan';
 import { selectVectorEngine, probeVectorEnvironment, AnnIndex, type UsearchModule, loadUsearchNative } from './vectorEngine';
 import Database from 'better-sqlite3';
 import { Schema, Field, FixedSizeList, Float32, Utf8, Float64 } from 'apache-arrow';
@@ -554,40 +554,78 @@ export class LanceDbService {
         // can validate candidates before top-k without losing later valid hits.
         // This is read-time payload validation, not a generation/ABA guarantee.
         const pageRows = Math.min(scanPageRows(), CANONICAL_VECTOR_PAGE_ROWS);
-        let top: { id: string; _score: number }[] = [];
-        const winners = new Map<string, MemoryNode>();
-        for (let offset = 0; offset < rowCount; offset += pageRows) {
-            let scan = table.query().limit(pageRows).offset(offset);
-            if (filter) scan = scan.where(filter);
-            const rows = await scan.toArray();
+        type Candidate = { id: string; ownerId: string; json_data: string; score: number };
+        // Stable ID tie-break, independent of scan delivery order. Old tied
+        // scores had unspecified scan order; no historical tie-order claim.
+        const before = (a: Candidate, b: Candidate) => b.score - a.score || a.id.localeCompare(b.id);
+        const candidates = (rows: any[]): Candidate[] => rows.flatMap(row => {
+            const vector = toNumericArray(row.vector);
+            const score = vector && cosineSimilarity(vector, queryVector);
+            return score === null ? [] : [{ id: row.id, ownerId: row.ownerId,
+                json_data: row.json_data, score }];
+        });
+        const validate = async (rows: Candidate[]) => {
             const byId = await this.getNodesByIds(rows.map(row => row.id), filter);
-            const valid = rows.filter(row => {
+            const valid = new Map<string, MemoryNode>();
+            for (const row of rows) {
                 const current = byId.get(row.id);
-                if (!current) return false;
+                if (!current) continue;
                 let projected: MemoryNode;
-                try { projected = JSON.parse(row.json_data); } catch { return false; }
+                try { projected = JSON.parse(row.json_data); } catch { continue; }
                 const matchesIdentity = (node: MemoryNode) =>
                     node.embeddingIdentity?.model === identity.model &&
                     node.embeddingIdentity?.version === identity.version &&
                     node.embeddingIdentity?.dimension === identity.dimension;
-                return projected?.id === row.id && current.id === row.id &&
+                if (projected?.id === row.id && current.id === row.id &&
                     matchesIdentity(projected) && matchesIdentity(current) &&
                     typeof projected.content === 'string' && typeof current.content === 'string' &&
                     projected.content === current.content &&
                     (projected.ownerId || 'system') === (current.ownerId || 'system') &&
                     row.ownerId === (current.ownerId || 'system') &&
                     Array.isArray(projected.tags) && Array.isArray(current.tags) &&
-                    JSON.stringify(projected.tags) === JSON.stringify(current.tags);
-            });
-            const ranked = rankByCosine(valid as { vector: unknown; id: string }[], queryVector, limit);
-            top = LanceDbService.mergeTopK(top, ranked, limit);
-            // Retain only k canonical snapshots, not every scanned memory.
-            for (const row of ranked) winners.set(row.id, byId.get(row.id)!);
+                    JSON.stringify(projected.tags) === JSON.stringify(current.tags)) valid.set(row.id, current);
+            }
+            return valid;
+        };
+        const readPage = async (offset: number) => {
+            let scan = table.query().limit(pageRows).offset(offset);
+            if (filter) scan = scan.where(filter);
+            return candidates(await scan.toArray());
+        };
+        const firstWindow = async (): Promise<MemoryNode[] | null> => {
+            // Rank a bounded candidate window, not final top-k. A full
+            // projection sweep proves rows outside this window cannot outrank
+            // it. Only return when validation fills k; stale rows never cause
+            // a premature partial result.
+            let window: Candidate[] = [];
+            for (let offset = 0; offset < rowCount; offset += pageRows) {
+                window = window.concat(await readPage(offset)).sort(before).slice(0, CANONICAL_VECTOR_PAGE_ROWS);
+            }
+            const current = await validate(window);
+            const accepted = window.filter(row => current.has(row.id));
+            return accepted.length >= limit ? accepted.slice(0, limit).map(row => current.get(row.id)!) : null;
+        };
+        // k larger than one window cannot benefit from the fast path.
+        if (limit <= CANONICAL_VECTOR_PAGE_ROWS) {
+            const selected = await firstWindow();
+            if (selected) return selected;
+        }
+        // One-window miss: exhaustive validated paged scan, NOT repeated
+        // candidate sweeps. This bounds stale-heavy overhead to one extra
+        // projection sweep + one canonical batch above the previous exact path.
+        // Revalidate rather than reusing stale canonical snapshots from above.
+        let top: Candidate[] = [];
+        const winners = new Map<string, MemoryNode>();
+        for (let offset = 0; offset < rowCount; offset += pageRows) {
+            const page = await readPage(offset);
+            const current = await validate(page);
+            top = top.concat(page.filter(row => current.has(row.id))).sort(before).slice(0, limit);
+            for (const row of top) if (current.has(row.id)) winners.set(row.id, current.get(row.id)!);
             const retained = new Set(top.map(row => row.id));
             for (const id of winners.keys()) if (!retained.has(id)) winners.delete(id);
         }
-        // Return the very payload validated above, not a later unvalidated
-        // re-hydration. Concurrent writes after the read are not fenced here.
+        // No later unvalidated hydration. Same-content ABA and a concurrent
+        // global snapshot remain outside this read contract.
         return top.map(row => winners.get(row.id)!);
     }
 
