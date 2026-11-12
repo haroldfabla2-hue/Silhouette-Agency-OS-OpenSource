@@ -69,6 +69,17 @@ describe('Lance canonical hydration on real storage (no service doubles)', () =>
         expect(output).toContain('"equalScoreStaleScopeLatePageCases":8,"pass":true');
         expect(output).toContain('"allStaleReturned":0');
     });
+    it('validates duplicate projection rows individually and returns distinct ranked IDs', async () => {
+        const dir = await mkdtemp(path.join(tmpdir(), 'canonical-duplicates-real-'));
+        dirs.push(dir);
+        const data = path.join(dir, 'lance');
+        const output = execFileSync(process.execPath, ['--import', 'tsx',
+            path.resolve('tests/integration/canonical-projection-duplicates.real.ts'), data], {
+            env: { ...process.env, VECTOR_ENGINE: 'scan', LANCEDB_OPTIMIZE_INTERVAL_MINUTES: '0',
+                SILHOUETTE_LANCEDB_PATH: data }, encoding: 'utf8', timeout: 25000,
+        });
+        expect(output).toContain('PUBLIC_DUPLICATE_PROJECTION_PASS');
+    });
     it('passes paged stale identity/content/owner, malformed and scope regression', () => {
         const parent = path.join(tmpdir(), 'canonical-subprocess-' + crypto.randomUUID());
         dirs.push(parent);

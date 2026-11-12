@@ -566,7 +566,9 @@ export class LanceDbService {
         });
         const validate = async (rows: Candidate[]) => {
             const byId = await this.getNodesByIds(rows.map(row => row.id), filter);
-            const valid = new Map<string, MemoryNode>();
+            // Acceptance belongs to this exact projection row, never just its
+            // ID: historical projections may contain duplicate IDs.
+            const valid = new Map<Candidate, MemoryNode>();
             for (const row of rows) {
                 const current = byId.get(row.id);
                 if (!current) continue;
@@ -583,7 +585,7 @@ export class LanceDbService {
                     (projected.ownerId || 'system') === (current.ownerId || 'system') &&
                     row.ownerId === (current.ownerId || 'system') &&
                     Array.isArray(projected.tags) && Array.isArray(current.tags) &&
-                    JSON.stringify(projected.tags) === JSON.stringify(current.tags)) valid.set(row.id, current);
+                    JSON.stringify(projected.tags) === JSON.stringify(current.tags)) valid.set(row, current);
             }
             return valid;
         };
@@ -591,6 +593,14 @@ export class LanceDbService {
             let scan = table.query().limit(pageRows).offset(offset);
             if (filter) scan = scan.where(filter);
             return candidates(await scan.toArray());
+        };
+        const distinct = (rows: Candidate[]): Candidate[] => {
+            const seen = new Set<string>();
+            return rows.filter(row => {
+                if (seen.has(row.id)) return false;
+                seen.add(row.id);
+                return true;
+            });
         };
         const firstWindow = async (): Promise<MemoryNode[] | null> => {
             // Rank a bounded candidate window, not final top-k. A full
@@ -602,8 +612,8 @@ export class LanceDbService {
                 window = window.concat(await readPage(offset)).sort(before).slice(0, CANONICAL_VECTOR_PAGE_ROWS);
             }
             const current = await validate(window);
-            const accepted = window.filter(row => current.has(row.id));
-            return accepted.length >= limit ? accepted.slice(0, limit).map(row => current.get(row.id)!) : null;
+            const accepted = distinct(window.filter(row => current.has(row)));
+            return accepted.length >= limit ? accepted.slice(0, limit).map(row => current.get(row)!) : null;
         };
         // k larger than one window cannot benefit from the fast path.
         if (limit <= CANONICAL_VECTOR_PAGE_ROWS) {
@@ -619,8 +629,8 @@ export class LanceDbService {
         for (let offset = 0; offset < rowCount; offset += pageRows) {
             const page = await readPage(offset);
             const current = await validate(page);
-            top = top.concat(page.filter(row => current.has(row.id))).sort(before).slice(0, limit);
-            for (const row of top) if (current.has(row.id)) winners.set(row.id, current.get(row.id)!);
+            top = distinct(top.concat(page.filter(row => current.has(row))).sort(before)).slice(0, limit);
+            for (const row of top) if (current.has(row)) winners.set(row.id, current.get(row)!);
             const retained = new Set(top.map(row => row.id));
             for (const id of winners.keys()) if (!retained.has(id)) winners.delete(id);
         }
