@@ -64,6 +64,11 @@ class CuriosityService {
     private storageState: 'loading' | 'ready' | 'ready-legacy' | 'blocked' = 'loading';
     private storageError: string | null = null;
     private legacyOriginal: string | null = null;
+    private closing = false;
+    private shutdownTask: Promise<void> | null = null;
+    private initialExploration: NodeJS.Timeout | null = null;
+    private activeOperations = new Set<Promise<void>>();
+    private topicSubscriptions: Array<() => void> = [];
 
 
     constructor() {
@@ -71,13 +76,13 @@ class CuriosityService {
         // Keep failure observable to every awaited entry point without an unhandled rejection.
         void this.loaded.catch(e => logger.warn('Snapshot unavailable; mutations blocked:', e));
         // Listen for topic mentions
-        systemBus.subscribe(SystemProtocol.MEMORY_CREATED, (payload: any) => {
+        this.topicSubscriptions.push(systemBus.subscribe(SystemProtocol.MEMORY_CREATED, (payload: any) => {
             this.queueTopicEvent(() => this.trackTopicFromMemory(payload.payload));
-        });
+        }));
 
-        systemBus.subscribe(SystemProtocol.THOUGHT_EMISSION, (payload: any) => {
+        this.topicSubscriptions.push(systemBus.subscribe(SystemProtocol.THOUGHT_EMISSION, (payload: any) => {
             this.queueTopicEvent(() => this.trackTopicFromThought(payload.payload));
-        });
+        }));
 
         // Mutating entry points await this.loaded before editing restored state.
 
@@ -85,8 +90,34 @@ class CuriosityService {
     }
 
     private queueTopicEvent(update: () => Promise<void>): void {
+        if (this.closing) return;
         this.events = this.events.catch(() => {}).then(update);
         void this.events.catch(e => logger.warn('Topic persistence failed:', e));
+    }
+
+    private trackOperation(operation: () => Promise<void>): Promise<void> {
+        if (this.closing) return Promise.reject(new Error('Curiosity is shutting down; new mutations refused'));
+        const task = Promise.resolve().then(operation);
+        this.activeOperations.add(task);
+        void task.then(() => this.activeOperations.delete(task), () => this.activeOperations.delete(task));
+        return task;
+    }
+
+    /** Fence new inputs, stop timers and drain work accepted before this call.
+     * Never turns a failed storage receipt into a clean shutdown. */
+    public shutdown(): Promise<void> {
+        if (this.shutdownTask) return this.shutdownTask;
+        this.closing = true;
+        this.stopExploration();
+        for (const unsubscribe of this.topicSubscriptions) unsubscribe();
+        this.topicSubscriptions = [];
+        this.shutdownTask = (async () => {
+            const results = await Promise.allSettled([...this.activeOperations]);
+            await this.waitForPersistence();
+            const failure = results.find(result => result.status === 'rejected');
+            if (failure?.status === 'rejected') throw failure.reason;
+        })();
+        return this.shutdownTask;
     }
 
     /** Wait for initial restore and all events received before this call. */
@@ -161,7 +192,7 @@ class CuriosityService {
      * Start the exploration loop (runs during idle time)
      */
     public startExploration() {
-        if (this.explorationInterval) return;
+        if (this.closing || this.explorationInterval) return;
 
         // [OPTIMIZATION] Check PowerManager before starting
         import('./powerManager').then(({ powerManager }) => {
@@ -174,20 +205,22 @@ class CuriosityService {
     }
 
     private activateExploration() {
-        if (this.explorationInterval) return;
+        if (this.closing || this.explorationInterval) return;
         logger.info('Starting Exploration Loop (Every 15 min)');
         this.explorationInterval = setInterval(() => {
-            void this.runExplorationCycle().catch(e => logger.warn('Exploration persistence failed:', e));
+            void this.trackOperation(() => this.runExplorationCycle()).catch(e => logger.warn('Exploration persistence failed:', e));
         }, this.CONFIG.GAP_DETECTION_INTERVAL_MS);
 
         // Initial run after 2 minutes
-        setTimeout(() => { void this.runExplorationCycle().catch(e => logger.warn('Exploration persistence failed:', e)); }, 2 * 60 * 1000);
+        this.initialExploration = setTimeout(() => { void this.trackOperation(() => this.runExplorationCycle()).catch(e => logger.warn('Exploration persistence failed:', e)); }, 2 * 60 * 1000);
     }
 
     /**
      * Stop the exploration loop
      */
     public stopExploration() {
+        if (this.initialExploration) clearTimeout(this.initialExploration);
+        this.initialExploration = null;
         if (this.explorationInterval) {
             clearInterval(this.explorationInterval);
             this.explorationInterval = null;
@@ -533,7 +566,7 @@ class CuriosityService {
             pendingGaps: this.knowledgeGaps.filter(g => g.status === 'PENDING').length,
             resolvedGaps: this.knowledgeGaps.filter(g => g.status === 'RESOLVED').length,
             trackedTopics: this.topicFrequency.size,
-            storage: {state:this.storageState, mutationsAllowed:this.storageState === 'ready' || this.storageState === 'ready-legacy',
+            storage: {state:this.storageState, mutationsAllowed:!this.closing && (this.storageState === 'ready' || this.storageState === 'ready-legacy'),
                 recoveryRequired:this.storageState === 'blocked', error:this.storageError}
         };
     }
@@ -548,7 +581,11 @@ class CuriosityService {
     /**
      * Manually add a knowledge gap (for user-driven curiosity)
      */
-    public async addGap(topic: string, question: string, priority: number = 0.5): Promise<void> {
+    public addGap(topic: string, question: string, priority: number = 0.5): Promise<void> {
+        return this.trackOperation(() => this.addGapAccepted(topic, question, priority));
+    }
+
+    private async addGapAccepted(topic: string, question: string, priority: number): Promise<void> {
         await this.loaded;
         if (this.storageState === 'blocked') throw new Error('Curiosity storage blocked; original retained, recovery required');
         const gap: KnowledgeGap = {
@@ -568,7 +605,11 @@ class CuriosityService {
     /**
      * Trigger immediate research (for testing)
      */
-    public async triggerResearch() {
+    public triggerResearch(): Promise<void> {
+        return this.trackOperation(() => this.triggerResearchAccepted());
+    }
+
+    private async triggerResearchAccepted() {
         await this.loaded;
         if (this.storageState === 'blocked') throw new Error('Curiosity storage blocked; original retained, recovery required');
         const pendingGaps = this.knowledgeGaps

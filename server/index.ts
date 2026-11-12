@@ -185,13 +185,31 @@ async function gracefulShutdown(signal: string) {
     isShuttingDown = true;
 
     console.log(`\n[SHUTDOWN] ${signal} received: shutting down gracefully...`);
+    let shutdownFailed = false;
+    // Bound the whole shutdown, including awaited storage drainage.
+    const deadline = setTimeout(() => {
+        console.error('[SHUTDOWN] Forced exit after timeout; drainage unverified');
+        process.exit(1);
+    }, 10000);
+    deadline.unref();
+    try {
+        const { curiosity } = await import('../services/curiosityService');
+        await curiosity.shutdown();
+        console.log('[SHUTDOWN] Curiosity accepted work drained');
+    } catch (error) {
+        shutdownFailed = true;
+        console.error('[SHUTDOWN] Curiosity drainage failed; do not claim clean persistence:', error);
+    }
 
     // 1. Flush pending memory entries
     try {
         const { continuousMemory } = await import('../services/memory/continuousMemory');
         continuousMemory.shutdown();
         console.log('[SHUTDOWN] Continuous Memory flushed');
-    } catch { /* ignore if not initialized */ }
+    } catch (error) {
+        shutdownFailed = true;
+        console.error('[SHUTDOWN] Continuous Memory persistence unverified:', error);
+    }
 
     // 2. Shutdown WS Gateway (notify clients)
     try {
@@ -231,14 +249,9 @@ async function gracefulShutdown(signal: string) {
     // 7. Close HTTP server
     server.close(() => {
         console.log('[SHUTDOWN] HTTP server closed');
-        process.exit(0);
+        clearTimeout(deadline);
+        process.exit(shutdownFailed ? 1 : 0);
     });
-
-    // Force exit after 10s if graceful shutdown hangs
-    setTimeout(() => {
-        console.error('[SHUTDOWN] Forced exit after timeout');
-        process.exit(1);
-    }, 10000).unref();
 }
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));

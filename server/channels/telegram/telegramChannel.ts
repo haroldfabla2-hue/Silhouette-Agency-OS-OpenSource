@@ -364,49 +364,42 @@ export class TelegramChannel implements IChannel {
                 await this.bot.api.sendChatAction(chatId, 'typing').catch(() => { });
             }
 
-            // 3. HANDLE MEDIA
+            // Return only a real provider message ID after every requested
+            // part has a receipt. Partial delivery remains unverified: never
+            // manufacture 'sent'/'media-sent' or issue a second error message.
+            let lastMessageId: number | null = null;
             if (message.media && message.media.length > 0) {
                 for (const media of message.media) {
-                    try {
-                        if (media.type === 'image' && media.url) {
-                            await this.bot.api.sendPhoto(chatId, media.url, { caption: media.caption });
-                        } else if (media.type === 'video' && media.url) {
-                            await this.bot.api.sendVideo(chatId, media.url, { caption: media.caption });
-                        }
-                    } catch (mediaErr: any) {
-                        logger.error(`[Telegram] Media send failed: ${mediaErr.message}`);
+                    let sent;
+                    if (media.type === 'image' && media.url) {
+                        sent = await this.bot.api.sendPhoto(chatId, media.url, { caption: media.caption });
+                    } else if (media.type === 'video' && media.url) {
+                        sent = await this.bot.api.sendVideo(chatId, media.url, { caption: media.caption });
+                    } else {
+                        logger.error('[Telegram] Unsupported media; delivery unverified. Do not resend completed parts.');
+                        return null;
                     }
+                    if (!Number.isInteger(sent.message_id) || sent.message_id <= 0) return null;
+                    lastMessageId = sent.message_id;
                 }
             }
 
-            // 4. SEND TEXT with chunking + Markdown fallback
+            // Text may span several provider messages. An accepted last chunk
+            // cannot certify earlier chunks that failed.
             if (message.text && message.text.trim().length > 0) {
                 const chunks = chunkMessage(message.text);
-                let lastMessageId: number | null = null;
-
                 for (const chunk of chunks) {
                     const msgId = await safeSendMessage(this.bot, chatId, chunk);
-                    if (msgId) lastMessageId = msgId;
-
-                    // Small delay between chunks to avoid rate limits
-                    if (chunks.length > 1) {
-                        await new Promise(resolve => setTimeout(resolve, 300));
-                    }
+                    if (!msgId || !Number.isInteger(msgId) || msgId <= 0) return null;
+                    lastMessageId = msgId;
+                    if (chunks.length > 1) await new Promise(resolve => setTimeout(resolve, 300));
                 }
-
-                return lastMessageId ? String(lastMessageId) : 'sent';
             }
-
-            return 'media-sent';
-
+            return lastMessageId === null ? null : String(lastMessageId);
         } catch (err: any) {
-            logger.error(`[Telegram] Send error to ${chatId}:`, err.message);
-
-            // Try to notify user of error
-            try {
-                await this.bot.api.sendMessage(chatId, "⚠️ Error enviando la respuesta. Revisa los logs del sistema.");
-            } catch { /* Silent */ }
-
+            // The request may have reached Telegram before its response was
+            // lost. Another send here risks duplicate user-facing delivery.
+            logger.error(`[Telegram] Delivery unverified for ${chatId}; do not resend:`, err.message);
             return null;
         }
     }
