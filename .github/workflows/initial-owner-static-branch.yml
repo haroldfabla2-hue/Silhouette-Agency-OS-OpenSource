@@ -1,4 +1,4 @@
-name: Initial-owner static only (exact isolated branch)
+name: Initial-owner static then two-case runtime trial (exact isolated branch)
 
 on:
   push:
@@ -110,11 +110,38 @@ jobs:
           if test "$result" = 0; then printf 'STATIC_PASS\n' > "$EVIDENCE/static-pass.txt"; fi
           exit "$result"
 
-      - name: Always collect static evidence
+      - name: Exact two-case runtime trial after static PASS
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(cat "$EVIDENCE/static-pass.txt")" = STATIC_PASS
+          printf 'NOT_STARTED\n' > "$EVIDENCE/runtime-status.txt"
+          # No package installation, sudo, external Redis, or alternate path.
+          # A missing tool is a trial capability result, before app workload.
+          for tool in bwrap ip; do
+            if ! command -v "$tool" >> "$EVIDENCE/runtime-capability.log" 2>&1; then
+              printf 'BLOCKED: missing %s before app workload\n' "$tool" | tee -a "$EVIDENCE/runtime-capability.log"
+              printf 'BLOCKED\n' > "$EVIDENCE/runtime-status.txt"
+              exit 1
+            fi
+          done
+          set +e
+          timeout --signal=TERM --kill-after=5s 100s env -i PATH="$PATH" HOME=/tmp /bin/bash tests/real-process/introspection-initial/run-runtime.sh "$EVIDENCE" "$EVIDENCE/runtime" 2>&1 | tee "$EVIDENCE/runtime-trial.log"
+          codes=("${PIPESTATUS[@]}")
+          set -e
+          printf '%s\n' "${codes[0]}" > "$EVIDENCE/runtime-command.exit"
+          printf '%s\n' "${codes[1]}" > "$EVIDENCE/runtime-tee.exit"
+          if test "${codes[0]}" != 0 || test "${codes[1]}" != 0; then
+            printf 'FAIL (inspect log for BLOCKED capability/network or case failure)\n' > "$EVIDENCE/runtime-status.txt"
+            exit 1
+          fi
+          printf 'PASS\n' > "$EVIDENCE/runtime-status.txt"
+
+      - name: Always collect static and trial evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: initial-owner-static-${{ github.run_id }}-${{ github.run_attempt }}
+          name: initial-owner-static-runtime-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/initial-owner-static-evidence
           if-no-files-found: warn
           retention-days: 7
