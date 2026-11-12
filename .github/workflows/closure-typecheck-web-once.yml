@@ -1,0 +1,47 @@
+name: Web handler typecheck once
+on:
+  push:
+    branches: [validation/silhouette-typecheck-web-once-20261111]
+permissions:
+  contents: read
+jobs:
+  typecheck:
+    if: github.repository == 'haroldfabla2-hue/Silhouette-Agency-OS-OpenSource' && github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: a3d5c8cda1f93b7acfb18e4f45b2f7b067454b9b
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Verify exact source and public standard runner scope
+        env:
+          REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+        run: |
+          set -eu
+          test "$REPOSITORY_PRIVATE" = false
+          test "$(git rev-parse HEAD)" = a3d5c8cda1f93b7acfb18e4f45b2f7b067454b9b
+          test -z "$(git status --porcelain)"
+          test ! -e .env && test ! -e .env.local
+          node --version
+          sha256sum package-lock.json tsconfig.json
+          free -m
+      - name: Install locked type dependencies without lifecycle execution
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 'true'
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install OS isolation boundary
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Exact global TypeScript gate with no network or application startup
+        run: |
+          set -eu
+          node_bin=$(command -v node)
+          bwrap --unshare-all --die-with-parent --ro-bind / / --tmpfs /root --tmpfs /home --tmpfs /opt --tmpfs /tmp --tmpfs /run --ro-bind "$GITHUB_WORKSPACE" /tmp/project --ro-bind "$node_bin" /tmp/node --proc /proc --dev /dev --chdir /tmp/project /usr/bin/env -i PATH=/usr/bin:/bin HOME=/tmp NODE_OPTIONS=--max-old-space-size=2560 /usr/bin/timeout 300 /tmp/node node_modules/typescript/bin/tsc --noEmit --skipLibCheck
+          test -z "$(git status --porcelain)"
