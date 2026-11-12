@@ -225,3 +225,24 @@ new pending event identity after complete and superseded histories, exact origin
 payload/timestamp/vector preserved, reopen, actual Lance replay with mirror disabled,
 canonical/local A and honestly still-pending mirror. This proves the ledger/local
 reactivation regression, NOT final mirror payload acceptance. Qdrant remains closed.
+
+## Vector generation bound to canonical commit
+
+Same node JSON/identity with V1 then V2 previously allowed a cursor/reopen to replay
+V2 first and V1 last, leaving the older local vector. The new regression reproduced
+that failure. Canonical memory_records_v2 now commits projection_event_key beside
+the unchanged node JSON in the same merge. It names the immutable intent containing
+the vector and identity. Replay supersedes a different keyed event before delivery;
+consumer/direct receipts verify identity and Float32-normalized vector against the
+active event. This defines stored vector equivalence as Float32 equality, not
+arbitrary double precision. Existing tables get an additive empty-string column at
+the next serialized write, not at read-only init. Existing empty/unkeyed historical
+rows still use source-checksum recovery; historical generation is not fabricated.
+
+Real tests cover shifted cursor, reopen, V2 then stale V1, exact persisted Float32
+V2, stale receipt rejection, and additive upgrade of an old-schema table preserving
+the node. Mirror disabled: this is not final Qdrant ACK/restart evidence. UUID cost
+was measured on a separate real SQLite ledger: ten identical dense-vector prepare
+attempts grew the closed database from 16,384 to 196,608 bytes (+180,224 bytes).
+This is a fixture measurement, not a production capacity bound; no history was
+pruned. Repeated canonical writes are distinct events, not globally exactly-once.

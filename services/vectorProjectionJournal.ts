@@ -47,6 +47,10 @@ export class VectorProjectionJournal {
             .run(key, node.id, checksum, JSON.stringify(intent));
         return intent;
     }
+    get(key: string): ProjectionIntent | null {
+        const row = this.db.prepare('SELECT body,state FROM projection_intents WHERE key = ?').get(key) as any;
+        return row ? { ...JSON.parse(row.body), phase: row.state } : null;
+    }
     pending(limit = 50): ProjectionIntent[] {
         const cursor = (this.db.prepare('SELECT after_rowid FROM projection_scan_cursor WHERE singleton = 1').get() as any).after_rowid;
         const rows = this.db.prepare("SELECT rowid,body,state FROM projection_intents WHERE state IN ('prepared','pending') ORDER BY CASE WHEN rowid > ? THEN 0 ELSE 1 END, rowid LIMIT ?")

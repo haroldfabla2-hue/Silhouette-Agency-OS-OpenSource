@@ -219,11 +219,31 @@ export class LanceDbService {
         return operation;
     }
 
-    private toRecord(node: MemoryNode, json?: string) {
+    private async ensureProjectionEventColumn(): Promise<void> {
+        if (!this.db || !(await this.db.tableNames()).includes('memory_records_v2')) return;
+        const current = await this.db.openTable('memory_records_v2');
+        if (!(await current.schema()).fields.some(field => field.name === 'projection_event_key')) {
+            await current.addColumns([{ name: 'projection_event_key', valueSql: "cast('' as string)" }]);
+        }
+        this.table = await this.db.openTable('memory_records_v2');
+    }
+
+    private async canonicalProjectionEventKey(id: string): Promise<string | null> {
+        if (!this.db || !(await this.db.tableNames()).includes('memory_records_v2')) return null;
+        const current = await this.db.openTable('memory_records_v2');
+        await current.checkoutLatest();
+        if (!(await current.schema()).fields.some(field => field.name === 'projection_event_key')) return null;
+        const rows = await current.query().where(`id = '${id.replace(/'/g, "''")}'`).select(['projection_event_key']).limit(2).toArray();
+        if (rows.length !== 1) return null;
+        return rows[0].projection_event_key || null;
+    }
+
+    private toRecord(node: MemoryNode, json?: string, projectionEventKey = '') {
         const jsonData = json ?? JSON.stringify(node);
         return {
             id: node.id,
             embedding_state: 'EMBEDDING_PENDING',
+            projection_event_key: projectionEventKey,
             content: node.content,
             originalContent: node.originalContent || '',
             tags: node.tags.length ? node.tags : [''],
@@ -302,6 +322,7 @@ export class LanceDbService {
         await this.ensureInitialized();
         if (!this.db) throw new Error('LanceDB is unavailable');
         if (nodes.length === 0) return { ok: true, count: 0 };
+        await this.ensureProjectionEventColumn();
         const records = nodes.map(n => this.toRecord(n));
         if (!this.table) {
             const names = await this.db.tableNames();
@@ -349,7 +370,8 @@ export class LanceDbService {
             ? this.journal().prepare(node, vector, node.embeddingIdentity) : null;
         const json = JSON.stringify(node);
         const checksum = createHash('sha256').update(json).digest('hex');
-        const record = this.toRecord(node, json);
+        await this.ensureProjectionEventColumn();
+        const record = this.toRecord(node, json, intent?.key);
         if (!this.table) {
             const names = await this.db.tableNames();
             this.table = names.includes('memory_records_v2')
@@ -424,6 +446,11 @@ export class LanceDbService {
                 if (intent.phase !== 'prepared') journal.superseded(intent.key);
                 continue;
             }
+            // A node checksum alone cannot distinguish V1 -> V2 with identical
+            // node JSON. The event key is committed atomically beside that JSON
+            // and names the immutable journal vector/digest for this write.
+            const activeEvent = await this.canonicalProjectionEventKey(intent.id);
+            if (activeEvent && activeEvent !== intent.key) { journal.superseded(intent.key); continue; }
             journal.canonicalVerified(intent.key);
             await this.projectionCheckpoint?.('source_verified', intent.id);
             try {
@@ -711,6 +738,14 @@ export class LanceDbService {
             const current = await this.getNodeById(node.id);
             if (!current || canonicalChecksum(current) !== canonicalChecksum(node)) {
                 throw new Error('Canonical version changed; stale local projection receipt refused');
+            }
+            const activeEvent = await this.canonicalProjectionEventKey(node.id);
+            if (activeEvent) {
+                const intent = this.journal().get(activeEvent);
+                if (!intent || canonicalChecksum(intent.identity) !== canonicalChecksum(identity)
+                    || canonicalChecksum(Array.from(Float32Array.from(intent.vector))) !== canonicalChecksum(Array.from(Float32Array.from(vector)))) {
+                    throw new Error('Canonical vector generation changed; stale projection receipt refused');
+                }
             }
             await this.projectEmbeddingSerialized(node, vector, identity);
             const table = await this.db!.openTable(this.vectorTableName(identity));
