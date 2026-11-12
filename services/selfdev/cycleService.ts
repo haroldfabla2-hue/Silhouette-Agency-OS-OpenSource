@@ -37,7 +37,7 @@ import { atomicWriteFile } from './atomicWrite';
 import { llmGateway, CompletionOptions } from '../llmGateway';
 
 export type CycleState =
-    | 'PLANNED' | 'ATTEMPTED' | 'EXECUTED' | 'VERIFIED'
+    | 'PROPOSAL_PENDING' | 'PLANNED' | 'ATTEMPTED' | 'EXECUTED' | 'VERIFIED'
     | 'PR_SUBMITTED' | 'PR_OPEN'
     | 'FAILED' | 'REJECTED' | 'ABANDONED';
 
@@ -206,7 +206,7 @@ export class SelfDevCycleService {
         if (kind !== 'vitest' || !SelfDevCycleService.validRel(target)) {
             throw Object.assign(new Error('acceptance must be { kind: "vitest", target: <relative test path> }'), { statusCode: 400 });
         }
-        if (this.store.cycles.some(c => ACTIVE_STATES.includes(c.state))) {
+        if (!learningProposal && this.store.cycles.some(c => ACTIVE_STATES.includes(c.state))) {
             throw Object.assign(new Error('another cycle is already active (shared selfwork clone): finish or abandon it first'), { statusCode: 409 });
         }
         const today = new Date().toISOString().slice(0, 10);
@@ -218,8 +218,8 @@ export class SelfDevCycleService {
         const c: SelfDevCycle = {
             id: crypto.randomUUID(), issue, scope, acceptance: { kind: 'vitest', target },
             ...(learningProposal ? { learningProposal } : {}),
-            state: 'PLANNED', runs: [], createdAt: at, updatedAt: at,
-            history: [{ from: null, to: 'PLANNED', at, note: 'cycle created' }]
+            state: learningProposal ? 'PROPOSAL_PENDING' : 'PLANNED', runs: [], createdAt: at, updatedAt: at,
+            history: [{ from: null, to: learningProposal ? 'PROPOSAL_PENDING' : 'PLANNED', at, note: learningProposal ? 'proposal only; no worktree reservation' : 'cycle created' }]
         };
         this.store.cycles.push(c);
         this.journal({ ts: at, cycleId: c.id, event: 'CREATED', issue, scope, acceptance: c.acceptance });

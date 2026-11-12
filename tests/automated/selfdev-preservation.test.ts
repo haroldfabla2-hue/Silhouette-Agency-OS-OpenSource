@@ -23,12 +23,13 @@ describe('isolated selfdev evidence and pending-learning boundaries (real git)',
    await expect(selfCodeService.syncWithUpstream()).rejects.toThrow(/dirty candidate preserved/);expect(fs.readdirSync(directory)).toEqual(entries);
    const escape=path.join(root,'outside');fs.mkdirSync(escape);fs.symlinkSync(escape,path.join(wt,'link'),'dir');await expect(selfCodeService.writeFile('link/no.ts','bad','authored escape probe')).rejects.toThrow(/symlink/);expect(fs.existsSync(path.join(escape,'no.ts'))).toBe(false);
    const dir=path.join(root,'cycles');const s=new SelfDevCycleService({dir});const input={memoryId:'authored-proposal-memory-id',source:'continuum-promote',incidentId:'authored-incident-id',issue:'Authored mechanics fixture only'};
-   const c=s.createLearningProposal(input);expect(c.scope).toEqual(memoryRepairMapping(input.source)!.scope);expect(c.learningProposal?.applied).toBe(false);expect(c.learningProposal?.verification).toBe('BASELINE_ORACLE_REQUIRED');
+   const c=s.createLearningProposal(input);expect(c.scope).toEqual(memoryRepairMapping(input.source)!.scope);expect(c.state).toBe('PROPOSAL_PENDING');expect(c.learningProposal?.applied).toBe(false);expect(c.learningProposal?.verification).toBe('BASELINE_ORACLE_REQUIRED');
    const restarted=new SelfDevCycleService({dir});const replay=restarted.createLearningProposal(input);expect(replay.id).toBe(c.id);expect(restarted.list()).toHaveLength(1);
-   const before=fs.readFileSync(path.join(wt,'source.ts'));expect((await restarted.attempt(c.id,[{op:'write',path:'services/continuumMemory.ts',content:'anything',rationale:'fixture'}])).state).toBe('PLANNED');expect(fs.readFileSync(path.join(wt,'source.ts'))).toEqual(before);
+   const before=fs.readFileSync(path.join(wt,'source.ts'));expect((await restarted.attempt(c.id,[{op:'write',path:'services/continuumMemory.ts',content:'anything',rationale:'fixture'}])).state).toBe('PROPOSAL_PENDING');expect(fs.readFileSync(path.join(wt,'source.ts'))).toEqual(before);
    expect(()=>restarted.requestPR(c.id,'fixture-operator')).toThrow(/independent baseline/);expect(fs.readdirSync(path.join(dir,'pr-requests'))).toHaveLength(0);
    expect(()=>restarted.createLearningProposal({...input,source:'unknown'})).toThrow(/declared repair mapping/);expect(()=>restarted.createLearningProposal({...input,incidentId:'conflicting'})).toThrow(/conflicts/);
    const mapping=memoryRepairMapping(input.source)!;mapping.scope.push('security');expect(memoryRepairMapping(input.source)!.scope).not.toContain('security');expect(memoryRepairMapping('__proto__')).toBeUndefined();
+   const ordinary=restarted.create({issue:'Independent ordinary cycle remains available',scope:['src'],acceptance:{kind:'vitest',target:'tests/authored.test.ts'}});expect(ordinary.state).toBe('PLANNED');restarted.abandon(ordinary.id,'authored no-execution fixture');
   }finally{for(const k of names){if(saved[k]===undefined)delete process.env[k];else process.env[k]=saved[k];}fs.rmSync(root,{recursive:true,force:true});}
  });
 });
