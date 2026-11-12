@@ -3,20 +3,21 @@ import { SystemProtocol, FileNode, CodeChunk, IntrospectionCapability } from "..
 import { systemBus } from "./systemBus";
 import { vfs } from "./virtualFileSystem";
 import { vectorMemory } from "./vectorMemoryService";
-import { geminiService } from "./geminiService";
+
 import * as crypto from 'crypto';
 
 // --- CODEBASE AWARENESS SERVICE ---
 // Gives Silhouette the ability to "know" its own code via RAG.
 // Listens for VFS changes, chunks code, and updates Vector Memory.
 
-class CodebaseAwarenessService {
+export class CodebaseAwarenessService {
     private isIndexing: boolean = false;
     private fileHashes: Map<string, string> = new Map(); // Cache for change detection
     private readonly COLLECTION_PREFIX = "code_";
 
-    constructor() {
-        this.initialize();
+    constructor(private readonly embed: (text: string) => Promise<number[] | null> = async text =>
+        (await import('./geminiService')).generateEmbedding(text), subscribe = true) {
+        if (subscribe) this.initialize();
     }
 
     private initialize() {
@@ -28,7 +29,8 @@ class CodebaseAwarenessService {
                 if (event.payload.fileId) {
                     const node = vfs.getNode(event.payload.fileId);
                     if (node && node.type === 'FILE') {
-                        await this.indexFile(node);
+                        try { await this.indexFile(node); }
+                        catch (error) { console.error("[CODEBASE AWARENESS] Indexing failed; file remains retryable:", error); }
                     }
                 }
             }
@@ -59,13 +61,11 @@ class CodebaseAwarenessService {
             }
         };
 
-        const project = vfs.getProjects().find(p => p.id === projectId);
-        if (project) {
-            await processNode(project.rootFolderId);
-        }
-
-        this.isIndexing = false;
-        console.log(`[CODEBASE AWARENESS] Full index complete.`);
+        try {
+            const project = vfs.getProjects().find(p => p.id === projectId);
+            if (project) await processNode(project.rootFolderId);
+            console.log(`[CODEBASE AWARENESS] Full index complete.`);
+        } finally { this.isIndexing = false; }
     }
 
     /**
@@ -86,7 +86,6 @@ class CodebaseAwarenessService {
             // No change
             return;
         }
-        this.fileHashes.set(node.id, hash);
 
         console.log(`[CODEBASE AWARENESS] Indexing file: ${node.name}`);
 
@@ -128,7 +127,8 @@ class CodebaseAwarenessService {
 
         // 3. Embedding & Storage
         for (const chunk of chunks) {
-            const vector = await geminiService.generateEmbedding(chunk.content);
+            const vector = await this.embed(chunk.content);
+            if (!vector) throw new Error('Code RAG embedding unavailable; file remains retryable');
             if (vector) {
                 await vectorMemory.storeMemory(chunk.id, vector, {
                     type: 'CODE_CHUNK',
@@ -136,14 +136,15 @@ class CodebaseAwarenessService {
                 });
             }
         }
+        this.fileHashes.set(node.id, hash);
     }
 
     /**
      * Queries the codebase for relevant snippets.
      */
     public async query(userQuery: string, limit: number = 3): Promise<string> {
-        const vector = await geminiService.generateEmbedding(userQuery);
-        if (!vector) return "";
+        const vector = await this.embed(userQuery);
+        if (!vector) throw new Error('Code RAG query embedding unavailable');
 
         const results = await vectorMemory.searchMemory(vector, limit, { type: 'CODE_CHUNK' });
 

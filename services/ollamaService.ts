@@ -1,8 +1,8 @@
+import { localInferenceAllowed, assertLocalInferenceAllowed } from './security/localInferencePolicy';
 import { Queue, Worker, Job, QueueEvents } from 'bullmq';
 import { Ollama } from 'ollama';
 import { REDIS_CONFIG } from '../constants';
 import Redis from 'ioredis';
-import { resourceArbiter } from './resourceArbiter'; // [PA-036]
 
 // --- TYPES ---
 interface OllamaJobData {
@@ -50,6 +50,7 @@ export class OllamaService {
      * failures never surface as unhandled events.
      */
     private ensureInfra(): void {
+        assertLocalInferenceAllowed();
         if (this.infraReady) return;
 
         const redisOptions = {
@@ -91,6 +92,7 @@ export class OllamaService {
     }
 
     async checkStatus(): Promise<boolean> {
+        if (!localInferenceAllowed()) return false;
         if (this.isCircuitOpen) return false;
         try {
             await this.ollama.list(); // Simple ping
@@ -140,11 +142,13 @@ export class OllamaService {
 
 
     private async processJob(job: Job): Promise<OllamaJobResult> {
+        assertLocalInferenceAllowed();
         if (!this.checkCircuit()) {
             throw new Error("Ollama Circuit Breaker is OPEN. Service unavailable.");
         }
 
         // [PA-036] INTELLIGENT RESOURCE CHECK
+        const { resourceArbiter } = await import('./resourceArbiter');
         const metrics = await resourceArbiter.getRealMetrics();
         const vramUsage = metrics.vramUsed / metrics.vramTotal;
 
@@ -261,6 +265,7 @@ export class OllamaService {
      * Public API: Direct Streaming for Chat Fallback (Bypasses Queue for Latency)
      */
     async * generateStream(prompt: string, model: string = process.env.OLLAMA_LOCAL_MODEL?.trim() || 'qwen3:4b'): AsyncGenerator<string, void, unknown> {
+        assertLocalInferenceAllowed();
         // [R2] Errors are thrown, never yielded as content: an error string in the
         // stream used to be persisted as an assistant response and stored as "facts".
         if (!this.checkCircuit()) {
@@ -291,6 +296,7 @@ export class OllamaService {
      * Public API: Chat Streaming (Messages Array) - Best for Context Retention
      */
     async * generateChatStream(messages: { role: string, content: string }[], model: string = process.env.OLLAMA_LOCAL_MODEL?.trim() || 'qwen3:4b'): AsyncGenerator<string, void, unknown> {
+        assertLocalInferenceAllowed();
         // [R2] Errors are thrown, never yielded as content (see generateStream).
         if (!this.checkCircuit()) {
             throw new Error('[Ollama Circuit Open - Local Brain Offline]');
@@ -319,6 +325,7 @@ export class OllamaService {
      * Public API: Forcefully unload a model from VRAM
      */
     async unloadModel(modelName: string): Promise<boolean> {
+        if (!localInferenceAllowed()) return false;
         try {
             console.log(`[Ollama] 📉 Unloading model: ${modelName}`);
             // Sending an empty request with keep_alive: 0 forces immediate unload
