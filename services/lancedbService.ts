@@ -632,10 +632,12 @@ export class LanceDbService {
     }
 
     /** Observation-only path: no initialization, optimization, FTS creation,
-     * embedding, provider call, access update or arbitrary result cap. Reads
+     * embedding, provider call, access update or corpus truncation. Caller-bounded results. Reads
      * existing canonical tables; legacy then v2, with v2 winning duplicate IDs. */
-    public async getLatestObservation(tag:string,excludedIds:string[]=[]):Promise<MemoryNode|null>{
-        if(!fs.existsSync(this.databasePath))return null;
+    public async getRecentObservations(tag:string|string[],limit:number,excludedIds:string[]=[]):Promise<MemoryNode[]>{
+        const tags=Array.isArray(tag)?tag:[tag];
+        if(!tags.length || !tags.every(t=>typeof t==='string' && t.length>0) || !Number.isInteger(limit) || limit < 1 || limit > 1000) throw new Error('Observation tags and bounded limit required');
+        if(!fs.existsSync(this.databasePath))return [];
         const db=this.db??await (this.observationConnection??=lancedb.connect(this.databasePath).catch(error=>{this.observationConnection=null;throw error;}));
         const names=await db.tableNames();
         const tables=[];
@@ -645,7 +647,7 @@ export class LanceDbService {
         const version=JSON.stringify(tables.map(t=>[t.name,t.version]));
         const key=JSON.stringify([tag,[...excludedIds].sort()]);
         const cached=this.observationCache.get(key);
-        if(cached?.version===version)return cached.node;
+        if(limit===1 && cached?.version===version)return cached.node ? [cached.node] : [];
         const excluded=new Set(excludedIds);
         const candidates=new Map<string,MemoryNode>();
         for(const {table} of tables){
@@ -657,16 +659,20 @@ export class LanceDbService {
                     const node=JSON.parse(row.json_data) as MemoryNode;
                     // Include all IDs before selecting tag so a v2 update can
                     // remove a tag present in the legacy row.
-                    if(!excluded.has(node.id)&&node.tags.includes(tag))candidates.set(node.id,node);
+                    if(!excluded.has(node.id)&&tags.every(t=>node.tags.includes(t)))candidates.set(node.id,node);
                     else candidates.delete(node.id);
                 }
             }
         }
-        const node=[...candidates.values()]
-            .sort((a,b)=>b.timestamp-a.timestamp||a.id.localeCompare(b.id))[0]??null;
+        const selected=[...candidates.values()]
+            .sort((a,b)=>b.timestamp-a.timestamp||a.id.localeCompare(b.id)).slice(0,limit);
         this.observationCache.clear(); // cache only latest query, never grow with requests
-        this.observationCache.set(key,{version,node});
-        return node;
+        if(limit===1)this.observationCache.set(key,{version,node:selected[0]??null});
+        return selected;
+    }
+
+    public async getLatestObservation(tag:string,excludedIds:string[]=[]):Promise<MemoryNode|null>{
+        return (await this.getRecentObservations(tag,1,excludedIds))[0]??null;
     }
 
     public async getAllNodes(): Promise<MemoryNode[]> {

@@ -166,6 +166,13 @@ export class UnifiedDaemon {
         }).catch(err => console.error('[DAEMON] Failed to bind restart hooks', err));
     }
 
+    /** Scheduler state, not a claim of thought quality or completed cognition. */
+    public getRuntimeStatus() {
+        return { running: this.isRunning && this.checkInterval !== null,
+            enabledTaskCount: this.tasks.filter(task => task.enabled).length,
+            registeredTaskCount: this.tasks.length };
+    }
+
     public stop() {
         if (!this.isRunning) return;
         this.isRunning = false;

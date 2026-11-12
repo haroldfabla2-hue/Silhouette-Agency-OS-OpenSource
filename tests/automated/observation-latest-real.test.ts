@@ -4,6 +4,7 @@ import {describe,it,expect} from 'vitest';
 import {mkdtempSync,rmSync,existsSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
+import {connect} from '@lancedb/lancedb';
 import {lancedbService as lancedbDefault,LanceDbService} from '../../services/lancedbService';
 import {MemoryTier} from '../../types';
 describe('observation-only latest stored tag',()=>{
@@ -29,6 +30,37 @@ describe('observation-only latest stored tag',()=>{
    await writer.store({id:'new-tag',content:'new',tags:['missing'],tier:MemoryTier.WORKING,timestamp:5} as any);
    expect((await reader.getLatestObservation('missing'))?.id).toBe('new-tag');
    expect((await reader.getLatestObservation('epiphany',['newest']))?.id).toBe('older');
+  }finally{rmSync(dir,{recursive:true,force:true});}
+ });
+});
+
+describe('bounded canonical observation history',()=>{
+ it('merges legacy and v2 before ordering, with tag removal and exclusions respected',async()=>{
+  const dir=mkdtempSync(path.join(tmpdir(),'history-real-'));
+  const location=path.join(dir,'db.lancedb');
+  const node=(id:string,timestamp:number,tags:string[])=>({id,timestamp,tags,content:id,tier:MemoryTier.LONG});
+  const row=(n:any)=>({id:n.id,json_data:JSON.stringify(n)});
+  try{
+   const db=await connect(location);
+   await db.createTable('memory',[row(node('shadow',99,['EXPERIENCE','FAILURE'])),row(node('old',1,['EXPERIENCE','FAILURE']))]);
+   await db.createTable('memory_records_v2',[row(node('shadow',100,['EXPERIENCE','SUCCESS'])),row(node('new',3,['EXPERIENCE','FAILURE'])),row(node('unrelated',4,['FAILURE']))]);
+   const reader=new LanceDbService(location);
+   expect((await reader.getRecentObservations(['EXPERIENCE','FAILURE'],2)).map(n=>n.id)).toEqual(['new','old']);
+   expect((await reader.getRecentObservations(['EXPERIENCE','FAILURE'],1,['new'])).map(n=>n.id)).toEqual(['old']);
+   expect((reader as any).initialized).toBe(false);
+   expect((reader as any).ftsReady.size).toBe(0);
+   await expect(reader.getRecentObservations('EXPERIENCE',0)).rejects.toThrow(/bounded/);
+   await expect(reader.getRecentObservations([],1)).rejects.toThrow(/tags/);
+  }finally{rmSync(dir,{recursive:true,force:true});}
+ });
+ it('does not turn corrupt durable records into an empty successful window',async()=>{
+  const dir=mkdtempSync(path.join(tmpdir(),'history-corrupt-'));
+  const location=path.join(dir,'db.lancedb');
+  try{
+   const db=await connect(location);
+   await db.createTable('memory_records_v2',[{id:'corrupt',json_data:'{broken'}]);
+   const reader=new LanceDbService(location);
+   await expect(reader.getRecentObservations('EXPERIENCE',100)).rejects.toThrow();
   }finally{rmSync(dir,{recursive:true,force:true});}
  });
 });

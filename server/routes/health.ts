@@ -69,14 +69,9 @@ healthRouter.get('/', async (_req: Request, res: Response) => {
 
     // 3. Qdrant (Vector Memory)
     try {
-        const start = Date.now();
         const { vectorMemory } = await import('../../services/vectorMemoryService');
-        if (vectorMemory) {
-            checks.qdrant = { status: 'up', latencyMs: Date.now() - start };
-        } else {
-            checks.qdrant = { status: 'down', error: 'Not initialized' };
-            overallHealthy = false;
-        }
+        checks.qdrant = await vectorMemory.getHealth();
+        if (checks.qdrant.status !== 'up') overallHealthy = false;
     } catch (e: any) {
         checks.qdrant = { status: 'down', error: e.message };
         overallHealthy = false;
@@ -90,15 +85,19 @@ healthRouter.get('/', async (_req: Request, res: Response) => {
         checks.sqlite = { status: 'up', latencyMs: Date.now() - start };
     } catch (e: any) {
         checks.sqlite = { status: 'down', error: e.message };
-        // SQLite failure is degraded, not down
+        overallHealthy = false; // failed persistence must never produce a healthy aggregate
     }
 
     // 5. Daemon Status
     try {
         const { unifiedDaemon } = await import('../../services/daemon/unifiedDaemon');
-        checks.daemon = { status: unifiedDaemon ? 'up' : 'down' };
+        const runtime = unifiedDaemon.getRuntimeStatus();
+        checks.daemon = { status: runtime.running ? 'up' : 'down', backend: 'scheduler',
+            note: `Scheduler running=${runtime.running}; ${runtime.enabledTaskCount}/${runtime.registeredTaskCount} tasks enabled. This is not proof of cognitive output.` };
+        if (!runtime.running) overallHealthy = false;
     } catch {
         checks.daemon = { status: 'down' };
+        overallHealthy = false;
     }
 
     const anyDegraded = Object.values(checks).some(c => c.status === 'degraded');

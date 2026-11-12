@@ -115,6 +115,20 @@ class ExperienceBufferService {
         return filtered.slice(0, count);
     }
 
+    /** Bounded canonical history, independent of process-local RAM and semantic
+     * search. Failure is observable: unreadable durable data must not be
+     * reported as a successful empty learning window. Does not rewrite memory. */
+    async getRecentDurable(count: number = 100, type?: ExperienceType): Promise<Experience[]> {
+        if (!Number.isInteger(count) || count < 1 || count > 100) throw new Error('Experience history limit must be 1..100');
+        const nodes = await continuum.getRecentObservations(type ? ['EXPERIENCE', type] : ['EXPERIENCE'], count);
+        return nodes.map(n => {
+            const experience = this.parseExperience(n);
+            if (!experience || (type && experience.type !== type)) throw new Error(`Invalid durable experience ${n.id}`);
+            return experience;
+        })
+            .sort((a, b) => b.timestamp - a.timestamp || a.id.localeCompare(b.id)).slice(0, count);
+    }
+
     /**
      * Get experiences relevant to a context (from eternal memory)
      */

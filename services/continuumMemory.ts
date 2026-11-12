@@ -585,14 +585,19 @@ class ContinuumMemorySystem {
         if (index >= 0) { this.working[index] = updated; this.markDirty(); await this.saveSnapshot(); }
     }
 
-    /** Latest exact-tag stored observation, without semantic search, ranking
+    /** Recent exact-tag stored observations, without semantic search, ranking
      * budget, access writes or provider use. Ordinary retrieval is unchanged. */
+    public async getRecentObservations(tag:string|string[],limit:number):Promise<MemoryNode[]>{
+        const tags=Array.isArray(tag)?tag:[tag];
+        if(!tags.length || !tags.every(t=>typeof t==='string' && t.length>0) || !Number.isInteger(limit) || limit < 1 || limit > 1000) throw new Error('Observation tags and bounded limit required');
+        const persisted=await lancedbService.getRecentObservations(tag,limit,this.working.map(n=>n.id));
+        const byId=new Map<string,MemoryNode>(persisted.map(n=>[n.id,n]));
+        for(const node of this.working)if(tags.every(t=>node.tags.includes(t)))byId.set(node.id,node);
+        return [...byId.values()].sort((a,b)=>b.timestamp-a.timestamp||a.id.localeCompare(b.id)).slice(0,limit);
+    }
+
     public async getLatestObservation(tag:string):Promise<MemoryNode|null>{
-        const persisted=await lancedbService.getLatestObservation(tag,this.working.map(n=>n.id));
-        const byId=new Map<string,MemoryNode>();
-        if(persisted)byId.set(persisted.id,persisted);
-        for(const node of this.working)if(node.tags.includes(tag))byId.set(node.id,node);
-        return [...byId.values()].sort((a,b)=>b.timestamp-a.timestamp||a.id.localeCompare(b.id))[0]??null;
+        return (await this.getRecentObservations(tag,1))[0]??null;
     }
 
     public async retrieve(query: string, filterTag?: string, agentId?: string): Promise<MemoryNode[]> {

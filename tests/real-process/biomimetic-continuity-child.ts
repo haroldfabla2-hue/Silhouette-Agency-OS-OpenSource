@@ -21,6 +21,48 @@ if (mode === 'experience-write') {
     assert.deepEqual(read.find(x => x.id === original.id), original);
     assert.equal(experienceBuffer.getRecent().length, 0, 'fresh process RAM is not a durable history claim');
     console.log(JSON.stringify({ mode, fresh_process_identity_time_and_fields_retained: true }));
+} else if (mode === 'experience-learning-read') {
+    const { experienceBuffer } = await import('../../services/experienceBuffer');
+    const { learningLoop } = await import('../../services/learningLoop');
+    const original = JSON.parse(fs.readFileSync(resultFile, 'utf8'));
+    assert.equal(experienceBuffer.getRecent().length, 0, 'new process starts with no RAM replay');
+    const failures = await (learningLoop as any).getRecentFailures(experienceBuffer, 86400000);
+    assert.ok(failures.some((e: any) => e.context === original.context && e.timestamp === original.timestamp
+        && e.error === original.outcome && e.source === original.agentId), 'durable failure must reach actual learning selector after restart');
+    console.log(JSON.stringify({ mode, fresh_process_learning_selector_retains_original_failure: true }));
+} else if (mode === 'experience-window') {
+    const { lancedbService } = await import('../../services/lancedbService');
+    const { experienceBuffer } = await import('../../services/experienceBuffer');
+    const { learningLoop } = await import('../../services/learningLoop');
+    const { MemoryTier } = await import('../../types');
+    const base = Date.now() - 10000;
+    const records = Array.from({length:105}, (_, i) => {
+        const exp = {id:`window-experience-${i}`, type:'FAILURE', context:`window-context-${i}`,
+            action:'authored local fixture', outcome:'authored fixture failure', timestamp:base+i, agentId:'window-agent'};
+        return {id:`window-memory-${i}`, content:`[EXPERIENCE:FAILURE] V2 ${JSON.stringify(exp)}`,
+            timestamp:exp.timestamp, tier:MemoryTier.LONG, importance:0.5, tags:['EXPERIENCE','FAILURE'], accessCount:0, lastAccess:exp.timestamp};
+    });
+    records.push({...records[0], id:'not-an-experience', timestamp:base+9999, tags:['FAILURE'], content:'ordinary error, not an experience'});
+    await lancedbService.storeMany(records);
+    const selected = await experienceBuffer.getRecentDurable(100, 'FAILURE');
+    assert.equal(selected.length, 100);
+    assert.equal(selected[0].id, 'window-experience-104');
+    assert.equal(selected[99].id, 'window-experience-5');
+    const failures = await (learningLoop as any).getRecentFailures(experienceBuffer, 86400000);
+    assert.equal(failures.length, 100);
+    assert.equal(failures[0].context, 'window-context-104');
+    await assert.rejects(experienceBuffer.getRecentDurable(101));
+    await assert.rejects(experienceBuffer.getRecentDurable(NaN));
+    // A canonical update can remove the selector tag. Stale prior rows must not win.
+    await lancedbService.store({...records[104], tags:['EXPERIENCE','SUCCESS'],
+        content:records[104].content.replace('EXPERIENCE:FAILURE', 'EXPERIENCE:SUCCESS').replace('"type":"FAILURE"', '"type":"SUCCESS"')});
+    const updated = await experienceBuffer.getRecentDurable(100, 'FAILURE');
+    assert.equal(updated[0].id, 'window-experience-103');
+    await lancedbService.store({...records[0], id:'malformed-experience', timestamp:base+10000,
+        content:'[EXPERIENCE:FAILURE] V2 {broken'});
+    await assert.rejects(experienceBuffer.getRecentDurable(100, 'FAILURE'), /Invalid durable experience/);
+    console.log(JSON.stringify({mode, bounded_latest_failures:100, unrelated_tags_excluded:true,
+        canonical_update_respected:true, malformed_experience_not_empty_success:true}));
 } else if (mode === 'experience-rejected') {
     const { experienceBuffer } = await import('../../services/experienceBuffer');
     await assert.rejects(experienceBuffer.recordFailure('fixture-rejected', 'fixture-action', 'memory that is identical to itself'), /persistence unverified/);

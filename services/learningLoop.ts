@@ -140,18 +140,16 @@ class LearningLoop {
      * Get recent failures from experience buffer
      */
     private async getRecentFailures(
-        experienceBuffer: { getRecent(count: number, type?: ExperienceType): RecordedExperience[] },
+        experienceBuffer: { getRecentDurable(count: number, type?: ExperienceType): Promise<RecordedExperience[]> },
         timeWindowMs: number
     ): Promise<Experience[]> {
         if (!Number.isFinite(timeWindowMs) || timeWindowMs <= 0) {
             throw new Error('Learning failure window must be finite and positive');
         }
         const cutoff = Date.now() - timeWindowMs;
-        // Use the actual ExperienceBuffer contract. It records `type` and
-        // `outcome`, not a nonexistent getRecentExperiences/result API.
-        // This is explicitly the bounded current-process buffer, not a
-        // claim to recover all durable experiences after a restart.
-        return experienceBuffer.getRecent(100, 'FAILURE')
+        // Read original durable experiences after restart, not only this process's
+        // RAM. Observation-only storage reads do not invoke a provider or ranking.
+        return (await experienceBuffer.getRecentDurable(100, 'FAILURE'))
             .filter(e => e.type === 'FAILURE' && e.timestamp > cutoff)
             .map(e => ({ timestamp: e.timestamp, context: e.context,
                 action: e.action, result: 'FAILURE', error: e.outcome,

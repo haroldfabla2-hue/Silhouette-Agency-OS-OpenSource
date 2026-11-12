@@ -5,6 +5,7 @@ import { BrandDigitalTwin } from '../types';
 // Browser-safe Qdrant Client Wrapper
 class VectorMemoryService {
     private client: any;
+    private healthClient: any;
     private isConnected: boolean = false;
     private collectionName = QDRANT_CONFIG.collectionName;
 
@@ -15,6 +16,29 @@ class VectorMemoryService {
     /** Check if Qdrant is connected and ready for queries */
     public isReady(): boolean {
         return this.isConnected;
+    }
+
+    /** Observation only: never connect, create a collection, or run embedding. */
+    public async getHealth(): Promise<{ status: 'up' | 'down'; backend: 'qdrant' | 'disabled'; note?: string; latencyMs?: number }> {
+        const { configLoader } = await import('../server/config/configLoader');
+        if (configLoader.getConfig().modules.vectorDB === false) {
+            return { status: 'up', backend: 'disabled', note: 'Vector database disabled by config; no Qdrant availability claimed.' };
+        }
+        if (!this.isConnected || !this.client) return { status: 'down', backend: 'qdrant', note: 'Qdrant not connected' };
+        const start = Date.now();
+        try {
+            if (!this.healthClient) {
+                const { QdrantClient } = await import('@qdrant/js-client-rest');
+                this.healthClient = new QdrantClient({url: QDRANT_CONFIG.url,
+                    timeout: 1000, maxConnections: 1, checkCompatibility: false});
+            }
+            // SDK timeout aborts the request; a Promise.race alone would leave
+            // the 300-second default request running after the health timeout.
+            await this.healthClient.getCollections();
+            return { status: 'up', backend: 'qdrant', latencyMs: Date.now() - start };
+        } catch {
+            return { status: 'down', backend: 'qdrant', note: 'Qdrant read probe failed', latencyMs: Date.now() - start };
+        }
     }
 
     private connecting = false;
