@@ -11,8 +11,6 @@
  */
 
 import { toolRegistry } from './toolRegistry';
-import { backgroundLLM } from '../backgroundLLMService';
-import { experienceBuffer } from '../experienceBuffer';
 import { systemBus } from '../systemBus';
 import { SystemProtocol } from '../../types';
 
@@ -139,6 +137,7 @@ class ToolEvolver {
         // Get failure experiences for this tool
         let failureContext = '';
         try {
+            const { experienceBuffer } = await import('../experienceBuffer');
             const failures = experienceBuffer.getRecent(20, 'FAILURE');
             const toolFailures = failures
                 .filter((e: any) => e.context?.includes(toolName) && e.result === 'FAILURE')
@@ -172,6 +171,7 @@ Respond with JSON:
 }`;
 
         try {
+            const { backgroundLLM } = await import('../backgroundLLMService');
             const response = await backgroundLLM.generate(prompt, {
                 taskType: 'CODE',
                 priority: 'LOW'
