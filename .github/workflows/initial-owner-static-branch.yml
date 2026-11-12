@@ -14,8 +14,17 @@ jobs:
     timeout-minutes: 15
     env:
       EXPECTED_COMMIT_SHA: ${{ github.sha }}
-      EVIDENCE: ${{ runner.temp }}/initial-owner-static-evidence
     steps:
+      - name: Initialize evidence location on runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/initial-owner-static-evidence"
+          mkdir -p "$evidence"
+          test -w "$evidence"
+          printf 'EVIDENCE_WRITABLE\n' > "$evidence/write-check.txt"
+          printf 'EVIDENCE=%s\n' "$evidence" >> "$GITHUB_ENV"
+
       - name: Checkout exact pushed candidate
         uses: actions/checkout@v4
         with:
