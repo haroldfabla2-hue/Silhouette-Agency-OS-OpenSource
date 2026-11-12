@@ -439,11 +439,10 @@ export class LanceDbService {
         await this.ensureInitialized();
         const safeId = id.replace(/'/g, "''");
         for (const tableName of ['memory_records_v2', 'memory'] as const) {
-            const rows = await this.withCurrentTable(tableName, async () => {
-                const current = (tableName === 'memory_records_v2' ? this.table : this.legacyTable);
-                if (!current) return [];
-                return current.query().where(`id = '${safeId}'`).limit(2).toArray();
-            });
+            if (!this.db || !(await this.db.tableNames()).includes(tableName)) continue;
+            const current = await this.db.openTable(tableName);
+            await current.checkoutLatest();
+            const rows = await current.query().where(`id = '${safeId}'`).limit(2).toArray();
             if (rows.length > 1) throw new Error(`Duplicate memory ID in LanceDB: ${id}`);
             if (rows.length) return JSON.parse(rows[0].json_data) as MemoryNode;
         }

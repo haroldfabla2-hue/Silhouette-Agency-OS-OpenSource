@@ -181,3 +181,12 @@ isolation or a full-consumer no-startup check.
   and vector stay current; an older receipt is rejected.
 
 These are focused real storage/component tests, not full app/OS-isolation acceptance.
+
+
+The strengthened stale-receipt ordering test initially FAILED with "missing expected
+rejection": an older Lance service instance's getNodeById used a stale table handle
+and saw its own old canonical source. That failed attempt is retained. Canonical
+point reads now open an independent latest handle before verifying checksums; the
+final strengthened test must pass before this fix is treated as evidence.
+
+After latest independent point-read fix, all four real component tests passed, including stale receipt rejection. Focused Vitest 41 tests passed before that final point-read change and are not represented as a full suite.
