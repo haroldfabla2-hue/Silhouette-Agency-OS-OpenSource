@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 87ee66e4ec07739abb5e8704aa22f2315bc66974
+          ref: 8b6be788bc701f84567a6c5a07b161ee693e2c37
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -23,7 +23,7 @@ jobs:
         run: |
           set -eu
           test "$REPOSITORY_PRIVATE" = false
-          test "$(git rev-parse HEAD)" = 87ee66e4ec07739abb5e8704aa22f2315bc66974
+          test "$(git rev-parse HEAD)" = 8b6be788bc701f84567a6c5a07b161ee693e2c37
           test -z "$(git status --porcelain)"
           test ! -e .env && test ! -e .env.local
           node --version
@@ -60,7 +60,7 @@ jobs:
           set -eu
           fixture="$RUNNER_TEMP/silhouette-selfdev-fixture"
           mkdir -p "$fixture"
-          git archive 87ee66e4ec07739abb5e8704aa22f2315bc66974 | tar -x -C "$fixture"
+          git archive 8b6be788bc701f84567a6c5a07b161ee693e2c37 | tar -x -C "$fixture"
           ln -s /tmp/project/node_modules "$fixture/node_modules"
           node_bin=$(command -v node)
           bwrap --unshare-user --uid 0 --gid 0 --unshare-net --cap-add ALL --cap-drop CAP_DAC_OVERRIDE --cap-drop CAP_DAC_READ_SEARCH --die-with-parent --ro-bind / / --tmpfs /root --tmpfs /home --tmpfs /opt --tmpfs /tmp --tmpfs /run --ro-bind "$GITHUB_WORKSPACE" /tmp/project --tmpfs /tmp/project/node_modules/.vite-temp --tmpfs /tmp/project/node_modules/.vite --ro-bind "$node_bin" /tmp/bin/node --ro-bind "$RUNNER_TEMP/silhouette-test-browsers" /tmp/browsers --bind "$fixture" /tmp/work --proc /proc --dev /dev --chdir /tmp/work /bin/bash -c 'set -eu; ip link set lo up; exec /usr/bin/env -i PATH=/tmp/bin:/usr/bin:/bin HOME=/tmp/work/home NODE_ENV=test SILHOUETTE_PROVIDERS=off PLAYWRIGHT_BROWSERS_PATH=/tmp/browsers NODE_OPTIONS=--max-old-space-size=1100 /usr/bin/timeout 360 /tmp/bin/node node_modules/vitest/vitest.mjs run --maxWorkers 5 --retry=0'
