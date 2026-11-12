@@ -10,8 +10,16 @@ import { systemBus } from '../systemBus';
 import { SystemProtocol } from '../../types';
 import { ttsService } from '../ttsService';
 import { isDemoModeEnabled } from '../security/capabilityState';
-import { generateText } from '../geminiService';
+import { assertExternalProvidersEnabled } from '../security/bootMode';
 import { voiceLibraryService } from '../media/voiceLibraryService';
+
+// The policy must reject before loading the provider/app graph. ON delegates
+// the exact existing implementation without changing prompts or model routing.
+async function generateTelephonyText(prompt: string): Promise<string> {
+    assertExternalProvidersEnabled();
+    const { generateText } = await import('../geminiService');
+    return generateText(prompt);
+}
 
 export type CallDirection = 'INBOUND' | 'OUTBOUND';
 export type CallStatus = 'QUEUED' | 'RINGING' | 'IN_PROGRESS' | 'COMPLETED' | 'BUSY' | 'FAILED';
@@ -480,7 +488,7 @@ Agent Response (spoken naturally):`;
 
         let responseText = "Understood. I am processing that request for you right now.";
         try {
-            const rawResponse = await generateText(systemPrompt);
+            const rawResponse = await generateTelephonyText(systemPrompt);
             if (rawResponse && rawResponse.trim()) {
                 responseText = rawResponse.trim().replace(/[*_#`]/g, '');
             }
@@ -616,7 +624,7 @@ Agent Response (spoken naturally):`;
 Summarize this phone conversation in 2 sentences. Highlight any agreed terms, reservations, numbers, or action items:
 ${fullTranscriptText}
 `;
-            const generatedSummary = await generateText(summaryPrompt);
+            const generatedSummary = await generateTelephonyText(summaryPrompt);
             if (generatedSummary && generatedSummary.trim()) {
                 summary = generatedSummary.trim();
             }

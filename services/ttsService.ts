@@ -2,9 +2,6 @@
 import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
-import { resourceArbiter } from './resourceArbiter';
-import { systemBus } from './systemBus';
-import { SystemProtocol } from '../types';
 import { minimaxService } from './minimaxService'; // Inject Minimax TTS
 
 export interface VoiceConfig {
@@ -19,6 +16,15 @@ export class TTSService {
     private static instance: TTSService;
     private pythonEngineUrl = process.env.VOICE_ENGINE_URL || 'http://localhost:8100';
     private isEngineAwake = false;
+    private backgroundStopped = false;
+    private healthTimer: ReturnType<typeof setInterval> | null = null;
+    private healthControllers = new Set<AbortController>();
+    private healthRequests = new Set<Promise<void>>();
+    private initialConfig: Promise<void>;
+    private initialHealth: Promise<void>;
+    private backgroundReady: Promise<void>;
+    private healthFailures: unknown[] = [];
+    private backgroundStop: Promise<void> | null = null;
 
     // Config default
     private config: VoiceConfig = {
@@ -30,11 +36,31 @@ export class TTSService {
 
     private constructor() {
         console.log('[TTS] Service Initialized. Connecting to Voice Engine...');
-        this.loadConfig(); // Load from DB
-        this.checkEngineHealth();
-
-        // Periodic Health Check
-        setInterval(() => this.checkEngineHealth(), 30000);
+        // Preserve automatic bootstrap and the existing health-check cadence.
+        this.initialConfig = this.loadConfig();
+        this.initialHealth = this.checkEngineHealth();
+        // Keep each owned operation, not only the fail-fast aggregate.
+        void this.initialConfig.catch(error => {
+            console.error('[TTS] Initial config load failed', error);
+        });
+        void this.initialHealth.catch(error => {
+            console.error('[TTS] Initial health check failed', error);
+        });
+        this.backgroundReady = Promise.all([
+            this.initialConfig,
+            this.initialHealth
+        ]).then(() => undefined);
+        void this.backgroundReady.catch(error => {
+            console.error('[TTS] Background initialization failed', error);
+        });
+        this.healthTimer = setInterval(() => {
+            if (!this.backgroundStopped) {
+                void this.checkEngineHealth().catch(error => {
+                    this.healthFailures.push(error);
+                    console.error('[TTS] Background health check failed', error);
+                });
+            }
+        }, 30000);
     }
 
     private async loadConfig() {
@@ -53,7 +79,7 @@ export class TTSService {
             // 2. Allow SQLite runtime overrides (Web UI/Telegram settings)
             const { sqliteService } = await import('./sqliteService');
             const savedConfig = sqliteService.getConfig('voice_settings');
-            if (savedConfig) {
+            if (savedConfig && !this.backgroundStopped) {
                 this.config = { ...this.config, ...savedConfig };
             }
         } catch (e) {
@@ -254,13 +280,51 @@ export class TTSService {
         }
     }
 
-    private async checkEngineHealth() {
-        try {
-            await axios.get(`${this.pythonEngineUrl}/`);
-            this.isEngineAwake = true;
-        } catch (e) {
-            this.isEngineAwake = false;
-        }
+    /** Initial config load and health check settled; not an availability guarantee. */
+    public ready(): Promise<void> {
+        return this.backgroundReady;
+    }
+
+    /** Stops constructor-owned config initialization/health polling only.
+     * Owners must separately await speech, wake, sleep and config writes.
+     * Terminal: no implicit restart and no global application shutdown.
+     */
+    public stopBackgroundWork(): Promise<void> {
+        if (this.backgroundStop) return this.backgroundStop;
+        this.backgroundStopped = true;
+        if (this.healthTimer !== null) clearInterval(this.healthTimer);
+        this.healthTimer = null;
+        for (const controller of this.healthControllers) controller.abort();
+        // Admission is closed synchronously, so this is the complete owned set.
+        this.backgroundStop = Promise.allSettled([
+            this.initialConfig,
+            this.initialHealth,
+            ...this.healthRequests
+        ]).then(results => {
+            const failures = results.flatMap(result => result.status === 'rejected' ? [result.reason] : []);
+            // Also retain rejected interval work that settled before stop.
+            for (const failure of this.healthFailures) if (!failures.includes(failure)) failures.push(failure);
+            if (failures.length) throw new AggregateError(failures, 'TTS background drainage failed');
+        });
+        return this.backgroundStop;
+    }
+
+    private checkEngineHealth(): Promise<void> {
+        if (this.backgroundStopped) return Promise.resolve();
+        const controller = new AbortController();
+        this.healthControllers.add(controller);
+        const request: Promise<void> = axios.get(`${this.pythonEngineUrl}/`, { signal: controller.signal })
+            .then(() => {
+                if (!this.backgroundStopped) this.isEngineAwake = true;
+            }, () => {
+                if (!this.backgroundStopped) this.isEngineAwake = false;
+            })
+            .finally(() => {
+                this.healthControllers.delete(controller);
+                this.healthRequests.delete(request);
+            });
+        this.healthRequests.add(request);
+        return request;
     }
 
     public getHealth() {

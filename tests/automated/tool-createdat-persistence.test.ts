@@ -1,15 +1,34 @@
-import { describe, it, expect } from 'vitest';
-import { mkdtempSync } from 'node:fs';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-// Isolate persistence (tools.db lands in cwd/data) before importing the modules.
-process.chdir(mkdtempSync(join(tmpdir(), 'tool-createdat-')));
+// Register cleanup before setup imports; this test owns only its tools database.
+const originalCwd = process.cwd();
+let persistenceDir: string | undefined;
+let toolRegistry: typeof import('../../services/tools/toolRegistry').toolRegistry;
+let toolPersistence: typeof import('../../services/tools/toolPersistence').toolPersistence;
+let toolEvolver: typeof import('../../services/tools/toolEvolver').toolEvolver;
 
-const { toolRegistry } = await import('../../services/tools/toolRegistry');
-const { toolPersistence } = await import('../../services/tools/toolPersistence');
-const { toolEvolver } = await import('../../services/tools/toolEvolver');
+afterAll(() => {
+    try {
+        toolPersistence?.close();
+    } finally {
+        process.chdir(originalCwd);
+    }
+    // A failed close propagates and leaves the directory for inspection.
+    if (persistenceDir) rmSync(persistenceDir, { recursive: true, force: true });
+});
+
+beforeAll(async () => {
+    // Isolate persistence (tools.db lands in cwd/data) before importing modules.
+    persistenceDir = mkdtempSync(join(tmpdir(), 'tool-createdat-'));
+    process.chdir(persistenceDir);
+    ({ toolRegistry } = await import('../../services/tools/toolRegistry'));
+    ({ toolPersistence } = await import('../../services/tools/toolPersistence'));
+    ({ toolEvolver } = await import('../../services/tools/toolEvolver'));
+});
 
 const probe: any = {
     id: 'tool_zz_touch_probe',

@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
-import { resolveStagehandStatus, StagehandPerception, StagehandLike } from '../../services/browser/stagehandPerception';
+import { resolveStagehandStatus, StagehandPerception, StagehandLike, ownStagehandRuntime } from '../../services/browser/stagehandPerception';
 import { routePerception, BuiltinBrowser } from '../../services/browser/perceptionRouter';
 
-const REAL_ENV = { STAGEHAND_MODEL: 'test/model-x', STAGEHAND_MODEL_API_KEY: 'k-test' };
+const REAL_ENV = { STAGEHAND_MODEL: 'openai/fixture-routing-only', STAGEHAND_MODEL_API_KEY: 'k-test' };
 
 // Simulated Stagehand runtime: used ONLY in tests.
 function fakeRuntime(observed: any[], actResult: any = { data: { success: true, message: 'ok', actionDescription: '', actions: [] } }) {
@@ -37,9 +37,15 @@ describe('Stagehand status is driven by configuration only', () => {
     it('REAL with model + key; model and key are never defaulted', () => {
         const st = resolveStagehandStatus(REAL_ENV);
         expect(st.status).toBe('REAL');
-        expect(st.settings?.model).toBe('test/model-x');
+        expect(st.settings?.model).toBe('openai/fixture-routing-only');
         expect(resolveStagehandStatus({ STAGEHAND_MODEL: 'm' }).status).toBe('UNAVAILABLE');
         expect(resolveStagehandStatus({ STAGEHAND_MODEL_API_KEY: 'k' }).status).toBe('UNAVAILABLE');
+    });
+    it('rejects invalid ModelConfig separately from missing settings using real SDK schema', () => {
+        const st = resolveStagehandStatus({ ...REAL_ENV, STAGEHAND_MODEL: 'test/model-x' });
+        expect(st.status).toBe('UNAVAILABLE');
+        expect(st.missing).toEqual([]);
+        expect(st.reason).toContain('Invalid STAGEHAND_MODEL');
     });
     it('remote browser additionally requires BROWSERBASE_API_KEY; bad browser kind is rejected', () => {
         expect(resolveStagehandStatus({ ...REAL_ENV, STAGEHAND_BROWSER: 'browserbase' }).missing).toEqual(['BROWSERBASE_API_KEY']);
@@ -68,7 +74,7 @@ describe('UNAVAILABLE path: no fake, honest fallback to the built-in engine', ()
     });
 });
 
-describe('REAL path (simulated runtime, tests only)', () => {
+describe('Configured routing only (injected runtime, NOT SDK semantic acceptance)', () => {
     it('observe/extract go through the runtime and the builtin engine is not touched', async () => {
         const { inst } = fakeRuntime([{ selector: '#a', description: 'Login button', method: 'click' }]);
         const sp = new StagehandPerception(() => REAL_ENV, async () => inst);
@@ -119,4 +125,39 @@ describe('REAL path (simulated runtime, tests only)', () => {
         expect(r.success).toBe(false);
         expect(r.error).toContain('element detached');
     });
+});
+
+// These standins test ownership control flow only, NOT browser functionality or SDK success.
+describe('ownership logic only (not a live browser test)', () => {
+    for (const mode of ['ok', 'runtime', 'browser', 'both', 'undefined']) {
+        it(`closes both owned resources once and keeps original error: ${mode}`, async () => {
+            const order: string[] = [];
+            const first = new Error('runtime-close-fixture');
+            const second = new Error('browser-close-fixture');
+            const runtime: StagehandLike = {
+                act: async function () { return this; },
+                observe: async function () { return this; },
+                extract: async function () { return this; },
+                close: async () => {
+                    order.push('runtime');
+                    if (mode === 'undefined') throw undefined;
+                    if (mode === 'runtime' || mode === 'both') throw first;
+                },
+            };
+            const browser = { close: async () => { order.push('browser'); if (mode === 'browser' || mode === 'both') throw second; } };
+            const wrapped = ownStagehandRuntime(runtime, browser);
+            expect(await wrapped.act('fixture')).toBe(runtime);
+            expect(await wrapped.observe()).toBe(runtime);
+            expect(await wrapped.extract('fixture')).toBe(runtime);
+            const closing = wrapped.close();
+            expect(wrapped.close()).toBe(closing);
+            if (mode === 'ok') await closing;
+            else {
+                let rejected = false;
+                try { await closing; } catch (error) { rejected = true; expect(error).toBe(mode === 'undefined' ? undefined : mode === 'browser' ? second : first); }
+                expect(rejected).toBe(true);
+            }
+            expect(order).toEqual(['runtime', 'browser']);
+        });
+    }
 });

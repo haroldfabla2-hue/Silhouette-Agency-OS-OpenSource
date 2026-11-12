@@ -39,9 +39,10 @@ export class OllamaService {
     private readonly QUEUE_NAME = 'ollama-execution-queue';
     public serviceName = "Ollama Native Brain";
 
-    constructor() {
-        // Only initialize the lightweight HTTP client eagerly.
-        this.ollama = new Ollama({ host: 'http://localhost:11434' });
+    constructor(client: Ollama = new Ollama({ host: 'http://localhost:11434' })) {
+        // Only initialize the lightweight HTTP client eagerly. A caller may
+        // own an actual SDK client; the production default host is unchanged.
+        this.ollama = client;
     }
 
     /**
@@ -95,8 +96,9 @@ export class OllamaService {
         if (!localInferenceAllowed()) return false;
         if (this.isCircuitOpen) return false;
         try {
-            await this.ollama.list(); // Simple ping
-            return true;
+            const listing = await this.ollama.list();
+            // Reachable listing endpoint only, not model/generation readiness.
+            return listing !== null && typeof listing === 'object' && Array.isArray(listing.models);
         } catch (error) {
             return false;
         }
