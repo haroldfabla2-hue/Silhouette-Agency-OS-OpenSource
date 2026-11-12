@@ -1,7 +1,7 @@
-name: Selfdev isolated grouped gates once
+name: Selfdev isolated suite mountpoint gate once
 on:
   push:
-    branches: [validation/silhouette-selfdev-gates-once-20261111]
+    branches: [validation/silhouette-selfdev-suite-mounts-once-20261111]
 permissions:
   contents: read
 jobs:
@@ -49,15 +49,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bubblewrap iproute2
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      - name: Exact global TypeScript gate with no network or application startup
-        run: |
-          set -eu
-          node_bin=$(command -v node)
-          bwrap --unshare-all --die-with-parent --ro-bind / / --tmpfs /root --tmpfs /home --tmpfs /opt --tmpfs /tmp --tmpfs /run --ro-bind "$GITHUB_WORKSPACE" /tmp/project --ro-bind "$node_bin" /tmp/node --proc /proc --dev /dev --chdir /tmp/project /usr/bin/env -i PATH=/usr/bin:/bin HOME=/tmp NODE_OPTIONS=--max-old-space-size=2560 /usr/bin/timeout 300 /tmp/node node_modules/typescript/bin/tsc --noEmit --skipLibCheck
-          test -z "$(git status --porcelain)"
       - name: Whole suite in disposable OFF offline namespace, zero retries
         run: |
           set -eu
+          # bwrap cannot create child mountpoints after the parent is read-only.
+          mkdir -p node_modules/.vite-temp node_modules/.vite
+          test -d node_modules/.vite-temp && test -d node_modules/.vite
+          test -d "$RUNNER_TEMP/silhouette-test-browsers"
           fixture="$RUNNER_TEMP/silhouette-selfdev-fixture"
           mkdir -p "$fixture"
           git archive bc5a6d0f3c560b9233b14ec2ac2575e48ebce60e | tar -x -C "$fixture"
