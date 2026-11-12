@@ -1,0 +1,67 @@
+name: Selfdev isolated grouped gates once
+on:
+  push:
+    branches: [validation/silhouette-selfdev-gates-once-20261111]
+permissions:
+  contents: read
+jobs:
+  grouped-gates:
+    if: github.repository == 'haroldfabla2-hue/Silhouette-Agency-OS-OpenSource' && github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 87ee66e4ec07739abb5e8704aa22f2315bc66974
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Verify exact source and public standard runner scope
+        env:
+          REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+        run: |
+          set -eu
+          test "$REPOSITORY_PRIVATE" = false
+          test "$(git rev-parse HEAD)" = 87ee66e4ec07739abb5e8704aa22f2315bc66974
+          test -z "$(git status --porcelain)"
+          test ! -e .env && test ! -e .env.local
+          node --version
+          sha256sum package-lock.json tsconfig.json
+          free -m
+      - name: Install locked dependencies without general lifecycle execution
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 'true'
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Prepare explicit native test dependencies and browser
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 'true'
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/silhouette-test-browsers
+        run: |
+          set -eu
+          npm rebuild better-sqlite3 esbuild sharp usearch msgpackr-extract --no-audit --no-fund
+          node node_modules/playwright/cli.js install --with-deps chromium
+          node -e "require('better-sqlite3'); require('@lancedb/lancedb'); require('@xenova/transformers'); require('usearch'); console.log('Native test dependencies importable')"
+      - name: Install OS isolation boundary
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap iproute2
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Exact global TypeScript gate with no network or application startup
+        run: |
+          set -eu
+          node_bin=$(command -v node)
+          bwrap --unshare-all --die-with-parent --ro-bind / / --tmpfs /root --tmpfs /home --tmpfs /opt --tmpfs /tmp --tmpfs /run --ro-bind "$GITHUB_WORKSPACE" /tmp/project --ro-bind "$node_bin" /tmp/node --proc /proc --dev /dev --chdir /tmp/project /usr/bin/env -i PATH=/usr/bin:/bin HOME=/tmp NODE_OPTIONS=--max-old-space-size=2560 /usr/bin/timeout 300 /tmp/node node_modules/typescript/bin/tsc --noEmit --skipLibCheck
+          test -z "$(git status --porcelain)"
+      - name: Whole suite in disposable OFF offline namespace, zero retries
+        run: |
+          set -eu
+          fixture="$RUNNER_TEMP/silhouette-selfdev-fixture"
+          mkdir -p "$fixture"
+          git archive 87ee66e4ec07739abb5e8704aa22f2315bc66974 | tar -x -C "$fixture"
+          ln -s /tmp/project/node_modules "$fixture/node_modules"
+          node_bin=$(command -v node)
+          bwrap --unshare-user --uid 0 --gid 0 --unshare-net --cap-add ALL --cap-drop CAP_DAC_OVERRIDE --cap-drop CAP_DAC_READ_SEARCH --die-with-parent --ro-bind / / --tmpfs /root --tmpfs /home --tmpfs /opt --tmpfs /tmp --tmpfs /run --ro-bind "$GITHUB_WORKSPACE" /tmp/project --tmpfs /tmp/project/node_modules/.vite-temp --tmpfs /tmp/project/node_modules/.vite --ro-bind "$node_bin" /tmp/bin/node --ro-bind "$RUNNER_TEMP/silhouette-test-browsers" /tmp/browsers --bind "$fixture" /tmp/work --proc /proc --dev /dev --chdir /tmp/work /bin/bash -c 'set -eu; ip link set lo up; exec /usr/bin/env -i PATH=/tmp/bin:/usr/bin:/bin HOME=/tmp/work/home NODE_ENV=test SILHOUETTE_PROVIDERS=off PLAYWRIGHT_BROWSERS_PATH=/tmp/browsers NODE_OPTIONS=--max-old-space-size=1100 /usr/bin/timeout 360 /tmp/bin/node node_modules/vitest/vitest.mjs run --maxWorkers 5 --retry=0'
+          test -z "$(git status --porcelain)"
