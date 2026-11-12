@@ -14,6 +14,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import crypto from 'node:crypto';
 import { agentFileSystem } from '../agents/agentFileSystem';
 
 // ═══════════════════════════════════════════════════════════════
@@ -40,7 +41,8 @@ export interface WALEntry {
         taskDescription?: string;
         metadata?: Record<string, any>;
     };
-    status: 'PENDING' | 'COMMITTED';
+    status: 'PENDING' | 'COMMITTED' | 'INTERRUPTED';
+    interruption?: { detectedAt: number; reason: string };
 }
 
 export interface ConsolidationStats {
@@ -63,13 +65,17 @@ export class ContinuousMemoryService {
         lastConsolidation: Date.now()
     };
     private consolidationInterval: ReturnType<typeof setInterval> | null = null;
-    private walWritePending = false;
+    private initialized = false;
+    private closed = false;
+    private storageError: Error | null = null;
 
     /**
      * Initialize the service. Call on system startup.
      * Replays any pending WAL entries from a previous crash.
      */
     public initialize(): void {
+        this.assertStorageUsable();
+        if (this.initialized) return;
         // Ensure WAL directory exists
         if (!fs.existsSync(WAL_DIR)) {
             fs.mkdirSync(WAL_DIR, { recursive: true });
@@ -84,9 +90,13 @@ export class ContinuousMemoryService {
             this.replayPendingEntries(pendingEntries);
         }
 
+        this.initialized = true;
+
         // Start periodic consolidation (every 30 seconds)
         this.consolidationInterval = setInterval(() => {
-            this.periodicConsolidation();
+            try { this.periodicConsolidation(); } catch (error) {
+                console.error('[CONTINUOUS_MEM] Consolidation persistence failed; writes blocked:', error);
+            }
         }, 30000);
 
         console.log(`[CONTINUOUS_MEM] ✅ Continuous Memory Service initialized`);
@@ -96,14 +106,22 @@ export class ContinuousMemoryService {
      * Shutdown cleanly — flush all pending entries.
      */
     public shutdown(): void {
+        if (this.closed) return;
+        try { this.ensureReady(); } catch (error) {
+            if (this.consolidationInterval) clearInterval(this.consolidationInterval);
+            this.consolidationInterval = null;
+            throw error;
+        }
         if (this.consolidationInterval) {
             clearInterval(this.consolidationInterval);
             this.consolidationInterval = null;
         }
 
-        // Final flush
-        this.flushAll();
-        console.log(`[CONTINUOUS_MEM] 🛑 Shutdown complete. All memories flushed.`);
+        // Shutdown is not evidence of completed processing. Preserve pending
+        // payloads synchronously for honest recovery in the next process.
+        this.persistWAL();
+        this.closed = true;
+        console.log(`[CONTINUOUS_MEM] Shutdown persisted; ${this.wal.filter(e => e.status !== 'COMMITTED').length} unfinished entries retained.`);
     }
 
     // ───────────────────────────────────────────────────────────
@@ -119,15 +137,18 @@ export class ContinuousMemoryService {
         type: WALEntry['type'],
         data: WALEntry['data']
     ): string {
+        this.ensureReady();
+        const previous = [...this.wal];
         const entry: WALEntry = {
-            id: `wal-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            id: `wal-${crypto.randomUUID()}`,
             timestamp: Date.now(),
             agentId,
             type,
-            data,
+            data: JSON.parse(JSON.stringify(data)), // freeze the durable input, not a caller-owned mutable object
             status: 'PENDING'
         };
 
+        if (!this.validRecord(entry)) throw new Error('Invalid WAL entry');
         this.wal.push(entry);
 
         // [FIX 2026-02] Enforce WAL size cap — evict oldest committed entries first
@@ -140,7 +161,7 @@ export class ContinuousMemoryService {
             }
         }
 
-        this.persistWAL();
+        try { this.persistWAL(); } catch (error) { this.wal = previous; throw error; }
 
         return entry.id;
     }
@@ -150,35 +171,39 @@ export class ContinuousMemoryService {
      * This triggers micro-consolidation.
      */
     public commitEntry(walId: string, output?: string): void {
+        this.ensureReady();
         const entry = this.wal.find(e => e.id === walId);
-        if (!entry) return;
-
-        entry.status = 'COMMITTED';
-        if (output) {
-            entry.data.output = output;
+        if (!entry) throw new Error(`Unknown WAL entry ${walId}`);
+        if (entry.status === 'COMMITTED') {
+            if (output !== undefined && output !== entry.data.output) throw new Error('Conflicting WAL commit retry');
+            return;
         }
-
-        // Micro-consolidation: save to agent's MEMORY.md immediately
-        this.microConsolidate(entry);
-        this.persistWAL();
+        const previous = JSON.parse(JSON.stringify(entry)) as WALEntry;
+        try {
+            if (output !== undefined) entry.data.output = output;
+            this.microConsolidate(entry);
+            entry.status = 'COMMITTED';
+            this.persistWAL();
+        } catch (error) { Object.assign(entry, previous); throw error; }
     }
 
-    /**
-     * Micro-consolidation: persist a summary of the completed entry to the agent's memory.
-     */
-    private microConsolidate(entry: WALEntry): void {
-        try {
-            if (entry.type === 'TASK_COMPLETED' || entry.type === 'MESSAGE_RECEIVED') {
-                const summary = this.buildMemorySummary(entry);
-                if (summary) {
-                    agentFileSystem.appendMemory(entry.agentId, summary);
-                    this.stats.memoriesSaved++;
-                }
-            }
-            this.stats.entriesProcessed++;
-        } catch (error) {
-            console.error(`[CONTINUOUS_MEM] ⚠️ Micro-consolidation failed for ${entry.id}:`, error);
+    private appendVerified(entry: WALEntry, text: string, kind: 'COMMIT' | 'INTERRUPTION'): void {
+        const marker = `<!-- WAL_${kind}:${entry.id} -->`;
+        const receipt = `${marker}\n${text}`;
+        const before = agentFileSystem.readFile(entry.agentId, 'MEMORY.md');
+        if (!before.includes(receipt)) agentFileSystem.appendMemory(entry.agentId, receipt);
+        if (!agentFileSystem.readFile(entry.agentId, 'MEMORY.md').includes(receipt)) {
+            throw new Error(`WAL memory receipt unverified for ${entry.id}`);
         }
+    }
+
+    /** Persist the caller's completion receipt, not independent task correctness. */
+    private microConsolidate(entry: WALEntry): void {
+        if (entry.type === 'TASK_COMPLETED' || entry.type === 'MESSAGE_RECEIVED') {
+            const summary = this.buildMemorySummary(entry);
+            if (summary) { this.appendVerified(entry, summary, 'COMMIT'); this.stats.memoriesSaved++; }
+        }
+        this.stats.entriesProcessed++;
     }
 
     /**
@@ -219,34 +244,22 @@ export class ContinuousMemoryService {
 
         // Remove committed entries older than 5 minutes
         const fiveMinAgo = Date.now() - 5 * 60 * 1000;
+        const previous = [...this.wal];
         const before = this.wal.length;
         this.wal = this.wal.filter(e => {
-            // Keep pending entries always
-            if (e.status === 'PENDING') return true;
+            // Keep pending and interrupted entries always
+            if (e.status !== 'COMMITTED') return true; // interrupted work is still unresolved
             // Keep recent committed entries (< 5 min old)
             return e.timestamp > fiveMinAgo;
         });
 
         const cleaned = before - this.wal.length;
         if (cleaned > 0) {
+            try { this.persistWAL(); } catch (error) { this.wal = previous; throw error; }
             this.stats.walEntriesCleaned += cleaned;
-            this.persistWAL();
         }
 
         this.stats.lastConsolidation = Date.now();
-    }
-
-    /**
-     * Flush all pending entries as committed (used during shutdown).
-     */
-    private flushAll(): void {
-        for (const entry of this.wal) {
-            if (entry.status === 'PENDING') {
-                entry.status = 'COMMITTED';
-                this.microConsolidate(entry);
-            }
-        }
-        this.persistWAL();
     }
 
     // ───────────────────────────────────────────────────────────
@@ -259,20 +272,14 @@ export class ContinuousMemoryService {
      */
     private replayPendingEntries(entries: WALEntry[]): void {
         for (const entry of entries) {
-            console.log(`[CONTINUOUS_MEM] Replaying WAL entry: ${entry.type} for agent ${entry.agentId}`);
-
-            // Log recovery to the agent's memory
-            agentFileSystem.appendMemory(
-                entry.agentId,
-                `**⚠️ Recovery**: Previous session ended unexpectedly during ${entry.type}. ` +
-                `Task: ${entry.data.taskDescription || 'Unknown'}. Status: Recovered from WAL.`
-            );
-
-            // Mark as committed (we can't re-execute, but we can log it)
-            entry.status = 'COMMITTED';
-            this.stats.entriesProcessed++;
+            // A recovery notice is not a task result. Never invent COMMITTED
+            // merely because startup noticed unfinished work.
+            this.appendVerified(entry,
+                `**Interrupted work**: Previous session ended during ${entry.type}. ` +
+                `Task: ${entry.data.taskDescription || 'Unknown'}. Not re-executed; completion unverified.`, 'INTERRUPTION');
+            entry.status = 'INTERRUPTED';
+            entry.interruption = { detectedAt: Date.now(), reason: 'executor ended before a durable commit' };
         }
-
         this.persistWAL();
     }
 
@@ -280,29 +287,63 @@ export class ContinuousMemoryService {
     // WAL PERSISTENCE
     // ───────────────────────────────────────────────────────────
 
+    private assertStorageUsable(): void {
+        if (this.storageError) throw this.storageError;
+        if (this.closed) throw new Error('Continuous memory is shut down');
+    }
+
+    private ensureReady(): void {
+        this.assertStorageUsable();
+        if (!this.initialized) this.initialize();
+    }
+
+    private validRecord(entry: any): entry is WALEntry {
+        const base = path.resolve(process.cwd(), 'data', 'agents');
+        const agentPath = typeof entry?.agentId === 'string' ? path.resolve(base, entry.agentId) : base;
+        return !!entry && typeof entry.id === 'string' && !!entry.id
+            && agentPath.startsWith(base + path.sep) && Number.isFinite(entry.timestamp) && entry.timestamp > 0
+            && ['MESSAGE_RECEIVED','TASK_STARTED','TASK_COMPLETED','SESSION_CREATED','CHECKPOINT'].includes(entry.type)
+            && !!entry.data && typeof entry.data === 'object' && !Array.isArray(entry.data)
+            && ['PENDING','COMMITTED','INTERRUPTED'].includes(entry.status);
+    }
+
     private loadWAL(): void {
         try {
-            if (fs.existsSync(WAL_FILE)) {
-                const raw = fs.readFileSync(WAL_FILE, 'utf-8');
-                this.wal = JSON.parse(raw);
-            }
+            if (!fs.existsSync(WAL_FILE)) { this.wal = []; return; }
+            const records = JSON.parse(fs.readFileSync(WAL_FILE, 'utf-8'));
+            if (!Array.isArray(records) || !records.every(e => this.validRecord(e))
+                || new Set(records.map(e => e.id)).size !== records.length) throw new Error('Invalid WAL records');
+            this.wal = records;
         } catch (error) {
-            console.error('[CONTINUOUS_MEM] Failed to load WAL, starting fresh:', error);
-            this.wal = [];
+            this.storageError = error instanceof Error ? error : new Error(String(error));
+            console.error('[CONTINUOUS_MEM] WAL unreadable; original preserved and writes refused:', this.storageError);
+            throw this.storageError;
         }
     }
 
+    /** Write-ahead means the write is durable before the caller receives its ID.
+     * The synchronous API cannot defer durability to a microtask. */
     private persistWAL(): void {
-        if (this.walWritePending) return; // Coalesce rapid writes
-        this.walWritePending = true;
-        queueMicrotask(() => {
-            this.walWritePending = false;
-            try {
-                fs.writeFileSync(WAL_FILE, JSON.stringify(this.wal, null, 2), 'utf-8');
-            } catch (error) {
-                console.error('[CONTINUOUS_MEM] Failed to persist WAL:', error);
+        this.assertStorageUsable();
+        const temporary = `${WAL_FILE}.${process.pid}.${crypto.randomUUID()}.tmp`;
+        try {
+            fs.mkdirSync(WAL_DIR, { recursive: true });
+            const fd = fs.openSync(temporary, 'wx', 0o600);
+            try { fs.writeFileSync(fd, JSON.stringify(this.wal, null, 2), 'utf8'); fs.fsyncSync(fd); }
+            finally { fs.closeSync(fd); }
+            fs.renameSync(temporary, WAL_FILE);
+            // Directory fsync is supported on POSIX; Windows does not expose
+            // an equivalent directory handle through this API.
+            if (process.platform !== 'win32') {
+                const directory = fs.openSync(WAL_DIR, 'r');
+                try { fs.fsyncSync(directory); } finally { fs.closeSync(directory); }
             }
-        });
+        } catch (error) {
+            this.storageError = error instanceof Error ? error : new Error(String(error));
+            throw this.storageError;
+        } finally {
+            try { fs.unlinkSync(temporary); } catch { /* renamed or failed before creation */ }
+        }
     }
 
     // ───────────────────────────────────────────────────────────
