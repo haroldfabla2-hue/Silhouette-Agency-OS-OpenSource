@@ -65,3 +65,28 @@ rollback. Existing generic selfdev tests run editable code and cannot certify
 independent learning. No positive generative planner or runtime-applied useful
 learning is demonstrated. No production data, secrets, cloud providers or charges
 were used. No main merge, PR creation or deployment is authorized by this cut.
+
+## Consolidated verification-contract correction
+
+The completed all-OFF suite exposed a contract mismatch, not an all-green gate:
+22 inherited fixture transport/Brain/credential tests require their authored
+fixture values while OFF intentionally refuses them. Four further tests failed
+on preparation (npm/npx absent, browser default cache absent, fixture log path
+scrubbed), and one suite required a private ignored config file.
+
+The dead-config regression now decodes the tracked public example (currently
+UTF-16LE BOM) instead of reading private silhouette.config.json. Both original
+assertions remain: removed schema keys must stay absent, and config fixture must
+parse and contain neither removed key. No default object or private config is
+substituted. A clean checkout focal passed2/2.
+
+The checked-in exhaustive manifest lists five inherited fixture regression files
+and227 OFF files,232 total. The verification harness must prove exact set equality
+with source discovery and no duplicate paths before running. The five regressions
+are not cognition/provider acceptance; no real provider or secret is added. The
+other phase keeps global OFF, including actual boot subprocesses. Both phases
+have closed external networking and loopback only. No test assertions are removed,
+no mocks added, and no provider policy or environment allowlist is changed.
+
+A new exact-source grouped gate is still pending review/execution. Prior failed
+runs and incomplete local attempts remain failures/incomplete, never overwritten.
