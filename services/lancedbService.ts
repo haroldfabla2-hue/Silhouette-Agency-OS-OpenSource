@@ -10,6 +10,10 @@ const DB_PATH = process.env.SILHOUETTE_LANCEDB_PATH || path.resolve(process.cwd(
     ? `silhouette-test-worker-${process.env.VITEST_WORKER_ID}.lancedb`
     : 'silhouette.lancedb');
 const DEFAULT_DIMENSIONS = 768; // Hardcoded default to match the original schema
+// Identified reads keep projection + canonical JSON in memory together. The
+// general 25k scan page is too large for that join (real 256MiB canary OOM).
+// This is a batch bound, not a corpus/result ceiling; every page is read.
+const CANONICAL_VECTOR_PAGE_ROWS = 256;
 
 import { validEmbedding, scopeSql, inScope, type EmbeddingIdentity, type MemoryScope } from './memoryRetrieval';
 import { rankByCosine, toNumericArray, scanPageRows } from './vectorScan';
@@ -374,11 +378,11 @@ export class LanceDbService {
             // A cached writer handle may predate another process's canonical
             // update. Open the current table for each batch, without mutation.
             const current = await this.db.openTable(tableName);
-            const rows = await current.query().where(`id IN (${quoted})`).limit(missing.length * 2).toArray();
+            const rows = await current.query().select(['id', 'json_data']).where(`id IN (${quoted})`).limit(missing.length * 2).toArray();
             // Evaluate arbitrary SQL filters on canonical columns as well as
             // projection columns. Resolve IDs even if filtered or malformed so
             // an older legacy row cannot replace a newer excluded v2 record.
-            const eligible = filter ? new Set((await current.query()
+            const eligible = filter ? new Set((await current.query().select(['id'])
                 .where(`id IN (${quoted}) AND (${filter})`).limit(missing.length * 2).toArray())
                 .map(row => row.id)) : null;
             const seen = new Set<string>();
@@ -549,7 +553,7 @@ export class LanceDbService {
         // canonical content/identity. Use the paged exact read until that path
         // can validate candidates before top-k without losing later valid hits.
         // This is read-time payload validation, not a generation/ABA guarantee.
-        const pageRows = scanPageRows();
+        const pageRows = Math.min(scanPageRows(), CANONICAL_VECTOR_PAGE_ROWS);
         let top: { id: string; _score: number }[] = [];
         const winners = new Map<string, MemoryNode>();
         for (let offset = 0; offset < rowCount; offset += pageRows) {

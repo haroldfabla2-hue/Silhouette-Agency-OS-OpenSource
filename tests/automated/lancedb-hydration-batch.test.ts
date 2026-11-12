@@ -43,6 +43,20 @@ describe('Lance canonical hydration on real storage (no service doubles)', () =>
         const { service } = await fixture();
         expect(await service.search([1, 0, 0], 5, undefined, identity)).toEqual([]);
     });
+    it('keeps late-page top-k across a full 5199/4418 public corpus', async () => {
+        const dir = await mkdtemp(path.join(tmpdir(), 'canonical-scale-real-'));
+        dirs.push(dir);
+        const data = path.join(dir, 'lance');
+        const script = path.resolve('tests/integration/canonical-projection-scale.real.ts');
+        const env = { ...process.env, VECTOR_ENGINE: 'scan', LANCEDB_SCAN_PAGE_ROWS: '25000',
+            LANCEDB_OPTIMIZE_INTERVAL_MINUTES: '0', SILHOUETTE_LANCEDB_PATH: data };
+        execFileSync(process.execPath, ['--import', 'tsx', script, 'seed', data],
+            { env, encoding: 'utf8', timeout: 25000 });
+        const output = execFileSync(process.execPath, ['--import', 'tsx', script, 'read', data],
+            { env, encoding: 'utf8', timeout: 25000 });
+        expect(output).toContain('"scaleReadPass":true');
+        // RSS is recorded, not a portable substitute for a real cgroup cap.
+    });
     it('passes paged stale identity/content/owner, malformed and scope regression', () => {
         const parent = path.join(tmpdir(), 'canonical-subprocess-' + crypto.randomUUID());
         dirs.push(parent);
