@@ -18,8 +18,10 @@ for p,text in network['routes'].items():
   fields=line.split()
   assert not fields or (fields[0] if p.endswith('/route') else fields[-1])=='lo'
 assert subprocess.check_output(['node','--version'],text=True).strip()=='v22.18.0'
-# Only PATH/HOME/NODE_ENV. No providers-OFF switch, keys, URLs or inherited test knobs.
-env={'PATH':os.environ['PATH'],'HOME':'/tmp/home','NODE_ENV':'test'}
+# Explicit validation policy survives clean env, never falls back to mixed.
+assert os.environ.get('SILHOUETTE_INFERENCE_MODE')=='cloud-only','VALIDATION_POLICY_REQUIRED before phase admission'
+env={'PATH':os.environ['PATH'],'HOME':'/tmp/home','NODE_ENV':'test','SILHOUETTE_INFERENCE_MODE':os.environ['SILHOUETTE_INFERENCE_MODE']}
+print('VALIDATION_SUPERVISOR_POLICY: cloud-only',flush=True)
 pathlib.Path(env['HOME']).mkdir(exist_ok=True)
 phases=[('lint',['npm','run','lint'],180),('types',['npm','run','typecheck'],180),
  ('actual-owner-tests',['npm','test','--','tests/automated/fase1-chat-gateway.test.ts',

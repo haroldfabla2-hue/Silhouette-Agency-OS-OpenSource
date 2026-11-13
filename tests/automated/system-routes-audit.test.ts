@@ -1,3 +1,4 @@
+import '../setup/require-cloud-only';
 /**
  * Regression tests for the dashboard audit (batch 1):
  * 1. /auto-evolution routes must be registered at import time.

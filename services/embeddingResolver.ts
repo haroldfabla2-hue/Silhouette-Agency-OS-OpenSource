@@ -4,6 +4,7 @@ import { localEmbeddingService } from './localEmbeddingService';
 import { LOCAL_EMBEDDING_IDENTITY, geminiIdentity, type EmbeddingIdentity } from './embeddingIdentity';
 import { DEFAULT_GEMINI_EMBEDDING_MODEL, FALLBACK_GEMINI_EMBEDDING_MODEL, GEMINI_EMBEDDING_DIMENSIONS } from './llm/defaultModels';
 import { quotaLedger } from './quotaLedger';
+import { localInferenceAllowed } from './security/localInferencePolicy';
 
 let consecutiveEmbeddingFailures = 0;
 let isLocalEmbeddingPrimary = false;
@@ -26,22 +27,35 @@ export const generateEmbeddingWithIdentity = async (text: string, opts?: { allow
     // instead - the row stays EMBEDDING_PENDING and is retried when the real
     // provider recovers. Strict mode also never feeds the 3-strikes latch, so a
     // memory-path outage cannot silently switch identity for every other caller.
+    // Validate policy outside provider catches. A stale mixed-mode latch must
+    // never prevent an ordinary cloud-only request from trying its cloud path.
+    const localAllowed = localInferenceAllowed();
+    if (!localAllowed) isLocalEmbeddingPrimary = false;
     const allowFallbackIdentity = opts?.allowFallbackIdentity !== false;
+    const localFallback = async (): Promise<{ vector: number[]; identity: EmbeddingIdentity } | null> => {
+        // Recheck current policy at the effect boundary after any cloud await.
+        // Denial never makes another cloud request or invents an embedding.
+        const permittedNow = localInferenceAllowed();
+        if (!permittedNow) isLocalEmbeddingPrimary = false;
+        if (!allowFallbackIdentity || !permittedNow) {
+            console.warn('[EMBEDDING] Local fallback not selected by policy or identity; embedding unavailable');
+            return null;
+        }
+        const localVector = await localEmbeddingService.getEmbedding(text);
+        return localVector ? { vector: localVector, identity: LOCAL_EMBEDDING_IDENTITY } : null;
+    };
 
     if (isLocalEmbeddingPrimary) {
         if (!allowFallbackIdentity) return null;
-        // [PA-048] User requested permanent fallback after 3 strikes
-        const localVector = await localEmbeddingService.getEmbedding(text);
-        return localVector ? { vector: localVector, identity: LOCAL_EMBEDDING_IDENTITY } : null;
+        return localFallback();
     }
 
     const client = ensureClient();
     if (!client) {
         if (!allowFallbackIdentity) return null;
         // Fallback to local Transformers.js embedding (all-MiniLM-L6-v2)
-        console.log("[GeminiService] 🔌 Using Local Embedding Fallback for:", text.substring(0, 30));
-        const localVector = await localEmbeddingService.getEmbedding(text);
-        return localVector ? { vector: localVector, identity: LOCAL_EMBEDDING_IDENTITY } : null;
+        if (localInferenceAllowed()) console.log("[GeminiService] 🔌 Using Local Embedding Fallback for:", text.substring(0, 30));
+        return localFallback();
     }
 
     try {
@@ -54,8 +68,7 @@ export const generateEmbeddingWithIdentity = async (text: string, opts?: { allow
         if (cooldown) {
             console.warn(`[GeminiService] provider cooldown active for gemini:${DEFAULT_GEMINI_EMBEDDING_MODEL} until ${new Date(cooldown).toISOString()} (real 429 RetryInfo) - no call burned`);
             if (!allowFallbackIdentity) return null;
-            const localVector = await localEmbeddingService.getEmbedding(text);
-            return localVector ? { vector: localVector, identity: LOCAL_EMBEDDING_IDENTITY } : null;
+            return localFallback();
         }
         // preReserved: caller (backfill governor) already counted this
         // attempt atomically; recording again would double-count.
@@ -65,8 +78,7 @@ export const generateEmbeddingWithIdentity = async (text: string, opts?: { allow
         if (!qPrimary.allowed) {
             console.warn(`[GeminiService] QUOTA_BUDGET_EXCEEDED: local daily budget for gemini:${DEFAULT_GEMINI_EMBEDDING_MODEL} spent (${qPrimary.used}/${qPrimary.budget} attempts, day ${qPrimary.day}). Degrading honestly until quota reset.`);
             if (!allowFallbackIdentity) return null;
-            const localVector = await localEmbeddingService.getEmbedding(text);
-            return localVector ? { vector: localVector, identity: LOCAL_EMBEDDING_IDENTITY } : null;
+            return localFallback();
         }
 
         try {
@@ -96,8 +108,7 @@ export const generateEmbeddingWithIdentity = async (text: string, opts?: { allow
                     const qFallback = quotaLedger.recordAttempt('gemini', FALLBACK_GEMINI_EMBEDDING_MODEL);
                     if (!qFallback.allowed) {
                         console.warn(`[GeminiService] QUOTA_BUDGET_EXCEEDED: local daily budget for gemini:${FALLBACK_GEMINI_EMBEDDING_MODEL} spent (${qFallback.used}/${qFallback.budget} attempts, day ${qFallback.day}).`);
-                        const localVector = await localEmbeddingService.getEmbedding(text);
-                        return localVector ? { vector: localVector, identity: LOCAL_EMBEDDING_IDENTITY } : null;
+                        return localFallback();
                     }
                     const result = await client.models.embedContent({
                         model: FALLBACK_GEMINI_EMBEDDING_MODEL,
@@ -113,14 +124,13 @@ export const generateEmbeddingWithIdentity = async (text: string, opts?: { allow
                     consecutiveEmbeddingFailures++;
                     console.error(`[GeminiService] ❌ Fallback Embedding ${FALLBACK_GEMINI_EMBEDDING_MODEL} also failed:`, fallbackError.message || fallbackError);
 
-                    if (consecutiveEmbeddingFailures >= 3) {
+                    if (localInferenceAllowed() && consecutiveEmbeddingFailures >= 3) {
                         isLocalEmbeddingPrimary = true;
                         console.warn("[GeminiService] 🚨 3 Consecutive API Embedding Failures. Permanently switching to Local Embedding Engine.");
-                    } else {
+                    } else if (localInferenceAllowed()) {
                         console.log(`[GeminiService] 🔌 Falling back to Local Embedding Engine (${consecutiveEmbeddingFailures}/3 strikes)...`);
                     }
-                    const localVector = await localEmbeddingService.getEmbedding(text);
-                    return localVector ? { vector: localVector, identity: LOCAL_EMBEDDING_IDENTITY } : null;
+                    return localFallback();
                 }
             } else {
                 consecutiveEmbeddingFailures++;
@@ -136,14 +146,13 @@ export const generateEmbeddingWithIdentity = async (text: string, opts?: { allow
                     }
                 }
 
-                if (consecutiveEmbeddingFailures >= 3) {
+                if (localInferenceAllowed() && consecutiveEmbeddingFailures >= 3) {
                     isLocalEmbeddingPrimary = true;
                     console.warn("[GeminiService] 🚨 3 Consecutive API Embedding Failures. Permanently switching to Local Embedding Engine.");
-                } else {
+                } else if (localInferenceAllowed()) {
                     console.log(`[GeminiService] 🔌 Falling back to Local Embedding Engine (${consecutiveEmbeddingFailures}/3 strikes)...`);
                 }
-                const localVector = await localEmbeddingService.getEmbedding(text);
-                return localVector ? { vector: localVector, identity: LOCAL_EMBEDDING_IDENTITY } : null;
+                return localFallback();
             }
         }
 
@@ -156,13 +165,12 @@ export const generateEmbeddingWithIdentity = async (text: string, opts?: { allow
         consecutiveEmbeddingFailures++;
         console.error("[GeminiService] ❌ Critical Embedding Failure:", e?.message || e);
 
-        if (consecutiveEmbeddingFailures >= 3) {
+        if (localInferenceAllowed() && consecutiveEmbeddingFailures >= 3) {
             isLocalEmbeddingPrimary = true;
             console.warn("[GeminiService] 🚨 3 Consecutive API Embedding Failures. Permanently switching to Local Embedding Engine.");
-        } else {
+        } else if (localInferenceAllowed()) {
             console.log(`[GeminiService] 🔌 Falling back to Local Embedding Engine (${consecutiveEmbeddingFailures}/3 strikes)...`);
         }
-        const localVector = await localEmbeddingService.getEmbedding(text);
-        return localVector ? { vector: localVector, identity: LOCAL_EMBEDDING_IDENTITY } : null;
+        return localFallback();
     }
 };

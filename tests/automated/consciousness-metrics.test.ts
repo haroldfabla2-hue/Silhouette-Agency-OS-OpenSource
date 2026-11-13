@@ -1,3 +1,4 @@
+import '../setup/require-cloud-only';
 /**
  * AUTOMATED TEST SUITE: Cognitive-state engine (phi composite index)
  * Verifies the phi score is a transparent, explainable weighted composite —

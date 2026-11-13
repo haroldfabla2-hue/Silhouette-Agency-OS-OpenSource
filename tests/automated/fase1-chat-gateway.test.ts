@@ -1,3 +1,4 @@
+import '../setup/require-cloud-only';
 /**
  * FASE 1 (R1): Chat-gateway unification — REAL behavioral tests.
  *

@@ -50,12 +50,12 @@ jobs:
           mkdir "$reviewed"
           cp tests/real-process/fullsuite/reviewed-inputs.sha256 "$reviewed/inputs.sha256"
           chmod 0444 "$reviewed/inputs.sha256"
-          printf '%s  %s\n' c04b3ff5bac6e2a42aaf983c9450e76bbafe584d16d0431398b1ca563978aff1 "$reviewed/inputs.sha256" | sha256sum --check
+          printf '%s  %s\n' b8f45803578398ce14523353984bdcd8606724f70ac6b2276b83052e14dabcaa "$reviewed/inputs.sha256" | sha256sum --check
           printf 'REVIEWED=%s\n' "$reviewed" >> "$GITHUB_ENV"
           work="$RUNNER_TEMP/current-suite-work"
           python3 tests/real-process/fullsuite/prepare-work.py "$work" "$EVIDENCE"
           printf '%s  %s\n' f620fbb142f7011b60aa171160e049cc3af3beeacc11e3d47bb518624c8ef684 tests/real-process/fullsuite/verify-tree.py | sha256sum --check
-          python3 tests/real-process/fullsuite/verify-tree.py "$work" "$reviewed/inputs.sha256" c04b3ff5bac6e2a42aaf983c9450e76bbafe584d16d0431398b1ca563978aff1 "$EVIDENCE/pre-install-tree.json"
+          python3 tests/real-process/fullsuite/verify-tree.py "$work" "$reviewed/inputs.sha256" b8f45803578398ce14523353984bdcd8606724f70ac6b2276b83052e14dabcaa "$EVIDENCE/pre-install-tree.json"
           printf 'WORK=%s\n' "$work" >> "$GITHUB_ENV"
       - name: Exact Node floor
         uses: actions/setup-node@v4
@@ -73,7 +73,7 @@ jobs:
           python3 "$control" capture npm-ci 300 env -i PATH="$PATH" HOME="$RUNNER_TEMP/current-suite-install-home" PUPPETEER_SKIP_DOWNLOAD=true PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=true npm ci
           cd "$GITHUB_WORKSPACE"
           printf '%s  %s\n' f620fbb142f7011b60aa171160e049cc3af3beeacc11e3d47bb518624c8ef684 tests/real-process/fullsuite/verify-tree.py | sha256sum --check
-          python3 tests/real-process/fullsuite/verify-tree.py "$WORK" "$REVIEWED/inputs.sha256" c04b3ff5bac6e2a42aaf983c9450e76bbafe584d16d0431398b1ca563978aff1 "$EVIDENCE/post-install-tree.json"
+          python3 tests/real-process/fullsuite/verify-tree.py "$WORK" "$REVIEWED/inputs.sha256" b8f45803578398ce14523353984bdcd8606724f70ac6b2276b83052e14dabcaa "$EVIDENCE/post-install-tree.json"
       - name: Explicit one security candidate only, no APT configuration or install
         shell: bash
         run: |
@@ -135,7 +135,7 @@ jobs:
         run: |
           set -euo pipefail
           set +e
-          timeout --signal=TERM --kill-after=5s 675s env -i PATH="$PATH" STAGED_BWRAP="$STAGED_BWRAP" bash tests/real-process/fullsuite/launch.sh "$WORK" "$EVIDENCE" "$REVIEWED"
+          timeout --signal=TERM --kill-after=5s 675s env -i PATH="$PATH" STAGED_BWRAP="$STAGED_BWRAP" SILHOUETTE_INFERENCE_MODE=cloud-only bash tests/real-process/fullsuite/launch.sh "$WORK" "$EVIDENCE" "$REVIEWED"
           code=$?
           set -e
           printf '%s\n' "$code" > "$EVIDENCE/session-command.exit"
