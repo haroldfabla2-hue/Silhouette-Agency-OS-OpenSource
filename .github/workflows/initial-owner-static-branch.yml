@@ -321,6 +321,8 @@ jobs:
           import base64, hashlib, io, pathlib, sys, tarfile
           root = pathlib.Path(sys.argv[1])
           files = sorted(p for p in root.rglob('*') if p.is_file() and not p.is_symlink())
+          print('FOCUSED_EVIDENCE_FILE_COUNT:' + str(len(files)), flush=True)
+          print('FOCUSED_EVIDENCE_RAW_BYTES:' + str(sum(p.stat().st_size for p in files)), flush=True)
           if len(files) > 128 or sum(p.stat().st_size for p in files) > 2 * 1024 * 1024:
               raise SystemExit('EVIDENCE_LIMIT_FAIL: too many files or more than2MiB raw')
           out = io.BytesIO()

@@ -156,7 +156,7 @@ def run_phase(root, evidence, phase, work):
         # Preserve source bytes before teardown/delete, even when WRITE never exits.
         preserved = []
         capture_errors = []
-        for rel in ['data/memory_snapshot.json', 'write-proof.json', 'initial-effects-write.json', 'initial-effects-read.json']:
+        for rel in (['data/memory_snapshot.json', 'write-proof.json', 'initial-effects-write.json', 'initial-effects-read.json'] if failure else []):
             source = work / rel
             try:
                 if source.exists():
@@ -175,7 +175,7 @@ def run_phase(root, evidence, phase, work):
             safe = stop_and_reap(child, cleanup_actions)
         after_cleanup_files = []
         if safe:
-            for rel in ['data/memory_snapshot.json', 'write-proof.json', 'initial-effects-write.json', 'initial-effects-read.json']:
+            for rel in (['data/memory_snapshot.json', 'write-proof.json', 'initial-effects-write.json', 'initial-effects-read.json'] if failure else []):
                 source = work / rel
                 try:
                     if source.exists():
@@ -247,7 +247,12 @@ try:
     proof = (work / 'write-proof.json').read_bytes()
     (evidence / 'write-proof.json').write_bytes(proof)
     checksum = json.loads(proof)['receipt']['checksum']
-    if hashlib.sha256((work / 'data/memory_snapshot.json').read_bytes()).hexdigest() != checksum:
+    # One stable post-write byte capture; export and SHA use the SAME bytes.
+    snapshot_bytes = (work / 'data/memory_snapshot.json').read_bytes()
+    if len(snapshot_bytes) > 262144:
+        raise RuntimeError('Stable snapshot evidence exceeds 256KiB cap')
+    (evidence / 'snapshot-after-write.json').write_bytes(snapshot_bytes)
+    if hashlib.sha256(snapshot_bytes).hexdigest() != checksum:
         raise RuntimeError('Snapshot changed after write natural exit, before read')
     if json.loads(proof)['pid'] != write['pid']:
         raise RuntimeError('Write proof PID mismatch')
@@ -261,7 +266,22 @@ try:
         raise RuntimeError('Cross-process proof mismatch')
     (evidence / 'restart-result.json').write_text(json.dumps({'status':'PASS','phases':['write','read'],'different_pids':True,'same_node_id':w['nodeId'],'write_receipt':w['receipt'],'scope':'direct WORKING disk restart, not normal ingestion or Redis durability'},indent=2))
 except BaseException as error:
-    (evidence / 'restart-failure.json').write_text(json.dumps({'status':'FAIL','error':str(error)}))
+    # Outer checksum/cross-proof failure can happen outside run_phase.
+    # Read existing bytes before safe work removal; never hide capture failure.
+    outer_capture = None
+    capture_error = None
+    try:
+        current_snapshot = work / 'data/memory_snapshot.json'
+        if current_snapshot.exists():
+            data = current_snapshot.read_bytes()
+            if len(data) > 262144:
+                raise RuntimeError('Outer failure snapshot exceeds 256KiB cap')
+            (evidence / 'snapshot-at-outer-failure.json').write_bytes(data)
+            outer_capture = {'path': 'snapshot-at-outer-failure.json', 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
+    except BaseException as capture:
+        capture_error = str(capture)
+    (evidence / 'restart-failure.json').write_text(json.dumps({'status':'FAIL','error':str(error),
+        'snapshot_capture':outer_capture,'capture_error':capture_error}))
     raise
 finally:
     # Phase supervisor retains work if group unknown. Never delete work still owned.
