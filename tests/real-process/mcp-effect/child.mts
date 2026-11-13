@@ -35,7 +35,7 @@ const requests: Promise<unknown>[] = [];
 const serverErrors: unknown[] = [];
 let sseCount = 0, discoveryCount = 0;
 let mcpServer: Server | undefined, appServer: Server | undefined;
-const handled = <T>(work: Promise<T>): Promise<T> => { void work.catch(() => undefined); return work; };
+const handled = <T,>(work: Promise<T>): Promise<T> => { void work.catch(() => undefined); return work; };
 const listen = (server: Server) => new Promise<string>((resolve, reject) => {
     server.once('error', reject);
     server.listen(0, '127.0.0.1', () => {
@@ -148,8 +148,9 @@ try {
         assert.equal(result.success, expected);
     };
     const outcome = async (index: number) => {
-        const result = await outcomes[index]; assert.equal(result.ok, true);
-        if (result.ok === false) throw result.error; return result.value as Record<string, unknown>;
+        const result = await outcomes[index];
+        if (result.ok === false) throw result.error;
+        assert.equal(result.ok, true); return result.value as Record<string, unknown>;
     };
     const noPrincipal = await start(null, { text: 'deny', requestLabel: 'system' });
     assert.equal((await outcome(noPrincipal.index)).blocked, true); await effectCount(0);
