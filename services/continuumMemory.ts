@@ -783,7 +783,7 @@ class ContinuumMemorySystem {
                 // and identity was labeled from an env var instead of the actual
                 // provider. Now one resolver returns vector + the identity that
                 // truly produced it; lancedbService.store projects per identity.
-                const { generateEmbeddingWithIdentity } = await import('./geminiService');
+                const { generateEmbeddingWithIdentity } = await import('./embeddingResolver');
                 const embedded = await generateEmbeddingWithIdentity(content);
                 if (embedded) nodeToStore.embeddingIdentity = embedded.identity;
                 await lancedbService.store(nodeToStore, embedded?.vector); // Canonical copy + automatic per-identity projection.
@@ -1400,8 +1400,8 @@ class ContinuumMemorySystem {
             // and query identities diverge again. Qdrant is queried only when
             // actually connected and the dimension matches its 768 requirement.
             const { vectorMemory } = await import('./vectorMemoryService');
-            const geminiMod = await import('./geminiService');
-            const embedWithIdentity = geminiMod.geminiService?.generateEmbeddingWithIdentity || geminiMod.generateEmbeddingWithIdentity;
+            const embeddingMod = await import('./embeddingResolver');
+            const embedWithIdentity = embeddingMod.generateEmbeddingWithIdentity;
             const embedded = typeof embedWithIdentity === 'function' ? await embedWithIdentity(query) : null;
 
             if (embedded) {
@@ -1501,7 +1501,7 @@ class ContinuumMemorySystem {
      */
     public async backfillMemoryEmbeddings(limit = 50): Promise<{ projected: number; failed: number }> {
         if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new Error('Invalid backfill limit');
-        const { generateEmbeddingWithIdentity } = await import('./geminiService');
+        const { generateEmbeddingWithIdentity } = await import('./embeddingResolver');
         const pending = await lancedbService.pendingEmbeddings(limit);
         let projected = 0, failed = 0;
         for (const node of pending) {

@@ -26,7 +26,8 @@ describe('embedding identity: single builder, stable hashing', () => {
 });
 
 const continuum = fs.readFileSync('services/continuumMemory.ts', 'utf8');
-const gemini = fs.readFileSync('services/geminiService.ts', 'utf8');
+const gemini = fs.readFileSync('services/embeddingResolver.ts', 'utf8');
+const barrel = fs.readFileSync('services/geminiService.ts', 'utf8');
 
 describe('deep memory write and read share one identity resolver', () => {
     it('write path tags the TRUE identity and never labels from env', () => {
@@ -43,7 +44,12 @@ describe('deep memory write and read share one identity resolver', () => {
         expect(continuum).toContain('vectorMemory.isReady()');
         expect(continuum).toContain('embedded.identity.dimension === 768');
     });
-    it('geminiService has a single embedding path that reports its true source', () => {
+    it('shared resolver reports true source while the legacy barrel reexports it', () => {
+        expect(barrel).toContain("export { generateEmbedding, generateEmbeddingWithIdentity } from './embeddingResolver'");
+        expect(gemini).toContain("import { ensureClient } from './geminiClientState'");
+        for (const owner of ['orchestrator', 'narrativeService', 'consciousnessEngine', 'contextAssembler', 'resourceArbiter']) {
+            expect(gemini).not.toContain(owner);
+        }
         expect(gemini).toContain('generateEmbeddingWithIdentity');
         expect(gemini).toContain('identity: LOCAL_EMBEDDING_IDENTITY');
         expect(gemini).toContain('identity: geminiIdentity(DEFAULT_GEMINI_EMBEDDING_MODEL)');

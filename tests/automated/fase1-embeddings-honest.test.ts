@@ -12,7 +12,9 @@ const routes = fs.readFileSync('server/routes/v1/memory.routes.ts', 'utf8');
 describe('embedding pipeline is resilient and honest', () => {
     it('write and query paths share the identity-aware resolver', () => {
         expect(continuum).toContain('generateEmbeddingWithIdentity');
-        expect(continuum).toContain('geminiMod.geminiService?.generateEmbeddingWithIdentity || geminiMod.generateEmbeddingWithIdentity');
+        expect(continuum).toContain("import('./embeddingResolver')");
+        expect(continuum).toContain('embeddingMod.generateEmbeddingWithIdentity');
+        expect(continuum).not.toContain("import('./geminiService')");
         expect(continuum).toContain('nodeToStore.embeddingIdentity = embedded.identity');
     });
     it('no env var can label or gate embedding identity anymore', () => {
