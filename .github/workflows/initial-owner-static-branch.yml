@@ -52,12 +52,12 @@ jobs:
           mkdir "$reviewed"
           cp tests/real-process/fullsuite/reviewed-inputs.sha256 "$reviewed/inputs.sha256"
           chmod 0444 "$reviewed/inputs.sha256"
-          printf '%s  %s\n' de3744877349d43bcf68f55d1d3ec381bae9657a07de9d14d718184427021c25 "$reviewed/inputs.sha256" | sha256sum --check
+          printf '%s  %s\n' 63c22c1abb148aa17e93b8dd845f7dab65098d5dcf8b86250165ace5467da6fe "$reviewed/inputs.sha256" | sha256sum --check
           printf 'REVIEWED=%s\n' "$reviewed" >> "$GITHUB_ENV"
           work="$RUNNER_TEMP/current-suite-work"
           python3 tests/real-process/fullsuite/prepare-work.py "$work" "$EVIDENCE"
           printf '%s  %s\n' f620fbb142f7011b60aa171160e049cc3af3beeacc11e3d47bb518624c8ef684 tests/real-process/fullsuite/verify-tree.py | sha256sum --check
-          python3 tests/real-process/fullsuite/verify-tree.py "$work" "$reviewed/inputs.sha256" de3744877349d43bcf68f55d1d3ec381bae9657a07de9d14d718184427021c25 "$EVIDENCE/pre-install-tree.json"
+          python3 tests/real-process/fullsuite/verify-tree.py "$work" "$reviewed/inputs.sha256" 63c22c1abb148aa17e93b8dd845f7dab65098d5dcf8b86250165ace5467da6fe "$EVIDENCE/pre-install-tree.json"
           printf 'WORK=%s\n' "$work" >> "$GITHUB_ENV"
       - name: Exact Node floor
         uses: actions/setup-node@v4
@@ -75,7 +75,7 @@ jobs:
           python3 "$control" capture npm-ci 300 env -i PATH="$PATH" HOME="$RUNNER_TEMP/current-suite-install-home" PUPPETEER_SKIP_DOWNLOAD=true PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=true npm ci
           cd "$GITHUB_WORKSPACE"
           printf '%s  %s\n' f620fbb142f7011b60aa171160e049cc3af3beeacc11e3d47bb518624c8ef684 tests/real-process/fullsuite/verify-tree.py | sha256sum --check
-          python3 tests/real-process/fullsuite/verify-tree.py "$WORK" "$REVIEWED/inputs.sha256" de3744877349d43bcf68f55d1d3ec381bae9657a07de9d14d718184427021c25 "$EVIDENCE/post-install-tree.json"
+          python3 tests/real-process/fullsuite/verify-tree.py "$WORK" "$REVIEWED/inputs.sha256" 63c22c1abb148aa17e93b8dd845f7dab65098d5dcf8b86250165ace5467da6fe "$EVIDENCE/post-install-tree.json"
       - name: Explicit one security candidate only, no APT configuration or install
         shell: bash
         run: |
@@ -149,7 +149,7 @@ jobs:
           set -e
           printf '%s\n' "$legacy_code" > "$EVIDENCE/legacy-command.exit"
           # Independent checks may continue after actual test failure, not unsafe cleanup/drift.
-          python3 tests/real-process/fullsuite/verify-tree.py "$WORK" "$REVIEWED/inputs.sha256" de3744877349d43bcf68f55d1d3ec381bae9657a07de9d14d718184427021c25 "$EVIDENCE/pre-harness-tree.json"
+          python3 tests/real-process/fullsuite/verify-tree.py "$WORK" "$REVIEWED/inputs.sha256" 63c22c1abb148aa17e93b8dd845f7dab65098d5dcf8b86250165ace5467da6fe "$EVIDENCE/pre-harness-tree.json"
           python3 - "$EVIDENCE" <<'ADMIT'
           import json,pathlib,sys,time
           ev=pathlib.Path(sys.argv[1]);c=json.loads((ev/'job-clock.json').read_text());assert c['deadline_monotonic']-time.monotonic()>=445,'NOT_STARTED_HARNESS_JOB_BUDGET'
@@ -166,7 +166,7 @@ jobs:
           set -e
           printf '%s\n' "$harness_code" > "$EVIDENCE/harness-command.exit"
           python3 tests/real-process/wal-owner/verify-evidence.py "$EVIDENCE"
-          python3 tests/real-process/fullsuite/verify-tree.py "$WORK" "$REVIEWED/inputs.sha256" de3744877349d43bcf68f55d1d3ec381bae9657a07de9d14d718184427021c25 "$EVIDENCE/post-harness-tree.json"
+          python3 tests/real-process/fullsuite/verify-tree.py "$WORK" "$REVIEWED/inputs.sha256" 63c22c1abb148aa17e93b8dd845f7dab65098d5dcf8b86250165ace5467da6fe "$EVIDENCE/post-harness-tree.json"
           test "$legacy_code" = 0 && test "$harness_code" = 0
       - name: Always cleanup only this new delegated run scope
         if: always()

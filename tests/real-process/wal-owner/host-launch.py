@@ -2,7 +2,7 @@
 NEW scoped sudo self-admission requires separate approval. No systemd/provision or global controller enablement.
 Host inputs must be already copied/verified disposable source+harness; no git/home.
 """
-import argparse,hashlib,json,os,pathlib,selectors,signal,subprocess,time
+import argparse,hashlib,json,os,pathlib,selectors,shutil,signal,stat,subprocess,time
 p=argparse.ArgumentParser();p.add_argument('--delegated-parent',required=True);p.add_argument('--work',required=True);p.add_argument('--harness',required=True);p.add_argument('--evidence',required=True);p.add_argument('--staged-bwrap',required=True);p.add_argument('--run-id',required=True);p.add_argument('--reviewed-root-helper',required=True);p.add_argument('--root-helper-sha256',required=True);a=p.parse_args()
 parent=pathlib.Path(a.delegated_parent).resolve(strict=True);work=pathlib.Path(a.work).resolve(strict=True);harness=pathlib.Path(a.harness).resolve(strict=True);evidence=pathlib.Path(a.evidence).resolve(strict=True);bwrap=pathlib.Path(a.staged_bwrap).resolve(strict=True)
 assert a.run_id.isdigit() and int(a.run_id)>0
@@ -22,6 +22,21 @@ def kill_scope(reason):
  events.append({'reason':reason,'at':time.monotonic()-start})
  (cg/'cgroup.kill').write_text('1') # all descendants, not Pythonprocessgroup only
 try:
+ # Resolve only workflow-selected Node22.18.0, never broaden inner PATH.
+ node_cut={'requested':'node','expected':'/opt/hostedtoolcache/node/22.18.0/x64/bin/node'}
+ try:
+  selected=shutil.which('node');node_cut['hostLookup']=selected
+  assert selected is not None,'workflow Node not found on host PATH'
+  node=pathlib.Path(selected).resolve(strict=True);node_cut['realpath']=str(node)
+  assert node==pathlib.Path(node_cut['expected']),'workflow Node resolved outside exact approved toolcache entry'
+  ns=node.stat();node_cut.update({'size':ns.st_size,'mode':oct(ns.st_mode),'uid':ns.st_uid,'gid':ns.st_gid})
+  assert stat.S_ISREG(ns.st_mode) and 0<ns.st_size<=256*1024**2 and os.access(node,os.X_OK)
+  assert ns.st_mode & 0o022==0,'Node must not be group/other writable'
+  with node.open('rb') as stream:node_sha=hashlib.file_digest(stream,'sha256').hexdigest()
+  node_cut['sha256']=node_sha;node_cut['status']='HOST_PATH_AND_DIGEST_CAPTURED_NOT_INNER_VERIFIED'
+ except Exception as error:
+  node_cut.update({'status':'FAIL','errorType':type(error).__name__,'errno':getattr(error,'errno',None),'filename':getattr(error,'filename',None),'error':str(error)[:1024]});raise
+ finally:(evidence/'node-host.json').write_text(json.dumps(node_cut,indent=2))
  for name,value in [('memory.max',str(8*1024**3)),('memory.swap.max','0'),('pids.max','96'),('cpu.max','200000 100000'),('memory.oom.group','1')]:write(name,value)
  assert (cg/'cgroup.kill').exists() and os.access(cg/'cgroup.kill',os.W_OK)
  # Future gate only. No fallback if pinned verified bwrap lacks size/nesting.
@@ -34,7 +49,7 @@ try:
  # No numeric target-PID attach race and no broad LCA permission delegation.
  cmd=[str(bwrap),'--die-with-parent','--unshare-pid','--unshare-user','--uid','0','--gid','0','--unshare-net','--cap-add','CAP_NET_ADMIN','--cap-add','CAP_SETFCAP']
  for source in ['/usr','/bin','/lib','/lib64','/etc','/opt']:cmd+=['--ro-bind',source,source]
- cmd+=['--proc','/proc','--dev','/dev','--size',str(512*1024**2),'--tmpfs','/tmp','--ro-bind',str(work),'/tmp/work','--ro-bind',str(harness),'/tmp/harness','--ro-bind',str(bwrap.parent),'/tmp/security-bin','--ro-bind',str(cg),'/tmp/limits','--bind',str(evidence),'/tmp/export','--remount-ro','/','--chdir','/tmp/work','/usr/bin/python3','/tmp/harness/namespace-init.py',bwrap.name]
+ cmd+=['--proc','/proc','--dev','/dev','--size',str(512*1024**2),'--tmpfs','/tmp','--ro-bind',str(work),'/tmp/work','--ro-bind',str(harness),'/tmp/harness','--ro-bind',str(bwrap.parent),'/tmp/security-bin','--ro-bind',str(cg),'/tmp/limits','--bind',str(evidence),'/tmp/export','--remount-ro','/','--chdir','/tmp/work','/usr/bin/python3','/tmp/harness/namespace-init.py',bwrap.name,str(node),node_sha]
  child_process=subprocess.Popen(['sudo','-n','/usr/bin/python3','-',str(os.getuid()),str(os.getgid()),a.run_id,str(os.getpid()),json.dumps(cmd)],stdin=subprocess.PIPE)
  child=child_process.pid
  child_process.stdin.write(helper);child_process.stdin.close()

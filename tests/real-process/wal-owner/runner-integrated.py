@@ -2,8 +2,8 @@
 Requires externally reviewed dedicated containment before it will launch Node.
 This script has NOT been executed. All outputs are authored sandbox evidence.
 """
-import argparse, json, os, pathlib, resource, selectors, signal, subprocess, time
-p=argparse.ArgumentParser();p.add_argument('--repo',required=True);p.add_argument('--evidence',required=True);p.add_argument('--cgroup',required=True);a=p.parse_args()
+import argparse, hashlib, json, os, pathlib, resource, selectors, shutil, signal, stat, subprocess, time
+p=argparse.ArgumentParser();p.add_argument('--repo',required=True);p.add_argument('--evidence',required=True);p.add_argument('--cgroup',required=True);p.add_argument('--node-executable',required=True);p.add_argument('--node-sha256',required=True);a=p.parse_args()
 repo=pathlib.Path(a.repo).resolve(); evidence=pathlib.Path(a.evidence).resolve(); cg=pathlib.Path(a.cgroup).resolve()
 # Require this already-contained supervisor and all descendants to share a dedicated scope.
 assert cg==pathlib.Path('/tmp/limits'), 'only host-verified read-only current-scope view'
@@ -44,10 +44,32 @@ start=time.monotonic(); children=[]; results=[]
 (evidence/'containment.json').write_text(json.dumps({'cgroup':str(cg),'memoryMax':mem,'cpuMax':[quota,period],'pidsMax':pids,'swapMax':0,'wallSeconds':320,'storageBytes':volume.f_blocks*volume.f_frsize,'network':'loopback-only','providers':'off','oldspaceMiB':2048},indent=2))
 def wall_expired(signum,frame):raise TimeoutError('hard supervisor wall deadline')
 signal.signal(signal.SIGALRM,wall_expired);signal.alarm(320)
+# Evidence is written even when identity/version/exec admission fails.
+node_cut={'requested':a.node_executable,'expectedSha256':a.node_sha256,'legacyLookup':shutil.which('node'),'innerPATH':os.environ['PATH']}
+try:
+ node=pathlib.Path(a.node_executable).resolve(strict=True);node_cut['realpath']=str(node)
+ assert node==pathlib.Path('/opt/hostedtoolcache/node/22.18.0/x64/bin/node') and str(node)==a.node_executable
+ ns=node.stat();node_cut.update({'size':ns.st_size,'mode':oct(ns.st_mode),'uid':ns.st_uid,'gid':ns.st_gid,'mountReadOnly':bool(os.statvfs(node).f_flag & os.ST_RDONLY)})
+ assert stat.S_ISREG(ns.st_mode) and 0<ns.st_size<=256*1024**2 and os.access(node,os.X_OK)
+ assert ns.st_mode & 0o022==0 and node_cut['mountReadOnly']
+ with node.open('rb') as stream:node_cut['sha256']=hashlib.file_digest(stream,'sha256').hexdigest()
+ assert len(a.node_sha256)==64 and node_cut['sha256']==a.node_sha256,'host/inner Node digest differs'
+ version=subprocess.run([str(node),'--version'],env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=2,check=True)
+ node_cut['version']=version.stdout[:128].decode('utf-8',errors='replace').strip()
+ assert version.stdout==b'v22.18.0\n','exact workflow Node version differs'
+ node_cut['status']='INNER_RO_IDENTITY_VERSION_PASS_NOT_FUNCTIONAL_COVERAGE'
+except Exception as error:
+ node_cut.update({'status':'FAIL','errorType':type(error).__name__,'errno':getattr(error,'errno',None),'filename':getattr(error,'filename',None),'error':str(error)[:1024]});raise
+finally:(evidence/'node-inner.json').write_text(json.dumps(node_cut,indent=2))
+launch_errors=[]
 class Child:
  def __init__(self,directory,label,custom=None):
   directory.mkdir(parents=True,exist_ok=True);self.label=label;self.serial=0
-  self.p=subprocess.Popen(['node','--import',str(loader),*([str(x) for x in custom] if isinstance(custom,list) else [str(custom or script)])],cwd=directory,env=env,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True,bufsize=0)
+  command=[str(node),'--import',str(loader),*([str(x) for x in custom] if isinstance(custom,list) else [str(custom or script)])]
+  try:self.p=subprocess.Popen(command,cwd=directory,env=env,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True,bufsize=0)
+  except OSError as error:
+   launch_errors.append({'label':label,'requestedExecutable':command[0],'cwd':str(directory),'errorType':type(error).__name__,'errno':error.errno,'filename':error.filename,'filename2':error.filename2,'error':str(error)[:1024]})
+   (evidence/'launch-errors.json').write_text(json.dumps(launch_errors,indent=2));raise
   children.append(self);self.sel=selectors.DefaultSelector();self.sel.register(self.p.stdout,selectors.EVENT_READ);self.buf=b'';self.log=(evidence/(label+'.log')).open('wb')
  def read(self,prefix,seconds=30):
   deadline=time.monotonic()+seconds

@@ -19,7 +19,7 @@ root=pathlib.Path('/tmp');scratch=root/'capped';scratch.mkdir(mode=0o700)
 cmd=[bwrap,'--die-with-parent','--unshare-user','--uid','1000','--gid','1000','--unshare-pid','--cap-drop','ALL']
 # Shares outer networknamespace which has ONLY loopback. No host net.
 for source in ['/usr','/bin','/lib','/lib64','/etc','/opt']:cmd+=['--ro-bind',source,source]
-cmd+=['--proc','/proc','--dev','/dev','--remount-ro','/dev','--ro-bind','/tmp/work','/tmp/work','--ro-bind','/tmp/harness','/tmp/harness','--ro-bind','/tmp/limits','/tmp/limits','--bind',str(scratch),'/tmp/capped','--remount-ro','/','--chdir','/tmp/work','/usr/bin/python3','/tmp/harness/runner-integrated.py','--repo','/tmp/work','--evidence','/tmp/capped/run','--cgroup','/tmp/limits']
+cmd+=['--proc','/proc','--dev','/dev','--remount-ro','/dev','--ro-bind','/tmp/work','/tmp/work','--ro-bind','/tmp/harness','/tmp/harness','--ro-bind','/tmp/limits','/tmp/limits','--bind',str(scratch),'/tmp/capped','--remount-ro','/','--chdir','/tmp/work','/usr/bin/python3','/tmp/harness/runner-integrated.py','--repo','/tmp/work','--evidence','/tmp/capped/run','--cgroup','/tmp/limits','--node-executable',sys.argv[2],'--node-sha256',sys.argv[3]]
 # Only supervisor can export; tests do NOT mount /tmp/export or raw sidecar paths
 # outside authored store. Mount keeps subtree journal operations within SQLite.
 resource.setrlimit(resource.RLIMIT_FSIZE,(64*1024**2,64*1024**2))
