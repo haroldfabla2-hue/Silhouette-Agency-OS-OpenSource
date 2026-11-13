@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """NEW security-only download/extraction contract. Preparation, NOT EXECUTED."""
-import datetime,email.utils,hashlib,io,json,lzma,os,pathlib,re,selectors,signal,stat,subprocess,sys,tarfile,time,urllib.request
+import shutil,datetime,email.utils,hashlib,io,json,lzma,os,pathlib,re,selectors,signal,stat,subprocess,sys,tarfile,time,urllib.request
 E=pathlib.Path(os.environ['EVIDENCE']);scope=pathlib.Path(sys.argv[1]);key=pathlib.Path(sys.argv[2]);expected_key='80a36b0a6de2f69f49d2df75ef473ccde121e9e190b9ea01d20a4f63778d5c31'
 clock=json.loads((E/'job-clock.json').read_text());host=json.loads((E/'host-budget.json').read_text())
 end=min(time.monotonic()+max(0,180-host['elapsed_seconds']),clock['deadline_monotonic']-60)
@@ -35,7 +35,7 @@ def bounded_file(p,cap):
   z=os.fstat(fd);assert len(b)<=cap and len(b)==a.st_size and (a.st_dev,a.st_ino,a.st_size,a.st_mtime_ns,a.st_ctime_ns)==(z.st_dev,z.st_ino,z.st_size,z.st_mtime_ns,z.st_ctime_ns)
   return b
  finally:os.close(fd)
-def call(cmd,cap=262144):
+def call(cmd,cap=262144,allowed_rc=(0,),diagnostic=False):
  global producer_total,cleaning,sticky_unsafe
  checktime();p=None;sel=selectors.DefaultSelector();data={};began=time.monotonic();error=None;signals=[];eof=set();pre=None;safe=False;spawn_pending=True;reaped=False
  # Persist UNSAFE before spawn. SIGKILL in any spawn/register gap remains fail-closed.
@@ -58,7 +58,10 @@ def call(cmd,cap=262144):
     if producer_total+sum(map(len,data.values()))+len(b)>min(512*1024,3*1024*1024-host['retained_bytes']) or sum(map(len,data.values()))+len(b)>cap:raise RuntimeError('Bounded command output cap')
     data[k.fd].extend(b)
   rc=p.wait(timeout=min(2,max(.01,end-time.monotonic())));reaped=True
-  assert rc==0,'Command nonzero '+str(cmd)
+  if diagnostic:
+   record.setdefault('ip_command_captures',[]).append({'argv':cmd,'returncode':rc,'stdout':bytes(data[p.stdout.fileno()]).decode(),'stderr':bytes(data[p.stderr.fileno()]).decode()})
+   (proof/'ip-command-captures.json').write_text(json.dumps(record['ip_command_captures'],indent=2))
+  assert rc in allowed_rc,'Command nonzero '+str(cmd)
   assert group(p.pid)=='ESRCH','Helper residual process group'
  except BaseException as exc:error=str(exc)
  finally:
@@ -220,12 +223,68 @@ try:
   owned.append({'path':str(path),'owner':owner})
  record['loader_owners']=owned
  call([str(binary),'--version'])
- out,_=call(['dpkg-query','-W','-f=${binary:Package}\t${Architecture}\t${Version}\t${db:Status-Status}\n','iproute2:amd64']);parts=out.decode().strip().split('\t');assert len(parts)==4 and parts[1]=='amd64' and parts[3]=='installed'
- ips=[pathlib.Path(x) for x in ['/usr/sbin/ip','/usr/bin/ip','/bin/ip'] if pathlib.Path(x).exists()];assert ips
- for ip in ips:
-  resolved=ip.resolve();st=resolved.stat();assert st.st_uid==0 and st.st_mode&0o022==0
-  out,_=call(['dpkg-query','-S',str(resolved)]);assert out.decode().startswith('iproute2:')
- record['iproute2']={'fields':parts,'paths':[str(x.resolve()) for x in ips]}
+ # Capture exact metadata before interpretation. No owner inferred from canonical-path failure.
+ ipproof={'paths':{},'queries':[],'status':'CAPTURE_PENDING'}
+ def ipquery(cmd,allowed=(0,)):
+  out,err=call(cmd,32768,allowed_rc=allowed,diagnostic=True)
+  ipproof['queries'].append({'argv':cmd,'stdout':out.decode(),'stderr':err.decode(),'returncode':record['commands'][-1]['post_cleanup']['returncode']})
+  (proof/'ip-identity.json').write_text(json.dumps(ipproof,indent=2));return out,err,ipproof['queries'][-1]['returncode']
+ # Numeric fields and all stdout/stderr/rc are retained before assertions below.
+ out,_,_=ipquery(['dpkg-query','-W','-f=${binary:Package}\t${Architecture}\t${Version}\t${Status}\n','iproute2:amd64'])
+ package_fields=out.decode().strip().split('\t')
+ listing,_,_=ipquery(['dpkg-query','-L','iproute2:amd64'])
+ known=['/bin/ip','/sbin/ip','/usr/bin/ip','/usr/sbin/ip'];owners={};diversions={}
+ for name in known:
+  owner,_,rc=ipquery(['dpkg-query','-S',name],(0,1));owners[name]={'rc':rc,'text':owner.decode()}
+ # One exact check per allowed pathname, not global undisclosed metadata.
+ for name in known:
+  diverted,_,_=ipquery(['dpkg-divert','--list',name]);diversions[name]=diverted.decode()
+ alt,alterr,altrc=ipquery(['update-alternatives','--query','ip'],(0,2))
+ # Snapshot every parent/alias, including absent paths. No package path is invented.
+ for name in ['/bin','/sbin','/usr','/usr/bin','/usr/sbin']+known:
+  path=pathlib.Path(name)
+  try:
+   ls=path.lstat();row={'exists':True,'lstat_mode':ls.st_mode,'uid':ls.st_uid,'gid':ls.st_gid,'dev':ls.st_dev,'ino':ls.st_ino,'symlink':stat.S_ISLNK(ls.st_mode),'link':os.readlink(path) if stat.S_ISLNK(ls.st_mode) else None,'resolved':str(path.resolve(strict=True))}
+   if name in known:
+    dest=path.resolve(strict=True);st=dest.stat();row.update({'target_dev':st.st_dev,'target_ino':st.st_ino,'target_mode':st.st_mode,'target_uid':st.st_uid,'target_bytes':st.st_size,'target_sha256':hashlib.sha256(bounded_file(dest,1048576)).hexdigest()})
+   ipproof['paths'][name]=row
+  except FileNotFoundError:ipproof['paths'][name]={'exists':False}
+  (proof/'ip-identity.json').write_text(json.dumps(ipproof,indent=2))
+ assert len(package_fields)==4 and package_fields[0]=='iproute2' and package_fields[1]=='amd64' and package_fields[3]=='install ok installed','Wrong package identity/state'
+ # No alternatives membership and no diversion of any admitted spelling.
+ assert altrc==2 and not alt and alterr.decode().strip()=='update-alternatives: error: no alternatives for ip','Alternatives present or unverifiable'
+ assert all(not x.strip() for x in diversions.values()),'Diverted ip spelling'
+ registered=set(listing.decode().splitlines()) & set(known)
+ assert registered and registered <= {'/bin/ip','/sbin/ip','/usr/bin/ip','/usr/sbin/ip'},'No exact registered ip path'
+ for name in registered:
+  assert owners[name]['rc']==0 and owners[name]['text'].strip()=='iproute2: '+name,'Exact registered path owner mismatch'
+ # Explicit parent aliases only; root-owned, no writable directories or unexpected redirects.
+ for name in ['/bin','/sbin','/usr','/usr/bin','/usr/sbin']:
+  row=ipproof['paths'][name];assert row['exists'] and row['uid']==0
+  if row['symlink']:
+   assert name in ['/bin','/sbin'] and row['resolved']=='/usr'+name,'Unexpected parent alias'
+  else:assert stat.S_ISDIR(row['lstat_mode']) and row['lstat_mode']&0o022==0
+ identities=set();existing=[]
+ for name in known:
+  row=ipproof['paths'][name]
+  if not row['exists']:
+   assert name not in registered;continue
+  existing.append(name)
+  assert row['resolved']=='/usr/bin/ip','Unexpected ip target'
+  assert row['uid']==0 and row['target_uid']==0 and stat.S_ISREG(row['target_mode']) and row['target_mode']&0o022==0
+  if row['symlink']:assert name in ['/sbin/ip','/usr/sbin/ip'] and row['link'] in ['../bin/ip','/bin/ip','/usr/bin/ip'],'Unexpected ip symlink'
+  identities.add((row['target_dev'],row['target_ino'],row['target_bytes'],row['target_sha256']))
+  if name not in registered:assert owners[name]['rc']==1 and not owners[name]['text'],'Unregistered alias has competing owner'
+ # Ensure the exact PATH used by launcher resolves this admitted target, not a shadow binary.
+ found=shutil.which('ip',path=os.environ['PATH']);assert found and pathlib.Path(found).resolve(strict=True)==pathlib.Path('/usr/bin/ip'),'PATH ip differs from verified target'
+ for name,row in ipproof['paths'].items():
+  path=pathlib.Path(name)
+  if not row['exists']:assert not path.exists() and not path.is_symlink();continue
+  now=path.lstat();assert (now.st_dev,now.st_ino,now.st_mode,now.st_uid,now.st_gid)==(row['dev'],row['ino'],row['lstat_mode'],row['uid'],row['gid']) and str(path.resolve(strict=True))==row['resolved'],'Alias changed during verification'
+  if name in known:
+   now=path.stat();assert (now.st_dev,now.st_ino,now.st_mode,now.st_uid,now.st_size)==(row['target_dev'],row['target_ino'],row['target_mode'],row['target_uid'],row['target_bytes']) and hashlib.sha256(bounded_file(path.resolve(strict=True),1048576)).hexdigest()==row['target_sha256'],'Executable changed'
+ assert len(identities)==1 and existing and all(ipproof['paths'][n]['exists'] for n in registered),'No unique physical registered executable'
+ ipproof.update({'status':'VERIFIED_EXACT_PACKAGE_AND_PHYSICAL_ALIAS','registered':sorted(registered),'selected':'/usr/bin/ip','package_fields':package_fields});(proof/'ip-identity.json').write_text(json.dumps(ipproof,indent=2));record['iproute2']=ipproof
  # OS/version/userns capability is tested by the real launcher, never inferred from version.
  assert not active and not sticky_unsafe and not interrupted,'Unsafe helper state blocks admission'
  publish_helpers('all helpers safe before completion')
