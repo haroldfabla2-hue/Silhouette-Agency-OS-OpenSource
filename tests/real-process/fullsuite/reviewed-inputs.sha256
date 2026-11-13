@@ -1307,7 +1307,7 @@ c48fc2fd4c0920818e1f2d349a012872ea061f23067d26bd7f2a8a9206c3a35a  tests/real-pro
 a3e1f67194350aa9a7de9bc886d0508b68804e314419e02d2f8158edfe5a5486  tests/real-process/wal-owner/legacy-session.py
 a2a201c487a792515c9d47b0749df30574a1f686eb247623c2ae78f86549735f  tests/real-process/wal-owner/namespace-init.py
 0b15dc9f61dac241681c41ff0d730fe627087b3ed1cde4c3a64683c4606708bc  tests/real-process/wal-owner/root-self-admit.py
-faec0915932a35000edb34d56a85f419c44a21ba6331ff1449f412d7f96d67b6  tests/real-process/wal-owner/runner-integrated.py
+665bd0110f7d2e8f30fa7b8079f424de20e8c6a8742c4a7351088bb46d9bdb39  tests/real-process/wal-owner/runner-integrated.py
 4580b533a8e6d64dc925614abe95095c35dc799f1f871432fc6c41f4efe398b8  tests/real-process/wal-owner/verify-evidence.py
 c84e1ef8f32fb3139785cab8ba1861603a731333505661965c3b198031ade012  tests/real-process/web-handler-receipt-child.ts
 700c862511e56b39531861f758f708ae5bd635e257a9a152113a599fd384fc28  tests/selfcode/atomic-worker.ts

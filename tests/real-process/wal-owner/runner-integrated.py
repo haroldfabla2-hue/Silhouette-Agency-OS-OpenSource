@@ -35,8 +35,35 @@ assert not evidence.exists(), 'never overwrite previous evidence'
 evidence.mkdir(parents=True); work=evidence/'authored-work';work.mkdir()
 loader=repo/'node_modules/tsx/dist/loader.mjs';assert loader.is_file()
 script=repo/'tests/real-process/wal-owner-control-child.ts';assert script.is_file()
-# No secret-bearing inherited environment or provider fallback.
-env={'PATH':os.environ['PATH'],'HOME':str(work),'NODE_ENV':'test','SILHOUETTE_PROVIDERS':'off','SILHOUETTE_INFERENCE_MODE':'cloud-only','NODE_OPTIONS':'--max-old-space-size=2048'}
+# One private writable runtime temp root, on the ALREADY bounded authored tmpfs.
+# tsx cache remains enabled; esbuild and Node share the same explicit temp root.
+runtime_tmp=evidence/'runtime-tmp';temporary_cut={'requested':str(runtime_tmp),'paths':[],'dependencies':[]}
+try:
+ runtime_tmp.mkdir(mode=0o700)
+ assert runtime_tmp.resolve(strict=True)==runtime_tmp and runtime_tmp.stat().st_dev==evidence.stat().st_dev
+ assert runtime_tmp.stat().st_uid==os.geteuid() and runtime_tmp.stat().st_mode & 0o777==0o700
+ probe=runtime_tmp/'.authored-write-probe'
+ with probe.open('xb') as stream:stream.write(b'authored-runtime-temp-check\n')
+ probe.unlink()
+ for path in [pathlib.Path('/tmp'),evidence.parent,evidence,work,runtime_tmp]:
+  item={'path':str(path)}
+  try:
+   st=path.stat();item.update({'realpath':str(path.resolve(strict=True)),'uid':st.st_uid,'gid':st.st_gid,'mode':oct(st.st_mode),'device':st.st_dev,'writable':os.access(path,os.W_OK),'readOnly':bool(os.statvfs(path).f_flag & os.ST_RDONLY)})
+  except OSError as error:item.update({'errorType':type(error).__name__,'errno':error.errno,'filename':error.filename})
+  temporary_cut['paths'].append(item)
+ # Metadata only, no dependency execution/import or alternative installation.
+ for path in [repo/'node_modules/tsx/node_modules/@esbuild/linux-x64/bin/esbuild',repo/'node_modules/better-sqlite3/build/Release/better_sqlite3.node']:
+  item={'path':str(path),'gate':False,'scope':'EXPECTED_LAYOUT_METADATA_ONLY_NOT_ABI_PROOF'}
+  try:
+   st=path.stat();item.update({'realpath':str(path.resolve(strict=True)),'uid':st.st_uid,'gid':st.st_gid,'mode':oct(st.st_mode),'size':st.st_size,'readOnly':bool(os.statvfs(path).f_flag & os.ST_RDONLY)})
+  except OSError as error:item.update({'errorType':type(error).__name__,'errno':error.errno,'filename':error.filename})
+  temporary_cut['dependencies'].append(item)
+ temporary_cut['status']='PRIVATE_TMPFS_RUNTIME_DIRECTORY_WRITABLE_NOT_FUNCTIONAL_COVERAGE'
+except Exception as error:
+ temporary_cut.update({'status':'FAIL','errorType':type(error).__name__,'errno':getattr(error,'errno',None),'filename':getattr(error,'filename',None),'error':str(error)[:1024]});raise
+finally:(evidence/'runtime-paths.json').write_text(json.dumps(temporary_cut,indent=2))
+# No secret-bearing inherited environment or provider fallback. No generic PATH expansion.
+env={'PATH':os.environ['PATH'],'HOME':str(work),'TMPDIR':str(runtime_tmp),'TEMP':str(runtime_tmp),'TMP':str(runtime_tmp),'NODE_ENV':'test','SILHOUETTE_PROVIDERS':'off','SILHOUETTE_INFERENCE_MODE':'cloud-only','NODE_OPTIONS':'--max-old-space-size=2048'}
 # Per-file hard cap complements mount/cgroup bounds; includes node descendants.
 resource.setrlimit(resource.RLIMIT_FSIZE,(64*1024**2,64*1024**2))
 resource.setrlimit(resource.RLIMIT_NOFILE,(256,256))
