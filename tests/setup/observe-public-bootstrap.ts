@@ -24,8 +24,15 @@ export function captureStartedBootstrap(): BootstrapCapture | undefined {
     return { memory, modules };
 }
 
+export type BeforeBootstrapRedisDisconnect = (observation: Readonly<{
+    retainedOwnersObservedWithoutFailure: boolean;
+}>) => Promise<void>;
+
 /** Teardown observes only retained references/promises. It initiates NO imports. */
-export async function observePublicBootstrap(capture: BootstrapCapture | undefined): Promise<void> {
+export async function observePublicBootstrap(
+    capture: BootstrapCapture | undefined,
+    beforeRedisDisconnect?: BeforeBootstrapRedisDisconnect,
+): Promise<void> {
     if (!capture) { console.log('SNAPSHOT_DIAGNOSTIC_TERMINAL ' + JSON.stringify({ status: 'DIAGNOSTIC_INCOMPLETE', reason: 'NOT_OBSERVED' })); console.log('PUBLIC_BOOTSTRAP_INCOMPLETE_NOT_OBSERVED: publication snapshot absent; pending import/owner race unresolved'); return; }
     const failures: unknown[] = [];
     const modules = await capture.modules;
@@ -77,6 +84,11 @@ export async function observePublicBootstrap(capture: BootstrapCapture | undefin
     // Separate terminal metadata status, never changes original storage failure.
     try {
         console.log('SNAPSHOT_DIAGNOSTIC_TERMINAL ' + JSON.stringify(memory.continuum.getSnapshotDiagnosticStatus()));
+    } catch (error) { failures.push(error); }
+    // Narrow observation seam: existing retained startup/effects first, Redis still available.
+    // A callback failure is retained without hiding independent bootstrap/cleanup failures.
+    try {
+        await beforeRedisDisconnect?.({ retainedOwnersObservedWithoutFailure: failures.length === 0 });
     } catch (error) { failures.push(error); }
     // Disconnect ONLY after initial work and admitted effects have been observed.
     try { if (redis) await redis.redisClient.disconnect(); } catch (error) { failures.push(error); }
