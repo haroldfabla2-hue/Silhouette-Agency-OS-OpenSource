@@ -1,4 +1,4 @@
-name: Hydration boundary and pr4a local checkpoint Node22.18 only
+name: Current isolated fullsuite reconciliation Node22.18 only
 
 on:
   push:
@@ -50,12 +50,12 @@ jobs:
           mkdir "$reviewed"
           cp tests/real-process/fullsuite/reviewed-inputs.sha256 "$reviewed/inputs.sha256"
           chmod 0444 "$reviewed/inputs.sha256"
-          printf '%s  %s\n' f3189d7ab4b993c0241b4f077289133d65e523bf1c6a54d721a0b25ee9c04c36 "$reviewed/inputs.sha256" | sha256sum --check
+          printf '%s  %s\n' bbed6a9e0333e3383c721a0bc1b983f1a26d5a2429ef7698ced147ec52dec014 "$reviewed/inputs.sha256" | sha256sum --check
           printf 'REVIEWED=%s\n' "$reviewed" >> "$GITHUB_ENV"
           work="$RUNNER_TEMP/current-suite-work"
           python3 tests/real-process/fullsuite/prepare-work.py "$work" "$EVIDENCE"
           printf '%s  %s\n' f620fbb142f7011b60aa171160e049cc3af3beeacc11e3d47bb518624c8ef684 tests/real-process/fullsuite/verify-tree.py | sha256sum --check
-          python3 tests/real-process/fullsuite/verify-tree.py "$work" "$reviewed/inputs.sha256" f3189d7ab4b993c0241b4f077289133d65e523bf1c6a54d721a0b25ee9c04c36 "$EVIDENCE/pre-install-tree.json"
+          python3 tests/real-process/fullsuite/verify-tree.py "$work" "$reviewed/inputs.sha256" bbed6a9e0333e3383c721a0bc1b983f1a26d5a2429ef7698ced147ec52dec014 "$EVIDENCE/pre-install-tree.json"
           printf 'WORK=%s\n' "$work" >> "$GITHUB_ENV"
       - name: Exact Node floor
         uses: actions/setup-node@v4
@@ -73,7 +73,7 @@ jobs:
           python3 "$control" capture npm-ci 300 env -i PATH="$PATH" HOME="$RUNNER_TEMP/current-suite-install-home" PUPPETEER_SKIP_DOWNLOAD=true PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=true npm ci
           cd "$GITHUB_WORKSPACE"
           printf '%s  %s\n' f620fbb142f7011b60aa171160e049cc3af3beeacc11e3d47bb518624c8ef684 tests/real-process/fullsuite/verify-tree.py | sha256sum --check
-          python3 tests/real-process/fullsuite/verify-tree.py "$WORK" "$REVIEWED/inputs.sha256" f3189d7ab4b993c0241b4f077289133d65e523bf1c6a54d721a0b25ee9c04c36 "$EVIDENCE/post-install-tree.json"
+          python3 tests/real-process/fullsuite/verify-tree.py "$WORK" "$REVIEWED/inputs.sha256" bbed6a9e0333e3383c721a0bc1b983f1a26d5a2429ef7698ced147ec52dec014 "$EVIDENCE/post-install-tree.json"
       - name: Explicit one security candidate only, no APT configuration or install
         shell: bash
         run: |
@@ -130,7 +130,7 @@ jobs:
           s=json.loads(pathlib.Path(sys.argv[1]).read_text());assert s['status']=='SAFE' and not s['active'] and not s['sticky_unsafe'] and not s['signals'],'UNSAFE helpers: no session admission'
           SAFE
           python3 tests/real-process/fullsuite/host-control.py reserve
-      - name: Static cold malformed and pr4a local checkpoint only
+      - name: Current isolated fullsuite and frontend server build checkpoint
         shell: bash
         run: |
           set -euo pipefail

@@ -22,8 +22,8 @@ assert subprocess.check_output(['node','--version'],text=True).strip()=='v22.18.
 env={'PATH':os.environ['PATH'],'HOME':'/tmp/home','NODE_ENV':'test'}
 pathlib.Path(env['HOME']).mkdir(exist_ok=True)
 phases=[('lint',['npm','run','lint'],180),('types',['npm','run','typecheck'],180),
- ('hydration-cases',['python3','tests/real-process/hydration-boundary/run-cases.py'],110),
- ('pr4a',['npm','test','--','--detectAsyncLeaks','tests/automated/pr4a-llm-chain.test.ts'],180)]
+ ('fullsuite',['npm','test','--','--detectAsyncLeaks'],300),
+ ('frontend',['npm','run','build'],180),('server',['node','node_modules/vite/bin/vite.js','build','--config','vite.server.config.ts'],180)]
 started=time.monotonic();results=[];unsafe=False;global_exhausted=False;total_bytes=0
 clock=json.loads((out/'job-clock.json').read_text())
 available=clock['deadline_monotonic']-started
@@ -80,6 +80,6 @@ for name,cmd,budget in phases:
   ok=not failure and pre['returncode']==0 and pre['reaped'] and pre['group']=='ESRCH' and eof and not signals and not residual
   results.append({'phase':name,'command':cmd,'budget_seconds':remaining,'elapsed_seconds':time.monotonic()-t0,'status':'PASS' if ok else 'FAIL','error':failure,'pid':child.pid if child else None,'residual_namespace_pids':residual,'pre_cleanup':pre,'post_cleanup':post,'signals':signals,'observed_log_bytes':observed,'truncated':observed>len(data),'global_exhausted':global_exhausted,'retained_log_bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()})
   (out/'session.json').write_text(json.dumps({'status':'IN_PROGRESS','results':results},indent=2))
-result={'status':'PASS_LOCAL_HYDRATION_AND_PR4A_ONLY' if all(r['status']=='PASS' for r in results) else 'FAIL','elapsed_seconds':time.monotonic()-started,'results':results,'scope':'Node22.18 static + cold/malformed real children + pr4a only; NO fullsuite/build/boot/API/Node22latest/Windows/audit/provider-success/global-drain'}
+result={'status':'PASS_CURRENT_ISOLATED_NODE_FLOOR_ONLY' if all(r['status']=='PASS' for r in results) else 'FAIL','elapsed_seconds':time.monotonic()-started,'results':results,'scope':'Node22.18 source-only isolated lint/types/full Vitest selection/frontend+server builds; NO boot/API/Node22latest/Windows/audit/provider-success/global-drain; runtime-data omissions and nested OS differences retained'}
 (out/'session.json').write_text(json.dumps(result,indent=2))
 raise SystemExit(0 if result['status'].startswith('PASS_') else 1)
