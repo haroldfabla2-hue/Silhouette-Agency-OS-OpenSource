@@ -15,6 +15,8 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'node:crypto';
+import { createRequire } from 'node:module';
+import { durableDirectory } from './durableFile';
 import { agentFileSystem } from '../agents/agentFileSystem';
 
 // ═══════════════════════════════════════════════════════════════
@@ -22,7 +24,8 @@ import { agentFileSystem } from '../agents/agentFileSystem';
 // ═══════════════════════════════════════════════════════════════
 
 const WAL_DIR = path.resolve(process.cwd(), 'data', 'wal');
-const WAL_FILE = path.join(WAL_DIR, 'memory_wal.json');
+// Resolve once per acquired owner, after creating WAL_DIR. Control sidecar is
+// SQLite-only: never fs.open/read/close/copy/unlink it or its journal in-process.
 const WAL_MAX_ENTRIES = 500; // [FIX 2026-02] Hard cap to prevent unbounded WAL growth
 
 // ═══════════════════════════════════════════════════════════════
@@ -56,6 +59,19 @@ export interface ConsolidationStats {
 // SERVICE
 // ═══════════════════════════════════════════════════════════════
 
+/** Narrow binding contract, not an ambient any declaration for the module.
+ * Only the methods actually used by ownership are exposed. Module loading is
+ * unknown until the constructor check inside initialize; no eager native load.
+ */
+interface ContinuousMemoryOwnerDatabase {
+    pragma(source: string, options: { simple: true }): unknown;
+    exec(source: string): this;
+    close(): this;
+}
+interface ContinuousMemoryOwnerConstructor {
+    new (filename: string, options: { timeout: number }): ContinuousMemoryOwnerDatabase;
+}
+
 export class ContinuousMemoryService {
     private wal: WALEntry[] = [];
     private stats: ConsolidationStats = {
@@ -67,7 +83,42 @@ export class ContinuousMemoryService {
     private consolidationInterval: ReturnType<typeof setInterval> | null = null;
     private initialized = false;
     private closed = false;
-    private storageError: Error | null = null;
+    private storageError: unknown = null;
+    private storageFailed = false;
+    private ownership: ContinuousMemoryOwnerDatabase | null = null;
+    private walDirectory: string | null = null;
+    private walFile: string | null = null;
+
+    private acquireOwnership(): void {
+        durableDirectory(WAL_DIR);
+        const directory = fs.realpathSync(WAL_DIR);
+        this.walDirectory = directory;
+        this.walFile = path.join(directory, 'memory_wal.json');
+        // A dedicated connection, not the application's SQLite data store.
+        // Empty sidecar, no memory records or schema migration. Stable pathname.
+        const nativeModule: unknown = createRequire(import.meta.url)('better-sqlite3');
+        if (typeof nativeModule !== 'function') throw new TypeError('Invalid better-sqlite3 constructor');
+        const NativeDatabase = nativeModule as ContinuousMemoryOwnerConstructor;
+        const owner = new NativeDatabase(path.join(directory, '.continuous-memory-owner.sqlite'), { timeout: 0 });
+        this.ownership = owner;
+        const mode = owner.pragma('journal_mode', { simple: true });
+        if (mode !== 'delete') throw new Error('Continuous memory ownership requires rollback journal DELETE mode');
+        // Sole retention sequence: no COMMIT, no locking_mode mix, no TTL/PID.
+        // SQLite/OS release ownership on connection close or process death.
+        owner.exec('BEGIN EXCLUSIVE');
+    }
+
+    private releaseOwnership(): void {
+        if (!this.ownership) return;
+        this.ownership.close(); // rolls back retained transaction; never unlinks sidecar
+        this.ownership = null;
+    }
+
+    private releaseAfterFailure(): void {
+        try { this.releaseOwnership(); } catch (error) {
+            console.error('[CONTINUOUS_MEM] Secondary ownership release failure:', error);
+        }
+    }
 
     /**
      * Initialize the service. Call on system startup.
@@ -76,10 +127,9 @@ export class ContinuousMemoryService {
     public initialize(): void {
         this.assertStorageUsable();
         if (this.initialized) return;
-        // Ensure WAL directory exists
-        if (!fs.existsSync(WAL_DIR)) {
-            fs.mkdirSync(WAL_DIR, { recursive: true });
-        }
+        try {
+        // Acquire before any WAL load, replay, write or timer admission.
+        this.acquireOwnership();
 
         // Load existing WAL (crash recovery)
         this.loadWAL();
@@ -100,16 +150,31 @@ export class ContinuousMemoryService {
         }, 30000);
 
         console.log(`[CONTINUOUS_MEM] ✅ Continuous Memory Service initialized`);
+        } catch (error) {
+            if (this.consolidationInterval) clearInterval(this.consolidationInterval);
+            this.consolidationInterval = null;
+            this.initialized = false;
+            this.storageError = error;
+            this.storageFailed = true;
+            this.releaseAfterFailure();
+            throw error;
+        }
     }
 
     /**
      * Shutdown cleanly — flush all pending entries.
      */
     public shutdown(): void {
-        if (this.closed) return;
+        if (this.closed) {
+            // Retry release only. Never reopen admission or storage.
+            this.releaseOwnership();
+            return;
+        }
         try { this.ensureReady(); } catch (error) {
             if (this.consolidationInterval) clearInterval(this.consolidationInterval);
             this.consolidationInterval = null;
+            this.closed = true;
+            this.releaseAfterFailure();
             throw error;
         }
         if (this.consolidationInterval) {
@@ -119,8 +184,16 @@ export class ContinuousMemoryService {
 
         // Shutdown is not evidence of completed processing. Preserve pending
         // payloads synchronously for honest recovery in the next process.
-        this.persistWAL();
+        try {
+            this.persistWAL();
+        } catch (error) {
+            // Terminal: no later public write may run after releasing ownership.
+            this.closed = true;
+            this.releaseAfterFailure();
+            throw error;
+        }
         this.closed = true;
+        this.releaseOwnership();
         console.log(`[CONTINUOUS_MEM] Shutdown persisted; ${this.wal.filter(e => e.status !== 'COMMITTED').length} unfinished entries retained.`);
     }
 
@@ -195,6 +268,7 @@ export class ContinuousMemoryService {
         const receipt = `${marker}\n${text}`;
         const before = agentFileSystem.readFile(entry.agentId, 'MEMORY.md');
         if (!before.includes(receipt)) agentFileSystem.appendMemory(entry.agentId, receipt);
+        else agentFileSystem.syncMemoryReceipt(entry.agentId);
         if (!agentFileSystem.readFile(entry.agentId, 'MEMORY.md').includes(receipt)) {
             throw new Error(`WAL memory receipt unverified for ${entry.id}`);
         }
@@ -291,7 +365,7 @@ export class ContinuousMemoryService {
     // ───────────────────────────────────────────────────────────
 
     private assertStorageUsable(): void {
-        if (this.storageError) throw this.storageError;
+        if (this.storageFailed) throw this.storageError;
         if (this.closed) throw new Error('Continuous memory is shut down');
     }
 
@@ -312,13 +386,15 @@ export class ContinuousMemoryService {
 
     private loadWAL(): void {
         try {
-            if (!fs.existsSync(WAL_FILE)) { this.wal = []; return; }
-            const records = JSON.parse(fs.readFileSync(WAL_FILE, 'utf-8'));
+            if (!this.ownership || !this.walFile) throw new Error('Continuous memory ownership unavailable');
+            if (!fs.existsSync(this.walFile)) { this.wal = []; return; }
+            const records = JSON.parse(fs.readFileSync(this.walFile, 'utf-8'));
             if (!Array.isArray(records) || !records.every(e => this.validRecord(e))
                 || new Set(records.map(e => e.id)).size !== records.length) throw new Error('Invalid WAL records');
             this.wal = records;
         } catch (error) {
-            this.storageError = error instanceof Error ? error : new Error(String(error));
+            this.storageError = error;
+            this.storageFailed = true;
             console.error('[CONTINUOUS_MEM] WAL unreadable; original preserved and writes refused:', this.storageError);
             throw this.storageError;
         }
@@ -328,22 +404,23 @@ export class ContinuousMemoryService {
      * The synchronous API cannot defer durability to a microtask. */
     private persistWAL(): void {
         this.assertStorageUsable();
-        const temporary = `${WAL_FILE}.${process.pid}.${crypto.randomUUID()}.tmp`;
+        if (!this.ownership || !this.walFile || !this.walDirectory) throw new Error('Continuous memory ownership unavailable');
+        const temporary = `${this.walFile}.${process.pid}.${crypto.randomUUID()}.tmp`;
         try {
-            fs.mkdirSync(WAL_DIR, { recursive: true });
             const fd = fs.openSync(temporary, 'wx', 0o600);
             try { fs.writeFileSync(fd, JSON.stringify(this.wal, null, 2), 'utf8'); fs.fsyncSync(fd); }
             finally { fs.closeSync(fd); }
-            fs.renameSync(temporary, WAL_FILE);
+            fs.renameSync(temporary, this.walFile);
             // Directory fsync is supported on POSIX; Windows does not expose
             // an equivalent directory handle through this API.
             if (process.platform !== 'win32') {
-                const directory = fs.openSync(WAL_DIR, 'r');
+                const directory = fs.openSync(this.walDirectory, 'r');
                 try { fs.fsyncSync(directory); } finally { fs.closeSync(directory); }
             }
         } catch (error) {
-            this.storageError = error instanceof Error ? error : new Error(String(error));
-            throw this.storageError;
+            this.storageError = error;
+            this.storageFailed = true;
+            throw error;
         } finally {
             try { fs.unlinkSync(temporary); } catch { /* renamed or failed before creation */ }
         }

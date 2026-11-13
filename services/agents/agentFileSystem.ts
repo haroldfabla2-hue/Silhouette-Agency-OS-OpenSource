@@ -16,6 +16,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { appendDurable, syncExistingDurable } from '../memory/durableFile';
 import { Agent, AgentRoleType, AgentTier, AgentCapability } from '../../types';
 import { createIdentityEvolution, type IdentityEvolution } from '../identity/identityEvolution';
 
@@ -220,19 +221,15 @@ export class AgentFileSystem {
      */
     public appendMemory(agentId: string, entry: string): void {
         const filePath = this.getFilePath(agentId, 'MEMORY.md');
-        const dir = this.getAgentDir(agentId);
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
-        }
-
         const timestamp = new Date().toISOString();
         const formattedEntry = `\n## [${timestamp}]\n${entry}\n`;
+        // Every caller gets the same durable append boundary and original error.
+        appendDurable(filePath, formattedEntry);
+    }
 
-        try {
-            fs.appendFileSync(filePath, formattedEntry, 'utf-8');
-        } catch (error) {
-            console.error(`[AGENT_FS] Failed to append memory for ${agentId}:`, error);
-        }
+    /** Fence an already-visible WAL receipt without appending a duplicate. */
+    public syncMemoryReceipt(agentId: string): void {
+        syncExistingDurable(this.getFilePath(agentId, 'MEMORY.md'));
     }
 
     /**

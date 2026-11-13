@@ -60,7 +60,7 @@ if(mode==='durable-before-return'){
  service.initialize();
  const id=service.logBeforeProcessing('wal-fixture','MESSAGE_RECEIVED',{input:'original awaiting memory receipt'});
  fs.mkdirSync('data/agents/wal-fixture/MEMORY.md',{recursive:true});
- assert.throws(()=>service.commitEntry(id,'authored input, not provider output'),/receipt unverified/);
+ assert.throws(()=>service.commitEntry(id,'authored input, not provider output'), (error: any) => error?.code === 'EISDIR', 'preserve original real append filesystem error');
  assert.equal(JSON.parse(fs.readFileSync(file,'utf8')).find((e:any)=>e.id===id)?.status,'PENDING');
  assert.equal(service.getStats().memoriesSaved,0);
  service.shutdown();

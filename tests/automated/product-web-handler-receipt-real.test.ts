@@ -8,7 +8,7 @@ import {pathToFileURL} from 'node:url';
 const loader=pathToFileURL(resolve('node_modules/tsx/dist/loader.mjs')).href;
 const script=resolve('tests/real-process/web-handler-receipt-child.ts');
 function run(directory:string,mode:string){
- const text=execFileSync(process.execPath,['--import',loader,script,mode],{cwd:directory,encoding:'utf8',timeout:25000,env:{PATH:process.env.PATH,HOME:directory,NODE_ENV:'test',SILHOUETTE_PROVIDERS:'off'}});
+ const text=execFileSync(process.execPath,['--import',loader,script,mode],{cwd:directory,encoding:'utf8',timeout:25000,env:{PATH:process.env.PATH,HOME:directory,NODE_ENV:'test',SILHOUETTE_PROVIDERS:'off',SILHOUETTE_INFERENCE_MODE:'cloud-only'}});
  return text.split('\n').filter(line=>line.startsWith('{')).map(line=>JSON.parse(line)).at(-1);
 }
 describe('actual gateway -> handler -> receipt -> WAL boundary',()=>{

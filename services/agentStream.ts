@@ -119,7 +119,8 @@ export class AgentStreamService {
                 const summary = fullText.length > 500 ? fullText.substring(0, 500) + '...' : fullText;
                 agentFileSystem.appendMemory(agent.id, `**Task Completed**\nTask: ${task.substring(0, 200)}\nResult Summary: ${summary}`);
             } catch (memErr) {
-                // Non-critical — don't let memory failures break the flow
+                // Preserve the task outcome, but never hide failed memory persistence.
+                console.error(`[AGENT_STREAM] Task memory persistence failed for ${agent.id}:`, memErr);
             }
 
         } catch (e) {
