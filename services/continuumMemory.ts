@@ -433,10 +433,11 @@ class ContinuumMemorySystem {
             await atomicWriteFile(SNAPSHOT_PATH, payload, this.snapshotDiagnosticEnabled ? {
                 snapshotDiagnostic: event => this.snapshotDiagnostic(event.stage, { ...metadata, ...event })
             } : {});
-            let readback: Buffer;
+            let readback!: Buffer;
             if (this.snapshotDiagnosticEnabled) {
                 const handle = await fs.open(SNAPSHOT_PATH, 'r');
-                let readFailed = false;
+                let readFailure: { error: unknown } | undefined;
+                let closeFailure: { error: unknown } | undefined;
                 try {
                     readback = await handle.readFile();
                     const readbackChecksum = createHash('sha256').update(readback).digest('hex');
@@ -451,14 +452,17 @@ class ContinuumMemorySystem {
                         this.snapshotDiagnostic('MISMATCH', { ...metadata, readbackChecksum, readbackBytes: readback.length });
                         throw new Error(`Snapshot read-back mismatch for sequence ${sequence}`);
                     }
-                } catch (error) { readFailed = true; throw error; }
+                } catch (error) { readFailure = { error }; }
                 finally {
                     try { await handle.close(); }
                     catch (error) {
                         this.snapshotDiagnostic('DIAGNOSTIC_ERROR', metadata);
-                        if (!readFailed) throw error;
+                        closeFailure = { error };
                     }
                 }
+                // Preserve the original read/mismatch error, even when close also failed.
+                if (readFailure) throw readFailure.error;
+                if (closeFailure) throw closeFailure.error;
             } else readback = await fs.readFile(SNAPSHOT_PATH);
             const readbackChecksum = createHash('sha256').update(readback).digest('hex');
             if (readbackChecksum !== checksum) {

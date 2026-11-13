@@ -85,11 +85,12 @@ for name,cmd,budget in phases:
   results.append({'phase':name,'command':cmd,'budget_seconds':remaining,'elapsed_seconds':time.monotonic()-t0,'status':'PASS' if ok else 'FAIL','error':failure,'pid':child.pid if child else None,'residual_namespace_pids':residual,'pre_cleanup':pre,'post_cleanup':post,'signals':signals,'observed_log_bytes':observed,'truncated':observed>len(data),'global_exhausted':global_exhausted,'retained_log_bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()})
   (out/'session.json').write_text(json.dumps({'status':'IN_PROGRESS','results':results},indent=2))
 # Diagnostic lines stay in original capped raw log; source parser is bounded.
-diag={'status':'DIAGNOSTIC_INCOMPLETE','event_cap':256,'byte_cap':131072,'events':0,'bytes':0,'terminals':0,'issues':[],'issues_omitted':0}
+diag={'status':'DIAGNOSTIC_INCOMPLETE','event_cap':256,'byte_cap':131072,'events':0,'bytes':0,'normalized_bytes':0,'raw_sha256':hashlib.sha256().hexdigest(),'normalized_sha256':hashlib.sha256().hexdigest(),'terminals':0,'issues':[],'issues_omitted':0}
 def issue(reason):
  if len(diag['issues'])<32:diag['issues'].append(reason)
  else:diag['issues_omitted']+=1
 owners={};context=None
+raw_digest=hashlib.sha256();normalized_digest=hashlib.sha256()
 allowed={'tests/automated/'+n+'.test.ts' for n in ['fase1-chat-gateway','system-routes-audit','consciousness-metrics']}
 testlog=out/'actual-owner-tests.log'
 if testlog.exists():
@@ -101,7 +102,8 @@ if testlog.exists():
    context=parsed.decode('utf8',errors='replace').split(' | ',1)[1].split(' > ',1)[0]
   terminal=parsed.startswith(b'SNAPSHOT_DIAGNOSTIC_TERMINAL ')
   if not terminal and not parsed.startswith(b'SNAPSHOT_DIAGNOSTIC '):continue
-  diag['events']+=1;diag['bytes']+=len(line)+1
+  diag['events']+=1;diag['bytes']+=len(line)+1;diag['normalized_bytes']+=len(parsed)+1
+  raw_digest.update(line+b'\n');normalized_digest.update(parsed+b'\n')
   if diag['events']>256 or diag['bytes']>131072:issue('aggregate cap exceeded');continue
   try:
    item=json.loads(parsed.split(b' ',1)[1]);g=item.get('graphId')
@@ -109,7 +111,7 @@ if testlog.exists():
    if context not in allowed:raise ValueError('missing focal worker context')
    if g not in owners:
     if len(owners)>=3:raise ValueError('extra graph owner')
-    owners[g]={'events':0,'bytes':0,'ordinal':0,'declared':False,'context':context,'worker':None,'ops':{},'terminal':False}
+    owners[g]={'events':0,'bytes':0,'raw_bytes':0,'raw_sha256':hashlib.sha256().hexdigest(),'normalized_sha256':hashlib.sha256().hexdigest(),'ordinal':0,'declared':False,'context':context,'worker':None,'ops':{},'terminal':False}
    owner=owners[g]
    if owner['context']!=context:raise ValueError('graph changed file context')
    if terminal:
@@ -121,7 +123,10 @@ if testlog.exists():
     if item.get('events')!=owner['events'] or item.get('bytes')!=owner['bytes']:issue('owner counter mismatch')
     continue
    if owner['terminal']:issue('event after terminal')
-   owner['events']+=1;owner['bytes']+=len(line)+1
+   owner['events']+=1;owner['bytes']+=len(parsed)+1;owner['raw_bytes']+=len(line)+1
+   # Counters reconcile emitted normalized bytes; raw transport ledger remains separate.
+   owner.setdefault('_raw_digest',hashlib.sha256()).update(line+b'\n')
+   owner.setdefault('_normalized_digest',hashlib.sha256()).update(parsed+b'\n')
    if owner['events']>64 or owner['bytes']>32768:issue('owner observed cap exceeded')
    ordinal=item.get('ordinal')
    if type(ordinal) is not int or ordinal!=owner['ordinal']+1:issue('noncontiguous owner ordinal')
@@ -171,6 +176,10 @@ for owner in owners.values():
  for op in owner['ops'].values():
   if op['stages'] not in [['SNAPSHOT_CAPTURED','TEMP_READY','RENAME_RETURNED','READBACK','MATCH'],['SNAPSHOT_CAPTURED','TEMP_READY','RENAME_RETURNED','READBACK','MISMATCH']]:issue('operation incomplete')
 if not diag['issues'] and not diag['issues_omitted']:diag['status']='OBSERVED_METADATA_ONLY_NOT_CAUSAL_PROOF'
+diag['raw_sha256']=raw_digest.hexdigest();diag['normalized_sha256']=normalized_digest.hexdigest()
+for owner in owners.values():
+ owner['raw_sha256']=owner.pop('_raw_digest',hashlib.sha256()).hexdigest()
+ owner['normalized_sha256']=owner.pop('_normalized_digest',hashlib.sha256()).hexdigest()
 diag['owners']=owners
 (out/'snapshot-diagnostic-summary.json').write_text(json.dumps(diag,indent=2))
 print('SNAPSHOT_DIAGNOSTIC_SOURCE_STATUS:'+diag['status'],flush=True)
