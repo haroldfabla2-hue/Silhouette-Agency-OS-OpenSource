@@ -1,4 +1,6 @@
 import '../setup/require-cloud-only';
+import { captureStartedMessageProducer, observeMessageProducer, type MessageProducerCapture } from '../setup/observe-message-producer';
+let messageProducerCapture: MessageProducerCapture;
 /**
  * AUTOMATED TEST SUITE: Cognitive-state engine (phi composite index)
  * Verifies the phi score is a transparent, explainable weighted composite —
@@ -11,7 +13,10 @@ const importFailures: unknown[] = [];
 async function actualConsciousness() {
     try { return await import('../../services/consciousnessEngine'); }
     catch (error) { importFailures.push(error); throw error; }
-    finally { bootstrapCapture ??= captureStartedBootstrap(); }
+    finally {
+        messageProducerCapture ??= captureStartedMessageProducer();
+        bootstrapCapture ??= captureStartedBootstrap();
+    }
 }
 
 let identityOwner: typeof import('../../services/consciousnessEngine').consciousness | undefined;
@@ -19,6 +24,7 @@ afterAll(async () => {
     // Runs even if a metric assertion failed. Rejection fails the hook visibly.
     const failures: unknown[] = [...importFailures];
     try { await identityOwner?.ready(); } catch (error) { failures.push(error); }
+    try { await observeMessageProducer(messageProducerCapture); } catch (error) { failures.push(error); }
     try { await observePublicBootstrap(bootstrapCapture); } catch (error) { failures.push(error); }
     if (failures.length) throw new AggregateError(failures, 'Identity/import/public bootstrap ownership failed');
 });

@@ -180,7 +180,26 @@ describe('R7: signed ingress envelope is the only channel authority', () => {
     it('wiring guard: orchestrator resolves authority and never trusts payload.role (static; orchestrator import needs model boot, documented cold-boot blocker)', async () => {
         const { readFileSync } = await import('node:fs');
         const src = readFileSync('services/orchestrator.ts', 'utf8');
-        const handler = src.slice(src.indexOf('public async handleUserMessage'));
+        const wrapperStart = src.indexOf('    public handleUserMessage(payload: any): Promise<void> {');
+        const bodyStart = src.indexOf('    private async handleAcceptedUserMessage(payload: any, root: MessageRootOutcome) {');
+        const bodyEnd = src.indexOf('    private async analyzeComplexity(', bodyStart);
+        expect(wrapperStart).toBeGreaterThanOrEqual(0);
+        expect(bodyStart).toBeGreaterThan(wrapperStart);
+        expect(bodyEnd).toBeGreaterThan(bodyStart);
+        const wrapper = src.slice(wrapperStart, bodyStart);
+        const handler = src.slice(bodyStart, bodyEnd);
+        const gate = wrapper.indexOf('if (!this.userMessageAdmissionOpen)');
+        const retained = wrapper.indexOf('this.userMessageOwners.add(owner)');
+        const invoked = wrapper.indexOf('this.handleAcceptedUserMessage(payload, root)');
+        expect(gate).toBeGreaterThanOrEqual(0);
+        expect(retained).toBeGreaterThan(gate);
+        expect(invoked).toBeGreaterThan(retained);
+        expect(wrapper).not.toContain('await ');
+        expect(handler).toContain("await import('./security/channelAuthority')");
+        const authorityCall = handler.indexOf('resolveChannelAuthority(payload)');
+        const walCall = handler.indexOf('continuousMemory.logBeforeProcessing(');
+        expect(authorityCall).toBeGreaterThanOrEqual(0);
+        expect(walCall).toBeGreaterThan(authorityCall);
         expect(handler).toContain('resolveChannelAuthority(payload)');
         expect(handler).not.toContain("payload.role === 'GUEST'");
         expect(handler).toContain('authority.role, {');

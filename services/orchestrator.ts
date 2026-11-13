@@ -1,3 +1,4 @@
+import { publishMessageProducer } from './messageProducerOwner';
 import { subscribeHelpProtocol } from './communication/helpProtocol';
 import { loadOrganization, defaultOrganizationPath, teamsForDomain, teamOfAgent } from './org/organization';
 import { ReputationLedger, defaultReputationLedgerPath } from './org/reputationLedger';
@@ -74,7 +75,83 @@ interface ActiveTask {
     status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED';
 }
 
+type MessageFailureStage = 'unsubscribe' | 'authority-or-uncaught-processing' | 'body-invocation' |
+    'transport-receipt-missing' | 'fallback-transport-receipt-missing' | 'wal-commit' | 'fallback-wal-commit' |
+    'transport' | 'fallback-transport' | 'wal-log-or-processing' | 'processing' | 'fallback-delivery';
+type MessageRootOutcome = {
+    wal: 'NOT_STARTED' | 'PENDING' | 'COMMITTED';
+    delivery: 'NOT_ATTEMPTED' | 'ATTEMPTED' | 'RECEIPT_MISSING' | 'FAILED' | 'RECEIPT_OBSERVED';
+    commit: 'NOT_ATTEMPTED' | 'SUCCESS' | 'FAILED';
+    readOnly: boolean;
+    failures: { stage: MessageFailureStage; error: unknown }[];
+};
+
+export class UserMessageAdmissionStoppedError extends Error {
+    constructor() { super('User-message admission stopped'); this.name = 'UserMessageAdmissionStoppedError'; }
+}
+
 export class AgentSwarmOrchestrator {
+    private userMessageAdmissionOpen = true;
+    private userMessageUnsubscribe?: () => void;
+    private readonly userMessageOwners = new Set<Promise<void>>();
+    private userMessageStopPromise?: Promise<ReturnType<AgentSwarmOrchestrator['getUserMessageProducerStatus']>>;
+    private readonly userMessageFailures: { stage: MessageFailureStage; error: unknown }[] = [];
+    private readonly userMessageCounts = { accepted: 0, settled: 0, denied: 0, failures: 0,
+        readOnlyPending: 0, otherPending: 0, notStarted: 0, deliveryNotAttempted: 0, receiptObserved: 0, receiptMissing: 0, commitFailed: 0 };
+    private userMessageCountOverflow = false;
+    private readonly userMessageFailureStages: Partial<Record<MessageFailureStage, number>> = {};
+
+    private countUserMessage(key: keyof typeof this.userMessageCounts): void {
+        if (this.userMessageCounts[key] === Number.MAX_SAFE_INTEGER) this.userMessageCountOverflow = true;
+        else this.userMessageCounts[key]++;
+    }
+
+    private recordUserMessageFailure(root: MessageRootOutcome | null, stage: MessageFailureStage, error: unknown): void {
+        // One throw passing through nested catches counts once; distinct causes remain separate.
+        if (root?.failures.some(item => Object.is(item.error, error))) return;
+        root?.failures.push({ stage, error });
+        this.countUserMessage('failures');
+        const stageCount = this.userMessageFailureStages[stage] ?? 0;
+        if (stageCount === Number.MAX_SAFE_INTEGER) this.userMessageCountOverflow = true;
+        else this.userMessageFailureStages[stage] = stageCount + 1;
+        if (this.userMessageFailures.length < 8) this.userMessageFailures.push({ stage, error });
+    }
+
+    public getUserMessageProducerStatus() {
+        const counts = { ...this.userMessageCounts };
+        return {
+            admissionOpen: this.userMessageAdmissionOpen,
+            pendingOwners: this.userMessageOwners.size,
+            counts, overflow: this.userMessageCountOverflow,
+            failureSampleSize: this.userMessageFailures.length,
+            failureStageCounts: { ...this.userMessageFailureStages },
+            scope: 'THIS_ORCHESTRATOR_MESSAGE_BODY_ONLY' as const,
+            localJoin: this.userMessageAdmissionOpen || this.userMessageOwners.size > 0
+                ? 'NOT_SETTLED' as const : 'LOCAL_MESSAGE_PRODUCERS_SETTLED' as const,
+            semanticStatus: this.userMessageAdmissionOpen || this.userMessageOwners.size > 0 ||
+                counts.failures > 0 || counts.readOnlyPending > 0 || counts.otherPending > 0 ||
+                counts.notStarted > 0 || this.userMessageCountOverflow
+                ? 'INCOMPLETE' as const : 'NO_LOCAL_MESSAGE_FAILURE_RECORDED' as const,
+        };
+    }
+
+    public stopUserMessageAdmissions(): Promise<ReturnType<AgentSwarmOrchestrator['getUserMessageProducerStatus']>> {
+        if (this.userMessageStopPromise) return this.userMessageStopPromise;
+        this.userMessageAdmissionOpen = false;
+        const unsubscribe = this.userMessageUnsubscribe;
+        this.userMessageUnsubscribe = undefined;
+        try { unsubscribe?.(); }
+        catch (error) { this.recordUserMessageFailure(null, 'unsubscribe', error); }
+        // This promise is never in the owner set. No fail-fast or cancellation.
+        this.userMessageStopPromise = (async () => {
+            while (this.userMessageOwners.size > 0) {
+                await Promise.allSettled([...this.userMessageOwners]);
+            }
+            return this.getUserMessageProducerStatus();
+        })();
+        return this.userMessageStopPromise;
+    }
+
     // Active Actors in RAM (The "Stage")
     // OPTIMIZED: LRU Cache Implementation
     private activeActors: Map<string, StandardAgent> = new Map();
@@ -267,7 +344,8 @@ export class AgentSwarmOrchestrator {
 
         // --- UNIFIED MESSAGING HANDLER (CHANNELS) ---
         // Handles messages from Telegram, WhatsApp, Discord via ChannelRouter
-        systemBus.subscribe(SystemProtocol.USER_MESSAGE, (event) => {
+        this.userMessageUnsubscribe = systemBus.subscribe(SystemProtocol.USER_MESSAGE, (event) => {
+            if (!this.userMessageAdmissionOpen) { this.countUserMessage('denied'); return; }
             console.log('[ORCHESTRATOR] 🔔 USER_MESSAGE event received from systemBus');
             this.handleUserMessage(event.payload).catch((err: any) => {
                 console.error('[ORCHESTRATOR] ❌ handleUserMessage FAILED:', err?.message || err);
@@ -912,7 +990,44 @@ Format each gap as:
     /**
      * Handles incoming user messages from ChannelRouter
      */
-    public async handleUserMessage(payload: any) {
+    public handleUserMessage(payload: any): Promise<void> {
+        // Denial is outside the legacy processing/error-reply path.
+        if (!this.userMessageAdmissionOpen) {
+            this.countUserMessage('denied');
+            return Promise.reject(new UserMessageAdmissionStoppedError());
+        }
+        const root: MessageRootOutcome = { wal: 'NOT_STARTED', delivery: 'NOT_ATTEMPTED',
+            commit: 'NOT_ATTEMPTED', readOnly: false, failures: [] };
+        let resolveOwner!: () => void;
+        let rejectOwner!: (error: unknown) => void;
+        const owner = new Promise<void>((resolve, reject) => { resolveOwner = resolve; rejectOwner = reject; });
+        this.userMessageOwners.add(owner);
+        this.countUserMessage('accepted');
+        const finish = () => {
+            if (root.wal === 'PENDING') this.countUserMessage(root.readOnly ? 'readOnlyPending' : 'otherPending');
+            if (root.wal === 'NOT_STARTED') this.countUserMessage('notStarted');
+            if (root.delivery === 'NOT_ATTEMPTED') this.countUserMessage('deliveryNotAttempted');
+            if (root.delivery === 'RECEIPT_OBSERVED') this.countUserMessage('receiptObserved');
+            if (root.delivery === 'RECEIPT_MISSING') this.countUserMessage('receiptMissing');
+            if (root.commit === 'FAILED') this.countUserMessage('commitFailed');
+            this.countUserMessage('settled');
+            this.userMessageOwners.delete(owner);
+        };
+        void owner.then(finish, finish);
+        // Invoke synchronously after retention, with the original first-await timing.
+        try {
+            void this.handleAcceptedUserMessage(payload, root).then(resolveOwner, error => {
+                this.recordUserMessageFailure(root, 'authority-or-uncaught-processing', error);
+                rejectOwner(error);
+            });
+        } catch (error) {
+            this.recordUserMessageFailure(root, 'body-invocation', error);
+            rejectOwner(error);
+        }
+        return owner;
+    }
+
+    private async handleAcceptedUserMessage(payload: any, root: MessageRootOutcome) {
         // payload: { sessionId, message, channel, chatId, senderId, senderName ... }
         console.log(`[ORCHESTRATOR] 📩 Processing User Message from ${payload.channel} (${payload.senderName || payload.senderId})`);
 
@@ -925,26 +1040,42 @@ Format each gap as:
 
         let walId: string | null = null;
         let replyAttempted = false;
-        const deliver = async (text: string, media?: any[]): Promise<string | null> => {
+        const deliver = async (text: string, media?: any[], fallback = false): Promise<string | null> => {
             replyAttempted = true;
-            let deliveryId: string | null;
-            if (typeof payload.replyRoute === 'string') {
-                const { gateway } = await import('../server/gateway/wsGateway');
-                deliveryId = await gateway.deliverReply(payload.replyRoute, text, media);
-            } else {
-                const { channelRouter } = await import('../server/channels/channelRouter');
-                deliveryId = await channelRouter.send(payload.channel, {chatId:payload.chatId,text,media});
-            }
-            if (!deliveryId) {
-                console.error('[ORCHESTRATOR] Reply delivery unverified; no transport receipt, do not resend:', {walId});
-                return null;
-            }
+            root.delivery = 'ATTEMPTED';
             try {
-                if (walId) continuousMemory.commitEntry(walId, text, {id:deliveryId,transport:typeof payload.replyRoute==='string'?'websocket':String(payload.channel)});
-            } catch (memoryError) {
-                console.error('[ORCHESTRATOR] Reply delivered; WAL commit unverified, do not resend:', {walId,error:memoryError});
+                let deliveryId: string | null;
+                if (typeof payload.replyRoute === 'string') {
+                    const { gateway } = await import('../server/gateway/wsGateway');
+                    deliveryId = await gateway.deliverReply(payload.replyRoute, text, media);
+                } else {
+                    const { channelRouter } = await import('../server/channels/channelRouter');
+                    deliveryId = await channelRouter.send(payload.channel, {chatId:payload.chatId,text,media});
+                }
+                if (!deliveryId) {
+                    root.delivery = 'RECEIPT_MISSING';
+                    this.recordUserMessageFailure(root, fallback ? 'fallback-transport-receipt-missing' : 'transport-receipt-missing', new Error('Transport receipt missing'));
+                    console.error('[ORCHESTRATOR] Reply delivery unverified; no transport receipt, do not resend:', {walId});
+                    return null;
+                }
+                root.delivery = 'RECEIPT_OBSERVED';
+                try {
+                    if (walId) {
+                        continuousMemory.commitEntry(walId, text, {id:deliveryId,transport:typeof payload.replyRoute==='string'?'websocket':String(payload.channel)});
+                        root.commit = 'SUCCESS';
+                        root.wal = 'COMMITTED';
+                    }
+                } catch (memoryError) {
+                    root.commit = 'FAILED';
+                    this.recordUserMessageFailure(root, fallback ? 'fallback-wal-commit' : 'wal-commit', memoryError);
+                    console.error('[ORCHESTRATOR] Reply delivered; WAL commit unverified, do not resend:', {walId,error:memoryError});
+                }
+                return deliveryId;
+            } catch (deliveryError) {
+                root.delivery = 'FAILED';
+                this.recordUserMessageFailure(root, fallback ? 'fallback-transport' : 'transport', deliveryError);
+                throw deliveryError;
             }
-            return deliveryId;
         };
 
         try {
@@ -955,8 +1086,11 @@ Format each gap as:
                 { input: payload.message, sessionId: payload.sessionId }
             );
 
+            root.wal = 'PENDING';
+
             // [PHASE 16: READ-ONLY OVERRIDE]
             if (payload.isReadOnly) {
+                root.readOnly = true;
                 console.log(`[ORCHESTRATOR] 👁️ Channel ${payload.channel} is in Read-Only mode. Message ingested but skipping LLM response.`);
                 return;
             }
@@ -1131,12 +1265,16 @@ ${payload.message}
             await deliver(finalOutput, outboundMedia.length > 0 ? outboundMedia : undefined);
 
         } catch (error: any) {
+            this.recordUserMessageFailure(root, root.wal === 'NOT_STARTED' ? 'wal-log-or-processing' : 'processing', error);
             console.error(`[ORCHESTRATOR] ❌ Message handling error:`, error);
             // No second reply after an attempted send: an exception cannot
             // prove that the original transport did not accept the message.
             if (!replyAttempted) {
-                try { await deliver(`⚠️ I encountered an internal error: ${error.message}`); }
-                catch (deliveryError) { console.error('[ORCHESTRATOR] Error response delivery unverified:', deliveryError); }
+                try { await deliver(`⚠️ I encountered an internal error: ${error.message}`, undefined, true); }
+                catch (deliveryError) {
+                    this.recordUserMessageFailure(root, 'fallback-delivery', deliveryError);
+                    console.error('[ORCHESTRATOR] Error response delivery unverified:', deliveryError);
+                }
             }
 
         }
@@ -3149,3 +3287,4 @@ OBJECTIVES:
 }
 
 export const orchestrator = new AgentSwarmOrchestrator();
+publishMessageProducer(orchestrator);

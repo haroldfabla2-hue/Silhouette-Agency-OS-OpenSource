@@ -1,4 +1,6 @@
 import '../setup/require-cloud-only';
+import { captureStartedMessageProducer, observeMessageProducer, type MessageProducerCapture } from '../setup/observe-message-producer';
+let messageProducerCapture: MessageProducerCapture;
 /**
  * Regression tests for the dashboard audit (batch 1):
  * 1. /auto-evolution routes must be registered at import time.
@@ -27,6 +29,7 @@ async function actualRoutes() {
         throw error;
     } finally {
         // A failed route import never forces a controller import here.
+        messageProducerCapture ??= captureStartedMessageProducer();
         narrativeCapture ??= captureStartedNarrative();
         arbiterCapture ??= captureStartedResourceArbiter();
         bootstrapCapture ??= captureStartedBootstrap();
@@ -65,6 +68,7 @@ afterAll(async () => {
         console.log('ACTUAL_TELEMETRY_POLL_INCOMPLETE_NOT_OBSERVED: no retained controller');
     }
     } catch (error) { failures.push(error); }
+    try { await observeMessageProducer(messageProducerCapture); } catch (error) { failures.push(error); }
     try { await observeNarrative(narrativeCapture); } catch (error) { failures.push(error); }
     try { await observeResourceArbiter(arbiterCapture); } catch (error) { failures.push(error); }
     try { await observePublicBootstrap(bootstrapCapture); } catch (error) { failures.push(error); }

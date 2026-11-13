@@ -1,4 +1,6 @@
 import '../setup/require-cloud-only';
+import { captureStartedMessageProducer, observeMessageProducer, type MessageProducerCapture } from '../setup/observe-message-producer';
+let messageProducerCapture: MessageProducerCapture;
 /**
  * FASE 1 (R1): Chat-gateway unification — REAL behavioral tests.
  *
@@ -22,6 +24,7 @@ let narrativeCapture: NarrativeCapture;
 let arbiterCapture: ArbiterCapture;
 afterAll(async () => {
     const failures: unknown[] = [];
+    try { await observeMessageProducer(messageProducerCapture); } catch (error) { failures.push(error); }
     try { await observeNarrative(narrativeCapture); } catch (error) { failures.push(error); }
     try { await observeResourceArbiter(arbiterCapture); } catch (error) { failures.push(error); }
     try { await observePublicBootstrap(bootstrapCapture); } catch (error) { failures.push(error); }
@@ -67,6 +70,7 @@ async function collect(stream: AsyncGenerator<InferenceEvent>): Promise<Inferenc
     for await (const e of stream) events.push(e);
     return events;
     } finally {
+        messageProducerCapture ??= captureStartedMessageProducer();
         narrativeCapture ??= captureStartedNarrative();
         arbiterCapture ??= captureStartedResourceArbiter();
         bootstrapCapture ??= captureStartedBootstrap();

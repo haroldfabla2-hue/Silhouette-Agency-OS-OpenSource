@@ -1,7 +1,7 @@
 import { Bot, Context, InputFile } from 'grammy';
 import { configLoader } from '../../server/config/configLoader';
 import { logger } from '../../services/logger';
-import { orchestrator } from '../orchestrator';
+import { orchestrator, UserMessageAdmissionStoppedError } from '../orchestrator';
 
 // ═══════════════════════════════════════════════════════════════
 // UTILITY: Continuous Typing (Telegram expires typing after ~5s)
@@ -126,6 +126,9 @@ export class TelegramService {
                     await ctx.reply("System Initializing... Please wait.");
                 }
             } catch (err: any) {
+                // Local orchestrator denial does not authorize an error reply/retry.
+                // Typing may already have been sent; this is not Telegram quiescence.
+                if (err instanceof UserMessageAdmissionStoppedError) return;
                 logger.error({ error: err.message }, `[Telegram] Processing failed`);
                 await ctx.reply("❌ Error procesando tu mensaje. El sistema está reintentando automáticamente.").catch(() => { });
             } finally {
