@@ -9,6 +9,7 @@ import { memoryTransitions, isOutstandingTransition } from './memoryTransitions'
 import { quotaLedger, QuotaLedger } from './quotaLedger';
 import { DEFAULT_GEMINI_EMBEDDING_MODEL } from './llm/defaultModels';
 import { introspection } from './introspectionEngine';
+import { publishContinuumInstance } from './continuumInstanceOwner';
 import { redisClient } from './redisClient';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -100,6 +101,10 @@ class ContinuumMemorySystem {
     private lastSnapshotReceipt: SnapshotReceipt | undefined;
     private readonly memoryEffectLimit = 128;
     private effectReservations = 0;
+    // Only pending hydration waiters are bounded here. Release before canonical
+    // work, so ingestion parents never hold a slot needed by their children.
+    private hydrationWaiters = 0;
+    private readonly hydrationWaiterLimit = 128;
     private readonly memoryEffectOwners = new Map<string, {
         nodeId: string; completion: Promise<MemoryEffectReceipt>; receipt?: MemoryEffectReceipt;
     }>();
@@ -657,6 +662,20 @@ class ContinuumMemorySystem {
         const completion: MemoryStoreCompletion = { storeReturned: true };
         if (!skipIngestion) this.effectReservations++;
         try {
+            // No bypass for skipIngestion: every public canonical call must
+            // observe the original hydration outcome before any mutation.
+            if (this.hydrationState === 'PENDING') {
+                if (this.hydrationWaiters >= this.hydrationWaiterLimit) {
+                    throw new Error('Hydration waiter admission full; canonical store not attempted');
+                }
+                this.hydrationWaiters++;
+                try { await this.hydrationOwner; }
+                finally { this.hydrationWaiters--; }
+            } else {
+                await this.hydrationOwner; // Original rejection is never bypassed.
+            }
+            const admissionError = this.snapshotAdmissionError();
+            if (admissionError) throw admissionError;
             await this.storeCanonical(content, tier, tags, skipIngestion, extra, completion);
             return completion;
         } finally {
@@ -1540,3 +1559,5 @@ class ContinuumMemorySystem {
 }
 
 export const continuum = new ContinuumMemorySystem();
+// Publish only the actual constructed instance, never a replacement or readyCore result.
+publishContinuumInstance(continuum);

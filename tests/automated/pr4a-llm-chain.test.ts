@@ -10,18 +10,85 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 
+// Retain the actual graph before assertions can throw or reset can invalidate it.
+async function ownedHealthGraph() {
+    const health = await import('../../services/providerHealthManager');
+    // Start ownership capture without waiting for core/initial or adding a
+    // prerequisite hydration await before the existing eight synchronous calls.
+    const graph = Promise.all([
+        import('../../services/continuumMemory'),
+        import('../../services/introspectionEngine'),
+        import('../../services/redisClient')
+    ]).then(([memory, initial, redis]) => ({ providerHealth: health.providerHealth,
+        continuum: memory.continuum, introspection: initial.introspection,
+        redisClient: redis.redisClient }));
+    // Observe rejection now; retain the original owner for the hook below.
+    void graph.catch(() => {});
+    healthGraphs.push(graph);
+    return health;
+}
+
+type HealthGraph = {
+    providerHealth: typeof import('../../services/providerHealthManager').providerHealth;
+    continuum: typeof import('../../services/continuumMemory').continuum;
+    introspection: typeof import('../../services/introspectionEngine').introspection;
+    redisClient: typeof import('../../services/redisClient').redisClient;
+};
+const healthGraphs: Promise<HealthGraph>[] = [];
+
+async function settleHealthGraphs() {
+    const failures: unknown[] = [];
+    for (const owner of healthGraphs.splice(0)) {
+        let graph: HealthGraph | undefined;
+        try {
+            graph = await owner;
+            // Observe original core and initial owners independently. Initial
+            // settlement alone does not include its post-store effect receipt.
+            const bootstrap = await Promise.allSettled([graph.continuum.readyCore(), graph.introspection.readyInitial()]);
+            for (const result of bootstrap) if (result.status === 'rejected') failures.push(result.reason);
+            // Collect every reachable owner before validation/logging can throw.
+            const effectOwner = graph.introspection.getInitialConceptEffectOwner();
+            const effects = await Promise.allSettled([
+                graph.providerHealth.settlePersistence(),
+                graph.continuum.settleMemoryEffects(),
+                ...(effectOwner ? [effectOwner] : [])
+            ]);
+            for (const result of effects) if (result.status === 'rejected') failures.push(result.reason);
+            const core = graph.continuum.getCoreRecoveryReport();
+            expect(core?.outcome).not.toBe('FAILED');
+            // DEGRADED remains distinct and visible, not renamed COMPLETE.
+            console.log('PR4A_CORE_RECOVERY:', core);
+            const initial = graph.introspection.getInitialWorkStatus();
+            expect(initial.concept.state).toBe('COMPLETE');
+            expect(initial.goals.state).toBe('COMPLETE');
+            expect(graph.continuum.getSnapshotOperations()).toEqual([]);
+            expect(graph.continuum.getMemoryEffectOperations()).toEqual([]);
+            expect(graph.providerHealth.getPersistenceStatus().operations).toEqual([]);
+            if (effectOwner) expect((await effectOwner).state).toBe('COMPLETE');
+        } catch (error) { failures.push(error); }
+        finally {
+            if (graph) {
+                try { await graph.redisClient.disconnect(); }
+                catch (error) { failures.push(error); }
+            }
+        }
+    }
+    if (failures.length) throw new AggregateError(failures, 'Actual health bootstrap/effects remained failed; no reset or persistence success implied');
+}
+
 describe('PR-4a per-model provider health', () => {
     beforeEach(() => { vi.resetModules(); });
+    afterEach(settleHealthGraphs);
 
     it('suspending one model leaves sibling models of the same provider available', async () => {
-        const { providerHealth } = await import('../../services/providerHealthManager');
+        const { providerHealth } = await ownedHealthGraph();
         providerHealth.suspendProvider('gemini:gemini-3.6-flash', 60_000, '429 quota');
         expect(providerHealth.isAvailable('gemini:gemini-3.6-flash')).toBe(false);
         expect(providerHealth.isAvailable('gemini:gemini-3.1-flash-lite')).toBe(true);
     });
 
     it('per-model failure tiers do not leak across models', async () => {
-        const { providerHealth } = await import('../../services/providerHealthManager');
+        const { providerHealth } = await ownedHealthGraph();
         const operations = [];
         for (let i = 0; i < 8; i++) {
             const operation = providerHealth.reportFailure('gemini:model-a', 'boom');

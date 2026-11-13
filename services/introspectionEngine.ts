@@ -2,6 +2,7 @@ import { IntrospectionLayer, IntrospectionResult, ConceptVector, IntrospectionCa
 import { ZOMBIE_THRESHOLD } from "../constants";
 
 import { systemBus } from "./systemBus";
+import { continuumInstanceOwner } from "./continuumInstanceOwner";
 
 // --- ANTHROPIC INTROSPECTION ENGINE V2.0 ---
 // Implements the 5 Core Capabilities:
@@ -239,7 +240,8 @@ export class IntrospectionEngine {
         this.activeConcepts.push(concept);
         this.capabilities.add(IntrospectionCapability.CONCEPT_INJECTION);
 
-        return import('./continuumMemory').then(async ({ continuum }) => {
+        return import('./continuumMemory').then(async () => {
+            const continuum = await continuumInstanceOwner;
             try {
                 const core = await continuum.readyCore();
                 this.initialStatus.concept.coreOutcome = core.outcome;
@@ -498,7 +500,8 @@ export class IntrospectionEngine {
             }
 
             // Fallback: Load from ContinuumMemory (legacy/migration)
-            const { continuum } = await import('./continuumMemory');
+            await import('./continuumMemory');
+            const continuum = await continuumInstanceOwner;
             try {
                 const core = await continuum.readyCore();
                 this.initialStatus.goals.coreOutcome = core.outcome;
