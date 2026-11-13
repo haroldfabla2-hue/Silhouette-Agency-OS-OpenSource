@@ -18,6 +18,11 @@ export interface InitialIntrospectionStatus {
 }
 
 export class IntrospectionEngine {
+    private initialConceptEffects: Promise<import('./continuumMemory').MemoryEffectReceipt> | undefined;
+
+    /** Initial concept effects only, explicitly separate from readyInitial canonical work. */
+    public getInitialConceptEffectOwner() { return this.initialConceptEffects; }
+
     private readonly initialConceptOwner: Promise<void>;
     private readonly initialGoalLoadOwner: Promise<void>;
     private readonly initialStatus: Record<'concept' | 'goals', InitialIntrospectionStatus> = {
@@ -244,7 +249,8 @@ export class IntrospectionEngine {
             }
             // Store completion is not a canonical persistence receipt; store
             // can currently skip. Preserve that limitation, do not rename it.
-            return continuum.store(`[INTROSPECTION] Injected Concept Vector: ${label} (Str: ${strength})`, undefined, ['system', 'concept-vector']);
+            const completion = await continuum.storeWithEffectReceipt(`[INTROSPECTION] Injected Concept Vector: ${label} (Str: ${strength})`, undefined, ['system', 'concept-vector']);
+            this.initialConceptEffects = completion.effects?.completion;
         });
     }
 

@@ -43,6 +43,16 @@ try {
     assert.equal(initial.concept.state, 'COMPLETE');
     assert.equal(initial.concept.coreOutcome, 'COMPLETE');
     assert.equal(initial.goals.state, 'COMPLETE');
+    const effectOwner = introspection.getInitialConceptEffectOwner();
+    assert.ok(effectOwner, 'Initial concept must admit a real effect owner');
+    const initialEffect = await effectOwner;
+    assert.equal(initialEffect.state, 'COMPLETE');
+    assert.equal(initialEffect.dreamer.state, 'COMPLETE');
+    assert.equal(initialEffect.brain.state, 'COMPLETE'); // OFF mode no-op, not remote persistence.
+    const effects = await continuum.settleMemoryEffects();
+    assert.ok(effects.every(receipt => receipt.state === 'COMPLETE'));
+    await fs.writeFile(`initial-effects-${phase}.json`, JSON.stringify(initialEffect));
+    assert.deepEqual(continuum.getMemoryEffectOperations(), []);
     if (phase === 'write') {
         assert.equal(continuum.getVolatileState().filter(n => n.content === marker).length, 0);
         // Explicit direct-store cut. Normal HTTP/ingestion path is NOT tested.

@@ -1,10 +1,8 @@
 import { verifyClaims, type CitedClaim } from './memoryCognition';
 import { continuum } from './continuumMemory';
-import { geminiService } from './geminiService';
 import { vectorMemory } from './vectorMemoryService';
 import { CommunicationLevel } from '../types';
 import { MemoryNode, MemoryTier } from '../types';
-import { resourceArbiter } from './resourceArbiter';
 import { AgentStatus, AgentRoleType, AgentTier, SystemProtocol } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { systemBus } from './systemBus';
@@ -28,14 +26,14 @@ export class DreamerService {
         console.log(`[DREAMER] ⚙️ Threshold updated to ${this.threshold} memories.`);
     }
 
-    public notifyNewMemory() {
+    public async notifyNewMemory(): Promise<void> {
         // [FIX] Hard cap on entropy to prevent runaway accumulation from loops
         const MAX_ENTROPY = this.threshold * 3; // 30 max (3x threshold of 10)
         if (this.memoriesAccumulated >= MAX_ENTROPY) {
             console.warn(`[DREAMER] ⚠️ Entropy hard cap reached (${MAX_ENTROPY}). Forcing consolidation.`);
             // Reset and trigger dream to prevent infinite growth
             this.memoriesAccumulated = 0;
-            this.attemptDream().catch(e => console.error('[DREAMER] Forced dream failed:', e));
+            await this.attemptDream(true);
             return;
         }
         this.memoriesAccumulated++;
@@ -132,7 +130,7 @@ export class DreamerService {
         console.log("[DREAMER] 🌋 SYNAPTIC FORGE: Conditions met for Neural Update.");
 
         // HOMEOSTATIC CHECK: Request admission from ResourceArbiter
-        const arbiterApproval = await resourceArbiter.requestAdmission({
+        const arbiterApproval = await (await import('./resourceArbiter')).resourceArbiter.requestAdmission({
             id: 'neural-training',
             name: 'Curricula Export',
             role: 'Neural Plasticity',
@@ -174,7 +172,7 @@ export class DreamerService {
             const result = await curriculaExportService.exportCurricula();
 
             this.isTraining = false;
-            resourceArbiter.release();
+            (await import('./resourceArbiter')).resourceArbiter.release();
             console.log("[DREAMER] 🔓 Resources released to Arbiter.");
 
             if (result.success && result.entriesExported > 0) {
@@ -230,7 +228,7 @@ export class DreamerService {
         } catch (error: any) {
             console.error("[DREAMER] ❌ Curricula Export Failed:", error.message);
             this.isTraining = false;
-            resourceArbiter.release();
+            (await import('./resourceArbiter')).resourceArbiter.release();
 
             systemBus.emit(SystemProtocol.WORKFLOW_UPDATE, {
                 step: "CURRICULA_EXPORT_FAILED",
@@ -260,12 +258,12 @@ export class DreamerService {
         }
     }
 
-    public async attemptDream() {
+    public async attemptDream(propagateFailure: boolean = false) {
         if (this.isDreaming) return;
 
         // 1. Check Real System Load via Arbiter
         // Verify if we have spare compute to dream
-        const admission = await resourceArbiter.requestAdmission({
+        const admission = await (await import('./resourceArbiter')).resourceArbiter.requestAdmission({
             id: 'dreamer',
             name: 'Dreamer Service',
             role: 'Subconscious',
@@ -373,6 +371,7 @@ export class DreamerService {
 
         } catch (e) {
             console.error("[DREAMER] Nightmare (Error):", e);
+            if (propagateFailure) throw e;
         } finally {
             this.isDreaming = false;
             if (cycleCompleted) {
@@ -419,9 +418,8 @@ export class DreamerService {
             // 2. Find "Constellation Members" (Sim: 0.3 - 0.7)
             // Dynamic Import for Vector Service
             const { vectorMemory } = await import('./vectorMemoryService');
-            const { geminiService } = await import('./geminiService');
 
-            const seedVector = await geminiService.generateEmbedding(seed.content);
+            const seedVector = await (await import('./geminiService')).geminiService.generateEmbedding(seed.content);
             if (!seedVector) return this.fallbackMix(all);
 
             // We look for 3 to 5 related concepts
@@ -454,9 +452,8 @@ export class DreamerService {
 
         try {
             const { vectorMemory } = await import('./vectorMemoryService');
-            const { geminiService } = await import('./geminiService');
 
-            const seedVector = await geminiService.generateEmbedding(seed.content);
+            const seedVector = await (await import('./geminiService')).geminiService.generateEmbedding(seed.content);
             if (!seedVector) return this.fallbackMix(all);
 
             // Search DISTANT/OPPOSITE (Sim < 0.25) or just Random weighted by distance
@@ -580,7 +577,7 @@ export class DreamerService {
         - 0-39: Nonsense.
         `;
 
-        const response = await geminiService.generateAgentResponse(
+        const response = await (await import('./geminiService')).geminiService.generateAgentResponse(
             "Dreamer",
             "Polymath",
             "CORE",
@@ -644,7 +641,7 @@ export class DreamerService {
         `;
 
         try {
-            const response = await geminiService.generateAgentResponse(
+            const response = await (await import('./geminiService')).geminiService.generateAgentResponse(
                 "Dreamer", "Skeptic", "CORE", prompt, null, undefined, undefined,
                 { useWebSearch: false }, {}, [], CommunicationLevel.TECHNICAL
             );
@@ -704,7 +701,7 @@ export class DreamerService {
 
     private async isRedundant(content: string): Promise<boolean> {
         try {
-            const vector = await geminiService.generateEmbedding(content);
+            const vector = await (await import('./geminiService')).geminiService.generateEmbedding(content);
             if (!vector) return false;
 
             // Search for similar memories in the 'INTUITION' namespace (implied by content similarity)
@@ -780,7 +777,7 @@ export class DreamerService {
 
             for (const anchor of anchors) {
                 console.log(`[DREAMER] ⚓ Anchor Concept: "${anchor.content.substring(0, 50)}..."`);
-                const embedding = await geminiService.generateEmbedding(anchor.content);
+                const embedding = await (await import('./geminiService')).geminiService.generateEmbedding(anchor.content);
                 if (!embedding) {
                     console.error("[DREAMER] ❌ Failed to generate embedding for anchor.");
                     continue;
@@ -880,7 +877,7 @@ export class DreamerService {
         If a valid link exists, output: "BISOCIATION: [The Insight]"
         `;
 
-        const response = await geminiService.generateAgentResponse(
+        const response = await (await import('./geminiService')).geminiService.generateAgentResponse(
             "Dreamer", "Synesthete", "CORE", prompt, null, undefined, undefined,
             { useWebSearch: false }, {}, [], CommunicationLevel.TECHNICAL, 'gemini-1.5-flash'
         );
@@ -945,7 +942,7 @@ export class DreamerService {
         Format: "SCORE: [Number]"
         `;
 
-        const response = await geminiService.generateAgentResponse(
+        const response = await (await import('./geminiService')).geminiService.generateAgentResponse(
             "Rules_Lawyer", "Critic", "CORE", prompt, null, undefined, undefined, { useWebSearch: false }, {}, [], CommunicationLevel.TECHNICAL, 'gemini-1.5-flash'
         );
 
@@ -963,7 +960,7 @@ export class DreamerService {
         Output only the JSON object.
         `;
 
-        const response = await geminiService.generateAgentResponse(
+        const response = await (await import('./geminiService')).geminiService.generateAgentResponse(
             "Archivist",
             "Librarian",
             "CORE",

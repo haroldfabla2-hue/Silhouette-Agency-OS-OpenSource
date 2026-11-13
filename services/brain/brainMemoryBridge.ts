@@ -6,10 +6,10 @@
 //
 //   1. READ  — turn the Brain's reasoning context into a compact text block that
 //              the ContextAssembler can splice into the agent prompt.
-//   2. WRITE — mirror locally-stored memories into the Brain (fire-and-forget)
+//   2. WRITE — mirror locally-stored memories into the Brain (owned completion)
 //              so both systems converge over time.
 //
-// Everything here is best-effort: if the Brain is disabled or down, callers get
+// Reads are best-effort: if the Brain is disabled or down, callers get
 // empty results and the OS keeps working on its native memory alone.
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -94,19 +94,16 @@ export class BrainMemoryBridge {
     }
 
     /**
-     * Mirror a memory into the Brain. Fire-and-forget: never throws, logs at debug.
+     * Mirror a memory into the Brain. Disabled is a no-op; enabled writes expose failure to the owner.
      */
-    public mirrorMemory(
+    public async mirrorMemory(
         text: string,
         opts: { importance?: number; tags?: string[]; tier?: 'WORKING' | 'MEDIUM' | 'LONG' | 'DEEP' } = {},
-    ): void {
+    ): Promise<void> {
         if (!this.client.isEnabled() || !text?.trim()) return;
-        // Intentionally not awaited — memory mirroring must not block the loop.
-        void this.client.addMemory(text, opts).then((res) => {
-            if (res?.status === 'ok') {
-                log.debug({ id: res.id }, 'Mirrored memory to Brain');
-            }
-        }).catch(() => { /* swallowed by client */ });
+        const res = await this.client.addMemory(text, opts);
+        if (res?.status !== 'ok') throw new Error('Brain mirror response unavailable or unconfirmed');
+        log.debug({ id: res.id }, 'Mirrored memory to Brain');
     }
 }
 

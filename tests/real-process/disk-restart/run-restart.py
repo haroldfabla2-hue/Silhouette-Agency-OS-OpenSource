@@ -14,13 +14,14 @@ def group_state(pgid):
     except OSError:
         return 'UNKNOWN'
 
-def stop_and_reap(child):
+def stop_and_reap(child, actions):
     for sig, budget in [(signal.SIGTERM, 2.0), (signal.SIGKILL, 2.0)]:
         if group_state(child.pid) != 'ESRCH':
             try:
                 os.killpg(child.pid, sig)
+                actions.append({'signal': sig.name, 'sent': True, 'at_monotonic': time.monotonic()})
             except ProcessLookupError:
-                pass
+                actions.append({'signal': sig.name, 'sent': False, 'reason': 'ESRCH'})
             except OSError:
                 return False
         end = time.monotonic() + budget
@@ -56,6 +57,7 @@ def run_phase(root, evidence, phase, work):
            'SILHOUETTE_LANCEDB_PATH': str(work / 'db/fixture.lancedb'),
            'FIXTURE_PHASE': phase}
     events = []
+    cleanup_actions = []
     assertion_at = None
     exited_at = None
     child = None
@@ -135,6 +137,10 @@ def run_phase(root, evidence, phase, work):
             raise RuntimeError('Initial owner success contract failed')
         if done['receipt']['disk'] != 'CONFIRMED':
             raise RuntimeError('No confirmed disk receipt')
+        effects = json.loads((work / ('initial-effects-' + phase + '.json')).read_text())
+        if effects['state'] != 'COMPLETE' or effects['dreamer']['state'] != 'COMPLETE' or effects['brain']['state'] != 'COMPLETE' or not effects['operationId'] or not effects['nodeId']:
+            raise RuntimeError('Initial effect owner did not complete')
+        (evidence / 'initial-effects.json').write_text(json.dumps(effects, indent=2))
         if child.poll() is None or group_state(child.pid) != 'ESRCH':
             raise RuntimeError('Group not ESRCH before PASS')
         result = {'status':'PASS','phase':phase,'pid':child.pid,'leader_reaped':True,'group':'ESRCH','pipe_eof':eof,'events':events}
@@ -144,18 +150,57 @@ def run_phase(root, evidence, phase, work):
         failure = str(error)
         raise
     finally:
+        before_cleanup = {'leader_returncode': child.poll() if child else None,
+            'leader_reaped': child is not None and child.returncode is not None,
+            'group': group_state(child.pid) if child else 'NOT_STARTED', 'pipe_eof': eof}
+        # Preserve source bytes before teardown/delete, even when WRITE never exits.
+        preserved = []
+        capture_errors = []
+        for rel in ['data/memory_snapshot.json', 'write-proof.json', 'initial-effects-write.json', 'initial-effects-read.json']:
+            source = work / rel
+            try:
+                if source.exists():
+                    data = source.read_bytes()
+                    if len(data) > 262144: raise RuntimeError('Evidence source exceeds 256KiB cap')
+                    target = evidence / 'preserved-before-cleanup' / rel
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(data)
+                    preserved.append({'path': rel, 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()})
+            except BaseException as error:
+                capture_errors.append({'path': rel, 'error': str(error)})
+                failure = failure or 'Evidence capture failure'
         safe = child is None or (child.poll() is not None and group_state(child.pid) == 'ESRCH')
         if child and not safe:
             failure = failure or 'LIVE/UNKNOWN cleanup group'
-            safe = stop_and_reap(child)
+            safe = stop_and_reap(child, cleanup_actions)
+        after_cleanup_files = []
+        if safe:
+            for rel in ['data/memory_snapshot.json', 'write-proof.json', 'initial-effects-write.json', 'initial-effects-read.json']:
+                source = work / rel
+                try:
+                    if source.exists():
+                        data = source.read_bytes()
+                        if len(data) > 262144: raise RuntimeError('Evidence source exceeds 256KiB cap')
+                        target = evidence / 'preserved-after-cleanup' / rel
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_bytes(data)
+                        after_cleanup_files.append({'path': rel, 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()})
+                except BaseException as error:
+                    capture_errors.append({'path': rel, 'stage': 'after_cleanup', 'error': str(error)})
+                    failure = failure or 'Evidence capture failure'
         selector.close()
         if child and child.stdout:
             child.stdout.close()
         if failure:
             (evidence / 'failure.json').write_text(json.dumps({'status': 'FAIL', 'error': failure,
-                'retained_work': not safe, 'work': str(work), 'events': events}, indent=2))
+                'retained_work': not safe, 'work': str(work), 'events': events,
+                'before_cleanup': before_cleanup, 'cleanup_actions': cleanup_actions,
+                'after_cleanup': {'leader_returncode': child.poll() if child else None, 'group': group_state(child.pid) if child else 'NOT_STARTED', 'pipe_eof_observed': eof},
+                'preserved_before_cleanup': preserved, 'preserved_after_cleanup': after_cleanup_files, 'capture_errors': capture_errors}, indent=2))
         if not safe:
             (evidence / 'RETAINED_WORK.txt').write_text(str(work))
+        if capture_errors:
+            raise RuntimeError('Evidence capture failed; see failure record')
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--root', required=True)
@@ -177,9 +222,26 @@ evidence.mkdir(exist_ok=False)
 (evidence / 'network-state.json').write_text(json.dumps(network, indent=2))
 work = pathlib.Path(tempfile.mkdtemp(prefix='real-disk-restart-'))
 (work / 'FIXTURE_ONLY').write_text('DISK_RESTART_ONLY')
-(work / 'data').mkdir()
-(work / 'data/memory_snapshot.json').write_text(json.dumps({'working':[],'ultraShort':[],'short':[]}))
+def seed_write_fixture():
+    # Every migration asset copied intact and hashed before any app import, WRITE only.
+    migrations = root / 'db/migrations/sqlite'
+    source_files = sorted(migrations.iterdir())
+    if not source_files or any(not f.is_file() or f.is_symlink() for f in source_files):
+        raise RuntimeError('Unexpected SQL migration asset shape')
+    target_migrations = work / 'db/migrations/sqlite'
+    target_migrations.mkdir(parents=True)
+    asset_hashes = []
+    for source in source_files:
+        data = source.read_bytes()
+        (target_migrations / source.name).write_bytes(data)
+        copied = (target_migrations / source.name).read_bytes()
+        if data != copied: raise RuntimeError('Copied migration bytes mismatch')
+        asset_hashes.append({'path': str(source.relative_to(root)), 'sha256': hashlib.sha256(data).hexdigest(), 'bytes': len(data)})
+    (evidence / 'migration-assets-before-import.json').write_text(json.dumps(asset_hashes, indent=2))
+    (work / 'data').mkdir()
+    (work / 'data/memory_snapshot.json').write_text(json.dumps({'working':[],'ultraShort':[],'short':[]}))
 try:
+    seed_write_fixture()
     write = run_phase(root, evidence / 'write', 'write', work)
     # First process exited naturally/reaped/groupESRCH/EOF before read can start.
     proof = (work / 'write-proof.json').read_bytes()

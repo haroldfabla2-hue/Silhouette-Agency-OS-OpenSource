@@ -36,6 +36,19 @@ export interface SnapshotReceipt {
     redisError?: string;
 }
 
+export interface MemoryEffectReceipt {
+    operationId: string;
+    nodeId: string;
+    state: 'COMPLETE' | 'FAILED';
+    dreamer: { state: 'COMPLETE' | 'FAILED'; error?: string };
+    brain: { state: 'COMPLETE' | 'FAILED'; error?: string };
+}
+export interface MemoryStoreCompletion {
+    // Historical store() can skip/deduplicate. This is NOT a canonical receipt.
+    storeReturned: true;
+    effects?: { operationId: string; nodeId: string; completion: Promise<MemoryEffectReceipt> };
+}
+
 export interface SnapshotOperation {
     sequence: number;
     dirtyRevision: number;
@@ -85,6 +98,35 @@ class ContinuumMemorySystem {
     private readonly snapshotOperations = new Map<number, SnapshotOperation & { payload: string }>();
     private readonly SNAPSHOT_OPERATION_LIMIT = 128;
     private lastSnapshotReceipt: SnapshotReceipt | undefined;
+    private readonly memoryEffectLimit = 128;
+    private effectReservations = 0;
+    private readonly memoryEffectOwners = new Map<string, {
+        nodeId: string; completion: Promise<MemoryEffectReceipt>; receipt?: MemoryEffectReceipt;
+    }>();
+
+    public getMemoryEffectOperations() {
+        return Array.from(this.memoryEffectOwners, ([operationId, value]) => ({
+            operationId, nodeId: value.nodeId,
+            state: value.receipt?.state ?? 'PENDING',
+            receipt: value.receipt ? structuredClone(value.receipt) : undefined
+        }));
+    }
+
+    /** Current accepted-set only. No future-admission barrier or global drain. */
+    public settleMemoryEffects(): Promise<MemoryEffectReceipt[]> {
+        return Promise.all(Array.from(this.memoryEffectOwners.values(), value => value.completion));
+    }
+
+    /** Explicitly acknowledge ONE exact observed failure, not retry or recovery.
+     * Caller must have handled the partial effect. Does not repeat dream entropy
+     * or external Brain writes and never marks an unknown outcome successful. */
+    public acknowledgeMemoryEffectFailure(operationId: string, expected: MemoryEffectReceipt): boolean {
+        const record = this.memoryEffectOwners.get(operationId);
+        if (!record?.receipt || record.receipt.state !== 'FAILED'
+            || JSON.stringify(record.receipt) !== JSON.stringify(expected)) return false;
+        this.memoryEffectOwners.delete(operationId);
+        return true;
+    }
 
     // [FIX] Anti-Recursion: Hash-based deduplication to prevent infinite loops
     private recentHashes: Set<string> = new Set();
@@ -601,7 +643,28 @@ class ContinuumMemorySystem {
         }
     }
 
+    /** Compatibility: return means historical store completion/skip, NOT effect success. */
     public async store(content: string, tier: MemoryTier = MemoryTier.ULTRA_SHORT, tags: string[] = [], skipIngestion: boolean = false, extra?: { parentIds?: string[]; affect?: { valence: number; activation: number; at: number } }): Promise<void> {
+        await this.storeWithEffectReceipt(content, tier, tags, skipIngestion, extra);
+    }
+
+    public async storeWithEffectReceipt(content: string, tier: MemoryTier = MemoryTier.ULTRA_SHORT, tags: string[] = [], skipIngestion: boolean = false, extra?: { parentIds?: string[]; affect?: { valence: number; activation: number; at: number } }): Promise<MemoryStoreCompletion> {
+        // Reserve before any canonical mutation or child effect admission.
+        // Completed-success records are released; failed records require exact acknowledgement.
+        if (!skipIngestion && this.memoryEffectOwners.size + this.effectReservations >= this.memoryEffectLimit) {
+            throw new Error('Memory effect admission full; canonical store not attempted');
+        }
+        const completion: MemoryStoreCompletion = { storeReturned: true };
+        if (!skipIngestion) this.effectReservations++;
+        try {
+            await this.storeCanonical(content, tier, tags, skipIngestion, extra, completion);
+            return completion;
+        } finally {
+            if (!skipIngestion) this.effectReservations--;
+        }
+    }
+
+    private async storeCanonical(content: string, tier: MemoryTier = MemoryTier.ULTRA_SHORT, tags: string[] = [], skipIngestion: boolean = false, extra?: { parentIds?: string[]; affect?: { valence: number; activation: number; at: number } }, completion?: MemoryStoreCompletion): Promise<void> {
         // [PR-4c] Boundary coercion: an invalid tier (e.g. an LLM emitting the
         // number 28) must not reach the gatekeeper as a "corruption" event that
         // mobilizes remediation squads in a loop. Coerce loudly to WORKING;
@@ -778,20 +841,36 @@ class ContinuumMemorySystem {
             // 3. Update Introspection about new thought (but NOT for narrative persistence)
             introspection.setRecentThoughts([`Storing memory: ${content.substring(0, 30)}...`]);
 
-            // 4. Notify Dreamer (Event-Driven) - with null check
-            import('./dreamerService').then(({ dreamer }) => {
-                if (dreamer?.notifyNewMemory) dreamer.notifyNewMemory();
-            }).catch(() => { /* Dreamer not available */ });
-
-            // 5. [BRAIN] Mirror to the external silhouette-brain 4-Tier memory
-            //    (fire-and-forget, no-op when the integration is disabled).
-            import('./brain').then(({ brainBridge }) => {
-                brainBridge.mirrorMemory(content, {
-                    importance: node.importance,
-                    tags: node.tags,
+            const operationId = crypto.randomUUID();
+            // Distinct from canonical completion. Always resolves a typed receipt;
+            // disabled Brain is settled local no-op, not remote persistence proof.
+            const effectCompletion: Promise<MemoryEffectReceipt> = Promise.allSettled([
+                import('./dreamerService').then(({ dreamer }) => dreamer.notifyNewMemory()),
+                import('./brain').then(({ brainBridge }) => brainBridge.mirrorMemory(content, {
+                    importance: node.importance, tags: node.tags,
                     tier: (tierStr === 'DEEP' ? 'DEEP' : tierStr === 'MEDIUM' ? 'MEDIUM' : 'WORKING'),
-                });
-            }).catch(() => { /* Brain integration not available */ });
+                }))
+            ]).then(results => {
+                const result = (value: PromiseSettledResult<void>): MemoryEffectReceipt['dreamer'] =>
+                    value.status === 'fulfilled' ? { state: 'COMPLETE' }
+                        : { state: 'FAILED', error: recoveryError(value.reason) };
+                const dreamer = result(results[0]), brain = result(results[1]);
+                return { operationId, nodeId: node.id,
+                    state: dreamer.state === 'COMPLETE' && brain.state === 'COMPLETE' ? 'COMPLETE' : 'FAILED',
+                    dreamer, brain };
+            });
+            const record: { nodeId: string; completion: Promise<MemoryEffectReceipt>; receipt?: MemoryEffectReceipt } =
+                { nodeId: node.id, completion: effectCompletion };
+            this.memoryEffectOwners.set(operationId, record);
+            // Original completion is returned and retained; no rejecting promise is orphaned.
+            void effectCompletion.then(receipt => {
+                record.receipt = structuredClone(receipt);
+                if (receipt.state === 'COMPLETE') this.memoryEffectOwners.delete(operationId);
+                else console.error('[CONTINUUM] Post-store effects failed:', receipt);
+            });
+            if (completion) completion.effects = { operationId, nodeId: node.id, completion: effectCompletion };
+            // Do not reject/rollback canonical store for a later notification failure.
+
         }
     }
 
