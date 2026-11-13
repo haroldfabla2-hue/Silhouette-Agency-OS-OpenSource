@@ -113,7 +113,12 @@ export class ChatController {
                 };
             }
 
-            res.json({ providers, timestamp: Date.now() });
+            const persistence = providerHealth.getPersistenceStatus();
+            res.json({ providers, timestamp: Date.now(), persistence: {
+                limit: persistence.limit, notAdmittedCount: persistence.notAdmittedCount,
+                operations: persistence.operations.map(({ operationId, providerId, observer, state }) =>
+                    ({ operationId, providerId, observer, state }))
+            } });
         } catch (e: any) {
             console.error("[CHAT] Failed to get provider status", e);
             res.status(500).json({ error: "Failed to get provider status" });

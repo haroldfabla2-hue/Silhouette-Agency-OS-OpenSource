@@ -1,5 +1,25 @@
-import { continuum } from "./continuumMemory";
+import { continuum, type MemoryEffectReceipt } from "./continuumMemory";
 import { ProviderState } from "../types"; // Import shared type
+
+export interface ProviderPersistenceOutcome {
+    operationId: string;
+    providerId: string;
+    state: 'NOT_ADMITTED' | 'CANONICAL_FAILED_PARTIAL_POSSIBLE' | 'STORE_RETURNED_UNCONFIRMED' | 'EFFECTS_COMPLETE' | 'EFFECTS_FAILED' | 'OBSERVATION_FAILED';
+    canonical: 'NOT_ATTEMPTED' | 'UNKNOWN_PARTIAL_POSSIBLE' | 'RETURNED_NOT_A_RECEIPT';
+    error?: string;
+    effects?: MemoryEffectReceipt;
+}
+export interface ProviderPersistenceOperation {
+    readonly operationId: string;
+    readonly admitted: boolean;
+    readonly completion: Promise<ProviderPersistenceOutcome>;
+}
+interface PersistenceRecord {
+    providerId: string;
+    operation: ProviderPersistenceOperation;
+    observer?: string;
+    outcome?: ProviderPersistenceOutcome;
+}
 
 const TIER_1_BACKOFF = 15 * 60 * 1000; // 15 mins
 const TIER_2_BACKOFF = 6 * 60 * 60 * 1000; // 6 hours
@@ -8,6 +28,102 @@ const TIER_3_BACKOFF = 24 * 60 * 60 * 1000; // 24 hours
 export class ProviderHealthManager {
     private static instance: ProviderHealthManager;
     private states: Map<string, ProviderState> = new Map();
+
+    // Manager owns accepted persistence independently of the LLM/fallback stack.
+    // Pending and terminal non-success records share one bounded admission budget.
+    private readonly persistenceLimit = 128;
+    private readonly persistence = new Map<string, PersistenceRecord>();
+    private readonly issuedOperations = new WeakSet<ProviderPersistenceOperation>();
+    private notAdmittedCount = 0;
+
+    public getPersistenceStatus() {
+        return { limit: this.persistenceLimit, notAdmittedCount: this.notAdmittedCount,
+            operations: Array.from(this.persistence, ([operationId, record]) => ({
+                operationId, providerId: record.providerId, observer: record.observer,
+                state: record.outcome?.state ?? 'PENDING',
+                outcome: record.outcome ? structuredClone(record.outcome) : undefined
+            })) };
+    }
+
+    /** Snapshot of currently accepted operations only, not a global/future-admission drain. */
+    public settlePersistence(): Promise<ProviderPersistenceOutcome[]> {
+        return Promise.all(Array.from(this.persistence.values(), record => record.operation.completion));
+    }
+
+    /** Synchronous handoff to this bounded owner, never await memory from an LLM fallback.
+     * A failed/unconfirmed outcome remains retained for a real diagnostic consumer.
+     * This records observation responsibility, not successful persistence or acknowledgement. */
+    public observePersistence(operation: ProviderPersistenceOperation, observer: string): boolean {
+        if (!this.issuedOperations.has(operation) || !observer || observer.length > 128) return false;
+        if (!operation.admitted) return true; // NOT_ADMITTED counted, no canonical attempt.
+        const record = this.persistence.get(operation.operationId);
+        if (!record || record.operation !== operation || (record.observer && record.observer !== observer)) return false;
+        record.observer = observer;
+        if (record.outcome?.state === 'EFFECTS_COMPLETE') this.persistence.delete(operation.operationId);
+        return true;
+    }
+
+    /** Acknowledges this retained diagnostic only. No retry, repair or Continuum ack.
+     * Separate Continuum effect failures stay retained until their own exact ack.
+     * Call only after the consumer has handled that partial/unconfirmed outcome. */
+    public acknowledgePersistenceFailure(operationId: string, expected: ProviderPersistenceOutcome): boolean {
+        const record = this.persistence.get(operationId);
+        if (!record?.outcome || record.outcome.state === 'EFFECTS_COMPLETE'
+            || JSON.stringify(record.outcome) !== JSON.stringify(expected)) return false;
+        this.persistence.delete(operationId);
+        return true;
+    }
+
+    private ownPersistence(providerId: string, content: string): ProviderPersistenceOperation {
+        const operationId = crypto.randomUUID();
+        if (this.persistence.size >= this.persistenceLimit) {
+            this.notAdmittedCount = Math.min(Number.MAX_SAFE_INTEGER, this.notAdmittedCount + 1);
+            const outcome: ProviderPersistenceOutcome = { operationId, providerId,
+                state: 'NOT_ADMITTED', canonical: 'NOT_ATTEMPTED' };
+            const operation = { operationId, admitted: false, completion: Promise.resolve(outcome) };
+            this.issuedOperations.add(operation);
+            console.error('[CIRCUIT BREAKER] Health persistence not admitted:', outcome);
+            return operation;
+        }
+        // Promise.resolve().then defers the real store until after the record is reserved.
+        // Immediate rejection handler belongs to the manager, not the fallback caller.
+        const completion: Promise<ProviderPersistenceOutcome> = Promise.resolve().then(async (): Promise<ProviderPersistenceOutcome> => {
+            let storeReturned = false;
+            try {
+                const stored = await continuum.storeWithEffectReceipt(content, undefined,
+                    ['system-health', 'api-quota', providerId]);
+                storeReturned = true;
+                if (!stored.effects) return { operationId, providerId,
+                    state: 'STORE_RETURNED_UNCONFIRMED', canonical: 'RETURNED_NOT_A_RECEIPT' };
+                const effects = await stored.effects.completion;
+                return { operationId, providerId,
+                    state: effects.state === 'COMPLETE' ? 'EFFECTS_COMPLETE' : 'EFFECTS_FAILED',
+                    canonical: 'RETURNED_NOT_A_RECEIPT', effects };
+            } catch (error) {
+                // A thrown canonical call may already have changed disk/RAM/other tiers.
+                return { operationId, providerId, state: storeReturned ? 'OBSERVATION_FAILED' : 'CANONICAL_FAILED_PARTIAL_POSSIBLE',
+                    canonical: storeReturned ? 'RETURNED_NOT_A_RECEIPT' : 'UNKNOWN_PARTIAL_POSSIBLE', error: error instanceof Error ? error.message : String(error) };
+            }
+        }).then(outcome => {
+            const record = this.persistence.get(operationId);
+            if (!record) throw new Error('Missing accepted provider persistence owner');
+            record.outcome = structuredClone(outcome);
+            if (outcome.state === 'EFFECTS_COMPLETE' && record.observer) this.persistence.delete(operationId);
+            else if (outcome.state !== 'EFFECTS_COMPLETE') console.error('[CIRCUIT BREAKER] Health persistence unresolved:', outcome);
+            return outcome;
+        }).catch(error => {
+            const outcome: ProviderPersistenceOutcome = { operationId, providerId,
+                state: 'OBSERVATION_FAILED', canonical: 'UNKNOWN_PARTIAL_POSSIBLE',
+                error: error instanceof Error ? error.message : String(error) };
+            const record = this.persistence.get(operationId);
+            if (record) record.outcome = structuredClone(outcome);
+            return outcome;
+        });
+        const operation: ProviderPersistenceOperation = { operationId, admitted: true, completion };
+        this.issuedOperations.add(operation);
+        this.persistence.set(operationId, { providerId, operation });
+        return operation;
+    }
 
     private constructor() {
         // Initialize known providers (optional, logic handles new ones dynamically)
@@ -70,7 +186,7 @@ export class ProviderHealthManager {
      * Reports a failed API call (specifically for Quota/Capacity issues).
      * Calculates the new suspension time based on tiered logic.
      */
-    public reportFailure(providerId: string, errorMsg: string) {
+    public reportFailure(providerId: string, errorMsg: string): ProviderPersistenceOperation {
         const state = this.getOrInitState(providerId);
         state.consecutiveFailures++;
         state.lastError = errorMsg;
@@ -97,11 +213,8 @@ export class ProviderHealthManager {
         console.warn(`[CIRCUIT BREAKER] ⛔ Suspending ${providerId} for ${tierLabel}. Next retry: ${dateStr}. Failures: ${state.consecutiveFailures}`);
 
         // Persist this vital health event to memory
-        continuum.store(
-            `[CIRCUIT BREAKER] ${providerId} suspended for ${tierLabel}. Reason: ${errorMsg}`,
-            undefined,
-            ['system-health', 'api-quota', providerId]
-        );
+        return this.ownPersistence(providerId,
+            `[CIRCUIT BREAKER] ${providerId} suspended for ${tierLabel}. Reason: ${errorMsg}`);
 
     }
 

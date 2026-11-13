@@ -515,7 +515,7 @@ export const generateAgentResponse = async (
                     } catch (gError: any) {
                         // Check for Quota/Rate Limit specifically
                         if (gError.message?.includes('429') || gError.message?.includes('Quota') || gError.message?.includes('insufficient_quota')) {
-                            providerHealth.reportFailure('groq', gError.message); // ⛔ Trigger Suspension
+                            providerHealth.observePersistence(providerHealth.reportFailure('groq', gError.message), 'services/geminiService.ts:failure-1'); // ⛔ Trigger Suspension
                         }
                         throw gError; // Re-throw to trigger fallback logic below
                     }
@@ -553,7 +553,7 @@ export const generateAgentResponse = async (
                             const status = orResponse.status;
                             // Check Quota
                             if (status === 429 || status === 402 || errText.includes('quota') || errText.includes('credit')) {
-                                providerHealth.reportFailure('openrouter', `Status ${status}: ${errText}`);
+                                providerHealth.observePersistence(providerHealth.reportFailure('openrouter', `Status ${status}: ${errText}`), 'services/geminiService.ts:failure-2');
                             }
                             throw new Error(`OpenRouter Error: ${status} - ${errText}`);
                         }
@@ -775,7 +775,7 @@ export const generateAgentResponse = async (
                                     continue; // Retry with new key
                                 }
                                 // No more keys? Report failure (per-model) and throw to outer loop
-                                providerHealth.reportFailure(`gemini:${negotiatedModel}`, gemError.message);
+                                providerHealth.observePersistence(providerHealth.reportFailure(`gemini:${negotiatedModel}`, gemError.message), 'services/geminiService.ts:failure-3');
                             }
                             throw gemError; // Non-rotation error or exhausted keys
                         }
@@ -857,7 +857,7 @@ export const generateAgentResponse = async (
                             if (!ocResponse.ok) {
                                 const ocErr = await ocResponse.text();
                                 if (ocResponse.status === 429 || ocResponse.status === 402) {
-                                    providerHealth.reportFailure('ollama-cloud', `Status ${ocResponse.status}: ${ocErr.slice(0, 200)}`);
+                                    providerHealth.observePersistence(providerHealth.reportFailure('ollama-cloud', `Status ${ocResponse.status}: ${ocErr.slice(0, 200)}`), 'services/geminiService.ts:failure-4');
                                 }
                                 throw new Error(`Ollama Cloud Error: ${ocResponse.status} - ${ocErr.slice(0, 200)}`);
                             }
@@ -1413,7 +1413,7 @@ export const generateTextWithCloudFallbacks = async (
             return text;
         } catch (e: any) {
             errors.push(`gemini-bg: ${e.message}`);
-            if (isQuota(e.message)) providerHealth.reportFailure('gemini-bg', e.message);
+            if (isQuota(e.message)) providerHealth.observePersistence(providerHealth.reportFailure('gemini-bg', e.message), 'services/geminiService.ts:failure-5');
         }
     } else errors.push('gemini-bg: circuit open');
 
@@ -1429,7 +1429,7 @@ export const generateTextWithCloudFallbacks = async (
             throw new Error('empty response');
         } catch (e: any) {
             errors.push(`groq: ${e.message}`);
-            if (isQuota(e.message)) providerHealth.reportFailure('groq', e.message);
+            if (isQuota(e.message)) providerHealth.observePersistence(providerHealth.reportFailure('groq', e.message), 'services/geminiService.ts:failure-6');
         }
     } else errors.push('groq: circuit open');
 
@@ -1453,7 +1453,7 @@ export const generateTextWithCloudFallbacks = async (
             throw new Error('empty response');
         } catch (e: any) {
             errors.push(`nvidia: ${e.message}`);
-            if (isQuota(e.message)) providerHealth.reportFailure('nvidia', e.message);
+            if (isQuota(e.message)) providerHealth.observePersistence(providerHealth.reportFailure('nvidia', e.message), 'services/geminiService.ts:failure-7');
         }
     } else errors.push(process.env.NVIDIA_API_KEY?.trim() ? 'nvidia: circuit open' : 'nvidia: no key');
 
@@ -1486,7 +1486,7 @@ export const generateTextWithCloudFallbacks = async (
             throw new Error('empty response');
         } catch (e: any) {
             errors.push(`openrouter: ${e.message}`);
-            if (isQuota(e.message)) providerHealth.reportFailure('openrouter', e.message);
+            if (isQuota(e.message)) providerHealth.observePersistence(providerHealth.reportFailure('openrouter', e.message), 'services/geminiService.ts:failure-8');
         }
     } else errors.push('openrouter: circuit open');
 

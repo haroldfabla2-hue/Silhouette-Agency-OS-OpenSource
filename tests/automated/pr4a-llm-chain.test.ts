@@ -22,7 +22,23 @@ describe('PR-4a per-model provider health', () => {
 
     it('per-model failure tiers do not leak across models', async () => {
         const { providerHealth } = await import('../../services/providerHealthManager');
-        for (let i = 0; i < 8; i++) providerHealth.reportFailure('gemini:model-a', 'boom');
+        const operations = [];
+        for (let i = 0; i < 8; i++) {
+            const operation = providerHealth.reportFailure('gemini:model-a', 'boom');
+            expect(providerHealth.observePersistence(operation, 'test:pr4a')).toBe(true);
+            operations.push(operation);
+        }
+        expect(new Set(operations.map(operation => operation.operationId)).size).toBe(8);
+        expect(providerHealth.getPersistenceStatus().operations.filter(row =>
+            operations.some(operation => operation.operationId === row.operationId)).every(row => row.state === 'PENDING')).toBe(true);
+        const outcomes = await Promise.all(operations.map(operation => operation.completion));
+        for (const outcome of outcomes) {
+            expect(outcome.state).not.toBe('NOT_ADMITTED');
+            expect(outcome.state).not.toBe('CANONICAL_FAILED_PARTIAL_POSSIBLE');
+            expect(outcome.state).not.toBe('OBSERVATION_FAILED');
+            expect(outcome.state).not.toBe('EFFECTS_FAILED');
+            // STORE_RETURNED_UNCONFIRMED is retained, not mislabeled persisted.
+        }
         expect(providerHealth.isAvailable('gemini:model-a')).toBe(false);
         expect(providerHealth.isAvailable('gemini:model-b')).toBe(true);
     });

@@ -511,7 +511,7 @@ class PlanExecutor {
                 || /^An error occurred during agent processing\.?$/i.test(trimmedOutput)
                 || /^\{\s*"error"/.test(trimmedOutput);
             if (errorShaped && stepArtifacts.length === 0) {
-                providerHealth.reportFailure('gemini', 'empty or error-shaped LLM response');
+                providerHealth.observePersistence(providerHealth.reportFailure('gemini', 'empty or error-shaped LLM response'), 'services/planExecutor.ts:failure-1');
                 return {
                     stepOrder: step.order,
                     agentId: step.agentId,
@@ -535,7 +535,7 @@ class PlanExecutor {
 
         } catch (e: any) {
             // Report failure to provider health
-            providerHealth.reportFailure('gemini', e.message);
+            providerHealth.observePersistence(providerHealth.reportFailure('gemini', e.message), 'services/planExecutor.ts:failure-2');
 
             return {
                 stepOrder: step.order,

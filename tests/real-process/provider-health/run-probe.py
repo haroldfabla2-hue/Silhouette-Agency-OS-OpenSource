@@ -74,7 +74,7 @@ def run_probe(root, evidence, work):
             return
         event = json.loads(line[len('PROVIDER_HEALTH_FIXTURE:'):])
         kind = event.get('event')
-        if kind not in {'CALLS_RETURNED','BEFORE_EXIT'} or any(e['event']==kind for e in events) or set(event)!={'event','pid'}:
+        if kind not in {'CALLS_RETURNED','COMPLETIONS_OBSERVED','BEFORE_EXIT'} or any(e['event']==kind for e in events) or set(event)!={'event','pid'}:
             raise RuntimeError('Unknown/duplicate/malformed event marker')
         if kind=='CALLS_RETURNED': assertion_at=time.monotonic()
         events.append(event)
@@ -118,19 +118,39 @@ def run_probe(root, evidence, work):
                     if group_state(child.pid) != 'ESRCH':
                         raise RuntimeError('Leader reaped but group LIVE/UNKNOWN')
                     break
-        if child.returncode!=0 or [e['event'] for e in events]!=['CALLS_RETURNED','BEFORE_EXIT'] or any(e['pid']!=child.pid for e in events):
+        if child.returncode!=0 or [e['event'] for e in events]!=['CALLS_RETURNED','COMPLETIONS_OBSERVED','BEFORE_EXIT'] or any(e['pid']!=child.pid for e in events):
             raise RuntimeError('Nonzero exit or missing/out-of-order actual state markers')
         initial=json.loads((work/'provider-CALLS_RETURNED.json').read_text())
+        completed=json.loads((work/'provider-COMPLETIONS_OBSERVED.json').read_text())
         final=json.loads((work/'provider-BEFORE_EXIT.json').read_text())
-        for proof in [initial,final]:
-            if proof['pid']!=child.pid or len(proof['returns'])!=8 or any(row!={'index':i,'type':'undefined','thenable':False} for i,row in enumerate(proof['returns'])):
-                raise RuntimeError('Baseline return contract changed')
-            if proof['health']['gemini:model-a']['consecutiveFailures']!=8 or proof['health']['gemini:model-a']['status']!='SUSPENDED':
-                raise RuntimeError('Health state contract mismatch')
+        ids=[row['operationId'] for row in initial['operations']]
+        if len(ids)!=8 or len(set(ids))!=8 or any(row['admitted'] is not True for row in initial['operations']):
+            raise RuntimeError('Wrong initial accepted operation identities')
+        owners=initial['persistence']['operations']
+        if len(owners)!=8 or {row['operationId'] for row in owners}!=set(ids) or any(row['state']!='PENDING' or row['observer']!='fixture:provider-health' for row in owners) or initial['outcomes']:
+            raise RuntimeError('No synchronous owned admission proof before microtasks')
+        for proof in [initial,completed,final]:
+            if proof['pid']!=child.pid or proof['operations']!=initial['operations'] or proof['health']['gemini:model-a']['consecutiveFailures']!=8 or proof['health']['gemini:model-a']['status']!='SUSPENDED' or proof['persistence']['notAdmittedCount']!=0:
+                raise RuntimeError('Health/admission/identity state mismatch')
+        for proof in [completed,final]:
+            outcomes=proof['outcomes']
+            if len(outcomes)!=8 or [row['operationId'] for row in outcomes]!=ids:
+                raise RuntimeError('Missing original owned completion proof')
+            retained={row['operationId']:row for row in proof['persistence']['operations']}
+            for outcome in outcomes:
+                if outcome['providerId']!='gemini:model-a' or outcome['canonical']!='RETURNED_NOT_A_RECEIPT':
+                    raise RuntimeError('Unconfirmed canonical contract mismatch')
+                if outcome['state']=='EFFECTS_COMPLETE':
+                    if outcome['effects']['state']!='COMPLETE' or outcome['operationId'] in retained:
+                        raise RuntimeError('Effect completion or owner release mismatch')
+                elif outcome['state']=='STORE_RETURNED_UNCONFIRMED':
+                    if retained.get(outcome['operationId'],{}).get('outcome')!=outcome:
+                        raise RuntimeError('Unconfirmed outcome not retained exactly')
+                else:raise RuntimeError('Actual persistence failure, preserve partial state')
         if any(e['state']!='COMPLETE' for e in final['effects']) or final['snapshots']:
             raise RuntimeError('Real retained unresolved effect/snapshot state at observed beforeExit')
-        result={'status':'PASS_BASELINE_OBSERVATION_ONLY','pid':child.pid,'leader_reaped':True,'group':'ESRCH','pipe_eof':eof,'events':events,
-            'scope':'cold provider import plus eight synchronous reportFailure calls, no Vitest/RPC causality, no persistence ownership claim'}
+        result={'status':'PASS_OWNED_LOCAL_ONLY','pid':child.pid,'leader_reaped':True,'group':'ESRCH','pipe_eof':eof,'events':events,
+            'scope':'eight synchronous owned reportFailure calls then actual completions, not eight write receipts, Vitest/RPC cause or global drain'}
         (evidence/'result.json').write_text(json.dumps(result,indent=2))
         return result
     except BaseException as error:
@@ -142,7 +162,7 @@ def run_probe(root, evidence, work):
         capture_errors=[]
         def capture(stage):
             records=[]
-            for rel in ['provider-CALLS_RETURNED.json','provider-BEFORE_EXIT.json','data/memory_snapshot.json']:
+            for rel in ['provider-CALLS_RETURNED.json','provider-COMPLETIONS_OBSERVED.json','provider-BEFORE_EXIT.json','data/memory_snapshot.json']:
                 source=work/rel
                 try:
                     if not source.exists():
@@ -213,7 +233,7 @@ try:
     run_probe(root,evidence/'provider',work)
 except BaseException as error:
     outer=[]
-    for rel in ['provider-CALLS_RETURNED.json','provider-BEFORE_EXIT.json','data/memory_snapshot.json']:
+    for rel in ['provider-CALLS_RETURNED.json','provider-COMPLETIONS_OBSERVED.json','provider-BEFORE_EXIT.json','data/memory_snapshot.json']:
         source=work/rel
         try:
             if not source.exists():

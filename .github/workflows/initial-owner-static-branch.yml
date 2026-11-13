@@ -1,4 +1,4 @@
-name: Initial-owner static then provider owner baseline trial (exact isolated branch)
+name: Initial-owner static then provider owned persistence trial (exact isolated branch)
 
 on:
   push:
@@ -45,7 +45,7 @@ jobs:
           [[ "$EXPECTED_COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$actual" = "$EXPECTED_COMMIT_SHA"
           git status --porcelain > "$EVIDENCE/checkout-status.txt"
-          sha256sum types.ts services/sqliteService.ts package.json package-lock.json services/continuumMemory.ts services/memoryTransitions.ts services/introspectionEngine.ts tsconfig.json tsconfig.introspection-fixture.json tests/real-process/introspection-initial/initial-status-consumer.mts tests/real-process/introspection-initial/run-two.py tests/real-process/introspection-initial/run-runtime.sh tests/real-process/disk-restart/child.mts tests/real-process/disk-restart/run-restart.py tests/real-process/disk-restart/run-runtime.sh services/dreamerService.ts services/brain/brainMemoryBridge.ts db/migrations/sqlite/001_baseline_indexes.down.sql db/migrations/sqlite/001_baseline_indexes.up.sql db/migrations/sqlite/002_facts_table.down.sql db/migrations/sqlite/002_facts_table.up.sql db/migrations/sqlite/003_user_profiles.down.sql db/migrations/sqlite/003_user_profiles.up.sql db/migrations/sqlite/004_incidents.down.sql db/migrations/sqlite/004_incidents.up.sql tests/real-process/mcp-effect/child.mts tests/real-process/mcp-effect/run-effect.py tests/real-process/mcp-effect/run-runtime.sh services/identityService.ts services/mcp/mcpClient.ts server/middleware/authMiddleware.ts server/routes/v1/autonomy.routes.ts services/actionExecutor.ts services/security/effectGate.ts services/security/gatedExecution.ts services/security/principalContext.ts services/security/approvalGrants.ts services/security/effectContext.ts tests/real-process/provider-health/child.mts tests/real-process/provider-health/run-probe.py tests/real-process/provider-health/run-runtime.sh services/providerHealthManager.ts services/narrativeService.ts tests/automated/pr4a-llm-chain.test.ts tests/automated/workflow-mission-route.test.ts > "$EVIDENCE/input-sha256.txt"
+          sha256sum types.ts services/sqliteService.ts package.json package-lock.json services/continuumMemory.ts services/memoryTransitions.ts services/introspectionEngine.ts tsconfig.json tsconfig.introspection-fixture.json tests/real-process/introspection-initial/initial-status-consumer.mts tests/real-process/introspection-initial/run-two.py tests/real-process/introspection-initial/run-runtime.sh tests/real-process/disk-restart/child.mts tests/real-process/disk-restart/run-restart.py tests/real-process/disk-restart/run-runtime.sh services/dreamerService.ts services/brain/brainMemoryBridge.ts db/migrations/sqlite/001_baseline_indexes.down.sql db/migrations/sqlite/001_baseline_indexes.up.sql db/migrations/sqlite/002_facts_table.down.sql db/migrations/sqlite/002_facts_table.up.sql db/migrations/sqlite/003_user_profiles.down.sql db/migrations/sqlite/003_user_profiles.up.sql db/migrations/sqlite/004_incidents.down.sql db/migrations/sqlite/004_incidents.up.sql tests/real-process/mcp-effect/child.mts tests/real-process/mcp-effect/run-effect.py tests/real-process/mcp-effect/run-runtime.sh services/identityService.ts services/mcp/mcpClient.ts server/middleware/authMiddleware.ts server/routes/v1/autonomy.routes.ts services/actionExecutor.ts services/security/effectGate.ts services/security/gatedExecution.ts services/security/principalContext.ts services/security/approvalGrants.ts services/security/effectContext.ts tests/real-process/provider-health/child.mts tests/real-process/provider-health/run-probe.py tests/real-process/provider-health/run-runtime.sh services/providerHealthManager.ts services/narrativeService.ts tests/automated/pr4a-llm-chain.test.ts tests/automated/workflow-mission-route.test.ts services/geminiService.ts services/media/imageFactory.ts services/planExecutor.ts server/controllers/chatController.ts tests/verify_circuit_breaker.ts > "$EVIDENCE/input-sha256.txt"
           set +e
           sha256sum --check tests/real-process/introspection-initial/reviewed-inputs.sha256 2>&1 | tee "$EVIDENCE/reviewed-input-check.log"
           codes=("${PIPESTATUS[@]}")
@@ -123,6 +123,41 @@ jobs:
             printf '%s\n' "${codes[1]}" > "$EVIDENCE/$name.tee-exit"
             test "${codes[0]}" = 0; test "${codes[1]}" = 0
           }
+          # Read-only evidence BEFORE any OS/chain-byte guard or privileged operation.
+          # Fixed public source paths only; no environment dump, token or private files.
+          python3 - "$EVIDENCE" <<'PREFLIGHT'
+          import base64,hashlib,json,os,pathlib,stat,sys
+          out=pathlib.Path(sys.argv[1])/'sandbox-source-preflight.json'
+          result={'schema':1,'image_environment':{k:os.environ.get(k) for k in
+              ['ImageOS','ImageVersion','RUNNER_OS','RUNNER_ARCH']},'files':[]}
+          paths=['/etc/os-release','/etc/apt/sources.list.d/ubuntu.sources',
+              '/etc/apt/apt-mirrors.txt','/usr/share/keyrings/ubuntu-archive-keyring.gpg']
+          for name in paths:
+           row={'path':name}
+           try:
+            # os-release commonly is a symlink; record that fact and bounded target.
+            p=pathlib.Path(name);m=p.lstat()
+            row.update({'mode':oct(stat.S_IMODE(m.st_mode)),'uid':m.st_uid,'gid':m.st_gid,
+                'bytes_lstat':m.st_size,'symlink':stat.S_ISLNK(m.st_mode)})
+            if name=='/etc/os-release' and stat.S_ISLNK(m.st_mode):
+             row['symlink_target']=os.readlink(p)
+             p=p.resolve(strict=True)
+             if str(p)!='/usr/lib/os-release':raise RuntimeError('Unexpected os-release target')
+            fd=os.open(p,os.O_RDONLY|os.O_NOFOLLOW)
+            try:
+             before=os.fstat(fd)
+             if not stat.S_ISREG(before.st_mode) or before.st_size>16384:raise RuntimeError('Not bounded regular source')
+             data=os.read(fd,16385);after=os.fstat(fd)
+             if len(data)>16384 or before.st_size!=len(data) or (before.st_ino,before.st_size,before.st_mtime_ns)!=(after.st_ino,after.st_size,after.st_mtime_ns):raise RuntimeError('Source changed during capture')
+            finally:os.close(fd)
+            row.update({'resolved_path':str(p),'target_mode':oct(stat.S_IMODE(before.st_mode)),
+                'target_uid':before.st_uid,'target_gid':before.st_gid,'bytes':len(data),
+                'sha256':hashlib.sha256(data).hexdigest(),'base64':base64.b64encode(data).decode()})
+           except BaseException as error:row['capture_error']=str(error)
+           result['files'].append(row)
+          out.write_text(json.dumps(result,indent=2))
+          if any('capture_error' in row for row in result['files']):raise RuntimeError('Incomplete source preflight; preserve evidence and stop')
+          PREFLIGHT
           . /etc/os-release
           test "$ID:$VERSION_ID:$(dpkg --print-architecture)" = ubuntu:24.04:amd64
           # No package/root operation until all existing chain bytes match independently reviewed bytes.
@@ -266,7 +301,7 @@ jobs:
           run_setup sandbox-apparmor-after sysctl -n "$key"
           test "$(tail -n1 "$EVIDENCE/sandbox-apparmor-after.log")" = 0
           printf 'SETUP_COMPLETE_NOT_RUNTIME_PASS\n' > "$EVIDENCE/sandbox-setup.txt"
-      - name: Exact provider owner baseline after static PASS
+      - name: Exact provider owned persistence after static PASS
         shell: bash
         run: |
           set -euo pipefail

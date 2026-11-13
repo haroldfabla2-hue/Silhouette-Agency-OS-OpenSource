@@ -131,7 +131,7 @@ export class ImageFactory {
         } catch (e: any) {
             console.warn('[ImageFactory] ⚠️ Replicate failed:', e.message);
             if (e.message?.includes('402') || e.message?.includes('quota') || e.message?.includes('credit')) {
-                providerHealth.reportFailure('replicate-image', e.message);
+                providerHealth.observePersistence(providerHealth.reportFailure('replicate-image', e.message), 'services/media/imageFactory.ts:failure-1');
             }
         }
         return null;
@@ -174,7 +174,7 @@ export class ImageFactory {
         } catch (e: any) {
             console.warn('[ImageFactory] ⚠️ OpenAI failed:', e.message);
             if (e.message?.includes('429') || e.message?.includes('quota') || e.message?.includes('billing')) {
-                providerHealth.reportFailure('openai-image', e.message);
+                providerHealth.observePersistence(providerHealth.reportFailure('openai-image', e.message), 'services/media/imageFactory.ts:failure-2');
             }
         }
         return null;
@@ -221,7 +221,7 @@ export class ImageFactory {
         } catch (e: any) {
             console.warn('[ImageFactory] ⚠️ ComfyUI failed:', e.message);
             if (!e.message?.includes('offline')) {
-                providerHealth.reportFailure('comfyui-image', e.message);
+                providerHealth.observePersistence(providerHealth.reportFailure('comfyui-image', e.message), 'services/media/imageFactory.ts:failure-3');
             }
         }
         return null;
