@@ -3,6 +3,15 @@ Review-only. None of these setup operations has been executed.
 """
 import json,os,pathlib,resource,signal,subprocess,sys,tarfile,time
 bwrap='/tmp/security-bin/'+sys.argv[1]
+# Capture outer state before creating the inner namespace. No secrets/payloads.
+# SETFCAP must exist HERE when a child maps parentUID0, not inside final tests.
+status=pathlib.Path('/proc/self/status').read_text()
+cap_names=['CapInh:','CapPrm:','CapEff:','CapBnd:','CapAmb:','NoNewPrivs:','Uid:','Gid:']
+cut={name[:-1]:next(line.split(':',1)[1].strip() for line in status.splitlines() if line.startswith(name)) for name in cap_names}
+cut.update({'uid_map':pathlib.Path('/proc/self/uid_map').read_text(),'gid_map':pathlib.Path('/proc/self/gid_map').read_text(),'user_ns':os.readlink('/proc/self/ns/user'),'net_ns':os.readlink('/proc/self/ns/net'),'stage':'OUTER_BEFORE_INNER_MAPPING'})
+pathlib.Path('/tmp/export/outer-before-inner.json').write_text(json.dumps(cut,indent=2))
+expected=(1<<12)|(1<<31) # CAP_NET_ADMIN + CAP_SETFCAP; neither in host namespace
+assert int(cut['CapEff'],16)==expected and int(cut['CapPrm'],16)==expected,'outer capability scope differs from exact reviewed mask'
 # Existing route already uses CAP_NET_ADMIN solely in private netnamespace.
 subprocess.run(['ip','link','set','lo','up'],check=True,timeout=2)
 root=pathlib.Path('/tmp');scratch=root/'capped';scratch.mkdir(mode=0o700)

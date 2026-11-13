@@ -1302,10 +1302,10 @@ cefec0efd73afc34fbf02d3e8c83e64526d81425dacadb06e7b47310ab9c1f3c  tests/real-pro
 c48fc2fd4c0920818e1f2d349a012872ea061f23067d26bd7f2a8a9206c3a35a  tests/real-process/wal-owner/cleanup-delegation.sh
 74f4dc2cae77bc7b506b331e1729fdeb9cc56231b21574a952aae6fd263d191a  tests/real-process/wal-owner/delegate-once.sh
 7009ff11c6b656aecf72f0b1d737d9e9972fcdaea7217c7b70ccd6e59120f36f  tests/real-process/wal-owner/host-control.py
-29b7f9d2bc42eb417bf06dc51a86eef22cd13018550ed4bf245e687df6912d8e  tests/real-process/wal-owner/host-launch.py
+5bdc12620dd066332556b5437e1e14214212565884e8329501e57bb8f92de910  tests/real-process/wal-owner/host-launch.py
 77f9d98a56d938f4becceb03facd21eaccb1ce8b38890977ffc97a5f5ca6d8cc  tests/real-process/wal-owner/legacy-launch.sh
 a3e1f67194350aa9a7de9bc886d0508b68804e314419e02d2f8158edfe5a5486  tests/real-process/wal-owner/legacy-session.py
-68d081ee6b62031c629cdba4b45826921d1735d2e78c61f4b752d014f0d77728  tests/real-process/wal-owner/namespace-init.py
+03a9c2bfef03f54f08aacd6b1e945250266f92b9533e229367296f96fc9ec438  tests/real-process/wal-owner/namespace-init.py
 0b15dc9f61dac241681c41ff0d730fe627087b3ed1cde4c3a64683c4606708bc  tests/real-process/wal-owner/root-self-admit.py
 0c5b2ba831db9f0d601fa6f07df1349a430eba525875e1d5fc5277e88edaf099  tests/real-process/wal-owner/runner-integrated.py
 4580b533a8e6d64dc925614abe95095c35dc799f1f871432fc6c41f4efe398b8  tests/real-process/wal-owner/verify-evidence.py

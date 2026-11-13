@@ -32,7 +32,7 @@ try:
  control=evidence/'containment-host.json';control.write_text(json.dumps({'scope':str(cg),'limits':{n:(cg/n).read_text().strip() for n in ['memory.max','memory.swap.max','pids.max','cpu.max']},'bwrap_sha256':hashlib.sha256(bwrap.read_bytes()).hexdigest(),'wallSeconds':360,'storageBytes':512*1024**2,'status':'PREPARED_NOT_STARTED'},indent=2))
  # Root helper self-admits before executing bwrap, then drops all root IDs.
  # No numeric target-PID attach race and no broad LCA permission delegation.
- cmd=[str(bwrap),'--die-with-parent','--unshare-pid','--unshare-user','--uid','0','--gid','0','--unshare-net','--cap-add','CAP_NET_ADMIN']
+ cmd=[str(bwrap),'--die-with-parent','--unshare-pid','--unshare-user','--uid','0','--gid','0','--unshare-net','--cap-add','CAP_NET_ADMIN','--cap-add','CAP_SETFCAP']
  for source in ['/usr','/bin','/lib','/lib64','/etc','/opt']:cmd+=['--ro-bind',source,source]
  cmd+=['--proc','/proc','--dev','/dev','--size',str(512*1024**2),'--tmpfs','/tmp','--ro-bind',str(work),'/tmp/work','--ro-bind',str(harness),'/tmp/harness','--ro-bind',str(bwrap.parent),'/tmp/security-bin','--ro-bind',str(cg),'/tmp/limits','--bind',str(evidence),'/tmp/export','--remount-ro','/','--chdir','/tmp/work','/usr/bin/python3','/tmp/harness/namespace-init.py',bwrap.name]
  child_process=subprocess.Popen(['sudo','-n','/usr/bin/python3','-',str(os.getuid()),str(os.getgid()),a.run_id,str(os.getpid()),json.dumps(cmd)],stdin=subprocess.PIPE)
