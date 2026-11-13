@@ -4,7 +4,14 @@
     "noEmit": true
   },
   "include": [
-    "tests/real-process/introspection-initial/initial-status-consumer.mts"
+    "tests/real-process/introspection-initial/initial-status-consumer.mts",
+    "tests/real-process/disk-restart/child.mts"
   ],
-  "exclude": ["node_modules", "dist", "ComfyUI", "silhouette", "uploads"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "ComfyUI",
+    "silhouette",
+    "uploads"
+  ]
 }

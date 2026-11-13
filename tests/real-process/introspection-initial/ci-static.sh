@@ -11,7 +11,7 @@ mkdir "$out"
 # Existing npm ci must already have run for this exact checkout/package-lock.
 # No npm install/ci/update/network/provisioning is performed by this script.
 git rev-parse HEAD > "$out/source-head.txt"
-sha256sum package.json package-lock.json services/continuumMemory.ts services/memoryTransitions.ts services/introspectionEngine.ts tsconfig.json tsconfig.introspection-fixture.json tests/real-process/introspection-initial/initial-status-consumer.mts tests/real-process/introspection-initial/ci-static.sh tests/real-process/introspection-initial/run-two.py tests/real-process/introspection-initial/run-runtime.sh > "$out/input-sha256.txt"
+sha256sum types.ts services/sqliteService.ts package.json package-lock.json services/continuumMemory.ts services/memoryTransitions.ts services/introspectionEngine.ts tsconfig.json tsconfig.introspection-fixture.json tests/real-process/introspection-initial/initial-status-consumer.mts tests/real-process/introspection-initial/ci-static.sh tests/real-process/introspection-initial/run-two.py tests/real-process/introspection-initial/run-runtime.sh tests/real-process/disk-restart/child.mts tests/real-process/disk-restart/run-restart.py tests/real-process/disk-restart/run-runtime.sh > "$out/input-sha256.txt"
 # Timeouts FAIL, no relaxed existing gates or new full-suite invocation.
 timeout --signal=TERM --kill-after=5s 180s npm run lint 2>&1 | tee "$out/lint.log"
 timeout --signal=TERM --kill-after=5s 180s npm run typecheck 2>&1 | tee "$out/tsc-production.log"
