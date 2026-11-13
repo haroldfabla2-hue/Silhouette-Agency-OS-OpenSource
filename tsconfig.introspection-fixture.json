@@ -5,7 +5,8 @@
   },
   "include": [
     "tests/real-process/introspection-initial/initial-status-consumer.mts",
-    "tests/real-process/disk-restart/child.mts"
+    "tests/real-process/disk-restart/child.mts",
+    "tests/real-process/mcp-effect/child.mts"
   ],
   "exclude": [
     "node_modules",

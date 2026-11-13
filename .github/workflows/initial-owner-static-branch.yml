@@ -1,4 +1,4 @@
-name: Initial-owner static then disk-restart runtime trial (exact isolated branch)
+name: Initial-owner static then real MCP effect runtime trial (exact isolated branch)
 
 on:
   push:
@@ -45,7 +45,7 @@ jobs:
           [[ "$EXPECTED_COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$actual" = "$EXPECTED_COMMIT_SHA"
           git status --porcelain > "$EVIDENCE/checkout-status.txt"
-          sha256sum types.ts services/sqliteService.ts package.json package-lock.json services/continuumMemory.ts services/memoryTransitions.ts services/introspectionEngine.ts tsconfig.json tsconfig.introspection-fixture.json tests/real-process/introspection-initial/initial-status-consumer.mts tests/real-process/introspection-initial/run-two.py tests/real-process/introspection-initial/run-runtime.sh tests/real-process/disk-restart/child.mts tests/real-process/disk-restart/run-restart.py tests/real-process/disk-restart/run-runtime.sh services/dreamerService.ts services/brain/brainMemoryBridge.ts db/migrations/sqlite/001_baseline_indexes.down.sql db/migrations/sqlite/001_baseline_indexes.up.sql db/migrations/sqlite/002_facts_table.down.sql db/migrations/sqlite/002_facts_table.up.sql db/migrations/sqlite/003_user_profiles.down.sql db/migrations/sqlite/003_user_profiles.up.sql db/migrations/sqlite/004_incidents.down.sql db/migrations/sqlite/004_incidents.up.sql > "$EVIDENCE/input-sha256.txt"
+          sha256sum types.ts services/sqliteService.ts package.json package-lock.json services/continuumMemory.ts services/memoryTransitions.ts services/introspectionEngine.ts tsconfig.json tsconfig.introspection-fixture.json tests/real-process/introspection-initial/initial-status-consumer.mts tests/real-process/introspection-initial/run-two.py tests/real-process/introspection-initial/run-runtime.sh tests/real-process/disk-restart/child.mts tests/real-process/disk-restart/run-restart.py tests/real-process/disk-restart/run-runtime.sh services/dreamerService.ts services/brain/brainMemoryBridge.ts db/migrations/sqlite/001_baseline_indexes.down.sql db/migrations/sqlite/001_baseline_indexes.up.sql db/migrations/sqlite/002_facts_table.down.sql db/migrations/sqlite/002_facts_table.up.sql db/migrations/sqlite/003_user_profiles.down.sql db/migrations/sqlite/003_user_profiles.up.sql db/migrations/sqlite/004_incidents.down.sql db/migrations/sqlite/004_incidents.up.sql tests/real-process/mcp-effect/child.mts tests/real-process/mcp-effect/run-effect.py tests/real-process/mcp-effect/run-runtime.sh services/identityService.ts services/mcp/mcpClient.ts server/middleware/authMiddleware.ts server/routes/v1/autonomy.routes.ts services/actionExecutor.ts services/security/effectGate.ts services/security/gatedExecution.ts services/security/principalContext.ts services/security/approvalGrants.ts services/security/effectContext.ts > "$EVIDENCE/input-sha256.txt"
           set +e
           sha256sum --check tests/real-process/introspection-initial/reviewed-inputs.sha256 2>&1 | tee "$EVIDENCE/reviewed-input-check.log"
           codes=("${PIPESTATUS[@]}")
@@ -266,7 +266,7 @@ jobs:
           run_setup sandbox-apparmor-after sysctl -n "$key"
           test "$(tail -n1 "$EVIDENCE/sandbox-apparmor-after.log")" = 0
           printf 'SETUP_COMPLETE_NOT_RUNTIME_PASS\n' > "$EVIDENCE/sandbox-setup.txt"
-      - name: Exact sequential disk-restart trial after static PASS
+      - name: Exact local MCP effect trial after static PASS
         shell: bash
         run: |
           set -euo pipefail
@@ -282,7 +282,7 @@ jobs:
             fi
           done
           set +e
-          timeout --signal=TERM --kill-after=5s 100s env -i PATH="$PATH" HOME=/tmp /bin/bash tests/real-process/disk-restart/run-runtime.sh "$EVIDENCE" "$EVIDENCE/runtime" 2>&1 | tee "$EVIDENCE/runtime-trial.log"
+          timeout --signal=TERM --kill-after=5s 100s env -i PATH="$PATH" HOME=/tmp /bin/bash tests/real-process/mcp-effect/run-runtime.sh "$EVIDENCE" "$EVIDENCE/runtime" 2>&1 | tee "$EVIDENCE/runtime-trial.log"
           codes=("${PIPESTATUS[@]}")
           set -e
           printf '%s\n' "${codes[0]}" > "$EVIDENCE/runtime-command.exit"
