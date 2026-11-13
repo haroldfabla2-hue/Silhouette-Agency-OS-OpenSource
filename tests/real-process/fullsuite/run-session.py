@@ -42,7 +42,9 @@ for name,cmd,budget in phases:
  child=None;sel=selectors.DefaultSelector();eof=False;signals=[];failure=None;observed=0;end_at=None
  log=out/(name+'.log');t0=time.monotonic()
  try:
-  child=subprocess.Popen(cmd,cwd=root,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True)
+  phase_env=dict(env)
+  if name=='actual-owner-tests':phase_env['SILHOUETTE_TEST_MEMORY_MODE']='independent-three-focals'
+  child=subprocess.Popen(cmd,cwd=root,env=phase_env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True)
   fd=child.stdout.fileno();os.set_blocking(fd,False);sel.register(fd,selectors.EVENT_READ)
   with log.open('wb') as stream:
    while True:
@@ -132,6 +134,13 @@ if testlog.exists():
    if type(ordinal) is not int or ordinal!=owner['ordinal']+1:issue('noncontiguous owner ordinal')
    owner['ordinal']=ordinal
    stage=item.get('stage')
+   if item.get('storeLabel')!='disposable-test-owner/memory_snapshot.json' or item.get('ownerModel')!='INDEPENDENT_TEST_SCOPE_BOUND':issue('independent scope binding unverified')
+   scope_digest=item.get('scopeDigest')
+   if not isinstance(scope_digest,str) or len(scope_digest)!=64 or any(c not in '0123456789abcdef' for c in scope_digest):issue('invalid independent scope digest')
+   if stage=='OWNER_DECLARED':
+    if any(other is not owner and other.get('scopeDigest')==scope_digest for other in owners.values()):issue('independent owners share scope digest')
+    owner['scopeDigest']=scope_digest
+   elif scope_digest!=owner.get('scopeDigest'):issue('owner scope digest changed')
    if stage=='OWNER_DECLARED':
     if owner['declared'] or owner['events']!=1:issue('invalid owner declaration order')
     worker=item.get('worker')

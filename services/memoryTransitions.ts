@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { MemoryNode } from '../types';
 import { lancedbService } from './lancedbService';
+import { MEMORY_TRANSITIONS_DIR_OVERRIDE } from './memoryStoragePaths';
 
 export type TransitionState = 'PENDING' | 'WRITTEN' | 'VERIFIED' | 'COMMITTED';
 export interface MemoryTransition {
@@ -20,7 +21,7 @@ export const isOutstandingTransition = (e: MemoryTransition): boolean => e.state
 
 export class MemoryTransitions {
     constructor(
-        private readonly directory = path.join(process.cwd(), 'data', 'memory-transitions'),
+        private readonly directory = MEMORY_TRANSITIONS_DIR_OVERRIDE ?? path.join(process.cwd(), 'data', 'memory-transitions'),
         private readonly lance: LanceLike = lancedbService,
     ) { }
 

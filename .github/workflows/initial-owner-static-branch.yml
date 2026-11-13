@@ -50,12 +50,12 @@ jobs:
           mkdir "$reviewed"
           cp tests/real-process/fullsuite/reviewed-inputs.sha256 "$reviewed/inputs.sha256"
           chmod 0444 "$reviewed/inputs.sha256"
-          printf '%s  %s\n' e90987478ac0a868dbed889c024b405f9acfa8fb4210480650a4c302e1cae31c "$reviewed/inputs.sha256" | sha256sum --check
+          printf '%s  %s\n' 45ba020ee6fa570705ebf011ba92798c2c3defaa7e4e7021b0676e116b5d1b93 "$reviewed/inputs.sha256" | sha256sum --check
           printf 'REVIEWED=%s\n' "$reviewed" >> "$GITHUB_ENV"
           work="$RUNNER_TEMP/current-suite-work"
           python3 tests/real-process/fullsuite/prepare-work.py "$work" "$EVIDENCE"
           printf '%s  %s\n' f620fbb142f7011b60aa171160e049cc3af3beeacc11e3d47bb518624c8ef684 tests/real-process/fullsuite/verify-tree.py | sha256sum --check
-          python3 tests/real-process/fullsuite/verify-tree.py "$work" "$reviewed/inputs.sha256" e90987478ac0a868dbed889c024b405f9acfa8fb4210480650a4c302e1cae31c "$EVIDENCE/pre-install-tree.json"
+          python3 tests/real-process/fullsuite/verify-tree.py "$work" "$reviewed/inputs.sha256" 45ba020ee6fa570705ebf011ba92798c2c3defaa7e4e7021b0676e116b5d1b93 "$EVIDENCE/pre-install-tree.json"
           printf 'WORK=%s\n' "$work" >> "$GITHUB_ENV"
       - name: Exact Node floor
         uses: actions/setup-node@v4
@@ -73,7 +73,7 @@ jobs:
           python3 "$control" capture npm-ci 300 env -i PATH="$PATH" HOME="$RUNNER_TEMP/current-suite-install-home" PUPPETEER_SKIP_DOWNLOAD=true PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=true npm ci
           cd "$GITHUB_WORKSPACE"
           printf '%s  %s\n' f620fbb142f7011b60aa171160e049cc3af3beeacc11e3d47bb518624c8ef684 tests/real-process/fullsuite/verify-tree.py | sha256sum --check
-          python3 tests/real-process/fullsuite/verify-tree.py "$WORK" "$REVIEWED/inputs.sha256" e90987478ac0a868dbed889c024b405f9acfa8fb4210480650a4c302e1cae31c "$EVIDENCE/post-install-tree.json"
+          python3 tests/real-process/fullsuite/verify-tree.py "$WORK" "$REVIEWED/inputs.sha256" 45ba020ee6fa570705ebf011ba92798c2c3defaa7e4e7021b0676e116b5d1b93 "$EVIDENCE/post-install-tree.json"
       - name: Explicit one security candidate only, no APT configuration or install
         shell: bash
         run: |

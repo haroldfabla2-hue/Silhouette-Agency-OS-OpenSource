@@ -17,7 +17,7 @@ import { systemBus } from './systemBus';
 import { SystemProtocol } from '../types';
 import { MemoryNodeSchema } from './memorySchema'; // Added missing import
 
-const SNAPSHOT_PATH = path.join(process.cwd(), 'data', 'memory_snapshot.json');
+import { MEMORY_SNAPSHOT_PATH as SNAPSHOT_PATH, CONTINUUM_REDIS_KEY, SNAPSHOT_DIAGNOSTIC_BINDING } from './memoryStoragePaths';
 
 export interface CoreRecoveryReport {
     outcome: 'COMPLETE' | 'DEGRADED' | 'FAILED';
@@ -89,9 +89,7 @@ class ContinuumMemorySystem {
             const event = {
                 stage, graphId: this.snapshotGraphId, pid: process.pid,
                 worker: process.env.VITEST_WORKER_ID ?? 'UNKNOWN',
-                thread: 'UNKNOWN', storeLabel: SNAPSHOT_PATH === '/tmp/work/data/memory_snapshot.json'
-                    ? 'shared-work/data/memory_snapshot.json' : 'UNKNOWN',
-                ownerModel: 'UNRESOLVED_SHARED_PATH_TEST',
+                thread: 'UNKNOWN', ...SNAPSHOT_DIAGNOSTIC_BINDING,
                 ordinal: ++this.snapshotDiagnosticOrdinal,
                 monotonicNs: process.hrtime.bigint().toString(), ...metadata
             };
@@ -419,7 +417,7 @@ class ContinuumMemorySystem {
             let redis: SnapshotReceipt['redis'] = 'SETTLED_UNVERIFIED';
             let redisError: string | undefined;
             // Preserve historical Redis -> disk ordering, per captured payload.
-            try { await redisClient.set('continuum:volatile', payload, 3600); }
+            try { await redisClient.set(CONTINUUM_REDIS_KEY, payload, 3600); }
             catch (error) {
                 redis = 'FAILED';
                 redisError = recoveryError(error);
@@ -503,7 +501,7 @@ class ContinuumMemorySystem {
             if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
             // Redis is consulted ONLY when disk is absent, never corrupt/unreadable.
             report.source = 'REDIS';
-            payload = await redisClient.get('continuum:volatile');
+            payload = await redisClient.get(CONTINUUM_REDIS_KEY);
             report.source = payload === null ? 'EMPTY' : 'REDIS';
             if (redisClient.isMockMode()) {
                 report.errors.push('Disk absent; Redis is volatile in-memory fallback, not durable recovery evidence');

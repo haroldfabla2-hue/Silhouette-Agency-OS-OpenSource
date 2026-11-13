@@ -21,6 +21,12 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+// No opt-in: preserve the legacy DB-only/partial-env setup exactly.
+if (process.env.SILHOUETTE_TEST_MEMORY_MODE !== undefined) {
+    const { expect } = await import('vitest');
+    const { prepareIndependentMemoryStore } = await import('./independent-memory-store');
+    prepareIndependentMemoryStore(expect.getState().testPath);
+} else {
 if (!process.env.SILHOUETTE_DB_PATH) {
     const worker = process.env.VITEST_WORKER_ID || `pid-${process.pid}`;
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'silhouette-test-db-'));
@@ -39,4 +45,6 @@ if(!process.env.SILHOUETTE_LANCEDB_PATH){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'silhouette-test-lancedb-'));
  process.env.SILHOUETTE_LANCEDB_PATH=path.join(dir,'memory.lancedb');
  process.on('exit',()=>{try{fs.rmSync(dir,{recursive:true,force:true});}catch{/* cleanup is best-effort on worker exit */}});
+}
+
 }
