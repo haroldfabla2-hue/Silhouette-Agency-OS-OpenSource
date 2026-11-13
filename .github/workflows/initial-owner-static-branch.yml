@@ -1,155 +1,340 @@
-name: Ubuntu complete apt chain inspection only (exact isolated branch)
+name: Initial-owner static then two-case runtime trial (exact isolated branch)
+
 on:
   push:
     branches:
       - validation/initial-owner-static-reviewed-20261112
+
 permissions:
   contents: read
+
 jobs:
-  source-inspection-only:
+  focused-static:
     runs-on: ubuntu-24.04
-    timeout-minutes: 3
+    timeout-minutes: 15
+    env:
+      EXPECTED_COMMIT_SHA: ${{ github.sha }}
     steps:
-      - name: Checkout exact inspection source
+      - name: Initialize evidence location on runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/initial-owner-static-evidence"
+          mkdir -p "$evidence"
+          test -w "$evidence"
+          printf 'EVIDENCE_WRITABLE\n' > "$evidence/write-check.txt"
+          printf 'EVIDENCE=%s\n' "$evidence" >> "$GITHUB_ENV"
+
+      - name: Checkout exact pushed candidate
         uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
           fetch-depth: 1
-      - name: Verify source and inspect complete existing Ubuntu chain only
+
+      - name: Verify pushed commit and reviewed bytes
         shell: bash
-        env:
-          EXPECTED_COMMIT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$EXPECTED_COMMIT_SHA"
-          printf 'INSPECTION_HEAD=%s\n' "$EXPECTED_COMMIT_SHA"
-          sha256sum --check tests/real-process/introspection-initial/reviewed-inputs.sha256
+          mkdir -p "$EVIDENCE"
+          test -w "$EVIDENCE"
+          printf 'EVIDENCE_WRITABLE\n' > "$EVIDENCE/write-check.txt"
+          actual=$(git rev-parse HEAD)
+          printf '%s\n' "$actual" > "$EVIDENCE/head.txt"
+          printf '%s\n' "$EXPECTED_COMMIT_SHA" > "$EVIDENCE/expected-head.txt"
+          [[ "$EXPECTED_COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$EXPECTED_COMMIT_SHA"
+          git status --porcelain > "$EVIDENCE/checkout-status.txt"
+          sha256sum package.json package-lock.json services/continuumMemory.ts services/memoryTransitions.ts services/introspectionEngine.ts tsconfig.json tsconfig.introspection-fixture.json tests/real-process/introspection-initial/initial-status-consumer.mts tests/real-process/introspection-initial/run-two.py tests/real-process/introspection-initial/run-runtime.sh > "$EVIDENCE/input-sha256.txt"
           set +e
-          timeout --signal=TERM --kill-after=5s 30s python3 - > "$RUNNER_TEMP/source-inspection.log" 2>&1 <<'INSPECT'
-          import datetime, hashlib, json, os, pathlib, re, stat, subprocess, urllib.parse
-          SOURCES = pathlib.Path('/etc/apt/sources.list.d/ubuntu.sources')
-          MIRRORS = pathlib.Path('/etc/apt/apt-mirrors.txt')
-          KEYRING = pathlib.Path('/usr/share/keyrings/ubuntu-archive-keyring.gpg')
-          EXPECTED = [
-              ['http://azure.archive.ubuntu.com/ubuntu/', 'priority:1'],
-              ['https://archive.ubuntu.com/ubuntu/', 'priority:2'],
-              ['https://security.ubuntu.com/ubuntu/', 'priority:3'],
-          ]
-
-          def capture(path, limit, include_text):
-              meta = path.lstat()
-              if not stat.S_ISREG(meta.st_mode) or meta.st_size > limit:
-                  raise SystemExit('FAIL: expected capped regular file: ' + str(path))
-              data = path.read_bytes()
-              if len(data) > limit:
-                  raise SystemExit('FAIL: file grew beyond cap: ' + str(path))
-              record = {'path': str(path), 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest(),
-                        'uid': meta.st_uid, 'mode': oct(stat.S_IMODE(meta.st_mode))}
-              if include_text:
-                  text = data.decode('utf8', errors='strict')
-                  for value in re.findall(r'[A-Za-z][A-Za-z0-9+.-]*://[^\s]+', text):
-                      parsed = urllib.parse.urlsplit(value)
-                      if parsed.username is not None or parsed.password is not None or parsed.query or parsed.fragment:
-                          raise SystemExit('FAIL_REDACTED: unexpected URI credential/query/fragment; bodies withheld')
-                  record['text'] = text
-              return record
-
-          def read_command(args, cap=16384):
-              value = subprocess.run(args, capture_output=True, timeout=5)
-              if len(value.stdout) + len(value.stderr) > cap:
-                  raise SystemExit('INCOMPLETE: diagnostic command output above cap')
-              return {'argv': args, 'exit': value.returncode, 'stdout': value.stdout.decode('utf8', errors='strict'),
-                      'stderr': value.stderr.decode('utf8', errors='strict')}
-
-          # Read this entire fixed chain once, before any trust assertion or apt update/install.
-          source = capture(SOURCES, 16384, True)
-          mirrors = capture(MIRRORS, 8192, True)
-          keyring = capture(KEYRING, 262144, False)
-          os_release = pathlib.Path('/etc/os-release').read_text()
-          if len(os_release.encode()) > 4096:
-              raise SystemExit('INCOMPLETE: os-release above4KiB')
-          owner = read_command(['dpkg-query', '-S', str(KEYRING)])
-          package = read_command(['dpkg-query', '-W', '-f=${Package} ${Version} ${Architecture} ${Status}\n', 'ubuntu-keyring'])
-          verification = read_command(['dpkg', '--verify', 'ubuntu-keyring'])
-          # Filter only security fields, never print full apt config, auth config, proxies or environment.
-          config_result = subprocess.run(['apt-config', 'dump'], capture_output=True, timeout=5)
-          if config_result.returncode != 0 or len(config_result.stdout) > 1048576:
-              raise SystemExit('INCOMPLETE: apt-config read failed or too large')
-          security_prefixes = ('Acquire::AllowInsecureRepositories', 'Acquire::AllowWeakRepositories',
-                               'Acquire::AllowDowngradeToInsecureRepositories', 'Acquire::Check-Valid-Until',
-                               'Acquire::Check-Date', 'APT::Get::AllowUnauthenticated',
-                               'Acquire::http::AllowRedirect', 'Acquire::https::AllowRedirect',
-                               'Acquire::https::Verify-Peer', 'Acquire::https::Verify-Host')
-          security_lines = [line for line in config_result.stdout.decode('utf8').splitlines()
-                            if any(line.startswith(prefix + ' ') for prefix in security_prefixes)]
-          if sum(len(line) for line in security_lines) > 4096:
-              raise SystemExit('INCOMPLETE: security fields above4KiB')
-          context = {'timestamp_utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                     'image_os': os.environ.get('ImageOS'), 'image_version': os.environ.get('ImageVersion'),
-                     'os_release': os_release, 'new_vm_not_historical': True}
-          record = {'context': context, 'sources': source, 'mirrors': mirrors, 'keyring': keyring,
-                    'keyring_owner': owner, 'keyring_package': package, 'keyring_package_verify': verification,
-                    'apt_security_config_explicit_fields': security_lines,
-                    'absent_config_field': 'APT default, not proven explicit; future setup must force secure values',
-                    'included_software_link': 'recover literal from this run Set up job',
-                    'release_packages_deb_signature_chain': 'NOT_TESTED: no apt update/download/install'}
-          print('APT_CHAIN_CAPTURE_JSON=' + json.dumps(record, ensure_ascii=True), flush=True)
-
-          # Strict deb822 parser. Reject unknown fields, duplicate keys and continuations.
-          stanzas = []
-          current = {}
-          for line in source['text'].splitlines() + ['']:
-              if line.startswith('#'):
-                  continue
-              if not line.strip():
-                  if current:
-                      stanzas.append(current)
-                      current = {}
-                  continue
-              assert not line[0].isspace() and ':' in line, 'Unexpected deb822 continuation or syntax'
-              key, value = line.split(':', 1)
-              assert key not in current, 'Duplicate deb822 field'
-              current[key] = value.strip()
-          print('PARSED_DEB822_JSON=' + json.dumps(stanzas, ensure_ascii=True), flush=True)
-          entries = []
-          for line in mirrors['text'].splitlines():
-              if not line.strip() or line.startswith('#'):
-                  continue
-              assert '\t' in line, 'Mirror metadata must follow tab'
-              uri, metadata = line.split('\t', 1)
-              entries.append([uri, metadata.strip()])
-          print('PARSED_MIRROR_ENTRIES_JSON=' + json.dumps(entries, ensure_ascii=True), flush=True)
-          assert len(stanzas) == 2, 'Unexpected stanza count'
-          for index, stanza in enumerate(stanzas):
-              assert set(stanza) == {'Types', 'URIs', 'Suites', 'Components', 'Signed-By'}, 'Unknown source/trust field'
-              assert stanza['Types'] == 'deb', 'Only deb binary sources'
-              assert stanza['URIs'] == 'mirror+file:/etc/apt/apt-mirrors.txt', 'Unexpected mirror transport/path'
-              assert stanza['Signed-By'] == str(KEYRING), 'Unexpected signing keyring'
-              assert stanza['Components'].split() == ['main', 'universe', 'restricted', 'multiverse'], 'Unexpected components'
-              assert stanza['Suites'].split() == (['noble', 'noble-updates', 'noble-backports'] if index == 0 else ['noble-security']), 'Unexpected suites'
-          assert entries == EXPECTED, 'Mirror set/order/priority differs from exact official image source'
-          for file in [source, mirrors, keyring]:
-              assert file['uid'] == 0 and int(file['mode'], 8) & 0o022 == 0, 'Chain file not root-owned or is writable by group/others'
-          assert owner['exit'] == 0 and owner['stdout'].strip() == 'ubuntu-keyring: ' + str(KEYRING), 'Unexpected keyring owner'
-          assert package['exit'] == 0 and 'install ok installed' in package['stdout'], 'Keyring package not installed'
-          assert verification['exit'] == 0 and not verification['stdout'].strip(), 'Keyring installed package verification failed'
-          print('STRUCTURAL_CHAIN_PASS_ONLY_SIGNATURE_VERIFICATION_NOT_RUN', flush=True)
-          INSPECT
-          code=$?
+          sha256sum --check tests/real-process/introspection-initial/reviewed-inputs.sha256 2>&1 | tee "$EVIDENCE/reviewed-input-check.log"
+          codes=("${PIPESTATUS[@]}")
           set -e
-          printf 'SOURCE_INSPECTION_COMMAND_EXIT=%s\n' "$code"
-          python3 - "$RUNNER_TEMP/source-inspection.log" <<'ENCODE'
-          import base64, hashlib, pathlib, sys
-          data = pathlib.Path(sys.argv[1]).read_bytes()
-          if len(data) > 65536:
-              raise SystemExit('INCOMPLETE: inspection output above64KiB; no truncation')
-          print('SOURCE_INSPECTION_LOG_BYTES=' + str(len(data)))
-          print('SOURCE_INSPECTION_LOG_SHA256=' + hashlib.sha256(data).hexdigest())
-          print('SOURCE_INSPECTION_LOG_BASE64_BEGIN')
+          printf '%s\n' "${codes[0]}" > "$EVIDENCE/reviewed-input-check.exit"
+          printf '%s\n' "${codes[1]}" > "$EVIDENCE/reviewed-input-check.tee-exit"
+          test "${codes[0]}" = 0
+          test "${codes[1]}" = 0
+          printf 'PUSH_HEAD_AND_REVIEWED_BYTES_MATCH\n' > "$EVIDENCE/head-check.txt"
+
+      - name: Setup exact existing CI Node floor
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+
+      - name: Existing pinned lock install
+        shell: bash
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 'true'
+        run: |
+          set -euo pipefail
+          test -w "$EVIDENCE"
+          node --version > "$EVIDENCE/node-version.txt"
+          npm --version > "$EVIDENCE/npm-version.txt"
+          set +e
+          timeout --signal=TERM --kill-after=5s 300s npm ci 2>&1 | tee "$EVIDENCE/npm-ci.log"
+          codes=("${PIPESTATUS[@]}")
+          set -e
+          printf '%s\n' "${codes[0]}" > "$EVIDENCE/npm-ci.exit"
+          printf '%s\n' "${codes[1]}" > "$EVIDENCE/npm-ci.tee-exit"
+          test "${codes[0]}" = 0
+          test "${codes[1]}" = 0
+
+      - name: All three static checks, aggregate failure
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -w "$EVIDENCE"
+          run_check() {
+            name=$1
+            shift
+            set +e
+            timeout --signal=TERM --kill-after=5s 180s "$@" 2>&1 | tee "$EVIDENCE/$name.log"
+            codes=("${PIPESTATUS[@]}")
+            set -e
+            printf '%s\n' "${codes[0]}" > "$EVIDENCE/$name.exit"
+            printf '%s\n' "${codes[1]}" > "$EVIDENCE/$name.tee-exit"
+          }
+          # Deliberate diagnostic policy: run all three even if lint/TSC fail.
+          # Recording/tee failures never turn a nonzero command into success.
+          run_check lint npm run lint
+          run_check tsc-production npm run typecheck
+          run_check tsc-fixture node node_modules/typescript/bin/tsc --project tsconfig.introspection-fixture.json
+          result=0
+          for name in lint tsc-production tsc-fixture; do
+            test "$(cat "$EVIDENCE/$name.exit")" = 0 || result=1
+            test "$(cat "$EVIDENCE/$name.tee-exit")" = 0 || result=1
+          done
+          printf '%s\n' "$result" > "$EVIDENCE/aggregate.exit"
+          if test "$result" = 0; then printf 'STATIC_PASS\n' > "$EVIDENCE/static-pass.txt"; fi
+          exit "$result"
+
+      - name: Verified existing Ubuntu key copy and authenticated package setup
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_setup() {
+            name=$1; shift
+            set +e
+            timeout --signal=TERM --kill-after=5s 120s "$@" 2>&1 | tee "$EVIDENCE/$name.log"
+            codes=("${PIPESTATUS[@]}")
+            set -e
+            printf '%s\n' "${codes[0]}" > "$EVIDENCE/$name.exit"
+            printf '%s\n' "${codes[1]}" > "$EVIDENCE/$name.tee-exit"
+            test "${codes[0]}" = 0; test "${codes[1]}" = 0
+          }
+          . /etc/os-release
+          test "$ID:$VERSION_ID:$(dpkg --print-architecture)" = ubuntu:24.04:amd64
+          # No package/root operation until all existing chain bytes match independently reviewed bytes.
+          run_setup sandbox-verify-and-stage python3 - "$RUNNER_TEMP" <<'VERIFY'
+          import hashlib,json,os,pathlib,stat,sys,tempfile
+          expected = {
+           '/etc/apt/sources.list.d/ubuntu.sources': '4508181e0dd5578c33d1247db48ab4847910b25da85e0789c8e7b3140d1fb289',
+           '/etc/apt/apt-mirrors.txt': 'e0d6b0af979e4662d16357a27ae456cc6f21e26da031540f4df8706ebed1d583',
+           '/usr/share/keyrings/ubuntu-archive-keyring.gpg': '80a36b0a6de2f69f49d2df75ef473ccde121e9e190b9ea01d20a4f63778d5c31'
+          }
+          staged = pathlib.Path(sys.argv[1]) / 'reviewed-ubuntu-stage'
+          staged.mkdir(mode=0o700)
+          for name,digest in expected.items():
+           p=pathlib.Path(name);m=p.lstat()
+           assert stat.S_ISREG(m.st_mode) and m.st_uid==0 and m.st_size<=16384,'Unexpected chain file'
+           if name.endswith(('ubuntu.sources','apt-mirrors.txt')): assert m.st_mode & 0o022==0,'Writable source/mirror'
+           data=p.read_bytes();assert hashlib.sha256(data).hexdigest()==digest,'Unexpected chain bytes, stop'
+           # Keyring may be0777 on image; only exact read snapshot copied, never trust mutable original afterward.
+           target=staged/p.name;fd=os.open(target,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+           with os.fdopen(fd,'wb') as out:out.write(data)
+           print(json.dumps({'path':name,'sha256':digest,'mode':oct(stat.S_IMODE(m.st_mode))}))
+          VERIFY
+          run_setup sandbox-keyring-package dpkg-query -W -f='${Package} ${Version} ${Architecture} ${Status}\n' ubuntu-keyring
+          run_setup sandbox-keyring-owner dpkg-query -S /usr/share/keyrings/ubuntu-archive-keyring.gpg
+          # The independent hash, not dpkg verification or original permission, admits the copied bytes.
+          run_setup sandbox-secure-mktemp sudo -n mktemp -d /run/initial-owner-apt.XXXXXXXX
+          secure=$(tail -n1 "$EVIDENCE/sandbox-secure-mktemp.log")
+          [[ "$secure" =~ ^/run/initial-owner-apt\.[A-Za-z0-9]{8}$ ]]
+          printf 'APT_TRIAL_SCOPE=%s\n' "$secure" >> "$GITHUB_ENV"
+          printf '%s\n' "$secure" > "$EVIDENCE/sandbox-private-scope.txt"
+          run_setup sandbox-secure-dir sudo -n chmod 0755 "$secure"
+          run_setup sandbox-copy-key sudo -n install -o root -g root -m 0644 "$RUNNER_TEMP/reviewed-ubuntu-stage/ubuntu-archive-keyring.gpg" "$secure/ubuntu-archive-keyring.gpg"
+          # Only Signed-By changes in the source copy; existing sources/mirrors/keyring are untouched.
+          python3 - "$RUNNER_TEMP/reviewed-ubuntu-stage/ubuntu.sources" "$secure" <<'SOURCE'
+          import pathlib,sys
+          p=pathlib.Path(sys.argv[1]);text=p.read_text();secure=sys.argv[2]
+          assert text.count('mirror+file:/etc/apt/apt-mirrors.txt')==2
+          assert text.count('Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg')==2
+          text=text.replace('Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg','Signed-By: '+secure+'/ubuntu-archive-keyring.gpg')
+          p.write_text(text)
+          SOURCE
+          run_setup sandbox-copy-source sudo -n install -o root -g root -m 0644 "$RUNNER_TEMP/reviewed-ubuntu-stage/ubuntu.sources" "$secure/ubuntu.sources"
+          run_setup sandbox-copy-check sudo -n python3 - "$secure" <<'CHECK'
+          import pathlib,hashlib,os,stat,sys,json,subprocess
+          p=pathlib.Path(sys.argv[1])
+          for name in ['ubuntu-archive-keyring.gpg','ubuntu.sources']:
+           f=p/name;m=f.lstat();assert stat.S_ISREG(m.st_mode) and m.st_uid==0 and m.st_mode&0o022==0
+           h=hashlib.sha256(f.read_bytes()).hexdigest()
+           if name=='ubuntu-archive-keyring.gpg':assert h=='80a36b0a6de2f69f49d2df75ef473ccde121e9e190b9ea01d20a4f63778d5c31'
+           if name=='ubuntu-archive-keyring.gpg':assert f.stat().st_size==3607
+           print(json.dumps({'file':name,'uid':m.st_uid,'mode':oct(stat.S_IMODE(m.st_mode)),'sha256':h}))
+          result=subprocess.run(['gpg','--batch','--no-options','--homedir',str(p),'--no-default-keyring','--keyring',str(p/'ubuntu-archive-keyring.gpg'),'--with-colons','--fingerprint','--list-keys'],capture_output=True,timeout=10)
+          assert result.returncode==0,'Fingerprint read failed'
+          actual={line.split(':')[9] for line in result.stdout.decode().splitlines() if line.startswith('fpr:')}
+          expected={'790BC7277767219C42C86F933B4FE6ACC0B21F32','843938DF228D22F7B3742BC0D94AA3F0EFE21092','F6ECB3762474EDA9D21B7022871920D1991BC93C'}
+          assert actual==expected,'Unexpected complete key fingerprint set'
+          print(json.dumps({'verified_fingerprints':sorted(actual)}))
+          CHECK
+          run_setup sandbox-fresh-lists sudo -n mkdir "$secure/lists" "$secure/archives"
+          opts=(-o "Dir::Etc::sourcelist=$secure/ubuntu.sources" -o Dir::Etc::sourceparts=- -o "Dir::State::lists=$secure/lists" -o "Dir::Cache::archives=$secure/archives" -o Acquire::AllowInsecureRepositories=false -o Acquire::AllowWeakRepositories=false -o Acquire::AllowDowngradeToInsecureRepositories=false -o APT::Get::AllowUnauthenticated=false -o Acquire::Check-Valid-Until=true -o Acquire::Check-Date=true -o Acquire::http::AllowRedirect=false -o Acquire::https::AllowRedirect=false -o Acquire::http::Proxy=DIRECT -o Acquire::https::Proxy=DIRECT -o Acquire::http::Proxy-Auto-Detect= -o Acquire::https::Proxy-Auto-Detect= -o Acquire::https::Verify-Peer=true -o Acquire::https::Verify-Host=true -o APT::Update::Error-Mode=any)
+          for host in azure.archive.ubuntu.com archive.ubuntu.com security.ubuntu.com; do
+            opts+=(-o "Acquire::http::Proxy::$host=DIRECT" -o "Acquire::https::Proxy::$host=DIRECT" -o "Acquire::http::AllowRedirect::$host=false" -o "Acquire::https::AllowRedirect::$host=false" -o "Acquire::https::Verify-Peer::$host=true" -o "Acquire::https::Verify-Host::$host=true")
+          done
+          missing=()
+          command -v bwrap >/dev/null || missing+=(bubblewrap)
+          command -v ip >/dev/null || missing+=(iproute2)
+          if test "${#missing[@]}" != 0; then
+            # Fail if the original root-owned source or mirror changed since capture.
+            printf '%s  %s\n' e0d6b0af979e4662d16357a27ae456cc6f21e26da031540f4df8706ebed1d583 /etc/apt/apt-mirrors.txt | sha256sum --check
+            printf '%s  %s\n' 4508181e0dd5578c33d1247db48ab4847910b25da85e0789c8e7b3140d1fb289 /etc/apt/sources.list.d/ubuntu.sources | sha256sum --check
+            run_setup sandbox-authenticated-update sudo -n env -i PATH="$PATH" apt-get "${opts[@]}" update
+            # Independently confirm every fetched signed Release with the secure key copy and exact Ubuntu suite.
+            run_setup sandbox-release-verification sudo -n python3 - "$secure" <<'RELEASE'
+          import pathlib,subprocess,sys,json
+          p=pathlib.Path(sys.argv[1]);files=list((p/'lists').glob('*InRelease'));assert len(files)==4,'Need four signed suite files'
+          seen=set()
+          for f in files:
+           r=subprocess.run(['gpgv','--keyring',str(p/'ubuntu-archive-keyring.gpg'),'--status-fd','1',str(f)],capture_output=True,timeout=10)
+           assert r.returncode==0 and '[GNUPG:] VALIDSIG ' in r.stdout.decode(),'Release signature failed'
+           fields={line.split(':',1)[0]:line.split(':',1)[1].strip() for line in f.read_text().splitlines() if ':' in line and not line.startswith(' ')}
+           assert fields['Origin']=='Ubuntu' and fields['Label']=='Ubuntu' and fields['Codename']=='noble'
+           assert fields['Suite'] in ['noble','noble-updates','noble-backports','noble-security'];seen.add(fields['Suite'])
+           print(json.dumps({'file':f.name,'origin':fields['Origin'],'suite':fields['Suite'],'valid_until':fields.get('Valid-Until'),'gpgv_status':r.stdout.decode()}))
+          assert seen=={'noble','noble-updates','noble-backports','noble-security'}
+          RELEASE
+            pins=()
+            for pkg in "${missing[@]}"; do
+              run_setup "sandbox-$pkg-policy" apt-cache "${opts[@]}" policy "$pkg"
+              candidate=$(apt-cache "${opts[@]}" policy "$pkg" | awk '/Candidate:/ {print $2}')
+              test -n "$candidate" && test "$candidate" != '(none)'
+              pins+=("$pkg=$candidate")
+            done
+            run_setup sandbox-apt-simulate apt-get "${opts[@]}" --simulate --no-install-recommends --no-upgrade --no-remove install "${pins[@]}"
+            while read -r pkg; do
+              if dpkg-query -W -f='${db:Status-Status}' "$pkg" 2>/dev/null | grep -qx installed; then
+                printf 'BLOCKED: proposed upgrade of installed %s\n' "$pkg"; exit 1
+              fi
+            done < <(awk '$1=="Inst" {print $2}' "$EVIDENCE/sandbox-apt-simulate.log")
+            run_setup sandbox-candidate-metadata python3 - "$EVIDENCE/sandbox-apt-simulate.log" "${opts[@]}" <<'METADATA'
+          import pathlib,subprocess,sys,re,json
+          text=pathlib.Path(sys.argv[1]).read_text();opts=sys.argv[2:];planned=[]
+          for line in text.splitlines():
+           if not line.startswith('Inst '):continue
+           m=re.match(r'Inst ([^ ]+) \(([^ ]+)',line);assert m,'Unexpected simulated package format'
+           pkg,version=m.groups();r=subprocess.run(['apt-cache',*opts,'show',pkg+'='+version],capture_output=True,timeout=10);assert r.returncode==0
+           records=[]
+           for paragraph in r.stdout.decode().strip().split('\n\n'):
+            fields={x.split(':',1)[0]:x.split(':',1)[1].strip() for x in paragraph.splitlines() if ':' in x and not x[0].isspace()}
+            if fields.get('Version')!=version:continue
+            filename=fields['Filename'];assert filename.startswith('pool/') and '..' not in pathlib.PurePosixPath(filename).parts and ':' not in filename and '?' not in filename and '#' not in filename
+            assert re.fullmatch('[0-9a-f]{64}',fields['SHA256'])
+            records.append({'package':fields['Package'],'version':version,'filename':filename,'sha256':fields['SHA256'],'size':fields['Size']})
+           assert records,'No exact candidate metadata'
+           planned.extend(records)
+          assert planned,'No packages planned'
+          print(json.dumps(planned))
+          METADATA
+            run_setup sandbox-authenticated-download sudo -n env -i PATH="$PATH" apt-get "${opts[@]}" --yes --download-only --no-install-recommends --no-upgrade --no-remove install "${pins[@]}"
+            run_setup sandbox-downloaded-hashes sudo -n python3 - "$secure/archives" "$EVIDENCE/sandbox-candidate-metadata.log" <<'HASHES'
+          import pathlib,json,sys,hashlib
+          records=json.loads(pathlib.Path(sys.argv[2]).read_text());files=list(pathlib.Path(sys.argv[1]).glob('*.deb'));expected={r['sha256'] for r in records};actual=set()
+          for p in files:
+           digest=hashlib.sha256(p.read_bytes()).hexdigest();assert digest in expected,'Downloaded archive not exact authenticated candidate'
+           actual.add(digest);print(json.dumps({'archive':p.name,'sha256':digest,'bytes':p.stat().st_size}))
+          assert actual==expected,'Missing candidate archives'
+          HASHES
+            # Same signed indexes and candidates; install cannot fetch any additional URI.
+            run_setup sandbox-apt-install sudo -n env -i PATH="$PATH" apt-get "${opts[@]}" --yes --no-download --no-install-recommends --no-upgrade --no-remove install "${pins[@]}"
+          fi
+          run_setup sandbox-package-versions dpkg-query -W -f='${Package} ${Version} ${Architecture}\n' bubblewrap iproute2
+          run_setup sandbox-bwrap-version bwrap --version
+          run_setup sandbox-ip-version ip -Version
+          key=kernel.apparmor_restrict_unprivileged_userns
+          run_setup sandbox-apparmor-before sysctl -n "$key"
+          before=$(tail -n1 "$EVIDENCE/sandbox-apparmor-before.log")
+          case "$before" in
+            0) ;;
+            1) run_setup sandbox-apparmor-set sudo -n sysctl -w "$key=0" ;;
+            *) printf 'BLOCKED: unexpected AppArmor value\n'; exit 1 ;;
+          esac
+          run_setup sandbox-apparmor-after sysctl -n "$key"
+          test "$(tail -n1 "$EVIDENCE/sandbox-apparmor-after.log")" = 0
+          printf 'SETUP_COMPLETE_NOT_RUNTIME_PASS\n' > "$EVIDENCE/sandbox-setup.txt"
+      - name: Exact two-case runtime trial after static PASS
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(cat "$EVIDENCE/static-pass.txt")" = STATIC_PASS
+          printf 'NOT_STARTED\n' > "$EVIDENCE/runtime-status.txt"
+          # No package installation, sudo, external Redis, or alternate path.
+          # A missing tool is a trial capability result, before app workload.
+          for tool in bwrap ip; do
+            if ! command -v "$tool" >> "$EVIDENCE/runtime-capability.log" 2>&1; then
+              printf 'BLOCKED: missing %s before app workload\n' "$tool" | tee -a "$EVIDENCE/runtime-capability.log"
+              printf 'BLOCKED\n' > "$EVIDENCE/runtime-status.txt"
+              exit 1
+            fi
+          done
+          set +e
+          timeout --signal=TERM --kill-after=5s 100s env -i PATH="$PATH" HOME=/tmp /bin/bash tests/real-process/introspection-initial/run-runtime.sh "$EVIDENCE" "$EVIDENCE/runtime" 2>&1 | tee "$EVIDENCE/runtime-trial.log"
+          codes=("${PIPESTATUS[@]}")
+          set -e
+          printf '%s\n' "${codes[0]}" > "$EVIDENCE/runtime-command.exit"
+          printf '%s\n' "${codes[1]}" > "$EVIDENCE/runtime-tee.exit"
+          if test "${codes[0]}" != 0 || test "${codes[1]}" != 0; then
+            printf 'FAIL (inspect log for BLOCKED capability/network or case failure)\n' > "$EVIDENCE/runtime-status.txt"
+            exit 1
+          fi
+          printf 'PASS\n' > "$EVIDENCE/runtime-status.txt"
+
+      - name: Always remove only this trial root-owned apt scope
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test -z "${APT_TRIAL_SCOPE:-}"; then exit 0; fi
+          [[ "$APT_TRIAL_SCOPE" =~ ^/run/initial-owner-apt\.[A-Za-z0-9]{8}$ ]]
+          set +e
+          timeout --signal=TERM --kill-after=5s 20s sudo -n rm -rf --one-file-system -- "$APT_TRIAL_SCOPE" 2>&1 | tee "$EVIDENCE/sandbox-cleanup.log"
+          codes=("${PIPESTATUS[@]}")
+          set -e
+          printf '%s\n' "${codes[0]}" > "$EVIDENCE/sandbox-cleanup.exit"
+          printf '%s\n' "${codes[1]}" > "$EVIDENCE/sandbox-cleanup.tee-exit"
+          test "${codes[0]}" = 0
+          test "${codes[1]}" = 0
+          test ! -e "$APT_TRIAL_SCOPE"
+          rm -rf -- "$RUNNER_TEMP/reviewed-ubuntu-stage"
+
+      - name: Always retain bounded evidence in job logs only
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Job logs do not count toward artifact storage allowance. No upload/cache.
+          python3 - "$EVIDENCE" <<'PY'
+          import base64, hashlib, io, pathlib, sys, tarfile
+          root = pathlib.Path(sys.argv[1])
+          files = sorted(p for p in root.rglob('*') if p.is_file() and not p.is_symlink())
+          if len(files) > 128 or sum(p.stat().st_size for p in files) > 2 * 1024 * 1024:
+              raise SystemExit('EVIDENCE_LIMIT_FAIL: too many files or more than2MiB raw')
+          out = io.BytesIO()
+          with tarfile.open(fileobj=out, mode='w:gz') as archive:
+              for file in files:
+                  archive.add(file, arcname=str(file.relative_to(root)), recursive=False)
+          data = out.getvalue()
+          if len(data) > 512 * 1024:
+              raise SystemExit('EVIDENCE_LIMIT_FAIL: compressed evidence above512KiB')
+          print('FOCUSED_EVIDENCE_SHA256:' + hashlib.sha256(data).hexdigest())
+          print('FOCUSED_EVIDENCE_BYTES:' + str(len(data)))
+          print('FOCUSED_EVIDENCE_BASE64_BEGIN')
           text = base64.b64encode(data).decode('ascii')
           for start in range(0, len(text), 4096):
               print(text[start:start + 4096])
-          print('SOURCE_INSPECTION_LOG_BASE64_END')
-          ENCODE
-          exit "$code"
+          print('FOCUSED_EVIDENCE_BASE64_END')
+          PY
