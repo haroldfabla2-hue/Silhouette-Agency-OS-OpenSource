@@ -51,6 +51,7 @@ export async function observePublicBootstrap(capture: BootstrapCapture | undefin
     console.log('ACTUAL_PUBLIC_BOOTSTRAP_OWNER_STATES:', {
         core: memory.continuum.getCoreRecoveryReport(),
         initial: initial?.introspection.getInitialWorkStatus(),
+        coherenceObservations: initial?.introspection.getCoherenceObservationStatus(),
         snapshotOperations: memory.continuum.getSnapshotOperations(),
         memoryEffectOperations: memory.continuum.getMemoryEffectOperations(),
         healthPersistence: health?.providerHealth.getPersistenceStatus(),

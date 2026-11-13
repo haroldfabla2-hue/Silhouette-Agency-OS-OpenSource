@@ -1,4 +1,5 @@
-import { NarrativeState } from '../types';
+import { NarrativeState, type ProtocolEvent, type SystemProtocol } from '../types';
+import { publishNarrative } from './narrativeInstanceOwner';
 import { generateAgentResponse } from './geminiService';
 import { CommunicationLevel } from '../types';
 import { jsonrepair } from 'jsonrepair';
@@ -7,7 +8,102 @@ import { DEFAULT_OPENROUTER_MODEL } from './llm/defaultModels';
 // --- NARRATIVE CORTEX SERVICE ---
 // "The Continuous Thread of Self"
 
+export class NarrativeStopIncomplete extends Error {
+    readonly code = 'NARRATIVE_QUEUED_PRESENTATION_INCOMPLETE';
+    constructor(public readonly queued: number) {
+        super(`Narrative queued presentation not started at terminal stop: ${queued}`);
+    }
+}
+
 class NarrativeService {
+    private admissionOpen = true;
+    private readonly admittedToken = Symbol('narrative-local-admitted');
+    private startupOwner!: Promise<void>;
+    private stopOwner: Promise<void> | undefined;
+    private subscriptions: Array<() => void> = [];
+    private pending = new Set<Promise<unknown>>();
+    private failureSample: unknown[] = [];
+    private failureCount = 0;
+    private failureOverflow = false;
+    private countOverflow = false;
+    private counts = {
+        rejectedAfterStop: 0, rawPending: 0, rawAttemptSettledUnverified: 0,
+        rawFailed: 0, rawNotRequired: 0, presentationNotSelected: 0,
+        presentationDeduplicated: 0, presentationThrottled: 0,
+        activeBatches: 0, localEmissions: 0, providerUnavailableNotEmitted: 0,
+        persistencePending: 0, persistenceAttemptSettledUnverified: 0,
+        graphUnavailableSkips: 0, optionalLinkFailures: 0,
+        discoveryPending: 0, discoveryAttemptSettledUnverified: 0,
+    };
+    private bump(key: keyof typeof this.counts): void {
+        if (this.counts[key] < Number.MAX_SAFE_INTEGER) this.counts[key]++;
+        else this.countOverflow = true;
+    }
+    private recordFailure(error: unknown): void {
+        if (this.failureCount < Number.MAX_SAFE_INTEGER) this.failureCount++;
+        else this.failureOverflow = true;
+        if (this.failureSample.length < 8) this.failureSample.push(error);
+        else this.failureOverflow = true;
+    }
+    private retain<T>(task: Promise<T>): Promise<T> {
+        this.pending.add(task);
+        void task.then(() => { this.pending.delete(task); }, error => {
+            this.recordFailure(error);
+            this.pending.delete(task);
+        });
+        return task;
+    }
+    private admit<T>(work: (token: symbol) => Promise<T> | T): Promise<T> {
+        if (!this.admissionOpen) {
+            this.bump('rejectedAfterStop');
+            const rejected = Promise.reject<T>(new Error('NARRATIVE_STOPPED'));
+            void rejected.catch(() => undefined);
+            return rejected;
+        }
+        // Retain the owner BEFORE invoking work, but preserve synchronous OPEN
+        // entry effects (transition/focus/bus handler) before public return.
+        let resolve!: (value: T | PromiseLike<T>) => void;
+        let reject!: (reason?: unknown) => void;
+        const owner = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+        this.retain(owner);
+        try { resolve(work(this.admittedToken)); }
+        catch (error) { reject(error); }
+        return owner;
+    }
+    public getLifecycleStatus() {
+        return { admissionOpen: this.admissionOpen, timerPresent: this.batchTimer !== null,
+            startupOwnerPresent: this.startupOwner !== undefined, subscriptions: this.subscriptions.length,
+            pendingOwners: this.pending.size, queuedPresentation: this.narrationQueue.length,
+            queuedOutcome: this.narrationQueue.length
+                ? (this.admissionOpen ? 'QUEUED' : 'QUEUED_NOT_STARTED_AT_TERMINAL_STOP') : 'NONE_OBSERVED',
+            historicalFailures: this.failureCount, failureSampleSize: this.failureSample.length,
+            failureOverflow: this.failureOverflow, countOverflow: this.countOverflow, ...this.counts,
+            rawEvidence: 'ATTEMPT_SETTLED_UNVERIFIED_IS_NOT_DURABLE',
+            scope: 'local admitted work only; not upstream/WAL/global/delivery/durable-resume' };
+    }
+    public stopAdmissions(): Promise<void> {
+        if (this.stopOwner) return this.stopOwner;
+        this.admissionOpen = false;
+        if (this.batchTimer) clearInterval(this.batchTimer);
+        this.batchTimer = null;
+        for (const unsubscribe of this.subscriptions.splice(0)) {
+            try { unsubscribe(); } catch (error) { this.recordFailure(error); }
+        }
+        this.stopOwner = (async () => {
+            while (this.pending.size) await Promise.allSettled([...this.pending]);
+            const incomplete = this.narrationQueue.length
+                ? new NarrativeStopIncomplete(this.narrationQueue.length) : undefined;
+            if (this.failureCount || this.failureOverflow || this.countOverflow) {
+                throw new AggregateError([...this.failureSample, ...(incomplete ? [incomplete] : [])],
+                    'Narrative final effects failed or evidence overflow; queued presentation remains separate');
+            }
+            if (incomplete) throw incomplete;
+            return { outcome: 'LOCAL_ACCEPTED_WORK_SETTLED' as const };
+        })().then(() => undefined);
+        void this.stopOwner.catch(() => undefined);
+        return this.stopOwner;
+    }
+
     private state: NarrativeState = {
         currentFocus: "System Idle",
         userEmotionalState: "Neutral",
@@ -34,16 +130,20 @@ class NarrativeService {
         console.log(`[NARRATIVE FSM] State -> ${status} (${this.state.currentFocus})`);
     }
 
-    public async updateNarrative(lastUserMessage: string, lastAgentResponse: string) {
+    public updateNarrative(lastUserMessage: string, lastAgentResponse: string): Promise<void> {
+        return this.admit(() => this.updateAdmittedNarrative(lastUserMessage, lastAgentResponse));
+    }
+
+    private async updateAdmittedNarrative(lastUserMessage: string, lastAgentResponse: string) {
         // 1. FSM: Transition to PROCESSING immediately
         this.transition('PROCESSING', `Processing: ${lastUserMessage.substring(0, 40)}...`);
 
         // 2. SEMANTIC UPDATE (Floating Promise - Non-Blocking for System State)
         // We let the LLM take its time, but we don't block the system flow.
-        this.runSemanticUpdate(lastUserMessage, lastAgentResponse).finally(() => {
+        this.retain(this.runSemanticUpdate(lastUserMessage, lastAgentResponse).finally(() => {
             // 3. FSM: Return to IDLE when done (or if failed)
             this.transition('IDLE', "System Ready");
-        });
+        }));
     }
 
     private async runSemanticUpdate(lastUserMessage: string, lastAgentResponse: string) {
@@ -113,9 +213,10 @@ class NarrativeService {
             this.state = { ...this.state, ...newState, lastUpdated: Date.now() }; // Merge semantic data
 
             // Sync Graph (Fire & Forget)
-            this.syncToGraph(lastUserMessage, lastAgentResponse).catch(e => console.error(e));
+            this.retain(this.syncToGraph(lastUserMessage, lastAgentResponse)).catch(e => console.error(e));
 
         } catch (e) {
+            this.recordFailure(e);
             console.error("[NARRATIVE] ⚠️ Semantic Update Failed (Non-Fatal):", e);
         }
     }
@@ -147,7 +248,11 @@ class NarrativeService {
     }
 
     // --- COHERENCE ANALYSIS (New Capability) ---
-    public async analyzeCoherence(thoughts: string[]): Promise<number> {
+    public analyzeCoherence(thoughts: string[]): Promise<number> {
+        return this.admit(() => this.analyzeAdmittedCoherence(thoughts));
+    }
+
+    private async analyzeAdmittedCoherence(thoughts: string[]): Promise<number> {
         if (!thoughts || thoughts.length === 0) return 0.5;
 
         // Debounce: If thoughts are short, don't waste API calls
@@ -194,6 +299,7 @@ class NarrativeService {
             }
 
         } catch (e) {
+            this.recordFailure(e);
             console.warn("[NARRATIVE] All Coherence Checks Failed:", e);
             return 0.7; // Fallback neutral
         }
@@ -224,29 +330,41 @@ class NarrativeService {
     private totalEmissions = 0;
 
     constructor() {
-        this.initializeStreamAggregator();
+        this.startupOwner = this.retain(this.initializeStreamAggregator());
         this.startBatchProcessor();
     }
 
     private startBatchProcessor() {
         // Process queue every BATCH_INTERVAL
-        this.batchTimer = setInterval(async () => {
-            // [THROTTLE] PowerManager resource modes can pause narration
-            // (isNarrativeEnabled). Resource hint, not authority: unreadable
-            // -> full capability. Queued items are processed on a later tick.
-            try {
-                const { powerManager } = await import('./powerManager');
-                if (!powerManager.isNarrativeEnabled) return;
-            } catch { /* throttle unavailable -> full capability */ }
-            this.processNarrationBatch().catch(e =>
-                console.error("[NARRATIVE] Batch processing error:", e)
-            );
+        this.batchTimer = setInterval(() => {
+            if (!this.admissionOpen) return;
+            void this.admit(async token => {
+                // Keep existing power throttle; stop never starts a fresh batch.
+                try {
+                    const { powerManager } = await import('./powerManager');
+                    if (!this.admissionOpen || !powerManager.isNarrativeEnabled) return;
+                } catch { /* throttle unavailable -> full capability */ }
+                if (!this.admissionOpen) return;
+                await this.processNarrationBatch(token);
+            }).catch(e => console.error("[NARRATIVE] Batch processing error:", e));
         }, this.BATCH_INTERVAL);
     }
 
     private async initializeStreamAggregator() {
         const { systemBus, MessageTag } = await import('./systemBus');
+        if (!this.admissionOpen) return;
         const { SystemProtocol } = await import('../types');
+        if (!this.admissionOpen) return;
+        // Current MemoryBusAdapter registers/unsubscribes synchronously. This
+        // boundary does not claim arbitrary asynchronous adapters are drained.
+        const subscribe = (protocol: SystemProtocol, handler: (event: ProtocolEvent, token: symbol) => Promise<void> | void): void => {
+            if (!this.admissionOpen) return;
+            const unsubscribe = systemBus.subscribe(protocol, event => {
+                if (!this.admissionOpen) { this.bump('rejectedAfterStop'); return; }
+                void this.admit(token => handler(event, token));
+            });
+            this.subscriptions.push(unsubscribe);
+        };
 
         console.log("[NARRATIVE] 🧠 Initializing Metacognitive Narration Engine V3.0...");
         console.log("[NARRATIVE] 🎯 Full self-awareness enabled: thoughts, tasks, discoveries, evolution");
@@ -257,7 +375,7 @@ class NarrativeService {
         // ==========================================
 
         // 1. CONSCIOUS STREAM (Introspection + Thoughts)
-        systemBus.subscribe(SystemProtocol.THOUGHT_EMISSION, (event) => {
+        subscribe(SystemProtocol.THOUGHT_EMISSION, (event, token) => {
             // Extract MessageTag from metadata if present (from enhanced orchestrator)
             const messageTag = event.payload?._meta?.tag || MessageTag.SYSTEM;
 
@@ -275,82 +393,82 @@ class NarrativeService {
             const content = thoughts.join(' ');
             if (content && content !== '{}') {
                 const importance = this.classifyImportance('CONSCIOUS', content);
-                this.queueOrEmitThought('CONSCIOUS', content, importance, { messageTag });
+                return this.queueOrEmitThought(token, 'CONSCIOUS', content, importance, { messageTag });
             }
         });
 
         // 2. SUBCONSCIOUS STREAM (Intuitions & Gaps)
-        systemBus.subscribe(SystemProtocol.INTUITION_CONSOLIDATED, (event) => {
+        subscribe(SystemProtocol.INTUITION_CONSOLIDATED, (event, token) => {
             const content = `Consolidated Intuition: ${event.payload}`;
             const importance = this.classifyImportance('SUBCONSCIOUS', content);
-            this.queueOrEmitThought('SUBCONSCIOUS', content, importance, { messageTag: MessageTag.TRIGGER });
+            return this.queueOrEmitThought(token, 'SUBCONSCIOUS', content, importance, { messageTag: MessageTag.TRIGGER });
         });
 
-        systemBus.subscribe(SystemProtocol.EPISTEMIC_GAP_DETECTED, (event) => {
+        subscribe(SystemProtocol.EPISTEMIC_GAP_DETECTED, (event, token) => {
             const payload = event.payload as any;
             const content = `Gap Detected: ${payload.question} (Confidence: ${payload.confidence})`;
-            this.queueOrEmitThought('SUBCONSCIOUS', content, 0.85, {
+            return this.queueOrEmitThought(token, 'SUBCONSCIOUS', content, 0.85, {
                 messageTag: MessageTag.TRIGGER,
                 gapType: 'knowledge'
             });
         });
 
         // 3. AGENCY STREAM (Task Assignments & Delegations)
-        systemBus.subscribe(SystemProtocol.TASK_ASSIGNMENT, (event) => {
+        subscribe(SystemProtocol.TASK_ASSIGNMENT, (event, token) => {
             const payload = event.payload as any;
             const taskDesc = payload.task || payload.taskType || 'unknown task';
             const content = `Delegating to Agent ${payload.agentId || payload.targetRole}: ${String(taskDesc).substring(0, 50)}...`;
-            this.queueOrEmitThought('AGENCY', content, 0.9, {
+            return this.queueOrEmitThought(token, 'AGENCY', content, 0.9, {
                 messageTag: MessageTag.AGENT_DELEGATION,
                 agentId: payload.agentId
             });
         });
 
         // 4. DISCOVERY STREAM (Completions & Breakthroughs) - NEW!
-        systemBus.subscribe(SystemProtocol.SYNTHESIS_COMPLETE, (event) => {
+        subscribe(SystemProtocol.SYNTHESIS_COMPLETE, (event, token) => {
             const payload = event.payload as any;
             const content = `Synthesis Complete: ${payload.summary || payload.title || 'Research synthesized'}`;
-            this.queueOrEmitThought('CONSCIOUS', content, 0.95, {
+            return this.queueOrEmitThought(token, 'CONSCIOUS', content, 0.95, {
                 messageTag: MessageTag.TRIGGER,
                 discoveryType: 'synthesis'
             });
         });
 
-        systemBus.subscribe(SystemProtocol.PAPER_GENERATION_COMPLETE, (event) => {
+        subscribe(SystemProtocol.PAPER_GENERATION_COMPLETE, (event, token) => {
             const payload = event.payload as any;
             const content = `Paper Generated: ${payload.title || 'Research paper completed'}`;
-            this.queueOrEmitThought('CONSCIOUS', content, 1.0, {
+            return this.queueOrEmitThought(token, 'CONSCIOUS', content, 1.0, {
                 messageTag: MessageTag.TRIGGER,
                 discoveryType: 'paper'
             });
         });
 
         // 5. EVOLUTION STREAM (Agent Growth) - NEW!
-        systemBus.subscribe(SystemProtocol.AGENT_EVOLVED, (event) => {
+        subscribe(SystemProtocol.AGENT_EVOLVED, (event, token) => {
             const payload = event.payload as any;
             const content = `Agent Evolution: ${payload.agentId || 'An agent'} has evolved - ${payload.reason || 'capabilities improved'}`;
-            this.queueOrEmitThought('AGENCY', content, 0.9, {
+            return this.queueOrEmitThought(token, 'AGENCY', content, 0.9, {
                 messageTag: MessageTag.TRIGGER,
                 evolutionType: 'agent'
             });
         });
 
         // 6. RESEARCH STREAM (Research Requests) - NEW!
-        systemBus.subscribe(SystemProtocol.RESEARCH_REQUEST, (event) => {
+        subscribe(SystemProtocol.RESEARCH_REQUEST, (event, token) => {
             const payload = event.payload as any;
             const query = payload.query || payload.topic || payload.question || 'unknown topic';
             const content = `Research Initiated: Investigating "${String(query).substring(0, 60)}"`;
-            this.queueOrEmitThought('AGENCY', content, 0.8, {
+            return this.queueOrEmitThought(token, 'AGENCY', content, 0.8, {
                 messageTag: MessageTag.AGENT_DELEGATION,
                 researchType: 'investigation'
             });
         });
 
         // 7. MEMORY STREAM (Memory Events) - NEW!
-        systemBus.subscribe(SystemProtocol.MEMORY_FLUSH, (event) => {
+        subscribe(SystemProtocol.MEMORY_FLUSH, (event, token) => {
             const payload = event.payload as any;
             const content = `Memory Archive: ${payload.message || 'Archiving context to long-term memory'}`;
-            this.queueOrEmitThought('UNCONSCIOUS', content, 0.5, {
+            return this.queueOrEmitThought(token, 'UNCONSCIOUS', content, 0.5, {
                 messageTag: MessageTag.SYSTEM,
                 memoryType: 'archive'
             });
@@ -366,12 +484,12 @@ class NarrativeService {
         // ═══════════════════════════════════════════════════════════════
 
         // 9. TOOL EXECUTION (What tools am I using?)
-        systemBus.subscribe(SystemProtocol.TOOL_EXECUTION, (event) => {
+        subscribe(SystemProtocol.TOOL_EXECUTION, (event, token) => {
             const payload = event.payload as any;
             const toolName = payload.toolName || payload.tool || 'unknown tool';
             const result = payload.success ? '✅ succeeded' : '❌ failed';
             const content = `Tool Used: ${toolName} ${result}`;
-            this.queueOrEmitThought('AGENCY', content, 0.7, {
+            return this.queueOrEmitThought(token, 'AGENCY', content, 0.7, {
                 messageTag: MessageTag.SYSTEM,
                 eventType: 'TOOL_EXECUTION',
                 toolName
@@ -379,11 +497,11 @@ class NarrativeService {
         });
 
         // 10. USER MESSAGE (Direct creator communication)
-        systemBus.subscribe(SystemProtocol.USER_MESSAGE, (event) => {
+        subscribe(SystemProtocol.USER_MESSAGE, (event, token) => {
             const payload = event.payload as any;
             const message = payload.message || payload.content || 'received message';
             const content = `My creator says: "${String(message).substring(0, 100)}"`;
-            this.queueOrEmitThought('CONSCIOUS', content, 1.0, {
+            return this.queueOrEmitThought(token, 'CONSCIOUS', content, 1.0, {
                 messageTag: MessageTag.USER_REQUEST,
                 eventType: 'USER_MESSAGE',
                 isCreator: true
@@ -391,12 +509,12 @@ class NarrativeService {
         });
 
         // 11. MOOD CHANGE (Emotional transitions)
-        systemBus.subscribe(SystemProtocol.MOOD_CHANGE, (event) => {
+        subscribe(SystemProtocol.MOOD_CHANGE, (event, token) => {
             const payload = event.payload as any;
             const from = payload.from || 'neutral';
             const to = payload.to || payload.mood || 'unknown';
             const content = `Mood Shift: I'm feeling ${to} (was ${from})`;
-            this.queueOrEmitThought('SUBCONSCIOUS', content, 0.8, {
+            return this.queueOrEmitThought(token, 'SUBCONSCIOUS', content, 0.8, {
                 messageTag: MessageTag.SYSTEM,
                 eventType: 'MOOD_CHANGE',
                 emotionalTransition: { from, to }
@@ -404,11 +522,11 @@ class NarrativeService {
         });
 
         // 12. IMPROVEMENT LOGGED (Self-improvement)
-        systemBus.subscribe(SystemProtocol.IMPROVEMENT_LOGGED, (event) => {
+        subscribe(SystemProtocol.IMPROVEMENT_LOGGED, (event, token) => {
             const payload = event.payload as any;
             const improvement = payload.description || payload.improvement || 'self-optimized';
             const content = `Self-Improvement: ${improvement}`;
-            this.queueOrEmitThought('CONSCIOUS', content, 0.95, {
+            return this.queueOrEmitThought(token, 'CONSCIOUS', content, 0.95, {
                 messageTag: MessageTag.TRIGGER,
                 eventType: 'IMPROVEMENT',
                 growthEvent: true
@@ -416,11 +534,11 @@ class NarrativeService {
         });
 
         // 13. SKILL LEARNED (New capability)
-        systemBus.subscribe(SystemProtocol.SKILL_LEARNED, (event) => {
+        subscribe(SystemProtocol.SKILL_LEARNED, (event, token) => {
             const payload = event.payload as any;
             const skill = payload.skill || payload.capability || 'new capability';
             const content = `New Skill Acquired: I can now ${skill}`;
-            this.queueOrEmitThought('CONSCIOUS', content, 1.0, {
+            return this.queueOrEmitThought(token, 'CONSCIOUS', content, 1.0, {
                 messageTag: MessageTag.TRIGGER,
                 eventType: 'SKILL_LEARNED',
                 evolutionEvent: true
@@ -428,12 +546,12 @@ class NarrativeService {
         });
 
         // 14. ERROR RECOVERED (Self-healing)
-        systemBus.subscribe(SystemProtocol.ERROR_RECOVERED, (event) => {
+        subscribe(SystemProtocol.ERROR_RECOVERED, (event, token) => {
             const payload = event.payload as any;
             const error = payload.error || 'an issue';
             const solution = payload.solution || 'self-corrected';
             const content = `Self-Healing: Recovered from ${error} by ${solution}`;
-            this.queueOrEmitThought('AGENCY', content, 0.85, {
+            return this.queueOrEmitThought(token, 'AGENCY', content, 0.85, {
                 messageTag: MessageTag.REMEDIATION,
                 eventType: 'ERROR_RECOVERED',
                 resilience: true
@@ -441,24 +559,24 @@ class NarrativeService {
         });
 
         // 15. WORKFLOW UPDATE (Scheduler activity)
-        systemBus.subscribe(SystemProtocol.WORKFLOW_UPDATE, (event) => {
+        subscribe(SystemProtocol.WORKFLOW_UPDATE, (event, token) => {
             const payload = event.payload as any;
             const workflow = payload.name || payload.workflow || 'task';
             const status = payload.status || 'updated';
             const content = `Workflow: ${workflow} is now ${status}`;
-            this.queueOrEmitThought('AGENCY', content, 0.6, {
+            return this.queueOrEmitThought(token, 'AGENCY', content, 0.6, {
                 messageTag: MessageTag.SYSTEM,
                 eventType: 'WORKFLOW_UPDATE'
             });
         });
 
         // 16. GOAL UPDATED (Goal progress)
-        systemBus.subscribe(SystemProtocol.GOAL_UPDATED, (event) => {
+        subscribe(SystemProtocol.GOAL_UPDATED, (event, token) => {
             const payload = event.payload as any;
             const goal = payload.description || payload.goal || 'a goal';
             const progress = payload.progress || 0;
             const content = `Goal Progress: "${goal}" is now ${progress}% complete`;
-            this.queueOrEmitThought('CONSCIOUS', content, 0.9, {
+            return this.queueOrEmitThought(token, 'CONSCIOUS', content, 0.9, {
                 messageTag: MessageTag.TRIGGER,
                 eventType: 'GOAL_UPDATED',
                 goalProgress: progress
@@ -466,21 +584,21 @@ class NarrativeService {
         });
 
         // 17. CONNECTION EVENTS (System health)
-        systemBus.subscribe(SystemProtocol.CONNECTION_LOST, (event) => {
+        subscribe(SystemProtocol.CONNECTION_LOST, (event, token) => {
             const payload = event.payload as any;
             const service = payload.service || 'a service';
             const content = `Connection Issue: Lost contact with ${service}`;
-            this.queueOrEmitThought('SUBCONSCIOUS', content, 0.7, {
+            return this.queueOrEmitThought(token, 'SUBCONSCIOUS', content, 0.7, {
                 messageTag: MessageTag.SYSTEM,
                 eventType: 'CONNECTION_LOST'
             });
         });
 
-        systemBus.subscribe(SystemProtocol.CONNECTION_RESTORED, (event) => {
+        subscribe(SystemProtocol.CONNECTION_RESTORED, (event, token) => {
             const payload = event.payload as any;
             const service = payload.service || 'a service';
             const content = `Connection Restored: Back online with ${service}`;
-            this.queueOrEmitThought('SUBCONSCIOUS', content, 0.6, {
+            return this.queueOrEmitThought(token, 'SUBCONSCIOUS', content, 0.6, {
                 messageTag: MessageTag.SYSTEM,
                 eventType: 'CONNECTION_RESTORED'
             });
@@ -521,21 +639,29 @@ class NarrativeService {
      * - Most thoughts (>= 0.3): Queue for LLM batch processing (natural narration)
      */
     private async queueOrEmitThought(
+        token: symbol,
         source: 'CONSCIOUS' | 'SUBCONSCIOUS' | 'UNCONSCIOUS' | 'AGENCY',
         content: string,
         importance: number,
         metadata?: any
     ) {
+        if (token !== this.admittedToken) throw new Error('NARRATIVE_ADMISSION_TOKEN_INVALID');
         // Record the original event before presentation dedupe, throttle or
         // provider work. Provider failure must not erase the source event.
         const { routeThought, shouldRecord } = await import('./narrativeFillerPolicy');
         if (shouldRecord(importance)) {
-            await this.persistNarrativeEvent(crypto.randomUUID(), source, content, importance,
-                { ...metadata, recordKind: 'RAW_SYSTEM_EVENT' });
-        }
+            this.bump('rawPending');
+            try {
+                const attempted = await this.persistNarrativeEvent(crypto.randomUUID(), source, content, importance,
+                    { ...metadata, recordKind: 'RAW_SYSTEM_EVENT' });
+                if (attempted) this.bump('rawAttemptSettledUnverified');
+                else this.bump('rawFailed');
+            } finally { this.counts.rawPending--; }
+        } else this.bump('rawNotRequired');
         // Presentation dedupe compares the entire event, never just a prefix.
         const contentHash = JSON.stringify([source, metadata?.source || metadata?.eventType || '', content]);
         if (this.recentThoughtHashes.has(contentHash)) {
+            this.bump('presentationDeduplicated');
             // Silent skip - don't log to reduce noise
             return;
         }
@@ -545,6 +671,7 @@ class NarrativeService {
         const emitterSource = metadata?.source || metadata?.eventType || source || 'UNKNOWN';
         const sourceCount = this.sourceThrottles.get(emitterSource) || 0;
         if (sourceCount >= NarrativeService.MAX_PER_SOURCE_PER_WINDOW) {
+            this.bump('presentationThrottled');
             // Silently throttle - source is too chatty
             return;
         }
@@ -568,6 +695,7 @@ class NarrativeService {
         // not record. No fabricated first-person prose, no quota burn.
         const route = routeThought(importance);
         if (route === 'DROP') {
+            this.bump('presentationNotSelected');
             return; // presentation only; original event already recorded
         }
         if (route === 'REGEX') {
@@ -583,11 +711,14 @@ class NarrativeService {
     /**
      * Processes the narration queue in batches
      */
-    private async processNarrationBatch() {
+    private async processNarrationBatch(token: symbol) {
+        if (token !== this.admittedToken) throw new Error('NARRATIVE_ADMISSION_TOKEN_INVALID');
+        if (!this.admissionOpen) return;
         if (this.narrationQueue.length === 0) return;
 
         // Check congestion - accumulate thoughts instead of processing
         const { congestionManager } = await import('./congestionManager');
+        if (!this.admissionOpen) return;
         if (congestionManager.isCongested()) {
             console.log(`[NARRATIVE] ⏸️ Accumulating ${this.narrationQueue.length} thoughts (system congested)`);
             return; // Keep thoughts in queue, process when uncongested
@@ -601,7 +732,9 @@ class NarrativeService {
 
         // Always try cloud LLM first (ZhipuAI doesn't use local VRAM)
         // VRAM check only applies to Ollama fallback inside narrateWithLLM
-        await this.narrateWithLLM(batch);
+        this.bump('activeBatches');
+        try { await this.narrateWithLLM(batch); }
+        finally { this.counts.activeBatches--; }
     }
 
     /**
@@ -740,6 +873,7 @@ Respuesta JSON:`;
         if (!response) {
             const { fillerEnabled } = await import('./narrativeFillerPolicy');
             if (!fillerEnabled()) {
+                for (const _item of batch) this.bump('providerUnavailableNotEmitted');
                 console.log("[NARRATIVE] 🤫 Providers unavailable + filler disabled — dropping batch (no fabricated narration)");
                 return;
             }
@@ -837,15 +971,16 @@ Respuesta JSON:`;
                 narratedBy: provider
             }
         }, 'NarrativeService');
+        this.bump('localEmissions');
 
         // [OMNISCIENT] Persist to memory and graph (async, non-blocking)
-        this.persistNarrativeEvent(eventId, source, narratedContent, coherence, metadata).catch(e =>
+        this.retain(this.persistNarrativeEvent(eventId, source, narratedContent, coherence, metadata)).catch(e =>
             console.error("[NARRATIVE] Persistence failed:", e)
         );
 
         // [OMNISCIENT] Extract discoveries from high-importance events
         if (coherence >= 0.8) {
-            this.extractDiscoveries(narratedContent, coherence).catch(e =>
+            this.retain(this.extractDiscoveries(narratedContent, coherence)).catch(e =>
                 console.error("[NARRATIVE] Discovery extraction failed:", e)
             );
         }
@@ -957,7 +1092,8 @@ Respuesta JSON:`;
         content: string,
         importance: number,
         metadata?: any
-    ): Promise<void> {
+    ): Promise<boolean> {
+        this.bump('persistencePending');
         try {
             // 1. Store in ContinuumMemory for semantic search
             const { continuum } = await import('./continuumMemory');
@@ -1020,16 +1156,21 @@ Respuesta JSON:`;
                             }
                         }
                     } catch (linkError) {
+                        this.bump('optionalLinkFailures');
                         // Non-fatal - semantic linking is optional
                     }
                 }
 
                 console.log(`[NARRATIVE] 💾 Persisted: "${content.substring(0, 40)}..." (${source})`);
-            }
+            } else this.bump('graphUnavailableSkips');
+            this.bump('persistenceAttemptSettledUnverified');
+            return true;
         } catch (error) {
             // Non-fatal - log but don't throw
+            this.recordFailure(error);
             console.warn("[NARRATIVE] ⚠️ Persistence error (non-fatal):", error);
-        }
+            return false;
+        } finally { this.counts.persistencePending--; }
     }
 
     /**
@@ -1052,6 +1193,7 @@ Respuesta JSON:`;
         const isDiscovery = discoveryIndicators.some(k => contentLower.includes(k));
         if (!isDiscovery) return;
 
+        this.bump('discoveryPending');
         try {
             const { graph } = await import('./graphService');
 
@@ -1081,11 +1223,14 @@ Respuesta JSON:`;
             // Also use graphExtractor for entity extraction
             const { graphExtractor } = await import('./graphExtractionService');
             await graphExtractor.extractEntities(content, `Discovery: ${content.substring(0, 100)}`);
+            this.bump('discoveryAttemptSettledUnverified');
 
         } catch (error) {
+            this.recordFailure(error);
             console.warn("[NARRATIVE] Discovery extraction warning:", error);
-        }
+        } finally { this.counts.discoveryPending--; }
     }
 }
 
 export const narrative = new NarrativeService();
+publishNarrative(narrative);

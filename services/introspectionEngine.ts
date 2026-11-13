@@ -54,6 +54,20 @@ export class IntrospectionEngine {
         return this.getInitialWorkStatus();
     }
 
+    private coherenceFailureCount = 0;
+    private coherenceFailureOverflow = false;
+    private coherenceFailureSample: unknown[] = [];
+    public getCoherenceObservationStatus() {
+        return { failureCount: this.coherenceFailureCount, sampleSize: this.coherenceFailureSample.length,
+            overflow: this.coherenceFailureOverflow, outcome: this.coherenceFailureCount ? 'FAILED_OBSERVATIONS' : 'NO_FAILURE_RECORDED' };
+    }
+    private observeCoherenceFailure(error: unknown): void {
+        if (this.coherenceFailureCount < Number.MAX_SAFE_INTEGER) this.coherenceFailureCount++;
+        else this.coherenceFailureOverflow = true;
+        if (this.coherenceFailureSample.length < 8) this.coherenceFailureSample.push(error);
+        else this.coherenceFailureOverflow = true;
+    }
+
     private currentLayer: IntrospectionLayer = IntrospectionLayer.OPTIMAL;
     private activeConcepts: ConceptVector[] = [];
     private recentThoughts: string[] = []; // Central Store for UI
@@ -888,11 +902,11 @@ export class IntrospectionEngine {
         // but TRIGGER the real analysis for the dashboard update.
 
         import('./narrativeService').then(({ narrative }) => {
-            narrative.analyzeCoherence(thoughts).then(score => {
+            return narrative.analyzeCoherence(thoughts).then(score => {
                 // Update the lastReasoning with the REAL score for the next tick
                 this.lastReasoning = this.lastReasoning.replace(/Coherence: \d+(\.\d+)?/, `Coherence: ${score.toFixed(2)}`);
             });
-        });
+        }).catch(error => { this.observeCoherenceFailure(error); });
 
         // Heuristic fallback for immediate display
         const usesMemory = thoughts.some(t => t.toLowerCase().includes('memory') || t.toLowerCase().includes('context'));

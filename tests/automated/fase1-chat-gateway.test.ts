@@ -17,9 +17,12 @@ import { describe, it, expect, afterAll } from 'vitest';
 import { captureStartedBootstrap, observePublicBootstrap, type BootstrapCapture } from '../setup/observe-public-bootstrap';
 import { captureStartedResourceArbiter, observeResourceArbiter, type ArbiterCapture } from '../setup/observe-resource-arbiter';
 let bootstrapCapture: BootstrapCapture | undefined;
+import { captureStartedNarrative, observeNarrative, type NarrativeCapture } from '../setup/observe-narrative';
+let narrativeCapture: NarrativeCapture;
 let arbiterCapture: ArbiterCapture;
 afterAll(async () => {
     const failures: unknown[] = [];
+    try { await observeNarrative(narrativeCapture); } catch (error) { failures.push(error); }
     try { await observeResourceArbiter(arbiterCapture); } catch (error) { failures.push(error); }
     try { await observePublicBootstrap(bootstrapCapture); } catch (error) { failures.push(error); }
     if (failures.length) throw new AggregateError(failures, 'Retained arbiter/bootstrap ownership failed');
@@ -64,6 +67,7 @@ async function collect(stream: AsyncGenerator<InferenceEvent>): Promise<Inferenc
     for await (const e of stream) events.push(e);
     return events;
     } finally {
+        narrativeCapture ??= captureStartedNarrative();
         arbiterCapture ??= captureStartedResourceArbiter();
         bootstrapCapture ??= captureStartedBootstrap();
     }
