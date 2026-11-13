@@ -4,16 +4,27 @@
  * not a magic number — and that weights sum to 1.
  */
 import { describe, it, expect, afterAll } from 'vitest';
+import { captureStartedBootstrap, observePublicBootstrap, type BootstrapCapture } from '../setup/observe-public-bootstrap';
+let bootstrapCapture: BootstrapCapture | undefined;
+const importFailures: unknown[] = [];
+async function actualConsciousness() {
+    try { return await import('../../services/consciousnessEngine'); }
+    catch (error) { importFailures.push(error); throw error; }
+    finally { bootstrapCapture ??= captureStartedBootstrap(); }
+}
 
 let identityOwner: typeof import('../../services/consciousnessEngine').consciousness | undefined;
 afterAll(async () => {
     // Runs even if a metric assertion failed. Rejection fails the hook visibly.
-    await identityOwner?.ready();
+    const failures: unknown[] = [...importFailures];
+    try { await identityOwner?.ready(); } catch (error) { failures.push(error); }
+    try { await observePublicBootstrap(bootstrapCapture); } catch (error) { failures.push(error); }
+    if (failures.length) throw new AggregateError(failures, 'Identity/import/public bootstrap ownership failed');
 });
 
 describe('Cognitive-state engine', () => {
     it('exposes a transparent phi breakdown with normalized factors', async () => {
-        const { consciousness } = await import('../../services/consciousnessEngine');
+        const { consciousness } = await actualConsciousness();
         identityOwner = consciousness;
         const breakdown = consciousness.getPhiBreakdown();
 
@@ -26,7 +37,7 @@ describe('Cognitive-state engine', () => {
     });
 
     it('uses weights that sum to 1 (well-formed composite)', async () => {
-        const { consciousness } = await import('../../services/consciousnessEngine');
+        const { consciousness } = await actualConsciousness();
         identityOwner = consciousness;
         const { weights } = consciousness.getPhiBreakdown();
         const sum = weights.memory + weights.throughput + weights.emergence + weights.network;
@@ -34,7 +45,7 @@ describe('Cognitive-state engine', () => {
     });
 
     it('keeps every normalized factor within [0,1]', async () => {
-        const { consciousness } = await import('../../services/consciousnessEngine');
+        const { consciousness } = await actualConsciousness();
         identityOwner = consciousness;
         const b = consciousness.getPhiBreakdown();
         for (const f of [b.memoryFactor, b.throughputFactor, b.emergenceFactor, b.networkFactor]) {

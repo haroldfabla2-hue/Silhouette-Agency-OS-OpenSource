@@ -6,7 +6,61 @@
  * 2. GET /auto-evolution must never return characters of the real token
  *    (constant mask only; the POST handler treats the mask as "keep existing").
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterAll } from 'vitest';
+import { captureStartedBootstrap, observePublicBootstrap, type BootstrapCapture } from '../setup/observe-public-bootstrap';
+let controllerOwner: typeof import('../../server/controllers/systemController').systemController | undefined;
+let bootstrapCapture: BootstrapCapture | undefined;
+const importFailures: unknown[] = [];
+async function actualRoutes() {
+    try {
+        const routes = await import('../../server/routes/v1/system.routes');
+        // Fulfillment proves its static systemController dependency evaluated.
+        controllerOwner = (await import('../../server/controllers/systemController')).systemController;
+        return routes;
+    } catch (error) {
+        importFailures.push(error);
+        throw error;
+    } finally {
+        // A failed route import never forces a controller import here.
+        bootstrapCapture ??= captureStartedBootstrap();
+    }
+}
+afterAll(async () => {
+    const failures: unknown[] = [...importFailures];
+    try {
+    if (controllerOwner) {
+        // Read-only diagnostic of this retained real owner; no mock/clock/reset.
+        const owner = controllerOwner;
+        const snapshot = () => ({
+            admissionOpen: Reflect.get(owner, 'isPolling'),
+            timerPresent: Reflect.get(owner, 'telemetryPollTimer') !== undefined,
+            refreshOwnerPresent: Reflect.get(owner, 'telemetryPollOwner') !== undefined,
+            historicalFailurePresent: Reflect.get(owner, 'telemetryPollFailure') !== undefined
+        });
+        const before = snapshot();
+        const stop = owner.stopBackgroundPolling();
+        const afterAdmissionStop = snapshot();
+        const sameStopOwner = stop === owner.stopBackgroundPolling();
+        let stopOutcome = 'FULFILLED';
+        try { await stop; } catch (error) { stopOutcome = 'REJECTED'; failures.push(error); }
+        const afterSettlement = snapshot();
+        console.log('ACTUAL_TELEMETRY_POLL_OWNER:', {
+            before, afterAdmissionStop, afterSettlement, sameStopOwner, stopOutcome,
+            scope: 'retained poll at settlement only; not future global admission or timed absence proof'
+        });
+        if (!sameStopOwner || afterAdmissionStop.admissionOpen !== false ||
+            afterAdmissionStop.timerPresent || afterSettlement.admissionOpen !== false ||
+            afterSettlement.timerPresent ||
+            (afterSettlement.historicalFailurePresent && stopOutcome !== 'REJECTED')) {
+            failures.push(new Error('Actual retained telemetry poll stop invariant failed'));
+        }
+    } else {
+        console.log('ACTUAL_TELEMETRY_POLL_INCOMPLETE_NOT_OBSERVED: no retained controller');
+    }
+    } catch (error) { failures.push(error); }
+    try { await observePublicBootstrap(bootstrapCapture); } catch (error) { failures.push(error); }
+    if (failures.length) throw new AggregateError(failures, 'Route import/poll/bootstrap ownership failed');
+});
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -31,7 +85,7 @@ function mockRes() {
 describe('system.routes audit batch 1', () => {
 
     it('registers GET and POST /auto-evolution at import time (not nested in /health)', async () => {
-        const mod = await import('../../server/routes/v1/system.routes');
+        const mod = await actualRoutes();
         const router = mod.default as any;
         expect(findHandler(router, '/auto-evolution', 'get')).toBeTypeOf('function');
         expect(findHandler(router, '/auto-evolution', 'post')).toBeTypeOf('function');
@@ -47,7 +101,7 @@ describe('system.routes audit batch 1', () => {
         const prevCwd = process.cwd();
         process.chdir(tmp);
         try {
-            const mod = await import('../../server/routes/v1/system.routes');
+            const mod = await actualRoutes();
             const handler = findHandler(mod.default as any, '/auto-evolution', 'get');
             const res = mockRes();
             await handler({} as any, res);
@@ -70,7 +124,7 @@ describe('system.routes audit batch 1', () => {
         const prevCwd = process.cwd();
         process.chdir(tmp);
         try {
-            const mod = await import('../../server/routes/v1/system.routes');
+            const mod = await actualRoutes();
             const handler = findHandler(mod.default as any, '/auto-evolution', 'get');
             const res = mockRes();
             await handler({} as any, res);
@@ -82,7 +136,7 @@ describe('system.routes audit batch 1', () => {
     });
 
     it('POST /auto-evolution rejects missing fields with 400 (before any side effect)', async () => {
-        const mod = await import('../../server/routes/v1/system.routes');
+        const mod = await actualRoutes();
         const handler = findHandler(mod.default as any, '/auto-evolution', 'post');
         const res = mockRes();
         await handler({ body: { gitToken: 'x' } } as any, res);

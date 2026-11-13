@@ -308,6 +308,10 @@ export class SystemController {
     private lastTelemetryTime: number = 0;
     private readonly CACHE_TTL = 5000;
     private isPolling: boolean = false;
+    private telemetryPollTimer: ReturnType<typeof setTimeout> | undefined;
+    private telemetryPollOwner: Promise<void> | undefined;
+    private telemetryStopOwner: Promise<void> | undefined;
+    private telemetryPollFailure: { error: unknown } | undefined;
 
     constructor() {
         // Start background polling immediately to warm up cache
@@ -315,23 +319,43 @@ export class SystemController {
     }
 
     private startBackgroundPolling() {
-        if (this.isPolling) return;
+        if (this.isPolling || this.telemetryStopOwner) return;
         this.isPolling = true;
+        this.admitTelemetryPoll();
+    }
 
-        const poll = async () => {
-            try {
-                // Background fetch
-                await this.refreshTelemetryCache();
-            } catch (e) {
-                console.error("[TELEMETRY] Background poll failed", e);
-            } finally {
-                // Schedule next poll (5s)
-                setTimeout(poll, 5000);
+    private admitTelemetryPoll(): void {
+        if (!this.isPolling) return;
+        this.telemetryPollTimer = undefined;
+        // Retain the actual refresh owner, not just a timer or a caught placeholder.
+        const owner = this.refreshTelemetryCache().then(() => undefined).catch(error => {
+            this.telemetryPollFailure ??= { error };
+            console.error('[TELEMETRY] Background poll failed', error);
+            throw error;
+        }).finally(() => {
+            if (this.isPolling) {
+                this.telemetryPollTimer = setTimeout(() => this.admitTelemetryPoll(), 5000);
             }
-        };
+        });
+        this.telemetryPollOwner = owner;
+        // Observe immediately, while stopBackgroundPolling still owns rejection.
+        void owner.catch(() => {});
+    }
 
-        // Initial kick
-        poll();
+    /** Stop only this controller's recurring telemetry loop, not request work or app globals. */
+    public stopBackgroundPolling(): Promise<void> {
+        if (this.telemetryStopOwner) return this.telemetryStopOwner;
+        // Stop admission BEFORE observing in-flight work, so its finally cannot re-arm.
+        this.isPolling = false;
+        if (this.telemetryPollTimer !== undefined) clearTimeout(this.telemetryPollTimer);
+        this.telemetryPollTimer = undefined;
+        const active = this.telemetryPollOwner;
+        this.telemetryStopOwner = (active ?? Promise.resolve()).then(() => {
+            if (this.telemetryPollFailure) throw this.telemetryPollFailure.error;
+        });
+        // Preserve rejection for callers without introducing a new unhandled owner.
+        void this.telemetryStopOwner.catch(() => {});
+        return this.telemetryStopOwner;
     }
 
     public async getTelemetry(req: Request, res: Response) {

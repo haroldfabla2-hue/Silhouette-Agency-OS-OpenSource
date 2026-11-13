@@ -9,3 +9,6 @@ export function publishContinuumInstance(instance: ContinuumInstance): void {
     published = instance;
     publish(instance);
 }
+
+/** Read-only publication snapshot. Does not start or await application work. */
+export function getPublishedContinuumInstance(): ContinuumInstance | undefined { return published; }

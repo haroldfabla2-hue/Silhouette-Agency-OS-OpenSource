@@ -12,7 +12,10 @@
  * Adapters are injected test doubles at the router boundary (the router is the
  * unit under test); no provider is mocked inside production code.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterAll } from 'vitest';
+import { captureStartedBootstrap, observePublicBootstrap, type BootstrapCapture } from '../setup/observe-public-bootstrap';
+let bootstrapCapture: BootstrapCapture | undefined;
+afterAll(async () => { await observePublicBootstrap(bootstrapCapture); });
 import * as fs from 'fs';
 import * as path from 'path';
 import { createAgentInferenceRouter, defaultChain } from '../../services/llm/agentInferenceRouter';
@@ -48,9 +51,13 @@ function stubAdapter(id: string, opts: {
 }
 
 async function collect(stream: AsyncGenerator<InferenceEvent>): Promise<InferenceEvent[]> {
+    try {
     const events: InferenceEvent[] = [];
     for await (const e of stream) events.push(e);
     return events;
+    } finally {
+        bootstrapCapture ??= captureStartedBootstrap();
+    }
 }
 
 const baseReq = {
