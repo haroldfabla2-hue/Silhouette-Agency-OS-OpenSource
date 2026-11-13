@@ -327,7 +327,7 @@ class PlanExecutor {
                 success: false,
                 tokensUsed: 0,
                 executionTimeMs: Date.now() - stepStart,
-                error: 'Resource arbiter timeout'
+                error: 'Resource arbiter admission stopped'
             };
         }
 

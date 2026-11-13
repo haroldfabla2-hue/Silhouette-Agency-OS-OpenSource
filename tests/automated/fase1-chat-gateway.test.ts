@@ -15,8 +15,15 @@ import '../setup/require-cloud-only';
  */
 import { describe, it, expect, afterAll } from 'vitest';
 import { captureStartedBootstrap, observePublicBootstrap, type BootstrapCapture } from '../setup/observe-public-bootstrap';
+import { captureStartedResourceArbiter, observeResourceArbiter, type ArbiterCapture } from '../setup/observe-resource-arbiter';
 let bootstrapCapture: BootstrapCapture | undefined;
-afterAll(async () => { await observePublicBootstrap(bootstrapCapture); });
+let arbiterCapture: ArbiterCapture;
+afterAll(async () => {
+    const failures: unknown[] = [];
+    try { await observeResourceArbiter(arbiterCapture); } catch (error) { failures.push(error); }
+    try { await observePublicBootstrap(bootstrapCapture); } catch (error) { failures.push(error); }
+    if (failures.length) throw new AggregateError(failures, 'Retained arbiter/bootstrap ownership failed');
+});
 import * as fs from 'fs';
 import * as path from 'path';
 import { createAgentInferenceRouter, defaultChain } from '../../services/llm/agentInferenceRouter';
@@ -57,6 +64,7 @@ async function collect(stream: AsyncGenerator<InferenceEvent>): Promise<Inferenc
     for await (const e of stream) events.push(e);
     return events;
     } finally {
+        arbiterCapture ??= captureStartedResourceArbiter();
         bootstrapCapture ??= captureStartedBootstrap();
     }
 }

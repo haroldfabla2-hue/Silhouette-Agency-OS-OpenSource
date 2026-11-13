@@ -3,6 +3,7 @@ import { Agent, AgentStatus, SystemMode } from "../types";
 import * as si from 'systeminformation';
 import { exec } from 'child_process';
 import * as util from 'util';
+import { publishResourceArbiter } from './resourceArbiterOwner';
 
 const execAsync = util.promisify(exec);
 
@@ -35,74 +36,125 @@ class ResourceArbiter {
 
     private intervalId: NodeJS.Timeout | null = null;
 
+    private admissionOpen = true;
+    private startupOwner!: Promise<void>;
+    private stopOwner: Promise<void> | undefined;
+    private queueOwner: Promise<void> | undefined;
+    private pending = new Set<Promise<unknown>>();
+    private readonly failureSample: unknown[] = [];
+    private failureCount = 0;
+    private failureOverflow = false;
+
+    private recordFailure(error: unknown): void {
+        if (this.failureCount < Number.MAX_SAFE_INTEGER) this.failureCount++;
+        else this.failureOverflow = true;
+        if (this.failureSample.length < 8) this.failureSample.push(error);
+        else this.failureOverflow = true;
+    }
+    private releaseAfterStop = 0;
+
+    private retain<T>(task: Promise<T>): Promise<T> {
+        this.pending.add(task);
+        // Observe every original rejection without replacing the caller's promise.
+        void task.then(() => { this.pending.delete(task); }, error => {
+            this.recordFailure(error);
+            this.pending.delete(task);
+        });
+        return task;
+    }
+
+    public getLifecycleStatus() {
+        return { admissionOpen: this.admissionOpen, timerPresent: this.intervalId !== null,
+            startupOwnerPresent: this.startupOwner !== undefined, queueOwnerPresent: this.queueOwner !== undefined,
+            pendingChecks: this.pending.size, queued: this.queue.length,
+            historicalFailures: this.failureCount, failureSampleSize: this.failureSample.length,
+            failureOverflow: this.failureOverflow, releaseAfterStop: this.releaseAfterStop };
+    }
+
+    /** Terminal service-local stop. Does not own already admitted downstream tasks. */
+    public stopAdmissions(): Promise<void> {
+        if (this.stopOwner) return this.stopOwner;
+        this.admissionOpen = false;
+        if (this.intervalId) clearInterval(this.intervalId);
+        this.intervalId = null;
+        // Queued requests have not been admitted. Settle once, never grant on stop.
+        for (const item of this.queue.splice(0)) item.resolve(false);
+        this.stopOwner = (async () => {
+            // Pending retained startup/checks can complete descendants before settling.
+            while (this.pending.size) await Promise.allSettled([...this.pending]);
+            if (this.failureCount || this.failureOverflow) throw new AggregateError([...this.failureSample],
+                `Resource arbiter checks failed (${this.failureCount} recorded checks; sample overflow: ${this.failureOverflow})`);
+        })();
+        // A caller still receives the original stop rejection; never unhandled if
+        // its owner retains the promise before awaiting other independent services.
+        void this.stopOwner.catch(() => undefined);
+        return this.stopOwner;
+    }
+
     constructor() {
         this.isServer = typeof process !== 'undefined' && process.versions != null && process.versions.node != null;
         console.log(`[ARBITER] Initialized. Environment: ${this.isServer ? 'SERVER (Real Metrics)' : 'CLIENT (Simulated)'}`);
 
         // Start Queue Processor Loop with dynamic interval
-        this.startProcessing();
+        this.startupOwner = this.retain(this.startProcessing());
     }
 
-    private startProcessing() {
-        // Import dynamically to avoid circular dependency
-        import('./powerManager').then(({ powerManager }) => {
-            const intervalMs = powerManager.getConfig().resourceArbiterMs;
-            this.intervalId = setInterval(() => this.processQueue(), intervalMs);
-            console.log(`[ARBITER] Queue processor started (${intervalMs}ms interval)`);
-        });
+    private async startProcessing(): Promise<void> {
+        // Retained import, no timer may appear after terminal stop.
+        const { powerManager } = await import('./powerManager');
+        if (!this.admissionOpen) return;
+        const intervalMs = powerManager.getConfig().resourceArbiterMs;
+        this.intervalId = setInterval(() => { void this.processQueue(); }, intervalMs);
+        console.log(`[ARBITER] Queue processor started (${intervalMs}ms interval)`);
     }
 
     /**
      * Checks if the system can handle waking up a new agent.
      * Returns a Promise that resolves when resources are available.
      */
-    public async requestAdmission(agent: Agent, priority: 'CRITICAL' | 'HIGH' | 'NORMAL' | 'LOW' = 'NORMAL'): Promise<boolean> {
-        return new Promise(async (resolve) => {
-            const metrics = await this.getRealMetrics();
-
-            // 1. CRITICAL ALWAYS PASSES
-            if (priority === 'CRITICAL' && metrics.ramUsed / metrics.ramTotal < 0.98) {
-                resolve(true);
-                return;
-            }
-
-            // 2. STARTUP GRACE PERIOD
-            if (process.uptime() < 60) {
-                resolve(true);
-                return;
-            }
-
-            // 3. CHECK THRESHOLDS
-            const ramUsagePercent = metrics.ramUsed / metrics.ramTotal;
-            if (ramUsagePercent > this.maxRamThreshold || metrics.cpuLoad > this.maxCpuThreshold) {
-                // QUEUE THE REQUEST
-                console.log(`[ARBITER] ⏳ Queuing ${agent.name} (Priority: ${priority}). RAM: ${(ramUsagePercent * 100).toFixed(1)}%`);
-                this.queue.push({
-                    agentId: agent.id,
-                    priority,
-                    timestamp: Date.now(),
-                    resolve
-                });
-                this.sortQueue();
-            } else {
-                // ADMIT IMMEDIATELY
-                resolve(true);
-            }
-        });
+    public requestAdmission(agent: Agent, priority: 'CRITICAL' | 'HIGH' | 'NORMAL' | 'LOW' = 'NORMAL'): Promise<boolean> {
+        if (!this.admissionOpen) return Promise.resolve(false);
+        // Metrics were admitted before stop. Await them, but never admit/enqueue
+        // downstream work if terminal stop happened while the check was running.
+        return this.retain(this.evaluateAdmission(agent, priority));
     }
 
-    public release() {
-        // Trigger immediate check when resources are freed
-        this.processQueue();
-    }
-
-    private async processQueue() {
-        if (this.queue.length === 0) return;
-
-        const metrics = await this.getRealMetrics();
+    private async evaluateAdmission(agent: Agent, priority: QueueItem['priority']): Promise<boolean> {
+        const metrics = await this.readRealMetrics();
+        if (!this.admissionOpen) return false;
+        if (priority === 'CRITICAL' && metrics.ramUsed / metrics.ramTotal < 0.98) return true;
+        if (process.uptime() < 60) return true;
         const ramUsagePercent = metrics.ramUsed / metrics.ramTotal;
+        if (ramUsagePercent > this.maxRamThreshold || metrics.cpuLoad > this.maxCpuThreshold) {
+            console.log(`[ARBITER] ⏳ Queuing ${agent.name} (Priority: ${priority}). RAM: ${(ramUsagePercent * 100).toFixed(1)}%`);
+            return new Promise<boolean>(resolve => {
+                this.queue.push({ agentId: agent.id, priority, timestamp: Date.now(), resolve });
+                this.sortQueue();
+            });
+        }
+        return true;
+    }
 
-        // If we have headroom
+    public release(): void {
+        if (!this.admissionOpen) { this.releaseAfterStop++; return; }
+        void this.processQueue();
+    }
+
+    private processQueue(): Promise<void> {
+        if (!this.admissionOpen || this.queue.length === 0) return Promise.resolve();
+        if (this.queueOwner) return this.queueOwner;
+        const task = this.retain(this.checkQueue());
+        this.queueOwner = task;
+        // Both branches handled, original failure stays in retain's ledger.
+        void task.then(() => { if (this.queueOwner === task) this.queueOwner = undefined; },
+            () => { if (this.queueOwner === task) this.queueOwner = undefined; });
+        return task;
+    }
+
+    private async checkQueue(): Promise<void> {
+        const metrics = await this.readRealMetrics();
+        if (!this.admissionOpen) return;
+        const ramUsagePercent = metrics.ramUsed / metrics.ramTotal;
         if (ramUsagePercent < this.maxRamThreshold && metrics.cpuLoad < this.maxCpuThreshold) {
             const nextItem = this.queue.shift();
             if (nextItem) {
@@ -217,7 +269,14 @@ class ResourceArbiter {
         return { used: 0, total: 0 };
     }
 
-    public async getRealMetrics(): Promise<ResourceMetrics> {
+    /** Direct public metric checks are admitted/joined too; callers already using
+     * their result remain outside this service's downstream stop ownership. */
+    public getRealMetrics(): Promise<ResourceMetrics> {
+        if (!this.admissionOpen) return Promise.reject(new Error('RESOURCE_ARBITER_STOPPED'));
+        return this.retain(this.readRealMetrics());
+    }
+
+    private async readRealMetrics(): Promise<ResourceMetrics> {
         // Cache Check (2 seconds)
         if (this.lastMetrics && (Date.now() - this.lastMetricsTime < 2000)) {
             return this.lastMetrics;
@@ -225,11 +284,22 @@ class ResourceArbiter {
 
         if (this.isServer) {
             try {
-                const [load, mem, gpu] = await Promise.all([
-                    si.currentLoad(),
-                    si.mem(),
-                    this.getGpuMetrics() // [NEW] Real GPU Audit
-                ]);
+                // Launch each original branch once, then await ALL branches even
+                // when one rejects. A rejected fast CPU/memory branch must not
+                // let an active GPU child escape this retained metric owner.
+                const measured = await Promise.allSettled([
+                    Promise.resolve().then(() => si.currentLoad()),
+                    Promise.resolve().then(() => si.mem()),
+                    Promise.resolve().then(() => this.getGpuMetrics())
+                ] as const);
+                const errors = measured.flatMap(result => result.status === 'rejected' ? [result.reason] : []);
+                const [loadResult, memResult, gpuResult] = measured;
+                if (loadResult.status !== 'fulfilled' || memResult.status !== 'fulfilled' || gpuResult.status !== 'fulfilled') {
+                    throw new AggregateError(errors, 'Real metric branches failed');
+                }
+                const load = loadResult.value;
+                const mem = memResult.value;
+                const gpu = gpuResult.value;
 
                 // Debug Log (Throttled)
                 if (load.currentLoad >= 99 && Math.random() > 0.95) {
@@ -248,6 +318,7 @@ class ResourceArbiter {
                 this.lastMetricsTime = Date.now();
                 return metrics;
             } catch (e) {
+                this.recordFailure(e);
                 console.error("[ARBITER] Failed to get real metrics", e);
                 return this.getSimulatedMetrics();
             }
@@ -296,3 +367,4 @@ class ResourceArbiter {
 }
 
 export const resourceArbiter = new ResourceArbiter();
+publishResourceArbiter(resourceArbiter);

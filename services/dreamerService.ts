@@ -148,8 +148,8 @@ export class DreamerService {
         }, 'LOW'); // Lowest priority - yields to all other work
 
         if (!arbiterApproval) {
-            console.log("[DREAMER] ⏳ Curricula export queued by ResourceArbiter. Will retry when resources available.");
-            systemBus.emit(SystemProtocol.TRAINING_LOG, { type: 'log', message: "⏳ Curricula export queued (waiting for resources)..." }, 'DREAMER_SERVICE');
+            console.log("[DREAMER] Curricula export not admitted; resource arbiter admission is stopped.");
+            systemBus.emit(SystemProtocol.TRAINING_LOG, { type: 'log', message: "Curricula export not admitted: resource arbiter admission stopped." }, 'DREAMER_SERVICE');
             return;
         }
 
@@ -281,7 +281,7 @@ export class DreamerService {
         }, 'LOW');
 
         if (!admission) {
-            console.log("[DREAMER] 🛑 Insufficient resources to dream right now.");
+            console.log("[DREAMER] Dream not admitted; resource arbiter admission is stopped.");
             return;
         }
 

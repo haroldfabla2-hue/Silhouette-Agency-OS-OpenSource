@@ -9,6 +9,8 @@ import '../setup/require-cloud-only';
  */
 import { describe, it, expect, afterAll } from 'vitest';
 import { captureStartedBootstrap, observePublicBootstrap, type BootstrapCapture } from '../setup/observe-public-bootstrap';
+import { captureStartedResourceArbiter, observeResourceArbiter, type ArbiterCapture } from '../setup/observe-resource-arbiter';
+let arbiterCapture: ArbiterCapture;
 let controllerOwner: typeof import('../../server/controllers/systemController').systemController | undefined;
 let bootstrapCapture: BootstrapCapture | undefined;
 const importFailures: unknown[] = [];
@@ -23,6 +25,7 @@ async function actualRoutes() {
         throw error;
     } finally {
         // A failed route import never forces a controller import here.
+        arbiterCapture ??= captureStartedResourceArbiter();
         bootstrapCapture ??= captureStartedBootstrap();
     }
 }
@@ -59,6 +62,7 @@ afterAll(async () => {
         console.log('ACTUAL_TELEMETRY_POLL_INCOMPLETE_NOT_OBSERVED: no retained controller');
     }
     } catch (error) { failures.push(error); }
+    try { await observeResourceArbiter(arbiterCapture); } catch (error) { failures.push(error); }
     try { await observePublicBootstrap(bootstrapCapture); } catch (error) { failures.push(error); }
     if (failures.length) throw new AggregateError(failures, 'Route import/poll/bootstrap ownership failed');
 });
