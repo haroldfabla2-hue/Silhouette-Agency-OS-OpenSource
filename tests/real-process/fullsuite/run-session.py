@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Proposed current isolated full suite checkpoint. NOT EXECUTED."""
-import hashlib,json,os,pathlib,selectors,signal,subprocess,sys,time
+import hashlib,json,os,pathlib,re,selectors,signal,subprocess,sys,time
 root=pathlib.Path('/tmp/work');out=pathlib.Path('/tmp/evidence');out.mkdir(exist_ok=True)
 host=sys.argv[1]
 def group(pid):
@@ -20,7 +20,8 @@ for p,text in network['routes'].items():
 assert subprocess.check_output(['node','--version'],text=True).strip()=='v22.18.0'
 # Explicit validation policy survives clean env, never falls back to mixed.
 assert os.environ.get('SILHOUETTE_INFERENCE_MODE')=='cloud-only','VALIDATION_POLICY_REQUIRED before phase admission'
-env={'PATH':os.environ['PATH'],'HOME':'/tmp/home','NODE_ENV':'test','SILHOUETTE_INFERENCE_MODE':os.environ['SILHOUETTE_INFERENCE_MODE']}
+assert os.environ.get('SILHOUETTE_SNAPSHOT_DIAGNOSTIC')=='metadata-only','DIAGNOSTIC_POLICY_REQUIRED'
+env={'SILHOUETTE_SNAPSHOT_DIAGNOSTIC':'metadata-only','PATH':os.environ['PATH'],'HOME':'/tmp/home','NODE_ENV':'test','SILHOUETTE_INFERENCE_MODE':os.environ['SILHOUETTE_INFERENCE_MODE']}
 print('VALIDATION_SUPERVISOR_POLICY: cloud-only',flush=True)
 pathlib.Path(env['HOME']).mkdir(exist_ok=True)
 phases=[('lint',['npm','run','lint'],180),('types',['npm','run','typecheck'],180),
@@ -83,6 +84,96 @@ for name,cmd,budget in phases:
   ok=not failure and pre['returncode']==0 and pre['reaped'] and pre['group']=='ESRCH' and eof and not signals and not residual
   results.append({'phase':name,'command':cmd,'budget_seconds':remaining,'elapsed_seconds':time.monotonic()-t0,'status':'PASS' if ok else 'FAIL','error':failure,'pid':child.pid if child else None,'residual_namespace_pids':residual,'pre_cleanup':pre,'post_cleanup':post,'signals':signals,'observed_log_bytes':observed,'truncated':observed>len(data),'global_exhausted':global_exhausted,'retained_log_bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()})
   (out/'session.json').write_text(json.dumps({'status':'IN_PROGRESS','results':results},indent=2))
+# Diagnostic lines stay in original capped raw log; source parser is bounded.
+diag={'status':'DIAGNOSTIC_INCOMPLETE','event_cap':256,'byte_cap':131072,'events':0,'bytes':0,'terminals':0,'issues':[],'issues_omitted':0}
+def issue(reason):
+ if len(diag['issues'])<32:diag['issues'].append(reason)
+ else:diag['issues_omitted']+=1
+owners={};context=None
+allowed={'tests/automated/'+n+'.test.ts' for n in ['fase1-chat-gateway','system-routes-audit','consciousness-metrics']}
+testlog=out/'actual-owner-tests.log'
+if testlog.exists():
+ for line in testlog.read_bytes().splitlines():
+  # Normalize only a parsing copy. Raw line bytes still own accounting/hash.
+  parsed=re.sub(rb'\x1b\[[0-?]*[ -/]*[@-~]',b'',line)
+  # Owner-local ordinal checks do not establish cross-owner causal print order.
+  if parsed.startswith(b'stdout | ') or parsed.startswith(b'stderr | '):
+   context=parsed.decode('utf8',errors='replace').split(' | ',1)[1].split(' > ',1)[0]
+  terminal=parsed.startswith(b'SNAPSHOT_DIAGNOSTIC_TERMINAL ')
+  if not terminal and not parsed.startswith(b'SNAPSHOT_DIAGNOSTIC '):continue
+  diag['events']+=1;diag['bytes']+=len(line)+1
+  if diag['events']>256 or diag['bytes']>131072:issue('aggregate cap exceeded');continue
+  try:
+   item=json.loads(parsed.split(b' ',1)[1]);g=item.get('graphId')
+   if not isinstance(g,str) or not g or len(g)>80:raise ValueError('invalid graph id')
+   if context not in allowed:raise ValueError('missing focal worker context')
+   if g not in owners:
+    if len(owners)>=3:raise ValueError('extra graph owner')
+    owners[g]={'events':0,'bytes':0,'ordinal':0,'declared':False,'context':context,'worker':None,'ops':{},'terminal':False}
+   owner=owners[g]
+   if owner['context']!=context:raise ValueError('graph changed file context')
+   if terminal:
+    diag['terminals']+=1
+    if owner['terminal']:raise ValueError('duplicate owner terminal')
+    owner['terminal']=True
+    if item.get('enabled') is not True or item.get('status')!='OBSERVED_METADATA_ONLY':issue('owner incomplete')
+    if item.get('eventCap')!=64 or item.get('byteCap')!=32768:issue('owner cap mismatch')
+    if item.get('events')!=owner['events'] or item.get('bytes')!=owner['bytes']:issue('owner counter mismatch')
+    continue
+   if owner['terminal']:issue('event after terminal')
+   owner['events']+=1;owner['bytes']+=len(line)+1
+   if owner['events']>64 or owner['bytes']>32768:issue('owner observed cap exceeded')
+   ordinal=item.get('ordinal')
+   if type(ordinal) is not int or ordinal!=owner['ordinal']+1:issue('noncontiguous owner ordinal')
+   owner['ordinal']=ordinal
+   stage=item.get('stage')
+   if stage=='OWNER_DECLARED':
+    if owner['declared'] or owner['events']!=1:issue('invalid owner declaration order')
+    worker=item.get('worker')
+    if not isinstance(worker,str) or not worker or worker=='UNKNOWN':issue('worker id unavailable')
+    if type(item.get('pid')) is not int or item['pid']<=0:issue('pid unavailable')
+    owner['worker']=worker;owner['declared']=True
+    continue
+   if not owner['declared']:issue('stage before owner declared')
+   if item.get('worker')!=owner['worker']:issue('owner worker changed')
+   if stage=='DIAGNOSTIC_ERROR':issue('callback/stat/close error');continue
+   seq=item.get('sequence');key=item.get('operationKey')
+   if type(seq) is not int or seq<=0 or key!=g+':'+str(seq):raise ValueError('invalid operation key')
+   checksum=item.get('checksum');length=item.get('utf8Bytes')
+   if not isinstance(checksum,str) or len(checksum)!=64 or any(c not in '0123456789abcdef' for c in checksum):raise ValueError('invalid captured checksum')
+   if type(length) is not int or length<0:raise ValueError('invalid payload length')
+   ops=owner['ops']
+   if stage=='SNAPSHOT_CAPTURED':
+    if key in ops:issue('duplicate capture')
+    ops[key]={'stages':['SNAPSHOT_CAPTURED'],'checksum':checksum,'length':length};continue
+   if key not in ops:raise ValueError('operation missing capture')
+   op=ops[key]
+   if checksum!=op['checksum'] or length!=op['length']:issue('captured metadata changed')
+   expected={'SNAPSHOT_CAPTURED':'TEMP_READY','TEMP_READY':'RENAME_RETURNED','RENAME_RETURNED':'READBACK','READBACK':None}
+   prior=op['stages'][-1]
+   if not ((prior=='READBACK' and stage in ['MATCH','MISMATCH']) or expected.get(prior)==stage):issue('invalid operation stage order')
+   if stage in ['TEMP_READY','READBACK']:
+    if not all(isinstance(item.get(k),str) and item[k].isdigit() for k in ['dev','ino','size']):issue('descriptor identity unavailable')
+   if stage in ['READBACK','MATCH','MISMATCH']:
+    rh=item.get('readbackChecksum');rl=item.get('readbackBytes')
+    if not isinstance(rh,str) or len(rh)!=64 or any(c not in '0123456789abcdef' for c in rh) or type(rl) is not int or rl<0:issue('invalid readback metadata')
+    if stage=='READBACK':op['readbackChecksum']=rh;op['readbackBytes']=rl
+    elif rh!=op.get('readbackChecksum') or rl!=op.get('readbackBytes'):issue('readback terminal metadata changed')
+    if stage=='MATCH' and rh!=checksum:issue('false match')
+    if stage=='MISMATCH' and rh==checksum:issue('false mismatch')
+   op['stages'].append(stage)
+  except Exception as error:issue('invalid diagnostic record: '+str(error)[:100])
+if diag['terminals']!=3 or len(owners)!=3:issue('three owner terminals not observed')
+if {v['context'] for v in owners.values()}!=allowed:issue('three focal contexts not observed')
+if len({v['worker'] for v in owners.values()})!=3:issue('three worker ids not observed')
+for owner in owners.values():
+ if not owner['declared'] or not owner['terminal'] or not owner['ops']:issue('owner operation ledger not observed')
+ for op in owner['ops'].values():
+  if op['stages'] not in [['SNAPSHOT_CAPTURED','TEMP_READY','RENAME_RETURNED','READBACK','MATCH'],['SNAPSHOT_CAPTURED','TEMP_READY','RENAME_RETURNED','READBACK','MISMATCH']]:issue('operation incomplete')
+if not diag['issues'] and not diag['issues_omitted']:diag['status']='OBSERVED_METADATA_ONLY_NOT_CAUSAL_PROOF'
+diag['owners']=owners
+(out/'snapshot-diagnostic-summary.json').write_text(json.dumps(diag,indent=2))
+print('SNAPSHOT_DIAGNOSTIC_SOURCE_STATUS:'+diag['status'],flush=True)
 result={'status':'COMMANDS_GREEN_OWNER_EVIDENCE_REVIEW_REQUIRED' if all(r['status']=='PASS' for r in results) else 'FAIL','elapsed_seconds':time.monotonic()-started,'results':results,'scope':'Node22.18 isolated lint/types/exact 3 actual RPC-attributed test files only; command green is NOT bootstrap closure/PASS. INCOMPLETE_NOT_OBSERVED remains incomplete; raw states and RPC/collector must be reviewed. NO fullsuite/build/boot/API/provider success/global drain/mount repair; runtime exclusions unchanged'}
 (out/'session.json').write_text(json.dumps(result,indent=2))
 raise SystemExit(0 if result['status']=='COMMANDS_GREEN_OWNER_EVIDENCE_REVIEW_REQUIRED' else 1)

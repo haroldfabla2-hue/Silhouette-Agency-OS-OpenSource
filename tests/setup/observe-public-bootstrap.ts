@@ -26,7 +26,7 @@ export function captureStartedBootstrap(): BootstrapCapture | undefined {
 
 /** Teardown observes only retained references/promises. It initiates NO imports. */
 export async function observePublicBootstrap(capture: BootstrapCapture | undefined): Promise<void> {
-    if (!capture) { console.log('PUBLIC_BOOTSTRAP_INCOMPLETE_NOT_OBSERVED: publication snapshot absent; pending import/owner race unresolved'); return; }
+    if (!capture) { console.log('SNAPSHOT_DIAGNOSTIC_TERMINAL ' + JSON.stringify({ status: 'DIAGNOSTIC_INCOMPLETE', reason: 'NOT_OBSERVED' })); console.log('PUBLIC_BOOTSTRAP_INCOMPLETE_NOT_OBSERVED: publication snapshot absent; pending import/owner race unresolved'); return; }
     const failures: unknown[] = [];
     const modules = await capture.modules;
     for (const result of modules) if (result.status === 'rejected') failures.push(result.reason);
@@ -72,6 +72,10 @@ export async function observePublicBootstrap(capture: BootstrapCapture | undefin
         expect(memory.continuum.getMemoryEffectOperations()).toEqual([]);
         expect(health!.providerHealth.getPersistenceStatus().operations).toEqual([]);
         if (conceptEffect) expect((await conceptEffect).state).toBe('COMPLETE');
+    } catch (error) { failures.push(error); }
+    // Separate terminal metadata status, never changes original storage failure.
+    try {
+        console.log('SNAPSHOT_DIAGNOSTIC_TERMINAL ' + JSON.stringify(memory.continuum.getSnapshotDiagnosticStatus()));
     } catch (error) { failures.push(error); }
     // Disconnect ONLY after initial work and admitted effects have been observed.
     try { if (redis) await redis.redisClient.disconnect(); } catch (error) { failures.push(error); }

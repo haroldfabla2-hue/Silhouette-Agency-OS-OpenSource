@@ -2,7 +2,7 @@ import { lexicalMatches, lexicalScore } from './lexicalMatch';
 import { atomicWriteFile } from './utils/atomicWrite';
 import { MemoryNode, MemoryTier } from "../types";
 import { lancedbService } from './lancedbService';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { fuseMemories, inScope, scopeSql, type MemoryScope } from './memoryRetrieval';
 import { activation, selectSleepBatch } from './memoryCognition';
 import { memoryTransitions, isOutstandingTransition } from './memoryTransitions';
@@ -75,6 +75,48 @@ function positiveIntEnv(name: string, fallback: number): number {
 }
 
 class ContinuumMemorySystem {
+    private readonly snapshotDiagnosticEnabled = process.env.SILHOUETTE_SNAPSHOT_DIAGNOSTIC === 'metadata-only';
+    private readonly snapshotGraphId = this.snapshotDiagnosticEnabled ? randomUUID() : 'DIAGNOSTIC_DISABLED';
+    private snapshotDiagnosticOrdinal = 0;
+    private snapshotDiagnosticEvents = 0;
+    private snapshotDiagnosticBytes = 0;
+    private snapshotDiagnosticIncomplete = false;
+
+    private snapshotDiagnostic(stage: string, metadata: Record<string, unknown> = {}): void {
+        if (!this.snapshotDiagnosticEnabled) return;
+        if (stage === 'DIAGNOSTIC_ERROR') this.snapshotDiagnosticIncomplete = true;
+        try {
+            const event = {
+                stage, graphId: this.snapshotGraphId, pid: process.pid,
+                worker: process.env.VITEST_WORKER_ID ?? 'UNKNOWN',
+                thread: 'UNKNOWN', storeLabel: SNAPSHOT_PATH === '/tmp/work/data/memory_snapshot.json'
+                    ? 'shared-work/data/memory_snapshot.json' : 'UNKNOWN',
+                ownerModel: 'UNRESOLVED_SHARED_PATH_TEST',
+                ordinal: ++this.snapshotDiagnosticOrdinal,
+                monotonicNs: process.hrtime.bigint().toString(), ...metadata
+            };
+            const line = 'SNAPSHOT_DIAGNOSTIC ' + JSON.stringify(event);
+            const bytes = Buffer.byteLength(line + '\n', 'utf8');
+            if (this.snapshotDiagnosticEvents >= 64 || this.snapshotDiagnosticBytes + bytes > 32768) {
+                this.snapshotDiagnosticIncomplete = true;
+                return;
+            }
+            this.snapshotDiagnosticEvents++;
+            this.snapshotDiagnosticBytes += bytes;
+            console.log(line);
+        } catch { this.snapshotDiagnosticIncomplete = true; }
+    }
+
+    public getSnapshotDiagnosticStatus() {
+        return {
+            graphId: this.snapshotGraphId, enabled: this.snapshotDiagnosticEnabled,
+            status: this.snapshotDiagnosticEnabled && this.snapshotDiagnosticEvents > 0 && !this.snapshotDiagnosticIncomplete
+                ? 'OBSERVED_METADATA_ONLY' : 'DIAGNOSTIC_INCOMPLETE',
+            events: this.snapshotDiagnosticEvents, bytes: this.snapshotDiagnosticBytes,
+            eventCap: 64, byteCap: 32768
+        };
+    }
+
     // === UNIFIED WORKING MEMORY (RAM - Fast Access) ===
     // [REFACTOR 2026-01-07] Merged ultraShort + short into single working array
     // TTL: 30 mins (promoted to MEDIUM if accessed frequently or aged)
@@ -227,6 +269,7 @@ class ContinuumMemorySystem {
     private consecutivePromoteFailures = 0;
 
     constructor() {
+        this.snapshotDiagnostic('OWNER_DECLARED', { backingStoreIdentity: 'UNKNOWN', generation: 'UNKNOWN' });
         // No hydration needed for LanceDB, it's always on disk.
         // RAM tiers start empty on reboot (Tabula Rasa for short term) UNLESS hydrated explicitly.
 
@@ -344,6 +387,10 @@ class ContinuumMemorySystem {
         const dirtyRevision = this.dirtyRevision;
         const record: SnapshotOperation & { payload: string } = { sequence, dirtyRevision, checksum, state: 'PENDING', payload };
         this.snapshotOperations.set(sequence, record);
+        this.snapshotDiagnostic('SNAPSHOT_CAPTURED', {
+            sequence, operationKey: `${this.snapshotGraphId}:${sequence}`, dirtyRevision,
+            checksum, utf8Bytes: Buffer.byteLength(payload, 'utf8'), generation: 'UNKNOWN'
+        });
         return this.enqueueSnapshot(record);
     }
 
@@ -381,11 +428,44 @@ class ContinuumMemorySystem {
             const commitError = this.snapshotAdmissionError();
             if (commitError) throw commitError;
             await fs.mkdir(path.dirname(SNAPSHOT_PATH), { recursive: true });
-            await atomicWriteFile(SNAPSHOT_PATH, payload);
-            const readback = await fs.readFile(SNAPSHOT_PATH);
-            if (createHash('sha256').update(readback).digest('hex') !== checksum) {
+            const metadata = { sequence, operationKey: `${this.snapshotGraphId}:${sequence}`,
+                dirtyRevision, checksum, utf8Bytes: Buffer.byteLength(payload, 'utf8') };
+            await atomicWriteFile(SNAPSHOT_PATH, payload, this.snapshotDiagnosticEnabled ? {
+                snapshotDiagnostic: event => this.snapshotDiagnostic(event.stage, { ...metadata, ...event })
+            } : {});
+            let readback: Buffer;
+            if (this.snapshotDiagnosticEnabled) {
+                const handle = await fs.open(SNAPSHOT_PATH, 'r');
+                let readFailed = false;
+                try {
+                    readback = await handle.readFile();
+                    const readbackChecksum = createHash('sha256').update(readback).digest('hex');
+                    try {
+                        const stat = await handle.stat({ bigint: true });
+                        this.snapshotDiagnostic('READBACK', { ...metadata,
+                            readbackChecksum: createHash('sha256').update(readback).digest('hex'),
+                            readbackBytes: readback.length, dev: String(stat.dev), ino: String(stat.ino),
+                            size: String(stat.size), mtimeNs: String(stat.mtimeNs), ctimeNs: String(stat.ctimeNs) });
+                    } catch { this.snapshotDiagnostic('DIAGNOSTIC_ERROR', metadata); }
+                    if (readbackChecksum !== checksum) {
+                        this.snapshotDiagnostic('MISMATCH', { ...metadata, readbackChecksum, readbackBytes: readback.length });
+                        throw new Error(`Snapshot read-back mismatch for sequence ${sequence}`);
+                    }
+                } catch (error) { readFailed = true; throw error; }
+                finally {
+                    try { await handle.close(); }
+                    catch (error) {
+                        this.snapshotDiagnostic('DIAGNOSTIC_ERROR', metadata);
+                        if (!readFailed) throw error;
+                    }
+                }
+            } else readback = await fs.readFile(SNAPSHOT_PATH);
+            const readbackChecksum = createHash('sha256').update(readback).digest('hex');
+            if (readbackChecksum !== checksum) {
+                this.snapshotDiagnostic('MISMATCH', { ...metadata, readbackChecksum, readbackBytes: readback.length });
                 throw new Error(`Snapshot read-back mismatch for sequence ${sequence}`);
             }
+            this.snapshotDiagnostic('MATCH', { ...metadata, readbackChecksum, readbackBytes: readback.length });
             const receipt: SnapshotReceipt = {
                 sequence, dirtyRevision, checksum, disk: 'CONFIRMED', redis, redisError
             };

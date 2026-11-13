@@ -5,6 +5,8 @@ export interface AtomicWriteOptions {
     /** Retries for transient rename failures (EPERM/EBUSY on Windows when another process holds the file). */
     renameRetries?: number;
     retryDelayMs?: number;
+    /** Optional metadata-only synchronous diagnostic. Never controls commit. */
+    snapshotDiagnostic?: (event: { stage: 'TEMP_READY' | 'RENAME_RETURNED' | 'DIAGNOSTIC_ERROR'; dev?: string; ino?: string; size?: string }) => void;
     /** Test seam. */
     rename?: (from: string, to: string) => Promise<void>;
 }
@@ -20,11 +22,24 @@ export async function atomicWriteFile(target: string, data: string | Buffer, opt
     const delay = opts.retryDelayMs ?? 40;
     const rename = opts.rename ?? fs.rename;
     const tmp = `${target}.${process.pid}.${crypto.randomUUID()}.tmp`;
+    const diagnostic = (event: Parameters<NonNullable<AtomicWriteOptions['snapshotDiagnostic']>>[0]) => {
+        try { opts.snapshotDiagnostic?.(event); }
+        catch {
+            // A callback cannot turn a successful rename into a retry/failure.
+            try { opts.snapshotDiagnostic?.({ stage: 'DIAGNOSTIC_ERROR' }); } catch { /* no recursion */ }
+        }
+    };
     try {
         const fh = await fs.open(tmp, 'w');
         try {
             await fh.writeFile(data);
             await fh.sync();
+            if (opts.snapshotDiagnostic) {
+                try {
+                    const stat = await fh.stat({ bigint: true });
+                    diagnostic({ stage: 'TEMP_READY', dev: String(stat.dev), ino: String(stat.ino), size: String(stat.size) });
+                } catch { diagnostic({ stage: 'DIAGNOSTIC_ERROR' }); }
+            }
         } finally {
             await fh.close();
         }
@@ -32,6 +47,7 @@ export async function atomicWriteFile(target: string, data: string | Buffer, opt
         for (let attempt = 0; attempt <= retries; attempt++) {
             try {
                 await rename(tmp, target);
+                diagnostic({ stage: 'RENAME_RETURNED' });
                 return;
             } catch (e: any) {
                 lastErr = e;
