@@ -1,4 +1,4 @@
-name: Initial-owner static then provider owned persistence trial (exact isolated branch)
+name: Current isolated fullsuite checkpoint Node22.18 only
 
 on:
   push:
@@ -9,119 +9,78 @@ permissions:
   contents: read
 
 jobs:
-  focused-static:
+  current-isolated-suite:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    env:
-      EXPECTED_COMMIT_SHA: ${{ github.sha }}
     steps:
-      - name: Initialize evidence location on runner
+      - name: Anchor conservative job deadline before checkout
         shell: bash
         run: |
           set -euo pipefail
-          evidence="$RUNNER_TEMP/initial-owner-static-evidence"
-          mkdir -p "$evidence"
-          test -w "$evidence"
-          printf 'EVIDENCE_WRITABLE\n' > "$evidence/write-check.txt"
+          evidence="$RUNNER_TEMP/current-suite-evidence"
+          mkdir "$evidence"
           printf 'EVIDENCE=%s\n' "$evidence" >> "$GITHUB_ENV"
-
-      - name: Checkout exact pushed candidate
+          python3 - "$evidence" <<'CLOCK'
+          import json,os,pathlib,sys,time
+          ev=pathlib.Path(sys.argv[1]);hz=os.sysconf('SC_CLK_TCK');pid=os.getpid();anchor=None
+          for _ in range(64):
+           p=pathlib.Path('/proc')/str(pid);s=(p/'stat').read_text();f=s[s.rindex(')')+2:].split()
+           if (p/'comm').read_text().strip()=='Runner.Worker':
+            anchor={'pid':pid,'start_ticks':int(f[19])};break
+           pid=int(f[1])
+           if pid<=1:break
+          assert anchor is not None,'No Runner.Worker conservative start; STOP'
+          (ev/'job-clock.json').write_text(json.dumps({'anchor':'Runner.Worker start before job start','worker':anchor,'ticks_per_second':hz,'deadline_monotonic':anchor['start_ticks']/hz+900,'observed_monotonic':time.monotonic(),'cleanup_export_reserve_seconds':60,'job_limit_seconds':900},indent=2))
+          (ev/'host-budget.json').write_text(json.dumps({'elapsed_seconds':0,'observed_bytes':0,'retained_bytes':0,'commands':[]},indent=2))
+          CLOCK
+      - name: Checkout exact reviewed push
         uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
           fetch-depth: 1
-
-      - name: Verify pushed commit and reviewed bytes
+      - name: Verify source and external read-only reviewed manifest
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$EVIDENCE"
-          test -w "$EVIDENCE"
-          printf 'EVIDENCE_WRITABLE\n' > "$EVIDENCE/write-check.txt"
-          actual=$(git rev-parse HEAD)
-          printf '%s\n' "$actual" > "$EVIDENCE/head.txt"
-          printf '%s\n' "$EXPECTED_COMMIT_SHA" > "$EVIDENCE/expected-head.txt"
-          [[ "$EXPECTED_COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]
-          test "$actual" = "$EXPECTED_COMMIT_SHA"
+          test "$(git rev-parse HEAD)" = '${{ github.sha }}'
+          git rev-parse HEAD > "$EVIDENCE/head.txt"
           git status --porcelain > "$EVIDENCE/checkout-status.txt"
-          sha256sum types.ts services/sqliteService.ts package.json package-lock.json services/continuumMemory.ts services/memoryTransitions.ts services/introspectionEngine.ts tsconfig.json tsconfig.introspection-fixture.json tests/real-process/introspection-initial/initial-status-consumer.mts tests/real-process/introspection-initial/run-two.py tests/real-process/introspection-initial/run-runtime.sh tests/real-process/disk-restart/child.mts tests/real-process/disk-restart/run-restart.py tests/real-process/disk-restart/run-runtime.sh services/dreamerService.ts services/brain/brainMemoryBridge.ts db/migrations/sqlite/001_baseline_indexes.down.sql db/migrations/sqlite/001_baseline_indexes.up.sql db/migrations/sqlite/002_facts_table.down.sql db/migrations/sqlite/002_facts_table.up.sql db/migrations/sqlite/003_user_profiles.down.sql db/migrations/sqlite/003_user_profiles.up.sql db/migrations/sqlite/004_incidents.down.sql db/migrations/sqlite/004_incidents.up.sql tests/real-process/mcp-effect/child.mts tests/real-process/mcp-effect/run-effect.py tests/real-process/mcp-effect/run-runtime.sh services/identityService.ts services/mcp/mcpClient.ts server/middleware/authMiddleware.ts server/routes/v1/autonomy.routes.ts services/actionExecutor.ts services/security/effectGate.ts services/security/gatedExecution.ts services/security/principalContext.ts services/security/approvalGrants.ts services/security/effectContext.ts tests/real-process/provider-health/child.mts tests/real-process/provider-health/run-probe.py tests/real-process/provider-health/run-runtime.sh services/providerHealthManager.ts services/narrativeService.ts tests/automated/pr4a-llm-chain.test.ts tests/automated/workflow-mission-route.test.ts services/geminiService.ts services/media/imageFactory.ts services/planExecutor.ts server/controllers/chatController.ts tests/verify_circuit_breaker.ts services/embeddingResolver.ts services/geminiClientState.ts tests/automated/deep-memory-identity.test.ts tests/automated/fase1-embeddings-honest.test.ts > "$EVIDENCE/input-sha256.txt"
-          set +e
-          sha256sum --check tests/real-process/introspection-initial/reviewed-inputs.sha256 2>&1 | tee "$EVIDENCE/reviewed-input-check.log"
-          codes=("${PIPESTATUS[@]}")
-          set -e
-          printf '%s\n' "${codes[0]}" > "$EVIDENCE/reviewed-input-check.exit"
-          printf '%s\n' "${codes[1]}" > "$EVIDENCE/reviewed-input-check.tee-exit"
-          test "${codes[0]}" = 0
-          test "${codes[1]}" = 0
-          printf 'PUSH_HEAD_AND_REVIEWED_BYTES_MATCH\n' > "$EVIDENCE/head-check.txt"
-
-      - name: Setup exact existing CI Node floor
+          reviewed="$RUNNER_TEMP/current-suite-reviewed"
+          mkdir "$reviewed"
+          cp tests/real-process/fullsuite/reviewed-inputs.sha256 "$reviewed/inputs.sha256"
+          chmod 0444 "$reviewed/inputs.sha256"
+          printf '%s  %s\n' baaccbd36362e29dde16e894d70de633ede7fda555fc927db7f5c90c1608a1f5 "$reviewed/inputs.sha256" | sha256sum --check
+          printf 'REVIEWED=%s\n' "$reviewed" >> "$GITHUB_ENV"
+          work="$RUNNER_TEMP/current-suite-work"
+          python3 tests/real-process/fullsuite/prepare-work.py "$work" "$EVIDENCE"
+          printf '%s  %s\n' f620fbb142f7011b60aa171160e049cc3af3beeacc11e3d47bb518624c8ef684 tests/real-process/fullsuite/verify-tree.py | sha256sum --check
+          python3 tests/real-process/fullsuite/verify-tree.py "$work" "$reviewed/inputs.sha256" baaccbd36362e29dde16e894d70de633ede7fda555fc927db7f5c90c1608a1f5 "$EVIDENCE/pre-install-tree.json"
+          printf 'WORK=%s\n' "$work" >> "$GITHUB_ENV"
+      - name: Exact Node floor
         uses: actions/setup-node@v4
         with:
           node-version: '22.18.0'
-
-      - name: Existing pinned lock install
+      - name: Bounded host install existing lock and verify exact work tree
         shell: bash
-        env:
-          PUPPETEER_SKIP_DOWNLOAD: 'true'
-          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 'true'
         run: |
           set -euo pipefail
-          test -w "$EVIDENCE"
           node --version > "$EVIDENCE/node-version.txt"
           npm --version > "$EVIDENCE/npm-version.txt"
-          set +e
-          timeout --signal=TERM --kill-after=5s 300s npm ci 2>&1 | tee "$EVIDENCE/npm-ci.log"
-          codes=("${PIPESTATUS[@]}")
-          set -e
-          printf '%s\n' "${codes[0]}" > "$EVIDENCE/npm-ci.exit"
-          printf '%s\n' "${codes[1]}" > "$EVIDENCE/npm-ci.tee-exit"
-          test "${codes[0]}" = 0
-          test "${codes[1]}" = 0
-
-      - name: All three static checks, aggregate failure
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -w "$EVIDENCE"
-          run_check() {
-            name=$1
-            shift
-            set +e
-            timeout --signal=TERM --kill-after=5s 180s "$@" 2>&1 | tee "$EVIDENCE/$name.log"
-            codes=("${PIPESTATUS[@]}")
-            set -e
-            printf '%s\n' "${codes[0]}" > "$EVIDENCE/$name.exit"
-            printf '%s\n' "${codes[1]}" > "$EVIDENCE/$name.tee-exit"
-          }
-          # Deliberate diagnostic policy: run all three even if lint/TSC fail.
-          # Recording/tee failures never turn a nonzero command into success.
-          run_check lint npm run lint
-          run_check tsc-production npm run typecheck
-          run_check tsc-fixture node node_modules/typescript/bin/tsc --project tsconfig.introspection-fixture.json
-          result=0
-          for name in lint tsc-production tsc-fixture; do
-            test "$(cat "$EVIDENCE/$name.exit")" = 0 || result=1
-            test "$(cat "$EVIDENCE/$name.tee-exit")" = 0 || result=1
-          done
-          printf '%s\n' "$result" > "$EVIDENCE/aggregate.exit"
-          if test "$result" = 0; then printf 'STATIC_PASS\n' > "$EVIDENCE/static-pass.txt"; fi
-          exit "$result"
-
+          # Explicit clean install environment; same browser skip settings/lifecycle.
+          control="$PWD/tests/real-process/fullsuite/host-control.py"
+          cd "$WORK"
+          python3 "$control" capture npm-ci 300 env -i PATH="$PATH" HOME="$RUNNER_TEMP/current-suite-install-home" PUPPETEER_SKIP_DOWNLOAD=true PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=true npm ci
+          cd "$GITHUB_WORKSPACE"
+          printf '%s  %s\n' f620fbb142f7011b60aa171160e049cc3af3beeacc11e3d47bb518624c8ef684 tests/real-process/fullsuite/verify-tree.py | sha256sum --check
+          python3 tests/real-process/fullsuite/verify-tree.py "$WORK" "$REVIEWED/inputs.sha256" baaccbd36362e29dde16e894d70de633ede7fda555fc927db7f5c90c1608a1f5 "$EVIDENCE/post-install-tree.json"
       - name: Verified existing Ubuntu key copy and authenticated package setup
         shell: bash
         run: |
           set -euo pipefail
           run_setup() {
             name=$1; shift
-            set +e
-            timeout --signal=TERM --kill-after=5s 120s "$@" 2>&1 | tee "$EVIDENCE/$name.log"
-            codes=("${PIPESTATUS[@]}")
-            set -e
-            printf '%s\n' "${codes[0]}" > "$EVIDENCE/$name.exit"
-            printf '%s\n' "${codes[1]}" > "$EVIDENCE/$name.tee-exit"
-            test "${codes[0]}" = 0; test "${codes[1]}" = 0
+            python3 tests/real-process/fullsuite/host-control.py capture "$name" 120 "$@"
           }
           # Read-only evidence BEFORE any OS/chain-byte guard or privileged operation.
           # Fixed public source paths only; no environment dump, token or private files.
@@ -246,7 +205,7 @@ jobs:
             pins=()
             for pkg in "${missing[@]}"; do
               run_setup "sandbox-$pkg-policy" apt-cache "${opts[@]}" policy "$pkg"
-              candidate=$(apt-cache "${opts[@]}" policy "$pkg" | awk '/Candidate:/ {print $2}')
+              candidate=$(awk '/Candidate:/ {print $2}' "$EVIDENCE/sandbox-$pkg-policy.log")
               test -n "$candidate" && test "$candidate" != '(none)'
               pins+=("$pkg=$candidate")
             done
@@ -301,77 +260,62 @@ jobs:
           run_setup sandbox-apparmor-after sysctl -n "$key"
           test "$(tail -n1 "$EVIDENCE/sandbox-apparmor-after.log")" = 0
           printf 'SETUP_COMPLETE_NOT_RUNTIME_PASS\n' > "$EVIDENCE/sandbox-setup.txt"
-      - name: Exact provider owned persistence after static PASS
+      - name: Admit session only if absolute job budget fits plus cleanup and export
         shell: bash
         run: |
           set -euo pipefail
-          test "$(cat "$EVIDENCE/static-pass.txt")" = STATIC_PASS
-          printf 'NOT_STARTED\n' > "$EVIDENCE/runtime-status.txt"
-          # No package installation, sudo, external Redis, or alternate path.
-          # A missing tool is a trial capability result, before app workload.
-          for tool in bwrap ip; do
-            if ! command -v "$tool" >> "$EVIDENCE/runtime-capability.log" 2>&1; then
-              printf 'BLOCKED: missing %s before app workload\n' "$tool" | tee -a "$EVIDENCE/runtime-capability.log"
-              printf 'BLOCKED\n' > "$EVIDENCE/runtime-status.txt"
-              exit 1
-            fi
-          done
+          python3 tests/real-process/fullsuite/host-control.py reserve
+      - name: Current isolated static fullsuite and builds unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
           set +e
-          timeout --signal=TERM --kill-after=5s 100s env -i PATH="$PATH" HOME=/tmp /bin/bash tests/real-process/provider-health/run-runtime.sh "$EVIDENCE" "$EVIDENCE/runtime" 2>&1 | tee "$EVIDENCE/runtime-trial.log"
-          codes=("${PIPESTATUS[@]}")
+          timeout --signal=TERM --kill-after=5s 675s env -i PATH="$PATH" bash tests/real-process/fullsuite/launch.sh "$WORK" "$EVIDENCE" "$REVIEWED"
+          code=$?
           set -e
-          printf '%s\n' "${codes[0]}" > "$EVIDENCE/runtime-command.exit"
-          printf '%s\n' "${codes[1]}" > "$EVIDENCE/runtime-tee.exit"
-          if test "${codes[0]}" != 0 || test "${codes[1]}" != 0; then
-            printf 'FAIL (inspect log for BLOCKED capability/network or case failure)\n' > "$EVIDENCE/runtime-status.txt"
-            exit 1
-          fi
-          printf 'PASS\n' > "$EVIDENCE/runtime-status.txt"
-
-      - name: Always remove only this trial root-owned apt scope
+          printf '%s\n' "$code" > "$EVIDENCE/session-command.exit"
+          exit "$code"
+      - name: Always remove only this trial root-owned apt scope under reserved cleanup budget
         if: always()
         shell: bash
         run: |
           set -euo pipefail
           if test -z "${APT_TRIAL_SCOPE:-}"; then exit 0; fi
           [[ "$APT_TRIAL_SCOPE" =~ ^/run/initial-owner-apt\.[A-Za-z0-9]{8}$ ]]
-          set +e
-          timeout --signal=TERM --kill-after=5s 20s sudo -n rm -rf --one-file-system -- "$APT_TRIAL_SCOPE" 2>&1 | tee "$EVIDENCE/sandbox-cleanup.log"
-          codes=("${PIPESTATUS[@]}")
-          set -e
-          printf '%s\n' "${codes[0]}" > "$EVIDENCE/sandbox-cleanup.exit"
-          printf '%s\n' "${codes[1]}" > "$EVIDENCE/sandbox-cleanup.tee-exit"
-          test "${codes[0]}" = 0
-          test "${codes[1]}" = 0
+          python3 tests/real-process/fullsuite/host-control.py cleanup sandbox-cleanup 20 sudo -n rm -rf --one-file-system -- "$APT_TRIAL_SCOPE"
           test ! -e "$APT_TRIAL_SCOPE"
           rm -rf -- "$RUNNER_TEMP/reviewed-ubuntu-stage"
-
-      - name: Always retain bounded evidence in job logs only
+      - name: Always retain bounded evidence within reserved deadline
         if: always()
         shell: bash
         run: |
           set -euo pipefail
-          # Job logs do not count toward artifact storage allowance. No upload/cache.
-          python3 - "$EVIDENCE" <<'PY'
-          import base64, hashlib, io, pathlib, sys, tarfile
-          root = pathlib.Path(sys.argv[1])
-          files = sorted(p for p in root.rglob('*') if p.is_file() and not p.is_symlink())
-          print('FOCUSED_EVIDENCE_FILE_COUNT:' + str(len(files)), flush=True)
-          print('FOCUSED_EVIDENCE_RAW_BYTES:' + str(sum(p.stat().st_size for p in files)), flush=True)
-          if len(files) > 128 or sum(p.stat().st_size for p in files) > 2 * 1024 * 1024:
-              raise SystemExit('EVIDENCE_LIMIT_FAIL: too many files or more than2MiB raw')
-          out = io.BytesIO()
-          with tarfile.open(fileobj=out, mode='w:gz') as archive:
-              for file in files:
-                  archive.add(file, arcname=str(file.relative_to(root)), recursive=False)
-          data = out.getvalue()
-          if len(data) > 512 * 1024:
-              raise SystemExit('EVIDENCE_LIMIT_FAIL: compressed evidence above512KiB')
-          print('FOCUSED_EVIDENCE_SHA256:' + hashlib.sha256(data).hexdigest())
-          print('FOCUSED_EVIDENCE_BYTES:' + str(len(data)))
-          print('FOCUSED_EVIDENCE_BASE64_BEGIN')
-          text = base64.b64encode(data).decode('ascii')
-          for start in range(0, len(text), 4096):
-              print(text[start:start + 4096])
-          print('FOCUSED_EVIDENCE_BASE64_END')
+          budget=$(python3 - "$EVIDENCE/job-clock.json" <<'LIMIT'
+          import json,pathlib,sys,time
+          c=json.loads(pathlib.Path(sys.argv[1]).read_text());v=min(30,int(c['deadline_monotonic']-time.monotonic()-5));assert v>0,'No export budget';print(v)
+          LIMIT
+          )
+          timeout --signal=TERM --kill-after=2s "${budget}s" python3 - "$EVIDENCE" <<'PY'
+          import base64,hashlib,io,pathlib,stat,sys,tarfile
+          root=pathlib.Path(sys.argv[1]);files=[]
+          for p in sorted(root.rglob('*')):
+           m=p.lstat()
+           if stat.S_ISDIR(m.st_mode):continue
+           if not stat.S_ISREG(m.st_mode):raise SystemExit('EVIDENCE_NONREGULAR_FAIL')
+           files.append(p)
+          count=len(files);raw=sum(p.stat().st_size for p in files)
+          print('CURRENT_SUITE_EVIDENCE_FILES:'+str(count),flush=True)
+          print('CURRENT_SUITE_EVIDENCE_RAW_BYTES:'+str(raw),flush=True)
+          if count>128 or raw>20*1024*1024:raise SystemExit('EVIDENCE_CAP_FAIL_128FILES_20MIB')
+          out=io.BytesIO()
+          with tarfile.open(fileobj=out,mode='w:gz') as tar:
+           for p in files:tar.add(p,arcname=str(p.relative_to(root)),recursive=False)
+          data=out.getvalue()
+          if len(data)>4*1024*1024:raise SystemExit('EVIDENCE_CAP_FAIL_4MIB_GZIP')
+          print('CURRENT_SUITE_EVIDENCE_SHA256:'+hashlib.sha256(data).hexdigest())
+          print('CURRENT_SUITE_EVIDENCE_BYTES:'+str(len(data)))
+          print('CURRENT_SUITE_EVIDENCE_BASE64_BEGIN')
+          text=base64.b64encode(data).decode()
+          for i in range(0,len(text),4096):print(text[i:i+4096])
+          print('CURRENT_SUITE_EVIDENCE_BASE64_END')
           PY
