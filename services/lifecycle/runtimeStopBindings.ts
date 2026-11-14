@@ -16,6 +16,7 @@ const cron: Slot = { name:'cron',phase:'UNSEEN' };
 const dreamer: Slot = { name:'dreamer',phase:'UNSEEN' };
 const introspection: Slot = { name:'introspection-known-borrowers',phase:'UNSEEN' };
 const resourceManager: Slot = { name:'resource-manager-known-borrowers',phase:'UNSEEN' };
+const telephonyTools: Slot = { name:'known-telephony-tool-tasks',phase:'UNSEEN' };
 const telephony: Slot = { name:'telephony-known-borrowers',phase:'UNSEEN' };
 const tts: Slot = { name:'tts-known-borrowers',phase:'UNSEEN' };
 const voiceLibrary: Slot = { name:'voice-library-known-borrowers',phase:'UNSEEN' };
@@ -91,6 +92,9 @@ export function admitEvaluatedResourceManager(): Permit { return admit(resourceM
 export function bindEvaluatedResourceManager(permit: Permit,stop: () => unknown): void { publish(resourceManager,permit,stop,false); }
 export function failEvaluatedResourceManager(permit: Permit,error: unknown): void { failed(resourceManager,permit,error); }
 
+export function admitEvaluatedTelephonyTools(): Permit { return admit(telephonyTools); }
+export function bindEvaluatedTelephonyTools(permit: Permit,stop: () => unknown): void { publish(telephonyTools,permit,stop,false); }
+
 export function admitEvaluatedTelephony(): Permit { return admit(telephony); }
 export function bindEvaluatedTelephony(permit: Permit,stop: () => unknown): void { publish(telephony,permit,stop,voiceBorrowersSealed); }
 export function failEvaluatedTelephony(permit: Permit,error: unknown): void { failed(telephony,permit,error); }
@@ -110,6 +114,8 @@ export async function drainEvaluatedKnownVoiceBorrowers(): Promise<void> {
     // Admitted resource shunt/restore can still import and call original TTS.
     // Join it before the new constructor admission frontier is sealed.
     try { await drain([resourceManager]); } catch (error) { failures.push(error); }
+    // Original admitted tool branches may still evaluate telephony imports.
+    try { await drain([telephonyTools]); } catch (error) { failures.push(error); }
     registrationSealed = true;
     try { await drain([telephony]); } catch (error) { failures.push(error); }
     // No new speech/voice continuations can originate in joined call turns.
@@ -157,5 +163,5 @@ export async function closeEvaluatedRuntimeStorage(): Promise<void> {
 }
 export function evaluatedRuntimeFrontier(): readonly Readonly<{name:string;phase:string}>[] {
     // UNSEEN remains UNVERIFIED; never silently becomes NOT_ACQUIRED.
-    return [...producers,introspection,resourceManager,telephony,tts,voiceLibrary,...storage].map(slot => Object.freeze({name:slot.name,phase:slot.phase}));
+    return [...producers,introspection,resourceManager,telephonyTools,telephony,tts,voiceLibrary,...storage].map(slot => Object.freeze({name:slot.name,phase:slot.phase}));
 }

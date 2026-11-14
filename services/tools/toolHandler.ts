@@ -1,3 +1,4 @@
+import { retainKnownTelephonyTool } from '../lifecycle/telephonyToolWork';
 import { requestCollaborationAndWait, ToolCaller } from '../communication/helpProtocol';
 
 import { GenerateVideoArgs, ListVisualAssetsArgs, GenerateImageArgs, DelegateTaskArgs, SearchAssetsArgs, ManageAssetArgs, PreviewAssetArgs, CreateToolArgs, RequestCollaborationArgs } from './definitions';
@@ -2278,6 +2279,9 @@ export class ToolHandler {
     }
 
     private async handleTelephonyDial(args: any): Promise<any> {
+        return retainKnownTelephonyTool('Dial', () => this.handleTelephonyDialOriginal(args));
+    }
+    private async handleTelephonyDialOriginal(args: any): Promise<any> {
         try {
             const { telephonyService } = await import('../telephony/telephonyService');
             const result = await telephonyService.dial({
@@ -2309,6 +2313,9 @@ export class ToolHandler {
     }
 
     private async handleTelephonyProcessTurn(args: any): Promise<any> {
+        return retainKnownTelephonyTool('ProcessTurn', () => this.handleTelephonyProcessTurnOriginal(args));
+    }
+    private async handleTelephonyProcessTurnOriginal(args: any): Promise<any> {
         try {
             const { telephonyService } = await import('../telephony/telephonyService');
             const result = await telephonyService.processCallTurn(args.call_id, args.caller_utterance, args.latency_ms);
@@ -2330,6 +2337,9 @@ export class ToolHandler {
     }
 
     private async handleTelephonyBargeIn(args: any): Promise<any> {
+        return retainKnownTelephonyTool('BargeIn', () => this.handleTelephonyBargeInOriginal(args));
+    }
+    private async handleTelephonyBargeInOriginal(args: any): Promise<any> {
         try {
             const { telephonyService } = await import('../telephony/telephonyService');
             const result = await telephonyService.triggerBargeIn(args.call_id);
@@ -2347,6 +2357,9 @@ export class ToolHandler {
     }
 
     private async handleTelephonyAnalyzeSentiment(args: any): Promise<any> {
+        return retainKnownTelephonyTool('AnalyzeSentiment', () => this.handleTelephonyAnalyzeSentimentOriginal(args));
+    }
+    private async handleTelephonyAnalyzeSentimentOriginal(args: any): Promise<any> {
         try {
             const { telephonyService } = await import('../telephony/telephonyService');
             const result = telephonyService.analyzeAcousticSentiment(args.text, args.latency_ms);
@@ -2364,6 +2377,9 @@ export class ToolHandler {
     }
 
     private async handleTelephonySendDtmf(args: any): Promise<any> {
+        return retainKnownTelephonyTool('SendDtmf', () => this.handleTelephonySendDtmfOriginal(args));
+    }
+    private async handleTelephonySendDtmfOriginal(args: any): Promise<any> {
         try {
             const { telephonyService } = await import('../telephony/telephonyService');
             const result = await telephonyService.sendDtmf(args.call_id, args.digits);
@@ -2382,6 +2398,9 @@ export class ToolHandler {
     }
 
     private async handleTelephonyHangup(args: any): Promise<any> {
+        return retainKnownTelephonyTool('Hangup', () => this.handleTelephonyHangupOriginal(args));
+    }
+    private async handleTelephonyHangupOriginal(args: any): Promise<any> {
         try {
             const { telephonyService } = await import('../telephony/telephonyService');
             const result = await telephonyService.hangup(args.call_id, args.reason);
