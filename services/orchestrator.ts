@@ -1026,7 +1026,7 @@ Format each gap as:
             this.userMessageOwners.delete(owner);
         };
         void owner.then(finish, finish);
-        // Invoke synchronously after retention, with the original first-await timing.
+        // Invoke synchronously after retention, preserving the original async boundary.
         try {
             void this.handleAcceptedUserMessage(payload, root).then(resolveOwner, error => {
                 this.recordUserMessageFailure(root, 'authority-or-uncaught-processing', error);
