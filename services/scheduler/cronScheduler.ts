@@ -1,3 +1,6 @@
+import { cronOwner } from '../lifecycle/preparationBindings';
+import { AdmissionClosed } from '../lifecycle/host';
+import { admitEvaluatedCron, bindEvaluatedCron, failEvaluatedCron } from '../lifecycle/runtimeStopBindings';
 // =============================================================================
 // ENHANCED SCHEDULER SERVICE
 // Extends the existing SchedulerService with cron expression parsing,
@@ -97,11 +100,36 @@ export interface WebhookJob {
 // ─── Enhanced Scheduler ──────────────────────────────────────────────────────
 
 export class CronScheduler {
+    private readonly ownership=cronOwner();
+    private sealed=false;
+    private joined?:Promise<void>;
+    private readonly originalWebhooks=new Set<Promise<void>>();
+    constructor(){this.ownership.onSeal(()=>this.sealAndDrain());}
+    private launchOriginalWebhook(job:WebhookJob):Promise<void> {
+        if(this.sealed)throw new AdmissionClosed('cron:webhook');
+        const original=this.ownership.invoke('original-webhook',()=>this.fireWebhook(job));
+        this.originalWebhooks.add(original);
+        const settled=()=>{this.originalWebhooks.delete(original);};
+        void original.then(settled,settled);
+        return original;
+    }
+    public sealAndDrain():Promise<void> {
+        this.sealed=true;
+        if(this.joined)return this.joined;
+        let resolve!:()=>void;let reject!:(error:unknown)=>void;
+        this.joined=new Promise<void>((yes,no)=>{resolve=yes;reject=no;});
+        void this.joined.catch(()=>undefined);
+        let failed=false;let cancellation:unknown;
+        try{this.shutdown();}catch(error){failed=true;cancellation=error;this.ownership.failure('original-interval-cancel',error);}
+        void Promise.allSettled([...this.originalWebhooks]).then(()=>{if(failed)reject(cancellation);else resolve();},reject);
+        return this.joined;
+    }
     private webhookJobs: Map<string, WebhookJob> = new Map();
     private interval: NodeJS.Timeout | null = null;
     private readonly CHECK_INTERVAL_MS = 60_000; // Check every minute
 
     initialize(): void {
+        if(this.sealed)return;
         if (!this.executionAllowed()) { this.shutdown(); return; }
         if (this.interval) return;
         this.interval = setInterval(() => this.tick(), this.CHECK_INTERVAL_MS);
@@ -112,6 +140,7 @@ export class CronScheduler {
      * Register a new webhook job.
      */
     addWebhookJob(job: Omit<WebhookJob, 'id' | 'fireCount' | 'nextFireAt'>): string {
+        if(this.sealed)throw new AdmissionClosed('cron:add');
         const id = `cron_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
         const newJob: WebhookJob = {
             ...job,
@@ -133,6 +162,7 @@ export class CronScheduler {
      * Remove a webhook job.
      */
     removeWebhookJob(id: string): boolean {
+        if(this.sealed)throw new AdmissionClosed('cron:remove');
         return this.webhookJobs.delete(id);
     }
 
@@ -154,6 +184,7 @@ export class CronScheduler {
     }
 
     private async tick(): Promise<void> {
+        if(this.sealed)return;
         if (!this.executionAllowed()) { this.shutdown(); return; }
         const now = new Date();
 
@@ -163,7 +194,7 @@ export class CronScheduler {
             if (!matchesCron(job.cronExpression, now)) continue;
 
             // Fire the webhook
-            this.fireWebhook(job).catch(err => {
+            this.launchOriginalWebhook(job).catch(err => {
                 console.error(`[CronScheduler] Webhook ${job.name} failed:`, err.message);
             });
         }
@@ -195,6 +226,7 @@ export class CronScheduler {
 
             job.lastFireAt = Date.now();
             job.fireCount++;
+            if(!response.ok)this.ownership.taskFailed('original-webhook-http-outcome',new Error('HTTP_STATUS_'+response.status));
             job.lastResult = {
                 status: response.status,
                 success: response.ok,
@@ -220,6 +252,7 @@ export class CronScheduler {
                 responseTime: Date.now() - start,
             };
 
+            this.ownership.taskFailed('original-webhook-outcome',err);
             console.error(`[CronScheduler] ❌ ${job.name}: ${err.message}`);
         }
     }
@@ -249,4 +282,8 @@ export class CronScheduler {
 
 // ─── Singleton Export ────────────────────────────────────────────────────────
 
-export const cronScheduler = new CronScheduler();
+const runtimeConstructionPermit=admitEvaluatedCron();
+export const cronScheduler=(()=>{
+    try{const original=new CronScheduler();bindEvaluatedCron(runtimeConstructionPermit,()=>original.sealAndDrain());return original;}
+    catch(error){failEvaluatedCron(runtimeConstructionPermit,error);throw error;}
+})();
