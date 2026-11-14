@@ -1,4 +1,3 @@
-import { createOriginalChildOwner } from '../setup/original-child-ownership';
 import { retainChildDiagnostics } from '../setup/child-diagnostics';
 /** Channel ingress provenance envelope (R7): two independent identities over
  * the REAL channel router -> real system bus -> authority resolver path.
@@ -11,7 +10,7 @@ import { retainChildDiagnostics } from '../setup/child-diagnostics';
  * denied), NOT issuer protection from the executor (infrastructure, still
  * open). No live Redis server here: the wire-format case proves the envelope
  * survives the adapter's JSON boundary. No provider/model call. */
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -27,9 +26,6 @@ const { channelRouter } = await import('../../server/channels/channelRouter');
 const { resolveChannelAuthority } = await import('../../services/security/channelAuthority');
 const { IngressAuthority } = await import('../../services/security/ingressEnvelope');
 const { confirmationGate } = await import('../../services/tools/confirmationGate');
-
-const originalChildren = createOriginalChildOwner();
-afterEach(() => originalChildren.cleanup());
 
 interface Captured { payload: any }
 let userA: any, userB: any;
@@ -231,7 +227,6 @@ describe('R7-H3: replay denial is atomic across processes', () => {
         const runChild = () => new Promise<any>((resolve, reject) => {
             const child = spawn(process.execPath, ['--import', 'tsx/esm', 'tests/fixtures/ingress-verify-child.ts',
                 key.toString('hex'), dir, payloadFile], { stdio: ['ignore', 'pipe', 'pipe'] });
-    originalChildren.retain(child);
     retainChildDiagnostics(child, 'ingress-verifier');
             let out = '';
             child.stdout.on('data', d => { out += d.toString(); });

@@ -1,0 +1,11 @@
+{
+  "status": "NEW_STAGE_A_SOURCE_LEDGER_NOT_FULL_SUITE_EQUIVALENCE",
+  "productBase": "fc5bd04462200f0d12c7559015e743d9a9c7527a",
+  "productTree": "d0e80234ff0c173e6e74a2fbfbc612544579cc0c",
+  "missingValidationOnlyNotAdmitted": [
+    "tests/real-process/standalone-preparation.ts",
+    "tests/setup/original-child-ownership.ts"
+  ],
+  "historical1550UntouchedInNamedArchive": true,
+  "noRuntimeAuthorization": true
+}

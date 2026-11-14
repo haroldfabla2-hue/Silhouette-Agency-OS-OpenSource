@@ -15,6 +15,13 @@ const scheduler: Slot = { name:'scheduler',phase:'UNSEEN' };
 const cron: Slot = { name:'cron',phase:'UNSEEN' };
 const dreamer: Slot = { name:'dreamer',phase:'UNSEEN' };
 const introspection: Slot = { name:'introspection-known-borrowers',phase:'UNSEEN' };
+const voiceRoutes: Slot = { name:'known-voice-route-tasks',phase:'UNSEEN' };
+const resourceManager: Slot = { name:'resource-manager-known-borrowers',phase:'UNSEEN' };
+const telephonyTools: Slot = { name:'known-telephony-tool-tasks',phase:'UNSEEN' };
+const telephony: Slot = { name:'telephony-known-borrowers',phase:'UNSEEN' };
+const tts: Slot = { name:'tts-known-borrowers',phase:'UNSEEN' };
+const voiceLibrary: Slot = { name:'voice-library-known-borrowers',phase:'UNSEEN' };
+let voiceBorrowersSealed = false;
 let conceptBorrowersSealed = false;
 const producers = [daemon,curiosity,nervous,scheduler,cron,dreamer];
 const storage = [continuousMemory,redis,graph,sqlite];
@@ -82,6 +89,49 @@ export function failEvaluatedDreamer(permit: Permit,error: unknown): void { fail
 export function admitEvaluatedIntrospection(): Permit { return admit(introspection); }
 export function bindEvaluatedIntrospection(permit: Permit,stop: () => unknown): void { publish(introspection,permit,stop,conceptBorrowersSealed); }
 export function failEvaluatedIntrospection(permit: Permit,error: unknown): void { failed(introspection,permit,error); }
+export function admitEvaluatedVoiceRoutes(): Permit { return admit(voiceRoutes); }
+export function bindEvaluatedVoiceRoutes(permit: Permit,stop: () => unknown): void { publish(voiceRoutes,permit,stop,false); }
+
+export function admitEvaluatedResourceManager(): Permit { return admit(resourceManager); }
+export function bindEvaluatedResourceManager(permit: Permit,stop: () => unknown): void { publish(resourceManager,permit,stop,false); }
+export function failEvaluatedResourceManager(permit: Permit,error: unknown): void { failed(resourceManager,permit,error); }
+
+export function admitEvaluatedTelephonyTools(): Permit { return admit(telephonyTools); }
+export function bindEvaluatedTelephonyTools(permit: Permit,stop: () => unknown): void { publish(telephonyTools,permit,stop,false); }
+
+export function admitEvaluatedTelephony(): Permit { return admit(telephony); }
+export function bindEvaluatedTelephony(permit: Permit,stop: () => unknown): void { publish(telephony,permit,stop,voiceBorrowersSealed); }
+export function failEvaluatedTelephony(permit: Permit,error: unknown): void { failed(telephony,permit,error); }
+export function admitEvaluatedTTS(): Permit { return admit(tts); }
+export function bindEvaluatedTTS(permit: Permit,stop: () => unknown): void { publish(tts,permit,stop,voiceBorrowersSealed); }
+export function failEvaluatedTTS(permit: Permit,error: unknown): void { failed(tts,permit,error); }
+export function admitEvaluatedVoiceLibrary(): Permit { return admit(voiceLibrary); }
+export function bindEvaluatedVoiceLibrary(permit: Permit,stop: () => unknown): void { publish(voiceLibrary,permit,stop,voiceBorrowersSealed); }
+export function failEvaluatedVoiceLibrary(permit: Permit,error: unknown): void { failed(voiceLibrary,permit,error); }
+
+/** Known source order only. Caller must FIRST join every real upstream HTTP,
+ * callback, media, CFO and resource-manager lifetime. Not wired into global
+ * shutdown while those frontiers are open. Does not authorize SQLite release.
+ */
+export async function drainEvaluatedKnownVoiceBorrowers(): Promise<void> {
+    const failures: unknown[] = [];
+    // Admitted resource shunt/restore can still import and call original TTS.
+    // Join it before the new constructor admission frontier is sealed.
+    // Known routes may still admit original resource/tool/voice imports.
+    try { await drain([voiceRoutes]); } catch (error) { failures.push(error); }
+    try { await drain([resourceManager]); } catch (error) { failures.push(error); }
+    // Original admitted tool branches may still evaluate telephony imports.
+    try { await drain([telephonyTools]); } catch (error) { failures.push(error); }
+    registrationSealed = true;
+    try { await drain([telephony]); } catch (error) { failures.push(error); }
+    // No new speech/voice continuations can originate in joined call turns.
+    // The independent owner drains below join any already-admitted work still
+    // pending there; both are attempted even if one rejects.
+    voiceBorrowersSealed = true;
+    try { await drain([tts, voiceLibrary]); } catch (error) { failures.push(error); }
+    if (failures.length) throw new AggregateError(failures, 'Known original voice borrower drain failed');
+}
+
 export function sealEvaluatedRuntimeProducers(): void {
     // Close the construction frontier BEFORE producer callbacks. Modules not
     // yet admitted now fail before allocating their original singleton.
@@ -119,5 +169,5 @@ export async function closeEvaluatedRuntimeStorage(): Promise<void> {
 }
 export function evaluatedRuntimeFrontier(): readonly Readonly<{name:string;phase:string}>[] {
     // UNSEEN remains UNVERIFIED; never silently becomes NOT_ACQUIRED.
-    return [...producers,introspection,...storage].map(slot => Object.freeze({name:slot.name,phase:slot.phase}));
+    return [...producers,introspection,voiceRoutes,resourceManager,telephonyTools,telephony,tts,voiceLibrary,...storage].map(slot => Object.freeze({name:slot.name,phase:slot.phase}));
 }

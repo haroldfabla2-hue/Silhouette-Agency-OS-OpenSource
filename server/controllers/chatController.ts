@@ -7,7 +7,7 @@ import { continuum } from '../../services/continuumMemory';
 import { MemorySource, sourceTag, speakerLabel, shouldExcludeFromChat, wantsSelfIncluded } from '../../services/memory/provenance';
 import { codebaseAwareness } from '../../services/codebaseAwareness';
 import { providerHealth } from '../../services/providerHealthManager';
-import { userProfile } from '../../services/userProfileService';
+import { userProfile, type ProfileExtractionReceipt } from '../../services/userProfileService';
 import { factRepository } from '../../services/memory/factRepository';
 import { chatToolIntegration } from '../../services/chatToolIntegration';
 import { planGenerator } from '../../services/planGenerator';
@@ -31,6 +31,37 @@ import { IntrospectionLayer, WorkflowStage, AgentCapability, CommunicationLevel 
  * 3. Groq (llama-3.3-70b-versatile) - Fast inference fallback
  * 4. Ollama (local llama3.2/glm4) - Offline survival mode
  */
+type ChatReceipt = {
+    chatMessage: 'NOT_CONFIRMED' | 'SQLITE_APPEND_RETURNED';
+    profile: ProfileExtractionReceipt | { state: 'NOT_STARTED' };
+    generation: 'NOT_STARTED' | 'STARTED' | 'MODEL_RESPONSE_RETURNED' | 'RESPONSE_STORED';
+};
+function initialChatReceipt(): ChatReceipt {
+    return { chatMessage: 'NOT_CONFIRMED', profile: { state: 'NOT_STARTED' }, generation: 'NOT_STARTED' };
+}
+export function finishChatFailure(res: Response, original: unknown, phase: string, receipt: ChatReceipt, streaming: boolean): void {
+    // No arbitrary thrown-value property access or private SQL/provider errors in
+    // the public payload. Terminal write/end failures retain the original error.
+    const code = phase === 'PROFILE' ? 'PROFILE_UPDATE_FAILED' : 'CHAT_REQUEST_FAILED';
+    const error = phase === 'PROFILE' ? 'Profile update failed. Check the saved-message and profile receipts.' : 'Chat request failed. Check the saved-message and profile receipts.';
+    const payload = { type: 'error', error, code, phase, receipt };
+    const terminalErrors: unknown[] = [];
+    try {
+        if (!res.destroyed && !res.writableEnded) {
+            if (streaming) res.write(`data: ${JSON.stringify(payload)}\n\n`);
+            else if (!res.headersSent) res.status(500).json(payload);
+        }
+    } catch (failure) { terminalErrors.push(failure); }
+    finally {
+        try { if (!res.destroyed && !res.writableEnded) res.end(); }
+        catch (failure) { terminalErrors.push(failure); }
+        if (!res.destroyed && !res.writableEnded) {
+            try { res.destroy(); } catch (failure) { terminalErrors.push(failure); }
+        }
+    }
+    if (terminalErrors.length) throw new AggregateError([original, ...terminalErrors], 'Chat failure delivery was incomplete', { cause: original });
+}
+
 export class ChatController {
 
     public async getSessions(req: Request, res: Response) {
@@ -130,6 +161,8 @@ export class ChatController {
      * For simple integrations that don't need SSE
      */
     public async sendMessage(req: Request, res: Response) {
+        const receipt = initialChatReceipt();
+        let phase = 'REQUEST';
         try {
             const { message, messages, sessionId, role } = req.body;
 
@@ -183,22 +216,29 @@ ${gateAck}` : userMessage;
             // 1. Persist User Message
             sqliteService.appendChatMessage(userMsg, cleanSessionId);
 
-            // 1.5 Extract user profile info (name, preferences)
-            await userProfile.extractFromMessage(userMessage, userId);
+            receipt.chatMessage = 'SQLITE_APPEND_RETURNED';
+            phase = 'PROFILE';
+            const profile = await userProfile.extractFromMessageWithReceipt(userMessage, userId);
+            receipt.profile = profile.receipt;
+            if (profile.ok === false) throw profile.original;
+            phase = 'CONTEXT';
 
             // 2. Get context from memory AND codebase
             const recentHistory = sqliteService.getChatHistory(cleanSessionId, 50);
             const profileContext = [userProfile.getProfileContext(userId), this.verifiedFactsBlock(userId)].filter(Boolean).join('\n');
-            const memoryContext = await this.assembleContext(userMessage, allowedOwner);
+            const memoryContext = await this.assembleContext(userMessage, allowedOwner, userProfile.profileIdentity(userId));
             const codeContext = await this.getCodebaseContext(userMessage);
 
             // 3. Generate LLM response (R1: unified fallback chain via the inference router)
+            phase = 'GENERATION';
+            receipt.generation = 'STARTED';
             const response = await agentInferenceRouter.completeText(
                 `${this.buildSystemPrompt(codeContext || '')}
 
 ${this.buildPrompt(promptMessage, recentHistory, profileContext, memoryContext, codeContext)}`,
                 { lane: 'conversational' }
             );
+            receipt.generation = 'MODEL_RESPONSE_RETURNED';
             // Same tool bridge as /stream: execute [TOOL:] calls under the caller's
             // role and render honest results (or loud errors) inline.
             const bridged = await chatToolIntegration.processToolCalls(response, userRole, { principalId: userId, conversationId: cleanSessionId });
@@ -211,6 +251,7 @@ ${this.buildPrompt(promptMessage, recentHistory, profileContext, memoryContext, 
                 timestamp: Date.now()
             };
             sqliteService.appendChatMessage(assistantMsg, cleanSessionId);
+            receipt.generation = 'RESPONSE_STORED';
 
             // 5. Store interaction in memory for future context
             await continuum.store(`User asked: ${userMessage.slice(0, 100)}`, undefined, ['chat', 'interaction', ownerTag, sourceTag(MemorySource.USER_SAID)]);
@@ -218,12 +259,13 @@ ${this.buildPrompt(promptMessage, recentHistory, profileContext, memoryContext, 
             res.json({
                 success: true,
                 savedMessage: userMsg,
-                response: assistantMsg
+                response: assistantMsg,
+                receipt
             });
 
         } catch (e: any) {
             console.error("[CHAT] Failed to send message", e);
-            res.status(500).json({ error: "Failed to generate response" });
+            finishChatFailure(res, e, phase, receipt, false);
         }
     }
 
@@ -232,6 +274,8 @@ ${this.buildPrompt(promptMessage, recentHistory, profileContext, memoryContext, 
      * Uses the Universal Fallback Chain automatically
      */
     public async streamMessage(req: Request, res: Response) {
+        const receipt = initialChatReceipt();
+        let phase = 'REQUEST';
         const { message, messages, sessionId, modelPreference } = req.body;
 
         // [DEBUG] Log incoming stream request
@@ -296,15 +340,23 @@ ${gateAck}` : userMessage;
 
             // 1. Persist User Message
             sqliteService.appendChatMessage(userMsg, cleanSessionId);
-            res.write(`data: ${JSON.stringify({ type: 'user_saved', message: userMsg })}\n\n`);
+            receipt.chatMessage = 'SQLITE_APPEND_RETURNED';
+            res.write(`data: ${JSON.stringify({ type: 'user_saved', message: userMsg, scope: 'CHAT_MESSAGE_ONLY_NOT_PROFILE_RECEIPT' })}\n\n`);
 
-            // 1.5 Extract user profile info (name, preferences) from message
-            await userProfile.extractFromMessage(userMessage, userId);
+            phase = 'PROFILE';
+            const profile = await userProfile.extractFromMessageWithReceipt(userMessage, userId);
+            receipt.profile = profile.receipt;
+            if (profile.ok === false) throw profile.original;
+            phase = 'PROFILE_RECEIPT_DELIVERY';
+            res.write(`data: ${JSON.stringify({ type: 'profile_receipt', receipt: profile.receipt })}\n\n`);
+            phase = 'GENERATION';
 
             // 1.6 INTELLIGENT ORCHESTRATION: Analyze complexity and delegate if needed
             res.write(`data: ${JSON.stringify({ type: 'status', message: 'Analyzing request...' })}\n\n`);
 
+            let orchestratedDeliveryStarted = false;
             try {
+                receipt.generation = 'STARTED';
                 const plan = await planGenerator.create(userMessage);
 
                 // If complex task, use plan-based delegation to specialists
@@ -316,10 +368,15 @@ ${gateAck}` : userMessage;
                         steps: plan.steps.map(s => ({ agent: s.agentRole, task: s.taskDescription.slice(0, 50) }))
                     })}\n\n`);
 
+                    receipt.generation = 'STARTED';
                     const planResult = await planExecutor.execute(plan);
 
                     if (planResult.success) {
+                        // A selected response cannot fall back to another model
+                        // after any of its delivery has begun.
+                        orchestratedDeliveryStarted = true;
                         // Stream the final orchestrated response
+                        receipt.generation = 'MODEL_RESPONSE_RETURNED';
                         const orchestratedResponse = planResult.finalOutput;
 
                         for (const chunk of orchestratedResponse.split(' ')) {
@@ -334,17 +391,19 @@ ${gateAck}` : userMessage;
                             timestamp: Date.now()
                         };
                         sqliteService.appendChatMessage(assistantMsg, cleanSessionId);
-
-                        res.write(`data: ${JSON.stringify({ type: 'done', message: assistantMsg })}\n\n`);
+                        receipt.generation = 'RESPONSE_STORED';
+                        res.write(`data: ${JSON.stringify({ type: 'done', done: true, message: assistantMsg, receipt })}\n\n`);
                         return res.end();
                     }
                     // If plan execution failed, fall through to normal flow
                     console.warn('[CHAT] Plan execution failed, falling back to direct response');
                 }
             } catch (planError: any) {
-                console.warn('[CHAT] Plan generation failed (non-critical), using direct response:', planError.message);
+                if (orchestratedDeliveryStarted) throw planError;
+                console.warn('[CHAT] Plan generation failed (non-critical), using direct response:', planError);
             }
 
+            phase = 'CONTEXT';
             // 2. Get RAW context from memory AND codebase
             res.write(`data: ${JSON.stringify({ type: 'status', message: 'Assembling context...' })}\n\n`);
             const recentHistory = sqliteService.getChatHistory(cleanSessionId, 50);
@@ -379,6 +438,8 @@ ${gateAck}` : userMessage;
             const fullPrompt = `${systemPrompt}\n\n${this.buildPromptPurified(promptMessage, purifiedContext)}`;
 
             // 5. Stream LLM response using the Universal Fallback Chain
+            phase = 'GENERATION';
+            receipt.generation = 'STARTED';
             let fullResponse = '';
 
             // Determine model override based on preference
@@ -429,6 +490,7 @@ ${gateAck}` : userMessage;
             }
 
             // 5.5 TOOL INTEGRATION: Process any tool calls in the response
+            receipt.generation = 'MODEL_RESPONSE_RETURNED';
             let finalResponse = fullResponse;
             if (chatToolIntegration.hasToolCalls(fullResponse)) {
                 res.write(`data: ${JSON.stringify({ type: 'status', message: 'Executing tools...' })}\n\n`);
@@ -461,6 +523,7 @@ ${gateAck}` : userMessage;
                 timestamp: Date.now()
             };
             sqliteService.appendChatMessage(assistantMsg, cleanSessionId);
+            receipt.generation = 'RESPONSE_STORED';
 
             // 7. Store CLEAN memories with proper namespace tags
             // Namespace isolation: USER memories separate from SYSTEM logs
@@ -500,13 +563,13 @@ ${gateAck}` : userMessage;
             });
 
             // 9. Signal completion
-            res.write(`data: ${JSON.stringify({ type: 'done', message: assistantMsg })}\n\n`);
+            receipt.generation = 'RESPONSE_STORED';
+            res.write(`data: ${JSON.stringify({ type: 'done', done: true, message: assistantMsg, receipt })}\n\n`);
             res.end();
 
         } catch (e: any) {
             console.error("[CHAT] Stream error", e);
-            res.write(`data: ${JSON.stringify({ type: 'error', error: e.message })}\n\n`);
-            res.end();
+            finishChatFailure(res, e, phase, receipt, true);
         }
     }
 
@@ -547,10 +610,10 @@ ${gateAck}` : userMessage;
 
     /**
      * Assemble context from various memory sources INCLUDING Neo4j Graph
-     * This ensures we can remember user information like names.
-     * Includes read isolation via the allowedOwner firewall.
+     * Current profile fields come from the separate authoritative SQLite read.
+     * Graph relationships are a non-authoritative, explicitly identity-bound projection.
      */
-    private async assembleContext(query: string, allowedOwner?: string): Promise<string> {
+    private async assembleContext(query: string, allowedOwner?: string, profileId?: string): Promise<string> {
         try {
             if (!query || typeof query !== 'string') return '';
 
@@ -559,18 +622,19 @@ ${gateAck}` : userMessage;
             // 1. Query Neo4j for User entity relationships FIRST
             try {
                 const { graph } = await import('../../services/graphService');
+                if (!profileId) throw new Error('Explicit graph profile identity required');
                 const userNodes = await graph.runQuery(`
-                    MATCH (u:User)-[r]->(v)
-                    RETURN u.name as userName, type(r) as relationship, v.name as value
+                    MATCH (u:User {id: $profileId})-[r]->(v)
+                    RETURN u.id as profileId, type(r) as relationship, v.name as value
                     LIMIT 5
-                `);
+                `, { profileId });
 
-                if (userNodes && userNodes.length > 0) {
-                    contextParts.push('[User Profile from Graph]');
-                    userNodes.forEach((n: any) => {
-                        if (n.userName) {
-                            contextParts.push(`- User Name: ${n.userName}`);
-                        }
+                // The SQLite generic Cypher fallback may not implement this
+                // shape. Fail closed unless each row echoes the exact identity.
+                const scopedNodes = userNodes?.filter((node: any) => node.profileId === profileId) ?? [];
+                if (scopedNodes.length > 0) {
+                    contextParts.push('[Non-authoritative graph relationship projection; not the current user profile]');
+                    scopedNodes.forEach((n: any) => {
                         if (n.relationship && n.value) {
                             contextParts.push(`- ${n.relationship}: ${n.value}`);
                         }

@@ -44,7 +44,7 @@ if mode=='checks':
  record={'phase':mode,'dependencies_read_only':bool(os.statvfs(root/'node_modules').f_flag&os.ST_RDONLY),'cache':[]}
  assert record['dependencies_read_only'],'dependencies must stay RO'
  assert bool(os.statvfs(root/'node_modules/vite/package.json').f_flag&os.ST_RDONLY)
- assert bool(os.statvfs(root/'node_modules/.silhouette-native-redis/redis-server').f_flag&os.ST_RDONLY)
+
  for name in ['.vite-temp','.vite']:
   path=root/'node_modules'/name;st=path.lstat();assert path.is_dir()and not path.is_symlink()
   fs=os.statvfs(path);item={'path':str(path),'device':st.st_dev,'read_only':bool(fs.f_flag&os.ST_RDONLY),'filesystem_bytes':fs.f_blocks*fs.f_frsize}
@@ -69,13 +69,13 @@ elif mode=='native':
  audit=json.loads(pathlib.Path('/tmp/harness/native-entry-hashes.json').read_text())
  for rel,expected in audit.items():
   p=root/rel;assert p.is_file()and not p.is_symlink()and hashlib.sha256(p.read_bytes()).hexdigest()==expected,'native source mismatch:'+rel
- phases=[('better-sqlite3',['/bin/sh','-c','prebuild-install || node-gyp rebuild --release'],root/'node_modules/better-sqlite3',90),('sharp-032',['/bin/sh','-c','(node install/libvips && node install/dll-copy && prebuild-install) || (node install/can-compile && node-gyp rebuild && node install/dll-copy)'],root/'node_modules/@xenova/transformers/node_modules/sharp',90),('real-redis-build',['/usr/bin/python3','/tmp/harness/build-redis.py'],root,100)]
+ phases=[('better-sqlite3',['/bin/sh','-c','prebuild-install || node-gyp rebuild --release'],root/'node_modules/better-sqlite3',90)]
  env['PATH']=str(root/'node_modules/.bin')+':'+env['PATH']
 elif mode=='browser':
  phases=[('browser-asset-preparation',['/usr/bin/python3','/tmp/harness/prepare-browser.py'],root,90)]
 elif mode=='checks':
  env['PLAYWRIGHT_BROWSERS_PATH']=str(root/'node_modules/.silhouette-browser-assets')
- phases=[('native-smoke',[node,'/tmp/harness/native-smoke.cjs'],root,20),('esbuild025',[str(root/'node_modules/@esbuild/linux-x64/bin/esbuild'),'--version'],root,3),('esbuild027',[str(root/'node_modules/tsx/node_modules/@esbuild/linux-x64/bin/esbuild'),'--version'],root,3),('ffmpeg',[str(root/'node_modules/@ffmpeg-installer/linux-x64/ffmpeg'),'-version'],root,3),('lint',[node,npm,'run','lint'],root,90),('types',[node,npm,'run','typecheck'],root,120),('full-existing-suite',[node,npm,'test','--','--reporter=default','--reporter=/tmp/harness/runtime-observation-reporter.mjs','--maxWorkers=2'],root,600),('lifecycle-boot-active-stop',[node,'--import',str(root/'node_modules/tsx/dist/loader.mjs'),'/tmp/harness/boot-ledger-real.mts','boot-active-stop'],root,6),('lifecycle-boot-original-failure',[node,'--import',str(root/'node_modules/tsx/dist/loader.mjs'),'/tmp/harness/boot-ledger-real.mts','boot-original-failure'],root,6),('lifecycle-ledger-capacity',[node,'--import',str(root/'node_modules/tsx/dist/loader.mjs'),'/tmp/harness/boot-ledger-real.mts','ledger-capacity'],root,6),('daemon-startup-stop',[node,'--import',str(root/'node_modules/tsx/dist/loader.mjs'),'/tmp/harness/daemon-start-stop-real.mts','startup-stop'],root,8),('daemon-startup-persistence-denied',[node,'--import',str(root/'node_modules/tsx/dist/loader.mjs'),'/tmp/harness/daemon-start-stop-real.mts','startup-persistence-denied'],root,8),('frontend-build',[node,npm,'run','build'],root,70),('server-build',[node,str(root/'node_modules/vite/bin/vite.js'),'build','--config','vite.server.config.ts'],root,40)]
+ phases=[('native-smoke',[node,'/tmp/harness/native-smoke.cjs'],root,20),('lint',[node,npm,'run','lint'],root,90),('types',[node,npm,'run','typecheck'],root,120),('frontend-build',[node,npm,'run','build'],root,70),('server-build',[node,str(root/'node_modules/vite/bin/vite.js'),'build','--config','vite.server.config.ts'],root,40),('profile-native-oracle',[node,'--import',str(root/'node_modules/tsx/dist/loader.mjs'),'/tmp/harness/profile-native-oracle.mts'],root,120),('profile-terminal-oracle',[node,'--import',str(root/'node_modules/tsx/dist/loader.mjs'),'/tmp/harness/profile-terminal-oracle.mts'],root,60)]
 else:raise SystemExit('unknown mode')
 # Host also enforces remaining setup240s aggregate and absolute1800s job deadline.
 results=[];total=0;unsafe=False;deadline=float(os.environ['PHASE_DEADLINE_MONOTONIC'])

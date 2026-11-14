@@ -1,3 +1,4 @@
+import { retainKnownVoiceRoute } from '../../lifecycle/voiceRouteWork';
 /**
  * Voice Routes
  * API endpoints for voice library and cloning management
@@ -54,7 +55,7 @@ const voiceUpload = multer({
  * GET /v1/voices/library
  * List all voices in the library (curated + user cloned)
  */
-router.get('/library', async (_req: Request, res: Response) => {
+router.get('/library', retainKnownVoiceRoute('voice:get:/library', async (_req: Request, res: Response) => {
     try {
         const { voiceLibraryService } = await import('../../../services/media/voiceLibraryService');
         const voices = await voiceLibraryService.getAllVoices();
@@ -76,13 +77,13 @@ router.get('/library', async (_req: Request, res: Response) => {
         console.error('[VOICE_ROUTES] Error listing voices:', error);
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 /**
  * GET /v1/voices/library/language/:lang
  * Get voices by language
  */
-router.get('/library/language/:lang', async (req: Request, res: Response) => {
+router.get('/library/language/:lang', retainKnownVoiceRoute('voice:get:/library/language/:lang', async (req: Request, res: Response) => {
     try {
         const { voiceLibraryService } = await import('../../../services/media/voiceLibraryService');
         const voices = await voiceLibraryService.getVoicesByLanguage(req.params.lang);
@@ -90,13 +91,13 @@ router.get('/library/language/:lang', async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 /**
  * POST /v1/voices/library/download/:id
  * Download a voice from the library
  */
-router.post('/library/download/:id', async (req: Request, res: Response) => {
+router.post('/library/download/:id', retainKnownVoiceRoute('voice:post:/library/download/:id', async (req: Request, res: Response) => {
     try {
         const { voiceLibraryService } = await import('../../../services/media/voiceLibraryService');
         const result = await voiceLibraryService.downloadVoice(req.params.id);
@@ -110,13 +111,13 @@ router.post('/library/download/:id', async (req: Request, res: Response) => {
         console.error('[VOICE_ROUTES] Error downloading voice:', error);
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 /**
  * POST /v1/voices/library/download-all
  * Download all library voices
  */
-router.post('/library/download-all', async (_req: Request, res: Response) => {
+router.post('/library/download-all', retainKnownVoiceRoute('voice:post:/library/download-all', async (_req: Request, res: Response) => {
     try {
         const { voiceLibraryService } = await import('../../../services/media/voiceLibraryService');
 
@@ -132,7 +133,7 @@ router.post('/library/download-all', async (_req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // ROUTE ORDER MATTERS (Express matches in registration order): fixed paths such as /default and /calls MUST be
 // registered before the parameterized '/:id' routes, otherwise '/:id' captures them ("Voice not found").
@@ -141,7 +142,7 @@ router.post('/library/download-all', async (_req: Request, res: Response) => {
  * GET /v1/voices/default
  * Get the current default voice
  */
-router.get('/default', async (_req: Request, res: Response) => {
+router.get('/default', retainKnownVoiceRoute('voice:get:/default', async (_req: Request, res: Response) => {
     try {
         const { voiceLibraryService } = await import('../../../services/media/voiceLibraryService');
         const voice = await voiceLibraryService.getDefaultVoice();
@@ -154,13 +155,13 @@ router.get('/default', async (_req: Request, res: Response) => {
     } catch (e: any) {
         return res.status(500).json({ error: e.message });
     }
-});
+}));
 
 /**
  * GET /v1/voices/calls
  * List recent phone calls
  */
-router.get('/calls', async (_req: Request, res: Response) => {
+router.get('/calls', retainKnownVoiceRoute('voice:get:/calls', async (_req: Request, res: Response) => {
     try {
         const { telephonyService } = await import('../../../services/telephony/telephonyService');
         const calls = telephonyService.listCalls(30);
@@ -168,7 +169,7 @@ router.get('/calls', async (_req: Request, res: Response) => {
     } catch (e: any) {
         return res.status(500).json({ error: e.message });
     }
-});
+}));
 
 // ==================== INDIVIDUAL VOICE ====================
 
@@ -176,7 +177,7 @@ router.get('/calls', async (_req: Request, res: Response) => {
  * GET /v1/voices/:id
  * Get details of a specific voice
  */
-router.get('/:id', async (req: Request, res: Response) => {
+router.get('/:id', retainKnownVoiceRoute('voice:get:/:id', async (req: Request, res: Response) => {
     try {
         const { voiceLibraryService } = await import('../../../services/media/voiceLibraryService');
         const voice = await voiceLibraryService.getVoice(req.params.id);
@@ -189,13 +190,13 @@ router.get('/:id', async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 /**
  * DELETE /v1/voices/:id
  * Delete a user voice (only cloned/custom voices)
  */
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', retainKnownVoiceRoute('voice:delete:/:id', async (req: Request, res: Response) => {
     try {
         const { voiceLibraryService } = await import('../../../services/media/voiceLibraryService');
         const result = await voiceLibraryService.deleteVoice(req.params.id);
@@ -208,13 +209,13 @@ router.delete('/:id', async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 /**
  * POST /v1/voices/:id/set-default
  * Set a voice as the default
  */
-router.post('/:id/set-default', async (req: Request, res: Response) => {
+router.post('/:id/set-default', retainKnownVoiceRoute('voice:post:/:id/set-default', async (req: Request, res: Response) => {
     try {
         const { voiceLibraryService } = await import('../../../services/media/voiceLibraryService');
         await voiceLibraryService.setDefaultVoice(req.params.id);
@@ -222,13 +223,13 @@ router.post('/:id/set-default', async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 /**
  * GET /v1/voices/:id/sample
  * Get the audio sample for a voice (stream)
  */
-router.get('/:id/sample', async (req: Request, res: Response) => {
+router.get('/:id/sample', retainKnownVoiceRoute('voice:get:/:id/sample', async (req: Request, res: Response) => {
     try {
         const { voiceLibraryService } = await import('../../../services/media/voiceLibraryService');
         const samplePath = await voiceLibraryService.getVoiceSamplePath(req.params.id);
@@ -245,7 +246,7 @@ router.get('/:id/sample', async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // ==================== VOICE CLONING ====================
 
@@ -253,7 +254,7 @@ router.get('/:id/sample', async (req: Request, res: Response) => {
  * POST /v1/voices/clone
  * Clone a voice from uploaded audio
  */
-router.post('/clone', voiceUpload.single('audio'), async (req: MulterRequest, res: Response) => {
+router.post('/clone', voiceUpload.single('audio'), retainKnownVoiceRoute('voice:post:/clone', async (req: MulterRequest, res: Response) => {
     try {
         const { voiceLibraryService } = await import('../../../services/media/voiceLibraryService');
         const { processVoiceFile } = await import('../../../utils/audioConverter');
@@ -371,13 +372,13 @@ router.post('/clone', voiceUpload.single('audio'), async (req: MulterRequest, re
 
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 /**
  * GET /v1/voices/clone/providers
  * Which cloning providers are actually ready right now (no guessing).
  */
-router.get('/clone/providers', async (_req: Request, res: Response) => {
+router.get('/clone/providers', retainKnownVoiceRoute('voice:get:/clone/providers', async (_req: Request, res: Response) => {
     try {
         const { elevenLabsService } = await import('../../../services/media/elevenLabsService');
         const { ttsService } = await import('../../../services/ttsService');
@@ -396,13 +397,13 @@ router.get('/clone/providers', async (_req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 /**
  * POST /v1/voices/clone/analyze
  * Analyze audio quality before cloning
  */
-router.post('/clone/analyze', voiceUpload.single('audio'), async (req: MulterRequest, res: Response) => {
+router.post('/clone/analyze', voiceUpload.single('audio'), retainKnownVoiceRoute('voice:post:/clone/analyze', async (req: MulterRequest, res: Response) => {
     try {
         if (!req.file) {
             return res.status(400).json({ error: 'No audio file provided' });
@@ -442,7 +443,7 @@ router.post('/clone/analyze', voiceUpload.single('audio'), async (req: MulterReq
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // ==================== TELEPHONY & PHONE CALL WEBHOOKS ====================
 
@@ -469,7 +470,7 @@ function requireTwilioSignature(req: Request, res: Response, next: () => void) {
 }
 
 /** POST /v1/voices/twiml - call answered, returns TwiML. */
-router.post('/twiml', twilioForm, requireTwilioSignature, async (_req: Request, res: Response) => {
+router.post('/twiml', twilioForm, requireTwilioSignature, retainKnownVoiceRoute('voice:post:/twiml', async (_req: Request, res: Response) => {
     try {
         const { telephonyService } = await import('../../../services/telephony/telephonyService');
         const greeting = "Hello, this is Silhouette Agency OS. How can I assist you today?";
@@ -478,10 +479,10 @@ router.post('/twiml', twilioForm, requireTwilioSignature, async (_req: Request, 
     } catch (e: any) {
         return res.status(500).type('text/xml').send('<Response><Say>An internal error occurred.</Say></Response>');
     }
-});
+}));
 
 /** POST /v1/voices/twiml-gather - caller speech result, returns next TwiML turn. */
-router.post('/twiml-gather', twilioForm, requireTwilioSignature, async (req: Request, res: Response) => {
+router.post('/twiml-gather', twilioForm, requireTwilioSignature, retainKnownVoiceRoute('voice:post:/twiml-gather', async (req: Request, res: Response) => {
     res.type('text/xml');
     try {
         const { telephonyService } = await import('../../../services/telephony/telephonyService');
@@ -498,20 +499,20 @@ router.post('/twiml-gather', twilioForm, requireTwilioSignature, async (req: Req
     } catch {
         return res.send('<?xml version="1.0" encoding="UTF-8"?><Response><Say>An internal error occurred.</Say></Response>');
     }
-});
+}));
 
 /** POST /v1/voices/status - provider status callback; the only way a real call advances. */
-router.post('/status', twilioForm, requireTwilioSignature, async (req: Request, res: Response) => {
+router.post('/status', twilioForm, requireTwilioSignature, retainKnownVoiceRoute('voice:post:/status', async (req: Request, res: Response) => {
     const { telephonyService } = await import('../../../services/telephony/telephonyService');
     const updated = telephonyService.applyProviderStatus(String(req.body?.CallSid || ''), String(req.body?.CallStatus || ''));
     return res.status(200).json({ ok: true, changed: !!updated });
-});
+}));
 
 /**
  * POST /v1/voices/dial
  * Trigger outbound phone call
  */
-router.post('/dial', async (req: Request, res: Response) => {
+router.post('/dial', retainKnownVoiceRoute('voice:post:/dial', async (req: Request, res: Response) => {
     try {
         const { toNumber, purpose, initialGreeting } = req.body;
         if (!toNumber || !purpose) {
@@ -525,6 +526,6 @@ router.post('/dial', async (req: Request, res: Response) => {
     } catch (e: any) {
         return res.status(500).json({ error: e.message });
     }
-});
+}));
 
 export default router;

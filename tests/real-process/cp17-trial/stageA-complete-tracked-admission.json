@@ -1,0 +1,160 @@
+{
+  "productTree": "d0e80234ff0c173e6e74a2fbfbc612544579cc0c",
+  "trackedCount": 1587,
+  "admittedCount": 1549,
+  "excluded": [
+    {
+      "path": ".env.example",
+      "reason": "EXCLUDED_RUNTIME_DATA_DB_DATASET_OR_SECRET_CONFIGURATION"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "reason": "EXCLUDED_WORKFLOW_OR_DIFFERENT_HISTORICAL_TRIAL_INFRA_NOT_PRODUCT_BUILD"
+    },
+    {
+      "path": ".github/workflows/initial-owner-static-branch.yml",
+      "reason": "EXCLUDED_WORKFLOW_OR_DIFFERENT_HISTORICAL_TRIAL_INFRA_NOT_PRODUCT_BUILD"
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "reason": "EXCLUDED_WORKFLOW_OR_DIFFERENT_HISTORICAL_TRIAL_INFRA_NOT_PRODUCT_BUILD"
+    },
+    {
+      "path": "data/agents/definitions/asset_curator.json",
+      "reason": "EXCLUDED_RUNTIME_DATA_DB_DATASET_OR_SECRET_CONFIGURATION"
+    },
+    {
+      "path": "data/agents/definitions/orchestrator.json",
+      "reason": "EXCLUDED_RUNTIME_DATA_DB_DATASET_OR_SECRET_CONFIGURATION"
+    },
+    {
+      "path": "data/agents/definitions/paper_writer.json",
+      "reason": "EXCLUDED_RUNTIME_DATA_DB_DATASET_OR_SECRET_CONFIGURATION"
+    },
+    {
+      "path": "data/agents/definitions/research_synthesizer.json",
+      "reason": "EXCLUDED_RUNTIME_DATA_DB_DATASET_OR_SECRET_CONFIGURATION"
+    },
+    {
+      "path": "data/agents/definitions/researcher_pro.json",
+      "reason": "EXCLUDED_RUNTIME_DATA_DB_DATASET_OR_SECRET_CONFIGURATION"
+    },
+    {
+      "path": "data/assets/library/props/82e2e7fa-9952-4dca-9a4e-762f7e967507.json",
+      "reason": "EXCLUDED_RUNTIME_DATA_DB_DATASET_OR_SECRET_CONFIGURATION"
+    },
+    {
+      "path": "data/assets/library/props/b332d904-aa70-4dc6-b7fb-769895c42ad5.json",
+      "reason": "EXCLUDED_RUNTIME_DATA_DB_DATASET_OR_SECRET_CONFIGURATION"
+    },
+    {
+      "path": "data/assets/library/props/df8a15b2-c051-41b2-b3cd-7b851899169f.json",
+      "reason": "EXCLUDED_RUNTIME_DATA_DB_DATASET_OR_SECRET_CONFIGURATION"
+    },
+    {
+      "path": "data/queues/video_render_queue.json",
+      "reason": "EXCLUDED_RUNTIME_DATA_DB_DATASET_OR_SECRET_CONFIGURATION"
+    },
+    {
+      "path": "data/tools.db",
+      "reason": "EXCLUDED_RUNTIME_DATA_DB_DATASET_OR_SECRET_CONFIGURATION"
+    },
+    {
+      "path": "data/training/dataset.jsonl",
+      "reason": "EXCLUDED_RUNTIME_DATA_DB_DATASET_OR_SECRET_CONFIGURATION"
+    },
+    {
+      "path": "data/webhooks.json",
+      "reason": "EXCLUDED_RUNTIME_DATA_DB_DATASET_OR_SECRET_CONFIGURATION"
+    },
+    {
+      "path": "silhouette/data/curriculum.jsonl",
+      "reason": "EXCLUDED_RUNTIME_DATA_DB_DATASET_OR_SECRET_CONFIGURATION"
+    },
+    {
+      "path": "silhouette/data/dummy_train.txt",
+      "reason": "EXCLUDED_RUNTIME_DATA_DB_DATASET_OR_SECRET_CONFIGURATION"
+    },
+    {
+      "path": "silhouette/silhouette_discovery.db",
+      "reason": "EXCLUDED_RUNTIME_DATA_DB_DATASET_OR_SECRET_CONFIGURATION"
+    },
+    {
+      "path": "soak-evidence.jsonl",
+      "reason": "EXCLUDED_RUNTIME_DATA_DB_DATASET_OR_SECRET_CONFIGURATION"
+    },
+    {
+      "path": "tests/real-process/cp17-trial/dependency-volume.py",
+      "reason": "EXCLUDED_WORKFLOW_OR_DIFFERENT_HISTORICAL_TRIAL_INFRA_NOT_PRODUCT_BUILD"
+    },
+    {
+      "path": "tests/real-process/cp17-trial/infrastructure.sha256",
+      "reason": "EXCLUDED_WORKFLOW_OR_DIFFERENT_HISTORICAL_TRIAL_INFRA_NOT_PRODUCT_BUILD"
+    },
+    {
+      "path": "tests/real-process/cp17-trial/integral-inputs.json",
+      "reason": "EXCLUDED_WORKFLOW_OR_DIFFERENT_HISTORICAL_TRIAL_INFRA_NOT_PRODUCT_BUILD"
+    },
+    {
+      "path": "tests/real-process/cp17-trial/native-entry-hashes.json",
+      "reason": "EXCLUDED_WORKFLOW_OR_DIFFERENT_HISTORICAL_TRIAL_INFRA_NOT_PRODUCT_BUILD"
+    },
+    {
+      "path": "tests/real-process/cp17-trial/native-provenance.py",
+      "reason": "EXCLUDED_WORKFLOW_OR_DIFFERENT_HISTORICAL_TRIAL_INFRA_NOT_PRODUCT_BUILD"
+    },
+    {
+      "path": "tests/real-process/cp17-trial/native-smoke.cjs",
+      "reason": "EXCLUDED_WORKFLOW_OR_DIFFERENT_HISTORICAL_TRIAL_INFRA_NOT_PRODUCT_BUILD"
+    },
+    {
+      "path": "tests/real-process/cp17-trial/oracle-host.py",
+      "reason": "EXCLUDED_WORKFLOW_OR_DIFFERENT_HISTORICAL_TRIAL_INFRA_NOT_PRODUCT_BUILD"
+    },
+    {
+      "path": "tests/real-process/cp17-trial/phase-child.py",
+      "reason": "EXCLUDED_WORKFLOW_OR_DIFFERENT_HISTORICAL_TRIAL_INFRA_NOT_PRODUCT_BUILD"
+    },
+    {
+      "path": "tests/real-process/cp17-trial/phase-host.py",
+      "reason": "EXCLUDED_WORKFLOW_OR_DIFFERENT_HISTORICAL_TRIAL_INFRA_NOT_PRODUCT_BUILD"
+    },
+    {
+      "path": "tests/real-process/cp17-trial/phase-namespace.py",
+      "reason": "EXCLUDED_WORKFLOW_OR_DIFFERENT_HISTORICAL_TRIAL_INFRA_NOT_PRODUCT_BUILD"
+    },
+    {
+      "path": "tests/real-process/cp17-trial/prepare-integral.py",
+      "reason": "EXCLUDED_WORKFLOW_OR_DIFFERENT_HISTORICAL_TRIAL_INFRA_NOT_PRODUCT_BUILD"
+    },
+    {
+      "path": "tests/real-process/cp17-trial/run-reviewed-trial.sh",
+      "reason": "EXCLUDED_WORKFLOW_OR_DIFFERENT_HISTORICAL_TRIAL_INFRA_NOT_PRODUCT_BUILD"
+    },
+    {
+      "path": "tests/real-process/fullsuite/host-control.py",
+      "reason": "EXCLUDED_WORKFLOW_OR_DIFFERENT_HISTORICAL_TRIAL_INFRA_NOT_PRODUCT_BUILD"
+    },
+    {
+      "path": "tests/real-process/fullsuite/launch.sh",
+      "reason": "EXCLUDED_WORKFLOW_OR_DIFFERENT_HISTORICAL_TRIAL_INFRA_NOT_PRODUCT_BUILD"
+    },
+    {
+      "path": "tests/real-process/fullsuite/prepare-work.py",
+      "reason": "EXCLUDED_WORKFLOW_OR_DIFFERENT_HISTORICAL_TRIAL_INFRA_NOT_PRODUCT_BUILD"
+    },
+    {
+      "path": "tests/real-process/fullsuite/reviewed-inputs.sha256",
+      "reason": "EXCLUDED_WORKFLOW_OR_DIFFERENT_HISTORICAL_TRIAL_INFRA_NOT_PRODUCT_BUILD"
+    },
+    {
+      "path": "tests/real-process/fullsuite/run-session.py",
+      "reason": "EXCLUDED_WORKFLOW_OR_DIFFERENT_HISTORICAL_TRIAL_INFRA_NOT_PRODUCT_BUILD"
+    },
+    {
+      "path": "tests/real-process/fullsuite/verify-tree.py",
+      "reason": "EXCLUDED_WORKFLOW_OR_DIFFERENT_HISTORICAL_TRIAL_INFRA_NOT_PRODUCT_BUILD"
+    }
+  ],
+  "note": "Every tracked path classified, not an unfiltered archive containing private datasets/DB. No excluded contents read. Not historical full suite."
+}

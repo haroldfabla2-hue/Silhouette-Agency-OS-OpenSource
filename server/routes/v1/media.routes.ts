@@ -1,3 +1,4 @@
+import { retainKnownVoiceRoute } from '../../lifecycle/voiceRouteWork';
 import { Router, Request, Response } from 'express';
 import { mediaController } from '../../controllers/mediaController';
 
@@ -139,7 +140,7 @@ router.post('/generate/voice', async (req: Request, res: Response) => {
 
 // ==================== LOCAL TTS (Coqui GPU) ====================
 // POST /v1/media/tts/speak - Generate speech using local engine
-router.post('/tts/speak', async (req: Request, res: Response) => {
+router.post('/tts/speak', retainKnownVoiceRoute('media:post:/tts/speak', async (req: Request, res: Response) => {
     try {
         const { ttsService } = await import('../../../services/ttsService');
         const { text } = req.body;
@@ -154,20 +155,20 @@ router.post('/tts/speak', async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // GET /v1/media/tts/config
-router.get('/tts/config', async (_req: Request, res: Response) => {
+router.get('/tts/config', retainKnownVoiceRoute('media:get:/tts/config', async (_req: Request, res: Response) => {
     try {
         const { ttsService } = await import('../../../services/ttsService');
         return res.json(ttsService.getConfig());
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // POST /v1/media/tts/config
-router.post('/tts/config', async (req: Request, res: Response) => {
+router.post('/tts/config', retainKnownVoiceRoute('media:post:/tts/config', async (req: Request, res: Response) => {
     try {
         const { ttsService } = await import('../../../services/ttsService');
         ttsService.updateConfig(req.body);
@@ -175,10 +176,10 @@ router.post('/tts/config', async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // POST /v1/media/tts/sleep
-router.post('/tts/sleep', async (_req: Request, res: Response) => {
+router.post('/tts/sleep', retainKnownVoiceRoute('media:post:/tts/sleep', async (_req: Request, res: Response) => {
     try {
         const { ttsService } = await import('../../../services/ttsService');
         await ttsService.sleep();
@@ -186,10 +187,10 @@ router.post('/tts/sleep', async (_req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // POST /v1/media/tts/wake
-router.post('/tts/wake', async (_req: Request, res: Response) => {
+router.post('/tts/wake', retainKnownVoiceRoute('media:post:/tts/wake', async (_req: Request, res: Response) => {
     try {
         const { ttsService } = await import('../../../services/ttsService');
         await ttsService.wake();
@@ -197,10 +198,10 @@ router.post('/tts/wake', async (_req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // GET /v1/media/tts/voices - List all voices (default + cloned)
-router.get('/tts/voices', async (_req: Request, res: Response) => {
+router.get('/tts/voices', retainKnownVoiceRoute('media:get:/tts/voices', async (_req: Request, res: Response) => {
     try {
         const { ttsService } = await import('../../../services/ttsService');
         const voices = await ttsService.getVoices();
@@ -208,40 +209,38 @@ router.get('/tts/voices', async (_req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // POST /v1/media/tts/voices/clone - Clone voice from upload
-router.post('/tts/voices/clone', async (req: Request, res: Response) => {
+router.post('/tts/voices/clone', retainKnownVoiceRoute('media:post:/tts/voices/clone', async (req: Request, res: Response) => {
+    let status = 200;
+    let payload: unknown;
     try {
         const { ttsService } = await import('../../../services/ttsService');
-        const multer = (await import('multer')).default;
-        const upload = multer({ dest: 'uploads/temp/' }).single('file');
-
-        upload(req, res, async (err: any) => {
-            if (err) return res.status(500).json({ error: err.message });
-            if (!(req as any).file) return res.status(400).json({ error: 'No file uploaded' });
-
-            try {
-                const result = await ttsService.cloneVoice((req as any).file, req.body.name);
-                return res.json(result);
-            } catch (e: any) {
-                return res.status(500).json({ error: e.message });
-            }
-        });
+        const { receiveOwnedVoiceUpload } = await import('../../lifecycle/ownedVoiceUpload');
+        const file = await receiveOwnedVoiceUpload(req);
+        if (!file) { status = 400; payload = { error: 'No file uploaded' }; }
+        else payload = await ttsService.cloneVoice(file, req.body.name);
     } catch (error: any) {
-        return res.status(500).json({ error: error.message });
+        const { serverOwner } = await import('../../../services/lifecycle/preparationBindings');
+        serverOwner().taskFailed('known-voice-upload-or-clone-original-error', error);
+        status = 500; payload = { error: error.message };
     }
-});
+    // Business failure and transport write are separate. A thrown json() is
+    // forwarded by the outer owned Express wrapper, never another 500 attempt.
+    // A disconnected client never cancels an already admitted clone operation.
+    if (!res.destroyed && !res.writableEnded && !res.headersSent) return res.status(status).json(payload);
+}));
 
 // GET /v1/media/tts/health - Get engine status
-router.get('/tts/health', async (_req: Request, res: Response) => {
+router.get('/tts/health', retainKnownVoiceRoute('media:get:/tts/health', async (_req: Request, res: Response) => {
     try {
         const { ttsService } = await import('../../../services/ttsService');
         return res.json(ttsService.getHealth());
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // POST /v1/media/lipsync - Apply lip sync to video
 router.post('/lipsync', async (req: Request, res: Response) => {

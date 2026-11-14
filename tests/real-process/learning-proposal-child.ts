@@ -1,5 +1,8 @@
-import '../../server/config/runtimeCredentials';
+import { bootstrapStandaloneFixture } from './standalone-fixture-bootstrap';
 import fs from 'node:fs';import assert from 'node:assert/strict';
+// Original abrupt probe semantics remain. Bootstrap is not closure evidence.
+bootstrapStandaloneFixture();
+await import('../../server/config/runtimeCredentials');
 const {env}=await import('@xenova/transformers');env.allowRemoteModels=false;
 env.allowLocalModels=false;
 const {learningLoop}=await import('../../services/learningLoop');

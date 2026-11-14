@@ -5,11 +5,6 @@
     "bytes": 78
   },
   {
-    "path": ".env.example",
-    "sha256": "ab75e75bd8de28f3ffda48c4f16f67aaa301eda950f821a18242963b5373e7f6",
-    "bytes": 11149
-  },
-  {
     "path": ".eslintrc.json",
     "sha256": "78b3892941751ea3825dea818eb7e3d1490651ad02590bc4d17c2bee55b1bf4b",
     "bytes": 2926
@@ -20,19 +15,29 @@
     "bytes": 41
   },
   {
-    "path": ".github/workflows/ci.yml",
-    "sha256": "01de51ff0acd30ef7c8ecfd40686c4dedb7e9f965f98dd045b9ab79be881621d",
-    "bytes": 4875
-  },
-  {
-    "path": ".github/workflows/release.yml",
-    "sha256": "e06144fa6c2dd86ebbb805070683679f6effa4746746bda64b3abc173958855f",
-    "bytes": 4070
-  },
-  {
     "path": ".gitignore",
     "sha256": "145b91718902c833a4203c4c5c73d1e457b8ef43e6394bc8c6d3db5df0f2eb7e",
     "bytes": 1587
+  },
+  {
+    "path": ".silhouette/skills/create_agent/SKILL.md",
+    "sha256": "a78075fd304aee1290adebf2806f8dd4a9ca9c2f6f1397b4e710483f566089fe",
+    "bytes": 2719
+  },
+  {
+    "path": ".silhouette/skills/create_plugin/SKILL.md",
+    "sha256": "6d44ddb754ffc138cbbecc27f2782adaf6730152eef1f112a31ba69a6d41a3d9",
+    "bytes": 2798
+  },
+  {
+    "path": ".silhouette/skills/create_tool/SKILL.md",
+    "sha256": "6cae813df057276ddb17b6a64a16f70b73ee563f9c20e0b53a002029d36e4998",
+    "bytes": 3196
+  },
+  {
+    "path": ".silhouette/skills/reverse_engineering/SKILL.md",
+    "sha256": "f92a8f2d2caeb65ac593154020ef9be2b0f5edbb72f5cc11fd99da5ba83c5acb",
+    "bytes": 2608
   },
   {
     "path": "ARCHITECTURE.md",
@@ -246,8 +251,8 @@
   },
   {
     "path": "components/ChatWidget.tsx",
-    "sha256": "949fce98243b728ea2b5da26f4aa574412f937051c9dcf94e37d022f46caa4f6",
-    "bytes": 44292
+    "sha256": "3297858d5c7c5fd9cdc327180d8894513baea3298f8e6a9987cd2f24923183d9",
+    "bytes": 46627
   },
   {
     "path": "components/CommandPalette.tsx",
@@ -2226,8 +2231,8 @@
   },
   {
     "path": "server/controllers/chatController.ts",
-    "sha256": "a71fe6a86ba1d2eef1fa189eea05942976e538779af513aef456647a59ac7cc4",
-    "bytes": 41349
+    "sha256": "ddb1c4fc69dc3c820d3134a140ade74ab36e225c38d272f60e05b9c7f36976f9",
+    "bytes": 45314
   },
   {
     "path": "server/controllers/factoryController.ts",
@@ -2308,6 +2313,16 @@
     "path": "server/lifecycle/bootTimers.ts",
     "sha256": "4b3fa9d59329b057e517576680118c9e3a462f446f881db344d5b02f76ea3fa9",
     "bytes": 7345
+  },
+  {
+    "path": "server/lifecycle/ownedVoiceUpload.ts",
+    "sha256": "f1d0bf666941060691d38e7f55ba4455eef1ade62020653d47bc9b1b53b05659",
+    "bytes": 7526
+  },
+  {
+    "path": "server/lifecycle/voiceRouteWork.ts",
+    "sha256": "eef57c855fd1d13c8a5bd7fbd53e945122c38d5815bdda6f9f2629352bc1d471",
+    "bytes": 3291
   },
   {
     "path": "server/loaders/aiLoader.ts",
@@ -2471,8 +2486,8 @@
   },
   {
     "path": "server/routes/v1/media.routes.ts",
-    "sha256": "c66657ca9264a60638999814361773310ed4e608317c8603148573f1f62b18e0",
-    "bytes": 23477
+    "sha256": "2b579dcdc52bc78dd3fba59d7c55a33b9c85fa6f78c471d5f8dd7e3e178e238d",
+    "bytes": 24187
   },
   {
     "path": "server/routes/v1/memory.routes.ts",
@@ -2531,8 +2546,8 @@
   },
   {
     "path": "server/routes/v1/voice.routes.ts",
-    "sha256": "d5d6c656be07356acf9a720649a092ee924ca5923cebd658c9f33f2012036a32",
-    "bytes": 21151
+    "sha256": "b72e4d719e875086c350d46b74313b4fbd80c2ca8e879ae87e20b50a4251f3c3",
+    "bytes": 22053
   },
   {
     "path": "server/routes/v1/workflow.routes.ts",
@@ -3271,8 +3286,8 @@
   },
   {
     "path": "services/lifecycle/preparationBindings.ts",
-    "sha256": "d068fadfccb93e481e7fe7044e1b0fb6afe0f497ecda3117ac262576e0ba13c0",
-    "bytes": 4424
+    "sha256": "39f054f9b937cb8686b64e76c748241c821e6f7495b87c85eb5370b3bac664ee",
+    "bytes": 4813
   },
   {
     "path": "services/lifecycle/preserveOriginal.ts",
@@ -3286,8 +3301,13 @@
   },
   {
     "path": "services/lifecycle/runtimeStopBindings.ts",
-    "sha256": "250cb3ab367b9d189cf1039f15fd70d318df699728cba575fe86067a2bfdc815",
-    "bytes": 9195
+    "sha256": "b5ad442a91b49fabd035225c17e1fced49ea730c8fbe8f093e67d3ea5df47d55",
+    "bytes": 12984
+  },
+  {
+    "path": "services/lifecycle/telephonyToolWork.ts",
+    "sha256": "1e9ff2ea71bd7feb8dfa830188c9bb9c10538f8d03dd2f42119f5908e3b22c0b",
+    "bytes": 1614
   },
   {
     "path": "services/llm/admissionQueue.ts",
@@ -3426,8 +3446,8 @@
   },
   {
     "path": "services/media/voiceLibraryService.ts",
-    "sha256": "6e36a2539304b320b3ed4267df56fe7a4efea57b1850881b79b62ad872c50d7d",
-    "bytes": 15661
+    "sha256": "a25d30d4a303d369a30ea7d7c127d7c8407184afc4e818460f12a88ee493a28d",
+    "bytes": 24349
   },
   {
     "path": "services/media/voiceMonitorService.ts",
@@ -3463,6 +3483,11 @@
     "path": "services/memory/factRepository.ts",
     "sha256": "f758f0d8eb19b1ecf6e9904fa42d0da56fcb8186cc0c760664ef00df66182606",
     "bytes": 13174
+  },
+  {
+    "path": "services/memory/profileAuthority.ts",
+    "sha256": "8fa1c80e37cb5cbefc3f466b1603f834ec69c69fdc0bacb6a209a42498396361",
+    "bytes": 9149
   },
   {
     "path": "services/memory/provenance.ts",
@@ -3801,8 +3826,8 @@
   },
   {
     "path": "services/redisClient.ts",
-    "sha256": "a469c97e6291a1549d16f6a1b25d1b73d8cf78764949895eac581a801de779f7",
-    "bytes": 14982
+    "sha256": "8b702874cea0fb5fea76ca3a0a5b856493f26a8127e5ba5cc2f2ba12336d690e",
+    "bytes": 16598
   },
   {
     "path": "services/referenceCollector.ts",
@@ -3851,8 +3876,8 @@
   },
   {
     "path": "services/resourceManager.ts",
-    "sha256": "bacddcf97902648b562e4d5fa573c06a50ad1dd4a2ef4d698e348c2c6c4d740a",
-    "bytes": 5850
+    "sha256": "5c8dd79d5705d2d7ced820d3004897a77b0ae26fc3a2f5cf8717084891370dd9",
+    "bytes": 8844
   },
   {
     "path": "services/scheduler/cronScheduler.ts",
@@ -4161,8 +4186,8 @@
   },
   {
     "path": "services/telephony/telephonyService.ts",
-    "sha256": "79f4c0a962c8ac22f0cc88b2be4278185d4fc5d0983fc3c6cf011d716e50fa8a",
-    "bytes": 31726
+    "sha256": "2426f87b496bdd88e90e525098d810c2209f905c6668aff17a4d628792f95843",
+    "bytes": 37429
   },
   {
     "path": "services/telephony/twilioSignature.ts",
@@ -4231,8 +4256,8 @@
   },
   {
     "path": "services/tools/toolHandler.ts",
-    "sha256": "6fa7d6ff0c9efdc80c5231246934a1c8ceb7237e538e0f0db4c09c379882e12f",
-    "bytes": 102466
+    "sha256": "c9287db432e6fc851285b6c39aed076a238a5717f0ce8861babf7e0c3caf19b3",
+    "bytes": 103669
   },
   {
     "path": "services/tools/toolPersistence.ts",
@@ -4266,8 +4291,8 @@
   },
   {
     "path": "services/ttsService.ts",
-    "sha256": "cad38c8458a6b4c04a7df4038e1655388c436f1c987ceb57b06f2086794586dd",
-    "bytes": 14218
+    "sha256": "eb2e1b263b7e9c74cae758250cf51e62718466b3036da81aede43f5385452311",
+    "bytes": 19982
   },
   {
     "path": "services/uiContext.ts",
@@ -4281,8 +4306,8 @@
   },
   {
     "path": "services/userProfileService.ts",
-    "sha256": "392574481051a131a6bf50318050cf7a95162bab7bda7675ac706c80e91e7a0d",
-    "bytes": 14213
+    "sha256": "eee98088dfc7067e19971180197942b2505c3ac3c6a4640a50e9422242d13d03",
+    "bytes": 14642
   },
   {
     "path": "services/utils/atomicWrite.ts",
@@ -5311,8 +5336,8 @@
   },
   {
     "path": "tests/automated/autonomy-entry-points.test.ts",
-    "sha256": "c567f01ae1faf68485c4d3ff190fbb20a3418b4f6343a22b5f61a8c15e92307f",
-    "bytes": 13000
+    "sha256": "5c22a1be8d0d18dab11f5d0fe5020e11fd15795b4528638b16427aaaf5573f2b",
+    "bytes": 12151
   },
   {
     "path": "tests/automated/autonomy-policy.test.ts",
@@ -5381,8 +5406,8 @@
   },
   {
     "path": "tests/automated/channel-ingress-envelope.test.ts",
-    "sha256": "07864b9464e22035eaf0d8e37516f54039c6d128e2d5eddc3ee7fc411ef21a8c",
-    "bytes": 21226
+    "sha256": "dcf93024dbbacc49f0cc4569828640c9521e864be035804627bf9614c37ce668",
+    "bytes": 21002
   },
   {
     "path": "tests/automated/channels.test.ts",
@@ -5431,13 +5456,13 @@
   },
   {
     "path": "tests/automated/consent-ledger.test.ts",
-    "sha256": "01ad626fc2d311026c63b3e1ea5b5f7e1581a97c773f74c82c4d2c9e57e88828",
-    "bytes": 49681
+    "sha256": "355cfe2228549f1816cf2f2277c191b1cde6370ddc2ea1c181dd124f7c600e74",
+    "bytes": 49607
   },
   {
     "path": "tests/automated/continuous-wal-real.test.ts",
-    "sha256": "394b97cd6cdc8c03f25c9c2a244c43822834bb0b3984a2ee7b84fae16d613e6b",
-    "bytes": 1689
+    "sha256": "fbae3ab88a64d0ba37f6e29c809748e50dc194b85eb9bd30fd2210b2b34d67a4",
+    "bytes": 1828
   },
   {
     "path": "tests/automated/cors-same-origin-real-http.test.ts",
@@ -5986,8 +6011,8 @@
   },
   {
     "path": "tests/automated/product-audit-boundary-real.test.ts",
-    "sha256": "eea1ac1cddcdf7304524c65c84bde0544e83cefc0d206dfbae6e8e1bf970950a",
-    "bytes": 1449
+    "sha256": "a8d855fd36e9011549a2dff2fcf4312615c73700f3427d0d49e4c766f708b488",
+    "bytes": 1588
   },
   {
     "path": "tests/automated/product-curiosity-drain-real.test.ts",
@@ -5996,13 +6021,13 @@
   },
   {
     "path": "tests/automated/product-learning-proposal-real.test.ts",
-    "sha256": "fcaad492daff8e9da2ecc709038080e48e087ec7893801db075d95e5fab7264c",
-    "bytes": 1677
+    "sha256": "1034942d16db9a16936866bf9ef6ffb0f6647f64feda4abce2c6b276a8b98b6c",
+    "bytes": 1816
   },
   {
     "path": "tests/automated/product-web-handler-receipt-real.test.ts",
-    "sha256": "98296007e2aa860a06f437be1fdf8f196ee9fdfb866a673b89063634b7267972",
-    "bytes": 2395
+    "sha256": "09310e69c8e2ac379e25ed8aae22fc13f86d3da9fb3739c7d8e75d1080050739",
+    "bytes": 2534
   },
   {
     "path": "tests/automated/proposal-owner.test.ts",
@@ -6151,8 +6176,8 @@
   },
   {
     "path": "tests/automated/telephony-call-voice.test.ts",
-    "sha256": "f146eb96f1dd4501a8cb05d47887224444a801274a4cdede538dfdafb97f9990",
-    "bytes": 6812
+    "sha256": "5eccb45926e23ced1f7eb7ea7ab7fb70e0d02d30ff8a77f9cba22110bcaab933",
+    "bytes": 6234
   },
   {
     "path": "tests/automated/telephony-service.test.ts",
@@ -6161,8 +6186,8 @@
   },
   {
     "path": "tests/automated/telephony-truthfulness.test.ts",
-    "sha256": "73498bae0fff1e464acd436b89ec5b4a6d6e11dc7404af842f2b6ab981d273e0",
-    "bytes": 7224
+    "sha256": "a7e0936c5ca8c874bdfc435e1e40d2ac6d4fe6b6a1a18260f1a9cb064b265752",
+    "bytes": 6646
   },
   {
     "path": "tests/automated/temporal-context.test.ts",
@@ -6436,13 +6461,13 @@
   },
   {
     "path": "tests/real-process/chat-audit-boundary-child.ts",
-    "sha256": "a9426106794a8cc2c0868b889a85f690c72cddba2d4d17d1ee762e944ff5d0b6",
-    "bytes": 3056
+    "sha256": "7d50707abf3cce57630bea8634a54df67f3d4535004c39f979b81a94a7df4719",
+    "bytes": 3248
   },
   {
     "path": "tests/real-process/continuous-wal-child.ts",
-    "sha256": "3ebfbdf012e71bfdd9a20e0c1db6c6f7a49012323759a1cbec0f0ab9cf3db27f",
-    "bytes": 6397
+    "sha256": "b8188df634d5787008889003129b87c1bce3b5b0d5051e292bcedea0a1e0c93a",
+    "bytes": 6598
   },
   {
     "path": "tests/real-process/credentials-child.ts",
@@ -6461,8 +6486,8 @@
   },
   {
     "path": "tests/real-process/curiosity-legacy-child.ts",
-    "sha256": "dc8f39b2d8efdcb4697fbe0a6adb59710bd55b946df4319e45cb865b25b8192d",
-    "bytes": 1948
+    "sha256": "da82eea145738e486de949b516372ae3f1a7f70c66deed3a7f33365f804181b0",
+    "bytes": 2140
   },
   {
     "path": "tests/real-process/disk-restart/child.mts",
@@ -6488,31 +6513,6 @@
     "path": "tests/real-process/full-app-memory-restart.py",
     "sha256": "4452f1ab57eb955bcb612095f8345b2a64e2e9630c50704ec165177706b9b115",
     "bytes": 3099
-  },
-  {
-    "path": "tests/real-process/fullsuite/host-control.py",
-    "sha256": "0c8d222c700a247b0f2371e136476dbce1ef48bc20690317a0839290a54cf2aa",
-    "bytes": 5686
-  },
-  {
-    "path": "tests/real-process/fullsuite/launch.sh",
-    "sha256": "cdc1b304631199309ea5df08e8c5944561882d20deee7fcd1850cbc5eb311f4c",
-    "bytes": 1638
-  },
-  {
-    "path": "tests/real-process/fullsuite/prepare-work.py",
-    "sha256": "376f58aee9735b90640c659e6c484e4b7e35261b5ef0eb79b7443cfdb153c66c",
-    "bytes": 1806
-  },
-  {
-    "path": "tests/real-process/fullsuite/run-session.py",
-    "sha256": "f6d1388849f1791999f880dabea428c3d8f79b4237fd8f67d3599ca7b2a81c6d",
-    "bytes": 14777
-  },
-  {
-    "path": "tests/real-process/fullsuite/verify-tree.py",
-    "sha256": "f620fbb142f7011b60aa171160e049cc3af3beeacc11e3d47bb518624c8ef684",
-    "bytes": 1795
   },
   {
     "path": "tests/real-process/hydration-boundary/child.mts",
@@ -6551,8 +6551,8 @@
   },
   {
     "path": "tests/real-process/learning-proposal-child.ts",
-    "sha256": "60bba7bd7fdd2944a87741ae462b468d2300435ada386921f7bbdfcb564570fe",
-    "bytes": 2763
+    "sha256": "95b40547f841ed356df6fda142b0c10078d629818b002a07af547b68f4a84931",
+    "bytes": 2955
   },
   {
     "path": "tests/real-process/mcp-effect/child.mts",
@@ -6625,19 +6625,19 @@
     "bytes": 6831
   },
   {
-    "path": "tests/real-process/standalone-preparation.ts",
-    "sha256": "85498e4a8924ada6872fa54e7e671cb1d22f4bd92c26708afa0ddc543dc11b72",
-    "bytes": 4162
+    "path": "tests/real-process/standalone-fixture-bootstrap.ts",
+    "sha256": "49175462f9dee8e4c5cc1a8b170687723f6292fbca0d19d7286dab17481d3bc4",
+    "bytes": 2003
   },
   {
     "path": "tests/real-process/telephony-truthfulness-child.ts",
-    "sha256": "ffda7fba2475c8576bd8f74e76ceedda889a865931f2d7004a26cfadf19ec139",
-    "bytes": 12592
+    "sha256": "cefec0efd73afc34fbf02d3e8c83e64526d81425dacadb06e7b47310ab9c1f3c",
+    "bytes": 12366
   },
   {
     "path": "tests/real-process/telephony-voice-boundary-child.ts",
-    "sha256": "1b28ca2a049c36565d193ae31b963b279a3613485495d0ce76679a88378fabe8",
-    "bytes": 8879
+    "sha256": "829c63adf5e42b6e1685807b4d78fe7bea31687d7c93584afb85a78e2d8fadd6",
+    "bytes": 8658
   },
   {
     "path": "tests/real-process/wal-owner-control-child.ts",
@@ -6696,8 +6696,8 @@
   },
   {
     "path": "tests/real-process/web-handler-receipt-child.ts",
-    "sha256": "c84e1ef8f32fb3139785cab8ba1861603a731333505661965c3b198031ade012",
-    "bytes": 8541
+    "sha256": "7f0b8cd0f870506c589be8905615025474565e438f09ecff8b8659f4def83fb0",
+    "bytes": 8733
   },
   {
     "path": "tests/selfcode/atomic-worker.ts",
@@ -6748,11 +6748,6 @@
     "path": "tests/setup/observe-resource-arbiter.ts",
     "sha256": "c365ef0e9bd57a21818441655960923c2f4b3db6bbf799adbf1c108bf218fd51",
     "bytes": 1574
-  },
-  {
-    "path": "tests/setup/original-child-ownership.ts",
-    "sha256": "8fbbf81e32a9868853b66f60ae6b697f9a38596afdb59c1819f24c392f1b9faf",
-    "bytes": 4367
   },
   {
     "path": "tests/setup/preparation-generation.ts",

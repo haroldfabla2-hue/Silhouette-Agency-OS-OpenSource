@@ -43,6 +43,12 @@ if mode=='checks':
   destination=pathlib.Path('/tmp/deps-store')/name
   assert destination.is_dir()and not destination.is_symlink()and not list(destination.iterdir())
   cmd+=['--bind',str(source),'/tmp/work/node_modules/'+name]
+if mode=='checks':
+ # Same already-staged executable used by both outer namespaces, not host apt.
+ # Original procedure product/tests require deployment-owned exact path.
+ # Read-only single-file mount, no /usr writes or broader executable search.
+ candidate=pathlib.Path(bwrap);assert candidate.is_file() and not candidate.is_symlink()
+ cmd+=['--ro-bind',str(candidate),'/usr/bin/bwrap']
 cmd+=['--remount-ro','/','--chdir','/tmp/work','/usr/bin/python3','/tmp/harness/phase-child.py',mode]
 # INSTALL only: exact locked Lance binary116740704B exceeds64MiB.
 #128MiB is a fixed design bound with17.5MB headroom, not proof all files fit.

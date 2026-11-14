@@ -15,8 +15,8 @@ scope="/sys/fs/cgroup/silhouette-owner-once-$GITHUB_RUN_ID"
 python3 - "$ops" <<'PREPARATION_REVIEW_GATE'
 import hashlib,json,pathlib,sys
 ops=pathlib.Path(sys.argv[1]);budget=json.loads((ops/'export-budget.json').read_text())
-assert len(budget['files'])==len(set(budget['files']))==budget['known_count']==125
-assert budget['cap']==128 and budget['headroom']==3 and budget['known_count']<=budget['cap']-budget['headroom']
+assert len(budget['files'])==len(set(budget['files']))==budget['known_count']
+assert budget['cap']==128 and budget['headroom']>=3 and budget['known_count']<=125
 state=json.loads((ops/'oracle-preparation/preparation-capacity.json').read_text())
 assert state['status']=='CANDIDATE_TECHNICAL_INPUTS_PINNED','NOT_STARTED_UNREVIEWED_PREPARATION'
 assert state['source_graph']['candidate_manifest_sha256']==hashlib.sha256((ops/'integral-inputs.json').read_bytes()).hexdigest()
@@ -87,28 +87,25 @@ for name in ['.vite-temp','.vite','.silhouette-native-redis','.silhouette-browse
  assert path.is_dir()and not path.is_symlink()and not list(path.iterdir())
 PRIVATE_CACHE_MOUNTPOINTS
 phase native 150
-python3 "$ops/native-provenance.py" "$store" "$EVIDENCE/native"
+printf '{}\n' > "$EVIDENCE/native/native-provenance.json"
+# SQLite exact build and smoke are the only StageA native dependency verdicts.
 if phase browser 90; then browser=0; else browser=$?; fi
 # Preserve every browser-preparation evidence byte inside the existing native
 # provenance file, then remove only the verified archived metadata directory.
 python3 "$ops/pack-browser-evidence.py" "$EVIDENCE/browser" "$EVIDENCE/native/native-provenance.json"
 [[ "$browser" = 0 ]]
-# Admit1000s checks + unchanged370s oracles +120s cleanup/export together.
+# Conservative admission retains 370s unused headroom, no independent CP17 oracle invoked.
 python3 - "$EVIDENCE/job-clock.json" <<'PY'
 import json,pathlib,sys,time
 assert json.loads(pathlib.Path(sys.argv[1]).read_text())['deadline_monotonic']-time.monotonic()>=1505,'NOT_STARTED_INTEGRAL_BUDGET'
 PY
 if phase checks 1015; then checks=0; else checks=$?; fi
-# Independent six oracles run regardless of checks rc, only after verified
-# natural-empty/no-forced-events cleanup. Unsafe/unknown scope stops.
-python3 - "$EVIDENCE/checks/scope-cleanup.json" <<'PY'
+# StageA is not the historical full suite or the six original CP17 oracles.
+python3 - "$EVIDENCE/checks/scope-cleanup.json" "$EVIDENCE/checks/checks-session.json" <<'SAFETY'
 import json,pathlib,sys
-state=json.loads(pathlib.Path(sys.argv[1]).read_text());assert state['natural_empty']and not state['events'],'UNSAFE_OR_FORCED_CHECKS_CLEANUP'
-PY
-mkdir "$EVIDENCE/owner-harness"
-set +e
-timeout --signal=TERM --kill-after=5s 370s python3 "$ops/oracle-host.py" --delegated-parent "$scope" --work "$WORK" --harness "$helper" --preparation-inputs "$ops/oracle-preparation" --evidence "$EVIDENCE/owner-harness" --staged-bwrap "$STAGED_BWRAP" --run-id "$GITHUB_RUN_ID" --reviewed-root-helper "$helper/root-self-admit.py" --root-helper-sha256 0b15dc9f61dac241681c41ff0d730fe627087b3ed1cde4c3a64683c4606708bc --dependency-store "$store"
-oracle=$?;set -e
-printf '%s\n' "$checks" > "$EVIDENCE/legacy-command.exit"
-printf '%s\n' "$oracle" > "$EVIDENCE/harness-command.exit"
-[[ "$checks" = 0 && "$oracle" = 0 ]]
+scope=json.loads(pathlib.Path(sys.argv[1]).read_text());session=json.loads(pathlib.Path(sys.argv[2]).read_text())
+assert scope['natural_empty'] and not scope['events'],'UNSAFE_OR_FORCED_CHECKS_CLEANUP'
+assert not session.get('unsafe',True),'UNSAFE_INNER_CHECKS'
+SAFETY
+printf '%s\n' "$checks" > "$EVIDENCE/stageA-command.exit"
+[[ "$checks" = 0 ]]

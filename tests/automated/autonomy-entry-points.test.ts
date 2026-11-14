@@ -75,27 +75,11 @@ beforeEach(() => {
     triggerDiscoveryCycle.mockClear();
 });
 
-let drainStartedHeartbeat: (() => Promise<void>) | undefined;
-afterEach(async () => {
-    // Keep the exact timer frontier evaluated by this test. Teardown must not
-    // import a replacement generation or silently remove handles first.
-    const originalDrain = drainStartedHeartbeat;
-    drainStartedHeartbeat = undefined;
-    try { await originalDrain?.(); }
-    finally { vi.useRealTimers(); }
+afterEach(() => {
+    vi.useRealTimers();
 });
 
 describe('heartbeat job (boot loader route)', () => {
-    beforeEach(async () => {
-        // Production boot slots are deliberately idempotent for one generation.
-        // Each test needs a new real host/module generation, rather than leaving
-        // SCHEDULED slots behind when fake timers remove their native handles.
-        vi.resetModules();
-        await installTestHostGeneration();
-        const original = await import('../../server/lifecycle/bootTimers');
-        drainStartedHeartbeat = original.sealAndDrainBootTimers;
-    });
-
     it('runs no proactive cycle when the ceiling is off', async () => {
         await warm(HEARTBEAT_TICK_IMPORTS);
         vi.useFakeTimers();

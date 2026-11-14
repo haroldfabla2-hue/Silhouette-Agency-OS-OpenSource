@@ -1,9 +1,13 @@
 // Actual synchronous filesystem and service. Run only in a disposable private
 // network/filesystem. No agent result or provider is emulated.
-import '../../server/config/runtimeCredentials';
+import { bootstrapStandaloneFixture } from './standalone-fixture-bootstrap';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {ContinuousMemoryService} from '../../services/memory/continuousMemory';
+
+// Original abrupt probe semantics remain. Bootstrap is not closure evidence.
+bootstrapStandaloneFixture();
+await import('../../server/config/runtimeCredentials');
+const {ContinuousMemoryService}=await import('../../services/memory/continuousMemory');
 const mode=process.argv[2];const file='data/wal/memory_wal.json';
 const service=new ContinuousMemoryService();
 if(mode==='durable-before-return'){

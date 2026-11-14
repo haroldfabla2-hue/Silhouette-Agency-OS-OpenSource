@@ -48,6 +48,19 @@ class RedisService {
         // 2. Singleton Check
         if (!this.client && !this.isMock) {
             const incidentFailures: unknown[]=[];
+            // Only the exact awaited transport connect may select an operational
+            // task outcome. Allocation/bookkeeping/cleanup are still ownership
+            // failures. This does not acknowledge or erase any failure record.
+            let originalConnectRejected = false;
+            let connectAttemptOpen = false;
+            let terminalRetryFailure: Error | undefined;
+            const exactOperationalConnectError = (original: unknown): boolean => {
+                if (original === terminalRetryFailure && terminalRetryFailure !== undefined) return true;
+                if (!original || typeof original !== 'object') return false;
+                const descriptor = Object.getOwnPropertyDescriptor(original, 'code');
+                return !!descriptor && 'value' in descriptor
+                    && ['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'EAI_AGAIN', 'ENOTFOUND'].includes(descriptor.value);
+            };
             try {
                 // 3. Dynamic Import: Prevents bundler from including 'redis' package in frontend build
                 const redisModule = await import('redis');
@@ -65,7 +78,8 @@ class RedisService {
                         reconnectStrategy: (retries: number) => {
                             if (retries > 3) {
                                 console.warn('[REDIS] Max retries reached. Switching to In-Memory Fallback.');
-                                return new Error('Max retries reached');
+                                terminalRetryFailure = new Error('Max retries reached');
+                                return terminalRetryFailure;
                             }
                             return Math.min(retries * 100, 3000);
                         }
@@ -87,7 +101,9 @@ class RedisService {
 
                 this.client.on('error', (err: any) => {
                     // Only log if not already in mock mode to avoid spam
-                    this.ownership.failure('service-client:EMITTED_ERROR', err);
+                    if (connectAttemptOpen && this.client === acquired && exactOperationalConnectError(err))
+                        this.ownership.taskFailed('service-client:EMITTED_ERROR', err);
+                    else this.ownership.failure('service-client:EMITTED_ERROR', err);
                     if (!this.isMock) console.error('[REDIS] Client Error:', err.message);
                 });
 
@@ -102,9 +118,14 @@ class RedisService {
                     }
                 });
 
-                await this.client.connect();
+                connectAttemptOpen = true;
+                try { await acquired.connect(); }
+                catch (original) { originalConnectRejected = true; throw original; }
+                finally { connectAttemptOpen = false; }
             } catch (e: any) {
-                this.ownership.failure('service-connect:MEMORY_AVAILABILITY_NOT_DURABILITY_FALLBACK', e);
+                if (originalConnectRejected && exactOperationalConnectError(e))
+                    this.ownership.taskFailed('service-connect:MEMORY_AVAILABILITY_NOT_DURABILITY_FALLBACK', e);
+                else this.ownership.failure('service-connect:MEMORY_AVAILABILITY_NOT_DURABILITY_FALLBACK', e);
                 console.warn(`[REDIS] Connection Failed: ${e.message || e}. Using In-Memory Fallback (data lost on restart).`);
                 if (this.client) {
                     try {

@@ -367,22 +367,34 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ currentUserRole, onChangeRole, 
         const agentMsgId = crypto.randomUUID();
         setMessages(prev => [...prev, { id: agentMsgId, role: 'agent', text: '', timestamp: Date.now() }]);
 
-        // SAFETY NET: Timeout after 45 seconds if no response
+        // One request owns this deadline through the terminal body event, not
+        // just the arrival of HTTP headers. It never aborts a later request.
+        const requestController = new AbortController();
+        let terminalReceived = false;
+        let fullText = '';
+        let lastProfileReceipt: any;
+        let lastChatReceipt: any;
+        const showFailure = (message: string, receipt?: any) => {
+            const details: string[] = [message];
+            if (receipt?.chatMessage === 'SQLITE_APPEND_RETURNED' || lastChatReceipt)
+                details.push('Your chat message was saved. This does not confirm a profile update.');
+            const profile = receipt?.profile || lastProfileReceipt;
+            const committed = Array.isArray(profile?.completed)
+                ? profile.completed.filter((step: any) => step.state === 'SQLITE_COMMIT_RETURNED').length : 0;
+            if (committed) details.push(`${committed} profile update(s) were confirmed before this error.`);
+            if (receipt?.generation === 'NOT_STARTED') details.push('No response generation was started.');
+            setMessages(prev => prev.map(m => m.id === agentMsgId
+                ? { ...m, text: [cleanProtocolOutput(fullText), details.join(' ')].filter(Boolean).join('\n\n') } : m));
+        };
         const timeoutId = setTimeout(() => {
-            if (isTyping) {
+            if (!terminalReceived) {
+                showFailure('Request timed out before completion was confirmed.');
                 setIsTyping(false);
-                setMessages(prev => prev.map(m =>
-                    m.id === agentMsgId && m.text === '' ? { ...m, text: "Error: Request timed out. The agent took too long to respond." } : m
-                ));
-                if (abortControllerRef.current) {
-                    abortControllerRef.current.abort();
-                }
+                requestController.abort();
             }
         }, 45000);
-
         try {
-            abortControllerRef.current = new AbortController();
-
+            abortControllerRef.current = requestController;
             const response = await api.fetch('/v1/chat/stream', {
                 method: 'POST',
                 body: JSON.stringify({
@@ -391,75 +403,76 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ currentUserRole, onChangeRole, 
                     systemMetrics,
                     sessionId: activeSessionId
                 }),
-                signal: abortControllerRef.current.signal
+                signal: requestController.signal
             });
-
-            clearTimeout(timeoutId); // Clear timeout on successful connection
-
-            if (!response.ok) throw new Error("Stream Error");
-            if (!response.body) throw new Error("No Response Body");
-
+            if (!response.ok) throw new Error('Stream request was not accepted.');
+            if (!response.body) throw new Error('No response body was received.');
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
-            let fullText = '';
             let buffer = '';
-            let isDone = false;
-
-            while (!isDone) {
-                const { done, value } = await reader.read();
-                isDone = done;
-
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n\n');
-                buffer = lines.pop() || ''; // Keep partial line
-
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        try {
-                            const data = JSON.parse(line.slice(6));
-
-                            // SSE Format from backend: { type: 'token', content: '...' }
-                            if (data.type === 'token' && data.content) {
-                                fullText += data.content;
-                                setMessages(prev => prev.map(m =>
-                                    m.id === agentMsgId ? { ...m, text: cleanProtocolOutput(fullText) } : m
-                                ));
+            try {
+                let streamEnded = false;
+                while (!streamEnded && !terminalReceived) {
+                    const { done, value } = await reader.read();
+                    streamEnded = done;
+                    buffer += decoder.decode(value, { stream: !done });
+                    const lines = buffer.split('\n\n');
+                    buffer = lines.pop() || '';
+                    for (const line of lines) {
+                        if (!line.startsWith('data: ')) continue;
+                        // Only JSON parsing is interpreted as protocol parsing;
+                        // observer/UI exceptions are not silently swallowed.
+                        const data = JSON.parse(line.slice(6));
+                        if (data.type === 'user_saved') lastChatReceipt = true;
+                        if (data.type === 'profile_receipt') lastProfileReceipt = data.receipt;
+                        if (data.type === 'token' && typeof data.content === 'string') {
+                            fullText += data.content;
+                            setMessages(prev => prev.map(m => m.id === agentMsgId ? { ...m, text: cleanProtocolOutput(fullText) } : m));
+                        }
+                        if (data.type === 'enhanced_response' && typeof data.content === 'string') {
+                            fullText = data.content;
+                            setMessages(prev => prev.map(m => m.id === agentMsgId ? { ...m, text: cleanProtocolOutput(fullText) } : m));
+                        }
+                        if (onUpdateThoughts && data.allThoughts) onUpdateThoughts(data.allThoughts);
+                        if (data.type === 'AGENT_THOUGHT' && onAgentThought)
+                            onAgentThought(data.agentId, data.thoughts, data.role);
+                        if (data.type === 'error' || data.error) {
+                            terminalReceived = true;
+                            clearTimeout(timeoutId); setIsTyping(false);
+                            showFailure(typeof data.error === 'string' ? data.error : 'Chat failed before completion was confirmed.', data.receipt);
+                            break;
+                        }
+                        if (data.type === 'done' || data.done === true) {
+                            terminalReceived = true;
+                            clearTimeout(timeoutId); setIsTyping(false);
+                            if (!fullText && typeof data.message?.content === 'string') {
+                                fullText = data.message.content;
+                                setMessages(prev => prev.map(m => m.id === agentMsgId ? { ...m, text: cleanProtocolOutput(fullText) } : m));
                             }
-
-                            // Capture Thoughts for Introspection UI
-                            if (onUpdateThoughts && (data.thought || data.allThoughts)) {
-                                if (data.allThoughts) onUpdateThoughts(data.allThoughts);
-                            }
-
-                            // Capture Distributed Agent Thoughts (The "100% Real" Stuff)
-                            if (data.type === 'AGENT_THOUGHT' && onAgentThought) {
-                                onAgentThought(data.agentId, data.thoughts, data.role);
-                            }
-
-                            if (data.done) {
-                                setIsTyping(false);
-                                loadSessions(); // Refresh list to update preview/timestamp
-                            }
-
-                            if (data.error) {
-                                console.error("Stream Error Payload", data.error);
-                            }
-                        } catch (e) {
-                            // Ignore parse errors for partial chunks
+                            void loadSessions();
+                            break;
                         }
                     }
                 }
+                if (!terminalReceived) showFailure('The stream ended before completion was confirmed.');
+            } finally {
+                // Stop reading after a terminal event, even if a server leaves
+                // the transport open. Cancel is not proof of backend closure.
+                if (terminalReceived) {
+                    try { await reader.cancel(); }
+                    catch (original) { console.error('Stream reader cancellation failed', original); }
+                }
+                reader.releaseLock();
             }
-
-        } catch (e: any) {
+        } catch (original: unknown) {
+            if (!requestController.signal.aborted) showFailure('The connection failed before completion was confirmed.');
+            console.error('Chat stream failed', original);
+        } finally {
             clearTimeout(timeoutId);
-            if (e.name !== 'AbortError') {
-                setMessages(prev => prev.map(m =>
-                    m.id === agentMsgId ? { ...m, text: "Connection Error: " + e.message } : m
-                ));
-            }
             setIsTyping(false);
+            if (abortControllerRef.current === requestController) abortControllerRef.current = null;
         }
+
     };
 
     if (currentUserRole === UserRole.VISITOR) return null;

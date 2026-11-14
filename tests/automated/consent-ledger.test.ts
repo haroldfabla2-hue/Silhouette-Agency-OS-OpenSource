@@ -1,4 +1,3 @@
-import { createOriginalChildOwner } from '../setup/original-child-ownership';
 import { retainChildDiagnostics } from '../setup/child-diagnostics';
 /** Durable consent ledger (R8): real on-disk store, real cross-process
  * locking, real child processes killed with SIGKILL. Two independent
@@ -7,7 +6,7 @@ import { retainChildDiagnostics } from '../setup/child-diagnostics';
  * module, not production servers. DECLARED LIMITS: same-host store; the
  * lock file is not a boundary against an attacker with the executor's OS
  * user (infrastructure work, not claimed). */
-import { afterEach, describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { appendFileSync, chmodSync, existsSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -31,13 +30,9 @@ const record = (over: Partial<ConsentRecord>): ConsentRecord => ({
     ...over,
 });
 
-const originalChildren = createOriginalChildOwner();
-afterEach(() => originalChildren.cleanup());
-
 const runChild = (dir: string, token: string, principalId: string, conversationId: string, mode: string) => {
     const child = spawn(process.execPath, ['--import', 'tsx/esm', 'tests/fixtures/consent-ledger-child.ts',
         dir, token, principalId, conversationId, mode], { stdio: ['ignore', 'pipe', 'pipe'] });
-    originalChildren.retain(child);
     retainChildDiagnostics(child, 'consent-ledger');
     let out = '';
     child.stdout.on('data', d => { out += d.toString(); });
@@ -81,7 +76,11 @@ describe('R8: durable consent ledger', () => {
         const r = record({ status: 'APPROVED', approvedAt: Date.now() });
         ledger.put(r);
         const { child, lines } = runChild(dir, r.token, A.principalId, A.conversationId, 'consume-then-hang');
-        await originalChildren.waitForLine(child, lines, values => values.length > 0);
+        await new Promise<void>(resolve => {
+            const poll = setInterval(() => {
+                if (lines().length > 0) { clearInterval(poll); resolve(); }
+            }, 25);
+        });
         expect(JSON.parse(lines()[0]).result).toBe('CONSUMED');
         child.kill('SIGKILL');
         await new Promise(res => child.on('close', res));
@@ -98,7 +97,11 @@ describe('R8: durable consent ledger', () => {
         const r = record({ status: 'APPROVED', approvedAt: Date.now() });
         ledger.put(r);
         const { child, lines } = runChild(dir, r.token, A.principalId, A.conversationId, 'hang-forever');
-        await originalChildren.waitForLine(child, lines, values => values.includes('READY'));
+        await new Promise<void>(resolve => {
+            const poll = setInterval(() => {
+                if (lines().includes('READY')) { clearInterval(poll); resolve(); }
+            }, 25);
+        });
         child.kill('SIGKILL');
         await new Promise(res => child.on('close', res));
         const after = new ConsentLedger(dir);
@@ -259,7 +262,6 @@ describe('R8-eventlog: append-only store semantics (H3-root fix on the ledger)',
         const runReoffer = (newToken: string) => new Promise<any>((resolve, reject) => {
             const child = spawn(process.execPath, ['--import', 'tsx/esm', 'tests/fixtures/consent-ledger-child.ts',
                 dir, r.token, A.principalId, A.conversationId, 'reoffer', newToken], { stdio: ['ignore', 'pipe', 'pipe'] });
-    originalChildren.retain(child);
     retainChildDiagnostics(child, 'consent-ledger');
             let out = '';
             child.stdout.on('data', d => { out += d.toString(); });
@@ -328,7 +330,6 @@ describe('R8-v3: adversarial store transitions (review findings 1-5, 7)', () => 
         const runDecide = (decision: string) => new Promise<any>((resolve, reject) => {
             const child = spawn(process.execPath, ['--import', 'tsx/esm', 'tests/fixtures/consent-ledger-child.ts',
                 dir, r.token, A.principalId, A.conversationId, 'decide', decision], { stdio: ['ignore', 'pipe', 'pipe'] });
-    originalChildren.retain(child);
     retainChildDiagnostics(child, 'consent-ledger');
             let out = '';
             child.stdout.on('data', d => { out += d.toString(); });

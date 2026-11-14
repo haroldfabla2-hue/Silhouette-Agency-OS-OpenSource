@@ -1,3 +1,4 @@
+import { standaloneFixturePreparationInputs } from '../real-process/standalone-fixture-bootstrap';
 /** Real modules, local file reads/denials and actual corrupted storage. */
 import {describe,it,expect} from 'vitest';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -10,7 +11,7 @@ function run(script:string,mode:string){
  const directory=mkdtempSync(join(tmpdir(),'product-boundary-real-'));
  try{
   const stdout=execFileSync(process.execPath,['--import',loader,resolve('tests/real-process/'+script),mode],{cwd:directory,encoding:'utf8',timeout:25000,
-   env:{PATH:process.env.PATH,HOME:directory,NODE_ENV:'test',SILHOUETTE_PROVIDERS:'off'}});
+   env:{...standaloneFixturePreparationInputs(),PATH:process.env.PATH,HOME:directory,NODE_ENV:'test',SILHOUETTE_PROVIDERS:'off'}});
   return stdout.split('\n').filter(line=>line.startsWith('{')).map(line=>JSON.parse(line)).at(-1);
  }finally{rmSync(directory,{recursive:true,force:true});}
 }

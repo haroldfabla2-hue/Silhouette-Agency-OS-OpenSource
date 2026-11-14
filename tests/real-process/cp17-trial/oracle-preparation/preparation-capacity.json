@@ -3,8 +3,8 @@
   "source_graph": {
     "candidate_product_commit": "598cb9a60d12af988813818adf1f85302c8a5b6c",
     "product_commit_is_baseline_not_exact_integral": true,
-    "candidate_manifest_sha256": "d2194b7aea1e19701159af21ec2b081ab44a46614cb76ffb13c79e37b5d8b4f9",
-    "status": "SOURCE_ONLY_EXPLICIT_CHECKS256_HELPER_NOT_RUNTIME_VALIDATED",
+    "candidate_manifest_sha256": "dbeaef4276185ca323b1216fdeb5a5d73ab0ed6cf660f892d651eb2f894ae30d",
+    "status": "STAGE_A_ONLY_NOT_INTEGRAL_SUITE_EQUIVALENT",
     "metadata_parent_trial_commit": "766797d916b428ff96c17eeadc3ddb286d6a122d",
     "base_trial_commit": "6410fc163d847bb629813727899d837ed104c0b6",
     "source_delta_vs_candidate_product_commit": [
@@ -147,5 +147,10 @@
     ],
     "accepted_heartbeat_packet_sha256": "d44a6fb5326250e8f43ad89b53a81101c046a3c57b6e108a34d92c5c2d8ba785",
     "accepted_redis_packet_sha256": "5e806b4cee3c0d08ebd9443595886c62aebb5ddf4c23a6a4d698841f25060f53"
+  },
+  "stageA_exact_source": {
+    "tree": "d0e80234ff0c173e6e74a2fbfbc612544579cc0c",
+    "ledger": "dbeaef4276185ca323b1216fdeb5a5d73ab0ed6cf660f892d651eb2f894ae30d",
+    "historicalSourceGraphMetadata": "Retained prior graph capacity metadata, not an equivalence claim or executed oracle."
   }
 }
