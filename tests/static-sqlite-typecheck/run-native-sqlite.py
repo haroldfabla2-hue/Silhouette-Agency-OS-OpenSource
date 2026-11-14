@@ -1,6 +1,7 @@
 """Manual compiler-only proposal. No services, product evaluation or npm hooks."""
 from native_sqlite_supervisor import system_binary_manifest, build_exact_namespace_command, run_namespace_phase
 from pathlib import Path
+import traceback
 import os,sys,json,hashlib,subprocess,resource,time,signal,shutil,tarfile,io,base64,urllib.request,difflib,re,gzip,stat
 BASE='db201993d05124cdb23a84cdfbc695bb3c6680d5'
 LOCK='039ce85293514e83584ca047d0d8b53eb7bce71bb3b3fe75fc6f96e928a0299c'
@@ -307,7 +308,13 @@ try:
  REPORT['nativeAccountStoreSubsetPass']=True
  REPORT['lifecycleAcceptance']='INCOMPLETE_UNCHANGED'
 except BaseException as cause:
- REPORT['status']='STATIC_PREREQUISITE_OR_VALIDATION_FAILED';REPORT['failures'].append({'type':type(cause).__name__,'text':str(cause)})
+ # Frame metadata ONLY: no locals, source snippets, payload strings or args.
+ trace=[{'file':Path(frame.filename).name,'line':frame.lineno,'function':frame.name}for frame in traceback.extract_tb(cause.__traceback__,limit=32)]
+ named=str(cause)
+ safe_message=named if len(named)<=256 and re.fullmatch(r'NATIVE_PREREQUISITE:[A-Za-z0-9_./:-]+',named)else 'See bounded source location; untrusted exception payload not exported'
+ REPORT['status']='STATIC_PREREQUISITE_OR_VALIDATION_FAILED';REPORT['nativeAccountStoreSubsetPass']=False
+ REPORT['failures'].append({'type':type(cause).__name__,'text':safe_message,'traceFrames':trace,'traceLimit32NoLocalsNoSource':True})
+ emit('native-failure-location.json',{'type':type(cause).__name__,'traceFrames':trace,'namedGuard':safe_message,'noLocalsOrSourceOrExceptionPayload':True})
 finally:
  REPORT['seconds']=time.monotonic()-START;REPORT['duAfter']=du()
  archive=ROOT/'static-evidence.tar.gz';finalizationErrors=[]

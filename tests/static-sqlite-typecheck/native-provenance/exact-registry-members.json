@@ -1,0 +1,413 @@
+{
+  "schema": 1,
+  "packages": [
+    {
+      "package": "better-sqlite3",
+      "version": "12.5.0",
+      "archiveBytes": 2622454,
+      "archiveSha256": "0a3cd0554b063c3185b9912ef7059b84455a2e411d637faa0166fef9fefa04c2",
+      "SRI": "sha512-WwCZ/5Diz7rsF29o27o0Gcc1Du+l7Zsv7SYtVPG0X3G/uUI1LqdxrQI7c9Hs2FWpqXXERjW9hp6g3/tH7DlVKg==",
+      "totalBytes": 10247763,
+      "members": [
+        {
+          "name": "package/LICENSE",
+          "kind": "file",
+          "bytes": 1078,
+          "sha256": "09856b52897c91ab67e7456ef43067019f31dfd3b87fda72e655736b1ebdee55"
+        },
+        {
+          "name": "package/deps/sqlite3/sqlite3.c",
+          "kind": "file",
+          "bytes": 9387560,
+          "sha256": "a2f20fae216f85b05c6c7cefcc0640d85353f00502ae20a1363840d72489825f"
+        },
+        {
+          "name": "package/deps/test_extension.c",
+          "kind": "file",
+          "bytes": 587,
+          "sha256": "948af88dbf356835f5496c1a3d047fdbcc58f3717aa9bc94d0943d7de2b7cf5b"
+        },
+        {
+          "name": "package/src/addon.cpp",
+          "kind": "file",
+          "bytes": 1283,
+          "sha256": "20f19f480ce060900521cf9510922e5ca1c8e76936f07ac2916f316e549a0190"
+        },
+        {
+          "name": "package/src/objects/backup.cpp",
+          "kind": "file",
+          "bytes": 4146,
+          "sha256": "16a67102c49c9312eb1deecd08c27064325840df51d6957fe134b871f5d8798c"
+        },
+        {
+          "name": "package/src/better_sqlite3.cpp",
+          "kind": "file",
+          "bytes": 2856,
+          "sha256": "c343ae9a8c876ed62d620562ffe9acedcdb105f49ba196b4e79f9aab8ffe16fa"
+        },
+        {
+          "name": "package/src/util/bind-map.cpp",
+          "kind": "file",
+          "bytes": 1587,
+          "sha256": "7026e107a7f662b6460fbd05e91d9594f5114ffa69de7a8ddb082911f6e90876"
+        },
+        {
+          "name": "package/src/util/binder.cpp",
+          "kind": "file",
+          "bytes": 6060,
+          "sha256": "64e2ebe910f2efc1d7a847672565745da2c4f5656d951033d99567e7593409d8"
+        },
+        {
+          "name": "package/src/util/constants.cpp",
+          "kind": "file",
+          "bytes": 9068,
+          "sha256": "bbf4a3f983631f01f723627ee0e897f92b12cd6ca3e8b8b965318931bba0f2b4"
+        },
+        {
+          "name": "package/src/util/custom-aggregate.cpp",
+          "kind": "file",
+          "bytes": 3952,
+          "sha256": "742d03187a7b8483c9f42bb7b77ed29d0f6877450584fba2662164d2b8dd11b6"
+        },
+        {
+          "name": "package/src/util/custom-function.cpp",
+          "kind": "file",
+          "bytes": 1550,
+          "sha256": "6a1f826df2cc2c402d8a3dd747a57dbcedb52fe9220a2bbda6a5e01f038b13d1"
+        },
+        {
+          "name": "package/src/util/custom-table.cpp",
+          "kind": "file",
+          "bytes": 14960,
+          "sha256": "7549b38f24b7e69e78d407534a5cde8814a8a08628a421b122644a43940e0aaf"
+        },
+        {
+          "name": "package/src/util/data-converter.cpp",
+          "kind": "file",
+          "bytes": 460,
+          "sha256": "3cb73d0911e92893abf840752e9cfd6baded604d49b39ec4000599eec7c8c594"
+        },
+        {
+          "name": "package/src/util/data.cpp",
+          "kind": "file",
+          "bytes": 9639,
+          "sha256": "74de42f9a0fa68277d8ea9cbaf8ee5f455bbd99cc41297696546c0ec8408c882"
+        },
+        {
+          "name": "package/src/objects/database.cpp",
+          "kind": "file",
+          "bytes": 14178,
+          "sha256": "0e5806c8d74bcf66ef596516227479f4ae921e58f76c742e564abb15e4360720"
+        },
+        {
+          "name": "package/src/util/helpers.cpp",
+          "kind": "file",
+          "bytes": 4433,
+          "sha256": "4d273c4ee67337fbe3440ec49058a2ee5cbe6a627b14917dc1e1c98fda8178f1"
+        },
+        {
+          "name": "package/src/util/macros.cpp",
+          "kind": "file",
+          "bytes": 3661,
+          "sha256": "56060b7c8957851321c8a032b7b37c4655270b9a5402f6dd1367c206d0bfedba"
+        },
+        {
+          "name": "package/src/util/query-macros.cpp",
+          "kind": "file",
+          "bytes": 4138,
+          "sha256": "0dcf68c3ff527398ebe0a6b874b38aa23b3fb87f285b9701636c3b19282dde8c"
+        },
+        {
+          "name": "package/src/util/row-builder.cpp",
+          "kind": "file",
+          "bytes": 1017,
+          "sha256": "d5b352ac4959a07db22a825019286e085910310d6363c61fbdf037e3f32d56fc"
+        },
+        {
+          "name": "package/src/objects/statement-iterator.cpp",
+          "kind": "file",
+          "bytes": 3339,
+          "sha256": "6ac791fbb786fc498450e843f2a043eddeb03093eb6b31012a04ae7b84a8d7ab"
+        },
+        {
+          "name": "package/src/objects/statement.cpp",
+          "kind": "file",
+          "bytes": 13163,
+          "sha256": "cbc020a09e954ed3ff48eba868ff425989f04b3ea30ea16d588ac897e26b00c5"
+        },
+        {
+          "name": "package/binding.gyp",
+          "kind": "file",
+          "bytes": 942,
+          "sha256": "2a48a110d17a692e769e4747dfea3b4471842ba86501db7cdcda33f8dfcb2921"
+        },
+        {
+          "name": "package/deps/sqlite3.gyp",
+          "kind": "file",
+          "bytes": 2542,
+          "sha256": "a009b8f80cf0a944eacaf71a84e590504f353fbd8f8b341138d0c3094e372d18"
+        },
+        {
+          "name": "package/deps/common.gypi",
+          "kind": "file",
+          "bytes": 1584,
+          "sha256": "e71a565cd7733e05efc3a2792b54e260126f03f490325aa2a201202acbbdb315"
+        },
+        {
+          "name": "package/deps/defines.gypi",
+          "kind": "file",
+          "bytes": 1128,
+          "sha256": "1ffa84b8af99780a293dcb7a9031c2dccc8b0d013aef434a35c283cc6c984f2e"
+        },
+        {
+          "name": "package/deps/sqlite3/sqlite3.h",
+          "kind": "file",
+          "bytes": 671786,
+          "sha256": "4340a24cda7bc436d62459c3c5237f67b9ab716ddca872faf8052d0ce0d97119"
+        },
+        {
+          "name": "package/deps/sqlite3/sqlite3ext.h",
+          "kind": "file",
+          "bytes": 38632,
+          "sha256": "ea81fb7bd05882e0e0b92c4d60f677b205f7f1fbf085f218b12f0b5b3f0b9e48"
+        },
+        {
+          "name": "package/src/objects/backup.hpp",
+          "kind": "file",
+          "bytes": 705,
+          "sha256": "02d57e03a1a03b3f8bb2fc503fc1704d4143b76d939fe37230fbb3b44177c44a"
+        },
+        {
+          "name": "package/src/objects/database.hpp",
+          "kind": "file",
+          "bytes": 3129,
+          "sha256": "f47ab5d6bb775cadd0b2b73c4fcb6faf5cb2ae783a049ff4691fafc5d29a0bca"
+        },
+        {
+          "name": "package/src/objects/statement-iterator.hpp",
+          "kind": "file",
+          "bytes": 1391,
+          "sha256": "c064f10ad6bca99154d4f5325e187978d4c6d6cc6fedaa047a4d2f3b4b4f9655"
+        },
+        {
+          "name": "package/src/objects/statement.hpp",
+          "kind": "file",
+          "bytes": 1373,
+          "sha256": "3dca186418c62d81f4b9170904fdc02e624c3d76a0c0c61e6aa95486799808e9"
+        },
+        {
+          "name": "package/lib/methods/aggregate.js",
+          "kind": "file",
+          "bytes": 1932,
+          "sha256": "e9f74eb919ec93fe089c95ddf25a98f1f631c80418fa34fb2346ca1bc29f1b82"
+        },
+        {
+          "name": "package/lib/methods/backup.js",
+          "kind": "file",
+          "bytes": 2380,
+          "sha256": "ea29d34992bb02e006d0fdeda9675ac5d2bb227aaf57468decd997e9fc9c7dbf"
+        },
+        {
+          "name": "package/deps/copy.js",
+          "kind": "file",
+          "bytes": 897,
+          "sha256": "05a2bd41dbd96e33e2fc6cf4bcbc722b4bc8c529813b882f92113d7dbbbece67"
+        },
+        {
+          "name": "package/lib/database.js",
+          "kind": "file",
+          "bytes": 4149,
+          "sha256": "02ea23bdd23d7ac5de0675a2f32fc686e76d5c6a32bd3e3891f360e72e07f61f"
+        },
+        {
+          "name": "package/lib/methods/function.js",
+          "kind": "file",
+          "bytes": 1396,
+          "sha256": "f431d49303b8bbdc044b1f1b455bdad21fc9b74b007de0acb22f08f25b4febd3"
+        },
+        {
+          "name": "package/lib/index.js",
+          "kind": "file",
+          "bytes": 110,
+          "sha256": "82db11c4ee43a41d859988c5db42c3771dff565371f94bacbd1e4d8d6ceb47cd"
+        },
+        {
+          "name": "package/lib/methods/inspect.js",
+          "kind": "file",
+          "bytes": 174,
+          "sha256": "4975a78daee850adee62ba98719d0f223819a0ec135a07c0e302994bd8dbff61"
+        },
+        {
+          "name": "package/lib/methods/pragma.js",
+          "kind": "file",
+          "bytes": 536,
+          "sha256": "8b1c54475bd4340b15e25c50d53d06308be65f8f919ecbe4aa9d285ca859ad5a"
+        },
+        {
+          "name": "package/lib/methods/serialize.js",
+          "kind": "file",
+          "bytes": 625,
+          "sha256": "7a10ee5c2735384b7f0c361811bc6d017db29f62b203fd3c68a35f667e2c2605"
+        },
+        {
+          "name": "package/lib/sqlite-error.js",
+          "kind": "file",
+          "bytes": 717,
+          "sha256": "2582d61c27680dead168543f392eb102be621dfbef282a4ca4c7c21aa5e7c75d"
+        },
+        {
+          "name": "package/lib/methods/table.js",
+          "kind": "file",
+          "bytes": 7144,
+          "sha256": "97c42d9ded1aa96c7d916b5b92f96b4e59581d50eaf629cd2c7afb78ff26a9ea"
+        },
+        {
+          "name": "package/lib/methods/transaction.js",
+          "kind": "file",
+          "bytes": 2792,
+          "sha256": "bc8624a3ef689d8f78e5669020ad121e17acbc93b1d5ee5afe26860b1084c66c"
+        },
+        {
+          "name": "package/lib/util.js",
+          "kind": "file",
+          "bytes": 331,
+          "sha256": "92b2e39e2151b43a2252e10b6d6de876ecaf0008336a4fa1dfe1317b20f1916f"
+        },
+        {
+          "name": "package/lib/methods/wrappers.js",
+          "kind": "file",
+          "bytes": 1145,
+          "sha256": "a150a6271d23f4e5f8953b129f370ff096c7cdc4b812afbf080a6cf4ab741bcf"
+        },
+        {
+          "name": "package/package.json",
+          "kind": "file",
+          "bytes": 1426,
+          "sha256": "dd24d43349bed6f27c33204f2c9cb45a4adc2c58b5ab5771af4fa7178a15c70e"
+        },
+        {
+          "name": "package/README.md",
+          "kind": "file",
+          "bytes": 5597,
+          "sha256": "11f4b73341d2d3091a79e08c3f25f4bc57a510c2c26a88c2c263a9161dd28f75"
+        },
+        {
+          "name": "package/deps/patches/1208.patch",
+          "kind": "file",
+          "bytes": 597,
+          "sha256": "5d1f22d69fee3551b70a7b7b9b14be43fcfd04dbc8683233667abfa75905011a"
+        },
+        {
+          "name": "package/deps/download.sh",
+          "kind": "file",
+          "bytes": 3888,
+          "sha256": "8ea2d15c7caf272fd24002175f8d49a89fededd76a204de6008399787e539eaa"
+        }
+      ]
+    },
+    {
+      "package": "bindings",
+      "version": "1.5.0",
+      "archiveBytes": 4174,
+      "archiveSha256": "d77781178c5bd89a91b1f6c5556acd511b1b5927eb13e2ad8189cac29eeb0907",
+      "SRI": "sha512-p2q/t/mhvuOj/UeLlV6566GD/guowlr0hHxClI0W9m7MWYkL1F0hLo+0Aexs9HSPCtR1SXQ0TD3MMKrXZajbiQ==",
+      "totalBytes": 11230,
+      "members": [
+        {
+          "name": "package/package.json",
+          "kind": "file",
+          "bytes": 660,
+          "sha256": "a87721fe406e1f1798fef44d697b46ea1efe346fda118010334713346ee4207c"
+        },
+        {
+          "name": "package/bindings.js",
+          "kind": "file",
+          "bytes": 5986,
+          "sha256": "8e32a0d37f20bd6f7d5bdbf99d041aa27be47cbbe5172ac13ebf7380a10b3bf6"
+        },
+        {
+          "name": "package/LICENSE.md",
+          "kind": "file",
+          "bytes": 1108,
+          "sha256": "85fde19744c84cfacb04aed732c0392ba221231b26090d3271d2ed865bfc0792"
+        },
+        {
+          "name": "package/README.md",
+          "kind": "file",
+          "bytes": 3476,
+          "sha256": "a5552f138725ba2768610c9362f5c7387c8ac80c61fc68477a4f97b7412bba86"
+        }
+      ]
+    },
+    {
+      "package": "file-uri-to-path",
+      "version": "1.0.0",
+      "archiveBytes": 3549,
+      "archiveSha256": "5440cdf67e75ab96f36a6be63c1d4c3d54255b1d0970273710fecfebfab06fb3",
+      "SRI": "sha512-0Zt+s3L7Vf1biwWZ29aARiVYLx7iMGnEUl9x33fbB/j3jR81u/O2LbqK+Bm1CDSNDKVtJ/YjwY7TUd5SkeLQLw==",
+      "totalBytes": 8068,
+      "members": [
+        {
+          "name": "package/package.json",
+          "kind": "file",
+          "bytes": 717,
+          "sha256": "71eb1e24bb9694f89c613fa0aa307f977dd43f41d11794c7b48fabf6c55f66b0"
+        },
+        {
+          "name": "package/.npmignore",
+          "kind": "file",
+          "bytes": 14,
+          "sha256": "bfb16fc2dc3b7f24e20981aa586e31d66293c81eb7c2e5d0a9bbb252b13c6271"
+        },
+        {
+          "name": "package/README.md",
+          "kind": "file",
+          "bytes": 2073,
+          "sha256": "a801a028d69327433eb397e69fd0aea3f58b80a76222ffbae129d8808913251a"
+        },
+        {
+          "name": "package/LICENSE",
+          "kind": "file",
+          "bytes": 1083,
+          "sha256": "75070206e4ee2a749be52444cecc05101ca8d314c9d6d335ff914046cbf086a0"
+        },
+        {
+          "name": "package/index.js",
+          "kind": "file",
+          "bytes": 1723,
+          "sha256": "e62293e871bdd5a7449ff3c7956c9536ec1d2ea7369461de77322b5256bb93e7"
+        },
+        {
+          "name": "package/.travis.yml",
+          "kind": "file",
+          "bytes": 472,
+          "sha256": "14cfedcd0d39a797fb56787bc06b46d09aa2786084bb0dec49467b9720fb2979"
+        },
+        {
+          "name": "package/index.d.ts",
+          "kind": "file",
+          "bytes": 77,
+          "sha256": "46eb38b4f992126135e00159041a6e69e46402e56613bdc891d7b0d28fc31e37"
+        },
+        {
+          "name": "package/History.md",
+          "kind": "file",
+          "bytes": 433,
+          "sha256": "0b06e981a4318af1daef8b6ef0c6ff794e9b18a0a3e0738a65c9063988016d2e"
+        },
+        {
+          "name": "package/test/test.js",
+          "kind": "file",
+          "bytes": 666,
+          "sha256": "223c25dba6fefbb7cb491b026a32f070b1425475d3cd2d04627be5d71a07fd38"
+        },
+        {
+          "name": "package/test/tests.json",
+          "kind": "file",
+          "bytes": 810,
+          "sha256": "b48c50c1328ab8522fc0bf91923ea42fb59e63e847b967dac88123cb5e5b185d"
+        }
+      ]
+    }
+  ]
+}
