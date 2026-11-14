@@ -26,13 +26,21 @@ def emit(name,value):
  p=EV/name;assert not p.is_symlink();p.write_bytes(raw)
  assert sum(p.stat().st_size for p in EV.iterdir()if p.is_file())<=RAW
 
-def limits(cpu=240):
- for k,v in [(resource.RLIMIT_CORE,0),(resource.RLIMIT_CPU,cpu),(resource.RLIMIT_AS,24*1024**3),(resource.RLIMIT_NOFILE,256),(resource.RLIMIT_NPROC,96),(resource.RLIMIT_FSIZE,1024**3)]:resource.setrlimit(k,(v,v))
+def limits(cpu=240,nofile=256):
+ for k,v in [(resource.RLIMIT_CORE,0),(resource.RLIMIT_CPU,cpu),(resource.RLIMIT_AS,24*1024**3),(resource.RLIMIT_NOFILE,nofile),(resource.RLIMIT_NPROC,96),(resource.RLIMIT_FSIZE,1024**3)]:resource.setrlimit(k,(v,v))
 
-def run(label,cmd,cwd,env,wall=300):
+def run(label,cmd,cwd,env,wall=300,nofile=256):
  assert time.monotonic()+wall<DEADLINE,'reserve exhausted before '+label
  import selectors
- t=time.monotonic();p=subprocess.Popen(cmd,cwd=cwd,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True,preexec_fn=limits);sel=selectors.DefaultSelector();os.set_blocking(p.stdout.fileno(),False);sel.register(p.stdout,selectors.EVENT_READ);count=0;eof=False;cause=None;signals=[];leader_exit=None
+ def child_setup():
+  limits(nofile=nofile)
+  actual={name:list(resource.getrlimit(kind))for name,kind in [('cpu',resource.RLIMIT_CPU),('as',resource.RLIMIT_AS),('nofile',resource.RLIMIT_NOFILE),('nproc',resource.RLIMIT_NPROC),('fsize',resource.RLIMIT_FSIZE),('core',resource.RLIMIT_CORE)]}
+  actual['label']=label;actual['requestedNofile']=nofile
+  fd=os.open(str(EV/(label+'-child-resources.json')),os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+  try:
+   data=(json.dumps(actual,indent=2)+'\n').encode();assert os.write(fd,data)==len(data)
+  finally:os.close(fd)
+ t=time.monotonic();p=subprocess.Popen(cmd,cwd=cwd,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True,preexec_fn=child_setup);sel=selectors.DefaultSelector();os.set_blocking(p.stdout.fileno(),False);sel.register(p.stdout,selectors.EVENT_READ);count=0;eof=False;cause=None;signals=[];leader_exit=None
  try:
   with (EV/(label+'.log')).open('xb')as log:
    while True:
@@ -60,9 +68,34 @@ def run(label,cmd,cwd,env,wall=300):
     try:os.killpg(p.pid,signal.SIGKILL);signals.append('SIGKILL')
     except ProcessLookupError:pass
   p.wait(timeout=5);sel.close();p.stdout.close()
- row={'label':label,'argv':cmd,'rc':p.returncode,'seconds':time.monotonic()-t,'logBytes':count,'eof':eof,'cause':cause,'signals':signals,'naturalComplete':not cause and not signals and eof}
+ actual=json.loads((EV/(label+'-child-resources.json')).read_text())
+ if actual['nofile']!=[nofile,nofile]:cause=cause or {'type':'ResourceMismatch','text':'actual child NOFILE differs from reviewed phase limit'}
+ row={'label':label,'childResources':actual,'nofile':nofile,'argv':cmd,'rc':p.returncode,'seconds':time.monotonic()-t,'logBytes':count,'eof':eof,'cause':cause,'signals':signals,'naturalComplete':not cause and not signals and eof}
  REPORT['commands'].append(row);emit('result.json',REPORT)
  return row
+
+def capture_npm_debug_logs():
+ # Fresh allowlisted acquisition env contains no auth/config secrets. Do not
+ # export arbitrary caches, home, npmrc files, URLs with credentials or tokens.
+ folder=ROOT/'empty-npm-cache'/'_logs';proof=[]
+ if not folder.exists():
+  emit('npm-debug-capture.json',{'directoryExisted':False,'files':[],'complete':True});return
+ assert folder.is_dir()and not folder.is_symlink(),'unsafe npm logs directory'
+ files=sorted(folder.rglob('*'));assert len(files)<=100,'npm debug inventory overflow'
+ total=sum(p.stat().st_size for p in EV.iterdir()if p.is_file())
+ for source in files:
+  assert not source.is_symlink(),'npm debug symlink refused'
+  if source.is_dir():continue
+  assert source.is_file(),'npm debug nonregular file refused'
+  size=source.stat().st_size
+  assert size<=CAP and total+size<=RAW-1024**2,'npm debug evidence cap exceeded; NO partial log acceptance'
+  raw=source.read_bytes();assert len(raw)==size,'npm debug changed during capture'
+  # Quarantine rather than redact: original bytes are not modified for upload.
+  forbidden=rb'(?i)(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:authorization|_authToken|password)\s*[:=]\s*["\x27]?(?!null\b|undefined\b|false\b)[A-Za-z0-9+/=_-]{12,}|https?://[^/\s:@]+:[^/\s@]+@)'
+  assert not re.search(forbidden,raw),'possible secret in npm debug log; quarantine no byte export'
+  name='npm-debug-'+str(len(proof)).zfill(3)+'.log';target=EV/name;assert not target.exists();target.write_bytes(raw);total+=size
+  proof.append({'sourceRelative':str(source.relative_to(folder)),'evidenceFile':name,'bytes':size,'sha256':hashlib.sha256(raw).hexdigest()})
+ emit('npm-debug-capture.json',{'directoryExisted':True,'files':proof,'complete':True,'captureBeforeCleanup':True,'bodiesUnmodified':True})
 
 def download(url,maximum=32*1024**2):
  req=urllib.request.Request(url,headers={'User-Agent':'StaticLockIntegrity/1.0'})
@@ -112,7 +145,7 @@ try:
  node=Path(shutil.which('node')).resolve();version=subprocess.check_output([str(node),'--version'],text=True).strip();assert version=='v22.18.0'
  npm=Path(shutil.which('npm')).resolve();npm_version=subprocess.check_output([str(node),str(npm),'--version'],text=True).strip()
  mem=dict((line.split(':',1)[0],line.split(':',1)[1].strip())for line in Path('/proc/meminfo').read_text().splitlines());assert int(mem['MemAvailable'].split()[0])*1024>=6*1024**3;disk=shutil.disk_usage(ROOT);assert disk.free>=8*1024**3
- emit('identity-resources.json',{'node':str(node),'nodeVersion':version,'nodeSha256':sha(node),'npm':str(npm),'npmVersion':npm_version,'runnerImage':{k:os.environ.get(k)for k in ['ImageOS','ImageVersion','RUNNER_ARCH']},'meminfo':mem,'disk':disk._asdict(),'controls':'PER_PROCESS_RLIMITS_AND_GROUP_WALL_NOT_AGGREGATE_CGROUP_OR_DISK','cpuSeconds':240,'ASbytes':24*1024**3,'nofile':256,'nproc':96,'fsize':1024**3,'core':0,'compilerOldSpaceMiB':4096,'networkAcquisition':'PUBLIC_ANONYMOUS_NO_DOMAIN_FIREWALL_CLAIM'})
+ emit('identity-resources.json',{'node':str(node),'nodeVersion':version,'nodeSha256':sha(node),'npm':str(npm),'npmVersion':npm_version,'runnerImage':{k:os.environ.get(k)for k in ['ImageOS','ImageVersion','RUNNER_ARCH']},'meminfo':mem,'disk':disk._asdict(),'controls':'PER_PROCESS_RLIMITS_AND_GROUP_WALL_NOT_AGGREGATE_CGROUP_OR_DISK','cpuSeconds':240,'ASbytes':24*1024**3,'nofile':256,'nproc':96,'fsize':1024**3,'core':0,'compilerOldSpaceMiB':4096,'networkAcquisition':'PUBLIC_ANONYMOUS_NO_DOMAIN_FIREWALL_CLAIM','inheritedNofileSoftHard':resource.getrlimit(resource.RLIMIT_NOFILE),'acquisitionNofileProposed':4096,'compilerNofileUnchanged':256})
  baseline=ROOT/'baseline';candidate=ROOT/'candidate';before={'baseline':make_copy(baseline),'candidate':make_copy(candidate)}
  delta=json.loads((HERE/'candidate-delta.json').read_text());assert delta['base']==BASE
  for row in delta['files']:
@@ -148,7 +181,8 @@ try:
  assert resolved['userconfig']==str(empty)and resolved['globalconfig']==str(empty_global)and resolved['cache']==str(cache)
  assert resolved['ignore-scripts']is True and resolved['audit']is False and resolved['fund']is False and resolved['fetch-retries']==0
  emit('npm-config-preflight.json',{'userconfig':str(empty),'globalconfig':str(empty_global),'gitGlobalConfig':env['GIT_CONFIG_GLOBAL'],'distinctEmptyFiles':True,'npmVersion':npm_version,'nonAcquisitiveCommand':config['argv'],'resolvedIsolationFlagsVerified':True})
- REPORT['duBeforeAcquisition']=du();install=run('acquisition',[str(node),str(npm),'ci','--ignore-scripts','--no-audit','--no-fund'],acquisition,env)
+ assert resource.getrlimit(resource.RLIMIT_NOFILE)[1]==resource.RLIM_INFINITY or resource.getrlimit(resource.RLIMIT_NOFILE)[1]>=4096,'inherited hard NOFILE below reviewed acquisition4096; STOP no escalation'
+ REPORT['duBeforeAcquisition']=du();install=run('acquisition',[str(node),str(npm),'ci','--ignore-scripts','--no-audit','--no-fund'],acquisition,env,nofile=4096)
  assert sha(acquisition/'package-lock.json')==LOCK and sha(acquisition/'package.json')==PACKAGE
  assert install['naturalComplete']and install['rc']==0,'acquisition failed; STOP no automatic fallback/retry'
  deps=acquisition/'node_modules';lib=deps/'libsignal';libproof={}
@@ -183,6 +217,7 @@ finally:
  REPORT['seconds']=time.monotonic()-START;REPORT['duAfter']=du()
  archive=ROOT/'static-evidence.tar.gz';finalizationErrors=[]
  try:
+  capture_npm_debug_logs()
   emit('result.json',REPORT)
   with tarfile.open(archive,'w:gz')as t:
    for p in sorted(EV.iterdir()):assert p.is_file()and not p.is_symlink();t.add(p,arcname=p.name)
