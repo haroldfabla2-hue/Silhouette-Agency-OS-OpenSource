@@ -15,6 +15,7 @@ const scheduler: Slot = { name:'scheduler',phase:'UNSEEN' };
 const cron: Slot = { name:'cron',phase:'UNSEEN' };
 const dreamer: Slot = { name:'dreamer',phase:'UNSEEN' };
 const introspection: Slot = { name:'introspection-known-borrowers',phase:'UNSEEN' };
+const voiceRoutes: Slot = { name:'known-voice-route-tasks',phase:'UNSEEN' };
 const resourceManager: Slot = { name:'resource-manager-known-borrowers',phase:'UNSEEN' };
 const telephonyTools: Slot = { name:'known-telephony-tool-tasks',phase:'UNSEEN' };
 const telephony: Slot = { name:'telephony-known-borrowers',phase:'UNSEEN' };
@@ -88,6 +89,9 @@ export function failEvaluatedDreamer(permit: Permit,error: unknown): void { fail
 export function admitEvaluatedIntrospection(): Permit { return admit(introspection); }
 export function bindEvaluatedIntrospection(permit: Permit,stop: () => unknown): void { publish(introspection,permit,stop,conceptBorrowersSealed); }
 export function failEvaluatedIntrospection(permit: Permit,error: unknown): void { failed(introspection,permit,error); }
+export function admitEvaluatedVoiceRoutes(): Permit { return admit(voiceRoutes); }
+export function bindEvaluatedVoiceRoutes(permit: Permit,stop: () => unknown): void { publish(voiceRoutes,permit,stop,false); }
+
 export function admitEvaluatedResourceManager(): Permit { return admit(resourceManager); }
 export function bindEvaluatedResourceManager(permit: Permit,stop: () => unknown): void { publish(resourceManager,permit,stop,false); }
 export function failEvaluatedResourceManager(permit: Permit,error: unknown): void { failed(resourceManager,permit,error); }
@@ -113,6 +117,8 @@ export async function drainEvaluatedKnownVoiceBorrowers(): Promise<void> {
     const failures: unknown[] = [];
     // Admitted resource shunt/restore can still import and call original TTS.
     // Join it before the new constructor admission frontier is sealed.
+    // Known routes may still admit original resource/tool/voice imports.
+    try { await drain([voiceRoutes]); } catch (error) { failures.push(error); }
     try { await drain([resourceManager]); } catch (error) { failures.push(error); }
     // Original admitted tool branches may still evaluate telephony imports.
     try { await drain([telephonyTools]); } catch (error) { failures.push(error); }
@@ -163,5 +169,5 @@ export async function closeEvaluatedRuntimeStorage(): Promise<void> {
 }
 export function evaluatedRuntimeFrontier(): readonly Readonly<{name:string;phase:string}>[] {
     // UNSEEN remains UNVERIFIED; never silently becomes NOT_ACQUIRED.
-    return [...producers,introspection,resourceManager,telephonyTools,telephony,tts,voiceLibrary,...storage].map(slot => Object.freeze({name:slot.name,phase:slot.phase}));
+    return [...producers,introspection,voiceRoutes,resourceManager,telephonyTools,telephony,tts,voiceLibrary,...storage].map(slot => Object.freeze({name:slot.name,phase:slot.phase}));
 }
