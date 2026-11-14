@@ -16,7 +16,7 @@ while cur!=cur.parent:
  cur=cur.parent
 allowed.update({'continuum-regressions/continuum-validation.json',*( 'continuum-regressions/continuum-mode-'+m+'.json' for m in ['constructors','identity-existing','saturated-replay','schema-and-write-failure','power-check','timer-armed','timer-fired','threshold']),*( 'continuum-regressions/'+n for n in ['root-preflight.json','network.json','supervisor.json','complete.log','identity-map.json']),'continuum-regressions.log','continuum-regressions-receipt.json'})
 # Fixed only: NEVER redis-mode-*.log or redis complete.log/raw logs.
-redisModes=['natural-expiry','pending-terminal','fired-terminal','inflight-terminal','release-reacquire-terminal','multikey-guard','postseal-idempotency','open-survivor']
+redisModes=['natural-expiry','pending-terminal','fired-terminal','inflight-terminal','release-reacquire-terminal','multikey-guard','postseal-idempotency','open-survivor','supplement-batch']
 allowed.update({'redis-regressions/redis-validation.json',*('redis-regressions/redis-mode-'+m+'.json'for m in redisModes),*('redis-regressions/'+n for n in ['root-preflight.json','network.json','supervisor.json','identity-map.json']),'redis-regressions.log','redis-regressions-receipt.json'})
 def bounded_evidence_read(p,cap):
  assert p.is_relative_to(root)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SOURCE ONLY. Eight real subprocesses, no raw mode-log export, alwaysFAIL."""
+"""SOURCE ONLY. Eight original subprocesses and one conditional supplemental batch, no raw mode-log export, alwaysFAIL."""
 import json,os,pathlib,subprocess,time,signal,selectors,importlib.util
 spec=importlib.util.spec_from_file_location('redis_schema','/driver/redis-receipt-schema.py');schema=importlib.util.module_from_spec(spec);spec.loader.exec_module(schema)
 START=time.monotonic();END=START+160;rows=[];fatal=False
@@ -13,11 +13,14 @@ for mode in schema.MODES:
  receipt=pathlib.Path('/evidence/redis-mode-'+mode+'.json');begin=time.monotonic()
  row={'mode':mode,'code':None,'timeout':False,'failure':None,'forcedOrGroupRemained':False,'receipt':False,'assertionsComplete':False,'elapsed':0}
  # Admit only a FULL17s execution +2s group cleanup slot, not stolen from later
- # modes or the supervisor's180s.8*19=152 plus8s driver/receipt overhead.
+ # modes or supervisor180s. Original8 retain152s allowance. Ninth slot
+ # is conditional on real remaining>=19s; worst-case9*19 DOES NOT fit160.
+ # If not available, PHASE_BUDGET/fatal/FAIL, never partial acceptance.
  if END-begin<19:row['failure']='PHASE_BUDGET';fatal=True;rows.append(row);break
  env=dict(os.environ,NODE_ENV='test',SILHOUETTE_FINITE_REDIS='real-terminal-expiry-v1',SILHOUETTE_FINITE_REDIS_RECEIPT=str(receipt))
  assert env['SILHOUETTE_PROVIDERS']=='off'and env['SILHOUETTE_INFERENCE_MODE']=='cloud-only'
- p=subprocess.Popen(['/node/bin/node','--import','tsx/esm','/driver/redis-terminal-regression.mts',mode],cwd='/app',env=env,start_new_session=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+ command=['/usr/bin/python3','/driver/redis-supplement-batch.py']if mode=='supplement-batch'else ['/node/bin/node','--import','tsx/esm','/driver/redis-terminal-regression.mts',mode]
+ p=subprocess.Popen(command,cwd='/app',env=env,start_new_session=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
  sel=selectors.DefaultSelector();os.set_blocking(p.stdout.fileno(),False);sel.register(p.stdout,selectors.EVENT_READ);bytes_seen=0;eof=False
  try:
   # Complete original logs remain PRIVATE and excluded from exporter. No raw
@@ -54,9 +57,9 @@ for mode in schema.MODES:
   assert p.returncode==(0 if r['assertionsComplete']else 1)
  except BaseException:row['failure']='RECEIPT_INVALID';fatal=True
  rows.append(row)
- OUT.write_text(json.dumps({'version':1,'phase':'redis-regressions','status':'FAIL_OR_INCOMPLETE_NOT_PRODUCT_PASS','rows':rows,'allModesAccounted':len(rows)==8,'fatal':fatal,'elapsed':time.monotonic()-START,'global':'INCOMPLETE'},indent=2)+'\n')
+ OUT.write_text(json.dumps({'version':1,'phase':'redis-regressions','status':'FAIL_OR_INCOMPLETE_NOT_PRODUCT_PASS','rows':rows,'allModesAccounted':len(rows)==9,'fatal':fatal,'elapsed':time.monotonic()-START,'global':'INCOMPLETE'},indent=2)+'\n')
  # An ordinary assertionFAIL (including OPENsurvivor) continues independent
  # scenarios. Any transport/timeout/orphan/schema failure prevents new imports.
  if fatal:break
-OUT.write_text(json.dumps({'version':1,'phase':'redis-regressions','status':'FAIL_OR_INCOMPLETE_NOT_PRODUCT_PASS','rows':rows,'allModesAccounted':len(rows)==8,'fatal':fatal,'elapsed':time.monotonic()-START,'global':'INCOMPLETE'},indent=2)+'\n')
+OUT.write_text(json.dumps({'version':1,'phase':'redis-regressions','status':'FAIL_OR_INCOMPLETE_NOT_PRODUCT_PASS','rows':rows,'allModesAccounted':len(rows)==9,'fatal':fatal,'elapsed':time.monotonic()-START,'global':'INCOMPLETE'},indent=2)+'\n')
 raise SystemExit(1)

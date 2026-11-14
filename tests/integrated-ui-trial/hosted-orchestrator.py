@@ -89,7 +89,7 @@ def members(b,*,mode,package=None,integrity=None):
 try:
  assert os.environ['PRIVATE']=='false'and os.environ['ENVIRONMENT']=='github-hosted'and os.environ['GITHUB_EVENT_NAME']in {'workflow_dispatch','push'}
  if os.environ['GITHUB_EVENT_NAME']=='push':
-  assert subprocess.check_output(['git','rev-parse','HEAD^'],cwd=REPO,text=True).strip()=='41de67a763370230152fd136886b03a64029e1c7'
+  assert subprocess.check_output(['git','rev-parse','HEAD^'],cwd=REPO,text=True).strip()=='de2f1b5548d529615c239262fa4da562fb922ab9'
   assert os.environ['GITHUB_REF']=='refs/heads/preparation/sqlite-static-typecheck-db201993-4054-20261114'
  assert os.environ['GITHUB_SHA']==os.environ['EXPECTED_HEAD']==subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip()
  node=Path(shutil.which('node')).resolve();assert sha(node.read_bytes())=='ccacb2d6d87ba6d118b2bffc1ae33747a05cc5fc6b1f1ec4fc1d420b687e952d';assert subprocess.check_output([str(node),'--version'],text=True).strip()=='v22.18.0'
@@ -147,6 +147,11 @@ try:
  for r in redisComposition['files']:
   p=app/r['path'];b=(HERE/'redis-terminal-overlay'/r['path']).read_bytes();assert sha(p.read_bytes())==r['beforeSha256'];assert len(b)==r['bytes']and sha(b)==r['afterSha256'];p.write_bytes(b)
  redisActual={str(p.relative_to(app)):sha(p.read_bytes())for p in app.rglob('*')if p.is_file()};assert redisActual==redisComposition['finalProductFiles']
+ generationRaw=(HERE/'generation-borrow-composition.json').read_bytes();assert sha(generationRaw)=='0c567fa373d8d6f88de8452a447c800345166710992b7a9f6893c7d32b7e308b'
+ generation=json.loads(generationRaw);assert generation['priorComposition']==sha(redisRaw)and len(generation['files'])==1
+ for r in generation['files']:
+  p=app/r['path'];b=(HERE/'generation-borrow-overlay'/r['path']).read_bytes();assert sha(p.read_bytes())==r['beforeSha256'];assert len(b)==r['bytes']and sha(b)==r['afterSha256'];p.write_bytes(b)
+ assert {str(p.relative_to(app)):sha(p.read_bytes())for p in app.rglob('*')if p.is_file()}==generation['finalProductFiles']
  excluded=[]
  for r in classification['files']:
   if not r['include']:(app/r['path']).unlink();excluded.append(r)

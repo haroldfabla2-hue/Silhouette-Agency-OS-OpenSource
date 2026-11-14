@@ -1,6 +1,6 @@
 """SOURCE ONLY. Exact scenario and final-byte evidence contract, no success grant."""
 import math
-MODES=['natural-expiry','pending-terminal','fired-terminal','inflight-terminal','release-reacquire-terminal','multikey-guard','postseal-idempotency','open-survivor']
+MODES=['natural-expiry','pending-terminal','fired-terminal','inflight-terminal','release-reacquire-terminal','multikey-guard','postseal-idempotency','open-survivor','supplement-batch']
 SCENARIOS=['NATURAL_EXPIRY_AND_HELD_GUARD','PUBLIC_DISCONNECT_NOT_TERMINAL','FIRED_BEFORE_TERMINAL','ACQUISITION_PENDING_AT_SEAL','TWO_GENERATIONS_CANCEL_WITHOUT_UNLOCK','MULTIKEY_AND_UNSELECTED_GUARD','PENDING_BEFORE_POSTSEAL_ASSERTION','OLD_EXPIRY_MUST_NOT_DELETE_NEW_LOCK']
 TERMINAL='ACTUAL_TERMINAL_DISPOSITION_AND_PHYSICAL_CANCEL'
 FIXED=['QUEUED_NOT_FIRED_RACE','NATIVE_SETUP_OR_CANCELLATION_FAILURE','ACTUAL_REDIS_NX_PX']
@@ -24,6 +24,9 @@ def diagnostic_receipt(d):
  assert d['incidentsTable']in {'NOT_OBSERVED','PRESENT','ABSENT'}and d['migration004']in {'NOT_OBSERVED','APPLIED','ABSENT_OR_MISMATCH'}
  if d['migration004']=='APPLIED':assert d['incidentsTable']=='PRESENT'and d['migrationSource']=='MATCH_ALL_FOUR'
 def mode_receipt(v,mode):
+ if mode=='supplement-batch':
+  from redis_supplement_schema import batch_receipt
+  batch_receipt(v);return
  keys(v,'version mode diagnostic assertionsComplete results cleanup hostSealedEarly productState productVerdict survivor sameBodyObserved postSealRejected exactNativeTimers actualDestroyObserved cancelledSameOriginal firedOriginal ownerFailures taskOutcomeFailures lifetimeFailures rawPrivateLogExported global')
  diagnostic_receipt(v['diagnostic'])
  assert type(v['version'])is int and v['version']==1 and v['mode']==mode and mode in MODES
@@ -81,8 +84,8 @@ def summary_receipt(v,receipts):
  assert v['status']=='FAIL_OR_INCOMPLETE_NOT_PRODUCT_PASS'and v['global']=='INCOMPLETE'
  assert type(v['allModesAccounted'])is bool and type(v['fatal'])is bool
  number(v['elapsed'],180)
- assert type(v['rows'])is list and 1<=len(v['rows'])<=8
- assert v['allModesAccounted']==(len(v['rows'])==8)
+ assert type(v['rows'])is list and 1<=len(v['rows'])<=9
+ assert v['allModesAccounted']==(len(v['rows'])==9)
  present=set();fatal_indices=[]
  for i,r in enumerate(v['rows']):
   keys(r,'mode code timeout failure forcedOrGroupRemained receipt assertionsComplete elapsed')
@@ -103,4 +106,4 @@ def summary_receipt(v,receipts):
  assert set(receipts)==present
  assert v['fatal']==bool(fatal_indices)
  if fatal_indices:assert fatal_indices==[len(v['rows'])-1]
- else:assert v['allModesAccounted']is True and len(v['rows'])==8 and set(receipts)==set(MODES)
+ else:assert v['allModesAccounted']is True and len(v['rows'])==9 and set(receipts)==set(MODES)

@@ -1,6 +1,6 @@
 {
-  "status": "SOURCE_ONLY_COMPOSITION_NO_PUBLICATION_OR_EXECUTION",
-  "parent": "41de67a763370230152fd136886b03a64029e1c7",
+  "status": "SOURCE_ONLY_NO_EXECUTION_PUBLICATION",
+  "parent": "de2f1b5548d529615c239262fa4da562fb922ab9",
   "files": {
     "ASSERTION-DIAGNOSTIC-COMPOSITION-REVIEW.md": {
       "bytes": 1315,
@@ -21,6 +21,14 @@
     "FINITE-VALIDATION-REVIEW.md": {
       "bytes": 4913,
       "sha256": "d20349427a1895e4e116d6ca5654c43763d03fe2d46b1ea0fd383a798c6ea170"
+    },
+    "GENERATION-BORROW-COMPOSITION-REVIEW.md": {
+      "bytes": 5855,
+      "sha256": "1dca5b674dd85a7c76a0c77e180a13627807f853d98fde2c6dac4989608b4987"
+    },
+    "GENERATION-BORROW-PRODUCT-REVIEW.md": {
+      "bytes": 6206,
+      "sha256": "5a4a3e904827e456ac8c7b63569223125c56ecf6f5ac3f35acde5dd706159411"
     },
     "REDIS-PRECONDITION-COMPOSITION-REVIEW.md": {
       "bytes": 3999,
@@ -150,9 +158,17 @@
       "bytes": 20160,
       "sha256": "dbf0ff4c7a98a5b0f00b51ee85d978dfd3cc5dde61aac09c28c0ee0fa932f278"
     },
+    "generation-borrow-composition.json": {
+      "bytes": 193118,
+      "sha256": "0c567fa373d8d6f88de8452a447c800345166710992b7a9f6893c7d32b7e308b"
+    },
+    "generation-borrow-overlay/services/redisClient.ts": {
+      "bytes": 23254,
+      "sha256": "94875ae65d7b0dacc7952bd5a166db4a273ec7ea69c5ffd0a332e6e85527b9c5"
+    },
     "hosted-orchestrator.py": {
-      "bytes": 27282,
-      "sha256": "684c1fe8c3eff063e844821de856c3086ecf48948b1ebbe0b3a22006587a326f"
+      "bytes": 27920,
+      "sha256": "a17283e1b815e7ba9824ac4ed9eb0d63bd4439496ab1f2de68e9e7dabf4cffbc"
     },
     "identity-entry.py": {
       "bytes": 3884,
@@ -167,8 +183,8 @@
       "sha256": "0e3a710ab63232eec31d90e994036b3a3480c65605097fe4a6f0938e2bf33366"
     },
     "integrated-hosted.yml": {
-      "bytes": 3768,
-      "sha256": "20900ab863fc7ba73b66e3c1413d12d6febe122de0765cf0732eb00060eb08bb"
+      "bytes": 4164,
+      "sha256": "f2065c3aa74e5bd95cb3bbc4a85c0d2f4968311a154115d0a9d547b0ebaa76a7"
     },
     "lance-provenance.json": {
       "bytes": 900,
@@ -210,9 +226,17 @@
       "bytes": 4061,
       "sha256": "6d4db2c333ac887464b161bc1139f1fd86c248e0b43110a758b945c60d7763f1"
     },
+    "redis-generation-supplement.mts": {
+      "bytes": 19842,
+      "sha256": "da4096752a71828a7fca404b28380e1efbc1a6508c2b71c7f9b67d0e9c9d2b8f"
+    },
     "redis-receipt-schema.py": {
-      "bytes": 8487,
-      "sha256": "62b30094ed507106c622cd7b37645ba9e50aec0a4bf44b2a538da0b1ba5c9b9c"
+      "bytes": 8614,
+      "sha256": "d5e536eea39595b80931a80fe5070a79b9d2c21dd192080ef4ee951ac595b428"
+    },
+    "redis-supplement-batch.py": {
+      "bytes": 2189,
+      "sha256": "5afea73a9d5e3729b6b16b55d7e2886f96670d5f7dd01ba147731e7a8164ffad"
     },
     "redis-terminal-composition.json": {
       "bytes": 193353,
@@ -227,12 +251,16 @@
       "sha256": "76eeffd4f80aa557c5348b09162a1499b4e30a741f75ebf2b9d08afe4e5ca2a5"
     },
     "redis-validation.py": {
-      "bytes": 3894,
-      "sha256": "1ce0404d5254cf3de3bc7bff246e9963e7da52bfe8fd290d3631b5156b811d84"
+      "bytes": 4185,
+      "sha256": "6f5ca0fdad7f3f1acd2d1f1e16b6b159b0e9caa0e3cea9cd765d049c4e9109cc"
+    },
+    "redis_supplement_schema.py": {
+      "bytes": 6902,
+      "sha256": "045f357220cf14f3e24212d06d4b95c5ebfe9a499377df54b5e2416b5f1d0550"
     },
     "return-evidence.py": {
-      "bytes": 15112,
-      "sha256": "d42c460a9ba88c32c6da264ce2b5befcdf6b8f2e158bbf75c3c9dfb918623e7d"
+      "bytes": 15131,
+      "sha256": "f67fc78d5d419e9a0281a5727c023ceb89ab8ec3694f0e98511bb1bbdf44ea04"
     },
     "runtime-boundary-composition.json": {
       "bytes": 194009,
