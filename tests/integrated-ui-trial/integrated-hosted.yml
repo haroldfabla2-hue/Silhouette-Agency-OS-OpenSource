@@ -27,7 +27,7 @@ jobs:
         run: |
           set -euo pipefail
           case "$GITHUB_EVENT_NAME" in
-            push) test "${{ github.event.before }}" = 9b85668507d4cdbb814ca032d4006f0edade657b ;;
+            push) test "${{ github.event.before }}" = 26c801546d6bf0d1c63b67ccbee136d5016778bf ;;
             workflow_dispatch) test -n "${{ inputs.expected_head }}" ;;
             *) exit 96 ;;
           esac
@@ -46,10 +46,10 @@ jobs:
         run: |
           set -euo pipefail
           if test "$GITHUB_EVENT_NAME" = push; then
-            test "$(git rev-parse HEAD^)" = 9b85668507d4cdbb814ca032d4006f0edade657b
+            test "$(git rev-parse HEAD^)" = 26c801546d6bf0d1c63b67ccbee136d5016778bf
             test "$(git rev-list --parents -n 1 HEAD | wc -w)" -eq 2
             git diff-tree --no-commit-id --name-only -r HEAD | sort > "$RUNNER_TEMP/integrated-actual-paths"
-            printf '%s\n' .github/workflows/integrated-silhouette-ui.yml tests/integrated-ui-trial/GLOBAL-NUMERIC-IDENTITY-DELTA-REVIEW.md tests/integrated-ui-trial/MANIFEST.json tests/integrated-ui-trial/REVIEW.md tests/integrated-ui-trial/acl_custody_receipt.py tests/integrated-ui-trial/effective_acl_custody.py tests/integrated-ui-trial/fixed_io_boundary.py tests/integrated-ui-trial/hosted-orchestrator.py tests/integrated-ui-trial/integrated-hosted.yml tests/integrated-ui-trial/lineage-static-audit.json tests/integrated-ui-trial/mount_readonly_model.py tests/integrated-ui-trial/packet.sha256 | sort > "$RUNNER_TEMP/integrated-expected-paths"
+            printf '%s\n' .github/workflows/integrated-silhouette-ui.yml tests/integrated-ui-trial/MANIFEST.json tests/integrated-ui-trial/NATIVE-FIRSTFAILURE-DELTA-REVIEW.md tests/integrated-ui-trial/REVIEW.md tests/integrated-ui-trial/hosted-orchestrator.py tests/integrated-ui-trial/integrated-hosted.yml tests/integrated-ui-trial/lineage-static-audit.json tests/integrated-ui-trial/native_fd_coordinator.py tests/integrated-ui-trial/native_finite_exporter.py tests/integrated-ui-trial/native_fixed_boundary.py tests/integrated-ui-trial/native_receipt_schema.py tests/integrated-ui-trial/packet.sha256 tests/integrated-ui-trial/qualify-host.py tests/integrated-ui-trial/qualify-regular-native-inventory-source.py | sort > "$RUNNER_TEMP/integrated-expected-paths"
             diff -u "$RUNNER_TEMP/integrated-expected-paths" "$RUNNER_TEMP/integrated-actual-paths"
           fi
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020

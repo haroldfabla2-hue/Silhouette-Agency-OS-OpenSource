@@ -2,6 +2,7 @@
 """REVIEW SOURCE ONLY. Read-only full environment inventory, aggregate gaps.
 No app, downloaded executable, sudo write, install, sysctl or network call.
 """
+from native_fixed_boundary import call,deny,blocked_receipt,NativeFixedFailure
 from pathlib import Path
 import ctypes.util,hashlib,json,os,shutil,subprocess,sys,time,importlib.util
 QUALIFICATION_STARTED=time.monotonic()
@@ -43,25 +44,68 @@ r['next']='Actual bounded same-launcher namespace/cgroup/capability/loader probe
 # protected descriptors/identities; missing custody is a hard qualification gap.
 # All old host checks above are preserved, same original30s outer command bound.
 def regular_native_extension():
- require(len(sys.argv)==8,'SUPERVISOR_FD_ADMISSION_REQUIRED')
- privatefd,sinkfd=int(sys.argv[2]),int(sys.argv[3])
- privateid=(int(sys.argv[4]),int(sys.argv[5]));sinkid=(int(sys.argv[6]),int(sys.argv[7]))
- require(time.monotonic()<QUALIFICATION_DEADLINE,'NO_EXTENSION_BUDGET_REMAINS')
- here=Path(__file__).resolve().parent
+ coordinator=None;inventory=None;sinkfd=None;sinkid=None
  def load(name,filename):
-  spec=importlib.util.spec_from_file_location(name,here/filename);module=importlib.util.module_from_spec(spec);sys.modules[name]=module;spec.loader.exec_module(module);return module
- exporter=load('native_finite_exporter','native_finite_exporter.py')
- schema=load('native_receipt_schema','native_receipt_schema.py')
- inventory=load('regular_native_inventory','qualify-regular-native-inventory-source.py')
- coordinator=load('native_fd_coordinator','native_fd_coordinator.py')
- contract=json.loads((here/'regular-native-contract.json').read_text())
- result=coordinator.run_extension(inventory.inventory_regular_chrome_requirements,contract,
-    QUALIFICATION_DEADLINE,privatefd,privateid,sinkfd,sinkid)
- # Public parent hostreceipt stores a fixed label only; rawnative receipt has
- # its own exact finite sink. No path or rawversiondata copied into this field.
+  here=Path(__file__).resolve().parent
+  spec=call('MODULE_SPEC',importlib.util.spec_from_file_location,name,here/filename)
+  module=call('MODULE_CREATE',importlib.util.module_from_spec,spec)
+  sys.modules[name]=module
+  call('MODULE_EXEC',spec.loader.exec_module,module)
+  return module
+ try:
+  if len(sys.argv)!=8:deny('EXTENSION_ARGS','SUPERVISOR_FD_ADMISSION_REQUIRED')
+  privatefd,sinkfd=call('EXTENSION_ARGS',int,sys.argv[2]),call('EXTENSION_ARGS',int,sys.argv[3])
+  privateid=(call('EXTENSION_ARGS',int,sys.argv[4]),call('EXTENSION_ARGS',int,sys.argv[5]))
+  sinkid=(call('EXTENSION_ARGS',int,sys.argv[6]),call('EXTENSION_ARGS',int,sys.argv[7]))
+  if call('CLOCK_READ',time.monotonic)>=QUALIFICATION_DEADLINE:deny('EXTENSION_BUDGET','NO_EXTENSION_BUDGET_REMAINS')
+  load('native_finite_exporter','native_finite_exporter.py')
+  load('native_receipt_schema','native_receipt_schema.py')
+  coordinator=load('native_fd_coordinator','native_fd_coordinator.py')
+  inventory=load('regular_native_inventory','qualify-regular-native-inventory-source.py')
+  fd=None;raw=bytearray();primary=None
+  try:
+   fd=call('CONTRACT_OPEN',os.open,Path(__file__).with_name('regular-native-contract.json'),os.O_RDONLY|os.O_CLOEXEC|os.O_NOFOLLOW)
+   while True:
+    block=call('CONTRACT_READ',os.read,fd,min(4096,65537-len(raw)))
+    if not block:break
+    raw.extend(block)
+    if len(raw)>65536:deny('CONTRACT_READ','CONTRACT_INCOMPLETE')
+  except BaseException as original:primary=original;raise
+  finally:
+   if fd is not None:
+    try:call('CONTRACT_CLOSE',os.close,fd)
+    except BaseException:
+     if primary is not None:primary.cleanupFailed=True
+     else:raise
+  def contract_pairs(items):
+   result={}
+   for key,value in items:
+    if key in result:deny('CONTRACT_PARSE','CONTRACT_INCOMPLETE')
+    result[key]=value
+   return result
+  def no_constant(_):deny('CONTRACT_PARSE','CONTRACT_INCOMPLETE')
+  contract=call('CONTRACT_PARSE',json.loads,raw,object_pairs_hook=contract_pairs,parse_constant=no_constant)
+  coordinator.run_extension(inventory.inventory_regular_chrome_requirements,contract,
+     QUALIFICATION_DEADLINE,privatefd,privateid,sinkfd,sinkid,(inventory.QualificationIncomplete,))
+ except BaseException as original:
+  trusted=(inventory.QualificationIncomplete,)if inventory is not None else()
+  if not getattr(original,'receiptWritten',False)and not getattr(original,'sinkAttempted',False):
+   receipt=blocked_receipt(original,trusted)
+   if coordinator is not None and sinkfd is not None and sinkid is not None:
+    try:coordinator.write_fixed_sink(receipt,sinkfd,sinkid)
+    except BaseException:coordinator.failure_fallback(original,trusted)
+   else:
+    # Bootstrap failed before safe sink writer was available. Only source-fixed
+    # finite diagnostic, never a substitute for the mandatory receipt file.
+    try:print(json.dumps({'fixedNativeFallback':receipt,'receiptWriteFailed':True},sort_keys=True))
+    except BaseException:original.cleanupFailed=True
+  raise
  return 'STATIC_METADATA_ONLY_NOT_NATIVE_QUALIFIED'
 def guarded_regular_native_extension():
- try:return regular_native_extension()
- except BaseException:raise RuntimeError('REGULAR_NATIVE_STATIC_INCOMPLETE')from None
+ try:return call('QUALIFIER_EXTENSION',regular_native_extension)
+ except BaseException:
+  # Detailed source-owned finite receipt/fallback is separate; no raw exception
+  # enters the legacy host JSON/log or traceback.
+  raise RuntimeError('REGULAR_NATIVE_STATIC_INCOMPLETE')from None
 check('regular-native-static-extension',guarded_regular_native_extension)
 out.write_text(json.dumps(r,indent=2)+'\n');print(json.dumps(r));raise SystemExit(1 if gaps else 0)

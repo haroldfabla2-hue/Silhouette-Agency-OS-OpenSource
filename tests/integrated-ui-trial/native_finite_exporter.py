@@ -1,3 +1,4 @@
+from native_fixed_boundary import clean_diagnostic
 """SOURCE ONLY. Fixed secret-denying native inventory export and gate.
 Untrusted/raw host data must never be serialized to the public evidence sink.
 No tool invocation/import of acquired code in these functions.
@@ -32,6 +33,9 @@ def finite_export_and_gate(raw):
              'unresolvedCount':len(missing),'unsupportedCount':len(unsupported),'fixedGapCount':len(gaps),
              'vendorAndDlopen':'UNVERIFIED','namespaceLoad':'NOT_EXECUTED','resourceFit':'UNVERIFIED',
              'nativeQualified':False,'productPass':False}
+    receipt.update(clean_diagnostic())
+    if blocked:
+        receipt.update(failureOperation='FINITE_PROJECT',failureReason='STATIC_NATIVE_HARD_GAP')
     # Caller writes ONLY this fixed receipt and exits failure when blocked.
     # Even clean static metadata has no native/runtime admission pass.
     return receipt, blocked
