@@ -51,6 +51,29 @@ def emergency(reason):
   print(text,flush=True);emitted+=size;return True
  selected=[];omitted=[]
  emit({'kind':'EVIDENCE_INCOMPLETE','reason':reason,'raw_complete':False,'files_count_observed':len(files),'raw_bytes_observed':raw,'scan_complete':complete_scan,'scan_entries':scanned,'issues':issues,'selection':'control/final/session metadata plus inventory, not raw archive','limits':{'files':MAX_FILES,'raw':MAX_RAW,'gzip':MAX_GZIP,'emergency_stdout':MAX_EMERGENCY}})
+ # Priority bounded boot diagnostic, before bulky details/inventory.
+ # Dedicated producer emits only fixed schema, enum types, hashes, counters.
+ boot_rel='checks/neo4j-boot-emergency.json';boot_path=root/boot_rel
+ try:
+  fd=os.open(boot_path,os.O_RDONLY|os.O_NOFOLLOW)
+  with os.fdopen(fd,'rb')as stream:
+   meta=os.fstat(stream.fileno());assert stat.S_ISREG(meta.st_mode)and meta.st_size<=MAX_DETAIL
+   data=stream.read(MAX_DETAIL+1);assert len(data)<=MAX_DETAIL
+  value=json.loads(data);assert value.get('schema')=='NEO4J_BOOT_EMERGENCY_V1'
+  def safe_boot(v,depth=0):
+   if depth>5:return 'DEPTH_LIMIT'
+   if v is None or type(v)in(bool,int,float):return v
+   if isinstance(v,str):
+    allowed={'NEO4J_BOOT_EMERGENCY_V1','FAIL','INCOMPLETE','ONE_BOOT_QUERY_READBACK_CONTROLLED_SHUTDOWN_PASS_NOT_PRODUCT','PREFLIGHT','LAUNCH','READINESS','SERVER_IDENTITY','CREATE','MATCH','SHUTDOWN','NOT_WRITTEN','WRITE_FAILED','WRITTEN_COMPLETE','WRITTEN_INCOMPLETE','AssertionError','RuntimeError','TimeoutError','OSError','FileNotFoundError','PermissionError','ValueError','HTTPError','URLError','ConnectionError','JSONDecodeError','BrokenPipeError','ProcessLookupError','KeyError','TypeError','SystemExit','KeyboardInterrupt','OTHER_EXCEPTION'}
+    return v if v in allowed or len(v)==64 and all(c in '0123456789abcdef'for c in v)else'TEXT_REDACTED'
+   if isinstance(v,list):return [safe_boot(x,depth+1)for x in v[:4]]
+   if isinstance(v,dict):
+    keys={'schema','status','original_failure','stage','error_type','error_sha256','last_stage','envelope_state','raw_complete','cleanup','leader_rc','signal_count','eof','group_empty','ports_closed','remaining_identity_count','errors','console_missing_bytes','runtime_evidence_incomplete','evidence_failure_type'}
+    return{k:safe_boot(x,depth+1)for k,x in v.items()if k in keys}
+   return 'REDACTED'
+  emit({'kind':'EMERGENCY_BOOT_CAUSE_CLEANUP','path':boot_rel,'selection':safe_boot(value),'raw_fields_omitted':True});selected.append(boot_rel)
+ except Exception as error:
+  emit({'kind':'EMERGENCY_BOOT_DIAGNOSTIC_UNAVAILABLE','path':boot_rel,'cause_and_cleanup_unverified':True,'detail_missing':True,'error_type':type(error).__name__ if type(error).__name__ in {'FileNotFoundError','PermissionError','AssertionError','JSONDecodeError','OSError'}else'OTHER_EXCEPTION'})
  fixed=['trial-cleanup.json','host-budget.json','security-helpers-state.json']
  for phase in ['install','native','checks']:
   fixed +=[phase+'/'+name for name in ['containment-host.json','scope-cleanup.json',phase+'-session.json','namespace-status.json']]

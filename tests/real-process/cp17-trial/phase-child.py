@@ -27,33 +27,8 @@ if mode in {'install','native','browser'}:
  (ev/'network-preflight.json').write_text(json.dumps(record,indent=2))
  if record.get('returncode')!=0:raise SystemExit('PREPARATION_DNS_UNAVAILABLE_NOT_PRODUCT_FAILURE')
 
-if mode=='checks':
- # Exact reviewed policy inputs are separate from original product bytes.
- # Technical48/512/256/256 policy reviewed; exact execution authority is separate.
- preparation=json.loads(pathlib.Path('/tmp/harness/oracle-preparation/preparation-capacity.json').read_text())
- assert preparation['status']=='CANDIDATE_TECHNICAL_INPUTS_PINNED'
- profile=preparation['vitest-generation']
- for key in ['scopes','active','failures','resources']:
-  value=profile[key]
-  assert type(value)is int and value>0,'Missing reviewed test capacity:'+key
-  env['SILHOUETTE_OWNER_'+key.upper()]=str(value)
- (ev/'test-preparation-inputs.json').write_text(json.dumps({'source_graph':preparation['source_graph'],'capacity':profile,'scope':'Per actual module generation; not process-global upper bound'},indent=2))
- subprocess.run(['/usr/bin/python3','/tmp/harness/prepare-browser.py','--verify-only'],env=env,check=True,timeout=min(30,max(.1,float(os.environ['PHASE_DEADLINE_MONOTONIC'])-time.monotonic()-5)))
-
-if mode=='checks':
- record={'phase':mode,'dependencies_read_only':bool(os.statvfs(root/'node_modules').f_flag&os.ST_RDONLY),'cache':[]}
- assert record['dependencies_read_only'],'dependencies must stay RO'
- assert bool(os.statvfs(root/'node_modules/vite/package.json').f_flag&os.ST_RDONLY)
-
- for name in ['.vite-temp','.vite']:
-  path=root/'node_modules'/name;st=path.lstat();assert path.is_dir()and not path.is_symlink()
-  fs=os.statvfs(path);item={'path':str(path),'device':st.st_dev,'read_only':bool(fs.f_flag&os.ST_RDONLY),'filesystem_bytes':fs.f_blocks*fs.f_frsize}
-  assert st.st_dev==pathlib.Path('/tmp').stat().st_dev and not item['read_only'] and item['filesystem_bytes']<=512*1024**2
-  probe=path/'.authored-cache-mount-probe'
-  with probe.open('xb')as f:f.write(b'authored-private-cache-only\n')
-  probe.unlink();record['cache'].append(item)
- (ev/'private-cache-mounts.json').write_text(json.dumps(record,indent=2))
-
+# This source candidate checks mode is a dedicated real Neo4j dependency boot only.
+# No browser verification, Vite cache mounts, ownership product input or product imports.
 install_preparation=None
 if mode=='install':
  assert resource.getrlimit(resource.RLIMIT_NOFILE)==(4096,4096),'explicit install-only FD4096 not effective'
@@ -71,8 +46,7 @@ elif mode=='native':
 elif mode=='browser':
  phases=[('browser-asset-preparation',['/usr/bin/python3','/tmp/harness/prepare-browser.py'],root,90)]
 elif mode=='checks':
- env['PLAYWRIGHT_BROWSERS_PATH']=str(root/'node_modules/.silhouette-browser-assets')
- phases=[('native-smoke',[node,'/tmp/harness/native-smoke.cjs'],root,20),('lint',[node,npm,'run','lint'],root,90),('types',[node,npm,'run','typecheck'],root,120),('frontend-build',[node,npm,'run','build'],root,70),('server-build',[node,str(root/'node_modules/vite/bin/vite.js'),'build','--config','vite.server.config.ts'],root,40),('profile-native-oracle',[node,'--import',str(root/'node_modules/tsx/dist/loader.mjs'),'/tmp/harness/profile-native-oracle.mts'],root,120),('profile-terminal-oracle',[node,'--import',str(root/'node_modules/tsx/dist/loader.mjs'),'/tmp/harness/profile-terminal-oracle.mts'],root,60)]
+ phases=[('neo4j-boot-real',['/usr/bin/python3','/tmp/harness/neo4j-boot-real.py'],root,185)]
 else:raise SystemExit('unknown mode')
 # Host also enforces remaining setup240s aggregate and absolute1800s job deadline.
 results=[];total=0;unsafe=False;deadline=float(os.environ['PHASE_DEADLINE_MONOTONIC'])
@@ -88,6 +62,7 @@ for name,argv,cwd,limit in phases:
  try:
   phase_env=dict(env,NODE_OPTIONS='--max-old-space-size=4096')if name=='types'else dict(env)
   if name=='neo4j-admission':phase_env['NEO4J_ADMISSION_PHASE_DEADLINE']=str(deadline)
+  if name=='neo4j-boot-real':phase_env['NEO4J_BOOT_PHASE_DEADLINE']=str(deadline)
   child=subprocess.Popen(argv,cwd=cwd,env=phase_env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True);os.set_blocking(child.stdout.fileno(),False);sel.register(child.stdout,selectors.EVENT_READ)
   with(ev/(name+'.log')).open('wb')as stream:
    while True:

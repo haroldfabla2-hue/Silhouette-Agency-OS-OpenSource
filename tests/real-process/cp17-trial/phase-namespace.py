@@ -35,14 +35,7 @@ if mode=='native':
  for rel in ['.silhouette-native-neo4j']:cmd+=['--bind','/tmp/deps-store/'+rel,'/tmp/work/node_modules/'+rel]
 if mode=='browser':
  cmd+=['--bind','/tmp/deps-store/.silhouette-browser-assets','/tmp/work/node_modules/.silhouette-browser-assets']
-if mode=='checks':
- for name in ['.vite-temp','.vite']:
-  # Empty destinations were prepared on fixedstore before RO mount. Only this
-  # scratchdirectory becomes writable, never any dependency package bytes.
-  source=scratch/('private-'+name);source.mkdir(mode=0o777);source.chmod(0o777)
-  destination=pathlib.Path('/tmp/deps-store')/name
-  assert destination.is_dir()and not destination.is_symlink()and not list(destination.iterdir())
-  cmd+=['--bind',str(source),'/tmp/work/node_modules/'+name]
+# No Vite/browser/product cache mounts in this boot-only checks entry.
 cmd+=['--remount-ro','/','--chdir','/tmp/work','/usr/bin/python3','/tmp/harness/phase-child.py',mode]
 # INSTALL only: exact locked Lance binary116740704B exceeds64MiB.
 #128MiB is a fixed design bound with17.5MB headroom, not proof all files fit.

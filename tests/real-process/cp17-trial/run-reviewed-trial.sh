@@ -29,7 +29,7 @@ for name in ['vitest-generation','wal','accepted']:
   value=state[name][key];assert type(value)is int and value>0,'NOT_STARTED_UNREVIEWED_CAPACITY:'+name+':'+key
 PREPARATION_REVIEW_GATE
 # Pure transitive admission preflight, before volume/delegation/package operations.
-for exact_phase in native; do
+for exact_phase in native checks; do
   python3 "$ops/phase_contract.py" --phase "$exact_phase" --legacy "$helper/root-self-admit.py" --checks "$ops/root-self-admit-checks256.py"
 done
 cleanup() {
@@ -64,7 +64,9 @@ p=pathlib.Path(sys.argv[1]);mode=sys.argv[2];cap=int(sys.argv[3]);clock=json.loa
 remaining=clock['deadline_monotonic']-now-120
 if mode in {'install','native','browser'}:
  state=json.loads((p/'host-budget.json').read_text());remaining=min(remaining,240-state['elapsed_seconds'])
-v=int(min(cap,remaining));assert v>15,'NOT_STARTED_BUDGET';print(v-15)
+v=int(min(cap,remaining));assert v>15,'NOT_STARTED_BUDGET'
+if mode=='checks':assert v==220,'NOT_STARTED_BOOT_REQUIRES_FULL220s_HOST_ALLOCATION'
+print(v-15)
 PY
 )
   # Fixed enum selects a fixed pinned helper; host revalidates independently.
@@ -80,7 +82,7 @@ if mode in {'install','native','browser'}:
 PY
   return "$rc"
 }
-# Admission-only source delta: no npm/install/SQLite/browser/checks phases.
+# Required archive readmission only, then one dedicated real Neo4j checks command.
 python3 - "$store" <<'NEO4J_MOUNTPOINT'
 import pathlib,sys
 root=pathlib.Path(sys.argv[1]);assert root.is_dir()and not root.is_symlink()
@@ -97,3 +99,17 @@ assert len(session['results'])==1 and session['results'][0]['name']=='neo4j-admi
 assert admission['status']=='ADMITTED_ARCHIVE_ONLY_NOT_BOOTFIT'
 print('NEO4J_STATIC_ARCHIVE_ADMISSION_ONLY_NOT_SERVICE_OR_STAGEB_PASS')
 ADMISSION_RESULT
+# Exactly one real dependency boot after required ephemeral asset readmission.
+phase checks 220
+python3 - "$EVIDENCE/checks/scope-cleanup.json" "$EVIDENCE/checks/checks-session.json" "$EVIDENCE/checks/neo4j-boot-evidence.json" "$EVIDENCE/checks/containment-host.json" <<'BOOT_RESULT'
+import json,pathlib,sys
+scope,session,envelope,host=[json.loads(pathlib.Path(p).read_text())for p in sys.argv[1:]]
+metrics=host['pre_cleanup_metrics'];memory=dict(line.split()for line in metrics['memory.events'].splitlines());pids=dict(line.split()for line in metrics['pids.events'].splitlines())
+assert all(int(memory[k])==0 for k in ['oom','oom_kill','max'])and int(pids['max'])==0,'BOOT_RESOURCE_LIMIT_EVENT'
+assert host['status']=='FINAL_PASS'
+assert scope['natural_empty']and not scope['events'],'UNSAFE_OR_FORCED_BOOT_CLEANUP'
+assert not session.get('unsafe',True),'UNSAFE_INNER_BOOT'
+assert len(session['results'])==1 and session['results'][0]['name']=='neo4j-boot-real'and session['results'][0]['status']=='PASS'
+assert envelope['runtime_files_complete']and envelope['result']['status']=='ONE_BOOT_QUERY_READBACK_CONTROLLED_SHUTDOWN_PASS_NOT_PRODUCT'
+print('NEO4J_ONE_REAL_BOOT_ONLY_NOT_SERVICE_CONTROLLER_UI_OR_FEATURE')
+BOOT_RESULT
