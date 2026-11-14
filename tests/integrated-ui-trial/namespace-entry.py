@@ -4,6 +4,7 @@ import os,pathlib,socket,fcntl,struct,subprocess,json,sys,signal,time
 # Bring only lo up. No address/route to external networks is installed.
 s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);ifr=struct.pack('16sH14s',b'lo',0x1|0x8,b'');fcntl.ioctl(s,0x8914,ifr);s.close()
 # Validate both IP families and root exposure BEFORE dependency/plugin/app eval.
+assert os.readlink('/proc/self/ns/net')!=os.environ['HOST_NETNS'],'HOST_NETNS_NOT_ISOLATED'
 interfaces=socket.if_nameindex();assert {n for _,n in interfaces}=={'lo'}
 routes=pathlib.Path('/proc/net/route').read_text();assert all(not x.strip()or x.split()[0]=='lo'for x in routes.splitlines()[1:])
 v6=pathlib.Path('/proc/net/ipv6_route').read_text();assert all(not x.strip()or x.split()[-1]=='lo'for x in v6.splitlines())
@@ -24,7 +25,15 @@ status=dict(l.split(':',1)for l in pathlib.Path('/proc/self/status').read_text()
 assert all(int(status[k].strip(),16)==0 for k in ['CapEff','CapPrm','CapBnd','CapInh'])and status['NoNewPrivs'].strip()=='1'
 pathlib.Path('/evidence/root-preflight.json').write_text(json.dumps({'rootEntries':sorted(os.listdir('/')),'mountinfo':pathlib.Path('/proc/self/mountinfo').read_text(),'forbiddenPathsAbsent':True,'capabilitiesZero':True,'noNewPrivs':True,'HOME':'/home/test','TMPDIR':'/tmp','dependencies':'readonly except empty .vite-temp tmpfs','freshApp':True},indent=2)+'\n')
 pathlib.Path('/evidence/network.json').write_text(json.dumps({'routesV4':routes,'routesV6':v6,'interfaces':interfaces,'network':'isolated namespace loopback only'})+'\n')
-phase=sys.argv[1];env={'PATH':'/node/bin:/usr/bin:/bin','HOME':'/home/test','TMPDIR':'/tmp','NODE_ENV':'production','SILHOUETTE_PROVIDERS':'off','SILHOUETTE_INFERENCE_MODE':'cloud-only','SILHOUETTE_BOOT_MODE':'normal','SILHOUETTE_HOST':'127.0.0.1','PORT':'3005','WORKSPACE_ROOT':'/app/workspace','PROPOSAL_OWNER_DIR':'/app/data','INGRESS_REPLAY_DIR':'/app/data','CONFIRMATION_GATE_DIR':'/app/data','SILHOUETTE_DB_PATH':'/app/db/test.db','SILHOUETTE_IDENTITY_DB_PATH':'/app/db/identity.sqlite','SILHOUETTE_TOOLS_DB_PATH':'/app/data/tools.db','SILHOUETTE_LANCEDB_PATH':'/app/data/lance','SILHOUETTE_OWNER_SCOPES':'128','SILHOUETTE_OWNER_ACTIVE':'512','SILHOUETTE_OWNER_FAILURES':'64','SILHOUETTE_OWNER_RESOURCES':'256','GOMAXPROCS':'1','TOKIO_WORKER_THREADS':'1','LANCE_CPU_THREADS':'1','RAYON_NUM_THREADS':'1'}
+phase=sys.argv[1]
+if phase=='preflight':
+ # Actual local binds, selected Node and Python loader only, no project imports.
+ for family,addr in [(socket.AF_INET,('127.0.0.1',3005)),(socket.AF_INET6,('::1',3005))]:
+  with socket.socket(family,socket.SOCK_STREAM)as local:local.bind(addr);local.listen(1)
+ n=subprocess.check_output(['/node/bin/node','--version'],env={'PATH':'/node/bin:/usr/bin:/bin'},timeout=5).decode().strip();assert n=='v22.18.0'
+ pathlib.Path('/evidence/qualification.json').write_text(json.dumps({'status':'REAL_EMPTY_ENVIRONMENT_PROBE_ONLY','noProjectModulesEvaluated':True,'bothLoopbackBinds':True,'nodeVersion':n,'networkNamespace':os.readlink('/proc/self/ns/net'),'noPolicyChanges':True})+'\n')
+ raise SystemExit(0)
+env={'PATH':'/node/bin:/usr/bin:/bin','HOME':'/home/test','TMPDIR':'/tmp','NODE_ENV':'production','SILHOUETTE_PROVIDERS':'off','SILHOUETTE_INFERENCE_MODE':'cloud-only','SILHOUETTE_BOOT_MODE':'normal','SILHOUETTE_HOST':'127.0.0.1','PORT':'3005','WORKSPACE_ROOT':'/app/workspace','PROPOSAL_OWNER_DIR':'/app/data','INGRESS_REPLAY_DIR':'/app/data','CONFIRMATION_GATE_DIR':'/app/data','SILHOUETTE_DB_PATH':'/app/db/test.db','SILHOUETTE_IDENTITY_DB_PATH':'/app/db/identity.sqlite','SILHOUETTE_TOOLS_DB_PATH':'/app/data/tools.db','SILHOUETTE_LANCEDB_PATH':'/app/data/lance','SILHOUETTE_OWNER_SCOPES':'128','SILHOUETTE_OWNER_ACTIVE':'512','SILHOUETTE_OWNER_FAILURES':'64','SILHOUETTE_OWNER_RESOURCES':'256','GOMAXPROCS':'1','TOKIO_WORKER_THREADS':'1','LANCE_CPU_THREADS':'1','RAYON_NUM_THREADS':'1'}
 # API token stays ephemeral in process-local env, never printed or saved.
 import secrets
 env['SILHOUETTE_API_TOKEN']=secrets.token_urlsafe(32)
@@ -34,6 +43,8 @@ fd=os.open('/evidence/.export-deny-api-token',os.O_WRONLY|os.O_CREAT|os.O_EXCL,0
 try:
  tokenBytes=env['SILHOUETTE_API_TOKEN'].encode('ascii');assert os.write(fd,tokenBytes)==len(tokenBytes)
 finally:os.close(fd)
+if phase=='runtime-prerequisites':
+ raise SystemExit(subprocess.call(['/node/bin/node','/driver/runtime-prerequisites.cjs'],env=env))
 if phase.endswith('build'):
  cmd=['/node/bin/node','/app/node_modules/vite/bin/vite.js','build']
  if phase=='server-build':cmd+=['--config','vite.server.config.ts']

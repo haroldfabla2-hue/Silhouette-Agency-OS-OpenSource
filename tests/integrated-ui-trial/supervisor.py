@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Review-only project integration supervisor. No approval inferred from flags."""
-import argparse,json,os,pathlib,resource,signal,subprocess,time,selectors,shutil
+import argparse,json,os,pathlib,resource,signal,subprocess,hashlib,time,selectors,shutil
 P=pathlib.Path;p=argparse.ArgumentParser()
-for name in ['phase','app','deps','browser','review-dir','node-root','cgroup-parent','cgroup-tag','memory-bytes','wall-seconds','evidence']:p.add_argument('--'+name,required=True)
-a=p.parse_args();assert a.phase in ['ui-build','server-build','runtime'];memory=int(a.memory_bytes);wall=int(a.wall_seconds);assert memory==3*1024**3 and wall==180 and a.cgroup_tag.isdigit()
+for name in ['bwrap','phase','app','deps','browser','review-dir','node-root','cgroup-parent','cgroup-tag','memory-bytes','wall-seconds','evidence']:p.add_argument('--'+name,required=True)
+a=p.parse_args();assert a.phase in ['preflight','runtime-prerequisites','ui-build','server-build','runtime'];memory=int(a.memory_bytes);wall=int(a.wall_seconds);assert memory==3*1024**3 and wall==180 and a.cgroup_tag.isdigit()
 app=P(a.app).resolve();evidence=P(a.evidence).resolve();assert not evidence.exists();evidence.mkdir(mode=0o700)
 start=time.monotonic();childcg=None;proc=None;failure=None;events=[];receipts=[];mem={};written=0;procs=[];memoryEvents='UNVERIFIED';code=None;removed=False
 
@@ -30,11 +30,12 @@ try:
   for typ,val in [(resource.RLIMIT_CORE,0),(resource.RLIMIT_NOFILE,256),(resource.RLIMIT_NPROC,96),(resource.RLIMIT_CPU,120),(resource.RLIMIT_FSIZE,64*1024**2)]:resource.setrlimit(typ,(val,val))
   os.sched_setaffinity(0,{min(os.sched_getaffinity(0))})
  # Explicit empty root first. Only reviewed bind roots enter it, never '/' host.
- cmd=['bwrap','--die-with-parent','--new-session','--unshare-user','--uid','0','--gid','0','--unshare-net','--unshare-pid','--unshare-ipc','--unshare-uts','--cap-drop','ALL','--cap-add','CAP_NET_ADMIN','--cap-add','CAP_SETPCAP','--clearenv','--tmpfs','/','--proc','/proc','--dev','/dev','--tmpfs','/tmp','--tmpfs','/home','--dir','/home/test']
+ bwrap=P(a.bwrap).resolve(strict=True);assert hashlib.sha256(bwrap.read_bytes()).hexdigest()=='e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71'
+ cmd=[str(bwrap),'--die-with-parent','--new-session','--unshare-user','--uid','0','--gid','0','--unshare-net','--unshare-pid','--unshare-ipc','--unshare-uts','--cap-drop','ALL','--cap-add','CAP_NET_ADMIN','--cap-add','CAP_SETPCAP','--clearenv','--tmpfs','/','--proc','/proc','--dev','/dev','--tmpfs','/tmp','--tmpfs','/home','--dir','/home/test']
  for x in ['/usr','/bin','/lib','/lib64','/etc/fonts','/etc/ld.so.cache','/etc/ssl/certs']:
   if P(x).exists():cmd+=['--ro-bind',x,x]
  for src,dst,mode in [(app,'/app','--bind'),(P(a.deps),'/app/node_modules','--ro-bind'),(P(a.browser),'/browser-assets','--ro-bind'),(P(a.review_dir),'/driver','--ro-bind'),(P(a.node_root),'/node','--ro-bind'),(evidence,'/evidence','--bind')]:cmd+=[mode,str(src.resolve()),dst]
- cmd+=['--tmpfs','/app/node_modules/.vite-temp','--chdir','/app','--setenv','PATH','/node/bin:/usr/bin:/bin','--setenv','HOME','/home/test','--setenv','TMPDIR','/tmp','/usr/bin/python3','/driver/namespace-entry.py',a.phase]
+ cmd+=['--tmpfs','/app/node_modules/.vite-temp','--chdir','/app','--setenv','PATH','/node/bin:/usr/bin:/bin','--setenv','HOST_NETNS',os.readlink('/proc/self/ns/net'),'--setenv','HOME','/home/test','--setenv','TMPDIR','/tmp','/usr/bin/python3','/driver/namespace-entry.py',a.phase]
  proc=subprocess.Popen(cmd,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,env={'PATH':'/usr/bin:/bin'},preexec_fn=setup);sel=selectors.DefaultSelector();os.set_blocking(proc.stdout.fileno(),False);sel.register(proc.stdout,selectors.EVENT_READ);eof=False
  with(evidence/'complete.log').open('xb')as log:
   while True:

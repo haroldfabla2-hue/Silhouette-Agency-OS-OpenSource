@@ -51,12 +51,19 @@ def members(b):
 try:
  assert os.environ['PRIVATE']=='false'and os.environ['ENVIRONMENT']=='github-hosted'and os.environ['GITHUB_EVENT_NAME']in {'workflow_dispatch','push'}
  if os.environ['GITHUB_EVENT_NAME']=='push':
-  assert subprocess.check_output(['git','rev-parse','HEAD^'],cwd=REPO,text=True).strip()=='82a19131a82a86b669bc1e20ff6b76d1527cd190'
+  assert subprocess.check_output(['git','rev-parse','HEAD^'],cwd=REPO,text=True).strip()=='1f1c3c05cec56ec1a25375ee256f984a0c7c3319'
   assert os.environ['GITHUB_REF']=='refs/heads/preparation/sqlite-static-typecheck-db201993-4054-20261114'
  assert os.environ['GITHUB_SHA']==os.environ['EXPECTED_HEAD']==subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip()
  node=Path(shutil.which('node')).resolve();assert sha(node.read_bytes())=='ccacb2d6d87ba6d118b2bffc1ae33747a05cc5fc6b1f1ec4fc1d420b687e952d';assert subprocess.check_output([str(node),'--version'],text=True).strip()=='v22.18.0'
  assert shutil.disk_usage(ROOT).free>=8*1024**3
- for binary in ['bwrap','sudo','git']:assert shutil.which(binary),'MISSING_PREREQUISITE:'+binary
+ # Aggregate all current host prerequisites before any project acquisition.
+ command('host-qualification',['/usr/bin/python3',str(HERE/'qualify-host.py'),str(EV/'host-qualification.json')],REPO,{'PATH':os.environ['PATH'],'ImageOS':os.environ.get('ImageOS',''),'ImageVersion':os.environ.get('ImageVersion','')},30)
+ command('security-preparation',['/usr/bin/python3',str(HERE/'prepare-security.py'),str(EV),os.environ['GITHUB_RUN_ID']],REPO,{'PATH':'/usr/bin:/bin','RUNNER_TEMP':os.environ['RUNNER_TEMP']},170)
+ security=json.loads((EV/'security-preparation.json').read_text());assert security['status']=='AUTHENTICATED_STAGED_NOT_RUNTIME_PASS'and security['rootKeyScopeAbsent']and not security['forced'];bwrap=Path(security['binary']);assert sha(bwrap.read_bytes())=='e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71'
+ # Same actual supervisor/root/net/capability path, empty disposable roots only.
+ probe=ROOT/'probe-app';probe.mkdir();(probe/'node_modules').mkdir();probeDeps=ROOT/'probe-deps';probeDeps.mkdir();(probeDeps/'.vite-temp').mkdir();probeBrowser=ROOT/'probe-browser';probeBrowser.mkdir();(probe/'RUNTIME-MATERIALIZATION-REVIEWED.json').write_text('{}')
+ command('environment-probe',['sudo','-n','/usr/bin/python3',str(HERE/'supervisor.py'),'--phase','preflight','--app',str(probe),'--deps',str(probeDeps),'--browser',str(probeBrowser),'--review-dir',str(HERE),'--node-root',str(node.parents[1]),'--bwrap',str(bwrap),'--cgroup-parent','/sys/fs/cgroup','--cgroup-tag',os.environ['GITHUB_RUN_ID'],'--memory-bytes',str(3*1024**3),'--wall-seconds','180','--evidence',str(EV/'environment-probe')],REPO,{'PATH':'/usr/bin:/bin'},200)
+
  app=ROOT/'app';app.mkdir();raw=subprocess.check_output(['git','archive',BASE],cwd=REPO)
  with tarfile.open(fileobj=io.BytesIO(raw))as t:
   for m in t.getmembers():
@@ -120,8 +127,8 @@ try:
  (app/'node_modules').mkdir();(deps/'.vite-temp').mkdir()
  (app/'RUNTIME-MATERIALIZATION-REVIEWED.json').write_text(json.dumps({'base':BASE,'source54':True,'historicalState':False,'providerMode':'off','runnableOnlyInsideIsolatedPhase':True})+'\n')
  nodeRoot=node.parents[1]
- for phase in ['ui-build','server-build','runtime']:
-  command(phase,['sudo','-n',str(shutil.which('python3')),str(HERE/'supervisor.py'),'--phase',phase,'--app',str(app),'--deps',str(deps),'--browser',str(browser),'--review-dir',str(HERE),'--node-root',str(nodeRoot),'--cgroup-parent','/sys/fs/cgroup','--cgroup-tag',os.environ['GITHUB_RUN_ID'],'--memory-bytes',str(3*1024**3),'--wall-seconds','180','--evidence',str(EV/phase)],REPO,{'PATH':os.environ['PATH']},200)
+ for phase in ['runtime-prerequisites','ui-build','server-build','runtime']:
+  command(phase,['sudo','-n',str(shutil.which('python3')),str(HERE/'supervisor.py'),'--bwrap',str(bwrap),'--phase',phase,'--app',str(app),'--deps',str(deps),'--browser',str(browser),'--review-dir',str(HERE),'--node-root',str(nodeRoot),'--cgroup-parent','/sys/fs/cgroup','--cgroup-tag',os.environ['GITHUB_RUN_ID'],'--memory-bytes',str(3*1024**3),'--wall-seconds','180','--evidence',str(EV/phase)],REPO,{'PATH':os.environ['PATH']},200)
  emit('result.json',{'status':'INTEGRATED_PHASES_EXITED','providers':'off','localInference':False,'AIProven':False,'authenticatedChatStorageProven':False,'rootBComplete':False,'global':'INCOMPLETE'})
 except BaseException as e:
  emit('failure.json',{'type':type(e).__name__,'message':str(e),'global':'INCOMPLETE','forcedOrMissingEvidenceNeverPass':True});raise
