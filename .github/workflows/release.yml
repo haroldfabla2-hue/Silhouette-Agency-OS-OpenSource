@@ -14,6 +14,7 @@ on:
         options:
           - static
           - native-account-wal
+          - native-factory-stop
 permissions:
   contents: read
 jobs:
@@ -61,6 +62,10 @@ jobs:
             native-account-wal)
               sha256sum --check native-packet.sha256
               python3 run-native-sqlite.py
+              ;;
+            native-factory-stop)
+              sha256sum --check factory-packet.sha256
+              python3 run-native-factory.py
               ;;
             *)
               printf '%s\n' 'Unreviewed validation selector refused' >&2
