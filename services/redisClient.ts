@@ -11,6 +11,7 @@ class RedisService {
     private readonly ownership = redisOwner();
     private client: any;
     private isConnected: boolean = false;
+    private connectingOwner: Promise<void> | undefined;
     private isMock: boolean = false;
     private mockStore: Map<string, string> = new Map();
 
@@ -26,7 +27,21 @@ class RedisService {
     public connect() {
         return this.ownership.invoke('original-connect', operation => this.connectOriginal(operation));
     }
-    private async connectOriginal(operation: Operation) {
+    private connectOriginal(operation: Operation): Promise<void> {
+        // Install before the original dynamic import can resume. Every admitted
+        // caller retains the same original attempt instead of allocating another
+        // client, or returning early merely because its candidate exists.
+        if (this.connectingOwner) return this.connectingOwner;
+        const original = this.connectAttemptOriginal(operation);
+        this.connectingOwner = original;
+        const release = () => {
+            if (this.connectingOwner === original) this.connectingOwner = undefined;
+        };
+        // Observe both settlements without replacing the original Promise/error.
+        void original.then(release, release);
+        return original;
+    }
+    private async connectAttemptOriginal(operation: Operation): Promise<void> {
         // 1. Browser Safety Check: Never run in browser
         if (typeof window !== 'undefined') return;
 
@@ -154,7 +169,9 @@ class RedisService {
      * original errors retained rather than escaping EventEmitter unowned. */
     private async ensureConnected(operation: Operation): Promise<void> {
         // Fixed original command continuation, not a new root after seal.
-        if (!this.isConnected) await this.connectOriginal(operation);
+        // The transport 'connect' event can precede connect() readiness. Join
+        // the original attempt even if that event already changed isConnected.
+        if (this.connectingOwner || !this.isConnected) await this.connectOriginal(operation);
     }
 
     public set(key: string, value: string, ttl?: number) {
