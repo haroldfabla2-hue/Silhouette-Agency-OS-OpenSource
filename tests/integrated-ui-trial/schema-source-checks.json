@@ -1,0 +1,12 @@
+{
+  "scope": "PURE_SCHEMA_CONTRACT_ONLY_NOT_PRODUCT_PASS",
+  "checks": [
+    "Exact actual19 current projection rejects old3fieldvalidator (observed source compatibility check only).",
+    "Same unmodified actual19 current projection accepts exact5fieldvalidator, all original counters/categories unchanged.",
+    "EXTRA_FIELD: rejected as required (validator tamper check, not functional product test).",
+    "UNKNOWN_SITE: rejected as required (validator tamper check, not functional product test).",
+    "MISSING_SAME_REF: rejected as required (validator tamper check, not functional product test).",
+    "FORWARD_SAME_REF: rejected as required (validator tamper check, not functional product test).",
+    "UNKNOWN_CATEGORY: rejected as required (validator tamper check, not functional product test)."
+  ]
+}

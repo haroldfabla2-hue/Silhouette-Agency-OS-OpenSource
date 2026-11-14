@@ -1,17 +1,10 @@
 {
   "sourceOnly": true,
-  "executed": false,
-  "currentPublicationParent": "53b68d46317a16bd0220d7e2ac794d7580b493d2",
-  "workflowPushBefore": [
-    "53b68d46317a16bd0220d7e2ac794d7580b493d2"
-  ],
-  "workflowParent": [
-    "53b68d46317a16bd0220d7e2ac794d7580b493d2"
-  ],
-  "orchestratorParent": [
-    "53b68d46317a16bd0220d7e2ac794d7580b493d2"
-  ],
-  "historicalCompositionIntact": true,
-  "functionalCompositionSha256": "25f49a318b3c98f0959621d89deaf9c11d9075844112efb610669b6d50183cda",
-  "fullOutcome": "FAIL_OR_INCOMPLETE"
+  "parent": "e40ce600d1ebf6c5c09874486a7c7e6f6fdaf436",
+  "workflowEventBefore": "e40ce600d1ebf6c5c09874486a7c7e6f6fdaf436",
+  "workflowHeadParent": "e40ce600d1ebf6c5c09874486a7c7e6f6fdaf436",
+  "internalOrchestratorHeadParent": "e40ce600d1ebf6c5c09874486a7c7e6f6fdaf436",
+  "allOperationalPinsSame": true,
+  "historicalCompositionUnchanged": true,
+  "productLayerSha256": "f55dbf5558508c15a76e2f74cce46395a869a0f44ffe5168fc566f64c640b3e8"
 }

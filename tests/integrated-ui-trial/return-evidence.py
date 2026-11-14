@@ -203,6 +203,7 @@ with tarfile.open(fileobj=buf,mode='w:gz')as t:
     validators={'runtime/runtime-finite.json':runtimeSchema.validate,'runtime/browser.json':runtimeSchema.browser,'runtime/runtime-result.json':runtimeSchema.runtime_result,'runtime/exit-frontier.json':runtimeSchema.exit_frontier,'runtime/runtime-process-counters.json':runtimeSchema.process_counters,'runtime/runtime-cgroup-counters.json':runtimeSchema.cgroup_counters,'runtime-receipt.json':runtimeSchema.runtime_outer}
     validators[rel](fixedReceipt)
     if rel.endswith('runtime-finite.json')and fixedReceipt['lifecycleEvidence']!='OBSERVED_NOT_GLOBAL_PASS':diagnostic_error(rel,'INCOMPLETE_FIXED_RUNTIME_LIFECYCLE')
+    if rel.endswith('runtime-finite.json')and fixedReceipt['identityEvidence']!='OBSERVED_NOT_AUTH_PROOF':diagnostic_error(rel,'INCOMPLETE_FIXED_IDENTITY_BOUNDARY')
    except BaseException:
     diagnostic_error(rel,'INVALID_FIXED_RUNTIME_OR_BROWSER_RECEIPT');quarantine.append({'path':rel,'reason':'INVALID_FIXED_RUNTIME_RECEIPT_QUARANTINE'});continue
   if any(value in b for value in denyValues)or(not rel.endswith('.png')and(secret.search(b)or credentialPattern.search(b))):quarantine.append({'path':rel,'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest(),'reason':'POSSIBLE_SECRET_QUARANTINE'});continue

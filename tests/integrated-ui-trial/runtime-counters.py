@@ -1,14 +1,44 @@
 #!/usr/bin/env python3
-"""Namespace-local exact wrapper-descendant counters, no cmdline/env/fd/memory.
+"""Namespace-local exact wrapper-descendant counters, no cmdline/env/FD paths or memory contents. Fixed pipe inodes only.
 Stat command names are discarded. Never export data about non-descendants.
 """
-import os,sys,pathlib,time,json,signal
-root=int(sys.argv[1]);me=os.getpid();out=pathlib.Path('/evidence/runtime-process-counters.json');stop=False;start=time.monotonic();samples=[];lastCheckpoint=None;failed=False
+import os,sys,pathlib,time,json,signal,re
+root=int(sys.argv[1]);me=os.getpid();out=pathlib.Path('/evidence/runtime-process-counters.json');stop=False;start=time.monotonic();samples=[];seenCheckpoints=set();failed=False
 
 def stat(pid):
  raw=(pathlib.Path('/proc')/str(pid)/'stat').read_text();v=raw[raw.rindex(')')+2:].split()
  return {'pid':pid,'state':v[0],'ppid':int(v[1]),'userTicks':int(v[11]),'systemTicks':int(v[12]),'threads':int(v[17]),'startTicks':int(v[19]),'rssPages':int(v[21])}
 rootStart=stat(root)['startTicks']
+# Fixed known files only. No exe path/target bytes, cmdline or environ exported.
+fixedExecutablePaths=[('NODE_EXECUTABLE','/node/bin/node'),('CHROMIUM_EXECUTABLE','/browser-assets/chrome-headless-shell-linux64/chrome-headless-shell'),('TSX_ESBUILD_EXECUTABLE','/app/node_modules/tsx/node_modules/@esbuild/linux-x64/bin/esbuild'),('TOPLEVEL_ESBUILD_EXECUTABLE','/app/node_modules/@esbuild/linux-x64/bin/esbuild')]
+fixedExecutableIdentities=[]
+for label,path in fixedExecutablePaths:
+ try:
+  st=os.stat(path);fixedExecutableIdentities.append((label,(st.st_dev,st.st_ino)))
+ except FileNotFoundError:pass
+
+def selected_pipes(pid):
+ try:
+  st=os.stat('/proc/'+str(pid)+'/exe');exeBefore=(st.st_dev,st.st_ino);identity=next((label for label,pair in fixedExecutableIdentities if pair==(st.st_dev,st.st_ino)),'OTHER_OR_UNAVAILABLE')
+ except FileNotFoundError:return {'executableIdentity':'OTHER_OR_UNAVAILABLE','pipeEndpointsStatus':'PROCESS_GONE','pipeEndpoints':None}
+ except PermissionError:return {'executableIdentity':'OTHER_OR_UNAVAILABLE','pipeEndpointsStatus':'UNAVAILABLE','pipeEndpoints':None}
+ if identity not in {'NODE_EXECUTABLE','TSX_ESBUILD_EXECUTABLE','TOPLEVEL_ESBUILD_EXECUTABLE'}:return {'executableIdentity':identity,'pipeEndpointsStatus':'NOT_SELECTED_EXECUTABLE','pipeEndpoints':None}
+ try:
+  fds=list((pathlib.Path('/proc')/str(pid)/'fd').iterdir())
+  if len(fds)>512:return {'executableIdentity':identity,'pipeEndpointsStatus':'CAP_OVERFLOW','pipeEndpoints':None}
+  values=[]
+  for fd in sorted(fds,key=lambda x:int(x.name)):
+   try:
+    target=os.readlink(fd);match=re.fullmatch(r'pipe:\[([0-9]{1,20})\]',target)
+    if match:values.append({'fd':int(fd.name),'pipeInode':match.group(1)})
+   except FileNotFoundError:continue
+  if len(values)>64:return {'executableIdentity':identity,'pipeEndpointsStatus':'CAP_OVERFLOW','pipeEndpoints':None}
+  after=os.stat('/proc/'+str(pid)+'/exe')
+  if (after.st_dev,after.st_ino)!=exeBefore:return {'executableIdentity':'OTHER_OR_UNAVAILABLE','pipeEndpointsStatus':'EXECUTABLE_CHANGED_UNVERIFIED','pipeEndpoints':None}
+  return {'executableIdentity':identity,'pipeEndpointsStatus':'COLLECTED_FIXED_PIPE_INODES_ONLY','pipeEndpoints':values}
+ except FileNotFoundError:return {'executableIdentity':identity,'pipeEndpointsStatus':'PROCESS_GONE','pipeEndpoints':None}
+ except PermissionError:return {'executableIdentity':identity,'pipeEndpointsStatus':'UNAVAILABLE','pipeEndpoints':None}
+
 def sample(reason):
  global failed
  errors=[];rows={}
@@ -38,7 +68,10 @@ def sample(reason):
      try:
       raw=(tid/'stat').read_text();v=raw[raw.rindex(')')+2:].split();values.append({'tid':int(tid.name),'state':v[0],'userTicks':int(v[11]),'systemTicks':int(v[12])})
      except FileNotFoundError:pass
-    row['tasks']=values;selected.append(row)
+    row['tasks']=values;row.update(selected_pipes(pid))
+    if stat(pid)['startTicks']!=row['startTicks']:errors.append('DESCENDANT_IDENTITY_CHANGED');continue
+    if row['pipeEndpointsStatus']in{'CAP_OVERFLOW','UNAVAILABLE','EXECUTABLE_CHANGED_UNVERIFIED'}:errors.append('DESCENDANT_PIPE_IDENTITY_UNVERIFIED')
+    selected.append(row)
    except FileNotFoundError:pass
   result={'reason':reason,'elapsed':round(time.monotonic()-start,3),'descendants':selected,'errors':errors}
  except BaseException as e:result={'reason':reason,'elapsed':round(time.monotonic()-start,3),'errorType':type(e).__name__,'unverified':True}
@@ -58,10 +91,12 @@ try:
   p=pathlib.Path('/evidence/browser-checkpoints.json')
   try:
    raw=p.read_bytes();assert len(raw)<=65536
-   current=json.loads(raw)['checkpoints'][-1]['stage']
-   if current!=lastCheckpoint and current in {'ORIGINAL_BROWSER_FAILURE','ACTUAL_SCREENSHOT_ATTEMPT_BEGIN','BEFORE_BROWSER_CLOSE'}:
-    lastCheckpoint=current
-    if len(samples)<21:sample(current)
+   checkpoints=json.loads(raw)['checkpoints'];assert type(checkpoints)is list and len(checkpoints)<=64
+   for checkpoint in checkpoints:
+    current=checkpoint['stage']
+    if current not in seenCheckpoints and current in {'ORIGINAL_BROWSER_FAILURE','ACTUAL_SCREENSHOT_ATTEMPT_BEGIN','BEFORE_BROWSER_CLOSE'}:
+     seenCheckpoints.add(current)
+     if len(samples)<21:sample(current)
   except (FileNotFoundError,KeyError,IndexError,json.JSONDecodeError):pass
   time.sleep(.25)
 finally:

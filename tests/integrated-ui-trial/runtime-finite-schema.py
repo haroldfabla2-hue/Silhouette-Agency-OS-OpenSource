@@ -32,6 +32,9 @@ def projection(o):
   if r['sameOriginalFirstRetainedId']is not None:n(r['sameOriginalFirstRetainedId'])
  assert len(ids)==len(set(ids))
  for r in o['retained']:assert r['sameOriginalFirstRetainedId']is None or r['sameOriginalFirstRetainedId']in ids[:ids.index(r['id'])+1]
+ for r in o['retained']:
+  first=r['sameOriginalFirstRetainedId']
+  if first is not None:assert next(row for row in o['retained']if row['id']==first)['sameOriginalFirstRetainedId']==first
  assert o['ownerFailures']+o['taskOutcomeFailures']==o['lifetimeFailures']
  assert o['retainedCount']+o['acknowledged']<=o['lifetimeFailures'] # dropped-overcapacity rows remain lifetime failures
  assert sum(r['kind']=='OWNER_FAILURE'for r in o['retained'])<=o['ownerFailures']
@@ -64,7 +67,10 @@ def snapshot(o):
   keys(r,{'label','phase','fires','failures'});enum(r['phase'],{'UNSEEN','SCHEDULED','RUNNING','SETTLED','CANCELLED','UNVERIFIED'});n(r['fires']);n(r['failures'])
  h=o['hostEvidence'];assert(h is not None)==(o['kind']=='HOST')
  if h is not None:
-  keys(h,{'state','coverage','pending','capacity','highWater','residualCount','resourceEvidenceCount','resourceDispositions','failureProjection'})
+  keys(h,{'state','coverage','pending','capacity','highWater','residualCount','resourceEvidenceCount','resourceDispositions','failureProjection','productFrontierGuardPresent','resourceReasonCounts'})
+  b(h['productFrontierGuardPresent']);keys(h['resourceReasonCounts'],{'EVALUATION_UNKNOWN','RESOURCE_DEPENDENCY_CYCLE','DEPENDENT_RELEASE_UNVERIFIED','NO_SUPPORTED_CLOSE','CLOSE_FAILED','VERIFY_FAILED','STOP_INTERRUPTED_BEFORE_RELEASE_EVIDENCE','OTHER_OR_NONE'})
+  for v in h['resourceReasonCounts'].values():n(v)
+  assert sum(h['resourceReasonCounts'].values())==h['resourceEvidenceCount']
   enum(h['state'],{'INCOMPLETE','SETTLED_NO_FAILURE_RECORDED'});assert h['coverage']=='EXPLICITLY_REGISTERED_WORK_ONLY'
   for k in ['pending','residualCount','resourceEvidenceCount']:n(h[k])
   for k in ['capacity','highWater']:
@@ -84,11 +90,13 @@ def resource(o):
  else:keys(o,{'checkpoint','status','cap','counts','attribution','physicalClosureProven'});assert o['counts']is None
 
 def validate(o):
- keys(o,{'version','rawRuntimeLogs','snapshots','events','resourceCounts','markerOrder','lifecycleEvidence','global'})
+ keys(o,{'version','rawRuntimeLogs','snapshots','events','resourceCounts','markerOrder','lifecycleEvidence','identityBoundary','identityEvidence','identitySummary','global'})
  assert o['version']==1 and o['global']=='INCOMPLETE'
  keys(o['rawRuntimeLogs'],{'withheld','reason','runtimeCompletePresent','runtimeOuterPresent'});assert o['rawRuntimeLogs']['withheld']is True and o['rawRuntimeLogs']['reason']=='CREDENTIALLED_FIXTURE_PRIVATE_RAW_LOGS'
  b(o['rawRuntimeLogs']['runtimeCompletePresent']);b(o['rawRuntimeLogs']['runtimeOuterPresent'])
  rows(o['snapshots'],32);rows(o['events'],128);rows(o['resourceCounts'],2)
+ assert o['identitySummary']==identity_summary(o['identityBoundary'])
+ identity_boundary(o['identityBoundary']);enum(o['identityEvidence'],{'OBSERVED_NOT_AUTH_PROOF','MISSING_OR_INCOMPLETE'});assert(o['identityEvidence']=='OBSERVED_NOT_AUTH_PROOF')==identity_complete(o['identityBoundary'])
  for x in o['snapshots']:snapshot(x)
  for x in o['events']:keys(x,{'kind'});enum(x['kind'],EVENTS)
  for x in o['resourceCounts']:resource(x)
@@ -105,9 +113,64 @@ FUNCTIONAL_BOOLEANS={'freshSetup','actualDiagnostics','telemetryOff','evolutionO
 FUNCTIONAL_STAGES={'INITIAL','FRESH_SETUP_READINESS','REAL_SETUP_FIELDS','OFF_CHOICES_VERIFIED','REAL_SETUP_COMMIT','NEGATIVE_AUTH_BOUNDARIES','NEW_CONTEXT_REAL_LOGIN','PROTECTED_REQUEST_RELOAD','REAL_SESSION_REVOCATION','NARROW_AUTH_COMPLETE'}
 CHECKPOINTS={'BROWSER_LAUNCHED','PAGE_CREATED','ACTUAL_DOMCONTENTLOADED','ACTUAL_LOAD','BOOTSTRAP_BODY_ENTERED','HOST_INSTALLED','ENTRY_IMPORT_CALLED','ENTRY_IMPORT_FULFILLED','ENTRY_IMPORT_REJECTED','READINESS_REQUEST_FINISHED','BEFORE_BODY_WAIT','ORIGINAL_BROWSER_FAILURE','ACTUAL_SCREENSHOT_ATTEMPT_BEGIN','BEFORE_BROWSER_CLOSE','BROWSER_DISCONNECTED','PAGE_CRASH'}
 def browser(o):
- required={'console','pageErrors','failedResources','localResources','requests','responses','setupRequired','authenticated','chatStorageVerified','safeAuthenticatedPixels','lifecycleEvents','finishedResources','checkpoints','screenshot','bodyVisibleObserved','cleanupErrors'}
- optional={'navigation','titleObserved','functional','limitation','primaryFailure','layout','layoutFailure','layoutMetadataOverflow','captureOverflow','pendingWorkAtCleanup','credentialFixtureEntered'}
+ required={'operations','console','pageErrors','failedResources','localResources','requests','responses','setupRequired','authenticated','chatStorageVerified','safeAuthenticatedPixels','lifecycleEvents','finishedResources','checkpoints','screenshot','bodyVisibleObserved','cleanupErrors'}
+ optional={'preCredentialBoundary','navigation','titleObserved','functional','limitation','primaryFailure','layout','layoutFailure','layoutMetadataOverflow','captureOverflow','pendingWorkAtCleanup','credentialFixtureEntered'}
  assert type(o)is dict and required<=set(o)<=required|optional
+ rows(o['operations'],64)
+ for ordinal,r in enumerate(o['operations']):
+  keys(r,{'ordinal','operation','startedAt','originalSettledAt','wrapperFinishedAt','originalResult','wrapperResult','deadlineKind'});assert r['ordinal']==ordinal
+  enum(r['operation'],{'BROWSER_LAUNCH','FIRST_CONTEXT_CREATE','FIRST_PAGE_CREATE','BACKEND_READINESS_REQUEST','BACKEND_READINESS_JSON','FIRST_NAVIGATION','FIRST_BODY_VISIBLE','FIRST_TITLE'})
+  for k in ['startedAt','originalSettledAt','wrapperFinishedAt']:
+   if r[k]is not None:n(r[k],9999999999999)
+  assert r['startedAt']is not None
+  enum(r['originalResult'],{'PENDING','FULFILLED','REJECTED_TIMEOUT_CLASS','REJECTED_OTHER'});enum(r['wrapperResult'],{'PENDING','FULFILLED','WRAPPER_DEADLINE','ORIGINAL_REJECTED'});enum(r['deadlineKind'],{'COMMON_WORK_END','ACTION_15_SECONDS'})
+  assert(r['originalResult']=='PENDING')==(r['originalSettledAt']is None)
+  assert(r['wrapperResult']=='PENDING')==(r['wrapperFinishedAt']is None)
+  for k in ['originalSettledAt','wrapperFinishedAt']:
+   if r[k]is not None:assert r[k]>=r['startedAt']
+  if r['wrapperResult']=='FULFILLED':assert r['originalResult']=='FULFILLED'
+  if r['wrapperResult']=='ORIGINAL_REJECTED':assert r['originalResult']in{'REJECTED_TIMEOUT_CLASS','REJECTED_OTHER'}
+ if any(r['operation']=='FIRST_BODY_VISIBLE'for r in o['operations']):assert 'preCredentialBoundary'in o
+ if 'preCredentialBoundary'in o:
+  p=o['preCredentialBoundary'];keys(p,{'version','status','startedAt','finishedAt','http','playwright','cdp','pendingOriginalCount','pendingDisposalCount','cleanupStatus'});assert p['version']==1;n(p['pendingOriginalCount'],8);n(p['pendingDisposalCount'],8)
+  enum(p['cleanupStatus'],{'CLEAN','FAILED','RESIDUAL_UNVERIFIED'})
+  if p['cleanupStatus']=='CLEAN':assert p['pendingOriginalCount']==p['pendingDisposalCount']==0
+  else:assert p['status']=='FAILED_DIAGNOSTIC_CLEANUP'
+  if p['cleanupStatus']=='RESIDUAL_UNVERIFIED':assert p['pendingOriginalCount']or p['pendingDisposalCount']
+  enum(p['status'],{'NOT_NEEDED_ORIGINAL_SETTLED','REFUSED_CREDENTIAL_BOUNDARY','FAILED_DIAGNOSTIC_CLEANUP','FAILED_UNEXPECTED','FIXED_RESULTS_ONLY_NOT_CAUSE'})
+  for k in ['startedAt','finishedAt']:
+   if p[k]is not None:n(p[k],9999999999999)
+  h=p['http'];keys(h,{'result','status','startedAt','finishedAt'});
+  for k in ['startedAt','finishedAt']:
+   if h[k]is not None:n(h[k],9999999999999)
+  if h['result']=='NOT_STARTED':assert h['startedAt']is None and h['finishedAt']is None
+  else:assert h['startedAt']is not None and h['finishedAt']is not None and h['finishedAt']>=h['startedAt']
+  enum(h['result'],{'NOT_STARTED','RESPONSE','ACTION_TIMEOUT','COMMON_BUDGET','ORIGINAL_REJECTED'})
+  if h['result']=='RESPONSE':assert type(h['status'])is int and 100<=h['status']<=599
+  else:assert h['status']is None
+  w=p['playwright'];keys(w,{'result'});enum(w['result'],{'NOT_STARTED','RETURNED_TRUE','INVALID_FIXED_RESULT','ACTION_TIMEOUT','COMMON_BUDGET','ORIGINAL_REJECTED'})
+  c=p['cdp'];keys(c,{'session','evaluation','detach','lateDetach','geometry'});enum(c['session'],{'NOT_STARTED','CREATED','ACTION_TIMEOUT','COMMON_BUDGET','ORIGINAL_REJECTED_OR_INVALID'});enum(c['evaluation'],{'NOT_STARTED','FIXED_GEOMETRY_RETURNED','ACTION_TIMEOUT','COMMON_BUDGET','ORIGINAL_REJECTED_OR_INVALID'});enum(c['detach'],{'NOT_STARTED','DETACHED','FAILED'})
+  enum(c['lateDetach'],{'NOT_NEEDED','PENDING','DETACHED','FAILED'})
+  if c['lateDetach']=='FAILED':assert p['cleanupStatus']=='FAILED'
+  if c['lateDetach']=='PENDING':assert p['cleanupStatus']!='CLEAN'
+  if c['session']=='CREATED':
+   assert c['evaluation']!='NOT_STARTED'and c['detach']in{'DETACHED','FAILED'}and c['lateDetach']=='NOT_NEEDED'
+   if c['detach']=='FAILED':assert p['cleanupStatus']=='FAILED'and p['status']=='FAILED_DIAGNOSTIC_CLEANUP'
+  else:assert c['evaluation']=='NOT_STARTED'and c['detach']=='NOT_STARTED'and c['geometry']is None
+  if p['status']in{'NOT_NEEDED_ORIGINAL_SETTLED','FIXED_RESULTS_ONLY_NOT_CAUSE'}:assert p['cleanupStatus']=='CLEAN'
+  if c['geometry']is not None:
+   g=c['geometry'];keys(g,{'readyState','body'});enum(g['readyState'],{'loading','interactive','complete'})
+   if g['body']is not None:
+    z=g['body'];keys(z,{'children','width','height','display','visibility'});n(z['children']);enum(z['display'],{'block','flex','grid','none','contents','inline','inline-block','OTHER'});enum(z['visibility'],{'visible','hidden','collapse','OTHER'})
+    for k in ['width','height']:real_number(z[k],10000000)
+   assert c['evaluation']=='FIXED_GEOMETRY_RETURNED'
+  else:assert c['evaluation']!='FIXED_GEOMETRY_RETURNED'
+  if p['status']=='NOT_NEEDED_ORIGINAL_SETTLED':assert p['startedAt']is None and p['finishedAt']is None and h['result']==w['result']==c['session']==c['evaluation']==c['detach']=='NOT_STARTED'and c['lateDetach']=='NOT_NEEDED'and p['pendingOriginalCount']==0
+  if p['status']=='FIXED_RESULTS_ONLY_NOT_CAUSE':assert p['startedAt']is not None and p['finishedAt']is not None and p['finishedAt']>=p['startedAt']
+  if p['status']in{'FIXED_RESULTS_ONLY_NOT_CAUSE','FAILED_DIAGNOSTIC_CLEANUP'}:
+   assert h['result']!='NOT_STARTED'and w['result']!='NOT_STARTED'and c['session']!='NOT_STARTED'
+   assert p['startedAt']is not None and p['finishedAt']is not None
+   assert p['startedAt']<=h['startedAt']<=h['finishedAt']<=p['finishedAt']
  for k in ['authenticated','chatStorageVerified','safeAuthenticatedPixels','bodyVisibleObserved']:b(o[k])
  assert o['chatStorageVerified']is False and(o['setupRequired']is None or type(o['setupRequired'])is bool)
  if 'pendingWorkAtCleanup'in o:n(o['pendingWorkAtCleanup'],128)
@@ -123,6 +186,7 @@ def browser(o):
    assert all(f[k]for k in FUNCTIONAL_BOOLEANS)and f['failedStage']=='NONE'and f['stage']=='NARROW_AUTH_COMPLETE'
    assert o['authenticated']is True and o['safeAuthenticatedPixels']is True and not o['cleanupErrors']and not o.get('captureOverflow',False)and not o.get('pendingWorkAtCleanup',0)and 'primaryFailure'not in o
    assert o['screenshot']['status']=='PRIVATE_VIEWPORT_PIXELS_NOT_EXPORTED'
+   if 'preCredentialBoundary'in o:assert o['preCredentialBoundary']['cleanupStatus']=='CLEAN'and o['preCredentialBoundary']['pendingOriginalCount']==o['preCredentialBoundary']['pendingDisposalCount']==0 and o['preCredentialBoundary']['status']in{'NOT_NEEDED_ORIGINAL_SETTLED','FIXED_RESULTS_ONLY_NOT_CAUSE'}
   else:assert o['authenticated']is False
  for k,cap in [('console',100),('pageErrors',128),('failedResources',128),('localResources',128),('requests',256),('responses',256),('finishedResources',256),('lifecycleEvents',16),('checkpoints',64),('cleanupErrors',128)]:rows(o[k],cap)
  for r in o['console']:keys(r,{'kind','pageOrdinal'});page_id(r);enum(r['kind'],{'error','warning','info','log','debug','warn','OTHER'})
@@ -233,11 +297,19 @@ def process_counters(o):
    keys(r,{'reason','elapsed','errorType','unverified'});assert r['unverified']is True;enum(r['errorType'],{'AssertionError','OSError','PermissionError','ProcessLookupError','FileNotFoundError','ValueError','IndexError'})
   else:
    keys(r,{'reason','elapsed','descendants','errors'});rows(r['descendants'],96);rows(r['errors'],96)
-   for x in r['errors']:assert x=='DESCENDANT_IDENTITY_CHANGED'
+   for x in r['errors']:assert x in{'DESCENDANT_IDENTITY_CHANGED','DESCENDANT_PIPE_IDENTITY_UNVERIFIED'}
    total=0
    for d in r['descendants']:
-    keys(d,{'pid','state','ppid','userTicks','systemTicks','threads','startTicks','rssPages','tasks'});enum(d['state'],{'R','S','D','Z','T','t','X','x','K','W','P','I'})
+    keys(d,{'pid','state','ppid','userTicks','systemTicks','threads','startTicks','rssPages','tasks','executableIdentity','pipeEndpointsStatus','pipeEndpoints'});enum(d['state'],{'R','S','D','Z','T','t','X','x','K','W','P','I'})
     for k in ['pid','ppid','userTicks','systemTicks','threads','startTicks','rssPages']:n(d[k],9999999999999)
+    enum(d['executableIdentity'],{'NODE_EXECUTABLE','CHROMIUM_EXECUTABLE','TSX_ESBUILD_EXECUTABLE','TOPLEVEL_ESBUILD_EXECUTABLE','OTHER_OR_UNAVAILABLE'})
+    enum(d['pipeEndpointsStatus'],{'PROCESS_GONE','UNAVAILABLE','NOT_SELECTED_EXECUTABLE','CAP_OVERFLOW','EXECUTABLE_CHANGED_UNVERIFIED','COLLECTED_FIXED_PIPE_INODES_ONLY'})
+    if d['pipeEndpointsStatus']=='COLLECTED_FIXED_PIPE_INODES_ONLY':
+     assert d['executableIdentity']in{'NODE_EXECUTABLE','TSX_ESBUILD_EXECUTABLE','TOPLEVEL_ESBUILD_EXECUTABLE'};rows(d['pipeEndpoints'],64);fds=[]
+     for endpoint in d['pipeEndpoints']:
+      keys(endpoint,{'fd','pipeInode'});n(endpoint['fd'],1048576);assert type(endpoint['pipeInode'])is str and re.fullmatch(r'[0-9]{1,20}',endpoint['pipeInode']);fds.append(endpoint['fd'])
+     assert len(fds)==len(set(fds))
+    else:assert d['pipeEndpoints']is None
     rows(d['tasks'],96);total+=len(d['tasks']);assert total<=96
     for t in d['tasks']:
      keys(t,{'tid','state','userTicks','systemTicks'});enum(t['state'],{'R','S','D','Z','T','t','X','x','K','W','P','I'})
@@ -253,3 +325,52 @@ def cgroup_counters(o):
   for name in r['unavailable']:enum(name,names)
   for value in r['values'].values():assert type(value)is str and len(value)<=8192 and re.fullmatch(r'[a-z0-9_ .\n=]*',value)
  return o
+
+
+IDENTITY_NEXT={
+ 'INGRESS':{'AUTH_ENTERED','RESPONSE_FINISHED','RESPONSE_CLOSED'},
+ 'AUTH_ENTERED':{'IDENTITY_IMPORT_STARTED','RESPONSE_FINISHED','RESPONSE_CLOSED'},
+ 'IDENTITY_IMPORT_STARTED':{'IDENTITY_IMPORT_FULFILLED','RESPONSE_FINISHED','RESPONSE_CLOSED'},
+ 'IDENTITY_IMPORT_FULFILLED':{'IDENTITY_READY','RESPONSE_FINISHED','RESPONSE_CLOSED'},
+ 'IDENTITY_READY':{'HANDLER_ENTERED','RESPONSE_FINISHED','RESPONSE_CLOSED'},
+ 'HANDLER_ENTERED':{'RESPONSE_FINISHED','RESPONSE_CLOSED'},
+ 'RESPONSE_FINISHED':{'RESPONSE_CLOSED'},'RESPONSE_CLOSED':set()}
+def identity_boundary(records):
+ rows(records,258);events=0;requests={};enabled=0;overflows=0;lastAt=0
+ for r in records:
+  if r.get('kind')in{'ENABLED','OVERFLOW'}:
+   keys(r,{'kind','version'});assert r['version']==1
+   if r['kind']=='ENABLED':enabled+=1
+   else:overflows+=1
+   continue
+  keys(r,{'kind','version','event','request','path','method','stage','status','at'});assert r['kind']=='REQUEST'and r['version']==1
+  assert r['event']==events;events+=1;n(r['request'],32);assert r['request']>=1
+  enum(r['path'],{'CURRENT_SESSION','SETUP_STATUS','AUTO_LOGIN'});enum(r['method'],{'GET','POST','OTHER'});enum(r['stage'],set(IDENTITY_NEXT));n(r['at'],9999999999999)
+  assert r['at']>=lastAt;lastAt=r['at']
+  if r['stage']in{'RESPONSE_FINISHED','RESPONSE_CLOSED'}:assert type(r['status'])is int and 100<=r['status']<=599
+  else:assert r['status']is None
+  if r['stage']=='INGRESS':
+   assert r['request']not in requests and r['request']==len(requests)+1
+   requests[r['request']]={'path':r['path'],'method':r['method'],'stage':'INGRESS','status':None}
+  else:
+   before=requests.get(r['request']);assert before is not None and (before['path'],before['method'])==(r['path'],r['method'])
+   assert r['stage']in IDENTITY_NEXT[before['stage']]
+   if r['path']!='CURRENT_SESSION':assert r['stage']not in{'IDENTITY_IMPORT_STARTED','IDENTITY_IMPORT_FULFILLED','IDENTITY_READY','HANDLER_ENTERED'}
+   if before['stage']=='RESPONSE_FINISHED':assert r['status']==before['status']
+   before['stage']=r['stage'];before['status']=r['status']
+ assert enabled<=1 and overflows<=1 and events<=256
+ if records:assert records[0]=={'kind':'ENABLED','version':1}
+
+def identity_summary(records):
+ requests={};enabled=any(r['kind']=='ENABLED'for r in records);overflow=any(r['kind']=='OVERFLOW'for r in records)
+ for r in records:
+  if r['kind']=='REQUEST':
+   row=requests.setdefault(r['request'],{'finished':False,'closed':False})
+   if r['stage']=='RESPONSE_FINISHED':row['finished']=True
+   if r['stage']=='RESPONSE_CLOSED':row['closed']=True
+ count=len(requests);finished=sum(r['finished']for r in requests.values());closed=sum(r['closed']for r in requests.values());outstanding=sum(not r['closed']for r in requests.values());aborted=sum(r['closed']and not r['finished']for r in requests.values())
+ state='MISSING'if not enabled else'OVERFLOW_UNVERIFIED'if overflow else'ENABLED_ONLY'if not count else'OBSERVED_WITH_OUTSTANDING'if outstanding else'OBSERVED_WITH_ABORTED'if aborted else'OBSERVED_FINISHED'
+ return {'state':state,'requestCount':count,'finishedCount':finished,'closedCount':closed,'outstandingCount':outstanding,'abortedCount':aborted,'sourceClaim':'UNKNOWN','correlation':'TIME_AND_REQUEST_ORDINAL_ONLY_NOT_PAGE_OR_PROBE_IDENTITY'}
+
+def identity_complete(records):
+ return identity_summary(records)['state']in{'OBSERVED_WITH_OUTSTANDING','OBSERVED_WITH_ABORTED','OBSERVED_FINISHED'}

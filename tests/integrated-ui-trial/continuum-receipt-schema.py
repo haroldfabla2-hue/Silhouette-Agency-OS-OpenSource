@@ -10,6 +10,7 @@ def integer(value,minimum=0,maximum=9007199254740991):assert type(value)is int a
 def boolean(value):assert type(value)is bool
 def elapsed(value,maximum):assert type(value)in {int,float} and math.isfinite(value)and 0<=value<=maximum
 def cleanup(value):assert type(value)is list and len(value)==2 and all(type(x)is str and x in {'fulfilled','rejected'}for x in value)
+SITES={'UNCLASSIFIED','PROFILE_CONSTRUCTOR_HYDRATION','PROFILE_SQLITE_LOAD','PROFILE_SQLITE_LOAD_JOIN','PROFILE_LEGACY_GRAPH_LOAD','PROFILE_LEGACY_GRAPH_LOAD_JOIN','REDIS_CONNECT_SQLITE_ADMISSION','REDIS_CONNECT_SQLITE_JOIN'}
 def category_receipt(value):
  keys(value,['historicalMapping','currentReportOnly','retainedCount','ownerFailures','taskOutcomeFailures','lifetimeFailures','acknowledged','truncated','unclassifiedCount','attribution','retained'])
  assert value['historicalMapping']=='NOT_RECONSTRUCTED'and value['currentReportOnly']is True
@@ -22,10 +23,18 @@ def category_receipt(value):
  assert value['retainedCount']+value['acknowledged']<=value['lifetimeFailures']
  ids=[]
  for failure in value['retained']:
-  keys(failure,['id','kind','category']);integer(failure['id'],1)
+  keys(failure,['id','kind','category','sourceSite','sameOriginalFirstRetainedId']);integer(failure['id'],1)
+  assert type(failure['sourceSite'])is str and failure['sourceSite']in SITES
+  first=failure['sameOriginalFirstRetainedId']
+  if first is not None:
+   integer(first,1)
+   assert first in ids+[failure['id']]
   assert failure['kind']in {'OWNER_FAILURE','ORIGINAL_TASK_OUTCOME'}and failure['category']in CATEGORIES
   ids.append(failure['id'])
  assert len(set(ids))==len(ids)
+ for failure in value['retained']:
+  first=failure['sameOriginalFirstRetainedId']
+  if first is not None:assert next(row for row in value['retained']if row['id']==first)['sameOriginalFirstRetainedId']==first
  assert sum(x['kind']=='OWNER_FAILURE'for x in value['retained'])<=value['ownerFailures']
  assert sum(x['kind']=='ORIGINAL_TASK_OUTCOME'for x in value['retained'])<=value['taskOutcomeFailures']
  assert value['unclassifiedCount']==sum(x['category']=='UNCLASSIFIED'for x in value['retained'])

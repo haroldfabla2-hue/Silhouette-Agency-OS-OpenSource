@@ -1,0 +1,98 @@
+{
+  "scope": "R2_SOURCE_ONLY_PARTIAL_PROPOSAL_NOT_COMPOSED_NOT_PUBLICATION_READY",
+  "actual19Head": "e40ce600d1ebf6c5c09874486a7c7e6f6fdaf436",
+  "priorProductCompositionSha256": "25f49a318b3c98f0959621d89deaf9c11d9075844112efb610669b6d50183cda",
+  "supersedes": "c477e004ac0910518f7b5581da0da766751c60e7c56ceb6d4c10b9e925d43b7a",
+  "files": [
+    {
+      "path": "REVIEW.md",
+      "baseExactActual19Sha256": "ee6417721bef068bbbb23543d2f4dde08bdb5b232bb07871f4885cfbc1a1ee60",
+      "proposedSha256": "cd47f1e0d2e99f6d1dce15b498b6b1ba2e68206da6cf05a5600ae3a115c36ed2",
+      "bytes": 8343
+    },
+    {
+      "path": "boundary-overlay/server/diagnostics/identityBoundary.ts",
+      "baseExactActual19Sha256": null,
+      "proposedSha256": "ab9a5e45600934daada5b5c5cdc6fb8c5dcbc640fcfe2a4000681a22f5f97914",
+      "bytes": 2103
+    },
+    {
+      "path": "boundary-overlay/server/index.ts",
+      "baseExactActual19Sha256": "93fd042c371cd4de06287bd2f3cb367a494c21edeb68fd11c239720305ae8400",
+      "proposedSha256": "2c6cd07e76c3426c1748b0c5da7bbb7487cb8c372a7405ce247a7d55ebba5bb1",
+      "bytes": 24810
+    },
+    {
+      "path": "boundary-overlay/server/middleware/authMiddleware.ts",
+      "baseExactActual19Sha256": "32ba6514e689ee8bad0726d92bc7989a3aee0168326c74b016554b616a2c83aa",
+      "proposedSha256": "c54d52fa5b1581336dbfc75c1cf1c662e72f599706c1cf78b08fc2b0b241a901",
+      "bytes": 11747
+    },
+    {
+      "path": "boundary-overlay/server/routes/v1/identity.routes.ts",
+      "baseExactActual19Sha256": "ee16fe5dfb00d6bf0842cd939686c5f8e709e8e1f8e97c1fc9da3c8a79f62052",
+      "proposedSha256": "c7bff562eb9516747c9723b126141004239a9694b87cdbfa022b02786067b322",
+      "bytes": 21631
+    },
+    {
+      "path": "browser-boundary-probe.cjs",
+      "baseExactActual19Sha256": null,
+      "proposedSha256": "b6ab8c2bf2190e698ca782528c1d270ebcf98f6d06d667293453e1ae9dc2c1ff",
+      "bytes": 6593
+    },
+    {
+      "path": "browser-driver.cjs",
+      "baseExactActual19Sha256": "b8425a302a9c6523db0bb0db8d6c470c90933f96002a3f5b71dad3aecae20e59",
+      "proposedSha256": "1c16c33e99a944f29e3df10e56c640b5d21c9da80c55f988d8063681dc74ae75",
+      "bytes": 12188
+    },
+    {
+      "path": "collect-runtime-finite.py",
+      "baseExactActual19Sha256": "063e7734d923a6fc8d4afadb871d2860a6fc30ebb03e5288c265dd505fcf9794",
+      "proposedSha256": "133f97d9939521fd47750f9afde35586b795a6d67f388e384695a1778e966563",
+      "bytes": 3087
+    },
+    {
+      "path": "continuum-receipt-schema.py",
+      "baseExactActual19Sha256": "1ff411e84ffc9dc636c2197cdabf094571f888d51d75f64873e83a2acf82359b",
+      "proposedSha256": "b35be66a429271d04f67c04c8d4ad074b87b42a650f1c56f0f56d4050c2521df",
+      "bytes": 9957
+    },
+    {
+      "path": "grouped-review-contract-checks.json",
+      "baseExactActual19Sha256": null,
+      "proposedSha256": "e15226f6a7a65a9c6ed581a3c20c245190127a50bdd0971107acbc2a2c344c10",
+      "bytes": 705
+    },
+    {
+      "path": "namespace-entry.py",
+      "baseExactActual19Sha256": "67aa59f8c4f63b70c6dd62d2bf96ba5bff4a87f2c449650d4eb306fe40fd76fc",
+      "proposedSha256": "d745472275ab0cad1e5e2d6dddec54440feea69e6cc2e2528ef81d7ed42946a1",
+      "bytes": 8493
+    },
+    {
+      "path": "return-evidence.py",
+      "baseExactActual19Sha256": "9b61421faae692efecc6b2a1d6703f0a145dbb32ac3702e706d5e23e84274e14",
+      "proposedSha256": "6b1afb357bd555e00b9351cab800175debb4ab63a9849c35fa011aaf80c8dc69",
+      "bytes": 19553
+    },
+    {
+      "path": "runtime-counters.py",
+      "baseExactActual19Sha256": "be2b8ed47b794712844edb6f2b2df47d1b3292162f14fe8089df33cf1e71f26d",
+      "proposedSha256": "cbcd8ff4293033e0d5ad0f1ceef385f56f47c9599058c667e8273f378aa7762d",
+      "bytes": 6290
+    },
+    {
+      "path": "runtime-finite-schema.py",
+      "baseExactActual19Sha256": "6239dadbf3243de8ce2789d68ec6c1a35b77816156c079d68502ca092fb73ae2",
+      "proposedSha256": "915705061926f832f427cd3c59c05ffd59caadbf21b676c4c69fdd906f8fedb7",
+      "bytes": 34486
+    },
+    {
+      "path": "schema-source-checks.json",
+      "baseExactActual19Sha256": null,
+      "proposedSha256": "ff5152bfd037ad619155eab6e7a6cfafcdf3d8e63f0e216d61f4d49502684186",
+      "bytes": 811
+    }
+  ]
+}

@@ -60,6 +60,7 @@ if phase.endswith('build'):
  cmd=['/node/bin/node','/app/node_modules/vite/bin/vite.js','build']
  if phase=='server-build':cmd+=['--config','vite.server.config.ts']
  raise SystemExit(subprocess.call(cmd,env=env))
+env['SILHOUETTE_FINITE_IDENTITY_BOUNDARY']='source-fixed-v1'
 # Same private namespace and cgroup, no extra authority or secret environment.
 counters=subprocess.Popen(['/usr/bin/python3','/driver/runtime-counters.py',str(os.getpid())],env={'PATH':'/usr/bin:/bin'})
 app=subprocess.Popen(['/node/bin/node','--import','tsx/esm','server/bootstrap.preparation.ts'],env=env)

@@ -1,0 +1,18 @@
+{
+  "scope": "PURE_SERIALIZATION_CONTRACT_EXAMPLES_AND_TAMPER_CHECKS_ONLY_NOT_PRODUCT_TESTS",
+  "checks": [
+    "Pure contract example accepts genuine partial sequence prefix as outstanding, not finished.",
+    "Enabled-only fails mandatory identity evidence completeness.",
+    "READY_BEFORE_IMPORT: rejected.",
+    "HANDLER_BEFORE_AUTH: rejected.",
+    "TIME_REVERSED: rejected.",
+    "DUPLICATE_STAGE: rejected.",
+    "DUPLICATE_FINISH: rejected.",
+    "STATUS_MISMATCH: rejected.",
+    "DETACH_FAILED_WITH_SUCCESS: rejected.",
+    "GEOMETRY_WITHOUT_SESSION: rejected.",
+    "UNSTARTED_PROBE_WITH_SUCCESS: rejected.",
+    "RESIDUAL_WITH_CLEAN: rejected.",
+    "LATE_FAILED_WITH_CLEAN: rejected."
+  ]
+}

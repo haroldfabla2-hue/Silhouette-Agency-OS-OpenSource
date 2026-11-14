@@ -1,10 +1,14 @@
 {
   "status": "SOURCE_ONLY_NO_EXECUTION_PUBLICATION",
-  "parent": "53b68d46317a16bd0220d7e2ac794d7580b493d2",
+  "parent": "e40ce600d1ebf6c5c09874486a7c7e6f6fdaf436",
   "files": {
     "ASSERTION-DIAGNOSTIC-COMPOSITION-REVIEW.md": {
       "bytes": 1315,
       "sha256": "790d600397937d59281937a615bb2f46f850c3a0a86fa39e6ea50f3bdf745d06"
+    },
+    "BOUNDARY-COMPOSITION-REVIEW.md": {
+      "bytes": 8343,
+      "sha256": "cd47f1e0d2e99f6d1dce15b498b6b1ba2e68206da6cf05a5600ae3a115c36ed2"
     },
     "BROWSER-BOUNDARY-REVIEW.md": {
       "bytes": 6554,
@@ -51,8 +55,8 @@
       "sha256": "5a0cdbe116331bee1980fc58f051430b089b0f8a14d0da60e0d469d99b20ec24"
     },
     "REVIEW.md": {
-      "bytes": 13907,
-      "sha256": "ee6417721bef068bbbb23543d2f4dde08bdb5b232bb07871f4885cfbc1a1ee60"
+      "bytes": 1691,
+      "sha256": "3b40b69a5716830d5a64916e38fb4acb077f12869de3e45e6a63fd65e32e12a3"
     },
     "RUNTIME-BOUNDARY-COMPOSITION-REVIEW.md": {
       "bytes": 1130,
@@ -82,9 +86,37 @@
       "bytes": 40819,
       "sha256": "560bd48e9ca45d06eede21cba609ffc7acccffa113fbfe288f3f275c8f9c731b"
     },
+    "boundary-composition.json": {
+      "bytes": 194198,
+      "sha256": "f55dbf5558508c15a76e2f74cce46395a869a0f44ffe5168fc566f64c640b3e8"
+    },
+    "boundary-delta-admitted-identity.json": {
+      "bytes": 4201,
+      "sha256": "90635fdfd5576b95055cb275cc2033faa4e47d5475834ee13b5635f3c4d0f9ba"
+    },
+    "boundary-overlay/server/diagnostics/identityBoundary.ts": {
+      "bytes": 2103,
+      "sha256": "ab9a5e45600934daada5b5c5cdc6fb8c5dcbc640fcfe2a4000681a22f5f97914"
+    },
+    "boundary-overlay/server/index.ts": {
+      "bytes": 24810,
+      "sha256": "2c6cd07e76c3426c1748b0c5da7bbb7487cb8c372a7405ce247a7d55ebba5bb1"
+    },
+    "boundary-overlay/server/middleware/authMiddleware.ts": {
+      "bytes": 11747,
+      "sha256": "c54d52fa5b1581336dbfc75c1cf1c662e72f599706c1cf78b08fc2b0b241a901"
+    },
+    "boundary-overlay/server/routes/v1/identity.routes.ts": {
+      "bytes": 21631,
+      "sha256": "c7bff562eb9516747c9723b126141004239a9694b87cdbfa022b02786067b322"
+    },
+    "browser-boundary-probe.cjs": {
+      "bytes": 6593,
+      "sha256": "b6ab8c2bf2190e698ca782528c1d270ebcf98f6d06d667293453e1ae9dc2c1ff"
+    },
     "browser-driver.cjs": {
-      "bytes": 10393,
-      "sha256": "b8425a302a9c6523db0bb0db8d6c470c90933f96002a3f5b71dad3aecae20e59"
+      "bytes": 12188,
+      "sha256": "1c16c33e99a944f29e3df10e56c640b5d21c9da80c55f988d8063681dc74ae75"
     },
     "chromium-provenance.json": {
       "bytes": 62542,
@@ -99,8 +131,8 @@
       "sha256": "02334906ca37bdbf6562c06cf523b604f7e71039fc5be286a99553faf5c78b4d"
     },
     "collect-runtime-finite.py": {
-      "bytes": 2616,
-      "sha256": "063e7734d923a6fc8d4afadb871d2860a6fc30ebb03e5288c265dd505fcf9794"
+      "bytes": 3087,
+      "sha256": "133f97d9939521fd47750f9afde35586b795a6d67f388e384695a1778e966563"
     },
     "continuum-composition.json": {
       "bytes": 195861,
@@ -151,8 +183,8 @@
       "sha256": "58083f2c0c9f0430d61618ccea20873665af4c357868f9f7584d86fc9863aa70"
     },
     "continuum-receipt-schema.py": {
-      "bytes": 9273,
-      "sha256": "1ff411e84ffc9dc636c2197cdabf094571f888d51d75f64873e83a2acf82359b"
+      "bytes": 9957,
+      "sha256": "b35be66a429271d04f67c04c8d4ad074b87b42a650f1c56f0f56d4050c2521df"
     },
     "continuum-validation.py": {
       "bytes": 4834,
@@ -218,9 +250,13 @@
       "bytes": 23254,
       "sha256": "94875ae65d7b0dacc7952bd5a166db4a273ec7ea69c5ffd0a332e6e85527b9c5"
     },
+    "grouped-review-contract-checks.json": {
+      "bytes": 705,
+      "sha256": "e15226f6a7a65a9c6ed581a3c20c245190127a50bdd0971107acbc2a2c344c10"
+    },
     "hosted-orchestrator.py": {
-      "bytes": 29156,
-      "sha256": "d8dcb9609338384c23a9d957b6c8977f073f7c4ccc54da463f73ade7c7473290"
+      "bytes": 29831,
+      "sha256": "98041b047b59a225d3613d57dccdfaebb6ac003c8665c412911cf4fb24bd74c5"
     },
     "identity-entry.py": {
       "bytes": 3884,
@@ -235,8 +271,8 @@
       "sha256": "0e3a710ab63232eec31d90e994036b3a3480c65605097fe4a6f0938e2bf33366"
     },
     "integrated-hosted.yml": {
-      "bytes": 3738,
-      "sha256": "f13d62c9830fb980e3d2a048f722273800d184c9db358d91af40b589673a0cc3"
+      "bytes": 4660,
+      "sha256": "2ae97c377518c15da790d88e6b9207455ce7076babc706237c149df792cbd3a2"
     },
     "lance-provenance.json": {
       "bytes": 900,
@@ -255,12 +291,12 @@
       "sha256": "20367cd35272db599ff1f7ebfb93409fc61bff9c635b3e01dc544c7cb0029763"
     },
     "lineage-static-audit.json": {
-      "bytes": 529,
-      "sha256": "48fff1866c7ac35d041c80e977c2d9219275fd147a7cfd6df71119f33864d229"
+      "bytes": 466,
+      "sha256": "5101a75ce21a5e5385c1d2274e36a36d4c49c14c27b637c7800fc9db7c2c894d"
     },
     "namespace-entry.py": {
-      "bytes": 8432,
-      "sha256": "67aa59f8c4f63b70c6dd62d2bf96ba5bff4a87f2c449650d4eb306fe40fd76fc"
+      "bytes": 8493,
+      "sha256": "d745472275ab0cad1e5e2d6dddec54440feea69e6cc2e2528ef81d7ed42946a1"
     },
     "native-provenance/better-sqlite3-12.5.0.tgz": {
       "bytes": 2622454,
@@ -323,8 +359,8 @@
       "sha256": "045f357220cf14f3e24212d06d4b95c5ebfe9a499377df54b5e2416b5f1d0550"
     },
     "return-evidence.py": {
-      "bytes": 19388,
-      "sha256": "9b61421faae692efecc6b2a1d6703f0a145dbb32ac3702e706d5e23e84274e14"
+      "bytes": 19553,
+      "sha256": "6b1afb357bd555e00b9351cab800175debb4ab63a9849c35fa011aaf80c8dc69"
     },
     "runtime-boundary-composition.json": {
       "bytes": 194009,
@@ -379,16 +415,20 @@
       "sha256": "6bd2a313fa79fcfa1e18fbd8080fb93fecf2a20c5b2a939aec9543a5b303fd6a"
     },
     "runtime-counters.py": {
-      "bytes": 3383,
-      "sha256": "be2b8ed47b794712844edb6f2b2df47d1b3292162f14fe8089df33cf1e71f26d"
+      "bytes": 6290,
+      "sha256": "cbcd8ff4293033e0d5ad0f1ceef385f56f47c9599058c667e8273f378aa7762d"
     },
     "runtime-finite-schema.py": {
-      "bytes": 23464,
-      "sha256": "6239dadbf3243de8ce2789d68ec6c1a35b77816156c079d68502ca092fb73ae2"
+      "bytes": 34486,
+      "sha256": "915705061926f832f427cd3c59c05ffd59caadbf21b676c4c69fdd906f8fedb7"
     },
     "runtime-prerequisites.cjs": {
       "bytes": 2062,
       "sha256": "dbf1532699b4893f02287e47443f708e49b3b592a26fb739314a2c098db070d2"
+    },
+    "schema-source-checks.json": {
+      "bytes": 811,
+      "sha256": "ff5152bfd037ad619155eab6e7a6cfafcdf3d8e63f0e216d61f4d49502684186"
     },
     "security-setup/acquire.py": {
       "bytes": 23867,

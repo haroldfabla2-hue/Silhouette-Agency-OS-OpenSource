@@ -18,14 +18,19 @@ def read(rel,cap):
  assert len(data)==before.st_size<=cap and(before.st_dev,before.st_ino,before.st_size,before.st_mtime_ns,before.st_ctime_ns)==(after.st_dev,after.st_ino,after.st_size,after.st_mtime_ns,after.st_ctime_ns)
  return data
 raw=read('runtime/complete.log',16*1024**2);outer=read('runtime.log',16*1024**2)
-result={'version':1,'rawRuntimeLogs':{'withheld':True,'reason':'CREDENTIALLED_FIXTURE_PRIVATE_RAW_LOGS','runtimeCompletePresent':raw is not None,'runtimeOuterPresent':outer is not None},'snapshots':[],'events':[],'resourceCounts':[],'markerOrder':[],'lifecycleEvidence':'MISSING_OR_INCOMPLETE','global':'INCOMPLETE'}
+result={'version':1,'rawRuntimeLogs':{'withheld':True,'reason':'CREDENTIALLED_FIXTURE_PRIVATE_RAW_LOGS','runtimeCompletePresent':raw is not None,'runtimeOuterPresent':outer is not None},'snapshots':[],'events':[],'resourceCounts':[],'markerOrder':[],'lifecycleEvidence':'MISSING_OR_INCOMPLETE','identityBoundary':[],'identityEvidence':'MISSING_OR_INCOMPLETE','global':'INCOMPLETE'}
 try:
  for line in(raw or b'').splitlines():
+  if line.startswith(b'[IDENTITY_BOUNDARY] '):
+   assert len(line)<=2048 and len(result['identityBoundary'])<258
+   result['identityBoundary'].append(schema.strict_loads(line[len(b'[IDENTITY_BOUNDARY] '):]));continue
   for prefix,key,validator,cap in [(b'[RUNTIME_FINITE_SNAPSHOT] ','snapshots',schema.snapshot,32),(b'[RUNTIME_FINITE_EVENT] ','events',lambda x:(schema.keys(x,{'kind'}),schema.enum(x['kind'],schema.EVENTS)),128),(b'[DRAIN_RESOURCE_COUNTS] ','resourceCounts',schema.resource,2)]:
    if line.startswith(prefix):
     assert len(line)<=65536 and len(result[key])<cap
     value=schema.strict_loads(line[len(prefix):]);validator(value);result[key].append(value);result['markerOrder'].append({'group':key,'index':len(result[key])-1})
  if schema.completeness(result):result['lifecycleEvidence']='OBSERVED_NOT_GLOBAL_PASS'
+ result['identitySummary']=schema.identity_summary(result['identityBoundary'])
+ if schema.identity_complete(result['identityBoundary']):result['identityEvidence']='OBSERVED_NOT_AUTH_PROOF'
  schema.validate(result)
  # This receipt's own path must be absent, regular fresh creation only.
  p=root/'runtime/runtime-finite.json';fd=os.open(p,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
