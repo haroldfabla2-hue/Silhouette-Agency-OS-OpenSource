@@ -2,7 +2,7 @@
   "source_head": "7854560d1f5e3a4256e2ee62a41840432dee8cb9",
   "experiment_scope": "FUNCTIONAL_PARTIAL_REDIS_LIFECYCLE_INCOMPLETE",
   "redis_main_native_gate": "UNSUPPORTED_PUBLIC_JOIN_API_RETAIN_GLOBAL_INCOMPLETE",
-  "operational_state": "OPEN_NOT_AUTHORIZED",
+  "operational_state": "EXACT_JOINT_SOURCE_REVIEW_CLOSED",
   "outer_metadata_only_sources": {
     "process_evidence.py": "79b94bbda392b1551d976a006f08e4cccdb895dae87b2d25adb19aa417f0a6e5",
     "scope_finalize.py": "34472215880714f9ad747849dc47242d40a4cb717b0d64a91ad754f8ad38f049",
@@ -12,7 +12,7 @@
     "evidence_policy.py": "124a72e1e33a5992a688eff1e4c47369507ee57d7dd1bd536b1bc83f296eb6d5"
   },
   "entry_sources": {
-    "joint_service_entry.py": "c40868f7429fe2ed1dace1b6bf26463ab89fee3dfafd4dbde9bc8a663d37d15d",
+    "joint_service_entry.py": "c1d1bf971682c8c0faa6cd7116a0f3e0663b8e022f5b553289c9459acab36cb5",
     "neo4j_admin_private.py": "9f03c75de4a95ebc1ceaa3847448022c22dbfadc3984f44b3a836528c2c2e2db",
     "joint_composite_supervisor.py": "7012921ba9a1d367766358dd7a6f4857a203add5040c6049b35ecf40e335dbae",
     "bounded_evidence.py": "0b894b6a41a9f2b2850662d831c75ac33f48c5afbb73b8f98722b0b56a7bbdab",
