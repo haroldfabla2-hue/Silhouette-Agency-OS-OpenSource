@@ -39,15 +39,19 @@
     },
     "hosted-orchestrator.py": {
       "bytes": 14368,
-      "sha256": "4632d9613737da3bd33df26c8afa95e0285970d0f122523ff3fcb16df4dc4f1c"
+      "sha256": "e7d19c36f4e9486159c03c25fec3a7034cfaeeb29cdb35bc273f2db4949c26c0"
+    },
+    "identity-entry.py": {
+      "bytes": 3884,
+      "sha256": "2e3ce961bd60e019711453de7ee45f9a5b7cef31a77fc547e699f7e24e5c9819"
     },
     "integrated-0e3-source.tar.gz": {
       "bytes": 360317,
       "sha256": "0e3a710ab63232eec31d90e994036b3a3480c65605097fe4a6f0938e2bf33366"
     },
     "integrated-hosted.yml": {
-      "bytes": 3685,
-      "sha256": "2b39ae3f15255fac649e5c7e9617d4d690432d5e108eff35e8e0a33bdea44da3"
+      "bytes": 3769,
+      "sha256": "f2315fb0ae0c3ed4e7ac3fb7b36dacf40e5d1f06423c67cf72a58ab035cdd7aa"
     },
     "lance-provenance.json": {
       "bytes": 900,
@@ -58,8 +62,8 @@
       "sha256": "20367cd35272db599ff1f7ebfb93409fc61bff9c635b3e01dc544c7cb0029763"
     },
     "namespace-entry.py": {
-      "bytes": 6746,
-      "sha256": "0b561724a81bfbb406ccfa59b41df16eb4953f3bd112b73991bb8a3bdfe906b8"
+      "bytes": 7512,
+      "sha256": "2b0fa2e6efb582004f71ed17283fdcbdaf8f3637701335bb700f9c10d6cc5064"
     },
     "native-provenance/better-sqlite3-12.5.0.tgz": {
       "bytes": 2622454,
@@ -90,8 +94,8 @@
       "sha256": "6d4db2c333ac887464b161bc1139f1fd86c248e0b43110a758b945c60d7763f1"
     },
     "return-evidence.py": {
-      "bytes": 8617,
-      "sha256": "049cf0f328be18385b98bc5ee6379377fbfebe7dc4cd5dc7373f710b83464a9f"
+      "bytes": 8840,
+      "sha256": "5029b8ad87dc5083022b5aa60bacc1e2fdf83300af4f9a328b5e6b21020b691f"
     },
     "runtime-prerequisites.cjs": {
       "bytes": 2062,
@@ -114,8 +118,8 @@
       "sha256": "dd8db3911d514a259442ab4cbc7776f5defe28db9d522f61a49b9bed1457101a"
     },
     "supervisor.py": {
-      "bytes": 6761,
-      "sha256": "d035e985d41249da986fc6d41e9e6ee15a7ac2c1cc3208d69fadcf9d5c64da75"
+      "bytes": 13062,
+      "sha256": "455d669b9b8da0404b2c356780bee39887a69209d6975e1ead2d185ca2570dfe"
     }
   },
   "appExecution": false,

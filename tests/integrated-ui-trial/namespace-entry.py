@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """REVIEW ONLY. Inside fresh user/net/PID namespace. No external network."""
 import os,pathlib,socket,fcntl,struct,subprocess,json,sys,signal,time
+# Require exactly the old bwrap setup authority before any ioctl/project code.
+entryStatus=dict(l.split(':',1)for l in pathlib.Path('/proc/self/status').read_text().splitlines()if ':'in l)
+assert all(int(entryStatus[k].strip(),16)==((1<<8)|(1<<12))for k in ['CapEff','CapPrm','CapBnd','CapInh'])
+assert int(entryStatus['CapAmb'].strip(),16)&~((1<<8)|(1<<12))==0
 # Bring only lo up. No address/route to external networks is installed.
 s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);ifr=struct.pack('16sH14s',b'lo',0x1|0x8,b'');fcntl.ioctl(s,0x8914,ifr);s.close()
 # Validate both IP families and root exposure BEFORE dependency/plugin/app eval.
@@ -13,6 +17,7 @@ for forbidden in ['/root','/run','/var/run','/home/runner','/home/sandbox','/mem
 # Drop setup-only network/setpcap authority irreversibly before app/build/browser.
 import ctypes,errno
 libc=ctypes.CDLL(None,use_errno=True)
+assert libc.prctl(47,4,0,0,0)==0 # PR_CAP_AMBIENT_CLEAR_ALL; explicit before final zero assertion
 assert libc.prctl(28,15,0,0,0)==0 # PR_SET_SECUREBITS: NOROOT and NO_SETUID_FIXUP locked
 for cap in range(41):
  rc=libc.prctl(24,cap,0,0,0)
@@ -22,8 +27,8 @@ class Header(ctypes.Structure):_fields_=[('version',ctypes.c_uint32),('pid',ctyp
 class Data(ctypes.Structure):_fields_=[('effective',ctypes.c_uint32),('permitted',ctypes.c_uint32),('inheritable',ctypes.c_uint32)]
 h=Header(0x20080522,0);d=(Data*2)();assert libc.capset(ctypes.byref(h),ctypes.byref(d))==0
 status=dict(l.split(':',1)for l in pathlib.Path('/proc/self/status').read_text().splitlines()if ':'in l)
-assert all(int(status[k].strip(),16)==0 for k in ['CapEff','CapPrm','CapBnd','CapInh'])and status['NoNewPrivs'].strip()=='1'
-pathlib.Path('/evidence/root-preflight.json').write_text(json.dumps({'rootEntries':sorted(os.listdir('/')),'mountinfo':pathlib.Path('/proc/self/mountinfo').read_text(),'forbiddenPathsAbsent':True,'capabilitiesZero':True,'noNewPrivs':True,'HOME':'/home/test','TMPDIR':'/tmp','dependencies':'readonly except empty .vite-temp tmpfs','freshApp':True},indent=2)+'\n')
+assert all(int(status[k].strip(),16)==0 for k in ['CapEff','CapPrm','CapBnd','CapInh','CapAmb'])and status['NoNewPrivs'].strip()=='1'
+pathlib.Path('/evidence/root-preflight.json').write_text(json.dumps({'rootEntries':sorted(os.listdir('/')),'mountinfo':pathlib.Path('/proc/self/mountinfo').read_text(),'forbiddenPathsAbsent':True,'identity':{'uid':os.getuid(),'gid':os.getgid(),'groups':os.getgroups(),'uidMap':pathlib.Path('/proc/self/uid_map').read_text(),'gidMap':pathlib.Path('/proc/self/gid_map').read_text(),'setgroups':pathlib.Path('/proc/self/setgroups').read_text().strip(),'userns':os.readlink('/proc/self/ns/user')},'capabilitiesZero':True,'noNewPrivs':True,'HOME':'/home/test','TMPDIR':'/tmp','dependencies':'readonly except empty .vite-temp tmpfs','freshApp':True},indent=2)+'\n')
 pathlib.Path('/evidence/network.json').write_text(json.dumps({'routesV4':routes,'routesV6':v6,'interfaces':interfaces,'network':'isolated namespace loopback only'})+'\n')
 phase=sys.argv[1]
 if phase=='preflight':
