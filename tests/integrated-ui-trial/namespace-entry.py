@@ -50,6 +50,8 @@ try:
 finally:os.close(fd)
 if phase=='runtime-prerequisites':
  raise SystemExit(subprocess.call(['/node/bin/node','/driver/runtime-prerequisites.cjs'],env=env))
+if phase=='continuum-regressions':
+ raise SystemExit(subprocess.call(['/usr/bin/python3','/driver/continuum-validation.py'],env=env))
 if phase=='ui-build':
  raise SystemExit(subprocess.call(['/usr/bin/python3','/driver/ui-validation.py'],env=env))
 if phase.endswith('build'):

@@ -1,9 +1,14 @@
 {
-  "status": "SOURCE_REVIEW_ONLY_NO_PUBLICATION_OR_EXECUTION",
+  "status": "SOURCE_ONLY_COMPOSITION_NO_PUBLICATION_OR_EXECUTION",
+  "parent": "fbeebf507da7dd1ccf79e568ece67e32e44e1606",
   "files": {
     "BROWSER-BOUNDARY-REVIEW.md": {
       "bytes": 6554,
       "sha256": "273eb9136e1b51f3e0319b9c0648e69d6a3c51cc3c7e60fd07c838c96b275bad"
+    },
+    "CONTINUUM-COMPOSITION-REVIEW.md": {
+      "bytes": 2064,
+      "sha256": "f4b186f80ba3a8348e03fc43b0526e0316c57ecd0a97154f651d62840739b216"
     },
     "FINITE-DIAGNOSTICS-REVIEW.md": {
       "bytes": 6534,
@@ -49,6 +54,62 @@
       "bytes": 1377,
       "sha256": "02334906ca37bdbf6562c06cf523b604f7e71039fc5be286a99553faf5c78b4d"
     },
+    "continuum-composition.json": {
+      "bytes": 195651,
+      "sha256": "f6e73b9351f5a997e1324938e607e1fe4fb7d989452e356f89de90be342f5c67"
+    },
+    "continuum-overlay/server/index.ts": {
+      "bytes": 19893,
+      "sha256": "039042ac00bed146af4f006aa01760ad7dd750f71d365154821f28967b1af696"
+    },
+    "continuum-overlay/services/consciousnessEngine.ts": {
+      "bytes": 12261,
+      "sha256": "1c7d5999cf2d30455a52dc665e0ac5d0d12c6d72369bc0646fb7e5e1e865a797"
+    },
+    "continuum-overlay/services/continuumMemory.ts": {
+      "bytes": 86753,
+      "sha256": "d8e56002e450ad000a7f0aacca88d71261cfaef87d7e891dfaa9d4d783a00a22"
+    },
+    "continuum-overlay/services/dreamerService.ts": {
+      "bytes": 62601,
+      "sha256": "3019fa55ea1ee6e1d5afc16b4de4f16fda407d896a252f77c5ce29c53f56143d"
+    },
+    "continuum-overlay/services/introspectionEngine.ts": {
+      "bytes": 74941,
+      "sha256": "c445972cb12bbefb21773dc4c496c16eade5fa7f1de2e841cd568ecb0ba8d128"
+    },
+    "continuum-overlay/services/lifecycle/continuumDreamerNotification.ts": {
+      "bytes": 5241,
+      "sha256": "9c53f6291c5a91d9848fa63ac771c5d946c007be0b967a8348a8dc48fa1c1c07"
+    },
+    "continuum-overlay/services/lifecycle/finiteContinuumCheckpoints.ts": {
+      "bytes": 2401,
+      "sha256": "cf127dc45a6c5879a3fa424d5a48e5c62736b5bf5a71c00648ed64c35c874434"
+    },
+    "continuum-overlay/services/lifecycle/retainedFailureCategories.ts": {
+      "bytes": 3024,
+      "sha256": "c736fd9b27f6acc9629d3fc615065296d2c3ef25fc256b9a7f3e6666b95e376b"
+    },
+    "continuum-overlay/services/lifecycle/runtimeStopBindings.ts": {
+      "bytes": 21224,
+      "sha256": "ebe511ddadbf2f20e004a127d7b374bdabcad23fcb1cabf7bcd9c941a5c22dd0"
+    },
+    "continuum-overlay/tests/lifecycle/continuum-notification-boundary.mts": {
+      "bytes": 4230,
+      "sha256": "87429c17fc95f625f5b06e5d65b627fb2f4369ed089696523c051c325f6d0919"
+    },
+    "continuum-overlay/tests/lifecycle/continuum-original-integration.mts": {
+      "bytes": 14804,
+      "sha256": "7ba73154a92eadd0f4413f5de2d2e6918216108329694882ab40a0ddf4a6c2b5"
+    },
+    "continuum-receipt-schema.py": {
+      "bytes": 6564,
+      "sha256": "3c69bcb8ce8d871e38e4d74657c60606f55322f9c65168b615cf45c34b6fc0ce"
+    },
+    "continuum-validation.py": {
+      "bytes": 4834,
+      "sha256": "599cc3c1a5e0e78083ac74b78c5896971b954d64e76d12dd37a1f7f4e41a31e9"
+    },
     "decode-evidence.py": {
       "bytes": 1591,
       "sha256": "7be882fd19704d5cbe6914f185ac6d0d3b3a6eda0230a545c7291dc13b89b722"
@@ -70,8 +131,8 @@
       "sha256": "dbf0ff4c7a98a5b0f00b51ee85d978dfd3cc5dde61aac09c28c0ee0fa932f278"
     },
     "hosted-orchestrator.py": {
-      "bytes": 21930,
-      "sha256": "20877d3feb045a6a36c9a5fe9d1ebb443e9572e6031fe54d030aea012207c555"
+      "bytes": 24219,
+      "sha256": "44849d1fa8950f7f51e3983987bfd8b996dcb5341109cdaaa30740f7a986c321"
     },
     "identity-entry.py": {
       "bytes": 3884,
@@ -86,8 +147,8 @@
       "sha256": "0e3a710ab63232eec31d90e994036b3a3480c65605097fe4a6f0938e2bf33366"
     },
     "integrated-hosted.yml": {
-      "bytes": 4186,
-      "sha256": "a2f4ab262150ad04ddff3930b1018ee10ea7a5f87d628cce71fd983f33f6c819"
+      "bytes": 4852,
+      "sha256": "27bae3ee50f19e1c222eb5d20d3dcdb8938bf73ffc4f90bf4925a1b207d44a42"
     },
     "lance-provenance.json": {
       "bytes": 900,
@@ -98,8 +159,8 @@
       "sha256": "20367cd35272db599ff1f7ebfb93409fc61bff9c635b3e01dc544c7cb0029763"
     },
     "namespace-entry.py": {
-      "bytes": 8172,
-      "sha256": "4a6c7376af685b75c8ccebf5422e26e662577b2de06496eef1994014d72c1c81"
+      "bytes": 8306,
+      "sha256": "3436361b9b6917bd33e9ef122b1f26b6d4edb306f4f02ef1bb70c744c8c20cd0"
     },
     "native-provenance/better-sqlite3-12.5.0.tgz": {
       "bytes": 2622454,
@@ -130,8 +191,8 @@
       "sha256": "6d4db2c333ac887464b161bc1139f1fd86c248e0b43110a758b945c60d7763f1"
     },
     "return-evidence.py": {
-      "bytes": 9269,
-      "sha256": "6fb2a358b0243ec0cf90e2afcf28a28a3119982fc83cd8ce3e750003572c2c57"
+      "bytes": 12600,
+      "sha256": "95d9411ad15b8fdd0cf9f5e922eaa4ed2d5ee83c75a6975f10da3d40bb05ac4f"
     },
     "runtime-browser-composition.json": {
       "bytes": 194163,
@@ -190,8 +251,8 @@
       "sha256": "dd8db3911d514a259442ab4cbc7776f5defe28db9d522f61a49b9bed1457101a"
     },
     "supervisor.py": {
-      "bytes": 13921,
-      "sha256": "a81886ea83bd9d4b2b81c9a9ff667d2acef098f8f00c4e0f484106cb991f5112"
+      "bytes": 13945,
+      "sha256": "2a5ddc1bd8090bd02877d53a0634c41086b0cbdcf0b8287471659375bbc0f512"
     },
     "telemetry-regression.mts": {
       "bytes": 4398,

@@ -89,7 +89,7 @@ def members(b,*,mode,package=None,integrity=None):
 try:
  assert os.environ['PRIVATE']=='false'and os.environ['ENVIRONMENT']=='github-hosted'and os.environ['GITHUB_EVENT_NAME']in {'workflow_dispatch','push'}
  if os.environ['GITHUB_EVENT_NAME']=='push':
-  assert subprocess.check_output(['git','rev-parse','HEAD^'],cwd=REPO,text=True).strip()=='4ca45ac90eac1e3b57b34067de161551a075893c'
+  assert subprocess.check_output(['git','rev-parse','HEAD^'],cwd=REPO,text=True).strip()=='fbeebf507da7dd1ccf79e568ece67e32e44e1606'
   assert os.environ['GITHUB_REF']=='refs/heads/preparation/sqlite-static-typecheck-db201993-4054-20261114'
  assert os.environ['GITHUB_SHA']==os.environ['EXPECTED_HEAD']==subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip()
  node=Path(shutil.which('node')).resolve();assert sha(node.read_bytes())=='ccacb2d6d87ba6d118b2bffc1ae33747a05cc5fc6b1f1ec4fc1d420b687e952d';assert subprocess.check_output([str(node),'--version'],text=True).strip()=='v22.18.0'
@@ -129,6 +129,12 @@ try:
  for r in diagnostic['files']:
   p=app/r['path'];b=(HERE/'finite-diagnostics-overlay'/r['path']).read_bytes();assert sha(p.read_bytes())==r['beforeSha256'];assert len(b)==r['bytes']and sha(b)==r['afterSha256'];p.write_bytes(b)
  diagnosticActual={str(p.relative_to(app)):sha(p.read_bytes())for p in app.rglob('*')if p.is_file()};assert diagnosticActual==diagnostic['finalProductFiles']
+ # Accepted fixed continuum source overlay after exact diagnostics identity.
+ continuumRaw=(HERE/'continuum-composition.json').read_bytes();assert sha(continuumRaw)=='f6e73b9351f5a997e1324938e607e1fe4fb7d989452e356f89de90be342f5c67'
+ continuum=json.loads(continuumRaw);assert continuum['basePublishedParent']=='fbeebf507da7dd1ccf79e568ece67e32e44e1606'and len(continuum['files'])==11
+ for r in continuum['files']:
+  p=app/r['path'];b=(HERE/'continuum-overlay'/r['path']).read_bytes();assert(sha(p.read_bytes())if p.exists()else None)==r['beforeSha256'];assert len(b)==r['bytes']and sha(b)==r['afterSha256'];p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(b)
+ continuumActual={str(p.relative_to(app)):sha(p.read_bytes())for p in app.rglob('*')if p.is_file()};assert continuumActual==continuum['finalProductFiles']
  excluded=[]
  for r in classification['files']:
   if not r['include']:(app/r['path']).unlink();excluded.append(r)
@@ -184,11 +190,26 @@ try:
  (app/'RUNTIME-MATERIALIZATION-REVIEWED.json').write_text(json.dumps({'base':BASE,'source54':True,'historicalState':False,'providerMode':'off','runnableOnlyInsideIsolatedPhase':True})+'\n')
  nodeRoot=node.parents[1]
  phaseFailures=[]
- for phase in ['runtime-prerequisites','ui-build','server-build','runtime']:
+ for phase in ['runtime-prerequisites','ui-build','continuum-regressions','server-build','runtime']:
   try:command(phase,['sudo','-n',str(shutil.which('python3')),str(HERE/'supervisor.py'),'--bwrap',str(bwrap),'--phase',phase,'--app',str(app),'--deps',str(deps),'--browser',str(browser),'--review-dir',str(HERE),'--node-root',str(nodeRoot),'--cgroup-parent','/sys/fs/cgroup','--cgroup-tag',os.environ['GITHUB_RUN_ID'],'--memory-bytes',str(3*1024**3),'--wall-seconds','180','--evidence',str(EV/phase)],REPO,{'PATH':os.environ['PATH']},200)
   except AssertionError:
    # Only clean natural ui-build code1 diagnostic failures can continue. Any
    # supervisor/cgroup/output/identity/cap/timeout defect remains hard failure.
+   if phase in ['ui-build','continuum-regressions']:
+    outer=json.loads((EV/(phase+'-receipt.json')).read_text())
+    assert outer['code']==1 and outer['failure']is None and outer['forced']is False,'NATURAL_OUTER_COMMAND_RECEIPT_REQUIRED'
+   if phase=='continuum-regressions':
+    sr=json.loads((EV/phase/'supervisor.json').read_text());fr=json.loads((EV/phase/'continuum-validation.json').read_text())
+    assert sr['code']==1 and sr['failure']is None and not sr['events']and not sr['remainingPids']and sr['cgroupRemoved']is True
+    assert fr['phase']==phase and fr['status']=='FAIL_OR_INCOMPLETE_NOT_PRODUCT_PASS'and fr['allModesAccounted']is True and fr['fatal']is False
+    modes=['constructors','identity-existing','saturated-replay','schema-and-write-failure','power-check','timer-armed','timer-fired','threshold']
+    assert [r['mode']for r in fr['rows']]==modes
+    for r in fr['rows']:
+     assert r['code']==0 and r['timeout']is False and r['failure']is None and r['forcedOrGroupRemained']is False and r['receipt']is True and r['assertionsComplete']is True
+     assert len(r['cleanup'])==2 and all(x in ['fulfilled','rejected']for x in r['cleanup'])
+     assert r['productVerdict']in ['FAIL_RETAINED_ORIGINAL_EVIDENCE','INCOMPLETE_FRONTIER']
+    phaseFailures.append({'phase':phase,'code':1,'source':'continuum-validation.json','meaning':'ACTUAL_ASSERTIONS_COMPLETED_ORIGINAL_PRODUCT_FAILURES_OR_FRONTIER_RETAINED'})
+    continue
    if phase!='ui-build':raise
    sr=json.loads((EV/phase/'supervisor.json').read_text());fr=json.loads((EV/phase/'finite-validation.json').read_text());br=json.loads((EV/phase/'emitted-bootstrap-inspection.json').read_text())
    assert sr['code']==1 and sr['failure']is None and not sr['events']and not sr['remainingPids']and sr['cgroupRemoved']is True
