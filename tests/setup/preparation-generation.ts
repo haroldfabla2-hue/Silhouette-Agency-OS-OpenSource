@@ -41,7 +41,7 @@ export function sealAndDrainTestFileGenerations(): Promise<void> {
         const actualFailures: unknown[]=[];
         for (const result of results) {
             if (result.status==='rejected') {actualFailures.push(result.reason);continue;}
-            console.log('PREPARATION_GENERATION_REPORT',JSON.stringify({state:result.value.state,pending:result.value.pending,lifetimeFailures:result.value.lifetimeFailures,residuals:result.value.residuals,coverage:result.value.coverage}));
+            console.log('PREPARATION_GENERATION_REPORT',JSON.stringify({state:result.value.state,pending:result.value.pending,lifetimeFailures:result.value.lifetimeFailures,ownerFailures:result.value.ownerFailures,taskOutcomeFailures:result.value.taskOutcomeFailures,residuals:result.value.residuals,coverage:result.value.coverage}));
             if(result.value.lifetimeFailures) actualFailures.push(new Error('Original generation failures: '+result.value.lifetimeFailures));
         }
         if(actualFailures.length) throw new AggregateError(actualFailures,'Original test generation teardown failed');

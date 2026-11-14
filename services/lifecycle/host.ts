@@ -4,7 +4,8 @@ import { RecoveryEvidence, type RecoveryObligation, type RecoveryObservation } f
  */
 export type Capacity = Readonly<{ scopes: number; active: number; failures: number; resources: number }>;
 export type Disposition = 'CLOSED' | 'NOT_ACQUIRED' | 'INCOMPLETE';
-export type Failure = Readonly<{ id: number; revision: 1; source: string; original: unknown }>;
+export type FailureKind = 'OWNER_FAILURE' | 'ORIGINAL_TASK_OUTCOME';
+export type Failure = Readonly<{ id: number; revision: 1; kind: FailureKind; source: string; original: unknown }>;
 export type ResourceEvidence = Readonly<{ source: string; disposition: Disposition; reason?: string; resourceId?: number }>;
 export class AdmissionClosed extends Error {}
 export class CapacityExceeded extends Error {}
@@ -14,7 +15,7 @@ export type ChildReservation = Readonly<{ id: number }>;
 export type ResourceReservation = Readonly<{ id: number }>;
 export type HostReport = Readonly<{
     state: 'INCOMPLETE' | 'SETTLED_NO_FAILURE_RECORDED'; pending: number;
-    failures: readonly Failure[]; acknowledged: number; lifetimeFailures: number; childGuardNotSelected: number;
+    failures: readonly Failure[]; acknowledged: number; lifetimeFailures: number; ownerFailures: number; taskOutcomeFailures: number; childGuardNotSelected: number;
     residuals: readonly string[]; resources: readonly ResourceEvidence[];
     coverage: 'EXPLICITLY_REGISTERED_WORK_ONLY';
     recovery: readonly RecoveryObservation[];
@@ -45,6 +46,7 @@ export interface Scope {
     releaseUnused(reservation: ResourceReservation): void;
     closeResource(operation: Operation, value: object): unknown;
     failure(source: string, original: unknown): void;
+    taskFailed(source: string, original: unknown): void;
     unknown(source: string, evaluation?: boolean): void;
     onSeal(stop: () => unknown): void;
 }
@@ -78,6 +80,8 @@ class Core {
     #reservedActive = 0;
     #reservedResources = 0;
     #lifetimeFailures = 0;
+    #ownerFailures = 0;
+    #taskOutcomeFailures = 0;
     #childGuardNotSelected = 0;
     #failures: Failure[] = [];
     #residuals = new Set<string>();
@@ -175,6 +179,7 @@ class Core {
                 return item.close();
             },
             failure: (source: string, error: unknown) => this.failure(label + ':' + source, error),
+            taskFailed: (source: string, error: unknown) => this.failure(label + ':' + source,error,'ORIGINAL_TASK_OUTCOME'),
             unknown: (source: string, evaluation = false) => this.unknown(label + ':' + source, evaluation),
             onSeal: (stop: () => unknown) => {
                 const record = this.#scopes.get(scope)!;
@@ -187,14 +192,21 @@ class Core {
     private unknown(source: string, evaluation = false): void {
         this.#residuals.add(source); if (evaluation) this.#unsafeEvaluation = true;
     }
-    private failure(source: string, original: unknown): Failure | undefined {
+    private failure(source: string, original: unknown, kind: FailureKind = 'OWNER_FAILURE'): Failure | undefined {
+        if(kind==='ORIGINAL_TASK_OUTCOME') {
+            if(this.#taskOutcomeFailures < Number.MAX_SAFE_INTEGER)this.#taskOutcomeFailures++;
+            else this.unknown('TASK_OUTCOME_COUNT_OVERFLOW');
+        } else {
+            if(this.#ownerFailures < Number.MAX_SAFE_INTEGER)this.#ownerFailures++;
+            else this.unknown('OWNER_FAILURE_COUNT_OVERFLOW');
+        }
         if (this.#lifetimeFailures < Number.MAX_SAFE_INTEGER) this.#lifetimeFailures++;
         else this.unknown('FAILURE_COUNT_OVERFLOW');
         if (this.#failures.length >= this.capacity.failures) { this.unknown('FAILURE_CAPACITY_EXHAUSTED'); return; }
         // A failure record is immutable, final, revision1. A later occurrence is
         // a NEW id, never an update. Exact object+id+revision acknowledgement
         // removes only that retained item; lifetime failure still makes FAIL.
-        const record: Failure = Object.freeze({ id: ++this.#nextId, revision: 1, source, original });
+        const record: Failure = Object.freeze({ id: ++this.#nextId, revision: 1, kind, source, original });
         this.#failures.push(record); return record;
     }
     private acknowledge(original: Failure): void {
@@ -310,7 +322,7 @@ class Core {
     private snapshot(): HostReport {
         return Object.freeze({ state: this.#lifetimeFailures || this.#residuals.size || this.#active.size || this.#reservedResources || this.#releaseEvidence.some(x => x.disposition === 'INCOMPLETE')
             ? 'INCOMPLETE' : 'SETTLED_NO_FAILURE_RECORDED', pending: this.#active.size,
-            failures: Object.freeze([...this.#failures]), acknowledged: this.#acknowledged, lifetimeFailures: this.#lifetimeFailures, childGuardNotSelected: this.#childGuardNotSelected,
+            failures: Object.freeze([...this.#failures]), acknowledged: this.#acknowledged, lifetimeFailures: this.#lifetimeFailures, ownerFailures:this.#ownerFailures, taskOutcomeFailures:this.#taskOutcomeFailures, childGuardNotSelected: this.#childGuardNotSelected,
             residuals: Object.freeze([...this.#residuals]), resources: Object.freeze([...this.#releaseEvidence]), coverage: 'EXPLICITLY_REGISTERED_WORK_ONLY', recovery: this.#recovery.observe(this.#releaseEvidence) });
     }
     private retire(scope: Scope): Promise<RetirementReport> {

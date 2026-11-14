@@ -4,12 +4,12 @@ import type { Scope } from './host';
 // installPreparationHost. Application sources import only their fixed binding.
 export const fixedNames = ['systemBus', 'sqlite', 'sensory', 'power', 'hub', 'nervous', 'neuroLink', 'settings',
     'continuum', 'introspection', 'consciousness', 'narrative', 'arbiter', 'dreamer', 'graph', 'redis',
-    'lance', 'brainBridge', 'plugins', 'proStudio', 'server', 'cost', 'runtimeEnvironment', 'config', 'orchestrator', 'neuroSynapse', 'architecturalReview', 'remediation', 'helpProtocol', 'codebase', 'architect', 'workflow'] as const;
+    'lance', 'brainBridge', 'plugins', 'proStudio', 'server', 'cost', 'runtimeEnvironment', 'config', 'orchestrator', 'neuroSynapse', 'architecturalReview', 'remediation', 'helpProtocol', 'codebase', 'architect', 'workflow', 'daemon'] as const;
 type Name = typeof fixedNames[number];
 let installed: Readonly<Record<Name, Scope>> | undefined;
-let independentAdmissions: { lance: () => Scope; introspection: () => Scope; brainBridge: () => Scope; codebase: () => Scope };
+let independentAdmissions: { lance: () => Scope; introspection: () => Scope; brainBridge: () => Scope; codebase: () => Scope; daemon: () => Scope };
 export function installFixedBindings(scopes: Readonly<Record<Name, Scope>>, independent: {
-    lance: () => Scope; introspection: () => Scope; brainBridge: () => Scope; codebase: () => Scope;
+    lance: () => Scope; introspection: () => Scope; brainBridge: () => Scope; codebase: () => Scope; daemon: () => Scope;
 }): void {
     if (installed) throw new Error('Host already installed in this realm');
     installed = scopes; independentAdmissions = independent;
@@ -67,4 +67,9 @@ export function admitBrainBridgeInstance(): Scope {
 
 export function admitCodebaseInstance(): Scope {
     required('codebase'); return independentAdmissions.codebase();
+}
+
+/** Independent actual daemon instances, fixed bootstrap authority only. */
+export function admitDaemonInstance(): Scope {
+    required('daemon'); return independentAdmissions.daemon();
 }

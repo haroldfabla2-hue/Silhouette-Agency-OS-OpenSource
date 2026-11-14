@@ -9,6 +9,9 @@ import { admitEvaluatedDaemon, bindEvaluatedDaemon, failEvaluatedDaemon } from '
  * ==============================================================================
  */
 
+import { admitDaemonInstance } from '../lifecycle/preparationBindings';
+import { AdmissionClosed, type Scope } from '../lifecycle/host';
+import { requestRuntimeRootShutdown } from '../../server/runtimeRootHost';
 import fs from 'fs/promises';
 import path from 'path';
 import { continuum } from '../continuumMemory';
@@ -54,9 +57,34 @@ export class UnifiedDaemon {
     private readonly STATE_FILE = path.resolve(process.cwd(), 'data', 'daemon_state.json');
 
     private tasks: DaemonTask[] = [];
+    private readonly ownership: Scope;
+    private closing = false;
+    private startTask?: Promise<void>;
+    private startupEntered = false;
+    private stopTask?: Promise<void>;
+    private tickTask?: Promise<void>;
+    private restartUnsubscribe?: () => void;
+    private persistence: Promise<void> = Promise.resolve();
+    private ownerFailures = 0;
+    private taskOutcomeFailures = 0;
+    private failureSamples: unknown[] = [];
+    private recordTaskFailure(source: string, original: unknown): void {
+        if(this.taskOutcomeFailures < Number.MAX_SAFE_INTEGER) this.taskOutcomeFailures++;
+        // Immutable original failed outcome stays visible in the same host.
+        // It does not mean that joining/closing its settled work failed.
+        this.ownership.taskFailed(source,original);
+    }
+    private recordFailure(source: string, original: unknown): void {
+        if(this.ownerFailures < Number.MAX_SAFE_INTEGER) this.ownerFailures++;
+        if(this.failureSamples.length < 16) this.failureSamples.push(original);
+        this.ownership.failure(source,original);
+    }
+
 
     constructor() {
+        this.ownership=admitDaemonInstance();
         this.initializeTasks();
+        this.ownership.onSeal(() => this.stop());
     }
 
     private initializeTasks() {
@@ -113,12 +141,24 @@ export class UnifiedDaemon {
         });
     }
 
-    public async start() {
-        if (this.isRunning) return;
+    public start(): Promise<void> {
+        if(this.closing) return Promise.reject(new AdmissionClosed('daemon:start'));
+        if(this.startTask) return this.startTask;
+        // Publish join before original async startup can trigger reentrance.
+        let yes!: () => void;let no!: (error: unknown) => void;
+        this.startTask=new Promise<void>((resolve,reject) => {yes=resolve;no=reject;});
+        void this.startTask.catch(() => undefined);
+        try { void this.ownership.invoke('original-start',() => this.performOriginalStart()).then(yes,error => {this.recordFailure('startup',error);no(error);}); }
+        catch(error) {this.recordFailure('startup-admission',error);no(error);}
+        return this.startTask;
+    }
+    private async performOriginalStart(): Promise<void> {
+        this.startupEntered=true;
         this.isRunning = true;
 
         console.log('[DAEMON] 🔋 Starting Unified Cognitive Daemon...');
         await this.loadState();
+        if(this.closing) return;
 
         // [SECURITY] Real readers for autonomy config: proactive tasks (the
         // ones that wake agents, evolve the system or narrate) run ONLY when
@@ -129,6 +169,7 @@ export class UnifiedDaemon {
         // tasks stay disabled.
         try {
             const { configLoader } = await import('../../server/config/configLoader');
+            if(this.closing) return;
             const autonomy = configLoader.getConfig().autonomy as AutonomyFlags;
             for (const task of this.tasks) {
                 if (!isTaskAllowedByAutonomy(task.name, autonomy)) {
@@ -137,34 +178,51 @@ export class UnifiedDaemon {
                 }
             }
         } catch (cfgErr: any) {
+            if(this.closing && cfgErr instanceof AdmissionClosed) return;
+            this.recordFailure('autonomy-config',cfgErr);
             console.error('[DAEMON] ⛔ Could not read autonomy config; proactive tasks DISABLED (fail-closed):', cfgErr?.message || cfgErr);
             for (const task of this.tasks) {
                 if (PROACTIVE_TASK_FLAGS[task.name]) task.enabled = false;
             }
         }
 
-        // Start internal tick system
-        this.checkInterval = setInterval(() => this.tick(), this.TICK_INTERVAL_MS);
-
-        // Run first tick immediately
-        this.tick();
-
-        // [PA-051] OS Dynamic Reload Hook (For Enterprise Plugins)
-        import('../../services/systemBus').then(({ systemBus }) => {
-            import('../../types').then(({ SystemProtocol }) => {
-                systemBus.subscribe(SystemProtocol.SYSTEM_RESTART_REQUEST, async (event: any) => {
-                    console.warn('[DAEMON] 🚨 SYSTEM_RESTART_REQUEST RECEIVED!');
-                    console.warn(`[DAEMON] ♻️ Initiating Graceful Shutdown (Requested by: ${event.initiator})...`);
-                    this.stop();
-
-                    // Allow 1 second for immediate async writes to finish natively (like logs)
-                    setTimeout(() => {
-                        console.warn('[DAEMON] 💀 Exiting process to allow Janus Supervisor reboot...');
-                        process.exit(0);
-                    }, 1000);
-                });
+        if(this.closing) return;
+        // Retain the original restart-hook import and unsubscribe; no detached
+        // nested import can add a subscription after this startup is joined.
+        try {
+            const { systemBus }=await import('../../services/systemBus');
+            if(this.closing) return;
+            const { SystemProtocol }=await import('../../types');
+            if(this.closing) return;
+            this.restartUnsubscribe=systemBus.subscribe(SystemProtocol.SYSTEM_RESTART_REQUEST,(event: any) => {
+                if(this.closing) return;
+                console.warn('[DAEMON] SYSTEM_RESTART_REQUEST RECEIVED:',event.initiator);
+                // Control dispatch only. Awaiting root shutdown here would form
+                // a cycle if the event delivery itself is part of daemon work.
+                // Root retains/joins its own original shutdown and daemon.stop.
+                try {
+                    void requestRuntimeRootShutdown('DAEMON_RESTART_REQUEST').catch(error => {
+                        this.recordFailure('restart-root-shutdown',error);
+                        process.exitCode=1;
+                        console.error('[DAEMON] Original root shutdown failed:',error);
+                    });
+                } catch(error) {
+                    this.recordFailure('restart-root-request',error);process.exitCode=1;
+                    console.error('[DAEMON] Original root shutdown unavailable:',error);
+                }
             });
-        }).catch(err => console.error('[DAEMON] Failed to bind restart hooks', err));
+        } catch(error) {
+            if(this.closing && error instanceof AdmissionClosed) return;
+            this.recordFailure('restart-hook-install',error);
+            console.error('[DAEMON] Failed to bind restart hooks:',error);
+        }
+        if(this.closing) return;
+        const requestTick=() => {
+            if(this.closing) return;
+            void this.tick().catch(error => console.error('[DAEMON] Original tick failed:',error));
+        };
+        this.checkInterval=setInterval(requestTick,this.TICK_INTERVAL_MS);
+        requestTick();
     }
 
     /** Scheduler state, not a claim of thought quality or completed cognition. */
@@ -174,22 +232,54 @@ export class UnifiedDaemon {
             registeredTaskCount: this.tasks.length };
     }
 
-    public stop() {
-        if (!this.isRunning) return;
-        this.isRunning = false;
-
-        console.log('[DAEMON] 🛑 Stopping Unified Cognitive Daemon...');
-        if (this.checkInterval) {
-            clearInterval(this.checkInterval);
-            this.checkInterval = null;
+    public stop(): Promise<void> {
+        this.closing=true;this.isRunning=false;
+        if(this.stopTask) return this.stopTask;
+        // Publish before any original unsubscribe callback can reenter.
+        let yes!: () => void;let no!: (error: unknown) => void;
+        this.stopTask=new Promise<void>((resolve,reject) => {yes=resolve;no=reject;});
+        void this.stopTask.catch(() => undefined);
+        if(this.checkInterval) {clearInterval(this.checkInterval);this.checkInterval=null;}
+        void this.performOriginalStop().then(yes,no);
+        return this.stopTask;
+    }
+    private async performOriginalStop(): Promise<void> {
+        console.log('[DAEMON] Stopping Unified Cognitive Daemon; joining original work...');
+        // Startup cannot install a new timer/subscription after these guards.
+        if(this.startTask) await Promise.allSettled([this.startTask]);
+        try {this.restartUnsubscribe?.();}
+        catch(error) {this.recordFailure('restart-unsubscribe',error);}
+        // Keep the exact callback retained, even after failed unsubscribe.
+        if(this.tickTask) await Promise.allSettled([this.tickTask]);
+        await Promise.allSettled([this.persistence]);
+        // Final original snapshot is after the admitted task/actor/recovery
+        // branches, and is part of this stop receipt, never a detached write.
+        if(this.startupEntered) {
+            try {await this.saveState();} catch { /* original retained by saveState */ }
         }
-        this.saveState(); // Save state on shutdown
+        console.log('[DAEMON] Original settled task failures:',this.taskOutcomeFailures,'owner/closure failures:',this.ownerFailures);
+        if(this.ownerFailures) throw new AggregateError(this.failureSamples,'Daemon original owner/closure failures: '+this.ownerFailures);
     }
 
-    private async tick() {
+    private tick(): Promise<void> {
+        if(this.closing) return Promise.reject(new AdmissionClosed('daemon:tick'));
+        // Deliberate scheduler change: one original check at a time, retaining
+        // its exact promise. Coalesced checks do not invent additional runs or
+        // alter configured intervals, autonomy flags or lock deferral counters.
+        if(this.tickTask) return this.tickTask;
+        let yes!: () => void;let no!: (error: unknown) => void;
+        const task=new Promise<void>((resolve,reject) => {yes=resolve;no=reject;});
+        this.tickTask=task;
+        void task.then(() => {if(this.tickTask===task)this.tickTask=undefined;},() => {if(this.tickTask===task)this.tickTask=undefined;});
+        try {void this.ownership.invoke('original-tick',() => this.performOriginalTick()).then(yes,error => {this.recordFailure('tick',error);no(error);});}
+        catch(error) {this.recordFailure('tick-admission',error);no(error);}
+        return task;
+    }
+    private async performOriginalTick(): Promise<void> {
         const now = Date.now();
 
         for (const task of this.tasks) {
+            if(this.closing) return;
             if (!task.enabled) continue;
 
             const timeSinceLastRun = now - (task.lastRun || 0);
@@ -211,6 +301,7 @@ export class UnifiedDaemon {
                     continue;
                 }
 
+                if(this.closing) return;
                 if (!acquired) {
                     console.log(`[DAEMON: SKIPPED] 🔒 ${task.name} already running in cluster.`);
                     // Do NOT touch lastRun: a held/failed lock is not a run.
@@ -230,12 +321,14 @@ export class UnifiedDaemon {
                     task.runCount = (task.runCount || 0) + 1;
                     daemonLog.info({ task: task.name, durationMs: Date.now() - t0 }, '✓ completado');
                 } catch (error: any) {
+                    this.recordTaskFailure('task:'+task.name,error);
                     task.lastRun = Date.now(); // Prevent immediate retry loops
                     task.errCount = (task.errCount || 0) + 1;
                     console.error(`[DAEMON: FAULT] ❌ ${task.name} failed (Attempt #${task.errCount}):`, error.message);
                 }
 
-                await this.saveState();
+                try {await this.saveState();}
+                catch { /* original persistence failure retained; do not skip independent tasks */ }
             }
         }
     }
@@ -268,7 +361,15 @@ export class UnifiedDaemon {
         }
     }
 
-    private async saveState() {
+    private saveState(): Promise<void> {
+        // Serialize exact original snapshots/atomic-write sequences. A failed
+        // predecessor is still retained, but must not skip independent final IO.
+        const original=this.persistence.catch(() => undefined).then(() => this.writeOriginalState());
+        this.persistence=original;
+        void original.catch(error => this.recordFailure('state-save',error));
+        return original;
+    }
+    private async writeOriginalState(): Promise<void> {
         try {
             const state: DaemonState = {
                 tasks: {},
@@ -299,6 +400,7 @@ export class UnifiedDaemon {
             await fs.rename(tmpFile, this.STATE_FILE);
         } catch (e: any) {
             console.warn(`[DAEMON] Failed to save state: ${e.message}`);
+            throw e; // original failure, never a successful persistence receipt
         }
     }
 
@@ -319,6 +421,7 @@ export class UnifiedDaemon {
 
         let awokenCount = 0;
         const MAX_PER_CYCLE = 2;
+        const originalActors: Promise<unknown>[]=[];
 
         for (const actor of actors) {
             if (awokenCount >= MAX_PER_CYCLE) break;
@@ -330,18 +433,25 @@ export class UnifiedDaemon {
                 console.log(`[DAEMON: HEARTBEAT] 💓 Dispatching to ${actor.name}: "${mission.substring(0, 80)}..."`);
                 awokenCount++;
 
-                actor.executeTask(mission).catch(async (e: any) => {
+                try {originalActors.push(actor.executeTask(mission).catch(async (e: any) => {
+                    this.recordTaskFailure('heartbeat-actor:'+actor.name,e);
                     console.error(`[DAEMON: HEARTBEAT] ❌ Agent ${actor.name} failed: ${e.message}`);
-                    continuum.store(
+                    await continuum.store(
                         `SYSTEM ERROR: Agent ${actor.name} failed during heartbeat: ${e.message}`,
                         undefined,
                         ['CRITICAL', 'system_error', 'heartbeat_failure'],
                         true
-                    ).catch(() => { });
-                });
+                    ).catch(error => {this.recordFailure('heartbeat-recovery-store',error);throw error;});
+                }));}
+                catch(error) {this.recordTaskFailure('heartbeat-actor-start:'+actor.name,error);originalActors.push(Promise.reject(error));}
             }
         }
 
+        // Both original actor branches remain concurrent, but the daemon task
+        // now joins them and their exact error-recovery store before completion.
+        const receipts=await Promise.allSettled(originalActors);
+        const rejected=receipts.filter((r): r is PromiseRejectedResult => r.status==='rejected');
+        if(rejected.length) throw new AggregateError(rejected.map(r=>r.reason),'Original heartbeat branches failed');
         if (awokenCount > 0) {
             console.log(`[DAEMON: HEARTBEAT] 💓 Awakened ${awokenCount}/${actors.length} agents.`);
         }

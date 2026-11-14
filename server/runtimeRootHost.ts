@@ -27,3 +27,15 @@ export function recordRuntimeStartupFailure(original: unknown): void {
         console.error('[BOOT] Original startup failure evidence could not be fully retained:', original, bookkeepingError);
     }
 }
+
+// A restart event requests the same original root shutdown, not a timed exit.
+// Control-plane callers must not join this from a daemon task the root drains.
+let requestInstalledShutdown: ((reason: string) => Promise<void>) | undefined;
+export function installRuntimeRootShutdown(original: (reason: string) => Promise<void>): void {
+    if (requestInstalledShutdown) throw new Error('Runtime root shutdown already installed');
+    requestInstalledShutdown=original;
+}
+export function requestRuntimeRootShutdown(reason: string): Promise<void> {
+    if (!requestInstalledShutdown) throw new Error('Explicit runtime root shutdown unavailable');
+    return requestInstalledShutdown(reason);
+}

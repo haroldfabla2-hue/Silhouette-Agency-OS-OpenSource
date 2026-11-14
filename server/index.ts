@@ -7,7 +7,7 @@
 // ═══════════════════════════════════════════════════════════════
 import { configLoader } from './config/configLoader';
 import { createServer } from 'http';
-import { stopRuntimeRootHost, recordRuntimeStartupFailure } from './runtimeRootHost';
+import { stopRuntimeRootHost, recordRuntimeStartupFailure, installRuntimeRootShutdown } from './runtimeRootHost';
 import { AdmissionClosed } from '../services/lifecycle/host';
 import { sealEvaluatedRuntimeProducers, drainEvaluatedRuntimeProducers, closeEvaluatedRuntimeStorage, evaluatedRuntimeFrontier, RuntimeConstructionAdmissionClosed } from '../services/lifecycle/runtimeStopBindings';
 
@@ -213,7 +213,7 @@ async function completeOriginalStartup(): Promise<void> {
     try {
         const { unifiedDaemon } = await import('../services/daemon/unifiedDaemon');
         if (isShuttingDown) return;
-        unifiedDaemon.start();
+        await unifiedDaemon.start();
     } catch (error) {
 
         if (isShuttingDown && (error instanceof AdmissionClosed || error instanceof RuntimeConstructionAdmissionClosed)) return;
@@ -276,6 +276,7 @@ server.once('error', error => {
     if (!startupEntered) failStartup(error);
     void gracefulShutdown('HTTP_SERVER_ERROR').catch(failure => console.error('[SHUTDOWN] Server error drain failed:', failure));
 });
+installRuntimeRootShutdown(gracefulShutdown);
 server.listen(PORT, HOST);
 
 // ═══════════════════════════════════════════════════════════════
@@ -346,8 +347,10 @@ async function performOriginalShutdown(signal: string): Promise<void> {
 
     try {
         const report = await stopRuntimeRootHost();
-        if (report.lifetimeFailures) shutdownFailed = true;
-        console.error('[SHUTDOWN] Explicit host evidence:', report.state, report.coverage, evaluatedRuntimeFrontier());
+        // Original failed task outcomes remain immutable evidence, not clean
+        // task success. A settled task fault alone is not a failed close.
+        if (report.ownerFailures) shutdownFailed = true;
+        console.error('[SHUTDOWN] Explicit host evidence:', report.state, report.coverage, {ownerFailures:report.ownerFailures,taskOutcomeFailures:report.taskOutcomeFailures,lifetimeFailures:report.lifetimeFailures}, evaluatedRuntimeFrontier());
     } catch (error) {
         shutdownFailed = true;
         console.error('[SHUTDOWN] Explicit host stop failed:', error);

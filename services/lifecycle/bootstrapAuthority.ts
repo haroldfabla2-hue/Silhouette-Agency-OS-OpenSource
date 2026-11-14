@@ -11,6 +11,7 @@ export function installPreparationHost(capacity: Capacity): Host {
         introspection: () => host.scope('introspection:independent'),
         brainBridge: () => host.scope('brainBridge:independent'),
         codebase: () => host.scope('codebase:independent'),
+        daemon: () => host.scope('daemon:independent'),
     }));
     // Guard stays global: unknown first-party work could share any resource.
     host.unknown('PRODUCT_FRONTIER_INTEGRATION_INCOMPLETE', true);
