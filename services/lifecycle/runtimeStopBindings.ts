@@ -13,7 +13,8 @@ const sqlite: Slot = { name:'sqlite',phase:'UNSEEN' };
 const nervous: Slot = { name:'nervous',phase:'UNSEEN' };
 const scheduler: Slot = { name:'scheduler',phase:'UNSEEN' };
 const cron: Slot = { name:'cron',phase:'UNSEEN' };
-const producers = [daemon,curiosity,nervous,scheduler,cron];
+const dreamer: Slot = { name:'dreamer',phase:'UNSEEN' };
+const producers = [daemon,curiosity,nervous,scheduler,cron,dreamer];
 const storage = [continuousMemory,redis,graph,sqlite];
 let registrationSealed = false;
 let producersSealed = false;
@@ -73,6 +74,9 @@ export function failEvaluatedScheduler(permit: Permit,error: unknown): void { fa
 export function admitEvaluatedCron(): Permit { return admit(cron); }
 export function bindEvaluatedCron(permit: Permit,stop: () => unknown): void { publish(cron,permit,stop,producersSealed); }
 export function failEvaluatedCron(permit: Permit,error: unknown): void { failed(cron,permit,error); }
+export function admitEvaluatedDreamer(): Permit { return admit(dreamer); }
+export function bindEvaluatedDreamer(permit: Permit,stop: () => unknown): void { publish(dreamer,permit,stop,producersSealed); }
+export function failEvaluatedDreamer(permit: Permit,error: unknown): void { failed(dreamer,permit,error); }
 export function sealEvaluatedRuntimeProducers(): void {
     // Close the construction frontier BEFORE producer callbacks. Modules not
     // yet admitted now fail before allocating their original singleton.

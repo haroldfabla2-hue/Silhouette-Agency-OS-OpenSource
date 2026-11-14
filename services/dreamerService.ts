@@ -1,3 +1,5 @@
+import { AdmissionClosed, type Operation } from './lifecycle/host';
+import { admitEvaluatedDreamer, bindEvaluatedDreamer, failEvaluatedDreamer } from './lifecycle/runtimeStopBindings';
 import { preserveOriginal } from './lifecycle/preserveOriginal';
 import { dreamerOwner } from './lifecycle/preparationBindings';
 import { verifyClaims, type CitedClaim } from './memoryCognition';
@@ -12,7 +14,57 @@ import * as si from 'systeminformation'; // NEW: For Resource Monitoring
 
 export class DreamerService {
     private readonly ownership = dreamerOwner();
-    constructor() { this.ownership.onSeal(() => this.stopDreamingLoop()); }
+    private runtimeSealed = false;
+    private originalDrain?: Promise<void>;
+    private readonly originalTasks = new Set<Promise<unknown>>();
+    private readonly deferredEurekas = new Map<NodeJS.Timeout, () => void>();
+    constructor() { this.ownership.onSeal(() => this.sealAndDrainOriginalWork()); }
+    private retainOriginal<T>(original: Promise<T>): Promise<T> {
+        this.originalTasks.add(original);
+        const settled = () => { this.originalTasks.delete(original); };
+        void original.then(settled, settled);
+        return original;
+    }
+    private async runOriginal<T>(name: string, body: (operation: Operation) => Promise<T>): Promise<T> {
+        if (this.runtimeSealed) throw new AdmissionClosed('dreamer:' + name);
+        return this.retainOriginal(this.ownership.invoke(name, body));
+    }
+    public sealAndDrainOriginalWork(): Promise<void> {
+        this.runtimeSealed = true;
+        if (this.originalDrain) return this.originalDrain;
+        let yes!: () => void; let no!: (error: unknown) => void;
+        this.originalDrain = new Promise<void>((resolve, reject) => { yes = resolve; no = reject; });
+        void this.originalDrain.catch(() => undefined);
+        const errors: unknown[] = [];
+        try { this.stopDreamingLoop(); } catch (error) { errors.push(error); this.ownership.failure('loop-cancel', error); }
+        // Final seal cancels only not-yet-fired original 5s callbacks. Fired work
+        // stays retained; manual stopDreamingLoop still only stops its interval.
+        for (const [timer, cancel] of this.deferredEurekas) {
+            try { clearTimeout(timer); cancel(); }
+            catch (error) { errors.push(error); this.ownership.failure('eureka-cancel', error); }
+        }
+        this.deferredEurekas.clear();
+        void Promise.allSettled([...this.originalTasks]).then(() => {
+            if (errors.length) no(new AggregateError(errors, 'Dreamer original cancellation failed')); else yes();
+        }, no);
+        return this.originalDrain;
+    }
+    private scheduleOriginalEurekas(): void {
+        if (this.runtimeSealed || !this.ownership.open) return;
+        // Register the entire original timer plus fired callback before creating
+        // the timer. Cancellation settles a non-fired lifecycle obligation only,
+        // never claims a completed Eureka or an original guard not selected.
+        this.retainOriginal(this.ownership.invoke('original-eureka-5s', () => {
+            let yes!: () => void; let no!: (error: unknown) => void;
+            const task = new Promise<void>((resolve, reject) => { yes = resolve; no = reject; });
+            const timer = setTimeout(() => {
+                this.deferredEurekas.delete(timer);
+                void this.generateNeuralEurekasOriginal().then(yes, no);
+            }, 5000);
+            this.deferredEurekas.set(timer, yes);
+            return task;
+        }));
+    }
     private isDreaming: boolean = false;
     private isTraining: boolean = false; // Prevent concurrent training
     private dreamInterval: NodeJS.Timeout | null = null;
@@ -25,19 +77,28 @@ export class DreamerService {
     private pendingTriggerReasons: string[] = [];
     private lastCycleMemoryCount: number | null = null;
 
+    public notifyNewMemory(): Promise<void> { return this.runOriginal('notifyNewMemory', () => this.notifyNewMemoryOriginal()); }
+    public forceSleepCycle(options: { train: boolean, consolidate: boolean }): Promise<void> { return this.runOriginal('forceSleepCycle', () => this.forceSleepCycleOriginal(options)); }
+    public attemptDream(propagateFailure: boolean = false): Promise<void> { return this.runOriginal('attemptDream', () => this.attemptDreamOriginal(propagateFailure)); }
+    public consolidateLongTerm(nodes: MemoryNode[]): Promise<string> { return this.runOriginal('consolidateLongTerm', () => this.consolidateLongTermOriginal(nodes)); }
+    public synthesizeDeepConnections(): Promise<void> { return this.runOriginal('synthesizeDeepConnections', () => this.synthesizeDeepConnectionsOriginal()); }
+    public generateNeuralEurekas(): Promise<void> { return this.runOriginal('generateNeuralEurekas', () => this.generateNeuralEurekasOriginal()); }
+    public checkSleepConditions(): Promise<boolean> { return this.runOriginal('checkSleepConditions', () => this.checkSleepConditionsOriginal()); }
+    public learnFromNeo4jConcepts(): Promise<number> { return this.runOriginal('learnFromNeo4jConcepts', () => this.learnFromNeo4jConceptsOriginal()); }
+
     public setThreshold(value: number) {
         this.threshold = value;
         console.log(`[DREAMER] ⚙️ Threshold updated to ${this.threshold} memories.`);
     }
 
-    public async notifyNewMemory(): Promise<void> {
+    private async notifyNewMemoryOriginal(): Promise<void> {
         // [FIX] Hard cap on entropy to prevent runaway accumulation from loops
         const MAX_ENTROPY = this.threshold * 3; // 30 max (3x threshold of 10)
         if (this.memoriesAccumulated >= MAX_ENTROPY) {
             console.warn(`[DREAMER] ⚠️ Entropy hard cap reached (${MAX_ENTROPY}). Forcing consolidation.`);
             // Reset and trigger dream to prevent infinite growth
             this.memoriesAccumulated = 0;
-            await this.attemptDream(true);
+            await this.attemptDreamOriginal(true);
             return;
         }
         this.memoriesAccumulated++;
@@ -45,36 +106,42 @@ export class DreamerService {
     }
 
     public startDreamingLoop() {
-        if (this.dreamInterval) return;
+        if (this.runtimeSealed || !this.ownership.open || this.dreamInterval) return;
 
         // [OPTIMIZATION] Check PowerManager before starting
-        this.ownership.invoke('original-power-check', () => import('./powerManager')).then(({ powerManager }) => {
-            if (!this.ownership.open) return;
+        void this.runOriginal('original-power-check', async () => {
+            const { powerManager } = await import('./powerManager');
+            if (this.runtimeSealed || !this.ownership.open) return;
             if (!powerManager.isDreamerEnabled) {
                 console.log("[DREAMER] 💤 Disabled by PowerManager (BALANCED mode). Use activateDreamer() to enable manually.");
                 return;
             }
             this.activateDreamLoop();
+        }).catch(error => {
+            // Startup callback is not an original failed dream task. Retain the
+            // exact error at this owner boundary, including admission failures.
+            this.ownership.failure('startup-power-check-boundary', error);
+            console.error('[DREAMER] Startup power check failed:', error);
         });
     }
 
     private activateDreamLoop() {
-        if (this.dreamInterval) return;
+        if (this.runtimeSealed || !this.ownership.open || this.dreamInterval) return;
         console.log("[DREAMER] 🌙 Dream Cycle Initiated...");
 
         // Check every 5 minutes if we should dream
         this.dreamInterval = setInterval(() => {
-            if (!this.ownership.open) return;
-            return this.ownership.invoke('dream-loop-tick', async operation => {
+            if (this.runtimeSealed || !this.ownership.open) return;
+            return this.runOriginal('dream-loop-tick', async operation => {
             if (this.memoriesAccumulated >= this.threshold) {
-                this.ownership.invoke('accumulated-memories-dream', () => this.attemptDream(), operation);
+                this.retainOriginal(this.ownership.invoke('accumulated-memories-dream', () => this.attemptDreamOriginal(), operation));
             }
 
             // Event-based triggers (roadmap item 8): epiphanies, milestones,
             // hippocampus pressure, clock fallback. Never throws.
             try {
                 const { evaluateAndMaybeDream } = await import('./dream/dreamTriggers');
-                await evaluateAndMaybeDream(this.isDreaming, () => this.attemptDream(), r => { this.pendingTriggerReasons = r; });
+                await evaluateAndMaybeDream(this.isDreaming, () => this.attemptDreamOriginal(), r => { this.pendingTriggerReasons = r; });
             } catch (e) {
                 console.warn('[DREAMER] trigger evaluation failed (non-fatal):', e);
             }
@@ -87,7 +154,7 @@ export class DreamerService {
                 return; // Skip training check during startup
             }
 
-            const sleepReady = await this.checkSleepConditions();
+            const sleepReady = await this.checkSleepConditionsOriginal();
             if (sleepReady && !this.isTraining && !this.isDreaming) {
                 // Check if it's time to train (e.g., once per day or if buffer huge)
                 // For demo: Check if we haven't trained in 1 hour
@@ -95,14 +162,14 @@ export class DreamerService {
                     await this.triggerNeuralTraining();
                 }
             }
-            });
+            }).catch(error => { console.error('[DREAMER] Dream loop tick failed:', error); });
         }, 300000); // Increased to 5 minutes
     }
 
     // ... (Existing Methods: stopDreamingLoop, attemptDream, etc.)
 
     // --- SYNAPTIC FORGE TRIGGER ---
-    public async forceSleepCycle(options: { train: boolean, consolidate: boolean }) {
+    private async forceSleepCycleOriginal(options: { train: boolean, consolidate: boolean }): Promise<void> {
         if (this.isTraining || this.isDreaming) {
             console.warn("[DREAMER] Sleep Cycle already active.");
             return;
@@ -122,7 +189,7 @@ export class DreamerService {
         if (options.train) {
             // NEW: Learn from Neo4j discoveries before training
             systemBus.emit(SystemProtocol.TRAINING_LOG, { type: 'log', message: "🧬 Extracting Knowledge from Neo4j Graph..." }, 'DREAMER_SERVICE');
-            const neo4jExamples = await this.learnFromNeo4jConcepts();
+            const neo4jExamples = await this.learnFromNeo4jConceptsOriginal();
             if (neo4jExamples > 0) {
                 systemBus.emit(SystemProtocol.TRAINING_LOG, { type: 'log', message: `✅ Added ${neo4jExamples} discovery-based training examples.` }, 'DREAMER_SERVICE');
             }
@@ -203,7 +270,7 @@ export class DreamerService {
                 }, 'DREAMER_SERVICE');
 
                 // [SELF-AWARENESS] Conclude the learning cycle with a conscious realization
-                import('./introspectionEngine').then(({ introspection }) => {
+                await import('./introspectionEngine').then(({ introspection }) => {
                     introspection.addThought(
                         `I have prepared ${result.entriesExported} training examples as a curriculum for NanoSilhouette. The knowledge collected from my interactions is now ready for neural consolidation.`,
                         "META_COGNITION",
@@ -266,7 +333,7 @@ export class DreamerService {
         }
     }
 
-    public async attemptDream(propagateFailure: boolean = false) {
+    private async attemptDreamOriginal(propagateFailure: boolean = false): Promise<void> {
         if (this.isDreaming) return;
 
         // 1. Check Real System Load via Arbiter
@@ -294,14 +361,12 @@ export class DreamerService {
         }
 
         this.isDreaming = true;
-        // Update Introspection Engine Status
-        import('./introspectionEngine').then(({ introspection }) => {
-            introspection.setDreaming(true);
-        });
-
         let cycleCompleted = false;
         this.lastCycleMemoryCount = null;
         try {
+            // Keep the original status update in this admitted body.
+            const { introspection } = await import('./introspectionEngine');
+            introspection.setDreaming(true);
             // 2. Gather "Day Residue" (Random L2/L3 memories)
             const allNodes = await continuum.getAllNodes();
             // FIX: 'gatherDayResidue' is async now, must await
@@ -346,11 +411,11 @@ export class DreamerService {
                     );
 
                     // Store as Open Loop in Graph
-                    import('./graphService').then(({ graph }) => {
-                        graph.createDiscoveryRelationship('DREAMER', 'MYSTERY_BOX', 'IMPLIES', result.veracity, 'CURIOSITY_ENGINE')
-                            .then(() => console.log("[DREAMER] Mystery Node Created"))
-                            .catch(e => console.warn(e));
-                    });
+                    try {
+                        const { graph } = await import('./graphService');
+                        await graph.createDiscoveryRelationship('DREAMER', 'MYSTERY_BOX', 'IMPLIES', result.veracity, 'CURIOSITY_ENGINE');
+                        console.log("[DREAMER] Mystery Node Created");
+                    } catch (error) { this.ownership.failure('mystery-graph-write', error); console.warn(error); }
                 }
 
             } else {
@@ -370,11 +435,12 @@ export class DreamerService {
             // If we have enough memories, build a tree structure for today's context.
             if (memories.length >= 5) {
                 console.log(`[DREAMER] 🦖 Triggering RAPTOR Ingestion for ${memories.length} memories...`);
-                import('./semanticMemory').then(({ semanticMemory }) => {
+                try {
+                    const { semanticMemory } = await import('./semanticMemory');
                     const combinedText = memories.map(m => `[${new Date(m.timestamp).toLocaleTimeString()}] ${m.content}`).join('\n');
                     const dayTitle = `Dream_Cycle_${new Date().toISOString().split('T')[0]}_${Date.now()}`;
-                    semanticMemory.ingestDocument(dayTitle, combinedText).catch(e => console.error("[DREAMER] RAPTOR Failed:", e));
-                });
+                    await semanticMemory.ingestDocument(dayTitle, combinedText);
+                } catch (error) { this.ownership.failure('raptor-ingest', error); console.error("[DREAMER] RAPTOR Failed:", error); }
             }
 
         } catch (e) {
@@ -395,9 +461,10 @@ export class DreamerService {
                 }
             }
             // Update Introspection Engine Status
-            import('./introspectionEngine').then(({ introspection }) => {
+            try {
+                const { introspection } = await import('./introspectionEngine');
                 introspection.setDreaming(false);
-            });
+            } catch (error) { this.ownership.failure('dreaming-status-clear', error); }
         }
     }
 
@@ -733,7 +800,7 @@ export class DreamerService {
         }
     }
     // --- DEEP SLEEP PROTOCOL (Consolidation) ---
-    public async consolidateLongTerm(nodes: MemoryNode[]): Promise<string> {
+    private async consolidateLongTermOriginal(nodes: MemoryNode[]): Promise<string> {
         if (nodes.length === 0) throw new Error('Cannot consolidate an empty batch');
         const { createHash } = await import('node:crypto');
         const { lancedbService } = await import('./lancedbService');
@@ -766,7 +833,7 @@ export class DreamerService {
     }
 
     // --- PHASE 7: SERENDIPITY (Active Dreaming) ---
-    public async synthesizeDeepConnections() {
+    private async synthesizeDeepConnectionsOriginal(): Promise<void> {
         if (this.isDreaming) return;
         this.isDreaming = true;
         console.log("[DREAMER] 🌌 Entering Deep Dream (Serendipity Mode)...");
@@ -864,7 +931,7 @@ export class DreamerService {
         }
 
         // After deep dream, check for Structural Gaps (Eurekas)
-        setTimeout(() => this.generateNeuralEurekas(), 5000);
+        this.scheduleOriginalEurekas();
     }
 
     private async attemptBisociation(conceptA: string, conceptB: string): Promise<string | null> {
@@ -901,7 +968,7 @@ export class DreamerService {
 
     // --- PHASE 8: NEURAL EUREKAS (The Hive Mind Update) ---
     // Finds structural gaps in the graph and uses GLM-4 to bridge them
-    public async generateNeuralEurekas() {
+    private async generateNeuralEurekasOriginal(): Promise<void> {
         if (this.isDreaming) return;
         this.isDreaming = true;
         console.log("[DREAMER] 🧠 Entering Neural Eureka Mode (Graph Gap Analysis)...");
@@ -991,7 +1058,7 @@ export class DreamerService {
         return response.output;
     }
     // --- NOCTURNAL PLASTICITY (SLEEP MODE DETECTION) ---
-    public async checkSleepConditions(): Promise<boolean> {
+    private async checkSleepConditionsOriginal(): Promise<boolean> {
         try {
             const cpu = await si.currentLoad();
             const mem = await si.mem();
@@ -1016,7 +1083,7 @@ export class DreamerService {
     }
 
     // --- NEO4J LEARNING: Enable LLM to learn from graph discoveries ---
-    public async learnFromNeo4jConcepts(): Promise<number> {
+    private async learnFromNeo4jConceptsOriginal(): Promise<number> {
         console.log("[DREAMER] 🧬 SYNAPSE BRIDGE: Learning from Neo4j Knowledge Graph...");
 
         try {
@@ -1107,7 +1174,7 @@ export class DreamerService {
                 }, 'DREAMER_SERVICE');
 
                 // 5. Add self-awareness thought
-                import('./introspectionEngine').then(({ introspection }) => {
+                await import('./introspectionEngine').then(({ introspection }) => {
                     introspection.addThought(
                         `I have integrated ${trainingExamples.length} discoveries from my Knowledge Graph into my training data. ` +
                         `These include causal relationships and implications that I discovered through pattern analysis.`,
@@ -1137,4 +1204,8 @@ function constructOriginalDreamerService(): DreamerService {
         preserveOriginal(owner, 'construction-failure', () => owner.constructionFailed(operation, original)); throw original;
     }
 }
-export const dreamer = constructOriginalDreamerService();
+const runtimeConstructionPermit = admitEvaluatedDreamer();
+export const dreamer = (() => {
+    try { const original = constructOriginalDreamerService(); bindEvaluatedDreamer(runtimeConstructionPermit, () => original.sealAndDrainOriginalWork()); return original; }
+    catch (error) { failEvaluatedDreamer(runtimeConstructionPermit, error); throw error; }
+})();
