@@ -89,7 +89,7 @@ def members(b,*,mode,package=None,integrity=None):
 try:
  assert os.environ['PRIVATE']=='false'and os.environ['ENVIRONMENT']=='github-hosted'and os.environ['GITHUB_EVENT_NAME']in {'workflow_dispatch','push'}
  if os.environ['GITHUB_EVENT_NAME']=='push':
-  assert subprocess.check_output(['git','rev-parse','HEAD^'],cwd=REPO,text=True).strip()=='39be237722acdf70547d0888ac6d5b417f29022b'
+  assert subprocess.check_output(['git','rev-parse','HEAD^'],cwd=REPO,text=True).strip()=='dbc5809e6dcf7ee9f3fee0eb6d147c297ee8761e'
   assert os.environ['GITHUB_REF']=='refs/heads/preparation/sqlite-static-typecheck-db201993-4054-20261114'
  assert os.environ['GITHUB_SHA']==os.environ['EXPECTED_HEAD']==subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip()
  node=Path(shutil.which('node')).resolve();assert sha(node.read_bytes())=='ccacb2d6d87ba6d118b2bffc1ae33747a05cc5fc6b1f1ec4fc1d420b687e952d';assert subprocess.check_output([str(node),'--version'],text=True).strip()=='v22.18.0'
@@ -135,6 +135,12 @@ try:
  for r in continuum['files']:
   p=app/r['path'];b=(HERE/'continuum-overlay'/r['path']).read_bytes();assert(sha(p.read_bytes())if p.exists()else None)==r['beforeSha256'];assert len(b)==r['bytes']and sha(b)==r['afterSha256'];p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(b)
  continuumActual={str(p.relative_to(app)):sha(p.read_bytes())for p in app.rglob('*')if p.is_file()};assert continuumActual==continuum['finalProductFiles']
+ # Source-fixed bounded diagnostic layer; historical prior manifests immutable.
+ boundaryRaw=(HERE/'runtime-boundary-composition.json').read_bytes();assert sha(boundaryRaw)=='281cafb64b90f7ed100a685f0b9725274605da4b00ed2a71fc34cfb821bc4fe7'
+ boundary=json.loads(boundaryRaw);assert boundary['basePublishedParent']=='dbc5809e6dcf7ee9f3fee0eb6d147c297ee8761e'and len(boundary['files'])==4
+ for r in boundary['files']:
+  p=app/r['path'];b=(HERE/'runtime-boundary-overlay'/r['path']).read_bytes();assert sha(p.read_bytes())==r['beforeSha256'];assert len(b)==r['bytes']and sha(b)==r['afterSha256'];p.write_bytes(b)
+ boundaryActual={str(p.relative_to(app)):sha(p.read_bytes())for p in app.rglob('*')if p.is_file()};assert boundaryActual==boundary['finalProductFiles']
  excluded=[]
  for r in classification['files']:
   if not r['include']:(app/r['path']).unlink();excluded.append(r)

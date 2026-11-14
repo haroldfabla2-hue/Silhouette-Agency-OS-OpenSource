@@ -1,6 +1,6 @@
 {
   "status": "SOURCE_ONLY_COMPOSITION_NO_PUBLICATION_OR_EXECUTION",
-  "parent": "39be237722acdf70547d0888ac6d5b417f29022b",
+  "parent": "dbc5809e6dcf7ee9f3fee0eb6d147c297ee8761e",
   "files": {
     "ASSERTION-DIAGNOSTIC-COMPOSITION-REVIEW.md": {
       "bytes": 1315,
@@ -26,6 +26,10 @@
       "bytes": 11544,
       "sha256": "2378c43c3ee001fd9a98412d91e079e18e6bcbd96ca53c1bb2f8eecb5369601a"
     },
+    "RUNTIME-BOUNDARY-COMPOSITION-REVIEW.md": {
+      "bytes": 1130,
+      "sha256": "c5515c8dd4409fb6363a43324177251eff28b1287c5ffb00df6142741c963a25"
+    },
     "SNAPSHOT-BINDING-COMPOSITION-REVIEW.md": {
       "bytes": 1396,
       "sha256": "e57fef193ac203b01386438f0b1af333183bf5d99ee6183e6025de07e9895851"
@@ -47,8 +51,8 @@
       "sha256": "560bd48e9ca45d06eede21cba609ffc7acccffa113fbfe288f3f275c8f9c731b"
     },
     "browser-driver.cjs": {
-      "bytes": 7218,
-      "sha256": "f5c39d7d123a53097cbf88279983defabdeb93b00f4d175586c0b0f27d0b0729"
+      "bytes": 7688,
+      "sha256": "ebaf69e86e3965b314409b92571c2b6b2f89121c151edaecef569f6ba9ef70d4"
     },
     "chromium-provenance.json": {
       "bytes": 62542,
@@ -139,8 +143,8 @@
       "sha256": "dbf0ff4c7a98a5b0f00b51ee85d978dfd3cc5dde61aac09c28c0ee0fa932f278"
     },
     "hosted-orchestrator.py": {
-      "bytes": 24219,
-      "sha256": "4653d1d6368b879bcb1e8d368b0d53ab67dddeb44925312e78ab75315cd98357"
+      "bytes": 24981,
+      "sha256": "9f42e8ec1d7db0f127b1f7d112c403a9b50bf5ae9ff86ef57ff0a173a95a7316"
     },
     "identity-entry.py": {
       "bytes": 3884,
@@ -155,8 +159,8 @@
       "sha256": "0e3a710ab63232eec31d90e994036b3a3480c65605097fe4a6f0938e2bf33366"
     },
     "integrated-hosted.yml": {
-      "bytes": 3862,
-      "sha256": "0bd9a2a261a5b4227f2ede241902b2baaf349633b4b876d64d05c904b7bd59e7"
+      "bytes": 4059,
+      "sha256": "983a1a3b18794e863f13989c4a76c6b0f838688bdfb20c35d09a0cc1d73e934f"
     },
     "lance-provenance.json": {
       "bytes": 900,
@@ -201,6 +205,26 @@
     "return-evidence.py": {
       "bytes": 12600,
       "sha256": "95d9411ad15b8fdd0cf9f5e922eaa4ed2d5ee83c75a6975f10da3d40bb05ac4f"
+    },
+    "runtime-boundary-composition.json": {
+      "bytes": 194009,
+      "sha256": "281cafb64b90f7ed100a685f0b9725274605da4b00ed2a71fc34cfb821bc4fe7"
+    },
+    "runtime-boundary-overlay/browser.bootstrap.ts": {
+      "bytes": 1755,
+      "sha256": "a0d3c5c34d1636ddbe933398d820656dcff623f15d71756520000ea8663e7d43"
+    },
+    "runtime-boundary-overlay/server/index.ts": {
+      "bytes": 19949,
+      "sha256": "86dc88717a75eb106c97e86c7abcc78486b2a14d748678cace8b933333af0b67"
+    },
+    "runtime-boundary-overlay/server/runtimeRootHost.ts": {
+      "bytes": 2227,
+      "sha256": "22e8a73d523046d0181eecc4870b911c805f1898f5b2a31b5e1a1f81698cae66"
+    },
+    "runtime-boundary-overlay/services/lifecycle/host.ts": {
+      "bytes": 33940,
+      "sha256": "224d68bb2b444b07fc9da60e001a962687e75b2acf31fd9ca655c1d2f7cee159"
     },
     "runtime-browser-composition.json": {
       "bytes": 194163,
