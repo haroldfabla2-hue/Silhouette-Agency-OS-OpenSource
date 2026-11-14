@@ -7701,8 +7701,8 @@
   },
   {
     "path": "vite.config.ts",
-    "sha256": "9800682b709118315918d67dedfa74a657c478d6947917e9ab431c624985f568",
-    "bytes": 3844
+    "sha256": "481ebcf5bf4e7d1961be3c53a73e9df36e7b05fb50961b350597741cb43eb28b",
+    "bytes": 4029
   },
   {
     "path": "vite.server.config.ts",

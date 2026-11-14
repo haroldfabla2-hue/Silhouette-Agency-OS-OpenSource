@@ -26,6 +26,9 @@ export default defineConfig(({ mode }) => {
     build: {
       chunkSizeWarningLimit: 1300, // Increased for vendor libs (three.js ~1.2MB)
       rollupOptions: {
+        // Bound concurrent module reads below constrained CI file-descriptor limits.
+        // Other plugin/runtime handles remain outside this queue.
+        maxParallelFileOps: 64,
         output: {
           manualChunks(id) {
             if (id.includes('node_modules')) {
