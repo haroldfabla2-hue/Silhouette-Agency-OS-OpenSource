@@ -96,8 +96,24 @@ def wait_stop(cleanup=False):
 try:
  assert DEADLINE-T>=170,'insufficientfixturebudget'
  assert resource.getrlimit(resource.RLIMIT_NOFILE)==(256,256)and resource.getrlimit(resource.RLIMIT_FSIZE)==(64*1024**2,64*1024**2)
- assert set(p.name for p in pathlib.Path('/sys/class/net').iterdir())=={'lo'},'externalnetworkinterfacepresent'
- assert all(line.split()[1]=='00000000'and line.split()[2]=='00000000'for line in pathlib.Path('/proc/net/route').read_text().splitlines()[1:]),'externalroutepresent'
+ # /proc belongs to the existing private network/PID namespace; /sys is not mounted.
+ # Inspect actual interfaces/routes without external probes or new mounts.
+ network={}
+ for name in ['dev','route','ipv6_route']:
+  with(pathlib.Path('/proc/net')/name).open('rb')as stream:data=stream.read(65537)
+  assert len(data)<=65536,'networkpreflightfilecap'
+  network[name]={'sha256':hashlib.sha256(data).hexdigest(),'lines':data.decode('ascii').splitlines()}
+ interfaces=[]
+ for line in network['dev']['lines'][2:]:
+  if line.strip():
+   name,sep,counters=line.partition(':');assert sep and len(counters.split())==16,'networkinterfacerecord'
+   interfaces.append(name.strip())
+ assert interfaces==['lo'],'externalnetworkinterfacepresent'
+ routes4=[line.split()for line in network['route']['lines'][1:]if line.strip()]
+ assert all(len(row)==11 and row[0]=='lo'and row[2]=='00000000'for row in routes4),'externalIPv4routepresent'
+ routes6=[line.split()for line in network['ipv6_route']['lines']if line.strip()]
+ assert all(len(row)==10 and row[-1]=='lo'and row[4]=='0'*32 for row in routes6),'externalIPv6routepresent'
+ result['network_preflight']={'source':'EXISTING_PRIVATE_NAMESPACE_PROC_NO_EXTERNAL_PROBE','network_namespace':os.readlink('/proc/self/ns/net'),'interfaces':interfaces,'files':network,'ipv4_route_count':len(routes4),'ipv6_route_count':len(routes6)}
  assert os.statvfs(A).f_flag&os.ST_RDONLY,'assetmustRO'
  pins=json.loads((H/'neo4j-asset-pin.json').read_text())
  for row in pins:
