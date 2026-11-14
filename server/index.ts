@@ -357,7 +357,7 @@ async function performOriginalShutdown(signal: string): Promise<void> {
         // Original failed task outcomes remain immutable evidence, not clean
         // task success. A settled task fault alone is not a failed close.
         if (report.ownerFailures) shutdownFailed = true;
-        console.error('[SHUTDOWN] Explicit host evidence:', report.state, report.coverage, {ownerFailures:report.ownerFailures,taskOutcomeFailures:report.taskOutcomeFailures,lifetimeFailures:report.lifetimeFailures}, evaluatedRuntimeFrontier());
+        console.error('[SHUTDOWN] Explicit host evidence:', report.state, report.coverage, {ownerFailures:report.ownerFailures,taskOutcomeFailures:report.taskOutcomeFailures,lifetimeFailures:report.lifetimeFailures,capacity:report.capacity,highWater:report.highWater}, evaluatedRuntimeFrontier());
     } catch (error) {
         shutdownFailed = true;
         console.error('[SHUTDOWN] Explicit host stop failed:', error);

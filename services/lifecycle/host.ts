@@ -15,6 +15,7 @@ export type ChildReservation = Readonly<{ id: number }>;
 export type ResourceReservation = Readonly<{ id: number }>;
 export type HostReport = Readonly<{
     state: 'INCOMPLETE' | 'SETTLED_NO_FAILURE_RECORDED'; pending: number;
+    capacity: Capacity; highWater: Capacity;
     failures: readonly Failure[]; acknowledged: number; lifetimeFailures: number; ownerFailures: number; taskOutcomeFailures: number; childGuardNotSelected: number;
     residuals: readonly string[]; resources: readonly ResourceEvidence[];
     coverage: 'EXPLICITLY_REGISTERED_WORK_ONLY';
@@ -79,6 +80,7 @@ class Core {
     #active = new Set<Promise<void>>();
     #reservedActive = 0;
     #reservedResources = 0;
+    #highWater = {scopes:0,active:0,failures:0,resources:0};
     #lifetimeFailures = 0;
     #ownerFailures = 0;
     #taskOutcomeFailures = 0;
@@ -97,6 +99,12 @@ class Core {
     constructor(private readonly capacity: Capacity) {
         for (const value of Object.values(capacity)) if (!Number.isSafeInteger(value) || value < 1) throw new Error('Explicit positive integer capacity required');
         this.#recovery = new RecoveryEvidence(capacity.failures);
+    }
+    private retainHighWater(): void {
+        this.#highWater.scopes=Math.max(this.#highWater.scopes,this.#scopes.size);
+        this.#highWater.active=Math.max(this.#highWater.active,this.#active.size);
+        this.#highWater.failures=Math.max(this.#highWater.failures,this.#failures.length);
+        this.#highWater.resources=Math.max(this.#highWater.resources,this.#resources.size+this.#reservedResources);
     }
     controller(): Host {
         return Object.freeze({ scope: (label: string) => this.scope(label), stop: () => this.stop(),
@@ -187,7 +195,7 @@ class Core {
                 record.stoppers.push(stop);
             },
         });
-        this.#scopes.set(scope, { stoppers: [], sealed: false, active: new Set() }); return scope;
+        this.#scopes.set(scope, { stoppers: [], sealed: false, active: new Set() }); this.retainHighWater();return scope;
     }
     private unknown(source: string, evaluation = false): void {
         this.#residuals.add(source); if (evaluation) this.#unsafeEvaluation = true;
@@ -207,7 +215,7 @@ class Core {
         // a NEW id, never an update. Exact object+id+revision acknowledgement
         // removes only that retained item; lifetime failure still makes FAIL.
         const record: Failure = Object.freeze({ id: ++this.#nextId, revision: 1, kind, source, original });
-        this.#failures.push(record); return record;
+        this.#failures.push(record); this.retainHighWater();return record;
     }
     private acknowledge(original: Failure): void {
         const i = this.#failures.findIndex(x => x === original && x.id === original.id && x.revision === original.revision);
@@ -231,7 +239,7 @@ class Core {
         const done = new Promise<void>(yes => { finish = yes; });
         const token = Object.freeze({ id: ++this.#nextId });
         const state: State = { scope, live: true, children: new Set(), done, finish };
-        this.#operations.set(token, state); this.#active.add(done); owner.active.add(done);
+        this.#operations.set(token, state); this.#active.add(done); owner.active.add(done);this.retainHighWater();
         if (reservation) void done.then(reservation.finish);
         else if (parent) { parent.children.add(done); void done.then(() => parent.children.delete(done)); }
         return token;
@@ -272,7 +280,7 @@ class Core {
         const permit = Object.freeze({ id: ++this.#nextId });
         this.#children.set(permit, { scope, source, parent: p, live: true, done, finish });
         p.children.add(done); void done.then(() => p.children.delete(done));
-        this.#active.add(done); this.#scopes.get(scope)!.active.add(done); this.#reservedActive++;
+        this.#active.add(done); this.#scopes.get(scope)!.active.add(done); this.#reservedActive++;this.retainHighWater();
         return permit;
     }
     private invokeChild<T>(scope: Scope, permit: ChildReservation, body: (operation: Operation) => T): T {
@@ -295,7 +303,7 @@ class Core {
         if (this.#phase === 'RELEASING' || this.#phase === 'CLOSED') throw new AdmissionClosed(label);
         if (this.#resources.size + this.#reservedResources >= this.capacity.resources) throw new CapacityExceeded(label);
         const permit = Object.freeze({ id: ++this.#nextId });
-        this.#permits.set(permit, { scope, operation, label, live: true }); this.#reservedResources++; return permit;
+        this.#permits.set(permit, { scope, operation, label, live: true }); this.#reservedResources++;this.retainHighWater(); return permit;
     }
     private acquire(scope: Scope, reservation: ResourceReservation, value: object, close: (() => unknown) | undefined, verify: () => ResourceEvidence, dependencies: readonly object[], closePolicy: 'SINGLE_ATTEMPT' | 'NEO4J_DRIVER_SOURCE_MANAGED'): void {
         const p = this.#permits.get(reservation);
@@ -322,6 +330,7 @@ class Core {
     private snapshot(): HostReport {
         return Object.freeze({ state: this.#lifetimeFailures || this.#residuals.size || this.#active.size || this.#reservedResources || this.#releaseEvidence.some(x => x.disposition === 'INCOMPLETE')
             ? 'INCOMPLETE' : 'SETTLED_NO_FAILURE_RECORDED', pending: this.#active.size,
+            capacity:Object.freeze({...this.capacity}),highWater:Object.freeze({...this.#highWater}),
             failures: Object.freeze([...this.#failures]), acknowledged: this.#acknowledged, lifetimeFailures: this.#lifetimeFailures, ownerFailures:this.#ownerFailures, taskOutcomeFailures:this.#taskOutcomeFailures, childGuardNotSelected: this.#childGuardNotSelected,
             residuals: Object.freeze([...this.#residuals]), resources: Object.freeze([...this.#releaseEvidence]), coverage: 'EXPLICITLY_REGISTERED_WORK_ONLY', recovery: this.#recovery.observe(this.#releaseEvidence) });
     }
