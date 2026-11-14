@@ -1,0 +1,29 @@
+{
+  "status": "REVIEWED_FOR_EXACT_PACKET",
+  "source_graph": {
+    "candidate_commit": "1a028bbea63bbbe8f02d12a3fb8dea6dc371b69a",
+    "candidate_manifest_sha256": "146f4b045449dbfa341a3227df39af50db7cd4d21769cd8ca2f6dc4b5c4b2d67",
+    "status": "REVIEWED_SOURCE_CANDIDATE_NOT_FINAL_EXECUTION_PACKET"
+  },
+  "wal": {
+    "scopes": 48,
+    "active": 512,
+    "failures": 256,
+    "resources": 256
+  },
+  "accepted": {
+    "scopes": 48,
+    "active": 512,
+    "failures": 256,
+    "resources": 256
+  },
+  "execution_authority": "NONE_FRESH_EXACT_GO_REQUIRED",
+  "diagnostic_envelope_not_proven_maximum": true,
+  "no_auto_enlarge_or_retry": true,
+  "vitest-generation": {
+    "scopes": 48,
+    "active": 512,
+    "failures": 256,
+    "resources": 256
+  }
+}
