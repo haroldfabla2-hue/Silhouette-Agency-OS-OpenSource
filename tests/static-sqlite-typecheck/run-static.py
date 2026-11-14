@@ -1,6 +1,6 @@
 """Manual compiler-only proposal. No services, product evaluation or npm hooks."""
 from pathlib import Path
-import os,sys,json,hashlib,subprocess,resource,time,signal,shutil,tarfile,io,base64,urllib.request,difflib,re,gzip
+import os,sys,json,hashlib,subprocess,resource,time,signal,shutil,tarfile,io,base64,urllib.request,difflib,re,gzip,stat
 BASE='db201993d05124cdb23a84cdfbc695bb3c6680d5'
 LOCK='039ce85293514e83584ca047d0d8b53eb7bce71bb3b3fe75fc6f96e928a0299c'
 PACKAGE='5d33ed5f3b6212da1ff00c29bf75e653522affc760d5e59b134adc72c0c071fa'
@@ -118,6 +118,11 @@ def verify_package(name,lock,deps,cache):
  row=lock['packages']['node_modules/'+name];alg,sri=row['integrity'].split('-',1);digest=base64.b64decode(sri);h=digest.hex();cp=cache/'_cacache/content-v2'/alg/h[:2]/h[2:4]/h[4:]
  data=cp.read_bytes()if cp.is_file()else download(row['resolved']);assert hashlib.new(alg,data).digest()==digest,'SRI mismatch '+name
  expected=archive_files(data);root=deps/name;proof=[]
+ if name.startswith('libsignal/node_modules/'):
+  actual={str(p.relative_to(root)):p for p in root.rglob('*')if p.is_file()or p.is_symlink()}
+  comparison={'package':name,'missing':sorted(set(expected)-set(actual)),'extra':sorted(set(actual)-set(expected)),
+   'mismatched':[rel for rel,raw in expected.items()if rel in actual and(actual[rel].is_symlink()or not actual[rel].is_file()or actual[rel].read_bytes()!=raw)]}
+  emit('libsignal-nested-'+hashlib.sha256(name.encode()).hexdigest()[:12]+'-diff.json',comparison)
  for rel,raw in expected.items():
   p=root/rel;assert p.is_file()and not p.is_symlink()and p.read_bytes()==raw,'byte mismatch '+str(p);proof.append({'path':rel,'sha256':hashlib.sha256(raw).hexdigest()})
  assert {str(p.relative_to(root))for p in root.rglob('*')if p.is_file()}==set(expected),'extra unverified files '+name
@@ -186,9 +191,53 @@ try:
  assert sha(acquisition/'package-lock.json')==LOCK and sha(acquisition/'package.json')==PACKAGE
  assert install['naturalComplete']and install['rc']==0,'acquisition failed; STOP no automatic fallback/retry'
  deps=acquisition/'node_modules';lib=deps/'libsignal';libproof={}
- for rel,h in expectedlib.items():p=lib/rel;assert p.is_file()and not p.is_symlink()and sha(p)==h;libproof[rel]=h
- assert {str(p.relative_to(lib))for p in lib.rglob('*')if p.is_file()}==set(expectedlib),'extra libsignal file'
- emit('libsignal-integrity.json',{'commit':'1c30d7d7e76a3b0aa120b04dc6a26f5a12dccf67','publicArchiveSha256':hashlib.sha256(public).hexdigest(),'files':libproof,'credentialUsed':False})
+ # Capture ACTUAL bounded inventory BEFORE validating, including unknown files
+ # and links. Never follow a link or silently omit the nested dependencies.
+ inventory=[]
+ for current,dirs,names in os.walk(lib,followlinks=False):
+  for name in sorted(dirs+names):
+   path=Path(current)/name;mode=path.lstat().st_mode;rel=str(path.relative_to(lib))
+   row={'path':rel,'kind':'directory'if stat.S_ISDIR(mode)else'symlink'if stat.S_ISLNK(mode)else'file'if stat.S_ISREG(mode)else'other','bytes':path.lstat().st_size}
+   if row['kind']=='file':row['sha256']=sha(path)
+   elif row['kind']=='symlink':row['target']=os.readlink(path)
+   inventory.append(row);assert len(inventory)<=10000,'libsignal inventory entry cap exceeded; incomplete explicit failure'
+ emit('libsignal-actual-inventory.json',inventory)
+ nested_names=['libsignal/node_modules/@types/node','libsignal/node_modules/long','libsignal/node_modules/protobufjs']
+ nested_keys={'node_modules/'+name for name in nested_names}
+ actual_lock_nested={name for name in lock['packages']if name.startswith('node_modules/libsignal/')}
+ emit('libsignal-lock-partition.json',{'rootManifest':expectedlib,'expectedNestedLockKeys':sorted(nested_keys),'actualNestedLockKeys':sorted(actual_lock_nested),'unknownLockKeys':sorted(actual_lock_nested-nested_keys),'missingLockKeys':sorted(nested_keys-actual_lock_nested)})
+ assert actual_lock_nested==nested_keys,'unexpected libsignal nested lock topology'
+ # Root package22 byte proof remains strict. Nested package archive boundaries
+ # are separately verified against their exact lock SRI, not declared trusted
+ # merely because their pathname starts with node_modules.
+ expected_files=set(expectedlib);expected_links={}
+ root_actual={row['path']:row for row in inventory if not row['path'].startswith('node_modules/')and row['kind']!='directory'}
+ root_diff={'missing':sorted(set(expectedlib)-set(root_actual)),'unknownRootEntries':sorted(set(root_actual)-set(expectedlib)),
+  'mismatched':[rel for rel,h in expectedlib.items()if rel in root_actual and(root_actual[rel]['kind']!='file'or root_actual[rel].get('sha256')!=h)],'nestedDisposition':'PENDING_EXACT_LOCK_SRI_NOT_YET_ACCEPTED'}
+ emit('libsignal-root-diff.json',root_diff)
+ assert not any(root_diff[key]for key in ['missing','unknownRootEntries','mismatched']),'libsignal root mismatch; inventory/rootdiff retained'
+ for rel,h in expectedlib.items():libproof[rel]=h
+ nested_proof=[]
+ for name in nested_names:
+  proof=verify_package(name,lock,deps,cache);nested_proof.append(proof)
+  prefix=name[len('libsignal/'):]
+  expected_files.update(prefix+'/'+row['path']for row in proof['files'])
+  for command,target in lock['packages']['node_modules/'+name].get('bin',{}).items():
+   assert re.fullmatch('[A-Za-z0-9_.-]+',command)and'..'not in Path(target).parts and not Path(target).is_absolute()
+   link='node_modules/.bin/'+command;expected_links[link]={'target':'../'+name.split('/')[-1]+'/'+target,'file':prefix+'/'+target}
+ actual_files={row['path']for row in inventory if row['kind']=='file'}
+ actual_links={row['path']:row.get('target')for row in inventory if row['kind']=='symlink'}
+ expected_dirs=set()
+ for rel in expected_files|set(expected_links):
+  expected_dirs.update(str(parent)for parent in Path(rel).parents if str(parent)!='.')
+ actual_dirs={row['path']for row in inventory if row['kind']=='directory'}
+ reconciliation={'unknownFiles':sorted(actual_files-expected_files),'missingFiles':sorted(expected_files-actual_files),'unknownLinks':sorted(set(actual_links)-set(expected_links)),'missingLinks':sorted(set(expected_links)-set(actual_links)),'unknownDirectories':sorted(actual_dirs-expected_dirs),'missingDirectories':sorted(expected_dirs-actual_dirs),'otherEntries':[row for row in inventory if row['kind']=='other'],'rootFiles':len(expectedlib),'nestedPackageFiles':len(expected_files)-len(expectedlib),'expectedBinLinks':expected_links,'actualLinks':actual_links}
+ emit('libsignal-partition-diff.json',reconciliation)
+ assert not any(reconciliation[name]for name in ['unknownFiles','missingFiles','unknownLinks','missingLinks','unknownDirectories','missingDirectories','otherEntries']),'unreconciled libsignal tree entries; inventory/diff retained'
+ for rel,expected in expected_links.items():
+  assert actual_links[rel]==expected['target']and (lib/rel).resolve()==(lib/expected['file']).resolve()and expected['file']in actual_files,'libsignal bin link mismatch '+rel
+ emit('libsignal-nested-SRI-integrity.json',nested_proof)
+ emit('libsignal-integrity.json',{'commit':'1c30d7d7e76a3b0aa120b04dc6a26f5a12dccf67','publicArchiveSha256':hashlib.sha256(public).hexdigest(),'files':libproof,'rootBoundary':'exact22sourcefiles','nestedRegistryPackages':nested_names,'nestedAllBytesVerifiedAgainstLockSRI':True,'credentialUsed':False})
  verified=[verify_package(n,lock,deps,cache)for n in ['typescript','@types/node','undici-types','vite']];emit('compiler-declarations-integrity.json',verified)
  assert [x['version']for x in verified]==['5.8.3','22.19.1','6.21.0','6.4.1']
  installed=json.loads((deps/'.package-lock.json').read_text())['packages'];missing=[]
