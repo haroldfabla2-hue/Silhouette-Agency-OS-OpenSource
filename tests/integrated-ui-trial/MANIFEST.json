@@ -1,6 +1,6 @@
 {
   "status": "SOURCE_ONLY_COMPOSITION_NO_PUBLICATION_OR_EXECUTION",
-  "parent": "dbc5809e6dcf7ee9f3fee0eb6d147c297ee8761e",
+  "parent": "822be2f3b219459cc2b24d860118dbac52a49ff3",
   "files": {
     "ASSERTION-DIAGNOSTIC-COMPOSITION-REVIEW.md": {
       "bytes": 1315,
@@ -21,6 +21,10 @@
     "FINITE-VALIDATION-REVIEW.md": {
       "bytes": 4913,
       "sha256": "d20349427a1895e4e116d6ca5654c43763d03fe2d46b1ea0fd383a798c6ea170"
+    },
+    "REDIS-TERMINAL-COMPOSITION-REVIEW.md": {
+      "bytes": 4423,
+      "sha256": "5a0cdbe116331bee1980fc58f051430b089b0f8a14d0da60e0d469d99b20ec24"
     },
     "REVIEW.md": {
       "bytes": 11544,
@@ -143,8 +147,8 @@
       "sha256": "dbf0ff4c7a98a5b0f00b51ee85d978dfd3cc5dde61aac09c28c0ee0fa932f278"
     },
     "hosted-orchestrator.py": {
-      "bytes": 24981,
-      "sha256": "9f42e8ec1d7db0f127b1f7d112c403a9b50bf5ae9ff86ef57ff0a173a95a7316"
+      "bytes": 27282,
+      "sha256": "8d57a6204bd519ae5dd89443cb51c5f009c8593ea3391523e1f5ca41f165c69d"
     },
     "identity-entry.py": {
       "bytes": 3884,
@@ -159,8 +163,8 @@
       "sha256": "0e3a710ab63232eec31d90e994036b3a3480c65605097fe4a6f0938e2bf33366"
     },
     "integrated-hosted.yml": {
-      "bytes": 4059,
-      "sha256": "983a1a3b18794e863f13989c4a76c6b0f838688bdfb20c35d09a0cc1d73e934f"
+      "bytes": 4071,
+      "sha256": "8cad002070fb9c0e0482322dc4140c36c287f49504213d87a0fb7a3ae6085958"
     },
     "lance-provenance.json": {
       "bytes": 900,
@@ -171,8 +175,8 @@
       "sha256": "20367cd35272db599ff1f7ebfb93409fc61bff9c635b3e01dc544c7cb0029763"
     },
     "namespace-entry.py": {
-      "bytes": 8306,
-      "sha256": "3436361b9b6917bd33e9ef122b1f26b6d4edb306f4f02ef1bb70c744c8c20cd0"
+      "bytes": 8432,
+      "sha256": "67aa59f8c4f63b70c6dd62d2bf96ba5bff4a87f2c449650d4eb306fe40fd76fc"
     },
     "native-provenance/better-sqlite3-12.5.0.tgz": {
       "bytes": 2622454,
@@ -202,9 +206,29 @@
       "bytes": 4061,
       "sha256": "6d4db2c333ac887464b161bc1139f1fd86c248e0b43110a758b945c60d7763f1"
     },
+    "redis-receipt-schema.py": {
+      "bytes": 6783,
+      "sha256": "cdd2236dd724a7a62ab6ef501e6f97d632d5f903908d6c1c3f2f4e733e08794d"
+    },
+    "redis-terminal-composition.json": {
+      "bytes": 193353,
+      "sha256": "605628b62a49b3c3dce38f8e154638c6be9294f2470ed30ef8a25ee14f1c00ec"
+    },
+    "redis-terminal-overlay/services/redisClient.ts": {
+      "bytes": 21795,
+      "sha256": "06195e47a38f1760e9f9e6090560666e16c1c3163c25a51654313850f41bad2f"
+    },
+    "redis-terminal-regression.mts": {
+      "bytes": 13689,
+      "sha256": "f9db0fdb73e21c6b397ae6823a6a15f44be59d165d4a3fab12c324fb5f9a9ad7"
+    },
+    "redis-validation.py": {
+      "bytes": 3894,
+      "sha256": "1ce0404d5254cf3de3bc7bff246e9963e7da52bfe8fd290d3631b5156b811d84"
+    },
     "return-evidence.py": {
-      "bytes": 12600,
-      "sha256": "95d9411ad15b8fdd0cf9f5e922eaa4ed2d5ee83c75a6975f10da3d40bb05ac4f"
+      "bytes": 15112,
+      "sha256": "d42c460a9ba88c32c6da264ce2b5befcdf6b8f2e158bbf75c3c9dfb918623e7d"
     },
     "runtime-boundary-composition.json": {
       "bytes": 194009,
@@ -283,8 +307,8 @@
       "sha256": "dd8db3911d514a259442ab4cbc7776f5defe28db9d522f61a49b9bed1457101a"
     },
     "supervisor.py": {
-      "bytes": 13945,
-      "sha256": "2a5ddc1bd8090bd02877d53a0634c41086b0cbdcf0b8287471659375bbc0f512"
+      "bytes": 13965,
+      "sha256": "13f74d646eb4b5cd81900b34c825b37154efdf3d6b574ba52b14f5a2774f70c9"
     },
     "telemetry-regression.mts": {
       "bytes": 4398,

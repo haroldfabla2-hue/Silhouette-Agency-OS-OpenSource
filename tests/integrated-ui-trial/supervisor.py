@@ -3,7 +3,7 @@
 import argparse,json,os,pathlib,resource,signal,subprocess,hashlib,time,selectors,shutil,socket,select,stat
 P=pathlib.Path;p=argparse.ArgumentParser()
 for name in ['bwrap','phase','app','deps','browser','review-dir','node-root','cgroup-parent','cgroup-tag','memory-bytes','wall-seconds','evidence']:p.add_argument('--'+name,required=True)
-a=p.parse_args();assert a.phase in ['preflight','runtime-prerequisites','ui-build','continuum-regressions','server-build','runtime'];memory=int(a.memory_bytes);wall=int(a.wall_seconds);assert memory==3*1024**3 and wall==180 and a.cgroup_tag.isdigit()
+a=p.parse_args();assert a.phase in ['preflight','runtime-prerequisites','ui-build','continuum-regressions','redis-regressions','server-build','runtime'];memory=int(a.memory_bytes);wall=int(a.wall_seconds);assert memory==3*1024**3 and wall==180 and a.cgroup_tag.isdigit()
 app=P(a.app).resolve();evidence=P(a.evidence).resolve();assert not evidence.exists();evidence.mkdir(mode=0o700)
 start=time.monotonic();childcg=None;proc=None;failure=None;events=[];receipts=[];mem={};written=0;procs=[];memoryEvents='UNVERIFIED';code=None;removed=False;identity={'status':'NOT_STARTED'};pidfd=None;channel=None;phaseLog=None
 

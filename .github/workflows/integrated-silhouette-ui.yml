@@ -27,7 +27,7 @@ jobs:
         run: |
           set -euo pipefail
           case "$GITHUB_EVENT_NAME" in
-            push) test "${{ github.event.before }}" = dbc5809e6dcf7ee9f3fee0eb6d147c297ee8761e ;;
+            push) test "${{ github.event.before }}" = 822be2f3b219459cc2b24d860118dbac52a49ff3 ;;
             workflow_dispatch) test -n "${{ inputs.expected_head }}" ;;
             *) exit 96 ;;
           esac
@@ -46,10 +46,10 @@ jobs:
         run: |
           set -euo pipefail
           if test "$GITHUB_EVENT_NAME" = push; then
-            test "$(git rev-parse HEAD^)" = dbc5809e6dcf7ee9f3fee0eb6d147c297ee8761e
+            test "$(git rev-parse HEAD^)" = 822be2f3b219459cc2b24d860118dbac52a49ff3
             test "$(git rev-list --parents -n 1 HEAD | wc -w)" -eq 2
             git diff-tree --no-commit-id --name-only -r HEAD | sort > "$RUNNER_TEMP/integrated-actual-paths"
-            printf '%s\n' .github/workflows/integrated-silhouette-ui.yml tests/integrated-ui-trial/MANIFEST.json tests/integrated-ui-trial/RUNTIME-BOUNDARY-COMPOSITION-REVIEW.md tests/integrated-ui-trial/browser-driver.cjs tests/integrated-ui-trial/hosted-orchestrator.py tests/integrated-ui-trial/integrated-hosted.yml tests/integrated-ui-trial/packet.sha256 tests/integrated-ui-trial/runtime-boundary-composition.json tests/integrated-ui-trial/runtime-boundary-overlay/browser.bootstrap.ts tests/integrated-ui-trial/runtime-boundary-overlay/server/index.ts tests/integrated-ui-trial/runtime-boundary-overlay/server/runtimeRootHost.ts tests/integrated-ui-trial/runtime-boundary-overlay/services/lifecycle/host.ts | sort > "$RUNNER_TEMP/integrated-expected-paths"
+            printf '%s\n' .github/workflows/integrated-silhouette-ui.yml tests/integrated-ui-trial/MANIFEST.json tests/integrated-ui-trial/REDIS-TERMINAL-COMPOSITION-REVIEW.md tests/integrated-ui-trial/hosted-orchestrator.py tests/integrated-ui-trial/integrated-hosted.yml tests/integrated-ui-trial/namespace-entry.py tests/integrated-ui-trial/packet.sha256 tests/integrated-ui-trial/redis-receipt-schema.py tests/integrated-ui-trial/redis-terminal-composition.json tests/integrated-ui-trial/redis-terminal-overlay/services/redisClient.ts tests/integrated-ui-trial/redis-terminal-regression.mts tests/integrated-ui-trial/redis-validation.py tests/integrated-ui-trial/return-evidence.py tests/integrated-ui-trial/supervisor.py | sort > "$RUNNER_TEMP/integrated-expected-paths"
             diff -u "$RUNNER_TEMP/integrated-expected-paths" "$RUNNER_TEMP/integrated-actual-paths"
           fi
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020

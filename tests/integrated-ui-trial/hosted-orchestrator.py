@@ -8,7 +8,7 @@ def sha(b):return hashlib.sha256(b).hexdigest()
 def emit(n,o):
  b=(json.dumps(o,indent=2)+'\n').encode();assert len(b)<=8*1024**2;(EV/n).write_bytes(b)
 def command(name,args,cwd,env,wall=180):
- assert time.monotonic()-START+wall<1020,'OVERALL_CLEANUP_RESERVE';p=subprocess.Popen(args,cwd=cwd,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True);sel=selectors.DefaultSelector();os.set_blocking(p.stdout.fileno(),False);sel.register(p.stdout,selectors.EVENT_READ);count=0;begin=time.monotonic();forced=False;failure=None
+ assert time.monotonic()-START+wall+35<1020,'OVERALL_WALL_RECOVERY_OVERHEAD_RESERVE';p=subprocess.Popen(args,cwd=cwd,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True);sel=selectors.DefaultSelector();os.set_blocking(p.stdout.fileno(),False);sel.register(p.stdout,selectors.EVENT_READ);count=0;begin=time.monotonic();forced=False;failure=None
  try:
   with (EV/(name+'.log')).open('xb')as log:
    eof=False
@@ -89,7 +89,7 @@ def members(b,*,mode,package=None,integrity=None):
 try:
  assert os.environ['PRIVATE']=='false'and os.environ['ENVIRONMENT']=='github-hosted'and os.environ['GITHUB_EVENT_NAME']in {'workflow_dispatch','push'}
  if os.environ['GITHUB_EVENT_NAME']=='push':
-  assert subprocess.check_output(['git','rev-parse','HEAD^'],cwd=REPO,text=True).strip()=='dbc5809e6dcf7ee9f3fee0eb6d147c297ee8761e'
+  assert subprocess.check_output(['git','rev-parse','HEAD^'],cwd=REPO,text=True).strip()=='822be2f3b219459cc2b24d860118dbac52a49ff3'
   assert os.environ['GITHUB_REF']=='refs/heads/preparation/sqlite-static-typecheck-db201993-4054-20261114'
  assert os.environ['GITHUB_SHA']==os.environ['EXPECTED_HEAD']==subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip()
  node=Path(shutil.which('node')).resolve();assert sha(node.read_bytes())=='ccacb2d6d87ba6d118b2bffc1ae33747a05cc5fc6b1f1ec4fc1d420b687e952d';assert subprocess.check_output([str(node),'--version'],text=True).strip()=='v22.18.0'
@@ -141,6 +141,12 @@ try:
  for r in boundary['files']:
   p=app/r['path'];b=(HERE/'runtime-boundary-overlay'/r['path']).read_bytes();assert sha(p.read_bytes())==r['beforeSha256'];assert len(b)==r['bytes']and sha(b)==r['afterSha256'];p.write_bytes(b)
  boundaryActual={str(p.relative_to(app)):sha(p.read_bytes())for p in app.rglob('*')if p.is_file()};assert boundaryActual==boundary['finalProductFiles']
+ # Exact terminal Redis ownership overlay; historical layers immutable.
+ redisRaw=(HERE/'redis-terminal-composition.json').read_bytes();assert sha(redisRaw)=='605628b62a49b3c3dce38f8e154638c6be9294f2470ed30ef8a25ee14f1c00ec'
+ redisComposition=json.loads(redisRaw);assert redisComposition['basePublishedParent']=='822be2f3b219459cc2b24d860118dbac52a49ff3'and len(redisComposition['files'])==1
+ for r in redisComposition['files']:
+  p=app/r['path'];b=(HERE/'redis-terminal-overlay'/r['path']).read_bytes();assert sha(p.read_bytes())==r['beforeSha256'];assert len(b)==r['bytes']and sha(b)==r['afterSha256'];p.write_bytes(b)
+ redisActual={str(p.relative_to(app)):sha(p.read_bytes())for p in app.rglob('*')if p.is_file()};assert redisActual==redisComposition['finalProductFiles']
  excluded=[]
  for r in classification['files']:
   if not r['include']:(app/r['path']).unlink();excluded.append(r)
@@ -196,14 +202,30 @@ try:
  (app/'RUNTIME-MATERIALIZATION-REVIEWED.json').write_text(json.dumps({'base':BASE,'source54':True,'historicalState':False,'providerMode':'off','runnableOnlyInsideIsolatedPhase':True})+'\n')
  nodeRoot=node.parents[1]
  phaseFailures=[]
- for phase in ['runtime-prerequisites','ui-build','continuum-regressions','server-build','runtime']:
+ for phase in ['runtime-prerequisites','ui-build','continuum-regressions','redis-regressions','server-build','runtime']:
+  # New finite phase admitted only with its full235s outer slot AND both
+  # remaining235s server/runtime slots inside1020s, including recovery. Remaining180s of20min
+  # belongs to cleanup/export, never new tests. Refusal is FAIL, no extension.
+  if phase=='redis-regressions':assert time.monotonic()-START+705<1020,'REDIS_PHASE_AND_REMAINING_SLOTS_RESERVE'
   try:command(phase,['sudo','-n',str(shutil.which('python3')),str(HERE/'supervisor.py'),'--bwrap',str(bwrap),'--phase',phase,'--app',str(app),'--deps',str(deps),'--browser',str(browser),'--review-dir',str(HERE),'--node-root',str(nodeRoot),'--cgroup-parent','/sys/fs/cgroup','--cgroup-tag',os.environ['GITHUB_RUN_ID'],'--memory-bytes',str(3*1024**3),'--wall-seconds','180','--evidence',str(EV/phase)],REPO,{'PATH':os.environ['PATH']},200)
   except AssertionError:
    # Only clean natural ui-build code1 diagnostic failures can continue. Any
    # supervisor/cgroup/output/identity/cap/timeout defect remains hard failure.
-   if phase in ['ui-build','continuum-regressions']:
+   if phase in ['ui-build','continuum-regressions','redis-regressions']:
     outer=json.loads((EV/(phase+'-receipt.json')).read_text())
     assert outer['code']==1 and outer['failure']is None and outer['forced']is False,'NATURAL_OUTER_COMMAND_RECEIPT_REQUIRED'
+   if phase=='redis-regressions':
+    sr=json.loads((EV/phase/'supervisor.json').read_text());fr=json.loads((EV/phase/'redis-validation.json').read_text())
+    assert sr['code']==1 and sr['failure']is None and not sr['events']and not sr['remainingPids']and sr['cgroupRemoved']is True
+    assert fr['phase']==phase and fr['status']=='FAIL_OR_INCOMPLETE_NOT_PRODUCT_PASS'and fr['allModesAccounted']is True and fr['fatal']is False
+    from importlib.util import spec_from_file_location,module_from_spec
+    spec=spec_from_file_location('redis_phase_schema',HERE/'redis-receipt-schema.py');rs=module_from_spec(spec);spec.loader.exec_module(rs)
+    receipts={m:json.loads((EV/phase/('redis-mode-'+m+'.json')).read_text())for m in rs.MODES}
+    rs.summary_receipt(fr,receipts)
+    # Natural assertionred is retained in exactreceipts, not expectedFAILgreen.
+    # All8must be accounted with actualphysicalcontainment; no timeout bypass.
+    phaseFailures.append({'phase':phase,'code':1,'source':'redis-validation.json','meaning':'REAL_REDIS_ASSERTIONS_AND_ORIGINAL_FAILURES_RETAINED_NOT_PRODUCT_PASS'})
+    continue
    if phase=='continuum-regressions':
     sr=json.loads((EV/phase/'supervisor.json').read_text());fr=json.loads((EV/phase/'continuum-validation.json').read_text())
     assert sr['code']==1 and sr['failure']is None and not sr['events']and not sr['remainingPids']and sr['cgroupRemoved']is True

@@ -7,7 +7,7 @@ root=Path(os.environ['RUNNER_TEMP'])/'silhouette-integrated-ui/evidence';assert 
 # Deliberately not generic file upload. Only this project's receipts, test logs,
 # and actual fresh providerOFF UI PNG. No source tree, env, browser HAR/storage,
 # authentication payloads, cookies, profile/database or operating transcripts.
-allowed={'runtime/browser-checkpoints.json','runtime/runtime-process-counters.json','runtime/runtime-cgroup-counters.json','ui-build/finite-validation.json','ui-build/telemetry-regression.json','ui-build/emitted-bootstrap-inspection.json','dependency-archive-verification.json',*(phase+'/identity-map.json'for phase in ['environment-probe','runtime-prerequisites','ui-build','continuum-regressions','server-build','runtime']),'host-qualification.log','host-qualification-receipt.json','host-qualification.json','security-preparation.log','security-preparation-receipt.json','security-preparation.json','security-chain/result.json','security-chain/gpgv-status.txt','security-chain/selected-stanza.json','security-chain/loader.txt','security-chain/key-fingerprints.txt','security-chain/ip-identity.json','security-helpers-state.json','environment-probe.log','environment-probe-receipt.json','environment-probe/root-preflight.json','environment-probe/network.json','environment-probe/supervisor.json','environment-probe/complete.log','runtime-prerequisites/root-preflight.json','runtime-prerequisites/network.json','runtime-prerequisites/supervisor.json','runtime-prerequisites/complete.log','environment-probe/qualification.json','runtime-prerequisites/prerequisites.json','runtime-prerequisites/prerequisites-failure.json','runtime-prerequisites.log','runtime-prerequisites-receipt.json','ui-build/root-preflight.json','server-build/root-preflight.json','runtime/root-preflight.json','outer-cleanup.json','npm-config-preflight.log','npm-config-preflight-receipt.json','source-materialization.json','dependency-members.json','result.json','failure.json','dependency-acquisition.log','dependency-acquisition-receipt.json','ui-build.log','server-build.log','runtime.log','ui-build-receipt.json','server-build-receipt.json','runtime-receipt.json','ui-build/complete.log','server-build/complete.log','runtime/complete.log','ui-build/supervisor.json','server-build/supervisor.json','runtime/supervisor.json','ui-build/network.json','server-build/network.json','runtime/network.json','runtime/actual-ui.png','runtime/browser.json','runtime/browser-failure.json','runtime/runtime-result.json','runtime/exit-frontier.json'}
+allowed={'runtime/browser-checkpoints.json','runtime/runtime-process-counters.json','runtime/runtime-cgroup-counters.json','ui-build/finite-validation.json','ui-build/telemetry-regression.json','ui-build/emitted-bootstrap-inspection.json','dependency-archive-verification.json',*(phase+'/identity-map.json'for phase in ['environment-probe','runtime-prerequisites','ui-build','continuum-regressions','redis-regressions','server-build','runtime']),'host-qualification.log','host-qualification-receipt.json','host-qualification.json','security-preparation.log','security-preparation-receipt.json','security-preparation.json','security-chain/result.json','security-chain/gpgv-status.txt','security-chain/selected-stanza.json','security-chain/loader.txt','security-chain/key-fingerprints.txt','security-chain/ip-identity.json','security-helpers-state.json','environment-probe.log','environment-probe-receipt.json','environment-probe/root-preflight.json','environment-probe/network.json','environment-probe/supervisor.json','environment-probe/complete.log','runtime-prerequisites/root-preflight.json','runtime-prerequisites/network.json','runtime-prerequisites/supervisor.json','runtime-prerequisites/complete.log','environment-probe/qualification.json','runtime-prerequisites/prerequisites.json','runtime-prerequisites/prerequisites-failure.json','runtime-prerequisites.log','runtime-prerequisites-receipt.json','ui-build/root-preflight.json','server-build/root-preflight.json','runtime/root-preflight.json','outer-cleanup.json','npm-config-preflight.log','npm-config-preflight-receipt.json','source-materialization.json','dependency-members.json','result.json','failure.json','dependency-acquisition.log','dependency-acquisition-receipt.json','ui-build.log','server-build.log','runtime.log','ui-build-receipt.json','server-build-receipt.json','runtime-receipt.json','ui-build/complete.log','server-build/complete.log','runtime/complete.log','ui-build/supervisor.json','server-build/supervisor.json','runtime/supervisor.json','ui-build/network.json','server-build/network.json','runtime/network.json','runtime/actual-ui.png','runtime/browser.json','runtime/browser-failure.json','runtime/runtime-result.json','runtime/exit-frontier.json'}
 # Private evidence root is exactly the launcher-selected temporary test scope.
 # Never follow symlinks in the root ancestry or allowlisted children.
 cur=root
@@ -15,6 +15,9 @@ while cur!=cur.parent:
  assert not cur.is_symlink(),'EVIDENCE_ROOT_SYMLINK'
  cur=cur.parent
 allowed.update({'continuum-regressions/continuum-validation.json',*( 'continuum-regressions/continuum-mode-'+m+'.json' for m in ['constructors','identity-existing','saturated-replay','schema-and-write-failure','power-check','timer-armed','timer-fired','threshold']),*( 'continuum-regressions/'+n for n in ['root-preflight.json','network.json','supervisor.json','complete.log','identity-map.json']),'continuum-regressions.log','continuum-regressions-receipt.json'})
+# Fixed only: NEVER redis-mode-*.log or redis complete.log/raw logs.
+redisModes=['natural-expiry','pending-terminal','fired-terminal','inflight-terminal','release-reacquire-terminal','multikey-guard','postseal-idempotency','open-survivor']
+allowed.update({'redis-regressions/redis-validation.json',*('redis-regressions/redis-mode-'+m+'.json'for m in redisModes),*('redis-regressions/'+n for n in ['root-preflight.json','network.json','supervisor.json','identity-map.json']),'redis-regressions.log','redis-regressions-receipt.json'})
 def bounded_evidence_read(p,cap):
  assert p.is_relative_to(root)
  cur=root
@@ -34,7 +37,7 @@ secret=re.compile(rb'(?i)(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{2
 # Read exact ephemeral values privately, never include them in any receipt,
 # error, hash list or frame. Refuse symlink/mode/length irregularities.
 denyValues=[]
-for phase in ['runtime-prerequisites','ui-build','continuum-regressions','server-build','runtime']:
+for phase in ['runtime-prerequisites','ui-build','continuum-regressions','redis-regressions','server-build','runtime']:
  d=root/phase/'.export-deny-api-token'
  if d.exists():
   assert d.is_file()and not d.is_symlink()and d.stat().st_mode&0o777==0o600,'EXPORT_DENY_FILE_INVALID'
@@ -58,7 +61,7 @@ def mandatory_presence(rel):
  except FileNotFoundError:return False
  except BaseException:
   diagnostic_error(rel,'INVALID_OR_UNREADABLE_MANDATORY_PATH');return True
-for phase in ['environment-probe','runtime-prerequisites','ui-build','continuum-regressions','server-build','runtime']:
+for phase in ['environment-probe','runtime-prerequisites','ui-build','continuum-regressions','redis-regressions','server-build','runtime']:
  activation=phase+'.log'
  if mandatory_presence(activation):
   if not mandatory_presence(phase+'/identity-map.json'):missing.append(phase+'/identity-map.json')
@@ -118,6 +121,32 @@ if continuumPresent:
   except BaseException:
    invalidContinuum.add(summaryRel);diagnostic_error(summaryRel,'INVALID_OR_INCOHERENT_CONTINUUM_SUMMARY')
  for rel in invalidContinuum:validatedContinuum.pop(rel,None)
+# Final-byte fixed Redis validation, same duplicate/nonfinite rejection as
+# continuum. A raw mode log can never substitute for missing finite receipt.
+redisSpec=spec_from_file_location('finite_redis_schema',Path(__file__).with_name('redis-receipt-schema.py'))
+redisSchema=module_from_spec(redisSpec);redisSpec.loader.exec_module(redisSchema)
+redisPrefix='redis-regressions/'
+redisJson={redisPrefix+'redis-validation.json',*(redisPrefix+'redis-mode-'+m+'.json'for m in redisSchema.MODES)}
+validatedRedis={};invalidRedis=set();redisReceipts={};redisSummary=None
+if mandatory_presence('redis-regressions.log'):
+ for rel in sorted(redisJson):
+  try:
+   data=bounded_evidence_read(root/rel,16384)
+   if data is None:missing.append(rel);continue
+   def redis_object(pairs):
+    value={}
+    for key,item in pairs:assert key not in value;value[key]=item
+    return value
+   value=json.loads(data,object_pairs_hook=redis_object,parse_constant=lambda _:(_ for _ in ()).throw(ValueError()))
+   if rel.endswith('/redis-validation.json'):redisSummary=value
+   else:
+    mode=rel[len(redisPrefix+'redis-mode-'):-5];redisSchema.mode_receipt(value,mode);redisReceipts[mode]=value
+   validatedRedis[rel]=data
+  except BaseException:invalidRedis.add(rel);diagnostic_error(rel,'INVALID_FIXED_REDIS_RECEIPT')
+ if redisSummary is not None:
+  try:redisSchema.summary_receipt(redisSummary,redisReceipts)
+  except BaseException:invalidRedis.add(redisPrefix+'redis-validation.json');diagnostic_error(redisPrefix+'redis-validation.json','INVALID_OR_INCOHERENT_REDIS_SUMMARY')
+ for rel in invalidRedis:validatedRedis.pop(rel,None)
 rows=[];total=0;quarantine=[];buf=io.BytesIO()
 with tarfile.open(fileobj=buf,mode='w:gz')as t:
  for rel in sorted(allowed):
@@ -131,6 +160,8 @@ with tarfile.open(fileobj=buf,mode='w:gz')as t:
     diagnostic_error(rel,'INVALID_OR_MUTATED_FIXED_CONTINUUM_RECEIPT')
     quarantine.append({'path':rel,'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest(),'reason':'INVALID_FIXED_RECEIPT_QUARANTINE'})
     continue
+  if rel in redisJson and (rel in invalidRedis or rel not in validatedRedis or b!=validatedRedis.get(rel)):
+   diagnostic_error(rel,'INVALID_OR_MUTATED_FIXED_REDIS_RECEIPT');quarantine.append({'path':rel,'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest(),'reason':'INVALID_FIXED_RECEIPT_QUARANTINE'});continue
   if any(value in b for value in denyValues)or(not rel.endswith('.png')and(secret.search(b)or credentialPattern.search(b))):quarantine.append({'path':rel,'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest(),'reason':'POSSIBLE_SECRET_QUARANTINE'});continue
   total+=len(b);assert total<=64*1024**2,'RAW_CAPTURE_CAP'
   row={'path':rel,'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()};rows.append(row);info=tarfile.TarInfo(rel);info.size=len(b);info.mode=0o600;t.addfile(info,io.BytesIO(b))
