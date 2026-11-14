@@ -1,6 +1,6 @@
 {
   "status": "SOURCE_ONLY_COMPOSITION_NO_PUBLICATION_OR_EXECUTION",
-  "parent": "822be2f3b219459cc2b24d860118dbac52a49ff3",
+  "parent": "41de67a763370230152fd136886b03a64029e1c7",
   "files": {
     "ASSERTION-DIAGNOSTIC-COMPOSITION-REVIEW.md": {
       "bytes": 1315,
@@ -21,6 +21,10 @@
     "FINITE-VALIDATION-REVIEW.md": {
       "bytes": 4913,
       "sha256": "d20349427a1895e4e116d6ca5654c43763d03fe2d46b1ea0fd383a798c6ea170"
+    },
+    "REDIS-PRECONDITION-COMPOSITION-REVIEW.md": {
+      "bytes": 3999,
+      "sha256": "ef780953484f2255cbb18c8de96183eb89de4b2efe9ebc48e4a315b4a5419c74"
     },
     "REDIS-TERMINAL-COMPOSITION-REVIEW.md": {
       "bytes": 4423,
@@ -148,7 +152,7 @@
     },
     "hosted-orchestrator.py": {
       "bytes": 27282,
-      "sha256": "8d57a6204bd519ae5dd89443cb51c5f009c8593ea3391523e1f5ca41f165c69d"
+      "sha256": "684c1fe8c3eff063e844821de856c3086ecf48948b1ebbe0b3a22006587a326f"
     },
     "identity-entry.py": {
       "bytes": 3884,
@@ -163,8 +167,8 @@
       "sha256": "0e3a710ab63232eec31d90e994036b3a3480c65605097fe4a6f0938e2bf33366"
     },
     "integrated-hosted.yml": {
-      "bytes": 4071,
-      "sha256": "8cad002070fb9c0e0482322dc4140c36c287f49504213d87a0fb7a3ae6085958"
+      "bytes": 3768,
+      "sha256": "20900ab863fc7ba73b66e3c1413d12d6febe122de0765cf0732eb00060eb08bb"
     },
     "lance-provenance.json": {
       "bytes": 900,
@@ -207,8 +211,8 @@
       "sha256": "6d4db2c333ac887464b161bc1139f1fd86c248e0b43110a758b945c60d7763f1"
     },
     "redis-receipt-schema.py": {
-      "bytes": 6783,
-      "sha256": "cdd2236dd724a7a62ab6ef501e6f97d632d5f903908d6c1c3f2f4e733e08794d"
+      "bytes": 8487,
+      "sha256": "62b30094ed507106c622cd7b37645ba9e50aec0a4bf44b2a538da0b1ba5c9b9c"
     },
     "redis-terminal-composition.json": {
       "bytes": 193353,
@@ -219,8 +223,8 @@
       "sha256": "06195e47a38f1760e9f9e6090560666e16c1c3163c25a51654313850f41bad2f"
     },
     "redis-terminal-regression.mts": {
-      "bytes": 13689,
-      "sha256": "f9db0fdb73e21c6b397ae6823a6a15f44be59d165d4a3fab12c324fb5f9a9ad7"
+      "bytes": 17399,
+      "sha256": "76eeffd4f80aa557c5348b09162a1499b4e30a741f75ebf2b9d08afe4e5ca2a5"
     },
     "redis-validation.py": {
       "bytes": 3894,

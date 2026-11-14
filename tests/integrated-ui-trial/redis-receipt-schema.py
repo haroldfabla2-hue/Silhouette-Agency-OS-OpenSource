@@ -9,8 +9,23 @@ COUNTS={'natural-expiry':(2,1,1),'pending-terminal':(1,1,0),'fired-terminal':(1,
 def integer(v,lo=0,hi=9007199254740991):assert type(v)is int and lo<=v<=hi
 def keys(v,k):assert type(v)is dict and set(v)==set(k.split())
 def number(v,hi):assert type(v)in {float,int}and math.isfinite(v)and 0<=v<=hi
+STAGES={'PRECONDITION_NOT_REACHED','MIGRATION_SOURCE','SQLITE_PRECONDITION','REDIS_IMPORT','READONLY_SHAPE','NATIVE_TIMER_CAPTURE','ACQUIRE_BODY','TERMINAL_ASSERTIONS','OPEN_SURVIVOR'}
+PREDICATES={'NONE','PINNED_SOURCE_AND_PRIVATE_DESTINATION','ACTUAL_INCIDENTS_TABLE','ACTUAL_MIGRATION_004','ACTUAL_PRODUCTION_SINGLETON','OWN_FIELDS_AND_CAPS','EXACT_TIMEOUT_RESOURCE_ID','PUBLIC_ORIGINAL_PROMISE','REAL_ACQUISITION_TRUE','HOST_AND_CANCELLATION_TYPE','SELECTED_SAME_ORIGINAL_ERROR','EXACT_NATIVE_DESTROY','NEW_LOCK_SURVIVES_OLD_EXPIRY'}
+def diagnostic_receipt(d):
+ keys(d,'stage failedStage predicate failedPredicate errorKind migrationSource migrationCount incidentsTable migration004')
+ assert d['stage']in STAGES and d['failedStage']in STAGES|{'NONE'}
+ assert d['predicate']in PREDICATES and d['failedPredicate']in PREDICATES
+ assert d['errorKind']in {'NOT_OBSERVED','ASSERTION_ERROR','SQLITE_ERROR','OTHER_ERROR','NON_ERROR_OR_UNKNOWN'}
+ assert (d['failedStage']=='NONE')==(d['errorKind']=='NOT_OBSERVED')
+ if d['failedStage']=='NONE':assert d['failedPredicate']=='NONE'
+ integer(d['migrationCount'],0,4)
+ assert d['migrationSource']in {'NOT_OBSERVED','MATCH_ALL_FOUR'}
+ if d['migrationSource']=='MATCH_ALL_FOUR':assert d['migrationCount']==4
+ assert d['incidentsTable']in {'NOT_OBSERVED','PRESENT','ABSENT'}and d['migration004']in {'NOT_OBSERVED','APPLIED','ABSENT_OR_MISMATCH'}
+ if d['migration004']=='APPLIED':assert d['incidentsTable']=='PRESENT'and d['migrationSource']=='MATCH_ALL_FOUR'
 def mode_receipt(v,mode):
- keys(v,'version mode assertionsComplete results cleanup hostSealedEarly productState productVerdict survivor sameBodyObserved postSealRejected exactNativeTimers actualDestroyObserved cancelledSameOriginal firedOriginal ownerFailures taskOutcomeFailures lifetimeFailures rawPrivateLogExported global')
+ keys(v,'version mode diagnostic assertionsComplete results cleanup hostSealedEarly productState productVerdict survivor sameBodyObserved postSealRejected exactNativeTimers actualDestroyObserved cancelledSameOriginal firedOriginal ownerFailures taskOutcomeFailures lifetimeFailures rawPrivateLogExported global')
+ diagnostic_receipt(v['diagnostic'])
  assert type(v['version'])is int and v['version']==1 and v['mode']==mode and mode in MODES
  for k in ['assertionsComplete','sameBodyObserved','postSealRejected','hostSealedEarly']:assert type(v[k])is bool
  assert v['productVerdict']=='FAIL_OR_INCOMPLETE_NOT_PRODUCT_PASS'and v['global']=='INCOMPLETE'and v['rawPrivateLogExported']is False
@@ -39,7 +54,9 @@ def mode_receipt(v,mode):
  assert terminal in {'EXERCISED_PASSED','EXERCISED_FAILED','NOT_REACHED'}
  assert [r['status']for r in v['results'][2:]]==['NOTEXERCISED','NOTEXERCISED','NOTRUN']
  if scenario=='NOT_REACHED':assert v['assertionsComplete']is False
- if scenario=='EXERCISED_PASSED':assert v['sameBodyObserved']is True and n>=1
+ if scenario=='EXERCISED_PASSED':
+  assert v['diagnostic']['migration004']=='APPLIED'and v['diagnostic']['incidentsTable']=='PRESENT'and v['diagnostic']['migrationSource']=='MATCH_ALL_FOUR'
+  assert v['sameBodyObserved']is True and n>=1
  if mode=='inflight-terminal'and scenario=='EXERCISED_PASSED':assert v['hostSealedEarly']is True
  if terminal=='EXERCISED_PASSED':
   assert v['productState']=='INCOMPLETE'and v['postSealRejected']is True
