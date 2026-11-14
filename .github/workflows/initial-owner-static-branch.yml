@@ -1,9 +1,9 @@
-name: POST-CP17 real Redis integral validation Node22.18
+name: POST-CP17 identified Redis client integral validation Node22.18
 
 on:
   push:
     branches:
-      - validation/postcp17-realredis-reviewed-20261114
+      - validation/postcp17-redisua-reviewed-20261114
 
 permissions:
   contents: read
@@ -47,7 +47,7 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = '${{ github.sha }}'
           ops="$PWD/tests/real-process/cp17-trial"
-          printf '%s  %s\n' a04a8289858ecbab15f0d63bbc3d6c13cf1f7487f7eb5fb9edd952e081ddde72 "$ops/infrastructure.sha256" | sha256sum --check
+          printf '%s  %s\n' 6e1f1ea47b2c0d62f6d4a365e134099ba016a05c84898ac294dd818e569b9b99 "$ops/infrastructure.sha256" | sha256sum --check
           (cd "$ops" && sha256sum --check infrastructure.sha256)
           work="$RUNNER_TEMP/current-suite-work"
           python3 "$ops/prepare-integral.py" "$PWD" "$work" "$ops/integral-inputs.json" 69eef40f1d0fb2c1eeb4173b09e9815c3b80d303e2cbad81f0fbc49d7cf3fe41

@@ -3,7 +3,8 @@ import hashlib,json,os,pathlib,subprocess,sys,tarfile,time,urllib.request
 root=pathlib.Path('/tmp/redis-build');root.mkdir();ev=pathlib.Path('/tmp/evidence');url='https://download.redis.io/releases/redis-7.4.7.tar.gz';expected='c97e57b0df330a9e091cacff012bebe763c275398cf36ff44cdba876814b595b'
 # Overall nativephase commanddeadline ownedby supervisor, no retries/alternateversions.
 archive=root/'source.tar.gz'
-with urllib.request.urlopen(url,timeout=10)as response,archive.open('xb')as stream:
+request=urllib.request.Request(url,headers={'User-Agent':'Silhouette-Isolated-Validation/1.0'})
+with urllib.request.urlopen(request,timeout=10)as response,archive.open('xb')as stream:
  n=0
  while True:
   block=response.read(65536)
