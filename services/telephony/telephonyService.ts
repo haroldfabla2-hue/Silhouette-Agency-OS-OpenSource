@@ -1,3 +1,5 @@
+import { telephonyOwner } from '../lifecycle/preparationBindings';
+import { AdmissionClosed, type Operation } from '../lifecycle/host';
 // =============================================================================
 // SILHOUETTE TELEPHONY & REAL-TIME VOIP ENGINE (PHASE 22 - TELEPHONY EXPANSION)
 // Enterprise-Grade Bidirectional Voice Calling, Live Twilio/SIP Integration,
@@ -93,6 +95,37 @@ export interface InitiateCallParams {
 }
 
 export class TelephonyService {
+    private readonly ownership = telephonyOwner();
+    private knownWorkSealed = false;
+    private readonly knownWork = new Set<Promise<unknown>>();
+    private knownDrain: Promise<void> | undefined;
+    private invokeKnown<T>(source: string, original: () => T): T {
+        if (this.knownWorkSealed) throw new AdmissionClosed(source);
+        return this.ownership.invoke('telephony-' + source, original);
+    }
+    private admitKnown<T>(source: string, original: () => Promise<T>): Promise<T> {
+        const work = this.invokeKnown(source, original);
+        this.knownWork.add(work);
+        const settled = () => { this.knownWork.delete(work); };
+        void work.then(settled, settled);
+        return work;
+    }
+    /** Only known in-process methods. Does not hang up calls, revoke provider
+     * callbacks, detach a sender or assert remote completion. Not wired to root
+     * stop until those real upstream receiver lifetimes are integrated.
+     */
+    public sealAndDrainKnownWork(): Promise<void> {
+        if (this.knownDrain) return this.knownDrain;
+        this.knownWorkSealed = true;
+        this.knownDrain = Promise.allSettled([...this.knownWork]).then(results => {
+            if (this.activeCalls.size) this.ownership.unknown('REMOTE_CALL_OR_CALLBACK_LIFETIME_UNVERIFIED', true);
+            if (this.mediaStreamSender) this.ownership.unknown('MEDIA_STREAM_SENDER_LIFETIME_UNVERIFIED', true);
+            const errors = results.flatMap(result => result.status === 'rejected' ? [result.reason] : []);
+            if (errors.length) throw new AggregateError(errors, 'Known telephony borrower drain failed');
+        });
+        void this.knownDrain.catch(() => undefined);
+        return this.knownDrain;
+    }
     private activeCalls: Map<string, TelephonyCall> = new Map();
     private isInitialized = false;
 
@@ -101,12 +134,16 @@ export class TelephonyService {
     private authToken: string | null = null;
     private defaultFromNumber: string | null = null;
 
-    constructor() {
-        this.reloadCredentials();
+    constructor(operation: Operation) {
+        this.ownership.validateConstruction(operation);
+        this.reloadCredentialsOriginal();
         this.initializeSchema();
     }
 
     public reloadCredentials(): void {
+        return this.invokeKnown('reloadCredentials', () => this.reloadCredentialsOriginal());
+    }
+    private reloadCredentialsOriginal(): void {
         this.accountSid = process.env.TWILIO_ACCOUNT_SID || null;
         this.authToken = process.env.TWILIO_AUTH_TOKEN || null;
         // No fabricated default: without TWILIO_PHONE_NUMBER there is no real
@@ -153,6 +190,9 @@ export class TelephonyService {
     /** Optional sender to the live media stream (WebSocket). Registered by the media-stream server when present. */
     private mediaStreamSender: ((callId: string, msg: { event: 'clear' }) => Promise<boolean>) | null = null;
     public setMediaStreamSender(fn: ((callId: string, msg: { event: 'clear' }) => Promise<boolean>) | null): void {
+        return this.invokeKnown('setMediaStreamSender', () => this.setMediaStreamSenderOriginal(fn));
+    }
+    private setMediaStreamSenderOriginal(fn: ((callId: string, msg: { event: 'clear' }) => Promise<boolean>) | null): void {
         this.mediaStreamSender = fn;
     }
 
@@ -161,6 +201,9 @@ export class TelephonyService {
      * Backwards or post-terminal updates are ignored. Returns the call when the state changed.
      */
     public applyProviderStatus(providerCallSid: string, rawStatus: string): TelephonyCall | null {
+        return this.invokeKnown('applyProviderStatus', () => this.applyProviderStatusOriginal(providerCallSid, rawStatus));
+    }
+    private applyProviderStatusOriginal(providerCallSid: string, rawStatus: string): TelephonyCall | null {
         const next = mapProviderStatus(rawStatus);
         if (!next) return null;
         let call: TelephonyCall | undefined;
@@ -184,6 +227,9 @@ export class TelephonyService {
      * high-fidelity conversational simulation mode for testing and local dev.
      */
     public async dial(params: InitiateCallParams): Promise<{ call: TelephonyCall; error?: string }> {
+        return this.admitKnown('dial', () => this.dialOriginal(params));
+    }
+    private async dialOriginal(params: InitiateCallParams): Promise<{ call: TelephonyCall; error?: string }> {
         this.initializeSchema();
 
         const callId = `call_${crypto.randomUUID().replace(/-/g, '').substring(0, 12)}`;
@@ -375,6 +421,9 @@ export class TelephonyService {
      * flushing the provider media stream queue and synchronizing dialog turns.
      */
     public async triggerBargeIn(callId: string): Promise<{ success: boolean; twiml: string; timestamp: number; error?: string }> {
+        return this.admitKnown('triggerBargeIn', () => this.triggerBargeInOriginal(callId));
+    }
+    private async triggerBargeInOriginal(callId: string): Promise<{ success: boolean; twiml: string; timestamp: number; error?: string }> {
         const call = this.activeCalls.get(callId);
         if (!call || call.status !== 'IN_PROGRESS') {
             return { success: false, twiml: '', timestamp: Date.now(), error: `Call ${callId} is not active.` };
@@ -435,11 +484,30 @@ export class TelephonyService {
         voicePersona?: string;
         error?: string;
     }> {
+        return this.admitKnown('processCallTurn', () => this.processCallTurnOriginal(callId, callerUtterance, latencyMs));
+    }
+    private async processCallTurnOriginal(
+        callId: string,
+        callerUtterance: string,
+        latencyMs?: number
+    ): Promise<{
+        agentResponse: string;
+        audioBase64?: string;
+        sentiment?: AcousticSentimentAnalysis;
+        voicePersona?: string;
+        error?: string;
+    }> {
         const call = this.activeCalls.get(callId);
         if (!call || call.status !== 'IN_PROGRESS') {
             return { agentResponse: '', error: `Call ${callId} is not currently active.` };
         }
 
+        const admittedSpeech = ttsService.reserveTelephonySpeech();
+        let admittedVoice: ReturnType<typeof voiceLibraryService.reserveTelephonyVoice> | undefined;
+        try {
+        // Only reserve the branch the original voice-id guard selects. If this
+        // independent reservation fails, finally still releases speech unused.
+        if (call.voiceId) admittedVoice = voiceLibraryService.reserveTelephonyVoice();
         // 1. Analyze acoustic sentiment & caller disposition
         const sentiment = this.analyzeAcousticSentiment(callerUtterance, latencyMs);
 
@@ -447,7 +515,7 @@ export class TelephonyService {
         let voicePersonaName = 'Silhouette Voice';
         if (call.voiceId) {
             try {
-                const voice = await voiceLibraryService.getVoice(call.voiceId);
+                const voice = await admittedVoice!.getVoice(call.voiceId);
                 if (voice) {
                     voicePersonaName = `${voice.name} (${voice.style || 'natural'}, ${voice.language})`;
                 }
@@ -499,7 +567,7 @@ Agent Response (spoken naturally):`;
         // 5. Synthesize voice audio
         let audioBase64: string | undefined;
         try {
-            const audioUrl = await ttsService.speak(responseText, { voiceId: call.voiceId });
+            const audioUrl = await admittedSpeech.speak(responseText, { voiceId: call.voiceId });
             if (audioUrl) {
                 audioBase64 = audioUrl;
             }
@@ -522,12 +590,19 @@ Agent Response (spoken naturally):`;
             sentiment,
             voicePersona: voicePersonaName
         };
+        } finally {
+            try { admittedVoice?.notSelected(); }
+            finally { admittedSpeech.notSelected(); }
+        }
     }
 
     /**
      * Sends DTMF tones (keypad digits: '1', '2', '#', etc.) to navigate automated phone systems (IVRs).
      */
     public async sendDtmf(callId: string, digits: string): Promise<{ success: boolean; error?: string }> {
+        return this.admitKnown('sendDtmf', () => this.sendDtmfOriginal(callId, digits));
+    }
+    private async sendDtmfOriginal(callId: string, digits: string): Promise<{ success: boolean; error?: string }> {
         const call = this.activeCalls.get(callId);
         if (!call || call.status !== 'IN_PROGRESS') {
             return { success: false, error: `Call ${callId} is not active.` };
@@ -588,6 +663,9 @@ Agent Response (spoken naturally):`;
      * agreements and decisions into Silhouette's memory.
      */
     public async hangup(callId: string, reason: string = 'Completed normally'): Promise<{ call?: TelephonyCall; error?: string }> {
+        return this.admitKnown('hangup', () => this.hangupOriginal(callId, reason));
+    }
+    private async hangupOriginal(callId: string, reason: string = 'Completed normally'): Promise<{ call?: TelephonyCall; error?: string }> {
         const call = this.activeCalls.get(callId);
         if (!call) {
             return { error: `Call ${callId} not found.` };
@@ -673,6 +751,9 @@ ${fullTranscriptText}
 
     /** Finds a call by the provider SID (used by webhooks). */
     public getCallByProviderSid(sid: string): TelephonyCall | null {
+        return this.invokeKnown('getCallByProviderSid', () => this.getCallByProviderSidOriginal(sid));
+    }
+    private getCallByProviderSidOriginal(sid: string): TelephonyCall | null {
         for (const c of this.activeCalls.values()) if (c.providerCallSid === sid) return c;
         this.initializeSchema();
         try {
@@ -685,6 +766,9 @@ ${fullTranscriptText}
      * Retrieves a call record by ID.
      */
     public getCall(callId: string): TelephonyCall | null {
+        return this.invokeKnown('getCall', () => this.getCallOriginal(callId));
+    }
+    private getCallOriginal(callId: string): TelephonyCall | null {
         if (this.activeCalls.has(callId)) {
             return this.activeCalls.get(callId)!;
         }
@@ -718,6 +802,9 @@ ${fullTranscriptText}
      * Lists recent call history.
      */
     public listCalls(limit: number = 20): TelephonyCall[] {
+        return this.invokeKnown('listCalls', () => this.listCallsOriginal(limit));
+    }
+    private listCallsOriginal(limit: number = 20): TelephonyCall[] {
         this.initializeSchema();
         const rows = sqliteService.db.prepare(`
             SELECT * FROM telephony_calls ORDER BY created_at DESC LIMIT ?
@@ -774,4 +861,13 @@ ${fullTranscriptText}
     }
 }
 
-export const telephonyService = new TelephonyService();
+function constructOriginalTelephony(): TelephonyService {
+    const owner = telephonyOwner();
+    const operation = owner.beginConstruction();
+    try {
+        const original = new TelephonyService(operation);
+        owner.constructed(operation, original);
+        return original;
+    } catch (error) { owner.constructionFailed(operation, error); throw error; }
+}
+export const telephonyService = constructOriginalTelephony();

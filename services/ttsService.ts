@@ -1,3 +1,5 @@
+import { ttsOwner } from './lifecycle/preparationBindings';
+import { AdmissionClosed, type Operation } from './lifecycle/host';
 
 import axios from 'axios';
 import fs from 'fs';
@@ -14,6 +16,72 @@ export interface VoiceConfig {
 
 export class TTSService {
     private static instance: TTSService;
+    private readonly ownership = ttsOwner();
+    private knownWorkSealed = false;
+    private readonly knownWork = new Set<Promise<unknown>>();
+    private knownDrain: Promise<void> | undefined;
+
+    /** Source-local admitted borrower work only, not global quiescence.
+     * Original return/error identity is retained by the host. Rejections settled
+     * before drain stay lifetime failures there, not erased by this pending set.
+     */
+    private admitKnown<T>(source: string, original: () => Promise<T>): Promise<T> {
+        if (this.knownWorkSealed) throw new AdmissionClosed(source);
+        const work = this.ownership.invoke(source, original);
+        this.knownWork.add(work);
+        const settled = () => { this.knownWork.delete(work); };
+        void work.then(settled, settled);
+        return work;
+    }
+
+    /** Source-fixed telephony continuation. Reserve before the call-turn's
+     * first await, so a later TTS seal cannot cancel already-admitted speech.
+     * This is lifetime bookkeeping, not provider/remote-call authority.
+     */
+    public reserveTelephonySpeech(): { speak: (text: string, options?: { voiceId?: string }) => Promise<string | null>; notSelected: () => void } {
+        if (this.knownWorkSealed) throw new AdmissionClosed('telephony-speech');
+        const permit = this.ownership.invoke('telephony-speech-reserve', operation =>
+            this.ownership.reserveChild(operation, 'telephony-speech'));
+        let pending = true;
+        let finish!: () => void;
+        const settled = new Promise<void>(resolve => { finish = resolve; });
+        this.knownWork.add(settled);
+        void settled.then(() => this.knownWork.delete(settled));
+        return Object.freeze({
+            speak: (text: string, options?: { voiceId?: string }) => {
+                if (!pending) throw new AdmissionClosed('telephony-speech-consumed');
+                pending = false;
+                try {
+                    const original = this.ownership.invokeChild(permit, () => this.speakOriginal(text, options));
+                    void original.then(finish, finish);
+                    return original;
+                } catch (error) { finish(); throw error; }
+            },
+            notSelected: () => {
+                if (!pending) return;
+                pending = false;
+                try { this.ownership.skipChild(permit, 'ORIGINAL_GUARD_NOT_SELECTED'); }
+                finally { finish(); }
+            },
+        });
+    }
+
+    /** Terminal known TTS borrower seal/join. Not a SQLite close permission.
+     * Existing speak continuations retain wake/retry/fallback behavior through
+     * private originals after the public admission frontier is sealed.
+     */
+    public sealAndDrainKnownWork(): Promise<void> {
+        if (this.knownDrain) return this.knownDrain;
+        this.knownWorkSealed = true;
+        const pending = [...this.knownWork];
+        this.knownDrain = (async () => {
+            const results = await Promise.allSettled([this.stopBackgroundWork(), ...pending]);
+            const errors = results.flatMap(result => result.status === 'rejected' ? [result.reason] : []);
+            if (errors.length) throw new AggregateError(errors, 'Known TTS borrower drain failed');
+        })();
+        void this.knownDrain.catch(() => undefined);
+        return this.knownDrain;
+    }
     private pythonEngineUrl = process.env.VOICE_ENGINE_URL || 'http://localhost:8100';
     private isEngineAwake = false;
     private backgroundStopped = false;
@@ -34,11 +102,12 @@ export class TTSService {
         provider: 'minimax' // Set Minimax as default provider to save VRAM
     };
 
-    private constructor() {
+    private constructor(operation: Operation) {
+        this.ownership.validateConstruction(operation);
         console.log('[TTS] Service Initialized. Connecting to Voice Engine...');
         // Preserve automatic bootstrap and the existing health-check cadence.
-        this.initialConfig = this.loadConfig();
-        this.initialHealth = this.checkEngineHealth();
+        this.initialConfig = this.admitKnown('initial-config-borrower', () => this.loadConfig());
+        this.initialHealth = this.admitKnown('initial-health', () => this.checkEngineHealth());
         // Keep each owned operation, not only the fail-fast aggregate.
         void this.initialConfig.catch(error => {
             console.error('[TTS] Initial config load failed', error);
@@ -55,7 +124,7 @@ export class TTSService {
         });
         this.healthTimer = setInterval(() => {
             if (!this.backgroundStopped) {
-                void this.checkEngineHealth().catch(error => {
+                void this.admitKnown('scheduled-health', () => this.checkEngineHealth()).catch(error => {
                     this.healthFailures.push(error);
                     console.error('[TTS] Background health check failed', error);
                 });
@@ -83,6 +152,7 @@ export class TTSService {
                 this.config = { ...this.config, ...savedConfig };
             }
         } catch (e) {
+            this.ownership.failure('config-load-borrower-failed', e);
             console.warn('[TTS] Failed to load config', e);
         }
     }
@@ -92,13 +162,20 @@ export class TTSService {
             const { sqliteService } = await import('./sqliteService');
             sqliteService.setConfig('voice_settings', this.config);
         } catch (e) {
+            this.ownership.failure('config-write-borrower-failed', e);
             console.warn('[TTS] Failed to save config', e);
         }
     }
 
     public static getInstance(): TTSService {
         if (!TTSService.instance) {
-            TTSService.instance = new TTSService();
+            const owner = ttsOwner();
+            const operation = owner.beginConstruction();
+            try {
+                const original = new TTSService(operation);
+                owner.constructed(operation, original);
+                TTSService.instance = original;
+            } catch (error) { owner.constructionFailed(operation, error); throw error; }
         }
         return TTSService.instance;
     }
@@ -132,6 +209,9 @@ export class TTSService {
      * Generate speech from text
      */
     public async speak(text: string, options?: { voiceId?: string }): Promise<string | null> {
+        return this.admitKnown('speech', () => this.speakOriginal(text, options));
+    }
+    private async speakOriginal(text: string, options?: { voiceId?: string }): Promise<string | null> {
         // Per-call voice override (e.g. a phone call's chosen voice); the global config voice is only the default.
         const voiceId = options?.voiceId || this.config.voiceId;
         if (!this.config.enabled) return null;
@@ -160,7 +240,7 @@ export class TTSService {
         // Auto-wake if engine is sleeping
         if (!this.isEngineAwake) {
             console.log('[TTS] ⚡ Local engine sleeping - attempting to wake...');
-            await this.wake();
+            await this.wakeOriginal();
             // Wait a bit for model to load
             await new Promise(resolve => setTimeout(resolve, 2000));
         }
@@ -185,7 +265,7 @@ export class TTSService {
             // One more attempt after wake
             if (error.code === 'ECONNREFUSED' || error.response?.status === 500) {
                 console.log('[TTS] 🔄 Retrying after wake...');
-                await this.wake();
+                await this.wakeOriginal();
                 await new Promise(resolve => setTimeout(resolve, 3000));
 
                 try {
@@ -233,6 +313,9 @@ export class TTSService {
     }
 
     public async getVoices(): Promise<{ default_models: string[], cloned_voices: string[] }> {
+        return this.admitKnown('list-voices', () => this.getVoicesOriginal());
+    }
+    private async getVoicesOriginal(): Promise<{ default_models: string[], cloned_voices: string[] }> {
         try {
             const res = await axios.get(`${this.pythonEngineUrl}/voices`);
             return res.data;
@@ -243,6 +326,9 @@ export class TTSService {
     }
 
     public async cloneVoice(file: any, name: string): Promise<any> {
+        return this.admitKnown('clone-voice', () => this.cloneVoiceOriginal(file, name));
+    }
+    private async cloneVoiceOriginal(file: any, name: string): Promise<any> {
         try {
             const FormDataModule = await import('form-data');
             const FormDataClass = (FormDataModule.default || FormDataModule) as any;
@@ -261,6 +347,9 @@ export class TTSService {
     }
 
     public async sleep() {
+        return this.admitKnown('sleep', () => this.sleepOriginal());
+    }
+    private async sleepOriginal() {
         try {
             await axios.post(`${this.pythonEngineUrl}/sleep`);
             this.isEngineAwake = false;
@@ -271,6 +360,9 @@ export class TTSService {
     }
 
     public async wake() {
+        return this.admitKnown('wake', () => this.wakeOriginal());
+    }
+    private async wakeOriginal() {
         try {
             await axios.post(`${this.pythonEngineUrl}/wake`);
             this.isEngineAwake = true;
@@ -345,8 +437,14 @@ export class TTSService {
     }
 
     public updateConfig(newConfig: Partial<VoiceConfig>) {
-        this.config = { ...this.config, ...newConfig };
-        this.saveConfig();
+        if (this.knownWorkSealed) throw new AdmissionClosed('config-update');
+        // Invoke before returning the original void API. The async SQLite write
+        // remains owned even though this public caller does not await it.
+        this.ownership.invoke('config-update', () => {
+            this.config = { ...this.config, ...newConfig };
+            const write = this.admitKnown('config-write-borrower', () => this.saveConfig());
+            void write.catch(() => undefined); // original void API, host retains rejection
+        });
     }
 
     public getConfig() {
