@@ -1,6 +1,6 @@
 'use strict';
 // SOURCE-ONLY PROPOSAL. One pre-credential diagnostic per fixed phase, no screenshot or mutation.
-module.exports=function boundaryProbe(context,page,evidence,workEnd,originalOperationSettled,phase){
+module.exports=function boundaryProbe(context,page,evidence,workEnd,originalOperationSettled,phase,environmentSample){
  if(!['FIRST_NAVIGATION','FIRST_BODY_VISIBLE'].includes(phase)||evidence.preCredentialBoundaries.some(p=>p.phase===phase))throw Error('FIXED_PROBE_PHASE_CONFLICT');
  // Internal state is never the published receipt. finish() takes ONE immutable
  // barrier snapshot, so late completions cannot turn a residual into acceptance.
@@ -47,7 +47,7 @@ module.exports=function boundaryProbe(context,page,evidence,workEnd,originalOper
    }catch(e){const result=e==='ACTION_TIMEOUT'?'ACTION_TIMEOUT':e==='COMMON_BUDGET'?'COMMON_BUDGET':'ORIGINAL_REJECTED_OR_INVALID';if(session)record.cdp.evaluation=result;else record.cdp.session=result;}
    finally{if(session)record.cdp.detach=await dispose(session);}
   };
-  await Promise.allSettled([http(),pw(),cdp()]);
+  await Promise.allSettled([http(),pw(),cdp(),environmentSample()]);
   record.finishedAt=Date.now();if(record.status==='STARTED')record.status='FIXED_RESULTS_ONLY_NOT_CAUSE';
  };
  let timer,resolveTask;

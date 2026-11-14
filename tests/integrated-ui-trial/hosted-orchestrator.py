@@ -89,7 +89,7 @@ def members(b,*,mode,package=None,integrity=None):
 try:
  assert os.environ['PRIVATE']=='false'and os.environ['ENVIRONMENT']=='github-hosted'and os.environ['GITHUB_EVENT_NAME']in {'workflow_dispatch','push'}
  if os.environ['GITHUB_EVENT_NAME']=='push':
-  assert subprocess.check_output(['git','rev-parse','HEAD^'],cwd=REPO,text=True).strip()=='e2c881bcd1bafd7c4e282b3ab1435ad68a06117e'
+  assert subprocess.check_output(['git','rev-parse','HEAD^'],cwd=REPO,text=True).strip()=='0a644545fa7b234bff2c27b561bc1440c88408dd'
   assert os.environ['GITHUB_REF']=='refs/heads/preparation/sqlite-static-typecheck-db201993-4054-20261114'
  assert os.environ['GITHUB_SHA']==os.environ['EXPECTED_HEAD']==subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip()
  node=Path(shutil.which('node')).resolve();assert sha(node.read_bytes())=='ccacb2d6d87ba6d118b2bffc1ae33747a05cc5fc6b1f1ec4fc1d420b687e952d';assert subprocess.check_output([str(node),'--version'],text=True).strip()=='v22.18.0'
@@ -167,6 +167,11 @@ try:
  for r in boundary['files']:
   p=app/r['path'];b=(HERE/'boundary-overlay'/r['path']).read_bytes();assert(sha(p.read_bytes())if p.exists()else None)==r['beforeSha256'];assert len(b)==r['bytes']and sha(b)==r['afterSha256'];p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(b)
  assert {str(p.relative_to(app)):sha(p.read_bytes())for p in app.rglob('*')if p.is_file()}==boundary['finalProductFiles']
+ environmentRaw=(HERE/'environment-continuation-composition.json').read_bytes();assert sha(environmentRaw)=='556f6b40246f207fe3eeca956eddff03611aef24df7dac111da514656c33305e'
+ environment=json.loads(environmentRaw);assert environment['priorComposition']==sha(boundaryRaw)and len(environment['files'])==4
+ for r in environment['files']:
+  p=app/r['path'];b=(HERE/'continuation-overlay'/r['path']).read_bytes();assert(sha(p.read_bytes())if p.exists()else None)==r['beforeSha256'];assert len(b)==r['bytes']and sha(b)==r['afterSha256'];p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(b)
+ assert {str(p.relative_to(app)):sha(p.read_bytes())for p in app.rglob('*')if p.is_file()}==environment['finalProductFiles']
  excluded=[]
  for r in classification['files']:
   if not r['include']:(app/r['path']).unlink();excluded.append(r)

@@ -1,6 +1,6 @@
 {
   "status": "SOURCE_ONLY_NO_EXECUTION_PUBLICATION",
-  "parent": "e2c881bcd1bafd7c4e282b3ab1435ad68a06117e",
+  "parent": "0a644545fa7b234bff2c27b561bc1440c88408dd",
   "files": {
     "ASSERTION-DIAGNOSTIC-COMPOSITION-REVIEW.md": {
       "bytes": 1315,
@@ -17,6 +17,10 @@
     "CONTINUUM-COMPOSITION-REVIEW.md": {
       "bytes": 2064,
       "sha256": "f4b186f80ba3a8348e03fc43b0526e0316c57ecd0a97154f651d62840739b216"
+    },
+    "ENVIRONMENT-DELTA-REVIEW.md": {
+      "bytes": 6747,
+      "sha256": "4ffc78f73845252743fe83ba260a15aded59668910e551068bfcb212323b53c4"
     },
     "FINITE-DIAGNOSTICS-REVIEW.md": {
       "bytes": 6534,
@@ -59,8 +63,8 @@
       "sha256": "5a0cdbe116331bee1980fc58f051430b089b0f8a14d0da60e0d469d99b20ec24"
     },
     "REVIEW.md": {
-      "bytes": 6346,
-      "sha256": "6d4c3114c16e36cef44f3c79dba1b566c4d54050c6c429a29e1b1d38be6703c8"
+      "bytes": 7392,
+      "sha256": "51b1f7986c951e59b1f731b56b57ee2a3fb09c2a560e4fad083e202521d7495f"
     },
     "RUNTIME-BOUNDARY-COMPOSITION-REVIEW.md": {
       "bytes": 1130,
@@ -115,12 +119,16 @@
       "sha256": "c7bff562eb9516747c9723b126141004239a9694b87cdbfa022b02786067b322"
     },
     "browser-boundary-probe.cjs": {
-      "bytes": 6804,
-      "sha256": "abd0b975a135a2f8e852669d7e1c8cb4349d07cd9f572aca50c6f11b6f779360"
+      "bytes": 6842,
+      "sha256": "1f0670cb99cf25e04e7c63f70275d90eea75b5025be9482c2635c2e91d4103d9"
     },
     "browser-driver.cjs": {
-      "bytes": 12933,
-      "sha256": "445f2a142558ae41623e7052c2d82a4ce599d4eb3b204c7d6ace25b44cffee34"
+      "bytes": 14065,
+      "sha256": "ad99e43954b2922ac57746e800157d271d129258efe80ddd546a8af884428351"
+    },
+    "browser-environment-control.cjs": {
+      "bytes": 3782,
+      "sha256": "470c8761af2140eab33619ac7c5fc2b7229ac6b1a424c35e4a8b562c0b915785"
     },
     "chromium-provenance.json": {
       "bytes": 62542,
@@ -137,6 +145,22 @@
     "collect-runtime-finite.py": {
       "bytes": 3087,
       "sha256": "133f97d9939521fd47750f9afde35586b795a6d67f388e384695a1778e966563"
+    },
+    "continuation-overlay/components/LoginGate.tsx": {
+      "bytes": 8169,
+      "sha256": "88a5d1ae92cefea1476bf218104a95b7baf961c8b4738d2dc8dd6e87477954bb"
+    },
+    "continuation-overlay/components/SetupWizard.tsx": {
+      "bytes": 23013,
+      "sha256": "fa6d72949d408d499d8cc8715ec67bc55bb30dc3316b934457b7825d12e258a0"
+    },
+    "continuation-overlay/utils/fingerprint.ts": {
+      "bytes": 7770,
+      "sha256": "226a32d1d05c591a7a31626853dd61dc01798f9bccbac044014edb364d3c6605"
+    },
+    "continuation-overlay/utils/initialAuthContinuation.ts": {
+      "bytes": 715,
+      "sha256": "7e839f72e8b93f52d7ba771539c9c0834a634919eecd88732ec2494d624f8aa9"
     },
     "continuum-composition.json": {
       "bytes": 195861,
@@ -197,6 +221,18 @@
     "decode-evidence.py": {
       "bytes": 1591,
       "sha256": "7be882fd19704d5cbe6914f185ac6d0d3b3a6eda0230a545c7291dc13b89b722"
+    },
+    "environment-continuation-composition.json": {
+      "bytes": 194284,
+      "sha256": "556f6b40246f207fe3eeca956eddff03611aef24df7dac111da514656c33305e"
+    },
+    "environment-delta-admitted-identity.json": {
+      "bytes": 2896,
+      "sha256": "f5b81b6116059bdf3c7b4116a52ff94a618c55f01e9b17778ba68b81c7f3aa49"
+    },
+    "environment-schema-contract-checks.json": {
+      "bytes": 355,
+      "sha256": "fda60a73df2d23b8daf1eb623b6e7be5a22c4fbfd1a0539c4f5828754c986ecf"
     },
     "finite-diagnostics-composition.json": {
       "bytes": 193240,
@@ -259,8 +295,8 @@
       "sha256": "e15226f6a7a65a9c6ed581a3c20c245190127a50bdd0971107acbc2a2c344c10"
     },
     "hosted-orchestrator.py": {
-      "bytes": 29831,
-      "sha256": "21e5e1bc06e0b13da1ed842269a5499147d216928863d31a8916bcbe5502d7db"
+      "bytes": 30548,
+      "sha256": "816e5a44cc69a24335b1eab2a20067704f94358e94393c979d953ca8aad847ae"
     },
     "identity-entry.py": {
       "bytes": 3884,
@@ -275,8 +311,8 @@
       "sha256": "0e3a710ab63232eec31d90e994036b3a3480c65605097fe4a6f0938e2bf33366"
     },
     "integrated-hosted.yml": {
-      "bytes": 4016,
-      "sha256": "a09084c1bf52f0c97cd3468ef0c889f080ad3b3c4d7f36a6b7b3cc53f5f8cbdc"
+      "bytes": 4439,
+      "sha256": "090ced70ac857e4f0f40ce2a36b74b9063849066d410819128ae7b5eeecb02ea"
     },
     "lance-provenance.json": {
       "bytes": 900,
@@ -295,8 +331,8 @@
       "sha256": "20367cd35272db599ff1f7ebfb93409fc61bff9c635b3e01dc544c7cb0029763"
     },
     "lineage-static-audit.json": {
-      "bytes": 622,
-      "sha256": "ffc7beee10e8f25cee2fdcce87b1a5773c1dcf0ab0f2c9ee05efab8aff51b94a"
+      "bytes": 623,
+      "sha256": "b607ae26a1e67f2bd133e3ab8dc9f7d4e8d202325b9490eda7c7ed0ee013fbb9"
     },
     "namespace-entry.py": {
       "bytes": 8493,
@@ -431,8 +467,8 @@
       "sha256": "cbcd8ff4293033e0d5ad0f1ceef385f56f47c9599058c667e8273f378aa7762d"
     },
     "runtime-finite-schema.py": {
-      "bytes": 35175,
-      "sha256": "aafd1b32f6ddd555c02b49f58e9657fc50f0b2386c49545cfbd591a43b0fa94b"
+      "bytes": 38727,
+      "sha256": "3451349d5a9077c5122f12aba83d90fe9e1127b13fb8d7451812bc8681719a77"
     },
     "runtime-prerequisites.cjs": {
       "bytes": 2062,

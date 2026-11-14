@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const workEnd=Date.now()+120000;
 const {chromium}=require('/app/node_modules/playwright');
 (async()=>{
- let browser,context,page,primary,bodyProbe,navigationProbe;let overflow=false;let workAborted=false;const workPending=new Set();
+ let browser,context,page,primary,bodyProbe,navigationProbe,environmentControl;let overflow=false;let workAborted=false;const workPending=new Set();
  const evidence={preCredentialBoundaries:[],operations:[],console:[],pageErrors:[],failedResources:[],localResources:[],requests:[],responses:[],setupRequired:null,authenticated:false,chatStorageVerified:false,safeAuthenticatedPixels:false,lifecycleEvents:[],startedResources:[],finishedResources:[],checkpoints:[],screenshot:null,bodyVisibleObserved:false,cleanupErrors:[]};
  const bounded=async(promise,ms,label)=>{let timer;try{return await Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(label)),ms);})]);}finally{clearTimeout(timer);}};
  const work=async(fn,operation)=>{
@@ -33,8 +33,8 @@ const {chromium}=require('/app/node_modules/playwright');
   checkpoint('PAGE_CREATED',pageOrdinal);
   page.on('domcontentloaded',()=>checkpoint('ACTUAL_DOMCONTENTLOADED',pageOrdinal));
   page.on('load',()=>checkpoint('ACTUAL_LOAD',pageOrdinal));
-  const sourceStages=new Set(['BOOTSTRAP_BODY_ENTERED','HOST_INSTALLED','ENTRY_IMPORT_CALLED','ENTRY_IMPORT_FULFILLED','ENTRY_IMPORT_REJECTED']);
-  page.on('console',m=>{const text=m.text();const prefix='SILHOUETTE_BROWSER_BOUNDARY:';if(text.startsWith(prefix)&&sourceStages.has(text.slice(prefix.length)))checkpoint(text.slice(prefix.length),pageOrdinal);});
+  const sourceStages=new Set(['BOOTSTRAP_BODY_ENTERED','HOST_INSTALLED','ENTRY_IMPORT_CALLED','ENTRY_IMPORT_FULFILLED','ENTRY_IMPORT_REJECTED','AUTO_LOGIN_JSON_FULFILLED','TRUST_RESULT_RETURNED','SCREEN_AUTHENTICATED_SELECTED','SCREEN_UNREACHABLE_SELECTED','SCREEN_SETUP_SELECTED','SCREEN_LOGIN_SELECTED','SETUP_FIRST_PASSIVE_EFFECT']);
+  page.on('console',m=>{const text=m.text();const prefix='SILHOUETTE_BROWSER_BOUNDARY:';if(text.startsWith(prefix)&&sourceStages.has(text.slice(prefix.length))&&(!['AUTO_LOGIN_JSON_FULFILLED','TRUST_RESULT_RETURNED','SCREEN_AUTHENTICATED_SELECTED','SCREEN_UNREACHABLE_SELECTED','SCREEN_SETUP_SELECTED','SCREEN_LOGIN_SELECTED','SETUP_FIRST_PASSIVE_EFFECT'].includes(text.slice(prefix.length))||(pageOrdinal===1&&!evidence.credentialFixtureEntered)))checkpoint(text.slice(prefix.length),pageOrdinal);});
   page.on('console',m=>add(evidence.console,{pageOrdinal,kind:['error','warning','info','log','debug','warn'].includes(m.type())?m.type():'OTHER'},100));
   page.on('pageerror',()=>add(evidence.pageErrors,{pageOrdinal,kind:'ACTUAL_PAGE_ERROR'}));
   page.on('requestfailed',r=>add(evidence.failedResources,{at:Date.now(),pageOrdinal,...resource(r.url()),kind:r.resourceType(),kindOfFailure:'ACTUAL_REQUEST_FAILED'}));
@@ -62,9 +62,11 @@ const {chromium}=require('/app/node_modules/playwright');
   while(Date.now()<end){try{const r=await work(()=>context.request.get('http://127.0.0.1:3005/v1/identity/setup-status',{timeout:1500}),'BACKEND_READINESS_REQUEST');if(r.ok()){evidence.setupRequired=(await work(()=>r.json(),'BACKEND_READINESS_JSON')).needsSetup;ready=true;break;}}catch{}await new Promise(r=>setTimeout(r,250));}
   checkpoint('READINESS_REQUEST_FINISHED');
   if(!ready)throw Error('ACTUAL_BACKEND_NOT_READY');
+  environmentControl=require('/driver/browser-environment-control.cjs')(browser,page,workEnd);
+  if(!await environmentControl.baseline())throw Error('ENVIRONMENT_ORIGINAL_BLANK_UNQUALIFIED');
   const navigationWait=work(()=>page.goto('http://127.0.0.1:3005/',{waitUntil:'domcontentloaded',timeout:15000}),'FIRST_NAVIGATION');
   const navigationOperation=evidence.operations[evidence.operations.length-1];
-  navigationProbe=require('/driver/browser-boundary-probe.cjs')(context,page,evidence,workEnd,()=>navigationOperation.originalResult!=='PENDING','FIRST_NAVIGATION');
+  navigationProbe=require('/driver/browser-boundary-probe.cjs')(context,page,evidence,workEnd,()=>navigationOperation.originalResult!=='PENDING','FIRST_NAVIGATION',()=>environmentControl.sample('FIRST_NAVIGATION'));
   const navigation=await navigationWait;
   await navigationProbe.finish();
   if(!probeClean(evidence.preCredentialBoundaries[evidence.preCredentialBoundaries.length-1]))throw Error('NAVIGATION_DIAGNOSTIC_INCOMPLETE');
@@ -73,10 +75,12 @@ const {chromium}=require('/app/node_modules/playwright');
   const bodyWait=work(()=>page.locator('body').waitFor({state:'visible',timeout:Math.min(30000,workEnd-Date.now())}),'FIRST_BODY_VISIBLE');
   // Observe the same original, never replace it or change its timeout.
   const bodyOperation=evidence.operations[evidence.operations.length-1];
-  bodyProbe=require('/driver/browser-boundary-probe.cjs')(context,page,evidence,workEnd,()=>bodyOperation.originalResult!=='PENDING','FIRST_BODY_VISIBLE');
+  bodyProbe=require('/driver/browser-boundary-probe.cjs')(context,page,evidence,workEnd,()=>bodyOperation.originalResult!=='PENDING','FIRST_BODY_VISIBLE',()=>environmentControl.sample('FIRST_BODY_VISIBLE'));
   await bodyWait;
   await bodyProbe.finish();
   if(!evidence.preCredentialBoundaries.every(probeClean))throw Error('BOUNDARY_DIAGNOSTIC_INCOMPLETE');
+  evidence.environmentControl=await environmentControl.finish();
+  if(evidence.environmentControl.status!=='FIXED_ENVIRONMENT_RESULTS_NOT_PRODUCT_PROOF'||evidence.environmentControl.cleanupStatus!=='CLEAN')throw Error('ENVIRONMENT_CONTROL_INCOMPLETE');
   evidence.bodyVisibleObserved=true;await work(()=>page.title(),'FIRST_TITLE');evidence.titleObserved=true;
   if(evidence.setupRequired!==true)throw Error('EXPECTED_FRESH_STORE');
   evidence.credentialFixtureEntered=true;
@@ -87,6 +91,7 @@ const {chromium}=require('/app/node_modules/playwright');
   workAborted=true;
   if(navigationProbe)await navigationProbe.finish();
   if(bodyProbe)await bodyProbe.finish();
+  if(environmentControl)evidence.environmentControl=await environmentControl.finish();
   if(workPending.size){evidence.pendingWorkAtCleanup=workPending.size;if(!primary)primary=Error('LATE_BROWSER_WORK_PENDING');}
   // No first-context fallback. Capture failure preserves its original state.
   if(!evidence.screenshot)evidence.screenshot={status:'NO_VERIFIED_SECOND_PAGE_PRIVATE_PIXELS'};

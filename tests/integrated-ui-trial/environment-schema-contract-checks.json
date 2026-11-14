@@ -1,0 +1,11 @@
+{
+  "scope": "PURE_SERIALIZATION_NOT_RUNTIME_PRODUCT_EVIDENCE",
+  "checks": [
+    "Serialization example only: global/environment positive cannot erase actual21 original UI/probe failure.",
+    "MISSING_ENV: rejected",
+    "ARBITRARY_PAYLOAD: rejected",
+    "FALSE_CLEAN: rejected",
+    "INVALID_PHASE: rejected",
+    "FALSE_VERSION_PASS: rejected"
+  ]
+}

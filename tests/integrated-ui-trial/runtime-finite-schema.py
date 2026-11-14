@@ -111,10 +111,10 @@ def validate(o):
 
 FUNCTIONAL_BOOLEANS={'freshSetup','actualDiagnostics','telemetryOff','evolutionOff','noGitEffectsObserved','setupActual','setupSessionStored','setupSqliteCorrelated','consentPersistedOff','negativeUnauthorized','negativeWrongPassword','negativeInvalidSession','negativeMasterOnly','cookieOnly','headerPrecedence','postSetupDiagnosticsRejected','realBearerPreserved','secondContextLogin','loginSessionStored','loginSqliteCorrelated','protectedSessionRequest','reloadAuthenticated','reloadUnchangedSqlite','revokedSessionRejected'}
 FUNCTIONAL_STAGES={'INITIAL','FRESH_SETUP_READINESS','REAL_SETUP_FIELDS','OFF_CHOICES_VERIFIED','REAL_SETUP_COMMIT','NEGATIVE_AUTH_BOUNDARIES','NEW_CONTEXT_REAL_LOGIN','PROTECTED_REQUEST_RELOAD','REAL_SESSION_REVOCATION','NARROW_AUTH_COMPLETE'}
-CHECKPOINTS={'BROWSER_LAUNCHED','PAGE_CREATED','ACTUAL_DOMCONTENTLOADED','ACTUAL_LOAD','BOOTSTRAP_BODY_ENTERED','HOST_INSTALLED','ENTRY_IMPORT_CALLED','ENTRY_IMPORT_FULFILLED','ENTRY_IMPORT_REJECTED','READINESS_REQUEST_FINISHED','BEFORE_BODY_WAIT','ORIGINAL_BROWSER_FAILURE','ACTUAL_SCREENSHOT_ATTEMPT_BEGIN','BEFORE_BROWSER_CLOSE','BROWSER_DISCONNECTED','PAGE_CRASH'}
+CHECKPOINTS={'BROWSER_LAUNCHED','PAGE_CREATED','ACTUAL_DOMCONTENTLOADED','ACTUAL_LOAD','BOOTSTRAP_BODY_ENTERED','HOST_INSTALLED','ENTRY_IMPORT_CALLED','ENTRY_IMPORT_FULFILLED','ENTRY_IMPORT_REJECTED','AUTO_LOGIN_JSON_FULFILLED','TRUST_RESULT_RETURNED','SCREEN_AUTHENTICATED_SELECTED','SCREEN_UNREACHABLE_SELECTED','SCREEN_SETUP_SELECTED','SCREEN_LOGIN_SELECTED','SETUP_FIRST_PASSIVE_EFFECT','READINESS_REQUEST_FINISHED','BEFORE_BODY_WAIT','ORIGINAL_BROWSER_FAILURE','ACTUAL_SCREENSHOT_ATTEMPT_BEGIN','BEFORE_BROWSER_CLOSE','BROWSER_DISCONNECTED','PAGE_CRASH'}
 def browser(o):
  required={'preCredentialBoundaries','operations','console','pageErrors','failedResources','localResources','requests','responses','setupRequired','authenticated','chatStorageVerified','safeAuthenticatedPixels','lifecycleEvents','startedResources','finishedResources','checkpoints','screenshot','bodyVisibleObserved','cleanupErrors'}
- optional={'navigation','titleObserved','functional','limitation','primaryFailure','layout','layoutFailure','layoutMetadataOverflow','captureOverflow','pendingWorkAtCleanup','credentialFixtureEntered'}
+ optional={'environmentControl','navigation','titleObserved','functional','limitation','primaryFailure','layout','layoutFailure','layoutMetadataOverflow','captureOverflow','pendingWorkAtCleanup','credentialFixtureEntered'}
  assert type(o)is dict and required<=set(o)<=required|optional
  rows(o['operations'],64)
  for ordinal,r in enumerate(o['operations']):
@@ -130,10 +130,35 @@ def browser(o):
    if r[k]is not None:assert r[k]>=r['startedAt']
   if r['wrapperResult']=='FULFILLED':assert r['originalResult']=='FULFILLED'
   if r['wrapperResult']=='ORIGINAL_REJECTED':assert r['originalResult']in{'REJECTED_TIMEOUT_CLASS','REJECTED_OTHER'}
+ if any(r['operation']=='FIRST_NAVIGATION'for r in o['operations']):assert 'environmentControl'in o
+ if 'environmentControl'in o:
+  e=o['environmentControl'];keys(e,{'version','status','baseline','samples','cleanupStatus','pendingOriginalCount','pendingDisposalCount'});assert e['version']==1
+  enum(e['status'],{'FIXED_ENVIRONMENT_RESULTS_NOT_PRODUCT_PROOF','FAILED_OR_UNQUALIFIED'});enum(e['baseline'],{'QUALIFIED_ORIGINAL_ABOUT_BLANK_ONLY','FAILED'})
+  enum(e['cleanupStatus'],{'CLEAN','FAILED','RESIDUAL_UNVERIFIED'});n(e['pendingOriginalCount'],8);n(e['pendingDisposalCount'],8);rows(e['samples'],3)
+  ep=[r['phase']for r in e['samples']];assert ep in [[],['BASELINE'],['BASELINE','FIRST_NAVIGATION'],['BASELINE','FIRST_BODY_VISIBLE'],['BASELINE','FIRST_NAVIGATION','FIRST_BODY_VISIBLE']]
+  for r in e['samples']:
+   keys(r,{'phase','startedAt','finishedAt','browser','page'});n(r['startedAt'],9999999999999);n(r['finishedAt'],9999999999999);assert r['finishedAt']>=r['startedAt']
+   enum(r['browser'],{'PINNED_VERSION_RETURNED','INVALID_FIXED_VERSION','ACTION_TIMEOUT','ORIGINAL_REJECTED'})
+   enum(r['page'],{'RETURNED_TRUE','INVALID_FIXED_RESULT','ACTION_TIMEOUT','ORIGINAL_REJECTED'}if r['phase']=='BASELINE'else{'NOT_APPLICABLE'})
+  if e['cleanupStatus']=='CLEAN':assert e['pendingOriginalCount']==e['pendingDisposalCount']==0
+  if e['baseline']=='QUALIFIED_ORIGINAL_ABOUT_BLANK_ONLY':assert ep and e['samples'][0]['browser']=='PINNED_VERSION_RETURNED'and e['samples'][0]['page']=='RETURNED_TRUE'
+  if e['status']=='FIXED_ENVIRONMENT_RESULTS_NOT_PRODUCT_PROOF':assert e['baseline']=='QUALIFIED_ORIGINAL_ABOUT_BLANK_ONLY'and e['cleanupStatus']=='CLEAN'and all(r['browser']=='PINNED_VERSION_RETURNED'for r in e['samples'])
+  else:assert e['baseline']=='FAILED'or e['cleanupStatus']!='CLEAN'
  rows(o['preCredentialBoundaries'],2)
  phases=[p['phase']for p in o['preCredentialBoundaries']]
  assert phases==[r['operation']for r in o['operations']if r['operation']in{'FIRST_NAVIGATION','FIRST_BODY_VISIBLE'}]
  assert phases in [[],['FIRST_NAVIGATION'],['FIRST_NAVIGATION','FIRST_BODY_VISIBLE']]
+ if 'environmentControl'in o and o['environmentControl']['baseline']=='QUALIFIED_ORIGINAL_ABOUT_BLANK_ONLY':assert [r['phase']for r in o['environmentControl']['samples']]==['BASELINE']+[p['phase']for p in o['preCredentialBoundaries']if p['startedAt']is not None]
+ if 'environmentControl'in o:
+  e=o['environmentControl']
+  if e['samples']:
+   readiness=next(r for r in reversed(o['operations'])if r['operation']=='BACKEND_READINESS_JSON');assert readiness['originalResult']=='FULFILLED'and e['samples'][0]['startedAt']>=readiness['originalSettledAt']
+  if phases:
+   assert e['baseline']=='QUALIFIED_ORIGINAL_ABOUT_BLANK_ONLY'
+   nav=next(r for r in o['operations']if r['operation']=='FIRST_NAVIGATION');assert nav['startedAt']>=e['samples'][0]['finishedAt']
+  for r in e['samples'][1:]:
+   probe=next(p for p in o['preCredentialBoundaries']if p['phase']==r['phase']);assert probe['startedAt']is not None and probe['finishedAt']is not None and probe['startedAt']<=r['startedAt']<=r['finishedAt']<=probe['finishedAt']
+
  for p in o['preCredentialBoundaries']:
   enum(p['phase'],{'FIRST_NAVIGATION','FIRST_BODY_VISIBLE'})
   keys(p,{'phase','version','status','startedAt','finishedAt','http','playwright','cdp','pendingOriginalCount','pendingDisposalCount','cleanupStatus'});assert p['version']==1;n(p['pendingOriginalCount'],8);n(p['pendingDisposalCount'],8)
@@ -193,6 +218,7 @@ def browser(o):
    assert o['authenticated']is True and o['safeAuthenticatedPixels']is True and not o['cleanupErrors']and not o.get('captureOverflow',False)and not o.get('pendingWorkAtCleanup',0)and 'primaryFailure'not in o
    assert o['screenshot']['status']=='PRIVATE_VIEWPORT_PIXELS_NOT_EXPORTED'
    assert phases==['FIRST_NAVIGATION','FIRST_BODY_VISIBLE']
+   assert o['environmentControl']['status']=='FIXED_ENVIRONMENT_RESULTS_NOT_PRODUCT_PROOF'and o['environmentControl']['cleanupStatus']=='CLEAN'
    for p in o['preCredentialBoundaries']:assert p['cleanupStatus']=='CLEAN'and p['pendingOriginalCount']==p['pendingDisposalCount']==0 and p['status']in{'NOT_NEEDED_ORIGINAL_SETTLED','FIXED_RESULTS_ONLY_NOT_CAUSE'}
   else:assert o['authenticated']is False
  for k,cap in [('console',100),('pageErrors',128),('failedResources',128),('localResources',128),('requests',256),('responses',256),('startedResources',256),('finishedResources',256),('lifecycleEvents',16),('checkpoints',64),('cleanupErrors',128)]:rows(o[k],cap)
@@ -211,6 +237,9 @@ def browser(o):
  for r in o['requests']:keys(r,{'path','method','pageOrdinal','at'});n(r['at'],9999999999999);page_id(r);path(r['path']);enum(r['method'],{'GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS'})
  for r in o['responses']:keys(r,{'path','status','pageOrdinal','at'});n(r['at'],9999999999999);page_id(r);path(r['path']);n(r['status'],599)
  for key in ['startedResources','finishedResources','failedResources','localResources','requests','responses']:assert [r['at']for r in o[key]]==sorted(r['at']for r in o[key])
+ continuation={'AUTO_LOGIN_JSON_FULFILLED','TRUST_RESULT_RETURNED','SCREEN_AUTHENTICATED_SELECTED','SCREEN_UNREACHABLE_SELECTED','SCREEN_SETUP_SELECTED','SCREEN_LOGIN_SELECTED','SETUP_FIRST_PASSIVE_EFFECT'}
+ observed=[r for r in o['checkpoints']if r['stage']in continuation]
+ assert len({r['stage']for r in observed})==len(observed)and all(r['pageOrdinal']==1 for r in observed)
  for r in o['lifecycleEvents']:
   assert set(r)==({'kind','at','pageOrdinal'}if r.get('kind')=='PAGE_CRASH'else{'kind','at'});
   if 'pageOrdinal'in r:page_id(r)

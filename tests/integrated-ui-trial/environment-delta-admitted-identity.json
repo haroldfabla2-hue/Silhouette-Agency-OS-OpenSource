@@ -1,0 +1,76 @@
+{
+  "scope": "SOURCE_ONLY_NOT_COMPOSED_NOT_EXECUTED_NO_RUN_AUTHORITY",
+  "parentHead": "0a644545fa7b234bff2c27b561bc1440c88408dd",
+  "files": [
+    {
+      "path": "browser-boundary-probe.cjs",
+      "source": "browser-boundary-probe.cjs",
+      "product": false,
+      "beforeSha256": "abd0b975a135a2f8e852669d7e1c8cb4349d07cd9f572aca50c6f11b6f779360",
+      "afterSha256": "1f0670cb99cf25e04e7c63f70275d90eea75b5025be9482c2635c2e91d4103d9",
+      "bytes": 6842
+    },
+    {
+      "path": "browser-driver.cjs",
+      "source": "browser-driver.cjs",
+      "product": false,
+      "beforeSha256": "445f2a142558ae41623e7052c2d82a4ce599d4eb3b204c7d6ace25b44cffee34",
+      "afterSha256": "ad99e43954b2922ac57746e800157d271d129258efe80ddd546a8af884428351",
+      "bytes": 14065
+    },
+    {
+      "path": "browser-environment-control.cjs",
+      "source": "browser-environment-control.cjs",
+      "product": false,
+      "beforeSha256": null,
+      "afterSha256": "470c8761af2140eab33619ac7c5fc2b7229ac6b1a424c35e4a8b562c0b915785",
+      "bytes": 3782
+    },
+    {
+      "path": "components/LoginGate.tsx",
+      "source": "continuation-overlay/components/LoginGate.tsx",
+      "product": true,
+      "beforeSha256": "921c97f9e7675b13a00556efb8be84d801e2882df03d0d1378b0566341bc6b13",
+      "afterSha256": "88a5d1ae92cefea1476bf218104a95b7baf961c8b4738d2dc8dd6e87477954bb",
+      "bytes": 8169
+    },
+    {
+      "path": "components/SetupWizard.tsx",
+      "source": "continuation-overlay/components/SetupWizard.tsx",
+      "product": true,
+      "beforeSha256": "421305af2373ee4d32244c0d131b2de6d98cac82d278d1eff9e452b55e4997e6",
+      "afterSha256": "fa6d72949d408d499d8cc8715ec67bc55bb30dc3316b934457b7825d12e258a0",
+      "bytes": 23013
+    },
+    {
+      "path": "utils/fingerprint.ts",
+      "source": "continuation-overlay/utils/fingerprint.ts",
+      "product": true,
+      "beforeSha256": "66bddcecc076505f3f45755a0558c927f0c5c73530977c13d6fc8760e21ab481",
+      "afterSha256": "226a32d1d05c591a7a31626853dd61dc01798f9bccbac044014edb364d3c6605",
+      "bytes": 7770
+    },
+    {
+      "path": "utils/initialAuthContinuation.ts",
+      "source": "continuation-overlay/utils/initialAuthContinuation.ts",
+      "product": true,
+      "beforeSha256": null,
+      "afterSha256": "7e839f72e8b93f52d7ba771539c9c0834a634919eecd88732ec2494d624f8aa9",
+      "bytes": 715
+    },
+    {
+      "path": "runtime-finite-schema.py",
+      "source": "runtime-finite-schema.py",
+      "product": false,
+      "beforeSha256": "aafd1b32f6ddd555c02b49f58e9657fc50f0b2386c49545cfbd591a43b0fa94b",
+      "afterSha256": "3451349d5a9077c5122f12aba83d90fe9e1127b13fb8d7451812bc8681719a77",
+      "bytes": 38727
+    }
+  ],
+  "productPathsChanged": 4,
+  "newProductPaths": 1,
+  "oldProductFileCount": 1704,
+  "proposedProductFileCount": 1705,
+  "newTargets": 0,
+  "independentHttpLifetime": "EXCLUDED_NOT_IMPLEMENTED"
+}
