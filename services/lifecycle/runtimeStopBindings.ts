@@ -14,7 +14,7 @@ const nervous: Slot = { name:'nervous',phase:'UNSEEN' };
 const scheduler: Slot = { name:'scheduler',phase:'UNSEEN' };
 const cron: Slot = { name:'cron',phase:'UNSEEN' };
 const dreamer: Slot = { name:'dreamer',phase:'UNSEEN' };
-const introspection: Slot = { name:'introspection-concept-borrowers',phase:'UNSEEN' };
+const introspection: Slot = { name:'introspection-known-borrowers',phase:'UNSEEN' };
 let conceptBorrowersSealed = false;
 const producers = [daemon,curiosity,nervous,scheduler,cron,dreamer];
 const storage = [continuousMemory,redis,graph,sqlite];
@@ -100,7 +100,7 @@ export async function drainEvaluatedRuntimeProducers(): Promise<void> {
     sealEvaluatedRuntimeProducers();
     const failures: unknown[] = [];
     // Existing original producers may still call addThought while settling.
-    // Join them before sealing this known concept borrower frontier.
+    // Join them before sealing this source-fixed known borrower frontier.
     try { await drain(producers); } catch (error) { failures.push(error); }
     conceptBorrowersSealed = true;
     try { await drain([introspection]); } catch (error) { failures.push(error); }
