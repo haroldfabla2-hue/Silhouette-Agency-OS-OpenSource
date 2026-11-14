@@ -8,7 +8,7 @@ PACKAGE='5d33ed5f3b6212da1ff00c29bf75e653522affc760d5e59b134adc72c0c071fa'
 BRANCH='refs/heads/preparation/sqlite-static-typecheck-db201993-4054-20261114'
 HERE=Path(__file__).resolve().parent;REPO=HERE.parents[1]
 ROOT=Path(os.environ['RUNNER_TEMP'])/'sqlite-static-only';ROOT.mkdir(mode=0o700)
-EV=ROOT/'evidence';EV.mkdir();REPORT={'status':'STARTED_STATIC_ONLY','base':BASE,'candidateSourcePacket':'4054bb42867d09d15740c3b8e47c1c8e9deec8714489ec47ed23c4e10fb98dab','commands':[],'failures':[]}
+EV=ROOT/'evidence';EV.mkdir();REPORT={'status':'STARTED_STATIC_ONLY','base':BASE,'candidateSourcePacket':'0e3a710ab63232eec31d90e994036b3a3480c65605097fe4a6f0938e2bf33366','prior4054StaticPassRun':43601671065,'candidateMeaning':'EXACT_RECEIVER_INTEGRATED_0e3_NOT_4054_ONLY','commands':[],'failures':[]}
 NAMESPACE_CLEANUP_SAFE=True
 CAP=8*1024**2;RAW=32*1024**2;GZIP=8*1024**2;START=time.monotonic();DEADLINE=START+1000
 # Conservative job anchor prevents setup latency from consuming cleanup reserve.
@@ -154,10 +154,34 @@ try:
  mem=dict((line.split(':',1)[0],line.split(':',1)[1].strip())for line in Path('/proc/meminfo').read_text().splitlines());assert int(mem['MemAvailable'].split()[0])*1024>=6*1024**3;disk=shutil.disk_usage(ROOT);assert disk.free>=8*1024**3
  emit('identity-resources.json',{'node':str(node),'nodeVersion':version,'nodeSha256':sha(node),'npm':str(npm),'npmVersion':npm_version,'runnerImage':{k:os.environ.get(k)for k in ['ImageOS','ImageVersion','RUNNER_ARCH']},'meminfo':mem,'disk':disk._asdict(),'controls':'PER_PROCESS_RLIMITS_AND_GROUP_WALL_NOT_AGGREGATE_CGROUP_OR_DISK','cpuSeconds':240,'ASbytes':24*1024**3,'nofile':256,'nproc':96,'fsize':1024**3,'core':0,'compilerOldSpaceMiB':4096,'networkAcquisition':'PUBLIC_ANONYMOUS_NO_DOMAIN_FIREWALL_CLAIM','inheritedNofileSoftHard':resource.getrlimit(resource.RLIMIT_NOFILE),'acquisitionNofileProposed':4096,'compilerNofileUnchanged':256})
  baseline=ROOT/'baseline';candidate=ROOT/'candidate';before={'baseline':make_copy(baseline),'candidate':make_copy(candidate)}
- delta=json.loads((HERE/'candidate-delta.json').read_text());assert delta['base']==BASE
- for row in delta['files']:
-  rel=Path(row['path']);assert not rel.is_absolute()and'..'not in rel.parts;src=HERE/'candidate-overlay'/rel;dst=candidate/rel
-  assert sha(src)==row['after_sha256'];assert (sha(dst)if dst.exists()else None)==row['before_sha256'];dst.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(src,dst)
+ # Exact previously frozen integrated packet, not regenerated product bytes.
+ integrated_packet=HERE/'integrated-0e3-source.tar.gz'
+ assert sha(integrated_packet)=='0e3a710ab63232eec31d90e994036b3a3480c65605097fe4a6f0938e2bf33366'
+ with tarfile.open(integrated_packet,'r:gz')as package:
+  members=package.getmembers();assert len(members)<=128 and sum(m.size for m in members)<=8*1024**2
+  files={}
+  for member in members:
+   rel=Path(member.name)
+   assert not rel.is_absolute()and '..'not in rel.parts and rel.parts[0]=='receiver-integrated-source-review'
+   if member.isdir():continue
+   assert member.isfile()and member.name not in files,'unsafe or duplicate integrated archive member'
+   files[member.name]=package.extractfile(member).read()
+ prefix='receiver-integrated-source-review/'
+ composition=json.loads(files[prefix+'composition.json']);assert composition['baseline']==BASE
+ rows=composition['files'];assert len(rows)==53 and len({row['path']for row in rows})==53
+ source_prefix=prefix+'proposed-product/'
+ assert {name[len(source_prefix):]for name in files if name.startswith(source_prefix)}=={row['path']for row in rows}
+ integrated_proof=[]
+ for row in rows:
+  rel=Path(row['path']);assert not rel.is_absolute()and '..'not in rel.parts and rel.suffix=='.ts'
+  assert rel.parts[0]in {'server','services','tests'}
+  raw=files[source_prefix+row['path']];dst=candidate/rel
+  assert len(raw)==row['bytes']and hashlib.sha256(raw).hexdigest()==row['integratedSha256']
+  assert (sha(dst)if dst.exists()else None)==row['beforeDb201993Sha256'],'integrated baseline preimage mismatch'
+  dst.parent.mkdir(parents=True,exist_ok=True);assert not dst.is_symlink();dst.write_bytes(raw)
+  assert sha(dst)==row['integratedSha256']
+  integrated_proof.append({'path':row['path'],'bytes':len(raw),'sha256':sha(dst)})
+ emit('integrated-0e3-overlay-integrity.json',{'packetSha256':sha(integrated_packet),'files':integrated_proof,'exact53FrozenBytes':True,'sourceOnlyNoProductEvaluation':True,'prior4054Run':43601671065})
  mirror=candidate/'tests/real-process/neo4j-service-trial/proposed-product-overlay/services/userProfileService.ts';assert mirror.read_bytes()==(candidate/'services/userProfileService.ts').read_bytes();shutil.copyfile(mirror,candidate/'services/userProfileService.ts')
  # Capture complete input tree hashes before any acquisition or compiler.
  input_hashes={label:{str(p.relative_to(root)):sha(p)for p in sorted(root.rglob('*'))if p.is_file()}for label,root in [('baseline',baseline),('candidate',candidate)]};emit('source-config-lock-hashes.json',input_hashes)
