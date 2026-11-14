@@ -1,3 +1,6 @@
+import { serverOwner } from '../services/lifecycle/preparationBindings';
+import { recordRuntimeStartupFailure } from './runtimeRootHost';
+import { bootTimersAreSealed, expectedBootShutdownAdmission } from './lifecycle/bootTimers';
 import { loadRuntimeEnvironment } from './config/runtimeCredentials';
 // ═══════════════════════════════════════════════════════════════
 // CRITICAL: Load environment variables FIRST, before any imports
@@ -213,20 +216,27 @@ app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
 });
 
 // ─── INITIALIZATION ──────────────────────────────────────────────────────────
-// Trigger system loaders (async) but don't block export
-initServer().then(async () => {
+// Retain the exact original initialization graph without blocking module export.
+export const appInitialization=serverOwner().invoke('original-app-initialization',()=>initServer().then(async () => {
+    if(bootTimersAreSealed())return;
     // [SKILLS] Load dynamic skills from universalprompts + managed + workspace
     try {
         const { skillRegistry } = await import('../services/skills/skillRegistry');
+        if(bootTimersAreSealed())return;
         skillRegistry.loadAll();
     } catch (e) {
+        if(expectedBootShutdownAdmission(e))return;
+        recordRuntimeStartupFailure(e);
         console.warn('[APP] Skill registry not available:', e);
     }
 
     // [SECURITY] Initialize tool security manager
     try {
+        if(bootTimersAreSealed())return;
         const { securityManager } = await import('../services/security/securityManager');
+        if(bootTimersAreSealed())return;
         const { getConfig } = await import('./config/configSchema');
+        if(bootTimersAreSealed())return;
         const config = getConfig();
         securityManager.initialize({
             allowlist: new Set(config.tools.allowlist),
@@ -236,19 +246,28 @@ initServer().then(async () => {
             maxExecTimeoutMs: config.tools.sandbox.timeoutMs,
         });
     } catch (e) {
+        if(expectedBootShutdownAdmission(e))return;
+        recordRuntimeStartupFailure(e);
         console.warn('[APP] Security manager not available:', e);
     }
 
     // [CRON] Initialize enhanced cron scheduler
     try {
+        if(bootTimersAreSealed())return;
         const { cronScheduler } = await import('../services/scheduler/cronScheduler');
+        if(bootTimersAreSealed())return;
         cronScheduler.initialize();
     } catch (e) {
+        if(expectedBootShutdownAdmission(e))return;
+        recordRuntimeStartupFailure(e);
         console.warn('[APP] Cron scheduler not available:', e);
     }
 
     // NOTE: Channels are initialized in server/index.ts to avoid double initialization.
-}).catch(err => {
-    console.error("FATAL: Failed to initialize server", err);
-    process.exit(1);
+}));
+// Observation does not replace or fulfill the original rejected promise. Root
+// joins this exact task and owns its shutdown, rather than immediate exit.
+void appInitialization.catch(err => {
+    process.exitCode=1;recordRuntimeStartupFailure(err);
+    console.error('FATAL: Original server initialization failed',err);
 });

@@ -1,3 +1,4 @@
+import { startToolEvolutionTimer } from '../../server/lifecycle/bootTimers';
 /**
  * TOOL EVOLVER
  * ═══════════════════════════════════════════════════════════════
@@ -238,7 +239,7 @@ Respond with JSON:
     public scheduleEvolutionCycles(intervalMs: number = 6 * 60 * 60 * 1000): void {
         console.log(`[TOOL_EVOLVER] ⏰ Scheduled evolution every ${intervalMs / 3600000}h`);
 
-        setInterval(async () => {
+        startToolEvolutionTimer(async () => {
             console.log('[TOOL_EVOLVER] ⏰ Running scheduled evolution cycle...');
             await this.runEvolutionCycle();
         }, intervalMs);

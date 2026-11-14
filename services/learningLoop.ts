@@ -1,3 +1,4 @@
+import { startLearningAnalysisTimer } from '../server/lifecycle/bootTimers';
 /**
  * LEARNING LOOP
  * ═══════════════════════════════════════════════════════════════
@@ -398,7 +399,7 @@ Auto-applicable: ${insight.autoApplicable}
     public schedulePeriodicAnalysis(intervalMs: number = 6 * 60 * 60 * 1000): void {
         console.log(`[LEARNING_LOOP] ⏰ Scheduled analysis every ${intervalMs / 3600000}h`);
 
-        setInterval(async () => {
+        startLearningAnalysisTimer(async () => {
             // [THROTTLE] PowerManager resource modes can pause the periodic
             // learning loop (isLearningLoopEnabled). The throttle is a
             // resource hint, not an authority: unreadable -> full capability.

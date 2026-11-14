@@ -1,3 +1,5 @@
+import { bootTimersAreSealed, prepareOriginalBootTimerFrontier } from '../lifecycle/bootTimers';
+import { scheduleInitialJanitor, scheduleInitialLearning, scheduleNervousSystemStartup, scheduleAutonomousSchedulerStartup } from '../lifecycle/bootTimers';
 
 import { initDatabases } from './dbLoader';
 import { initAIServices } from './aiLoader';
@@ -11,12 +13,17 @@ import { initializeContextConfig } from '../routes/v1/context.routes'; // [PA-04
 import { initializeNervousSystem } from '../../services/connectionNervousSystem'; // Auto-healing
 
 export const initServer = async () => {
+    // Explicit root-entry registration before any original async service work.
+    prepareOriginalBootTimerFrontier();
+    if(bootTimersAreSealed())return;
     console.log("=================================");
     console.log("   SILHOUETTE AGENCY OS - v7.5   ");
     console.log("=================================");
 
     await initDatabases();
+    if(bootTimersAreSealed())return;
     await initAIServices();
+    if(bootTimersAreSealed())return;
 
     // [LIFECYCLE] Dreaming loop starts EXPLICITLY at boot. It previously
     // started as a hidden side effect of importing continuumMemory, which
@@ -27,9 +34,12 @@ export const initServer = async () => {
     // the ceiling must hold on every route. Fail-closed.
     try {
         const { configLoader } = await import('../config/configLoader');
+        if(bootTimersAreSealed())return;
         const { isTaskAllowedByAutonomy } = await import('../../services/daemon/autonomyPolicy');
+        if(bootTimersAreSealed())return;
         if (isTaskAllowedByAutonomy('Dreamer', configLoader.getConfig().autonomy as any)) {
             const { dreamer } = await import('../../services/dreamerService');
+            if(bootTimersAreSealed())return;
             dreamer.startDreamingLoop();
         } else {
             console.log('[BOOT] 🌙 Dreaming loop NOT started: autonomy.enabled=false (config ceiling).');
@@ -40,16 +50,18 @@ export const initServer = async () => {
 
     // [PA-041] Load persisted Context Priority configuration
     await initializeContextConfig();
+    if(bootTimersAreSealed())return;
 
     // Start Background Jobs
     startHeartbeat();
     startPersistenceJobs();
 
     // Initial Cleanup - DEFERRED 5s after startup to avoid blocking
-    setTimeout(() => {
-        contextJanitor.runMaintenance().catch((e) =>
-            console.warn("[LOADER] Janitor maintenance deferred error:", e)
-        );
+    scheduleInitialJanitor(() => {
+        return contextJanitor.runMaintenance().catch((e) => {
+            console.warn('[LOADER] Janitor maintenance deferred error:',e);
+            throw e;
+        });
     }, 5000);
 
     // === SELF-EVOLUTION SYSTEM ===
@@ -61,7 +73,9 @@ export const initServer = async () => {
     // PowerManager throttling is applied per-tick inside the loops.
     try {
         const { configLoader } = await import('../config/configLoader');
+        if(bootTimersAreSealed())return;
         const { isTaskAllowedByAutonomy } = await import('../../services/daemon/autonomyPolicy');
+        if(bootTimersAreSealed())return;
         if (isTaskAllowedByAutonomy('Tool_Evolution', configLoader.getConfig().autonomy as any)) {
             // Schedule Learning Loop (every 6 hours) - analyzes failures and generates insights
             const LEARNING_INTERVAL = 6 * 60 * 60 * 1000; // 6 hours
@@ -73,13 +87,15 @@ export const initServer = async () => {
             console.log("[LOADER] 🧬 Tool Evolution scheduled (every 6h)");
 
             // Run initial analysis after 30 seconds (gives system time to warm up)
-            setTimeout(async () => {
+            scheduleInitialLearning(async () => {
                 console.log("[LOADER] 🔍 Running initial self-evolution analysis...");
                 try {
                     const insights = await learningLoop.analyzeFailures();
+                    if(bootTimersAreSealed())return;
                     console.log(`[LOADER] 💡 Initial analysis complete: ${insights.length} insights found`);
                 } catch (e) {
                     console.warn("[LOADER] Initial learning analysis skipped:", e);
+            throw e;
                 }
             }, 30000);
         } else {
@@ -100,20 +116,23 @@ export const initServer = async () => {
 
     // === CONNECTION NERVOUS SYSTEM ===
     // Auto-healing for Neo4j, Ollama, Google APIs, etc.
-    setTimeout(async () => {
+    scheduleNervousSystemStartup(async () => {
         try {
             await initializeNervousSystem();
+            if(bootTimersAreSealed())return;
             console.log("[LOADER] 🧠 Connection Nervous System online");
         } catch (e) {
             console.warn("[LOADER] Nervous System initialization deferred:", e);
+            throw e;
         }
     }, 3000); // Wait 3s for services to be ready
 
     // === AUTONOMOUS SCHEDULER ===
     // Start task scheduler for autonomous operations
-    setTimeout(async () => {
+    scheduleAutonomousSchedulerStartup(async () => {
         try {
             const { schedulerService } = await import('../../services/schedulerService');
+            if(bootTimersAreSealed())return;
             if (schedulerService.start()) {
                 console.log('[LOADER] Autonomous Scheduler online');
             } else {
@@ -121,6 +140,7 @@ export const initServer = async () => {
             }
         } catch (e) {
             console.warn("[LOADER] Scheduler initialization deferred:", e);
+            throw e;
         }
     }, 5000); // Wait 5s for other services
 

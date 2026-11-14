@@ -1,3 +1,4 @@
+import { bootTimersAreSealed } from '../lifecycle/bootTimers';
 import { externalProvidersDisabled, loadRuntimeEnvironment } from '../config/runtimeCredentials';
 
 
@@ -44,6 +45,7 @@ export const initAIServices = async () => {
     // 1. Vector Memory
     try {
         await vectorMemory.connect();
+        if(bootTimersAreSealed())return;
         console.log("[LOADER] ✅ Vector Memory Connected.");
     } catch (e) {
         console.error("[LOADER] ❌ Failed to connect to Vector Memory:", e);
@@ -82,6 +84,7 @@ export const initAIServices = async () => {
     // This registers all core tools including generate_image, web_search, etc.
     try {
         await toolRegistry.initialize();
+        if(bootTimersAreSealed())return;
         console.log("[LOADER] ✅ Tool Registry Initialized.");
     } catch (e) {
         console.error("[LOADER] ❌ Failed to initialize Tool Registry:", e);

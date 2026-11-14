@@ -1,3 +1,4 @@
+import { startHeartbeatTimer } from '../lifecycle/bootTimers';
 import { introspection } from '../../services/introspectionEngine';
 
 const HEARTBEAT_INTERVAL = 120000; // 120s (0.5 RPM - optimized for z.ai limits)
@@ -7,7 +8,7 @@ let cycleCount = 0;
 
 export const startHeartbeat = () => {
     console.log('[JOB] ❤️ Autonomous Heartbeat Started.');
-    setInterval(async () => {
+    startHeartbeatTimer(async () => {
         try {
             // Check congestion before running cycle
             const { congestionManager } = await import('../../services/congestionManager');
@@ -52,6 +53,7 @@ export const startHeartbeat = () => {
             }
         } catch (e) {
             console.error("[HEARTBEAT] ❤️‍🔥 Arrhythmia:", e);
+            throw e;
         }
     }, HEARTBEAT_INTERVAL);
 };

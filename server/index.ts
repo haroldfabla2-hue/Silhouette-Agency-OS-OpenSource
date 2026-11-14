@@ -14,7 +14,8 @@ import { sealEvaluatedRuntimeProducers, drainEvaluatedRuntimeProducers, closeEva
 // Initialize Config (Loads Env or JSON)
 const config = configLoader.getConfig();
 
-import { app } from './app';
+import { app, appInitialization } from './app';
+import { sealAndDrainBootTimers, bootTimerFrontier } from './lifecycle/bootTimers';
 import '../services/narrativeService'; // Initialize Unified Stream Aggregator
 
 const PORT = config.system.port || 3005;
@@ -61,6 +62,7 @@ const originalStartup = new Promise<void>((resolve, reject) => { finishStartup =
 void originalStartup.catch(error => {
     recordRuntimeStartupFailure(error);
     console.error('[BOOT] Original startup failed:', error);
+    void gracefulShutdown('ORIGINAL_STARTUP_FAILED').catch(failure=>console.error('[BOOT] Failed startup drain rejected:',failure));
 });
 const server = createServer((request, response) => {
     if (isShuttingDown) {
@@ -72,6 +74,8 @@ const server = createServer((request, response) => {
     app(request, response);
 });
 async function completeOriginalStartup(): Promise<void> {
+    await appInitialization;
+    if(isShuttingDown)return;
     console.log(`
     -------------------------------------------
     SILHOUETTE AGENCY OS IS ONLINE
@@ -310,6 +314,9 @@ async function performOriginalShutdown(signal: string): Promise<void> {
     });
     // Observe each rejection immediately while independent producers drain.
     const httpReceipt = Promise.allSettled([httpClosed]);
+    // Stop original boot callbacks before backend release. Retain joins now,
+    // even if a later independent producer throws synchronously.
+    const bootTimerReceipts=Promise.allSettled([sealAndDrainBootTimers()]);
     sealEvaluatedRuntimeProducers();
     const producerStops: Promise<unknown>[] = [];
     for (const stop of [
@@ -323,8 +330,8 @@ async function performOriginalShutdown(signal: string): Promise<void> {
     // Referenced deadline prevents an unresolved join from silently exiting0.
     // No new graph is imported for these joins. Already-admitted startup may
     // finish its current original import, but later independent phases skip.
-    const startupReceipts = await Promise.allSettled([originalStartup]);
-    for (const result of [...startupReceipts, ...await producerReceipts]) {
+    const startupReceipts = await Promise.allSettled([originalStartup,appInitialization]);
+    for (const result of [...startupReceipts, ...await producerReceipts, ...await bootTimerReceipts]) {
         if (result.status === 'rejected') { shutdownFailed = true;console.error('[SHUTDOWN] Original startup/producer drain failed:', result.reason); }
     }
     for (const result of await httpReceipt) {
@@ -356,6 +363,7 @@ async function performOriginalShutdown(signal: string): Promise<void> {
         console.error('[SHUTDOWN] Explicit host stop failed:', error);
     }
 
+    console.error('[SHUTDOWN] Boot timer source frontier:',bootTimerFrontier());
     // The original HTTP close callback was already joined above, not issued
     // after backend release. A forced deadline is still an explicit failure.
     // Conventional exit code reflects actual shutdown failures, not the
