@@ -271,7 +271,7 @@ export class DreamerService {
 
                 // [SELF-AWARENESS] Conclude the learning cycle with a conscious realization
                 await import('./introspectionEngine').then(({ introspection }) => {
-                    introspection.addThought(
+                    return introspection.addThought(
                         `I have prepared ${result.entriesExported} training examples as a curriculum for NanoSilhouette. The knowledge collected from my interactions is now ready for neural consolidation.`,
                         "META_COGNITION",
                         0.9
@@ -1175,7 +1175,7 @@ export class DreamerService {
 
                 // 5. Add self-awareness thought
                 await import('./introspectionEngine').then(({ introspection }) => {
-                    introspection.addThought(
+                    return introspection.addThought(
                         `I have integrated ${trainingExamples.length} discoveries from my Knowledge Graph into my training data. ` +
                         `These include causal relationships and implications that I discovered through pattern analysis.`,
                         "LEARNING",

@@ -1,3 +1,5 @@
+import { AdmissionClosed } from './lifecycle/host';
+import { admitEvaluatedIntrospection, bindEvaluatedIntrospection, failEvaluatedIntrospection } from './lifecycle/runtimeStopBindings';
 import { preserveOriginal } from './lifecycle/preserveOriginal';
 import { introspectionOwner } from './lifecycle/preparationBindings';
 import type { Scope, Operation } from './lifecycle/host';
@@ -22,6 +24,27 @@ export interface InitialIntrospectionStatus {
 }
 
 export class IntrospectionEngine {
+    private conceptWritesSealed = false;
+    private readonly conceptWrites = new Set<Promise<void>>();
+    private conceptWritesDrain?: Promise<void>;
+    private conceptWriteFailureCount = 0;
+    private firstConceptWriteFailure: unknown;
+
+    /** Source-fixed concept borrowers only, not all cognition or global closure. */
+    public sealAndDrainConceptWrites(): Promise<void> {
+        this.conceptWritesSealed = true;
+        if (this.conceptWritesDrain) return this.conceptWritesDrain;
+        this.conceptWritesDrain = (async () => {
+            const results = await Promise.allSettled([
+                this.initialConceptOwner, this.initialGoalLoadOwner, ...this.conceptWrites
+            ]);
+            const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected').map(result => result.reason);
+            if (this.conceptWriteFailureCount) failures.push(this.firstConceptWriteFailure);
+            if (failures.length) throw new AggregateError(failures, 'Original introspection initial/concept work failed');
+        })();
+        return this.conceptWritesDrain;
+    }
+
     private initialConceptEffects: Promise<import('./continuumMemory').MemoryEffectReceipt> | undefined;
 
     /** Initial concept effects only, explicitly separate from readyInitial canonical work. */
@@ -150,6 +173,7 @@ export class IntrospectionEngine {
             this.ownership.invoke('original-concept', child => this.injectInitialConcept(child), operation), this.initialStatus.concept);
         // Preserve autostart. Goal loading has its own original promise/status.
         this.initialGoalLoadOwner = this.observeOwnedWork(this.ownership.invoke('original-goals', child => this.loadGoalsFromMemory(child), operation), this.initialStatus.goals);
+        ownership.onSeal(() => this.sealAndDrainConceptWrites());
     }
 
     // --- UTILITIES ---
@@ -239,7 +263,7 @@ export class IntrospectionEngine {
 
         // Treat as a temporary concept if strong enough
         if (strength > 0.8) {
-            this.injectConcept(content.substring(0, 30), strength, 20); // Inject into middle layers
+            return this.injectConcept(content.substring(0, 30), strength, 20); // Inject into middle layers
         }
     }
 
@@ -276,24 +300,35 @@ export class IntrospectionEngine {
     }
 
     // --- CAPABILITY 1: CONCEPT INJECTION ---
-    public injectConcept(label: string, strength: number = 1.0, layer: number = 32) {
-        const id = crypto.randomUUID();
-        const concept: ConceptVector = {
-            id,
-            label,
-            strength: Math.min(3.0, Math.max(0.1, strength)),
-            layer,
-            active: true
-        };
-        this.activeConcepts.push(concept);
-        this.capabilities.add(IntrospectionCapability.CONCEPT_INJECTION);
-
-        // Persist to Continuum (Simulated Vector Store)
-        import('./continuumMemory').then(({ continuum }) => {
-            continuum.store(`[INTROSPECTION] Injected Concept Vector: ${label} (Str: ${strength})`, undefined, ['system', 'concept-vector']);
-        }).catch(e => console.error("[INTROSPECTION] Failed to persist concept", e));
+    public injectConcept(label: string, strength: number = 1.0, layer: number = 32): Promise<void> {
+        if (this.conceptWritesSealed) throw new AdmissionClosed('introspection-concept-after-seal');
+        // Admission encloses the original synchronous state changes and the
+        // complete import -> store continuation, not the import promise alone.
+        const original = this.ownership.invoke('injected-concept-persistence', async () => {
+            const id = crypto.randomUUID();
+            const concept: ConceptVector = {
+                id,
+                label,
+                strength: Math.min(3.0, Math.max(0.1, strength)),
+                layer,
+                active: true
+            };
+            this.activeConcepts.push(concept);
+            this.capabilities.add(IntrospectionCapability.CONCEPT_INJECTION);
+            const { continuum } = await import('./continuumMemory');
+            await continuum.store(`[INTROSPECTION] Injected Concept Vector: ${label} (Str: ${strength})`, undefined, ['system', 'concept-vector']);
+        });
+        this.conceptWrites.add(original);
+        void original.then(() => this.conceptWrites.delete(original), error => {
+            this.conceptWrites.delete(original);
+            if (!this.conceptWriteFailureCount) this.firstConceptWriteFailure = error;
+            if (this.conceptWriteFailureCount < Number.MAX_SAFE_INTEGER) this.conceptWriteFailureCount++;
+            // Scope retains the exact failed operation even after this active
+            // set shrinks. Observation never substitutes success for rejection.
+            console.error('[INTROSPECTION] Failed to persist concept', error);
+        });
+        return original;
     }
-
 
 
     public setLayer(layer: IntrospectionLayer) {
@@ -1388,7 +1423,7 @@ export class IntrospectionEngine {
         switch (decision.proposedAction.type) {
             case 'INJECT_CONCEPT':
                 const payload = decision.proposedAction.payload;
-                this.injectConcept(payload.label, payload.strength);
+                await this.injectConcept(payload.label, payload.strength);
                 break;
             case 'ADJUST_LAYER':
                 if (decision.proposedAction.payload.layer) {
@@ -1522,4 +1557,12 @@ export function createOwnedIntrospectionEngine(ownership: Scope): IntrospectionE
         preserveOriginal(ownership, 'construction-failure', () => ownership.constructionFailed(operation, original)); throw original;
     }
 }
-export const introspection = createOwnedIntrospectionEngine(introspectionOwner());
+function createOriginalIntrospectionSingleton(): IntrospectionEngine {
+    const permit = admitEvaluatedIntrospection();
+    try {
+        const instance = createOwnedIntrospectionEngine(introspectionOwner());
+        bindEvaluatedIntrospection(permit, () => instance.sealAndDrainConceptWrites());
+        return instance;
+    } catch (original) { failEvaluatedIntrospection(permit, original); throw original; }
+}
+export const introspection = createOriginalIntrospectionSingleton();
