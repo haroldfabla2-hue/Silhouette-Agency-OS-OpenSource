@@ -1,0 +1,29 @@
+{
+  "status": "CANDIDATE_TECHNICAL_INPUTS_PINNED",
+  "source_graph": {
+    "candidate_commit": "e7d5d763b2aea000f166fa1ddd5217b866f19cee",
+    "candidate_manifest_sha256": "d308ac4858f315ecd8eba07a80995963f882c448b085405efc7da7275edeeb89",
+    "status": "NEW_DIAGNOSTIC_CUT_NOT_EQUIVALENT_TO_PRIOR_TRIAL"
+  },
+  "wal": {
+    "scopes": 48,
+    "active": 512,
+    "failures": 256,
+    "resources": 256
+  },
+  "accepted": {
+    "scopes": 48,
+    "active": 512,
+    "failures": 256,
+    "resources": 256
+  },
+  "execution_authority": "NONE_FRESH_EXACT_GO_REQUIRED",
+  "diagnostic_envelope_not_proven_maximum": true,
+  "no_auto_enlarge_or_retry": true,
+  "vitest-generation": {
+    "scopes": 48,
+    "active": 512,
+    "failures": 256,
+    "resources": 256
+  }
+}
