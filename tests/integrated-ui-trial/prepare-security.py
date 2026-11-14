@@ -32,9 +32,9 @@ finally:
  cleanupErrors=[]
  if created:
   try:
-   subprocess.run(['sudo','-n','chmod','0700',str(secure)],check=True,timeout=3)
-   if (secure/'ubuntu-archive-keyring.gpg').exists():subprocess.run(['sudo','-n','rm','--',str(secure/'ubuntu-archive-keyring.gpg')],check=True,timeout=3)
-   subprocess.run(['sudo','-n','rmdir','--',str(secure)],check=True,timeout=3)
+   # Root helper owns ALL private-directory traversal and unlink checks.
+   # Its JSON comes through inherited stdout for complete command capture.
+   subprocess.run(['sudo','-n','/usr/bin/python3',str(here/'cleanup-keyscope.py'),run],check=True,timeout=5)
   except BaseException as ex:cleanupErrors.append(type(ex).__name__+':'+str(ex))
  receipt['cleanupErrors']=cleanupErrors
  if cleanupErrors or forced:receipt['status']='PREPARATION_FAIL'

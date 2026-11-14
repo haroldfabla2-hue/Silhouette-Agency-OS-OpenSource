@@ -26,8 +26,12 @@
       "sha256": "ba4184e387e89a82c171cdbb9f130e594aaa7db6f8e154c7f989b55e3157ed77"
     },
     "cleanup-hosted.py": {
-      "bytes": 1982,
-      "sha256": "c6e21ab705d4ab9b97f817feafdd0054ff32cde9cf6787b96e54c076778aef48"
+      "bytes": 3237,
+      "sha256": "6168f23e6582ccf2850131e7652ffb3e1396afda21b810b443417c6d91d60cd1"
+    },
+    "cleanup-keyscope.py": {
+      "bytes": 1377,
+      "sha256": "02334906ca37bdbf6562c06cf523b604f7e71039fc5be286a99553faf5c78b4d"
     },
     "decode-evidence.py": {
       "bytes": 1403,
@@ -35,15 +39,15 @@
     },
     "hosted-orchestrator.py": {
       "bytes": 14368,
-      "sha256": "5e538fa73ef8592e5abbc2329dd1f2f0589df8ed5b494e3d866932763405af7f"
+      "sha256": "4a01c4afb2914f2d06dff78caa41f65fd48e8b1c627ba340adb0b11fbd101480"
     },
     "integrated-0e3-source.tar.gz": {
       "bytes": 360317,
       "sha256": "0e3a710ab63232eec31d90e994036b3a3480c65605097fe4a6f0938e2bf33366"
     },
     "integrated-hosted.yml": {
-      "bytes": 3983,
-      "sha256": "b828d3970302d7dcab5ae18daf680e308ee03389693a7a387b479c8fc6441c74"
+      "bytes": 3683,
+      "sha256": "acdbdce876848a4e23809f410a04796618b74c6a07d0d2526f11687bad16d86e"
     },
     "lance-provenance.json": {
       "bytes": 900,
@@ -78,8 +82,8 @@
       "sha256": "5440cdf67e75ab96f36a6be63c1d4c3d54255b1d0970273710fecfebfab06fb3"
     },
     "prepare-security.py": {
-      "bytes": 4131,
-      "sha256": "99c73d449ea7f483789cab1b9a50dad47ad7110b46a09cc650faac37af32a1d3"
+      "bytes": 4073,
+      "sha256": "14ff759e1d81a194fd47bfbfdf044284e106ce14c11e6ba48c6c35622ede8ff0"
     },
     "qualify-host.py": {
       "bytes": 4061,
