@@ -261,7 +261,7 @@ try:
   row=run_namespace_phase(phase,argv,cwd,env,EV,receipt,DEADLINE,8 if phase=='probe'else 280)
   NAMESPACE_CLEANUP_SAFE=before_safe and row['cleanupSafe']
   REPORT['commands'].append(row);emit('result.json',REPORT)
-  assert row['cleanupSafe'],'privileged setup/known compiler group still live; cleanup incomplete STOP'
+  assert row['cleanupSafe'],'namespace scope unsafe or isolation receipt incomplete; chainReaped='+str(row.get('chainReaped'))+'; isolationValidated='+str(row.get('isolationValidated'))+'; cause='+str(row.get('cause'))+'; STOP preserve copies'
   return row
  probe=namespace_phase('probe',ROOT);assert probe['naturalComplete']and probe['rc']==0,'offline namespace unavailable; no fallback/escalation'
  for label,root in [('baseline',baseline),('candidate',candidate)]:

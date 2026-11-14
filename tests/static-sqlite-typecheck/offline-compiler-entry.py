@@ -9,6 +9,38 @@ def emit(path,value):
  try:assert os.write(fd,raw)==len(raw)
  finally:os.close(fd)
  os.link(pending,path);os.unlink(pending) # atomic complete receipt, no overwrite
+
+def read_route_inventory(path):
+ # Bounded actual proc read, not file stat size (proc files report zero size).
+ with Path(path).open('r',encoding='ascii',errors='strict')as source:
+  raw=source.read(8193)
+ assert len(raw)<=8192,'route inventory exceeds evidence bound'
+ lines=raw.splitlines()
+ assert len(lines)<=32 and all(len(line)<=512 for line in lines),'route inventory shape overflow'
+ return lines
+
+def parse_no_external_routes(ipv4,ipv6):
+ # IPv4 main table may not exist: fib_route_seq_start returns NULL before
+ # SEQ_START_TOKEN. Empty file OR exact header only means no IPv4 rows.
+ header=['Iface','Destination','Gateway','Flags','RefCnt','Use','Metric','Mask','MTU','Window','IRTT']
+ assert len(ipv4)<=32 and len(ipv6)<=32,'route row limit'
+ assert not ipv4 or(len(ipv4)==1 and ipv4[0].split()==header),'IPv4 route row or malformed header'
+ parsed=[]
+ for line in ipv6:
+  fields=line.split()
+  assert len(fields)==10,'IPv6 route must have exactly 10 fields'
+  widths=[32,2,32,2,32,8,8,8,8]
+  assert all(re.fullmatch('[0-9a-fA-F]{'+str(width)+'}',field)for field,width in zip(fields[:9],widths)),'malformed IPv6 route numeric fields'
+  assert int(fields[1],16)<=128 and int(fields[3],16)<=128,'invalid IPv6 prefix'
+  flags=int(fields[8],16) # [7] is use count, [8] flags, [9] interface.
+  row={'destination':fields[0],'destinationPrefix':int(fields[1],16),'source':fields[2],'sourcePrefix':int(fields[3],16),'nextHop':fields[4],'metric':int(fields[5],16),'referenceCount':int(fields[6],16),'useCount':int(fields[7],16),'flags':flags,'interface':fields[9]}
+  # Only kernel null/reject sentinel permitted, NEVER merely an arbitrary
+  # inactive or lo-named route. RTF_REJECT|RTF_NONEXTHOP, no RTF_UP/GATEWAY.
+  assert fields[9]=='lo'and flags==0x00200200,'not an inactive loopback reject sentinel'
+  assert all(int(fields[i],16)==0 for i in [0,1,2,3,4,7])and int(fields[5],16)==0xffffffff,'non-null IPv6 route'
+  parsed.append(row)
+ return {'ipv4Rows':0,'ipv4HeaderPresent':bool(ipv4),'ipv6RejectSentinels':parsed,'flagsIndex':8,'interfaceIndex':9,'externalRoutes':0}
+
 def main():
  # Fixed positional parameters from reviewed controller, not request values.
  assert len(sys.argv)==9
@@ -45,12 +77,11 @@ def main():
   lo_flags=struct.unpack_from('H',response,16)[0]
  stage('loopback-flags',{'flags':lo_flags,'IFF_UP':bool(lo_flags&1),'source':'current-netns SIOCGIFFLAGS ioctl'})
  assert lo_flags&1==0
- ipv4=Path('/proc/self/net/route').read_text().splitlines()
- ipv6=Path('/proc/self/net/ipv6_route').read_text().splitlines()
- stage('routes',{'ipv4':ipv4,'ipv6':ipv6})
- assert len(ipv4)==1
- for line in ipv6:
-  fields=line.split();assert fields[-1]=='lo'and int(fields[7],16)&1==0,'active IPv6 route'
+ ipv4=read_route_inventory('/proc/self/net/route')
+ ipv6=read_route_inventory('/proc/self/net/ipv6_route')
+ stage('routes-before-strict-parse',{'ipv4':ipv4,'ipv6':ipv6})
+ routes=parse_no_external_routes(ipv4,ipv6)
+ stage('routes-strictly-validated',routes)
  # /proc enumeration may expose its temporary directory FD as a broken link.
  # No surviving extra FD, host socket, netns FD or inherited file is accepted.
  inherited=[]
@@ -62,11 +93,13 @@ def main():
  stage('inherited-descriptors',inherited)
  assert not inherited
  caps=[('cpu',resource.RLIMIT_CPU,240),('as',resource.RLIMIT_AS,24*1024**3),('nofile',resource.RLIMIT_NOFILE,256),('nproc',resource.RLIMIT_NPROC,96),('fsize',resource.RLIMIT_FSIZE,1024**3),('core',resource.RLIMIT_CORE,0)]
+ stage('kernel-limits-before-set',{'requested':{name:[value,value]for name,_,value in caps},'observed':{name:list(resource.getrlimit(key))for name,key,_ in caps}})
  for _,key,value in caps:resource.setrlimit(key,(value,value))
  actual={name:list(resource.getrlimit(key))for name,key,_ in caps}
  stage('kernel-limits',actual)
  assert all(actual[name]==[value,value]for name,_,value in caps)
  node=Path(node_path);compiler=Path(compiler_path);root=Path(root_dir)
+ stage('paths-before-validation',{'node':{'path':str(node),'isFile':node.is_file(),'isSymlink':node.is_symlink()},'compiler':{'path':str(compiler),'isFile':compiler.is_file(),'isSymlink':compiler.is_symlink()},'root':{'path':str(root),'isDirectory':root.is_dir(),'isSymlink':root.is_symlink()}})
  assert node.is_file()and not node.is_symlink()and compiler.is_file()and not compiler.is_symlink()
  # Controller source verifies these exact bytes immediately before sudo.
  expected_node=os.environ['STATIC_EXPECTED_NODE_SHA256'];expected_compiler=os.environ['STATIC_EXPECTED_COMPILER_SHA256']
@@ -85,7 +118,7 @@ def main():
  stage('ancestor-identities',{'ancestors':ancestors,'rootTimeoutCandidates':timeout_ancestors,'supervisorNamespaceParentExpected':parent_net})
  assert len(timeout_ancestors)==1,'root system watchdog ancestor unavailable'
  assert timeout_ancestors[0]['pgid']==os.getpgrp(),'namespace entry escaped root watchdog group'
- proof={'phase':phase,'pid':os.getpid(),'ppid':os.getppid(),'pgid':os.getpgrp(),'sid':os.getsid(0),'uid':list(os.getresuid()),'gid':list(os.getresgid()),'groups':os.getgroups(),'caps':{key:status[key].strip()for key in ['CapInh','CapPrm','CapEff','CapBnd','CapAmb','NoNewPrivs']},'parentNetNamespace':parent_net,'netNamespace':net,'interfaces':interfaces,'loopbackFlags':lo_flags,'loDown':True,'ipv4Routes':ipv4,'ipv6Routes':ipv6,'extraInheritedDescriptors':inherited,'kernelLimits':actual,'nodeSha256':digest(node),'compilerSha256':digest(compiler),'cwd':str(root),'phaseReceiptNotCompilerCompletion':True,'ancestorIdentities':ancestors,'rootTimeoutAncestor':timeout_ancestors[0],'rootTimeoutGroupMatchesEntry':True}
+ proof={'phase':phase,'pid':os.getpid(),'ppid':os.getppid(),'pgid':os.getpgrp(),'sid':os.getsid(0),'uid':list(os.getresuid()),'gid':list(os.getresgid()),'groups':os.getgroups(),'caps':{key:status[key].strip()for key in ['CapInh','CapPrm','CapEff','CapBnd','CapAmb','NoNewPrivs']},'parentNetNamespace':parent_net,'netNamespace':net,'interfaces':interfaces,'loopbackFlags':lo_flags,'loDown':True,'ipv4Routes':ipv4,'ipv6Routes':ipv6,'validatedRoutes':routes,'extraInheritedDescriptors':inherited,'kernelLimits':actual,'nodeSha256':digest(node),'compilerSha256':digest(compiler),'cwd':str(root),'phaseReceiptNotCompilerCompletion':True,'ancestorIdentities':ancestors,'rootTimeoutAncestor':timeout_ancestors[0],'rootTimeoutGroupMatchesEntry':True}
  proof['isolationValidated']=True
  stage('validated-before-exec',{'isolationValidated':True,'cwd':str(root)})
  emit(output,proof)
