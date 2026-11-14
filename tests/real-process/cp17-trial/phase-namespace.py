@@ -47,7 +47,8 @@ cmd+=['--remount-ro','/','--chdir','/tmp/work','/usr/bin/python3','/tmp/harness/
 # INSTALL only: exact locked Lance binary116740704B exceeds64MiB.
 #128MiB is a fixed design bound with17.5MB headroom, not proof all files fit.
 file_limit=(256 if mode=='browser'else 128 if mode=='install'else 64)*1024**2
-resource.setrlimit(resource.RLIMIT_FSIZE,(file_limit,file_limit));resource.setrlimit(resource.RLIMIT_NOFILE,(256,256))
+nofile_limit=4096 if mode=='install'else 256
+resource.setrlimit(resource.RLIMIT_FSIZE,(file_limit,file_limit));resource.setrlimit(resource.RLIMIT_NOFILE,(nofile_limit,nofile_limit))
 t=time.monotonic();child=subprocess.Popen(cmd,env={'PATH':'/usr/bin:/bin','PHASE_DEADLINE_MONOTONIC':str(t+duration)},stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True);sel=selectors.DefaultSelector();sel.register(child.stdout,selectors.EVENT_READ);failure=None;signals=[];observed=0;eof=False
 try:
  with(ev/'namespace.log').open('wb')as log:
@@ -72,7 +73,7 @@ finally:
   p=work/row['path']
   if not p.is_file()or p.is_symlink()or hashlib.sha256(p.read_bytes()).hexdigest()!=row['sha256']:post.append(row['path'])
  (ev/'source-post.json').write_text(json.dumps({'drift':post}))
- (ev/'namespace-status.json').write_text(json.dumps({'rc':child.returncode,'failure':failure,'signals':signals,'eof':eof,'seconds':time.monotonic()-t,'file_limit_bytes':file_limit}))
+ (ev/'namespace-status.json').write_text(json.dumps({'rc':child.returncode,'failure':failure,'signals':signals,'eof':eof,'seconds':time.monotonic()-t,'file_limit_bytes':file_limit,'nofile_limit':nofile_limit}))
  # Evidence is copied only by outer supervisor after package/test PID namespace ends.
  for p in sorted(ev.iterdir()):
   if p.is_symlink()or not p.is_file():raise RuntimeError('nonregular evidence')

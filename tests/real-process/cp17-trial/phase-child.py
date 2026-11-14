@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """No host privileges. Runs only inside reviewed capped namespace. REVIEW ONLY."""
-import hashlib,json,os,pathlib,selectors,signal,subprocess,sys,time
+import hashlib,json,os,pathlib,resource,selectors,signal,subprocess,sys,time
 from process_evidence import snapshot,counter_delta
 mode=sys.argv[1];root=pathlib.Path('/tmp/work');ev=pathlib.Path('/tmp/evidence');ev.mkdir(exist_ok=True)
 assert os.geteuid()==1000 and os.getegid()==1000
@@ -54,6 +54,16 @@ if mode=='checks':
   probe.unlink();record['cache'].append(item)
  (ev/'private-cache-mounts.json').write_text(json.dumps(record,indent=2))
 
+install_preparation=None
+if mode=='install':
+ assert resource.getrlimit(resource.RLIMIT_NOFILE)==(4096,4096),'explicit install-only FD4096 not effective'
+ # Fixed handful of source/config files only. No recursive dependency inventory
+ # or extra process/telemetry writer, unchanged source-post ledger covers drift.
+ npm_root=pathlib.Path(npm).parent.parent
+ package=json.loads((npm_root/'package.json').read_text())
+ assert package['version']=='10.9.3','exact workflow Node floor bundled npm differs'
+ metadata_paths=['package.json','node_modules/@npmcli/arborist/lib/arborist/reify.js','node_modules/@npmcli/config/lib/definitions/definitions.js','node_modules/pacote/lib/fetcher.js']
+ install_preparation={'nofile_soft_hard':list(resource.getrlimit(resource.RLIMIT_NOFILE)),'node':'v22.18.0','npm':package['version'],'npm_root':str(npm_root),'npm_source_hashes':{name:hashlib.sha256((npm_root/name).read_bytes()).hexdigest()for name in metadata_paths},'input_hashes_before':{name:hashlib.sha256((root/name).read_bytes()).hexdigest()for name in ['package.json','package-lock.json']},'effective_environment':{name:env[name]for name in ['npm_config_cache','npm_config_loglevel','npm_config_verbose','PUPPETEER_SKIP_DOWNLOAD','PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD','ELECTRON_SKIP_BINARY_DOWNLOAD']},'command_config':'Exact argv retained in results; ci/ignore-scripts/no-audit/no-fund/fetch-retries0/maxsockets4. No fs concurrency guarantee or hidden npm alteration.'}
 if mode=='install':phases=[('npm-ci',[node,npm,'ci','--ignore-scripts','--no-audit','--no-fund','--fetch-retries=0','--maxsockets=4'],root,150)]
 elif mode=='native':
  audit=json.loads(pathlib.Path('/tmp/harness/native-entry-hashes.json').read_text())
@@ -132,5 +142,8 @@ for name,argv,cwd,limit in phases:
   with (ev/(mode+'-process-observations.jsonl')).open('a')as diagnostic_stream:diagnostic_stream.write(json.dumps({'status':telemetry_state,'reporter_status':reporter_state,'cuts':telemetry,'errors':telemetry_errors,'delta':counter_delta(telemetry[0]['counters'],telemetry[-1]['counters'])if len(telemetry)>1 else {'unavailable':True},'leader_returncode':child.returncode if child else None,'leader_signal':-child.returncode if child and child.returncode is not None and child.returncode<0 else None,'worker_exit_history':'UNAVAILABLE_PUBLIC_REPORTER_NO_WORKER_EXIT_HOOK_RAPID_REAP_GAP','command':name},separators=(',',':'))+'\n')
   results[-1]['diagnostic_capture_status']=telemetry_state
   results[-1]['reporter_capture_status']=reporter_state
-  (ev/(mode+'-session.json')).write_text(json.dumps({'mode':mode,'results':results,'unsafe':unsafe},indent=2))
+  if install_preparation is not None:
+   install_preparation['input_hashes_after']={name:hashlib.sha256((root/name).read_bytes()).hexdigest()for name in ['package.json','package-lock.json']}
+   install_preparation['input_drift']=install_preparation['input_hashes_before']!=install_preparation['input_hashes_after']
+  (ev/(mode+'-session.json')).write_text(json.dumps({'mode':mode,'results':results,'unsafe':unsafe,**({'install_preparation':install_preparation}if install_preparation is not None else{})},indent=2))
 raise SystemExit(0 if results and all(x['status']=='PASS'for x in results)else 1)
