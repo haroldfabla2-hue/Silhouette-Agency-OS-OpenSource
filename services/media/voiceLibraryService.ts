@@ -1,3 +1,4 @@
+import { admitEvaluatedVoiceLibrary, bindEvaluatedVoiceLibrary, failEvaluatedVoiceLibrary } from '../lifecycle/runtimeStopBindings';
 import { voiceLibraryOwner } from '../lifecycle/preparationBindings';
 import { AdmissionClosed, type Operation } from '../lifecycle/host';
 /**
@@ -245,13 +246,17 @@ class VoiceLibraryService {
 
     public static getInstance(): VoiceLibraryService {
         if (!VoiceLibraryService.instance) {
-            const owner = voiceLibraryOwner();
-            const operation = owner.beginConstruction();
+            const permit = admitEvaluatedVoiceLibrary();
             try {
-                const original = new VoiceLibraryService(operation);
+                const owner = voiceLibraryOwner();
+                const operation = owner.beginConstruction();
+                let original: VoiceLibraryService;
+                try { original = new VoiceLibraryService(operation); }
+                catch (error) { owner.constructionFailed(operation, error); throw error; }
                 owner.constructed(operation, original);
                 VoiceLibraryService.instance = original;
-            } catch (error) { owner.constructionFailed(operation, error); throw error; }
+                bindEvaluatedVoiceLibrary(permit, () => original.sealAndDrainKnownWork());
+            } catch (error) { failEvaluatedVoiceLibrary(permit, error); throw error; }
         }
         return VoiceLibraryService.instance;
     }

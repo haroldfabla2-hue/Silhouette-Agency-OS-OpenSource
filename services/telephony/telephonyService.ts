@@ -1,3 +1,4 @@
+import { admitEvaluatedTelephony, bindEvaluatedTelephony, failEvaluatedTelephony } from '../lifecycle/runtimeStopBindings';
 import { telephonyOwner } from '../lifecycle/preparationBindings';
 import { AdmissionClosed, type Operation } from '../lifecycle/host';
 // =============================================================================
@@ -862,12 +863,16 @@ ${fullTranscriptText}
 }
 
 function constructOriginalTelephony(): TelephonyService {
-    const owner = telephonyOwner();
-    const operation = owner.beginConstruction();
+    const permit = admitEvaluatedTelephony();
     try {
-        const original = new TelephonyService(operation);
+        const owner = telephonyOwner();
+        const operation = owner.beginConstruction();
+        let original: TelephonyService;
+        try { original = new TelephonyService(operation); }
+        catch (error) { owner.constructionFailed(operation, error); throw error; }
         owner.constructed(operation, original);
+        bindEvaluatedTelephony(permit, () => original.sealAndDrainKnownWork());
         return original;
-    } catch (error) { owner.constructionFailed(operation, error); throw error; }
+    } catch (error) { failEvaluatedTelephony(permit, error); throw error; }
 }
 export const telephonyService = constructOriginalTelephony();

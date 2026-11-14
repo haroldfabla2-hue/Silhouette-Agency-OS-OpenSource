@@ -1,3 +1,4 @@
+import { admitEvaluatedTTS, bindEvaluatedTTS, failEvaluatedTTS } from './lifecycle/runtimeStopBindings';
 import { ttsOwner } from './lifecycle/preparationBindings';
 import { AdmissionClosed, type Operation } from './lifecycle/host';
 
@@ -169,13 +170,17 @@ export class TTSService {
 
     public static getInstance(): TTSService {
         if (!TTSService.instance) {
-            const owner = ttsOwner();
-            const operation = owner.beginConstruction();
+            const permit = admitEvaluatedTTS();
             try {
-                const original = new TTSService(operation);
+                const owner = ttsOwner();
+                const operation = owner.beginConstruction();
+                let original: TTSService;
+                try { original = new TTSService(operation); }
+                catch (error) { owner.constructionFailed(operation, error); throw error; }
                 owner.constructed(operation, original);
                 TTSService.instance = original;
-            } catch (error) { owner.constructionFailed(operation, error); throw error; }
+                bindEvaluatedTTS(permit, () => original.sealAndDrainKnownWork());
+            } catch (error) { failEvaluatedTTS(permit, error); throw error; }
         }
         return TTSService.instance;
     }
