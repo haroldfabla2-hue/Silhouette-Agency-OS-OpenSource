@@ -2,29 +2,42 @@
   "status": "CANDIDATE_TECHNICAL_INPUTS_PINNED",
   "source_graph": {
     "candidate_product_commit": "598cb9a60d12af988813818adf1f85302c8a5b6c",
-    "candidate_manifest_sha256": "212b85952c533cd0e4da552ee479f8d58e1dbf915a8d053ff935b0544d34daa4",
-    "status": "SOURCE_ONLY_ENVIRONMENT_B_FINAL_ASSEMBLY_NOT_EQUIVALENT_TO_EXECUTED6410",
+    "product_commit_is_baseline_not_exact_integral": true,
+    "candidate_manifest_sha256": "d2194b7aea1e19701159af21ec2b081ab44a46614cb76ffb13c79e37b5d8b4f9",
+    "status": "SOURCE_ONLY_POST_CD6327_ASSEMBLY_NOT_EQUIVALENT_TO_EXECUTED_A109_OR_CP17",
+    "metadata_parent_trial_commit": "cd6327f047eb03bf607b802f29c27ae357248cfc",
     "base_trial_commit": "6410fc163d847bb629813727899d837ed104c0b6",
+    "source_delta_vs_candidate_product_commit": [
+      "server/config/runtimeCredentials.ts",
+      "tests/automated/autonomy-entry-points.test.ts",
+      "tests/automated/channel-ingress-envelope.test.ts",
+      "tests/automated/consent-ledger.test.ts",
+      "tests/automated/telephony-call-voice.test.ts",
+      "tests/automated/telephony-truthfulness.test.ts",
+      "tests/real-process/standalone-preparation.ts",
+      "tests/real-process/telephony-truthfulness-child.ts",
+      "tests/real-process/telephony-voice-boundary-child.ts",
+      "tests/setup/original-child-ownership.ts"
+    ],
     "source_delta_vs_executed6410": [
+      "server/config/runtimeCredentials.ts",
       "services/dreamerService.ts",
       "services/introspectionEngine.ts",
       "services/lifecycle/runtimeStopBindings.ts",
+      "services/redisClient.ts",
+      "tests/automated/autonomy-entry-points.test.ts",
       "tests/automated/telephony-call-voice.test.ts",
       "tests/automated/telephony-truthfulness.test.ts",
-      "tests/real-process/telephony-truthfulness-child.ts",
-      "tests/real-process/telephony-voice-boundary-child.ts",
       "tests/real-process/standalone-preparation.ts",
-      "services/redisClient.ts",
-      "tests/automated/autonomy-entry-points.test.ts"
+      "tests/real-process/telephony-truthfulness-child.ts",
+      "tests/real-process/telephony-voice-boundary-child.ts"
     ],
-    "prior_manifest_sha256": "d87fbaf17e7cb560fdd89ffc33143b4fe641ec6ea992960d0a53b63ed3a3a167",
-    "reviewed_environment_packet_sha256": "6fd7d60afd369e8440aed6621166e23f633f8dae4788a7c7fb2fd60db7c260d1",
-    "source_delta_vs_environment6fd7": [
-      "services/redisClient.ts",
-      "tests/automated/autonomy-entry-points.test.ts"
+    "source_delta_vs_executed_a109": [
+      "server/config/runtimeCredentials.ts",
+      "tests/real-process/standalone-preparation.ts"
     ],
-    "accepted_heartbeat_packet_sha256": "d44a6fb5326250e8f43ad89b53a81101c046a3c57b6e108a34d92c5c2d8ba785",
-    "accepted_redis_packet_sha256": "5e806b4cee3c0d08ebd9443595886c62aebb5ddf4c23a6a4d698841f25060f53"
+    "reviewed_nonsecret_packet_sha256": "8f9b08d8f33bd7240e15936fac7ac7264a7be522263c70be103832123010ad02",
+    "reviewed_checks256_packet_sha256": "6440877fb5b046b54e5cc51bc5d2535a0125a99889cff05b03df5341ad5f42ca"
   },
   "wal": {
     "scopes": 48,
@@ -64,6 +77,53 @@
     "runtime_file_bytes": 67108864,
     "install_file_bytes": 134217728,
     "dependency_store_bytes_including_browser": 4294967296,
-    "new_execution_authority": "NONE"
+    "new_execution_authority": "NONE",
+    "pids_max_by_phase": {
+      "install": 96,
+      "native": 96,
+      "browser": 96,
+      "checks": 256,
+      "oracles": 96
+    },
+    "nofile_soft_hard_by_phase": {
+      "install": 4096,
+      "native": 256,
+      "browser": 256,
+      "checks": 256,
+      "oracles": 256
+    },
+    "memory_max_bytes": 8589934592,
+    "memory_swap_max_bytes": 0,
+    "cpu_max": "200000 100000",
+    "tmp_bytes": 536870912,
+    "checks256_is_finite_selected_margin_not_measured_demand_or_fit_guarantee": true,
+    "diagnostic_process_rows_bound": 96,
+    "diagnostic_row_bound_is_not_pids_limit": true
+  },
+  "historical_source_graph": {
+    "candidate_product_commit": "598cb9a60d12af988813818adf1f85302c8a5b6c",
+    "candidate_manifest_sha256": "212b85952c533cd0e4da552ee479f8d58e1dbf915a8d053ff935b0544d34daa4",
+    "status": "SOURCE_ONLY_ENVIRONMENT_B_FINAL_ASSEMBLY_NOT_EQUIVALENT_TO_EXECUTED6410",
+    "base_trial_commit": "6410fc163d847bb629813727899d837ed104c0b6",
+    "source_delta_vs_executed6410": [
+      "services/dreamerService.ts",
+      "services/introspectionEngine.ts",
+      "services/lifecycle/runtimeStopBindings.ts",
+      "tests/automated/telephony-call-voice.test.ts",
+      "tests/automated/telephony-truthfulness.test.ts",
+      "tests/real-process/telephony-truthfulness-child.ts",
+      "tests/real-process/telephony-voice-boundary-child.ts",
+      "tests/real-process/standalone-preparation.ts",
+      "services/redisClient.ts",
+      "tests/automated/autonomy-entry-points.test.ts"
+    ],
+    "prior_manifest_sha256": "d87fbaf17e7cb560fdd89ffc33143b4fe641ec6ea992960d0a53b63ed3a3a167",
+    "reviewed_environment_packet_sha256": "6fd7d60afd369e8440aed6621166e23f633f8dae4788a7c7fb2fd60db7c260d1",
+    "source_delta_vs_environment6fd7": [
+      "services/redisClient.ts",
+      "tests/automated/autonomy-entry-points.test.ts"
+    ],
+    "accepted_heartbeat_packet_sha256": "d44a6fb5326250e8f43ad89b53a81101c046a3c57b6e108a34d92c5c2d8ba785",
+    "accepted_redis_packet_sha256": "5e806b4cee3c0d08ebd9443595886c62aebb5ddf4c23a6a4d698841f25060f53"
   }
 }
