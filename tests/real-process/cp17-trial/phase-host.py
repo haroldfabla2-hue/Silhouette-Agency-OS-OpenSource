@@ -89,4 +89,36 @@ finally:
  deadline=time.monotonic()+5
  while 'populated 1' in (cg/'cgroup.events').read_text() and time.monotonic()<deadline:time.sleep(.05)
  (evidence/'scope-cleanup.json').write_text(json.dumps({'events':events,'state':(cg/'cgroup.events').read_text()},indent=2))
- if 'populated 1' not in (cg/'cgroup.events').read_text():cg.rmdir()
+ if 'populated 1' not in (cg/'cgroup.events').read_text():
+  # Optional metadata only after scope empty; no package reads or symlink traversal.
+  # A diagnostic failure must not prevent cgroup removal or erase cleanup failure.
+  try:
+   import heapq
+   cutoff=time.monotonic()+2;entries=0;count=0;total=0;largest=[];truncated=False;errors=[];pending=[store]
+   while pending:
+    if entries>=100000 or time.monotonic()>=cutoff:truncated=True;break
+    directory=pending.pop()
+    try:
+     with os.scandir(directory)as scan:
+      for entry in scan:
+       if entries>=100000 or time.monotonic()>=cutoff:truncated=True;break
+       entries+=1
+       try:
+        if entry.is_symlink():continue
+        if entry.is_dir(follow_symlinks=False):pending.append(pathlib.Path(entry.path));continue
+        st=entry.stat(follow_symlinks=False)
+        if not stat.S_ISREG(st.st_mode):continue
+        rel=str(pathlib.Path(entry.path).relative_to(store));count+=1;total+=st.st_size
+        item=(st.st_size,rel)
+        if len(largest)<128:heapq.heappush(largest,item)
+        elif item>largest[0]:heapq.heapreplace(largest,item)
+       except OSError as error:
+        if len(errors)<16:errors.append({'path':str(pathlib.Path(entry.path).relative_to(store)),'errno':error.errno})
+    except OSError as error:
+     if len(errors)<16:errors.append({'path':str(directory.relative_to(store)),'errno':error.errno})
+    if truncated:break
+   volume=os.statvfs(store)
+   (evidence/'dependency-store-metadata.json').write_text(json.dumps({'after_scope_empty':True,'phase':a.phase,'scan_entries':entries,'scan_files':count,'scan_total_bytes':total,'truncated':truncated,'max_scan_entries':100000,'scan_seconds_budget':2,'largest':[{'bytes':n,'path':p}for n,p in sorted(largest,reverse=True)],'errors':errors,'filesystem_bytes':volume.f_blocks*volume.f_frsize,'filesystem_available_bytes':volume.f_bavail*volume.f_frsize,'claim':'partial metadata only, exact SIGXFSZ source not proven by equal-sized file'},indent=2))
+  except Exception as error:
+   print('DEPENDENCY_METADATA_UNAVAILABLE',type(error).__name__,getattr(error,'errno',None),flush=True)
+  finally:cg.rmdir()
