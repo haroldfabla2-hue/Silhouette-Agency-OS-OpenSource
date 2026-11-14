@@ -20,6 +20,7 @@ for p in work.rglob('*'):
  else:p.chmod(p.stat().st_mode&0o777)
 cmd=[bwrap,'--die-with-parent','--unshare-user','--uid','1000','--gid','1000','--unshare-pid','--cap-drop','ALL']
 for p in ['/usr','/bin','/lib','/lib64','/etc','/opt']:cmd+=['--ro-bind',p,p]
+if mode in {'install','native'}:cmd+=['--ro-bind','/etc/resolv.conf','/etc/resolv.conf']
 cmd+=['--proc','/proc','--dev','/dev','--remount-ro','/dev','--bind',str(scratch),'/tmp','--ro-bind','/tmp/harness','/tmp/harness','--ro-bind','/tmp/limits','/tmp/limits']
 # Capped scratch is /tmp, original complete deps reside in separately fixed store.
 cmd+=['--bind'if mode=='install'else'--ro-bind','/tmp/deps-store','/tmp/work/node_modules']

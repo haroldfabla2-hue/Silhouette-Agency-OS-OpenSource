@@ -12,6 +12,19 @@ node='/opt/hostedtoolcache/node/22.18.0/x64/bin/node';npm='/opt/hostedtoolcache/
 assert subprocess.check_output([node,'--version'],text=True).strip()=='v22.18.0'
 env={'PATH':str(pathlib.Path(node).parent)+':/usr/bin:/bin','HOME':'/tmp/home','TMPDIR':'/tmp','NODE_ENV':'test','SILHOUETTE_PROVIDERS':'off','SILHOUETTE_INFERENCE_MODE':'cloud-only','SILHOUETTE_SNAPSHOT_DIAGNOSTIC':'metadata-only','NODE_OPTIONS':'--max-old-space-size=2048','npm_config_cache':'/tmp/npm-cache','npm_config_loglevel':'verbose','npm_config_verbose':'true','PUPPETEER_SKIP_DOWNLOAD':'true','PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD':'true','ELECTRON_SKIP_BINARY_DOWNLOAD':'1','SHARP_IGNORE_GLOBAL_LIBVIPS':'1'}
 pathlib.Path('/tmp/home').mkdir(exist_ok=True)
+# Bounded preflight is inside existing aggregate deadline, no retries or package code.
+if mode in {'install','native'}:
+ import socket
+ resolver=pathlib.Path('/etc/resolv.conf');record={'stage':'innermost','network_ns':os.readlink('/proc/self/ns/net'),'resolver_exists':resolver.exists(),'resolver_symlink':resolver.is_symlink(),'resolver_realpath':str(resolver.resolve(strict=False)),'routes_sha256':hashlib.sha256(pathlib.Path('/proc/net/route').read_bytes()).hexdigest()}
+ if resolver.exists():record['resolver_sha256']=hashlib.sha256(resolver.read_bytes()).hexdigest()
+ preflight=[node,'--input-type=module','-e',"import dns from 'node:dns/promises'; for (const host of ['registry.npmjs.org','codeload.github.com']) { try { const result=await dns.lookup(host); console.log(JSON.stringify({host,result})); } catch (e) { console.log(JSON.stringify({host,error:e.code})); process.exitCode=1; } }"]
+ try:
+  remaining=min(8,float(os.environ['PHASE_DEADLINE_MONOTONIC'])-time.monotonic()-5);assert remaining>0
+  probe=subprocess.run(preflight,env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=remaining,check=False);record.update({'returncode':probe.returncode,'stdout':probe.stdout[:4096].decode(errors='replace'),'stderr':probe.stderr[:4096].decode(errors='replace')})
+ except Exception as e:record.update({'error':type(e).__name__+':'+str(e)})
+ (ev/'network-preflight.json').write_text(json.dumps(record,indent=2))
+ if record.get('returncode')!=0:raise SystemExit('PREPARATION_DNS_UNAVAILABLE_NOT_PRODUCT_FAILURE')
+
 if mode=='install':phases=[('npm-ci',[node,npm,'ci','--ignore-scripts','--no-audit','--no-fund','--fetch-retries=0'],root,150)]
 elif mode=='native':
  audit=json.loads(pathlib.Path('/tmp/harness/native-entry-hashes.json').read_text())

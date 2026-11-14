@@ -41,6 +41,15 @@ try:
  finally:(evidence/'node-host.json').write_text(json.dumps(node_cut,indent=2))
  for name,value in [('memory.max',str(8*1024**3)),('memory.swap.max','0'),('pids.max','96'),('cpu.max','200000 100000'),('memory.oom.group','1')]:write(name,value)
  assert (cg/'cgroup.kill').exists() and os.access(cg/'cgroup.kill',os.W_OK)
+ # Preparation resolver snapshot: dereference only this one host file, never bind /run.
+ resolver=evidence/'resolver.snapshot';resolver_record={'stage':'host','mode':a.phase,'network_ns':os.readlink('/proc/self/ns/net')}
+ if a.phase in {'install','native'}:
+  source=pathlib.Path('/etc/resolv.conf');resolver_record.update({'source_is_symlink':source.is_symlink(),'source_realpath':str(source.resolve(strict=True))})
+  with source.open('rb')as f:
+   st=os.fstat(f.fileno());assert stat.S_ISREG(st.st_mode)and st.st_size<=65536
+   raw=f.read(65537);assert 0<len(raw)<=65536 and b'\x00'not in raw
+  resolver.write_bytes(raw);resolver.chmod(0o444);resolver_record.update({'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()})
+ (evidence/'resolver-host.json').write_text(json.dumps(resolver_record,indent=2))
  # Future gate only. No fallback if pinned verified bwrap lacks size/nesting.
  helptext=subprocess.check_output([str(bwrap),'--help'],text=True,timeout=2)
  for option in ['--size','--unshare-user','--uid','--gid','--unshare-pid','--die-with-parent','--cap-drop']:assert option in helptext
@@ -52,6 +61,7 @@ try:
  cmd=[str(bwrap),'--die-with-parent','--unshare-pid','--unshare-user','--uid','0','--gid','0','--cap-add','CAP_SETFCAP']
  if a.phase=='checks':cmd+=['--unshare-net','--cap-add','CAP_NET_ADMIN']
  for source in ['/usr','/bin','/lib','/lib64','/etc','/opt']:cmd+=['--ro-bind',source,source]
+ if a.phase in {'install','native'}:cmd+=['--ro-bind',str(resolver),'/etc/resolv.conf']
  cmd+=['--proc','/proc','--dev','/dev','--size',str(512*1024**2),'--tmpfs','/tmp','--ro-bind',str(work),'/tmp/work','--bind',str(store),'/tmp/deps-store','--ro-bind',str(harness),'/tmp/harness','--ro-bind',str(bwrap.parent),'/tmp/security-bin','--ro-bind',str(cg),'/tmp/limits','--bind',str(evidence),'/tmp/export','--remount-ro','/','--chdir','/tmp/work','/usr/bin/python3','/tmp/harness/phase-namespace.py',bwrap.name,a.phase,str(a.phase_seconds)]
  child_process=subprocess.Popen(['sudo','-n','/usr/bin/python3','-',str(os.getuid()),str(os.getgid()),a.run_id,str(os.getpid()),json.dumps(cmd)],stdin=subprocess.PIPE)
  child=child_process.pid
