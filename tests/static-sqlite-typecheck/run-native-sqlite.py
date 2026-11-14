@@ -11,6 +11,9 @@ HERE=Path(__file__).resolve().parent;REPO=HERE.parents[1]
 ROOT=Path(os.environ['RUNNER_TEMP'])/'sqlite-static-only';ROOT.mkdir(mode=0o700)
 EV=ROOT/'evidence';EV.mkdir();REPORT={'status':'STARTED_STATIC_ONLY','base':BASE,'candidateSourcePacket':'0e3a710ab63232eec31d90e994036b3a3480c65605097fe4a6f0938e2bf33366','prior4054StaticPassRun':43601671065,'candidateMeaning':'EXACT_ACCOUNTSTORE_0e3_NATIVE_SQLITE_SUBSET_NOT_GLOBAL_RUNTIME','commands':[],'failures':[]}
 NAMESPACE_CLEANUP_SAFE=True
+NATIVE_WORKER_ENTERED=False
+NATIVE_CAPTURE_DONE=False
+from native_worker_contract import validate_worker_report,capture_safe_native_files
 CAP=8*1024**2;RAW=32*1024**2;GZIP=8*1024**2;START=time.monotonic();DEADLINE=START+1000
 # Conservative job anchor prevents setup latency from consuming cleanup reserve.
 pid=os.getpid();worker_start=None
@@ -295,12 +298,17 @@ try:
  (ROOT/'native-data').mkdir(mode=0o700)
  (candidate/'node_modules').symlink_to(deps,target_is_directory=True)
  probe=namespace_phase('probe',ROOT);assert probe['naturalComplete']and probe['rc']==0
+ NATIVE_WORKER_ENTERED=True
  worker=namespace_phase('native-account-wal',candidate)
+ capture_safe_native_files(ROOT,EV,NAMESPACE_CLEANUP_SAFE,NATIVE_WORKER_ENTERED,emit);NATIVE_CAPTURE_DONE=True
  assert worker['naturalComplete']and worker['rc']==0,'native worker failed or did not exit naturally'
  worker_report=json.loads((EV/'native-account-wal-namespace-receipt.json.worker.json').read_text())
- assert worker_report['assertionsCompleted']and not worker_report['failure']and not worker_report['cleanupFailures']
- fixture=ROOT/'native-data/account-wal.sqlite';assert fixture.is_file()and not fixture.is_symlink()and fixture.stat().st_size<=CAP
- shutil.copyfile(fixture,EV/'native-account-wal.sqlite')
+ file_event=validate_worker_report(worker_report)
+ capture=json.loads((EV/'native-physical-capture.json').read_text())
+ assert not capture['missingMainFile'],'NATIVE_CONTRACT:CAPTURE_MAIN_FILE_MISSING'
+ captured=[row for row in capture['files']if row['file']=='native-account-wal.sqlite'];assert len(captured)==1,'NATIVE_CONTRACT:CAPTURE_MAIN_FILE_COUNT'
+ assert captured[0]['bytes']==file_event['bytes']and captured[0]['sha256']==file_event['sha256'],'NATIVE_CONTRACT:CAPTURE_SHA_VS_WORKER'
+ assert len(capture['files'])==1,'NATIVE_CONTRACT:UNEXPECTED_WAL_SHM_AFTER_CLOSED_READONLY_VERIFIER'
  assert check_inputs(candidate)==before['candidate']
  drift=[rel for rel,h in input_hashes['candidate'].items()if not(candidate/rel).is_file()or sha(candidate/rel)!=h];assert not drift,'source drift'
  REPORT['status']='ACCOUNTSTORE_SQLITE_WAL_NATIVE_SUBSET_COMPLETED_ONLY'
@@ -311,11 +319,19 @@ except BaseException as cause:
  # Frame metadata ONLY: no locals, source snippets, payload strings or args.
  trace=[{'file':Path(frame.filename).name,'line':frame.lineno,'function':frame.name}for frame in traceback.extract_tb(cause.__traceback__,limit=32)]
  named=str(cause)
- safe_message=named if len(named)<=256 and re.fullmatch(r'NATIVE_PREREQUISITE:[A-Za-z0-9_./:-]+',named)else 'See bounded source location; untrusted exception payload not exported'
+ safe_message=named if len(named)<=256 and re.fullmatch(r'NATIVE_(?:PREREQUISITE|CONTRACT):[A-Za-z0-9_./:-]+',named)else 'See bounded source location; untrusted exception payload not exported'
  REPORT['status']='STATIC_PREREQUISITE_OR_VALIDATION_FAILED';REPORT['nativeAccountStoreSubsetPass']=False
  REPORT['failures'].append({'type':type(cause).__name__,'text':safe_message,'traceFrames':trace,'traceLimit32NoLocalsNoSource':True})
  emit('native-failure-location.json',{'type':type(cause).__name__,'traceFrames':trace,'namedGuard':safe_message,'noLocalsOrSourceOrExceptionPayload':True})
 finally:
+ # Preserve safe reaped native files even if JSON validation/classification
+ # threw. Capture failure prevents source deletion; unsafe scope stays unread.
+ try:
+  if NATIVE_WORKER_ENTERED and not NATIVE_CAPTURE_DONE:
+   capture_safe_native_files(ROOT,EV,NAMESPACE_CLEANUP_SAFE,NATIVE_WORKER_ENTERED,emit);NATIVE_CAPTURE_DONE=True
+ except BaseException as capture_error:
+  REPORT['nativeAccountStoreSubsetPass']=False
+  REPORT['failures'].append({'type':type(capture_error).__name__,'text':'NATIVE_CONTRACT:FINAL_CAPTURE_INCOMPLETE','traceFrames':[{'file':Path(f.filename).name,'line':f.lineno,'function':f.name}for f in traceback.extract_tb(capture_error.__traceback__,limit=32)]})
  REPORT['seconds']=time.monotonic()-START;REPORT['duAfter']=du()
  archive=ROOT/'static-evidence.tar.gz';finalizationErrors=[]
  try:
@@ -331,9 +347,9 @@ finally:
   for name in ['baseline','candidate','acquisition','empty-npm-cache','empty-home','native-data']:
    p=ROOT/name
    try:
-    if p.exists()and NAMESPACE_CLEANUP_SAFE:shutil.rmtree(p)
+    if p.exists()and NAMESPACE_CLEANUP_SAFE and(not NATIVE_WORKER_ENTERED or NATIVE_CAPTURE_DONE):shutil.rmtree(p)
    except BaseException as cause:finalizationErrors.append({'stage':'cleanup:'+name,'type':type(cause).__name__,'text':str(cause)})
- cleanup={'disposableCopiesRemoved':all(not(ROOT/n).exists()for n in ['baseline','candidate','acquisition','empty-npm-cache','empty-home','native-data']),'errors':finalizationErrors,'noNativeServicesStarted':True,'namespaceCleanupSafe':NAMESPACE_CLEANUP_SAFE,'copiesPreservedIfSetupSurvives':not NAMESPACE_CLEANUP_SAFE}
+ cleanup={'disposableCopiesRemoved':all(not(ROOT/n).exists()for n in ['baseline','candidate','acquisition','empty-npm-cache','empty-home','native-data']),'errors':finalizationErrors,'noNativeServicesStarted':True,'namespaceCleanupSafe':NAMESPACE_CLEANUP_SAFE,'copiesPreservedIfSetupSurvives':not NAMESPACE_CLEANUP_SAFE,'nativeWorkerEntered':NATIVE_WORKER_ENTERED,'nativePhysicalCaptureComplete':NATIVE_CAPTURE_DONE,'copiesPreservedIfCaptureIncomplete':NATIVE_WORKER_ENTERED and not NATIVE_CAPTURE_DONE}
  if not cleanup['disposableCopiesRemoved']or finalizationErrors:REPORT['productTypecheckPass']=False;REPORT['nativeAccountStoreSubsetPass']=False
  # Even if complete logs exceed policy, export an EXPLICIT failed evidence
  # manifest with hashes/lengths, never a shortened log masquerading complete.
