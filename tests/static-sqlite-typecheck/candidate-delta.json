@@ -1,0 +1,1955 @@
+{
+  "state": "SOURCE_ONLY_REVIEW_STARTLOOP_DELTA_PLUS_STATIC_PREREQUISITE_CAP_REPORT",
+  "base": "db201993d05124cdb23a84cdfbc695bb3c6680d5",
+  "files": [
+    {
+      "path": "server/controllers/chatController.ts",
+      "before_sha256": "ddb1c4fc69dc3c820d3134a140ade74ab36e225c38d272f60e05b9c7f36976f9",
+      "after_sha256": "d28283bcf86cdff8ddfc9474c53d77a8e2ac77dafc22b694e69165855b44ec50",
+      "bytes": 46221,
+      "wrapped": [
+        {
+          "name": "getSessions",
+          "line": 67,
+          "async": true
+        },
+        {
+          "name": "getHistory",
+          "line": 90,
+          "async": true
+        },
+        {
+          "name": "createSession",
+          "line": 102,
+          "async": true
+        },
+        {
+          "name": "deleteSession",
+          "line": 114,
+          "async": true
+        },
+        {
+          "name": "sendMessage",
+          "line": 163,
+          "async": true
+        },
+        {
+          "name": "streamMessage",
+          "line": 276,
+          "async": true
+        },
+        {
+          "name": "assembleContext",
+          "line": 616,
+          "async": true
+        }
+      ]
+    },
+    {
+      "path": "server/controllers/factoryController.ts",
+      "before_sha256": "8ce14720cdd50ead640f8878724d4eb575e6456cb1cfcc422756037906a5235b",
+      "after_sha256": "6ec488674108b2a3c4a4e0a563538b81c6e495d317b90d6487778d67b092a242",
+      "bytes": 4227,
+      "wrapped": [
+        {
+          "name": "listProjects",
+          "line": 63,
+          "async": false
+        },
+        {
+          "name": "getConfig",
+          "line": 68,
+          "async": false
+        },
+        {
+          "name": "updateConfig",
+          "line": 73,
+          "async": true
+        }
+      ]
+    },
+    {
+      "path": "server/controllers/orchestratorController.ts",
+      "before_sha256": "9fee06cdbb356c24c62f77ae30eb60dd3975df0e780cf5196ab841490bb7a173",
+      "after_sha256": "765e7808dcd7718452c210c275a31e4b259f08013fced9f1a48a72ceb8beaa83",
+      "bytes": 7841,
+      "wrapped": [
+        {
+          "name": "getEvolutionHistory",
+          "line": 81,
+          "async": false
+        },
+        {
+          "name": "<original-callback>",
+          "line": 86,
+          "async": false
+        }
+      ]
+    },
+    {
+      "path": "server/controllers/systemController.ts",
+      "before_sha256": "d1777b9f4bd1e87f61c66b170f4ce7b657ba318dcab438b625a6d9e82ed2f022",
+      "after_sha256": "ee8bc31490580bfefc283f912217e49a0979b49afae34fedea28f2334fd05c6f",
+      "bytes": 33341,
+      "wrapped": [
+        {
+          "name": "saveSecret",
+          "line": 37,
+          "async": true
+        },
+        {
+          "name": "listSecrets",
+          "line": 75,
+          "async": true
+        },
+        {
+          "name": "getSecret",
+          "line": 108,
+          "async": true
+        },
+        {
+          "name": "getSecretInternal",
+          "line": 140,
+          "async": false
+        },
+        {
+          "name": "getConfig",
+          "line": 148,
+          "async": true
+        },
+        {
+          "name": "updateConfig",
+          "line": 161,
+          "async": true
+        },
+        {
+          "name": "scanSystem",
+          "line": 223,
+          "async": true
+        },
+        {
+          "name": "installHandover",
+          "line": 237,
+          "async": true
+        },
+        {
+          "name": "getStatus",
+          "line": 271,
+          "async": true
+        },
+        {
+          "name": "getCosts",
+          "line": 301,
+          "async": true
+        },
+        {
+          "name": "startBackgroundPolling",
+          "line": 321,
+          "async": false
+        },
+        {
+          "name": "admitTelemetryPoll",
+          "line": 327,
+          "async": false
+        },
+        {
+          "name": "getTelemetry",
+          "line": 361,
+          "async": true
+        },
+        {
+          "name": "getFullState",
+          "line": 372,
+          "async": true
+        },
+        {
+          "name": "getTelemetryData",
+          "line": 452,
+          "async": true
+        },
+        {
+          "name": "refreshTelemetryCache",
+          "line": 458,
+          "async": true
+        }
+      ]
+    },
+    {
+      "path": "server/jobs/persistence.ts",
+      "before_sha256": "cb4038369b1844f6942cdb0d4ad0f7355fa8d08b6895f203a08aec96b9eb72f3",
+      "after_sha256": "dc333889cfd2b586678a10f8aa3e84fc1aa693a083a02461446642aac7e20f9d",
+      "bytes": 2467,
+      "wrapped": [
+        {
+          "name": "<original-callback>",
+          "line": 15,
+          "async": false
+        }
+      ]
+    },
+    {
+      "path": "server/lib/installScanner.ts",
+      "before_sha256": "5a070216ff96e7b1b50c33a14258e2e103939d681221585d31826dc7fb2683f9",
+      "after_sha256": "dc8587e4259bd5456382f44ab86d3cb4a45daf65c465a0bfcb04059dc5161b78",
+      "bytes": 3690,
+      "wrapped": []
+    },
+    {
+      "path": "server/loaders/aiLoader.ts",
+      "before_sha256": "0f176814cd855f3de2b7ad01a1d8b547c0b02c8535208b069093855227017fc6",
+      "after_sha256": "fee4b154c5174918fcbedd837fa5fcf6f086518f07ce1dda3efcce96a8a8db6d",
+      "bytes": 4606,
+      "wrapped": [
+        {
+          "name": "<original-callback>",
+          "line": 14,
+          "async": true
+        }
+      ]
+    },
+    {
+      "path": "server/routes/health.ts",
+      "before_sha256": "1aa977985a6dee9a16a0b499864f28da5c4196fb18b0822cc6628d47311abef5",
+      "after_sha256": "efdf9df6fc2f489915d31ce214e803a12fb4c6f144416f48fc5051641b6840e5",
+      "bytes": 7226,
+      "wrapped": [
+        {
+          "name": "<original-callback>",
+          "line": 47,
+          "async": true
+        }
+      ]
+    },
+    {
+      "path": "server/routes/oauth.routes.ts",
+      "before_sha256": "5db0006e626c96f9f375908b2e620117b643c5dee5015ab87413fafac8b14c5f",
+      "after_sha256": "b7808d087da11bce1b59bee4c1ee8f9973850e4d04ef9c009649e86c70bb83e7",
+      "bytes": 7930,
+      "wrapped": [
+        {
+          "name": "<original-callback>",
+          "line": 39,
+          "async": true
+        }
+      ]
+    },
+    {
+      "path": "server/routes/v1/factory.routes.ts",
+      "before_sha256": "7d6812c7dea017cb30a3c9875d6bc7345ab38ba3ad139dff72345b6c3bce4e77",
+      "after_sha256": "45bd184f943233774693d924c1eea2e25ce3ed348c6a0995c49408be1af7b3b5",
+      "bytes": 11983,
+      "wrapped": [
+        {
+          "name": "<original-callback>",
+          "line": 56,
+          "async": true
+        },
+        {
+          "name": "<original-callback>",
+          "line": 79,
+          "async": true
+        },
+        {
+          "name": "<original-callback>",
+          "line": 321,
+          "async": true
+        }
+      ]
+    },
+    {
+      "path": "server/routes/v1/google-auth.routes.ts",
+      "before_sha256": "ccbb24d803292e1a9dbbbc6643b7e37339d3af241c3c886a858e898a47714b97",
+      "after_sha256": "63bd3459a0c4d7ceca0c4204dd5137fe464e2187b53c32f9a42375edfbcf3519",
+      "bytes": 7068,
+      "wrapped": [
+        {
+          "name": "<original-callback>",
+          "line": 39,
+          "async": false
+        },
+        {
+          "name": "<original-callback>",
+          "line": 107,
+          "async": false
+        },
+        {
+          "name": "<original-callback>",
+          "line": 132,
+          "async": true
+        }
+      ]
+    },
+    {
+      "path": "server/routes/v1/system.routes.ts",
+      "before_sha256": "6621feaf14d264aa14e0cb5e88e2eabf93bdc2970d32bc8f73182c625575c788",
+      "after_sha256": "87109fa9fb96996da8a66978be90f4c406a2a38c586422ea88abe3e338949cd5",
+      "bytes": 17776,
+      "wrapped": [
+        {
+          "name": "<original-callback>",
+          "line": 351,
+          "async": true
+        }
+      ]
+    },
+    {
+      "path": "services/agentPersistence.ts",
+      "before_sha256": "7c09aa16dbee0339b6c4a15b2aa813c129c2edf1ea05085f292e0e1ae2064651",
+      "after_sha256": "dca2e63117a90cf31d2ce1ac13c808625b6785f3402450dc0ec8732f12f9f7d9",
+      "bytes": 3745,
+      "wrapped": [
+        {
+          "name": "saveAgent",
+          "line": 11,
+          "async": false
+        },
+        {
+          "name": "loadAgent",
+          "line": 29,
+          "async": false
+        },
+        {
+          "name": "getAllAgentIds",
+          "line": 38,
+          "async": false
+        },
+        {
+          "name": "saveAgents",
+          "line": 48,
+          "async": false
+        },
+        {
+          "name": "deleteAgent",
+          "line": 54,
+          "async": false
+        },
+        {
+          "name": "migrateAllToFileSystem",
+          "line": 70,
+          "async": false
+        }
+      ]
+    },
+    {
+      "path": "services/apiKeyService.ts",
+      "before_sha256": "6eb9cf20fa05d525d5544a8fda20989287ee68a95dcb20095052e41b118a1aea",
+      "after_sha256": "a066d821b3d002a7bc738e2817670a2fd68a827e1a90cc6c0e84604bffed92bf",
+      "bytes": 9518,
+      "wrapped": [
+        {
+          "name": "setAdminPassword",
+          "line": 70,
+          "async": false
+        },
+        {
+          "name": "verifyAdminPassword",
+          "line": 79,
+          "async": false
+        },
+        {
+          "name": "isAdminConfigured",
+          "line": 95,
+          "async": false
+        },
+        {
+          "name": "createApiKey",
+          "line": 105,
+          "async": false
+        },
+        {
+          "name": "validateKey",
+          "line": 150,
+          "async": false
+        },
+        {
+          "name": "revokeKey",
+          "line": 191,
+          "async": false
+        },
+        {
+          "name": "deleteKey",
+          "line": 212,
+          "async": false
+        },
+        {
+          "name": "getAllKeys",
+          "line": 226,
+          "async": false
+        },
+        {
+          "name": "updateKey",
+          "line": 230,
+          "async": false
+        },
+        {
+          "name": "listKeys",
+          "line": 248,
+          "async": false
+        },
+        {
+          "name": "getStats",
+          "line": 255,
+          "async": false
+        }
+      ]
+    },
+    {
+      "path": "services/capabilityAwareness.ts",
+      "before_sha256": "4e62264afaf8eb61f4f5f80f1739b341097131e762ad3cbfffddb78f4342f704",
+      "after_sha256": "2aa53c7f2e875c4bb20ce1996d06ccdc765b5ab3a5bedcd3b4d33cd8ee1b6022",
+      "bytes": 14963,
+      "wrapped": [
+        {
+          "name": "initialize",
+          "line": 84,
+          "async": true
+        },
+        {
+          "name": "subscribeToEvents",
+          "line": 130,
+          "async": false
+        },
+        {
+          "name": "onToolCreated",
+          "line": 176,
+          "async": false
+        },
+        {
+          "name": "onToolEvolved",
+          "line": 182,
+          "async": false
+        },
+        {
+          "name": "onToolDeleted",
+          "line": 192,
+          "async": false
+        },
+        {
+          "name": "onAgentSpawned",
+          "line": 198,
+          "async": false
+        },
+        {
+          "name": "onAgentEvolved",
+          "line": 211,
+          "async": false
+        },
+        {
+          "name": "onAgentDismissed",
+          "line": 220,
+          "async": false
+        },
+        {
+          "name": "onSquadFormed",
+          "line": 226,
+          "async": false
+        },
+        {
+          "name": "onSquadDissolved",
+          "line": 238,
+          "async": false
+        },
+        {
+          "name": "markDirty",
+          "line": 244,
+          "async": false
+        },
+        {
+          "name": "forceSync",
+          "line": 255,
+          "async": true
+        },
+        {
+          "name": "persistSnapshot",
+          "line": 303,
+          "async": true
+        },
+        {
+          "name": "loadPersistedSnapshot",
+          "line": 324,
+          "async": true
+        }
+      ]
+    },
+    {
+      "path": "services/cognitive/thoughtNarrator.ts",
+      "before_sha256": "75cbfdc7c451b95d5d2c00e2801e80d101febae559a712b738de9c0e39127094",
+      "after_sha256": "1e13f5a960db1f98b9e07f783e5ffc7d4b38b66fc49c3d11ba0c27b5153e77ef",
+      "bytes": 61124,
+      "wrapped": [
+        {
+          "name": "generateNarrative",
+          "line": 151,
+          "async": true
+        },
+        {
+          "name": "runConsciousnessCycle",
+          "line": 194,
+          "async": true
+        },
+        {
+          "name": "perceiveErrors",
+          "line": 890,
+          "async": true
+        }
+      ]
+    },
+    {
+      "path": "services/costEstimator.ts",
+      "before_sha256": "68b2a2954bbcf2b627b59b40fd7767a5b59513044e69293929aadabc6501d05e",
+      "after_sha256": "b05d06514ac8039ca17b0ca32890f8abd9ab383f9a2cfb3aa936e6ffb838e08d",
+      "bytes": 10753,
+      "wrapped": [
+        {
+          "name": "trackTransaction",
+          "line": 115,
+          "async": false
+        },
+        {
+          "name": "updateMetrics",
+          "line": 146,
+          "async": false
+        },
+        {
+          "name": "schedulePersistence",
+          "line": 172,
+          "async": false
+        },
+        {
+          "name": "reset",
+          "line": 182,
+          "async": false
+        },
+        {
+          "name": "loadPersistedMetrics",
+          "line": 211,
+          "async": true
+        },
+        {
+          "name": "persistMetrics",
+          "line": 235,
+          "async": true
+        }
+      ]
+    },
+    {
+      "path": "services/database/sqliteAdapter.ts",
+      "before_sha256": "51f571f9767ec6a0ecd5ea53c8f2844156c326e44470b35aae197919a73c52cd",
+      "after_sha256": "1331f95972eb2d9e277bc34755d5594cd8e9ab4e052ea72f9dc618089911e4c7",
+      "bytes": 27502,
+      "wrapped": [
+        {
+          "name": "upsertAgent",
+          "line": 48,
+          "async": true
+        },
+        {
+          "name": "getAgent",
+          "line": 53,
+          "async": true
+        },
+        {
+          "name": "getAllAgents",
+          "line": 58,
+          "async": true
+        },
+        {
+          "name": "deleteAgent",
+          "line": 63,
+          "async": true
+        },
+        {
+          "name": "getInactiveAgents",
+          "line": 68,
+          "async": true
+        },
+        {
+          "name": "log",
+          "line": 75,
+          "async": true
+        },
+        {
+          "name": "getLogs",
+          "line": 80,
+          "async": true
+        },
+        {
+          "name": "getRecentLogs",
+          "line": 85,
+          "async": true
+        },
+        {
+          "name": "saveCostMetrics",
+          "line": 92,
+          "async": true
+        },
+        {
+          "name": "getCostMetrics",
+          "line": 97,
+          "async": true
+        },
+        {
+          "name": "setConfig",
+          "line": 104,
+          "async": true
+        },
+        {
+          "name": "getConfig",
+          "line": 109,
+          "async": true
+        },
+        {
+          "name": "getAllConfig",
+          "line": 114,
+          "async": true
+        },
+        {
+          "name": "appendChatMessage",
+          "line": 121,
+          "async": true
+        },
+        {
+          "name": "getChatSessions",
+          "line": 126,
+          "async": true
+        },
+        {
+          "name": "createChatSession",
+          "line": 131,
+          "async": true
+        },
+        {
+          "name": "deleteChatSession",
+          "line": 136,
+          "async": true
+        },
+        {
+          "name": "getChatHistory",
+          "line": 141,
+          "async": true
+        },
+        {
+          "name": "searchChatHistory",
+          "line": 146,
+          "async": true
+        },
+        {
+          "name": "saveUiState",
+          "line": 153,
+          "async": true
+        },
+        {
+          "name": "getUiState",
+          "line": 158,
+          "async": true
+        },
+        {
+          "name": "logEvolution",
+          "line": 165,
+          "async": true
+        },
+        {
+          "name": "getEvolutionHistory",
+          "line": 170,
+          "async": true
+        },
+        {
+          "name": "upsertVoice",
+          "line": 177,
+          "async": true
+        },
+        {
+          "name": "getVoice",
+          "line": 182,
+          "async": true
+        },
+        {
+          "name": "getAllVoices",
+          "line": 187,
+          "async": true
+        },
+        {
+          "name": "getVoicesByCategory",
+          "line": 192,
+          "async": true
+        },
+        {
+          "name": "getDefaultVoice",
+          "line": 197,
+          "async": true
+        },
+        {
+          "name": "setDefaultVoice",
+          "line": 202,
+          "async": true
+        },
+        {
+          "name": "deleteVoice",
+          "line": 207,
+          "async": true
+        },
+        {
+          "name": "incrementVoiceUsage",
+          "line": 212,
+          "async": true
+        },
+        {
+          "name": "createCloneSession",
+          "line": 217,
+          "async": true
+        },
+        {
+          "name": "updateCloneSession",
+          "line": 222,
+          "async": true
+        },
+        {
+          "name": "getCloneSession",
+          "line": 227,
+          "async": true
+        },
+        {
+          "name": "getCloneSessionsForVoice",
+          "line": 232,
+          "async": true
+        }
+      ]
+    },
+    {
+      "path": "services/execution/taskLedger.ts",
+      "before_sha256": "fefcdf837395ab8a400b9175ae56362935eaa9fdbb2cba65b36a4890afb4ccc4",
+      "after_sha256": "d46e253e9af2065d1629678d622ef4c3fa8ce7c173fdc98d1e74851ab75542a9",
+      "bytes": 16191,
+      "wrapped": [
+        {
+          "name": "<original-callback>",
+          "line": 38,
+          "async": false
+        },
+        {
+          "name": "<original-callback>",
+          "line": 62,
+          "async": false
+        },
+        {
+          "name": "<original-callback>",
+          "line": 116,
+          "async": false
+        },
+        {
+          "name": "<original-callback>",
+          "line": 166,
+          "async": false
+        },
+        {
+          "name": "<original-callback>",
+          "line": 196,
+          "async": false
+        },
+        {
+          "name": "<original-callback>",
+          "line": 229,
+          "async": false
+        },
+        {
+          "name": "<original-callback>",
+          "line": 264,
+          "async": false
+        },
+        {
+          "name": "<original-callback>",
+          "line": 298,
+          "async": false
+        }
+      ]
+    },
+    {
+      "path": "services/genesisService.ts",
+      "before_sha256": "75e721bfd55e6b132f650c9cd904e627daa35168be2fb9ef4b36d99decdfed5e",
+      "after_sha256": "2838ccde46ac2785465bd270e31d1b0d44f04b7420861a403ec031de8168c818",
+      "bytes": 7817,
+      "wrapped": [
+        {
+          "name": "spawnProject",
+          "line": 14,
+          "async": true
+        },
+        {
+          "name": "runSpawnProcess",
+          "line": 54,
+          "async": true
+        },
+        {
+          "name": "updateProjectStatus",
+          "line": 154,
+          "async": false
+        }
+      ]
+    },
+    {
+      "path": "services/graphService.ts",
+      "before_sha256": "115d2fe661cfb26bdd1f2b3e4b93d94c1b3bab96ecfd6cf962b4edf593706c1a",
+      "after_sha256": "cc333b73c5a1a44bb32d392184299c483ac9627de971e9448c2c434239f53bf7",
+      "bytes": 74549,
+      "wrapped": [
+        {
+          "name": "runQuery",
+          "line": 463,
+          "async": false
+        },
+        {
+          "name": "runQueryOriginal",
+          "line": 466,
+          "async": true
+        },
+        {
+          "name": "runSqliteWrite",
+          "line": 569,
+          "async": true
+        },
+        {
+          "name": "runSqliteQuery",
+          "line": 649,
+          "async": true
+        },
+        {
+          "name": "createNode",
+          "line": 1160,
+          "async": true
+        },
+        {
+          "name": "createRelationship",
+          "line": 1230,
+          "async": true
+        },
+        {
+          "name": "createDiscoveryRelationship",
+          "line": 1270,
+          "async": true
+        },
+        {
+          "name": "getHubs",
+          "line": 1294,
+          "async": true
+        },
+        {
+          "name": "applyPreferentialAttachment",
+          "line": 1311,
+          "async": true
+        },
+        {
+          "name": "getRelatedConcepts",
+          "line": 1348,
+          "async": true
+        },
+        {
+          "name": "findOpenTriangles",
+          "line": 1386,
+          "async": true
+        },
+        {
+          "name": "getUserFacts",
+          "line": 1413,
+          "async": true
+        }
+      ]
+    },
+    {
+      "path": "services/incidentRegistry.ts",
+      "before_sha256": "edd9b3acdee9ab04ca2c3399167dab0bb1c76464f24349309411224e40b33b0a",
+      "after_sha256": "811d21e7c2f9ddfbde2d29c7d8624c015beea26b119cfac0a13ae843f306e377",
+      "bytes": 5183,
+      "wrapped": [
+        {
+          "name": "recordIncident",
+          "line": 47,
+          "async": false
+        },
+        {
+          "name": "resolveIncidents",
+          "line": 73,
+          "async": false
+        },
+        {
+          "name": "getOpenIncidents",
+          "line": 88,
+          "async": false
+        },
+        {
+          "name": "getRecentIncidents",
+          "line": 95,
+          "async": false
+        }
+      ]
+    },
+    {
+      "path": "services/integrationArchitect.ts",
+      "before_sha256": "8f22c2618675d8a1f7ea8c4547acc450a2e724908f163509c8d1b12af3816bac",
+      "after_sha256": "3b8dbb4ee1d9403b8e25a799927270eab82cd27064ff80d5a0eed7c1e5898488",
+      "bytes": 27529,
+      "wrapped": [
+        {
+          "name": "approveAndExecute",
+          "line": 323,
+          "async": true
+        },
+        {
+          "name": "loadFromStorage",
+          "line": 542,
+          "async": true
+        },
+        {
+          "name": "saveToStorage",
+          "line": 563,
+          "async": true
+        }
+      ]
+    },
+    {
+      "path": "services/introspectionEngine.ts",
+      "before_sha256": "4aeacc4d64be15b7ac710f9e6b7035a12f427ef709c9d6ce8d1dbf988db25d3b",
+      "after_sha256": "0c372e376bc43490313325f086d9bbecb243968ec34b91a468b1cd43d2242391",
+      "bytes": 73930,
+      "wrapped": [
+        {
+          "name": "loadGoalsFromMemory",
+          "line": 553,
+          "async": true
+        },
+        {
+          "name": "writeGoalsSnapshot",
+          "line": 609,
+          "async": false
+        },
+        {
+          "name": "persistGoals",
+          "line": 624,
+          "async": false
+        },
+        {
+          "name": "deriveGoals",
+          "line": 676,
+          "async": true
+        },
+        {
+          "name": "addGoal",
+          "line": 750,
+          "async": false
+        },
+        {
+          "name": "updateGoalProgress",
+          "line": 776,
+          "async": true
+        },
+        {
+          "name": "<original-callback>",
+          "line": 611,
+          "async": true
+        }
+      ]
+    },
+    {
+      "path": "services/lifecycle/host.ts",
+      "before_sha256": "553e940e2651ea92d2972813ce41b80a011f8f6f6b3ea8e4f82a9a508f72c22e",
+      "after_sha256": "66aa18f027ba83e8c2953eb95e9baa2e1c45b14fc539eefca317907c9a85beb1",
+      "bytes": 31922
+    },
+    {
+      "path": "services/lifecycle/sqliteAdmission.ts",
+      "before_sha256": null,
+      "after_sha256": "bd1f75952a8a123a5445611ea8804fca7cde627207ace62c743bdd12cb58b2b5",
+      "bytes": 7190
+    },
+    {
+      "path": "services/media/voiceLibraryService.ts",
+      "before_sha256": "a25d30d4a303d369a30ea7d7c127d7c8407184afc4e818460f12a88ee493a28d",
+      "after_sha256": "c2e86f5dc9c10822db6db527b78edc8dd9fcf83f09d4cda985d4bea9ab81fdb5",
+      "bytes": 27913,
+      "wrapped": [
+        {
+          "name": "reserveTelephonyVoice",
+          "line": 183,
+          "async": false
+        },
+        {
+          "name": "initialize",
+          "line": 267,
+          "async": true
+        },
+        {
+          "name": "initializeOriginal",
+          "line": 270,
+          "async": true
+        },
+        {
+          "name": "getAllVoices",
+          "line": 301,
+          "async": true
+        },
+        {
+          "name": "getAllVoicesOriginal",
+          "line": 304,
+          "async": true
+        },
+        {
+          "name": "getVoicesByCategory",
+          "line": 312,
+          "async": true
+        },
+        {
+          "name": "getVoicesByCategoryOriginal",
+          "line": 315,
+          "async": true
+        },
+        {
+          "name": "getVoicesByLanguage",
+          "line": 323,
+          "async": true
+        },
+        {
+          "name": "getVoicesByLanguageOriginal",
+          "line": 326,
+          "async": true
+        },
+        {
+          "name": "getVoice",
+          "line": 334,
+          "async": true
+        },
+        {
+          "name": "getVoiceOriginal",
+          "line": 337,
+          "async": true
+        },
+        {
+          "name": "getDefaultVoice",
+          "line": 345,
+          "async": true
+        },
+        {
+          "name": "getDefaultVoiceOriginal",
+          "line": 348,
+          "async": true
+        },
+        {
+          "name": "downloadVoice",
+          "line": 356,
+          "async": true
+        },
+        {
+          "name": "downloadVoiceOriginal",
+          "line": 359,
+          "async": true
+        },
+        {
+          "name": "downloadAllVoices",
+          "line": 400,
+          "async": true
+        },
+        {
+          "name": "downloadAllVoicesOriginal",
+          "line": 403,
+          "async": true
+        },
+        {
+          "name": "addClonedVoice",
+          "line": 421,
+          "async": true
+        },
+        {
+          "name": "addClonedVoiceOriginal",
+          "line": 429,
+          "async": true
+        },
+        {
+          "name": "deleteVoice",
+          "line": 464,
+          "async": true
+        },
+        {
+          "name": "deleteVoiceOriginal",
+          "line": 467,
+          "async": true
+        },
+        {
+          "name": "setDefaultVoice",
+          "line": 496,
+          "async": true
+        },
+        {
+          "name": "setDefaultVoiceOriginal",
+          "line": 499,
+          "async": true
+        },
+        {
+          "name": "getVoiceSamplePath",
+          "line": 509,
+          "async": true
+        },
+        {
+          "name": "getVoiceSamplePathOriginal",
+          "line": 512,
+          "async": true
+        },
+        {
+          "name": "loadFromDatabase",
+          "line": 617,
+          "async": true
+        },
+        {
+          "name": "saveToDatabase",
+          "line": 635,
+          "async": true
+        },
+        {
+          "name": "deleteFromDatabase",
+          "line": 648,
+          "async": true
+        }
+      ]
+    },
+    {
+      "path": "services/media/voiceMonitorService.ts",
+      "before_sha256": "94369344d49fc2805c243f85ed77bcebeda7d97cc05d8da032b442bcf2dcce6d",
+      "after_sha256": "e21b08c02148c5e096daf0e4bc68ee7399f9dbee82b621b0f86e776f7b64f263",
+      "bytes": 25144,
+      "wrapped": [
+        {
+          "name": "startMonitoring",
+          "line": 50,
+          "async": false
+        },
+        {
+          "name": "checkHealth",
+          "line": 77,
+          "async": true
+        },
+        {
+          "name": "requestSelfRepair",
+          "line": 155,
+          "async": true
+        },
+        {
+          "name": "recordTTSRequest",
+          "line": 180,
+          "async": false
+        },
+        {
+          "name": "recordVoiceQuality",
+          "line": 204,
+          "async": false
+        },
+        {
+          "name": "emitCloneComplete",
+          "line": 235,
+          "async": false
+        },
+        {
+          "name": "emitCloneFailed",
+          "line": 248,
+          "async": false
+        },
+        {
+          "name": "restartVoiceEngine",
+          "line": 297,
+          "async": true
+        },
+        {
+          "name": "killPortProcess",
+          "line": 566,
+          "async": true
+        },
+        {
+          "name": "installDependencies",
+          "line": 602,
+          "async": true
+        },
+        {
+          "name": "setCpuOnlyMode",
+          "line": 635,
+          "async": true
+        }
+      ]
+    },
+    {
+      "path": "services/memory/factRepository.ts",
+      "before_sha256": "f758f0d8eb19b1ecf6e9904fa42d0da56fcb8186cc0c760664ef00df66182606",
+      "after_sha256": "751530d6671ca6dad6af90c9eb75488d72bcae6655f104370a1f049b09b9bf77",
+      "bytes": 14129,
+      "wrapped": [
+        {
+          "name": "addFact",
+          "line": 83,
+          "async": true
+        },
+        {
+          "name": "updateFact",
+          "line": 105,
+          "async": true
+        },
+        {
+          "name": "retractFact",
+          "line": 139,
+          "async": true
+        },
+        {
+          "name": "getRecentFacts",
+          "line": 168,
+          "async": false
+        },
+        {
+          "name": "getFacts",
+          "line": 177,
+          "async": false
+        },
+        {
+          "name": "getFact",
+          "line": 185,
+          "async": false
+        },
+        {
+          "name": "findSimilar",
+          "line": 193,
+          "async": false
+        },
+        {
+          "name": "importLegacyFacts",
+          "line": 209,
+          "async": false
+        }
+      ]
+    },
+    {
+      "path": "services/missionCheckpoint.ts",
+      "before_sha256": "a0f8dfd745a57ee47cbc8a9854217c90a8af0db956a8c00f84ac84120abc33ce",
+      "after_sha256": "0582c55425e3a1952e3218898fe8411e0c621ded13357db6c6cd6b6d676cf4d4",
+      "bytes": 4467,
+      "wrapped": [
+        {
+          "name": "<original-callback>",
+          "line": 53,
+          "async": false
+        },
+        {
+          "name": "<original-callback>",
+          "line": 80,
+          "async": false
+        },
+        {
+          "name": "<original-callback>",
+          "line": 97,
+          "async": false
+        }
+      ]
+    },
+    {
+      "path": "services/orchestrator.ts",
+      "before_sha256": "62cf3adaecd19b6f4589af1ff53b5e81b95e7188364952b96c7ec5e5122c21e6",
+      "after_sha256": "24e466e927f1de38477c80188b19e60096d2f6c586027e526427ab5c4bb5b573",
+      "bytes": 159633,
+      "wrapped": [
+        {
+          "name": "handleDynamicExpansion",
+          "line": 1332,
+          "async": false
+        },
+        {
+          "name": "initializeSwarm",
+          "line": 1431,
+          "async": false
+        },
+        {
+          "name": "requestEvolution",
+          "line": 1971,
+          "async": true
+        },
+        {
+          "name": "toggleCategory",
+          "line": 2265,
+          "async": false
+        }
+      ]
+    },
+    {
+      "path": "services/planExecutor.ts",
+      "before_sha256": "4dd031e2c88bfcbeffc72a44618fd1f6764a89adf2e4201acc97837ee9299a89",
+      "after_sha256": "54157debc0f429846f4aadfb2da8f2dcc9157a9620e887f7ecc325652234906e",
+      "bytes": 42420
+    },
+    {
+      "path": "services/qualityControlService.ts",
+      "before_sha256": "b550ed99bcc33ad9b22759874b044c8213a222de09c5ef268bb4e68b0d450aed",
+      "after_sha256": "1af286a948d4b3576da7c18cfd43dd1e1c58112bfa980448653a2cf556fc57b8",
+      "bytes": 7362,
+      "wrapped": [
+        {
+          "name": "getSystemQualityScore",
+          "line": 78,
+          "async": false
+        },
+        {
+          "name": "<original-callback>",
+          "line": 123,
+          "async": false
+        },
+        {
+          "name": "<original-callback>",
+          "line": 131,
+          "async": false
+        },
+        {
+          "name": "<original-callback>",
+          "line": 139,
+          "async": false
+        },
+        {
+          "name": "<original-callback>",
+          "line": 147,
+          "async": false
+        },
+        {
+          "name": "<original-callback>",
+          "line": 155,
+          "async": false
+        },
+        {
+          "name": "<original-callback>",
+          "line": 163,
+          "async": false
+        }
+      ]
+    },
+    {
+      "path": "services/remediationService.ts",
+      "before_sha256": "cd809449ba46fe72bcbea515b60af973ec4c0a4618c2fc5e9df189ce28069986",
+      "after_sha256": "a2a43f5a7bfc3c42c6df5428a0ecb1747810355a36ba5269c13d1ff2136bcc09",
+      "bytes": 39583,
+      "wrapped": [
+        {
+          "name": "subscribeToVoiceIncidents",
+          "line": 187,
+          "async": false
+        },
+        {
+          "name": "handleVoiceEngineIncident",
+          "line": 205,
+          "async": true
+        },
+        {
+          "name": "applyVoiceFix",
+          "line": 336,
+          "async": true
+        },
+        {
+          "name": "escalateVoiceFailure",
+          "line": 386,
+          "async": false
+        },
+        {
+          "name": "logRepairSuccess",
+          "line": 437,
+          "async": false
+        },
+        {
+          "name": "mobilizeSquad",
+          "line": 456,
+          "async": true
+        },
+        {
+          "name": "diagnose",
+          "line": 678,
+          "async": true
+        },
+        {
+          "name": "fastTrackRemediation",
+          "line": 805,
+          "async": true
+        }
+      ]
+    },
+    {
+      "path": "services/schedulerService.ts",
+      "before_sha256": "2d845f45541e467b895324892db1a6666fe9e26d58d271376f41a827b8303f4e",
+      "after_sha256": "8e7de859baf0fe6370b235d940851cbd88a730f8b365d2b3ecb8e7d95b177bcf",
+      "bytes": 16436,
+      "wrapped": [
+        {
+          "name": "start",
+          "line": 86,
+          "async": false
+        },
+        {
+          "name": "scheduleTask",
+          "line": 123,
+          "async": false
+        },
+        {
+          "name": "scheduleNaturalLanguage",
+          "line": 146,
+          "async": false
+        },
+        {
+          "name": "cancelTask",
+          "line": 210,
+          "async": false
+        },
+        {
+          "name": "checkAndExecuteDueTasks",
+          "line": 251,
+          "async": true
+        },
+        {
+          "name": "loadTasksFromStorage",
+          "line": 349,
+          "async": true
+        },
+        {
+          "name": "persistTasks",
+          "line": 374,
+          "async": true
+        }
+      ]
+    },
+    {
+      "path": "services/sqliteService.ts",
+      "before_sha256": "49ec28cf8aa0904fb50c7b28d9178b6e816de176853c0d07c4c8f2b5bc8d6b55",
+      "after_sha256": "bd5e5a62392753361ea87504b562b0383caa1d2898e67bc2dbd99c586ee286a0",
+      "bytes": 51144,
+      "wrapped": [
+        {
+          "name": "upsertAgent",
+          "line": 459,
+          "async": false
+        },
+        {
+          "name": "getAgent",
+          "line": 481,
+          "async": false
+        },
+        {
+          "name": "getAllAgents",
+          "line": 488,
+          "async": false
+        },
+        {
+          "name": "deleteAgent",
+          "line": 494,
+          "async": false
+        },
+        {
+          "name": "log",
+          "line": 501,
+          "async": false
+        },
+        {
+          "name": "getLogs",
+          "line": 509,
+          "async": false
+        },
+        {
+          "name": "getRecentLogs",
+          "line": 517,
+          "async": false
+        },
+        {
+          "name": "saveCostMetrics",
+          "line": 528,
+          "async": false
+        },
+        {
+          "name": "getCostMetrics",
+          "line": 539,
+          "async": false
+        },
+        {
+          "name": "recordTelemetrySample",
+          "line": 549,
+          "async": false
+        },
+        {
+          "name": "getTelemetrySamples",
+          "line": 558,
+          "async": false
+        },
+        {
+          "name": "setConfig",
+          "line": 567,
+          "async": false
+        },
+        {
+          "name": "getConfig",
+          "line": 581,
+          "async": false
+        },
+        {
+          "name": "getAllConfig",
+          "line": 589,
+          "async": false
+        },
+        {
+          "name": "appendChatMessage",
+          "line": 602,
+          "async": false
+        },
+        {
+          "name": "getChatSessions",
+          "line": 625,
+          "async": false
+        },
+        {
+          "name": "createChatSession",
+          "line": 645,
+          "async": false
+        },
+        {
+          "name": "deleteChatSession",
+          "line": 662,
+          "async": false
+        },
+        {
+          "name": "getChatHistory",
+          "line": 672,
+          "async": false
+        },
+        {
+          "name": "searchChatHistory",
+          "line": 703,
+          "async": false
+        },
+        {
+          "name": "saveUiState",
+          "line": 796,
+          "async": false
+        },
+        {
+          "name": "getUiState",
+          "line": 807,
+          "async": false
+        },
+        {
+          "name": "getInactiveAgents",
+          "line": 816,
+          "async": false
+        },
+        {
+          "name": "logEvolution",
+          "line": 824,
+          "async": false
+        },
+        {
+          "name": "getEvolutionHistory",
+          "line": 850,
+          "async": false
+        },
+        {
+          "name": "upsertVoice",
+          "line": 877,
+          "async": false
+        },
+        {
+          "name": "getVoice",
+          "line": 927,
+          "async": false
+        },
+        {
+          "name": "getAllVoices",
+          "line": 933,
+          "async": false
+        },
+        {
+          "name": "getVoicesByCategory",
+          "line": 938,
+          "async": false
+        },
+        {
+          "name": "getDefaultVoice",
+          "line": 943,
+          "async": false
+        },
+        {
+          "name": "setDefaultVoice",
+          "line": 949,
+          "async": false
+        },
+        {
+          "name": "deleteVoice",
+          "line": 956,
+          "async": false
+        },
+        {
+          "name": "incrementVoiceUsage",
+          "line": 961,
+          "async": false
+        },
+        {
+          "name": "createCloneSession",
+          "line": 988,
+          "async": false
+        },
+        {
+          "name": "updateCloneSession",
+          "line": 1014,
+          "async": false
+        },
+        {
+          "name": "getCloneSession",
+          "line": 1039,
+          "async": false
+        },
+        {
+          "name": "getCloneSessionsForVoice",
+          "line": 1044,
+          "async": false
+        },
+        {
+          "name": "upsertTask",
+          "line": 1054,
+          "async": false
+        },
+        {
+          "name": "getTasksByPlan",
+          "line": 1069,
+          "async": false
+        },
+        {
+          "name": "getUnresolvedAbandonedTasks",
+          "line": 1080,
+          "async": false
+        },
+        {
+          "name": "getOpenTasksBefore",
+          "line": 1091,
+          "async": false
+        }
+      ]
+    },
+    {
+      "path": "services/telemetryAnalytics.ts",
+      "before_sha256": "b6645de5514b947945dc650ea76ce721221fad2a7471d725a5e4e70fc081968e",
+      "after_sha256": "d66ddc99a172cef7359bc42aba51545168516a55fabab3e372fd50b49ba4b9aa",
+      "bytes": 13947,
+      "wrapped": [
+        {
+          "name": "initialize",
+          "line": 66,
+          "async": true
+        },
+        {
+          "name": "ensureSchema",
+          "line": 91,
+          "async": false
+        },
+        {
+          "name": "loadConsent",
+          "line": 125,
+          "async": false
+        },
+        {
+          "name": "track",
+          "line": 152,
+          "async": false
+        },
+        {
+          "name": "setConsent",
+          "line": 218,
+          "async": true
+        },
+        {
+          "name": "getConsent",
+          "line": 239,
+          "async": false
+        },
+        {
+          "name": "getBufferedEvents",
+          "line": 250,
+          "async": false
+        },
+        {
+          "name": "getEventSummary",
+          "line": 278,
+          "async": false
+        },
+        {
+          "name": "flush",
+          "line": 301,
+          "async": true
+        },
+        {
+          "name": "purgeAllData",
+          "line": 329,
+          "async": false
+        },
+        {
+          "name": "trackHardwareProfile",
+          "line": 344,
+          "async": false
+        },
+        {
+          "name": "shutdown",
+          "line": 363,
+          "async": true
+        }
+      ]
+    },
+    {
+      "path": "services/telephony/telephonyService.ts",
+      "before_sha256": "2426f87b496bdd88e90e525098d810c2209f905c6668aff17a4d628792f95843",
+      "after_sha256": "97dc2cbcf93b2dd6f1c1890295ad80120bf75a029f963db0557787bcf39f624c",
+      "bytes": 39906,
+      "wrapped": [
+        {
+          "name": "initializeSchema",
+          "line": 159,
+          "async": false
+        },
+        {
+          "name": "applyProviderStatus",
+          "line": 204,
+          "async": false
+        },
+        {
+          "name": "applyProviderStatusOriginal",
+          "line": 207,
+          "async": false
+        },
+        {
+          "name": "dial",
+          "line": 230,
+          "async": true
+        },
+        {
+          "name": "dialOriginal",
+          "line": 233,
+          "async": true
+        },
+        {
+          "name": "triggerBargeIn",
+          "line": 424,
+          "async": true
+        },
+        {
+          "name": "triggerBargeInOriginal",
+          "line": 427,
+          "async": true
+        },
+        {
+          "name": "processCallTurn",
+          "line": 477,
+          "async": true
+        },
+        {
+          "name": "processCallTurnOriginal",
+          "line": 490,
+          "async": true
+        },
+        {
+          "name": "sendDtmf",
+          "line": 603,
+          "async": true
+        },
+        {
+          "name": "sendDtmfOriginal",
+          "line": 606,
+          "async": true
+        },
+        {
+          "name": "hangup",
+          "line": 666,
+          "async": true
+        },
+        {
+          "name": "hangupOriginal",
+          "line": 669,
+          "async": true
+        },
+        {
+          "name": "getCallByProviderSid",
+          "line": 754,
+          "async": false
+        },
+        {
+          "name": "getCallByProviderSidOriginal",
+          "line": 757,
+          "async": false
+        },
+        {
+          "name": "getCall",
+          "line": 769,
+          "async": false
+        },
+        {
+          "name": "getCallOriginal",
+          "line": 772,
+          "async": false
+        },
+        {
+          "name": "listCalls",
+          "line": 805,
+          "async": false
+        },
+        {
+          "name": "listCallsOriginal",
+          "line": 808,
+          "async": false
+        },
+        {
+          "name": "saveCallToDb",
+          "line": 832,
+          "async": false
+        }
+      ]
+    },
+    {
+      "path": "services/ttsService.ts",
+      "before_sha256": "eb2e1b263b7e9c74cae758250cf51e62718466b3036da81aede43f5385452311",
+      "after_sha256": "052546ac8a30a935fd68222371a2dcde330cc6f1e5663fa199e0d144d8cb31fd",
+      "bytes": 20350,
+      "wrapped": [
+        {
+          "name": "loadConfig",
+          "line": 136,
+          "async": true
+        },
+        {
+          "name": "saveConfig",
+          "line": 161,
+          "async": true
+        },
+        {
+          "name": "updateConfig",
+          "line": 444,
+          "async": false
+        }
+      ]
+    },
+    {
+      "path": "services/userProfileService.ts",
+      "before_sha256": "e311c20c407713f4bc65cdc4b91c152a4f77514669608c28ca67dcdb1484a37c",
+      "after_sha256": "03b857fff1f5c6fdb8418a1e7a891aa9fdfa15a85503ba5f6079d8ca9a941617",
+      "bytes": 16705,
+      "wrapped": [
+        {
+          "name": "loadProfile",
+          "line": 59,
+          "async": true
+        },
+        {
+          "name": "loadFromGraph",
+          "line": 85,
+          "async": true
+        },
+        {
+          "name": "mutate",
+          "line": 132,
+          "async": true
+        },
+        {
+          "name": "setName",
+          "line": 145,
+          "async": true
+        },
+        {
+          "name": "setPreference",
+          "line": 146,
+          "async": true
+        },
+        {
+          "name": "addFact",
+          "line": 147,
+          "async": true
+        },
+        {
+          "name": "extractFromMessage",
+          "line": 148,
+          "async": true
+        },
+        {
+          "name": "extractFromMessageWithReceipt",
+          "line": 153,
+          "async": true
+        },
+        {
+          "name": "getProfileContext",
+          "line": 227,
+          "async": false
+        }
+      ]
+    },
+    {
+      "path": "services/vault/financialVault.ts",
+      "before_sha256": "f8709816191f5f3f0de298f4b73f18ac80db03ce434eb7d8b84f45cb5493c2df",
+      "after_sha256": "63a4fe7de99f0826aa9342b53cfa39d59d1f3acaeb0adb06223cf1fb43fc2af3",
+      "bytes": 23855,
+      "wrapped": [
+        {
+          "name": "initializeSchema",
+          "line": 72,
+          "async": false
+        },
+        {
+          "name": "requestVirtualCard",
+          "line": 160,
+          "async": true
+        },
+        {
+          "name": "getCardForAutofill",
+          "line": 292,
+          "async": false
+        },
+        {
+          "name": "reserveSpend",
+          "line": 342,
+          "async": false
+        },
+        {
+          "name": "captureSpend",
+          "line": 379,
+          "async": false
+        },
+        {
+          "name": "releaseSpend",
+          "line": 394,
+          "async": false
+        },
+        {
+          "name": "recordTransaction",
+          "line": 404,
+          "async": false
+        },
+        {
+          "name": "burnCard",
+          "line": 421,
+          "async": false
+        },
+        {
+          "name": "getSpendSummary",
+          "line": 444,
+          "async": false
+        },
+        {
+          "name": "listCards",
+          "line": 471,
+          "async": false
+        }
+      ]
+    },
+    {
+      "path": "services/workflowEngine.ts",
+      "before_sha256": "bec99323b53d7a03bf1ee03b95f6278f9fb3c46f37b462a0c23eea5b4a85537f",
+      "after_sha256": "7319cedd95dd00d96a4d2619f1dcf51303751536a668129a162d7ec89bd2c6c4",
+      "bytes": 29605
+    },
+    {
+      "path": "tests/real-process/neo4j-service-trial/proposed-product-overlay/services/userProfileService.ts",
+      "before_sha256": "fd540e3258c278b5d7ba8905983d33a58f2b086129c90f7755d3aa623b6e9d81",
+      "after_sha256": "03b857fff1f5c6fdb8418a1e7a891aa9fdfa15a85503ba5f6079d8ca9a941617",
+      "bytes": 16705
+    }
+  ],
+  "root_product_files_untouched": true,
+  "host_guard_or_marker_changed": false,
+  "runtime": false,
+  "tests_changed": false,
+  "caps_changed": false,
+  "host_end_empty_child_sync_completion_changed": true
+}

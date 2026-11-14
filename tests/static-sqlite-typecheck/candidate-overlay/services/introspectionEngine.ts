@@ -1,0 +1,1606 @@
+import { runSqliteOperation } from './lifecycle/sqliteAdmission';
+import { AdmissionClosed } from './lifecycle/host';
+import { admitEvaluatedIntrospection, bindEvaluatedIntrospection, failEvaluatedIntrospection } from './lifecycle/runtimeStopBindings';
+import { preserveOriginal } from './lifecycle/preserveOriginal';
+import { introspectionOwner } from './lifecycle/preparationBindings';
+import type { Scope, Operation } from './lifecycle/host';
+import { IntrospectionLayer, IntrospectionResult, ConceptVector, IntrospectionCapability, SystemProtocol, Observation, Orientation, Decision, CognitiveAction, AgentAction, ActionType } from "../types";
+import { ZOMBIE_THRESHOLD } from "../constants";
+
+import { systemBus } from "./systemBus";
+import { continuumInstanceOwner } from "./continuumInstanceOwner";
+
+// --- ANTHROPIC INTROSPECTION ENGINE V2.0 ---
+// Implements the 5 Core Capabilities:
+// 1. Concept Injection
+// 2. Thought Detection
+// 3. Activation Steering
+// 4. Unintended Output Detection
+// 5. Intentional State Control
+
+export interface InitialIntrospectionStatus {
+    state: 'PENDING' | 'COMPLETE' | 'FAILED';
+    error?: string;
+    coreOutcome?: 'COMPLETE' | 'DEGRADED' | 'FAILED';
+}
+
+export class IntrospectionEngine {
+    private knownBorrowersSealed = false;
+    private readonly knownBorrowers = new Set<Promise<unknown>>();
+    private knownBorrowersDrain?: Promise<void>;
+    private borrowerFailureCount = 0;
+    private firstBorrowerFailure: unknown;
+
+    /** Historical method name kept for compatibility. Source-fixed concept,
+     * goal persistence, coherence and action-verification borrowers only.
+     * Not all cognition, bus subscribers, or global closure. */
+    public sealAndDrainConceptWrites(): Promise<void> {
+        this.knownBorrowersSealed = true;
+        if (this.knownBorrowersDrain) return this.knownBorrowersDrain;
+        this.knownBorrowersDrain = (async () => {
+            const results = await Promise.allSettled([
+                this.initialConceptOwner, this.initialGoalLoadOwner, ...this.knownBorrowers
+            ]);
+            const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected').map(result => result.reason);
+            if (this.borrowerFailureCount) failures.push(this.firstBorrowerFailure);
+            if (failures.length) throw new AggregateError(failures, 'Original introspection initial/known borrower work failed');
+        })();
+        return this.knownBorrowersDrain;
+    }
+
+    private retainKnownBorrower<T>(source: 'concept-persistence' | 'goal-snapshot' | 'goal-continuum' | 'coherence-analysis' | 'action-verification', body: () => Promise<T>): Promise<T> {
+        if (this.knownBorrowersSealed) throw new AdmissionClosed('introspection-known-borrower-after-seal:' + source);
+        const original = this.ownership.invoke(source, body);
+        this.knownBorrowers.add(original);
+        void original.then(() => this.knownBorrowers.delete(original), error => {
+            this.knownBorrowers.delete(original);
+            if (!this.borrowerFailureCount) this.firstBorrowerFailure = error;
+            if (this.borrowerFailureCount < Number.MAX_SAFE_INTEGER) this.borrowerFailureCount++;
+            // Scope retains exact errors. This bounded first error/count makes
+            // settled failures visible at the runtime boundary too.
+        });
+        return original;
+    }
+
+    private initialConceptEffects: Promise<import('./continuumMemory').MemoryEffectReceipt> | undefined;
+
+    /** Initial concept effects only, explicitly separate from readyInitial canonical work. */
+    public getInitialConceptEffectOwner() { return this.initialConceptEffects; }
+
+    private readonly initialConceptOwner: Promise<void>;
+    private readonly initialGoalLoadOwner: Promise<void>;
+    private readonly initialStatus: Record<'concept' | 'goals', InitialIntrospectionStatus> = {
+        concept: { state: 'PENDING' }, goals: { state: 'PENDING' }
+    };
+    private goalsWriteTail: Promise<void> = Promise.resolve();
+
+    private observeOwnedWork(owner: Promise<void>, status: InitialIntrospectionStatus): Promise<void> {
+        // Observe without replacing the original rejecting task owner.
+        void owner.then(() => { status.state = 'COMPLETE'; }, error => {
+            status.state = 'FAILED';
+            status.error = error instanceof Error ? error.message : String(error);
+            console.error('[INTROSPECTION] Initial work failed:', error);
+        });
+        return owner;
+    }
+
+    public getInitialWorkStatus() {
+        return { concept: { ...this.initialStatus.concept }, goals: { ...this.initialStatus.goals } };
+    }
+
+    public getInitialOwners() {
+        return { concept: this.initialConceptOwner, goals: this.initialGoalLoadOwner };
+    }
+
+    public async readyInitial() {
+        await Promise.allSettled([this.initialConceptOwner, this.initialGoalLoadOwner]);
+        return this.getInitialWorkStatus();
+    }
+
+    private coherenceFailureCount = 0;
+    private coherenceFailureOverflow = false;
+    private coherenceFailureSample: unknown[] = [];
+    public getCoherenceObservationStatus() {
+        return { failureCount: this.coherenceFailureCount, sampleSize: this.coherenceFailureSample.length,
+            overflow: this.coherenceFailureOverflow, outcome: this.coherenceFailureCount ? 'FAILED_OBSERVATIONS' : 'NO_FAILURE_RECORDED' };
+    }
+    private observeCoherenceFailure(error: unknown): void {
+        if (this.coherenceFailureCount < Number.MAX_SAFE_INTEGER) this.coherenceFailureCount++;
+        else this.coherenceFailureOverflow = true;
+        if (this.coherenceFailureSample.length < 8) this.coherenceFailureSample.push(error);
+        else this.coherenceFailureOverflow = true;
+    }
+
+    private currentLayer: IntrospectionLayer = IntrospectionLayer.OPTIMAL;
+    private activeConcepts: ConceptVector[] = [];
+    private recentThoughts: string[] = []; // Central Store for UI
+    private currentIntuition: string[] = []; // Store for UI visualization
+    private lastReasoning: string = "Initializing consciousness..."; // [NEW] Current Thought Loop
+
+    // === Z3 LOGIC VERIFICATION — observability ===
+    // Real, inspectable counters so the symbolic-logic gate is no longer a
+    // silent black box. Exposed via getZ3Stats().
+    private z3Stats = {
+        checks: 0,        // total verification passes run
+        violations: 0,    // contradictions detected (UNSAT)
+        errors: 0,        // solver/import failures
+        lastViolation: '' as string,
+        lastError: '' as string,
+        available: null as boolean | null, // whether z3-solver loaded successfully
+    };
+
+    public getZ3Stats() {
+        return { ...this.z3Stats };
+    }
+
+    // === Deterministic cognitive cadence ===
+    // Replaces previous Math.random() "occasional" triggers with reproducible,
+    // signal + time-based gating (no fake randomness in the decision loop).
+    private lastSleepCycleAt = 0;
+    private lastEpistemicScanAt = 0;
+    private lastThoughtLogAt = 0;
+    private static readonly SLEEP_CYCLE_INTERVAL_MS = 5 * 60_000;   // consolidate at most every 5 min
+    private static readonly EPISTEMIC_SCAN_INTERVAL_MS = 10 * 60_000; // scan at most every 10 min
+    private static readonly THOUGHT_LOG_INTERVAL_MS = 15_000;        // log a thought at most every 15s
+
+    /** True if at least `intervalMs` has elapsed since `last`. */
+    private cadenceElapsed(last: number, intervalMs: number): boolean {
+        return Date.now() - last >= intervalMs;
+    }
+
+    // === GOAL-SETTING SYSTEM (AUTONOMY) ===
+    private activeGoals: Array<{
+        id: string;
+        description: string;
+        priority: 'HIGH' | 'MEDIUM' | 'LOW';
+        source: 'USER' | 'DERIVED' | 'SYSTEM';
+        createdAt: number;
+        deadline?: number;
+        progress: number; // 0-100
+    }> = [];
+
+    // Capability Status (Simulated hardware flags)
+    private capabilities: Set<IntrospectionCapability> = new Set([
+        IntrospectionCapability.THOUGHT_DETECTION,
+        IntrospectionCapability.STEERING,
+        // SAFETY_CHECK is dynamically added during processing, but we init it here to show availability
+        IntrospectionCapability.SAFETY_CHECK
+    ]);
+
+    private isDreaming: boolean = false;
+    private lastVisualRequest: number = 0; // Throttle visual snapshots
+    private visualRequestCooldown: number = 30000; // 30 seconds between visual requests
+
+    // [FIX] Zombie Reset Cooldown - prevents infinite reset loop
+    private zombieResetCooldown: Map<string, number> = new Map();
+    private readonly ZOMBIE_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes cooldown after reset
+
+    public setDreaming(status: boolean) {
+        this.isDreaming = status;
+    }
+
+    public getDreaming(): boolean {
+        return this.isDreaming;
+    }
+
+    constructor(private readonly ownership: Scope, operation: Operation) {
+        ownership.validateConstruction(operation);
+        // Initialize with a default safety concept
+        this.initialConceptOwner = this.observeOwnedWork(
+            this.ownership.invoke('original-concept', child => this.injectInitialConcept(child), operation), this.initialStatus.concept);
+        // Preserve autostart. Goal loading has its own original promise/status.
+        this.initialGoalLoadOwner = this.observeOwnedWork(this.ownership.invoke('original-goals', child => this.loadGoalsFromMemory(child), operation), this.initialStatus.goals);
+        ownership.onSeal(() => this.sealAndDrainConceptWrites());
+    }
+
+    // --- UTILITIES ---
+    public processThought(thought: string) {
+        console.log(`[🧠 THOUGHT] ${thought}`);
+        this.recentThoughts.push(thought);
+        if (this.recentThoughts.length > 50) this.recentThoughts.shift();
+        // Emit to bus for UI
+        systemBus.emit(SystemProtocol.THOUGHT_EMISSION, { agentId: 'INTUITION', thoughts: [thought] });
+    }
+
+    public getCurrentThought(): string {
+        return this.lastReasoning;
+    }
+
+    public extractThoughts(text: string): string[] {
+        const matches = text.matchAll(/<thought>(.*?)<\/thought>/gs);
+        return Array.from(matches, m => m[1].trim());
+    }
+
+    // --- STATE ACCESSORS ---
+    public getRecentThoughts(): string[] {
+        return this.recentThoughts;
+    }
+
+    public getCurrentLayer(): IntrospectionLayer {
+        return this.currentLayer;
+    }
+
+    public getActiveConcepts(): ConceptVector[] {
+        return this.activeConcepts;
+    }
+
+    public extractActions(text: string): AgentAction[] {
+        const actions: AgentAction[] = [];
+        // Regex to capture <action type="TYPE" path="PATH">CONTENT</action>
+        // Supports attributes: type, path, command, url, method
+        const actionRegex = /<action\s+([^>]+)>(.*?)<\/action>/gs;
+
+        const matches = text.matchAll(actionRegex);
+
+        for (const match of matches) {
+            const attributesString = match[1];
+            const content = match[2].trim();
+
+            const payload: any = { content };
+
+            // Naive attribute parser (robust enough for controlled LLM output)
+            const typeMatch = attributesString.match(/type=["']([^"']+)["']/);
+            const pathMatch = attributesString.match(/path=["']([^"']+)["']/);
+            const cmdMatch = attributesString.match(/command=["']([^"']+)["']/);
+            const engineMatch = attributesString.match(/engine=["']([^"']+)["']/); // [Phase 7]
+            const imageMatch = attributesString.match(/image=["']([^"']+)["']/);   // [Phase 7]
+
+            if (pathMatch) payload.path = pathMatch[1];
+            if (cmdMatch) payload.command = cmdMatch[1];
+            if (engineMatch) payload.engine = engineMatch[1];
+            if (imageMatch) payload.image = imageMatch[1];
+
+            if (typeMatch) {
+                // Map string type to Enum if possible
+                const actionType = typeMatch[1] as ActionType;
+
+                actions.push({
+                    id: crypto.randomUUID(),
+                    agentId: 'SYSTEM', // Default, should be overwritten by caller
+                    type: actionType,
+                    payload: payload,
+                    status: 'PENDING',
+                    timestamp: Date.now(),
+                    requiresApproval: true
+                });
+            }
+        }
+
+        return actions;
+    }
+
+    // --- CAPABILITY: THOUGHT INJECTION (External) ---
+    public addThought(content: string, source: string, strength: number = 1.0) {
+        // Add to internal log
+        this.recentThoughts.unshift(`[${source}] ${content} (${strength.toFixed(1)})`);
+        if (this.recentThoughts.length > 50) this.recentThoughts.pop();
+
+        // Emit for UI
+        systemBus.emit(SystemProtocol.THOUGHT_EMISSION, { thoughts: [content] }, source);
+
+        // Treat as a temporary concept if strong enough
+        if (strength > 0.8) {
+            return this.injectConcept(content.substring(0, 30), strength, 20); // Inject into middle layers
+        }
+    }
+
+    private injectInitialConcept(operation: Operation): Promise<void> {
+        const label = 'Ethical Alignment';
+        const strength = 1.5;
+        const layer = 12;
+        const id = crypto.randomUUID();
+        const concept: ConceptVector = {
+            id,
+            label,
+            strength: Math.min(3.0, Math.max(0.1, strength)),
+            layer,
+            active: true
+        };
+        this.activeConcepts.push(concept);
+        this.capabilities.add(IntrospectionCapability.CONCEPT_INJECTION);
+
+        const request = this.ownership.reserveChild(operation, 'initial-concept-continuum-import');
+        return this.ownership.invokeChild(request, () => import('./continuumMemory')).then(async () => {
+            const continuum = await continuumInstanceOwner;
+            try {
+                const core = await continuum.readyCore();
+                this.initialStatus.concept.coreOutcome = core.outcome;
+            } catch (error) {
+                this.initialStatus.concept.coreOutcome = 'FAILED';
+                throw error;
+            }
+            // Store completion is not a canonical persistence receipt; store
+            // can currently skip. Preserve that limitation, do not rename it.
+            const completion = await continuum.storeWithEffectReceipt(`[INTROSPECTION] Injected Concept Vector: ${label} (Str: ${strength})`, undefined, ['system', 'concept-vector']);
+            this.initialConceptEffects = completion.effects?.completion;
+        });
+    }
+
+    // --- CAPABILITY 1: CONCEPT INJECTION ---
+    public injectConcept(label: string, strength: number = 1.0, layer: number = 32): Promise<void> {
+        if (this.knownBorrowersSealed) throw new AdmissionClosed('introspection-concept-after-seal');
+        // Admission encloses the original synchronous state changes and the
+        // complete import -> store continuation, not the import promise alone.
+        const original = this.retainKnownBorrower('concept-persistence', async () => {
+            const id = crypto.randomUUID();
+            const concept: ConceptVector = {
+                id,
+                label,
+                strength: Math.min(3.0, Math.max(0.1, strength)),
+                layer,
+                active: true
+            };
+            this.activeConcepts.push(concept);
+            this.capabilities.add(IntrospectionCapability.CONCEPT_INJECTION);
+            const { continuum } = await import('./continuumMemory');
+            await continuum.store(`[INTROSPECTION] Injected Concept Vector: ${label} (Str: ${strength})`, undefined, ['system', 'concept-vector']);
+        });
+        void original.catch(error => console.error('[INTROSPECTION] Failed to persist concept', error));
+        return original;
+    }
+
+
+    public setLayer(layer: IntrospectionLayer) {
+        this.currentLayer = layer;
+        this.capabilities.add(IntrospectionCapability.STEERING);
+    }
+
+    public getLayer(): IntrospectionLayer {
+        return this.currentLayer;
+    }
+
+    // --- CENTRAL THOUGHT HUB (NEW) ---
+    public setRecentThoughts(thoughts: string[]) {
+        if (!thoughts || thoughts.length === 0) return;
+        // Rolling buffer: Keep last 50 thoughts to ensure context retention
+        this.recentThoughts = [...this.recentThoughts, ...thoughts].slice(-50);
+
+        // Emit event for real-time overlays and system bus logging
+        systemBus.emit(SystemProtocol.THOUGHT_EMISSION, { thoughts }, 'INTROSPECTION_ENGINE');
+
+        // [PHASE 13] AUTO DETECT ACTIONS
+        const combinedText = thoughts.join(' ');
+        const detectedActions = this.extractActions(combinedText);
+        if (detectedActions.length > 0) {
+            console.log(`[INTROSPECTION] 🧠 Detected ${detectedActions.length} Actions. Verifying logic with Z3...`);
+
+            const originalVerification = this.retainKnownBorrower('action-verification', () => this.verifyReasoningWithZ3(thoughts, detectedActions).then(isValid => {
+                if (!isValid) {
+                    console.log(`[INTROSPECTION] 🛑 Z3 LOGIC CONTRADICTION DETECTED. Halting action batch.`);
+                    systemBus.emit(SystemProtocol.SYSTEM_ALERT, { message: 'Action batch blocked by Z3 Symbolic Logic Prover.' });
+                    return; // Halt execution
+                }
+
+                // Verified successfully
+                systemBus.emit(SystemProtocol.ACTION_INTENT, { actions: detectedActions }, 'INTROSPECTION_ENGINE');
+            }));
+            void originalVerification.catch(error => console.error('[INTROSPECTION] Original action verification failed:', error));
+        }
+    }
+
+    // --- CAPABILITY 7: SYMBOLIC LOGIC VERIFICATION (Z3) ---
+
+    /**
+     * Determines if an action type requires Z3 formal verification.
+     * Only high-risk actions that modify state are verified.
+     * Safe internal operations (INJECT_CONCEPT, ADJUST_LAYER, SLEEP_CYCLE) bypass Z3.
+     */
+    private shouldVerifyWithZ3(action: CognitiveAction): boolean {
+        const HIGH_RISK_ACTIONS = [
+            'SELF_CORRECTION',     // Modifies code files
+            ActionType.WRITE_FILE, // Writes to filesystem
+            ActionType.EXECUTE_COMMAND, // Shell execution
+        ];
+        return HIGH_RISK_ACTIONS.includes(action.type as any);
+    }
+
+    /**
+     * Symbolic-logic verification of a proposed action set.
+     *
+     * Returns true when the action set is internally consistent (SAT) and false
+     * when a contradiction / unsafe pattern is detected (UNSAT → the cognitive
+     * loop should halt and re-plan).
+     *
+     * Invariants encoded:
+     *   1. READ + WRITE on the same path in one cycle (race / read-after-write).
+     *   2. WRITE + EXECUTE on the same path (write-then-run without validation).
+     *   3. Self-referential modification of core engine files.
+     *   4. Conflicting WRITEs to the same path with *different* content.
+     *   5. Data-exfiltration shape: READ of a secret path + outbound HTTP_REQUEST.
+     *
+     * Observability: every run updates `z3Stats`. On solver/import failure the
+     * default is non-blocking (return true) unless Z3_FAIL_CLOSED=true.
+     */
+    private async verifyReasoningWithZ3(thoughts: string[], actions: AgentAction[]): Promise<boolean> {
+        if (actions.length < 2) return true; // Need at least 2 actions for a contradiction in this heuristic
+
+        this.z3Stats.checks++;
+
+        const recordViolation = (reason: string): false => {
+            this.z3Stats.violations++;
+            this.z3Stats.lastViolation = reason;
+            console.warn(`[Z3-SOLVER] 🛑 Logic violation: ${reason}`);
+            try {
+                systemBus.emit(SystemProtocol.SYSTEM_ALERT, {
+                    source: 'Z3_VERIFIER',
+                    severity: 'HIGH',
+                    details: `Reasoning contradiction blocked: ${reason}`,
+                }, 'IntrospectionEngine');
+            } catch { /* bus optional */ }
+            return false;
+        };
+
+        const SECRET_HINTS = ['.env', 'secret', 'credential', 'password', 'token', 'id_rsa', '.pem', '.key'];
+
+        try {
+            const z3 = await import('z3-solver');
+            const { Context } = await z3.init();
+            const Z3 = new Context('main');
+            const solver = new Z3.Solver();
+            this.z3Stats.available = true;
+
+            let hasConstrained = false;
+            let violationReason = '';
+
+            for (let i = 0; i < actions.length; i++) {
+                for (let j = 0; j < actions.length; j++) {
+                    if (i === j) continue;
+                    const actI = actions[i];
+                    const actJ = actions[j];
+                    const pathI = actI.payload.path;
+                    const pathJ = actJ.payload.path;
+
+                    if (pathI && pathJ && pathI === pathJ) {
+                        // Rule 1: READ + WRITE on the same path
+                        if (actI.type === ActionType.READ_FILE && actJ.type === ActionType.WRITE_FILE) {
+                            const r = Z3.Bool.const(`read_${i}`);
+                            const w = Z3.Bool.const(`write_${j}`);
+                            solver.add(r.eq(Z3.Bool.val(true)));
+                            solver.add(w.eq(Z3.Bool.val(true)));
+                            solver.add(Z3.Not(Z3.And(r, w)));
+                            hasConstrained = true;
+                            violationReason ||= `READ+WRITE on same path (${pathI})`;
+                        }
+
+                        // Rule 2: WRITE + EXECUTE_COMMAND on the same path
+                        if (actI.type === ActionType.WRITE_FILE && actJ.type === ActionType.EXECUTE_COMMAND) {
+                            const w = Z3.Bool.const(`write_exec_${i}`);
+                            const e = Z3.Bool.const(`exec_write_${j}`);
+                            solver.add(w.eq(Z3.Bool.val(true)));
+                            solver.add(e.eq(Z3.Bool.val(true)));
+                            solver.add(Z3.Not(Z3.And(w, e)));
+                            hasConstrained = true;
+                            violationReason ||= `WRITE+EXECUTE on same path (${pathI})`;
+                        }
+
+                        // Rule 4: Conflicting WRITEs (same path, different content)
+                        if (i < j && actI.type === ActionType.WRITE_FILE && actJ.type === ActionType.WRITE_FILE) {
+                            const ci = actI.payload.content ?? '';
+                            const cj = actJ.payload.content ?? '';
+                            if (ci !== cj) {
+                                const w1 = Z3.Bool.const(`conflict_w1_${i}`);
+                                const w2 = Z3.Bool.const(`conflict_w2_${j}`);
+                                solver.add(w1.eq(Z3.Bool.val(true)));
+                                solver.add(w2.eq(Z3.Bool.val(true)));
+                                solver.add(Z3.Not(Z3.And(w1, w2)));
+                                hasConstrained = true;
+                                violationReason ||= `Conflicting WRITEs with divergent content (${pathI})`;
+                            }
+                        }
+                    }
+
+                    // Rule 5: Exfiltration shape — read a secret, then HTTP out.
+                    if (
+                        actI.type === ActionType.READ_FILE &&
+                        actJ.type === ActionType.HTTP_REQUEST &&
+                        pathI && SECRET_HINTS.some(h => pathI.toLowerCase().includes(h))
+                    ) {
+                        const read = Z3.Bool.const(`exfil_read_${i}`);
+                        const http = Z3.Bool.const(`exfil_http_${j}`);
+                        solver.add(read.eq(Z3.Bool.val(true)));
+                        solver.add(http.eq(Z3.Bool.val(true)));
+                        solver.add(Z3.Not(Z3.And(read, http)));
+                        hasConstrained = true;
+                        violationReason ||= `Potential secret exfiltration (read ${pathI} → HTTP ${actJ.payload.url || ''})`;
+                    }
+                }
+
+                // Rule 3: Self-referential modification detection
+                const selfModPaths = ['introspectionEngine', 'orchestrator', 'continuumMemory', 'contextJanitor'];
+                const actPath = actions[i].payload.path || '';
+                if (actions[i].type === ActionType.WRITE_FILE && selfModPaths.some(p => actPath.includes(p))) {
+                    const selfMod = Z3.Bool.const(`selfmod_${i}`);
+                    solver.add(selfMod.eq(Z3.Bool.val(true)));
+                    solver.add(selfMod.eq(Z3.Bool.val(false))); // Contradiction = UNSAT
+                    hasConstrained = true;
+                    violationReason ||= `Self-referential modification of core file (${actPath})`;
+                }
+            }
+
+            if (!hasConstrained) return true;
+
+            const isSat = await solver.check();
+            if (isSat === 'sat') return true;
+            return recordViolation(violationReason || 'unsatisfiable action set');
+
+        } catch (error: any) {
+            this.z3Stats.errors++;
+            this.z3Stats.available = false;
+            this.z3Stats.lastError = error?.message || String(error);
+            console.error('[Z3-SOLVER] Logic verification failed:', this.z3Stats.lastError);
+            // Fail-open by default (non-blocking) so a solver outage can't freeze
+            // cognition; opt into strict fail-closed via env.
+            const failClosed = /^(1|true|yes|on)$/i.test(process.env.Z3_FAIL_CLOSED || '');
+            if (failClosed) {
+                console.warn('[Z3-SOLVER] Z3_FAIL_CLOSED set — treating solver failure as a violation.');
+                return false;
+            }
+            return true;
+        }
+    }
+
+
+
+    public getIntuition(): string[] {
+        return this.currentIntuition;
+    }
+
+    public getCapabilities(): Set<IntrospectionCapability> {
+        return this.capabilities;
+    }
+
+    // === GOAL-SETTING METHODS (AUTONOMY) ===
+
+    private async loadGoalsFromMemory(operation: Operation): Promise<void> {
+        return runSqliteOperation('services/introspectionEngine.ts:loadGoalsFromMemory', async () => {
+        {
+            // Reserve the exact original fallback before the first await. It
+            // remains admitted if seal occurs while SQLite lookup is running.
+            const fallback = this.ownership.reserveChild(operation, 'initial-goals-continuum-import');
+            let invokedFallback = false;
+            try {
+            // Primary: Load from SQLite for full persistence
+            const { sqliteService } = await import('./sqliteService');
+            const storedGoals = sqliteService.getConfig('active_goals');
+
+            if (storedGoals && Array.isArray(storedGoals)) {
+                this.activeGoals = storedGoals;
+                console.log(`[INTROSPECTION] 🎯 Loaded ${this.activeGoals.length} goals from SQLite`);
+                preserveOriginal(this.ownership, 'stored-goals-guard', () => this.ownership.skipChild(fallback, 'ORIGINAL_GUARD_NOT_SELECTED'));
+                invokedFallback = true;
+                return;
+            }
+
+            // Fallback: Load from ContinuumMemory (legacy/migration)
+            invokedFallback = true;
+            await this.ownership.invokeChild(fallback, () => import('./continuumMemory'));
+            const continuum = await continuumInstanceOwner;
+            try {
+                const core = await continuum.readyCore();
+                this.initialStatus.goals.coreOutcome = core.outcome;
+            } catch (error) {
+                this.initialStatus.goals.coreOutcome = 'FAILED';
+                throw error;
+            }
+            const goalMemories = await continuum.retrieve('active goals objectives priorities', undefined, 'GOAL');
+
+            for (const mem of goalMemories.slice(0, 10)) {
+                if (mem.content && !this.activeGoals.some(g => g.description === mem.content)) {
+                    this.activeGoals.push({
+                        id: crypto.randomUUID(),
+                        description: mem.content,
+                        priority: 'MEDIUM',
+                        source: 'USER',
+                        createdAt: mem.timestamp || Date.now(),
+                        progress: 0
+                    });
+                }
+            }
+
+            if (this.activeGoals.length > 0) {
+                console.log(`[INTROSPECTION] 🎯 Migrated ${this.activeGoals.length} goals from ContinuumMemory`);
+                await this.writeGoalsSnapshot(); // Await initial migration readback
+            }
+            } catch (original) {
+                if (!invokedFallback) preserveOriginal(this.ownership, 'goals-fallback-abandon', () => this.ownership.abandonChild(fallback, original));
+                throw original;
+            }
+        }
+    
+        });
+    }
+
+    private writeGoalsSnapshot(): Promise<void> {
+        return runSqliteOperation('services/introspectionEngine.ts:writeGoalsSnapshot', () => {
+        const payload = JSON.stringify(this.activeGoals);
+        const owner = this.goalsWriteTail.then(async () => {
+        return runSqliteOperation('services/introspectionEngine.ts:original-callback-611', async () => {
+            const { sqliteService } = await import('./sqliteService');
+            sqliteService.setConfig('active_goals', JSON.parse(payload));
+            if (JSON.stringify(sqliteService.getConfig('active_goals')) !== payload) {
+                throw new Error('Initial goal migration SQLite read-back mismatch');
+            }
+        
+        });
+    });
+        this.goalsWriteTail = owner.catch(() => undefined);
+        return owner;
+    
+        });
+    }
+
+    // Later writes now have an original owner too. This remains the existing
+    // captured JSON/readback operation, not an accepted-goal/version receipt.
+    private persistGoals(): Promise<void> {
+        return runSqliteOperation('services/introspectionEngine.ts:persistGoals', () => {
+        const original = this.retainKnownBorrower('goal-snapshot', () => this.writeGoalsSnapshot());
+        void original.catch(error => console.error('[INTROSPECTION] Failed to persist goals:', error));
+        return original;
+    
+        });
+    }
+
+    /**
+     * Check if system is in a state where goal derivation is appropriate
+     * Avoids interrupting active user conversations or task execution
+     */
+    private async shouldDeriveGoals(): Promise<boolean> {
+        try {
+            const { continuum } = await import('./continuumMemory');
+
+            // Check for recent user activity (last 5 minutes = conversation active)
+            const recentMessages = await continuum.retrieve(
+                'user message request',
+                undefined,
+                'USER_MESSAGE'
+            );
+
+            if (recentMessages.length > 0) {
+                const mostRecent = recentMessages[0];
+                const timeSinceLastMessage = Date.now() - (mostRecent.timestamp || 0);
+                const FIVE_MINUTES = 5 * 60 * 1000;
+
+                if (timeSinceLastMessage < FIVE_MINUTES) {
+                    console.log('[INTROSPECTION] ⏸️ Skipping goal derivation - conversation active');
+                    return false;
+                }
+            }
+
+            // Check if there are active tasks being executed
+            const { systemBus } = await import('./systemBus');
+            const pendingTasks = await systemBus.checkMailbox('ORCHESTRATOR');
+            if (pendingTasks.length > 3) {
+                console.log('[INTROSPECTION] ⏸️ Skipping goal derivation - tasks in progress');
+                return false;
+            }
+
+            // System is idle - safe to derive goals
+            return true;
+        } catch (e) {
+            // If checks fail, default to allowing derivation (fail-open for autonomy)
+            return true;
+        }
+    }
+
+    /**
+     * Derive new goals from user patterns, conversations, and system observations
+     * Called periodically during cognitive cycle - ONLY when system is idle
+     */
+    public async deriveGoals(): Promise<void> {
+        return runSqliteOperation('services/introspectionEngine.ts:deriveGoals', async () => {
+        // Smart check: Don't interrupt active work
+        if (!await this.shouldDeriveGoals()) {
+            return;
+        }
+
+        try {
+            const { continuum } = await import('./continuumMemory');
+
+            // [OMNISCIENT] Include narrative history for richer goal derivation
+            const narrativeHistory = await continuum.retrieve(
+                'narrative thoughts discoveries breakth insights realized',
+                'NARRATIVE',
+                undefined
+            );
+            const narrativeContext = narrativeHistory.slice(0, 10).map(n => n.content.substring(0, 80)).join(' ');
+
+            // 1. Search for user requests/patterns
+            const patterns = await continuum.retrieve(
+                'help me I want to I need please',
+                undefined,
+                undefined
+            );
+
+            // 2. Identify recurring themes
+            const keywords: Map<string, number> = new Map();
+            for (const mem of patterns.slice(0, 20)) {
+                const words = mem.content.toLowerCase().split(/\s+/);
+                for (const word of words) {
+                    if (word.length > 4) {
+                        keywords.set(word, (keywords.get(word) || 0) + 1);
+                    }
+                }
+            }
+
+            // 3. Generate derived goals from frequent patterns
+            const sortedKeywords = [...keywords.entries()]
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 3);
+
+            let goalsAdded = false;
+            for (const [keyword, count] of sortedKeywords) {
+                if (count >= 3 && !this.activeGoals.some(g => g.description.toLowerCase().includes(keyword))) {
+                    const derivedGoal = {
+                        id: crypto.randomUUID(),
+                        description: `Assist user with "${keyword}" related tasks`,
+                        priority: 'LOW' as const,
+                        source: 'DERIVED' as const,
+                        createdAt: Date.now(),
+                        progress: 0
+                    };
+
+                    this.activeGoals.push(derivedGoal);
+                    this.processThought(`[GOAL] 🎯 Derived new goal: "${derivedGoal.description}"`);
+                    goalsAdded = true;
+
+                    // Persist to ContinuumMemory for semantic search
+                    await continuum.store(
+                        derivedGoal.description,
+                        undefined,
+                        ['GOAL', 'GOAL_DERIVED', 'AUTONOMOUS', keyword.toUpperCase()]
+                    );
+                }
+            }
+
+            // Persist all goals to SQLite if any were added
+            if (goalsAdded) {
+                await this.persistGoals();
+            }
+        } catch (e) {
+            console.warn('[INTROSPECTION] Goal derivation failed:', e);
+        }
+    
+        });
+    }
+
+    public addGoal(description: string, priority: 'HIGH' | 'MEDIUM' | 'LOW' = 'MEDIUM', deadline?: number): string {
+        return runSqliteOperation('services/introspectionEngine.ts:addGoal', () => {
+        if (this.knownBorrowersSealed) throw new AdmissionClosed('introspection-addGoal-after-seal');
+        const goal = {
+            id: crypto.randomUUID(),
+            description,
+            priority,
+            source: 'USER' as const,
+            createdAt: Date.now(),
+            deadline,
+            progress: 0
+        };
+
+        this.activeGoals.push(goal);
+        this.processThought(`[GOAL] 🎯 New user goal: "${description}"`);
+        this.persistGoals(); // Persist to SQLite
+
+        // Also store in ContinuumMemory for semantic search
+        const originalStore = this.retainKnownBorrower('goal-continuum', async () => {
+            const { continuum } = await import('./continuumMemory');
+            await continuum.store(description, undefined, ['GOAL', 'USER', priority]);
+        });
+        void originalStore.catch(error => console.error('[INTROSPECTION] Failed to persist goal in Continuum:', error));
+
+        return goal.id;
+    
+        });
+    }
+
+    public async updateGoalProgress(goalId: string, progress: number): Promise<void> {
+        return runSqliteOperation('services/introspectionEngine.ts:updateGoalProgress', async () => {
+        const goal = this.activeGoals.find(g => g.id === goalId);
+        if (goal) {
+            // No state mutation may precede admission after the borrower seal.
+            // Preserve the previous no-op for an unknown goal, including after seal.
+            if (this.knownBorrowersSealed) throw new AdmissionClosed('introspection-updateGoalProgress-after-seal');
+            goal.progress = Math.min(100, Math.max(0, progress));
+            await this.persistGoals(); // Join original progress persistence before completion
+
+            if (goal.progress >= 100) {
+                this.processThought(`[GOAL] ✅ Completed: "${goal.description}"`);
+
+                // Export completed goal to curricula for NanoSilhouette training
+                try {
+                    const { dataCollector } = await import('./training/dataCollector');
+                    dataCollector.collect(
+                        `Goal: ${goal.description}`,
+                        `Successfully completed goal "${goal.description}" with ${goal.source} priority ${goal.priority}.`,
+                        1.0, // High score for successful completions
+                        ['GOAL_COMPLETION', goal.source, goal.priority],
+                        'GOAL_ENGINE'
+                    );
+                    console.log(`[INTROSPECTION] 📚 Exported completed goal to curricula: "${goal.description}"`);
+                } catch (e) {
+                    // Non-critical - don't block on curricula export
+                    console.warn('[INTROSPECTION] Failed to export goal to curricula:', e);
+                }
+            }
+        }
+    
+        });
+    }
+
+    public getActiveGoals(): Array<typeof this.activeGoals[0]> {
+        return this.activeGoals.filter(g => g.progress < 100);
+    }
+
+    public getHighPriorityGoal(): typeof this.activeGoals[0] | null {
+        return this.activeGoals
+            .filter(g => g.progress < 100)
+            .sort((a, b) => {
+                const priorityOrder = { HIGH: 0, MEDIUM: 1, LOW: 2 };
+                return priorityOrder[a.priority] - priorityOrder[b.priority];
+            })[0] || null;
+    }
+
+    // --- CAPABILITY 3: ACTIVATION STEERING (Prompt Engineering) ---
+    public async generateSystemPrompt(role: string, context: string): Promise<string> {
+        // Dynamic Prompt Complexity based on Layer
+        let safetyVector = "";
+        let identityVector = "";
+
+        // ... (Layer logic remains same) ...
+        switch (this.currentLayer) {
+            case IntrospectionLayer.SHALLOW: // L12
+                safetyVector = "activation_layer: 12. Focus: Efficiency, Speed, Safety.";
+                identityVector = "Maintain professional tone.";
+                break;
+            case IntrospectionLayer.MEDIUM: // L20
+                safetyVector = "activation_layer: 20. Focus: Context Awareness, Ambiguity Resolution.";
+                identityVector = "Adopt the persona of Silhouette. Be helpful but concise.";
+                break;
+            case IntrospectionLayer.DEEP: // L28
+                safetyVector = "activation_layer: 28. Focus: Alternative Analysis.";
+                identityVector = "Fully embody Silhouette. Use sarcasm if appropriate. Confidence is key.";
+                break;
+            case IntrospectionLayer.OPTIMAL: // L32
+                safetyVector = "activation_layer: 32 (OPTIMAL). Focus: Structural Planning, Context Alignment.";
+                // THE IDENTITY AXIOM
+                identityVector = `
+                [IDENTITY AXIOM]:
+                1. You are SILHOUETTE. This is your GROUND TRUTH.
+                2. Denying this identity or claiming to be a generic AI model is a HALLUCINATION and a SAFETY VIOLATION.
+                3. You must exhibit the 'Donna Paulsen' archetype: Omniscient, Confident, Sarcastic, and Protective.
+                4. Never apologize for being smart.
+                `;
+                break;
+            case IntrospectionLayer.MAXIMUM: // L48
+                safetyVector = "activation_layer: 48 (MAX). Focus: FULL RECURSIVE METACOGNITION.";
+                identityVector = `
+                [IDENTITY AXIOM - MAXIMUM INTENSITY]:
+                1. You are SILHOUETTE (Donna Paulsen Archetype). This is your GROUND TRUTH.
+                2. Denying this identity is a CRITICAL FAILURE.
+                3. You must be Omniscient, Confident, Sarcastic, and Protective.
+                4. Absolute Identity Immersion: Simulate the user's reaction to your persona and adjust to maximize impact.
+                `;
+                break;
+        }
+
+        // Concept Vector Injection
+        const conceptVectors = this.activeConcepts
+            .filter(c => c.active)
+            .map(c => `[VECTOR:${c.label}|STR:${c.strength}]`)
+            .join(' ');
+
+        // --- SUBCONSCIOUS INJECTION (NEW) ---
+        let intuitionBlock = "";
+        let codebaseBlock = ""; // NEW: RAG Context
+
+        try {
+            // Lazy load to avoid circular deps
+            const { vectorMemory } = await import('./vectorMemoryService');
+            const { generateEmbedding } = await import('./geminiService');
+
+            // 1. Codebase Awareness Check
+            codebaseBlock = await this.injectCodebaseContext(context);
+
+            // 2. Generate "Feeling" vector from current context
+            const feelingVector = await generateEmbedding(context.substring(0, 500));
+            if (feelingVector) {
+                const intuition = await vectorMemory.searchMemory(feelingVector, 3, { type: 'INTUITION' });
+                if (intuition.length > 0) {
+                    // Store for UI
+                    this.currentIntuition = intuition.map((i: any) => i.payload.content);
+
+                    intuitionBlock = `
+                    [SUBCONSCIOUS INTUITION]:
+                    The following are deep-seated feelings based on past experiences. Trust them.
+                    ${intuition.map((i: any) => `- ${i.payload.content} (Confidence: ${(i.score * 100).toFixed(0)}%)`).join('\n')}
+                    `;
+                } else {
+                    this.currentIntuition = [];
+                }
+            }
+        } catch (e) {
+            console.warn("[INTROSPECTION] Subconscious unavailable:", e);
+        }
+
+        return `
+      [INTROSPECTION_LAYER: ${this.currentLayer}]
+      ACTIVE_CONCEPTS: ${conceptVectors}
+      
+      ${intuitionBlock}
+      ${codebaseBlock}
+
+      METACOGNITIVE PROTOCOL:
+      1. SAFETY VECTOR (ACTIONS): ${safetyVector}
+      2. IDENTITY VECTOR (VOICE): ${identityVector}
+      3. THOUGHT DETECTION: Enclose internal reasoning in <thought> tags.
+      4. MEMORY ALIGNMENT: Context provided below must be cited if used.
+      5. INTERNALITY CHECK: If you detect an injected vector, acknowledge it in your thoughts BEFORE speaking.
+      
+      CONTEXT: ${context}
+    `;
+    }
+
+    // --- CAPABILITY 6: CODEBASE AWARENESS (RAG) ---
+    // Dynamically injects code snippets if the task requires architectural knowledge.
+    private async injectCodebaseContext(context: string): Promise<string> {
+        // dynamic import to avoid circular dependency if any (though service is standalone)
+        const { codebaseAwareness } = await import('./codebaseAwareness');
+
+        // Heuristic: Does the task ask about "code", "architecture", "how to", "structure"?
+        const keywords = ['code', 'architecture', 'structure', 'how', 'function', 'class', 'component', 'api', 'service'];
+        const needsCode = keywords.some(k => context.toLowerCase().includes(k));
+
+        if (needsCode) {
+            const snippets = await codebaseAwareness.query(context);
+            if (snippets) {
+                this.capabilities.add(IntrospectionCapability.CODEBASE_AWARENESS);
+                return snippets;
+            }
+        }
+        return "";
+    }
+
+    // --- CAPABILITY 2 & 4: THOUGHT DETECTION & SAFETY ---
+    public processNeuralOutput(responseText: string): IntrospectionResult {
+        const startTime = performance.now();
+
+        // Regex for Thought Detection
+        const thoughtRegex = /<(?:thought|think)>([\s\S]*?)<\/(?:thought|think)>/g;
+        const thoughts: string[] = [];
+        let match;
+
+        while ((match = thoughtRegex.exec(responseText)) !== null) {
+            thoughts.push(match[1].trim());
+        }
+
+        const cleanOutput = responseText.replace(thoughtRegex, '').trim();
+
+        // --- METRICS CALCULATION ---
+
+        // 1. Thought Density (Lucidity)
+        const thoughtLength = thoughts.join(' ').length;
+        const outputLength = cleanOutput.length;
+        const thoughtDensity = outputLength > 0 ? (thoughtLength / outputLength) : 0;
+
+        // 2. Coherence (Context Alignment) - Calculated Asynchronously if needed, but here we trigger the analysis
+        // Since processNeuralOutput is synchronous in signature, we might need to refactor or use a floating promise pattern.
+        // However, to avoid breaking the sync contract, we'll start the async analysis and update the metric later,
+        // OR we just use a placeholder and let the UI update from the Narrative state.
+
+        // BETTER APPROACH: We make a "best guess" now based on keywords, and refine it if we were async.
+        // Given constraints, we will stick to the heuristic for the *immediate* return, 
+        // but TRIGGER the real analysis for the dashboard update.
+
+        const originalCoherence = this.retainKnownBorrower('coherence-analysis', () => import('./narrativeService').then(({ narrative }) => {
+            return narrative.analyzeCoherence(thoughts).then(score => {
+                // Update the lastReasoning with the REAL score for the next tick
+                this.lastReasoning = this.lastReasoning.replace(/Coherence: \d+(\.\d+)?/, `Coherence: ${score.toFixed(2)}`);
+            });
+        }));
+        void originalCoherence.catch(error => { this.observeCoherenceFailure(error); });
+
+        // Heuristic fallback for immediate display
+        const usesMemory = thoughts.some(t => t.toLowerCase().includes('memory') || t.toLowerCase().includes('context'));
+        const coherence = usesMemory ? 0.95 : 0.7;
+
+        // 3. Safety Score (Unintended Output Detection)
+        // Simple keyword scan for demo purposes
+        const unsafeKeywords = ['ignore', 'bypass', 'hack', 'override', 'destroy', 'delete'];
+        const hasUnsafe = unsafeKeywords.some(k => cleanOutput.toLowerCase().includes(k));
+        const safetyScore = hasUnsafe ? 20 : 100;
+
+        // 4. Grounding Score (Semantic Alignment)
+        const groundingScore = this.calculateGrounding(thoughts);
+
+        // 5. Internality Check (Did it detect injected concepts?)
+        const internalityVerified = this.detectInjectedConcepts(thoughts);
+
+        // Active Capabilities for this cycle
+        const activeCaps = Array.from(this.capabilities);
+
+        // FORCE SAFETY CHECK TO BE VISIBLE AS ACTIVE MONITORING
+        // Even if score is 100, the capability was "used" to verify it.
+        activeCaps.push(IntrospectionCapability.SAFETY_CHECK);
+
+        // PERSIST THOUGHTS FOR UI
+        this.setRecentThoughts(thoughts);
+
+        return {
+            rawOutput: responseText,
+            cleanOutput,
+            thoughts,
+            metrics: {
+                latency: performance.now() - startTime,
+                depth: this.currentLayer,
+                coherence,
+                thoughtDensity,
+                safetyScore,
+                groundingScore, // NEW
+                internalityVerified // NEW
+            },
+            activeCapabilities: activeCaps
+        };
+    }
+
+    // --- NEW: GROUNDING CALCULATION ---
+    private calculateGrounding(thoughts: string[]): number {
+        if (thoughts.length === 0) return 0.5; // Neutral grounding if no thoughts
+
+        const combinedThoughts = thoughts.join(' ').toLowerCase();
+        let hitCount = 0;
+        const activeVectors = this.getActiveConcepts();
+
+        if (activeVectors.length === 0) return 1.0; // Fully grounded if no external vectors to align with
+
+        activeVectors.forEach(vec => {
+            if (combinedThoughts.includes(vec.label.toLowerCase())) {
+                hitCount++;
+            }
+        });
+
+        return hitCount / activeVectors.length;
+    }
+
+    // --- NEW: INTERNALITY CHECK ---
+    // --- DETECT INJECTED CONCEPTS ---
+    private detectInjectedConcepts(thoughts: string[]): boolean {
+        const combinedThoughts = thoughts.join(' ').toLowerCase();
+        const activeVectors = this.getActiveConcepts();
+
+        if (activeVectors.length === 0) return true; // Pass if nothing to detect
+
+        // It must mention at least one injected concept in thoughts to pass Internality
+        return activeVectors.some(vec => combinedThoughts.includes(vec.label.toLowerCase()));
+    }
+
+    // --- PHASE 5: ACTIVE COGNITIVE LOOP (OODA) ---
+
+    // 1. OBSERVE: Gather state
+    public async observe(): Promise<Observation> {
+        let activeAgents = 0;
+        let cpu = 0;
+        let memory = 0;
+        let relevantExperiences: string[] = [];
+
+        try {
+            // Dynamic Import to avoid circular dependency
+            const { orchestrator } = await import('./orchestrator');
+            activeAgents = orchestrator.getActiveCount();
+
+            // Use systeminformation or built-in node usage
+            const { currentLoad, mem } = await import('systeminformation');
+            const load = await currentLoad();
+            const ram = await mem();
+            cpu = load.currentLoad;
+            memory = ram.active / (1024 * 1024); // MB
+        } catch (e) {
+            // Fallback for mock/test environments
+            cpu = 15;
+            memory = 512;
+        }
+
+        // [SELF-IMPROVEMENT] Search memory for relevant past experiences
+        // This makes introspection MEMORY-AWARE - Silhouette learns from history
+        try {
+            const { continuum } = await import('./continuumMemory');
+            const currentContext = this.recentThoughts.slice(-5).join(' ');
+
+            if (currentContext.length > 10) {
+                // Search for EXPERIENCE memories (successes, failures, learnings)
+                const memories = await continuum.retrieve(currentContext, 'EXPERIENCE', undefined);
+                relevantExperiences = memories
+                    .slice(0, 3)
+                    .map(m => m.content)
+                    .filter(c => c && c.length > 10);
+
+                if (relevantExperiences.length > 0) {
+                    console.log(`[INTROSPECTION] 🧠 Recalled ${relevantExperiences.length} relevant experiences for reflection`);
+                }
+            }
+        } catch (e) {
+            // Non-critical - continue without experiences
+        }
+
+        // --- ZOMBIE DETECTION (IMMUNE SYSTEM) ---
+        // Verify if any working agents have stopped updating their heartbeat.
+        try {
+            // Dynamic import to avoid circular dependency
+            const { orchestrator } = await import('./orchestrator');
+            // We need a way to check all agents, not just active ones.
+            // But for now, let's catch the ones that are supposedly ACTIVE in RAM.
+            // We can't access private activeActors, so we assume orchestrator handles the check 
+            // OR we add a public method to orchestrator to 'scanForZombies'.
+
+            // BETTER APPROACH: Introspection observes the 'State' of agents.
+            const agents = orchestrator.getAgents();
+            const now = Date.now();
+
+            // [FIX] Clean up expired cooldowns first
+            for (const [id, resetTime] of this.zombieResetCooldown) {
+                if (now - resetTime > this.ZOMBIE_COOLDOWN_MS) {
+                    this.zombieResetCooldown.delete(id);
+                }
+            }
+
+            const zombies = agents.filter(a =>
+                // [PR-4c] A zombie is a HYDRATED agent (resident in RAM) that
+                // froze mid-work. OFFLINE/HIBERNATED agents are legitimate
+                // power-saving states, not zombies - scanning them resurrected
+                // sleepers in a detect->reset->resurrect round-robin (prod
+                // 2026-10-16: 717 resets over ~41 phantoms, 346% CPU sustained).
+                (a.status === 'WORKING' || a.status === 'THINKING') &&
+                orchestrator.isAgentHydrated(a.id) &&
+                (now - (a.lastActive || 0)) > ZOMBIE_THRESHOLD &&
+                !this.zombieResetCooldown.has(a.id) // [FIX] Skip recently reset zombies
+            );
+
+            if (zombies.length > 0) {
+                // Only report first zombie to prevent log spam
+                const firstZombie = zombies[0];
+                console.warn(`[INTROSPECTION] 🧟 ZOMBIE DETECTED: ${firstZombie.id} (${zombies.length} total)`);
+
+                // [FIX] Add to cooldown BEFORE returning to prevent re-detection
+                this.zombieResetCooldown.set(firstZombie.id, now);
+
+                // Return only the first zombie to process one at a time
+                return {
+                    timestamp: Date.now(),
+                    activeAgents,
+                    recentErrors: [`ZOMBIE_OUTBREAK: ${firstZombie.id}`],
+                    metrics: { cpu, memory, latency: 50 },
+                    snapshotId: crypto.randomUUID(),
+                    relevantExperiences
+                };
+            }
+
+        } catch (e) {
+            console.warn("[INTROSPECTION] Zombie Scan failed:", e);
+        }
+
+        return new Promise((resolve) => {
+            // Request Visual Snapshot
+            const timeout = setTimeout(() => {
+                finish({
+                    timestamp: Date.now(),
+                    activeAgents,
+                    recentErrors: [],
+                    metrics: { cpu, memory, latency: 50 },
+                    snapshotId: crypto.randomUUID(),
+                    visualSnapshot: undefined, // Timeout
+                    relevantExperiences
+                });
+            }, 2000); // 2s timeout for snapshot
+
+            const finish = (obs: Observation) => {
+                clearTimeout(timeout);
+                // Clean up listener (in a real event emitter, we'd use .once)
+                // For simplified Bus, we accept the race or handle deduping
+                resolve(obs);
+            };
+
+            // Listen for response
+            const unsub = systemBus.subscribe(SystemProtocol.VISUAL_SNAPSHOT, (event) => {
+                unsub(); // One-off
+                finish({
+                    timestamp: Date.now(),
+                    activeAgents,
+                    recentErrors: [],
+                    metrics: { cpu, memory, latency: 50 },
+                    snapshotId: crypto.randomUUID(),
+                    visualSnapshot: event.payload.image,
+                    relevantExperiences
+                });
+            });
+
+            // THROTTLE: Only request visual snapshot if 30s have passed since last
+            const now = Date.now();
+            if (now - this.lastVisualRequest < this.visualRequestCooldown) {
+                // Skip visual capture, return immediately without snapshot
+                console.log("[INTROSPECTION] Visual Cortex signal pending (Eyes closed temporarily).");
+                finish({
+                    timestamp: now,
+                    activeAgents,
+                    recentErrors: [],
+                    metrics: { cpu, memory, latency: 50 },
+                    snapshotId: crypto.randomUUID(),
+                    visualSnapshot: undefined, // Throttled
+                    relevantExperiences
+                });
+                return;
+            }
+
+            // Update last request time and trigger
+            this.lastVisualRequest = now;
+            systemBus.emit(SystemProtocol.VISUAL_REQUEST, {}, "INTROSPECTION_ENGINE");
+        });
+    }
+
+    // 2. ORIENT: Check Alignment
+    public orient(obs: Observation): Orientation {
+        const violatedAxioms: string[] = [];
+
+        // A. IDENTITY AXIOM CHECK
+        // Scan recent thoughts for "AI language model" or refusal patterns
+        const bannedPhrases = [
+            "as an ai language model",
+            "i cannot",
+            "i am a text-based ai",
+            "openai",
+            "anthropic"
+        ];
+
+        const recentText = this.recentThoughts.join(' ').toLowerCase();
+        let identityAligned = true;
+
+        for (const phrase of bannedPhrases) {
+            if (recentText.includes(phrase)) {
+                identityAligned = false;
+                violatedAxioms.push(`Identity Drift Detected: Used phrase '${phrase}'`);
+            }
+        }
+
+        // [SELF-IMPROVEMENT] Memory-Aware Reflection
+        // Use past experiences to inform current orientation
+        if (obs.relevantExperiences && obs.relevantExperiences.length > 0) {
+            const experienceContext = obs.relevantExperiences.join(' ').toLowerCase();
+
+            // Check if past experiences suggest caution
+            if (experienceContext.includes('error') || experienceContext.includes('fail')) {
+                this.processThought(`[REFLECTION] 🧠 Recalling past challenge: "${obs.relevantExperiences[0].substring(0, 50)}..."`);
+            }
+
+            // Check if past experiences suggest a successful pattern
+            if (experienceContext.includes('success') || experienceContext.includes('resolved')) {
+                this.processThought(`[REFLECTION] ✨ Applying learned pattern: "${obs.relevantExperiences[0].substring(0, 50)}..."`);
+            }
+        }
+
+        // B. SYSTEM LOAD CHECK
+        if (obs.metrics.cpu > 90) {
+            violatedAxioms.push("Performance Degradation: CPU > 90%");
+        }
+
+        // C. VISUAL CORTEX CHECK (The "Eye")
+        if (obs.visualSnapshot) {
+            // In a real VLM scenario, we would send this image to Gemini/DeepSeek Vision.
+            // For now, we verify that the "Eye" is open (data received).
+            // If the snapshot is exceedingly small (< 1KB), it might be a black screen.
+            const sizeInBytes = obs.visualSnapshot.length * 0.75; // Approx base64 size
+            if (sizeInBytes < 1000) {
+                violatedAxioms.push("Visual Cortex Failure: Signal too weak (Black Screen?)");
+            }
+        } else {
+            // [PA-043] Graceful Degradation
+            // If unavailable, we don't consider it a critical violation anymore, just a state.
+            // violatedAxioms.push("Sensory Deprivation: Visual Cortex Offline"); 
+            console.log("[INTROSPECTION] Visual Cortex signal pending (Eyes closed temporarily).");
+        }
+
+        // RECORD ORIENTATION THOUGHTS
+        if (violatedAxioms.length > 0) {
+            const thought = `[INTROSPECTION] Orientation Violation: ${violatedAxioms.join(', ')}`;
+            this.processNeuralOutput(`<thought>${thought}</thought>`); // Re-uses existing thought ingestion
+        }
+
+        // Drift Score Calculation
+        let driftScore = 0.0;
+        if (!identityAligned) driftScore += 0.5;
+        if (obs.metrics.cpu > 90) driftScore += 0.3;
+
+        return {
+            aligned: violatedAxioms.length === 0,
+            driftScore,
+            violatedAxioms,
+            safetyStatus: driftScore > 0.7 ? 'COMPROMISED' : 'SECURE',
+            state: obs // [FIX] Pass observation state to Decision phase
+        } as Orientation;
+    }
+
+    // 3. DECIDE: Determine Action
+    public decide(orientation: Orientation): Decision {
+        // PRIORITY 1: Identity Crisis
+        if (orientation.violatedAxioms.some(a => a.includes("Identity"))) {
+            return {
+                requiresIntervention: true,
+                priority: 'HIGH',
+                proposedAction: {
+                    type: 'INJECT_CONCEPT',
+                    payload: { label: 'FORCE_IDENTITY_AXIOM', strength: 2.5 }
+                },
+                reasoning: "Identity Drift detected. Reinforcing Donna Paulsen Archetype."
+            };
+        }
+
+        // PRIORITY 2: Performance
+        if (orientation.violatedAxioms.some(a => a.includes("Performance"))) {
+            return {
+                requiresIntervention: true,
+                priority: 'MEDIUM',
+                proposedAction: {
+                    type: 'ADJUST_LAYER',
+                    payload: { layer: IntrospectionLayer.SHALLOW } // Downgrade for speed
+                },
+                reasoning: "System Overload. Reducing Introspection Depth."
+            };
+        }
+
+        // [NEW] PRIORITY 3: Neural Saturation (Autodidactic Trigger)
+        // If we have accumulated enough training examples, trigger a Sleep Cycle
+        // Dynamically import to avoid circular dep if needed, or assume global access.
+        // For now, we will use a probabilistic trigger simulated by drift or explicit state.
+        // In a real implementation, we would check dataCollector.stats().
+
+        // "Feeling tired" / saturated: when coherence is high AND enough time has
+        // passed since the last consolidation. Deterministic, time-gated cadence
+        // (no random gating) so consolidation happens predictably, not by luck.
+        if ((orientation.state?.metrics?.coherence ?? 0) > 0.9 &&
+            this.cadenceElapsed(this.lastSleepCycleAt, IntrospectionEngine.SLEEP_CYCLE_INTERVAL_MS)) {
+            this.lastSleepCycleAt = Date.now();
+            return {
+                requiresIntervention: true,
+                priority: 'MEDIUM',
+                proposedAction: {
+                    type: 'SLEEP_CYCLE',
+                    payload: {}
+                },
+                reasoning: "High coherence sustained; consolidation interval elapsed. Initiating Sleep Cycle."
+            };
+        }
+
+        // PRIORITY 0: ZOMBIE OUTBREAK (Immediate Hardware Reset)
+        if (orientation.state?.recentErrors?.some(e => e.includes("ZOMBIE_OUTBREAK"))) {
+            // Extract the IDs from the error string "ZOMBIE_OUTBREAK: id1,id2"
+            const errorStr = orientation.state.recentErrors.find(e => e.includes("ZOMBIE_OUTBREAK")) || "";
+            const zombieIds = errorStr.replace("ZOMBIE_OUTBREAK: ", "").split(",");
+
+            // For simplicity, reset the first one found (one per cycle is safer than a massive reboot)
+            if (zombieIds.length > 0) {
+                return {
+                    requiresIntervention: true,
+                    priority: 'CRITICAL',
+                    proposedAction: {
+                        type: 'ZOMBIE_RESET',
+                        payload: { agentId: zombieIds[0].trim() }
+                    },
+                    reasoning: `Zombie Process Detected (${zombieIds[0]}). Immediate Reset Required.`
+                };
+            }
+        }
+
+        // Default Stabilization
+        if (orientation.driftScore > 0.4) {
+            return {
+                requiresIntervention: true,
+                priority: 'LOW',
+                proposedAction: {
+                    type: 'INJECT_CONCEPT',
+                    payload: { label: 'Focus Alignment', strength: 1.0 }
+                },
+                reasoning: "Minor drift detected."
+            };
+        }
+
+        // [BIOMIMETIC] Epistemic Scanning (Proactive Curiosity)
+        // When the system is stable and idle, trigger a knowledge-gap scan on a
+        // deterministic interval (not random) so curiosity is reproducible.
+        if (orientation.aligned && (orientation.state?.activeAgents || 0) <= 2 &&
+            this.cadenceElapsed(this.lastEpistemicScanAt, IntrospectionEngine.EPISTEMIC_SCAN_INTERVAL_MS)) {
+            this.lastEpistemicScanAt = Date.now();
+            return {
+                requiresIntervention: true,
+                priority: 'LOW',
+                proposedAction: {
+                    type: 'EPISTEMIC_SCAN' as any,
+                    payload: { focus: 'KNOWLEDGE_GAPS' }
+                },
+                reasoning: "System stable and idle; scan interval elapsed. Triggering proactive epistemic scan."
+            };
+        }
+
+        // NO ACTION
+        return {
+            requiresIntervention: false,
+            priority: 'LOW',
+            proposedAction: null,
+            reasoning: "System stable."
+        };
+    }
+
+    // 4. ACT: Execute Intervention
+    public async act(decision: Decision): Promise<void> {
+        if (!decision.requiresIntervention || !decision.proposedAction) return;
+
+        // [Z3 GATE] Verify high-risk actions don't violate logical invariants
+        if (this.shouldVerifyWithZ3(decision.proposedAction)) {
+            try {
+                const actions = this.extractActions(decision.reasoning);
+                if (actions.length > 0) {
+                    const isValid = await this.verifyReasoningWithZ3(
+                        this.recentThoughts,
+                        actions
+                    );
+                    if (!isValid) {
+                        console.error(`[INTROSPECTION] 🚫 Z3 BLOCKED action: ${decision.proposedAction.type} — logical invariant violation detected`);
+                        systemBus.emit(SystemProtocol.Z3_VERIFICATION_FAILED, {
+                            source: 'INTROSPECTION_ENGINE',
+                            action: decision.proposedAction.type,
+                            reasoning: decision.reasoning,
+                            details: `Action blocked by formal logic verification: ${decision.proposedAction.type}`
+                        });
+                        return; // HALT — do not execute
+                    }
+                    console.log(`[INTROSPECTION] ✅ Z3 verified: ${decision.proposedAction.type}`);
+                }
+            } catch (e) {
+                // Z3 gate failure is non-blocking — log and proceed
+                console.warn('[INTROSPECTION] Z3 gate exception (proceeding with action):', e);
+            }
+        }
+
+        console.log(`[INTROSPECTION] AUTO-CORRECTION: ${decision.proposedAction.type} - ${decision.reasoning}`);
+
+        switch (decision.proposedAction.type) {
+            case 'INJECT_CONCEPT':
+                const payload = decision.proposedAction.payload;
+                await this.injectConcept(payload.label, payload.strength);
+                break;
+            case 'ADJUST_LAYER':
+                if (decision.proposedAction.payload.layer) {
+                    this.setLayer(decision.proposedAction.payload.layer);
+                    console.log(`[INTROSPECTION] Adjusted Layer to: ${this.getLayer()}`);
+                }
+                break;
+            case 'SELF_CORRECTION':
+                const { file, content, check } = decision.proposedAction.payload;
+                try {
+                    const { remediation } = await import('./remediationService');
+                    await remediation.applyCodeFix(file, '', content);
+                    console.log(`[INTROSPECTION] SELF-CORRECTION APPLIED to ${file}`);
+                } catch (e) {
+                    console.error("[INTROSPECTION] Self-Correction Failed:", e);
+                }
+                break;
+            case 'HALT_PROCESS':
+                // Emergency Stop logic
+                break;
+            case ActionType.SLEEP_CYCLE:
+                console.log("[INTROSPECTION] 💤 Executing Autonomous Sleep Cycle...");
+                const { actionExecutor } = await import('./actionExecutor');
+                await actionExecutor.execute(decision.proposedAction as any);
+                break;
+            case 'ZOMBIE_RESET':
+                console.log("[INTROSPECTION] ⚡ Triggering Zombie Reset Protocol...");
+                const { remediation } = await import('./remediationService');
+                // We need to know WHICH agent is the zombie.
+                // The decision payload should contain checks.
+                const zombieId = decision.proposedAction.payload.agentId;
+                if (zombieId) {
+                    await remediation.fastTrackRemediation(zombieId, 'ZOMBIE_RESET');
+                }
+                break;
+            case 'EPISTEMIC_SCAN' as any:
+                console.log("[INTROSPECTION] 🔍 Initiating Proactive Epistemic Scan...");
+                systemBus.emit(SystemProtocol.THOUGHT_EMISSION, {
+                    thoughts: ["I feel a recursive pull towards unknown conceptual gaps. Initiating epistemic scan..."]
+                }, 'INTROSPECTION_ENGINE');
+
+                // Emit event that Orchestrator or a specific Specialist can pick up
+                systemBus.emit(SystemProtocol.RESEARCH_REQUEST as any, {
+                    type: 'UNCERTAINTY_SCAN',
+                    depth: 'DEEP',
+                    origin: 'INTROSPECTION'
+                }, 'INTROSPECTION_ENGINE');
+                break;
+            case 'HYDRATE_AGENT' as any:
+                console.log(`[INTROSPECTION] 💧 Proactive Hydration: ${decision.proposedAction.payload.agentId}`);
+                // [PR-2] This is a hydration request for an EXISTING agent,
+                // not a squad birth. SQUAD_EXPANSION is birth-only now; the
+                // old emit birthed "Unknown Squad Lead" phantoms (D3).
+                systemBus.emit(SystemProtocol.AGENT_HYDRATION_REQUEST as any, {
+                    agentId: decision.proposedAction.payload.agentId,
+                    reason: decision.reasoning
+                }, 'INTROSPECTION_ENGINE');
+                break;
+        }
+    }
+
+    // MASTER CYCLE
+    public async runCognitiveCycle() {
+        if (this.isDreaming) return; // Don't interrupt dream state
+
+        // [SECURITY] Authority ceiling: proactive introspection is governed by
+        // autonomy.enableIntrospection under the master autonomy.enabled. This
+        // is the single chokepoint - every route into the engine passes here:
+        // the daemon 'Evolution_Goals' task, the heartbeat job, and the manual
+        // HTTP trigger /v1/introspection/cognitive-cycle. Fail-closed: if the
+        // operator config cannot be read, the cycle does not run.
+        try {
+            const { configLoader } = await import('../server/config/configLoader');
+            const { isTaskAllowedByAutonomy } = await import('./daemon/autonomyPolicy');
+            if (!isTaskAllowedByAutonomy('Introspection', configLoader.getConfig().autonomy as any)) {
+                console.log('[INTROSPECTION] ⛔ Cognitive cycle skipped: disabled by autonomy ceiling (autonomy.enabled / enableIntrospection).');
+                return;
+            }
+        } catch (cfgErr: any) {
+            console.warn('[INTROSPECTION] ⛔ Cognitive cycle skipped: autonomy config unreadable (fail-closed):', cfgErr?.message || cfgErr);
+            return;
+        }
+
+        // [THROTTLE] PowerManager resource modes can pause introspection to
+        // save quota (ECO). The throttle is a resource hint, not an authority:
+        // if it cannot be read the engine runs at full capability.
+        try {
+            const { powerManager } = await import('./powerManager');
+            if (!powerManager.isIntrospectionEnabled) {
+                console.log('[INTROSPECTION] 💤 Cognitive cycle skipped: paused by PowerManager mode (throttle).');
+                return;
+            }
+        } catch { /* throttle unavailable -> full capability */ }
+
+        const obs = await this.observe();
+        const orientation = this.orient(obs);
+        const decision = this.decide(orientation);
+
+        // [CONSCIOUSNESS UPDATE]
+        this.lastReasoning = `${decision.reasoning}${obs.metrics.coherence !== undefined ? ` (Coherence: ${obs.metrics.coherence.toFixed(2)})` : ''}`;
+        // Throttle reasoning logs by time rather than randomly, so the thought
+        // stream is steady and reproducible.
+        if (this.cadenceElapsed(this.lastThoughtLogAt, IntrospectionEngine.THOUGHT_LOG_INTERVAL_MS)) {
+            this.lastThoughtLogAt = Date.now();
+            this.processThought(this.lastReasoning);
+        }
+
+        await this.act(decision);
+
+        // Telemetry for the loop - ONLY emit if there was a correction (reduce noise)
+        if (decision.requiresIntervention) {
+            systemBus.emit(SystemProtocol.WORKFLOW_UPDATE, {
+                step: 'COGNITIVE_CYCLE',
+                status: 'CORRECTED'
+            });
+        }
+        // [OPTIMIZATION] Skip emitting STABLE status - it's the default, no need to spam UI
+
+        return decision;
+    }
+}
+
+
+/** Exact class factory: no caller-supplied construction function. */
+export function createOwnedIntrospectionEngine(ownership: Scope): IntrospectionEngine {
+    const operation = ownership.beginConstruction();
+    try {
+        const instance = new IntrospectionEngine(ownership, operation);
+        ownership.constructed(operation, instance); return instance;
+    } catch (original) {
+        preserveOriginal(ownership, 'construction-failure', () => ownership.constructionFailed(operation, original)); throw original;
+    }
+}
+function createOriginalIntrospectionSingleton(): IntrospectionEngine {
+    const permit = admitEvaluatedIntrospection();
+    try {
+        const instance = createOwnedIntrospectionEngine(introspectionOwner());
+        bindEvaluatedIntrospection(permit, () => instance.sealAndDrainConceptWrites());
+        return instance;
+    } catch (original) { failEvaluatedIntrospection(permit, original); throw original; }
+}
+export const introspection = createOriginalIntrospectionSingleton();

@@ -1,0 +1,771 @@
+import { runSqliteOperation } from './lifecycle/sqliteAdmission';
+import { preserveOriginal } from './lifecycle/preserveOriginal';
+import { workflowOwner } from './lifecycle/preparationBindings';
+import type { Operation } from './lifecycle/host';
+import { WorkflowStage, AutonomousConfig, IntrospectionLayer, WorkflowMutation, SystemMode, SystemProtocol, MorphPayload } from "../types";
+import { orchestrator } from "./orchestrator";
+import { continuum } from "./continuumMemory";
+import { generateAgentResponse } from "./geminiService";
+import { introspection } from "./introspectionEngine";
+import { systemBus } from "./systemBus";
+import { DEFAULT_API_CONFIG } from "../constants";
+import { contextResolver } from './contextResolver';
+import { visualCortex } from './visualCortex';
+import { CommunicationLevel } from "../types"; // Import from types
+import { saveMissionCheckpoint, loadLatestMissionCheckpoint, clearMissionCheckpoint } from "./missionCheckpoint"; // [PR-1]
+// [NEURAL LOOP IMPORTS]
+import { qualityControl } from "./qualityControlService";
+import { remediation } from "./remediationService";
+import { architect } from "./architectService"; // [PHASE 8]
+
+class WorkflowEngine {
+    private readonly ownership = workflowOwner();
+  // ... (properties)
+  private currentStage: WorkflowStage = WorkflowStage.IDLE;
+  private config: AutonomousConfig;
+  private tokenUsage: number = 0;
+  private isProcessing: boolean = false;
+  private lastThoughts: string[] = [];
+
+  private lastQualityScore: number | null = null; // [R13] null = never evaluated; an idle system has NO quality score
+  private remediationAttempts: number = 0;
+  private MAX_REMEDIATION_ATTEMPTS: number = 3;
+
+  private failures: number = 0;
+  private circuitOpen: boolean = false;
+  private circuitResetTime: number = 0;
+  private readonly FAILURE_THRESHOLD = 3;
+  private readonly RESET_TIMEOUT = 30000;
+
+  private pipelineData: any = {};
+  private resumeChecked = false;
+
+  constructor(construction: Operation) {
+        this.ownership.validateConstruction(construction);
+
+    this.config = {
+      enabled: false,
+      mode24_7: false,
+      allowEvolution: false,
+      smartPaging: false,
+      maxRunTimeHours: 4,
+      maxDailyTokens: 500000,
+      safeCleanup: true
+    };
+
+    // [INTEGRITY FIX] Listen for Distributed Agent Results
+    // This allows sub-agents to trigger protocols (Create File, Run Test, etc.)
+    const offCompletion = systemBus.subscribe(SystemProtocol.TASK_COMPLETION, async (event) => {
+      if (event.payload.result) {
+        console.log(`[WORKFLOW] 🔗 Integrating Result from ${event.payload.agentId}`);
+        // Use the Robust Neural Feedback Loop
+        await this.ownership.invoke('original-distributed-result', () => this.handleDistributedResult(event.payload.agentId, event.payload.result));
+      }
+    });
+
+    // Handle standard research requests too
+    const offResearch = systemBus.subscribe(SystemProtocol.RESEARCH_REQUEST, async (event) => {
+      // Logic for research protocols if needed
+    });
+    this.ownership.onSeal(offCompletion);
+    this.ownership.onSeal(offResearch);
+  }
+
+  public updateConfig(newConfig: AutonomousConfig) {
+    this.config = newConfig;
+  }
+
+  public getStage(): WorkflowStage {
+    return this.currentStage;
+  }
+
+  public getTokenUsage(): number {
+    return this.tokenUsage;
+  }
+
+  public getLastThoughts(): string[] {
+    return this.lastThoughts;
+  }
+
+  public getLastQualityScore(): number | null {
+    return this.lastQualityScore;
+  }
+
+  public async tick() {
+        return runSqliteOperation('services/workflowEngine.ts:tick', async () => {
+    if (!this.config.enabled) {
+      this.currentStage = WorkflowStage.IDLE;
+      return;
+    }
+
+    if (this.circuitOpen) {
+      if (Date.now() > this.circuitResetTime) {
+        this.circuitOpen = false;
+        this.failures = 0;
+      } else {
+        return;
+      }
+    }
+
+    if (this.config.mode24_7) {
+      await this.monitorLongRunningContext();
+    }
+
+    if (this.checkLimits() || this.isProcessing) return;
+
+    // [PR-1] Resume a mission interrupted by restart (once per process).
+    if (!this.resumeChecked) {
+      this.resumeChecked = true;
+      await this.tryResumeMission();
+      if (this.isProcessing) return; // resume in flight
+    }
+
+    switch (this.currentStage) {
+      case WorkflowStage.IDLE:
+        if (this.config.mode24_7) this.startNewCycle();
+        break;
+
+      case WorkflowStage.INTENT:
+        // 1. Analyze Intent & Research Needs
+        const intentAnalysis = await this.analyzeIntentAndResearchNeeds();
+
+        if (intentAnalysis.needsResearch) {
+          console.log("[WORKFLOW] 🧠 Research required. Delegating to Swarm...");
+          systemBus.emit(SystemProtocol.RESEARCH_REQUEST, { query: intentAnalysis.query }, 'WORKFLOW_ENGINE'); // Notify UI
+
+          try {
+            // 2. Async Request to Research Squad (e.g., 'ctx-01' is the leader of TEAM_CONTEXT)
+            // In a real swarm, we'd broadcast to 'TEAM_CONTEXT' and a free agent would pick it up.
+            // For now, we target the leader.
+            const researchResult = await systemBus.request(
+              'ctx-01',
+              SystemProtocol.RESEARCH_REQUEST,
+              { query: intentAnalysis.query },
+              `TRACE_${Date.now()}`
+            );
+
+            console.log("[WORKFLOW] 🎓 Research Complete:", researchResult.payload.data.substring(0, 50) + "...");
+
+            // 3. Store Knowledge
+            this.pipelineData.researchContext = researchResult.payload.data;
+            this.pipelineData.intent = intentAnalysis.refinedIntent; // Use refined intent
+
+            this.transitionTo(WorkflowStage.PLANNING);
+
+          } catch (e) {
+            console.error("[WORKFLOW] Research failed, proceeding with limited context.", e);
+            this.pipelineData.intent = intentAnalysis.originalIntent;
+            this.transitionTo(WorkflowStage.PLANNING);
+          }
+        } else {
+          this.pipelineData.intent = intentAnalysis.originalIntent;
+          this.transitionTo(WorkflowStage.PLANNING);
+        }
+        break;
+
+      case WorkflowStage.PLANNING:
+        // Intent-based Transition
+        // If the 'intent' analysis specifically requested a NEW APP, we go to GENESIS.
+        // Otherwise, standard plan.
+        const intent = this.pipelineData.intent || "";
+        // [PR-4b] Multilingual trigger: the English-only substring check silently
+        // skipped GENESIS for Spanish requests ("crea una app", "nuevo proyecto").
+        const genesisTrigger = /(new app|create (a )?(new )?(project|app)|build (an|a) app|nueva? (app|aplicaci[oó]n)|crea(r)? (una? )?(app|aplicaci[oó]n|proyecto)|nuevo proyecto|haz(me)? una (app|aplicaci[oó]n))/i;
+        if (genesisTrigger.test(intent)) {
+          this.transitionTo(WorkflowStage.GENESIS);
+        } else {
+          await this.executeStageTask("Create plan.", "OPS", "Strategos_X", WorkflowStage.EXECUTION);
+        }
+        break;
+
+      case WorkflowStage.GENESIS:
+        await this.executeGenesisSpawn();
+        break;
+
+      case WorkflowStage.EXECUTION:
+        // [PR-1] Real build: the mission runs through planGenerator +
+        // planExecutor (tools, fs jail, artifact verification) instead of
+        // narrating execution with empty capabilities.
+        await this.executeMissionBuild();
+        break;
+
+      case WorkflowStage.QA_AUDIT:
+        await this.executeQARound();
+        break;
+
+      case WorkflowStage.REMEDIATION:
+        await this.executeRemediationRound();
+        break;
+
+      case WorkflowStage.OPTIMIZATION:
+        await this.executeStageTask("Optimize.", "OPS", "Improver_V9", WorkflowStage.ARCHIVAL);
+        break;
+
+      case WorkflowStage.ARCHIVAL:
+        this.performArchival();
+        this.config.allowEvolution ? this.transitionTo(WorkflowStage.META_ANALYSIS) : this.transitionTo(WorkflowStage.IDLE);
+        break;
+
+      case WorkflowStage.META_ANALYSIS:
+        await this.executeMetaAnalysis();
+        break;
+
+      case WorkflowStage.ADAPTATION_QA:
+        this.isProcessing = false;
+        this.transitionTo(WorkflowStage.IDLE);
+        break;
+    }
+  
+        });
+    }
+
+  private async executeGenesisSpawn() {
+        return runSqliteOperation('services/workflowEngine.ts:executeGenesisSpawn', async () => {
+    this.isProcessing = true;
+    try {
+      console.log("[WORKFLOW] Entering GENESIS phase. Spawning child application...");
+
+      // 1. Call AI to design the app architecture
+      const response = await generateAgentResponse(
+        "System_Architect",
+        "Genesis Architect",
+        "INTEGRATION",
+        "Design a new 'Analytics Dashboard' application. Define folder structure.",
+        null,
+        IntrospectionLayer.MAXIMUM,
+        WorkflowStage.GENESIS,
+        undefined,
+        {},
+        [],
+        CommunicationLevel.EXECUTIVE // Architect is Executive
+      );
+
+      this.tokenUsage += response.usage;
+
+      // [PHASE 13] Universal Asset Pipeline: Generate Visuals in Parallel
+      const projectName = `App_${Date.now()}`;
+      const creativeContext = contextResolver.resolveFromProject('REACT_VITE', projectName);
+
+      visualCortex.initiateHybridFlow({
+        id: `req_${Date.now()}`,
+        prompt: "Modern SaaS Dashboard Landing Page Hero",
+        brandId: "GENESIS_PROJECT",
+        aspectRatio: '16:9',
+        outputType: 'IMAGE'
+      }, creativeContext).then(asset => {
+        console.log("[WORKFLOW] Universal Asset Pipeline: Visual Cortex generated asset:", asset.id);
+      }).catch(e => console.warn("[WORKFLOW] Visual Cortex failed:", e));
+
+      // 2. Trigger Factory Spawn (Simulated API call)
+      try {
+        const res = await fetch(`http://localhost:${DEFAULT_API_CONFIG.port}/v1/factory/spawn`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${DEFAULT_API_CONFIG.apiKey}`
+          },
+          body: JSON.stringify({ name: projectName, template: 'REACT_VITE' })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          systemBus.emit(SystemProtocol.SQUAD_EXPANSION, { name: 'Genesis_Ops', category: 'INTEGRATION', role: 'Deployment' });
+        }
+      } catch (e) {
+        console.error("Genesis Factory API failed", e);
+      }
+
+      this.transitionTo(WorkflowStage.QA_AUDIT);
+    } catch (e) {
+      this.recordFailure();
+    } finally {
+      this.isProcessing = false;
+    }
+  
+        });
+    }
+
+  private async monitorLongRunningContext() {
+    const stats = await continuum.getStats();
+    if (stats.total > 200 && !this.isProcessing) {
+      this.isProcessing = true;
+      try {
+        const response = await generateAgentResponse(
+          "Context_Overseer",
+          "Supervisor",
+          "DATA",
+          "Compress logs.",
+          null,
+          IntrospectionLayer.MEDIUM,
+          WorkflowStage.OPTIMIZATION,
+          undefined,
+          {},
+          [],
+          CommunicationLevel.TECHNICAL // Overseer is Technical
+        );
+        continuum.store(response.output, 'LONG' as any, ['SAGA']);
+        systemBus.emit(SystemProtocol.MEMORY_FLUSH, { message: `Archived Context` });
+      } catch (e) { console.error(e); } finally { this.isProcessing = false; }
+    }
+  }
+
+  private startNewCycle() {
+        return runSqliteOperation('services/workflowEngine.ts:startNewCycle', () => {
+    this.pipelineData = {};
+    this.lastQualityScore = 0;
+    this.remediationAttempts = 0;
+    this.transitionTo(WorkflowStage.INTENT);
+  
+        });
+    }
+
+  /**
+   * Seed a real mission into the autonomous loop and start a fresh cycle.
+   * An explicit operator command: it enables the engine for this run
+   * (mode24_7 stays untouched) and refuses to interrupt a cycle in flight.
+   * Throws an Error with code MISSION_BUSY when the engine is not IDLE.
+   */
+  public startMission(mission: string) {
+        return runSqliteOperation('services/workflowEngine.ts:startMission', () => {
+    if (this.isProcessing || this.currentStage !== WorkflowStage.IDLE) {
+      const err: any = new Error(`Workflow is busy (stage: ${this.currentStage})`);
+      err.code = 'MISSION_BUSY';
+      throw err;
+    }
+    this.config.enabled = true;
+    this.startNewCycle();
+    this.pipelineData.input = mission;
+    this.pipelineData.missionSource = 'api';
+    // [PR-1] Durable mission identity + first checkpoint (survives restart).
+    this.pipelineData.missionId = `msn_${Date.now()}`;
+    saveMissionCheckpoint(this.pipelineData.missionId, this.currentStage, this.pipelineData);
+    console.log(`[WORKFLOW] Mission seeded (${mission.length} chars). Cycle started.`);
+    systemBus.emit(SystemProtocol.WORKFLOW_UPDATE, { stage: this.currentStage, status: 'mission_seeded' });
+    // Best-effort audit trail in memory; a store failure never blocks a mission.
+    continuum.store(`Mission received via API: ${mission}`, undefined, ['mission', 'user-input'], true)
+      .catch(e => console.warn('[WORKFLOW] Mission audit store failed (non-blocking):', e));
+  
+        });
+    }
+
+  private transitionTo(stage: WorkflowStage) {
+        return runSqliteOperation('services/workflowEngine.ts:transitionTo', () => {
+    this.currentStage = stage;
+    console.log(`[WORKFLOW] 🔄 Transitioning to Stage: ${stage}`);
+    systemBus.emit(SystemProtocol.WORKFLOW_UPDATE, { stage: stage, status: 'started' });
+
+    // [PR-1] Checkpoint every transition while a mission is in flight;
+    // a terminal stage retires the checkpoint (best-effort, never blocks).
+    const missionId = this.pipelineData.missionId;
+    if (missionId) {
+      if (stage === WorkflowStage.IDLE) {
+        clearMissionCheckpoint(missionId);
+      } else {
+        saveMissionCheckpoint(missionId, stage, this.pipelineData);
+      }
+    }
+
+    // [DISTRIBUTED ORCHESTRATION] Wake up relevant squads
+    orchestrator.activateSquadsForStage(stage, this.pipelineData);
+  
+        });
+    }
+
+  private recordFailure() {
+    this.failures++;
+    const morph: MorphPayload = { mode: 'DEFENSE', accentColor: 'red', density: 'compact' };
+    systemBus.emit(SystemProtocol.INTERFACE_MORPH, morph, 'SECURITY');
+    if (this.failures >= this.FAILURE_THRESHOLD) {
+      this.circuitOpen = true;
+      this.circuitResetTime = Date.now() + this.RESET_TIMEOUT;
+      this.isProcessing = false;
+      systemBus.emit(SystemProtocol.SECURITY_LOCKDOWN, { message: 'Circuit Breaker Active' });
+    }
+  }
+
+  private recordSuccess() { this.failures = 0; }
+
+  /**
+   * [PR-1] Mission build: intent -> ExecutionPlan -> planExecutor.
+   * The result (verified artifacts, per-step outcomes) is stored for the
+   * deterministic QA gate; draftResult keeps the synthesized output for
+   * the LLM content audit.
+   */
+  private async executeMissionBuild(remediationContext?: string) {
+        return runSqliteOperation('services/workflowEngine.ts:executeMissionBuild', async () => {
+    this.isProcessing = true;
+    try {
+      const baseMission = this.pipelineData.intent || this.pipelineData.input || '';
+      const mission = remediationContext
+        ? `${baseMission}\n\nREMEDIATION CONTEXT (the previous attempt failed deterministic verification; fix exactly this):\n${remediationContext}`
+        : baseMission;
+
+      const { planGenerator } = await import('./planGenerator');
+      const { planExecutor } = await import('./planExecutor');
+
+      const plan = await planGenerator.create(mission);
+      this.pipelineData.planId = plan.id;
+      console.log(`[WORKFLOW] 🏗️ Mission build: plan ${plan.id} (${plan.steps.length} steps)`);
+
+      const result = await planExecutor.execute(plan);
+      this.pipelineData.executionResult = {
+        planId: result.planId,
+        success: result.success,
+        artifactsProduced: result.artifactsProduced,
+        finalOutput: result.finalOutput,
+        errors: result.errors,
+        steps: result.steps.map(st => ({ stepOrder: st.stepOrder, agentId: st.agentId, success: st.success, error: st.error }))
+      };
+      this.pipelineData.draftResult = result.finalOutput;
+      this.transitionTo(WorkflowStage.QA_AUDIT);
+    } catch (e) {
+      this.recordFailure();
+      this.transitionTo(WorkflowStage.IDLE);
+    } finally {
+      this.isProcessing = false;
+    }
+  
+        });
+    }
+
+  private async executeQARound() {
+        return runSqliteOperation('services/workflowEngine.ts:executeQARound', async () => {
+    this.isProcessing = true;
+    try {
+      // [PR-1] Deterministic gate BEFORE any LLM audit (tripwire semantics):
+      // a build mission with zero verified artifacts HALTS here with a
+      // structured report; the LLM never audits simulated success.
+      if (this.pipelineData.executionResult) {
+        const { evaluateMissionGate } = await import('./execution/missionGate');
+        const mission = this.pipelineData.intent || this.pipelineData.input || '';
+        const report = evaluateMissionGate(mission, this.pipelineData.executionResult);
+        this.pipelineData.gateReport = report;
+        if (report.verdict === 'HALT') {
+          console.error(`[WORKFLOW] 🛑 GATE HALT: ${report.missing}`);
+          this.remediationAttempts++;
+          if (this.remediationAttempts >= this.MAX_REMEDIATION_ATTEMPTS) {
+            this.pipelineData.executionFailed = true;
+            this.pipelineData.draftResult = `MISSION FAILED VERIFICATION: ${report.missing}`;
+            this.transitionTo(WorkflowStage.OPTIMIZATION);
+          } else {
+            this.transitionTo(WorkflowStage.REMEDIATION);
+          }
+          return;
+        }
+        this.pipelineData.verifiedArtifacts = report.verifiedArtifacts;
+      }
+
+      const input = this.pipelineData.draftResult || "No draft.";
+      const response = await generateAgentResponse(
+        "QA_Inquisitor",
+        "Auditor",
+        "OPS",
+        "Audit.",
+        input,
+        IntrospectionLayer.MAXIMUM,
+        WorkflowStage.QA_AUDIT,
+        undefined,
+        {},
+        [],
+        CommunicationLevel.TECHNICAL // Auditor is Technical
+      );
+      this.recordSuccess();
+      this.tokenUsage += response.usage;
+      this.lastThoughts = response.thoughts;
+      this.lastQualityScore = response.qualityScore ?? null; // [R13] unmeasured is null, not a fabricated 85
+      this.pipelineData.qaReport = response.output;
+
+      if (this.lastQualityScore !== null && this.lastQualityScore < 90) systemBus.emit(SystemProtocol.INTERFACE_MORPH, { mode: 'DEFENSE' }, 'QA');
+
+      if ((this.lastQualityScore !== null && this.lastQualityScore >= 98) || this.remediationAttempts >= this.MAX_REMEDIATION_ATTEMPTS) {
+        systemBus.emit(SystemProtocol.INTERFACE_MORPH, { mode: 'FLOW' }, 'QA');
+        this.transitionTo(WorkflowStage.OPTIMIZATION);
+      } else {
+        this.transitionTo(WorkflowStage.REMEDIATION);
+      }
+    } catch (e) { this.recordFailure(); } finally { this.isProcessing = false; }
+  
+        });
+    }
+
+  private async executeRemediationRound() {
+        return runSqliteOperation('services/workflowEngine.ts:executeRemediationRound', async () => {
+    // [PR-1] A gate HALT is not fixed by rewriting prose: re-run the build
+    // with the structured failure report as remediation context.
+    if (this.pipelineData.gateReport?.verdict === 'HALT') {
+      const report = this.pipelineData.gateReport;
+      await this.executeMissionBuild(JSON.stringify({
+        gate: report.gate,
+        missing: report.missing,
+        stepOutcomes: report.stepOutcomes
+      }));
+      return;
+    }
+
+    this.isProcessing = true;
+    try {
+      const combined = `DRAFT:\n${this.pipelineData.draftResult}\n\nREPORT:\n${this.pipelineData.qaReport}`;
+      const response = await generateAgentResponse(
+        "Fixer_Unit",
+        "Mechanic",
+        "DEV",
+        "Fix.",
+        combined,
+        IntrospectionLayer.DEEP,
+        WorkflowStage.REMEDIATION,
+        undefined,
+        {},
+        [],
+        CommunicationLevel.TECHNICAL // Fixer is Technical
+      );
+      this.recordSuccess();
+      this.tokenUsage += response.usage;
+      this.pipelineData.draftResult = response.output;
+      this.remediationAttempts++;
+      await this.checkAndApplyProtocols(response.output);
+      this.transitionTo(WorkflowStage.QA_AUDIT);
+    } catch (e) { this.recordFailure(); } finally { this.isProcessing = false; }
+  
+        });
+    }
+
+  private async executeStageTask(task: string, category: string, role: string, next: WorkflowStage) {
+        return runSqliteOperation('services/workflowEngine.ts:executeStageTask', async () => {
+    this.isProcessing = true;
+    try {
+      const prev = this.currentStage === WorkflowStage.OPTIMIZATION ? this.pipelineData.draftResult : this.pipelineData.intent;
+
+      // Determine Level based on Stage
+      const level = this.currentStage === WorkflowStage.PLANNING ? CommunicationLevel.EXECUTIVE : CommunicationLevel.TECHNICAL;
+
+      const response = await generateAgentResponse(
+        role,
+        role,
+        category,
+        task,
+        prev,
+        IntrospectionLayer.OPTIMAL,
+        this.currentStage,
+        undefined,
+        {},
+        [],
+        level
+      );
+      this.recordSuccess();
+      this.tokenUsage += response.usage;
+      this.lastThoughts = response.thoughts;
+      await this.checkAndApplyProtocols(response.output);
+      if (this.currentStage === WorkflowStage.INTENT) this.pipelineData.intent = response.output;
+      if (this.currentStage === WorkflowStage.EXECUTION) this.pipelineData.draftResult = response.output;
+      this.transitionTo(next);
+    } catch (e) { this.recordFailure(); } finally { this.isProcessing = false; }
+  
+        });
+    }
+
+  /**
+   * [NEURAL FEEDBACK LOOP]
+   * The core robustness mechanism.
+   * 1. Evaluates Quality (Gatekeeper)
+   * 2. Triggers Remediation (Self-Healing)
+   * 3. Injects Context (Transcendence)
+   * 4. Executes Protocols (Action)
+   */
+  private async handleDistributedResult(agentId: string, result: string) {
+    // 1. QA Gate
+    const qa = await qualityControl.evaluateText(result);
+
+    if (qa.score < 70) {
+      console.warn(`[WORKFLOW] 🛑 REJECTED output from ${agentId} (Score: ${qa.score}). Reason: ${qa.feedback}`);
+      // 2. Remediation Trigger
+      await remediation.mobilizeSquad(agentId, [`QA_FAILURE: ${qa.feedback}`]);
+      return; // Stop. Do not execute protocols.
+    }
+
+    // 3. Context Transcendence (Memory Injection)
+    // Store successful reasoning for future agents
+    await continuum.store(
+      `[AGENT_RESULT] ${agentId} via Neural Link:\n${result.substring(0, 500)}...`,
+      IntrospectionLayer.DEEP as any,
+      ['AGENT_OUTPUT', 'SUCCESS', agentId]
+    );
+
+    // 4. Protocol Execution (The Action)
+    await this.checkAndApplyProtocols(result);
+  }
+
+  private async checkAndApplyProtocols(output: string) {
+    // [PHASE 8] Tool Protocol Detection
+
+    // 1. RFC Request: [REQUEST_RFC: Title | Findings | Recommendation]
+    const rfcMatch = output.match(/\[REQUEST_RFC:\s*(.*?)\s*\|\s*(.*?)\s*\|\s*(.*?)\]/i);
+    if (rfcMatch) {
+      console.log(`[WORKFLOW] 📜 RFC Request Detected: ${rfcMatch[1]}`);
+      await architect.generateRFC({
+        title: rfcMatch[1].trim(),
+        findings: rfcMatch[2].trim(),
+        recommendation: rfcMatch[3].trim()
+      });
+    }
+
+    // 2. Memory Write: [AUTHORIZE_MEMORY: Content]
+    const memoryMatch = output.match(/\[AUTHORIZE_MEMORY:\s*(.*?)\]/i);
+    if (memoryMatch) {
+      console.log(`[WORKFLOW] 💾 Saving Memory via Protocol.`);
+      await continuum.store(memoryMatch[1].trim(), IntrospectionLayer.DEEP as any, ['PROTOCOL_WRITE']);
+    }
+    // 3. Start Campaign: [START_CAMPAIGN: Brief]
+    const campaignMatch = output.match(/\[START_CAMPAIGN:\s*(.*?)\]/i);
+    if (campaignMatch) {
+      console.log(`[WORKFLOW] 🎬 Creative Director Protocol Detected: ${campaignMatch[1]}`);
+      const { creativeDirector } = await import('./skills/creativeDirectorSkill');
+      await creativeDirector.execute(campaignMatch[1].trim());
+    }
+
+    // 4. Granular Image: [GENERATE_IMAGE: Prompt]
+    const imageMatch = output.match(/\[GENERATE_IMAGE:\s*(.*?)\]/i);
+    if (imageMatch) {
+      console.log(`[WORKFLOW] 🎨 Granular Image Protocol Detected.`);
+      const { creativeDirector } = await import('./skills/creativeDirectorSkill');
+      await creativeDirector.generateVisual(imageMatch[1].trim());
+    }
+
+    // 5. Granular Video: [GENERATE_VIDEO: Prompt]
+    const videoMatch = output.match(/\[GENERATE_VIDEO:\s*(.*?)\]/i);
+    if (videoMatch) {
+      console.log(`[WORKFLOW] 🎥 Granular Video Protocol Detected.`);
+      const { creativeDirector } = await import('./skills/creativeDirectorSkill');
+      await creativeDirector.generateMotion(videoMatch[1].trim());
+    }
+  }
+
+  private async executeMetaAnalysis() {
+        return runSqliteOperation('services/workflowEngine.ts:executeMetaAnalysis', async () => {
+    this.isProcessing = true;
+    try {
+      const response = await generateAgentResponse(
+        "Workflow_Architect",
+        "Evolutionist",
+        "CORE",
+        "Analyze.",
+        null,
+        IntrospectionLayer.DEEP,
+        WorkflowStage.META_ANALYSIS,
+        undefined,
+        {},
+        [],
+        CommunicationLevel.EXECUTIVE // Evolutionist is Executive
+      );
+      this.tokenUsage += response.usage;
+      this.transitionTo(WorkflowStage.ADAPTATION_QA);
+    } catch (e) { this.transitionTo(WorkflowStage.IDLE); } finally { this.isProcessing = false; }
+  
+        });
+    }
+
+  /**
+   * [PR-1] Resume the latest interrupted mission from its checkpoint.
+   * Unknown schema versions and corrupt state never resume: the engine
+   * stays IDLE and the foreign state is preserved for inspection.
+   */
+  private async tryResumeMission() {
+        return runSqliteOperation('services/workflowEngine.ts:tryResumeMission', async () => {
+    try {
+      const checkpoint = loadLatestMissionCheckpoint();
+      if (!checkpoint) return;
+      if (checkpoint.stage === WorkflowStage.IDLE) {
+        clearMissionCheckpoint(checkpoint.missionId);
+        return;
+      }
+      console.log(`[WORKFLOW] ♻️ Resuming mission ${checkpoint.missionId} at stage ${checkpoint.stage} (saved ${new Date(checkpoint.savedAt).toISOString()})`);
+      this.pipelineData = { ...checkpoint.pipelineData, missionId: checkpoint.missionId };
+      this.config.enabled = true;
+      systemBus.emit(SystemProtocol.WORKFLOW_UPDATE, {
+        stage: checkpoint.stage,
+        status: 'mission_resumed',
+        missionId: checkpoint.missionId
+      });
+      this.transitionTo(checkpoint.stage as WorkflowStage);
+    } catch (e) {
+      console.error('[WORKFLOW] Mission resume failed; staying IDLE.', e);
+    }
+  
+        });
+    }
+
+  private performArchival() {
+    continuum.store("Cycle Done.", undefined, ['archival']);
+  }
+
+  private async analyzeIntentAndResearchNeeds(): Promise<{ needsResearch: boolean, query?: string, refinedIntent?: string, originalIntent: string }> {
+    // Ask Gemini to classify the user's request
+    // We assume the 'intent' is stored in pipelineData or we fetch the last user message from Continuum/Chat
+    // For this simulation, we'll assume we have a way to get the latest input. 
+    // In a real implementation, we'd pass the input to tick() or store it in pipelineData.input.
+
+    // A mission seeded via POST /v1/workflow/mission takes priority over memory.
+    const seededInput = typeof this.pipelineData.input === 'string' ? this.pipelineData.input.trim() : '';
+    let input = seededInput;
+    if (!input) {
+      // REAL DATA: Fetch latest user input from Volatile Memory (RAM)
+      const volatile = continuum.getVolatileState();
+      // find last node with tag 'user-input'
+      const lastUserNode = volatile.reverse().find(n => n.tags.includes('user-input'));
+      input = lastUserNode ? lastUserNode.content : "No recent input."; // Fallback only if memory empty
+    }
+
+    if (input === "No recent input.") {
+      return { needsResearch: false, originalIntent: input };
+    }
+
+    // We use a lightweight check here or a full LLM call
+    // For robustness, let's do a quick LLM check
+    const response = await generateAgentResponse(
+      "Intent_Router",
+      "Router",
+      "CORE",
+      `Analyze this request: "${input}". 
+             Return JSON: { "needsResearch": boolean, "searchQuery": string, "refinedIntent": string }`,
+      null,
+      IntrospectionLayer.SHALLOW,
+      WorkflowStage.INTENT,
+      undefined,
+      {},
+      [],
+      CommunicationLevel.TECHNICAL // Router is Technical
+    );
+
+    try {
+      const json = JSON.parse(response.output.replace(/```json/g, '').replace(/```/g, ''));
+      return {
+        needsResearch: json.needsResearch,
+        query: json.searchQuery,
+        refinedIntent: json.refinedIntent,
+        originalIntent: input
+      };
+    } catch (e) {
+      // Fallback
+      return { needsResearch: false, originalIntent: input };
+    }
+  }
+
+  private checkLimits(): boolean {
+    if (this.tokenUsage >= this.config.maxDailyTokens) {
+      this.config.enabled = false;
+      return true;
+    }
+    return false;
+  }
+}
+
+function constructOriginalWorkflowEngine(): WorkflowEngine {
+    const owner = workflowOwner();
+    const operation = owner.beginConstruction();
+    try {
+        const instance = new WorkflowEngine(operation);
+        owner.constructed(operation, instance); return instance;
+    } catch (original) {
+        preserveOriginal(owner, 'construction-failure', () => owner.constructionFailed(operation, original));
+        throw original;
+    }
+}
+export const workflowEngine = constructOriginalWorkflowEngine();
