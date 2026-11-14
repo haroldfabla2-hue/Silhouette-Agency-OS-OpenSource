@@ -45,21 +45,107 @@ def mount_identity(fd):
         raise MountModelUnavailable('IDMAPPED_OR_UNSUPPORTED_FILESYSTEM')
     return (unique, fs_magic, attrs)
 
-def require_host_identity_namespace():
-    for name in ('uid_map', 'gid_map'):
-        fd = fixed_call('UID_MAP_OPEN' if name == 'uid_map' else 'GID_MAP_OPEN', os.open, '/proc/self/' + name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
-        value=read_and_close(fd,257,'UID_MAP_READ' if name=='uid_map'else'GID_MAP_READ')
-        if len(value) > 256 or value.split() != [b'0', b'0', b'4294967295']:
+class GlobalNumericIdentityGrant:
+    """Owned self-namespace FDs, not initial-user-namespace membership proof.
+    Genuine host procfs and reviewed Linux maximal-extent semantics required.
+    Only trusted supervisor code may own/use this grant; never candidate data.
+    """
+    def __init__(self):
+        self.fds=[]
+        self.identities=None
+        self.runner=None
+        self.closed=False
+
+    def close(self):
+        first=None
+        if not self.closed:
+            for fd in reversed(self.fds):
+                try:fixed_call('FD_CLOSE',os.close,fd)
+                except BaseException as error:
+                    if first is None:first=error
+            self.closed=True
+        if first is not None:raise first
+
+    def current_identities(self):
+        values=[]
+        for fd,name,operation in zip(self.fds,('user','mnt'),('SELF_USERNS_STAT','SELF_MOUNTNS_STAT')):
+            held=fixed_call('NAMESPACE_FSTAT',os.fstat,fd)
+            now=fixed_call(operation,os.stat,'/proc/self/ns/'+name)
+            identity=(held.st_dev,held.st_ino)
+            if identity!=(now.st_dev,now.st_ino):
+                raise MountModelUnavailable('NAMESPACE_CHANGED')
+            values.append(identity)
+        if len(values)!=2:raise MountModelUnavailable('NAMESPACE_CHANGED')
+        return tuple(values)
+
+    def recheck(self):
+        if self.closed:raise MountModelUnavailable('NAMESPACE_CHANGED')
+        before=self.current_identities()
+        if before!=self.identities:raise MountModelUnavailable('NAMESPACE_CHANGED')
+        runner=_require_global_numeric_id_maps_and_caps()
+        if runner!=self.runner or self.current_identities()!=before:
+            raise MountModelUnavailable('NAMESPACE_CHANGED')
+        return self.runner
+
+
+def _read_bounded_proc(path,limit,open_operation,read_operation,bound_reason):
+    fd=fixed_call(open_operation,os.open,path,os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC)
+    first=None
+    try:
+        result=bytearray()
+        while True:
+            value=fixed_call(read_operation,os.read,fd,min(4096,limit+1-len(result)))
+            if not value:return bytes(result)
+            result.extend(value)
+            if len(result)>limit:raise MountModelUnavailable(bound_reason)
+    except BaseException as original:first=original;raise
+    finally:
+        try:fixed_call('FD_CLOSE',os.close,fd)
+        except BaseException:
+            if first is not None:first.cleanupFailed=True
+            else:raise
+
+
+def _require_global_numeric_id_maps_and_caps():
+    for name in ('uid_map','gid_map'):
+        value=_read_bounded_proc('/proc/self/'+name,256,
+            'UID_MAP_OPEN'if name=='uid_map'else'GID_MAP_OPEN',
+            'UID_MAP_READ'if name=='uid_map'else'GID_MAP_READ',
+            'USER_NAMESPACE_MAPPING_UNSUPPORTED')
+        # Full EOF-checked sole maximal extent. Parent-relative second column
+        # alone is NOT proof. Kernel stores composed global extents; maximal
+        # contiguous count forces stored global base0 through every parent.
+        if value.split()!=[b'0',b'0',b'4294967295']:
             raise MountModelUnavailable('USER_NAMESPACE_MAPPING_UNSUPPORTED')
-    if fixed_call('SELF_USERNS_STAT', os.stat, '/proc/self/ns/user').st_ino != fixed_call('PID1_USERNS_STAT', os.stat, '/proc/1/ns/user').st_ino:
-        raise MountModelUnavailable('USER_NAMESPACE_MISMATCH')
-    fd = fixed_call('PROC_STATUS_OPEN', os.open, '/proc/self/status', os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
-    status=read_and_close(fd,65537,'PROC_STATUS_READ')
-    if len(status) > 65536:
-        raise MountModelUnavailable('PROC_STATUS_BOUND')
-    fields = dict((line.split(b':', 1) for line in status.splitlines() if b':' in line))
-    if any((int(fields.get(k, b'-1').strip(), 16) != 0 for k in (b'CapEff', b'CapPrm', b'CapInh', b'CapAmb'))):
+    status=_read_bounded_proc('/proc/self/status',65536,'PROC_STATUS_OPEN','PROC_STATUS_READ','PROC_STATUS_BOUND')
+    fields={}
+    for line in status.splitlines():
+        if b':'not in line:continue
+        key,value=line.split(b':',1)
+        if key in fields:raise MountModelUnavailable('PROC_STATUS_BOUND')
+        fields[key]=value
+    if any(int(fields.get(k,b'-1').strip(),16)!=0 for k in(b'CapEff',b'CapPrm',b'CapInh',b'CapAmb')):
         raise MountModelUnavailable('SUPERVISOR_CAPABILITIES_UNSUPPORTED')
-    if fixed_call('PROCESS_UID',os.geteuid) == 0:
-        raise MountModelUnavailable('NONROOT_RUNNER_REQUIRED')
-    return (fixed_call('PROCESS_UID',os.geteuid), fixed_call('SELF_USERNS_STAT', os.stat, '/proc/self/ns/user').st_ino, fixed_call('SELF_MOUNTNS_STAT', os.stat, '/proc/self/ns/mnt').st_ino)
+    runner=fixed_call('PROCESS_UID',os.geteuid)
+    if runner==0:raise MountModelUnavailable('NONROOT_RUNNER_REQUIRED')
+    return runner
+
+
+def retain_global_numeric_identity():
+    grant=GlobalNumericIdentityGrant()
+    try:
+        # Following these two fixed procfs magic links is intentional. They
+        # refer only to this process; no PID1 access or privilege expansion.
+        for name,operation in(('user','SELF_USERNS_OPEN'),('mnt','SELF_MOUNTNS_OPEN')):
+            fd=fixed_call(operation,os.open,'/proc/self/ns/'+name,os.O_RDONLY|os.O_CLOEXEC)
+            grant.fds.append(fd) # Register BEFORE any fstat or map read.
+        grant.identities=grant.current_identities()
+        grant.runner=_require_global_numeric_id_maps_and_caps()
+        if grant.current_identities()!=grant.identities:
+            raise MountModelUnavailable('NAMESPACE_CHANGED')
+        grant.recheck()
+        return grant
+    except BaseException as original:
+        try:grant.close()
+        except BaseException:original.cleanupFailed=True
+        raise

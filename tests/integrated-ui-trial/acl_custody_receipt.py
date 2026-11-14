@@ -8,7 +8,7 @@ STATUSES={'SUPPORTED_MODEL_DAC_CUSTODY','BLOCKED_UNSAFE_ACCESS','BLOCKED_UNSUPPO
 def validate(v):
     assert type(v)is dict and set(v)==KEYS
     assert type(v['version'])is int and v['version']==1 and v['status']in STATUSES
-    assert v['model']=='ROOT_AND_SUPERVISOR_ONLY_LOCAL_EXT4_XFS_NONIDMAPPED'
+    assert v['model']=='GLOBAL_NUMERIC_IDENTITY_ROOT_SUPERVISOR_LOCAL_EXT4_XFS_NONIDMAPPED'
     for k,n in(('inspectedAncestors',32),('aclAncestors',32),('defaultAclAncestors',32),('untrustedWriteEntries',16352)):
         if k=='untrustedWriteEntries'and v['status']!='SUPPORTED_MODEL_DAC_CUSTODY':assert v[k]is None
         else:assert type(v[k])is int and 0<=v[k]<=n
@@ -27,7 +27,7 @@ def validate(v):
 def finite(chain,status,stage='COMPLETE',reason='NONE',operation='NONE',cleanup_failed=False):
     raw=chain.raw_private if chain is not None else[]
     good=status=='SUPPORTED_MODEL_DAC_CUSTODY'
-    return validate({'version':1,'status':status,'inspectedAncestors':len(raw),'aclAncestors':sum(x['access']is not None for x in raw),'defaultAclAncestors':sum(x['default']is not None for x in raw),'untrustedWriteEntries':0 if good else None,'model':'ROOT_AND_SUPERVISOR_ONLY_LOCAL_EXT4_XFS_NONIDMAPPED','effectiveDacChecked':good,'mountModelChecked':good,'productPass':False,'failureStage':stage,'failureReason':reason,'failureOperation':operation,'cleanupFailed':cleanup_failed})
+    return validate({'version':1,'status':status,'inspectedAncestors':len(raw),'aclAncestors':sum(x['access']is not None for x in raw),'defaultAclAncestors':sum(x['default']is not None for x in raw),'untrustedWriteEntries':0 if good else None,'model':'GLOBAL_NUMERIC_IDENTITY_ROOT_SUPERVISOR_LOCAL_EXT4_XFS_NONIDMAPPED','effectiveDacChecked':good,'mountModelChecked':good,'productPass':False,'failureStage':stage,'failureReason':reason,'failureOperation':operation,'cleanupFailed':cleanup_failed})
 
 # Raw exceptions are NEVER serialized. Only exact source-owned class/reason
 # combinations are mapped. No class-name or str(exception) export fallback.

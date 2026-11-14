@@ -7,7 +7,7 @@ import os
 import stat
 import time
 from acl_metadata_diagnostic import parse_linux_acl, _acl, _identity
-from mount_readonly_model import mount_identity, require_host_identity_namespace
+from mount_readonly_model import mount_identity, retain_global_numeric_identity
 
 class CustodyDenied(Exception):
     pass
@@ -51,13 +51,17 @@ class RetainedCustodyChain:
                 try:fixed_call('FD_CLOSE',os.close,fd)
                 except BaseException as error:
                     if first is None:first=error
+            if self.namespace is not None:
+                try:self.namespace.close()
+                except BaseException as error:
+                    if first is None:first=error
             self.closed=True
         if first is not None:raise first
     def recheck(self, deadline):
         if self.closed or fixed_call('CLOCK_READ',time.monotonic) >= deadline:
             raise CustodyDenied('DEADLINE_OR_CLOSED_CHAIN')
-        if fixed_call('NAMESPACE_IDENTITY', require_host_identity_namespace) != self.namespace:
-            raise CustodyDenied('NAMESPACE_CHANGED')
+        if self.namespace is None:raise CustodyDenied('NAMESPACE_CHANGED')
+        fixed_call('NAMESPACE_IDENTITY',self.namespace.recheck)
         for (fd, identity, mount) in self.entries:
             if fixed_call('CLOCK_READ',time.monotonic) >= deadline:
                 raise CustodyDenied('DEADLINE')
@@ -90,8 +94,8 @@ def inspect_and_retain(path, deadline, private_leaf=False):
         raise CustodyDenied('PATH_SHAPE')
     chain = RetainedCustodyChain()
     try:
-        chain.namespace = fixed_call('NAMESPACE_IDENTITY', require_host_identity_namespace)
-        runner = chain.namespace[0]
+        chain.namespace = fixed_call('NAMESPACE_IDENTITY', retain_global_numeric_identity)
+        runner = chain.namespace.runner
         fd = fixed_call('ROOT_DIRECTORY_OPEN', os.open, '/', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
         for (index, component) in enumerate([None, *parts]):
             if component is not None:

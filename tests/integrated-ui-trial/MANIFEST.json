@@ -1,6 +1,6 @@
 {
   "status": "SOURCE_ONLY_NO_EXECUTION_PUBLICATION",
-  "parent": "cf6806e0a721f603cb755a4d5de95bb591bc41d8",
+  "parent": "9b85668507d4cdbb814ca032d4006f0edade657b",
   "files": {
     "ACL-CUSTODY-DELTA-REVIEW.md": {
       "bytes": 7017,
@@ -54,6 +54,10 @@
       "bytes": 6206,
       "sha256": "5a4a3e904827e456ac8c7b63569223125c56ecf6f5ac3f35acde5dd706159411"
     },
+    "GLOBAL-NUMERIC-IDENTITY-DELTA-REVIEW.md": {
+      "bytes": 4933,
+      "sha256": "257480eede4fa04613edb968c6c82abb6142dd2e78025a49a052dcd986fe3d08"
+    },
     "LATEHANDLE-DIAGNOSTIC-COMPOSITION-REVIEW.md": {
       "bytes": 3905,
       "sha256": "3591c60ce53fc3c6ac4c75d58e94319bf2c687064c9b5dcd354585987a91efb2"
@@ -79,8 +83,8 @@
       "sha256": "b341edd0e58e295cf10b2fb118f57f6ff202d657ff657aa79eaf32363b54bbdf"
     },
     "REVIEW.md": {
-      "bytes": 5751,
-      "sha256": "dffdab3a26279cc7036993eeace355cf4e9eb553bbf435e72f8427d2269eede4"
+      "bytes": 5455,
+      "sha256": "3edb37a65cdbbfb6c220da3a78b861803283fd323600833afa0826f0e6c63395"
     },
     "RUNTIME-BOUNDARY-COMPOSITION-REVIEW.md": {
       "bytes": 1130,
@@ -95,8 +99,8 @@
       "sha256": "548cd7fd76f8afe364b6b4cc792002486cf9921bb9397bd933ab4d087894aea2"
     },
     "acl_custody_receipt.py": {
-      "bytes": 5276,
-      "sha256": "f51cca58f33485c5e1de18c42caea3d8e74f298cdc1848e2db86e16f1fa291ec"
+      "bytes": 5306,
+      "sha256": "6220a734a93fcdeb51812134a29f0c3caeb9f0099e485a158f449d3dfb78e959"
     },
     "acl_metadata_diagnostic.py": {
       "bytes": 6687,
@@ -251,8 +255,8 @@
       "sha256": "7be882fd19704d5cbe6914f185ac6d0d3b3a6eda0230a545c7291dc13b89b722"
     },
     "effective_acl_custody.py": {
-      "bytes": 5927,
-      "sha256": "bb80999e90de72c5921107f321f048c6d59328c576dd0d68b136bed1ce4e0a32"
+      "bytes": 6101,
+      "sha256": "01a5c9e7a56efc22f39d0e62b3b7446d572d6b84da4bf03beeeafb554ac19ac4"
     },
     "environment-continuation-composition.json": {
       "bytes": 194284,
@@ -283,8 +287,8 @@
       "sha256": "dbf0ff4c7a98a5b0f00b51ee85d978dfd3cc5dde61aac09c28c0ee0fa932f278"
     },
     "fixed_io_boundary.py": {
-      "bytes": 1782,
-      "sha256": "15a114ef5e03175e0a5ccd8ff8babcc0eacbf12cc8ce09c5a8f4d15cc71f95cb"
+      "bytes": 1874,
+      "sha256": "d1a0b31bb70feeccaf72377ad6fb6291643ce61c88b6433c559ed743c093ab98"
     },
     "functional-auth-composition.json": {
       "bytes": 194252,
@@ -332,7 +336,7 @@
     },
     "hosted-orchestrator.py": {
       "bytes": 37082,
-      "sha256": "696db4c358d9f54c47af317c04034441d0e63bcfb42b6a5247a284d53395fd5d"
+      "sha256": "9e9bca28871acf96a4aa6f3fd94cf8f3ff20fbf64422e8fcd2720bf407a20b1e"
     },
     "identity-entry.py": {
       "bytes": 3884,
@@ -347,8 +351,8 @@
       "sha256": "0e3a710ab63232eec31d90e994036b3a3480c65605097fe4a6f0938e2bf33366"
     },
     "integrated-hosted.yml": {
-      "bytes": 3995,
-      "sha256": "2cf756b1fe1450b0e88371586de0bdb0e03dfb498a4c59704a3e2c4a5997e505"
+      "bytes": 3946,
+      "sha256": "a895a6ac623905602066455ae690b432bb916317667e6ca299de5602b6073969"
     },
     "lance-provenance.json": {
       "bytes": 900,
@@ -367,12 +371,12 @@
       "sha256": "20367cd35272db599ff1f7ebfb93409fc61bff9c635b3e01dc544c7cb0029763"
     },
     "lineage-static-audit.json": {
-      "bytes": 507,
-      "sha256": "456f5d2480e517f0d26ecb7e64d9df1bc4a0c4dfc912f91701c31619701f89dc"
+      "bytes": 540,
+      "sha256": "9239a017c67acda4999ee2d51b53714d523c9c526e91ec86c444900b73b16f81"
     },
     "mount_readonly_model.py": {
-      "bytes": 3773,
-      "sha256": "d32fec989d607fe54baef0e5c68743709f2296e48f676f2d1ae1fe48ca853b87"
+      "bytes": 6963,
+      "sha256": "a0262778309693dc569d3d0cf6b69b6b9e53b5c7315b7de34894e4dad6a4bcbe"
     },
     "namespace-entry.py": {
       "bytes": 8493,
