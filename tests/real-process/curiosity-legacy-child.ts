@@ -1,6 +1,9 @@
-import '../../server/config/runtimeCredentials';
+import { bootstrapStandaloneFixture } from './standalone-fixture-bootstrap';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+// Original abrupt probe semantics remain. Bootstrap is not closure evidence.
+bootstrapStandaloneFixture();
+await import('../../server/config/runtimeCredentials');
 const mode=process.argv[2];const file='data/curiosity_gaps.json';
 fs.mkdirSync('data',{recursive:true});
 const original={gaps:[{topic:'original-legacy',question:'original retained question',priority:0.5,detectedAt:Date.now()-100,attempts:0,status:'PENDING'}],savedAt:1};

@@ -1,10 +1,13 @@
 /** Actual WebSocket ingress + complete handler. Providers OFF returns its real
  * credential error, never a synthetic model response or cognitive success. */
-import '../../server/config/runtimeCredentials';
+import { bootstrapStandaloneFixture } from './standalone-fixture-bootstrap';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import http from 'node:http';
 import {WebSocket} from 'ws';
+// Original abrupt probe semantics remain. Bootstrap is not closure evidence.
+bootstrapStandaloneFixture();
+await import('../../server/config/runtimeCredentials');
 const mode=process.argv[2];
 const {agentPersistence}=await import('../../services/agentPersistence');
 const {INITIAL_AGENTS}=await import('../../constants');

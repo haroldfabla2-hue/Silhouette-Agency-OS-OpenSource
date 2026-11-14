@@ -1,6 +1,9 @@
-import '../../server/config/runtimeCredentials';
+import { bootstrapStandaloneFixture } from './standalone-fixture-bootstrap';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+// Original abrupt probe semantics remain. Bootstrap is not closure evidence.
+bootstrapStandaloneFixture();
+await import('../../server/config/runtimeCredentials');
 const mode=process.argv[2];
 const {toolRegistry}=await import('../../services/tools/toolRegistry');
 const {chatToolIntegration}=await import('../../services/chatToolIntegration');
