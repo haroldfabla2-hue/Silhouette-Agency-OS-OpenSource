@@ -25,7 +25,7 @@ if mode in {'install','native'}:
  (ev/'network-preflight.json').write_text(json.dumps(record,indent=2))
  if record.get('returncode')!=0:raise SystemExit('PREPARATION_DNS_UNAVAILABLE_NOT_PRODUCT_FAILURE')
 
-if mode=='install':phases=[('npm-ci',[node,npm,'ci','--ignore-scripts','--no-audit','--no-fund','--fetch-retries=0'],root,150)]
+if mode=='install':phases=[('npm-ci',[node,npm,'ci','--ignore-scripts','--no-audit','--no-fund','--fetch-retries=0','--maxsockets=4'],root,150)]
 elif mode=='native':
  audit=json.loads(pathlib.Path('/tmp/harness/native-entry-hashes.json').read_text())
  for rel,expected in audit.items():
