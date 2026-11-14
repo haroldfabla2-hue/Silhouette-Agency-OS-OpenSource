@@ -27,7 +27,7 @@ jobs:
         run: |
           set -euo pipefail
           case "$GITHUB_EVENT_NAME" in
-            push) test "${{ github.event.before }}" = 6a3faba64a9c6a636a40b48b84a55c358e2118f0 ;;
+            push) test "${{ github.event.before }}" = 53b68d46317a16bd0220d7e2ac794d7580b493d2 ;;
             workflow_dispatch) test -n "${{ inputs.expected_head }}" ;;
             *) exit 96 ;;
           esac
@@ -46,10 +46,10 @@ jobs:
         run: |
           set -euo pipefail
           if test "$GITHUB_EVENT_NAME" = push; then
-            test "$(git rev-parse HEAD^)" = 6a3faba64a9c6a636a40b48b84a55c358e2118f0
+            test "$(git rev-parse HEAD^)" = 53b68d46317a16bd0220d7e2ac794d7580b493d2
             test "$(git rev-list --parents -n 1 HEAD | wc -w)" -eq 2
             git diff-tree --no-commit-id --name-only -r HEAD | sort > "$RUNNER_TEMP/integrated-actual-paths"
-            printf '%s\n' .github/workflows/integrated-silhouette-ui.yml tests/integrated-ui-trial/FUNCTIONAL-AUTH-COMPOSITION-REVIEW.md tests/integrated-ui-trial/MANIFEST.json tests/integrated-ui-trial/REVIEW.md tests/integrated-ui-trial/browser-driver.cjs tests/integrated-ui-trial/collect-runtime-finite.py tests/integrated-ui-trial/functional-auth-composition.json tests/integrated-ui-trial/functional-auth-overlay/server/index.ts tests/integrated-ui-trial/functional-auth-overlay/server/routes/v1/identity.routes.ts tests/integrated-ui-trial/functional-auth-overlay/services/lifecycle/retainedFailureCategories.ts tests/integrated-ui-trial/functional-auth-overlay/utils/api.ts tests/integrated-ui-trial/functional-auth-overlay/utils/fingerprint.ts tests/integrated-ui-trial/functional-auth.cjs tests/integrated-ui-trial/functional-source-grounding.json tests/integrated-ui-trial/hosted-orchestrator.py tests/integrated-ui-trial/integrated-hosted.yml tests/integrated-ui-trial/packet.sha256 tests/integrated-ui-trial/return-evidence.py tests/integrated-ui-trial/runtime-finite-schema.py | sort > "$RUNNER_TEMP/integrated-expected-paths"
+            printf '%s\n' .github/workflows/integrated-silhouette-ui.yml tests/integrated-ui-trial/LINEAGE-CORRECTION-REVIEW.md tests/integrated-ui-trial/MANIFEST.json tests/integrated-ui-trial/REVIEW.md tests/integrated-ui-trial/hosted-orchestrator.py tests/integrated-ui-trial/integrated-hosted.yml tests/integrated-ui-trial/lineage-static-audit.json tests/integrated-ui-trial/packet.sha256 | sort > "$RUNNER_TEMP/integrated-expected-paths"
             diff -u "$RUNNER_TEMP/integrated-expected-paths" "$RUNNER_TEMP/integrated-actual-paths"
           fi
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020

@@ -1,0 +1,17 @@
+{
+  "sourceOnly": true,
+  "executed": false,
+  "currentPublicationParent": "53b68d46317a16bd0220d7e2ac794d7580b493d2",
+  "workflowPushBefore": [
+    "53b68d46317a16bd0220d7e2ac794d7580b493d2"
+  ],
+  "workflowParent": [
+    "53b68d46317a16bd0220d7e2ac794d7580b493d2"
+  ],
+  "orchestratorParent": [
+    "53b68d46317a16bd0220d7e2ac794d7580b493d2"
+  ],
+  "historicalCompositionIntact": true,
+  "functionalCompositionSha256": "25f49a318b3c98f0959621d89deaf9c11d9075844112efb610669b6d50183cda",
+  "fullOutcome": "FAIL_OR_INCOMPLETE"
+}
