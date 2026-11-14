@@ -1,0 +1,61 @@
+name: MANUAL INTEGRATED SILHOUETTE UI - PROVIDERS OFF - ROOT INCOMPLETE
+on:
+  workflow_dispatch:
+    inputs:
+      expected_head:
+        description: Exact reviewed integrated test source commit
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  integrated-ui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Public standard-hosted zero-charge compute guard
+        shell: bash
+        env:
+          PRIVATE: ${{ github.event.repository.private }}
+          EXPECTED_HEAD: ${{ inputs.expected_head }}
+          ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$PRIVATE" = false
+          test "$ENVIRONMENT" = github-hosted
+          test "$GITHUB_REPOSITORY" = haroldfabla2-hue/Silhouette-Agency-OS-OpenSource
+          test "$GITHUB_REF" = refs/heads/preparation/sqlite-static-typecheck-db201993-4054-20261114
+          [[ "$EXPECTED_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          test "$GITHUB_SHA" = "$EXPECTED_HEAD"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.18.0'
+      - name: Exact packet verification and bounded integration attempt
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ inputs.expected_head }}
+          PRIVATE: ${{ github.event.repository.private }}
+          ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          cd tests/integrated-ui-trial
+          sha256sum --check packet.sha256
+          python3 hosted-orchestrator.py
+      - name: Always contain only this run's tagged phase cgroups
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n env GITHUB_RUN_ID="$GITHUB_RUN_ID" RUNNER_TEMP="$RUNNER_TEMP" python3 tests/integrated-ui-trial/cleanup-hosted.py
+      - name: Return bounded test evidence in job log, no artifact or cache storage
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd tests/integrated-ui-trial
+          python3 return-evidence.py

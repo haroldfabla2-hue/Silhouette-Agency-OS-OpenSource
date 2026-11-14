@@ -1,0 +1,26 @@
+{
+  "url": "https://registry.npmjs.org/@lancedb/lancedb-linux-x64-gnu/-/lancedb-linux-x64-gnu-0.22.3.tgz",
+  "SRI": "sha512-co7idTwvNAtbFoFHojhHlTpKsydOm5sZfbtAsQRdoa7g6a61yIrqrMm8D7Ngh756JfzZLFQBMkDUZEW3X4vP/g==",
+  "archiveSha256": "96eeebe05ea1c2524a2a229af73a9546ff7b1965c83839ca6ad6bb996dbc3fd7",
+  "files": [
+    {
+      "path": "package.json",
+      "bytes": 309,
+      "sha256": "0f0cf22ce746fd63911b2ed6a191fc95e1e6742cfd2b46cea5e2222a1386cd4d",
+      "existingMatches": true
+    },
+    {
+      "path": "README.md",
+      "bytes": 107,
+      "sha256": "7bef2f0a0ad3464fb6dc7ed08d0dbc8d1afe1d4f2f05c091983c79ce6e61a5f9",
+      "existingMatches": true
+    },
+    {
+      "path": "lancedb.linux-x64-gnu.node",
+      "bytes": 116507864,
+      "sha256": "b2413445fb6e661c6d4d53c7e69d4184d62d918c1a34db53bee84d1ea3a1232a",
+      "existingMatches": true
+    }
+  ],
+  "dynamicABI": "NOT_EXECUTED"
+}

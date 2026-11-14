@@ -1,0 +1,213 @@
+{
+  "rows": [
+    {
+      "path": "services/dreamerService.ts",
+      "line": 207,
+      "source": "// HOMEOSTATIC CHECK: Request admission from ResourceArbiter"
+    },
+    {
+      "path": "services/procedureOsSandbox.ts",
+      "line": 30,
+      "source": "'--clearenv', '--setenv', 'PATH', '/runtime', '--setenv', 'HOME', '/work',"
+    },
+    {
+      "path": "services/planExecutor.ts",
+      "line": 326,
+      "source": "// HOMEOSTATIC CHECK 1: Resource Arbiter (RAM/CPU/VRAM)"
+    },
+    {
+      "path": "services/planExecutor.ts",
+      "line": 342,
+      "source": "// HOMEOSTATIC CHECK 2: Provider Health (RPM limits)"
+    },
+    {
+      "path": "services/planExecutor.ts",
+      "line": 350,
+      "source": "// HOMEOSTATIC CHECK 3: Congestion Manager (Backpressure)"
+    },
+    {
+      "path": "services/remediationService.ts",
+      "line": 48,
+      "source": "tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sandbox-'));"
+    },
+    {
+      "path": "services/visualService.ts",
+      "line": 173,
+      "source": "const tmp = path.join(os.tmpdir(), `fontprobe-${Date.now()}-${base}`);"
+    },
+    {
+      "path": "services/memoryStoragePaths.ts",
+      "line": 22,
+      "source": "const temporary = fs.realpathSync(os.tmpdir());"
+    },
+    {
+      "path": "services/memoryStoragePaths.ts",
+      "line": 31,
+      "source": "&& process.env.SILHOUETTE_IDENTITY_DB_PATH === path.join(root, 'identity.sqlite')"
+    },
+    {
+      "path": "services/memoryStoragePaths.ts",
+      "line": 32,
+      "source": "&& process.env.SILHOUETTE_TOOLS_DB_PATH === path.join(root, 'tools.db')"
+    },
+    {
+      "path": "services/memoryStoragePaths.ts",
+      "line": 41,
+      "source": "process.env.SILHOUETTE_LANCEDB_PATH, process.env.SILHOUETTE_IDENTITY_DB_PATH,"
+    },
+    {
+      "path": "services/memoryStoragePaths.ts",
+      "line": 42,
+      "source": "process.env.SILHOUETTE_TOOLS_DB_PATH, MEMORY_SNAPSHOT_PATH,"
+    },
+    {
+      "path": "services/tools/confirmationGate.ts",
+      "line": 59,
+      "source": "const DATA_DIR = process.env.CONFIRMATION_GATE_DIR || path.join(process.cwd(), 'data');"
+    },
+    {
+      "path": "services/tools/toolPersistence.ts",
+      "line": 16,
+      "source": "const DB_PATH = process.env.SILHOUETTE_TOOLS_DB_PATH"
+    },
+    {
+      "path": "services/tools/toolPersistence.ts",
+      "line": 17,
+      "source": "? path.resolve(process.env.SILHOUETTE_TOOLS_DB_PATH)"
+    },
+    {
+      "path": "services/tools/fileJail.ts",
+      "line": 65,
+      "source": "return [process.cwd(), os.tmpdir()];"
+    },
+    {
+      "path": "services/security/ingressEnvelope.ts",
+      "line": 392,
+      "source": "replayDir: process.env.INGRESS_REPLAY_DIR || path.join(process.cwd(), 'data'),"
+    },
+    {
+      "path": "services/security/proposalOwner.ts",
+      "line": 230,
+      "source": "process.env.PROPOSAL_OWNER_DIR || path.join(process.cwd(), 'data')"
+    },
+    {
+      "path": "services/media/voiceMonitorService.ts",
+      "line": 375,
+      "source": "const userHome = os.homedir();"
+    },
+    {
+      "path": "services/auth/cliTransport.ts",
+      "line": 6,
+      "source": "*   cli-home:/path   -> CODEX_HOME-style home dir holding the CLI's own login"
+    },
+    {
+      "path": "services/auth/cliTransport.ts",
+      "line": 44,
+      "source": "* assumption that every CLI reads CODEX_HOME would be invented semantics)."
+    },
+    {
+      "path": "services/auth/cliTransport.ts",
+      "line": 45,
+      "source": "* codex: CODEX_HOME per https://developers.openai.com/codex/auth/ci-cd-auth/"
+    },
+    {
+      "path": "services/auth/cliTransport.ts",
+      "line": 48,
+      "source": "'codex-cli-authjson': 'CODEX_HOME',"
+    },
+    {
+      "path": "services/auth/cliTransport.ts",
+      "line": 54,
+      "source": "const CHILD_ENV_BASE = ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TERM', 'TMPDIR', 'USER', 'SHELL'];"
+    },
+    {
+      "path": "services/auth/cliTransport.ts",
+      "line": 119,
+      "source": "env.HOME = home;"
+    },
+    {
+      "path": "services/database/sqliteAdapter.ts",
+      "line": 19,
+      "source": "const IDENTITY_DB_PATH = process.env.SILHOUETTE_IDENTITY_DB_PATH"
+    },
+    {
+      "path": "services/database/sqliteAdapter.ts",
+      "line": 20,
+      "source": "? path.resolve(process.env.SILHOUETTE_IDENTITY_DB_PATH)"
+    },
+    {
+      "path": "server/routes/v1/visual.routes.ts",
+      "line": 84,
+      "source": "const WORKSPACE = process.env.VISUAL_WORKSPACE_ROOT || '/opt/silhouette/workspace';"
+    },
+    {
+      "path": "server/routes/v1/workspace.routes.ts",
+      "line": 8,
+      "source": "const WORKSPACE_ROOT = path.resolve(process.env.WORKSPACE_ROOT || path.join(process.cwd(), 'workspace'));"
+    },
+    {
+      "path": "server/routes/v1/workspace.routes.ts",
+      "line": 14,
+      "source": "const toRel = (abs: string): string => path.relative(WORKSPACE_ROOT, abs).split(path.sep).join('/');"
+    },
+    {
+      "path": "server/routes/v1/workspace.routes.ts",
+      "line": 16,
+      "source": "// Jail: resolve strictly inside WORKSPACE_ROOT and refuse dotfile segments"
+    },
+    {
+      "path": "server/routes/v1/workspace.routes.ts",
+      "line": 23,
+      "source": "const abs = path.resolve(WORKSPACE_ROOT, relPath);"
+    },
+    {
+      "path": "server/routes/v1/workspace.routes.ts",
+      "line": 24,
+      "source": "if (abs !== WORKSPACE_ROOT && !abs.startsWith(WORKSPACE_ROOT + path.sep)) return null;"
+    },
+    {
+      "path": "server/routes/v1/workspace.routes.ts",
+      "line": 54,
+      "source": "if (fs.existsSync(WORKSPACE_ROOT)) walk(WORKSPACE_ROOT, 0);"
+    },
+    {
+      "path": "server/routes/v1/workspace.routes.ts",
+      "line": 55,
+      "source": "res.json({ root: WORKSPACE_ROOT, nodes, truncated });"
+    },
+    {
+      "path": "server/routes/v1/workspace.routes.ts",
+      "line": 126,
+      "source": "if (abs === WORKSPACE_ROOT) return res.status(400).json({ error: 'Refusing to quarantine the workspace root' });"
+    },
+    {
+      "path": "server/routes/v1/workspace.routes.ts",
+      "line": 130,
+      "source": "const dest = path.join(WORKSPACE_ROOT, '.quarantine', stamp, toRel(abs));"
+    },
+    {
+      "path": "server/config/runtimeCredentials.ts",
+      "line": 17,
+      "source": "'PATH', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'HOME', 'TMPDIR', 'TEMP', 'TMP',"
+    },
+    {
+      "path": "server/config/runtimeCredentials.ts",
+      "line": 25,
+      "source": "'SILHOUETTE_IDENTITY_DB_PATH', 'SILHOUETTE_TOOLS_DB_PATH',"
+    }
+  ],
+  "mapping": {
+    "identityServiceSQLite": "SILHOUETTE_DB_PATH=/app/db/test.db",
+    "SqliteAdapterIdentity": "SILHOUETTE_IDENTITY_DB_PATH=/app/db/identity.sqlite",
+    "tools": "SILHOUETTE_TOOLS_DB_PATH=/app/data/tools.db",
+    "Lance": "/app/data/lance",
+    "WORKSPACE_ROOT": "/app/workspace (also unset fallback; OFF scrub may remove override)",
+    "PROPOSAL_OWNER_DIR": "/app/data (also unset fallback)",
+    "INGRESS_REPLAY_DIR": "/app/data (also unset fallback)",
+    "CONFIRMATION_GATE_DIR": "/app/data (also unset fallback)",
+    "HOME": "/home/test fresh tmpfs; voiceMonitor conda probes see empty home",
+    "TMPDIR": "/tmp fresh tmpfs; no host caches",
+    "VISUAL_WORKSPACE_ROOT": "/opt/silhouette/workspace default DENIED; not permitted to create host path"
+  },
+  "correction": "Previous claim identity override does not exist was wrong: identityService shares main DB, sqliteAdapter has separate identity override and memoryStoragePaths references it. Both mapped explicitly. Five excluded agent JSON, not six."
+}
