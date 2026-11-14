@@ -1,0 +1,35 @@
+# Integrated source-only effective ACL custody proposal
+
+Actual23 remains FAIL/INCOMPLETE. No runtime, parser fixtures, ctypes/native loads, host reads, permissions changes, acquisition, publication, or run performed. Python AST only. This is a changed-source candidate, NOT a fullcomposition and NOT authorized for execution. Operational gates still refer to actual23's historical parent until a future reviewed composition is expressly requested.
+
+## Complete proposed decision path
+
+hosted-orchestrator.py replaces blanket absence-of-ACL guard with a conservative effective-DAC guard under an explicit supported model. This is a proposed guarded admission change requiring review, NOT removing the guard. All new modules are included. ROOT/EV/privateNative are checked before any product candidate creation. Exact original30s inclusive FDsetup slot is retained; chain/mount/checks must finish by start+27, originalremaining is passed into qualifier with its3s reserve. No phase/resource/deadline change.
+
+Private ACL rows stay only in supervisor memory. The source computes a definite supported-model decision from them before proceeding or refusing, so raw persistence is unnecessary for this path. Source-authenticated finite public receipt records that scoped decision, not an unreviewable raw claim from candidate. No path, UID/GID, ACL contents, raw errors, host hashes, or generic private-object serialization enters it. Existing failed ROOT ancestry does not authenticate a private disk file; none is added. Public result is only fixed enums/counts/model/booleans, schema-strict on export, blocked or malformed receipt is nonpass, malformed bytes and hashes withheld. No private raw return channel or owner permission invented.
+
+## Explicit support envelope
+
+- Dedicated GitHub standard hosted VM, trusted host/root control plane and this existing supervisor runner UID are the existing trust domain. Candidate code is not yet created/launched; later candidate is confined by unchanged mount/PID/network/capability isolation and inherits none of these handles. This is not proof against hostile host/root or another process already controlling the supervisor UID. That assumption was already necessary for the original root-or-runner ownership guard.
+- Existing nonroot runner must have CapEff/CapPrm/CapInh/CapAmb=0; bounded /procstatus read. Identity uid/gid maps 0→0 for4294967295 IDs and same user namespace as PID1. Namespace identities rechecked. These checks do not prove a cloud provider's honesty.
+- Exact caller-visible directory FD must map via statx STATX_MNT_ID_UNIQUE to statmount SB_BASIC|MNT_BASIC. x86_64 LinuxUAPI v6.11 layout and syscallnumbers only. Require returnedmask, same unique mount ID,512B fixedbuffer, local ext4/XFS magic, MOUNT_ATTR_IDMAP absent. Each held FD's mount rechecked. Missing/denied syscall, absentfield, idmap/overlay/remote/unsupportedFS is hardBLOCKED; no mountinfo guess, fallback or kernel assumption. Current runner support UNKNOWN; unsupported means concrete supportedmodel gap, not runtime pass.
+- For every ancestor, owner must be UID0 or existing runner. ACL access entries valid and mode-consistent. Only owner and named UID0/runner may have effective write. ALL owning/named groups and OTHER must have no effective write; no NSS/membership guesses. MASK is a limit, never a principal. Named-user/group/owning-group effective bits use mask. Unknown owner/ACL/encoding/mode mismatch denies. No ACL: original no group/other write requirement applies.
+- Default ACL governs newchild inheritance, not existing inode access, so it no longer rejects merely for being present. Every actual private directory and sink subsequently uses explicit0700/0600 and checks its actual access ACL: owner runner only, no effective nonowner access including named runner, no mode077 bits. ROOT/EV/privateNative are private leaves. No chmod/setfacl/remove xattr.
+- Ancestor FDs retained with O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC openat walk from /. Max32 per chain, max3chains, held only until qualification finishes, close on every path. Retained devino/mode/owner/ACL/mount rechecked. Known supervisor mkdir/open updates parent timestamps; a narrowly scoped exact-parent-inode accounting function accepts ONLY timestamp changes after rechecking sameowner/mode/devino/mount/access/defaultACL, then final recheck. No arbitrary refresh/replacement recapture. Private dir creation and sink open use checked parent dir_fd, not path redirection. Existing exact twoFD/sixidentity qualifiergrant and finallyclose retained; no candidate FD aliases.
+
+The whole model is a conservative sufficient test for this pre-candidate DAC scope, not a complete Linux security theorem. MAC may deny additional access but does not grant discretionary access. Hostroot/privilegedcontrolplane remain trusted. No process membership interpretation, idmap inference or unknown privilege promotion. Private metadata is discarded with supervisor memory; independent review rests on exact source, fixed model receipt and physical FD assertions, just like other supervisor assertions. A new diagnostic can settle safe-under-supportedmodel vs unsafe/unsupported; it cannot promise the current host fits.
+
+## Corrections and remaining limits
+
+Previous diagnostic source had TEN summary keys, not11. Its normal-path-only exception report was incomplete. This candidate keeps that old parser/readhelper byteidentical as a dependency but does not call the old diagnostic entrypoint for admission. New receipt has its own TEN exact keys and integrated error/timeout branch emits BLOCKED_UNSUPPORTED_OR_INCOMPLETE; unsafe guard errors emit BLOCKED_UNSAFE_ACCESS. Counts for unavailable chain are0 retained, untrustedWriteEntries is null when unknown, never a falsezero. Success receipt describes last privateNative ancestor chain; all3chain checks are required by supervisor flow. Any later qualificationfailure overwrites receipt with conservativeblocked/incomplete, never stale success. ProductPass alwaysfalse.
+
+Raw source only; no fullinventory/workflowrepin/publication candidate yet. Parser's conservative undefined-ID encoding may reject some kernel exports. statmount privileges/availability and deadline fit are untested. No irreversible decision for owner is known: these are engineering/runtime admission questions, not reasons to request broader permissions, paid resources or host ACL mutation. Native/browser/model/NonUI acceptance remain separate and unproven.
+
+Sources read for semantics/ABI:
+https://man7.org/linux/man-pages/man5/acl.5.html
+https://man7.org/linux/man-pages/man2/statx.2.html
+https://man7.org/linux/man-pages/man2/statmount.2.html
+https://raw.githubusercontent.com/torvalds/linux/v6.11/include/uapi/linux/stat.h
+https://raw.githubusercontent.com/torvalds/linux/v6.11/include/uapi/linux/mount.h
+https://raw.githubusercontent.com/torvalds/linux/v6.11/arch/x86/entry/syscalls/syscall_64.tbl
+https://raw.githubusercontent.com/torvalds/linux/master/include/uapi/linux/posix_acl_xattr.h

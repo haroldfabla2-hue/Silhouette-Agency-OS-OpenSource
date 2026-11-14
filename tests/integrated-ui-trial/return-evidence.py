@@ -14,6 +14,7 @@ allowed={'runtime/browser-checkpoints.json','runtime/runtime-process-counters.js
 allowed.difference_update({'runtime.log','runtime/complete.log','runtime/actual-ui.png'})
 allowed.add('runtime/runtime-finite.json')
 allowed.add('regular-native-inventory.json')
+allowed.add('qualification-acl-summary.json')
 runtimeCollectionFailed=False
 if (root/'runtime.log').exists():
  import subprocess
@@ -189,6 +190,14 @@ with tarfile.open(fileobj=buf,mode='w:gz')as t:
   except BaseException:
    diagnostic_error(rel,'INVALID_UNREADABLE_OVERSIZE_OR_MUTATING_ALLOWLISTED_FILE');continue
   if b is None:continue
+  if rel=='qualification-acl-summary.json':
+   try:
+    assert len(b)<=4096
+    aclSpec=spec_from_file_location('acl_custody_receipt',Path(__file__).with_name('acl_custody_receipt.py'));aclSchema=module_from_spec(aclSpec);aclSpec.loader.exec_module(aclSchema)
+    aclReceipt=runtimeSchema.strict_loads(b);aclSchema.validate(aclReceipt)
+    if aclReceipt['status'].startswith('BLOCKED_'):diagnostic_error(rel,'FIXED_ACL_QUALIFICATION_BLOCKED')
+   except BaseException:
+    diagnostic_error(rel,'INVALID_FIXED_ACL_RECEIPT');quarantine.append({'path':rel,'reason':'INVALID_FIXED_ACL_RECEIPT_WITHHELD'});continue
   if rel=='regular-native-inventory.json':
    try:
     assert len(b)<=4096

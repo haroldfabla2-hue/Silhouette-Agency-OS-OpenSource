@@ -104,7 +104,7 @@ def fetch_regular_browser(url):
 try:
  assert os.environ['PRIVATE']=='false'and os.environ['ENVIRONMENT']=='github-hosted'and os.environ['GITHUB_EVENT_NAME']in {'workflow_dispatch','push'}
  if os.environ['GITHUB_EVENT_NAME']=='push':
-  assert subprocess.check_output(['git','rev-parse','HEAD^'],cwd=REPO,text=True).strip()=='a6964706994d696d8f39b7d5c8fac7691479d5be'
+  assert subprocess.check_output(['git','rev-parse','HEAD^'],cwd=REPO,text=True).strip()=='bd5072c3a6ac7b9e05ec964ac4f087f37a571950'
   assert os.environ['GITHUB_REF']=='refs/heads/preparation/sqlite-static-typecheck-db201993-4054-20261114'
  assert os.environ['GITHUB_SHA']==os.environ['EXPECTED_HEAD']==subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip()
  node=Path(shutil.which('node')).resolve();assert sha(node.read_bytes())=='ccacb2d6d87ba6d118b2bffc1ae33747a05cc5fc6b1f1ec4fc1d420b687e952d';assert subprocess.check_output([str(node),'--version'],text=True).strip()=='v22.18.0'
@@ -113,32 +113,50 @@ try:
  # Exact protected descriptor grant, not a basename/candidate claim.
  # All custody checks consume the original host-qualification30s slot.
  qualificationStarted=time.monotonic()
- def protected_chain(directory):
-  assert directory.is_absolute() and directory.resolve(strict=True)==directory,'QUALIFICATION_CANONICAL_ROOT'
-  for part in [*reversed(directory.parents),directory]:
-   st=part.lstat();assert stat.S_ISDIR(st.st_mode)and not stat.S_ISLNK(st.st_mode)
-   assert st.st_uid in (0,os.geteuid())and not(st.st_mode&0o022),'QUALIFICATION_ANCESTOR_CUSTODY'
-   assert not any(x in {'system.posix_acl_access','system.posix_acl_default'}for x in os.listxattr(part,follow_symlinks=False)),'QUALIFICATION_ACL_UNREVIEWED'
- assert os.geteuid()>0,'NONROOT_RUNNER_REQUIRED'
- protected_chain(ROOT);protected_chain(EV)
- privateNative=ROOT/'regular-native-private';privateNative.mkdir(mode=0o700)
- protected_chain(privateNative)
- privateFd=os.open(privateNative,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
- sinkFd=None
+ from effective_acl_custody import inspect_and_retain, CustodyDenied
+ from acl_custody_receipt import finite as finite_acl_receipt
+ chains=[];privateFd=None;sinkFd=None
  try:
-  sinkFd=os.open(EV/'regular-native-inventory.json',os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_CLOEXEC,0o600)
+  def protected_chain(directory,private=False):
+   try:
+    chain=inspect_and_retain(str(directory),qualificationStarted+min(27,30-3),private_leaf=private)
+   except CustodyDenied:
+    emit('qualification-acl-summary.json',finite_acl_receipt(None,'BLOCKED_UNSAFE_ACCESS'));raise
+   except BaseException:
+    emit('qualification-acl-summary.json',finite_acl_receipt(None,'BLOCKED_UNSUPPORTED_OR_INCOMPLETE'));raise RuntimeError('ACL_MODEL_UNAVAILABLE')from None
+   chains.append(chain)
+   return chain
+  assert os.geteuid()>0,'NONROOT_RUNNER_REQUIRED'
+  rootChain=protected_chain(ROOT,True);evidenceChain=protected_chain(EV,True)
+  os.mkdir('regular-native-private',mode=0o700,dir_fd=rootChain.leaf_fd)
+  privateNative=ROOT/'regular-native-private';privateChain=protected_chain(privateNative,True)
+  privateFd=os.dup(privateChain.leaf_fd)
+  sinkFd=os.open('regular-native-inventory.json',os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_CLOEXEC,0o600,dir_fd=evidenceChain.leaf_fd)
+  # 0600 under default ACL has zero effective nonowner mask. Verify exact
+  # actual access ACL, not default-inheritance assumption, before any bytes.
+  from effective_acl_custody import require_entry_rights
+  from acl_metadata_diagnostic import _acl
   privateStat=os.fstat(privateFd);sinkStat=os.fstat(sinkFd)
+  require_entry_rights(sinkStat,_acl(sinkFd,'system.posix_acl_access'),os.geteuid(),True)
   assert stat.S_ISDIR(privateStat.st_mode)and privateStat.st_uid==os.geteuid()and privateStat.st_mode&0o077==0
   assert stat.S_ISREG(sinkStat.st_mode)and sinkStat.st_nlink==1 and sinkStat.st_uid==os.geteuid()and sinkStat.st_mode&0o077==0 and sinkStat.st_size==0
-  # Candidate has not been created/launched at this point. No candidate can
-  # inherit aliases of these FDs; only this exact host qualifier gets them.
+  for chain in chains:
+   chain.account_expected_directory_mutation((rootChain.entries[-1][1][0],rootChain.entries[-1][1][1]),qualificationStarted+27)
+   chain.account_expected_directory_mutation((evidenceChain.entries[-1][1][0],evidenceChain.entries[-1][1][1]),qualificationStarted+27)
+  for chain in chains:chain.recheck(qualificationStarted+27)
+  emit('qualification-acl-summary.json',finite_acl_receipt(privateChain,'SUPPORTED_MODEL_DAC_CUSTODY'))
   grant=[str(privateFd),str(sinkFd),str(privateStat.st_dev),str(privateStat.st_ino),str(sinkStat.st_dev),str(sinkStat.st_ino)]
   qualificationRemaining=30-(time.monotonic()-qualificationStarted)
   assert qualificationRemaining>3,'QUALIFICATION_FD_GRANT_BUDGET_EXHAUSTED'
   command('host-qualification',['/usr/bin/python3',str(HERE/'qualify-host.py'),str(EV/'host-qualification.json'),*grant],REPO,{'PATH':os.environ['PATH'],'ImageOS':os.environ.get('ImageOS',''),'ImageVersion':os.environ.get('ImageVersion',''),'QUALIFICATION_REMAINING_SECONDS':str(qualificationRemaining)},qualificationRemaining,pass_fds=(privateFd,sinkFd))
+ except CustodyDenied:
+  emit('qualification-acl-summary.json',finite_acl_receipt(None,'BLOCKED_UNSAFE_ACCESS'));raise RuntimeError('ACL_CUSTODY_DENIED')from None
+ except BaseException:
+  emit('qualification-acl-summary.json',finite_acl_receipt(None,'BLOCKED_UNSUPPORTED_OR_INCOMPLETE'));raise RuntimeError('ACL_OR_QUALIFICATION_INCOMPLETE')from None
  finally:
   if sinkFd is not None:os.close(sinkFd)
-  os.close(privateFd)
+  if privateFd is not None:os.close(privateFd)
+  for chain in reversed(chains):chain.close()
 
  command('security-preparation',['/usr/bin/python3',str(HERE/'prepare-security.py'),str(EV),os.environ['GITHUB_RUN_ID']],REPO,{'PATH':'/usr/bin:/bin','RUNNER_TEMP':os.environ['RUNNER_TEMP']},170)
  security=json.loads((EV/'security-preparation.json').read_text());assert security['status']=='AUTHENTICATED_STAGED_NOT_RUNTIME_PASS'and security['rootKeyScopeAbsent']and not security['forced'];bwrap=Path(security['binary']);assert sha(bwrap.read_bytes())=='e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71'
