@@ -32,6 +32,7 @@ class RedisService {
 
         // 2. Singleton Check
         if (!this.client && !this.isMock) {
+            const incidentFailures: unknown[]=[];
             try {
                 // 3. Dynamic Import: Prevents bundler from including 'redis' package in frontend build
                 const redisModule = await import('redis');
@@ -79,7 +80,11 @@ class RedisService {
                     console.log('[REDIS] Connected (Warm Persistence Active)');
                     this.isConnected = true;
                     // [R6] recovery closes the SAME incident the fallback opened
-                    incidentRegistry.resolveIncidents('redis');
+                    try {incidentRegistry.resolveIncidents('redis');}
+                    catch(original) {
+                        this.ownership.failure('service-connected:ORIGINAL_INCIDENT_RESOLVE_FAILED',original);
+                        incidentFailures.push(original);
+                    }
                 });
 
                 await this.client.connect();
@@ -99,10 +104,20 @@ class RedisService {
                 this.isMock = true;
                 this.isConnected = true;
                 // [R6] durable incident: in-memory fallback loses data on restart
-                incidentRegistry.recordIncident('redis', 'outage',
-                    `Redis unavailable: ${e.message || e}. Using in-memory fallback.`,
-                    'Cached data is lost on restart while the fallback is active.');
+                try {
+                    incidentRegistry.recordIncident('redis', 'outage',
+                        `Redis unavailable: ${e.message || e}. Using in-memory fallback.`,
+                        'Cached data is lost on restart while the fallback is active.');
+                }catch(original) {
+                    this.ownership.failure('service-fallback:ORIGINAL_INCIDENT_RECORD_FAILED',original);
+                    // Preserve BOTH original outage and persistence failure.
+                    // Availability fallback is not a durable incident receipt.
+                    throw new AggregateError([e,original],'Redis outage incident persistence failed',{cause:e});
+                }
             }
+            // A synchronous connected-event observer must not escape EventEmitter
+            // unowned, or misclassify an incident failure as Redis connect failure.
+            if(incidentFailures.length)throw new AggregateError(incidentFailures,'Redis connected incident resolution failed');
         }
     }
 
@@ -135,7 +150,8 @@ class RedisService {
     /** Lazy connect: first real operation establishes the connection (or the
      *  in-memory fallback). Keeps module import side-effect free - a pending
      *  socket at import time raced test-worker teardown and crashed CI
-     *  intermittently. connect() is idempotent and never throws. */
+     *  intermittently. connect() is idempotent; incident persistence failures propagate with
+     * original errors retained rather than escaping EventEmitter unowned. */
     private async ensureConnected(operation: Operation): Promise<void> {
         // Fixed original command continuation, not a new root after seal.
         if (!this.isConnected) await this.connectOriginal(operation);
