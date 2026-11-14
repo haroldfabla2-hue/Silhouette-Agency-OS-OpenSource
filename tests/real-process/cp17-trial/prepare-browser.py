@@ -2,6 +2,8 @@
 """Pinned browser asset preparation. Source-only proposal, no self-install/fallback."""
 import hashlib,json,os,pathlib,re,stat,subprocess,sys,time,urllib.request,zipfile
 root=pathlib.Path('/tmp/work/node_modules/.silhouette-browser-assets')
+# /usr is the existing reviewed RO mount; /sbin is deliberately not mounted.
+ldconfig=pathlib.Path('/usr/sbin/ldconfig')
 pin=json.loads(pathlib.Path('/tmp/harness/browser-asset-pin.json').read_text())
 revision=root/('chromium_headless_shell-'+pin['revision'])
 verify=sys.argv[1:]==['--verify-only'];assert not sys.argv[1:]or verify
@@ -22,6 +24,7 @@ def elf(path):
  interp=re.findall(r'Requesting program interpreter: ([^\]]+)',ph)
  return needs,run,interp
 try:
+ assert ldconfig.is_file()and os.access(ldconfig,os.X_OK),'exact reviewed /usr/sbin/ldconfig unavailable; block without fallback'
  package=json.loads(pathlib.Path('/tmp/work/node_modules/playwright-core/package.json').read_text())
  browsers=json.loads(pathlib.Path('/tmp/work/node_modules/playwright-core/browsers.json').read_text())
  target=next(x for x in browsers['browsers']if x['name']=='chromium-headless-shell')
@@ -66,7 +69,7 @@ try:
  assert set(seen)==set(expected)and sum(x['bytes']for x in seen.values())==pin['unpacked_bytes']
  # Read the loader cache and resolve every downloaded ELF and its recursive
  # DT_NEEDED graph inside this exact image. Missing/unsupported paths block.
- cache=subprocess.check_output(['/sbin/ldconfig','-p'],text=True,timeout=3);result['loader_cache_sha256']=hashlib.sha256(cache.encode()).hexdigest();lookup={}
+ cache=subprocess.check_output([str(ldconfig),'-p'],text=True,timeout=3);result['loader_cache_sha256']=hashlib.sha256(cache.encode()).hexdigest();lookup={}
  for name,abi,path in re.findall(r'^\s*(\S+)\s+\(([^)]+)\)\s+=>\s+(\S+)',cache,re.M):
   if 'x86-64'in abi:lookup.setdefault(name,[]).append(path)
  queue=[p for p in revision.rglob('*')if p.is_file()and elf(p)is not None];done=set()
