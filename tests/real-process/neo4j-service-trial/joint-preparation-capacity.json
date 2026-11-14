@@ -1,0 +1,11 @@
+{
+  "status": "SOURCE_TECHNICAL_CAPACITY_NOT_EXECUTION_AUTHORITY",
+  "source_head": "7854560d1f5e3a4256e2ee62a41840432dee8cb9",
+  "manifest_sha256": "d7d63aa1168391c8f32bd83456e8abdd5fac2b47961521b748b4ec76caac9d96",
+  "capacity": {
+    "scopes": 48,
+    "active": 512,
+    "failures": 256,
+    "resources": 256
+  }
+}

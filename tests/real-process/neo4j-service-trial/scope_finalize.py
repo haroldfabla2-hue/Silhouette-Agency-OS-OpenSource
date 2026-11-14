@@ -1,6 +1,7 @@
-"""REVIEW ONLY. Exact assigned-scope diagnostics, no env/cmdline/credentials.
+"""REVIEW ONLY. Exact assigned-scope diagnostics, numeric process and counter data only.
 Diagnostic failure cannot bypass the existing cgroup.kill cleanup authority.
 """
+from evidence_policy import configure,cap,limited_open,emit_text,emit_bytes,append_text,copy_bounded
 import json,pathlib,time
 
 def finish_scope(cg,evidence,events,kill_scope,absolute_deadline):
@@ -43,7 +44,7 @@ def finish_scope(cg,evidence,events,kill_scope,absolute_deadline):
  wait_empty(min(absolute_deadline,time.monotonic()+5))
  samples.append(snapshot('final'));raw,state=read_state('final_verdict')
  result={'events':list(events),'state':raw,'natural_empty':not events and not issues and state.get('populated')=='0'and state.get('frozen')=='0','observations':samples,'diagnostic_issues':issues,'natural_settle_seconds_max':.5,'postkill_seconds_max':5,'absolute_deadline':absolute_deadline,'claim':'Observed current teardown only. No historical survivor identity or cause inferred. Diagnostic errors cannot skip existing scope cleanup.'}
- try:(evidence/'scope-cleanup.json').write_text(json.dumps(result,indent=2))
+ try:emit_text(evidence/'scope-cleanup.json',json.dumps(result,indent=2))
  except Exception as error:
   issue('evidence_write',error);result['natural_empty']=False
  return result

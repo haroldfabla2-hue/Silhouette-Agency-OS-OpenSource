@@ -106,6 +106,22 @@ class CappedBytes(io.BytesIO):
 
 scan(root);files.sort()
 if '--emergency-only'in sys.argv:emergency('PRIMARY_EXPORT_TIMEOUT_OR_FAILURE')
+# Fixed source union, checked against the COMPLETE tree before any raw archive.
+# This final perwriter admission does not claim all producers have hard capped
+# their scratch writes at creation time. Excess/missing evidence is not success.
+try:
+ policy=json.loads((pathlib.Path(__file__).parent/'writer-union.json').read_text())
+ assert policy['cap']==MAX_FILES and policy['hardRawBytes']==MAX_RAW and policy['hardGzipBytes']==MAX_GZIP
+ ceilings=policy['proposed_per_writer_max_bytes']
+ assert set(ceilings)==set(policy['files'])and len(ceilings)==policy['known_count']
+ assert sum(ceilings.values())<=MAX_RAW
+ for rel,path,metadata in files:
+  if rel not in ceilings:problem('UNREVIEWED_WRITER_PATH')
+  elif metadata.st_size>ceilings[rel]:problem('PER_WRITER_LIMIT')
+ required=['checks/neo4j-boot-evidence.json','checks/neo4j-boot-real.log','checks/scope-cleanup.json','checks/checks-session.json','native/native-materialization.json','native/native-elf-provenance.json','native/redis-asset.json','native/neo4j-admission.json','trial-cleanup.json']
+ available={rel for rel,path,metadata in files}
+ if not set(required)<=available:problem('REQUIRED_JOINT_EVIDENCE_MISSING')
+except Exception:problem('WRITER_UNION_ADMISSION_UNVERIFIED')
 print('CURRENT_SUITE_EVIDENCE_FILES:'+str(len(files)),flush=True);print('CURRENT_SUITE_EVIDENCE_RAW_BYTES:'+str(raw),flush=True)
 if issues or not complete_scan:emergency('PATH_OR_SCAN_INCOMPLETE')
 if len(files)>MAX_FILES or raw>MAX_RAW:emergency('COUNT_OR_RAW_LIMIT')

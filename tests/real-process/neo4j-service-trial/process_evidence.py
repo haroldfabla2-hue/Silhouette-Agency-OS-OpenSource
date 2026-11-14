@@ -1,4 +1,4 @@
-"""Review-only supervisor helper. Read metadata only, no env/cmdline/IO payloads.
+"""Review-only supervisor helper. Read metadata only, numeric process and counter data only.
 Never imported/executed during source preparation. No signals or host changes.
 """
 import pathlib,time

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """NEW security-only download/extraction contract. Preparation, NOT EXECUTED."""
+from evidence_policy import configure,cap,limited_open,emit_text,emit_bytes,append_text,copy_bounded
 import shutil,datetime,email.utils,hashlib,io,json,lzma,os,pathlib,re,selectors,signal,stat,subprocess,sys,tarfile,time,urllib.request
-E=pathlib.Path(os.environ['EVIDENCE']);scope=pathlib.Path(sys.argv[1]);key=pathlib.Path(sys.argv[2]);expected_key='80a36b0a6de2f69f49d2df75ef473ccde121e9e190b9ea01d20a4f63778d5c31'
+E=pathlib.Path(os.environ['EVIDENCE']);configure(E);scope=pathlib.Path(sys.argv[1]);key=pathlib.Path(sys.argv[2]);expected_key='80a36b0a6de2f69f49d2df75ef473ccde121e9e190b9ea01d20a4f63778d5c31'
 clock=json.loads((E/'job-clock.json').read_text());host=json.loads((E/'host-budget.json').read_text())
-end=min(time.monotonic()+max(0,240-host['elapsed_seconds']),clock['deadline_monotonic']-120)
+end=min(time.monotonic()+max(0,600-host['elapsed_seconds']),clock['deadline_monotonic']-120)
 assert end>time.monotonic(),'No host setup budget'
 proof=E/'security-chain';proof.mkdir();(scope/'home').mkdir(mode=0o700);total_download=0
 KEYS={'790BC7277767219C42C86F933B4FE6ACC0B21F32','843938DF228D22F7B3742BC0D94AA3F0EFE21092','F6ECB3762474EDA9D21B7022871920D1991BC93C'}
@@ -17,7 +18,7 @@ def group(pid):
  except OSError:return 'UNKNOWN'
 def publish_helpers(reason):
  value={'status':'SAFE' if not active and not sticky_unsafe else 'UNSAFE','active':list(active),'sticky_unsafe':sticky_unsafe,'signals':interrupted,'reason':reason,'owner_pid':os.getpid(),'monotonic':time.monotonic(),'helpers':record['commands']}
- tmp=helpers_state.with_suffix('.tmp');tmp.write_text(json.dumps(value,indent=2));os.replace(tmp,helpers_state)
+ tmp=helpers_state.with_suffix('.tmp');emit_text(tmp,json.dumps(value,indent=2));os.replace(tmp,helpers_state)
 def stopped(signum,frame):
  global sticky_unsafe
  sticky_unsafe=True;interrupted.append(signal.Signals(signum).name);publish_helpers('interrupted; never admit or delete owned resources')
@@ -60,7 +61,7 @@ def call(cmd,cap=262144,allowed_rc=(0,),diagnostic=False):
   rc=p.wait(timeout=min(2,max(.01,end-time.monotonic())));reaped=True
   if diagnostic:
    record.setdefault('ip_command_captures',[]).append({'argv':cmd,'returncode':rc,'stdout':bytes(data[p.stdout.fileno()]).decode(),'stderr':bytes(data[p.stderr.fileno()]).decode()})
-   (proof/'ip-command-captures.json').write_text(json.dumps(record['ip_command_captures'],indent=2))
+   emit_text(proof/'ip-command-captures.json',json.dumps(record['ip_command_captures'],indent=2))
   assert rc in allowed_rc,'Command nonzero '+str(cmd)
   assert group(p.pid)=='ESRCH','Helper residual process group'
  except BaseException as exc:error=str(exc)
@@ -98,7 +99,7 @@ def call(cmd,cap=262144,allowed_rc=(0,),diagnostic=False):
    record['commands'].append(row)
   else:
    sticky_unsafe=True;record['commands'].append({'argv':cmd,'spawn_pending':spawn_pending,'error':error,'safe':False})
-  producer_total+=sum(map(len,data.values()));sel.close();publish_helpers('helper closeout');(proof/'progress.json').write_text(json.dumps(record,indent=2));cleaning=False
+  producer_total+=sum(map(len,data.values()));sel.close();publish_helpers('helper closeout');emit_text(proof/'progress.json',json.dumps(record,indent=2));cleaning=False
  if error or signals or not safe or interrupted:raise RuntimeError(error or 'Helper required signals or is unsafe/interrupted')
  out=bytes(data[p.stdout.fileno()]);err=bytes(data[p.stderr.fileno()]);p.stdout.close();p.stderr.close();return out,err
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -120,7 +121,7 @@ def fetch(url,cap,dest,size=None,digest=None):
   assert size is None or len(data)==size
   h=hashlib.sha256(data).hexdigest();assert digest is None or h==digest
   assert total_download+len(data)<=3*1024*1024,'Aggregate download3MiB hard cap before write'
-  total_download+=len(data);dest.write_bytes(data);record['downloaded'].append({'url':url,'bytes':len(data),'sha256':h,'path':dest.name});(proof/'progress.json').write_text(json.dumps(record,indent=2));return bytes(data)
+  total_download+=len(data);dest.write_bytes(data)if not dest.is_relative_to(E)else emit_bytes(dest,data);record['downloaded'].append({'url':url,'bytes':len(data),'sha256':h,'path':dest.name});emit_text(proof/'progress.json',json.dumps(record,indent=2));return bytes(data)
 def fields(stanza):
  result={};last=None
  for line in stanza.splitlines():
@@ -133,13 +134,13 @@ def fields(stanza):
 try:
  # Key owned by root in a non-writable root-owned parent; no ambient key trust.
  m=key.lstat();parent=key.parent.lstat();assert m.st_uid==parent.st_uid==0 and stat.S_ISREG(m.st_mode) and m.st_mode&0o222==0 and parent.st_mode&0o022==0
- kb=bounded_file(key,16384);(proof/'ubuntu-archive-keyring.gpg').write_bytes(kb);assert len(kb)==3607 and hashlib.sha256(kb).hexdigest()==expected_key
+ kb=bounded_file(key,16384);emit_bytes(proof/'ubuntu-archive-keyring.gpg',kb);assert len(kb)==3607 and hashlib.sha256(kb).hexdigest()==expected_key
  out,_=call(['gpg','--batch','--no-autostart','--no-options','--homedir',str(scope/'home'),'--no-default-keyring','--keyring',str(key),'--with-colons','--fingerprint','--list-keys'])
- (proof/'key-fingerprints.txt').write_bytes(out)
+ emit_bytes(proof/'key-fingerprints.txt',out)
  assert {l.split(':')[9] for l in out.decode().splitlines() if l.startswith('fpr:')}==KEYS
  release=fetch('https://security.ubuntu.com/ubuntu/dists/noble-security/InRelease',262144,proof/'InRelease')
  signed,_=call(['gpgv','--homedir',str(scope/'home'),'--keyring',str(key),'--status-fd','1',str(proof/'InRelease')])
- (proof/'gpgv-status.txt').write_bytes(signed)
+ emit_bytes(proof/'gpgv-status.txt',signed)
  valid=[l.split() for l in signed.decode().splitlines() if l.startswith('[GNUPG:] VALIDSIG ')]
  assert valid and all(x[2] in KEYS or x[-1] in KEYS for x in valid);assert not any(x in signed.decode() for x in [' BADSIG ',' ERRSIG ',' REVKEYSIG ',' EXPKEYSIG '])
  # Parse only clearsigned payload; dash-unescape before field parsing.
@@ -166,11 +167,11 @@ try:
  assert pkg['Version']=='0.9.0-1ubuntu0.3','Reviewed version changed; no automatic candidate advance'
  filename=pkg['Filename'];assert filename=='pool/main/b/bubblewrap/bubblewrap_0.9.0-1ubuntu0.3_amd64.deb'
  assert int(pkg['Size'])<=1048576 and re.fullmatch('[0-9a-f]{64}',pkg['SHA256'])
- (proof/'selected-stanza.json').write_text(json.dumps(pkg,indent=2))
+ emit_text(proof/'selected-stanza.json',json.dumps(pkg,indent=2))
  deb=fetch('https://security.ubuntu.com/ubuntu/'+filename,1048576,scope/'bubblewrap.deb',int(pkg['Size']),pkg['SHA256'])
  # Pin researched payload too: archive signatures must ALSO verify above.
  assert pkg['SHA256']=='2461f1beee9cb04c8942739fe1a2b37e7b7c2a3d518f0779dc75f9245baa3094' and len(deb)==50436
- (proof/'bubblewrap.deb').write_bytes(deb)
+ emit_bytes(proof/'bubblewrap.deb',deb)
  # All dependency semantics fixed, alternatives/arch qualifiers/PreDepends rejected.
  deps=[]
  for name,minimum in [('libc6','2.38'),('libcap2','1:2.10'),('libselinux1','3.1~')]:
@@ -178,7 +179,7 @@ try:
   call(['dpkg','--compare-versions',items[2],'ge',minimum]);deps.append({'name':name,'architecture':items[1],'version':items[2],'status':items[3],'minimum':minimum})
  record['dependencies']=deps
  # Parse bounded decompressed control+data TAR BEFORE writing extracted payload.
- manifest_bytes=bounded_file(pathlib.Path(__file__).parent/'security-package-members.json',16384);(proof/'package-member-manifest.json').write_bytes(manifest_bytes);manifest=json.loads(manifest_bytes);expected={kind:{row['name']:row for row in manifest if row['archive']==kind} for kind in ['control','data']};contents={}
+ manifest_bytes=bounded_file(pathlib.Path(__file__).parent/'security-package-members.json',16384);emit_bytes(proof/'package-member-manifest.json',manifest_bytes);manifest=json.loads(manifest_bytes);expected={kind:{row['name']:row for row in manifest if row['archive']==kind} for kind in ['control','data']};contents={}
  for kind,flag in [('control','--ctrl-tarfile'),('data','--fsys-tarfile')]:
   raw,_=call(['dpkg-deb',flag,str(scope/'bubblewrap.deb')],262144);assert len(raw)<=1048576
   seen=set();total=0
@@ -198,7 +199,7 @@ try:
  assert binary.stat().st_size==72160 and hashlib.sha256(bounded_file(binary,1048576)).hexdigest()==expected['data']['./usr/bin/bwrap']['sha256']
  # No ldd/LD_LIBRARY_PATH. Actual existing loader validates absolute library set.
  loader=pathlib.Path('/lib64/ld-linux-x86-64.so.2');assert loader.resolve()==pathlib.Path('/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2')
- listing,_=call([str(loader),'--list',str(binary)]);(proof/'loader.txt').write_bytes(listing)
+ listing,_=call([str(loader),'--list',str(binary)]);emit_bytes(proof/'loader.txt',listing)
  names=set()
  for line in listing.decode().splitlines():
   line=line.strip()
@@ -228,7 +229,7 @@ try:
  def ipquery(cmd,allowed=(0,)):
   out,err=call(cmd,32768,allowed_rc=allowed,diagnostic=True)
   ipproof['queries'].append({'argv':cmd,'stdout':out.decode(),'stderr':err.decode(),'returncode':record['commands'][-1]['post_cleanup']['returncode']})
-  (proof/'ip-identity.json').write_text(json.dumps(ipproof,indent=2));return out,err,ipproof['queries'][-1]['returncode']
+  emit_text(proof/'ip-identity.json',json.dumps(ipproof,indent=2));return out,err,ipproof['queries'][-1]['returncode']
  # Numeric fields and all stdout/stderr/rc are retained before assertions below.
  out,_,_=ipquery(['dpkg-query','-W','-f=${binary:Package}\t${Architecture}\t${Version}\t${Status}\n','iproute2:amd64'])
  package_fields=out.decode().strip().split('\t')
@@ -249,7 +250,7 @@ try:
     dest=path.resolve(strict=True);st=dest.stat();row.update({'target_dev':st.st_dev,'target_ino':st.st_ino,'target_mode':st.st_mode,'target_uid':st.st_uid,'target_bytes':st.st_size,'target_sha256':hashlib.sha256(bounded_file(dest,1048576)).hexdigest()})
    ipproof['paths'][name]=row
   except FileNotFoundError:ipproof['paths'][name]={'exists':False}
-  (proof/'ip-identity.json').write_text(json.dumps(ipproof,indent=2))
+  emit_text(proof/'ip-identity.json',json.dumps(ipproof,indent=2))
  assert len(package_fields)==4 and package_fields[0]=='iproute2' and package_fields[1]=='amd64' and package_fields[3]=='install ok installed','Wrong package identity/state'
  # No alternatives membership and no diversion of any admitted spelling.
  assert altrc==2 and not alt and alterr.decode().strip()=='update-alternatives: error: no alternatives for ip','Alternatives present or unverifiable'
@@ -284,11 +285,11 @@ try:
   if name in known:
    now=path.stat();assert (now.st_dev,now.st_ino,now.st_mode,now.st_uid,now.st_size)==(row['target_dev'],row['target_ino'],row['target_mode'],row['target_uid'],row['target_bytes']) and hashlib.sha256(bounded_file(path.resolve(strict=True),1048576)).hexdigest()==row['target_sha256'],'Executable changed'
  assert len(identities)==1 and existing and all(ipproof['paths'][n]['exists'] for n in registered),'No unique physical registered executable'
- ipproof.update({'status':'VERIFIED_EXACT_PACKAGE_AND_PHYSICAL_ALIAS','registered':sorted(registered),'selected':'/usr/bin/ip','package_fields':package_fields});(proof/'ip-identity.json').write_text(json.dumps(ipproof,indent=2));record['iproute2']=ipproof
+ ipproof.update({'status':'VERIFIED_EXACT_PACKAGE_AND_PHYSICAL_ALIAS','registered':sorted(registered),'selected':'/usr/bin/ip','package_fields':package_fields});emit_text(proof/'ip-identity.json',json.dumps(ipproof,indent=2));record['iproute2']=ipproof
  # OS/version/userns capability is tested by the real launcher, never inferred from version.
  assert not active and not sticky_unsafe and not interrupted,'Unsafe helper state blocks admission'
  publish_helpers('all helpers safe before completion')
- record['binary']={'path':str(binary),'bytes':binary.stat().st_size,'sha256':hashlib.sha256(binary.read_bytes()).hexdigest()};record['status']='VERIFIED_STAGED_NOT_RUNTIME_PASS';(proof/'result.json').write_text(json.dumps(record,indent=2))
+ record['binary']={'path':str(binary),'bytes':binary.stat().st_size,'sha256':hashlib.sha256(binary.read_bytes()).hexdigest()};record['status']='VERIFIED_STAGED_NOT_RUNTIME_PASS';emit_text(proof/'result.json',json.dumps(record,indent=2))
  with open(os.environ['GITHUB_ENV'],'a') as f:f.write('STAGED_BWRAP='+str(binary)+'\n')
 except BaseException as exc:
- record['status']='FAIL_SETUP_STOP';record['error']={'name':type(exc).__name__,'message':str(exc)};(proof/'result.json').write_text(json.dumps(record,indent=2));raise
+ record['status']='FAIL_SETUP_STOP';record['error']={'name':type(exc).__name__,'message':str(exc)};emit_text(proof/'result.json',json.dumps(record,indent=2));raise

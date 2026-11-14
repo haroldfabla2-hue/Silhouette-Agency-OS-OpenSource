@@ -2,8 +2,10 @@
 """SOURCE REVIEW ONLY. Exact streaming archive admission, NEVER execute Neo4j/JDK.
 Missing reviewed runner JDK pin blocks BEFORE network. No fallback/retry.
 """
+from evidence_policy import configure,cap,limited_open,emit_text,emit_bytes,append_text,copy_bounded
 import gzip,hashlib,json,os,pathlib,resource,signal,stat,sys,tarfile,time,urllib.request
 HARNESS=pathlib.Path('/tmp/harness');ROOT=pathlib.Path('/tmp/work/node_modules/.silhouette-native-neo4j');EV=pathlib.Path('/tmp/evidence/neo4j-admission.json')
+configure(pathlib.Path('/tmp/evidence'),'native')
 P=json.loads((HARNESS/'neo4j-admission-inputs.json').read_text());rawpin=(HARNESS/'neo4j-asset-pin.json').read_bytes()
 report={'status':'INCOMPLETE','scope':'ARCHIVE_ADMISSION_ONLY_NO_SERVER_JAVA_OR_BOOTFIT','signals':[],'pin_sha256':hashlib.sha256(rawpin).hexdigest()};created=[];staging=ROOT/'staging';final=ROOT/'neo4j-community-5.26.32';response=None
 start=time.monotonic()
@@ -110,4 +112,4 @@ except BaseException as original:
  raise
 finally:
  if response:response.close()
- signal.alarm(0);report['seconds']=time.monotonic()-start;EV.write_text(json.dumps(report,indent=2)+'\n');print('NEO4J_ARCHIVE_ADMISSION',report['status'],flush=True)
+ signal.alarm(0);report['seconds']=time.monotonic()-start;emit_text(EV,json.dumps(report,indent=2)+'\n');print('NEO4J_ARCHIVE_ADMISSION',report['status'],flush=True)

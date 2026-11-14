@@ -2901,8 +2901,8 @@
   },
   {
     "path": "services/consciousnessEngine.ts",
-    "sha256": "857491633c61762100ffa7a5076e258e83b38e29ebc9d42d564b228ed207bb32",
-    "bytes": 10843
+    "sha256": "3fc304279a8434bd38109be7172e48126f6f0a27f356b526ecc0c2fa4716ccdf",
+    "bytes": 11411
   },
   {
     "path": "services/context/contextCompactionService.ts",
@@ -2936,8 +2936,8 @@
   },
   {
     "path": "services/continuumMemory.ts",
-    "sha256": "ab303407f85502b655ad5687e6a3a93db521b176ed26d8cb9eae9e6e2ec96751",
-    "bytes": 82454
+    "sha256": "f70d2b809a17000f52146b6b58a4585dbb6797341bff9fa49d7a4d724a141e60",
+    "bytes": 83819
   },
   {
     "path": "services/costEstimator.ts",
@@ -3181,8 +3181,8 @@
   },
   {
     "path": "services/identityService.ts",
-    "sha256": "1e5c731af2b1a63dfe728b87e18834b203bc423dfd8e7c60f5740fde21a65c5d",
-    "bytes": 32417
+    "sha256": "fab1a31d402ddfa9f02eb0d48a23a19da307f876cf24641f8f82ea5b4c348d87",
+    "bytes": 40390
   },
   {
     "path": "services/incidentRegistry.ts",
@@ -3241,8 +3241,8 @@
   },
   {
     "path": "services/lancedbService.ts",
-    "sha256": "fedb70baf05511a4ba540f1303c95281080a12d41fbb5177d50ae015cd98be70",
-    "bytes": 57244
+    "sha256": "6fc5562e5be55701d79abc2844e300367b3496bc2019e2f5b42320f07a4f07eb",
+    "bytes": 65777
   },
   {
     "path": "services/learningLoop.ts",
@@ -3286,8 +3286,8 @@
   },
   {
     "path": "services/lifecycle/preparationBindings.ts",
-    "sha256": "39f054f9b937cb8686b64e76c748241c821e6f7495b87c85eb5370b3bac664ee",
-    "bytes": 4813
+    "sha256": "2afd785b34f7d0b71b28d87980390ca1a9c4db0f1f3fa1eaa8201d681a507795",
+    "bytes": 4961
   },
   {
     "path": "services/lifecycle/preserveOriginal.ts",
@@ -3301,8 +3301,8 @@
   },
   {
     "path": "services/lifecycle/runtimeStopBindings.ts",
-    "sha256": "b5ad442a91b49fabd035225c17e1fced49ea730c8fbe8f093e67d3ea5df47d55",
-    "bytes": 12984
+    "sha256": "5614a2875658611ab9d0ace62fb1f859afe20f9ef6f405cf12b3259527c04485",
+    "bytes": 16285
   },
   {
     "path": "services/lifecycle/telephonyToolWork.ts",
@@ -3826,8 +3826,8 @@
   },
   {
     "path": "services/redisClient.ts",
-    "sha256": "8b702874cea0fb5fea76ca3a0a5b856493f26a8127e5ba5cc2f2ba12336d690e",
-    "bytes": 16598
+    "sha256": "dc072d97db8dc4b09d2cc9bbcdc227add162f13bc72ebfad2a6d1ba71602893f",
+    "bytes": 21510
   },
   {
     "path": "services/referenceCollector.ts",
@@ -4306,8 +4306,8 @@
   },
   {
     "path": "services/userProfileService.ts",
-    "sha256": "eee98088dfc7067e19971180197942b2505c3ac3c6a4640a50e9422242d13d03",
-    "bytes": 14642
+    "sha256": "e311c20c407713f4bc65cdc4b91c152a4f77514669608c28ca67dcdb1484a37c",
+    "bytes": 15677
   },
   {
     "path": "services/utils/atomicWrite.ts",
@@ -4408,6 +4408,11 @@
     "path": "silhouette.config.example.json",
     "sha256": "3a2d55517af881ba9c2d1ce3de078347d6a4074cab515898bc2f550f11b32728",
     "bytes": 524
+  },
+  {
+    "path": "silhouette.config.json",
+    "sha256": "75ae4138a3a863432a5f50ff1b4468f1192be47ff36f8ea1c63250e9165253a3",
+    "bytes": 1692
   },
   {
     "path": "silhouette/BITACORA.md",

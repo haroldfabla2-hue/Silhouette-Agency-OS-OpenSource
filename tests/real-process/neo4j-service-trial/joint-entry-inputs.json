@@ -1,0 +1,25 @@
+{
+  "source_head": "7854560d1f5e3a4256e2ee62a41840432dee8cb9",
+  "experiment_scope": "FUNCTIONAL_PARTIAL_REDIS_LIFECYCLE_INCOMPLETE",
+  "redis_main_native_gate": "UNSUPPORTED_PUBLIC_JOIN_API_RETAIN_GLOBAL_INCOMPLETE",
+  "operational_state": "OPEN_NOT_AUTHORIZED",
+  "outer_metadata_only_sources": {
+    "process_evidence.py": "79b94bbda392b1551d976a006f08e4cccdb895dae87b2d25adb19aa417f0a6e5",
+    "scope_finalize.py": "34472215880714f9ad747849dc47242d40a4cb717b0d64a91ad754f8ad38f049",
+    "phase-child.py": "6b49489fdd657c0d39ff79416a4e0b8ea02f2b53cb693a5446927f102a3718c7",
+    "phase-namespace.py": "ee0b219c5bb6a4e5b97b9001dfdbdf8eec2b55d265c729975a367cbe2898d019",
+    "phase-host.py": "e5224cc55b05256bfea22ab9ffefe7c50e05261b49e2ba67a7c5c1bb1d1bf5e0",
+    "evidence_policy.py": "124a72e1e33a5992a688eff1e4c47369507ee57d7dd1bd536b1bc83f296eb6d5"
+  },
+  "entry_sources": {
+    "joint_service_entry.py": "c40868f7429fe2ed1dace1b6bf26463ab89fee3dfafd4dbde9bc8a663d37d15d",
+    "neo4j_admin_private.py": "9f03c75de4a95ebc1ceaa3847448022c22dbfadc3984f44b3a836528c2c2e2db",
+    "joint_composite_supervisor.py": "7012921ba9a1d367766358dd7a6f4857a203add5040c6049b35ecf40e335dbae",
+    "bounded_evidence.py": "0b894b6a41a9f2b2850662d831c75ac33f48c5afbb73b8f98722b0b56a7bbdab",
+    "secret_export_guard.py": "e84f326dfadf05db9740833208cc14ef59621b2ae251e0dda230c212afd69019",
+    "product_service_child.mts": "a6073337c062fb8a100f1305c3bf060ae033835fd210732d6735be59043f88a8",
+    "provider_attempt_audit.mts": "f2f1f177ac2c9e3fea0af63f9e64dc28b30c46af21281c3b6d196d7dbdbb5e8e",
+    "evidence_policy.py": "124a72e1e33a5992a688eff1e4c47369507ee57d7dd1bd536b1bc83f296eb6d5"
+  },
+  "host_pid_namespace_binding": "phase-host captured node-host.json -> outer namespace readonly /tmp/export -> exact named env across isolated metadata launch -> entry comparison"
+}
