@@ -1,9 +1,10 @@
 'use strict';
-// SOURCE-ONLY PROPOSAL. One pre-credential diagnostic, no screenshot or mutation.
-module.exports=function boundaryProbe(context,page,evidence,workEnd,originalBodySettled){
+// SOURCE-ONLY PROPOSAL. One pre-credential diagnostic per fixed phase, no screenshot or mutation.
+module.exports=function boundaryProbe(context,page,evidence,workEnd,originalOperationSettled,phase){
+ if(!['FIRST_NAVIGATION','FIRST_BODY_VISIBLE'].includes(phase)||evidence.preCredentialBoundaries.some(p=>p.phase===phase))throw Error('FIXED_PROBE_PHASE_CONFLICT');
  // Internal state is never the published receipt. finish() takes ONE immutable
  // barrier snapshot, so late completions cannot turn a residual into acceptance.
- const record={version:1,status:'ARMED',startedAt:null,finishedAt:null,http:{result:'NOT_STARTED',status:null,startedAt:null,finishedAt:null},playwright:{result:'NOT_STARTED'},cdp:{session:'NOT_STARTED',evaluation:'NOT_STARTED',detach:'NOT_STARTED',lateDetach:'NOT_NEEDED',geometry:null}};
+ const record={version:1,phase,status:'ARMED',startedAt:null,finishedAt:null,http:{result:'NOT_STARTED',status:null,startedAt:null,finishedAt:null},playwright:{result:'NOT_STARTED'},cdp:{session:'NOT_STARTED',evaluation:'NOT_STARTED',detach:'NOT_STARTED',lateDetach:'NOT_NEEDED',geometry:null}};
  const originals=new Set(),disposals=new Set();let cleanupFailed=false,cancelled=false,finishPromise;
  const timeoutResult=Symbol();
  const dispose=async(session,late=false)=>{
@@ -28,7 +29,7 @@ module.exports=function boundaryProbe(context,page,evidence,workEnd,originalBody
   finally{clearTimeout(timer);}
  };
  const capture=async()=>{
-  if(cancelled||originalBodySettled()){record.status='NOT_NEEDED_ORIGINAL_SETTLED';return;}
+  if(cancelled||originalOperationSettled()){record.status='NOT_NEEDED_ORIGINAL_SETTLED';return;}
   if(evidence.credentialFixtureEntered||evidence.functional){record.status='REFUSED_CREDENTIAL_BOUNDARY';return;}
   record.startedAt=Date.now();record.status='STARTED';
   const http=async()=>{const startedAt=Date.now();try{const response=await bound(()=>context.request.get('http://127.0.0.1:3005/v1/identity/current-session',{timeout:1000}),1000);const status=response.status();if(!Number.isInteger(status)||status<100||status>599)throw 'INVALID_STATUS';record.http={result:'RESPONSE',status,startedAt,finishedAt:Date.now()};}catch(e){record.http={result:e==='ACTION_TIMEOUT'?'ACTION_TIMEOUT':e==='COMMON_BUDGET'?'COMMON_BUDGET':'ORIGINAL_REJECTED',status:null,startedAt,finishedAt:Date.now()};}};
@@ -64,7 +65,7 @@ module.exports=function boundaryProbe(context,page,evidence,workEnd,originalBody
    receipt.pendingOriginalCount=originals.size;receipt.pendingDisposalCount=disposals.size;
    receipt.cleanupStatus=cleanupFailed?'FAILED':(originals.size||disposals.size?'RESIDUAL_UNVERIFIED':'CLEAN');
    if(receipt.cleanupStatus!=='CLEAN')receipt.status='FAILED_DIAGNOSTIC_CLEANUP';
-   evidence.preCredentialBoundary=receipt;
+   evidence.preCredentialBoundaries.push(receipt);
    return receipt;
   })();
   return finishPromise;

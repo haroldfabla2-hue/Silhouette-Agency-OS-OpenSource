@@ -113,8 +113,8 @@ FUNCTIONAL_BOOLEANS={'freshSetup','actualDiagnostics','telemetryOff','evolutionO
 FUNCTIONAL_STAGES={'INITIAL','FRESH_SETUP_READINESS','REAL_SETUP_FIELDS','OFF_CHOICES_VERIFIED','REAL_SETUP_COMMIT','NEGATIVE_AUTH_BOUNDARIES','NEW_CONTEXT_REAL_LOGIN','PROTECTED_REQUEST_RELOAD','REAL_SESSION_REVOCATION','NARROW_AUTH_COMPLETE'}
 CHECKPOINTS={'BROWSER_LAUNCHED','PAGE_CREATED','ACTUAL_DOMCONTENTLOADED','ACTUAL_LOAD','BOOTSTRAP_BODY_ENTERED','HOST_INSTALLED','ENTRY_IMPORT_CALLED','ENTRY_IMPORT_FULFILLED','ENTRY_IMPORT_REJECTED','READINESS_REQUEST_FINISHED','BEFORE_BODY_WAIT','ORIGINAL_BROWSER_FAILURE','ACTUAL_SCREENSHOT_ATTEMPT_BEGIN','BEFORE_BROWSER_CLOSE','BROWSER_DISCONNECTED','PAGE_CRASH'}
 def browser(o):
- required={'operations','console','pageErrors','failedResources','localResources','requests','responses','setupRequired','authenticated','chatStorageVerified','safeAuthenticatedPixels','lifecycleEvents','finishedResources','checkpoints','screenshot','bodyVisibleObserved','cleanupErrors'}
- optional={'preCredentialBoundary','navigation','titleObserved','functional','limitation','primaryFailure','layout','layoutFailure','layoutMetadataOverflow','captureOverflow','pendingWorkAtCleanup','credentialFixtureEntered'}
+ required={'preCredentialBoundaries','operations','console','pageErrors','failedResources','localResources','requests','responses','setupRequired','authenticated','chatStorageVerified','safeAuthenticatedPixels','lifecycleEvents','startedResources','finishedResources','checkpoints','screenshot','bodyVisibleObserved','cleanupErrors'}
+ optional={'navigation','titleObserved','functional','limitation','primaryFailure','layout','layoutFailure','layoutMetadataOverflow','captureOverflow','pendingWorkAtCleanup','credentialFixtureEntered'}
  assert type(o)is dict and required<=set(o)<=required|optional
  rows(o['operations'],64)
  for ordinal,r in enumerate(o['operations']):
@@ -130,9 +130,13 @@ def browser(o):
    if r[k]is not None:assert r[k]>=r['startedAt']
   if r['wrapperResult']=='FULFILLED':assert r['originalResult']=='FULFILLED'
   if r['wrapperResult']=='ORIGINAL_REJECTED':assert r['originalResult']in{'REJECTED_TIMEOUT_CLASS','REJECTED_OTHER'}
- if any(r['operation']=='FIRST_BODY_VISIBLE'for r in o['operations']):assert 'preCredentialBoundary'in o
- if 'preCredentialBoundary'in o:
-  p=o['preCredentialBoundary'];keys(p,{'version','status','startedAt','finishedAt','http','playwright','cdp','pendingOriginalCount','pendingDisposalCount','cleanupStatus'});assert p['version']==1;n(p['pendingOriginalCount'],8);n(p['pendingDisposalCount'],8)
+ rows(o['preCredentialBoundaries'],2)
+ phases=[p['phase']for p in o['preCredentialBoundaries']]
+ assert phases==[r['operation']for r in o['operations']if r['operation']in{'FIRST_NAVIGATION','FIRST_BODY_VISIBLE'}]
+ assert phases in [[],['FIRST_NAVIGATION'],['FIRST_NAVIGATION','FIRST_BODY_VISIBLE']]
+ for p in o['preCredentialBoundaries']:
+  enum(p['phase'],{'FIRST_NAVIGATION','FIRST_BODY_VISIBLE'})
+  keys(p,{'phase','version','status','startedAt','finishedAt','http','playwright','cdp','pendingOriginalCount','pendingDisposalCount','cleanupStatus'});assert p['version']==1;n(p['pendingOriginalCount'],8);n(p['pendingDisposalCount'],8)
   enum(p['cleanupStatus'],{'CLEAN','FAILED','RESIDUAL_UNVERIFIED'})
   if p['cleanupStatus']=='CLEAN':assert p['pendingOriginalCount']==p['pendingDisposalCount']==0
   else:assert p['status']=='FAILED_DIAGNOSTIC_CLEANUP'
@@ -167,6 +171,8 @@ def browser(o):
   else:assert c['evaluation']!='FIXED_GEOMETRY_RETURNED'
   if p['status']=='NOT_NEEDED_ORIGINAL_SETTLED':assert p['startedAt']is None and p['finishedAt']is None and h['result']==w['result']==c['session']==c['evaluation']==c['detach']=='NOT_STARTED'and c['lateDetach']=='NOT_NEEDED'and p['pendingOriginalCount']==0
   if p['status']=='FIXED_RESULTS_ONLY_NOT_CAUSE':assert p['startedAt']is not None and p['finishedAt']is not None and p['finishedAt']>=p['startedAt']
+  operation=next(r for r in o['operations']if r['operation']==p['phase'])
+  if p['startedAt']is not None:assert p['startedAt']>=operation['startedAt']
   if p['status']in{'FIXED_RESULTS_ONLY_NOT_CAUSE','FAILED_DIAGNOSTIC_CLEANUP'}:
    assert h['result']!='NOT_STARTED'and w['result']!='NOT_STARTED'and c['session']!='NOT_STARTED'
    assert p['startedAt']is not None and p['finishedAt']is not None
@@ -186,23 +192,25 @@ def browser(o):
    assert all(f[k]for k in FUNCTIONAL_BOOLEANS)and f['failedStage']=='NONE'and f['stage']=='NARROW_AUTH_COMPLETE'
    assert o['authenticated']is True and o['safeAuthenticatedPixels']is True and not o['cleanupErrors']and not o.get('captureOverflow',False)and not o.get('pendingWorkAtCleanup',0)and 'primaryFailure'not in o
    assert o['screenshot']['status']=='PRIVATE_VIEWPORT_PIXELS_NOT_EXPORTED'
-   if 'preCredentialBoundary'in o:assert o['preCredentialBoundary']['cleanupStatus']=='CLEAN'and o['preCredentialBoundary']['pendingOriginalCount']==o['preCredentialBoundary']['pendingDisposalCount']==0 and o['preCredentialBoundary']['status']in{'NOT_NEEDED_ORIGINAL_SETTLED','FIXED_RESULTS_ONLY_NOT_CAUSE'}
+   assert phases==['FIRST_NAVIGATION','FIRST_BODY_VISIBLE']
+   for p in o['preCredentialBoundaries']:assert p['cleanupStatus']=='CLEAN'and p['pendingOriginalCount']==p['pendingDisposalCount']==0 and p['status']in{'NOT_NEEDED_ORIGINAL_SETTLED','FIXED_RESULTS_ONLY_NOT_CAUSE'}
   else:assert o['authenticated']is False
- for k,cap in [('console',100),('pageErrors',128),('failedResources',128),('localResources',128),('requests',256),('responses',256),('finishedResources',256),('lifecycleEvents',16),('checkpoints',64),('cleanupErrors',128)]:rows(o[k],cap)
+ for k,cap in [('console',100),('pageErrors',128),('failedResources',128),('localResources',128),('requests',256),('responses',256),('startedResources',256),('finishedResources',256),('lifecycleEvents',16),('checkpoints',64),('cleanupErrors',128)]:rows(o[k],cap)
  for r in o['console']:keys(r,{'kind','pageOrdinal'});page_id(r);enum(r['kind'],{'error','warning','info','log','debug','warn','OTHER'})
  for r in o['pageErrors']:keys(r,{'kind','pageOrdinal'});page_id(r);assert r['kind']=='ACTUAL_PAGE_ERROR'
  for r in o['cleanupErrors']:keys(r,{'kind'});enum(r['kind'],{'CDP_DETACH_FAILURE','BROWSER_CLOSE_FAILURE','LATE_BROWSER_SCOPE_CLOSE_FAILURE'})
  def path(x):assert type(x)is str and(x=='OMITTED'or re.fullmatch(r'/[A-Za-z0-9_./-]{0,511}',x))
  def source(r):enum(r['origin'],{'http://127.0.0.1:3005','https://fonts.googleapis.com','https://fonts.gstatic.com','OTHER_ORIGIN','UNPARSEABLE'});path(r['path'])
  kinds={'document','stylesheet','image','media','font','script','texttrack','xhr','fetch','eventsource','websocket','manifest','other'}
- for key in ['failedResources','localResources','finishedResources']:
+ for key in ['failedResources','localResources','startedResources','finishedResources']:
   for r in o[key]:
    extra={'kindOfFailure'}if key=='failedResources'else({'status'}if key=='localResources'else set())
-   keys(r,{'origin','path','kind','pageOrdinal'}|extra);page_id(r);source(r);enum(r['kind'],kinds)
+   keys(r,{'origin','path','kind','pageOrdinal','at'}|extra);n(r['at'],9999999999999);page_id(r);source(r);enum(r['kind'],kinds)
    if key=='failedResources':assert r['kindOfFailure']=='ACTUAL_REQUEST_FAILED'
    if key=='localResources':n(r['status'],599)
- for r in o['requests']:keys(r,{'path','method','pageOrdinal'});page_id(r);path(r['path']);enum(r['method'],{'GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS'})
- for r in o['responses']:keys(r,{'path','status','pageOrdinal'});page_id(r);path(r['path']);n(r['status'],599)
+ for r in o['requests']:keys(r,{'path','method','pageOrdinal','at'});n(r['at'],9999999999999);page_id(r);path(r['path']);enum(r['method'],{'GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS'})
+ for r in o['responses']:keys(r,{'path','status','pageOrdinal','at'});n(r['at'],9999999999999);page_id(r);path(r['path']);n(r['status'],599)
+ for key in ['startedResources','finishedResources','failedResources','localResources','requests','responses']:assert [r['at']for r in o[key]]==sorted(r['at']for r in o[key])
  for r in o['lifecycleEvents']:
   assert set(r)==({'kind','at','pageOrdinal'}if r.get('kind')=='PAGE_CRASH'else{'kind','at'});
   if 'pageOrdinal'in r:page_id(r)

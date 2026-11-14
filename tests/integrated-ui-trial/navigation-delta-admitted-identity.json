@@ -1,0 +1,21 @@
+{
+  "scope": "SOURCE_ONLY_NOT_COMPOSED_NO_RUN_AUTHORITY",
+  "parentHead": "e2c881bcd1bafd7c4e282b3ab1435ad68a06117e",
+  "files": [
+    {
+      "path": "browser-driver.cjs",
+      "beforeSha256": "1c16c33e99a944f29e3df10e56c640b5d21c9da80c55f988d8063681dc74ae75",
+      "afterSha256": "445f2a142558ae41623e7052c2d82a4ce599d4eb3b204c7d6ace25b44cffee34"
+    },
+    {
+      "path": "browser-boundary-probe.cjs",
+      "beforeSha256": "b6ab8c2bf2190e698ca782528c1d270ebcf98f6d06d667293453e1ae9dc2c1ff",
+      "afterSha256": "abd0b975a135a2f8e852669d7e1c8cb4349d07cd9f572aca50c6f11b6f779360"
+    },
+    {
+      "path": "runtime-finite-schema.py",
+      "beforeSha256": "915705061926f832f427cd3c59c05ffd59caadbf21b676c4c69fdd906f8fedb7",
+      "afterSha256": "aafd1b32f6ddd555c02b49f58e9657fc50f0b2386c49545cfbd591a43b0fa94b"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "scope": "PURE_SERIALIZATION_CONTRACT_EXAMPLES_ONLY_NOT_PRODUCT_TESTS",
+  "checks": [
+    "Pure serializer nav-only example accepted; original actual20 failure remains (NOT new runtime evidence).",
+    "MISSING_NAV_PHASE: rejected.",
+    "UNKNOWN_PHASE: rejected.",
+    "DUPLICATE_NAV_PHASE: rejected.",
+    "TIMESTAMP_REVERSED: rejected.",
+    "STARTED_CONTENT: rejected."
+  ]
+}

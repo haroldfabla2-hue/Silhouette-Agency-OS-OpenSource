@@ -1,6 +1,6 @@
 {
   "status": "SOURCE_ONLY_NO_EXECUTION_PUBLICATION",
-  "parent": "e40ce600d1ebf6c5c09874486a7c7e6f6fdaf436",
+  "parent": "e2c881bcd1bafd7c4e282b3ab1435ad68a06117e",
   "files": {
     "ASSERTION-DIAGNOSTIC-COMPOSITION-REVIEW.md": {
       "bytes": 1315,
@@ -46,6 +46,10 @@
       "bytes": 2487,
       "sha256": "d41333c36463b7e90637990ae9c2e03f2a7644fc63c01ed7a7adf75fb4fe2a31"
     },
+    "NAVIGATION-DELTA-REVIEW.md": {
+      "bytes": 5719,
+      "sha256": "0cdbb808e69873003bb20eea100515a086f0375f50a8b6cb912bb96865c69b3f"
+    },
     "REDIS-PRECONDITION-COMPOSITION-REVIEW.md": {
       "bytes": 3999,
       "sha256": "ef780953484f2255cbb18c8de96183eb89de4b2efe9ebc48e4a315b4a5419c74"
@@ -55,8 +59,8 @@
       "sha256": "5a0cdbe116331bee1980fc58f051430b089b0f8a14d0da60e0d469d99b20ec24"
     },
     "REVIEW.md": {
-      "bytes": 1691,
-      "sha256": "3b40b69a5716830d5a64916e38fb4acb077f12869de3e45e6a63fd65e32e12a3"
+      "bytes": 6346,
+      "sha256": "6d4c3114c16e36cef44f3c79dba1b566c4d54050c6c429a29e1b1d38be6703c8"
     },
     "RUNTIME-BOUNDARY-COMPOSITION-REVIEW.md": {
       "bytes": 1130,
@@ -111,12 +115,12 @@
       "sha256": "c7bff562eb9516747c9723b126141004239a9694b87cdbfa022b02786067b322"
     },
     "browser-boundary-probe.cjs": {
-      "bytes": 6593,
-      "sha256": "b6ab8c2bf2190e698ca782528c1d270ebcf98f6d06d667293453e1ae9dc2c1ff"
+      "bytes": 6804,
+      "sha256": "abd0b975a135a2f8e852669d7e1c8cb4349d07cd9f572aca50c6f11b6f779360"
     },
     "browser-driver.cjs": {
-      "bytes": 12188,
-      "sha256": "1c16c33e99a944f29e3df10e56c640b5d21c9da80c55f988d8063681dc74ae75"
+      "bytes": 12933,
+      "sha256": "445f2a142558ae41623e7052c2d82a4ce599d4eb3b204c7d6ace25b44cffee34"
     },
     "chromium-provenance.json": {
       "bytes": 62542,
@@ -256,7 +260,7 @@
     },
     "hosted-orchestrator.py": {
       "bytes": 29831,
-      "sha256": "98041b047b59a225d3613d57dccdfaebb6ac003c8665c412911cf4fb24bd74c5"
+      "sha256": "21e5e1bc06e0b13da1ed842269a5499147d216928863d31a8916bcbe5502d7db"
     },
     "identity-entry.py": {
       "bytes": 3884,
@@ -271,8 +275,8 @@
       "sha256": "0e3a710ab63232eec31d90e994036b3a3480c65605097fe4a6f0938e2bf33366"
     },
     "integrated-hosted.yml": {
-      "bytes": 4660,
-      "sha256": "2ae97c377518c15da790d88e6b9207455ce7076babc706237c149df792cbd3a2"
+      "bytes": 4016,
+      "sha256": "a09084c1bf52f0c97cd3468ef0c889f080ad3b3c4d7f36a6b7b3cc53f5f8cbdc"
     },
     "lance-provenance.json": {
       "bytes": 900,
@@ -291,8 +295,8 @@
       "sha256": "20367cd35272db599ff1f7ebfb93409fc61bff9c635b3e01dc544c7cb0029763"
     },
     "lineage-static-audit.json": {
-      "bytes": 466,
-      "sha256": "5101a75ce21a5e5385c1d2274e36a36d4c49c14c27b637c7800fc9db7c2c894d"
+      "bytes": 622,
+      "sha256": "ffc7beee10e8f25cee2fdcce87b1a5773c1dcf0ab0f2c9ee05efab8aff51b94a"
     },
     "namespace-entry.py": {
       "bytes": 8493,
@@ -317,6 +321,14 @@
     "native-provenance/file-uri-to-path-1.0.0.tgz": {
       "bytes": 3549,
       "sha256": "5440cdf67e75ab96f36a6be63c1d4c3d54255b1d0970273710fecfebfab06fb3"
+    },
+    "navigation-delta-admitted-identity.json": {
+      "bytes": 831,
+      "sha256": "c322e5f8cb5af5707c72c9ce38c3a565172696680ab625afb18b7d995a723b30"
+    },
+    "navigation-schema-contract-checks.json": {
+      "bytes": 384,
+      "sha256": "a91a3a774ab82d48b377d1383838114457eea5ab492f8765227ee789629f38b0"
     },
     "prepare-security.py": {
       "bytes": 4073,
@@ -419,8 +431,8 @@
       "sha256": "cbcd8ff4293033e0d5ad0f1ceef385f56f47c9599058c667e8273f378aa7762d"
     },
     "runtime-finite-schema.py": {
-      "bytes": 34486,
-      "sha256": "915705061926f832f427cd3c59c05ffd59caadbf21b676c4c69fdd906f8fedb7"
+      "bytes": 35175,
+      "sha256": "aafd1b32f6ddd555c02b49f58e9657fc50f0b2386c49545cfbd591a43b0fa94b"
     },
     "runtime-prerequisites.cjs": {
       "bytes": 2062,
