@@ -17,6 +17,7 @@ on:
           - native-factory-stop
           - native-manager-start-seal
           - static-body-custody
+          - native-body-helper-uds
 permissions:
   contents: read
 jobs:
@@ -76,6 +77,10 @@ jobs:
             static-body-custody)
               sha256sum --check body-custody-static-packet.sha256
               python3 run-static-body-custody.py
+              ;;
+            native-body-helper-uds)
+              sha256sum --check body-helper-packet.sha256
+              python3 run-native-body-helper.py
               ;;
             *)
               printf '%s\n' 'Unreviewed validation selector refused' >&2
