@@ -1,3 +1,4 @@
+import { installTestHostGeneration } from '../setup/preparation-generation';
 /**
  * Tanda 1 truthfulness remediation tests.
  *
@@ -45,8 +46,8 @@ describe('A1: buildTokenHistory (real telemetry bucketing)', () => {
 });
 
 describe('A2: video worker honesty without a provider key', () => {
-    beforeEach(() => {
-        vi.resetModules();
+    beforeEach(async () => {
+        vi.resetModules(); await installTestHostGeneration();
         delete process.env.REPLICATE_API_TOKEN;
     });
     it('emits INCIDENT_REPORT with UNAVAILABLE and never a fake TASK_COMPLETION', async () => {

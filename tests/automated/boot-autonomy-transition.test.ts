@@ -1,3 +1,4 @@
+import { installTestHostGeneration } from '../setup/preparation-generation';
 /**
  * Boot OFF->ON transition - initServer (the real boot loader) with the real
  * autonomy policy and a mutable config snapshot. Proves:
@@ -60,7 +61,7 @@ function mockAll() {
 }
 
 async function boot() {
-    vi.resetModules();
+    vi.resetModules(); await installTestHostGeneration();
     mockAll();
     // Warm the modules initServer dynamic-imports inside timers/gates so the
     // fake-timer advance executes them (first-time loads do not complete

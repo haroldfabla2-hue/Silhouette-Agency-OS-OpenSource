@@ -1,3 +1,4 @@
+import { installTestHostGeneration } from '../setup/preparation-generation';
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 
 /**
@@ -23,8 +24,8 @@ import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 // R2: zhipuService.isAvailable must not consume tokens
 // ────────────────────────────────────────────────────────────────────────────
 describe('zhipuService.isAvailable is a pure health check', () => {
-    beforeAll(() => {
-        vi.resetModules();
+    beforeAll(async () => {
+        vi.resetModules(); await installTestHostGeneration();
         process.env.ZHIPU_API_KEY = 'test-key-fase0-not-a-real-key';
     });
 

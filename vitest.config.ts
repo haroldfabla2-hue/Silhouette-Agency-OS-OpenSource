@@ -5,7 +5,7 @@ export default defineConfig({
     test: {
         globals: true,
         environment: 'node',
-        setupFiles: ['tests/setup/sqlite-per-worker.ts', 'tests/setup/fetch-teardown.ts'],
+        setupFiles: ['tests/setup/preparation-host.ts', 'tests/setup/sqlite-per-worker.ts', 'tests/setup/fetch-teardown.ts', 'tests/setup/preparation-teardown.ts'],
         include: ['tests/automated/**/*.test.ts'],
         exclude: ['**/node_modules/**', '**/dist/**'],
         testTimeout: 30000,
@@ -26,7 +26,8 @@ export default defineConfig({
         retry: 1,
         // Run tests sequentially for service tests (avoid port conflicts)
         sequence: {
-            shuffle: false
+            shuffle: false,
+            setupFiles: 'list'
         }
     },
     resolve: {

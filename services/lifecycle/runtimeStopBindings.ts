@@ -1,6 +1,7 @@
 /** Source-fixed original singleton construction/stop frontier. Pure bookkeeping.
  * No service import, timer, IO or physical/global-quiescence claim.
  */
+export class RuntimeConstructionAdmissionClosed extends Error {}
 type Permit = Readonly<{ token: object }>;
 type Slot = { name: string; phase: 'UNSEEN' | 'CONSTRUCTING' | 'PUBLISHED' | 'FAILED'; permit?: Permit; construction?: Promise<void>; finishConstruction?: () => void; original?: () => unknown; joined?: Promise<void>; failure?: unknown };
 const curiosity: Slot = { name:'curiosity',phase:'UNSEEN' };
@@ -15,7 +16,8 @@ let registrationSealed = false;
 let producersSealed = false;
 let storageSealed = false;
 function admit(slot: Slot): Permit {
-    if (registrationSealed || slot.phase !== 'UNSEEN') throw new Error('Runtime construction admission closed: ' + slot.name);
+    if (registrationSealed) throw new RuntimeConstructionAdmissionClosed('Runtime construction admission closed: ' + slot.name);
+    if (slot.phase !== 'UNSEEN') throw new Error('Duplicate runtime original singleton: ' + slot.name);
     const permit = Object.freeze({ token:Object.freeze({}) });
     slot.permit = permit;slot.phase = 'CONSTRUCTING';
     slot.construction = new Promise<void>(resolve => { slot.finishConstruction = resolve; });

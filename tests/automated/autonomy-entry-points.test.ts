@@ -1,3 +1,4 @@
+import { installTestHostGeneration } from '../setup/preparation-generation';
 /**
  * Autonomy entry points - every route into proactive cognition respects the
  * config ceiling; PowerManager throttles without cutting authority.
@@ -115,7 +116,7 @@ describe('heartbeat job (boot loader route)', () => {
 });
 
 describe('evolutionScheduler (index.ts + PowerManager reactivation route)', () => {
-    beforeEach(() => { vi.resetModules(); });
+    beforeEach(async () => { vi.resetModules(); await installTestHostGeneration(); });
 
     async function loadScheduler() {
         vi.doMock('../../services/tools/toolEvolver', () => ({ toolEvolver: {} }));
@@ -161,7 +162,7 @@ describe('evolutionScheduler (index.ts + PowerManager reactivation route)', () =
 });
 
 describe('learningLoop tick (PowerManager throttle reader)', () => {
-    beforeEach(() => { vi.resetModules(); });
+    beforeEach(async () => { vi.resetModules(); await installTestHostGeneration(); });
 
     it('skips the scheduled analysis while throttled, runs when not', async () => {
         vi.useFakeTimers();
@@ -184,7 +185,7 @@ describe('learningLoop tick (PowerManager throttle reader)', () => {
 });
 
 describe('narrativeService batch tick (PowerManager throttle reader)', () => {
-    beforeEach(() => { vi.resetModules(); });
+    beforeEach(async () => { vi.resetModules(); await installTestHostGeneration(); });
 
     it('pauses batch processing while throttled', async () => {
         vi.useFakeTimers();
@@ -206,7 +207,7 @@ describe('narrativeService batch tick (PowerManager throttle reader)', () => {
 });
 
 describe('neuroCognitive self-started heartbeat (constructor route)', () => {
-    beforeEach(() => { vi.resetModules(); });
+    beforeEach(async () => { vi.resetModules(); await installTestHostGeneration(); });
     afterEach(() => { vi.restoreAllMocks(); });
 
     async function loadNeuro() {

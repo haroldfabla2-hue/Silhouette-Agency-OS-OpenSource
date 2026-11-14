@@ -7,8 +7,9 @@
 // ═══════════════════════════════════════════════════════════════
 import { configLoader } from './config/configLoader';
 import { createServer } from 'http';
-import { stopRuntimeRootHost } from './runtimeRootHost';
-import { sealEvaluatedRuntimeProducers, drainEvaluatedRuntimeProducers, closeEvaluatedRuntimeStorage, evaluatedRuntimeFrontier } from '../services/lifecycle/runtimeStopBindings';
+import { stopRuntimeRootHost, recordRuntimeStartupFailure } from './runtimeRootHost';
+import { AdmissionClosed } from '../services/lifecycle/host';
+import { sealEvaluatedRuntimeProducers, drainEvaluatedRuntimeProducers, closeEvaluatedRuntimeStorage, evaluatedRuntimeFrontier, RuntimeConstructionAdmissionClosed } from '../services/lifecycle/runtimeStopBindings';
 
 // Initialize Config (Loads Env or JSON)
 const config = configLoader.getConfig();
@@ -57,7 +58,10 @@ let failStartup!: (error: unknown) => void;
 let startupEntered = false;
 const originalStartup = new Promise<void>((resolve, reject) => { finishStartup = resolve;failStartup = reject; });
 // Retain rejection now; shutdown also joins the exact original task.
-void originalStartup.catch(error => console.error('[BOOT] Original startup failed:', error));
+void originalStartup.catch(error => {
+    recordRuntimeStartupFailure(error);
+    console.error('[BOOT] Original startup failed:', error);
+});
 const server = createServer((request, response) => {
     if (isShuttingDown) {
         response.statusCode = 503;response.setHeader('Connection', 'close');
@@ -94,6 +98,10 @@ async function completeOriginalStartup(): Promise<void> {
         if (isShuttingDown) return;
         reapStaleTasks(PROCESS_STARTED_AT, 'executor lost: process restart (ledger row predates this boot)');
     } catch (e: any) {
+
+        if (isShuttingDown && (e instanceof AdmissionClosed || e instanceof RuntimeConstructionAdmissionClosed)) return;
+
+        recordRuntimeStartupFailure(e);
         console.warn('[BOOT] stale task sweep failed (non-blocking):', e?.message);
     }
 
@@ -106,6 +114,10 @@ async function completeOriginalStartup(): Promise<void> {
         gateway.initialize(server);
         console.log('[GATEWAY] ✅ WebSocket Gateway initialized');
     } catch (error) {
+
+        if (isShuttingDown && (error instanceof AdmissionClosed || error instanceof RuntimeConstructionAdmissionClosed)) return;
+
+        recordRuntimeStartupFailure(error);
         console.error('[GATEWAY] Failed to initialize WebSocket Gateway:', error);
     }
 
@@ -117,6 +129,10 @@ async function completeOriginalStartup(): Promise<void> {
         if (isShuttingDown) return;
         TerminalGateway.initialize(server);
     } catch (error) {
+
+        if (isShuttingDown && (error instanceof AdmissionClosed || error instanceof RuntimeConstructionAdmissionClosed)) return;
+
+        recordRuntimeStartupFailure(error);
         console.error('[TERMINAL] Failed to initialize Terminal Gateway:', error);
     }
 
@@ -128,6 +144,10 @@ async function completeOriginalStartup(): Promise<void> {
         if (isShuttingDown) return;
         await initializeChannels();
     } catch (error) {
+
+        if (isShuttingDown && (error instanceof AdmissionClosed || error instanceof RuntimeConstructionAdmissionClosed)) return;
+
+        recordRuntimeStartupFailure(error);
         console.error('[CHANNELS] Failed to initialize channels:', error);
     }
 
@@ -139,6 +159,10 @@ async function completeOriginalStartup(): Promise<void> {
         await mcpWrapper.initialize();
         await mcpWrapper.mount(app);
     } catch (error) {
+
+        if (isShuttingDown && (error instanceof AdmissionClosed || error instanceof RuntimeConstructionAdmissionClosed)) return;
+
+        recordRuntimeStartupFailure(error);
         console.error('[MCP] Failed to initialize standard MCP server:', error);
     }
 
@@ -162,6 +186,10 @@ async function completeOriginalStartup(): Promise<void> {
         await pluginRegistry.initialize();
         console.log('[PLUGINS] ✅ Plugin System initialized with Core Plugins');
     } catch (error) {
+
+        if (isShuttingDown && (error instanceof AdmissionClosed || error instanceof RuntimeConstructionAdmissionClosed)) return;
+
+        recordRuntimeStartupFailure(error);
         console.error('[PLUGINS] Failed to initialize plugin system:', error);
     }
 
@@ -171,6 +199,10 @@ async function completeOriginalStartup(): Promise<void> {
         await import('../services/ingestionEngine');
         console.log('[INGESTION] ✅ Webhook Ingestion Engine online');
     } catch (error) {
+
+        if (isShuttingDown && (error instanceof AdmissionClosed || error instanceof RuntimeConstructionAdmissionClosed)) return;
+
+        recordRuntimeStartupFailure(error);
         console.error('[INGESTION] Failed to start Ingestion Engine:', error);
     }
 
@@ -183,6 +215,10 @@ async function completeOriginalStartup(): Promise<void> {
         if (isShuttingDown) return;
         unifiedDaemon.start();
     } catch (error) {
+
+        if (isShuttingDown && (error instanceof AdmissionClosed || error instanceof RuntimeConstructionAdmissionClosed)) return;
+
+        recordRuntimeStartupFailure(error);
         console.error('[DAEMON] Failed to start unified daemon:', error);
     }
 
@@ -202,9 +238,17 @@ async function completeOriginalStartup(): Promise<void> {
             await capabilityAwareness.initialize();
             console.log('[CAPABILITY_AWARENESS] ✅ Initialized');
         } catch (caErr) {
+
+            if (isShuttingDown && (caErr instanceof AdmissionClosed || caErr instanceof RuntimeConstructionAdmissionClosed)) return;
+
+            recordRuntimeStartupFailure(caErr);
             console.error('[CAPABILITY_AWARENESS] Init failed (non-fatal):', caErr);
         }
     } catch (error) {
+
+        if (isShuttingDown && (error instanceof AdmissionClosed || error instanceof RuntimeConstructionAdmissionClosed)) return;
+
+        recordRuntimeStartupFailure(error);
         console.error('[ORCHESTRATOR] Failed to initialize orchestrator:', error);
     }
 
@@ -216,6 +260,10 @@ async function completeOriginalStartup(): Promise<void> {
         evolutionScheduler.start();
         console.log('[EVOLUTION] ✅ Evolution Scheduler started');
     } catch (error) {
+
+        if (isShuttingDown && (error instanceof AdmissionClosed || error instanceof RuntimeConstructionAdmissionClosed)) return;
+
+        recordRuntimeStartupFailure(error);
         console.error('[EVOLUTION] Failed to start evolution scheduler:', error);
     }
 }

@@ -1,3 +1,4 @@
+import { installTestHostGeneration } from '../setup/preparation-generation';
 /**
  * Model defaults: registry, stream adapter and geminiService must all resolve
  * to the same live-verified defaults from services/llm/defaultModels.ts, and
@@ -6,10 +7,10 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
 describe('default model resolution', () => {
-    afterEach(() => {
+    afterEach(async () => {
         delete process.env.GEMINI_MODEL;
         delete process.env.GEMINI_EMBEDDING_MODEL;
-        vi.resetModules();
+        vi.resetModules(); await installTestHostGeneration();
     });
 
     it('ships the live-verified defaults', async () => {
@@ -24,21 +25,21 @@ describe('default model resolution', () => {
 
     it('GEMINI_MODEL env overrides the default', async () => {
         process.env.GEMINI_MODEL = 'gemini-3.5-flash';
-        vi.resetModules();
+        vi.resetModules(); await installTestHostGeneration();
         const m = await import('../../services/llm/defaultModels');
         expect(m.DEFAULT_GEMINI_MODEL).toBe('gemini-3.5-flash');
     });
 
     it('blank GEMINI_MODEL falls back to the default', async () => {
         process.env.GEMINI_MODEL = '   ';
-        vi.resetModules();
+        vi.resetModules(); await installTestHostGeneration();
         const m = await import('../../services/llm/defaultModels');
         expect(m.DEFAULT_GEMINI_MODEL).toBe('gemini-3.8-flash');
     });
 
     it('GEMINI_EMBEDDING_MODEL env overrides the embedding default', async () => {
         process.env.GEMINI_EMBEDDING_MODEL = 'gemini-embedding-2';
-        vi.resetModules();
+        vi.resetModules(); await installTestHostGeneration();
         const m = await import('../../services/llm/defaultModels');
         expect(m.DEFAULT_GEMINI_EMBEDDING_MODEL).toBe('gemini-embedding-2');
     });

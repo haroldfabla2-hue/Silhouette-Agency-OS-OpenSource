@@ -1,3 +1,4 @@
+import { installTestHostGeneration } from '../setup/preparation-generation';
 /**
  * [PR-4a] LLM chain repairs:
  * 1. Per-model provider health: a quota suspension on one Gemini model must
@@ -77,7 +78,7 @@ async function settleHealthGraphs() {
 }
 
 describe('PR-4a per-model provider health', () => {
-    beforeEach(() => { vi.resetModules(); });
+    beforeEach(async () => { vi.resetModules(); await installTestHostGeneration(); });
     afterEach(settleHealthGraphs);
 
     it('suspending one model leaves sibling models of the same provider available', async () => {
@@ -113,7 +114,7 @@ describe('PR-4a per-model provider health', () => {
 
 describe('PR-4a provider registry', () => {
     const ORIG = { ...process.env };
-    afterEach(() => { process.env = { ...ORIG }; vi.resetModules(); });
+    afterEach(async () => { process.env = { ...ORIG }; vi.resetModules(); await installTestHostGeneration(); });
 
     it('registers Ollama Cloud as openai-compatible free-tier provider', async () => {
         const { builtInProviders } = await import('../../services/llm/providerRegistry');
@@ -128,14 +129,14 @@ describe('PR-4a provider registry', () => {
 
     it('local Ollama is out of the chain by default', async () => {
         delete process.env.OLLAMA_LOCAL_ENABLED;
-        vi.resetModules();
+        vi.resetModules(); await installTestHostGeneration();
         const { builtInProviders } = await import('../../services/llm/providerRegistry');
         expect(builtInProviders.find(p => p.id === 'OLLAMA')).toBeUndefined();
     });
 
     it('local Ollama re-enters only with explicit OLLAMA_LOCAL_ENABLED=true', async () => {
         process.env.OLLAMA_LOCAL_ENABLED = 'true';
-        vi.resetModules();
+        vi.resetModules(); await installTestHostGeneration();
         const { builtInProviders } = await import('../../services/llm/providerRegistry');
         const local = builtInProviders.find(p => p.id === 'OLLAMA');
         expect(local).toBeDefined();
