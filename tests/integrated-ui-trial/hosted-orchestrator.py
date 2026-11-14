@@ -89,7 +89,7 @@ def members(b,*,mode,package=None,integrity=None):
 try:
  assert os.environ['PRIVATE']=='false'and os.environ['ENVIRONMENT']=='github-hosted'and os.environ['GITHUB_EVENT_NAME']in {'workflow_dispatch','push'}
  if os.environ['GITHUB_EVENT_NAME']=='push':
-  assert subprocess.check_output(['git','rev-parse','HEAD^'],cwd=REPO,text=True).strip()=='fbeebf507da7dd1ccf79e568ece67e32e44e1606'
+  assert subprocess.check_output(['git','rev-parse','HEAD^'],cwd=REPO,text=True).strip()=='88377f03f19e2b606c94774c513ab276d363d49c'
   assert os.environ['GITHUB_REF']=='refs/heads/preparation/sqlite-static-typecheck-db201993-4054-20261114'
  assert os.environ['GITHUB_SHA']==os.environ['EXPECTED_HEAD']==subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip()
  node=Path(shutil.which('node')).resolve();assert sha(node.read_bytes())=='ccacb2d6d87ba6d118b2bffc1ae33747a05cc5fc6b1f1ec4fc1d420b687e952d';assert subprocess.check_output([str(node),'--version'],text=True).strip()=='v22.18.0'
@@ -130,8 +130,8 @@ try:
   p=app/r['path'];b=(HERE/'finite-diagnostics-overlay'/r['path']).read_bytes();assert sha(p.read_bytes())==r['beforeSha256'];assert len(b)==r['bytes']and sha(b)==r['afterSha256'];p.write_bytes(b)
  diagnosticActual={str(p.relative_to(app)):sha(p.read_bytes())for p in app.rglob('*')if p.is_file()};assert diagnosticActual==diagnostic['finalProductFiles']
  # Accepted fixed continuum source overlay after exact diagnostics identity.
- continuumRaw=(HERE/'continuum-composition.json').read_bytes();assert sha(continuumRaw)=='f6e73b9351f5a997e1324938e607e1fe4fb7d989452e356f89de90be342f5c67'
- continuum=json.loads(continuumRaw);assert continuum['basePublishedParent']=='fbeebf507da7dd1ccf79e568ece67e32e44e1606'and len(continuum['files'])==11
+ continuumRaw=(HERE/'continuum-composition.json').read_bytes();assert sha(continuumRaw)=='840ddcb3f79697ff64228b9b18e947dbe804821dbb645251f1b2a6884779c701'
+ continuum=json.loads(continuumRaw);assert continuum['basePublishedParent']=='88377f03f19e2b606c94774c513ab276d363d49c'and len(continuum['files'])==11
  for r in continuum['files']:
   p=app/r['path'];b=(HERE/'continuum-overlay'/r['path']).read_bytes();assert(sha(p.read_bytes())if p.exists()else None)==r['beforeSha256'];assert len(b)==r['bytes']and sha(b)==r['afterSha256'];p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(b)
  continuumActual={str(p.relative_to(app)):sha(p.read_bytes())for p in app.rglob('*')if p.is_file()};assert continuumActual==continuum['finalProductFiles']

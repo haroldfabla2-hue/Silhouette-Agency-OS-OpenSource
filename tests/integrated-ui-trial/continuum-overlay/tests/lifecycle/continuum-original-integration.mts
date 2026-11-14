@@ -41,6 +41,13 @@ const reached = checkpoints.awaitFiniteContinuumStage;
 let assertionsComplete = false;
 let exactFilesystemOriginal: unknown;
 let schemaRejected = false;
+// Fixed stages/predicates only. No message/stack/path/schema payload export.
+const assertionDiagnostic = {
+ stage:'NOT_REACHED', predicate:'NOT_REACHED',
+ filesystem:{observed:false,code:'NOT_OBSERVED',syscall:'NOT_OBSERVED',destinationMatches:'NOT_OBSERVED'},
+ schemaDisposition:'NOT_OBSERVED', thrownKind:'NOT_OBSERVED',
+};
+
 const modeReceiptPath = process.env.SILHOUETTE_FINITE_MODE_RECEIPT;
 assert.ok(modeReceiptPath && /^\/evidence\/continuum-mode-[a-z-]+\.json$/.test(modeReceiptPath));
 let report: Awaited<ReturnType<typeof host.stop>> | undefined;
@@ -113,19 +120,35 @@ try {
   }
   if (mode === 'schema-and-write-failure') {
    const before = dreamer.finiteOriginalBoundarySnapshot();
+   assertionDiagnostic.stage='SCHEMA_CALL'; assertionDiagnostic.predicate='SCHEMA_CALL_RESOLVES';
    const rejected = await continuum.storeWithEffectReceipt('',MemoryTier.ULTRA_SHORT);
-   assert.equal(rejected.canonicalDisposition,'SCHEMA_REJECTED'); assert.equal(rejected.effects,undefined); schemaRejected = true;
+   assertionDiagnostic.schemaDisposition=rejected.canonicalDisposition==='SCHEMA_REJECTED'?'SCHEMA_REJECTED':'OTHER_OR_UNKNOWN';
+   assertionDiagnostic.stage='SCHEMA_DISPOSITION'; assertionDiagnostic.predicate='SCHEMA_REJECTED_EXACT';
+   assert.equal(rejected.canonicalDisposition,'SCHEMA_REJECTED');
+   assertionDiagnostic.predicate='SCHEMA_NO_EFFECT'; assert.equal(rejected.effects,undefined); schemaRejected = true;
+   assertionDiagnostic.stage='SCHEMA_CALLBACK_COUNT'; assertionDiagnostic.predicate='NO_SCHEMA_CALLBACK';
    assert.equal(dreamer.finiteOriginalBoundarySnapshot().acceptedCallbackCount,before.acceptedCallbackCount);
    // Real immutable filesystem obstruction, not a fake canonical response.
    const snapshot = process.env.SILHOUETTE_MEMORY_SNAPSHOT_PATH!;
-   fs.renameSync(snapshot,snapshot+'.authored-backup'); fs.mkdirSync(snapshot);
+   assertionDiagnostic.stage='FILESYSTEM_OBSTRUCTION'; assertionDiagnostic.predicate='BACKUP_RENAME';
+   fs.renameSync(snapshot,snapshot+'.authored-backup');
+   assertionDiagnostic.predicate='CREATE_TARGET_DIRECTORY'; fs.mkdirSync(snapshot);
+   assertionDiagnostic.stage='CANONICAL_WRITE'; assertionDiagnostic.predicate='WRITE_REJECTS';
    await assert.rejects(continuum.storeWithEffectReceipt('Authored real denied write',MemoryTier.ULTRA_SHORT),original=>{
     const error=original as NodeJS.ErrnoException & {dest?:string};
     // Exact original target is checked IN MEMORY only; no paths/messages export.
-    assert.equal(error.code,'EISDIR'); assert.equal(error.syscall,'rename');
-    assert.equal(error.dest,snapshot); exactFilesystemOriginal=original; return true;
+    assertionDiagnostic.filesystem={observed:true,
+     code:error?.code==='EISDIR'?'EISDIR':error?.code==='ENOTDIR'?'ENOTDIR':error?.code==='EACCES'?'EACCES':error?.code==='EPERM'?'EPERM':'OTHER_OR_UNKNOWN',
+     syscall:error?.syscall==='rename'?'RENAME':error?.syscall==='open'?'OPEN':error?.syscall==='mkdir'?'MKDIR':error?.syscall==='read'?'READ':'OTHER_OR_UNKNOWN',
+     destinationMatches:error?.dest===snapshot?'MATCH':'MISMATCH_OR_MISSING'};
+    assertionDiagnostic.stage='FILESYSTEM_PREDICATE'; assertionDiagnostic.predicate='ERROR_CODE_EISDIR';
+    assert.equal(error.code,'EISDIR');
+    assertionDiagnostic.predicate='ERROR_SYSCALL_RENAME'; assert.equal(error.syscall,'rename');
+    assertionDiagnostic.predicate='ERROR_DESTINATION_EXACT'; assert.equal(error.dest,snapshot); exactFilesystemOriginal=original; return true;
    });
+   assertionDiagnostic.stage='WRITE_CALLBACK_COUNT'; assertionDiagnostic.predicate='NO_WRITE_CALLBACK';
    assert.equal(dreamer.finiteOriginalBoundarySnapshot().acceptedCallbackCount,before.acceptedCallbackCount);
+   assertionDiagnostic.stage='FAILED_WRITE_DISPOSITION_JOIN'; assertionDiagnostic.predicate='ORIGINAL_NOTIFICATION_JOIN';
    runtime.sealEvaluatedRuntimeProducers(); await permits.joinAcceptedContinuumNotifications();
   }
   if (mode === 'power-check') {
@@ -177,6 +200,11 @@ try {
   }
  }
  assertionsComplete=true;
+ if (mode==='schema-and-write-failure') { assertionDiagnostic.stage='BODY_ASSERTIONS_COMPLETED'; assertionDiagnostic.predicate='NONE'; }
+} catch (original) {
+ // Only fixed structural tags, never arbitrary Error.name/message/code strings.
+ assertionDiagnostic.thrownKind=original instanceof assert.AssertionError?'ASSERTION_ERROR':original instanceof Error?'OTHER_ERROR':'NON_ERROR_OR_UNKNOWN';
+ throw original;
 } finally {
  // Independent cleanup never skipped after failed assertion. Release test
  // latches only, not original obligations/timers or errors.
@@ -187,26 +215,35 @@ try {
  report=await host.stop();
  const categories=projection.projectRetainedFailureCategories(report);
  console.log('ACTUAL_SAME_REPORT_FIXED_CATEGORIES',JSON.stringify(categories));
+ let hostCauseAssertionFailure: unknown;
+ try {
  if (mode === 'schema-and-write-failure' && assertionsComplete) {
+  assertionDiagnostic.stage='HOST_CAUSE_ASSERTIONS'; assertionDiagnostic.predicate='SCHEMA_CASE_REACHED';
   assert.ok(schemaRejected);
   const abandoned=report.failures.filter(failure=>failure.source==='dreamer:canonical-store-notification:accepted-effect:NOT_INVOKED');
-  assert.ok(abandoned.some(failure=>failure.original instanceof ZodError));
-  assert.ok(exactFilesystemOriginal);
-  assert.ok(abandoned.some(failure=>failure.original===exactFilesystemOriginal));
-  assert.ok(!(exactFilesystemOriginal instanceof ZodError));
+  assertionDiagnostic.predicate='RETAINED_SCHEMA_ZOD'; assert.ok(abandoned.some(failure=>failure.original instanceof ZodError));
+  assertionDiagnostic.predicate='FILESYSTEM_ORIGINAL_CAPTURED'; assert.ok(exactFilesystemOriginal);
+  assertionDiagnostic.predicate='SAME_FILESYSTEM_ORIGINAL_RETAINED'; assert.ok(abandoned.some(failure=>failure.original===exactFilesystemOriginal));
+  assertionDiagnostic.predicate='FILESYSTEM_NOT_SCHEMA_ZOD'; assert.ok(!(exactFilesystemOriginal instanceof ZodError));
+  assertionDiagnostic.stage='HOST_CAUSE_ASSERTIONS_COMPLETED'; assertionDiagnostic.predicate='NONE';
+ }
+ } catch (original) {
+  assertionDiagnostic.thrownKind=original instanceof assert.AssertionError?'ASSERTION_ERROR':original instanceof Error?'OTHER_ERROR':'NON_ERROR_OR_UNKNOWN';
+  hostCauseAssertionFailure=original;
  }
  assert.equal(categories.lifetimeFailures,report.lifetimeFailures);
  assert.equal(categories.acknowledged,report.acknowledged);
  assert.equal(report.state,'INCOMPLETE'); // Existing unsafe frontier remains.
  // No process.exit, forced success, acknowledgement, swallowed original error,
  // global PASS claim or deletion of evidence/native files.
- const phaseReceipt = {version:1,mode,assertionsComplete,
+ const phaseReceipt = {version:1,mode,assertionsComplete:assertionsComplete && !hostCauseAssertionFailure,assertionDiagnostic,
   cleanup:cleanup.map(result=>result.status),
   productState:report.state, ownerFailures:report.ownerFailures,taskOutcomeFailures:report.taskOutcomeFailures,
   lifetimeFailures:report.lifetimeFailures, categories,
-  componentVerdict:assertionsComplete?'ASSERTIONS_COMPLETED_NOT_PRODUCT_PASS':'ASSERTIONS_INCOMPLETE',
+  componentVerdict:assertionsComplete && !hostCauseAssertionFailure?'ASSERTIONS_COMPLETED_NOT_PRODUCT_PASS':'ASSERTIONS_INCOMPLETE',
   productVerdict:cleanup.some(result=>result.status==='rejected')||report.ownerFailures||report.taskOutcomeFailures?'FAIL_RETAINED_ORIGINAL_EVIDENCE':'INCOMPLETE_FRONTIER',
  };
  fs.writeFileSync(modeReceiptPath!,JSON.stringify(phaseReceipt)+'\n',{flag:'wx',mode:0o600});
+ if (hostCauseAssertionFailure) throw hostCauseAssertionFailure;
  console.log(JSON.stringify({mode,assertionsComplete,scope:'FINITE_ORIGINAL_BOUNDARIES_ONLY_NOT_PRODUCT_PASS',cleanup:cleanup.map(result=>result.status),ownerFailures:report.ownerFailures,taskOutcomeFailures:report.taskOutcomeFailures}));
 }

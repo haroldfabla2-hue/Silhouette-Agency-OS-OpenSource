@@ -1,7 +1,7 @@
 {
   "sourceOnly": true,
-  "basePublishedParent": "fbeebf507da7dd1ccf79e568ece67e32e44e1606",
-  "priorFailedRun": 43628418246,
+  "basePublishedParent": "88377f03f19e2b606c94774c513ab276d363d49c",
+  "priorFailedRun": 43631153965,
   "admittedProductAndAssertionsPacket": "18b27106f50659b8c0e2dc3f022fdf4a8cd690ed9c1e87c4d6514447670f4c9b",
   "admittedWiringClosurePacket": "06184d218a596f7f09fcaa8d1453c8aa3aaf37b80b5017a515465b99a002560e",
   "files": [
@@ -68,8 +68,8 @@
     {
       "path": "tests/lifecycle/continuum-original-integration.mts",
       "beforeSha256": null,
-      "afterSha256": "7ba73154a92eadd0f4413f5de2d2e6918216108329694882ab40a0ddf4a6c2b5",
-      "bytes": 14804
+      "afterSha256": "5fbc4597e8ef9f704a8a35c8f3637c43d51e60ebc2fe6cd1f2dca5da38b525ac",
+      "bytes": 18070
     }
   ],
   "finalProductFiles": {
@@ -1775,6 +1775,7 @@
     "services/lifecycle/finiteContinuumCheckpoints.ts": "cf127dc45a6c5879a3fa424d5a48e5c62736b5bf5a71c00648ed64c35c874434",
     "services/lifecycle/retainedFailureCategories.ts": "c736fd9b27f6acc9629d3fc615065296d2c3ef25fc256b9a7f3e6666b95e376b",
     "tests/lifecycle/continuum-notification-boundary.mts": "87429c17fc95f625f5b06e5d65b627fb2f4369ed089696523c051c325f6d0919",
-    "tests/lifecycle/continuum-original-integration.mts": "7ba73154a92eadd0f4413f5de2d2e6918216108329694882ab40a0ddf4a6c2b5"
-  }
+    "tests/lifecycle/continuum-original-integration.mts": "5fbc4597e8ef9f704a8a35c8f3637c43d51e60ebc2fe6cd1f2dca5da38b525ac"
+  },
+  "admittedAssertionDiagnosticPacket": "5d6d2313723133201bc3a8d93b821a7c2a05dd1bbf4be1550bb438b8e078cf7a"
 }

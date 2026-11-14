@@ -30,9 +30,24 @@ def category_receipt(value):
  assert sum(x['kind']=='ORIGINAL_TASK_OUTCOME'for x in value['retained'])<=value['taskOutcomeFailures']
  assert value['unclassifiedCount']==sum(x['category']=='UNCLASSIFIED'for x in value['retained'])
  assert value['attribution']==('INCOMPLETE'if value['truncated']or value['unclassifiedCount']else'FIXED_SOURCE_CATEGORIES_ONLY_NOT_CAUSE_OR_RECOVERY_PROOF')
+def assertion_diagnostic(value,mode):
+ keys(value,['stage','predicate','filesystem','schemaDisposition','thrownKind'])
+ assert value['stage']in {'NOT_REACHED','SCHEMA_CALL','SCHEMA_DISPOSITION','SCHEMA_CALLBACK_COUNT','FILESYSTEM_OBSTRUCTION','CANONICAL_WRITE','FILESYSTEM_PREDICATE','WRITE_CALLBACK_COUNT','FAILED_WRITE_DISPOSITION_JOIN','BODY_ASSERTIONS_COMPLETED','HOST_CAUSE_ASSERTIONS','HOST_CAUSE_ASSERTIONS_COMPLETED'}
+ assert value['predicate']in {'NOT_REACHED','NONE','SCHEMA_CALL_RESOLVES','SCHEMA_REJECTED_EXACT','SCHEMA_NO_EFFECT','NO_SCHEMA_CALLBACK','BACKUP_RENAME','CREATE_TARGET_DIRECTORY','WRITE_REJECTS','ERROR_CODE_EISDIR','ERROR_SYSCALL_RENAME','ERROR_DESTINATION_EXACT','NO_WRITE_CALLBACK','ORIGINAL_NOTIFICATION_JOIN','SCHEMA_CASE_REACHED','RETAINED_SCHEMA_ZOD','FILESYSTEM_ORIGINAL_CAPTURED','SAME_FILESYSTEM_ORIGINAL_RETAINED','FILESYSTEM_NOT_SCHEMA_ZOD'}
+ assert value['schemaDisposition']in {'NOT_OBSERVED','SCHEMA_REJECTED','OTHER_OR_UNKNOWN'}
+ assert value['thrownKind']in {'NOT_OBSERVED','ASSERTION_ERROR','OTHER_ERROR','NON_ERROR_OR_UNKNOWN'}
+ f=value['filesystem'];keys(f,['observed','code','syscall','destinationMatches']);boolean(f['observed'])
+ assert f['code']in {'NOT_OBSERVED','EISDIR','ENOTDIR','EACCES','EPERM','OTHER_OR_UNKNOWN'}
+ assert f['syscall']in {'NOT_OBSERVED','RENAME','OPEN','MKDIR','READ','OTHER_OR_UNKNOWN'}
+ assert f['destinationMatches']in {'NOT_OBSERVED','MATCH','MISMATCH_OR_MISSING'}
+ if not f['observed']:assert f['code']==f['syscall']==f['destinationMatches']=='NOT_OBSERVED'
+ if mode!='schema-and-write-failure':
+  assert value['stage']==value['predicate']=='NOT_REACHED' and value['schemaDisposition']=='NOT_OBSERVED'and f['observed']is False
+
 def mode_receipt(value,mode):
- keys(value,['version','mode','assertionsComplete','cleanup','productState','ownerFailures','taskOutcomeFailures','lifetimeFailures','categories','componentVerdict','productVerdict'])
+ keys(value,['version','mode','assertionsComplete','assertionDiagnostic','cleanup','productState','ownerFailures','taskOutcomeFailures','lifetimeFailures','categories','componentVerdict','productVerdict'])
  assert value['version']==1 and type(value['version'])is int and value['mode']==mode and mode in MODES
+ assertion_diagnostic(value['assertionDiagnostic'],mode)
  boolean(value['assertionsComplete']);cleanup(value['cleanup']);assert value['productState']=='INCOMPLETE'
  for k in ['ownerFailures','taskOutcomeFailures','lifetimeFailures']:integer(value[k])
  category_receipt(value['categories'])

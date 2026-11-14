@@ -1,7 +1,11 @@
 {
   "status": "SOURCE_ONLY_COMPOSITION_NO_PUBLICATION_OR_EXECUTION",
-  "parent": "fbeebf507da7dd1ccf79e568ece67e32e44e1606",
+  "parent": "88377f03f19e2b606c94774c513ab276d363d49c",
   "files": {
+    "ASSERTION-DIAGNOSTIC-COMPOSITION-REVIEW.md": {
+      "bytes": 1315,
+      "sha256": "790d600397937d59281937a615bb2f46f850c3a0a86fa39e6ea50f3bdf745d06"
+    },
     "BROWSER-BOUNDARY-REVIEW.md": {
       "bytes": 6554,
       "sha256": "273eb9136e1b51f3e0319b9c0648e69d6a3c51cc3c7e60fd07c838c96b275bad"
@@ -55,8 +59,8 @@
       "sha256": "02334906ca37bdbf6562c06cf523b604f7e71039fc5be286a99553faf5c78b4d"
     },
     "continuum-composition.json": {
-      "bytes": 195651,
-      "sha256": "f6e73b9351f5a997e1324938e607e1fe4fb7d989452e356f89de90be342f5c67"
+      "bytes": 195758,
+      "sha256": "840ddcb3f79697ff64228b9b18e947dbe804821dbb645251f1b2a6884779c701"
     },
     "continuum-overlay/server/index.ts": {
       "bytes": 19893,
@@ -99,12 +103,12 @@
       "sha256": "87429c17fc95f625f5b06e5d65b627fb2f4369ed089696523c051c325f6d0919"
     },
     "continuum-overlay/tests/lifecycle/continuum-original-integration.mts": {
-      "bytes": 14804,
-      "sha256": "7ba73154a92eadd0f4413f5de2d2e6918216108329694882ab40a0ddf4a6c2b5"
+      "bytes": 18070,
+      "sha256": "5fbc4597e8ef9f704a8a35c8f3637c43d51e60ebc2fe6cd1f2dca5da38b525ac"
     },
     "continuum-receipt-schema.py": {
-      "bytes": 6564,
-      "sha256": "3c69bcb8ce8d871e38e4d74657c60606f55322f9c65168b615cf45c34b6fc0ce"
+      "bytes": 8348,
+      "sha256": "9f5a8abe6cb485dea4bfd87db637bd9703bf2e331b9b0a21cbb6381b9137e924"
     },
     "continuum-validation.py": {
       "bytes": 4834,
@@ -132,7 +136,7 @@
     },
     "hosted-orchestrator.py": {
       "bytes": 24219,
-      "sha256": "44849d1fa8950f7f51e3983987bfd8b996dcb5341109cdaaa30740f7a986c321"
+      "sha256": "fa75f8c01529dbebcf2651864966f98f42ff42521e8f3b4634ac274a3cc1515f"
     },
     "identity-entry.py": {
       "bytes": 3884,
@@ -147,8 +151,8 @@
       "sha256": "0e3a710ab63232eec31d90e994036b3a3480c65605097fe4a6f0938e2bf33366"
     },
     "integrated-hosted.yml": {
-      "bytes": 4852,
-      "sha256": "27bae3ee50f19e1c222eb5d20d3dcdb8938bf73ffc4f90bf4925a1b207d44a42"
+      "bytes": 3866,
+      "sha256": "b21e65ddbc51dfd2b3566d7b3be5a766bb0bd73fec6b4a44144157b1dd8c8387"
     },
     "lance-provenance.json": {
       "bytes": 900,
