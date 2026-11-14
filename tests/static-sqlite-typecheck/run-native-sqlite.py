@@ -308,7 +308,12 @@ try:
  assert not capture['missingMainFile'],'NATIVE_CONTRACT:CAPTURE_MAIN_FILE_MISSING'
  captured=[row for row in capture['files']if row['file']=='native-account-wal.sqlite'];assert len(captured)==1,'NATIVE_CONTRACT:CAPTURE_MAIN_FILE_COUNT'
  assert captured[0]['bytes']==file_event['bytes']and captured[0]['sha256']==file_event['sha256'],'NATIVE_CONTRACT:CAPTURE_SHA_VS_WORKER'
- assert len(capture['files'])==1,'NATIVE_CONTRACT:UNEXPECTED_WAL_SHM_AFTER_CLOSED_READONLY_VERIFIER'
+ # Read-only WAL clients may leave zero WAL + SHM after a clean close.
+ # Require independent per-handle FD/maps proof and exact physical bytes,
+ # not absence of sidecars as a proxy for closure. Product remains unchanged.
+ closed_files=worker_report['events'][6]['proof']['files']
+ expected_capture=[dict(row,file='native-'+row['file'])for row in closed_files]
+ assert capture['files']==expected_capture,'NATIVE_CONTRACT:CAPTURE_ALL_FILES_VS_CLOSED_PROOF'
  assert check_inputs(candidate)==before['candidate']
  drift=[rel for rel,h in input_hashes['candidate'].items()if not(candidate/rel).is_file()or sha(candidate/rel)!=h];assert not drift,'source drift'
  REPORT['status']='ACCOUNTSTORE_SQLITE_WAL_NATIVE_SUBSET_COMPLETED_ONLY'

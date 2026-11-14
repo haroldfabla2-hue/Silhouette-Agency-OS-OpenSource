@@ -5,9 +5,30 @@ REQUIRED={'schemaVersion','scenario','scope','events','failure','cleanupFailures
 SCOPE='REAL_ACCOUNTSTORE_SQLITE_WAL_ONLY_NO_SOCKET_OAUTH_VENDOR_OR_FULL_RUNTIME'
 def require(condition,code):
  if not condition:raise AssertionError('NATIVE_CONTRACT:'+code)
+def validate_closed_proof(event):
+ require(event.get('nativeOpen')is False,'CLOSED_NATIVE_OPEN')
+ proof=event.get('proof')
+ require(type(proof)is dict and set(proof)=={'beforeFdMatches','afterFdMatches','afterMapMatches','trackedIdentityCount','operationsRejected','files'},'CLOSED_PROOF_SCHEMA')
+ require(type(proof['beforeFdMatches'])is int and 1<=proof['beforeFdMatches']<=256,'CLOSED_POSITIVE_FD_CONTROL')
+ require(type(proof['afterFdMatches'])is int and proof['afterFdMatches']==0 and type(proof['afterMapMatches'])is int and proof['afterMapMatches']==0,'CLOSED_NO_FD_MAPS')
+ require(type(proof['trackedIdentityCount'])is int and 1<=proof['trackedIdentityCount']<=6 and proof['operationsRejected']is True,'CLOSED_IDENTITY_OPERATION')
+ files=proof['files'];require(type(files)is list and 1<=len(files)<=3,'CLOSED_FILES_SCHEMA')
+ names=[]
+ for row in files:
+  require(type(row)is dict and set(row)=={'file','bytes','sha256'},'CLOSED_FILE_KEYS')
+  require(type(row['file'])is str,'CLOSED_FILE_NAME_TYPE')
+  require(type(row['bytes'])is int and 0<=row['bytes']<=8*1024**2 and type(row['sha256'])is str and re.fullmatch('[0-9a-f]{64}',row['sha256'])is not None,'CLOSED_FILE_SHAPE')
+  names.append(row['file'])
+  if row['file']=='account-wal.sqlite':require(row['bytes']>0,'CLOSED_MAIN_EMPTY')
+  elif row['file']=='account-wal.sqlite-wal':require(row['bytes']==0 and row['sha256']==hashlib.sha256(b'').hexdigest(),'CLOSED_WAL_MUST_BE_EMPTY')
+  elif row['file']=='account-wal.sqlite-shm':require(row['bytes']==32768,'CLOSED_SHM_SHAPE')
+  else:require(False,'CLOSED_FILE_UNEXPECTED')
+ require(len(names)==len(set(names))and names[0]=='account-wal.sqlite','CLOSED_FILE_NAMES')
+ return files
+
 def validate_worker_report(row):
  require(type(row)is dict and set(row)==REQUIRED,'EXACT_TOP_LEVEL_KEYS')
- require(type(row['schemaVersion'])is int and row['schemaVersion']==1,'SCHEMA_VERSION')
+ require(type(row['schemaVersion'])is int and row['schemaVersion']==2,'SCHEMA_VERSION')
  require(row['scenario']=='account-wal'and row['scope']==SCOPE,'SCOPE')
  require(row['globalLifecycle']=='INCOMPLETE_UNCHANGED'and row['outerNaturalExitStillRequired']is True,'SCOPE_LIMITS')
  require(type(row['assertionsCompleted'])is bool,'ASSERTIONS_TYPE')
@@ -29,9 +50,12 @@ def validate_worker_report(row):
  require(event(ordered[1]).get('abi')=='127'and type(event(ordered[1]).get('sqliteVersion'))is str,'NATIVE_SQL')
  require(event(ordered[2]).get('file')=='account-wal.sqlite','FILE_NAME')
  require(type(event(ordered[3]).get('count'))is int and event(ordered[3])['count']==1,'COMMITTED_COUNT')
- require(event(ordered[4]).get('nativeOpen')is False,'SAME_ORIGINAL_CLOSED')
+ original_files=validate_closed_proof(event(ordered[4]))
+ verifier_files=validate_closed_proof(event(ordered[6]))
+ require(original_files[0]==verifier_files[0],'READONLY_MAIN_BYTES_CHANGED')
  require(type(event(ordered[5]).get('rows'))is int and event(ordered[5])['rows']==1,'DURABLE_ROWS')
  file_event=event(ordered[7]);require(type(file_event.get('bytes'))is int and 0<file_event['bytes']<=8*1024**2 and type(file_event.get('sha256'))is str and re.fullmatch('[0-9a-f]{64}',file_event['sha256'])is not None,'FIXTURE_EVENT')
+ require(file_event['bytes']==verifier_files[0]['bytes']and file_event['sha256']==verifier_files[0]['sha256'],'FINAL_FILE_VS_CLOSED_PROOF')
  require(event(ordered[9]).get('resource')=='same-original-account-store','CLEANUP_RESOURCE')
  return file_event
 
