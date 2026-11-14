@@ -47,10 +47,10 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = '${{ github.sha }}'
           ops="$PWD/tests/real-process/cp17-trial"
-          printf '%s  %s\n' 54796938a5ae0baf60989606c2b63365b5a35232c6999ded5615033504a65501 "$ops/infrastructure.sha256" | sha256sum --check
+          printf '%s  %s\n' 85f4ac98201d2f043f3c0875131906da299a3dc280d8c1df8d24da6e4709e24f "$ops/infrastructure.sha256" | sha256sum --check
           (cd "$ops" && sha256sum --check infrastructure.sha256)
           work="$RUNNER_TEMP/current-suite-work"
-          python3 "$ops/prepare-integral.py" "$PWD" "$work" "$ops/integral-inputs.json" 212b85952c533cd0e4da552ee479f8d58e1dbf915a8d053ff935b0544d34daa4
+          python3 "$ops/prepare-integral.py" "$PWD" "$work" "$ops/integral-inputs.json" d2194b7aea1e19701159af21ec2b081ab44a46614cb76ffb13c79e37b5d8b4f9
           printf 'WORK=%s\n' "$work" >> "$GITHUB_ENV"
       - name: Exact Node floor
         uses: actions/setup-node@v4

@@ -28,12 +28,47 @@ const LOCAL_STORE_ENV = new Set([...ACCEPTANCE_ENV,
     'QDRANT_URL', 'QDRANT_API_KEY', 'SELF_WORKTREE_PATH', 'SELFDEV_DIR',
 ]);
 
+/** Fixed non-secret preparation inputs from this process launcher only.
+ * They select existing resource policy/asset location, never provider authority.
+ * Do not add them to .env/config admission: arbitrary file content cannot grant
+ * preparation settings, and unknown keys still get scrubbed.
+ */
+function processPreparationInputs(): { valid: Set<string>; invalid: string[] } {
+    const valid = new Set<string>();
+    const invalid: string[] = [];
+    for (const key of ['GOMAXPROCS', 'TOKIO_WORKER_THREADS', 'LANCE_CPU_THREADS', 'RAYON_NUM_THREADS',
+        'SILHOUETTE_OWNER_SCOPES', 'SILHOUETTE_OWNER_ACTIVE', 'SILHOUETTE_OWNER_FAILURES', 'SILHOUETTE_OWNER_RESOURCES']) {
+        const value = process.env[key];
+        if (value === undefined) continue;
+        if (/^[1-9][0-9]{0,15}$/.test(value) && Number.isSafeInteger(Number(value))) valid.add(key);
+        else invalid.push(key);
+    }
+    const key = 'PLAYWRIGHT_BROWSERS_PATH';
+    const value = process.env[key];
+    if (value !== undefined) {
+        try {
+            // Only the reviewed local immutable dependency asset directory.
+            // No arbitrary host path, install request, network or executable override.
+            const expected = path.resolve(process.cwd(), 'node_modules/.silhouette-browser-assets');
+            const st = fs.lstatSync(value);
+            if (value === expected && st.isDirectory() && !st.isSymbolicLink()
+                && fs.realpathSync(value) === expected) valid.add(key);
+            else invalid.push(key);
+        } catch { invalid.push(key); }
+    }
+    return { valid, invalid };
+}
+
 export function loadRuntimeEnvironment(): void {
     if (externalProvidersDisabled()) {
         const allowed = acceptanceBoot() ? ACCEPTANCE_ENV : LOCAL_STORE_ENV;
+        const preparation = processPreparationInputs();
         for (const key of Object.keys(process.env)) {
-            if (!allowed.has(key)) delete process.env[key];
+            if (!allowed.has(key) && !preparation.valid.has(key)) delete process.env[key];
         }
+        // Invalid values are already removed alongside all provider secrets.
+        // Preserve key identity only, never echo their possibly sensitive values.
+        if (preparation.invalid.length) throw new Error('Invalid non-secret preparation input: ' + preparation.invalid.join(','));
         if (!acceptanceBoot()) {
             // Parse into a private object, not process.env: external keys are
             // never installed, even briefly, and the source files are not edited.

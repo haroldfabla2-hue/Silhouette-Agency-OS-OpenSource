@@ -2216,8 +2216,8 @@
   },
   {
     "path": "server/config/runtimeCredentials.ts",
-    "sha256": "fa10dd2bf99abb68e1928f90b0095ad47ed45617e51a25456446f2f97de47826",
-    "bytes": 4716
+    "sha256": "0949632adefee39fd4502f1ac320a980838efd9bd4a4f4014892c80971b07978",
+    "bytes": 6699
   },
   {
     "path": "server/config/staticServing.ts",
@@ -6626,8 +6626,8 @@
   },
   {
     "path": "tests/real-process/standalone-preparation.ts",
-    "sha256": "048e1e028d5f7a0d19a2e3a38b4748e4559777e4d5db73e301248e80f5f9d820",
-    "bytes": 2848
+    "sha256": "85498e4a8924ada6872fa54e7e671cb1d22f4bd92c26708afa0ddc543dc11b72",
+    "bytes": 4162
   },
   {
     "path": "tests/real-process/telephony-truthfulness-child.ts",

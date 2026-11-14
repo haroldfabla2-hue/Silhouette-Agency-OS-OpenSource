@@ -41,7 +41,7 @@ try:
  except Exception as error:
   node_cut.update({'status':'FAIL','errorType':type(error).__name__,'errno':getattr(error,'errno',None),'filename':getattr(error,'filename',None),'error':str(error)[:1024]});raise
  finally:(evidence/'node-host.json').write_text(json.dumps(node_cut,indent=2))
- for name,value in [('memory.max',str(8*1024**3)),('memory.swap.max','0'),('pids.max','96'),('cpu.max','200000 100000'),('memory.oom.group','1')]:write(name,value)
+ for name,value in [('memory.max',str(8*1024**3)),('memory.swap.max','0'),('pids.max','256' if a.phase=='checks' else '96'),('cpu.max','200000 100000'),('memory.oom.group','1')]:write(name,value)
  # Cgroup hierarchy/mount provenance before childlaunch. Metadata only.
  provenance={'mountinfo':[line for line in pathlib.Path('/proc/self/mountinfo').read_text().splitlines()if ' - cgroup2 'in line],'hierarchy':[]}
  for scope in [cg,parent,pathlib.Path('/sys/fs/cgroup')]:

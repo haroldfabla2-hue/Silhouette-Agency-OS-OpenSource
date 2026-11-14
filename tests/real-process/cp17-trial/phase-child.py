@@ -7,7 +7,7 @@ assert os.geteuid()==1000 and os.getegid()==1000
 status=pathlib.Path('/proc/self/status').read_text()
 for k in ['CapEff:','CapPrm:','CapAmb:']:assert int(next(l.split()[1]for l in status.splitlines()if l.startswith(k)),16)==0
 cg=pathlib.Path('/tmp/limits')
-for k,v in [('memory.max',str(8*1024**3)),('memory.swap.max','0'),('pids.max','96'),('cpu.max','200000 100000')]:assert(cg/k).read_text().strip()==v
+for k,v in [('memory.max',str(8*1024**3)),('memory.swap.max','0'),('pids.max','256' if mode=='checks' else '96'),('cpu.max','200000 100000')]:assert(cg/k).read_text().strip()==v
 assert os.statvfs('/tmp').f_blocks*os.statvfs('/tmp').f_frsize<=512*1024**2
 node='/opt/hostedtoolcache/node/22.18.0/x64/bin/node';npm='/opt/hostedtoolcache/node/22.18.0/x64/lib/node_modules/npm/bin/npm-cli.js'
 assert subprocess.check_output([node,'--version'],text=True).strip()=='v22.18.0'

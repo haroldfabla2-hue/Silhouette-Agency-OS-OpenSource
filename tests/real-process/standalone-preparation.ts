@@ -3,7 +3,7 @@
  */
 import { installPreparationHost } from '../../services/lifecycle/bootstrapAuthority';
 import { drainEvaluatedRuntimeProducers, closeEvaluatedRuntimeStorage } from '../../services/lifecycle/runtimeStopBindings';
-import type { Capacity } from '../../services/lifecycle/host';
+import { AdmissionClosed, OwnershipConflict, CapacityExceeded, type Capacity } from '../../services/lifecycle/host';
 
 export function createStandaloneFixtureHost() {
     const required = (name: string): number => {
@@ -38,7 +38,22 @@ export function createStandaloneFixtureHost() {
                 state: report.state, pending: report.pending, coverage: report.coverage,
                 capacity: report.capacity, highWater: report.highWater,
                 lifetimeFailures: report.lifetimeFailures, ownerFailures: report.ownerFailures,
-                taskOutcomeFailures: report.taskOutcomeFailures
+                taskOutcomeFailures: report.taskOutcomeFailures,
+                // Fixed diagnostic categories only. Never messages, stack, env,
+                // arbitrary source labels, SQL, paths or provider data.
+                failureDiagnostics: report.failures.slice(0, 8).map(failure => {
+                    const sources = new Set(['sqlite:public-close-unverified', 'sqlite:public-close-request',
+                        'sqlite:database:close', 'sqlite:database:verify', 'host:stop',
+                        'runtimeEnvironment:original-provider-off-env-scrub']);
+                    const original = failure.original;
+                    const name = original instanceof AdmissionClosed ? 'AdmissionClosed'
+                        : original instanceof OwnershipConflict ? 'OwnershipConflict'
+                            : original instanceof CapacityExceeded ? 'CapacityExceeded'
+                                : original instanceof AggregateError ? 'AggregateError'
+                                    : original instanceof Error ? 'Error' : 'OTHER_ERROR_REDACTED';
+                    return { kind: failure.kind, source: sources.has(failure.source) ? failure.source : 'OTHER_SOURCE_REDACTED', name };
+                }),
+                failureDiagnosticsOmitted: Math.max(0, report.failures.length - 8)
             }));
             // INCOMPLETE global coverage is not converted to COMPLETE. Like
             // original Vitest setup, any recorded lifetime failure rejects.
