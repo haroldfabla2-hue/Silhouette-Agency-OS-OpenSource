@@ -104,7 +104,7 @@ def fetch_regular_browser(url):
 try:
  assert os.environ['PRIVATE']=='false'and os.environ['ENVIRONMENT']=='github-hosted'and os.environ['GITHUB_EVENT_NAME']in {'workflow_dispatch','push'}
  if os.environ['GITHUB_EVENT_NAME']=='push':
-  assert subprocess.check_output(['git','rev-parse','HEAD^'],cwd=REPO,text=True).strip()=='79cac5c5fb6f0b7616d1ce1d246e4899262490e3'
+  assert subprocess.check_output(['git','rev-parse','HEAD^'],cwd=REPO,text=True).strip()=='cf6806e0a721f603cb755a4d5de95bb591bc41d8'
   assert os.environ['GITHUB_REF']=='refs/heads/preparation/sqlite-static-typecheck-db201993-4054-20261114'
  assert os.environ['GITHUB_SHA']==os.environ['EXPECTED_HEAD']==subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip()
  node=Path(shutil.which('node')).resolve();assert sha(node.read_bytes())=='ccacb2d6d87ba6d118b2bffc1ae33747a05cc5fc6b1f1ec4fc1d420b687e952d';assert subprocess.check_output([str(node),'--version'],text=True).strip()=='v22.18.0'
@@ -114,10 +114,18 @@ try:
  # All custody checks consume the original host-qualification30s slot.
  qualificationStarted=time.monotonic()
  from effective_acl_custody import inspect_and_retain, CustodyDenied
- from acl_custody_receipt import finite as finite_acl_receipt, classify_at_stage
+ from acl_custody_receipt import finite as finite_acl_receipt, classified_boundary
  from mount_readonly_model import MountModelUnavailable
  from acl_metadata_diagnostic import DiagnosticIncomplete
- chains=[];privateFd=None;sinkFd=None;aclStage='ROOT_CHAIN'
+ from fixed_io_boundary import fixed_call
+ def emit_acl(receipt):
+  try:fixed_call('RECEIPT_EMIT',emit,'qualification-acl-summary.json',receipt)
+  except BaseException:
+   # Source-fixed finite object only, never raw error/host data/hash. This is
+   # fallback diagnostic, NOT the mandatory file and never rescues acceptance.
+   print(json.dumps({'fixedAclFallback':receipt,'receiptWriteFailed':True}))
+   raise RuntimeError('ACL_FIXED_RECEIPT_WRITE_FAILED')from None
+ chains=[];privateFd=None;sinkFd=None;aclStage='ROOT_CHAIN';aclPrimary=None
  try:
   def protected_chain(directory,private=False):
    chain=inspect_and_retain(str(directory),qualificationStarted+27,private_leaf=private)
@@ -127,40 +135,49 @@ try:
   rootChain=protected_chain(ROOT,True)
   aclStage='EVIDENCE_CHAIN';evidenceChain=protected_chain(EV,True)
   aclStage='PRIVATE_MKDIR'
-  os.mkdir('regular-native-private',mode=0o700,dir_fd=rootChain.leaf_fd)
+  fixed_call('PRIVATE_MKDIR',os.mkdir,'regular-native-private',mode=0o700,dir_fd=rootChain.leaf_fd)
   aclStage='PRIVATE_CHAIN';privateNative=ROOT/'regular-native-private';privateChain=protected_chain(privateNative,True)
-  aclStage='PRIVATE_FD';privateFd=os.dup(privateChain.leaf_fd)
+  aclStage='PRIVATE_FD';privateFd=fixed_call('PRIVATE_FD_DUP',os.dup,privateChain.leaf_fd)
   aclStage='SINK_OPEN'
-  sinkFd=os.open('regular-native-inventory.json',os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_CLOEXEC,0o600,dir_fd=evidenceChain.leaf_fd)
+  sinkFd=fixed_call('SINK_OPEN',os.open,'regular-native-inventory.json',os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_CLOEXEC,0o600,dir_fd=evidenceChain.leaf_fd)
   # 0600 under default ACL has zero effective nonowner mask. Verify exact
   # actual access ACL, not default-inheritance assumption, before any bytes.
   from effective_acl_custody import require_entry_rights
   from acl_metadata_diagnostic import _acl
-  privateStat=os.fstat(privateFd);sinkStat=os.fstat(sinkFd)
+  privateStat=fixed_call('DIRECTORY_FSTAT',os.fstat,privateFd);sinkStat=fixed_call('SINK_FSTAT',os.fstat,sinkFd)
   aclStage='SINK_ACL'
-  require_entry_rights(sinkStat,_acl(sinkFd,'system.posix_acl_access'),os.geteuid(),True)
+  fixed_call('SINK_ACL',require_entry_rights,sinkStat,_acl(sinkFd,'system.posix_acl_access'),os.geteuid(),True)
   assert stat.S_ISDIR(privateStat.st_mode)and privateStat.st_uid==os.geteuid()and privateStat.st_mode&0o077==0
   assert stat.S_ISREG(sinkStat.st_mode)and sinkStat.st_nlink==1 and sinkStat.st_uid==os.geteuid()and sinkStat.st_mode&0o077==0 and sinkStat.st_size==0
   aclStage='CHAIN_RECHECK'
   for chain in chains:
-   chain.account_expected_directory_mutation((rootChain.entries[-1][1][0],rootChain.entries[-1][1][1]),qualificationStarted+27)
-   chain.account_expected_directory_mutation((evidenceChain.entries[-1][1][0],evidenceChain.entries[-1][1][1]),qualificationStarted+27)
-  for chain in chains:chain.recheck(qualificationStarted+27)
-  emit('qualification-acl-summary.json',finite_acl_receipt(privateChain,'SUPPORTED_MODEL_DAC_CUSTODY'))
+   fixed_call('EXPECTED_MUTATION_RECHECK',chain.account_expected_directory_mutation,(rootChain.entries[-1][1][0],rootChain.entries[-1][1][1]),qualificationStarted+27)
+   fixed_call('EXPECTED_MUTATION_RECHECK',chain.account_expected_directory_mutation,(evidenceChain.entries[-1][1][0],evidenceChain.entries[-1][1][1]),qualificationStarted+27)
+  for chain in chains:fixed_call('CHAIN_RECHECK',chain.recheck,qualificationStarted+27)
+  emit_acl(finite_acl_receipt(privateChain,'SUPPORTED_MODEL_DAC_CUSTODY'))
   aclStage='FD_GRANT'
   grant=[str(privateFd),str(sinkFd),str(privateStat.st_dev),str(privateStat.st_ino),str(sinkStat.st_dev),str(sinkStat.st_ino)]
   qualificationRemaining=30-(time.monotonic()-qualificationStarted)
   assert qualificationRemaining>3,'QUALIFICATION_FD_GRANT_BUDGET_EXHAUSTED'
   aclStage='QUALIFIER_COMMAND'
-  command('host-qualification',['/usr/bin/python3',str(HERE/'qualify-host.py'),str(EV/'host-qualification.json'),*grant],REPO,{'PATH':os.environ['PATH'],'ImageOS':os.environ.get('ImageOS',''),'ImageVersion':os.environ.get('ImageVersion',''),'QUALIFICATION_REMAINING_SECONDS':str(qualificationRemaining)},qualificationRemaining,pass_fds=(privateFd,sinkFd))
+  fixed_call('QUALIFIER_COMMAND',command,'host-qualification',['/usr/bin/python3',str(HERE/'qualify-host.py'),str(EV/'host-qualification.json'),*grant],REPO,{'PATH':os.environ['PATH'],'ImageOS':os.environ.get('ImageOS',''),'ImageVersion':os.environ.get('ImageVersion',''),'QUALIFICATION_REMAINING_SECONDS':str(qualificationRemaining)},qualificationRemaining,pass_fds=(privateFd,sinkFd))
  except BaseException as original:
-  reason=classify_at_stage(original,(CustodyDenied,MountModelUnavailable,DiagnosticIncomplete),aclStage)
-  emit('qualification-acl-summary.json',finite_acl_receipt(None,'BLOCKED_UNSUPPORTED_OR_INCOMPLETE',aclStage,reason))
+  aclPrimary=original
+  operation,reason=classified_boundary(original,(CustodyDenied,MountModelUnavailable,DiagnosticIncomplete),aclStage)
+  emit_acl(finite_acl_receipt(None,'BLOCKED_UNSUPPORTED_OR_INCOMPLETE',aclStage,reason,operation,getattr(original,'cleanupFailed',False)is True))
   raise RuntimeError('ACL_OR_QUALIFICATION_INCOMPLETE')from None
  finally:
-  if sinkFd is not None:os.close(sinkFd)
-  if privateFd is not None:os.close(privateFd)
-  for chain in reversed(chains):chain.close()
+  cleanupFailure=None
+  for closeFunction,args in [(os.close,(sinkFd,))if sinkFd is not None else(None,()),(os.close,(privateFd,))if privateFd is not None else(None,()),*((chain.close,())for chain in reversed(chains))]:
+   if closeFunction is None:continue
+   try:fixed_call('FD_CLOSE',closeFunction,*args)
+   except BaseException as error:
+    if cleanupFailure is None:cleanupFailure=error
+  if cleanupFailure is not None:
+   original=aclPrimary if aclPrimary is not None else cleanupFailure
+   operation,reason=classified_boundary(original,(CustodyDenied,MountModelUnavailable,DiagnosticIncomplete),aclStage)
+   emit_acl(finite_acl_receipt(None,'BLOCKED_UNSUPPORTED_OR_INCOMPLETE',aclStage,reason,operation,True))
+   raise RuntimeError('ACL_CLEANUP_INCOMPLETE')from None
 
  command('security-preparation',['/usr/bin/python3',str(HERE/'prepare-security.py'),str(EV),os.environ['GITHUB_RUN_ID']],REPO,{'PATH':'/usr/bin:/bin','RUNNER_TEMP':os.environ['RUNNER_TEMP']},170)
  security=json.loads((EV/'security-preparation.json').read_text());assert security['status']=='AUTHENTICATED_STAGED_NOT_RUNTIME_PASS'and security['rootKeyScopeAbsent']and not security['forced'];bwrap=Path(security['binary']);assert sha(bwrap.read_bytes())=='e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71'

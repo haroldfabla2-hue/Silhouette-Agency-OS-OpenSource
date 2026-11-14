@@ -1,0 +1,25 @@
+# All custody IO boundaries, source-only after actual25
+
+Actual25 cf6806e0 / run43653441463 remains FAIL with ROOT_CHAIN/IO_EACCES. Exact failing read UNKNOWN, no retrospective actual24 attribution. No trial, publication, host permission/ACL mutation, provider, native/ctypes/syscall, filesystem/proc/clock/mount behavior execution. This packet is an integrated changed-source proposal against actual25, not fullcomposition or admission.
+
+## Complete boundary audit, not one new label
+
+New fixed_io_boundary.py carries source-fixed operation plus original exception privately. fixed_call preserves an existing boundary exception rather than wrapping again. Public classifier unwraps exact own type only, then applies existing exacttrustedclass/fixedreason/IOerrno mapping. Exceptionmessage/classname/path/UID/ACL/errno number never copied. args of boundaryerror contain fixed constant only; original privately retained. Receipt is now FOURTEEN keys, adding failureOperation and cleanupFailed to prior12. Every stage still sourcefixed, all originalguards and firstreason semantics retained. No broadening of supported ABI/FS/principal model, no tolerance or extra time.
+
+Complete operation set covers maps open/read separatelyUID/GID; self/PID1 userns and mountnsstat; procstatusopen/read; root/childdirectoryopens; fstat; access/defaultxattrread; pureACLparse; statx/statmountsyscall+fixederrno; libcbind; architecture/UID/clock; mountidentity/namespacemodel; expectedmutation/finalrecheck; mkdir/dup/sinkopen/sinkACL; qualifiercommand; fixedreceiptwrite; FDclose. Access-rights validation has its own fixed boundary. Any deeper fixedoperation wins over aggregate stage/recheck. Known typedmodeldenials stillretainmeaning even when noIOerror; unsupportedhelperinternals explicitlyUNATTRIBUTED_INTERNAL, never claimedOSoperation.
+
+ENODATA remains normal no-ACL. Other xattr errors retain exact access/defaultoperation and original fixedIOcategory instead of degrading to genericACL_READ_UNAVAILABLE. No xattr list/enumeration or dataexport. Native syscall errno read immediately, outer wrappers perform no intervening nativecall. statmount extent/type/idmapguards unchanged.
+
+## Cleanup preserves primary error
+
+FDregistration now happens before fstat, so a failed first fstat cannot leak an unregistereddirectorydescriptor. Close walks ALL retainedFDs even if oneclosefails, retains firstcleanupfailure. Primaryoperationerror wins; cleanup failure is independent stickycleanupFailed. Proc maps/status use boundedos.read+explicitclose rather than contextmanager close able to mask originalreaderror. No readretry, permissionchange or fallback. Orchestratorfinally attempts all sink/private/chaincloses and records cleanup failure separately; ifonlycleanupfails it becomes primary. Mandatoryreceipterror cannot rescue acceptance. A failed fixedreceiptwrite prints only the validatedfiniteobject+writefailedflag in log as fallbackdiagnostic, then throws fixedsafeerror; missingmandatoryfile stillFAIL. This does not authenticate a file under failedancestry.
+
+Source helper code was mechanically AST-unparsed while inserting operation wrappers, so formattingdiff is larger than semanticdelta; no unrelatedcontrolflow/productchanges. Source-boundary-audit lists fixedcalls/exceptbranches for independent inspection. The old diagnostic entrypoint is not the active custody path; its deliberate INCOMPLETE aggregation remains diagnostic-only, not admission.
+
+## Pure coverage and preserved failure
+
+Parent's existingpureunit scope used only exactAST-selectedpureparser/schema/mapping/fixedboundaryfunctions and explicit byte/exception/callableinput. NoOS/clock/mount mocks, replacementenvironment, successsimulation, module/native/product imports. fixed_call receives a real purefunction raising an explicitlyconstructed exception; this tests genuinepureexceptionpropagation, not hostbehavior. Alloperationnames checked with IOEACCES, nestedboundaryretains firststatmountoperation/reason, cleanupFailed/schema/types/no-dataexport covered. Existing sevenpuregroups retained. Ten namedgroups PASS onattempt2, exit0/emptystderr. Attempt1failure retained: privacytest used markerPRIVATE, which falselymatched legitimatefixedoperationPRIVATE_MKDIR. Test marker changed to distinctiveSENSITIVE_PAYLOAD_ABC, not weakenedprivacyexpectation. Fullfailedresult/stderr included.
+
+Actualopen/ACL/model/namespace/statx/statmount/FDclose/recheck behavior remains UNEXECUTED. Puretests do not prove fullenvironment/productfitness. Exactruntimecaps/30squalification+27decision/3reserve/pass_fds/705Redis/1020/20min unchanged. Nooperationgate repin/publicationproposal yet. This should allow a future distinctlyadmitted trial to identify, for example, PID1_USERNS_STAT/IO_EACCES vs ACCESS_ACL_READ/IO_EACCES without guessing or asking forprivileges.
+
+No unavoidableownerdecision found. This is engineeringobservability, not authorization to change host permissions. NonUI realencoder/Qdrant/checkpoint/custody integration remains separate; it must not be misreported as solved by this harness work.

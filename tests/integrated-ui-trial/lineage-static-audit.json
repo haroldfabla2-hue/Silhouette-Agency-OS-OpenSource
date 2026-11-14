@@ -1,12 +1,12 @@
 {
   "sourceOnly": true,
-  "parent": "79cac5c5fb6f0b7616d1ce1d246e4899262490e3",
-  "workflowEventBefore": "79cac5c5fb6f0b7616d1ce1d246e4899262490e3",
-  "workflowHeadParent": "79cac5c5fb6f0b7616d1ce1d246e4899262490e3",
-  "internalOrchestratorHeadParent": "79cac5c5fb6f0b7616d1ce1d246e4899262490e3",
+  "parent": "cf6806e0a721f603cb755a4d5de95bb591bc41d8",
+  "workflowEventBefore": "cf6806e0a721f603cb755a4d5de95bb591bc41d8",
+  "workflowHeadParent": "cf6806e0a721f603cb755a4d5de95bb591bc41d8",
+  "internalOrchestratorHeadParent": "cf6806e0a721f603cb755a4d5de95bb591bc41d8",
   "allOperationalPinsSame": true,
   "historicalCompositionUnchanged": true,
   "productFiles": 1705,
   "productPathsChangedThisDelta": 0,
-  "meaning": "FIRST_FAILURE_FINITE_DIAGNOSTICS_NOT_RUNTIME_OR_PRODUCT_PASS"
+  "meaning": "ALL_IO_BOUNDARY_DIAGNOSTICS_NOT_RUNTIME_OR_PRODUCT_PASS"
 }

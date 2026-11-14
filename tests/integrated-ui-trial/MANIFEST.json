@@ -1,6 +1,6 @@
 {
   "status": "SOURCE_ONLY_NO_EXECUTION_PUBLICATION",
-  "parent": "79cac5c5fb6f0b7616d1ce1d246e4899262490e3",
+  "parent": "cf6806e0a721f603cb755a4d5de95bb591bc41d8",
   "files": {
     "ACL-CUSTODY-DELTA-REVIEW.md": {
       "bytes": 7017,
@@ -9,6 +9,10 @@
     "ACL-FIRSTFAILURE-DELTA-REVIEW.md": {
       "bytes": 4806,
       "sha256": "5e947efba0b711dc93002ad2c2d74b64897a17029a1c46c54d96c2b36492a41d"
+    },
+    "ALL-IO-FIRSTFAILURE-DELTA-REVIEW.md": {
+      "bytes": 5074,
+      "sha256": "7a2ff5678079f88134f1fb5fb2f00337840cd652b3fc4cb46dc12e8dc6effc20"
     },
     "ASSERTION-DIAGNOSTIC-COMPOSITION-REVIEW.md": {
       "bytes": 1315,
@@ -75,8 +79,8 @@
       "sha256": "b341edd0e58e295cf10b2fb118f57f6ff202d657ff657aa79eaf32363b54bbdf"
     },
     "REVIEW.md": {
-      "bytes": 5900,
-      "sha256": "690b260544c603911bdaf72fcc589f196af6755be5017f1817e89aebbd59ef6d"
+      "bytes": 5751,
+      "sha256": "dffdab3a26279cc7036993eeace355cf4e9eb553bbf435e72f8427d2269eede4"
     },
     "RUNTIME-BOUNDARY-COMPOSITION-REVIEW.md": {
       "bytes": 1130,
@@ -91,12 +95,12 @@
       "sha256": "548cd7fd76f8afe364b6b4cc792002486cf9921bb9397bd933ab4d087894aea2"
     },
     "acl_custody_receipt.py": {
-      "bytes": 4613,
-      "sha256": "4081d491029603ccf9e535560b789b19e40103f736c2c59c948cce5694076e1a"
+      "bytes": 5276,
+      "sha256": "f51cca58f33485c5e1de18c42caea3d8e74f298cdc1848e2db86e16f1fa291ec"
     },
     "acl_metadata_diagnostic.py": {
-      "bytes": 6051,
-      "sha256": "8f99cff14e9a4f2768ec3fb6915e6972cf4650a9d0295d00d47d456542360c60"
+      "bytes": 6687,
+      "sha256": "ffe35aacac278b143298c69efc8913ca4f95eb5d274a2413375ddb4a188b3778"
     },
     "archive-member-normalizations.json": {
       "bytes": 16768,
@@ -247,8 +251,8 @@
       "sha256": "7be882fd19704d5cbe6914f185ac6d0d3b3a6eda0230a545c7291dc13b89b722"
     },
     "effective_acl_custody.py": {
-      "bytes": 5116,
-      "sha256": "2739653642da6a7271a7599c63ac7e4b31d52e9d73839ced1bcc00c50464cf77"
+      "bytes": 5927,
+      "sha256": "bb80999e90de72c5921107f321f048c6d59328c576dd0d68b136bed1ce4e0a32"
     },
     "environment-continuation-composition.json": {
       "bytes": 194284,
@@ -277,6 +281,10 @@
     "finite-diagnostics-overlay/services/lifecycle/runtimeStopBindings.ts": {
       "bytes": 20160,
       "sha256": "dbf0ff4c7a98a5b0f00b51ee85d978dfd3cc5dde61aac09c28c0ee0fa932f278"
+    },
+    "fixed_io_boundary.py": {
+      "bytes": 1782,
+      "sha256": "15a114ef5e03175e0a5ccd8ff8babcc0eacbf12cc8ce09c5a8f4d15cc71f95cb"
     },
     "functional-auth-composition.json": {
       "bytes": 194252,
@@ -323,8 +331,8 @@
       "sha256": "e15226f6a7a65a9c6ed581a3c20c245190127a50bdd0971107acbc2a2c344c10"
     },
     "hosted-orchestrator.py": {
-      "bytes": 35634,
-      "sha256": "4840284cc5e0efd12279becb997a89c0b0215a99a9017f2f890135deacffafdb"
+      "bytes": 37082,
+      "sha256": "696db4c358d9f54c47af317c04034441d0e63bcfb42b6a5247a284d53395fd5d"
     },
     "identity-entry.py": {
       "bytes": 3884,
@@ -339,8 +347,8 @@
       "sha256": "0e3a710ab63232eec31d90e994036b3a3480c65605097fe4a6f0938e2bf33366"
     },
     "integrated-hosted.yml": {
-      "bytes": 3841,
-      "sha256": "f9a2bb0d9e0035eb9d2dfae37cc0e2bcedbdd007148a27501198faa81ad2c7f8"
+      "bytes": 3995,
+      "sha256": "2cf756b1fe1450b0e88371586de0bdb0e03dfb498a4c59704a3e2c4a5997e505"
     },
     "lance-provenance.json": {
       "bytes": 900,
@@ -359,12 +367,12 @@
       "sha256": "20367cd35272db599ff1f7ebfb93409fc61bff9c635b3e01dc544c7cb0029763"
     },
     "lineage-static-audit.json": {
-      "bytes": 512,
-      "sha256": "33685974bea8c75ba60ee404c6bf991d029f43f6b116980eccc9d84a14fb520c"
+      "bytes": 507,
+      "sha256": "456f5d2480e517f0d26ecb7e64d9df1bc4a0c4dfc912f91701c31619701f89dc"
     },
     "mount_readonly_model.py": {
-      "bytes": 3177,
-      "sha256": "a61aee5a797d4e92e33a0e118cee6378a62e4337495a8cbadc89fc7e28bf0102"
+      "bytes": 3773,
+      "sha256": "d32fec989d607fe54baef0e5c68743709f2296e48f676f2d1ae1fe48ca853b87"
     },
     "namespace-entry.py": {
       "bytes": 8493,
