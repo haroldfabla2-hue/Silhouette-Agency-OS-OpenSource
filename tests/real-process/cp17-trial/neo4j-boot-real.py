@@ -6,7 +6,7 @@ import base64,hashlib,json,os,pathlib,resource,selectors,signal,socket,stat,subp
 H=pathlib.Path('/tmp/harness');EV=pathlib.Path('/tmp/evidence');R=pathlib.Path('/tmp/neo4j-runtime');A=pathlib.Path('/tmp/work/node_modules/.silhouette-native-neo4j/neo4j-community-5.26.32');P=json.loads((H/'neo4j-admission-inputs.json').read_text())
 T=time.monotonic();DEADLINE=min(T+175,float(os.environ['NEO4J_BOOT_PHASE_DEADLINE'])-10);STARTUP=90;STOP=30
 result={'status':'INCOMPLETE','scope':'ONE_REAL_NEO4J_BOOT_CYPHER_WRITE_READ_CONTROLLED_SHUTDOWN_NOT_PRODUCT_OR_DRIVER','queries':[],'signals':[],'startup_errors':{'count':0,'samples':[]},'cleanup':{},'resource_maxima':'SAMPLED_NOT_ABSOLUTE_PEAK'}
-child=None;sel=selectors.DefaultSelector();log=bytearray();eof=False;stop_sent=False;identity=None;owned_history={};failure=None;cleanup_errors=[];observed={};stage='PREFLIGHT';original_failure=None;last_scan=0;fd_history={};console_total=0;console_hash=hashlib.sha256();console_missing=0
+child=None;sel=selectors.DefaultSelector();log=bytearray();eof=False;stop_sent=False;identity=None;owned_history={};failure=None;cleanup_errors=[];observed={};stage='PREFLIGHT';original_failure=None;last_scan=0;fd_history={};console_total=0;console_hash=hashlib.sha256();console_missing=0;observer_errors=[];observer_error_count=0
 
 def digest(path):
  with path.open('rb')as f:return hashlib.file_digest(f,'sha256').hexdigest()
@@ -16,15 +16,24 @@ def proc(pid):
  except FileNotFoundError:return None
 
 def inspect_processes():
+ global observer_error_count
  rows=[]
  for f in pathlib.Path('/proc').iterdir():
   if f.name.isdigit():
    row=proc(int(f.name))
    if row and child and row['pgid']==child.pid:
     rows.append(row);owned_history[(row['pid'],row['start_ticks'])]=row
+    # Zombies remain owned rows until reaped; no readable FD claim for them.
+    if row['state']=='Z':
+     row['fd_observation']='NOT_APPLICABLE_ZOMBIE_RETAINED_NOT_EMPTY';continue
     try:
-     fdcount=len(list((f/'fd').iterdir()));observed['maximum_sampled_fd_per_process']=max(observed.get('maximum_sampled_fd_per_process',0),fdcount);fd_history[(row['pid'],row['start_ticks'])]=max(fd_history.get((row['pid'],row['start_ticks']),0),fdcount)
-    except FileNotFoundError:pass
+     fdcount=len(list((f/'fd').iterdir()));row['fd_observation']='COUNTED';row['fd_count_sampled']=fdcount
+     observed['maximum_sampled_fd_per_process']=max(observed.get('maximum_sampled_fd_per_process',0),fdcount);fd_history[(row['pid'],row['start_ticks'])]=max(fd_history.get((row['pid'],row['start_ticks']),0),fdcount)
+    except OSError as error:
+     # Denied/disappeared FD directory is unknown telemetry, never absence.
+     # Latch FAIL but allow source lifecycle/console drain/cleanup to finish.
+     observer_error_count+=1;row['fd_observation']='UNVERIFIED_OSERROR';row['fd_errno']=error.errno
+     if len(observer_errors)<8:observer_errors.append({'stage':stage,'pid':row['pid'],'start_ticks':row['start_ticks'],'state':row['state'],'error_type':type(error).__name__,'errno':error.errno})
  assert len(rows)<=256,'processscanexcess'
  return rows
 
@@ -143,7 +152,10 @@ try:
  ready_until=min(time.monotonic()+STARTUP,DEADLINE-STOP-15);ready=False;next_try=0
  stage='READINESS'
  while time.monotonic()<ready_until:
-  drain(.05);assert child.poll()is None,'serverexitedbeforequeryreadiness'
+  drain(.05)
+  launcher_rc=child.poll()
+  if launcher_rc is not None:result['startup_exit']={'launcher_rc':launcher_rc,'before_query_readiness':True,'server_error_source':'runtime_files logs/runtime.log and logs/user.log; not inferred from observer'}
+  assert launcher_rc is None,'serverexitedbeforequeryreadiness'
   if time.monotonic()>=next_try:
    next_try=time.monotonic()+1
    try:
@@ -207,15 +219,16 @@ finally:
  if child and child.stdout:child.stdout.close()
  if result.get('actual_server_identity'):
   sv=result['actual_server_identity'];observed['maximum_sampled_actual_server_jvm_fd']=fd_history.get((sv['pid'],sv['start_ticks']))
+ result['observer_errors']={'count':observer_error_count,'samples':observer_errors,'complete_fd_telemetry':observer_error_count==0}
  result['owned_process_history']=list(owned_history.values());result['sampled_observations']=observed;result['seconds']=time.monotonic()-T;result['cleanup_errors']=cleanup_errors
- if cleanup_errors or console_total>1024**2:result['status']='FAIL'
+ if cleanup_errors or console_total>1024**2 or observer_error_count:result['status']='FAIL'
  result['budgets']={'fixture_absolute_seconds':175,'startup_seconds':90,'stop_seconds':30,'command_seconds':185,'phase_namespace_seconds_max':205,'outer_watchdog_seconds_max':210,'host_scope_wall_seconds_max':220}
  def publish_summary(envelope_state):
   # No raw error text, requests, parameters, console, paths or user data.
   safe_types={'AssertionError','RuntimeError','TimeoutError','OSError','FileNotFoundError','PermissionError','ValueError','HTTPError','URLError','ConnectionError','JSONDecodeError','BrokenPipeError','ProcessLookupError','KeyError','TypeError','SystemExit','KeyboardInterrupt'}
   def typ(value):return value if value in safe_types else 'OTHER_EXCEPTION'
   cause=None if original_failure is None else {**original_failure,'error_type':typ(original_failure['error_type'])}
-  summary={'schema':'NEO4J_BOOT_EMERGENCY_V1','status':'FAIL'if result['status']=='FAIL'else'INCOMPLETE'if envelope_state!='WRITTEN_COMPLETE'else result['status'],'original_failure':cause,'last_stage':stage,'envelope_state':envelope_state,'raw_complete':envelope_state=='WRITTEN_COMPLETE','cleanup':{'leader_rc':child.returncode if child else None,'signal_count':len(result['signals']),'eof':eof,'group_empty':result['cleanup'].get('owned_group_empty',False),'ports_closed':result['cleanup'].get('loopback_ports_closed',False),'remaining_identity_count':len(result['cleanup'].get('final_owned_identities',[])),'errors':[{'error_type':typ(e.get('error_type')),'error_sha256':hashlib.sha256(e.get('error','').encode()).hexdigest()}for e in cleanup_errors[:4]]},'console_missing_bytes':console_missing,'runtime_evidence_incomplete':bool(result.get('evidence_error')),'evidence_failure_type':typ(result.get('evidence_error',{}).get('error_type'))if result.get('evidence_error')else None}
+  summary={'schema':'NEO4J_BOOT_EMERGENCY_V1','status':'FAIL'if result['status']=='FAIL'else'INCOMPLETE'if envelope_state!='WRITTEN_COMPLETE'else result['status'],'original_failure':cause,'last_stage':stage,'envelope_state':envelope_state,'raw_complete':envelope_state=='WRITTEN_COMPLETE','cleanup':{'leader_rc':child.returncode if child else None,'signal_count':len(result['signals']),'eof':eof,'group_empty':result['cleanup'].get('owned_group_empty',False),'ports_closed':result['cleanup'].get('loopback_ports_closed',False),'remaining_identity_count':len(result['cleanup'].get('final_owned_identities',[])),'errors':[{'error_type':typ(e.get('error_type')),'error_sha256':hashlib.sha256(e.get('error','').encode()).hexdigest()}for e in cleanup_errors[:4]]},'observer_error_count':observer_error_count,'console_missing_bytes':console_missing,'runtime_evidence_incomplete':bool(result.get('evidence_error')),'evidence_failure_type':typ(result.get('evidence_error',{}).get('error_type'))if result.get('evidence_error')else None}
   text=json.dumps(summary,separators=(',',':'));assert len(text.encode())<=4096,'emergencysummary4096'
   try:(EV/'neo4j-boot-emergency.json').write_text(text+'\n')
   except Exception:

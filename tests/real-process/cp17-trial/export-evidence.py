@@ -68,7 +68,7 @@ def emergency(reason):
     return v if v in allowed or len(v)==64 and all(c in '0123456789abcdef'for c in v)else'TEXT_REDACTED'
    if isinstance(v,list):return [safe_boot(x,depth+1)for x in v[:4]]
    if isinstance(v,dict):
-    keys={'schema','status','original_failure','stage','error_type','error_sha256','last_stage','envelope_state','raw_complete','cleanup','leader_rc','signal_count','eof','group_empty','ports_closed','remaining_identity_count','errors','console_missing_bytes','runtime_evidence_incomplete','evidence_failure_type'}
+    keys={'schema','status','original_failure','stage','error_type','error_sha256','last_stage','envelope_state','raw_complete','cleanup','leader_rc','signal_count','eof','group_empty','ports_closed','remaining_identity_count','errors','console_missing_bytes','runtime_evidence_incomplete','evidence_failure_type','observer_error_count'}
     return{k:safe_boot(x,depth+1)for k,x in v.items()if k in keys}
    return 'REDACTED'
   emit({'kind':'EMERGENCY_BOOT_CAUSE_CLEANUP','path':boot_rel,'selection':safe_boot(value),'raw_fields_omitted':True});selected.append(boot_rel)
