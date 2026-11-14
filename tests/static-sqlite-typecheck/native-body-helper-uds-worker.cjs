@@ -6,7 +6,15 @@ const root=fs.realpathSync(process.argv[2]),data=fs.realpathSync(process.argv[3]
 const events=[],cleanupCodes=[];let failureCode=null;
 const dispatcherKey=Symbol.for('undici.globalDispatcher.1');const initialDispatcher=globalThis[dispatcherKey];
 const fixed=(code,facts={})=>{assert(!Object.hasOwn(facts,'code'));events.push({code,...facts});};
-let server,agent,aux,helper,serialize,ledger,ownedReader,imports=()=>[];let socketPath,closing,boundSocketIdentity,ownedPathDisposition;
+let server,agent,aux,helper,serialize,ledger,ownedReader,imports=()=>[];let socketPath,closing,boundSocketIdentity,ownedPathDisposition,privateAgentClosePromise;
+function finishPrivateAgent(){
+ if(!privateAgentClosePromise){
+  let resolve,reject;privateAgentClosePromise=new Promise((yes,no)=>{resolve=yes;reject=no;});
+  // Install retained promise BEFORE invoking original close, including sync throw.
+  try{Promise.resolve(agent.close()).then(resolve,reject);}catch(original){reject(original);}
+ }
+ return privateAgentClosePromise;
+}
 const dataIdentity=fs.lstatSync(data,{bigint:true});assert(dataIdentity.isDirectory()&&!dataIdentity.isSymbolicLink());assert.equal(dataIdentity.mode&0o077n,0n);
 function checkParentIdentity(){const st=fs.lstatSync(data,{bigint:true});assert(st.isDirectory()&&!st.isSymbolicLink()&&st.dev===dataIdentity.dev&&st.ino===dataIdentity.ino&&(st.mode&0o077n)===0n);}
 function checkBoundSocketIdentity(){checkParentIdentity();const st=fs.lstatSync(socketPath,{bigint:true});assert(st.isSocket()&&!st.isSymbolicLink()&&boundSocketIdentity&&st.dev===boundSocketIdentity.dev&&st.ino===boundSocketIdentity.ino);}
@@ -61,14 +69,14 @@ function finishServer(){if(!closing)closing=new Promise((resolve,reject)=>{try{i
   // Caller owns this actual lock. Joining its actual cancellation/release is
   // independent of helper ledger (which remains sticky incomplete).
   await reader.cancel();reader.releaseLock();ownedReader=undefined;assert.equal(serialize(ledger).count,1);
-  assert(sockets.size>0);const originalClose=agent.close();await originalClose;assert(agent.closed);assert.strictEqual(globalThis[dispatcherKey],aux);
+  assert(sockets.size>0);const originalClose=finishPrivateAgent();await originalClose;assert.strictEqual(finishPrivateAgent(),originalClose);assert(agent.closed);assert.strictEqual(globalThis[dispatcherKey],aux);
   fixed('SAME_PRIVATE_AGENT_ORIGINAL_CLOSE_JOINED',{closed:true,positiveSocketCount:sockets.size});
   await finishServer();await Promise.allSettled(socketClosePromises);assert.equal(socketClosed.size,sockets.size);const after=socketInodes();assert([...trackedSocketInodes].every(ino=>!after.has(ino)));assert([...after].every(ino=>initialSocketInodes.has(ino)));fixed('REAL_SERVER_AND_ALL_SEEN_NATIVE_SOCKETS_CLOSED',{sameSeenSocketCount:sockets.size,closedSocketCount:socketClosed.size,trackedNativeSocketInodes:trackedSocketInodes.size,remainingTrackedNativeSocketFds:0,newNativeSocketFds:0});
   removeOwnedPathAfterPhysicalJoin();fixed('OWNED_UDS_PATH_CLEANUP_AFTER_PHYSICAL_JOIN',{disposition:ownedPathDisposition,socketPathAbsent:true,sameParentIdentity:true});
  }catch(error){failureCode='HELPER_ASSERTION_OR_NATIVE_FAILURE';process.exitCode=1;}
  finally{
   if(ownedReader){try{await ownedReader.cancel();ownedReader.releaseLock();}catch{cleanupCodes.push('CALLER_READER_CLOSE_FAILED');process.exitCode=1;}}
-  if(agent){try{await agent.close();}catch{cleanupCodes.push('PRIVATE_AGENT_CLOSE_FAILED');process.exitCode=1;}}
+  if(agent){try{await finishPrivateAgent();}catch{cleanupCodes.push('PRIVATE_AGENT_CLOSE_FAILED');process.exitCode=1;}}
   if(server){try{await finishServer();await Promise.allSettled(socketClosePromises);const actual=socketInodes();assert([...trackedSocketInodes].every(ino=>!actual.has(ino)));if(boundSocketIdentity&&!ownedPathDisposition)removeOwnedPathAfterPhysicalJoin();}catch{cleanupCodes.push('UDS_SERVER_OR_OWNED_PATH_CLOSE_FAILED');process.exitCode=1;}}
   if(aux&&initialDispatcher===undefined){try{assert.strictEqual(globalThis[dispatcherKey],aux);await aux.close();fixed('HARNESS_ONLY_IMPORT_AGENT_CLOSED',{productionDrained:false});}catch{cleanupCodes.push('HARNESS_IMPORT_AGENT_CLOSE_FAILED');process.exitCode=1;}}
   if(socketPath&&fs.existsSync(socketPath)){cleanupCodes.push('UDS_PATH_REMAINS');process.exitCode=1;}
