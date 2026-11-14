@@ -1,3 +1,5 @@
+import { admitEvaluatedNervous, bindEvaluatedNervous, failEvaluatedNervous } from './lifecycle/runtimeStopBindings';
+import { AdmissionClosed } from './lifecycle/host';
 import { preserveOriginal } from './lifecycle/preserveOriginal';
 import { nervousOwner } from './lifecycle/preparationBindings';
 /**
@@ -43,6 +45,42 @@ interface ConnectionState {
 
 class ConnectionNervousSystem {
     private readonly ownership = nervousOwner();
+    private runtimeSealed = false;
+    private originalDrain?: Promise<void>;
+    private readonly originalHealthTasks = new Set<Promise<unknown>>();
+    private readonly integrationUnsubscribers = new Set<() => void>();
+    private holdOriginalHealth<T>(label: string, body: () => Promise<T>): Promise<T> {
+        if(this.runtimeSealed) throw new AdmissionClosed('nervous:'+label);
+        // Publish host ownership before original side effects, retain exact task.
+        const original=this.ownership.invoke(label,body);
+        this.originalHealthTasks.add(original);
+        const settled=() => { this.originalHealthTasks.delete(original); };
+        void original.then(settled,settled);
+        return original;
+    }
+    public retainIntegrationSubscription(unsubscribe: () => void): void {
+        if(this.runtimeSealed) { unsubscribe();return; }
+        this.integrationUnsubscribers.add(unsubscribe);
+    }
+    public sealAndDrainOriginalHealth(): Promise<void> {
+        this.runtimeSealed=true;
+        if(this.originalDrain) return this.originalDrain;
+        let yes!:()=>void;let no!:(error:unknown)=>void;
+        this.originalDrain=new Promise<void>((resolve,reject)=>{yes=resolve;no=reject;});
+        void this.originalDrain.catch(()=>undefined);
+        const errors:unknown[]=[];
+        // Seal/cancel never starts a new check/reconnect. Already-admitted health
+        // AND its original backoff/recovery remain obligations before backends.
+        try {this.stop();}catch(error){errors.push(error);this.ownership.failure('heartbeat-cancel',error);}
+        for(const unsubscribe of this.integrationUnsubscribers) {
+            try {unsubscribe();}catch(error){errors.push(error);this.ownership.failure('integration-unsubscribe',error);}
+        }
+        this.integrationUnsubscribers.clear();
+        void Promise.allSettled([...this.originalHealthTasks]).then(()=>{
+            if(errors.length) no(new AggregateError(errors,'Nervous original cancellation failed'));else yes();
+        },no);
+        return this.originalDrain;
+    }
     private connections: Map<string, ConnectionTarget> = new Map();
     private states: Map<string, ConnectionState> = new Map();
     private heartbeatInterval: NodeJS.Timeout | null = null;
@@ -51,13 +89,14 @@ class ConnectionNervousSystem {
 
     constructor() {
         console.log("[NERVOUS] 🧠 Connection Nervous System initializing...");
-        this.ownership.onSeal(() => this.stop());
+        this.ownership.onSeal(() => this.sealAndDrainOriginalHealth());
     }
 
     /**
      * Register a connection to be monitored
      */
     public register(target: ConnectionTarget): void {
+        if(this.runtimeSealed) return;
         if (this.connections.has(target.id)) {
             console.log(`[NERVOUS] 🔄 Re-registering: ${target.name} (${target.type})`);
         }
@@ -72,7 +111,7 @@ class ConnectionNervousSystem {
         console.log(`[NERVOUS] 📡 Registered: ${target.name} (${target.type})`);
 
         // Immediately check health of the new connection
-        this.ownership.invoke('register-health', () => this.checkConnection(target.id, target)).catch(() => { });
+        this.holdOriginalHealth('register-health', () => this.checkConnection(target.id, target)).catch(() => { });
     }
 
     /**
@@ -99,17 +138,18 @@ class ConnectionNervousSystem {
      * Start the nervous system heartbeat
      */
     public start(): void {
+        if(this.runtimeSealed) return;
         if (this.heartbeatInterval) return;
 
         console.log("[NERVOUS] 💓 Starting heartbeat monitor...");
 
         // Initial health check
-        this.ownership.invoke('initial-health', () => this.checkAllConnections());
+        this.holdOriginalHealth('initial-health', () => this.checkAllConnections());
 
         // Periodic heartbeat
         this.heartbeatInterval = setInterval(() => {
-            if (!this.ownership.open) return;
-            this.ownership.invoke('heartbeat', () => this.checkAllConnections());
+            if (this.runtimeSealed || !this.ownership.open) return;
+            this.holdOriginalHealth('heartbeat', () => this.checkAllConnections());
         }, this.HEARTBEAT_INTERVAL);
     }
 
@@ -149,6 +189,7 @@ class ConnectionNervousSystem {
         const now = Date.now();
         state.lastCheck = now;
 
+        let failed=false;let failureReason: string='';
         try {
             const isHealthy = await target.checkHealth();
 
@@ -171,13 +212,14 @@ class ConnectionNervousSystem {
 
             } else {
                 // Health check returned false
-                this.handleFailure(id, target, state, 'Health check returned false');
+                failed=true;failureReason='Health check returned false';
             }
 
         } catch (error: any) {
             // Health check threw an error
-            this.handleFailure(id, target, state, error.message);
+            failed=true;failureReason=error.message;
         }
+        if(failed) await this.handleFailure(id,target,state,failureReason);
     }
 
     /**
@@ -305,7 +347,7 @@ class ConnectionNervousSystem {
         const target = this.connections.get(id);
         if (!target) return false;
 
-        await this.checkConnection(id, target);
+        await this.holdOriginalHealth('forced-health',()=>this.checkConnection(id, target));
         return this.states.get(id)?.status === 'CONNECTED';
     }
 
@@ -329,7 +371,14 @@ function constructOriginalConnectionNervousSystem(): ConnectionNervousSystem {
         preserveOriginal(owner, 'construction-failure', () => owner.constructionFailed(operation, original)); throw original;
     }
 }
-export const nervousSystem = constructOriginalConnectionNervousSystem();
+const runtimeConstructionPermit=admitEvaluatedNervous();
+export const nervousSystem=(()=>{
+    try {
+        const original=constructOriginalConnectionNervousSystem();
+        bindEvaluatedNervous(runtimeConstructionPermit,()=>original.sealAndDrainOriginalHealth());
+        return original;
+    }catch(error){failEvaluatedNervous(runtimeConstructionPermit,error);throw error;}
+})();
 
 /**
  * Register default connections
@@ -522,7 +571,7 @@ export async function initializeNervousSystem(): Promise<void> {
     }
 
     // 7. Listen for dynamic integration events from Settings UI
-    systemBus.subscribe(SystemProtocol.INTEGRATION_EVENT, (event: any) => {
+    nervousSystem.retainIntegrationSubscription(systemBus.subscribe(SystemProtocol.INTEGRATION_EVENT, (event: any) => {
         const { action, integrationId, name, type } = event.payload || {};
         if (action === 'connected' && integrationId) {
             // Integration was enabled in Settings — register if not already
@@ -539,7 +588,7 @@ export async function initializeNervousSystem(): Promise<void> {
         } else if (action === 'disconnected' && integrationId) {
             nervousSystem.unregister(`integration:${integrationId}`);
         }
-    });
+    }));
 
     // Start monitoring
     nervousSystem.start();

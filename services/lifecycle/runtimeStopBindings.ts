@@ -10,7 +10,8 @@ const continuousMemory: Slot = { name:'continuousMemory',phase:'UNSEEN' };
 const redis: Slot = { name:'redis',phase:'UNSEEN' };
 const graph: Slot = { name:'graph',phase:'UNSEEN' };
 const sqlite: Slot = { name:'sqlite',phase:'UNSEEN' };
-const producers = [daemon,curiosity];
+const nervous: Slot = { name:'nervous',phase:'UNSEEN' };
+const producers = [daemon,curiosity,nervous];
 const storage = [continuousMemory,redis,graph,sqlite];
 let registrationSealed = false;
 let producersSealed = false;
@@ -61,6 +62,9 @@ export function failEvaluatedGraph(permit: Permit,error: unknown): void { failed
 export function admitEvaluatedSqlite(): Permit { return admit(sqlite); }
 export function bindEvaluatedSqlite(permit: Permit,stop: () => unknown): void { publish(sqlite,permit,stop,storageSealed); }
 export function failEvaluatedSqlite(permit: Permit,error: unknown): void { failed(sqlite,permit,error); }
+export function admitEvaluatedNervous(): Permit { return admit(nervous); }
+export function bindEvaluatedNervous(permit: Permit,stop: () => unknown): void { publish(nervous,permit,stop,producersSealed); }
+export function failEvaluatedNervous(permit: Permit,error: unknown): void { failed(nervous,permit,error); }
 export function sealEvaluatedRuntimeProducers(): void {
     // Close the construction frontier BEFORE producer callbacks. Modules not
     // yet admitted now fail before allocating their original singleton.
