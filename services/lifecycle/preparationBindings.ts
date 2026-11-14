@@ -4,7 +4,7 @@ import type { Scope } from './host';
 // installPreparationHost. Application sources import only their fixed binding.
 export const fixedNames = ['systemBus', 'sqlite', 'sensory', 'power', 'hub', 'nervous', 'neuroLink', 'settings',
     'continuum', 'introspection', 'consciousness', 'narrative', 'arbiter', 'dreamer', 'graph', 'redis',
-    'lance', 'brainBridge', 'plugins', 'proStudio', 'server', 'cost', 'runtimeEnvironment', 'config', 'orchestrator', 'neuroSynapse', 'architecturalReview', 'remediation', 'helpProtocol', 'codebase', 'architect', 'workflow', 'daemon'] as const;
+    'lance', 'brainBridge', 'plugins', 'proStudio', 'server', 'cost', 'runtimeEnvironment', 'config', 'orchestrator', 'neuroSynapse', 'architecturalReview', 'remediation', 'helpProtocol', 'codebase', 'architect', 'workflow', 'daemon', 'scheduler'] as const;
 type Name = typeof fixedNames[number];
 let installed: Readonly<Record<Name, Scope>> | undefined;
 let independentAdmissions: { lance: () => Scope; introspection: () => Scope; brainBridge: () => Scope; codebase: () => Scope; daemon: () => Scope };
@@ -73,3 +73,5 @@ export function admitCodebaseInstance(): Scope {
 export function admitDaemonInstance(): Scope {
     required('daemon'); return independentAdmissions.daemon();
 }
+
+export const schedulerOwner = () => required('scheduler');

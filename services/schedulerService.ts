@@ -1,3 +1,6 @@
+import { schedulerOwner } from './lifecycle/preparationBindings';
+import { AdmissionClosed } from './lifecycle/host';
+import { admitEvaluatedScheduler, bindEvaluatedScheduler, failEvaluatedScheduler } from './lifecycle/runtimeStopBindings';
 /**
  * SCHEDULER SERVICE
  * 
@@ -31,6 +34,8 @@ export interface ScheduledTask {
     };
     enabled: boolean;
     lastRun?: number;
+    lastAttempt?: number;
+    lastOutcome?: 'SUCCEEDED' | 'FAILED';
     nextRun?: number;
     createdBy: 'USER' | 'SYSTEM' | 'DERIVED';
 }
@@ -40,6 +45,29 @@ export interface ScheduledTask {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export class SchedulerService {
+    private readonly ownership=schedulerOwner();
+    private sealed=false;
+    private draining?:Promise<void>;
+    private readonly originalTasks=new Set<Promise<unknown>>();
+    private hold<T>(label:string,body:()=>Promise<T>):Promise<T> {
+        if(this.sealed) throw new AdmissionClosed('scheduler:'+label);
+        const original=this.ownership.invoke(label,body);
+        this.originalTasks.add(original);
+        const settled=()=>{this.originalTasks.delete(original);};
+        void original.then(settled,settled);
+        return original;
+    }
+    public sealAndDrain():Promise<void> {
+        this.sealed=true;
+        if(this.draining)return this.draining;
+        let resolve!:()=>void;let reject!:(error:unknown)=>void;
+        this.draining=new Promise<void>((yes,no)=>{resolve=yes;reject=no;});
+        void this.draining.catch(()=>undefined);
+        let stopError:unknown;
+        try{this.stop();}catch(error){stopError=error;this.ownership.failure('cancel-timers',error);}
+        void Promise.allSettled([...this.originalTasks]).then(()=>{if(stopError)reject(stopError);else resolve();},reject);
+        return this.draining;
+    }
     private tasks: Map<string, ScheduledTask> = new Map();
     private checkInterval: NodeJS.Timeout | null = null;
     private initialCheck: NodeJS.Timeout | null = null;
@@ -48,26 +76,28 @@ export class SchedulerService {
     private readonly CHECK_INTERVAL_MS = 60000; // Check every minute
 
     constructor() {
-        this.storageReady = this.loadTasksFromStorage();
+        this.ownership.onSeal(()=>this.sealAndDrain());
+        this.storageReady = this.hold('original-storage-ready',()=>this.loadTasksFromStorage());
     }
 
     /**
      * Start the scheduler daemon
      */
     public start(): boolean {
+        if(this.sealed)return false;
         if (!this.executionAllowed()) { this.stop(); return false; }
         if (this.checkInterval) return true;
 
         console.log('[SCHEDULER] ⏰ Autonomous Scheduler Started');
 
         this.checkInterval = setInterval(() => {
-            this.checkAndExecuteDueTasks();
+            if(!this.sealed)this.hold('periodic-check',()=>this.checkAndExecuteDueTasks()).catch(()=>undefined);
         }, this.CHECK_INTERVAL_MS);
 
         // Initial check on startup
         this.initialCheck = setTimeout(() => {
             this.initialCheck = null;
-            void this.checkAndExecuteDueTasks();
+            if(!this.sealed)this.hold('initial-check',()=>this.checkAndExecuteDueTasks()).catch(()=>undefined);
         }, 5000);
         return true;
     }
@@ -91,6 +121,7 @@ export class SchedulerService {
      * Schedule a new task
      */
     public scheduleTask(task: Omit<ScheduledTask, 'id' | 'nextRun'>): string {
+        if(this.sealed)throw new AdmissionClosed('scheduler:schedule');
         const id = crypto.randomUUID();
         const nextRun = this.calculateNextRun(task);
 
@@ -101,7 +132,7 @@ export class SchedulerService {
         };
 
         this.tasks.set(id, fullTask);
-        this.persistTasks();
+        this.hold('original-persist',()=>this.persistTasks()).catch(()=>undefined);
 
         console.log(`[SCHEDULER] ➕ Scheduled: "${task.name}" - Next run: ${new Date(nextRun).toLocaleString()}`);
 
@@ -177,9 +208,10 @@ export class SchedulerService {
      * Cancel a scheduled task
      */
     public cancelTask(taskId: string): boolean {
+        if(this.sealed)throw new AdmissionClosed('scheduler:cancel');
         const deleted = this.tasks.delete(taskId);
         if (deleted) {
-            this.persistTasks();
+            this.hold('original-persist',()=>this.persistTasks()).catch(()=>undefined);
             console.log(`[SCHEDULER] ❌ Cancelled task: ${taskId}`);
         }
         return deleted;
@@ -239,14 +271,16 @@ export class SchedulerService {
                     }, 'SCHEDULER');
 
                     // Execute based on action type
-                    if (!await this.executeTask(task)) continue;
-
-                    // Update last run
-                    task.lastRun = now;
+                    const outcome=await this.executeTask(task);
+                    if(outcome==='NOT_AUTHORIZED')continue;
+                    task.lastAttempt=now;
+                    task.lastOutcome=outcome;
+                    // Failed attempts are NOT successful lastRun receipts.
+                    if(outcome==='SUCCEEDED')task.lastRun=now;
 
                     // Calculate next run for recurring tasks
                     if (task.recurrence) {
-                        task.nextRun = this.calculateNextRun(task);
+                        task.nextRun = this.calculateNextRun(outcome==='FAILED'?{...task,lastRun:now}:task);
                         console.log(`[SCHEDULER] 🔄 Next run: ${new Date(task.nextRun).toLocaleString()}`);
                     } else {
                         // One-time task - disable after execution
@@ -261,8 +295,8 @@ export class SchedulerService {
         }
     }
 
-    private async executeTask(task: ScheduledTask): Promise<boolean> {
-        if (!this.executionAllowed(task)) return false;
+    private async executeTask(task: ScheduledTask): Promise<'SUCCEEDED' | 'FAILED' | 'NOT_AUTHORIZED'> {
+        if (!this.executionAllowed(task)) return 'NOT_AUTHORIZED';
         try {
             switch (task.action.type) {
                 case 'PLAN_EXECUTION':
@@ -285,9 +319,11 @@ export class SchedulerService {
                     break;
             }
         } catch (e) {
+            this.ownership.taskFailed('original-execute-outcome',e);
             console.error(`[SCHEDULER] ❌ Task "${task.name}" failed:`, e);
+            return 'FAILED';
         }
-        return true;
+        return 'SUCCEEDED';
     }
 
     private calculateNextRun(task: Partial<ScheduledTask>): number {
@@ -330,6 +366,7 @@ export class SchedulerService {
 
             console.log(`[SCHEDULER] 📦 Loaded ${this.tasks.size} tasks from storage`);
         } catch (e) {
+            this.ownership.failure('original-load-storage-nondurable',e);
             console.warn('[SCHEDULER] Storage unavailable, using in-memory only');
         }
     }
@@ -343,10 +380,15 @@ export class SchedulerService {
             const tasksArray = Array.from(this.tasks.values());
             sqliteService.setConfig('scheduled_tasks', tasksArray);
         } catch (e) {
-            // Non-critical - tasks still in memory
+            this.ownership.failure('original-persist-failed-nondurable',e);
+            // Availability in memory is not persisted durability.
         }
     }
 }
 
 // Singleton
-export const schedulerService = new SchedulerService();
+const runtimeConstructionPermit=admitEvaluatedScheduler();
+export const schedulerService=(()=>{
+    try{const original=new SchedulerService();bindEvaluatedScheduler(runtimeConstructionPermit,()=>original.sealAndDrain());return original;}
+    catch(error){failEvaluatedScheduler(runtimeConstructionPermit,error);throw error;}
+})();
