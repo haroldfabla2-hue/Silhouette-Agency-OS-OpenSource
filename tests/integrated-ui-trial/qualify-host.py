@@ -3,7 +3,11 @@
 No app, downloaded executable, sudo write, install, sysctl or network call.
 """
 from pathlib import Path
-import ctypes.util,hashlib,json,os,shutil,subprocess,sys
+import ctypes.util,hashlib,json,os,shutil,subprocess,sys,time,importlib.util
+QUALIFICATION_STARTED=time.monotonic()
+QUALIFICATION_REMAINING=float(os.environ.get('QUALIFICATION_REMAINING_SECONDS','0'))
+assert 3<QUALIFICATION_REMAINING<=30,'QUALIFICATION_SUPERVISOR_BUDGET_REQUIRED'
+QUALIFICATION_DEADLINE=QUALIFICATION_STARTED+min(27,QUALIFICATION_REMAINING-3)
 out=Path(sys.argv[1]);assert not out.exists();gaps=[];r={'status':'READ_ONLY_INVENTORY_NOT_RUNTIME_PASS','checks':{},'gaps':gaps}
 def check(name,fn):
  try:r['checks'][name]={'ok':True,'value':fn()}
@@ -35,4 +39,29 @@ for p in ['/proc/sys/kernel/apparmor_restrict_unprivileged_userns','/proc/sys/ke
  r['checks']['policy-read:'+p]={'exists':Path(p).exists(),'value':Path(p).read_text().strip()if Path(p).exists()else None,'changed':False}
 r['checks']['namespace-host']={'net':os.readlink('/proc/self/ns/net'),'mount':os.readlink('/proc/self/ns/mnt'),'pid':os.readlink('/proc/self/ns/pid'),'user':os.readlink('/proc/self/ns/user')}
 r['next']='Actual bounded same-launcher namespace/cgroup/capability/loader probe still required; library discovery is not executable load proof.'
+# SOURCE-ONLY proposed integration. Trusted supervisor supplies four already
+# protected descriptors/identities; missing custody is a hard qualification gap.
+# All old host checks above are preserved, same original30s outer command bound.
+def regular_native_extension():
+ require(len(sys.argv)==8,'SUPERVISOR_FD_ADMISSION_REQUIRED')
+ privatefd,sinkfd=int(sys.argv[2]),int(sys.argv[3])
+ privateid=(int(sys.argv[4]),int(sys.argv[5]));sinkid=(int(sys.argv[6]),int(sys.argv[7]))
+ require(time.monotonic()<QUALIFICATION_DEADLINE,'NO_EXTENSION_BUDGET_REMAINS')
+ here=Path(__file__).resolve().parent
+ def load(name,filename):
+  spec=importlib.util.spec_from_file_location(name,here/filename);module=importlib.util.module_from_spec(spec);sys.modules[name]=module;spec.loader.exec_module(module);return module
+ exporter=load('native_finite_exporter','native_finite_exporter.py')
+ schema=load('native_receipt_schema','native_receipt_schema.py')
+ inventory=load('regular_native_inventory','qualify-regular-native-inventory-source.py')
+ coordinator=load('native_fd_coordinator','native_fd_coordinator.py')
+ contract=json.loads((here/'regular-native-contract.json').read_text())
+ result=coordinator.run_extension(inventory.inventory_regular_chrome_requirements,contract,
+    QUALIFICATION_DEADLINE,privatefd,privateid,sinkfd,sinkid)
+ # Public parent hostreceipt stores a fixed label only; rawnative receipt has
+ # its own exact finite sink. No path or rawversiondata copied into this field.
+ return 'STATIC_METADATA_ONLY_NOT_NATIVE_QUALIFIED'
+def guarded_regular_native_extension():
+ try:return regular_native_extension()
+ except BaseException:raise RuntimeError('REGULAR_NATIVE_STATIC_INCOMPLETE')from None
+check('regular-native-static-extension',guarded_regular_native_extension)
 out.write_text(json.dumps(r,indent=2)+'\n');print(json.dumps(r));raise SystemExit(1 if gaps else 0)

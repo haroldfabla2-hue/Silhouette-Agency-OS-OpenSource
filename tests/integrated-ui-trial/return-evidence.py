@@ -13,6 +13,7 @@ allowed={'runtime/browser-checkpoints.json','runtime/runtime-process-counters.js
 # Credentialled raw runtime logs stay PRIVATE; mandatory presence is unchanged.
 allowed.difference_update({'runtime.log','runtime/complete.log','runtime/actual-ui.png'})
 allowed.add('runtime/runtime-finite.json')
+allowed.add('regular-native-inventory.json')
 runtimeCollectionFailed=False
 if (root/'runtime.log').exists():
  import subprocess
@@ -78,6 +79,7 @@ missing=[];invalid=[]
 def diagnostic_error(path,kind):
  # Fixed path/category only, never echo possibly secret JSON content/messages.
  invalid.append({'path':path,'reason':kind})
+if (root/'host-qualification.log').exists()and not(root/'regular-native-inventory.json').exists():diagnostic_error('regular-native-inventory.json','MISSING_FIXED_NATIVE_RECEIPT')
 if runtimeCollectionFailed:diagnostic_error('runtime/runtime-finite.json','FIXED_RUNTIME_COLLECTION_FAILED')
 if fixtureDenyInvalid:diagnostic_error('runtime/browser.json','MISSING_OR_INVALID_FIXTURE_DENY_MATERIAL')
 def mandatory_presence(rel):
@@ -187,6 +189,15 @@ with tarfile.open(fileobj=buf,mode='w:gz')as t:
   except BaseException:
    diagnostic_error(rel,'INVALID_UNREADABLE_OVERSIZE_OR_MUTATING_ALLOWLISTED_FILE');continue
   if b is None:continue
+  if rel=='regular-native-inventory.json':
+   try:
+    assert len(b)<=4096
+    nativeSpec=spec_from_file_location('native_receipt_schema',Path(__file__).with_name('native_receipt_schema.py'));nativeSchema=module_from_spec(nativeSpec);nativeSpec.loader.exec_module(nativeSchema)
+    runtimeSpec=spec_from_file_location('runtime_finite_schema',Path(__file__).with_name('runtime-finite-schema.py'));strictSchema=module_from_spec(runtimeSpec);runtimeSpec.loader.exec_module(strictSchema)
+    nativeReceipt=strictSchema.strict_loads(b);nativeSchema.validate(nativeReceipt)
+    if nativeReceipt['status'].startswith('BLOCKED_'):diagnostic_error(rel,'FIXED_NATIVE_QUALIFICATION_BLOCKED')
+   except BaseException:
+    diagnostic_error(rel,'INVALID_FIXED_NATIVE_RECEIPT');quarantine.append({'path':rel,'reason':'INVALID_FIXED_NATIVE_RECEIPT_WITHHELD'});continue
   if fixtureDenyInvalid and rel.startswith('runtime/')and rel not in {'runtime/network.json','runtime/root-preflight.json','runtime/identity-map.json','runtime/supervisor.json','runtime/runtime-process-counters.json','runtime/runtime-cgroup-counters.json','runtime/runtime-result.json','runtime/exit-frontier.json','runtime/runtime-finite.json'}:
    diagnostic_error(rel,'PRIVATE_FIXTURE_DENY_UNAVAILABLE_WITHHELD');continue
   if rel in continuumJson:

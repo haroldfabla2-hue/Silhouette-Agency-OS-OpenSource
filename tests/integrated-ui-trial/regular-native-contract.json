@@ -1,0 +1,517 @@
+{
+  "status": "STATIC_REQUIREMENTS_ONLY_NOT_HOST_QUALIFIED",
+  "browserVersion": "145.0.7632.6",
+  "archiveSha256": "b5e3195041af345a668d110f5daf5581961fa3608626ea588c97dd0fe81c4e38",
+  "architecture": "amd64",
+  "elfClass": "ELF64",
+  "interpreter": "/lib64/ld-linux-x86-64.so.2",
+  "externalSonames": [
+    "ld-linux-x86-64.so.2",
+    "libX11.so.6",
+    "libXcomposite.so.1",
+    "libXdamage.so.1",
+    "libXext.so.6",
+    "libXfixes.so.3",
+    "libXrandr.so.2",
+    "libasound.so.2",
+    "libatk-1.0.so.0",
+    "libatk-bridge-2.0.so.0",
+    "libatspi.so.0",
+    "libc.so.6",
+    "libcairo.so.2",
+    "libcups.so.2",
+    "libdbus-1.so.3",
+    "libdl.so.2",
+    "libexpat.so.1",
+    "libgbm.so.1",
+    "libgcc_s.so.1",
+    "libgio-2.0.so.0",
+    "libglib-2.0.so.0",
+    "libgobject-2.0.so.0",
+    "libm.so.6",
+    "libnspr4.so",
+    "libnss3.so",
+    "libnssutil3.so",
+    "libpango-1.0.so.0",
+    "libpthread.so.0",
+    "libsmime3.so",
+    "libudev.so.1",
+    "libxcb.so.1",
+    "libxkbcommon.so.0"
+  ],
+  "versionRequirementsByFile": [
+    {
+      "path": "chrome-linux64/WidevineCdm/_platform_specific/linux_x64/libwidevinecdm.so",
+      "versionRequirements": [
+        {
+          "library": "libdl.so.2",
+          "versions": [
+            "GLIBC_2.2.5"
+          ]
+        },
+        {
+          "library": "libpthread.so.0",
+          "versions": [
+            "GLIBC_2.2.5",
+            "GLIBC_2.3.2",
+            "GLIBC_2.3.3",
+            "GLIBC_2.3.4",
+            "GLIBC_2.12"
+          ]
+        },
+        {
+          "library": "libm.so.6",
+          "versions": [
+            "GLIBC_2.2.5"
+          ]
+        },
+        {
+          "library": "libgcc_s.so.1",
+          "versions": [
+            "GCC_3.0"
+          ]
+        },
+        {
+          "library": "libc.so.6",
+          "versions": [
+            "GLIBC_2.2.5",
+            "GLIBC_2.3",
+            "GLIBC_2.3.2",
+            "GLIBC_2.3.3",
+            "GLIBC_2.3.4",
+            "GLIBC_2.4",
+            "GLIBC_2.6",
+            "GLIBC_2.7",
+            "GLIBC_2.14",
+            "GLIBC_2.16",
+            "GLIBC_2.17"
+          ]
+        },
+        {
+          "library": "ld-linux-x86-64.so.2",
+          "versions": [
+            "GLIBC_2.2.5",
+            "GLIBC_2.3"
+          ]
+        }
+      ],
+      "elfClass": "ELF64",
+      "architecture": "X86_64",
+      "dataOnly": true
+    },
+    {
+      "path": "chrome-linux64/chrome",
+      "versionRequirements": [
+        {
+          "library": "libdl.so.2",
+          "versions": [
+            "GLIBC_2.2.5"
+          ]
+        },
+        {
+          "library": "libpthread.so.0",
+          "versions": [
+            "GLIBC_2.2.5",
+            "GLIBC_2.3.2",
+            "GLIBC_2.3.3",
+            "GLIBC_2.3.4",
+            "GLIBC_2.12"
+          ]
+        },
+        {
+          "library": "libnss3.so",
+          "versions": [
+            "NSS_3.2",
+            "NSS_3.3",
+            "NSS_3.4",
+            "NSS_3.5",
+            "NSS_3.6",
+            "NSS_3.9.2",
+            "NSS_3.11",
+            "NSS_3.12",
+            "NSS_3.12.1",
+            "NSS_3.22",
+            "NSS_3.30"
+          ]
+        },
+        {
+          "library": "libnssutil3.so",
+          "versions": [
+            "NSSUTIL_3.12.3"
+          ]
+        },
+        {
+          "library": "libsmime3.so",
+          "versions": [
+            "NSS_3.2",
+            "NSS_3.10"
+          ]
+        },
+        {
+          "library": "libdbus-1.so.3",
+          "versions": [
+            "LIBDBUS_1_3"
+          ]
+        },
+        {
+          "library": "libxkbcommon.so.0",
+          "versions": [
+            "V_0.5.0"
+          ]
+        },
+        {
+          "library": "libm.so.6",
+          "versions": [
+            "GLIBC_2.2.5"
+          ]
+        },
+        {
+          "library": "libudev.so.1",
+          "versions": [
+            "LIBUDEV_183"
+          ]
+        },
+        {
+          "library": "libasound.so.2",
+          "versions": [
+            "ALSA_0.9",
+            "ALSA_0.9.0rc4"
+          ]
+        },
+        {
+          "library": "libgcc_s.so.1",
+          "versions": [
+            "GCC_3.0",
+            "GCC_3.3",
+            "GCC_4.0.0",
+            "GCC_4.2.0"
+          ]
+        },
+        {
+          "library": "libc.so.6",
+          "versions": [
+            "GLIBC_2.2.5",
+            "GLIBC_2.3",
+            "GLIBC_2.3.2",
+            "GLIBC_2.3.4",
+            "GLIBC_2.4",
+            "GLIBC_2.6",
+            "GLIBC_2.7",
+            "GLIBC_2.8",
+            "GLIBC_2.9",
+            "GLIBC_2.10",
+            "GLIBC_2.11",
+            "GLIBC_2.14",
+            "GLIBC_2.15",
+            "GLIBC_2.16",
+            "GLIBC_2.17",
+            "GLIBC_2.18",
+            "GLIBC_2.25"
+          ]
+        },
+        {
+          "library": "ld-linux-x86-64.so.2",
+          "versions": [
+            "GLIBC_2.2.5",
+            "GLIBC_2.3"
+          ]
+        }
+      ],
+      "elfClass": "ELF64",
+      "architecture": "X86_64",
+      "dataOnly": true
+    },
+    {
+      "path": "chrome-linux64/chrome_crashpad_handler",
+      "versionRequirements": [
+        {
+          "library": "libdl.so.2",
+          "versions": [
+            "GLIBC_2.2.5"
+          ]
+        },
+        {
+          "library": "libpthread.so.0",
+          "versions": [
+            "GLIBC_2.2.5",
+            "GLIBC_2.3.2",
+            "GLIBC_2.3.3",
+            "GLIBC_2.12"
+          ]
+        },
+        {
+          "library": "libm.so.6",
+          "versions": [
+            "GLIBC_2.2.5"
+          ]
+        },
+        {
+          "library": "libgcc_s.so.1",
+          "versions": [
+            "GCC_3.0"
+          ]
+        },
+        {
+          "library": "libc.so.6",
+          "versions": [
+            "GLIBC_2.2.5",
+            "GLIBC_2.3",
+            "GLIBC_2.3.2",
+            "GLIBC_2.3.4",
+            "GLIBC_2.4",
+            "GLIBC_2.7",
+            "GLIBC_2.9",
+            "GLIBC_2.10",
+            "GLIBC_2.14",
+            "GLIBC_2.15",
+            "GLIBC_2.16",
+            "GLIBC_2.17"
+          ]
+        },
+        {
+          "library": "ld-linux-x86-64.so.2",
+          "versions": [
+            "GLIBC_2.2.5",
+            "GLIBC_2.3"
+          ]
+        }
+      ],
+      "elfClass": "ELF64",
+      "architecture": "X86_64",
+      "dataOnly": true
+    },
+    {
+      "path": "chrome-linux64/chrome_sandbox",
+      "versionRequirements": [
+        {
+          "library": "libpthread.so.0",
+          "versions": [
+            "GLIBC_2.2.5"
+          ]
+        },
+        {
+          "library": "libc.so.6",
+          "versions": [
+            "GLIBC_2.2.5",
+            "GLIBC_2.3.4",
+            "GLIBC_2.4",
+            "GLIBC_2.14"
+          ]
+        }
+      ],
+      "elfClass": "ELF64",
+      "architecture": "X86_64",
+      "dataOnly": true
+    },
+    {
+      "path": "chrome-linux64/libEGL.so",
+      "versionRequirements": [
+        {
+          "library": "libdl.so.2",
+          "versions": [
+            "GLIBC_2.2.5"
+          ]
+        },
+        {
+          "library": "libpthread.so.0",
+          "versions": [
+            "GLIBC_2.2.5",
+            "GLIBC_2.3.2"
+          ]
+        },
+        {
+          "library": "libgcc_s.so.1",
+          "versions": [
+            "GCC_3.0"
+          ]
+        },
+        {
+          "library": "libc.so.6",
+          "versions": [
+            "GLIBC_2.2.5",
+            "GLIBC_2.3",
+            "GLIBC_2.4",
+            "GLIBC_2.7",
+            "GLIBC_2.14",
+            "GLIBC_2.16"
+          ]
+        },
+        {
+          "library": "ld-linux-x86-64.so.2",
+          "versions": [
+            "GLIBC_2.3"
+          ]
+        }
+      ],
+      "elfClass": "ELF64",
+      "architecture": "X86_64",
+      "dataOnly": true
+    },
+    {
+      "path": "chrome-linux64/libGLESv2.so",
+      "versionRequirements": [
+        {
+          "library": "libdl.so.2",
+          "versions": [
+            "GLIBC_2.2.5"
+          ]
+        },
+        {
+          "library": "libpthread.so.0",
+          "versions": [
+            "GLIBC_2.2.5",
+            "GLIBC_2.3.2",
+            "GLIBC_2.12"
+          ]
+        },
+        {
+          "library": "libm.so.6",
+          "versions": [
+            "GLIBC_2.2.5"
+          ]
+        },
+        {
+          "library": "libgcc_s.so.1",
+          "versions": [
+            "GCC_3.0"
+          ]
+        },
+        {
+          "library": "libc.so.6",
+          "versions": [
+            "GLIBC_2.2.5",
+            "GLIBC_2.3",
+            "GLIBC_2.3.4",
+            "GLIBC_2.4",
+            "GLIBC_2.7",
+            "GLIBC_2.14",
+            "GLIBC_2.16",
+            "GLIBC_2.17"
+          ]
+        },
+        {
+          "library": "ld-linux-x86-64.so.2",
+          "versions": [
+            "GLIBC_2.3"
+          ]
+        }
+      ],
+      "elfClass": "ELF64",
+      "architecture": "X86_64",
+      "dataOnly": true
+    },
+    {
+      "path": "chrome-linux64/libvk_swiftshader.so",
+      "versionRequirements": [
+        {
+          "library": "libdl.so.2",
+          "versions": [
+            "GLIBC_2.2.5"
+          ]
+        },
+        {
+          "library": "libpthread.so.0",
+          "versions": [
+            "GLIBC_2.2.5",
+            "GLIBC_2.3.2",
+            "GLIBC_2.3.4",
+            "GLIBC_2.12"
+          ]
+        },
+        {
+          "library": "libm.so.6",
+          "versions": [
+            "GLIBC_2.2.5"
+          ]
+        },
+        {
+          "library": "libgcc_s.so.1",
+          "versions": [
+            "GCC_3.0"
+          ]
+        },
+        {
+          "library": "libc.so.6",
+          "versions": [
+            "GLIBC_2.2.5",
+            "GLIBC_2.3",
+            "GLIBC_2.4",
+            "GLIBC_2.6",
+            "GLIBC_2.7",
+            "GLIBC_2.14",
+            "GLIBC_2.16",
+            "GLIBC_2.17"
+          ]
+        },
+        {
+          "library": "ld-linux-x86-64.so.2",
+          "versions": [
+            "GLIBC_2.3"
+          ]
+        }
+      ],
+      "elfClass": "ELF64",
+      "architecture": "X86_64",
+      "dataOnly": true
+    },
+    {
+      "path": "chrome-linux64/libvulkan.so.1",
+      "versionRequirements": [
+        {
+          "library": "libdl.so.2",
+          "versions": [
+            "GLIBC_2.2.5"
+          ]
+        },
+        {
+          "library": "libpthread.so.0",
+          "versions": [
+            "GLIBC_2.2.5",
+            "GLIBC_2.3.2"
+          ]
+        },
+        {
+          "library": "libgcc_s.so.1",
+          "versions": [
+            "GCC_3.0"
+          ]
+        },
+        {
+          "library": "libc.so.6",
+          "versions": [
+            "GLIBC_2.2.5",
+            "GLIBC_2.3",
+            "GLIBC_2.4",
+            "GLIBC_2.7",
+            "GLIBC_2.14",
+            "GLIBC_2.16"
+          ]
+        },
+        {
+          "library": "ld-linux-x86-64.so.2",
+          "versions": [
+            "GLIBC_2.3"
+          ]
+        }
+      ],
+      "elfClass": "ELF64",
+      "architecture": "X86_64",
+      "dataOnly": true
+    }
+  ],
+  "vendorAdditionalRequirements": {
+    "gtk": "GTK3>=3.9.10 OR GTK4, exact ABI/selected path must be recorded",
+    "curl": "libcurl3-gnutls OR libcurl3-nss OR libcurl4 OR libcurl3",
+    "vulkan": "libvulkan1, bundled libvulkan.so.1 does not prove actual chosen path",
+    "other": [
+      "fonts-liberation",
+      "ca-certificates",
+      "xdg-utils>=1.0.2",
+      "wget"
+    ]
+  },
+  "dlopenEvidence": "UNKNOWN",
+  "hostResolution": "UNKNOWN",
+  "loadCompatibility": "UNKNOWN",
+  "runtimeFitness": "UNKNOWN"
+}

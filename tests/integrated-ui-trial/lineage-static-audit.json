@@ -1,13 +1,12 @@
 {
   "sourceOnly": true,
-  "parent": "0a644545fa7b234bff2c27b561bc1440c88408dd",
-  "workflowEventBefore": "0a644545fa7b234bff2c27b561bc1440c88408dd",
-  "workflowHeadParent": "0a644545fa7b234bff2c27b561bc1440c88408dd",
-  "internalOrchestratorHeadParent": "0a644545fa7b234bff2c27b561bc1440c88408dd",
+  "parent": "a6964706994d696d8f39b7d5c8fac7691479d5be",
+  "workflowEventBefore": "a6964706994d696d8f39b7d5c8fac7691479d5be",
+  "workflowHeadParent": "a6964706994d696d8f39b7d5c8fac7691479d5be",
+  "internalOrchestratorHeadParent": "a6964706994d696d8f39b7d5c8fac7691479d5be",
   "allOperationalPinsSame": true,
   "historicalCompositionUnchanged": true,
-  "productLayerSha256": "556f6b40246f207fe3eeca956eddff03611aef24df7dac111da514656c33305e",
   "productFiles": 1705,
-  "productPathsChangedThisDelta": 4,
-  "environmentDeltaSha256": "10d9906d16215fe9f973105472c66d525d5b16fe9a6ed29283558974c2da21b0"
+  "productPathsChangedThisDelta": 0,
+  "meaning": "REGULAR_BROWSER_PROVENANCE_NOT_NATIVE_QUALIFICATION_OR_PRODUCT_PASS"
 }

@@ -7,8 +7,8 @@ assert not ROOT.exists();ROOT.mkdir(mode=0o700);EV.mkdir(mode=0o700)
 def sha(b):return hashlib.sha256(b).hexdigest()
 def emit(n,o):
  b=(json.dumps(o,indent=2)+'\n').encode();assert len(b)<=8*1024**2;(EV/n).write_bytes(b)
-def command(name,args,cwd,env,wall=180):
- assert time.monotonic()-START+wall+35<1020,'OVERALL_WALL_RECOVERY_OVERHEAD_RESERVE';p=subprocess.Popen(args,cwd=cwd,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True);sel=selectors.DefaultSelector();os.set_blocking(p.stdout.fileno(),False);sel.register(p.stdout,selectors.EVENT_READ);count=0;begin=time.monotonic();forced=False;failure=None
+def command(name,args,cwd,env,wall=180,pass_fds=()):
+ assert time.monotonic()-START+wall+35<1020,'OVERALL_WALL_RECOVERY_OVERHEAD_RESERVE';p=subprocess.Popen(args,cwd=cwd,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True,close_fds=True,pass_fds=pass_fds);sel=selectors.DefaultSelector();os.set_blocking(p.stdout.fileno(),False);sel.register(p.stdout,selectors.EVENT_READ);count=0;begin=time.monotonic();forced=False;failure=None
  try:
   with (EV/(name+'.log')).open('xb')as log:
    eof=False
@@ -86,16 +86,60 @@ def members(b,*,mode,package=None,integrity=None):
   archiveDiagnostics['status']='FAIL_ARCHIVE_MEMBER_VERIFICATION';archiveDiagnostics['failure']={'mode':mode,'package':package,'archiveSha256':archiveSha,'category':type(e).__name__,'reason':str(e)if isinstance(e,AssertionError)else'ARCHIVE_PARSE_OR_READ_FAILED'}
   emit('dependency-archive-verification.json',archiveDiagnostics);raise
 
+def fetch_regular_browser(url):
+ # Narrow exception: precisely ONE regular-browser artifact, existing route only.
+ initial='https://cdn.playwright.dev/builds/cft/145.0.7632.6/linux64/chrome-linux64.zip'
+ storage='https://storage.googleapis.com/chrome-for-testing-public/145.0.7632.6/linux64/chrome-linux64.zip'
+ assert url==initial
+ class ExactRedirect(urllib.request.HTTPRedirectHandler):
+  def redirect_request(self,req,fp,code,msg,headers,newurl):
+   assert req.full_url==initial and newurl==storage,'REGULAR_BROWSER_REDIRECT_NOT_REVIEWED'
+   return super().redirect_request(req,fp,code,msg,headers,newurl)
+ with urllib.request.build_opener(ExactRedirect()).open(url,timeout=30)as r:
+  assert r.url in (initial,storage)and r.status==200
+  raw=r.read(192*1024**2+1)
+ assert len(raw)<=192*1024**2
+ return raw
+
 try:
  assert os.environ['PRIVATE']=='false'and os.environ['ENVIRONMENT']=='github-hosted'and os.environ['GITHUB_EVENT_NAME']in {'workflow_dispatch','push'}
  if os.environ['GITHUB_EVENT_NAME']=='push':
-  assert subprocess.check_output(['git','rev-parse','HEAD^'],cwd=REPO,text=True).strip()=='0a644545fa7b234bff2c27b561bc1440c88408dd'
+  assert subprocess.check_output(['git','rev-parse','HEAD^'],cwd=REPO,text=True).strip()=='a6964706994d696d8f39b7d5c8fac7691479d5be'
   assert os.environ['GITHUB_REF']=='refs/heads/preparation/sqlite-static-typecheck-db201993-4054-20261114'
  assert os.environ['GITHUB_SHA']==os.environ['EXPECTED_HEAD']==subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip()
  node=Path(shutil.which('node')).resolve();assert sha(node.read_bytes())=='ccacb2d6d87ba6d118b2bffc1ae33747a05cc5fc6b1f1ec4fc1d420b687e952d';assert subprocess.check_output([str(node),'--version'],text=True).strip()=='v22.18.0'
  assert shutil.disk_usage(ROOT).free>=8*1024**3
  # Aggregate all current host prerequisites before any project acquisition.
- command('host-qualification',['/usr/bin/python3',str(HERE/'qualify-host.py'),str(EV/'host-qualification.json')],REPO,{'PATH':os.environ['PATH'],'ImageOS':os.environ.get('ImageOS',''),'ImageVersion':os.environ.get('ImageVersion','')},30)
+ # Exact protected descriptor grant, not a basename/candidate claim.
+ # All custody checks consume the original host-qualification30s slot.
+ qualificationStarted=time.monotonic()
+ def protected_chain(directory):
+  assert directory.is_absolute() and directory.resolve(strict=True)==directory,'QUALIFICATION_CANONICAL_ROOT'
+  for part in [*reversed(directory.parents),directory]:
+   st=part.lstat();assert stat.S_ISDIR(st.st_mode)and not stat.S_ISLNK(st.st_mode)
+   assert st.st_uid in (0,os.geteuid())and not(st.st_mode&0o022),'QUALIFICATION_ANCESTOR_CUSTODY'
+   assert not any(x in {'system.posix_acl_access','system.posix_acl_default'}for x in os.listxattr(part,follow_symlinks=False)),'QUALIFICATION_ACL_UNREVIEWED'
+ assert os.geteuid()>0,'NONROOT_RUNNER_REQUIRED'
+ protected_chain(ROOT);protected_chain(EV)
+ privateNative=ROOT/'regular-native-private';privateNative.mkdir(mode=0o700)
+ protected_chain(privateNative)
+ privateFd=os.open(privateNative,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
+ sinkFd=None
+ try:
+  sinkFd=os.open(EV/'regular-native-inventory.json',os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_CLOEXEC,0o600)
+  privateStat=os.fstat(privateFd);sinkStat=os.fstat(sinkFd)
+  assert stat.S_ISDIR(privateStat.st_mode)and privateStat.st_uid==os.geteuid()and privateStat.st_mode&0o077==0
+  assert stat.S_ISREG(sinkStat.st_mode)and sinkStat.st_nlink==1 and sinkStat.st_uid==os.geteuid()and sinkStat.st_mode&0o077==0 and sinkStat.st_size==0
+  # Candidate has not been created/launched at this point. No candidate can
+  # inherit aliases of these FDs; only this exact host qualifier gets them.
+  grant=[str(privateFd),str(sinkFd),str(privateStat.st_dev),str(privateStat.st_ino),str(sinkStat.st_dev),str(sinkStat.st_ino)]
+  qualificationRemaining=30-(time.monotonic()-qualificationStarted)
+  assert qualificationRemaining>3,'QUALIFICATION_FD_GRANT_BUDGET_EXHAUSTED'
+  command('host-qualification',['/usr/bin/python3',str(HERE/'qualify-host.py'),str(EV/'host-qualification.json'),*grant],REPO,{'PATH':os.environ['PATH'],'ImageOS':os.environ.get('ImageOS',''),'ImageVersion':os.environ.get('ImageVersion',''),'QUALIFICATION_REMAINING_SECONDS':str(qualificationRemaining)},qualificationRemaining,pass_fds=(privateFd,sinkFd))
+ finally:
+  if sinkFd is not None:os.close(sinkFd)
+  os.close(privateFd)
+
  command('security-preparation',['/usr/bin/python3',str(HERE/'prepare-security.py'),str(EV),os.environ['GITHUB_RUN_ID']],REPO,{'PATH':'/usr/bin:/bin','RUNNER_TEMP':os.environ['RUNNER_TEMP']},170)
  security=json.loads((EV/'security-preparation.json').read_text());assert security['status']=='AUTHENTICATED_STAGED_NOT_RUNTIME_PASS'and security['rootKeyScopeAbsent']and not security['forced'];bwrap=Path(security['binary']);assert sha(bwrap.read_bytes())=='e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71'
  # Same actual supervisor/root/net/capability path, empty disposable roots only.
@@ -215,12 +259,22 @@ try:
  with tarfile.open(archive)as t:
   ms=t.getmembers();assert len(ms)==1 and ms[0].name=='build/Release/better_sqlite3.node'and ms[0].isfile();b=t.extractfile(ms[0]).read();d=deps/'better-sqlite3'/ms[0].name;d.parent.mkdir(parents=True);d.write_bytes(b)
  # Pinned official Playwright browser ZIP. No playwright install command/hooks.
- browser=ROOT/'browser';browser.mkdir();bp=json.loads((HERE/'chromium-provenance.json').read_text());raw=fetch(bp['url'],128*1024**2);assert sha(raw)==bp['archiveSha256']
+ browser=ROOT/'browser';browser.mkdir();bp=json.loads((HERE/'chromium-regular-provenance.json').read_text());assert bp['status']=='REVIEWED_ARCHIVE_MEMBERS_COMPLETE';assert bp['browserVersion']=='145.0.7632.6' and bp['distribution']=='CHROME_FOR_TESTING_REGULAR_LINUX64';raw=fetch_regular_browser(bp['url']);assert len(raw)==bp['archiveBytes'] and sha(raw)==bp['archiveSha256']
  with zipfile.ZipFile(io.BytesIO(raw))as z:
-  expected={r['path']:r for r in bp['files']};assert {n for n in z.namelist()if not n.endswith('/')}==set(expected)
-  for n,r in expected.items():
-   p=Path(n);assert not p.is_absolute()and '..'not in p.parts;b=z.read(n);assert len(b)==r['bytes']and sha(b)==r['sha256'];d=browser/p;d.parent.mkdir(parents=True,exist_ok=True);d.write_bytes(b);mode=(z.getinfo(n).external_attr>>16)&0o777;d.chmod(mode or 0o644)
- (browser/'chrome-headless-shell-linux64/chrome-headless-shell').chmod(0o755)
+  infos=z.infolist();names=[i.filename for i in infos];assert len(names)==len(set(names)),'BROWSER_DUPLICATE_ZIP_MEMBER'
+  expected={r['path']:r for r in bp['files']};assert len(expected)==len(bp['files'])
+  assert {i.filename for i in infos if not i.is_dir()}==set(expected)
+  assert type(bp['archiveExpandedBytes'])is int and bp['archiveExpandedBytes']>0
+  assert sum(i.file_size for i in infos)==bp['archiveExpandedBytes']
+  assert shutil.disk_usage(browser).free>=bp['archiveExpandedBytes']+1024**3,'BROWSER_EXTRACTION_DISK_RESERVE'
+  for i in infos:
+   p=Path(i.filename);assert not p.is_absolute()and '..'not in p.parts and p.parts[0]=='chrome-linux64'
+   mode=(i.external_attr>>16)&0o177777;kind=mode&0o170000
+   assert kind in (0,0o040000,0o100000)and not(mode&0o7000),'BROWSER_UNREVIEWED_MEMBER_TYPE_OR_PRIVILEGE'
+   if i.is_dir():continue
+   r=expected[i.filename];assert i.file_size==r['bytes']and(mode&0o777)==r['mode']
+   b=z.read(i);assert len(b)==r['bytes']and sha(b)==r['sha256'];d=browser/p;d.parent.mkdir(parents=True,exist_ok=True);d.write_bytes(b);d.chmod(r['mode']or 0o644)
+ (browser/'chrome-linux64/chrome').chmod(0o755)
  # Normal node_modules location preserves Node sibling package resolution.
  # Dependency files RO; only explicit .vite-temp tmpfs scratch is writable.
  (app/'node_modules').mkdir();(deps/'.vite-temp').mkdir()
