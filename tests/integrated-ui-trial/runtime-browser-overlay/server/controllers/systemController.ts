@@ -1,0 +1,733 @@
+import { SystemTelemetryPoll } from '../../services/lifecycle/systemTelemetryPoll';
+import { admitEvaluatedSystemTelemetry, bindEvaluatedSystemTelemetry, failEvaluatedSystemTelemetry } from '../../services/lifecycle/runtimeStopBindings';
+import { runSqliteOperation } from '../../services/lifecycle/sqliteAdmission';
+
+import { computeTokensToday } from './tokensToday';
+import { Request, Response } from 'express';
+import { configureGenAI } from '../../services/geminiService';
+import { sqliteService } from '../../services/sqliteService';
+import { buildTokenHistory } from '../../services/telemetryHistory';
+import { BUILD_VERSION } from '../../constants/buildVersion';
+import { buildTemporalContext } from '../../services/temporalContext';
+
+// Prefix used for all secrets in the system_config table
+const SECRETS_PREFIX = 'secretsVault_';
+
+/** Mask a secret value (object of strings or a raw string) for safe display. */
+function maskSecretValue(value: any): any {
+    const maskStr = (v: string): string =>
+        v.length > 4 ? `${v.substring(0, 4)}${'•'.repeat(Math.min(v.length - 4, 12))}` : '••••';
+    if (typeof value === 'string') return maskStr(value);
+    if (value && typeof value === 'object') {
+        return Object.fromEntries(
+            Object.entries(value).map(([k, v]) => [k, typeof v === 'string' ? maskStr(v) : '••••'])
+        );
+    }
+    return '••••';
+}
+
+export class SystemController {
+
+    // ═══════════════════════════════════════════════════════════
+    // SECRETS VAULT — Server-side credential storage
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Save credentials for a specific service (e.g., gemini, openai, google_drive).
+     * POST /v1/system/secrets/:serviceId
+     * Body: { credentials: { apiKey: "...", orgId: "..." } }
+     */
+    public async saveSecret(req: Request, res: Response) {
+        return runSqliteOperation('server/controllers/systemController.ts:saveSecret', async () => {
+        try {
+            const { serviceId } = req.params;
+            const { credentials } = req.body;
+
+            if (!serviceId || !credentials || typeof credentials !== 'object') {
+                return res.status(400).json({ error: 'Missing serviceId or credentials object' });
+            }
+
+            const key = `${SECRETS_PREFIX}${serviceId}`;
+            sqliteService.setConfig(key, credentials);
+
+            // Hot-reload side effects for known services
+            if (serviceId === 'gemini' && credentials.apiKey) {
+                configureGenAI(credentials.apiKey);
+                sqliteService.setConfig('systemApiKey', credentials.apiKey);
+            }
+            if (serviceId === 'media') {
+                try {
+                    const { mediaService } = await import('../../services/mediaService');
+                    mediaService.updateConfig(credentials);
+                    sqliteService.setConfig('mediaConfig', credentials);
+                } catch (e) { /* mediaService may not be loaded yet */ }
+            }
+
+            console.log(`[SECRETS] Saved credentials for service: ${serviceId}`);
+            res.json({ success: true, serviceId });
+        } catch (e: any) {
+            console.error('[SECRETS] Save failed:', e.message);
+            res.status(500).json({ error: 'Failed to save secret', details: e.message });
+        }
+    
+        });
+    }
+
+    /**
+     * List which services have stored credentials (NEVER returns raw values).
+     * GET /v1/system/secrets
+     * Returns: { services: [{ id: "gemini", hasCredentials: true, keys: ["apiKey"] }] }
+     */
+    public async listSecrets(req: Request, res: Response) {
+        return runSqliteOperation('server/controllers/systemController.ts:listSecrets', async () => {
+        try {
+            const allConfig = sqliteService.getAllConfig();
+            const services = Object.entries(allConfig)
+                .filter(([key]) => key.startsWith(SECRETS_PREFIX))
+                .map(([key, value]) => ({
+                    id: key.replace(SECRETS_PREFIX, ''),
+                    hasCredentials: true,
+                    keys: typeof value === 'object' && value !== null ? Object.keys(value) : [],
+                    maskedPreview: typeof value === 'object' && value !== null
+                        ? Object.fromEntries(
+                            Object.entries(value).map(([k, v]) => [
+                                k,
+                                typeof v === 'string' && v.length > 4
+                                    ? `${v.substring(0, 4)}${'•'.repeat(Math.min(v.length - 4, 12))}`
+                                    : '••••'
+                            ])
+                        )
+                        : {}
+                }));
+
+            res.json({ services });
+        } catch (e: any) {
+            console.error('[SECRETS] List failed:', e.message);
+            res.status(500).json({ error: 'Failed to list secrets', details: e.message });
+        }
+    
+        });
+    }
+
+    /**
+     * Get raw secret for a specific service (for internal agent/service use).
+     * GET /v1/system/secrets/:serviceId
+     * Returns raw credentials — should be behind auth middleware.
+     */
+    public async getSecret(req: Request, res: Response) {
+        return runSqliteOperation('server/controllers/systemController.ts:getSecret', async () => {
+        try {
+            const { serviceId } = req.params;
+            const key = `${SECRETS_PREFIX}${serviceId}`;
+            const value = sqliteService.getConfig(key);
+
+            if (!value) {
+                return res.status(404).json({ error: `No credentials found for ${serviceId}` });
+            }
+
+            // [SECURITY] Never return raw secrets over HTTP by default. Mask them.
+            // Raw reveal requires an explicit ?reveal=true AND a CREATOR session.
+            const wantsReveal = req.query.reveal === 'true' || req.query.reveal === '1';
+            const role = (req as any).user?.role;
+            const mayReveal = wantsReveal && role === 'CREATOR';
+
+            if (mayReveal) {
+                console.warn(`[SECRETS] ⚠️ Raw secret revealed for "${serviceId}" to CREATOR session`);
+                return res.json({ serviceId, credentials: value, revealed: true });
+            }
+
+            return res.json({ serviceId, credentials: maskSecretValue(value), masked: true });
+        } catch (e: any) {
+            console.error('[SECRETS] Get failed:', e.message);
+            res.status(500).json({ error: 'Failed to get secret', details: e.message });
+        }
+    
+        });
+    }
+
+    /**
+     * Static helper for programmatic access from other backend services.
+     * Usage: SystemController.getSecretInternal('gemini') => { apiKey: '...' }
+     */
+    public static getSecretInternal(serviceId: string): Record<string, any> | null {
+        return runSqliteOperation('server/controllers/systemController.ts:getSecretInternal', () => {
+        return sqliteService.getConfig(`${SECRETS_PREFIX}${serviceId}`);
+    
+        });
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // CONFIG (existing)
+    // ═══════════════════════════════════════════════════════════
+
+    public async getConfig(req: Request, res: Response) {
+        return runSqliteOperation('server/controllers/systemController.ts:getConfig', async () => {
+        // Fetch fresh config from SQLite + Env merger logic if needed
+        const config = sqliteService.getAllConfig();
+
+        // Add Drive configuration from environment
+        const driveConfig = {
+            folderId: process.env.GOOGLE_DRIVE_FOLDER_ID || null,
+            clientId: process.env.GOOGLE_CLIENT_ID ? '***configured***' : null,
+        };
+
+        res.json({ ...config, driveConfig });
+    
+        });
+    }
+
+    public async updateConfig(req: Request, res: Response) {
+        return runSqliteOperation('server/controllers/systemController.ts:updateConfig', async () => {
+        try {
+            const { apiKey, mediaConfig, dreamerConfig, systemUpdates } = req.body;
+            let updatedCount = 0;
+
+            if (apiKey) {
+                configureGenAI(apiKey);
+                // genesisConfig.systemApiKey = apiKey; // Legacy Global Var
+                sqliteService.setConfig('systemApiKey', apiKey);
+                updatedCount++;
+            }
+
+            if (mediaConfig) {
+                const { mediaService } = await import('../../services/mediaService');
+                mediaService.updateConfig(mediaConfig);
+                // genesisConfig.mediaConfig = ... // Legacy
+                sqliteService.setConfig('mediaConfig', mediaConfig); // Store as JSON blob or individual keys
+                updatedCount++;
+            }
+
+            if (dreamerConfig) {
+                const { dreamer } = await import('../../services/dreamerService');
+                if (dreamerConfig.threshold) {
+                    dreamer.setThreshold(dreamerConfig.threshold);
+                }
+                sqliteService.setConfig('dreamerConfig', dreamerConfig);
+                console.log("[CONFIG] Dreamer Configuration Updated");
+                updatedCount++;
+            }
+
+            if (systemUpdates) {
+                sqliteService.setConfig('systemUpdates', systemUpdates);
+                
+                // Sync to silhouette.config.json for Electron boot loader
+                try {
+                    const { configLoader } = await import('../config/configLoader.js');
+                    configLoader.saveConfig({
+                        system: {
+                            ...configLoader.getConfig().system,
+                            autoCheckUpdates: systemUpdates.autoCheck,
+                            autoLaunch: systemUpdates.autoLaunch
+                        }
+                    });
+                } catch (configErr: any) {
+                    console.error("[CONFIG] Failed to write systemUpdates to JSON config:", configErr.message);
+                }
+                
+                updatedCount++;
+            }
+
+            res.json({ success: true, message: `Configuration updated (${updatedCount} sections) and persisted.` });
+
+        } catch (e: any) {
+            console.error("[CONFIG] Error updating system config:", e);
+            res.status(500).json({ error: "Internal Server Error", details: e.message });
+        }
+    
+        });
+    }
+
+    /**
+     * Real installation scan: traverses the actual filesystem and SQLite
+     * schema via server/lib/installScanner. Never returns a hardcoded map.
+     */
+    public async scanSystem(req: Request, res: Response) {
+        return runSqliteOperation('server/controllers/systemController.ts:scanSystem', async () => {
+        try {
+            const { buildSystemMap } = await import('../lib/installScanner');
+            const map = await buildSystemMap({ rootDir: process.cwd(), databaseSchemaSnapshot: sqliteService.databaseSchemaSnapshot() });
+            res.json(map);
+        } catch (e: any) {
+            res.status(500).json({ error: `Real scan failed: ${e.message}` });
+        }
+    
+        });
+    }
+
+    /**
+     * Installation handover: persists the real system map so the
+     * orchestrator/UI can read what the installer actually found.
+     */
+    public async installHandover(req: Request, res: Response) {
+        return runSqliteOperation('server/controllers/systemController.ts:installHandover', async () => {
+        try {
+            const map = req.body?.map;
+            if (!map || !Array.isArray(map.frontendComponents)) {
+                return res.status(400).json({ error: 'Invalid system map payload' });
+            }
+            sqliteService.setConfig('installSystemMap', map);
+            res.json({ success: true });
+        } catch (e: any) {
+            res.status(500).json({ error: `Handover failed: ${e.message}` });
+        }
+    
+        });
+    }
+
+    public async readFile(req: Request, res: Response) {
+        const { filePath } = req.body;
+        // ... logic to read file safely ...
+        // Replicating original simplified logic for now:
+        const fs = await import('fs');
+        const path = await import('path');
+        try {
+            const rootDir = process.cwd();
+            const fullPath = path.join(rootDir, filePath);
+            if (!fs.existsSync(fullPath)) return res.status(404).json({ error: "File not found" });
+            const content = fs.readFileSync(fullPath, 'utf-8');
+            res.json({ success: true, content });
+        } catch (e) { res.status(500).json({ error: "Read failed" }); }
+    }
+    /**
+     * GET /v1/system/status
+     * Honest liveness report: every entry is derived from a real check.
+     * The core gateway entry is ONLINE only because this handler is executing
+     * (i.e. the HTTP process answered); its port is the configured one, and
+     * the SQLite entry reflects a real read against the real database file.
+     */
+    public async getStatus(req: Request, res: Response) {
+        return runSqliteOperation('server/controllers/systemController.ts:getStatus', async () => {
+        const services: Array<{ id: string; name: string; status: string; port?: number; path?: string; details?: string }> = [];
+
+        // Core API gateway: this handler only runs if the HTTP process is alive.
+        let port = 3005; // documented default (server/index.ts)
+        try {
+            const { config } = await import('../config/configLoader');
+            if (config?.system?.port) port = config.system.port;
+        } catch {
+            // Keep the default; it matches the server's own fallback.
+        }
+        services.push({ id: 'core', name: 'Orchestrator Core', status: 'ONLINE', port });
+
+        // SQLite persistence: real read probe against the real database file.
+        try {
+            sqliteService.getLogs(1); // throws if the database is unreadable
+            services.push({ id: 'db', name: 'SQLite Persistence', status: 'ONLINE', path: sqliteService.getDbPath() });
+        } catch (e: any) {
+            services.push({ id: 'db', name: 'SQLite Persistence', status: 'ERROR', details: e?.message || 'SQLite read probe failed' });
+        }
+
+        const degraded = services.some(s => s.status !== 'ONLINE');
+        res.json({
+            status: degraded ? 'DEGRADED' : 'ONLINE',
+            uptime: process.uptime(),
+            timestamp: Date.now(),
+            services
+        });
+    
+        });
+    }
+
+    public async getCosts(req: Request, res: Response) {
+        return runSqliteOperation('server/controllers/systemController.ts:getCosts', async () => {
+        const costs = sqliteService.getCostMetrics() || { totalCost: 0, dailyCost: 0, projectedMonthly: 0, costPerToken: 0, tokenCount: 0, modelBreakdown: {} };
+        res.json(costs);
+    
+        });
+    }
+
+    // CACHE FOR TELEMETRY
+    private lastTelemetry: any = null;
+    private lastTelemetryTime: number = 0;
+    private readonly CACHE_TTL = 5000;
+    private readonly telemetryPoll: SystemTelemetryPoll;
+
+    constructor() {
+        const permit = admitEvaluatedSystemTelemetry();
+        try {
+            this.telemetryPoll = new SystemTelemetryPoll(() => this.refreshTelemetryCache());
+            this.telemetryPoll.start();
+            bindEvaluatedSystemTelemetry(permit, () => this.stopBackgroundPolling());
+        } catch (error) {
+            // A partial controller never leaves its original recurring timer.
+            this.telemetryPoll?.sealProducer();
+            failEvaluatedSystemTelemetry(permit, error);
+            throw error;
+        }
+    }
+
+    /** Join the same original recurring refresh, preserving its failures. */
+    public stopBackgroundPolling(): Promise<void> {
+        return this.telemetryPoll.stop();
+    }
+
+    public async getTelemetry(req: Request, res: Response) {
+        return runSqliteOperation('server/controllers/systemController.ts:getTelemetry', async () => {
+        // Return whatever is in cache immediately (Stale-While-Revalidate style)
+        // If cache is null (startup), we wait for one fetch
+        if (!this.lastTelemetry) {
+            await this.refreshTelemetryCache();
+        }
+        res.json(this.lastTelemetry);
+    
+        });
+    }
+
+    // ... introspection endpoints ...
+
+    public async getFullState(req: Request, res: Response) {
+        return runSqliteOperation('server/controllers/systemController.ts:getFullState', async () => {
+        try {
+            const telemetry = await this.getTelemetryData();
+            const { orchestrator } = await import('../../services/orchestrator');
+            const { sqliteService } = await import('../../services/sqliteService');
+
+            // Fetch Brain Telemetry — READ-ONLY snapshot.
+            // A GET endpoint must never generate thought: cycles belong to the
+            // autonomous daemon or the explicit POST /v1/system/narrative/trigger.
+            let brainStats = null;
+            try {
+                const { continuum } = await import('../../services/continuumMemory');
+                const { thoughtNarrator } = await import('../../services/cognitive/thoughtNarrator');
+                const memStats = await continuum.getStats();
+                const narrative = await thoughtNarrator.getLatestNarrative();
+                brainStats = {
+                    workingMemoryItems: memStats.workingMemoryItems,
+                    latestNarrative: narrative ? narrative.text : null,
+                    latestNarrativeAt: narrative ? narrative.timestamp : null
+                };
+            } catch (e) {
+                console.warn("[SYSTEM] Failed to fetch brain telemetry", e);
+            }
+
+            // Get media queue status for Visual Cortex Queue display
+            let mediaQueue: any[] = [];
+            try {
+                const { localVideoService } = await import('../../services/media/localVideoService');
+                mediaQueue = localVideoService.getQueueStatus();
+            } catch (e) {
+                console.warn("[SYSTEM] Media queue fetch failed", e);
+            }
+
+            // Get projects from factory config (Active Operations VFS)
+            let projects: any[] = [];
+            try {
+                projects = sqliteService.getConfig('genesisProjects') || [];
+            } catch (e) {
+                console.warn("[SYSTEM] Projects fetch failed", e);
+            }
+
+            // Gather all data in parallel or sequence
+            // Last 20 log lines for the dashboard snapshot
+            const recentLogs = sqliteService.getLogs(20).map(l => `[${l.level}] ${l.message}`);
+
+            const state = {
+                telemetry: {
+                    ...telemetry, // This has cpu, ram, gpu, providerHealth
+                    agentCount: orchestrator.getActiveCount(),
+                    mediaQueue, // Add media queue to telemetry
+                    brain: brainStats // Emits cognitive data straight to frontend
+                },
+                orchestrator: {
+                    agents: orchestrator.getAgents(), // This returns full list (mixed active/offline)
+                    agentCount: orchestrator.getActiveCount()
+                },
+                introspection: {
+                    thoughts: [], // Thoughts handled by IntrospectionEngine
+                    // Fallback to logs if thoughts missing?
+                    // Or check systemBus? For now empty array is fine to stop crash, fetching agents is priority.
+                },
+                projects, // Add projects for Dashboard Active Operations
+                logs: recentLogs
+            };
+
+            res.json(state);
+        } catch (e: any) {
+            console.error("[SYSTEM] getFullState failed", e);
+            // Fallback to avoid 500 loop
+            res.json({
+                metrics: this.lastTelemetry || { cpu: 0, ram: { active: 0, total: 16 } },
+                logs: [],
+                liveThoughts: [],
+                squadThoughts: {},
+                activeAgents: 0
+            });
+        }
+    
+        });
+    }
+
+    // Helper methods for getFullState
+    private async getTelemetryData() {
+        return runSqliteOperation('server/controllers/systemController.ts:getTelemetryData', async () => {
+        // Instant return from cache
+        if (this.lastTelemetry) return this.lastTelemetry;
+        return await this.refreshTelemetryCache();
+    
+        });
+    }
+
+    private async refreshTelemetryCache() {
+        return runSqliteOperation('server/controllers/systemController.ts:refreshTelemetryCache', async () => {
+        const now = Date.now();
+        const si = await import('systeminformation');
+
+        let cpu, mem, gpu;
+
+        try {
+            cpu = await si.currentLoad();
+        } catch (e) {
+            console.warn("[TELEMETRY] CPU fetch failed", e);
+            cpu = { currentLoad: 0 };
+        }
+
+        try {
+            mem = await si.mem();
+        } catch (e) {
+            console.warn("[TELEMETRY] Mem fetch failed", e);
+            mem = null; // [R9] unmeasured is declared, never an invented 16GB
+        }
+
+        try {
+            // Graphics often hangs/fails on some Windows envs
+            gpu = await si.graphics().catch(() => ({ controllers: [] }));
+        } catch (e) {
+            console.warn("[TELEMETRY] GPU fetch failed", e);
+            gpu = { controllers: [] };
+        }
+
+        // [R9] no GPU detected = N/A, never an invented 4GB card
+        let gpuTelemetry: { vramUsed: number; vramTotal: number; model: string } | null = null;
+        if (gpu.controllers && gpu.controllers.length > 0 && gpu.controllers[0].vram) {
+            const card = gpu.controllers[0];
+            gpuTelemetry = {
+                vramUsed: (card as any).memoryUsed || 0,
+                vramTotal: card.vram,
+                model: card.model || 'Unknown GPU'
+            };
+        }
+
+        // Get real provider health stats (Enriched with Local Models)
+        let providerStats = {};
+        try {
+            const { providerHealth } = await import('../../services/providerHealthManager');
+            providerStats = await providerHealth.getEnrichedHealthStats();
+        } catch (e) {
+            console.warn("[TELEMETRY] Provider health fetch failed", e);
+        }
+
+        const telemetry = {
+            cpu: cpu.currentLoad,
+            ram: mem ? { active: (mem as any).active, total: (mem as any).total } : null, // null = unmeasured
+            gpu: gpuTelemetry, // null = no GPU detected (N/A)
+            activeAgents: 0,
+            agentsInVram: 0,
+            agentsInRam: 0,
+            providerHealth: providerStats
+        };
+
+        // Real token history: sample the cumulative counter and bucket per minute.
+        try {
+            const costs = sqliteService.getCostMetrics();
+            const totalTokens = Number(costs?.totalTokens ?? 0);
+            const totalCost = Number(costs?.totalCost ?? 0);
+            sqliteService.recordTelemetrySample(totalTokens, totalCost);
+            const since = now - 11 * 60 * 1000;
+            (telemetry as any).tokenHistory = buildTokenHistory(sqliteService.getTelemetrySamples(since), now, 10);
+            // Real "tokens today": positive deltas of the cumulative counter
+            // since local midnight (pure helper, unit-tested).
+            const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0);
+            (telemetry as any).tokensToday = computeTokensToday(
+                sqliteService.getTelemetrySamples(dayStart.getTime()), dayStart.getTime());
+        } catch (e: any) {
+            console.warn('[TELEMETRY] token history sampling failed', e);
+            (telemetry as any).tokenHistory = [];
+        }
+
+        this.lastTelemetry = telemetry;
+        this.lastTelemetryTime = now;
+        return telemetry;
+    
+        });
+    }
+
+    /**
+     * [R8] Common typed snapshot for the introspection UI. The backend used to
+     * return {thoughts, layer, activeConcepts, isDreaming} while the UI read
+     * {recentThoughts, consciousnessMetrics, narrativeState, temporalContext}
+     * - every conditional UI update silently never fired and defaults posed as
+     * data. Now one contract: measured values plus per-source availability,
+     * so a measured zero, an absent datum and an offline source are three
+     * different, visible states.
+     */
+    private async getIntrospectionData() {
+        const snapshot: any = {
+            version: BUILD_VERSION,
+            timestamp: Date.now(),
+            source: 'introspection-engine',
+            // measured values (defaults are real empties, not fabrications)
+            recentThoughts: [] as string[],
+            intuition: [] as string[],
+            isDreaming: false,
+            layer: 0,
+            activeConcepts: [] as any[],
+            consciousnessMetrics: null as any,   // null = engine unavailable
+            narrativeState: null as any,         // null = no narrative yet (absent, not zero)
+            temporalContext: buildTemporalContext(),  // measured: server clock (R8: measured, not absent)
+            available: { introspection: false, consciousness: false, narrative: false }
+        };
+
+        try {
+            const { introspection } = await import('../../services/introspectionEngine');
+            snapshot.recentThoughts = introspection.getRecentThoughts();
+            snapshot.intuition = introspection.getIntuition();
+            snapshot.layer = introspection.getCurrentLayer();
+            snapshot.activeConcepts = introspection.getActiveConcepts();
+            snapshot.isDreaming = introspection.getDreaming();
+            snapshot.available.introspection = true;
+        } catch (e: any) {
+            console.warn('[SYSTEM] introspection source unavailable:', e?.message);
+        }
+
+        try {
+            const { consciousness } = await import('../../services/consciousnessEngine');
+            snapshot.consciousnessMetrics = consciousness.getMetrics();
+            snapshot.available.consciousness = true;
+        } catch (e: any) {
+            console.warn('[SYSTEM] consciousness metrics source unavailable:', e?.message);
+        }
+
+        try {
+            const { thoughtNarrator } = await import('../../services/cognitive/thoughtNarrator');
+            // non-triggering read: observability must never start a cycle
+            snapshot.narrativeState = await thoughtNarrator.getLatestNarrative();
+            snapshot.available.narrative = true;
+        } catch (e: any) {
+            console.warn('[SYSTEM] narrative source unavailable:', e?.message);
+        }
+
+        // Legacy aliases for older consumers (same values, kept in sync)
+        snapshot.thoughts = snapshot.recentThoughts;
+        return snapshot;
+    }
+
+    private async getOrchestratorData() {
+        try {
+            const { orchestrator } = await import('../../services/orchestrator');
+            const agents = orchestrator.getAgents();
+            return {
+                agents: agents,
+                agentCount: agents.length
+            };
+        } catch {
+            return { agents: [], agentCount: 0 };
+        }
+    }
+
+    // Public endpoint for introspection state (used by introspection.routes.ts)
+    async getIntrospectionState(req: Request, res: Response) {
+        try {
+            const state = await this.getIntrospectionData();
+            res.json(state);
+        } catch (e: any) {
+            console.error('[SYSTEM] getIntrospectionState failed:', e.message);
+            res.status(500).json({ error: 'Failed to get introspection state', available: { introspection: false, consciousness: false, narrative: false } });
+        }
+    }
+
+    /**
+     * Get resource metrics (CPU, RAM, VRAM) for frontend Canvas optimization
+     * Uses resourceArbiter for accurate nvidia-smi based VRAM readings
+     */
+    async getResources(req: Request, res: Response) {
+        try {
+            const { resourceArbiter } = await import('../../services/resourceArbiter');
+            const metrics = await resourceArbiter.getRealMetrics();
+            res.json(metrics);
+        } catch (e: any) {
+            console.error('[SYSTEM] getResources failed:', e.message);
+            // [R9] measured or unavailable - simulated metrics presented as real were the lie
+            res.status(503).json({
+                available: false,
+                error: 'Hardware metrics unavailable',
+                details: e.message
+            });
+        }
+    }
+
+    /**
+     * Diagnostics for hardware evaluation during setup
+     */
+    async getDiagnostics(req: Request, res: Response) {
+        try {
+            const os = await import('os');
+            const totalMemory = os.totalmem();
+            const freeMemory = os.freemem();
+            const cpus = os.cpus();
+
+            const si = await import('systeminformation');
+            let gpuInfo = { vramTotalMB: 4096, vramTotalGB: 4, name: 'Standard Controller' };
+            try {
+                const graphics = await si.graphics().catch(() => ({ controllers: [] }));
+                if (graphics && graphics.controllers && graphics.controllers.length > 0) {
+                    const card = graphics.controllers[0];
+                    const vram = card.vram || 4096;
+                    gpuInfo = {
+                        vramTotalMB: vram,
+                        vramTotalGB: Math.round(vram / 1024),
+                        name: card.model || card.name || 'Standard Graphics Card'
+                    };
+                }
+            } catch (e) {
+                console.warn("[SYSTEM] GPU diagnostics failed:", e);
+            }
+
+            res.json({
+                ram: {
+                    totalBytes: totalMemory,
+                    totalGB: Math.round(totalMemory / (1024 * 1024 * 1024)),
+                    freeBytes: freeMemory,
+                    freeGB: Math.round(freeMemory / (1024 * 1024 * 1024))
+                },
+                cpu: {
+                    cores: cpus.length,
+                    model: cpus[0]?.model
+                },
+                gpu: gpuInfo,
+                os: {
+                    platform: os.platform(),
+                    release: os.release()
+                }
+            });
+        } catch (error: any) {
+            console.error('[SYSTEM] getDiagnostics failed:', error.message);
+            res.status(500).json({ error: error.message });
+        }
+    }
+
+    /**
+     * Submit a support ticket, sanitizing raw logs for PII before cloud sync
+     */
+    async submitSupportTicket(req: Request, res: Response) {
+        try {
+            const { description } = req.body;
+            if (!description || typeof description !== 'string') {
+                return res.status(400).json({ error: 'Description must be a non-empty string' });
+            }
+
+            const { supportAgent } = await import('../../services/supportAgent');
+            const result = await supportAgent.analyzeAndReport(description);
+
+            res.json({
+                success: true,
+                resolvedLocal: result.resolvedLocal,
+                message: result.message
+            });
+        } catch (error: any) {
+            console.error('[SYSTEM] Support ticket submission failed:', error.message);
+            res.status(500).json({ error: error.message });
+        }
+    }
+}
+
+export const systemController = new SystemController();

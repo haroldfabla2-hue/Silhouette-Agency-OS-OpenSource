@@ -27,7 +27,7 @@ jobs:
         run: |
           set -euo pipefail
           case "$GITHUB_EVENT_NAME" in
-            push) test "${{ github.event.before }}" = c555752c266613dc92df7a5733cac72d4d255445 ;;
+            push) test "${{ github.event.before }}" = c2a1c7fd3316027bf45c318d78144111717951d8 ;;
             workflow_dispatch) test -n "${{ inputs.expected_head }}" ;;
             *) exit 96 ;;
           esac
@@ -46,10 +46,10 @@ jobs:
         run: |
           set -euo pipefail
           if test "$GITHUB_EVENT_NAME" = push; then
-            test "$(git rev-parse HEAD^)" = c555752c266613dc92df7a5733cac72d4d255445
+            test "$(git rev-parse HEAD^)" = c2a1c7fd3316027bf45c318d78144111717951d8
             test "$(git rev-list --parents -n 1 HEAD | wc -w)" -eq 2
             git diff-tree --no-commit-id --name-only -r HEAD | sort > "$RUNNER_TEMP/integrated-actual-paths"
-            printf '%s\n' .github/workflows/integrated-silhouette-ui.yml tests/integrated-ui-trial/MANIFEST.json tests/integrated-ui-trial/hosted-orchestrator.py tests/integrated-ui-trial/integrated-hosted.yml tests/integrated-ui-trial/packet.sha256 | sort > "$RUNNER_TEMP/integrated-expected-paths"
+            printf '%s\n' .github/workflows/integrated-silhouette-ui.yml tests/integrated-ui-trial/BROWSER-BOUNDARY-REVIEW.md tests/integrated-ui-trial/FINITE-VALIDATION-REVIEW.md tests/integrated-ui-trial/MANIFEST.json tests/integrated-ui-trial/browser-driver.cjs tests/integrated-ui-trial/hosted-orchestrator.py tests/integrated-ui-trial/inspect-emitted-bootstrap.cjs tests/integrated-ui-trial/integrated-hosted.yml tests/integrated-ui-trial/namespace-entry.py tests/integrated-ui-trial/packet.sha256 tests/integrated-ui-trial/return-evidence.py tests/integrated-ui-trial/runtime-browser-composition.json tests/integrated-ui-trial/runtime-browser-overlay/browser.bootstrap.ts tests/integrated-ui-trial/runtime-browser-overlay/browser/ownershipCapacity.ts tests/integrated-ui-trial/runtime-browser-overlay/index.html tests/integrated-ui-trial/runtime-browser-overlay/server/controllers/systemController.ts tests/integrated-ui-trial/runtime-browser-overlay/services/lifecycle/runtimeStopBindings.ts tests/integrated-ui-trial/runtime-browser-overlay/services/lifecycle/systemTelemetryPoll.ts tests/integrated-ui-trial/runtime-browser-overlay/tsconfig.json tests/integrated-ui-trial/telemetry-regression.mts tests/integrated-ui-trial/ui-validation.py | sort > "$RUNNER_TEMP/integrated-expected-paths"
             diff -u "$RUNNER_TEMP/integrated-expected-paths" "$RUNNER_TEMP/integrated-actual-paths"
           fi
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020

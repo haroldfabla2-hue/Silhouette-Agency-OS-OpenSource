@@ -1,0 +1,24 @@
+# Source-only minimal finite validation delta
+
+This is a NEW review proposal, not already-admitted runtime code or executed tests. No push/run/build/typecheck/product import/browser launch was performed locally. Syntax checks only.
+
+## Why a new production loop module
+The real controller eagerly imports the original large service graph. Mocking that controller, stubbing services or inventing refresh data would not test production loop logic. The proposal moves its exact recurring poll owner into services/lifecycle/systemTelemetryPoll.ts and has the genuine controller instantiate that class with its unchanged real refreshTelemetryCache callback. Construction slot/registry binding remains in the actual controller. No provider/storage/app response is replaced. No admission exception is suppressed.
+
+The extracted loop preserves real5-second setTimeout, same in-flight refresh promise/error identity, same error log, no re-arm after stop, synchronous SQLite seal cancellation and cancelled-callback guard. No configurable short interval, fake clock, fake controller or replacement UI. Tests instantiate this exact production-used loop with controlled promises representing original lifecycle obligations only and with real SqliteAdmission, exactly as actual refreshTelemetryCache uses runSqliteOperation. These are not AI/storage results or a claimed successful application simulation. Physical SQLite/controller integration remains the actual runtime's separate job.
+
+## Proposed existing ui-build phase contents
+1.Complete actual tsconfig locked TypeScript check, --noEmit --pretty false,60second cap. Includes original full project/new browser files. Do not filter errors or convert baseline failures to pass.
+2.Exact production-used loop regression script under locked tsx,40second cap. Six real-timer assertions: idle/idempotent stop; pending original join blocks and does not rearm; actual5s recurrence then cancellation; original rejected error identity; actual SQLite seal cancels queued/in-flight polls and joins originals; new loop registration after seal rejects. Expected fixture failure is asserted explicitly, not reported as a clean product host. No DB/client constructed by this script.
+3.Genuine Vite build with source maps,55second cap. Source maps remain local non-allowlisted test outputs, never exported. They let inspection identify actual emitted first-party modules without decoding guessed minifier names.
+4.Actual emitted bootstrap inspector,8second cap. Walks emitted local static/literal dynamic chunk graph and source maps without evaluating bundle; requires one real HTML entry, no original App/index/systemBus source in static eager closure, genuine systemBus preserved in full closure, exact original bootstrap source map, and actual host construction -> frontend-entry scope -> dynamic import lexical order in emitted bootstrap AST. Fails closed on unsupported computed/nonlocal JS chunks or missing maps. Does NOT claim package/vendor runtime evaluation or rendered UI; genuine runtime/pageerror/PNG still required.
+
+Worst subcommand caps163seconds, within existing180second phase bound with17seconds orchestration reserve. Actual compiler/build/native behavior may exceed their caps: timeout is FAIL, never an automatic limit increase. Same3GiB1CPU96pids/swap0,20minute overall/no charge/providersOFF/privacy.
+
+## Needed composition behavior
+Keep phase supervisor and privilege/capability/network paths unchanged. ui-build namespace entry calls ui-validation.py; server-build stays actual Vite server build; runtime stays actual product+admitted genuine browser driver. Emit three new allowlisted receipts under ui-build: finite-validation.json, telemetry-regression.json, emitted-bootstrap-inspection.json. No source maps, storage, cookies, responses, screenshots from fixtures, or general artifact paths exported.
+
+An ordinary cleanly contained ui-build nonzero from typecheck/finite assertions must remain aggregate FAIL, but may permit independent actual server/runtime diagnostics only when actual dist/index.html and inspector receipt prove a real built UI. Supervisor force/timeout/remaining descendant/cleanup failure is never tolerated for continuation. Missing prerequisite prevents dependent runtime; it is not skipped-as-pass. All phase failures must survive into final result. This is diagnostic continuation, not gate weakening. Independent review must approve exact implementation.
+
+## Genuine limitations
+These finite tests cover the extracted real recurring loop and real admission, not full controller imports or every receiver/native owner. The full application still has sticky root INCOMPLETE and may fail complete TypeScript checks. Original first browser exception was not captured historically. Emitted AST inspection is not actual browser evaluation. Actual returned pixels still require visual inspection. No current proposal claims completion.

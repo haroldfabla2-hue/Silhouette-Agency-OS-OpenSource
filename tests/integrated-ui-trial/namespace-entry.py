@@ -50,6 +50,8 @@ try:
 finally:os.close(fd)
 if phase=='runtime-prerequisites':
  raise SystemExit(subprocess.call(['/node/bin/node','/driver/runtime-prerequisites.cjs'],env=env))
+if phase=='ui-build':
+ raise SystemExit(subprocess.call(['/usr/bin/python3','/driver/ui-validation.py'],env=env))
 if phase.endswith('build'):
  cmd=['/node/bin/node','/app/node_modules/vite/bin/vite.js','build']
  if phase=='server-build':cmd+=['--config','vite.server.config.ts']

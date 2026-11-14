@@ -89,7 +89,7 @@ def members(b,*,mode,package=None,integrity=None):
 try:
  assert os.environ['PRIVATE']=='false'and os.environ['ENVIRONMENT']=='github-hosted'and os.environ['GITHUB_EVENT_NAME']in {'workflow_dispatch','push'}
  if os.environ['GITHUB_EVENT_NAME']=='push':
-  assert subprocess.check_output(['git','rev-parse','HEAD^'],cwd=REPO,text=True).strip()=='c555752c266613dc92df7a5733cac72d4d255445'
+  assert subprocess.check_output(['git','rev-parse','HEAD^'],cwd=REPO,text=True).strip()=='c2a1c7fd3316027bf45c318d78144111717951d8'
   assert os.environ['GITHUB_REF']=='refs/heads/preparation/sqlite-static-typecheck-db201993-4054-20261114'
  assert os.environ['GITHUB_SHA']==os.environ['EXPECTED_HEAD']==subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip()
  node=Path(shutil.which('node')).resolve();assert sha(node.read_bytes())=='ccacb2d6d87ba6d118b2bffc1ae33747a05cc5fc6b1f1ec4fc1d420b687e952d';assert subprocess.check_output([str(node),'--version'],text=True).strip()=='v22.18.0'
@@ -117,6 +117,12 @@ try:
  for r in json.loads(bp)['files']:
   p=app/r['path'];b=(HERE/'body-custody-overlay'/r['path']).read_bytes();assert(sha(p.read_bytes())if p.exists()else None)==r['beforeSha256'];assert sha(b)==r['afterSha256'];p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(b)
  classification=json.loads((HERE/'state-classification.json').read_text());actual={str(p.relative_to(app)):sha(p.read_bytes())for p in app.rglob('*')if p.is_file()};assert actual=={r['path']:r['sha256']for r in classification['files']}
+ # Exact reviewed correction overlay AFTER immutable failed-source verification.
+ correctionRaw=(HERE/'runtime-browser-composition.json').read_bytes();assert sha(correctionRaw)=='12718cedc387b979cc83b6e6ea025179723f934d3fefa1c8ae8798230daf8599'
+ correction=json.loads(correctionRaw);assert correction['basePublishedParent']=='c2a1c7fd3316027bf45c318d78144111717951d8'and len(correction['files'])==7
+ for r in correction['files']:
+  p=app/r['path'];b=(HERE/'runtime-browser-overlay'/r['path']).read_bytes();assert(sha(p.read_bytes())if p.exists()else None)==r['beforeSha256'];assert len(b)==r['bytes']and sha(b)==r['afterSha256'];p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(b)
+ corrected={str(p.relative_to(app)):sha(p.read_bytes())for p in app.rglob('*')if p.is_file()};assert corrected==correction['finalProductFiles']
  excluded=[]
  for r in classification['files']:
   if not r['include']:(app/r['path']).unlink();excluded.append(r)
@@ -171,8 +177,20 @@ try:
  (app/'node_modules').mkdir();(deps/'.vite-temp').mkdir()
  (app/'RUNTIME-MATERIALIZATION-REVIEWED.json').write_text(json.dumps({'base':BASE,'source54':True,'historicalState':False,'providerMode':'off','runnableOnlyInsideIsolatedPhase':True})+'\n')
  nodeRoot=node.parents[1]
+ phaseFailures=[]
  for phase in ['runtime-prerequisites','ui-build','server-build','runtime']:
-  command(phase,['sudo','-n',str(shutil.which('python3')),str(HERE/'supervisor.py'),'--bwrap',str(bwrap),'--phase',phase,'--app',str(app),'--deps',str(deps),'--browser',str(browser),'--review-dir',str(HERE),'--node-root',str(nodeRoot),'--cgroup-parent','/sys/fs/cgroup','--cgroup-tag',os.environ['GITHUB_RUN_ID'],'--memory-bytes',str(3*1024**3),'--wall-seconds','180','--evidence',str(EV/phase)],REPO,{'PATH':os.environ['PATH']},200)
- emit('result.json',{'status':'INTEGRATED_PHASES_EXITED','providers':'off','localInference':False,'AIProven':False,'authenticatedChatStorageProven':False,'rootBComplete':False,'global':'INCOMPLETE'})
+  try:command(phase,['sudo','-n',str(shutil.which('python3')),str(HERE/'supervisor.py'),'--bwrap',str(bwrap),'--phase',phase,'--app',str(app),'--deps',str(deps),'--browser',str(browser),'--review-dir',str(HERE),'--node-root',str(nodeRoot),'--cgroup-parent','/sys/fs/cgroup','--cgroup-tag',os.environ['GITHUB_RUN_ID'],'--memory-bytes',str(3*1024**3),'--wall-seconds','180','--evidence',str(EV/phase)],REPO,{'PATH':os.environ['PATH']},200)
+  except AssertionError:
+   # Only clean natural ui-build code1 diagnostic failures can continue. Any
+   # supervisor/cgroup/output/identity/cap/timeout defect remains hard failure.
+   if phase!='ui-build':raise
+   sr=json.loads((EV/phase/'supervisor.json').read_text());fr=json.loads((EV/phase/'finite-validation.json').read_text());br=json.loads((EV/phase/'emitted-bootstrap-inspection.json').read_text())
+   assert sr['code']==1 and sr['failure']is None and not sr['events']and not sr['remainingPids']and sr['cgroupRemoved']is True
+   assert fr['status']=='FAIL'and any(r.get('code')not in [0,None]or r.get('timeout')for r in fr['rows'])
+   assert all(not r.get('timeout')for r in fr['rows']),'NO_TIMEOUT_DIAGNOSTIC_CONTINUATION'
+   assert br['status']=='EMITTED_STATIC_BOUNDARY_INSPECTED_NOT_BROWSER_EVALUATION'and(app/'dist/index.html').is_file()
+   phaseFailures.append({'phase':phase,'code':1,'source':'finite-validation.json','meaning':'ORDINARY_FINITE_CHECK_FAILED_AGGREGATE_FAIL'})
+ emit('result.json',{'status':'FAIL_FINITE_VALIDATION_WITH_ACTUAL_RUNTIME_DIAGNOSTICS'if phaseFailures else'INTEGRATED_PHASES_EXITED','retainedPhaseFailures':phaseFailures,'providers':'off','localInference':False,'AIProven':False,'authenticatedChatStorageProven':False,'rootBComplete':False,'global':'INCOMPLETE'})
+ if phaseFailures:raise AssertionError('FINITE_VALIDATION_FAILURE_RETAINED_AFTER_ACTUAL_RUNTIME_DIAGNOSTICS')
 except BaseException as e:
  emit('failure.json',{'type':type(e).__name__,'message':str(e),'global':'INCOMPLETE','forcedOrMissingEvidenceNeverPass':True});raise
