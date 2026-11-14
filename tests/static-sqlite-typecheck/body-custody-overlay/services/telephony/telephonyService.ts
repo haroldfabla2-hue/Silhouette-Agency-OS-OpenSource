@@ -1,0 +1,949 @@
+import { HttpBodyCustodyFailures, withHttpResponseCustody } from '../lifecycle/httpResponseCustody';
+import { runSqliteOperation } from '../lifecycle/sqliteAdmission';
+import { admitEvaluatedTelephony, bindEvaluatedTelephony, failEvaluatedTelephony } from '../lifecycle/runtimeStopBindings';
+import { telephonyOwner } from '../lifecycle/preparationBindings';
+import { AdmissionClosed, type Operation } from '../lifecycle/host';
+// =============================================================================
+// SILHOUETTE TELEPHONY & REAL-TIME VOIP ENGINE (PHASE 22 - TELEPHONY EXPANSION)
+// Enterprise-Grade Bidirectional Voice Calling, Live Twilio/SIP Integration,
+// Interactive Voice Response (IVR/DTMF) Navigation, and Memory Grounding.
+// =============================================================================
+
+import crypto from 'crypto';
+import { sqliteService } from '../sqliteService';
+import { systemBus } from '../systemBus';
+import { SystemProtocol } from '../../types';
+import { ttsService } from '../ttsService';
+import { isDemoModeEnabled } from '../security/capabilityState';
+import { assertExternalProvidersEnabled } from '../security/bootMode';
+import { voiceLibraryService } from '../media/voiceLibraryService';
+
+// The policy must reject before loading the provider/app graph. ON delegates
+// the exact existing implementation without changing prompts or model routing.
+async function generateTelephonyText(prompt: string): Promise<string> {
+    assertExternalProvidersEnabled();
+    const { generateText } = await import('../geminiService');
+    return generateText(prompt);
+}
+
+export type CallDirection = 'INBOUND' | 'OUTBOUND';
+export type CallStatus = 'QUEUED' | 'RINGING' | 'IN_PROGRESS' | 'COMPLETED' | 'BUSY' | 'FAILED';
+
+const TERMINAL: ReadonlySet<CallStatus> = new Set<CallStatus>(['COMPLETED', 'BUSY', 'FAILED']);
+const ORDER: Record<CallStatus, number> = { QUEUED: 0, RINGING: 1, IN_PROGRESS: 2, COMPLETED: 3, BUSY: 3, FAILED: 3 };
+
+/** Maps a Twilio call status to ours (null = unknown, ignored). */
+export function mapProviderStatus(raw: string): CallStatus | null {
+    switch ((raw || '').toLowerCase()) {
+        case 'queued': case 'initiated': return 'QUEUED';
+        case 'ringing': return 'RINGING';
+        case 'in-progress': case 'answered': return 'IN_PROGRESS';
+        case 'completed': return 'COMPLETED';
+        case 'busy': return 'BUSY';
+        case 'failed': case 'no-answer': case 'canceled': return 'FAILED';
+        default: return null;
+    }
+}
+
+/** Status only moves forward and never leaves a terminal state. */
+export function canTransition(from: CallStatus, to: CallStatus): boolean {
+    if (from === to) return false;
+    if (TERMINAL.has(from)) return false;
+    return ORDER[to] > ORDER[from];
+}
+
+export interface CallTurn {
+    speaker: 'agent' | 'caller' | 'system';
+    text: string;
+    timestamp: number;
+    dtmfDigits?: string;
+    audioUrl?: string;
+}
+
+export interface AcousticSentimentAnalysis {
+    hesitationIndex: number; // 0.0 to 1.0 (fillers, hesitations, latency)
+    urgencyScore: number;    // 0.0 to 1.0 (urgency cues, pace)
+    disposition: 'COOPERATIVE' | 'HESITANT' | 'RESISTANT' | 'FATIGUED';
+    negotiationSignals: string[];
+    tacticalAdvice: string;
+}
+
+export interface TelephonyCall {
+    id: string;
+    toNumber: string;
+    fromNumber: string;
+    direction: CallDirection;
+    status: CallStatus;
+    purpose: string;
+    transcript: CallTurn[];
+    durationSeconds: number;
+    providerCallSid?: string;
+    isSimulated: boolean;
+    /** Provider error when the call could not be placed (status FAILED). */
+    providerError?: string;
+    voiceId?: string;
+    createdAt: number;
+    endedAt?: number;
+    summary?: string;
+}
+
+export interface InitiateCallParams {
+    toNumber: string;
+    fromNumber?: string;
+    purpose: string;
+    initialGreeting?: string;
+    agentPersona?: string;
+    voiceId?: string;
+    maxDurationSeconds?: number;
+}
+
+export class TelephonyService {
+    private readonly ownership = telephonyOwner();
+    private knownWorkSealed = false;
+    private readonly knownWork = new Set<Promise<unknown>>();
+    private knownDrain: Promise<void> | undefined;
+    private readonly httpBodyFailures = new HttpBodyCustodyFailures();
+    private invokeKnown<T>(source: string, original: () => T): T {
+        if (this.knownWorkSealed) throw new AdmissionClosed(source);
+        return this.ownership.invoke('telephony-' + source, original);
+    }
+    private admitKnown<T>(source: string, original: () => Promise<T>): Promise<T> {
+        const work = this.invokeKnown(source, original);
+        this.knownWork.add(work);
+        const settled = () => { this.knownWork.delete(work); };
+        void work.then(settled, settled);
+        return work;
+    }
+    /** Only known in-process methods. Does not hang up calls, revoke provider
+     * callbacks, detach a sender or assert remote completion. Not wired to root
+     * stop until those real upstream receiver lifetimes are integrated.
+     */
+    public sealAndDrainKnownWork(): Promise<void> {
+        if (this.knownDrain) return this.knownDrain;
+        this.knownWorkSealed = true;
+        this.knownDrain = Promise.allSettled([...this.knownWork]).then(results => {
+            if (this.activeCalls.size) this.ownership.unknown('REMOTE_CALL_OR_CALLBACK_LIFETIME_UNVERIFIED', true);
+            if (this.mediaStreamSender) this.ownership.unknown('MEDIA_STREAM_SENDER_LIFETIME_UNVERIFIED', true);
+            const errors = results.flatMap(result => result.status === 'rejected' ? [result.reason] : []);
+            // Methods may return a provider business error instead of throwing.
+            // Their original body-cleanup failures remain separate obligations.
+            const bodyFailure = this.httpBodyFailures.drainFailure();
+            if (bodyFailure) errors.push(bodyFailure);
+            if (errors.length) throw new AggregateError(errors, 'Known telephony borrower drain failed');
+        });
+        void this.knownDrain.catch(() => undefined);
+        return this.knownDrain;
+    }
+    private activeCalls: Map<string, TelephonyCall> = new Map();
+    private isInitialized = false;
+
+    // Twilio / SIP Configuration
+    private accountSid: string | null = null;
+    private authToken: string | null = null;
+    private defaultFromNumber: string | null = null;
+
+    constructor(operation: Operation) {
+        this.ownership.validateConstruction(operation);
+        this.reloadCredentialsOriginal();
+        this.initializeSchema();
+    }
+
+    public reloadCredentials(): void {
+        return this.invokeKnown('reloadCredentials', () => this.reloadCredentialsOriginal());
+    }
+    private reloadCredentialsOriginal(): void {
+        this.accountSid = process.env.TWILIO_ACCOUNT_SID || null;
+        this.authToken = process.env.TWILIO_AUTH_TOKEN || null;
+        // No fabricated default: without TWILIO_PHONE_NUMBER there is no real
+        // sender number, and dial() fails honestly (demo mode uses a labelled
+        // fictional 555 number instead).
+        this.defaultFromNumber = process.env.TWILIO_PHONE_NUMBER || null;
+    }
+
+    /**
+     * Initializes telephony table in SQLite for persistent call history and auditing.
+     */
+    private initializeSchema(): void {
+        return runSqliteOperation('services/telephony/telephonyService.ts:initializeSchema', () => {
+        if (this.isInitialized) return;
+
+        sqliteService.sql.exec(`
+            CREATE TABLE IF NOT EXISTS telephony_calls (
+                id TEXT PRIMARY KEY,
+                to_number TEXT NOT NULL,
+                from_number TEXT NOT NULL,
+                direction TEXT NOT NULL,
+                status TEXT NOT NULL,
+                purpose TEXT NOT NULL,
+                transcript TEXT NOT NULL,
+                duration_seconds INTEGER DEFAULT 0,
+                provider_call_sid TEXT,
+                is_simulated INTEGER DEFAULT 1,
+                voice_id TEXT,
+                created_at INTEGER NOT NULL,
+                ended_at INTEGER,
+                summary TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_telephony_status ON telephony_calls(status);
+            CREATE INDEX IF NOT EXISTS idx_telephony_created ON telephony_calls(created_at);
+        `);
+
+        try {
+            sqliteService.sql.exec(`ALTER TABLE telephony_calls ADD COLUMN voice_id TEXT;`);
+        } catch {}
+
+        this.isInitialized = true;
+    
+        });
+    }
+
+    /** Optional sender to the live media stream (WebSocket). Registered by the media-stream server when present. */
+    private mediaStreamSender: ((callId: string, msg: { event: 'clear' }) => Promise<boolean>) | null = null;
+    public setMediaStreamSender(fn: ((callId: string, msg: { event: 'clear' }) => Promise<boolean>) | null): void {
+        return this.invokeKnown('setMediaStreamSender', () => this.setMediaStreamSenderOriginal(fn));
+    }
+    private setMediaStreamSenderOriginal(fn: ((callId: string, msg: { event: 'clear' }) => Promise<boolean>) | null): void {
+        this.mediaStreamSender = fn;
+    }
+
+    /**
+     * Applies a provider status update (callback). This is the ONLY way a real call moves forward.
+     * Backwards or post-terminal updates are ignored. Returns the call when the state changed.
+     */
+    public applyProviderStatus(providerCallSid: string, rawStatus: string): TelephonyCall | null {
+        return runSqliteOperation('services/telephony/telephonyService.ts:applyProviderStatus', () => {
+        return this.invokeKnown('applyProviderStatus', () => this.applyProviderStatusOriginal(providerCallSid, rawStatus));
+    
+        });
+    }
+    private applyProviderStatusOriginal(providerCallSid: string, rawStatus: string): TelephonyCall | null {
+        return runSqliteOperation('services/telephony/telephonyService.ts:applyProviderStatusOriginal', () => {
+        const next = mapProviderStatus(rawStatus);
+        if (!next) return null;
+        let call: TelephonyCall | undefined;
+        for (const c of this.activeCalls.values()) if (c.providerCallSid === providerCallSid) { call = c; break; }
+        if (!call) return null;
+        if (!canTransition(call.status, next)) return null;
+        call.status = next;
+        if (TERMINAL.has(next)) {
+            call.endedAt = Date.now();
+            call.durationSeconds = Math.max(1, Math.round((call.endedAt - call.createdAt) / 1000));
+            this.activeCalls.delete(call.id);
+        }
+        this.saveCallToDb(call);
+        systemBus.emit(SystemProtocol.TELEMETRY_LOG, { service: 'TelephonyService', event: 'CALL_STATUS', callId: call.id, status: next });
+        return call;
+    
+        });
+    }
+
+    /**
+     * Dials an outbound phone number.
+     * Uses Twilio REST API when credentials exist; otherwise gracefully runs in
+     * high-fidelity conversational simulation mode for testing and local dev.
+     */
+    public async dial(params: InitiateCallParams): Promise<{ call: TelephonyCall; error?: string }> {
+        return runSqliteOperation('services/telephony/telephonyService.ts:dial', async () => {
+        return this.admitKnown('dial', () => this.dialOriginal(params));
+    
+        });
+    }
+    private async dialOriginal(params: InitiateCallParams): Promise<{ call: TelephonyCall; error?: string }> {
+        return runSqliteOperation('services/telephony/telephonyService.ts:dialOriginal', async () => {
+        this.initializeSchema();
+
+        const callId = `call_${crypto.randomUUID().replace(/-/g, '').substring(0, 12)}`;
+        const hasCreds = !!(this.accountSid && this.authToken);
+        const configuredFrom = params.fromNumber || this.defaultFromNumber;
+        // Demo mode is a labelled simulation, so a fictional 555-range number
+        // is honest there; a real provider call needs a real configured number.
+        const fromNumber = configuredFrom || (isDemoModeEnabled() ? '+15550199000' : null);
+        if (hasCreds && !fromNumber) {
+            return {
+                call: null as any,
+                error: 'UNAVAILABLE: no sender phone number configured. Set TWILIO_PHONE_NUMBER (or pass fromNumber) to place real calls.'
+            };
+        }
+        // telephony_calls.from_number is NOT NULL: a call that never reaches a
+        // provider (honest local failure, no creds) gets an explicit marker,
+        // never a fabricated number and never a NULL insert.
+        const storedFromNumber = fromNumber || 'UNCONFIGURED';
+        let providerCallSid: string | undefined;
+        let providerError: string | undefined;
+        let status: CallStatus = 'QUEUED';
+        let isSimulated = false;
+
+        if (!hasCreds) {
+            if (isDemoModeEnabled()) {
+                // Explicit DEMO mode only: a labelled simulation, never presented as a real call.
+                isSimulated = true;
+                status = 'IN_PROGRESS';
+            } else {
+                providerError = 'UNAVAILABLE: no telephony provider credentials configured (TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN). Set them, or enable SILHOUETTE_DEMO_MODE=1 for a labelled demo.';
+                status = 'FAILED';
+            }
+        } else {
+            try {
+                const endpoint = `https://api.twilio.com/2010-04-01/Accounts/${this.accountSid}/Calls.json`;
+                const authHeader = Buffer.from(`${this.accountSid}:${this.authToken}`).toString('base64');
+                const webhookUrl = process.env.SILHOUETTE_VOICE_WEBHOOK;
+                if (!webhookUrl) {
+                    providerError = 'UNAVAILABLE: SILHOUETTE_VOICE_WEBHOOK (public HTTPS URL for call callbacks) is not configured.';
+                    status = 'FAILED';
+                } else {
+                    const body = new URLSearchParams({ To: params.toNumber, From: fromNumber, Url: webhookUrl });
+                    try {
+                        // Provider status callbacks come back to the same public origin.
+                        body.set('StatusCallback', new URL('/v1/voices/status', webhookUrl).toString());
+                        body.set('StatusCallbackEvent', 'initiated ringing answered completed');
+                    } catch { /* invalid URL is surfaced by the provider response */ }
+                    const res = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Basic ${authHeader}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: body.toString()
+                    });
+                    await withHttpResponseCustody(res, this.httpBodyFailures, 'telephony-dial', async readJson => {
+                        if (res.ok) {
+                            const data: any = await readJson();
+                            if (data && typeof data.sid === 'string' && data.sid) {
+                                providerCallSid = data.sid;
+                                status = 'QUEUED'; // advances ONLY via provider callbacks
+                            } else {
+                                providerError = 'Provider accepted the request but returned no call SID.';
+                                status = 'FAILED';
+                            }
+                        } else {
+                            providerError = `Provider rejected the call (HTTP ${res.status}).`;
+                            status = 'FAILED';
+                        }
+                    });
+                }
+            } catch (err: any) {
+                providerError = `Could not reach provider: ${err.message}`;
+                status = 'FAILED';
+            }
+        }
+
+        const initialTurn: CallTurn = {
+            speaker: 'agent',
+            text: params.initialGreeting || `Hello, this is Silhouette Agency Assistant calling regarding: ${params.purpose}.`,
+            timestamp: Date.now()
+        };
+
+        const callRecord: TelephonyCall = {
+            id: callId,
+            toNumber: params.toNumber,
+            fromNumber: storedFromNumber,
+            direction: 'OUTBOUND',
+            status,
+            purpose: params.purpose,
+            transcript: [initialTurn],
+            durationSeconds: 0,
+            providerCallSid,
+            isSimulated,
+            providerError,
+            voiceId: params.voiceId,
+            createdAt: Date.now(),
+            endedAt: status === 'FAILED' ? Date.now() : undefined
+        };
+
+        if (status !== 'FAILED') this.activeCalls.set(callId, callRecord);
+        this.saveCallToDb(callRecord);
+
+        systemBus.emit(SystemProtocol.TELEMETRY_LOG, {
+            service: 'TelephonyService',
+            event: status === 'FAILED' ? 'CALL_FAILED' : 'CALL_INITIATED',
+            callId,
+            toNumber: params.toNumber,
+            isSimulated,
+            status
+        });
+
+        return status === 'FAILED' ? { call: callRecord, error: providerError } : { call: callRecord };
+    
+        });
+    }
+
+    /**
+     * Acoustic Negotiation Radar:
+     * Analyzes cadence, hesitation markers, speech tempo/latency, and resistance cues
+     * to dynamically calibrate the agent's negotiation posture in real time.
+     */
+    public analyzeAcousticSentiment(text: string, latencyMs?: number): AcousticSentimentAnalysis {
+        const lower = text.toLowerCase();
+        const signals: string[] = [];
+
+        // Hesitation detection
+        const hesitationMarkers = ['um', 'uh', 'er', 'hmm', 'well...', 'well,', 'maybe', 'i guess', 'not sure', 'i think so', '...'];
+        let hesitationCount = 0;
+        for (const m of hesitationMarkers) {
+            if (lower.includes(m)) hesitationCount++;
+        }
+        if (latencyMs && latencyMs > 2500) {
+            hesitationCount += 2;
+            signals.push('HIGH_LATENCY_PAUSE');
+        }
+        const hesitationIndex = Math.min(1, Number((hesitationCount / 4).toFixed(2)));
+        if (hesitationIndex > 0.4) signals.push('UNCERTAINTY_HESITATION');
+
+        // Urgency detection
+        const urgencyMarkers = ['urgent', 'urgently', 'asap', 'immediately', 'quick', 'hurry', 'right now', 'emergency', 'fast', 'now'];
+        let urgencyCount = 0;
+        for (const m of urgencyMarkers) {
+            if (lower.includes(m)) urgencyCount++;
+        }
+        if (latencyMs && latencyMs < 800) {
+            urgencyCount++;
+            signals.push('RAPID_RESPONSE');
+        }
+        const urgencyScore = Math.min(1, Number((urgencyCount / 3).toFixed(2)));
+        if (urgencyScore > 0.5) signals.push('HIGH_URGENCY');
+
+        // Resistance / Objection detection
+        const resistanceMarkers = ['too expensive', 'can\'t', 'cannot', 'no way', 'too high', 'disagree', 'impossible', 'cancel', 'refund', 'don\'t want', 'ridiculous', 'not interested'];
+        let resistanceCount = 0;
+        for (const m of resistanceMarkers) {
+            if (lower.includes(m)) resistanceCount++;
+        }
+        if (resistanceCount > 0) signals.push('COMMERCIAL_OBJECTION');
+
+        // Fatigue detection
+        const fatigueMarkers = ['whatever', 'fine', 'i don\'t care', 'if you say so', 'tired', 'ugh', 'exhausted'];
+        let fatigueCount = 0;
+        for (const m of fatigueMarkers) {
+            if (lower.includes(m)) fatigueCount++;
+        }
+        if (fatigueCount > 0) signals.push('CALLER_FATIGUE');
+
+        // Disposition classification
+        let disposition: 'COOPERATIVE' | 'HESITANT' | 'RESISTANT' | 'FATIGUED' = 'COOPERATIVE';
+        let tacticalAdvice = 'Interlocutor is receptive and cooperative. Proceed directly with confirmation and clear next steps.';
+
+        if (resistanceCount > 0) {
+            disposition = 'RESISTANT';
+            tacticalAdvice = 'Interlocutor exhibits price, terms, or policy resistance. Acknowledge concerns with empathy, de-escalate tension, reframe value, and offer an alternative concession or tier.';
+        } else if (hesitationIndex >= 0.4) {
+            disposition = 'HESITANT';
+            tacticalAdvice = 'Interlocutor is uncertain or weighing trade-offs. Simplify choices into a binary decision (Option A vs Option B) and provide reassuring validation.';
+        } else if (fatigueCount > 0) {
+            disposition = 'FATIGUED';
+            tacticalAdvice = 'Interlocutor is experiencing conversation fatigue. Minimize verbosity, skip preamble, and proceed immediately to final resolution.';
+        }
+
+        return {
+            hesitationIndex,
+            urgencyScore,
+            disposition,
+            negotiationSignals: signals,
+            tacticalAdvice
+        };
+    }
+
+    /**
+     * Sub-100ms Full-Duplex Interruption (Barge-In).
+     * Truncates outbound TTS playback immediately when caller speech is detected,
+     * flushing the provider media stream queue and synchronizing dialog turns.
+     */
+    public async triggerBargeIn(callId: string): Promise<{ success: boolean; twiml: string; timestamp: number; error?: string }> {
+        return runSqliteOperation('services/telephony/telephonyService.ts:triggerBargeIn', async () => {
+        return this.admitKnown('triggerBargeIn', () => this.triggerBargeInOriginal(callId));
+    
+        });
+    }
+    private async triggerBargeInOriginal(callId: string): Promise<{ success: boolean; twiml: string; timestamp: number; error?: string }> {
+        return runSqliteOperation('services/telephony/telephonyService.ts:triggerBargeInOriginal', async () => {
+        const call = this.activeCalls.get(callId);
+        if (!call || call.status !== 'IN_PROGRESS') {
+            return { success: false, twiml: '', timestamp: Date.now(), error: `Call ${callId} is not active.` };
+        }
+
+        // A real call needs a connected media stream to flush queued audio. No stream = honestly UNAVAILABLE.
+        const twimlClear = `<?xml version="1.0" encoding="UTF-8"?><Response><Clear/></Response>`;
+        if (!call.isSimulated) {
+            const sender = this.mediaStreamSender;
+            if (!sender) {
+                return { success: false, twiml: '', timestamp: Date.now(), error: 'UNAVAILABLE: no media stream connected for this call, audio cannot be cleared.' };
+            }
+            try {
+                const ok = await sender(callId, { event: 'clear' });
+                if (!ok) return { success: false, twiml: '', timestamp: Date.now(), error: 'Media stream did not accept the clear command.' };
+            } catch (e: any) {
+                return { success: false, twiml: '', timestamp: Date.now(), error: `Media stream error: ${e.message}` };
+            }
+        }
+
+        const timestamp = Date.now();
+        call.transcript.push({
+            speaker: 'system',
+            text: `[BARGE_IN_TRIGGERED: Outbound audio truncated. Interruption detected at ${new Date(timestamp).toISOString()}]`,
+            timestamp
+        });
+
+        this.saveCallToDb(call);
+
+        const twiml = twimlClear;
+
+        systemBus.emit(SystemProtocol.TELEMETRY_LOG, {
+            service: 'TelephonyService',
+            event: 'BARGE_IN_TRIGGERED',
+            callId,
+            timestamp
+        });
+
+        return {
+            success: true,
+            twiml,
+            timestamp
+        };
+    
+        });
+    }
+
+    /**
+     * Processes an interactive voice turn in an ongoing phone call.
+     * Converts speech transcript -> acoustic radar -> LLM reasoning -> voice synthesis (TTS).
+     */
+    public async processCallTurn(
+        callId: string,
+        callerUtterance: string,
+        latencyMs?: number
+    ): Promise<{
+        agentResponse: string;
+        audioBase64?: string;
+        sentiment?: AcousticSentimentAnalysis;
+        voicePersona?: string;
+        error?: string;
+    }> {
+        return runSqliteOperation('services/telephony/telephonyService.ts:processCallTurn', async () => {
+        return this.admitKnown('processCallTurn', () => this.processCallTurnOriginal(callId, callerUtterance, latencyMs));
+    
+        });
+    }
+    private async processCallTurnOriginal(
+        callId: string,
+        callerUtterance: string,
+        latencyMs?: number
+    ): Promise<{
+        agentResponse: string;
+        audioBase64?: string;
+        sentiment?: AcousticSentimentAnalysis;
+        voicePersona?: string;
+        error?: string;
+    }> {
+        return runSqliteOperation('services/telephony/telephonyService.ts:processCallTurnOriginal', async () => {
+        const call = this.activeCalls.get(callId);
+        if (!call || call.status !== 'IN_PROGRESS') {
+            return { agentResponse: '', error: `Call ${callId} is not currently active.` };
+        }
+
+        const admittedSpeech = ttsService.reserveTelephonySpeech();
+        let admittedVoice: ReturnType<typeof voiceLibraryService.reserveTelephonyVoice> | undefined;
+        try {
+        // Only reserve the branch the original voice-id guard selects. If this
+        // independent reservation fails, finally still releases speech unused.
+        if (call.voiceId) admittedVoice = voiceLibraryService.reserveTelephonyVoice();
+        // 1. Analyze acoustic sentiment & caller disposition
+        const sentiment = this.analyzeAcousticSentiment(callerUtterance, latencyMs);
+
+        // 2. Resolve configured voice persona
+        let voicePersonaName = 'Silhouette Voice';
+        if (call.voiceId) {
+            try {
+                const voice = await admittedVoice!.getVoice(call.voiceId);
+                if (voice) {
+                    voicePersonaName = `${voice.name} (${voice.style || 'natural'}, ${voice.language})`;
+                }
+            } catch {}
+        }
+
+        // 3. Record caller's utterance
+        call.transcript.push({
+            speaker: 'caller',
+            text: callerUtterance,
+            timestamp: Date.now()
+        });
+
+        // 4. Build prompt context using call purpose, acoustic radar, and transcript history
+        const dialogHistory = call.transcript
+            .map(t => `${t.speaker.toUpperCase()}: ${t.text}`)
+            .join('\n');
+
+        const systemPrompt = `
+You are Silhouette Agency OS's Voice Telephony Agent on a real phone call.
+Keep your response concise, conversational, and direct (1-3 sentences maximum).
+Never output markdown, bullet points, or emojis, because your response will be read by Text-to-Speech over a telephone line.
+Current Call Purpose: ${call.purpose}
+To Phone Number: ${call.toNumber}
+Voice Persona: ${voicePersonaName}
+
+Acoustic Negotiation Radar:
+- Disposition: ${sentiment.disposition}
+- Hesitation Index: ${sentiment.hesitationIndex}
+- Urgency Score: ${sentiment.urgencyScore}
+- Detected Signals: ${sentiment.negotiationSignals.join(', ') || 'Normal pace'}
+- Tactical Negotiation Guidance: ${sentiment.tacticalAdvice}
+
+Call Transcript so far:
+${dialogHistory}
+
+Agent Response (spoken naturally):`;
+
+        let responseText = "Understood. I am processing that request for you right now.";
+        try {
+            const rawResponse = await generateTelephonyText(systemPrompt);
+            if (rawResponse && rawResponse.trim()) {
+                responseText = rawResponse.trim().replace(/[*_#`]/g, '');
+            }
+        } catch (e: any) {
+            console.error(`[Telephony] LLM generation error in call ${callId}:`, e.message);
+        }
+
+        // 5. Synthesize voice audio
+        let audioBase64: string | undefined;
+        try {
+            const audioUrl = await admittedSpeech.speak(responseText, { voiceId: call.voiceId });
+            if (audioUrl) {
+                audioBase64 = audioUrl;
+            }
+        } catch {
+            // TTS fallback
+        }
+
+        // 6. Record agent's response
+        call.transcript.push({
+            speaker: 'agent',
+            text: responseText,
+            timestamp: Date.now()
+        });
+
+        this.saveCallToDb(call);
+
+        return {
+            agentResponse: responseText,
+            audioBase64,
+            sentiment,
+            voicePersona: voicePersonaName
+        };
+        } finally {
+            try { admittedVoice?.notSelected(); }
+            finally { admittedSpeech.notSelected(); }
+        }
+    
+        });
+    }
+
+    /**
+     * Sends DTMF tones (keypad digits: '1', '2', '#', etc.) to navigate automated phone systems (IVRs).
+     */
+    public async sendDtmf(callId: string, digits: string): Promise<{ success: boolean; error?: string }> {
+        return runSqliteOperation('services/telephony/telephonyService.ts:sendDtmf', async () => {
+        return this.admitKnown('sendDtmf', () => this.sendDtmfOriginal(callId, digits));
+    
+        });
+    }
+    private async sendDtmfOriginal(callId: string, digits: string): Promise<{ success: boolean; error?: string }> {
+        return runSqliteOperation('services/telephony/telephonyService.ts:sendDtmfOriginal', async () => {
+        const call = this.activeCalls.get(callId);
+        if (!call || call.status !== 'IN_PROGRESS') {
+            return { success: false, error: `Call ${callId} is not active.` };
+        }
+
+        // Clean digits
+        const sanitized = digits.replace(/[^0-9*#w]/g, '');
+        if (!sanitized) {
+            return { success: false, error: 'Invalid DTMF digits. Only 0-9, *, # are supported.' };
+        }
+
+        if (!call.isSimulated && call.providerCallSid && this.accountSid && this.authToken) {
+            try {
+                // Twilio Play digits API
+                const endpoint = `https://api.twilio.com/2010-04-01/Accounts/${this.accountSid}/Calls/${call.providerCallSid}.json`;
+                const authHeader = Buffer.from(`${this.accountSid}:${this.authToken}`).toString('base64');
+
+                const twiml = `<Response><Play digits="${sanitized}"/></Response>`;
+                const body = new URLSearchParams({ Twiml: twiml });
+
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Basic ${authHeader}`,
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: body.toString()
+                });
+                const providerOk = await withHttpResponseCustody(res, this.httpBodyFailures, 'telephony-dtmf', () => res.ok);
+                if (!providerOk) {
+                    return { success: false, error: `Provider rejected DTMF (HTTP ${res.status}).` };
+                }
+            } catch (err: any) {
+                return { success: false, error: `DTMF not sent, provider unreachable: ${err.message}` };
+            }
+        }
+
+        call.transcript.push({
+            speaker: 'system',
+            text: `[DTMF KEYPAD SENT]: ${sanitized}`,
+            timestamp: Date.now(),
+            dtmfDigits: sanitized
+        });
+
+        this.saveCallToDb(call);
+
+        systemBus.emit(SystemProtocol.TELEMETRY_LOG, {
+            service: 'TelephonyService',
+            event: 'DTMF_SENT',
+            callId,
+            digits: sanitized
+        });
+
+        return { success: true };
+    
+        });
+    }
+
+    /**
+     * Terminates an active call, generates an executive summary, and anchors
+     * agreements and decisions into Silhouette's memory.
+     */
+    public async hangup(callId: string, reason: string = 'Completed normally'): Promise<{ call?: TelephonyCall; error?: string }> {
+        return runSqliteOperation('services/telephony/telephonyService.ts:hangup', async () => {
+        return this.admitKnown('hangup', () => this.hangupOriginal(callId, reason));
+    
+        });
+    }
+    private async hangupOriginal(callId: string, reason: string = 'Completed normally'): Promise<{ call?: TelephonyCall; error?: string }> {
+        return runSqliteOperation('services/telephony/telephonyService.ts:hangupOriginal', async () => {
+        const call = this.activeCalls.get(callId);
+        if (!call) {
+            return { error: `Call ${callId} not found.` };
+        }
+
+        // Real call: the provider must confirm the hangup. A local flag alone never ends a live call.
+        if (!call.isSimulated && call.providerCallSid && this.accountSid && this.authToken) {
+            try {
+                const endpoint = `https://api.twilio.com/2010-04-01/Accounts/${this.accountSid}/Calls/${call.providerCallSid}.json`;
+                const authHeader = Buffer.from(`${this.accountSid}:${this.authToken}`).toString('base64');
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Basic ${authHeader}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({ Status: 'completed' }).toString()
+                });
+                const providerOk = await withHttpResponseCustody(res, this.httpBodyFailures, 'telephony-hangup', () => res.ok);
+                if (!providerOk) return { call, error: `Hangup NOT confirmed by provider (HTTP ${res.status}). The call may still be live.` };
+            } catch (err: any) {
+                return { call, error: `Hangup NOT confirmed, provider unreachable: ${err.message}. The call may still be live.` };
+            }
+        }
+
+        call.status = 'COMPLETED';
+        call.endedAt = Date.now();
+        call.durationSeconds = Math.max(1, Math.round((call.endedAt - call.createdAt) / 1000));
+
+        // Generate call summary
+        const fullTranscriptText = call.transcript
+            .map(t => `${t.speaker}: ${t.text}`)
+            .join('\n');
+
+        let summary = `Phone call to ${call.toNumber} regarding ${call.purpose}. Result: ${reason}`;
+        try {
+            const summaryPrompt = `
+Summarize this phone conversation in 2 sentences. Highlight any agreed terms, reservations, numbers, or action items:
+${fullTranscriptText}
+`;
+            const generatedSummary = await generateTelephonyText(summaryPrompt);
+            if (generatedSummary && generatedSummary.trim()) {
+                summary = generatedSummary.trim();
+            }
+        } catch {
+            // Keep default summary
+        }
+
+        call.summary = summary;
+        this.saveCallToDb(call);
+        this.activeCalls.delete(callId);
+
+        // Emit call completed event on system bus for episodic memory ingestion
+        systemBus.emit(SystemProtocol.TELEMETRY_LOG, {
+            service: 'TelephonyService',
+            event: 'CALL_COMPLETED',
+            callId,
+            durationSeconds: call.durationSeconds,
+            summary
+        });
+
+        return { call };
+    
+        });
+    }
+
+    /**
+     * Generates standard TwiML XML to handle incoming calls or webhook callbacks.
+     */
+    public generateInboundTwiML(greeting: string, streamUrl?: string): string {
+        if (streamUrl) {
+            return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say voice="Polly.Joanna-Neural">${greeting}</Say>
+    <Connect>
+        <Stream url="${streamUrl}" />
+    </Connect>
+</Response>`;
+        }
+
+        return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say voice="Polly.Joanna-Neural">${greeting}</Say>
+    <Gather input="speech" timeout="4" action="/v1/voices/twiml-gather">
+        <Say>Please speak your request after the tone.</Say>
+    </Gather>
+</Response>`;
+    }
+
+    /** Finds a call by the provider SID (used by webhooks). */
+    public getCallByProviderSid(sid: string): TelephonyCall | null {
+        return runSqliteOperation('services/telephony/telephonyService.ts:getCallByProviderSid', () => {
+        return this.invokeKnown('getCallByProviderSid', () => this.getCallByProviderSidOriginal(sid));
+    
+        });
+    }
+    private getCallByProviderSidOriginal(sid: string): TelephonyCall | null {
+        return runSqliteOperation('services/telephony/telephonyService.ts:getCallByProviderSidOriginal', () => {
+        for (const c of this.activeCalls.values()) if (c.providerCallSid === sid) return c;
+        this.initializeSchema();
+        try {
+            const row = sqliteService.sql.prepare(`SELECT id FROM telephony_calls WHERE provider_call_sid = ?`).get(sid) as any;
+            return row ? this.getCall(row.id) : null;
+        } catch { return null; }
+    
+        });
+    }
+
+    /**
+     * Retrieves a call record by ID.
+     */
+    public getCall(callId: string): TelephonyCall | null {
+        return runSqliteOperation('services/telephony/telephonyService.ts:getCall', () => {
+        return this.invokeKnown('getCall', () => this.getCallOriginal(callId));
+    
+        });
+    }
+    private getCallOriginal(callId: string): TelephonyCall | null {
+        return runSqliteOperation('services/telephony/telephonyService.ts:getCallOriginal', () => {
+        if (this.activeCalls.has(callId)) {
+            return this.activeCalls.get(callId)!;
+        }
+
+        this.initializeSchema();
+        const row = sqliteService.sql.prepare(`
+            SELECT * FROM telephony_calls WHERE id = ?
+        `).get(callId) as any;
+
+        if (!row) return null;
+
+        return {
+            id: row.id,
+            toNumber: row.to_number,
+            fromNumber: row.from_number,
+            direction: row.direction as CallDirection,
+            status: row.status as CallStatus,
+            purpose: row.purpose,
+            transcript: JSON.parse(row.transcript || '[]'),
+            durationSeconds: row.duration_seconds,
+            providerCallSid: row.provider_call_sid,
+            isSimulated: Boolean(row.is_simulated),
+            voiceId: row.voice_id || undefined,
+            createdAt: row.created_at,
+            endedAt: row.ended_at,
+            summary: row.summary
+        };
+    
+        });
+    }
+
+    /**
+     * Lists recent call history.
+     */
+    public listCalls(limit: number = 20): TelephonyCall[] {
+        return runSqliteOperation('services/telephony/telephonyService.ts:listCalls', () => {
+        return this.invokeKnown('listCalls', () => this.listCallsOriginal(limit));
+    
+        });
+    }
+    private listCallsOriginal(limit: number = 20): TelephonyCall[] {
+        return runSqliteOperation('services/telephony/telephonyService.ts:listCallsOriginal', () => {
+        this.initializeSchema();
+        const rows = sqliteService.sql.prepare(`
+            SELECT * FROM telephony_calls ORDER BY created_at DESC LIMIT ?
+        `).all(limit) as any[];
+
+        return rows.map(r => ({
+            id: r.id,
+            toNumber: r.to_number,
+            fromNumber: r.from_number,
+            direction: r.direction as CallDirection,
+            status: r.status as CallStatus,
+            purpose: r.purpose,
+            transcript: JSON.parse(r.transcript || '[]'),
+            durationSeconds: r.duration_seconds,
+            providerCallSid: r.provider_call_sid,
+            isSimulated: Boolean(r.is_simulated),
+            voiceId: r.voice_id || undefined,
+            createdAt: r.created_at,
+            endedAt: r.ended_at,
+            summary: r.summary
+        }));
+    
+        });
+    }
+
+    private saveCallToDb(call: TelephonyCall): void {
+        return runSqliteOperation('services/telephony/telephonyService.ts:saveCallToDb', () => {
+        sqliteService.sql.prepare(`
+            INSERT INTO telephony_calls (
+                id, to_number, from_number, direction, status, purpose,
+                transcript, duration_seconds, provider_call_sid, is_simulated,
+                voice_id, created_at, ended_at, summary
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                status = excluded.status,
+                transcript = excluded.transcript,
+                duration_seconds = excluded.duration_seconds,
+                voice_id = excluded.voice_id,
+                ended_at = excluded.ended_at,
+                summary = excluded.summary
+        `).run(
+            call.id,
+            call.toNumber,
+            call.fromNumber,
+            call.direction,
+            call.status,
+            call.purpose,
+            JSON.stringify(call.transcript),
+            call.durationSeconds,
+            call.providerCallSid || null,
+            call.isSimulated ? 1 : 0,
+            call.voiceId || null,
+            call.createdAt,
+            call.endedAt || null,
+            call.summary || null
+        );
+    
+        });
+    }
+}
+
+function constructOriginalTelephony(): TelephonyService {
+    const permit = admitEvaluatedTelephony();
+    try {
+        const owner = telephonyOwner();
+        const operation = owner.beginConstruction();
+        let original: TelephonyService;
+        try { original = new TelephonyService(operation); }
+        catch (error) { owner.constructionFailed(operation, error); throw error; }
+        owner.constructed(operation, original);
+        bindEvaluatedTelephony(permit, () => original.sealAndDrainKnownWork());
+        return original;
+    } catch (error) { failEvaluatedTelephony(permit, error); throw error; }
+}
+export const telephonyService = constructOriginalTelephony();

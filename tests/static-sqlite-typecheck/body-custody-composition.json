@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "baseGit": "db201993d05124cdb23a84cdfbc695bb3c6680d5",
+  "frozen0e3PacketSha256": "0e3a710ab63232eec31d90e994036b3a3480c65605097fe4a6f0938e2bf33366",
+  "productAReviewPacketSha256": "5cb5a55a6970db496c080b0a75e117279f4052eb41f8aca66698721b3fc5d1fe",
+  "productAOverlayIdentitySha256": "19253560feaaabdbadb1dde8c279c537065b9e992528b6804628e174fe7b4f5d",
+  "files": [
+    {
+      "path": "services/lifecycle/httpResponseCustody.ts",
+      "beforeSha256": null,
+      "afterSha256": "88fea3c8c79537eb7b0e9d25925bd4fdb08f0636e65c456ad961e94314724ab8",
+      "bytes": 2909
+    },
+    {
+      "path": "services/telephony/telephonyService.ts",
+      "beforeSha256": "97dc2cbcf93b2dd6f1c1890295ad80120bf75a029f963db0557787bcf39f624c",
+      "afterSha256": "560bd48e9ca45d06eede21cba609ffc7acccffa113fbfe288f3f275c8f9c731b",
+      "bytes": 40819
+    }
+  ],
+  "meaning": "FROZEN_0e3_53_FILES_THEN_BODY_CUSTODY_2_PATHS_54_UNIQUE_TS_NO_B_ROOT_IMPLEMENTATION"
+}

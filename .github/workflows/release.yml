@@ -16,6 +16,7 @@ on:
           - native-account-wal
           - native-factory-stop
           - native-manager-start-seal
+          - static-body-custody
 permissions:
   contents: read
 jobs:
@@ -71,6 +72,10 @@ jobs:
             native-manager-start-seal)
               sha256sum --check manager-packet.sha256
               python3 run-native-manager.py
+              ;;
+            static-body-custody)
+              sha256sum --check body-custody-static-packet.sha256
+              python3 run-static-body-custody.py
               ;;
             *)
               printf '%s\n' 'Unreviewed validation selector refused' >&2
