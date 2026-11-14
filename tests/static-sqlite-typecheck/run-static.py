@@ -122,12 +122,12 @@ try:
  # Capture complete input tree hashes before any acquisition or compiler.
  input_hashes={label:{str(p.relative_to(root)):sha(p)for p in sorted(root.rglob('*'))if p.is_file()}for label,root in [('baseline',baseline),('candidate',candidate)]};emit('source-config-lock-hashes.json',input_hashes)
  acquisition=ROOT/'acquisition';acquisition.mkdir();shutil.copyfile(baseline/'package.json',acquisition/'package.json');shutil.copyfile(baseline/'package-lock.json',acquisition/'package-lock.json')
- cache=ROOT/'empty-npm-cache';cache.mkdir();home=ROOT/'empty-home';home.mkdir();empty=ROOT/'empty-config';empty.write_text('')
+ cache=ROOT/'empty-npm-cache';cache.mkdir();home=ROOT/'empty-home';home.mkdir();empty=ROOT/'empty-config';empty.write_text('');empty_global=ROOT/'empty-global-config';empty_global.write_text('')
  lock=json.loads((baseline/'package-lock.json').read_text());librow=lock['packages']['node_modules/libsignal'];assert librow['resolved']=='git+ssh://git@github.com/whiskeysockets/libsignal-node.git#1c30d7d7e76a3b0aa120b04dc6a26f5a12dccf67'
  public=download('https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/1c30d7d7e76a3b0aa120b04dc6a26f5a12dccf67',1024**2);assert len(public)==46103 and hashlib.sha256(public).hexdigest()=='a9e14823efa911474aaa9e8f6bfb88759f869a3bc25116e969be943b84bef318';publicfiles=archive_files(public);libpackage=json.loads(publicfiles['package.json']);assert not libpackage.get('scripts')and not libpackage.get('workspaces')and libpackage['version']=='2.0.1'
  expectedlib=json.loads((HERE/'libsignal-packed-files.json').read_text());assert len(expectedlib)==22
  for rel,h in expectedlib.items():assert hashlib.sha256(publicfiles[rel]).hexdigest()==h
- env={'PATH':os.environ['PATH'],'HOME':str(home),'NODE_OPTIONS':'','NPM_CONFIG_USERCONFIG':str(empty),'NPM_CONFIG_GLOBALCONFIG':str(empty),'NPM_CONFIG_CACHE':str(cache),'NPM_CONFIG_FETCH_RETRIES':'0','NPM_CONFIG_IGNORE_SCRIPTS':'true','NPM_CONFIG_AUDIT':'false','NPM_CONFIG_FUND':'false','PUPPETEER_SKIP_DOWNLOAD':'true','PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD':'true','GIT_CONFIG_NOSYSTEM':'1','GIT_CONFIG_GLOBAL':str(empty),'GIT_CONFIG_COUNT':'2','GIT_CONFIG_KEY_0':'url.https://github.com/whiskeysockets/libsignal-node.git.insteadOf','GIT_CONFIG_VALUE_0':'ssh://git@github.com/whiskeysockets/libsignal-node.git','GIT_CONFIG_KEY_1':'credential.helper','GIT_CONFIG_VALUE_1':'','GIT_TERMINAL_PROMPT':'0','GIT_ASKPASS':'/bin/false','SSH_ASKPASS':'/bin/false','GIT_SSH_COMMAND':'/bin/false'}
+ env={'PATH':os.environ['PATH'],'HOME':str(home),'NODE_OPTIONS':'','NPM_CONFIG_USERCONFIG':str(empty),'NPM_CONFIG_GLOBALCONFIG':str(empty_global),'NPM_CONFIG_CACHE':str(cache),'NPM_CONFIG_FETCH_RETRIES':'0','NPM_CONFIG_IGNORE_SCRIPTS':'true','NPM_CONFIG_AUDIT':'false','NPM_CONFIG_FUND':'false','PUPPETEER_SKIP_DOWNLOAD':'true','PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD':'true','GIT_CONFIG_NOSYSTEM':'1','GIT_CONFIG_GLOBAL':str(empty),'GIT_CONFIG_COUNT':'2','GIT_CONFIG_KEY_0':'url.https://github.com/whiskeysockets/libsignal-node.git.insteadOf','GIT_CONFIG_VALUE_0':'ssh://git@github.com/whiskeysockets/libsignal-node.git','GIT_CONFIG_KEY_1':'credential.helper','GIT_CONFIG_VALUE_1':'','GIT_TERMINAL_PROMPT':'0','GIT_ASKPASS':'/bin/false','SSH_ASKPASS':'/bin/false','GIT_SSH_COMMAND':'/bin/false'}
  # Source-ground normalization against this setup-node npm, no package eval.
  npmroot=npm.parents[1];npa=npmroot/'node_modules/npm-package-arg/lib/npa.js';pacote=npmroot/'node_modules/pacote/lib/git.js'
  assert npa.is_file()and pacote.is_file();npatext=npa.read_text();pactext=pacote.read_text()
@@ -137,6 +137,17 @@ try:
  # network/fallback attempts instead of silently retrying clone after failure.
  # Still retain exact-repo insteadOf config and deny SSH in inherited env.
  guard=ROOT/'git-guard';guard.mkdir();git=guard/'git';git.write_text('#!/bin/sh\ncase \"$*\" in --version|version) exec /usr/bin/git \"$@\" ;; *) printf \"STATIC_ACQUISITION_GIT_FALLBACK_DENIED\\n\" >&2; exit 97 ;; esac\n');git.chmod(0o700);env['PATH']=str(guard)+os.pathsep+env['PATH']
+ # npm refuses the same file loaded as both user and global configuration.
+ # Git still consumes the original empty-config; its producer is unchanged.
+ assert empty.resolve()!=empty_global.resolve()and empty.stat().st_ino!=empty_global.stat().st_ino
+ assert all(p.is_file()and not p.is_symlink()and p.read_bytes()==b''for p in [empty,empty_global])
+ assert env['NPM_CONFIG_USERCONFIG']==str(empty)and env['NPM_CONFIG_GLOBALCONFIG']==str(empty_global)and env['GIT_CONFIG_GLOBAL']==str(empty)
+ config=run('npm-config-preflight',[str(node),str(npm),'config','list','--json'],acquisition,env,wall=10)
+ assert config['naturalComplete']and config['rc']==0,'npm config resolution failed; STOP before acquisition'
+ resolved=json.loads((EV/'npm-config-preflight.log').read_text())
+ assert resolved['userconfig']==str(empty)and resolved['globalconfig']==str(empty_global)and resolved['cache']==str(cache)
+ assert resolved['ignore-scripts']is True and resolved['audit']is False and resolved['fund']is False and resolved['fetch-retries']==0
+ emit('npm-config-preflight.json',{'userconfig':str(empty),'globalconfig':str(empty_global),'gitGlobalConfig':env['GIT_CONFIG_GLOBAL'],'distinctEmptyFiles':True,'npmVersion':npm_version,'nonAcquisitiveCommand':config['argv'],'resolvedIsolationFlagsVerified':True})
  REPORT['duBeforeAcquisition']=du();install=run('acquisition',[str(node),str(npm),'ci','--ignore-scripts','--no-audit','--no-fund'],acquisition,env)
  assert sha(acquisition/'package-lock.json')==LOCK and sha(acquisition/'package.json')==PACKAGE
  assert install['naturalComplete']and install['rc']==0,'acquisition failed; STOP no automatic fallback/retry'
