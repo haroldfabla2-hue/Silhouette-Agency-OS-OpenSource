@@ -56,6 +56,8 @@ if phase.endswith('build'):
  cmd=['/node/bin/node','/app/node_modules/vite/bin/vite.js','build']
  if phase=='server-build':cmd+=['--config','vite.server.config.ts']
  raise SystemExit(subprocess.call(cmd,env=env))
+# Same private namespace and cgroup, no extra authority or secret environment.
+counters=subprocess.Popen(['/usr/bin/python3','/driver/runtime-counters.py',str(os.getpid())],env={'PATH':'/usr/bin:/bin'})
 app=subprocess.Popen(['/node/bin/node','--import','tsx/esm','server/bootstrap.preparation.ts'],env=env)
 result={'started':True,'backendPid':app.pid,'driverCode':None,'ordinaryTerminationRequested':False,'forced':False}
 try:
@@ -67,10 +69,15 @@ finally:
  try:result['backendExit']=app.wait(timeout=30)
  except subprocess.TimeoutExpired:
   result['forced']=True;app.kill();result['backendExit']=app.wait()
+ counters.send_signal(signal.SIGTERM) if counters.poll()is None else None
+ try:counters.wait(timeout=2)
+ except subprocess.TimeoutExpired:
+  counters.kill();counters.wait();result['counterSamplerForced']=True
+ result['counterSamplerExit']=counters.returncode
  frontier={'appPidPresent':pathlib.Path('/proc/'+str(app.pid)).exists(),'remainingPids':[x.name for x in pathlib.Path('/proc').iterdir()if x.name.isdigit()and int(x.name)not in {1,os.getpid()}],'netTcp':pathlib.Path('/proc/net/tcp').read_text(),'netTcp6':pathlib.Path('/proc/net/tcp6').read_text(),'netUnix':pathlib.Path('/proc/net/unix').read_text(),'note':'Namespace-local post-app/browser snapshot; rootB sticky incomplete, not exhaustive owner ledger proof'}
  pathlib.Path('/evidence/exit-frontier.json').write_text(json.dumps(frontier,indent=2)+'\n')
  result['descendantFrontierUnverified']=bool(frontier['remainingPids']or frontier['appPidPresent']);
  result['caption']= 'Actual isolated Silhouette UI, external providers OFF; no AI/learning claim. Client backend aliases may be mocks; real API/storage unverified unless correlated.'
  result['rootB']='INCOMPLETE'
  pathlib.Path('/evidence/runtime-result.json').write_text(json.dumps(result,indent=2)+'\n')
-raise SystemExit(1 if result['forced']or result.get('descendantFrontierUnverified',True)or result['backendExit']or result['driverCode'] else 0)
+raise SystemExit(1 if result['forced']or result.get('counterSamplerForced',False)or result.get('counterSamplerExit',1)!=0 or result.get('descendantFrontierUnverified',True)or result['backendExit']or result['driverCode'] else 0)

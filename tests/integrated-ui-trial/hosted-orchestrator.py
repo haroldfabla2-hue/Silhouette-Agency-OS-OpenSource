@@ -89,7 +89,7 @@ def members(b,*,mode,package=None,integrity=None):
 try:
  assert os.environ['PRIVATE']=='false'and os.environ['ENVIRONMENT']=='github-hosted'and os.environ['GITHUB_EVENT_NAME']in {'workflow_dispatch','push'}
  if os.environ['GITHUB_EVENT_NAME']=='push':
-  assert subprocess.check_output(['git','rev-parse','HEAD^'],cwd=REPO,text=True).strip()=='c2a1c7fd3316027bf45c318d78144111717951d8'
+  assert subprocess.check_output(['git','rev-parse','HEAD^'],cwd=REPO,text=True).strip()=='4ca45ac90eac1e3b57b34067de161551a075893c'
   assert os.environ['GITHUB_REF']=='refs/heads/preparation/sqlite-static-typecheck-db201993-4054-20261114'
  assert os.environ['GITHUB_SHA']==os.environ['EXPECTED_HEAD']==subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip()
  node=Path(shutil.which('node')).resolve();assert sha(node.read_bytes())=='ccacb2d6d87ba6d118b2bffc1ae33747a05cc5fc6b1f1ec4fc1d420b687e952d';assert subprocess.check_output([str(node),'--version'],text=True).strip()=='v22.18.0'
@@ -123,6 +123,12 @@ try:
  for r in correction['files']:
   p=app/r['path'];b=(HERE/'runtime-browser-overlay'/r['path']).read_bytes();assert(sha(p.read_bytes())if p.exists()else None)==r['beforeSha256'];assert len(b)==r['bytes']and sha(b)==r['afterSha256'];p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(b)
  corrected={str(p.relative_to(app)):sha(p.read_bytes())for p in app.rglob('*')if p.is_file()};assert corrected==correction['finalProductFiles']
+ # Exact admitted diagnostic overlay after prior corrected identity verification.
+ diagnosticRaw=(HERE/'finite-diagnostics-composition.json').read_bytes();assert sha(diagnosticRaw)=='21eb825b2aecb5292674e739fb2010693e45d74c38051ef84f277586fa250757'
+ diagnostic=json.loads(diagnosticRaw);assert diagnostic['basePublishedParent']=='4ca45ac90eac1e3b57b34067de161551a075893c'and len(diagnostic['files'])==3
+ for r in diagnostic['files']:
+  p=app/r['path'];b=(HERE/'finite-diagnostics-overlay'/r['path']).read_bytes();assert sha(p.read_bytes())==r['beforeSha256'];assert len(b)==r['bytes']and sha(b)==r['afterSha256'];p.write_bytes(b)
+ diagnosticActual={str(p.relative_to(app)):sha(p.read_bytes())for p in app.rglob('*')if p.is_file()};assert diagnosticActual==diagnostic['finalProductFiles']
  excluded=[]
  for r in classification['files']:
   if not r['include']:(app/r['path']).unlink();excluded.append(r)

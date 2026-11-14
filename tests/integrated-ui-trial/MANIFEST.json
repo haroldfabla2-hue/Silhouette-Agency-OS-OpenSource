@@ -5,6 +5,10 @@
       "bytes": 6554,
       "sha256": "273eb9136e1b51f3e0319b9c0648e69d6a3c51cc3c7e60fd07c838c96b275bad"
     },
+    "FINITE-DIAGNOSTICS-REVIEW.md": {
+      "bytes": 6534,
+      "sha256": "9b23ba588d7b1750d615089fb942588990873cc2b773fc7fa8d7d3fdc348fd67"
+    },
     "FINITE-VALIDATION-REVIEW.md": {
       "bytes": 4913,
       "sha256": "d20349427a1895e4e116d6ca5654c43763d03fe2d46b1ea0fd383a798c6ea170"
@@ -30,8 +34,8 @@
       "sha256": "560bd48e9ca45d06eede21cba609ffc7acccffa113fbfe288f3f275c8f9c731b"
     },
     "browser-driver.cjs": {
-      "bytes": 6291,
-      "sha256": "1fb68b1b07347b4f119c7fe63fce9bc9229ff26dd13bda2b6a676644883aa6d4"
+      "bytes": 7218,
+      "sha256": "f5c39d7d123a53097cbf88279983defabdeb93b00f4d175586c0b0f27d0b0729"
     },
     "chromium-provenance.json": {
       "bytes": 62542,
@@ -49,9 +53,25 @@
       "bytes": 1591,
       "sha256": "7be882fd19704d5cbe6914f185ac6d0d3b3a6eda0230a545c7291dc13b89b722"
     },
+    "finite-diagnostics-composition.json": {
+      "bytes": 193240,
+      "sha256": "21eb825b2aecb5292674e739fb2010693e45d74c38051ef84f277586fa250757"
+    },
+    "finite-diagnostics-overlay/server/index.ts": {
+      "bytes": 19669,
+      "sha256": "a02d862f40e530575c0b07677f6027552c20cfaff5b8343fe66b1a853591e9a1"
+    },
+    "finite-diagnostics-overlay/server/routes/v1/identity.routes.ts": {
+      "bytes": 20010,
+      "sha256": "7050c6ee11abc621b373b0d88720ef01e51d8fb937a2fa9bc05cf794d18d262a"
+    },
+    "finite-diagnostics-overlay/services/lifecycle/runtimeStopBindings.ts": {
+      "bytes": 20160,
+      "sha256": "dbf0ff4c7a98a5b0f00b51ee85d978dfd3cc5dde61aac09c28c0ee0fa932f278"
+    },
     "hosted-orchestrator.py": {
-      "bytes": 21142,
-      "sha256": "7a60d43c4a3a5033672476660a979a393f7afbb2b1379dcf097f0478f4d3d45e"
+      "bytes": 21930,
+      "sha256": "20877d3feb045a6a36c9a5fe9d1ebb443e9572e6031fe54d030aea012207c555"
     },
     "identity-entry.py": {
       "bytes": 3884,
@@ -66,8 +86,8 @@
       "sha256": "0e3a710ab63232eec31d90e994036b3a3480c65605097fe4a6f0938e2bf33366"
     },
     "integrated-hosted.yml": {
-      "bytes": 4594,
-      "sha256": "53fe5356f535930a72f904a6f525d03be1ece3573e92bb0b7dc0345e8711c8e0"
+      "bytes": 4186,
+      "sha256": "a2f4ab262150ad04ddff3930b1018ee10ea7a5f87d628cce71fd983f33f6c819"
     },
     "lance-provenance.json": {
       "bytes": 900,
@@ -78,8 +98,8 @@
       "sha256": "20367cd35272db599ff1f7ebfb93409fc61bff9c635b3e01dc544c7cb0029763"
     },
     "namespace-entry.py": {
-      "bytes": 7626,
-      "sha256": "7588869927c05c323c36c67eb3534c5d952d39011816f8d4fa762b5d71ddc0e2"
+      "bytes": 8172,
+      "sha256": "4a6c7376af685b75c8ccebf5422e26e662577b2de06496eef1994014d72c1c81"
     },
     "native-provenance/better-sqlite3-12.5.0.tgz": {
       "bytes": 2622454,
@@ -110,8 +130,8 @@
       "sha256": "6d4db2c333ac887464b161bc1139f1fd86c248e0b43110a758b945c60d7763f1"
     },
     "return-evidence.py": {
-      "bytes": 9155,
-      "sha256": "63db3a8f29029bed3d1e6e65b72ca7c3c1c59cf3f357fe0d984f320024f8f321"
+      "bytes": 9269,
+      "sha256": "6fb2a358b0243ec0cf90e2afcf28a28a3119982fc83cd8ce3e750003572c2c57"
     },
     "runtime-browser-composition.json": {
       "bytes": 194163,
@@ -145,6 +165,10 @@
       "bytes": 1017,
       "sha256": "6bd2a313fa79fcfa1e18fbd8080fb93fecf2a20c5b2a939aec9543a5b303fd6a"
     },
+    "runtime-counters.py": {
+      "bytes": 3383,
+      "sha256": "be2b8ed47b794712844edb6f2b2df47d1b3292162f14fe8089df33cf1e71f26d"
+    },
     "runtime-prerequisites.cjs": {
       "bytes": 2062,
       "sha256": "dbf1532699b4893f02287e47443f708e49b3b592a26fb739314a2c098db070d2"
@@ -166,8 +190,8 @@
       "sha256": "dd8db3911d514a259442ab4cbc7776f5defe28db9d522f61a49b9bed1457101a"
     },
     "supervisor.py": {
-      "bytes": 13062,
-      "sha256": "455d669b9b8da0404b2c356780bee39887a69209d6975e1ead2d185ca2570dfe"
+      "bytes": 13921,
+      "sha256": "a81886ea83bd9d4b2b81c9a9ff667d2acef098f8f00c4e0f484106cb991f5112"
     },
     "telemetry-regression.mts": {
       "bytes": 4398,

@@ -94,9 +94,20 @@ try:
  (evidence/'identity-map.json').write_text(json.dumps(identity,indent=2)+'\n')
  send({'stage':'EXEC_VERIFIED_BWRAP'});channel.close();channel=None
  sel=selectors.DefaultSelector();os.set_blocking(proc.stdout.fileno(),False);sel.register(proc.stdout,selectors.EVENT_READ);eof=False
+ counterSamples=[];nextCounterAt=0
+ def counters():
+  # Only this exact already-owned run cgroup, fixed read-only counters.
+  row={'elapsed':time.monotonic()-start,'values':{},'unavailable':[]}
+  for name in ['cpu.stat','cpu.pressure','memory.current','memory.peak','memory.events','memory.pressure','pids.current','pids.events']:
+   try:
+    value=(childcg/name).read_text();assert len(value)<=4096;row['values'][name]=value
+   except (FileNotFoundError,PermissionError):row['unavailable'].append(name)
+  counterSamples.append(row);assert len(counterSamples)<=20,'CGROUP_COUNTER_SAMPLE_CAP'
+  (evidence/'runtime-cgroup-counters.json').write_text(json.dumps({'phase':a.phase,'status':'COUNTERS_ONLY_NOT_UI_OR_DRAIN_PROOF','samples':counterSamples},indent=2)+'\n')
  with phaseLog as log:
   while True:
    if time.monotonic()-start>wall:raise TimeoutError('WALL_LIMIT')
+   if a.phase=='runtime'and time.monotonic()-start>=nextCounterAt:counters();nextCounterAt+=10
    if sum(f.stat().st_size for f in app.rglob('*')if f.is_file())>512*1024**2:raise RuntimeError('DISK_OUTPUT_CAP')
    for r in receipts:
     maximum=(P(r['path'])/'memory.max').read_text().strip();current=int((P(r['path'])/'memory.current').read_text())
