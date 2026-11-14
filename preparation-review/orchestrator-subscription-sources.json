@@ -1,0 +1,85 @@
+{
+  "warning": "Exact constructor subscriptions; original callbacks kept, original this.handle/hydrate invocation observed inline without changing callback return/await behavior. Source proof only, descendant admission closure incomplete.",
+  "subscriptions": [
+    {
+      "line": 243,
+      "protocol": "SystemProtocol.SQUAD_EXPANSION",
+      "callback": "(event) => {\n            const raw = event?.payload ?? {};\n            const inner = raw?.payload ?? raw;\n            const hasName = typeof inner.name === 'string' && inner.name.trim().length > 0;\n            const hasCategory = typeof inner.category === 'string' && inner.category.trim().length > 0;\n            if (!hasName || !hasCategory) {\n                console.warn(`[ORCHESTRATOR] ⛔ SQUAD_EXPANSION rejected: birth command requires name+category (got keys: ${Object.keys(inner).join(',') || 'none'}). Use SQUAD_MOBILIZED for mobilization notices and AGENT_HYDRATION_REQUEST to wake an existing agent.`);\n                return;\n            }\n            this.handleDynamicExpansion(event.payload);\n        }"
+    },
+    {
+      "line": 257,
+      "protocol": "SystemProtocol.AGENT_HYDRATION_REQUEST",
+      "callback": "(event) => {\n            const agentId = event?.payload?.agentId;\n            if (typeof agentId !== 'string' || !agentId.trim()) {\n                console.warn('[ORCHESTRATOR] ⛔ AGENT_HYDRATION_REQUEST rejected: missing agentId.');\n                return;\n            }\n            if (!this.knownAgentIds.includes(agentId)) {\n                console.warn(`[ORCHESTRATOR] ⛔ AGENT_HYDRATION_REQUEST rejected: unknown agent ${agentId}.`);\n                return;\n            }\n            this.hydrateAgent(agentId).catch(e => console.error(`[ORCHESTRATOR] Hydration failed for ${agentId}:`, e));\n        }"
+    },
+    {
+      "line": 271,
+      "protocol": "SystemProtocol.TASK_ASSIGNMENT",
+      "callback": "(event) => {\n            this.handleTaskAssignment(event.payload);\n        }"
+    },
+    {
+      "line": 276,
+      "protocol": "SystemProtocol.EPISTEMIC_GAP_DETECTED",
+      "callback": "(event) => {\n            this.handleEpistemicGap(event.payload);\n        }"
+    },
+    {
+      "line": 281,
+      "protocol": "SystemProtocol.TASK_COMPLETION",
+      "callback": "(event) => {\n            this.handleTaskCompletion(event.payload);\n        }"
+    },
+    {
+      "line": 286,
+      "protocol": "SystemProtocol.SQUAD_REASSIGNMENT",
+      "callback": "(event) => {\n            this.handleSquadReassignment(event.payload);\n        }"
+    },
+    {
+      "line": 291,
+      "protocol": "SystemProtocol.SENSORY_SNAPSHOT",
+      "callback": "(event) => {\n            // Forward visual info to agents if relevant\n            console.log(\"[ORCHESTRATOR] 👁️ Visual Context Updated\");\n        }"
+    },
+    {
+      "line": 320,
+      "protocol": "SystemProtocol.TRUTH_REVISION_APPLIED",
+      "callback": "(event) => {\n            this.handleTruthRevisionApplied(event.payload);\n        }"
+    },
+    {
+      "line": 325,
+      "protocol": "SystemProtocol.COST_ANOMALY",
+      "callback": "(event) => {\n            if (event.payload.agentId && event.payload.cost) {\n                this.handleCostAnomaly(event.payload.agentId, event.payload.cost);\n            }\n        }"
+    },
+    {
+      "line": 332,
+      "protocol": "SystemProtocol.DATA_CORRUPTION",
+      "callback": "(event) => {\n            this.handleDataCorruption(event.payload);\n        }"
+    },
+    {
+      "line": 337,
+      "protocol": "SystemProtocol.RESEARCH_REQUEST",
+      "callback": "(event) => {\n            this.handleResearchRequest(event.payload);\n        }"
+    },
+    {
+      "line": 342,
+      "protocol": "SystemProtocol.SYNTHESIS_REQUEST",
+      "callback": "(event) => {\n            this.handleSynthesisRequest(event.payload);\n        }"
+    },
+    {
+      "line": 346,
+      "protocol": "SystemProtocol.PAPER_GENERATION_REQUEST",
+      "callback": "(event) => {\n            this.handlePaperGenerationRequest(event.payload);\n        }"
+    },
+    {
+      "line": 352,
+      "protocol": "SystemProtocol.USER_MESSAGE",
+      "callback": "(event) => {\n            if (!this.userMessageAdmissionOpen) { this.countUserMessage('denied'); return; }\n            console.log('[ORCHESTRATOR] 🔔 USER_MESSAGE event received from systemBus');\n            this.handleUserMessage(event.payload).catch((err: any) => {\n                console.error('[ORCHESTRATOR] ❌ handleUserMessage FAILED:', err?.message || err);\n            });\n        }"
+    },
+    {
+      "line": 361,
+      "protocol": "SystemProtocol.SQUAD_DEBATE_START",
+      "callback": "(event) => {\n            this.handleSquadDebateStart(event.payload);\n        }"
+    },
+    {
+      "line": 365,
+      "protocol": "SystemProtocol.AGENT_DEBATE_MESSAGE",
+      "callback": "(event) => {\n            this.handleAgentDebateMessage(event.payload);\n        }"
+    }
+  ]
+}

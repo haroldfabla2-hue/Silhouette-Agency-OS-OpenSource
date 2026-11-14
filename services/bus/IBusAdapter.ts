@@ -21,6 +21,9 @@ export interface IBusAdapter {
      */
     subscribe(protocol: SystemProtocol, handler: (event: ProtocolEvent) => void): Promise<void>;
 
+    /** Local per-handler removal, never a shared native-channel close. */
+    unsubscribe?(protocol: SystemProtocol, handler: (event: ProtocolEvent) => void): void;
+
     /**
      * Send a direct message to an agent (Mailbox)
      */

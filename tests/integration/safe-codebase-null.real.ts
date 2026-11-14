@@ -1,12 +1,13 @@
+import { admitCodebaseInstance } from '../../services/lifecycle/preparationBindings';
 import assert from 'node:assert/strict';
-import { CodebaseAwarenessService } from '../../services/codebaseAwareness.ts';
+import { createOwnedCodebaseAwareness } from '../../services/codebaseAwareness.ts';
 import { localEmbeddingService } from '../../services/localEmbeddingService.ts';
 import { vfs } from '../../services/virtualFileSystem.ts';
 import { systemBus } from '../../services/systemBus.ts';
 import { SystemProtocol } from '../../types.ts';
 process.env.SILHOUETTE_INFERENCE_MODE='cloud-only';
 let embeddingCalls=0;
-const service=new CodebaseAwarenessService(async t=>{ embeddingCalls++; return localEmbeddingService.getEmbedding(t); });
+const service=createOwnedCodebaseAwareness(async t=>{ embeddingCalls++; return localEmbeddingService.getEmbedding(t); }, undefined, admitCodebaseInstance());
 const file:any={id:'PUBLIC_NULL_SOURCE',name:'public.ts',type:'FILE',content:'export const publicSource = "first unembedded content";'};
 (service as any).fileHashes.set(file.id,'PUBLIC_PREVIOUS_ACCEPTED_HASH');
 await assert.rejects(()=>service.indexFile(file),/embedding unavailable/);

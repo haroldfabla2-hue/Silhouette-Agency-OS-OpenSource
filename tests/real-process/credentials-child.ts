@@ -93,7 +93,7 @@ if (disabled) {
 }
 assert.equal(fs.readFileSync('silhouette.config.json').equals(before), true);
 assert.equal(fs.readFileSync('.env').toString().includes(sentinel), true);
-store.close();sqliteService.db.close();
+store.close();sqliteService.close();
 console.log(JSON.stringify({ mode: acceptance ? 'acceptance' : disabled ? 'providers-off' : 'normal', sources: ['inherited-custom-env','dotenv-file','config-json-both-loaders','sqlite-config','active-account-env','encrypted-token-file','explicit-client-env'], credentialsAvailable: !disabled, persistedCredentialUnchanged: true, accountUnchanged: true, configUnchanged: true, localStoresConfigured: disabled && !acceptance }));
 // Native Gemini module imports legacy interval services. Assertions above are
 // awaited; terminate this fixture child instead of leaving those loops alive.

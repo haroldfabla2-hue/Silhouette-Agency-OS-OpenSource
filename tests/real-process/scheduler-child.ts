@@ -30,4 +30,4 @@ const stored = sqliteService.getConfig('scheduled_tasks');
 assert.equal(stored[0].enabled, !allowed);
 assert.equal(fs.readFileSync('silhouette.config.json').equals(original), scenario !== 'revoke');
 console.log(JSON.stringify({ scenario, events: events.length, persistedEnabled: stored[0].enabled, configUnchanged: scenario !== 'revoke' }));
-sqliteService.db.close();
+sqliteService.close();

@@ -1,3 +1,5 @@
+import { createOwnedLanceDbService } from '../../services/lancedbService';
+import { admitLanceInstance } from '../../services/lifecycle/preparationBindings';
 /**
  * [Ticket W7] universal_knowledge table — root cause was a DEAD writer path
  * (capabilityAwareness.initialize() never called) plus a latent schema poison
@@ -19,7 +21,7 @@ describe('W7 universal_knowledge table', () => {
 
     beforeEach(() => {
         dir = mkdtempSync(join(tmpdir(), 'lancedb-w7-'));
-        svc = new LanceDbService(dir);
+        svc = createOwnedLanceDbService(dir, admitLanceInstance());
     });
     afterEach(() => {
         rmSync(dir, { recursive: true, force: true });

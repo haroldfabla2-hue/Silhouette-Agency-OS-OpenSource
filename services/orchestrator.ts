@@ -1,3 +1,6 @@
+import { preserveOriginal } from './lifecycle/preserveOriginal';
+import { orchestratorOwner } from './lifecycle/preparationBindings';
+import type { Operation } from './lifecycle/host';
 import { publishMessageProducer } from './messageProducerOwner';
 import { subscribeHelpProtocol } from './communication/helpProtocol';
 import { loadOrganization, defaultOrganizationPath, teamsForDomain, teamOfAgent } from './org/organization';
@@ -91,6 +94,7 @@ export class UserMessageAdmissionStoppedError extends Error {
 }
 
 export class AgentSwarmOrchestrator {
+    private readonly ownership = orchestratorOwner();
     private userMessageAdmissionOpen = true;
     private userMessageUnsubscribe?: () => void;
     private readonly userMessageOwners = new Set<Promise<void>>();
@@ -220,8 +224,9 @@ export class AgentSwarmOrchestrator {
     private orgChart: OrgChart;
     private reputationLedger: ReputationLedger;
 
-    constructor() {
-        this.initializeSwarm();
+    constructor(construction: Operation) {
+        this.ownership.validateConstruction(construction);
+        this.initializeSwarm(construction);
         this.applyMode(SystemMode.ECO);
         // Organization-as-data + evidence ledger: loaded before the help bus
         // subscribes so collaboration facts are recorded from the first request.
@@ -235,7 +240,7 @@ export class AgentSwarmOrchestrator {
         // requests) is rejected with a log instead of birthing an
         // "Unknown Squad Lead" husk — the D3 collision that produced 52+
         // phantom agents in the 2026-10-15 acceptance run.
-        systemBus.subscribe(SystemProtocol.SQUAD_EXPANSION, (event) => {
+        this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.SQUAD_EXPANSION, (event) => {
             const raw = event?.payload ?? {};
             const inner = raw?.payload ?? raw;
             const hasName = typeof inner.name === 'string' && inner.name.trim().length > 0;
@@ -244,12 +249,12 @@ export class AgentSwarmOrchestrator {
                 console.warn(`[ORCHESTRATOR] ⛔ SQUAD_EXPANSION rejected: birth command requires name+category (got keys: ${Object.keys(inner).join(',') || 'none'}). Use SQUAD_MOBILIZED for mobilization notices and AGENT_HYDRATION_REQUEST to wake an existing agent.`);
                 return;
             }
-            this.handleDynamicExpansion(event.payload);
-        });
+            this.ownership.invoke('original-handleDynamicExpansion', () => this.handleDynamicExpansion(event.payload));
+        }));
 
         // [PR-2] Hydration command: wake ONE existing agent. Unknown ids are
         // rejected — hydration must never become a backdoor birth channel.
-        systemBus.subscribe(SystemProtocol.AGENT_HYDRATION_REQUEST, (event) => {
+        this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.AGENT_HYDRATION_REQUEST, (event) => {
             const agentId = event?.payload?.agentId;
             if (typeof agentId !== 'string' || !agentId.trim()) {
                 console.warn('[ORCHESTRATOR] ⛔ AGENT_HYDRATION_REQUEST rejected: missing agentId.');
@@ -259,34 +264,34 @@ export class AgentSwarmOrchestrator {
                 console.warn(`[ORCHESTRATOR] ⛔ AGENT_HYDRATION_REQUEST rejected: unknown agent ${agentId}.`);
                 return;
             }
-            this.hydrateAgent(agentId).catch(e => console.error(`[ORCHESTRATOR] Hydration failed for ${agentId}:`, e));
-        });
+            this.ownership.invoke('original-hydrateAgent', () => this.hydrateAgent(agentId)).catch(e => console.error(`[ORCHESTRATOR] Hydration failed for ${agentId}:`, e));
+        }));
 
         // Listen for Async Task Assignments (e.g., Research Requests from Dreamer)
-        systemBus.subscribe(SystemProtocol.TASK_ASSIGNMENT, (event) => {
-            this.handleTaskAssignment(event.payload);
-        });
+        this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.TASK_ASSIGNMENT, (event) => {
+            this.ownership.invoke('original-handleTaskAssignment', () => this.handleTaskAssignment(event.payload));
+        }));
 
         // --- CURIOSITY ENGINE LOGIC (V3: CLOSED LOOP) ---
-        systemBus.subscribe(SystemProtocol.EPISTEMIC_GAP_DETECTED, (event) => {
-            this.handleEpistemicGap(event.payload);
-        });
+        this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.EPISTEMIC_GAP_DETECTED, (event) => {
+            this.ownership.invoke('original-handleEpistemicGap', () => this.handleEpistemicGap(event.payload));
+        }));
 
         // Use TASK_COMPLETION to close the loop
-        systemBus.subscribe(SystemProtocol.TASK_COMPLETION, (event) => {
-            this.handleTaskCompletion(event.payload);
-        });
+        this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.TASK_COMPLETION, (event) => {
+            this.ownership.invoke('original-handleTaskCompletion', () => this.handleTaskCompletion(event.payload));
+        }));
 
         // --- INTERFACE OF COMMAND (PHASE 11) ---
-        systemBus.subscribe(SystemProtocol.SQUAD_REASSIGNMENT, (event) => {
-            this.handleSquadReassignment(event.payload);
-        });
+        this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.SQUAD_REASSIGNMENT, (event) => {
+            this.ownership.invoke('original-handleSquadReassignment', () => this.handleSquadReassignment(event.payload));
+        }));
 
         // SENSORY
-        systemBus.subscribe(SystemProtocol.SENSORY_SNAPSHOT, (event) => {
+        this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.SENSORY_SNAPSHOT, (event) => {
             // Forward visual info to agents if relevant
             console.log("[ORCHESTRATOR] 👁️ Visual Context Updated");
-        });
+        }));
 
         // --- INTER-AGENT HELP PROTOCOL ---
         // Allows team leaders to request help from other specialists
@@ -312,54 +317,61 @@ export class AgentSwarmOrchestrator {
         });
 
         // --- TEAM LEARNING: janitor truth revisions become team evidence ---
-        systemBus.subscribe(SystemProtocol.TRUTH_REVISION_APPLIED, (event) => {
-            this.handleTruthRevisionApplied(event.payload);
-        });
+        this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.TRUTH_REVISION_APPLIED, (event) => {
+            this.ownership.invoke('original-handleTruthRevisionApplied', () => this.handleTruthRevisionApplied(event.payload));
+        }));
 
         // --- EMERGENCY BRAKE (CFO INTERVENTION) ---
-        systemBus.subscribe(SystemProtocol.COST_ANOMALY, (event) => {
+        this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.COST_ANOMALY, (event) => {
             if (event.payload.agentId && event.payload.cost) {
-                this.handleCostAnomaly(event.payload.agentId, event.payload.cost);
+                this.ownership.invoke('original-handleCostAnomaly', () => this.handleCostAnomaly(event.payload.agentId, event.payload.cost));
             }
-        });
+        }));
 
         // --- DATA INTEGRITY (JANITOR INTERVENTION) ---
-        systemBus.subscribe(SystemProtocol.DATA_CORRUPTION, (event) => {
-            this.handleDataCorruption(event.payload);
-        });
+        this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.DATA_CORRUPTION, (event) => {
+            this.ownership.invoke('original-handleDataCorruption', () => this.handleDataCorruption(event.payload));
+        }));
 
         // --- RESEARCH REQUEST HANDLER (DISCOVERY LEARNING LOOP) ---
-        systemBus.subscribe(SystemProtocol.RESEARCH_REQUEST, (event) => {
-            this.handleResearchRequest(event.payload);
-        });
+        this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.RESEARCH_REQUEST, (event) => {
+            this.ownership.invoke('original-handleResearchRequest', () => this.handleResearchRequest(event.payload));
+        }));
 
         // --- SYNTHESIS PIPELINE (RESEARCH SYNTHESIZER AGENT) ---
-        systemBus.subscribe(SystemProtocol.SYNTHESIS_REQUEST, (event) => {
-            this.handleSynthesisRequest(event.payload);
-        });
+        this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.SYNTHESIS_REQUEST, (event) => {
+            this.ownership.invoke('original-handleSynthesisRequest', () => this.handleSynthesisRequest(event.payload));
+        }));
 
-        systemBus.subscribe(SystemProtocol.PAPER_GENERATION_REQUEST, (event) => {
-            this.handlePaperGenerationRequest(event.payload);
-        });
+        this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.PAPER_GENERATION_REQUEST, (event) => {
+            this.ownership.invoke('original-handlePaperGenerationRequest', () => this.handlePaperGenerationRequest(event.payload));
+        }));
 
         // --- UNIFIED MESSAGING HANDLER (CHANNELS) ---
         // Handles messages from Telegram, WhatsApp, Discord via ChannelRouter
-        this.userMessageUnsubscribe = systemBus.subscribe(SystemProtocol.USER_MESSAGE, (event) => {
+        this.userMessageUnsubscribe = this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.USER_MESSAGE, (event) => {
             if (!this.userMessageAdmissionOpen) { this.countUserMessage('denied'); return; }
             console.log('[ORCHESTRATOR] 🔔 USER_MESSAGE event received from systemBus');
-            this.handleUserMessage(event.payload).catch((err: any) => {
+            this.ownership.invoke('original-handleUserMessage', () => this.handleUserMessage(event.payload)).catch((err: any) => {
                 console.error('[ORCHESTRATOR] ❌ handleUserMessage FAILED:', err?.message || err);
             });
-        });
+        }));
 
         // --- SWARM MATRIX V2 (DEBATE SQUADS) ---
-        systemBus.subscribe(SystemProtocol.SQUAD_DEBATE_START, (event) => {
-            this.handleSquadDebateStart(event.payload);
-        });
+        this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.SQUAD_DEBATE_START, (event) => {
+            this.ownership.invoke('original-handleSquadDebateStart', () => this.handleSquadDebateStart(event.payload));
+        }));
 
-        systemBus.subscribe(SystemProtocol.AGENT_DEBATE_MESSAGE, (event) => {
-            this.handleAgentDebateMessage(event.payload);
-        });
+        this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.AGENT_DEBATE_MESSAGE, (event) => {
+            this.ownership.invoke('original-handleAgentDebateMessage', () => this.handleAgentDebateMessage(event.payload));
+        }));
+    }
+
+    private retainOriginalSubscription(unsubscribe: () => void): () => void {
+        this.ownership.onSeal(unsubscribe);
+        // Preserve the exact public unsubscribe function and immediate caller
+        // behavior. Registration must not turn it into void or delay it to seal.
+        return unsubscribe;
     }
 
     // ...
@@ -1416,7 +1428,7 @@ JSON ONLY:
         this.smartPagingEnabled = enabled;
     }
 
-    private initializeSwarm() {
+    private initializeSwarm(construction: Operation) {
         // 0. Load Configuration from Persistence (DB)
         const config = sqliteService.getConfig('activeCategories');
         if (config && Array.isArray(config)) {
@@ -1428,6 +1440,7 @@ JSON ONLY:
         try {
             continuousMemory.initialize();
         } catch (err) {
+            this.ownership.failure('startup:CONTINUOUS_MEMORY_INIT_FAILED', err);
             console.error('[ORCHESTRATOR] Continuous Memory init failed (non-fatal):', err);
         }
 
@@ -1437,19 +1450,21 @@ JSON ONLY:
         if (existingIds.length === 0) {
             console.log("[ORCHESTRATOR] First Run: Executing Genesis V2 Protocol...");
             // Genesis V2 is async but we fire-and-forget here since it doesn't block
-            genesisV2.execute().then(report => {
+            this.ownership.invoke('original-genesis-startup', () => genesisV2.execute().then(report => {
                 if (report.success) {
                     console.log(`[ORCHESTRATOR] Genesis V2 complete: ${report.agentsCreated.length} agents born.`);
                     this.knownAgentIds = agentPersistence.getAllAgentIds();
                     this.generateSquadsStructureOnly();
                 } else {
+                    this.ownership.unknown('startup:GENESIS_REPORT_FAILED_LEGACY_FALLBACK');
                     console.error('[ORCHESTRATOR] Genesis V2 had failures, falling back to legacy...');
                     this.generateInitialAgents();
                 }
-            }).catch(() => {
+            }).catch(original => {
+                this.ownership.failure('startup:GENESIS_FAILED_LEGACY_FALLBACK', original);
                 console.error('[ORCHESTRATOR] Genesis V2 crashed, falling back to legacy...');
                 this.generateInitialAgents();
-            });
+            }), construction);
         } else {
             console.log(`[ORCHESTRATOR] Loaded ${existingIds.length} persistent agents from disk.`);
             this.knownAgentIds = existingIds;
@@ -1458,6 +1473,7 @@ JSON ONLY:
             try {
                 agentPersistence.migrateAllToFileSystem();
             } catch (err) {
+                this.ownership.failure('startup:FILESYSTEM_MIGRATION_FAILED', err);
                 console.error('[ORCHESTRATOR] File system migration failed (non-fatal):', err);
             }
         }
@@ -3286,5 +3302,16 @@ OBJECTIVES:
 
 }
 
-export const orchestrator = new AgentSwarmOrchestrator();
+function constructOriginalOrchestrator(): AgentSwarmOrchestrator {
+    const owner = orchestratorOwner();
+    const operation = owner.beginConstruction();
+    try {
+        const instance = new AgentSwarmOrchestrator(operation);
+        owner.constructed(operation, instance); return instance;
+    } catch (original) {
+        preserveOriginal(owner, 'construction-failure', () => owner.constructionFailed(operation, original));
+        throw original;
+    }
+}
+export const orchestrator = constructOriginalOrchestrator();
 publishMessageProducer(orchestrator);

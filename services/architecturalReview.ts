@@ -1,3 +1,6 @@
+import { preserveOriginal } from './lifecycle/preserveOriginal';
+import { architecturalReviewOwner } from './lifecycle/preparationBindings';
+import type { Operation } from './lifecycle/host';
 import { redisClient } from "./redisClient";
 import { systemBus } from "./systemBus";
 import { SystemProtocol, AgentStatus, IntrospectionLayer, WorkflowStage, CommunicationLevel } from "../types";
@@ -11,16 +14,26 @@ import { MemoryTier } from "../types";
 // Analyzes why things broke and ensures they don't break again.
 
 export class ArchitecturalReviewService {
+    private readonly ownership = architecturalReviewOwner();
     private static instance: ArchitecturalReviewService;
     // Removed In-Memory Map in favor of Redis
 
-    private constructor() {
+    private constructor(construction: Operation) {
+        this.ownership.validateConstruction(construction);
         this.initialize();
     }
 
     public static getInstance(): ArchitecturalReviewService {
         if (!ArchitecturalReviewService.instance) {
-            ArchitecturalReviewService.instance = new ArchitecturalReviewService();
+            const owner = architecturalReviewOwner();
+            const operation = owner.beginConstruction();
+            try {
+                ArchitecturalReviewService.instance = new ArchitecturalReviewService(operation);
+                owner.constructed(operation, ArchitecturalReviewService.instance);
+            } catch (original) {
+                preserveOriginal(owner, 'construction-failure', () => owner.constructionFailed(operation, original));
+                throw original;
+            }
         }
         return ArchitecturalReviewService.instance;
     }
@@ -29,9 +42,10 @@ export class ArchitecturalReviewService {
         console.log("[ARB] 🏛️ Architectural Review Board initialized.");
 
         // Listen for Incident Reports from Remediation/Hospital
-        systemBus.subscribe(SystemProtocol.INCIDENT_REPORT, (event) => {
-            this.handleIncident(event.payload);
+        const unsubscribe = systemBus.subscribe(SystemProtocol.INCIDENT_REPORT, (event) => {
+            this.ownership.invoke('original-incident-delivery', () => this.handleIncident(event.payload));
         });
+        this.ownership.onSeal(unsubscribe);
     }
 
     private async handleIncident(payload: any) {
@@ -61,6 +75,7 @@ export class ArchitecturalReviewService {
             }
 
         } catch (e) {
+            this.ownership.failure('incident:SELECTED_ANALYSIS_FAILED', e);
             console.error("[ARB] Analysis Failed:", e);
         }
     }

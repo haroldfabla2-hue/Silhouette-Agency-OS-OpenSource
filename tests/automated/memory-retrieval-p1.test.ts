@@ -1,3 +1,5 @@
+import { createOwnedLanceDbService } from '../../services/lancedbService';
+import { admitLanceInstance } from '../../services/lifecycle/preparationBindings';
 import { afterEach, describe, it, expect } from 'vitest';
 import { MemoryTier, type MemoryNode } from '../../types';
 import { LanceDbService } from '../../services/lancedbService';
@@ -7,7 +9,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 const dirs: string[] = [];
 afterEach(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true }))); });
-const fresh = async () => { const dir = await mkdtemp(join(tmpdir(), 'agency-p1-')); dirs.push(dir); return new LanceDbService(dir); };
+const fresh = async () => { const dir = await mkdtemp(join(tmpdir(), 'agency-p1-')); dirs.push(dir); return createOwnedLanceDbService(dir, admitLanceInstance()); };
 const node = (id: string, content = 'ordinary memory'): MemoryNode => ({ id, content, timestamp: 1000, tier: MemoryTier.MEDIUM, importance: 0.5, tags: [], accessCount: 0, lastAccess: 1000 });
 
 describe('P1 real LanceDB retrieval', () => {

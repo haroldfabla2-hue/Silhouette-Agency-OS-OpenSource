@@ -1,0 +1,36 @@
+DOCUMENTARY DIFF ONLY. NOT APPLIED. NOT ELIGIBLE FOR EXECUTION.
+Capacities and complete frontier/caller inventory are prerequisites.
+
+package.json:
+- "start": "node dist/server/index.js"
++ "start": "node dist/server/bootstrap.js"
+- "server": "node --import tsx/esm server/index.ts"
++ "server": "node --import tsx/esm server/bootstrap.ts"
+
+vite.server.config.ts:
+- entry: path.resolve(__dirname, 'server/index.ts')
++ entry: path.resolve(__dirname, 'server/bootstrap.ts')
+- fileName: () => 'index.js'
++ fileName: () => 'bootstrap.js'
+
+Rename reviewed server/bootstrap.preparation.ts to server/bootstrap.ts only
+when the entire source candidate is reviewed. The original server/index.ts
+still contains the server's body/config/functionality.
+
+electron.cjs:
+- const serverPath = path.join(__dirname, 'dist', 'server', 'index.js');
++ const serverPath = path.join(__dirname, 'dist', 'server', 'bootstrap.js');
+Dev still uses npm run server. Preserve env PORT/NODE_ENV and launch args.
+
+index.html:
+Replace only the existing module script's index.tsx target with reviewed root
+browser.bootstrap.ts. No React tree/component or LoginGate changes.
+
+vitest.config.ts:
+Prepend reviewed test-host setup to setupFiles. No test execution now.
+This alone is NOT enough for module-reset/isolation or every direct script.
+
+Direct CLI/scripts:
+Each supported direct process needs an explicit outer host BEFORE importing its
+original script. Package bin and scripts beyond the two server commands need a
+complete caller inventory. No implicit host in constructors or global window.

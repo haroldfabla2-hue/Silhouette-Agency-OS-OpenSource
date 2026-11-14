@@ -1,0 +1,809 @@
+{
+  "warning": "TEXT LEAD INVENTORY ONLY. No unsupported claim that every file is a process entry. Every hostEntryAdapted remains false until actual outer entry/reset setup is prepared and reviewed.",
+  "candidates": [
+    {
+      "path": "server/routes/telemetry.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "server/routes/v1/system.routes.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "server/routes/v1/introspection.routes.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "server/routes/v1/autonomy.routes.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "server/routes/v1/inbox.routes.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "server/routes/v1/memory.routes.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "server/jobs/persistence.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "server/jobs/heartbeat.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "server/gateway/wsGateway.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "server/controllers/chatController.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "server/controllers/factoryController.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "server/controllers/systemController.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "server/controllers/trainingController.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "server/controllers/mediaController.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "server/controllers/orchestratorController.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "server/channels/channelRouter.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "server/loaders/index.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "server/loaders/dbLoader.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "server/config/configSchema.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/test_deep_sleep.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/test_antifragility.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/migrate_deep_memory.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/benchmark_memory_rollout.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": true,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/test_curiosity_engine.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/verify_distributed_flow.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/test_continuum_recall.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/test_dream_manual.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/test_serendipity.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/diagnose_server_connectivity.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/test_live_thoughts.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/test_curiosity_swarm.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/verify_continuum_flow.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/debug_server_internals.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/test_discovery_protocol.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/verify_connection.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/janitor_exact_dups.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/testCompaction.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/migrate_v1_to_v2.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/verify_zombie_protocol.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/inspect_memory_tiers.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/diagnose_system.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/test_autonomy.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": true,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/analyze_universalprompts.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/test_memory_persistence.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/test_dreaming.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/test_memory_flow.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/verify_introspection.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/demo_autodidactic.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/test_self_correction.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/verify_memory_health.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/test_cognitive_loop.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/full_system_diagnosis.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/connectivity_audit.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/inspect_data_integrity.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "scripts/test_blindness.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/verify_self_healing.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/verification_simulation.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/verify_memory_gatekeeper.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/verify_janitor_healing.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/verify_circadian_trigger.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/verify_eureka_vector.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/verify_knowledge_ingest.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/verify_nocturnal.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/verify_synthesis_agent.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/verify_cfo_anomaly.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/verify_full_agency.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/verify_full_autonomy.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/verify_creative_director.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/verify_resource_shunt.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/verify_janitor_full_response.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/verify_real_wan.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/verify_training_api.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/setup/observe-public-bootstrap.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/real-process/scheduler-child.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/real-process/learning-proposal-child.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/real-process/biomimetic-continuity-child.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/real-process/curiosity-drain-child.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/real-process/chat-audit-boundary-child.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/real-process/biomimetic-ingress-child.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/integration/qdrant-optional-canonical-boundary.real.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": true,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/integration/safe-codebase-null.real.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/lancedb-store-many.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": true,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/cfo-retired-models.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/deep-memory-identity.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/introspection-chokepoint.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/fase7-honest-selfmodel.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/native-pipeline-recovery.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": true,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/lancedb-hydration-batch.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": true,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/truthfulness-tanda5.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/pr2-event-contracts.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/identity-evolution.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/janitor-quarantine.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/services.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/observation-latest-real.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": true,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/fase8-introspection-contract.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/truthfulness-tanda2.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/memory.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/brain-integration.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": true,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/lancedb-fts-commit-conflict.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": true,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/autonomy-entry-points.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/fase5-fact-repository.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/fase3-provenance.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/selfdev-preservation.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/help-protocol.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/memory-transitions-p0.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/sensory-drivers.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/truthfulness-tanda8.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/fase6-incident-perception.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/pr4a-llm-chain.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/fase1-embeddings-honest.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/fase9-memory-stats-snapshot.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/help-protocol-wait.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/memory-rollout.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": true,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/lexical-memory-search.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/federated-memory.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/graph-reconnect.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/sqlite-migration-race.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/memory-retrieval-p1.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": true,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/vector-scan.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": true,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/confirmation-outcome-contract.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/lancedb-knowledge-table.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": true,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/pr4b-honesty-stability.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/pr4c-agent-lifecycle.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/memory-stats-route.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/z3-verification.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/lancedb-stale-handle-retry.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": true,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/fase4-user-memory.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/confirmation-two-users.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/team-routing-e2e.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/channel-ingress-envelope.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/org-reputation.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/team-learning.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/truthfulness-tanda1.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    },
+    {
+      "path": "tests/automated/dream-provenance.test.ts",
+      "staticOrDynamicSourceMentions": "lead, not exact call-path authority",
+      "preparedDirectIndependentCaller": false,
+      "hostEntryAdapted": false
+    }
+  ]
+}

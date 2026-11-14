@@ -1,0 +1,5456 @@
+{
+  "scope": "All syntactic member calls matching close/disconnect/quit/destroy/end/dispose/shutdown/stop, and corresponding method definitions in tracked source directories. Computed properties, aliases, reflection, external plugins/dependencies remain unresolved. No whole-program receiver proof.",
+  "calls": [
+    {
+      "file": "App.tsx",
+      "line": 232,
+      "method": "close",
+      "receiver": "connection",
+      "call": "connection.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "connection",
+        "line": 182,
+        "initializer": "connectSSE('/v1/factory/stream', {\n      onOpen: () => {\n        console.log(\"[SSE] Connected.\");\n      },\n      onMessage: ({ data }) => {\n        try {\n          const parsed = JSON.parse(data);\n          if (parsed.type === 'bus_event') {\n            const innerEvent = parsed.payload;\n            if (innerEvent && innerEvent.type) {\n              systemBus.emit(innerEvent.type, innerEvent.payload, 'SERVER_BRIDGE');\n            }\n          } else if (parsed.type) {\n            systemBus.emit(parsed.type, parsed.payload, 'SERVER_BRIDGE');\n\n            if (parsed.type === SystemProtocol.TASK_COMPLETION) {\n              console.log(\"[SSE] Task Completed:\", parsed.payload);\n            }\n\n            if (parsed.type === SystemProtocol.UI_REFRESH && parsed.payload?.uiCommand) {\n              const cmd = parsed.payload.uiCommand;\n\n              if (cmd.type === 'NAVIGATE') {\n                setActiveTab(cmd.destination);\n              } else if (cmd.type === 'ACTION') {\n                if (cmd.action === 'open_panel') {\n                  if (cmd.panel === 'drive') setDriveOpen(true);\n                  else if (cmd.panel === 'email') setEmailOpen(true);\n                } else if (cmd.action === 'close_panel') {\n                  if (cmd.panel === 'drive') setDriveOpen(false);\n                  else if (cmd.panel === 'email') setEmailOpen(false);\n                } else if (cmd.action === 'highlight' && cmd.target) {\n                  const el = document.querySelector(cmd.target);\n                  if (el) {\n                    el.classList.add('silhouette-highlight');\n                    setTimeout(() => el.classList.remove('silhouette-highlight'), cmd.durationMs || 3000);\n                  }\n                }\n              }\n            }\n          }\n        } catch (err) {\n          // Ignore parse errors for heartbeat/keepalive messages\n        }\n      },\n      onError: () => {\n        console.warn(\"[SSE] Connection lost. Reconnecting with backoff...\");\n      },\n    })"
+      }
+    },
+    {
+      "file": "cli/commands/brain.ts",
+      "line": 42,
+      "method": "stop",
+      "receiver": "spinner",
+      "call": "spinner.stop('Brain scan complete', 'ok')",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "spinner",
+        "line": 30,
+        "initializer": "new Spinner('Querying knowledge graph...')",
+        "newType": "Spinner",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../utils/ui",
+          "imported": "Spinner"
+        }
+      }
+    },
+    {
+      "file": "cli/commands/brain.ts",
+      "line": 94,
+      "method": "stop",
+      "receiver": "spinner",
+      "call": "spinner.stop('Failed to query brain', 'fail')",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "spinner",
+        "line": 30,
+        "initializer": "new Spinner('Querying knowledge graph...')",
+        "newType": "Spinner",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../utils/ui",
+          "imported": "Spinner"
+        }
+      }
+    },
+    {
+      "file": "cli/commands/brain.ts",
+      "line": 118,
+      "method": "stop",
+      "receiver": "spinner",
+      "call": "spinner.stop('Brain probe complete', status ? 'ok' : 'fail')",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "cli/commands/brain.ts",
+      "line": 145,
+      "method": "stop",
+      "receiver": "spinner",
+      "call": "spinner.stop('Failed to query remote brain', 'fail')",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "cli/commands/chat.ts",
+      "line": 40,
+      "method": "close",
+      "receiver": "rl",
+      "call": "rl.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "rl",
+        "line": 27,
+        "initializer": "readline.createInterface({\n        input: process.stdin,\n        output: process.stdout,\n        prompt: `  ${C.BOLD}${C.WHITE}You:${C.RESET} `\n    })"
+      }
+    },
+    {
+      "file": "cli/commands/doctor.ts",
+      "line": 25,
+      "method": "stop",
+      "receiver": "spinner",
+      "call": "spinner.stop('Diagnostic scan complete', 'ok')",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "spinner",
+        "line": 21,
+        "initializer": "new Spinner('Running diagnostic checks...')",
+        "newType": "Spinner",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../utils/ui",
+          "imported": "Spinner"
+        }
+      }
+    },
+    {
+      "file": "cli/commands/evolve.ts",
+      "line": 31,
+      "method": "stop",
+      "receiver": "spinner",
+      "call": "spinner.stop(`Found ${agents.length} agents`, 'ok')",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "spinner",
+        "line": 24,
+        "initializer": "new Spinner('Fetching agents...')",
+        "newType": "Spinner",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../utils/ui",
+          "imported": "Spinner"
+        }
+      }
+    },
+    {
+      "file": "cli/commands/evolve.ts",
+      "line": 37,
+      "method": "stop",
+      "receiver": "spinner",
+      "call": "spinner.stop('Failed to fetch agents', 'fail')",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "spinner",
+        "line": 24,
+        "initializer": "new Spinner('Fetching agents...')",
+        "newType": "Spinner",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../utils/ui",
+          "imported": "Spinner"
+        }
+      }
+    },
+    {
+      "file": "cli/commands/memory.ts",
+      "line": 32,
+      "method": "stop",
+      "receiver": "spinner",
+      "call": "spinner.stop('Memory banks accessed', 'ok')",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "spinner",
+        "line": 24,
+        "initializer": "new Spinner('Reading memory banks...')",
+        "newType": "Spinner",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../utils/ui",
+          "imported": "Spinner"
+        }
+      }
+    },
+    {
+      "file": "cli/commands/memory.ts",
+      "line": 82,
+      "method": "stop",
+      "receiver": "searchSpinner",
+      "call": "searchSpinner.stop(`Found ${entries.length} memories`, 'ok')",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "searchSpinner",
+        "line": 73,
+        "initializer": "new Spinner(`Searching: \"${options.search}\"`)",
+        "newType": "Spinner",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../utils/ui",
+          "imported": "Spinner"
+        }
+      }
+    },
+    {
+      "file": "cli/commands/memory.ts",
+      "line": 96,
+      "method": "stop",
+      "receiver": "searchSpinner",
+      "call": "searchSpinner.stop('Search failed', 'fail')",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "searchSpinner",
+        "line": 73,
+        "initializer": "new Spinner(`Searching: \"${options.search}\"`)",
+        "newType": "Spinner",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../utils/ui",
+          "imported": "Spinner"
+        }
+      }
+    },
+    {
+      "file": "cli/commands/memory.ts",
+      "line": 101,
+      "method": "stop",
+      "receiver": "spinner",
+      "call": "spinner.stop('Failed to read memory', 'fail')",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "spinner",
+        "line": 24,
+        "initializer": "new Spinner('Reading memory banks...')",
+        "newType": "Spinner",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../utils/ui",
+          "imported": "Spinner"
+        }
+      }
+    },
+    {
+      "file": "cli/commands/restart.ts",
+      "line": 44,
+      "method": "stop",
+      "receiver": "spinner",
+      "call": "spinner.stop('Graceful shutdown timed out, force killing...', 'warn')",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "spinner",
+        "line": 22,
+        "initializer": "new Spinner('Sending shutdown signal...')",
+        "newType": "Spinner",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../utils/ui",
+          "imported": "Spinner"
+        }
+      }
+    },
+    {
+      "file": "cli/commands/restart.ts",
+      "line": 56,
+      "method": "stop",
+      "receiver": "spinner",
+      "call": "spinner.stop('Server still running. Try: silhouette restart --force', 'fail')",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "spinner",
+        "line": 22,
+        "initializer": "new Spinner('Sending shutdown signal...')",
+        "newType": "Spinner",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../utils/ui",
+          "imported": "Spinner"
+        }
+      }
+    },
+    {
+      "file": "cli/commands/restart.ts",
+      "line": 59,
+      "method": "stop",
+      "receiver": "spinner",
+      "call": "spinner.stop('Server stopped successfully', 'ok')",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "spinner",
+        "line": 22,
+        "initializer": "new Spinner('Sending shutdown signal...')",
+        "newType": "Spinner",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../utils/ui",
+          "imported": "Spinner"
+        }
+      }
+    },
+    {
+      "file": "cli/commands/restart.ts",
+      "line": 62,
+      "method": "stop",
+      "receiver": "spinner",
+      "call": "spinner.stop('Shutdown signal sent', 'warn')",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "spinner",
+        "line": 22,
+        "initializer": "new Spinner('Sending shutdown signal...')",
+        "newType": "Spinner",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../utils/ui",
+          "imported": "Spinner"
+        }
+      }
+    },
+    {
+      "file": "cli/commands/start.ts",
+      "line": 68,
+      "method": "stop",
+      "receiver": "spinner",
+      "call": "spinner.stop(`API Kernel online at port ${port}`, 'ok')",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "spinner",
+        "line": 56,
+        "initializer": "new Spinner('Starting API Kernel...')",
+        "newType": "Spinner",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../utils/ui",
+          "imported": "Spinner"
+        }
+      }
+    },
+    {
+      "file": "cli/commands/tokens.ts",
+      "line": 30,
+      "method": "stop",
+      "receiver": "spinner",
+      "call": "spinner.stop('Telemetry data retrieved', 'ok')",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "spinner",
+        "line": 23,
+        "initializer": "new Spinner('Fetching telemetry data...')",
+        "newType": "Spinner",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../utils/ui",
+          "imported": "Spinner"
+        }
+      }
+    },
+    {
+      "file": "cli/commands/tokens.ts",
+      "line": 87,
+      "method": "stop",
+      "receiver": "spinner",
+      "call": "spinner.stop('Failed to fetch telemetry', 'fail')",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "spinner",
+        "line": 23,
+        "initializer": "new Spinner('Fetching telemetry data...')",
+        "newType": "Spinner",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../utils/ui",
+          "imported": "Spinner"
+        }
+      }
+    },
+    {
+      "file": "cli/utils/checks.ts",
+      "line": 275,
+      "method": "destroy",
+      "receiver": "socket",
+      "call": "socket.destroy()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "socket",
+        "line": 273,
+        "initializer": "new net.Socket()",
+        "newType": "net.Socket"
+      }
+    },
+    {
+      "file": "cli/utils/checks.ts",
+      "line": 276,
+      "method": "destroy",
+      "receiver": "socket",
+      "call": "socket.destroy()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "socket",
+        "line": 273,
+        "initializer": "new net.Socket()",
+        "newType": "net.Socket"
+      }
+    },
+    {
+      "file": "cli/utils/checks.ts",
+      "line": 277,
+      "method": "destroy",
+      "receiver": "socket",
+      "call": "socket.destroy()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "socket",
+        "line": 273,
+        "initializer": "new net.Socket()",
+        "newType": "net.Socket"
+      }
+    },
+    {
+      "file": "components/Dashboard.tsx",
+      "line": 104,
+      "method": "disconnect",
+      "receiver": "observer",
+      "call": "observer.disconnect()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "observer",
+        "line": 101,
+        "initializer": "new ResizeObserver(updateDimensions)",
+        "newType": "ResizeObserver"
+      }
+    },
+    {
+      "file": "components/GenesisCore.tsx",
+      "line": 104,
+      "method": "dispose",
+      "receiver": "term",
+      "call": "term.dispose()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "term",
+        "line": 84,
+        "initializer": "new Terminal({\n            theme: { background: '#000000', foreground: '#00ff00' },\n            fontSize: 12,\n            rows: 10\n        })",
+        "newType": "Terminal",
+        "constructorImport": {
+          "kind": "named",
+          "from": "xterm",
+          "imported": "Terminal"
+        }
+      }
+    },
+    {
+      "file": "components/KnowledgeGraph.tsx",
+      "line": 235,
+      "method": "disconnect",
+      "receiver": "resizeObserver",
+      "call": "resizeObserver.disconnect()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "resizeObserver",
+        "line": 226,
+        "initializer": "new ResizeObserver((entries) => {\n            for (const entry of entries) {\n                const { width, height } = entry.contentRect;\n                if (width > 0 && height > 0) {\n                    setDimensions({ width, height });\n                }\n            }\n        })",
+        "newType": "ResizeObserver"
+      }
+    },
+    {
+      "file": "components/SystemControl.tsx",
+      "line": 91,
+      "method": "close",
+      "receiver": "connection",
+      "call": "connection.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "connection",
+        "line": 76,
+        "initializer": "connectSSE('/v1/factory/stream', {\n            onMessage: ({ data }) => {\n                try {\n                    const parsed = JSON.parse(data);\n                    if (parsed.type === 'LOG') {\n                        setGenesisLogs(prev => [...prev, parsed.message].slice(-500));\n                    }\n                } catch (e) {\n                    console.error(\"[SystemControl] SSE parse error:\", e);\n                }\n            },\n        })"
+      }
+    },
+    {
+      "file": "components/Terminal/InteractiveTerminal.tsx",
+      "line": 91,
+      "method": "close",
+      "receiver": "ws",
+      "call": "ws.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "ws",
+        "line": 58,
+        "initializer": "new WebSocket(wsUrl)",
+        "newType": "WebSocket"
+      }
+    },
+    {
+      "file": "components/Terminal/InteractiveTerminal.tsx",
+      "line": 92,
+      "method": "dispose",
+      "receiver": "term",
+      "call": "term.dispose()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "term",
+        "line": 20,
+        "initializer": "new Terminal({\n            cursorBlink: true,\n            theme: {\n                background: '#0f172a', // matches slate-900/black mix\n                foreground: '#22c55e', // green-500\n            },\n            fontFamily: 'Consolas, \"Courier New\", monospace',\n            fontSize: 14,\n        })",
+        "newType": "Terminal",
+        "constructorImport": {
+          "kind": "named",
+          "from": "xterm",
+          "imported": "Terminal"
+        }
+      }
+    },
+    {
+      "file": "components/TopologyVisualizer.tsx",
+      "line": 32,
+      "method": "disconnect",
+      "receiver": "observer",
+      "call": "observer.disconnect()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "observer",
+        "line": 29,
+        "initializer": "new ResizeObserver(updateDimensions)",
+        "newType": "ResizeObserver"
+      }
+    },
+    {
+      "file": "components/TrainingGraph.tsx",
+      "line": 207,
+      "method": "disconnect",
+      "receiver": "resizeObserver",
+      "call": "resizeObserver.disconnect()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "resizeObserver",
+        "line": 200,
+        "initializer": "new ResizeObserver((entries) => {\n            for (const entry of entries) {\n                const { width, height } = entry.contentRect;\n                setDimensions({ width, height });\n            }\n        })",
+        "newType": "ResizeObserver"
+      }
+    },
+    {
+      "file": "components/TrainingGraph.tsx",
+      "line": 248,
+      "method": "close",
+      "receiver": "connection",
+      "call": "connection.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "connection",
+        "line": 242,
+        "initializer": "connectSSE('/v1/training/sleep', {\n            onMessage: ({ data }) => {\n                try {\n                    const parsed = JSON.parse(data);\n                    if (parsed.type === 'done') {\n                        setIsTraining(false);\n                        connection.close();\n                        setTrainingLogs(prev => [...(prev || []), { type: 'success', message: '✨ TRAINING CYCLE COMPLETE. MODEL UPDATED.' }]);\n                        fetchGraph(); // Refresh graph to maybe show learned nodes? (or clear them as \"consolidated\")\n                    } else {\n                        setTrainingLogs(prev => [...(prev || []), parsed]);\n                    }\n                } catch {\n                    // Ignore heartbeat/keepalive frames\n                }\n            },\n            onError: (err) => {\n                console.error(\"Training Stream Error\", err);\n                setIsTraining(false);\n                connection.close();\n                setTrainingLogs(prev => [...(prev || []), { type: 'error', message: 'CRITICAL: CONNECTION LOST' }]);\n            },\n        }, { reconnect: false })"
+      }
+    },
+    {
+      "file": "components/TrainingGraph.tsx",
+      "line": 261,
+      "method": "close",
+      "receiver": "connection",
+      "call": "connection.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "connection",
+        "line": 242,
+        "initializer": "connectSSE('/v1/training/sleep', {\n            onMessage: ({ data }) => {\n                try {\n                    const parsed = JSON.parse(data);\n                    if (parsed.type === 'done') {\n                        setIsTraining(false);\n                        connection.close();\n                        setTrainingLogs(prev => [...(prev || []), { type: 'success', message: '✨ TRAINING CYCLE COMPLETE. MODEL UPDATED.' }]);\n                        fetchGraph(); // Refresh graph to maybe show learned nodes? (or clear them as \"consolidated\")\n                    } else {\n                        setTrainingLogs(prev => [...(prev || []), parsed]);\n                    }\n                } catch {\n                    // Ignore heartbeat/keepalive frames\n                }\n            },\n            onError: (err) => {\n                console.error(\"Training Stream Error\", err);\n                setIsTraining(false);\n                connection.close();\n                setTrainingLogs(prev => [...(prev || []), { type: 'error', message: 'CRITICAL: CONNECTION LOST' }]);\n            },\n        }, { reconnect: false })"
+      }
+    },
+    {
+      "file": "components/canvas/NexusCanvas.tsx",
+      "line": 81,
+      "method": "destroy",
+      "receiver": "engine",
+      "call": "engine.destroy()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "engine",
+        "line": 70,
+        "initializer": "new CanvasEngine()",
+        "newType": "CanvasEngine",
+        "constructorImport": {
+          "kind": "named",
+          "from": "./engine/CanvasEngine",
+          "imported": "CanvasEngine"
+        }
+      }
+    },
+    {
+      "file": "components/canvas/NexusCanvas.tsx",
+      "line": 121,
+      "method": "disconnect",
+      "receiver": "observer",
+      "call": "observer.disconnect()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "observer",
+        "line": 113,
+        "initializer": "new ResizeObserver((entries) => {\n            for (const entry of entries) {\n                const { width, height } = entry.contentRect;\n                canvasEngine.resize(width, height);\n            }\n        })",
+        "newType": "ResizeObserver"
+      }
+    },
+    {
+      "file": "components/canvas/engine/CanvasEngine.ts",
+      "line": 71,
+      "method": "destroy",
+      "receiver": "this.app",
+      "call": "this.app.destroy(true)",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "ENCLOSING_THIS_MEMBER_SOURCE_LEADS_NOT_OWNERSHIP_PROOF",
+        "class": "CanvasEngine",
+        "member": "app",
+        "fieldDeclarations": [
+          {
+            "name": "app",
+            "type": "PIXI.Application | null",
+            "initializer": "null"
+          }
+        ],
+        "assignments": [
+          {
+            "name": "app",
+            "line": 59,
+            "value": "new PIXI.Application()"
+          },
+          {
+            "name": "app",
+            "line": 72,
+            "value": "null"
+          },
+          {
+            "name": "app",
+            "line": 462,
+            "value": "null"
+          }
+        ],
+        "methodDeclaration": false
+      }
+    },
+    {
+      "file": "components/canvas/engine/CanvasEngine.ts",
+      "line": 134,
+      "method": "destroy",
+      "receiver": "object",
+      "call": "object.destroy({ children: true })",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "components/canvas/engine/CanvasEngine.ts",
+      "line": 140,
+      "method": "destroy",
+      "receiver": "shadow",
+      "call": "shadow.destroy()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "shadow",
+        "line": 138,
+        "initializer": "this.shadowSprites.get(id)"
+      }
+    },
+    {
+      "file": "components/canvas/engine/CanvasEngine.ts",
+      "line": 147,
+      "method": "destroy",
+      "receiver": "clip",
+      "call": "clip.destroy()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "clip",
+        "line": 145,
+        "initializer": "this.clippingMaskSprites.get(id)"
+      }
+    },
+    {
+      "file": "components/canvas/engine/CanvasEngine.ts",
+      "line": 153,
+      "method": "destroy",
+      "receiver": "vecMask",
+      "call": "vecMask.destroy()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "vecMask",
+        "line": 151,
+        "initializer": "this.vectorMasks.get(id)"
+      }
+    },
+    {
+      "file": "components/canvas/engine/CanvasEngine.ts",
+      "line": 294,
+      "method": "destroy",
+      "receiver": "this.clippingMaskSprites.get(layer.id)",
+      "call": "this.clippingMaskSprites.get(layer.id)?.destroy()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "THIS_MEMBER_REQUIRES_ENCLOSING_CLASS_FIELD_BINDING"
+      }
+    },
+    {
+      "file": "components/canvas/engine/CanvasEngine.ts",
+      "line": 297,
+      "method": "destroy",
+      "receiver": "this.vectorMasks.get(layer.id)",
+      "call": "this.vectorMasks.get(layer.id)?.destroy()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "THIS_MEMBER_REQUIRES_ENCLOSING_CLASS_FIELD_BINDING"
+      }
+    },
+    {
+      "file": "components/canvas/engine/CanvasEngine.ts",
+      "line": 320,
+      "method": "destroy",
+      "receiver": "this.clippingMaskSprites.get(layer.id)",
+      "call": "this.clippingMaskSprites.get(layer.id)?.destroy()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "THIS_MEMBER_REQUIRES_ENCLOSING_CLASS_FIELD_BINDING"
+      }
+    },
+    {
+      "file": "components/canvas/engine/CanvasEngine.ts",
+      "line": 321,
+      "method": "destroy",
+      "receiver": "this.vectorMasks.get(layer.id)",
+      "call": "this.vectorMasks.get(layer.id)?.destroy()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "THIS_MEMBER_REQUIRES_ENCLOSING_CLASS_FIELD_BINDING"
+      }
+    },
+    {
+      "file": "components/canvas/engine/CanvasEngine.ts",
+      "line": 356,
+      "method": "destroy",
+      "receiver": "this.shadowSprites.get(layer.id)",
+      "call": "this.shadowSprites.get(layer.id)?.destroy()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "THIS_MEMBER_REQUIRES_ENCLOSING_CLASS_FIELD_BINDING"
+      }
+    },
+    {
+      "file": "components/canvas/engine/CanvasEngine.ts",
+      "line": 371,
+      "method": "destroy",
+      "receiver": "g",
+      "call": "g.destroy()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "g",
+        "line": 369,
+        "initializer": "new PIXI.Graphics().rect(0, 0, this.canvasWidth, this.canvasHeight).fill(0xffffff)"
+      }
+    },
+    {
+      "file": "components/canvas/engine/CanvasEngine.ts",
+      "line": 452,
+      "method": "destroy",
+      "receiver": "object",
+      "call": "object.destroy({ children: true })",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "components/canvas/engine/CanvasEngine.ts",
+      "line": 454,
+      "method": "destroy",
+      "receiver": "s",
+      "call": "s.destroy()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "components/canvas/engine/CanvasEngine.ts",
+      "line": 456,
+      "method": "destroy",
+      "receiver": "s",
+      "call": "s.destroy()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "components/canvas/engine/CanvasEngine.ts",
+      "line": 458,
+      "method": "destroy",
+      "receiver": "this.app",
+      "call": "this.app.destroy(true)",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "ENCLOSING_THIS_MEMBER_SOURCE_LEADS_NOT_OWNERSHIP_PROOF",
+        "class": "CanvasEngine",
+        "member": "app",
+        "fieldDeclarations": [
+          {
+            "name": "app",
+            "type": "PIXI.Application | null",
+            "initializer": "null"
+          }
+        ],
+        "assignments": [
+          {
+            "name": "app",
+            "line": 59,
+            "value": "new PIXI.Application()"
+          },
+          {
+            "name": "app",
+            "line": 72,
+            "value": "null"
+          },
+          {
+            "name": "app",
+            "line": 462,
+            "value": "null"
+          }
+        ],
+        "methodDeclaration": false
+      }
+    },
+    {
+      "file": "components/canvas/tools/BrushTool.ts",
+      "line": 136,
+      "method": "destroy",
+      "receiver": "this.graphics",
+      "call": "this.graphics?.destroy()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "ENCLOSING_THIS_MEMBER_SOURCE_LEADS_NOT_OWNERSHIP_PROOF",
+        "class": "BrushTool",
+        "member": "graphics",
+        "fieldDeclarations": [
+          {
+            "name": "graphics",
+            "type": "PIXI.Graphics | null",
+            "initializer": "null"
+          }
+        ],
+        "assignments": [
+          {
+            "name": "graphics",
+            "line": 27,
+            "value": "new PIXI.Graphics()"
+          },
+          {
+            "name": "graphics",
+            "line": 137,
+            "value": "null"
+          }
+        ],
+        "methodDeclaration": false
+      }
+    },
+    {
+      "file": "components/canvas/tools/SelectionTool.ts",
+      "line": 286,
+      "method": "destroy",
+      "receiver": "this.graphics",
+      "call": "this.graphics?.destroy()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "ENCLOSING_THIS_MEMBER_SOURCE_LEADS_NOT_OWNERSHIP_PROOF",
+        "class": "SelectionTool",
+        "member": "graphics",
+        "fieldDeclarations": [
+          {
+            "name": "graphics",
+            "type": "PIXI.Graphics | null",
+            "initializer": "null"
+          }
+        ],
+        "assignments": [
+          {
+            "name": "graphics",
+            "line": 30,
+            "value": "new PIXI.Graphics()"
+          },
+          {
+            "name": "graphics",
+            "line": 287,
+            "value": "null"
+          }
+        ],
+        "methodDeclaration": false
+      }
+    },
+    {
+      "file": "components/chat/ImageCard.tsx",
+      "line": 43,
+      "method": "disconnect",
+      "receiver": "observer",
+      "call": "observer.disconnect()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "observer",
+        "line": 39,
+        "initializer": "new IntersectionObserver(\n            ([entry]) => {\n                if (entry.isIntersecting) {\n                    img.src = asset.url;\n                    observer.disconnect();\n                }\n            },\n            { threshold: 0.1 }\n        )",
+        "newType": "IntersectionObserver"
+      }
+    },
+    {
+      "file": "components/chat/ImageCard.tsx",
+      "line": 50,
+      "method": "disconnect",
+      "receiver": "observer",
+      "call": "observer.disconnect()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "observer",
+        "line": 39,
+        "initializer": "new IntersectionObserver(\n            ([entry]) => {\n                if (entry.isIntersecting) {\n                    img.src = asset.url;\n                    observer.disconnect();\n                }\n            },\n            { threshold: 0.1 }\n        )",
+        "newType": "IntersectionObserver"
+      }
+    },
+    {
+      "file": "components/chat/VoiceCloningWizard.tsx",
+      "line": 136,
+      "method": "stop",
+      "receiver": "track",
+      "call": "track.stop()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "components/chat/VoiceCloningWizard.tsx",
+      "line": 159,
+      "method": "stop",
+      "receiver": "mediaRecorderRef.current",
+      "call": "mediaRecorderRef.current.stop()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "mediaRecorderRef",
+        "line": 73,
+        "initializer": "useRef<MediaRecorder | null>(null)"
+      }
+    },
+    {
+      "file": "electron.cjs",
+      "line": 273,
+      "method": "shutdown",
+      "receiver": "pythonBackendManager",
+      "call": "pythonBackendManager.shutdown()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "electron.cjs",
+      "line": 276,
+      "method": "quit",
+      "receiver": "app",
+      "call": "app.quit()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "scripts/bootstrap.ts",
+      "line": 108,
+      "method": "close",
+      "receiver": "rl",
+      "call": "rl.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "rl",
+        "line": 6,
+        "initializer": "readline.createInterface({\n    input: process.stdin,\n    output: process.stdout\n})"
+      }
+    },
+    {
+      "file": "scripts/bootstrap_v2.ts",
+      "line": 133,
+      "method": "close",
+      "receiver": "rl",
+      "call": "rl.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "rl",
+        "line": 20,
+        "initializer": "readline.createInterface({\n    input: process.stdin,\n    output: process.stdout\n})"
+      }
+    },
+    {
+      "file": "scripts/bootstrap_v2.ts",
+      "line": 146,
+      "method": "close",
+      "receiver": "kickRl",
+      "call": "kickRl.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "kickRl",
+        "line": 144,
+        "initializer": "readline.createInterface({ input: process.stdin, output: process.stdout })"
+      }
+    },
+    {
+      "file": "scripts/cleanup_all_identity_memories.ts",
+      "line": 67,
+      "method": "close",
+      "receiver": "db",
+      "call": "db.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "db",
+        "line": 45,
+        "initializer": "new Database(dbPath, { readonly: true })",
+        "newType": "Database",
+        "constructorImport": {
+          "kind": "default",
+          "from": "better-sqlite3"
+        }
+      }
+    },
+    {
+      "file": "scripts/cleanup_duplicates.ts",
+      "line": 26,
+      "method": "close",
+      "receiver": "db",
+      "call": "db.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "db",
+        "line": 6,
+        "initializer": "new Database(DB_PATH)",
+        "newType": "Database",
+        "constructorImport": {
+          "kind": "default",
+          "from": "better-sqlite3"
+        }
+      }
+    },
+    {
+      "file": "scripts/fix_identity_memories.ts",
+      "line": 107,
+      "method": "close",
+      "receiver": "db",
+      "call": "db.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "db",
+        "line": 67,
+        "initializer": "new Database(dbPath, { readonly: true })",
+        "newType": "Database",
+        "constructorImport": {
+          "kind": "default",
+          "from": "better-sqlite3"
+        }
+      }
+    },
+    {
+      "file": "scripts/fix_identity_memories.ts",
+      "line": 160,
+      "method": "close",
+      "receiver": "db",
+      "call": "db.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "scripts/measure_biomimetic_topology.ts",
+      "line": 26,
+      "method": "close",
+      "receiver": "db",
+      "call": "db.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "db",
+        "line": 18,
+        "initializer": "new Database(path, { readonly: true, fileMustExist: true })",
+        "newType": "Database"
+      }
+    },
+    {
+      "file": "scripts/migrate-to-postgres.ts",
+      "line": 274,
+      "method": "close",
+      "receiver": "mainDb",
+      "call": "mainDb.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "mainDb",
+        "line": 124,
+        "initializer": "new Database(MAIN_DB_PATH, { readonly: true })",
+        "newType": "Database",
+        "constructorImport": {
+          "kind": "default",
+          "from": "better-sqlite3"
+        }
+      }
+    },
+    {
+      "file": "scripts/migrate-to-postgres.ts",
+      "line": 320,
+      "method": "close",
+      "receiver": "identityDb",
+      "call": "identityDb.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "identityDb",
+        "line": 283,
+        "initializer": "new Database(IDENTITY_DB_PATH, { readonly: true })",
+        "newType": "Database",
+        "constructorImport": {
+          "kind": "default",
+          "from": "better-sqlite3"
+        }
+      }
+    },
+    {
+      "file": "scripts/migrate-to-postgres.ts",
+      "line": 443,
+      "method": "end",
+      "receiver": "pool",
+      "call": "pool.end()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "pool",
+        "line": 118,
+        "initializer": "new Pool({ connectionString: DATABASE_URL, max: 10 })",
+        "newType": "Pool",
+        "constructorImport": {
+          "kind": "named",
+          "from": "pg",
+          "imported": "Pool"
+        }
+      }
+    },
+    {
+      "file": "scripts/personalize.ts",
+      "line": 56,
+      "method": "close",
+      "receiver": "rl",
+      "call": "rl.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "rl",
+        "line": 10,
+        "initializer": "readline.createInterface({\n    input: process.stdin,\n    output: process.stdout\n})"
+      }
+    },
+    {
+      "file": "scripts/setup.ts",
+      "line": 65,
+      "method": "stop",
+      "receiver": "s",
+      "call": "s.stop('Cognitive loops awakened.')",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "s",
+        "line": 62,
+        "initializer": "spinner()"
+      }
+    },
+    {
+      "file": "scripts/setup.ts",
+      "line": 115,
+      "method": "stop",
+      "receiver": "s",
+      "call": "s.stop(`Hardware Analysis Complete: ${totalGB}GB Total RAM detected.`)",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "s",
+        "line": 62,
+        "initializer": "spinner()"
+      }
+    },
+    {
+      "file": "scripts/setup.ts",
+      "line": 137,
+      "method": "stop",
+      "receiver": "s",
+      "call": "s.stop('Clusters deployed locally (Neo4j: 7687, Redis: 6499).')",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "s",
+        "line": 62,
+        "initializer": "spinner()"
+      }
+    },
+    {
+      "file": "scripts/setup.ts",
+      "line": 139,
+      "method": "stop",
+      "receiver": "s",
+      "call": "s.stop('⚠️ Failed to start Docker auto-magically.')",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "s",
+        "line": 62,
+        "initializer": "spinner()"
+      }
+    },
+    {
+      "file": "scripts/setup.ts",
+      "line": 461,
+      "method": "stop",
+      "receiver": "s",
+      "call": "s.stop(`Caddyfile generated for ${domain} with auto-SSL.`)",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "s",
+        "line": 62,
+        "initializer": "spinner()"
+      }
+    },
+    {
+      "file": "scripts/setup.ts",
+      "line": 494,
+      "method": "stop",
+      "receiver": "s",
+      "call": "s.stop('Caddyfile generated (port 80, no SSL).')",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "s",
+        "line": 62,
+        "initializer": "spinner()"
+      }
+    },
+    {
+      "file": "scripts/setup.ts",
+      "line": 719,
+      "method": "stop",
+      "receiver": "s",
+      "call": "s.stop('Configuration vault generated successfully.')",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "s",
+        "line": 62,
+        "initializer": "spinner()"
+      }
+    },
+    {
+      "file": "scripts/test_graph_connection.ts",
+      "line": 26,
+      "method": "close",
+      "receiver": "graph",
+      "call": "graph.close()",
+      "migration": "SHARED_SERVICE_LIFETIME_OR_CLOSE_API_REVIEW_REQUIRED",
+      "receiverEvidence": {
+        "kind": "IMPORT_BINDING",
+        "from": "../services/graphService",
+        "imported": "graph",
+        "local": "graph"
+      }
+    },
+    {
+      "file": "scripts/test_leiden.ts",
+      "line": 39,
+      "method": "close",
+      "receiver": "graph",
+      "call": "graph.close()",
+      "migration": "SHARED_SERVICE_LIFETIME_OR_CLOSE_API_REVIEW_REQUIRED",
+      "receiverEvidence": {
+        "kind": "IMPORT_BINDING",
+        "from": "../services/graphService",
+        "imported": "graph",
+        "local": "graph"
+      }
+    },
+    {
+      "file": "scripts/verify_graph_communities.ts",
+      "line": 26,
+      "method": "close",
+      "receiver": "graph",
+      "call": "graph.close()",
+      "migration": "SHARED_SERVICE_LIFETIME_OR_CLOSE_API_REVIEW_REQUIRED",
+      "receiverEvidence": {
+        "kind": "IMPORT_BINDING",
+        "from": "../services/graphService",
+        "imported": "graph",
+        "local": "graph"
+      }
+    },
+    {
+      "file": "scripts/verify_system_integrity.ts",
+      "line": 74,
+      "method": "close",
+      "receiver": "db",
+      "call": "db.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "db",
+        "line": 20,
+        "initializer": "new Database(DB_PATH)",
+        "newType": "Database",
+        "constructorImport": {
+          "kind": "default",
+          "from": "better-sqlite3"
+        }
+      }
+    },
+    {
+      "file": "server/channels/channelRouter.ts",
+      "line": 96,
+      "method": "disconnect",
+      "receiver": "ch",
+      "call": "ch.disconnect()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "server/channels/discord/discordChannel.ts",
+      "line": 179,
+      "method": "stop",
+      "receiver": "typing",
+      "call": "typing.stop()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "typing",
+        "line": 133,
+        "initializer": "new TypingIndicator()",
+        "newType": "TypingIndicator"
+      }
+    },
+    {
+      "file": "server/channels/discord/discordChannel.ts",
+      "line": 198,
+      "method": "destroy",
+      "receiver": "this.client",
+      "call": "this.client.destroy()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "ENCLOSING_THIS_MEMBER_SOURCE_LEADS_NOT_OWNERSHIP_PROOF",
+        "class": "DiscordChannel",
+        "member": "client",
+        "fieldDeclarations": [
+          {
+            "name": "client",
+            "type": "any",
+            "initializer": "null"
+          }
+        ],
+        "assignments": [
+          {
+            "name": "client",
+            "line": 100,
+            "value": "new Client({\n                intents: [\n                    GatewayIntentBits.Guilds,\n                    GatewayIntentBits.GuildMessages,\n                    GatewayIntentBits.MessageContent,\n                    GatewayIntentBits.DirectMessages,\n                ],\n            })"
+          },
+          {
+            "name": "client",
+            "line": 198,
+            "value": "null"
+          }
+        ],
+        "methodDeclaration": false
+      }
+    },
+    {
+      "file": "server/channels/telegram/telegramChannel.ts",
+      "line": 323,
+      "method": "stop",
+      "receiver": "typing",
+      "call": "typing.stop()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "typing",
+        "line": 287,
+        "initializer": "new TypingIndicator()",
+        "newType": "TypingIndicator"
+      }
+    },
+    {
+      "file": "server/channels/telegram/telegramChannel.ts",
+      "line": 331,
+      "method": "stop",
+      "receiver": "typing",
+      "call": "typing.stop()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "typing",
+        "line": 287,
+        "initializer": "new TypingIndicator()",
+        "newType": "TypingIndicator"
+      }
+    },
+    {
+      "file": "server/channels/telegram/telegramChannel.ts",
+      "line": 336,
+      "method": "stop",
+      "receiver": "this.bot",
+      "call": "this.bot.stop()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "ENCLOSING_THIS_MEMBER_SOURCE_LEADS_NOT_OWNERSHIP_PROOF",
+        "class": "TelegramChannel",
+        "member": "bot",
+        "fieldDeclarations": [
+          {
+            "name": "bot",
+            "type": "Bot | null",
+            "initializer": "null"
+          }
+        ],
+        "assignments": [
+          {
+            "name": "bot",
+            "line": 183,
+            "value": "new Bot(this.config.botToken)"
+          },
+          {
+            "name": "bot",
+            "line": 337,
+            "value": "null"
+          }
+        ],
+        "methodDeclaration": false
+      }
+    },
+    {
+      "file": "server/channels/telegram/telegramChannel.ts",
+      "line": 424,
+      "method": "stop",
+      "receiver": "typing",
+      "call": "typing.stop()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "server/channels/telegram/telegramChannel.ts",
+      "line": 489,
+      "method": "stop",
+      "receiver": "typing",
+      "call": "typing.stop()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "server/channels/terminalWebSocket.ts",
+      "line": 26,
+      "method": "close",
+      "receiver": "ws",
+      "call": "ws.close(3000, 'Unauthorized')",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "server/channels/terminalWebSocket.ts",
+      "line": 51,
+      "method": "close",
+      "receiver": "ws",
+      "call": "ws.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "server/channels/whatsapp/whatsappChannel.ts",
+      "line": 190,
+      "method": "stop",
+      "receiver": "typing",
+      "call": "typing.stop(this.sock, chatId)",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "typing",
+        "line": 160,
+        "initializer": "new TypingIndicator()",
+        "newType": "TypingIndicator"
+      }
+    },
+    {
+      "file": "server/channels/whatsapp/whatsappChannel.ts",
+      "line": 225,
+      "method": "stop",
+      "receiver": "typing",
+      "call": "typing.stop(this.sock, chatId)",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "typing",
+        "line": 160,
+        "initializer": "new TypingIndicator()",
+        "newType": "TypingIndicator"
+      }
+    },
+    {
+      "file": "server/channels/whatsapp/whatsappChannel.ts",
+      "line": 228,
+      "method": "end",
+      "receiver": "this.sock",
+      "call": "this.sock.end(undefined)",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "ENCLOSING_THIS_MEMBER_SOURCE_LEADS_NOT_OWNERSHIP_PROOF",
+        "class": "WhatsAppChannel",
+        "member": "sock",
+        "fieldDeclarations": [
+          {
+            "name": "sock",
+            "type": "any",
+            "initializer": "null"
+          }
+        ],
+        "assignments": [
+          {
+            "name": "sock",
+            "line": 106,
+            "value": "makeWASocket({\n                auth: state,\n                printQRInTerminal: true,\n            })"
+          },
+          {
+            "name": "sock",
+            "line": 228,
+            "value": "null"
+          }
+        ],
+        "methodDeclaration": false
+      }
+    },
+    {
+      "file": "server/controllers/chatController.ts",
+      "line": 339,
+      "method": "end",
+      "receiver": "res",
+      "call": "res.end()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "server/controllers/chatController.ts",
+      "line": 504,
+      "method": "end",
+      "receiver": "res",
+      "call": "res.end()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "server/controllers/chatController.ts",
+      "line": 509,
+      "method": "end",
+      "receiver": "res",
+      "call": "res.end()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "server/controllers/trainingController.ts",
+      "line": 57,
+      "method": "end",
+      "receiver": "res",
+      "call": "res.end()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "server/controllers/trainingController.ts",
+      "line": 82,
+      "method": "end",
+      "receiver": "res",
+      "call": "res.end()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "server/controllers/trainingController.ts",
+      "line": 95,
+      "method": "end",
+      "receiver": "res",
+      "call": "res.end()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "server/gateway/wsGateway.ts",
+      "line": 70,
+      "method": "close",
+      "receiver": "ws",
+      "call": "ws.close(4001, 'Handshake timeout')",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "server/gateway/wsGateway.ts",
+      "line": 88,
+      "method": "close",
+      "receiver": "ws",
+      "call": "ws.close(4002, 'First frame must be connect')",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "server/gateway/wsGateway.ts",
+      "line": 147,
+      "method": "close",
+      "receiver": "ws",
+      "call": "ws.close(4001, 'Unauthorized')",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "server/gateway/wsGateway.ts",
+      "line": 154,
+      "method": "close",
+      "receiver": "ws",
+      "call": "ws.close(4001, 'Unauthorized (Server Configuration Error)')",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "server/gateway/wsGateway.ts",
+      "line": 676,
+      "method": "close",
+      "receiver": "ws",
+      "call": "ws.close(1001, 'Server shutting down')",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "server/gateway/wsGateway.ts",
+      "line": 682,
+      "method": "close",
+      "receiver": "this.wss",
+      "call": "this.wss.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "ENCLOSING_THIS_MEMBER_SOURCE_LEADS_NOT_OWNERSHIP_PROOF",
+        "class": "SilhouetteGateway",
+        "member": "wss",
+        "fieldDeclarations": [
+          {
+            "name": "wss",
+            "type": "WebSocketServer | null",
+            "initializer": "null"
+          }
+        ],
+        "assignments": [
+          {
+            "name": "wss",
+            "line": 56,
+            "value": "new WebSocketServer({\n            server: httpServer,\n            path: '/ws',\n            maxPayload: CONFIG.MAX_PAYLOAD_BYTES,\n        })"
+          }
+        ],
+        "methodDeclaration": false
+      }
+    },
+    {
+      "file": "server/index.ts",
+      "line": 197,
+      "method": "shutdown",
+      "receiver": "curiosity",
+      "call": "curiosity.shutdown()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "server/index.ts",
+      "line": 207,
+      "method": "shutdown",
+      "receiver": "continuousMemory",
+      "call": "continuousMemory.shutdown()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "server/index.ts",
+      "line": 217,
+      "method": "shutdown",
+      "receiver": "gateway",
+      "call": "gateway.shutdown()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "server/index.ts",
+      "line": 224,
+      "method": "disconnect",
+      "receiver": "redisClient",
+      "call": "redisClient.disconnect()",
+      "migration": "SHARED_SINGLETON_CLOSE_REQUIRES_CALLSITE_LIFETIME_PLAN",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "server/index.ts",
+      "line": 231,
+      "method": "close",
+      "receiver": "graph",
+      "call": "graph.close()",
+      "migration": "SHARED_SINGLETON_CLOSE_REQUIRES_CALLSITE_LIFETIME_PLAN",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "server/index.ts",
+      "line": 238,
+      "method": "close",
+      "receiver": "sqliteService",
+      "call": "sqliteService.close()",
+      "migration": "OWNER_REQUEST_MIGRATED_BUT_EXCLUSIVE_QUIESCENCE_UNRESOLVED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "server/index.ts",
+      "line": 245,
+      "method": "stop",
+      "receiver": "unifiedDaemon",
+      "call": "unifiedDaemon.stop()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "server/index.ts",
+      "line": 250,
+      "method": "close",
+      "receiver": "server",
+      "call": "server.close(() => {\n        console.log('[SHUTDOWN] HTTP server closed');\n        clearTimeout(deadline);\n        process.exit(shutdownFailed ? 1 : 0);\n    })",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "server",
+        "line": 49,
+        "initializer": "app.listen(PORT, HOST, async () => {\n    console.log(`\n    -------------------------------------------\n    SILHOUETTE AGENCY OS IS ONLINE\n    -------------------------------------------\n    ► API Gateway:  http://localhost:${PORT}\n    ► WS Gateway:   ws://localhost:${PORT}/ws\n    ► Bind Host:    ${HOST}\n    ► Environment:  ${process.env.NODE_ENV || 'development'}\n    -------------------------------------------\n    `);\n\n    // [LEDGER-INTEGRITY] Close ledger rows left open by previous process\n    // lives: a restart strands pending/running rows whose executor is\n    // gone. Signal verified in code: these rows are unambiguous orphans -\n    // the only executor that could advance them ran in the dead process,\n    // and mission resume (workflowEngine.executeMissionBuild) always\n    // generates a NEW planId via planGenerator.create and overwrites\n    // pipelineData.planId, so no resume path ever re-drives a pre-boot\n    // row. They are failed honestly (never deleted); re-running the\n    // mission is the recovery path.\n    try {\n        const { reapStaleTasks } = await import('../services/execution/taskLedger');\n        reapStaleTasks(PROCESS_STARTED_AT, 'executor lost: process restart (ledger row predates this boot)');\n    } catch (e: any) {\n        console.warn('[BOOT] stale task sweep failed (non-blocking):', e?.message);\n    }\n\n    // [GATEWAY] Initialize WebSocket Gateway (shares HTTP server)\n    try {\n        const { gateway } = await import('./gateway');\n        gateway.initialize(server);\n        console.log('[GATEWAY] ✅ WebSocket Gateway initialized');\n    } catch (error) {\n        console.error('[GATEWAY] Failed to initialize WebSocket Gateway:', error);\n    }\n\n    // [TERMINAL] Initialize Interactive Terminal WebSocket\n    try {\n        const { TerminalGateway } = await import('./channels/terminalWebSocket');\n        TerminalGateway.initialize(server);\n    } catch (error) {\n        console.error('[TERMINAL] Failed to initialize Terminal Gateway:', error);\n    }\n\n\n    // [CHANNELS] Initialize Messaging Channels (WhatsApp, Telegram, Discord)\n    try {\n        const { initializeChannels } = await import('./channels');\n        await initializeChannels();\n    } catch (error) {\n        console.error('[CHANNELS] Failed to initialize channels:', error);\n    }\n\n    // [MCP] Initialize and Mount Standard MCP Server\n    try {\n        const { mcpWrapper } = await import('./mcp/mcpServer');\n        await mcpWrapper.initialize();\n        await mcpWrapper.mount(app);\n    } catch (error) {\n        console.error('[MCP] Failed to initialize standard MCP server:', error);\n    }\n\n    // [PLUGINS] Initialize Plugin System (Phase 14)\n    try {\n        const { pluginRegistry } = await import('../services/plugins/pluginRegistry');\n        const { registerCorePlugins } = await import('../services/plugins/loader');\n\n        // Register Core Plugins\n        registerCorePlugins();\n\n        // [R12] Discover + validate + register custom plugins (real ESM load)\n        const { registerCustomPlugins } = await import('../services/plugins/loader');\n        await registerCustomPlugins();\n\n        // Initialize Registry (starts plugins and registers tools)\n        await pluginRegistry.initialize();\n        console.log('[PLUGINS] ✅ Plugin System initialized with Core Plugins');\n    } catch (error) {\n        console.error('[PLUGINS] Failed to initialize plugin system:', error);\n    }\n\n    // [INGESTION] Start Webhook Ingestion Engine\n    try {\n        await import('../services/ingestionEngine');\n        console.log('[INGESTION] ✅ Webhook Ingestion Engine online');\n    } catch (error) {\n        console.error('[INGESTION] Failed to start Ingestion Engine:', error);\n    }\n\n    // [EVOLUTION] Proactive Self-Evolution is now handled by Unified Daemon\n\n    // [COGNITIVE] Start 4-Tier Memory Cognitive Engines & Evolution (Unified Daemon)\n    try {\n        const { unifiedDaemon } = await import('../services/daemon/unifiedDaemon');\n        unifiedDaemon.start();\n    } catch (error) {\n        console.error('[DAEMON] Failed to start unified daemon:', error);\n    }\n\n    // [ORCHESTRATOR] Initialize Agent Lifecycle Manager (auto-starts on import)\n    try {\n        await import('../services/orchestrator');\n        console.log('[ORCHESTRATOR] ✅ Agent Lifecycle Manager initialized');\n\n        // [Ticket W7] Wire the capability-awareness writer: it was imported\n        // (promptCompiler) but initialize() was never called, so its event\n        // subscriptions never existed and universal_knowledge had no writer.\n        try {\n            const { capabilityAwareness } = await import('../services/capabilityAwareness');\n            await capabilityAwareness.initialize();\n            console.log('[CAPABILITY_AWARENESS] ✅ Initialized');\n        } catch (caErr) {\n            console.error('[CAPABILITY_AWARENESS] Init failed (non-fatal):', caErr);\n        }\n    } catch (error) {\n        console.error('[ORCHESTRATOR] Failed to initialize orchestrator:', error);\n    }\n\n    // [EVOLUTION] Start Self-Evolution Scheduler (respects PowerManager mode)\n    try {\n        const { evolutionScheduler } = await import('../services/evolution/evolutionScheduler');\n        evolutionScheduler.start();\n        console.log('[EVOLUTION] ✅ Evolution Scheduler started');\n    } catch (error) {\n        console.error('[EVOLUTION] Failed to start evolution scheduler:', error);\n    }\n})"
+      }
+    },
+    {
+      "file": "server/retainedShutdown.preparation.ts",
+      "line": 25,
+      "method": "stop",
+      "receiver": "host",
+      "call": "host.stop()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "server/retainedShutdown.preparation.ts",
+      "line": 31,
+      "method": "stop",
+      "receiver": "host",
+      "call": "host.stop()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "server/routes/health.ts",
+      "line": 127,
+      "method": "destroy",
+      "receiver": "socket",
+      "call": "socket.destroy()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "socket",
+        "line": 120,
+        "initializer": "new net.Socket()",
+        "newType": "net.Socket"
+      }
+    },
+    {
+      "file": "server/routes/health.ts",
+      "line": 131,
+      "method": "destroy",
+      "receiver": "socket",
+      "call": "socket.destroy()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "socket",
+        "line": 120,
+        "initializer": "new net.Socket()",
+        "newType": "net.Socket"
+      }
+    },
+    {
+      "file": "server/routes/health.ts",
+      "line": 135,
+      "method": "destroy",
+      "receiver": "socket",
+      "call": "socket.destroy()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "socket",
+        "line": 120,
+        "initializer": "new net.Socket()",
+        "newType": "net.Socket"
+      }
+    },
+    {
+      "file": "services/auth/accountStore.ts",
+      "line": 97,
+      "method": "close",
+      "receiver": "this.db",
+      "call": "this.db.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "ENCLOSING_THIS_MEMBER_SOURCE_LEADS_NOT_OWNERSHIP_PROOF",
+        "class": "AccountStore",
+        "member": "db",
+        "fieldDeclarations": [
+          {
+            "name": "db",
+            "type": "Database.Database"
+          }
+        ],
+        "assignments": [
+          {
+            "name": "db",
+            "line": 29,
+            "value": "new Database(dbPath)"
+          }
+        ],
+        "methodDeclaration": false
+      }
+    },
+    {
+      "file": "services/auth/connectionManager.ts",
+      "line": 205,
+      "method": "close",
+      "receiver": "pinned",
+      "call": "pinned.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "pinned",
+        "line": 201,
+        "initializer": "await createPinnedFetcher(input.config.deviceCodeUrl, 'config.deviceCodeUrl', this.options.allowPrivateEndpoints === true)\n                .catch(e => { throw new ConnectionError(e.code || 'invalid-endpoint', e.message); })"
+      }
+    },
+    {
+      "file": "services/auth/connectionManager.ts",
+      "line": 238,
+      "method": "close",
+      "receiver": "pinned",
+      "call": "pinned.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "services/auth/connectionManager.ts",
+      "line": 245,
+      "method": "close",
+      "receiver": "pinned",
+      "call": "pinned.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "services/auth/oauthLoopback.ts",
+      "line": 75,
+      "method": "close",
+      "receiver": "server",
+      "call": "server.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "services/auth/oauthLoopback.ts",
+      "line": 81,
+      "method": "end",
+      "receiver": "res.writeHead(404)",
+      "call": "res.writeHead(404).end('not found')",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "services/auth/oauthLoopback.ts",
+      "line": 85,
+      "method": "end",
+      "receiver": "res.writeHead(200)",
+      "call": "res.writeHead(200).end('Authorization failed; you can close this tab.')",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "services/auth/oauthLoopback.ts",
+      "line": 86,
+      "method": "end",
+      "receiver": "res.writeHead(400)",
+      "call": "res.writeHead(400).end('Invalid state.')",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "services/auth/oauthLoopback.ts",
+      "line": 87,
+      "method": "end",
+      "receiver": "res.writeHead(400)",
+      "call": "res.writeHead(400).end('Missing code.')",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "services/auth/oauthLoopback.ts",
+      "line": 88,
+      "method": "end",
+      "receiver": "res.writeHead(200)",
+      "call": "res.writeHead(200).end('Authorization received; you can close this tab.')",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "services/auth/oauthLoopback.ts",
+      "line": 102,
+      "method": "close",
+      "receiver": "server",
+      "call": "server.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "services/auth/pinnedFetch.ts",
+      "line": 89,
+      "method": "close",
+      "receiver": "agent",
+      "call": "agent.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "agent",
+        "line": 75,
+        "initializer": "new Agent({\n        connect: {\n            // The socket ALWAYS dials the validated address; a changed DNS\n            // answer at request time is never consulted. TLS SNI/hostname\n            // verification still uses the URL host.\n            // undici calls lookup with all:true -> answer with a records array.\n            lookup: (hostname, _opts, cb) => {\n                if (hostname !== host) { cb(new Error('pinned host mismatch'), []); return; }\n                cb(null, [{ address: pinned, family }]);\n            },\n        },\n    })",
+        "newType": "Agent",
+        "constructorImport": {
+          "kind": "named",
+          "from": "undici",
+          "imported": "Agent"
+        }
+      }
+    },
+    {
+      "file": "services/browser/browserController.ts",
+      "line": 91,
+      "method": "shutdown",
+      "receiver": "this",
+      "call": "this.shutdown()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "THIS_MEMBER_REQUIRES_ENCLOSING_CLASS_FIELD_BINDING"
+      }
+    },
+    {
+      "file": "services/browser/browserController.ts",
+      "line": 107,
+      "method": "close",
+      "receiver": "oldPage",
+      "call": "oldPage.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "oldPage",
+        "line": 106,
+        "initializer": "this.pages.get(oldestKey)"
+      }
+    },
+    {
+      "file": "services/browser/browserController.ts",
+      "line": 343,
+      "method": "close",
+      "receiver": "page",
+      "call": "page.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "services/browser/browserController.ts",
+      "line": 354,
+      "method": "close",
+      "receiver": "page",
+      "call": "page.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "services/browser/browserController.ts",
+      "line": 358,
+      "method": "close",
+      "receiver": "this.browser",
+      "call": "this.browser.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "ENCLOSING_THIS_MEMBER_SOURCE_LEADS_NOT_OWNERSHIP_PROOF",
+        "class": "BrowserController",
+        "member": "browser",
+        "fieldDeclarations": [
+          {
+            "name": "browser",
+            "type": "Browser | null",
+            "initializer": "null"
+          }
+        ],
+        "assignments": [
+          {
+            "name": "browser",
+            "line": 68,
+            "value": "await puppeteer.launch({\n                headless: true,\n                args: [\n                    '--no-sandbox',\n                    '--disable-setuid-sandbox',\n                    '--disable-dev-shm-usage',\n                    '--disable-gpu',\n                    '--window-size=1280,720',\n                ],\n                defaultViewport: {\n                    width: 1280,\n                    height: 720,\n                },\n            })"
+          },
+          {
+            "name": "browser",
+            "line": 359,
+            "value": "null"
+          }
+        ],
+        "methodDeclaration": false
+      }
+    },
+    {
+      "file": "services/browser/stagehandPerception.ts",
+      "line": 98,
+      "method": "close",
+      "receiver": "browser",
+      "call": "browser.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "browser",
+        "line": 91,
+        "initializer": "s.browser === 'browserbase'\n        ? await sdk.browserbase.launch({ apiKey: s.browserbaseApiKey })\n        : await sdk.localBrowser.launch({ headless: s.headless })"
+      }
+    },
+    {
+      "file": "services/browser/stagehandPerception.ts",
+      "line": 116,
+      "method": "close",
+      "receiver": "runtime",
+      "call": "runtime.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "runtime",
+        "line": 95,
+        "initializer": "await sdk.Stagehand.create({ browser, model })"
+      }
+    },
+    {
+      "file": "services/browser/stagehandPerception.ts",
+      "line": 118,
+      "method": "close",
+      "receiver": "browser",
+      "call": "browser.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "browser",
+        "line": 91,
+        "initializer": "s.browser === 'browserbase'\n        ? await sdk.browserbase.launch({ apiKey: s.browserbaseApiKey })\n        : await sdk.localBrowser.launch({ headless: s.headless })"
+      }
+    },
+    {
+      "file": "services/browser/stagehandPerception.ts",
+      "line": 288,
+      "method": "close",
+      "receiver": "s",
+      "call": "s.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "services/browser/visualBrowserEngine.ts",
+      "line": 705,
+      "method": "close",
+      "receiver": "this.context",
+      "call": "this.context.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "ENCLOSING_THIS_MEMBER_SOURCE_LEADS_NOT_OWNERSHIP_PROOF",
+        "class": "VisualBrowserEngine",
+        "member": "context",
+        "fieldDeclarations": [
+          {
+            "name": "context",
+            "type": "BrowserContext | null",
+            "initializer": "null"
+          }
+        ],
+        "assignments": [
+          {
+            "name": "context",
+            "line": 218,
+            "value": "await this.browser.newContext({\n            viewport: { width: 1440, height: 900 },\n            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',\n            deviceScaleFactor: 1,\n            hasTouch: false,\n            locale: 'en-US',\n            timezoneId: 'America/New_York'\n        })"
+          },
+          {
+            "name": "context",
+            "line": 706,
+            "value": "null"
+          }
+        ],
+        "methodDeclaration": false
+      }
+    },
+    {
+      "file": "services/browser/visualBrowserEngine.ts",
+      "line": 709,
+      "method": "close",
+      "receiver": "this.browser",
+      "call": "this.browser.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "ENCLOSING_THIS_MEMBER_SOURCE_LEADS_NOT_OWNERSHIP_PROOF",
+        "class": "VisualBrowserEngine",
+        "member": "browser",
+        "fieldDeclarations": [
+          {
+            "name": "browser",
+            "type": "Browser | null",
+            "initializer": "null"
+          }
+        ],
+        "assignments": [
+          {
+            "name": "browser",
+            "line": 197,
+            "value": "await chromium.launch({\n                    headless: true,\n                    channel: 'chrome',\n                    args: launchArgs\n                })"
+          },
+          {
+            "name": "browser",
+            "line": 204,
+            "value": "await chromium.launch({\n                        headless: true,\n                        channel: 'msedge',\n                        args: launchArgs\n                    })"
+          },
+          {
+            "name": "browser",
+            "line": 210,
+            "value": "await chromium.launch({\n                        headless: true,\n                        args: launchArgs\n                    })"
+          },
+          {
+            "name": "browser",
+            "line": 710,
+            "value": "null"
+          }
+        ],
+        "methodDeclaration": false
+      }
+    },
+    {
+      "file": "services/browserService.ts",
+      "line": 131,
+      "method": "close",
+      "receiver": "stagehandPerception",
+      "call": "stagehandPerception.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "stagehandPerception",
+        "line": 7,
+        "initializer": "new StagehandPerception(\n    () => process.env,\n    undefined,\n    defaultPaymentApproval,\n    async (a) => {\n        const { browserAuditLedger } = await import('./browser/browserAuditLedger');\n        await browserAuditLedger.recordFrame({ actionType: `stagehand_${a.actionType}`, targetDescription: a.description, url: a.url || '' });\n    },\n)",
+        "newType": "StagehandPerception",
+        "constructorImport": {
+          "kind": "named",
+          "from": "./browser/stagehandPerception",
+          "imported": "StagehandPerception"
+        }
+      }
+    },
+    {
+      "file": "services/browserService.ts",
+      "line": 132,
+      "method": "close",
+      "receiver": "visualBrowserEngine",
+      "call": "visualBrowserEngine.close()",
+      "migration": "IMPORTED_RECEIVER_REQUIRES_DECLARATION_OR_LIFETIME_REVIEW",
+      "receiverEvidence": {
+        "kind": "IMPORT_BINDING",
+        "from": "./browser/visualBrowserEngine",
+        "imported": "visualBrowserEngine",
+        "local": "visualBrowserEngine"
+      }
+    },
+    {
+      "file": "services/bus/RedisBusAdapter.ts",
+      "line": 48,
+      "method": "close",
+      "receiver": "client",
+      "call": "client.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "services/connectionNervousSystem.ts",
+      "line": 54,
+      "method": "stop",
+      "receiver": "this",
+      "call": "this.stop()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "THIS_MEMBER_REQUIRES_ENCLOSING_CLASS_FIELD_BINDING"
+      }
+    },
+    {
+      "file": "services/continuumMemory.ts",
+      "line": 457,
+      "method": "close",
+      "receiver": "handle",
+      "call": "handle.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "handle",
+        "line": 438,
+        "initializer": "await fs.open(SNAPSHOT_PATH, 'r')"
+      }
+    },
+    {
+      "file": "services/daemon/unifiedDaemon.ts",
+      "line": 157,
+      "method": "stop",
+      "receiver": "this",
+      "call": "this.stop()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "THIS_MEMBER_REQUIRES_ENCLOSING_CLASS_FIELD_BINDING"
+      }
+    },
+    {
+      "file": "services/daemon/unifiedDaemon.ts",
+      "line": 296,
+      "method": "close",
+      "receiver": "handle",
+      "call": "handle.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "handle",
+        "line": 291,
+        "initializer": "await fs.open(tmpFile, 'w')"
+      }
+    },
+    {
+      "file": "services/database/postgresAdapter.ts",
+      "line": 385,
+      "method": "end",
+      "receiver": "this.pool",
+      "call": "this.pool.end()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "ENCLOSING_THIS_MEMBER_SOURCE_LEADS_NOT_OWNERSHIP_PROOF",
+        "class": "PostgresAdapter",
+        "member": "pool",
+        "fieldDeclarations": [
+          {
+            "name": "pool",
+            "type": "Pool"
+          }
+        ],
+        "assignments": [
+          {
+            "name": "pool",
+            "line": 18,
+            "value": "new Pool({\n            connectionString,\n            max: 20,                    // Max connections in pool\n            idleTimeoutMillis: 30000,   // Close idle connections after 30s\n            connectionTimeoutMillis: 5000\n        })"
+          }
+        ],
+        "methodDeclaration": false
+      }
+    },
+    {
+      "file": "services/database/sqliteAdapter.ts",
+      "line": 40,
+      "method": "close",
+      "receiver": "sqliteService",
+      "call": "sqliteService.close()",
+      "migration": "OWNER_REQUEST_MIGRATED_BUT_EXCLUSIVE_QUIESCENCE_UNRESOLVED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "services/database/sqliteAdapter.ts",
+      "line": 42,
+      "method": "close",
+      "receiver": "this.identityDb",
+      "call": "this.identityDb.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "ENCLOSING_THIS_MEMBER_SOURCE_LEADS_NOT_OWNERSHIP_PROOF",
+        "class": "SqliteAdapter",
+        "member": "identityDb",
+        "fieldDeclarations": [
+          {
+            "name": "identityDb",
+            "type": "Database.Database | null",
+            "initializer": "null"
+          }
+        ],
+        "assignments": [
+          {
+            "name": "identityDb",
+            "line": 32,
+            "value": "new Database(IDENTITY_DB_PATH, { timeout: 5000 })"
+          }
+        ],
+        "methodDeclaration": false
+      }
+    },
+    {
+      "file": "services/dbIntrospector.ts",
+      "line": 59,
+      "method": "close",
+      "receiver": "testDb",
+      "call": "testDb.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "testDb",
+        "line": 57,
+        "initializer": "new Database(uri.replace('sqlite://', ''), { readonly: true })",
+        "newType": "Database",
+        "constructorImport": {
+          "kind": "default",
+          "from": "better-sqlite3"
+        }
+      }
+    },
+    {
+      "file": "services/dbIntrospector.ts",
+      "line": 109,
+      "method": "close",
+      "receiver": "db",
+      "call": "db.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "db",
+        "line": 87,
+        "initializer": "new Database(cleanPath, { readonly: true })",
+        "newType": "Database",
+        "constructorImport": {
+          "kind": "default",
+          "from": "better-sqlite3"
+        }
+      }
+    },
+    {
+      "file": "services/dbIntrospector.ts",
+      "line": 172,
+      "method": "close",
+      "receiver": "db",
+      "call": "db.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "services/environmentService.ts",
+      "line": 86,
+      "method": "destroy",
+      "receiver": "socket",
+      "call": "socket.destroy()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "socket",
+        "line": 84,
+        "initializer": "new net.Socket()",
+        "newType": "net.Socket"
+      }
+    },
+    {
+      "file": "services/evolution/evolutionScheduler.ts",
+      "line": 62,
+      "method": "stop",
+      "receiver": "this",
+      "call": "this.stop()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "THIS_MEMBER_REQUIRES_ENCLOSING_CLASS_FIELD_BINDING"
+      }
+    },
+    {
+      "file": "services/graphService.ts",
+      "line": 175,
+      "method": "close",
+      "receiver": "candidate",
+      "call": "candidate.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "services/graphService.ts",
+      "line": 289,
+      "method": "disconnect",
+      "receiver": "this",
+      "call": "this.disconnect()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "THIS_MEMBER_REQUIRES_ENCLOSING_CLASS_FIELD_BINDING"
+      }
+    },
+    {
+      "file": "services/graphService.ts",
+      "line": 358,
+      "method": "disconnect",
+      "receiver": "this",
+      "call": "this.disconnect()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "THIS_MEMBER_REQUIRES_ENCLOSING_CLASS_FIELD_BINDING"
+      }
+    },
+    {
+      "file": "services/graphService.ts",
+      "line": 384,
+      "method": "close",
+      "receiver": "session",
+      "call": "session.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "services/hubStrengtheningService.ts",
+      "line": 63,
+      "method": "stop",
+      "receiver": "this",
+      "call": "this.stop()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "THIS_MEMBER_REQUIRES_ENCLOSING_CLASS_FIELD_BINDING"
+      }
+    },
+    {
+      "file": "services/hubStrengtheningService.ts",
+      "line": 119,
+      "method": "stop",
+      "receiver": "this",
+      "call": "this.stop()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "THIS_MEMBER_REQUIRES_ENCLOSING_CLASS_FIELD_BINDING"
+      }
+    },
+    {
+      "file": "services/lancedbService.ts",
+      "line": 149,
+      "method": "close",
+      "receiver": "handle",
+      "call": "handle.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "services/lifecycle/host.ts",
+      "line": 98,
+      "method": "stop",
+      "receiver": "this",
+      "call": "this.stop()",
+      "migration": "HOST_INTERNAL_REVIEWED_MECHANICS_NOT_PRODUCT_PROOF",
+      "receiverEvidence": {
+        "kind": "THIS_MEMBER_REQUIRES_ENCLOSING_CLASS_FIELD_BINDING"
+      }
+    },
+    {
+      "file": "services/lifecycle/host.ts",
+      "line": 125,
+      "method": "end",
+      "receiver": "this",
+      "call": "this.end(operation, label + ':construction', { status: 'fulfilled', value: instance })",
+      "migration": "HOST_INTERNAL_REVIEWED_MECHANICS_NOT_PRODUCT_PROOF",
+      "receiverEvidence": {
+        "kind": "THIS_MEMBER_REQUIRES_ENCLOSING_CLASS_FIELD_BINDING"
+      }
+    },
+    {
+      "file": "services/lifecycle/host.ts",
+      "line": 131,
+      "method": "end",
+      "receiver": "this",
+      "call": "this.end(operation, label + ':construction', { status: 'rejected', reason: original })",
+      "migration": "HOST_INTERNAL_REVIEWED_MECHANICS_NOT_PRODUCT_PROOF",
+      "receiverEvidence": {
+        "kind": "THIS_MEMBER_REQUIRES_ENCLOSING_CLASS_FIELD_BINDING"
+      }
+    },
+    {
+      "file": "services/lifecycle/host.ts",
+      "line": 175,
+      "method": "close",
+      "receiver": "item",
+      "call": "item.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "item",
+        "line": 171,
+        "initializer": "this.#resources.get(value)"
+      }
+    },
+    {
+      "file": "services/lifecycle/host.ts",
+      "line": 240,
+      "method": "end",
+      "receiver": "this",
+      "call": "this.end(token, source, { status: 'rejected', reason })",
+      "migration": "HOST_INTERNAL_REVIEWED_MECHANICS_NOT_PRODUCT_PROOF",
+      "receiverEvidence": {
+        "kind": "THIS_MEMBER_REQUIRES_ENCLOSING_CLASS_FIELD_BINDING"
+      }
+    },
+    {
+      "file": "services/lifecycle/host.ts",
+      "line": 245,
+      "method": "end",
+      "receiver": "this",
+      "call": "this.end(token, source, { status: 'fulfilled', value: result })",
+      "migration": "HOST_INTERNAL_REVIEWED_MECHANICS_NOT_PRODUCT_PROOF",
+      "receiverEvidence": {
+        "kind": "THIS_MEMBER_REQUIRES_ENCLOSING_CLASS_FIELD_BINDING"
+      }
+    },
+    {
+      "file": "services/lifecycle/host.ts",
+      "line": 246,
+      "method": "end",
+      "receiver": "this",
+      "call": "this.end(token, source, { status: 'rejected', reason })",
+      "migration": "HOST_INTERNAL_REVIEWED_MECHANICS_NOT_PRODUCT_PROOF",
+      "receiverEvidence": {
+        "kind": "THIS_MEMBER_REQUIRES_ENCLOSING_CLASS_FIELD_BINDING"
+      }
+    },
+    {
+      "file": "services/lifecycle/host.ts",
+      "line": 247,
+      "method": "end",
+      "receiver": "this",
+      "call": "this.end(token, source, { status: 'fulfilled', value })",
+      "migration": "HOST_INTERNAL_REVIEWED_MECHANICS_NOT_PRODUCT_PROOF",
+      "receiverEvidence": {
+        "kind": "THIS_MEMBER_REQUIRES_ENCLOSING_CLASS_FIELD_BINDING"
+      }
+    },
+    {
+      "file": "services/lifecycle/host.ts",
+      "line": 399,
+      "method": "close",
+      "receiver": "item",
+      "call": "item.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "item",
+        "line": 171,
+        "initializer": "this.#resources.get(value)"
+      }
+    },
+    {
+      "file": "services/media/voiceLibraryService.ts",
+      "line": 434,
+      "method": "close",
+      "receiver": "file",
+      "call": "file.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "file",
+        "line": 413,
+        "initializer": "fs.createWriteStream(destPath)"
+      }
+    },
+    {
+      "file": "services/memory/continuousMemory.ts",
+      "line": 113,
+      "method": "close",
+      "receiver": "this.ownership",
+      "call": "this.ownership.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "ENCLOSING_THIS_MEMBER_SOURCE_LEADS_NOT_OWNERSHIP_PROOF",
+        "class": "ContinuousMemoryService",
+        "member": "ownership",
+        "fieldDeclarations": [
+          {
+            "name": "ownership",
+            "type": "ContinuousMemoryOwnerDatabase | null",
+            "initializer": "null"
+          }
+        ],
+        "assignments": [
+          {
+            "name": "ownership",
+            "line": 103,
+            "value": "owner"
+          },
+          {
+            "name": "ownership",
+            "line": 114,
+            "value": "null"
+          }
+        ],
+        "methodDeclaration": false
+      }
+    },
+    {
+      "file": "services/pdfExporter.ts",
+      "line": 81,
+      "method": "close",
+      "receiver": "browser",
+      "call": "browser.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "browser",
+        "line": 64,
+        "initializer": "await puppeteer.launch({ headless: 'new' })"
+      }
+    },
+    {
+      "file": "services/pdfExporter.ts",
+      "line": 165,
+      "method": "close",
+      "receiver": "browser",
+      "call": "browser.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "services/procedureApprovalLedger.ts",
+      "line": 42,
+      "method": "close",
+      "receiver": "this.db",
+      "call": "this.db.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "ENCLOSING_THIS_MEMBER_SOURCE_LEADS_NOT_OWNERSHIP_PROOF",
+        "class": "ProcedureApprovalLedger",
+        "member": "db",
+        "fieldDeclarations": [
+          {
+            "name": "db",
+            "type": "Database.Database"
+          }
+        ],
+        "assignments": [
+          {
+            "name": "db",
+            "line": 18,
+            "value": "new Database(path)"
+          }
+        ],
+        "methodDeclaration": false
+      }
+    },
+    {
+      "file": "services/procedureOsSandbox.ts",
+      "line": 68,
+      "method": "end",
+      "receiver": "pipe",
+      "call": "pipe.end(filter)",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "pipe",
+        "line": 67,
+        "initializer": "child.stdio[3] as import('node:stream').Writable"
+      }
+    },
+    {
+      "file": "services/procedureOsSandbox.ts",
+      "line": 70,
+      "method": "end",
+      "receiver": "child.stdin!",
+      "call": "child.stdin!.end(input)",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "child",
+        "line": 39,
+        "initializer": "spawn('/usr/bin/prlimit', ['--as=2147483648', '--cpu=3', '--fsize=1048576',\n            '--nofile=64', '--core=0', '--', '/usr/bin/bwrap', ...args],\n        { env: { PATH: '/usr/bin:/bin' }, stdio: filter ? ['pipe', 'pipe', 'pipe', 'pipe'] : ['pipe', 'pipe', 'pipe'], detached: true })"
+      }
+    },
+    {
+      "file": "services/redisClient.ts",
+      "line": 66,
+      "method": "close",
+      "receiver": "acquired",
+      "call": "acquired.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "acquired",
+        "line": 61,
+        "initializer": "this.client"
+      }
+    },
+    {
+      "file": "services/redisClient.ts",
+      "line": 91,
+      "method": "disconnect",
+      "receiver": "this.client",
+      "call": "this.client.disconnect()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "ENCLOSING_THIS_MEMBER_SOURCE_LEADS_NOT_OWNERSHIP_PROOF",
+        "class": "RedisService",
+        "member": "client",
+        "fieldDeclarations": [
+          {
+            "name": "client",
+            "type": "any"
+          }
+        ],
+        "assignments": [
+          {
+            "name": "client",
+            "line": 43,
+            "value": "createClient({\n                    url: redisUrl,\n                    password: REDIS_CONFIG.password || undefined,\n                    socket: {\n                        connectTimeout: 5000,\n                        reconnectStrategy: (retries: number) => {\n                            if (retries > 3) {\n                                console.warn('[REDIS] Max retries reached. Switching to In-Memory Fallback.');\n                                return new Error('Max retries reached');\n                            }\n                            return Math.min(retries * 100, 3000);\n                        }\n                    }\n                })"
+          },
+          {
+            "name": "client",
+            "line": 96,
+            "value": "null"
+          },
+          {
+            "name": "client",
+            "line": 120,
+            "value": "null"
+          }
+        ],
+        "methodDeclaration": false
+      }
+    },
+    {
+      "file": "services/redisClient.ts",
+      "line": 114,
+      "method": "disconnect",
+      "receiver": "this.client",
+      "call": "this.client.disconnect()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "ENCLOSING_THIS_MEMBER_SOURCE_LEADS_NOT_OWNERSHIP_PROOF",
+        "class": "RedisService",
+        "member": "client",
+        "fieldDeclarations": [
+          {
+            "name": "client",
+            "type": "any"
+          }
+        ],
+        "assignments": [
+          {
+            "name": "client",
+            "line": 43,
+            "value": "createClient({\n                    url: redisUrl,\n                    password: REDIS_CONFIG.password || undefined,\n                    socket: {\n                        connectTimeout: 5000,\n                        reconnectStrategy: (retries: number) => {\n                            if (retries > 3) {\n                                console.warn('[REDIS] Max retries reached. Switching to In-Memory Fallback.');\n                                return new Error('Max retries reached');\n                            }\n                            return Math.min(retries * 100, 3000);\n                        }\n                    }\n                })"
+          },
+          {
+            "name": "client",
+            "line": 96,
+            "value": "null"
+          },
+          {
+            "name": "client",
+            "line": 120,
+            "value": "null"
+          }
+        ],
+        "methodDeclaration": false
+      }
+    },
+    {
+      "file": "services/remediationService.ts",
+      "line": 146,
+      "method": "stop",
+      "receiver": "container",
+      "call": "container.stop()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "container",
+        "line": 145,
+        "initializer": "docker.getContainer(this.containerId)"
+      }
+    },
+    {
+      "file": "services/remediationService.ts",
+      "line": 698,
+      "method": "destroy",
+      "receiver": "sandbox",
+      "call": "sandbox.destroy()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "sandbox",
+        "line": 692,
+        "initializer": "new DockerSandbox()",
+        "newType": "DockerSandbox"
+      }
+    },
+    {
+      "file": "services/remediationService.ts",
+      "line": 703,
+      "method": "destroy",
+      "receiver": "sandbox",
+      "call": "sandbox.destroy()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "sandbox",
+        "line": 692,
+        "initializer": "new DockerSandbox()",
+        "newType": "DockerSandbox"
+      }
+    },
+    {
+      "file": "services/scheduler/cronScheduler.ts",
+      "line": 105,
+      "method": "shutdown",
+      "receiver": "this",
+      "call": "this.shutdown()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "THIS_MEMBER_REQUIRES_ENCLOSING_CLASS_FIELD_BINDING"
+      }
+    },
+    {
+      "file": "services/scheduler/cronScheduler.ts",
+      "line": 157,
+      "method": "shutdown",
+      "receiver": "this",
+      "call": "this.shutdown()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "THIS_MEMBER_REQUIRES_ENCLOSING_CLASS_FIELD_BINDING"
+      }
+    },
+    {
+      "file": "services/schedulerService.ts",
+      "line": 58,
+      "method": "stop",
+      "receiver": "this",
+      "call": "this.stop()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "THIS_MEMBER_REQUIRES_ENCLOSING_CLASS_FIELD_BINDING"
+      }
+    },
+    {
+      "file": "services/schedulerService.ts",
+      "line": 221,
+      "method": "stop",
+      "receiver": "this",
+      "call": "this.stop()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "THIS_MEMBER_REQUIRES_ENCLOSING_CLASS_FIELD_BINDING"
+      }
+    },
+    {
+      "file": "services/sqliteService.ts",
+      "line": 42,
+      "method": "close",
+      "receiver": "acquired",
+      "call": "acquired.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "acquired",
+        "line": 41,
+        "initializer": "this.db"
+      }
+    },
+    {
+      "file": "services/telegram/telegramService.ts",
+      "line": 135,
+      "method": "stop",
+      "receiver": "typing",
+      "call": "typing.stop()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "typing",
+        "line": 113,
+        "initializer": "new TypingIndicator()",
+        "newType": "TypingIndicator"
+      }
+    },
+    {
+      "file": "services/tools/toolExecutor.ts",
+      "line": 264,
+      "method": "end",
+      "receiver": "child.stdin",
+      "call": "child.stdin.end()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "child",
+        "line": 211,
+        "initializer": "spawn('node', [runnerPath], {\n                stdio: ['pipe', 'pipe', 'pipe']\n            })"
+      }
+    },
+    {
+      "file": "services/tools/toolPersistence.ts",
+      "line": 357,
+      "method": "close",
+      "receiver": "this.db",
+      "call": "this.db.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "ENCLOSING_THIS_MEMBER_SOURCE_LEADS_NOT_OWNERSHIP_PROOF",
+        "class": "ToolPersistence",
+        "member": "db",
+        "fieldDeclarations": [
+          {
+            "name": "db",
+            "type": "Database.Database | null",
+            "initializer": "null"
+          }
+        ],
+        "assignments": [
+          {
+            "name": "db",
+            "line": 36,
+            "value": "new Database(DB_PATH)"
+          },
+          {
+            "name": "db",
+            "line": 358,
+            "value": "null"
+          }
+        ],
+        "methodDeclaration": false
+      }
+    },
+    {
+      "file": "services/utils/atomicWrite.ts",
+      "line": 44,
+      "method": "close",
+      "receiver": "fh",
+      "call": "fh.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "fh",
+        "line": 33,
+        "initializer": "await fs.open(tmp, 'w')"
+      }
+    },
+    {
+      "file": "tests/automated/auth/accountStore.test.ts",
+      "line": 21,
+      "method": "close",
+      "receiver": "s",
+      "call": "s.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "s",
+        "line": 13,
+        "initializer": "store()"
+      }
+    },
+    {
+      "file": "tests/automated/auth/accountStore.test.ts",
+      "line": 27,
+      "method": "close",
+      "receiver": "s",
+      "call": "s.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/auth/accountStore.test.ts",
+      "line": 37,
+      "method": "close",
+      "receiver": "s",
+      "call": "s.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/auth/cliRouteGateway.test.ts",
+      "line": 48,
+      "method": "close",
+      "receiver": "store",
+      "call": "store.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "store",
+        "line": 31,
+        "initializer": "new AccountStore(join(d, 'a.db'))",
+        "newType": "AccountStore",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../../../services/auth/accountStore",
+          "imported": "AccountStore"
+        }
+      }
+    },
+    {
+      "file": "tests/automated/auth/cliRouteGateway.test.ts",
+      "line": 56,
+      "method": "close",
+      "receiver": "store",
+      "call": "store.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "store",
+        "line": 31,
+        "initializer": "new AccountStore(join(d, 'a.db'))",
+        "newType": "AccountStore",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../../../services/auth/accountStore",
+          "imported": "AccountStore"
+        }
+      }
+    },
+    {
+      "file": "tests/automated/auth/connectionAuthz.test.ts",
+      "line": 49,
+      "method": "close",
+      "receiver": "db",
+      "call": "db.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "db",
+        "line": 43,
+        "initializer": "new Database(join(dir, 'identity.sqlite'))",
+        "newType": "Database",
+        "constructorImport": {
+          "kind": "default",
+          "from": "better-sqlite3"
+        }
+      }
+    },
+    {
+      "file": "tests/automated/auth/connectionAuthz.test.ts",
+      "line": 66,
+      "method": "close",
+      "receiver": "server",
+      "call": "server.close(() => r())",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/auth/connectionManager.test.ts",
+      "line": 22,
+      "method": "close",
+      "receiver": "servers.pop()!",
+      "call": "servers.pop()!.close(() => r())",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "servers",
+        "line": 20,
+        "initializer": "[]",
+        "type": "Server[]"
+      }
+    },
+    {
+      "file": "tests/automated/auth/connectionManager.test.ts",
+      "line": 62,
+      "method": "close",
+      "receiver": "store",
+      "call": "store.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "store",
+        "line": 28,
+        "initializer": "new AccountStore(join(d, 'a.db'))",
+        "newType": "AccountStore",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../../../services/auth/accountStore",
+          "imported": "AccountStore"
+        }
+      }
+    },
+    {
+      "file": "tests/automated/auth/connectionManager.test.ts",
+      "line": 77,
+      "method": "close",
+      "receiver": "store",
+      "call": "store.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "store",
+        "line": 28,
+        "initializer": "new AccountStore(join(d, 'a.db'))",
+        "newType": "AccountStore",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../../../services/auth/accountStore",
+          "imported": "AccountStore"
+        }
+      }
+    },
+    {
+      "file": "tests/automated/auth/credentialResolverWiring.test.ts",
+      "line": 18,
+      "method": "close",
+      "receiver": "server",
+      "call": "server.close(() => r())",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/auth/credentialResolverWiring.test.ts",
+      "line": 27,
+      "method": "end",
+      "receiver": "res.writeHead(200, { 'Content-Type': 'application/json' })",
+      "call": "res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({\n            model: 'test-model', choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],\n        }))",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/auth/credentialResolverWiring.test.ts",
+      "line": 52,
+      "method": "close",
+      "receiver": "store",
+      "call": "store.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "store",
+        "line": 38,
+        "initializer": "new AccountStore(join(d, 'a.db'))",
+        "newType": "AccountStore",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../../../services/auth/accountStore",
+          "imported": "AccountStore"
+        }
+      }
+    },
+    {
+      "file": "tests/automated/auth/credentialResolverWiring.test.ts",
+      "line": 68,
+      "method": "close",
+      "receiver": "store",
+      "call": "store.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/auth/credentialResolverWiring.test.ts",
+      "line": 81,
+      "method": "close",
+      "receiver": "store",
+      "call": "store.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/auth/deviceCodeFlow.test.ts",
+      "line": 7,
+      "method": "close",
+      "receiver": "server",
+      "call": "server?.close(() => r())",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/auth/deviceCodeFlow.test.ts",
+      "line": 15,
+      "method": "end",
+      "receiver": "res.writeHead(status, { 'Content-Type': 'application/json' })",
+      "call": "res.writeHead(status, { 'Content-Type': 'application/json' }).end(JSON.stringify(payload))",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/auth/oauthConnect.test.ts",
+      "line": 23,
+      "method": "close",
+      "receiver": "servers.pop()!",
+      "call": "servers.pop()!.close(() => r())",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "servers",
+        "line": 21,
+        "initializer": "[]",
+        "type": "Server[]"
+      }
+    },
+    {
+      "file": "tests/automated/auth/oauthConnect.test.ts",
+      "line": 38,
+      "method": "end",
+      "receiver": "res",
+      "call": "res.end()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/auth/oauthConnect.test.ts",
+      "line": 49,
+      "method": "end",
+      "receiver": "res",
+      "call": "res.end(JSON.stringify({ device_code: 'dc-1', user_code: 'ABCD-EFGH', verification_uri: 'https://double.example/activate', interval: 1, expires_in: 60 }))",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/auth/oauthConnect.test.ts",
+      "line": 51,
+      "method": "end",
+      "receiver": "res",
+      "call": "res.end(JSON.stringify({ error: 'authorization_pending' }))",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/auth/oauthConnect.test.ts",
+      "line": 52,
+      "method": "end",
+      "receiver": "res",
+      "call": "res.end(JSON.stringify({ access_token: 'atk-device-1', refresh_token: 'rtk-device-1', expires_in: 3600, scope: 'scope1 scope2' }))",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/auth/oauthConnect.test.ts",
+      "line": 54,
+      "method": "end",
+      "receiver": "res",
+      "call": "res.end(JSON.stringify({ error: 'invalid_grant' }))",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/auth/oauthConnect.test.ts",
+      "line": 55,
+      "method": "end",
+      "receiver": "res",
+      "call": "res.end(JSON.stringify({ access_token: 'atk-loopback-1', refresh_token: 'rtk-loopback-1', expires_in: 3600 }))",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/auth/oauthConnect.test.ts",
+      "line": 60,
+      "method": "end",
+      "receiver": "res.writeHead(404)",
+      "call": "res.writeHead(404).end()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/auth/oauthConnect.test.ts",
+      "line": 93,
+      "method": "close",
+      "receiver": "store",
+      "call": "store.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "store",
+        "line": 69,
+        "initializer": "new AccountStore(join(d, 'a.db'))",
+        "newType": "AccountStore",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../../../services/auth/accountStore",
+          "imported": "AccountStore"
+        }
+      }
+    },
+    {
+      "file": "tests/automated/auth/oauthConnect.test.ts",
+      "line": 108,
+      "method": "close",
+      "receiver": "store",
+      "call": "store.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "store",
+        "line": 69,
+        "initializer": "new AccountStore(join(d, 'a.db'))",
+        "newType": "AccountStore",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../../../services/auth/accountStore",
+          "imported": "AccountStore"
+        }
+      }
+    },
+    {
+      "file": "tests/automated/auth/oauthConnect.test.ts",
+      "line": 120,
+      "method": "close",
+      "receiver": "store",
+      "call": "store.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "store",
+        "line": 69,
+        "initializer": "new AccountStore(join(d, 'a.db'))",
+        "newType": "AccountStore",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../../../services/auth/accountStore",
+          "imported": "AccountStore"
+        }
+      }
+    },
+    {
+      "file": "tests/automated/auth/oauthConnect.test.ts",
+      "line": 135,
+      "method": "close",
+      "receiver": "store",
+      "call": "store.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "store",
+        "line": 69,
+        "initializer": "new AccountStore(join(d, 'a.db'))",
+        "newType": "AccountStore",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../../../services/auth/accountStore",
+          "imported": "AccountStore"
+        }
+      }
+    },
+    {
+      "file": "tests/automated/auth/oauthConnect.test.ts",
+      "line": 150,
+      "method": "close",
+      "receiver": "store",
+      "call": "store.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "store",
+        "line": 69,
+        "initializer": "new AccountStore(join(d, 'a.db'))",
+        "newType": "AccountStore",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../../../services/auth/accountStore",
+          "imported": "AccountStore"
+        }
+      }
+    },
+    {
+      "file": "tests/automated/auth/oauthConnect.test.ts",
+      "line": 163,
+      "method": "close",
+      "receiver": "store",
+      "call": "store.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "store",
+        "line": 69,
+        "initializer": "new AccountStore(join(d, 'a.db'))",
+        "newType": "AccountStore",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../../../services/auth/accountStore",
+          "imported": "AccountStore"
+        }
+      }
+    },
+    {
+      "file": "tests/automated/auth/oauthConnect.test.ts",
+      "line": 167,
+      "method": "end",
+      "receiver": "res",
+      "call": "res.end()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/auth/oauthConnect.test.ts",
+      "line": 180,
+      "method": "close",
+      "receiver": "store",
+      "call": "store.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "store",
+        "line": 69,
+        "initializer": "new AccountStore(join(d, 'a.db'))",
+        "newType": "AccountStore",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../../../services/auth/accountStore",
+          "imported": "AccountStore"
+        }
+      }
+    },
+    {
+      "file": "tests/automated/auth/oauthConnect.test.ts",
+      "line": 193,
+      "method": "close",
+      "receiver": "store",
+      "call": "store.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "store",
+        "line": 69,
+        "initializer": "new AccountStore(join(d, 'a.db'))",
+        "newType": "AccountStore",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../../../services/auth/accountStore",
+          "imported": "AccountStore"
+        }
+      }
+    },
+    {
+      "file": "tests/automated/auth/oauthLoopback.test.ts",
+      "line": 9,
+      "method": "close",
+      "receiver": "s",
+      "call": "s.close(() => resolve(p))",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "s",
+        "line": 7,
+        "initializer": "createServer()"
+      }
+    },
+    {
+      "file": "tests/automated/auth/pinnedFetch.test.ts",
+      "line": 15,
+      "method": "close",
+      "receiver": "servers.pop()!",
+      "call": "servers.pop()!.close(() => r())",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "servers",
+        "line": 14,
+        "initializer": "[]",
+        "type": "Server[]"
+      }
+    },
+    {
+      "file": "tests/automated/auth/pinnedFetch.test.ts",
+      "line": 19,
+      "method": "end",
+      "receiver": "res",
+      "call": "res.end('{\"ok\":true}')",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/auth/pinnedFetch.test.ts",
+      "line": 39,
+      "method": "close",
+      "receiver": "pinned",
+      "call": "pinned.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "pinned",
+        "line": 34,
+        "initializer": "await createPinnedFetcher(`http://localhost:${port}/x`, 'test.ep', true, flippingLookup)"
+      }
+    },
+    {
+      "file": "tests/automated/auth/pinnedFetch.test.ts",
+      "line": 56,
+      "method": "close",
+      "receiver": "pinned",
+      "call": "pinned.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/auth/refreshOrchestrator.test.ts",
+      "line": 15,
+      "method": "close",
+      "receiver": "server",
+      "call": "server.close(() => r())",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/auth/refreshOrchestrator.test.ts",
+      "line": 42,
+      "method": "end",
+      "receiver": "res.writeHead(200, { 'Content-Type': 'application/json' })",
+      "call": "res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({\n                    access_token: 'new-at-live', refresh_token: 'rt-2', expires_in: 3600,\n                }))",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/auth/refreshOrchestrator.test.ts",
+      "line": 55,
+      "method": "close",
+      "receiver": "store",
+      "call": "store.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "store",
+        "line": 21,
+        "initializer": "new AccountStore(join(d, 'a.db'))",
+        "newType": "AccountStore",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../../../services/auth/accountStore",
+          "imported": "AccountStore"
+        }
+      }
+    },
+    {
+      "file": "tests/automated/auth/refreshOrchestrator.test.ts",
+      "line": 76,
+      "method": "close",
+      "receiver": "store",
+      "call": "store.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "store",
+        "line": 21,
+        "initializer": "new AccountStore(join(d, 'a.db'))",
+        "newType": "AccountStore",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../../../services/auth/accountStore",
+          "imported": "AccountStore"
+        }
+      }
+    },
+    {
+      "file": "tests/automated/auth/refreshOrchestrator.test.ts",
+      "line": 85,
+      "method": "close",
+      "receiver": "store",
+      "call": "store.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "store",
+        "line": 21,
+        "initializer": "new AccountStore(join(d, 'a.db'))",
+        "newType": "AccountStore",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../../../services/auth/accountStore",
+          "imported": "AccountStore"
+        }
+      }
+    },
+    {
+      "file": "tests/automated/autonomy-approvals-auth.test.ts",
+      "line": 60,
+      "method": "close",
+      "receiver": "server",
+      "call": "server.close(() => r(null))",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/biomimetic-topology-cli.test.ts",
+      "line": 17,
+      "method": "close",
+      "receiver": "db",
+      "call": "db.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "db",
+        "line": 15,
+        "initializer": "new Database(path)",
+        "newType": "Database",
+        "constructorImport": {
+          "kind": "default",
+          "from": "better-sqlite3"
+        }
+      }
+    },
+    {
+      "file": "tests/automated/browser-audit-all-actions.test.ts",
+      "line": 11,
+      "method": "close",
+      "receiver": "visualBrowserEngine",
+      "call": "visualBrowserEngine.close()",
+      "migration": "IMPORTED_RECEIVER_REQUIRES_DECLARATION_OR_LIFETIME_REVIEW",
+      "receiverEvidence": {
+        "kind": "IMPORT_BINDING",
+        "from": "../../services/browser/visualBrowserEngine",
+        "imported": "visualBrowserEngine",
+        "local": "visualBrowserEngine"
+      }
+    },
+    {
+      "file": "tests/automated/browser-payment-gate.test.ts",
+      "line": 38,
+      "method": "close",
+      "receiver": "visualBrowserEngine",
+      "call": "visualBrowserEngine.close()",
+      "migration": "IMPORTED_RECEIVER_REQUIRES_DECLARATION_OR_LIFETIME_REVIEW",
+      "receiverEvidence": {
+        "kind": "IMPORT_BINDING",
+        "from": "../../services/browser/visualBrowserEngine",
+        "imported": "visualBrowserEngine",
+        "local": "visualBrowserEngine"
+      }
+    },
+    {
+      "file": "tests/automated/campaign-director-route.test.ts",
+      "line": 51,
+      "method": "close",
+      "receiver": "server",
+      "call": "server?.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/confirmation-two-users.test.ts",
+      "line": 36,
+      "method": "close",
+      "receiver": "server",
+      "call": "server.close(()=>resolve())",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/cors-same-origin-real-http.test.ts",
+      "line": 29,
+      "method": "close",
+      "receiver": "server",
+      "call": "server.close(e=>e?reject(e):resolve())",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "server",
+        "line": 17,
+        "initializer": "createServer(app)"
+      }
+    },
+    {
+      "file": "tests/automated/database-adapter.test.ts",
+      "line": 32,
+      "method": "close",
+      "receiver": "adapter",
+      "call": "adapter.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/exec-route.test.ts",
+      "line": 57,
+      "method": "close",
+      "receiver": "server",
+      "call": "server?.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/fase1-autologin-session.test.ts",
+      "line": 51,
+      "method": "close",
+      "receiver": "server",
+      "call": "server.close(r)",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "server",
+        "line": 39,
+        "initializer": "http.createServer(app)"
+      }
+    },
+    {
+      "file": "tests/automated/fase4-user-memory.test.ts",
+      "line": 38,
+      "method": "disconnect",
+      "receiver": "redisClient",
+      "call": "redisClient.disconnect()",
+      "migration": "SHARED_SINGLETON_CLOSE_REQUIRES_CALLSITE_LIFETIME_PLAN",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/fase5-fact-repository.test.ts",
+      "line": 27,
+      "method": "disconnect",
+      "receiver": "redisClient",
+      "call": "redisClient.disconnect()",
+      "migration": "SHARED_SINGLETON_CLOSE_REQUIRES_CALLSITE_LIFETIME_PLAN",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/fase6-incident-perception.test.ts",
+      "line": 27,
+      "method": "disconnect",
+      "receiver": "redisClient",
+      "call": "redisClient.disconnect()",
+      "migration": "SHARED_SINGLETON_CLOSE_REQUIRES_CALLSITE_LIFETIME_PLAN",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/fase7-honest-selfmodel.test.ts",
+      "line": 22,
+      "method": "disconnect",
+      "receiver": "redisClient",
+      "call": "redisClient.disconnect()",
+      "migration": "SHARED_SINGLETON_CLOSE_REQUIRES_CALLSITE_LIFETIME_PLAN",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/fase8-introspection-contract.test.ts",
+      "line": 22,
+      "method": "disconnect",
+      "receiver": "redisClient",
+      "call": "redisClient.disconnect()",
+      "migration": "SHARED_SINGLETON_CLOSE_REQUIRES_CALLSITE_LIFETIME_PLAN",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/fase9-memory-stats-snapshot.test.ts",
+      "line": 22,
+      "method": "disconnect",
+      "receiver": "redisClient",
+      "call": "redisClient.disconnect()",
+      "migration": "SHARED_SINGLETON_CLOSE_REQUIRES_CALLSITE_LIFETIME_PLAN",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/financial-vault.test.ts",
+      "line": 22,
+      "method": "close",
+      "receiver": "visualBrowserEngine",
+      "call": "visualBrowserEngine.close()",
+      "migration": "IMPORTED_RECEIVER_REQUIRES_DECLARATION_OR_LIFETIME_REVIEW",
+      "receiverEvidence": {
+        "kind": "IMPORT_BINDING",
+        "from": "../../services/browser/visualBrowserEngine",
+        "imported": "visualBrowserEngine",
+        "local": "visualBrowserEngine"
+      }
+    },
+    {
+      "file": "tests/automated/memory-stats-route.test.ts",
+      "line": 41,
+      "method": "disconnect",
+      "receiver": "redisClient",
+      "call": "redisClient.disconnect()",
+      "migration": "SHARED_SINGLETON_CLOSE_REQUIRES_CALLSITE_LIFETIME_PLAN",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/memory-stats-route.test.ts",
+      "line": 70,
+      "method": "close",
+      "receiver": "server",
+      "call": "server.close(() => r())",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "server",
+        "line": 60,
+        "initializer": "http.createServer(app)"
+      }
+    },
+    {
+      "file": "tests/automated/native-pipeline-recovery.test.ts",
+      "line": 25,
+      "method": "disconnect",
+      "receiver": "redisClient",
+      "call": "redisClient.disconnect()",
+      "migration": "SHARED_SINGLETON_CLOSE_REQUIRES_CALLSITE_LIFETIME_PLAN",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/openai-compatible.test.ts",
+      "line": 15,
+      "method": "end",
+      "receiver": "res",
+      "call": "res.end('private body secret-test')",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/openai-compatible.test.ts",
+      "line": 17,
+      "method": "end",
+      "receiver": "res",
+      "call": "res.end()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/openai-compatible.test.ts",
+      "line": 19,
+      "method": "end",
+      "receiver": "res",
+      "call": "res.end(JSON.stringify({ data: [{ id: 'new-model-2026' }, { id: 'new-model-2026' }, { id: 'another' }] }))",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/openai-compatible.test.ts",
+      "line": 27,
+      "method": "end",
+      "receiver": "res",
+      "call": "res.end()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/openai-compatible.test.ts",
+      "line": 29,
+      "method": "end",
+      "receiver": "res",
+      "call": "res.end('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] }) + '\\n\\ndata: [DONE]\\n\\n')",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/openai-compatible.test.ts",
+      "line": 32,
+      "method": "end",
+      "receiver": "res",
+      "call": "res.end('{')",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/openai-compatible.test.ts",
+      "line": 34,
+      "method": "end",
+      "receiver": "res",
+      "call": "res.end(JSON.stringify({ model: body.model, choices: [{ message, finish_reason: mode === 'tool' ? 'tool_calls' : 'stop' }], usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 } }))",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/openai-compatible.test.ts",
+      "line": 41,
+      "method": "close",
+      "receiver": "server",
+      "call": "server.close(() => resolve())",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/pr4a-llm-chain.test.ts",
+      "line": 71,
+      "method": "disconnect",
+      "receiver": "graph.redisClient",
+      "call": "graph.redisClient.disconnect()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "graph",
+        "line": 18,
+        "initializer": "Promise.all([\n        import('../../services/continuumMemory'),\n        import('../../services/introspectionEngine'),\n        import('../../services/redisClient')\n    ]).then(([memory, initial, redis]) => ({ providerHealth: health.providerHealth,\n        continuum: memory.continuum, introspection: initial.introspection,\n        redisClient: redis.redisClient }))"
+      }
+    },
+    {
+      "file": "tests/automated/procedure-lease-runner.test.ts",
+      "line": 10,
+      "method": "close",
+      "receiver": "h",
+      "call": "h.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/procedure-ledger.test.ts",
+      "line": 9,
+      "method": "close",
+      "receiver": "x",
+      "call": "x.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/procedure-owner-identity.test.ts",
+      "line": 45,
+      "method": "close",
+      "receiver": "x",
+      "call": "x.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/procedure-receipt-anchor.test.ts",
+      "line": 12,
+      "method": "close",
+      "receiver": "x",
+      "call": "x.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/procedure-receipt-anchor.test.ts",
+      "line": 89,
+      "method": "close",
+      "receiver": "raw",
+      "call": "raw.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "raw",
+        "line": 88,
+        "initializer": "new Database(path)",
+        "newType": "Database",
+        "constructorImport": {
+          "kind": "default",
+          "from": "better-sqlite3"
+        }
+      }
+    },
+    {
+      "file": "tests/automated/procedure-receipt-signing.test.ts",
+      "line": 11,
+      "method": "close",
+      "receiver": "x",
+      "call": "x.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/procedure-receipt-signing.test.ts",
+      "line": 44,
+      "method": "close",
+      "receiver": "raw",
+      "call": "raw.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "raw",
+        "line": 37,
+        "initializer": "new Database(path)",
+        "newType": "Database",
+        "constructorImport": {
+          "kind": "default",
+          "from": "better-sqlite3"
+        }
+      }
+    },
+    {
+      "file": "tests/automated/procedure-receipt-signing.test.ts",
+      "line": 70,
+      "method": "close",
+      "receiver": "raw",
+      "call": "raw.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/procedure-receipt-signing.test.ts",
+      "line": 119,
+      "method": "close",
+      "receiver": "raw",
+      "call": "raw.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/product-curiosity-drain-real.test.ts",
+      "line": 14,
+      "method": "close",
+      "receiver": "server",
+      "call": "server.close(error=>error?reject(error):resolve())",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "server",
+        "line": 13,
+        "initializer": "createServer()"
+      }
+    },
+    {
+      "file": "tests/automated/route-order.test.ts",
+      "line": 74,
+      "method": "close",
+      "receiver": "server",
+      "call": "server.close(() => r())",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "server",
+        "line": 56,
+        "initializer": "http.createServer(app)"
+      }
+    },
+    {
+      "file": "tests/automated/selfcode-route.test.ts",
+      "line": 66,
+      "method": "close",
+      "receiver": "server",
+      "call": "server?.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/sqlite-migration-race.test.ts",
+      "line": 44,
+      "method": "close",
+      "receiver": "db",
+      "call": "db.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "db",
+        "line": 42,
+        "initializer": "new Database(path.join(tmp, 'db', 'silhouette.sqlite'), { readonly: true })",
+        "newType": "Database",
+        "constructorImport": {
+          "kind": "default",
+          "from": "better-sqlite3"
+        }
+      }
+    },
+    {
+      "file": "tests/automated/stagehand-perception.test.ts",
+      "line": 152,
+      "method": "close",
+      "receiver": "wrapped",
+      "call": "wrapped.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "wrapped",
+        "line": 148,
+        "initializer": "ownStagehandRuntime(runtime, browser)"
+      }
+    },
+    {
+      "file": "tests/automated/stagehand-perception.test.ts",
+      "line": 153,
+      "method": "close",
+      "receiver": "wrapped",
+      "call": "wrapped.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "wrapped",
+        "line": 148,
+        "initializer": "ownStagehandRuntime(runtime, browser)"
+      }
+    },
+    {
+      "file": "tests/automated/tool-createdat-persistence.test.ts",
+      "line": 16,
+      "method": "close",
+      "receiver": "toolPersistence",
+      "call": "toolPersistence?.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/truthfulness-tanda2.test.ts",
+      "line": 156,
+      "method": "destroy",
+      "receiver": "sandbox",
+      "call": "sandbox.destroy()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "sandbox",
+        "line": 145,
+        "initializer": "new DockerSandbox()",
+        "newType": "DockerSandbox",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../../services/remediationService",
+          "imported": "DockerSandbox"
+        }
+      }
+    },
+    {
+      "file": "tests/automated/visual-browser-engine.test.ts",
+      "line": 7,
+      "method": "close",
+      "receiver": "visualBrowserEngine",
+      "call": "visualBrowserEngine.close()",
+      "migration": "IMPORTED_RECEIVER_REQUIRES_DECLARATION_OR_LIFETIME_REVIEW",
+      "receiverEvidence": {
+        "kind": "IMPORT_BINDING",
+        "from": "../../services/browser/visualBrowserEngine",
+        "imported": "visualBrowserEngine",
+        "local": "visualBrowserEngine"
+      }
+    },
+    {
+      "file": "tests/automated/voice-webhooks.test.ts",
+      "line": 42,
+      "method": "close",
+      "receiver": "server",
+      "call": "server.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/workflow-mission-route.test.ts",
+      "line": 51,
+      "method": "disconnect",
+      "receiver": "redisClient",
+      "call": "redisClient.disconnect()",
+      "migration": "SHARED_SINGLETON_CLOSE_REQUIRES_CALLSITE_LIFETIME_PLAN",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/automated/workflow-mission-route.test.ts",
+      "line": 63,
+      "method": "close",
+      "receiver": "server",
+      "call": "server.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "server",
+        "line": 20,
+        "initializer": "http.createServer(app)"
+      }
+    },
+    {
+      "file": "tests/automated/workflow-mission-route.test.ts",
+      "line": 91,
+      "method": "close",
+      "receiver": "server",
+      "call": "server.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "server",
+        "line": 20,
+        "initializer": "http.createServer(app)"
+      }
+    },
+    {
+      "file": "tests/automated/workflow-mission-route.test.ts",
+      "line": 109,
+      "method": "close",
+      "receiver": "server",
+      "call": "server.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "server",
+        "line": 20,
+        "initializer": "http.createServer(app)"
+      }
+    },
+    {
+      "file": "tests/manual/verify_phase18.ts",
+      "line": 22,
+      "method": "close",
+      "receiver": "browserService",
+      "call": "browserService.close()",
+      "migration": "IMPORTED_RECEIVER_REQUIRES_DECLARATION_OR_LIFETIME_REVIEW",
+      "receiverEvidence": {
+        "kind": "IMPORT_BINDING",
+        "from": "../../services/browserService",
+        "imported": "browserService",
+        "local": "browserService"
+      }
+    },
+    {
+      "file": "tests/real-process/accepted-owner-natural-child.ts",
+      "line": 119,
+      "method": "shutdown",
+      "receiver": "continuousMemory",
+      "call": "continuousMemory.shutdown()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/real-process/accepted-owner-natural-child.ts",
+      "line": 122,
+      "method": "close",
+      "receiver": "first.ws",
+      "call": "first.ws.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "first",
+        "line": 63,
+        "initializer": "await connect('accepted-origin')"
+      }
+    },
+    {
+      "file": "tests/real-process/accepted-owner-natural-child.ts",
+      "line": 122,
+      "method": "close",
+      "receiver": "other.ws",
+      "call": "other.ws.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "other",
+        "line": 64,
+        "initializer": "await connect('accepted-other')"
+      }
+    },
+    {
+      "file": "tests/real-process/accepted-owner-natural-child.ts",
+      "line": 124,
+      "method": "shutdown",
+      "receiver": "gateway",
+      "call": "gateway.shutdown()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/real-process/accepted-owner-natural-child.ts",
+      "line": 125,
+      "method": "close",
+      "receiver": "server",
+      "call": "server.close(error => error ? reject(error) : resolve())",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "server",
+        "line": 40,
+        "initializer": "http.createServer()"
+      }
+    },
+    {
+      "file": "tests/real-process/continuous-wal-child.ts",
+      "line": 20,
+      "method": "shutdown",
+      "receiver": "service",
+      "call": "service.shutdown()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "service",
+        "line": 8,
+        "initializer": "new ContinuousMemoryService()",
+        "newType": "ContinuousMemoryService",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../../services/memory/continuousMemory",
+          "imported": "ContinuousMemoryService"
+        }
+      }
+    },
+    {
+      "file": "tests/real-process/continuous-wal-child.ts",
+      "line": 32,
+      "method": "shutdown",
+      "receiver": "service",
+      "call": "service.shutdown()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "service",
+        "line": 8,
+        "initializer": "new ContinuousMemoryService()",
+        "newType": "ContinuousMemoryService",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../../services/memory/continuousMemory",
+          "imported": "ContinuousMemoryService"
+        }
+      }
+    },
+    {
+      "file": "tests/real-process/continuous-wal-child.ts",
+      "line": 57,
+      "method": "shutdown",
+      "receiver": "service",
+      "call": "service.shutdown()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "service",
+        "line": 8,
+        "initializer": "new ContinuousMemoryService()",
+        "newType": "ContinuousMemoryService",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../../services/memory/continuousMemory",
+          "imported": "ContinuousMemoryService"
+        }
+      }
+    },
+    {
+      "file": "tests/real-process/continuous-wal-child.ts",
+      "line": 66,
+      "method": "shutdown",
+      "receiver": "service",
+      "call": "service.shutdown()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "service",
+        "line": 8,
+        "initializer": "new ContinuousMemoryService()",
+        "newType": "ContinuousMemoryService",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../../services/memory/continuousMemory",
+          "imported": "ContinuousMemoryService"
+        }
+      }
+    },
+    {
+      "file": "tests/real-process/continuous-wal-child.ts",
+      "line": 81,
+      "method": "shutdown",
+      "receiver": "service",
+      "call": "service.shutdown()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "service",
+        "line": 8,
+        "initializer": "new ContinuousMemoryService()",
+        "newType": "ContinuousMemoryService",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../../services/memory/continuousMemory",
+          "imported": "ContinuousMemoryService"
+        }
+      }
+    },
+    {
+      "file": "tests/real-process/continuous-wal-child.ts",
+      "line": 91,
+      "method": "shutdown",
+      "receiver": "service",
+      "call": "service.shutdown()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "service",
+        "line": 8,
+        "initializer": "new ContinuousMemoryService()",
+        "newType": "ContinuousMemoryService",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../../services/memory/continuousMemory",
+          "imported": "ContinuousMemoryService"
+        }
+      }
+    },
+    {
+      "file": "tests/real-process/credentials-child.ts",
+      "line": 96,
+      "method": "close",
+      "receiver": "store",
+      "call": "store.close()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "store",
+        "line": 36,
+        "initializer": "new AccountStore(path.resolve('accounts.db'))",
+        "newType": "AccountStore",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../../services/auth/accountStore",
+          "imported": "AccountStore"
+        }
+      }
+    },
+    {
+      "file": "tests/real-process/credentials-child.ts",
+      "line": 96,
+      "method": "close",
+      "receiver": "sqliteService",
+      "call": "sqliteService.close()",
+      "migration": "SHARED_SERVICE_LIFETIME_OR_CLOSE_API_REVIEW_REQUIRED",
+      "receiverEvidence": {
+        "kind": "IMPORT_BINDING",
+        "from": "../../services/sqliteService",
+        "imported": "sqliteService",
+        "local": "sqliteService"
+      }
+    },
+    {
+      "file": "tests/real-process/cron-child.ts",
+      "line": 8,
+      "method": "end",
+      "receiver": "res",
+      "call": "res.end('actual-local-response')",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/real-process/cron-child.ts",
+      "line": 23,
+      "method": "shutdown",
+      "receiver": "scheduler",
+      "call": "scheduler.shutdown()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "scheduler",
+        "line": 11,
+        "initializer": "new CronScheduler()",
+        "newType": "CronScheduler",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../../services/scheduler/cronScheduler",
+          "imported": "CronScheduler"
+        }
+      }
+    },
+    {
+      "file": "tests/real-process/cron-child.ts",
+      "line": 23,
+      "method": "close",
+      "receiver": "server",
+      "call": "server.close(() => resolve())",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "server",
+        "line": 8,
+        "initializer": "http.createServer((_req, res) => { requests++; res.end('actual-local-response'); })"
+      }
+    },
+    {
+      "file": "tests/real-process/curiosity-drain-child.ts",
+      "line": 38,
+      "method": "shutdown",
+      "receiver": "curiosity",
+      "call": "curiosity.shutdown()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/real-process/curiosity-drain-child.ts",
+      "line": 45,
+      "method": "shutdown",
+      "receiver": "curiosity",
+      "call": "curiosity.shutdown()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/real-process/curiosity-drain-child.ts",
+      "line": 46,
+      "method": "shutdown",
+      "receiver": "curiosity",
+      "call": "curiosity.shutdown()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/real-process/editor-open-edit-save.cjs",
+      "line": 15,
+      "method": "close",
+      "receiver": "browser",
+      "call": "browser.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/real-process/ollama-listing-contract-child.ts",
+      "line": 30,
+      "method": "end",
+      "receiver": "res",
+      "call": "res.end(JSON.stringify(payload))",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/real-process/ollama-listing-contract-child.ts",
+      "line": 57,
+      "method": "close",
+      "receiver": "server",
+      "call": "server.close(error => error ? reject(error) : resolve())",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "server",
+        "line": 32,
+        "initializer": "listener"
+      }
+    },
+    {
+      "file": "tests/real-process/ollama-listing-contract-child.ts",
+      "line": 67,
+      "method": "close",
+      "receiver": "server",
+      "call": "server.close(error => error ? reject(error) : resolve())",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/real-process/product-health-child.ts",
+      "line": 31,
+      "method": "close",
+      "receiver": "server",
+      "call": "server.close(() => resolve())",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "server",
+        "line": 11,
+        "initializer": "app.listen('/tmp/result/health.sock')"
+      }
+    },
+    {
+      "file": "tests/real-process/provider-transport-child.ts",
+      "line": 15,
+      "method": "end",
+      "receiver": "res",
+      "call": "res.end(JSON.stringify({ choices: [{ message: { content: 'local fixture response' }, finish_reason: 'stop' }], model: 'fixture' }))",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/real-process/provider-transport-child.ts",
+      "line": 36,
+      "method": "close",
+      "receiver": "receiver",
+      "call": "receiver.close(() => resolve())",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "receiver",
+        "line": 9,
+        "initializer": "http.createServer((req, res) => {\n    calls++;\n    assert.equal(req.headers.authorization, 'Bearer fixture-only-not-a-real-key');\n    assert.equal(req.url, '/v1/chat/completions');\n    req.resume();\n    res.setHeader('Content-Type', 'application/json');\n    res.end(JSON.stringify({ choices: [{ message: { content: 'local fixture response' }, finish_reason: 'stop' }], model: 'fixture' }));\n})"
+      }
+    },
+    {
+      "file": "tests/real-process/scheduler-child.ts",
+      "line": 20,
+      "method": "stop",
+      "receiver": "service",
+      "call": "service.stop()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "service",
+        "line": 16,
+        "initializer": "new SchedulerService()",
+        "newType": "SchedulerService"
+      }
+    },
+    {
+      "file": "tests/real-process/scheduler-child.ts",
+      "line": 26,
+      "method": "stop",
+      "receiver": "service",
+      "call": "service.stop()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "service",
+        "line": 16,
+        "initializer": "new SchedulerService()",
+        "newType": "SchedulerService"
+      }
+    },
+    {
+      "file": "tests/real-process/scheduler-child.ts",
+      "line": 26,
+      "method": "stop",
+      "receiver": "schedulerService",
+      "call": "schedulerService.stop()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/real-process/scheduler-child.ts",
+      "line": 33,
+      "method": "close",
+      "receiver": "sqliteService",
+      "call": "sqliteService.close()",
+      "migration": "SHARED_SERVICE_LIFETIME_OR_CLOSE_API_REVIEW_REQUIRED",
+      "receiverEvidence": {
+        "kind": "IMPORT_BINDING",
+        "from": "../../services/sqliteService",
+        "imported": "sqliteService",
+        "local": "sqliteService"
+      }
+    },
+    {
+      "file": "tests/real-process/telephony-truthfulness-child.ts",
+      "line": 196,
+      "method": "close",
+      "receiver": "sqlite",
+      "call": "sqlite?.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/real-process/telephony-voice-boundary-child.ts",
+      "line": 56,
+      "method": "end",
+      "receiver": "res",
+      "call": "res.end('{\"ok\":true}')",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/real-process/telephony-voice-boundary-child.ts",
+      "line": 63,
+      "method": "end",
+      "receiver": "res",
+      "call": "res.end(JSON.stringify({ success: true, url: sentinel }))",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/real-process/telephony-voice-boundary-child.ts",
+      "line": 64,
+      "method": "destroy",
+      "receiver": "res",
+      "call": "res.destroy()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/real-process/telephony-voice-boundary-child.ts",
+      "line": 65,
+      "method": "end",
+      "receiver": "res",
+      "call": "res.end()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/real-process/telephony-voice-boundary-child.ts",
+      "line": 126,
+      "method": "close",
+      "receiver": "listener",
+      "call": "listener.close(error => error ? reject(error) : resolve())",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/real-process/telephony-voice-boundary-child.ts",
+      "line": 140,
+      "method": "close",
+      "receiver": "sqlite",
+      "call": "sqlite?.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/real-process/wal-owner-control-child.ts",
+      "line": 65,
+      "method": "shutdown",
+      "receiver": "service",
+      "call": "service.shutdown()",
+      "migration": "LOCAL_INSTANCE_SOURCE_FOUND_DISPOSAL_OWNERSHIP_UNVERIFIED",
+      "receiverEvidence": {
+        "kind": "LOCAL_NEW_SOURCE_LEAD_NOT_ESCAPE_PROOF",
+        "name": "service",
+        "line": 11,
+        "initializer": "new ContinuousMemoryService()",
+        "newType": "ContinuousMemoryService",
+        "constructorImport": {
+          "kind": "named",
+          "from": "../../services/memory/continuousMemory",
+          "imported": "ContinuousMemoryService"
+        }
+      }
+    },
+    {
+      "file": "tests/real-process/wal-owner-control-child.ts",
+      "line": 67,
+      "method": "close",
+      "receiver": "input",
+      "call": "input.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "input",
+        "line": 16,
+        "initializer": "readline.createInterface({input: process.stdin})"
+      }
+    },
+    {
+      "file": "tests/real-process/wal-owner-control-child.ts",
+      "line": 67,
+      "method": "destroy",
+      "receiver": "process.stdin",
+      "call": "process.stdin.destroy()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/real-process/wal-owner-control-child.ts",
+      "line": 78,
+      "method": "close",
+      "receiver": "input",
+      "call": "input.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "input",
+        "line": 16,
+        "initializer": "readline.createInterface({input: process.stdin})"
+      }
+    },
+    {
+      "file": "tests/real-process/wal-owner-control-child.ts",
+      "line": 78,
+      "method": "destroy",
+      "receiver": "process.stdin",
+      "call": "process.stdin.destroy()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/real-process/web-handler-receipt-child.ts",
+      "line": 97,
+      "method": "close",
+      "receiver": "first.ws",
+      "call": "first.ws.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "first",
+        "line": 41,
+        "initializer": "await connect('actual-origin-client')"
+      }
+    },
+    {
+      "file": "tests/real-process/web-handler-receipt-child.ts",
+      "line": 97,
+      "method": "close",
+      "receiver": "other.ws",
+      "call": "other.ws.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "other",
+        "line": 41,
+        "initializer": "await connect('actual-other-client')"
+      }
+    },
+    {
+      "file": "tests/real-process/web-handler-receipt-child.ts",
+      "line": 97,
+      "method": "shutdown",
+      "receiver": "gateway",
+      "call": "gateway.shutdown()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/real-process/web-handler-receipt-child.ts",
+      "line": 97,
+      "method": "close",
+      "receiver": "server",
+      "call": "server.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "server",
+        "line": 29,
+        "initializer": "http.createServer()"
+      }
+    },
+    {
+      "file": "tests/selfcode/atomic-write.test.ts",
+      "line": 75,
+      "method": "close",
+      "receiver": "watcher",
+      "call": "watcher.close()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "watcher",
+        "line": 59,
+        "initializer": "fs.watch(dir, (_event, filename) => {\n        if (filename?.toString().startsWith('.selfcode-') && !killed) {\n            killed = child.kill('SIGKILL');\n        }\n    })"
+      }
+    },
+    {
+      "file": "tests/selfcode/atomic-write.test.ts",
+      "line": 108,
+      "method": "close",
+      "receiver": "watcher",
+      "call": "watcher.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/setup/fetch-teardown.ts",
+      "line": 23,
+      "method": "destroy",
+      "receiver": "getGlobalDispatcher()",
+      "call": "getGlobalDispatcher().destroy()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tests/setup/observe-public-bootstrap.ts",
+      "line": 94,
+      "method": "disconnect",
+      "receiver": "redis.redisClient",
+      "call": "redis.redisClient.disconnect()",
+      "migration": "LOCAL_ALIAS_OR_FACTORY_RESULT_REQUIRES_RESOLUTION",
+      "receiverEvidence": {
+        "kind": "LOCAL_INITIALIZER_SOURCE_LEAD_NOT_BINDING_PROOF",
+        "name": "redis",
+        "line": 43,
+        "initializer": "modules[2].status === 'fulfilled' ? modules[2].value as Graph['redis'] : undefined"
+      }
+    },
+    {
+      "file": "tools/webBrowserTool.ts",
+      "line": 114,
+      "method": "close",
+      "receiver": "browser",
+      "call": "browser.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    },
+    {
+      "file": "tools/webBrowserTool.ts",
+      "line": 163,
+      "method": "close",
+      "receiver": "browser",
+      "call": "browser.close()",
+      "migration": "UNRESOLVED_RECEIVER_AND_OWNER_REQUIRED",
+      "receiverEvidence": {
+        "kind": "UNRESOLVED_PARAMETER_PROPERTY_OR_SHADOWED_NAME"
+      }
+    }
+  ],
+  "definitions": [
+    {
+      "file": "cli/utils/ui.ts",
+      "line": 190,
+      "name": "stop",
+      "class": "Spinner",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "components/canvas/engine/CanvasEngine.ts",
+      "line": 448,
+      "name": "destroy",
+      "class": "CanvasEngine",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "components/canvas/tools/BrushTool.ts",
+      "line": 135,
+      "name": "destroy",
+      "class": "BrushTool",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "components/canvas/tools/SelectionTool.ts",
+      "line": 282,
+      "name": "destroy",
+      "class": "SelectionTool",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "mocks/ioredis.ts",
+      "line": 13,
+      "name": "disconnect",
+      "class": "IORedisMock",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "mocks/ioredis.ts",
+      "line": 29,
+      "name": "quit",
+      "class": "IORedisMock",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "mocks/redisClient.ts",
+      "line": 27,
+      "name": "disconnect",
+      "class": "RedisClientMock",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "pythonManager.cjs",
+      "line": 225,
+      "name": "shutdown",
+      "class": "PythonBackendManager",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "server/channels/discord/discordChannel.ts",
+      "line": 23,
+      "name": "stop",
+      "class": "TypingIndicator",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "server/channels/discord/discordChannel.ts",
+      "line": 197,
+      "name": "disconnect",
+      "class": "DiscordChannel",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "server/channels/telegram/telegramChannel.ts",
+      "line": 38,
+      "name": "stop",
+      "class": "TypingIndicator",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "server/channels/telegram/telegramChannel.ts",
+      "line": 328,
+      "name": "disconnect",
+      "class": "TelegramChannel",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "server/channels/whatsapp/whatsappChannel.ts",
+      "line": 20,
+      "name": "stop",
+      "class": "TypingIndicator",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "server/channels/whatsapp/whatsappChannel.ts",
+      "line": 223,
+      "name": "disconnect",
+      "class": "WhatsAppChannel",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "server/gateway/wsGateway.ts",
+      "line": 664,
+      "name": "shutdown",
+      "class": "SilhouetteGateway",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/auth/accountStore.ts",
+      "line": 97,
+      "name": "close",
+      "class": "AccountStore",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/browser/browserController.ts",
+      "line": 350,
+      "name": "shutdown",
+      "class": "BrowserController",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/browser/stagehandPerception.ts",
+      "line": 112,
+      "name": "close",
+      "class": "anonymous",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/browser/stagehandPerception.ts",
+      "line": 285,
+      "name": "close",
+      "class": "StagehandPerception",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/browser/visualBrowserEngine.ts",
+      "line": 703,
+      "name": "close",
+      "class": "VisualBrowserEngine",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/browserService.ts",
+      "line": 130,
+      "name": "close",
+      "class": "BrowserService",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/bus/MemoryBusAdapter.ts",
+      "line": 20,
+      "name": "disconnect",
+      "class": "MemoryBusAdapter",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/bus/RedisBusAdapter.ts",
+      "line": 84,
+      "name": "disconnect",
+      "class": "RedisBusAdapter",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/cognitive/cognitiveScheduler.ts",
+      "line": 24,
+      "name": "stop",
+      "class": "CognitiveScheduler",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/connectionNervousSystem.ts",
+      "line": 119,
+      "name": "stop",
+      "class": "ConnectionNervousSystem",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/curiosityService.ts",
+      "line": 108,
+      "name": "shutdown",
+      "class": "CuriosityService",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/daemon/unifiedDaemon.ts",
+      "line": 176,
+      "name": "stop",
+      "class": "UnifiedDaemon",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/database/postgresAdapter.ts",
+      "line": 384,
+      "name": "close",
+      "class": "PostgresAdapter",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/database/sqliteAdapter.ts",
+      "line": 38,
+      "name": "close",
+      "class": "SqliteAdapter",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/evolution/evolutionScheduler.ts",
+      "line": 172,
+      "name": "stop",
+      "class": "EvolutionScheduler",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/graphService.ts",
+      "line": 329,
+      "name": "disconnect",
+      "class": "GraphService",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/graphService.ts",
+      "line": 1149,
+      "name": "close",
+      "class": "GraphService",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/hubStrengtheningService.ts",
+      "line": 105,
+      "name": "stop",
+      "class": "HubStrengtheningService",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/lifecycle/host.ts",
+      "line": 227,
+      "name": "end",
+      "class": "Core",
+      "visibility": "private"
+    },
+    {
+      "file": "services/lifecycle/host.ts",
+      "line": 353,
+      "name": "stop",
+      "class": "Core",
+      "visibility": "private"
+    },
+    {
+      "file": "services/mcp/mcpClient.ts",
+      "line": 161,
+      "name": "disconnect",
+      "class": "MCPClient",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/memory/continuousMemory.ts",
+      "line": 167,
+      "name": "shutdown",
+      "class": "ContinuousMemoryService",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/plugins/pluginRegistry.ts",
+      "line": 202,
+      "name": "shutdown",
+      "class": "PluginRegistry",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/procedureApprovalLedger.ts",
+      "line": 42,
+      "name": "close",
+      "class": "ProcedureApprovalLedger",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/redisClient.ts",
+      "line": 108,
+      "name": "disconnect",
+      "class": "RedisService",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/remediationService.ts",
+      "line": 139,
+      "name": "destroy",
+      "class": "DockerSandbox",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/scheduler/cronScheduler.ts",
+      "line": 230,
+      "name": "shutdown",
+      "class": "CronScheduler",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/schedulerService.ts",
+      "line": 78,
+      "name": "stop",
+      "class": "SchedulerService",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/security/securityManager.ts",
+      "line": 299,
+      "name": "shutdown",
+      "class": "SecurityManager",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/sqliteService.ts",
+      "line": 1037,
+      "name": "close",
+      "class": "SqliteService",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/telegram/telegramService.ts",
+      "line": 19,
+      "name": "stop",
+      "class": "TypingIndicator",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/telemetryAnalytics.ts",
+      "line": 363,
+      "name": "shutdown",
+      "class": "AnonymousTelemetry",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "services/tools/toolPersistence.ts",
+      "line": 355,
+      "name": "close",
+      "class": "ToolPersistence",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "tests/automated/channel-ingress-envelope.test.ts",
+      "line": 37,
+      "name": "disconnect",
+      "class": "FixtureChannel",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "tests/real-process/accepted-owner-natural-child.ts",
+      "line": 23,
+      "name": "destroy",
+      "class": "anonymous",
+      "visibility": "public-or-default"
+    },
+    {
+      "file": "types/optional-modules.d.ts",
+      "line": 11,
+      "name": "destroy",
+      "class": "Client",
+      "visibility": "public-or-default"
+    }
+  ],
+  "receiverAnalysis": "Source binding leads, no checker or application import. Local scope shadowing/escapes, dynamic factories and aliases are not certified. Includes actual source expression per lead."
+}

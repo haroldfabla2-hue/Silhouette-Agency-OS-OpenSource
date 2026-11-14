@@ -1,3 +1,5 @@
+import { preserveOriginal } from './lifecycle/preserveOriginal';
+import { continuumOwner } from './lifecycle/preparationBindings';
 import { lexicalMatches, lexicalScore } from './lexicalMatch';
 import { atomicWriteFile } from './utils/atomicWrite';
 import { MemoryNode, MemoryTier } from "../types";
@@ -278,13 +280,13 @@ class ContinuumMemorySystem {
             outcome: 'COMPLETE', source: 'EMPTY', snapshotLoaded: false,
             journalVerified: 0, unresolved: [], errors: []
         };
-        this.hydrationOwner = this.loadSnapshot(report).then(() => {
+        this.hydrationOwner = continuumOwner().invoke('original-hydration', () => this.loadSnapshot(report)).then(() => {
             this.hydrationState = 'VALID';
         }, error => {
             this.hydrationState = 'FAILED';
             throw error;
         });
-        this.coreRecovery = this.recoverCore(report);
+        this.coreRecovery = continuumOwner().invoke('original-core-recovery', () => this.recoverCore(report));
         // Observe immediately; retain the original rejecting owner for callers.
         void this.coreRecovery.catch(err => console.error('[CONTINUUM] Failed to recover memory:', err));
     }
@@ -1640,6 +1642,16 @@ class ContinuumMemorySystem {
     }
 }
 
-export const continuum = new ContinuumMemorySystem();
+function constructOriginalContinuumMemorySystem(): ContinuumMemorySystem {
+    const owner = continuumOwner();
+    const operation = owner.beginConstruction();
+    try {
+        const instance = new ContinuumMemorySystem();
+        owner.constructed(operation, instance); return instance;
+    } catch (original) {
+        preserveOriginal(owner, 'construction-failure', () => owner.constructionFailed(operation, original)); throw original;
+    }
+}
+export const continuum = constructOriginalContinuumMemorySystem();
 // Publish only the actual constructed instance, never a replacement or readyCore result.
 publishContinuumInstance(continuum);

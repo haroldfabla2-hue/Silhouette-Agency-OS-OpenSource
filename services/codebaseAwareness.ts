@@ -1,3 +1,6 @@
+import { preserveOriginal } from './lifecycle/preserveOriginal';
+import { codebaseOwner } from './lifecycle/preparationBindings';
+import type { Scope, Operation } from './lifecycle/host';
 
 import { SystemProtocol, FileNode, CodeChunk, IntrospectionCapability } from "../types";
 import { systemBus } from "./systemBus";
@@ -16,26 +19,29 @@ export class CodebaseAwarenessService {
     private readonly COLLECTION_PREFIX = "code_";
 
     constructor(private readonly embed: (text: string) => Promise<number[] | null> = async text =>
-        (await import('./geminiService')).generateEmbedding(text), subscribe = true) {
+        (await import('./geminiService')).generateEmbedding(text), subscribe = true,
+        private readonly ownership: Scope, construction: Operation) {
+        ownership.validateConstruction(construction);
         if (subscribe) this.initialize();
     }
 
     private initialize() {
         // Subscribe to File System Updates
-        systemBus.subscribe(SystemProtocol.FILESYSTEM_UPDATE, async (event) => {
+        const unsubscribe = systemBus.subscribe(SystemProtocol.FILESYSTEM_UPDATE, async (event) => {
             if (event.payload.action === 'UPDATE' || event.payload.action === 'CREATE') {
                 // We need the file ID or path. The event payload might need adjustment if it only sends ID.
                 // Assuming payload has { projectId, fileId, action }
                 if (event.payload.fileId) {
                     const node = vfs.getNode(event.payload.fileId);
                     if (node && node.type === 'FILE') {
-                        try { await this.indexFile(node); }
-                        catch (error) { console.error("[CODEBASE AWARENESS] Indexing failed; file remains retryable:", error); }
+                        try { await this.ownership.invoke('original-file-index-delivery', () => this.indexFile(node)); }
+                        catch (error) { this.ownership.failure('index:ORIGINAL_RETRYABLE_FAILURE', error); console.error("[CODEBASE AWARENESS] Indexing failed; file remains retryable:", error); }
                     }
                 }
             }
         });
 
+        this.ownership.onSeal(unsubscribe);
         console.log("[CODEBASE AWARENESS] Online. Listening for code changes.");
     }
 
@@ -43,7 +49,10 @@ export class CodebaseAwarenessService {
      * Scans the entire project and indexes it. 
      * Expensive! Use sparingly (e.g., on first boot or explicit request).
      */
-    public async indexProject(projectId: string) {
+    public indexProject(projectId: string) {
+        return this.ownership.invoke('original-indexProject', operation => this.indexProjectOriginal(operation, projectId));
+    }
+    private async indexProjectOriginal(operation: Operation, projectId: string) {
         if (this.isIndexing) return;
         this.isIndexing = true;
         console.log(`[CODEBASE AWARENESS] Starting full index for project: ${projectId}`);
@@ -57,7 +66,7 @@ export class CodebaseAwarenessService {
                     await processNode(childId);
                 }
             } else if (node.type === 'FILE') {
-                await this.indexFile(node);
+                await this.indexFileOriginal(operation, node);
             }
         };
 
@@ -74,7 +83,10 @@ export class CodebaseAwarenessService {
      * 2. Chunks content.
      * 3. Embeds and stores in Vector DB.
      */
-    public async indexFile(node: FileNode) {
+    public indexFile(node: FileNode) {
+        return this.ownership.invoke('original-indexFile', operation => this.indexFileOriginal(operation, node));
+    }
+    private async indexFileOriginal(operation: Operation, node: FileNode) {
         if (!node.content) return;
 
         // Filter for code files only
@@ -142,7 +154,10 @@ export class CodebaseAwarenessService {
     /**
      * Queries the codebase for relevant snippets.
      */
-    public async query(userQuery: string, limit: number = 3): Promise<string> {
+    public query(userQuery: string, limit: number = 3): Promise<string> {
+        return this.ownership.invoke('original-query', operation => this.queryOriginal(operation, userQuery, limit));
+    }
+    private async queryOriginal(operation: Operation, userQuery: string, limit: number = 3): Promise<string> {
         const vector = await this.embed(userQuery);
         if (!vector) throw new Error('Code RAG query embedding unavailable');
 
@@ -160,4 +175,16 @@ ${snippets}
     }
 }
 
-export const codebaseAwareness = new CodebaseAwarenessService();
+export function createOwnedCodebaseAwareness(
+    embed: ((text: string) => Promise<number[] | null>) | undefined,
+    subscribe: boolean | undefined, ownership: Scope): CodebaseAwarenessService {
+    const operation = ownership.beginConstruction();
+    try {
+        const instance = new CodebaseAwarenessService(embed, subscribe, ownership, operation);
+        ownership.constructed(operation, instance); return instance;
+    } catch (original) {
+        preserveOriginal(ownership, 'construction-failure', () => ownership.constructionFailed(operation, original));
+        throw original;
+    }
+}
+export const codebaseAwareness = createOwnedCodebaseAwareness(undefined, undefined, codebaseOwner());

@@ -1,3 +1,5 @@
+import { createOwnedLanceDbService } from '../../services/lancedbService';
+import { admitLanceInstance } from '../../services/lifecycle/preparationBindings';
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -11,7 +13,7 @@ afterEach(async () => { for (const d of dirs.splice(0)) await rm(d, { recursive:
 const node = (id: string, content = 'safety document', ownerId = 'alice'): MemoryNode => ({ id, content, ownerId, timestamp: 1, tier: MemoryTier.MEDIUM, tags: [], accessCount: 0, lastAccess: 1, importance: 0.5 });
 async function fresh() {
     const path = await mkdtemp(join(tmpdir(), 'rollout-')); dirs.push(path);
-    const db = new LanceDbService(path);
+    const db = createOwnedLanceDbService(path, admitLanceInstance());
     return { db, rollout: new MemoryProjectionRollout(path, db, { backfill: true, annShadow: true }), path };
 }
 describe('opt-in real projection rollout', () => {

@@ -1,3 +1,5 @@
+import { createOwnedLanceDbService } from '../../services/lancedbService';
+import { admitLanceInstance } from '../../services/lifecycle/preparationBindings';
 import { describe, it, expect, afterAll, vi } from 'vitest';
 import fs from 'fs';
 import os from 'os';
@@ -41,7 +43,7 @@ describe('native pipeline recovery', () => {
         const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'native-rec-'));
         const { MemoryTransitions } = await import('../../services/memoryTransitions');
         const { LanceDbService } = await import('../../services/lancedbService');
-        const lance = new LanceDbService(path.join(tmp, 'lance'));
+        const lance = createOwnedLanceDbService(path.join(tmp, 'lance'), admitLanceInstance());
         const transitions = new MemoryTransitions(path.join(tmp, 'journal'), lance as any);
 
         const source = mem('mem-rec-1', 'WORKING');
@@ -65,7 +67,7 @@ describe('native pipeline recovery', () => {
         fs.writeFileSync(blocker, 'not a directory'); // lance cannot open a dataset under a plain file
         const { MemoryTransitions } = await import('../../services/memoryTransitions');
         const { LanceDbService } = await import('../../services/lancedbService');
-        const lance = new LanceDbService(path.join(blocker, 'lance'));
+        const lance = createOwnedLanceDbService(path.join(blocker, 'lance'), admitLanceInstance());
         const transitions = new MemoryTransitions(path.join(tmp, 'journal'), lance as any);
 
         const entry = await transitions.begin(mem('mem-fail-1', 'WORKING'), mem('mem-fail-1', 'MEDIUM'));

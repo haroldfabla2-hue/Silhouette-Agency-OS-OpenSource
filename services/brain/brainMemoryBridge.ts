@@ -1,3 +1,6 @@
+import { preserveOriginal } from '../lifecycle/preserveOriginal';
+import { brainBridgeOwner } from '../lifecycle/preparationBindings';
+import type { Scope, Operation } from '../lifecycle/host';
 // ═══════════════════════════════════════════════════════════════════════════
 // SILHOUETTE BRAIN ↔ OS MEMORY BRIDGE
 // ───────────────────────────────────────────────────────────────────────────
@@ -38,7 +41,9 @@ function entryText(entry: BrainMemoryEntry): string {
 }
 
 export class BrainMemoryBridge {
-    constructor(private client: BrainClient = brainClient) {}
+    constructor(private client: BrainClient = brainClient, private readonly ownership: Scope, operation: Operation) {
+        ownership.validateConstruction(operation);
+    }
 
     public isEnabled(): boolean {
         return this.client.isEnabled();
@@ -48,9 +53,15 @@ export class BrainMemoryBridge {
      * Fetch deep context from the Brain and render it as a prompt-ready block.
      * Returns an empty block on any failure / when disabled.
      */
-    public async getContextBlock(
+    public getContextBlock(
         query: string,
         opts: { synthesize?: boolean; includeGraph?: boolean; signal?: AbortSignal } = {},
+    ): Promise<BrainContextBlock> {
+        return this.ownership.invoke('original-context-request', () => this.getContextBlockOriginal(query, opts));
+    }
+    private async getContextBlockOriginal(
+        query: string,
+        opts: { synthesize?: boolean; includeGraph?: boolean; signal?: AbortSignal },
     ): Promise<BrainContextBlock> {
         if (!this.client.isEnabled() || !query?.trim()) return EMPTY_BLOCK;
         if (!(await this.client.isAvailable())) return EMPTY_BLOCK;
@@ -96,9 +107,17 @@ export class BrainMemoryBridge {
     /**
      * Mirror a memory into the Brain. Disabled is a no-op; enabled writes expose failure to the owner.
      */
-    public async mirrorMemory(
+    public mirrorMemory(
         text: string,
         opts: { importance?: number; tags?: string[]; tier?: 'WORKING' | 'MEDIUM' | 'LONG' | 'DEEP' } = {},
+    ): Promise<void> {
+        // Supplied BrainClient is borrowed, including the default shared client.
+        // Own only this exact returned request, never its transport/close.
+        return this.ownership.invoke('original-mirror-request', () => this.mirrorMemoryOriginal(text, opts));
+    }
+    private async mirrorMemoryOriginal(
+        text: string,
+        opts: { importance?: number; tags?: string[]; tier?: 'WORKING' | 'MEDIUM' | 'LONG' | 'DEEP' },
     ): Promise<void> {
         if (!this.client.isEnabled() || !text?.trim()) return;
         const res = await this.client.addMemory(text, opts);
@@ -107,4 +126,15 @@ export class BrainMemoryBridge {
     }
 }
 
-export const brainBridge = new BrainMemoryBridge();
+
+/** Exact class factory: no caller-supplied construction function. */
+export function createOwnedBrainMemoryBridge(client: BrainClient | undefined, ownership: Scope): BrainMemoryBridge {
+    const operation = ownership.beginConstruction();
+    try {
+        const instance = new BrainMemoryBridge(client, ownership, operation);
+        ownership.constructed(operation, instance); return instance;
+    } catch (original) {
+        preserveOriginal(ownership, 'construction-failure', () => ownership.constructionFailed(operation, original)); throw original;
+    }
+}
+export const brainBridge = createOwnedBrainMemoryBridge(undefined, brainBridgeOwner());

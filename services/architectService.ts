@@ -1,3 +1,6 @@
+import { preserveOriginal } from './lifecycle/preserveOriginal';
+import { architectOwner } from './lifecycle/preparationBindings';
+import type { Operation } from './lifecycle/host';
 
 import { geminiService } from './geminiService';
 import { CommunicationLevel } from '../types';
@@ -14,9 +17,11 @@ const BRAIN_DIR = path.join(process.cwd(), '.gemini/antigravity/brain'); // Hard
 const RFC_DIR = path.join(BRAIN_DIR, 'rfcs');
 
 export class ArchitectService {
+    private readonly ownership = architectOwner();
 
-    constructor() {
-        this.ensureDirectories();
+    constructor(construction: Operation) {
+        this.ownership.validateConstruction(construction);
+        this.ownership.invoke('original-directory-effect', () => this.ensureDirectories(), construction);
     }
 
     private ensureDirectories() {
@@ -90,4 +95,15 @@ export class ArchitectService {
     }
 }
 
-export const architect = new ArchitectService();
+function constructOriginalArchitectService(): ArchitectService {
+    const owner = architectOwner();
+    const operation = owner.beginConstruction();
+    try {
+        const instance = new ArchitectService(operation);
+        owner.constructed(operation, instance); return instance;
+    } catch (original) {
+        preserveOriginal(owner, 'construction-failure', () => owner.constructionFailed(operation, original));
+        throw original;
+    }
+}
+export const architect = constructOriginalArchitectService();

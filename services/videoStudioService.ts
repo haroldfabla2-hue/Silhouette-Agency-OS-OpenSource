@@ -1,3 +1,4 @@
+import { proStudioOwner } from './lifecycle/preparationBindings';
 /**
  * FASE 1 VIDEO STUDIO: idea en lenguaje natural -> brief validado -> gate de aprobacion.
  *
@@ -73,10 +74,12 @@ export class VideoStudioService {
         if (!fs.existsSync(modulePath)) {
             throw new Error(`pro-studio generateBrief not found at ${modulePath} (set PRO_STUDIO_PATH)`);
         }
-        const mod = await import(pathToFileURL(modulePath).href);
+        const owner = proStudioOwner();
+        owner.unknown('proStudio:UNREVIEWED_MODULE_EVALUATION', true);
+        const mod = await owner.invoke('original-proStudio-import', () => import(pathToFileURL(modulePath).href));
         const { generateTextWithCloudFallbacks } = await import('./geminiService');
 
-        const result = await mod.generateBrief(idea.trim(), generateTextWithCloudFallbacks);
+        const result = await owner.invoke('original-proStudio-brief', () => mod.generateBrief(idea.trim(), generateTextWithCloudFallbacks));
 
         const now = Date.now();
         const row: VideoBriefRow = {

@@ -1,9 +1,9 @@
-name: One scoped durable memory ownership diagnostic Node22.18
+name: CP17 integral real validation Node22.18
 
 on:
   push:
     branches:
-      - validation/initial-owner-static-reviewed-20261112
+      - validation/cp17-integral-reviewed-20261113
 
 permissions:
   contents: read
@@ -41,41 +41,21 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
           fetch-depth: 1
-      - name: Verify source and external read-only reviewed manifest
+      - name: Verify integral CP17 source and operational infrastructure
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = '${{ github.sha }}'
-          git rev-parse HEAD > "$EVIDENCE/head.txt"
-          git status --porcelain > "$EVIDENCE/checkout-status.txt"
-          reviewed="$RUNNER_TEMP/current-suite-reviewed"
-          mkdir "$reviewed"
-          cp tests/real-process/fullsuite/reviewed-inputs.sha256 "$reviewed/inputs.sha256"
-          chmod 0444 "$reviewed/inputs.sha256"
-          printf '%s  %s\n' 457d1224eadef42d4d9a7ea4376b71ba3f88b909f237b284d8b16ecfd398eae8 "$reviewed/inputs.sha256" | sha256sum --check
-          printf 'REVIEWED=%s\n' "$reviewed" >> "$GITHUB_ENV"
+          ops="$PWD/tests/real-process/cp17-trial"
+          printf '%s  %s\n' 547135a0d8c1aa54352888b06f9328413584b9df903745888ffd24b8d799b22c "$ops/infrastructure.sha256" | sha256sum --check
+          (cd "$ops" && sha256sum --check infrastructure.sha256)
           work="$RUNNER_TEMP/current-suite-work"
-          python3 tests/real-process/fullsuite/prepare-work.py "$work" "$EVIDENCE"
-          printf '%s  %s\n' f620fbb142f7011b60aa171160e049cc3af3beeacc11e3d47bb518624c8ef684 tests/real-process/fullsuite/verify-tree.py | sha256sum --check
-          python3 tests/real-process/fullsuite/verify-tree.py "$work" "$reviewed/inputs.sha256" 457d1224eadef42d4d9a7ea4376b71ba3f88b909f237b284d8b16ecfd398eae8 "$EVIDENCE/pre-install-tree.json"
+          python3 "$ops/prepare-integral.py" "$PWD" "$work" "$ops/integral-inputs.json" 4f4a129263f790a45ff8c775615a0f1fc51b7876c93ca5cec990ca3e59da0664
           printf 'WORK=%s\n' "$work" >> "$GITHUB_ENV"
       - name: Exact Node floor
         uses: actions/setup-node@v4
         with:
           node-version: '22.18.0'
-      - name: Bounded host install existing lock and verify exact work tree
-        shell: bash
-        run: |
-          set -euo pipefail
-          node --version > "$EVIDENCE/node-version.txt"
-          npm --version > "$EVIDENCE/npm-version.txt"
-          # Explicit clean install environment; same browser skip settings/lifecycle.
-          control="$PWD/tests/real-process/wal-owner/host-control.py"
-          cd "$WORK"
-          python3 "$control" capture npm-ci 300 env -i PATH="$PATH" HOME="$RUNNER_TEMP/current-suite-install-home" PUPPETEER_SKIP_DOWNLOAD=true PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=true npm ci
-          cd "$GITHUB_WORKSPACE"
-          printf '%s  %s\n' f620fbb142f7011b60aa171160e049cc3af3beeacc11e3d47bb518624c8ef684 tests/real-process/fullsuite/verify-tree.py | sha256sum --check
-          python3 tests/real-process/fullsuite/verify-tree.py "$WORK" "$REVIEWED/inputs.sha256" 457d1224eadef42d4d9a7ea4376b71ba3f88b909f237b284d8b16ecfd398eae8 "$EVIDENCE/post-install-tree.json"
       - name: Explicit one security candidate only, no APT configuration or install
         shell: bash
         run: |
@@ -123,51 +103,15 @@ jobs:
           run_setup sandbox-apparmor-after sysctl -n "$key"
           test "$(tail -n1 "$EVIDENCE/sandbox-apparmor-after.log")" = 0
           printf 'SETUP_COMPLETE_NOT_RUNTIME_PASS\n' > "$EVIDENCE/sandbox-setup.txt"
-      - name: Admit session only if absolute job budget fits plus cleanup and export
+      - name: One integral CP17 trial under reviewed scopes
         shell: bash
         run: |
           set -euo pipefail
           python3 - "$EVIDENCE/security-helpers-state.json" <<'SAFE'
           import json,pathlib,sys
-          s=json.loads(pathlib.Path(sys.argv[1]).read_text());assert s['status']=='SAFE' and not s['active'] and not s['sticky_unsafe'] and not s['signals'],'UNSAFE helpers: no session admission'
+          s=json.loads(pathlib.Path(sys.argv[1]).read_text());assert s['status']=='SAFE' and not s['active'] and not s['sticky_unsafe'] and not s['signals']
           SAFE
-          python3 tests/real-process/wal-owner/host-control.py reserve
-      - name: Exact bounded legacy checks and new real-process ownership harness
-        shell: bash
-        run: |
-          set -euo pipefail
-          test '${{ github.event.repository.private }}' = false
-          test '${{ runner.environment }}' = github-hosted
-          # Standard ubuntu-24.04 runner only, no larger/custom/snapshot runner.
-          helper="$WORK/tests/real-process/wal-owner"
-          printf '%s  %s\n' 74f4dc2cae77bc7b506b331e1729fdeb9cc56231b21574a952aae6fd263d191a "$helper/delegate-once.sh" | sha256sum --check
-          printf '%s  %s\n' 0b15dc9f61dac241681c41ff0d730fe627087b3ed1cde4c3a64683c4606708bc "$helper/root-self-admit.py" | sha256sum --check
-          printf '%s  %s\n' c48fc2fd4c0920818e1f2d349a012872ea061f23067d26bd7f2a8a9206c3a35a "$helper/cleanup-delegation.sh" | sha256sum --check
-          set +e
-          timeout --signal=TERM --kill-after=5s 565s env -i PATH="$PATH" STAGED_BWRAP="$STAGED_BWRAP" SILHOUETTE_INFERENCE_MODE=cloud-only SILHOUETTE_SNAPSHOT_DIAGNOSTIC=metadata-only bash "$helper/legacy-launch.sh" "$WORK" "$EVIDENCE" "$REVIEWED"
-          legacy_code=$?
-          set -e
-          printf '%s\n' "$legacy_code" > "$EVIDENCE/legacy-command.exit"
-          # Independent checks may continue after actual test failure, not unsafe cleanup/drift.
-          python3 tests/real-process/fullsuite/verify-tree.py "$WORK" "$REVIEWED/inputs.sha256" 457d1224eadef42d4d9a7ea4376b71ba3f88b909f237b284d8b16ecfd398eae8 "$EVIDENCE/pre-harness-tree.json"
-          python3 - "$EVIDENCE" <<'ADMIT'
-          import json,pathlib,sys,time
-          ev=pathlib.Path(sys.argv[1]);c=json.loads((ev/'job-clock.json').read_text());assert c['deadline_monotonic']-time.monotonic()>=445,'NOT_STARTED_HARNESS_JOB_BUDGET'
-          s=json.loads((ev/'session.json').read_text())
-          assert all(not r.get('residual_namespace_pids') and r.get('post_cleanup',{}).get('group')=='ESRCH' for r in s['results'] if 'post_cleanup' in r),'UNSAFE_LEGACY_CLEANUP'
-          ADMIT
-          # Exact newly approved root scope only inside this disposable hosted VM.
-          bash "$helper/delegate-once.sh" > "$EVIDENCE/delegation.log" 2>&1
-          scope="/sys/fs/cgroup/silhouette-owner-once-$GITHUB_RUN_ID"
-          mkdir "$EVIDENCE/owner-harness"
-          set +e
-          timeout --signal=TERM --kill-after=5s 370s env -i PATH="$PATH" SILHOUETTE_INFERENCE_MODE=cloud-only SILHOUETTE_SNAPSHOT_DIAGNOSTIC=metadata-only python3 "$helper/host-launch.py" --delegated-parent "$scope" --work "$WORK" --harness "$helper" --evidence "$EVIDENCE/owner-harness" --staged-bwrap "$STAGED_BWRAP" --run-id "$GITHUB_RUN_ID" --reviewed-root-helper "$helper/root-self-admit.py" --root-helper-sha256 0b15dc9f61dac241681c41ff0d730fe627087b3ed1cde4c3a64683c4606708bc
-          harness_code=$?
-          set -e
-          printf '%s\n' "$harness_code" > "$EVIDENCE/harness-command.exit"
-          python3 tests/real-process/wal-owner/verify-evidence.py "$EVIDENCE"
-          python3 tests/real-process/fullsuite/verify-tree.py "$WORK" "$REVIEWED/inputs.sha256" 457d1224eadef42d4d9a7ea4376b71ba3f88b909f237b284d8b16ecfd398eae8 "$EVIDENCE/post-harness-tree.json"
-          test "$legacy_code" = 0 && test "$harness_code" = 0
+          bash tests/real-process/cp17-trial/run-reviewed-trial.sh
       - name: Always cleanup only this new delegated run scope
         if: always()
         shell: bash

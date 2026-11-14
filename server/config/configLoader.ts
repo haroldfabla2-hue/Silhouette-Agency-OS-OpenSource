@@ -1,10 +1,12 @@
+import { preserveOriginal } from '../../services/lifecycle/preserveOriginal';
+import { configOwner } from '../../services/lifecycle/preparationBindings';
 import { externalProvidersDisabled, configForRuntime, loadRuntimeEnvironment } from './runtimeCredentials';
 import fs from 'fs';
 import path from 'path';
 import { SilhouetteConfig, DEFAULT_CONFIG } from './configSchema';
 
 // Load .env files for initial migration
-loadRuntimeEnvironment();
+configOwner().invoke('original-config-env-load', () => loadRuntimeEnvironment());
 
 const CONFIG_PATH = path.join(process.cwd(), 'silhouette.config.json');
 
@@ -12,13 +14,22 @@ export class ConfigLoader {
     private static instance: ConfigLoader;
     private config: SilhouetteConfig;
 
-    private constructor() {
-        this.config = this.loadOrMigrate();
+    private constructor(construction: import('../../services/lifecycle/host').Operation) {
+        configOwner().validateConstruction(construction);
+        this.config = configOwner().invoke('original-config-read-migrate', () => this.loadOrMigrate(), construction);
     }
 
     public static getInstance(): ConfigLoader {
         if (!ConfigLoader.instance) {
-            ConfigLoader.instance = new ConfigLoader();
+            const owner = configOwner();
+            const operation = owner.beginConstruction();
+            try {
+                ConfigLoader.instance = new ConfigLoader(operation);
+                owner.constructed(operation, ConfigLoader.instance);
+            } catch (original) {
+                preserveOriginal(owner, 'construction-failure', () => owner.constructionFailed(operation, original));
+                throw original;
+            }
         }
         return ConfigLoader.instance;
     }

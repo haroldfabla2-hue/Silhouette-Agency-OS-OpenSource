@@ -1,0 +1,13 @@
+import { installPreparationHost } from '../../services/lifecycle/bootstrapAuthority';
+function required(name: string): number {
+    const n = Number(process.env[name]);
+    if (!Number.isSafeInteger(n) || n < 1) throw new Error('Missing explicit test-host capacity: ' + name);
+    return n;
+}
+export const host = installPreparationHost({
+    scopes: required('SILHOUETTE_OWNER_SCOPES'), active: required('SILHOUETTE_OWNER_ACTIVE'),
+    failures: required('SILHOUETTE_OWNER_FAILURES'), resources: required('SILHOUETTE_OWNER_RESOURCES'),
+});
+// Proposed setup must precede all static application imports.
+// vi.resetModules would create a new binding module: do not call this a complete
+// test migration until module-reset cases use explicit per-generation hosts.

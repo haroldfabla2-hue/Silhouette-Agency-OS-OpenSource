@@ -1,3 +1,5 @@
+import { createOwnedLanceDbService } from '../../services/lancedbService';
+import { admitLanceInstance } from '../../services/lifecycle/preparationBindings';
 import { describe, it, expect, afterAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -58,7 +60,7 @@ describe('LanceDbService stale table handle recovery', () => {
     afterAll(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
 
     it('reopens a handle pinned before compaction instead of failing until restart', async () => {
-        const svc = new LanceDbService(tmp);
+        const svc = createOwnedLanceDbService(tmp, admitLanceInstance());
         await svc.store(node('a'));
 
         const fragmentsBefore = new Set(fs.readdirSync(DATA_DIR));
@@ -101,7 +103,7 @@ describe('LanceDbService stale table handle recovery', () => {
     }, 90000);
 
     it('optimize with the never-prune threshold compacts without deleting any version or fragment', async () => {
-        const svc = new LanceDbService(tmp);
+        const svc = createOwnedLanceDbService(tmp, admitLanceInstance());
         await svc.store(node('n1'));
 
         const db2 = await lancedb.connect(tmp);

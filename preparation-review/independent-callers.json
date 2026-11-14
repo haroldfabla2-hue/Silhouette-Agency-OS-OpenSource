@@ -1,0 +1,148 @@
+[
+  {
+    "file": "tests/automated/brain-integration.test.ts",
+    "line": 99,
+    "constructor": "BrainMemoryBridge",
+    "original": "new BrainMemoryBridge(makeClient())"
+  },
+  {
+    "file": "tests/automated/brain-integration.test.ts",
+    "line": 114,
+    "constructor": "BrainMemoryBridge",
+    "original": "new BrainMemoryBridge(makeClient())"
+  },
+  {
+    "file": "tests/automated/brain-integration.test.ts",
+    "line": 121,
+    "constructor": "BrainMemoryBridge",
+    "original": "new BrainMemoryBridge(makeClient(false))"
+  },
+  {
+    "file": "tests/automated/lancedb-fts-commit-conflict.test.ts",
+    "line": 40,
+    "constructor": "LanceDbService",
+    "original": "new LanceDbService(tmp)"
+  },
+  {
+    "file": "tests/automated/lancedb-fts-commit-conflict.test.ts",
+    "line": 63,
+    "constructor": "LanceDbService",
+    "original": "new LanceDbService(tmp2)"
+  },
+  {
+    "file": "tests/automated/lancedb-hydration-batch.test.ts",
+    "line": 38,
+    "constructor": "LanceDbService",
+    "original": "new LanceDbService('/tmp/nonexistent-lancedb-test')"
+  },
+  {
+    "file": "tests/automated/lancedb-knowledge-table.test.ts",
+    "line": 22,
+    "constructor": "LanceDbService",
+    "original": "new LanceDbService(dir)"
+  },
+  {
+    "file": "tests/automated/lancedb-stale-handle-retry.test.ts",
+    "line": 61,
+    "constructor": "LanceDbService",
+    "original": "new LanceDbService(tmp)"
+  },
+  {
+    "file": "tests/automated/lancedb-stale-handle-retry.test.ts",
+    "line": 104,
+    "constructor": "LanceDbService",
+    "original": "new LanceDbService(tmp)"
+  },
+  {
+    "file": "tests/automated/lancedb-store-many.test.ts",
+    "line": 17,
+    "constructor": "LanceDbService",
+    "original": "new LanceDbService(dir)"
+  },
+  {
+    "file": "tests/automated/memory-retrieval-p1.test.ts",
+    "line": 10,
+    "constructor": "LanceDbService",
+    "original": "new LanceDbService(dir)"
+  },
+  {
+    "file": "tests/automated/memory-rollout.test.ts",
+    "line": 14,
+    "constructor": "LanceDbService",
+    "original": "new LanceDbService(path)"
+  },
+  {
+    "file": "tests/automated/native-pipeline-recovery.test.ts",
+    "line": 44,
+    "constructor": "LanceDbService",
+    "original": "new LanceDbService(path.join(tmp, 'lance'))"
+  },
+  {
+    "file": "tests/automated/native-pipeline-recovery.test.ts",
+    "line": 68,
+    "constructor": "LanceDbService",
+    "original": "new LanceDbService(path.join(blocker, 'lance'))"
+  },
+  {
+    "file": "tests/automated/observation-latest-real.test.ts",
+    "line": 15,
+    "constructor": "LanceDbService",
+    "original": "new LanceDbService(location)"
+  },
+  {
+    "file": "tests/automated/observation-latest-real.test.ts",
+    "line": 17,
+    "constructor": "LanceDbService",
+    "original": "new LanceDbService(location)"
+  },
+  {
+    "file": "tests/automated/observation-latest-real.test.ts",
+    "line": 21,
+    "constructor": "LanceDbService",
+    "original": "new LanceDbService(location)"
+  },
+  {
+    "file": "tests/automated/observation-latest-real.test.ts",
+    "line": 47,
+    "constructor": "LanceDbService",
+    "original": "new LanceDbService(location)"
+  },
+  {
+    "file": "tests/automated/observation-latest-real.test.ts",
+    "line": 62,
+    "constructor": "LanceDbService",
+    "original": "new LanceDbService(location)"
+  },
+  {
+    "file": "tests/automated/vector-scan.test.ts",
+    "line": 103,
+    "constructor": "LanceDbService",
+    "original": "new LanceDbService(joinPath(mkdtempSync(joinPath(tmpd(), 'paged-')), 'db.lancedb'))"
+  },
+  {
+    "file": "tests/integration/qdrant-optional-canonical-boundary.real.ts",
+    "line": 36,
+    "constructor": "LanceDbService",
+    "original": "new LanceDbService(path.join(root,'lance'))"
+  },
+  {
+    "file": "scripts/benchmark_memory_rollout.ts",
+    "line": 36,
+    "constructor": "LanceDbService",
+    "original": "new LanceDbService(path)"
+  },
+  {
+    "file": "scripts/test_autonomy.ts",
+    "line": 17,
+    "constructor": "IntrospectionEngine",
+    "original": "new IntrospectionEngine()"
+  },
+  {
+    "file": "tests/integration/safe-codebase-null.real.ts",
+    "line": 9,
+    "constructor": "CodebaseAwarenessService",
+    "original": "const service=new CodebaseAwarenessService(async t=>{ embeddingCalls++; return localEmbeddingService.getEmbedding(t); });",
+    "migration": "createOwnedCodebaseAwareness(originalEmbed, undefined, admitCodebaseInstance())",
+    "status": "SOURCE_MIGRATED_NOT_EXECUTED"
+  }
+]

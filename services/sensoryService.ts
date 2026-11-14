@@ -1,3 +1,5 @@
+import { sensoryOwner } from './lifecycle/preparationBindings';
+import { installOwnedFunction } from './lifecycle/ownedGlobal';
 
 import { LogEntry, SemanticNode, SensoryData } from "../types";
 import html2canvas from 'html2canvas';
@@ -38,19 +40,16 @@ class SensoryService {
 
     // --- 2. DIGITAL EAR (Log & Network Interceptor) ---
     private initLogInterceptor() {
+        const owner = sensoryOwner();
         try {
-            const originalError = console.error;
-            const originalWarn = console.warn;
-
-            console.error = (...args) => {
-                this.pushLog('ERROR', args.join(' '));
+            installOwnedFunction(owner, console, 'error', (originalError, active) => (...args) => {
+                if (active()) this.pushLog('ERROR', args.join(' '));
                 originalError.apply(console, args);
-            };
-
-            console.warn = (...args) => {
-                this.pushLog('WARN', args.join(' '));
+            });
+            installOwnedFunction(owner, console, 'warn', (originalWarn, active) => (...args) => {
+                if (active()) this.pushLog('WARN', args.join(' '));
                 originalWarn.apply(console, args);
-            };
+            });
         } catch (e) {
             console.warn("[SENSORY] Log interceptor init failed (environment protected).");
         }
@@ -80,7 +79,10 @@ class SensoryService {
 
             // TRY to overwrite fetch. If read-only, catch error and continue without telemetry.
             try {
-                window.fetch = wrappedFetch;
+                installOwnedFunction(sensoryOwner(), window, 'fetch', (predecessor, active) =>
+                    ((...args: Parameters<typeof fetch>) => active()
+                        ? wrappedFetch(...args)
+                        : Reflect.apply(predecessor, window, args)) as typeof fetch);
             } catch (readonlyError) {
                 console.warn("[SENSORY] window.fetch is read-only. Network telemetry disabled for stability.");
             }

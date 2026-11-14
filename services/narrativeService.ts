@@ -1,3 +1,5 @@
+import { preserveOriginal } from './lifecycle/preserveOriginal';
+import { narrativeOwner } from './lifecycle/preparationBindings';
 import { NarrativeState, type ProtocolEvent, type SystemProtocol } from '../types';
 import { publishNarrative } from './narrativeInstanceOwner';
 import { generateAgentResponse } from './geminiService';
@@ -330,7 +332,8 @@ class NarrativeService {
     private totalEmissions = 0;
 
     constructor() {
-        this.startupOwner = this.retain(this.initializeStreamAggregator());
+        narrativeOwner().onSeal(() => this.stopAdmissions());
+        this.startupOwner = this.retain(narrativeOwner().invoke('original-aggregator', () => this.initializeStreamAggregator()));
         this.startBatchProcessor();
     }
 
@@ -1232,5 +1235,15 @@ Respuesta JSON:`;
     }
 }
 
-export const narrative = new NarrativeService();
+function constructOriginalNarrativeService(): NarrativeService {
+    const owner = narrativeOwner();
+    const operation = owner.beginConstruction();
+    try {
+        const instance = new NarrativeService();
+        owner.constructed(operation, instance); return instance;
+    } catch (original) {
+        preserveOriginal(owner, 'construction-failure', () => owner.constructionFailed(operation, original)); throw original;
+    }
+}
+export const narrative = constructOriginalNarrativeService();
 publishNarrative(narrative);

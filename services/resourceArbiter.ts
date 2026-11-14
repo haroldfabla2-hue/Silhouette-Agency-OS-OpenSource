@@ -1,3 +1,5 @@
+import { preserveOriginal } from './lifecycle/preserveOriginal';
+import { arbiterOwner } from './lifecycle/preparationBindings';
 
 import { Agent, AgentStatus, SystemMode } from "../types";
 import * as si from 'systeminformation';
@@ -92,11 +94,12 @@ class ResourceArbiter {
     }
 
     constructor() {
+        arbiterOwner().onSeal(() => this.stopAdmissions());
         this.isServer = typeof process !== 'undefined' && process.versions != null && process.versions.node != null;
         console.log(`[ARBITER] Initialized. Environment: ${this.isServer ? 'SERVER (Real Metrics)' : 'CLIENT (Simulated)'}`);
 
         // Start Queue Processor Loop with dynamic interval
-        this.startupOwner = this.retain(this.startProcessing());
+        this.startupOwner = this.retain(arbiterOwner().invoke('original-processing', () => this.startProcessing()));
     }
 
     private async startProcessing(): Promise<void> {
@@ -366,5 +369,15 @@ class ResourceArbiter {
     }
 }
 
-export const resourceArbiter = new ResourceArbiter();
+function constructOriginalResourceArbiter(): ResourceArbiter {
+    const owner = arbiterOwner();
+    const operation = owner.beginConstruction();
+    try {
+        const instance = new ResourceArbiter();
+        owner.constructed(operation, instance); return instance;
+    } catch (original) {
+        preserveOriginal(owner, 'construction-failure', () => owner.constructionFailed(operation, original)); throw original;
+    }
+}
+export const resourceArbiter = constructOriginalResourceArbiter();
 publishResourceArbiter(resourceArbiter);

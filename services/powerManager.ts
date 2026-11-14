@@ -1,3 +1,5 @@
+import { preserveOriginal } from './lifecycle/preserveOriginal';
+import { powerOwner } from './lifecycle/preparationBindings';
 /**
  * POWER MANAGER SERVICE v2.0 - ADAPTIVE THROTTLING
  * All services run autonomously with CPU-based throttling
@@ -98,6 +100,7 @@ const POWER_CONFIGS: Record<PowerMode, PowerConfig> = {
 };
 
 class PowerManager {
+    private readonly ownership = powerOwner();
     private static instance: PowerManager;
     private currentMode: PowerMode = PowerMode.CONSCIOUS; // Default to Conscious for "Living OS" feel
     private listeners: Set<(mode: PowerMode, config: PowerConfig) => void> = new Set();
@@ -109,6 +112,7 @@ class PowerManager {
 
     private constructor() {
         console.log(`[POWER_MANAGER] ⚡ Initialized with mode: ${this.currentMode}`);
+        this.ownership.onSeal(() => { if (this.throttleCheckInterval) clearInterval(this.throttleCheckInterval); });
         this.startAdaptiveThrottling();
     }
 
@@ -118,7 +122,9 @@ class PowerManager {
      */
     private startAdaptiveThrottling() {
         // Check CPU every 30 seconds and adjust throttle
-        this.throttleCheckInterval = setInterval(async () => {
+        this.throttleCheckInterval = setInterval(() => {
+            if (!this.ownership.open) return;
+            return this.ownership.invoke('cpu-sample', async () => {
             try {
                 const si = await import('systeminformation');
                 const load = await si.currentLoad();
@@ -137,8 +143,10 @@ class PowerManager {
                 }
             } catch (e) {
                 // systeminformation not available, use default
+                this.ownership.failure('power:cpu-sample-fallback', e);
                 this.throttleMultiplier = 1;
             }
+            });
         }, 30000);
 
         // Staggered startup - delay service initialization
@@ -249,5 +257,15 @@ class PowerManager {
     }
 }
 
-export const powerManager = PowerManager.getInstance();
+function constructOriginalPowerManager(): PowerManager {
+    const owner = powerOwner();
+    const operation = owner.beginConstruction();
+    try {
+        const instance = PowerManager.getInstance();
+        owner.constructed(operation, instance); return instance;
+    } catch (original) {
+        preserveOriginal(owner, 'construction-failure', () => owner.constructionFailed(operation, original)); throw original;
+    }
+}
+export const powerManager = constructOriginalPowerManager();
 export type { PowerConfig };

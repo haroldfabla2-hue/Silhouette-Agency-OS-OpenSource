@@ -1,3 +1,7 @@
+import { preserveOriginal } from './lifecycle/preserveOriginal';
+import { sqliteOwner } from './lifecycle/preparationBindings';
+import type { Scope, Operation } from './lifecycle/host';
+const sqliteModuleOwner = sqliteOwner();
 import { externalProvidersDisabled, credentialConfigKey } from '../server/config/runtimeCredentials';
 import Database from 'better-sqlite3';
 import path from 'path';
@@ -11,9 +15,9 @@ const DB_PATH = process.env.SILHOUETTE_DB_PATH
     : path.resolve(process.cwd(), 'db', 'silhouette.sqlite');
 const DB_DIR = path.dirname(DB_PATH);
 
-if (!fs.existsSync(DB_DIR)) {
-    fs.mkdirSync(DB_DIR, { recursive: true });
-}
+sqliteModuleOwner.invoke('module-directory-effect', () => {
+    if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
+});
 
 /** Absolute path of the SQLite database file this service persists to. */
 export const SQLITE_DB_PATH = DB_PATH;
@@ -26,11 +30,18 @@ export class SqliteService {
         return DB_PATH;
     }
 
-    constructor() {
+    constructor(private readonly ownership: Scope, operation: Operation) {
+        ownership.validateConstruction(operation);
+        const reservation = ownership.reserveResource(operation, 'database');
         // busy_timeout at open: without it the WAL pragma below can fail
         // instantly with SQLITE_BUSY when another process holds a write lock
         // (the pragma runs before any busy timeout is in effect).
-        this.db = new Database(DB_PATH, { timeout: 5000 });
+        try { this.db = new Database(DB_PATH, { timeout: 5000 }); }
+        catch (error) { preserveOriginal(ownership, 'database-allocation-failed', () => ownership.releaseUnused(reservation)); throw error; }
+        const acquired = this.db;
+        ownership.acquire(reservation, acquired, () => { if (acquired.open) acquired.close(); },
+            () => ({ source: 'sqlite:database', disposition: acquired.open ? 'INCOMPLETE' : 'CLOSED',
+                ...(acquired.open ? { reason: 'DATABASE_STILL_OPEN' } : {}) }));
 
         // Enable WAL mode for high concurrency (non-blocking readers)
         this.db.pragma('journal_mode = WAL');
@@ -1024,10 +1035,24 @@ export class SqliteService {
     }
 
     public close(): void {
-        try {
-            this.db.close();
-        } catch { /* ignore if already closed */ }
+        this.ownership.invoke('public-close-request', operation => {
+            try { this.ownership.closeResource(operation, this.db); }
+            catch (error) {
+                // Preserve the original void/swallow public contract, but a
+                // denied or failed close is never successful release evidence.
+                this.ownership.failure('public-close-unverified', error);
+            }
+        });
     }
 }
 
-export const sqliteService = new SqliteService();
+function constructOriginalSqlite(): SqliteService {
+    const operation = sqliteModuleOwner.beginConstruction();
+    try {
+        const instance = new SqliteService(sqliteModuleOwner, operation);
+        sqliteModuleOwner.constructed(operation, instance); return instance;
+    } catch (original) {
+        preserveOriginal(sqliteModuleOwner, 'construction-failure', () => sqliteModuleOwner.constructionFailed(operation, original)); throw original;
+    }
+}
+export const sqliteService = constructOriginalSqlite();

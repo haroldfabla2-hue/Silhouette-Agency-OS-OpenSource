@@ -1,3 +1,6 @@
+import { preserveOriginal } from './lifecycle/preserveOriginal';
+import { neuroSynapseOwner } from './lifecycle/preparationBindings';
+import type { Operation } from './lifecycle/host';
 
 import { systemBus } from './systemBus';
 import { SystemProtocol } from '../types';
@@ -7,19 +10,22 @@ import { SystemProtocol } from '../types';
 // It converts abstract INTUITION events into concrete TASK ASSIGNMENTS.
 
 class NeuroSynapseService {
+    private readonly ownership = neuroSynapseOwner();
     private isConnected: boolean = false;
 
-    constructor() {
+    constructor(construction: Operation) {
+        this.ownership.validateConstruction(construction);
         console.log("[NEURO-LINK] 🧠 Initializing Synaptic Bridge...");
         this.initializeListeners();
     }
 
     private initializeListeners() {
         // Listen for new intuitions from the Dreamer
-        systemBus.subscribe(SystemProtocol.INTUITION_CONSOLIDATED, async (event) => {
-            await this.handleIntuition(event.payload);
+        const unsubscribe = systemBus.subscribe(SystemProtocol.INTUITION_CONSOLIDATED, async (event) => {
+            await this.ownership.invoke('original-intuition-delivery', () => this.handleIntuition(event.payload));
         });
 
+        this.ownership.onSeal(unsubscribe);
         this.isConnected = true;
         console.log("[NEURO-LINK] ✅ Synapses Firing. Listening for Dreams.");
     }
@@ -52,4 +58,15 @@ class NeuroSynapseService {
     }
 }
 
-export const neuroSynapse = new NeuroSynapseService();
+function constructOriginalNeuroSynapse(): NeuroSynapseService {
+    const owner = neuroSynapseOwner();
+    const operation = owner.beginConstruction();
+    try {
+        const instance = new NeuroSynapseService(operation);
+        owner.constructed(operation, instance); return instance;
+    } catch (original) {
+        preserveOriginal(owner, 'construction-failure', () => owner.constructionFailed(operation, original));
+        throw original;
+    }
+}
+export const neuroSynapse = constructOriginalNeuroSynapse();

@@ -1,3 +1,4 @@
+import { runtimeEnvironmentOwner } from '../../services/lifecycle/preparationBindings';
 /** Process-local external-provider credential isolation. Never rotates credentials.
  * This is credential-source isolation, NOT an OS/network sandbox. Run only in
  * a separate release with backups and an external egress restriction. Acceptance
@@ -85,4 +86,4 @@ export function credentialConfigKey(key: string): boolean {
 
 // Scrub provider-OFF/acceptance env before the next dependency is evaluated. Normal mode
 // keeps the original explicit dotenv load points and has no new import effect.
-if (externalProvidersDisabled()) loadRuntimeEnvironment();
+if (externalProvidersDisabled()) runtimeEnvironmentOwner().invoke('original-provider-off-env-scrub', () => loadRuntimeEnvironment());

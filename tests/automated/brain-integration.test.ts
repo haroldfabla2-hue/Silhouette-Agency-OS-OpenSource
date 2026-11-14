@@ -1,3 +1,5 @@
+import { createOwnedBrainMemoryBridge } from '../../services/brain/brainMemoryBridge';
+import { admitBrainBridgeInstance } from '../../services/lifecycle/preparationBindings';
 /**
  * AUTOMATED TEST SUITE: Silhouette Brain Integration
  * Verifies the typed HTTP client + memory bridge against a mocked Brain API.
@@ -96,7 +98,7 @@ describe('Silhouette Brain Integration', () => {
 
     describe('BrainMemoryBridge', () => {
         it('renders a reasoning context into a prompt block', () => {
-            const bridge = new BrainMemoryBridge(makeClient());
+            const bridge = createOwnedBrainMemoryBridge(makeClient(), admitBrainBridgeInstance());
             const block = bridge.renderContext({
                 query: 'q',
                 synthesis: 'The user prefers dark mode.',
@@ -111,14 +113,14 @@ describe('Silhouette Brain Integration', () => {
         });
 
         it('returns an empty block when nothing is recalled', () => {
-            const bridge = new BrainMemoryBridge(makeClient());
+            const bridge = createOwnedBrainMemoryBridge(makeClient(), admitBrainBridgeInstance());
             const block = bridge.renderContext({ query: 'q', semantic: [], recent: [] });
             expect(block.hasContent).toBe(false);
             expect(block.text).toBe('');
         });
 
         it('getContextBlock short-circuits to empty when disabled', async () => {
-            const bridge = new BrainMemoryBridge(makeClient(false));
+            const bridge = createOwnedBrainMemoryBridge(makeClient(false), admitBrainBridgeInstance());
             const block = await bridge.getContextBlock('q');
             expect(block.hasContent).toBe(false);
         });

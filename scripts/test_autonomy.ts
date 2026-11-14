@@ -1,3 +1,5 @@
+import { createOwnedIntrospectionEngine } from '../services/introspectionEngine';
+import { admitIntrospectionInstance } from '../services/lifecycle/preparationBindings';
 
 import { IntrospectionEngine } from '../services/introspectionEngine';
 import { systemBus } from '../services/systemBus';
@@ -14,7 +16,7 @@ import { SystemProtocol } from '../types';
 console.log("🧪 Testing Phase 13: Autonomy Loop");
 
 // 1. Setup
-const intro = new IntrospectionEngine();
+const intro = createOwnedIntrospectionEngine(admitIntrospectionInstance());
 
 // Mock Orchestrator's job for the test
 import { actionExecutor } from '../services/actionExecutor';

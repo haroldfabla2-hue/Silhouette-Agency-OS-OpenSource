@@ -1,3 +1,6 @@
+import { deliverReservedHelpResponse } from '../lifecycle/correlatedHelpResponse';
+import { preserveOriginal } from '../lifecycle/preserveOriginal';
+import type { Scope, Operation } from '../lifecycle/host';
 import { IBusAdapter } from "./IBusAdapter";
 import { ProtocolEvent, SystemProtocol, InterAgentMessage } from "../../types";
 import { createClient, RedisClientType } from 'redis';
@@ -8,7 +11,7 @@ export class RedisBusAdapter implements IBusAdapter {
     private isConnected: boolean = false;
     private listeners: Record<string, ((event: ProtocolEvent) => void)[]> = {};
 
-    constructor(url?: string) {
+    constructor(url: string | undefined, private readonly ownership: Scope, operation: Operation) {
         const redisUrl = url || process.env.REDIS_URL || 'redis://localhost:6379';
 
         const redisOptions = {
@@ -21,8 +24,14 @@ export class RedisBusAdapter implements IBusAdapter {
             }
         };
 
-        this.pubClient = createClient(redisOptions);
-        this.subClient = createClient(redisOptions);
+        const pubPermit = ownership.reserveResource(operation, 'publisher');
+        try { this.pubClient = createClient(redisOptions); }
+        catch (error) { preserveOriginal(ownership, 'pubPermit-allocation-failed', () => ownership.releaseUnused(pubPermit)); throw error; }
+        if (pubPermit) this.recordClient(this.pubClient, pubPermit);
+        const subPermit = ownership.reserveResource(operation, 'subscriber');
+        try { this.subClient = createClient(redisOptions); }
+        catch (error) { preserveOriginal(ownership, 'subPermit-allocation-failed', () => ownership.releaseUnused(subPermit)); throw error; }
+        if (subPermit) this.recordClient(this.subClient, subPermit);
 
         this.pubClient.on('error', (err) => {
             // Uncomment to debug detailed Redis connection errors
@@ -31,6 +40,16 @@ export class RedisBusAdapter implements IBusAdapter {
         this.subClient.on('error', (err) => {
             // console.error('[REDIS SUB ERROR]', err.message)
         });
+    }
+
+    private recordClient(client: RedisClientType, permit: import('../lifecycle/host').ResourceReservation): void {
+        let closeSettled = false;
+        this.ownership.acquire(permit, client, async () => {
+            if (client.isOpen) await client.close();
+            closeSettled = true;
+        }, () => ({ source: 'systemBus:redis-client',
+            disposition: closeSettled && !client.isOpen ? 'CLOSED' : 'INCOMPLETE',
+            ...(!closeSettled || client.isOpen ? { reason: 'CLIENT_RELEASE_UNVERIFIED' } : {}) }));
     }
 
     async connect(): Promise<void> {
@@ -53,14 +72,27 @@ export class RedisBusAdapter implements IBusAdapter {
 
     private handleIncomingEvent(event: ProtocolEvent) {
         if (this.listeners[event.type]) {
-            this.listeners[event.type].forEach(handler => handler(event));
+            this.listeners[event.type].forEach(handler => {
+                if (!this.ownership.open) {
+                        deliverReservedHelpResponse(handler, event); return;
+                    }
+                this.ownership.invoke('redis-delivery', () => handler(event));
+            });
         }
     }
 
     async disconnect(): Promise<void> {
-        await this.pubClient.disconnect();
-        await this.subClient.disconnect();
-        this.isConnected = false;
+        return this.ownership.invoke('public-disconnect-request', async operation => {
+            // Same memoized graceful releases as host teardown. No destructive
+            // disconnect/destroy that could cut admitted commands short.
+            const results = await Promise.allSettled([
+                Promise.resolve().then(() => this.ownership.closeResource(operation, this.pubClient)),
+                Promise.resolve().then(() => this.ownership.closeResource(operation, this.subClient)),
+            ]);
+            const failed = results.find(result => result.status === 'rejected');
+            if (failed?.status === 'rejected') throw failed.reason;
+            this.isConnected = false;
+        });
     }
 
     async publish(event: ProtocolEvent): Promise<void> {
@@ -77,6 +109,13 @@ export class RedisBusAdapter implements IBusAdapter {
             this.listeners[protocol] = [];
         }
         this.listeners[protocol].push(handler);
+    }
+
+    unsubscribe(protocol: SystemProtocol, handler: (event: ProtocolEvent) => void): void {
+        // Same local listener-list removal as MemoryBusAdapter. No native
+        // channel unsubscribe: other handlers still own that channel. Repeated
+        // explicit unsubscribe + host seal filters the same handler harmlessly.
+        this.listeners[protocol] = (this.listeners[protocol] || []).filter(listener => listener !== handler);
     }
 
     async send(message: InterAgentMessage): Promise<void> {

@@ -1,3 +1,5 @@
+import { preserveOriginal } from './lifecycle/preserveOriginal';
+import { hubOwner } from './lifecycle/preparationBindings';
 import { graph } from './graphService';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -32,6 +34,7 @@ interface ReinforcementRequest {
 }
 
 class HubStrengtheningService {
+    private readonly ownership = hubOwner();
     // Configuration
     private readonly CONFIG = {
         DECAY_RATE: 0.01,
@@ -46,6 +49,7 @@ class HubStrengtheningService {
 
     private pruningInterval: NodeJS.Timeout | null = null;
     private batchInterval: NodeJS.Timeout | null = null;
+    private delayedStartup: ReturnType<typeof setTimeout> | null = null;
 
     // Batched reinforcement queue
     private reinforcementQueue: ReinforcementRequest[] = [];
@@ -53,9 +57,19 @@ class HubStrengtheningService {
 
     constructor() {
         // Auto-start after 1 minute
-        setTimeout(() => {
-            this.startPruningCycle();
-            this.startBatchProcessor();
+        this.ownership.onSeal(() => {
+            if (this.delayedStartup) clearTimeout(this.delayedStartup);
+            this.delayedStartup = null;
+            this.stop();
+            if (this.reinforcementQueue.length) this.ownership.unknown('hub:QUEUED_REINFORCEMENT_AT_SEAL');
+        });
+        this.delayedStartup = setTimeout(() => {
+            this.delayedStartup = null;
+            if (!this.ownership.open) return;
+            this.ownership.invoke('original-delayed-start', () => {
+                this.startPruningCycle();
+                this.startBatchProcessor();
+            });
         }, 60000);
     }
 
@@ -67,7 +81,8 @@ class HubStrengtheningService {
 
         logger.info(`Starting Synaptic Pruning Cycle (Every ${this.CONFIG.PRUNING_INTERVAL_MS / 60000}m)`);
         this.pruningInterval = setInterval(() => {
-            this.runPruningCycle().catch(e => logger.error('Pruning error:', e));
+            if (!this.ownership.open) return;
+            this.ownership.invoke('pruning-tick', () => this.runPruningCycle()).catch(e => logger.error('Pruning error:', e));
         }, this.CONFIG.PRUNING_INTERVAL_MS);
     }
 
@@ -79,7 +94,8 @@ class HubStrengtheningService {
 
         logger.info(`Starting Batch Reinforcement Processor (Every ${this.CONFIG.BATCH_INTERVAL_MS / 1000}s)`);
         this.batchInterval = setInterval(() => {
-            this.flushReinforcementBatch().catch(e => logger.error('Batch flush error:', e));
+            if (!this.ownership.open) return;
+            this.ownership.invoke('batch-tick', () => this.flushReinforcementBatch()).catch(e => logger.error('Batch flush error:', e));
         }, this.CONFIG.BATCH_INTERVAL_MS);
     }
 
@@ -156,6 +172,7 @@ class HubStrengtheningService {
             }
 
         } catch (e) {
+            this.ownership.failure('reinforcement:FAILED_REQUEUED_OR_EXPIRED', e);
             logger.error('Batch reinforcement failed:', e);
             // Re-queue failed items (with limit to prevent infinite loop)
             const now = Date.now();
@@ -297,4 +314,14 @@ class HubStrengtheningService {
     }
 }
 
-export const hubStrengthening = new HubStrengtheningService();
+function constructOriginalHubStrengtheningService(): HubStrengtheningService {
+    const owner = hubOwner();
+    const operation = owner.beginConstruction();
+    try {
+        const instance = new HubStrengtheningService();
+        owner.constructed(operation, instance); return instance;
+    } catch (original) {
+        preserveOriginal(owner, 'construction-failure', () => owner.constructionFailed(operation, original)); throw original;
+    }
+}
+export const hubStrengthening = constructOriginalHubStrengtheningService();

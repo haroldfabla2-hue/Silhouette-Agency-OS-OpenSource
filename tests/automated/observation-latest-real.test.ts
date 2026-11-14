@@ -1,3 +1,5 @@
+import { createOwnedLanceDbService } from '../../services/lancedbService';
+import { admitLanceInstance } from '../../services/lifecycle/preparationBindings';
 /** Real LanceDB storage/reopen read, no model/provider or mocks. This verifies
  * this read primitive, not a whole dashboard startup or provider trace. */
 import {describe,it,expect} from 'vitest';
@@ -12,13 +14,13 @@ describe('observation-only latest stored tag',()=>{
   const dir=mkdtempSync(path.join(tmpdir(),'observation-real-'));
   const location=path.join(dir,'db.lancedb');
   try{
-   const absent=new LanceDbService(location);
+   const absent=createOwnedLanceDbService(location, admitLanceInstance());
    expect(await absent.getLatestObservation('epiphany')).toBeNull();expect(existsSync(location)).toBe(false);
-   const writer=new LanceDbService(location);
+   const writer=createOwnedLanceDbService(location, admitLanceInstance());
    await writer.store({id:'older',content:'EPIPHANY older',tags:['epiphany'],tier:MemoryTier.WORKING,timestamp:1} as any);
    await writer.store({id:'newest',content:'EPIPHANY '+('large thought '.repeat(2000)),tags:['epiphany'],tier:MemoryTier.WORKING,timestamp:3} as any);
    await writer.store({id:'unrelated',content:'other',tags:['other'],tier:MemoryTier.WORKING,timestamp:4} as any);
-   const reader=new LanceDbService(location);
+   const reader=createOwnedLanceDbService(location, admitLanceInstance());
    const newest=await reader.getLatestObservation('epiphany');
    expect(newest?.id).toBe('newest');expect(newest!.content.length).toBeGreaterThan(20000);
    expect((reader as any).initialized).toBe(false);expect((reader as any).ftsReady.size).toBe(0);
@@ -44,7 +46,7 @@ describe('bounded canonical observation history',()=>{
    const db=await connect(location);
    await db.createTable('memory',[row(node('shadow',99,['EXPERIENCE','FAILURE'])),row(node('old',1,['EXPERIENCE','FAILURE']))]);
    await db.createTable('memory_records_v2',[row(node('shadow',100,['EXPERIENCE','SUCCESS'])),row(node('new',3,['EXPERIENCE','FAILURE'])),row(node('unrelated',4,['FAILURE']))]);
-   const reader=new LanceDbService(location);
+   const reader=createOwnedLanceDbService(location, admitLanceInstance());
    expect((await reader.getRecentObservations(['EXPERIENCE','FAILURE'],2)).map(n=>n.id)).toEqual(['new','old']);
    expect((await reader.getRecentObservations(['EXPERIENCE','FAILURE'],1,['new'])).map(n=>n.id)).toEqual(['old']);
    expect((reader as any).initialized).toBe(false);
@@ -59,7 +61,7 @@ describe('bounded canonical observation history',()=>{
   try{
    const db=await connect(location);
    await db.createTable('memory_records_v2',[{id:'corrupt',json_data:'{broken'}]);
-   const reader=new LanceDbService(location);
+   const reader=createOwnedLanceDbService(location, admitLanceInstance());
    await expect(reader.getRecentObservations('EXPERIENCE',100)).rejects.toThrow();
   }finally{rmSync(dir,{recursive:true,force:true});}
  });

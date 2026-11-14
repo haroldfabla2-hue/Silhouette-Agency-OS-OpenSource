@@ -1,3 +1,5 @@
+import { createOwnedLanceDbService } from '../../services/lancedbService';
+import { admitLanceInstance } from '../../services/lifecycle/preparationBindings';
 import { describe, it, expect, afterAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -37,7 +39,7 @@ describe('LanceDbService FTS createIndex vs compaction Rewrite', () => {
     afterAll(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
 
     it('rebases and builds the FTS index after a retryable commit conflict', async () => {
-        const svc = new LanceDbService(tmp);
+        const svc = createOwnedLanceDbService(tmp, admitLanceInstance());
         await svc.store(node('a'));
         await svc.store(node('b'));
 
@@ -60,7 +62,7 @@ describe('LanceDbService FTS createIndex vs compaction Rewrite', () => {
     it('exhaustion: bounded retries, loud failure, index NEVER marked ready', async () => {
         const tmp2 = fs.mkdtempSync(path.join(os.tmpdir(), 'lancedb-fts-exhaust-'));
         try {
-            const svc = new LanceDbService(tmp2);
+            const svc = createOwnedLanceDbService(tmp2, admitLanceInstance());
             await svc.store(node('x'));
             const conflict = new Error('lance error: Retryable commit conflict for version 9: This CreateIndex transaction was preempted by concurrent transaction Rewrite at version 9. Please retry.');
             let calls = 0;

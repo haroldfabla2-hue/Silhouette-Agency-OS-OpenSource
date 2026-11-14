@@ -1,3 +1,5 @@
+import { preserveOriginal } from './lifecycle/preserveOriginal';
+import { nervousOwner } from './lifecycle/preparationBindings';
 /**
  * CONNECTION NERVOUS SYSTEM
  * 
@@ -40,6 +42,7 @@ interface ConnectionState {
 // ==================== NERVOUS SYSTEM ====================
 
 class ConnectionNervousSystem {
+    private readonly ownership = nervousOwner();
     private connections: Map<string, ConnectionTarget> = new Map();
     private states: Map<string, ConnectionState> = new Map();
     private heartbeatInterval: NodeJS.Timeout | null = null;
@@ -48,6 +51,7 @@ class ConnectionNervousSystem {
 
     constructor() {
         console.log("[NERVOUS] 🧠 Connection Nervous System initializing...");
+        this.ownership.onSeal(() => this.stop());
     }
 
     /**
@@ -68,7 +72,7 @@ class ConnectionNervousSystem {
         console.log(`[NERVOUS] 📡 Registered: ${target.name} (${target.type})`);
 
         // Immediately check health of the new connection
-        this.checkConnection(target.id, target).catch(() => { });
+        this.ownership.invoke('register-health', () => this.checkConnection(target.id, target)).catch(() => { });
     }
 
     /**
@@ -100,11 +104,12 @@ class ConnectionNervousSystem {
         console.log("[NERVOUS] 💓 Starting heartbeat monitor...");
 
         // Initial health check
-        this.checkAllConnections();
+        this.ownership.invoke('initial-health', () => this.checkAllConnections());
 
         // Periodic heartbeat
         this.heartbeatInterval = setInterval(() => {
-            this.checkAllConnections();
+            if (!this.ownership.open) return;
+            this.ownership.invoke('heartbeat', () => this.checkAllConnections());
         }, this.HEARTBEAT_INTERVAL);
     }
 
@@ -314,7 +319,17 @@ class ConnectionNervousSystem {
 
 // ==================== SINGLETON & REGISTRATION ====================
 
-export const nervousSystem = new ConnectionNervousSystem();
+function constructOriginalConnectionNervousSystem(): ConnectionNervousSystem {
+    const owner = nervousOwner();
+    const operation = owner.beginConstruction();
+    try {
+        const instance = new ConnectionNervousSystem();
+        owner.constructed(operation, instance); return instance;
+    } catch (original) {
+        preserveOriginal(owner, 'construction-failure', () => owner.constructionFailed(operation, original)); throw original;
+    }
+}
+export const nervousSystem = constructOriginalConnectionNervousSystem();
 
 /**
  * Register default connections

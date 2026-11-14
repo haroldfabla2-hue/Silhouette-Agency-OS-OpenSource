@@ -1,3 +1,6 @@
+import { preserveOriginal } from './lifecycle/preserveOriginal';
+import { introspectionOwner } from './lifecycle/preparationBindings';
+import type { Scope, Operation } from './lifecycle/host';
 import { IntrospectionLayer, IntrospectionResult, ConceptVector, IntrospectionCapability, SystemProtocol, Observation, Orientation, Decision, CognitiveAction, AgentAction, ActionType } from "../types";
 import { ZOMBIE_THRESHOLD } from "../constants";
 
@@ -140,12 +143,13 @@ export class IntrospectionEngine {
         return this.isDreaming;
     }
 
-    constructor() {
+    constructor(private readonly ownership: Scope, operation: Operation) {
+        ownership.validateConstruction(operation);
         // Initialize with a default safety concept
         this.initialConceptOwner = this.observeOwnedWork(
-            this.injectInitialConcept(), this.initialStatus.concept);
+            this.ownership.invoke('original-concept', child => this.injectInitialConcept(child), operation), this.initialStatus.concept);
         // Preserve autostart. Goal loading has its own original promise/status.
-        this.initialGoalLoadOwner = this.observeOwnedWork(this.loadGoalsFromMemory(), this.initialStatus.goals);
+        this.initialGoalLoadOwner = this.observeOwnedWork(this.ownership.invoke('original-goals', child => this.loadGoalsFromMemory(child), operation), this.initialStatus.goals);
     }
 
     // --- UTILITIES ---
@@ -239,7 +243,7 @@ export class IntrospectionEngine {
         }
     }
 
-    private injectInitialConcept(): Promise<void> {
+    private injectInitialConcept(operation: Operation): Promise<void> {
         const label = 'Ethical Alignment';
         const strength = 1.5;
         const layer = 12;
@@ -254,7 +258,8 @@ export class IntrospectionEngine {
         this.activeConcepts.push(concept);
         this.capabilities.add(IntrospectionCapability.CONCEPT_INJECTION);
 
-        return import('./continuumMemory').then(async () => {
+        const request = this.ownership.reserveChild(operation, 'initial-concept-continuum-import');
+        return this.ownership.invokeChild(request, () => import('./continuumMemory')).then(async () => {
             const continuum = await continuumInstanceOwner;
             try {
                 const core = await continuum.readyCore();
@@ -501,8 +506,13 @@ export class IntrospectionEngine {
 
     // === GOAL-SETTING METHODS (AUTONOMY) ===
 
-    private async loadGoalsFromMemory(): Promise<void> {
+    private async loadGoalsFromMemory(operation: Operation): Promise<void> {
         {
+            // Reserve the exact original fallback before the first await. It
+            // remains admitted if seal occurs while SQLite lookup is running.
+            const fallback = this.ownership.reserveChild(operation, 'initial-goals-continuum-import');
+            let invokedFallback = false;
+            try {
             // Primary: Load from SQLite for full persistence
             const { sqliteService } = await import('./sqliteService');
             const storedGoals = sqliteService.getConfig('active_goals');
@@ -510,11 +520,14 @@ export class IntrospectionEngine {
             if (storedGoals && Array.isArray(storedGoals)) {
                 this.activeGoals = storedGoals;
                 console.log(`[INTROSPECTION] 🎯 Loaded ${this.activeGoals.length} goals from SQLite`);
+                preserveOriginal(this.ownership, 'stored-goals-guard', () => this.ownership.skipChild(fallback, 'ORIGINAL_GUARD_NOT_SELECTED'));
+                invokedFallback = true;
                 return;
             }
 
             // Fallback: Load from ContinuumMemory (legacy/migration)
-            await import('./continuumMemory');
+            invokedFallback = true;
+            await this.ownership.invokeChild(fallback, () => import('./continuumMemory'));
             const continuum = await continuumInstanceOwner;
             try {
                 const core = await continuum.readyCore();
@@ -541,6 +554,10 @@ export class IntrospectionEngine {
             if (this.activeGoals.length > 0) {
                 console.log(`[INTROSPECTION] 🎯 Migrated ${this.activeGoals.length} goals from ContinuumMemory`);
                 await this.writeGoalsSnapshot(); // Await initial migration readback
+            }
+            } catch (original) {
+                if (!invokedFallback) preserveOriginal(this.ownership, 'goals-fallback-abandon', () => this.ownership.abandonChild(fallback, original));
+                throw original;
             }
         }
     }
@@ -1494,4 +1511,15 @@ export class IntrospectionEngine {
     }
 }
 
-export const introspection = new IntrospectionEngine();
+
+/** Exact class factory: no caller-supplied construction function. */
+export function createOwnedIntrospectionEngine(ownership: Scope): IntrospectionEngine {
+    const operation = ownership.beginConstruction();
+    try {
+        const instance = new IntrospectionEngine(ownership, operation);
+        ownership.constructed(operation, instance); return instance;
+    } catch (original) {
+        preserveOriginal(ownership, 'construction-failure', () => ownership.constructionFailed(operation, original)); throw original;
+    }
+}
+export const introspection = createOwnedIntrospectionEngine(introspectionOwner());

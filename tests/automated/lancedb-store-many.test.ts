@@ -1,3 +1,5 @@
+import { createOwnedLanceDbService } from '../../services/lancedbService';
+import { admitLanceInstance } from '../../services/lifecycle/preparationBindings';
 /**
  * LanceDbService.storeMany — bulk seed/import path.
  * One merge transaction for the batch, same refusal rules and writeQueue
@@ -14,7 +16,7 @@ import { tmpdir } from 'node:os';
 
 const dirs: string[] = [];
 afterEach(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true }))); });
-const fresh = async () => { const dir = await mkdtemp(join(tmpdir(), 'store-many-')); dirs.push(dir); return new LanceDbService(dir); };
+const fresh = async () => { const dir = await mkdtemp(join(tmpdir(), 'store-many-')); dirs.push(dir); return createOwnedLanceDbService(dir, admitLanceInstance()); };
 const node = (id: string, content = 'bulk memory'): MemoryNode => ({ id, content, timestamp: 1000, tier: MemoryTier.MEDIUM, importance: 0.5, tags: [], accessCount: 0, lastAccess: 1000 });
 
 describe('LanceDbService.storeMany', () => {

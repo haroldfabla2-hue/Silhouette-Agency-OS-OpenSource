@@ -1,3 +1,5 @@
+import { preserveOriginal } from './lifecycle/preserveOriginal';
+import { consciousnessOwner } from './lifecycle/preparationBindings';
 
 import { ConsciousnessLevel, ConsciousnessMetrics, QualiaMap, MemoryNode } from "../types";
 import { continuum } from "./continuumMemory";
@@ -37,7 +39,7 @@ class ConsciousnessEngine {
         };
 
         // Initialize Identity if empty
-        this.identityInitialization = this.initializeIdentity();
+        this.identityInitialization = consciousnessOwner().invoke('original-identity', () => this.initializeIdentity());
         // Observe immediately without replacing the rejected promise callers own.
         void this.identityInitialization.catch(error => {
             console.error('[CONSCIOUSNESS] Identity initialization failed', error);
@@ -248,4 +250,14 @@ class ConsciousnessEngine {
     }
 }
 
-export const consciousness = new ConsciousnessEngine();
+function constructOriginalConsciousnessEngine(): ConsciousnessEngine {
+    const owner = consciousnessOwner();
+    const operation = owner.beginConstruction();
+    try {
+        const instance = new ConsciousnessEngine();
+        owner.constructed(operation, instance); return instance;
+    } catch (original) {
+        preserveOriginal(owner, 'construction-failure', () => owner.constructionFailed(operation, original)); throw original;
+    }
+}
+export const consciousness = constructOriginalConsciousnessEngine();

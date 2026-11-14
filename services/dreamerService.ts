@@ -1,3 +1,5 @@
+import { preserveOriginal } from './lifecycle/preserveOriginal';
+import { dreamerOwner } from './lifecycle/preparationBindings';
 import { verifyClaims, type CitedClaim } from './memoryCognition';
 import { continuum } from './continuumMemory';
 import { vectorMemory } from './vectorMemoryService';
@@ -9,6 +11,8 @@ import { systemBus } from './systemBus';
 import * as si from 'systeminformation'; // NEW: For Resource Monitoring
 
 export class DreamerService {
+    private readonly ownership = dreamerOwner();
+    constructor() { this.ownership.onSeal(() => this.stopDreamingLoop()); }
     private isDreaming: boolean = false;
     private isTraining: boolean = false; // Prevent concurrent training
     private dreamInterval: NodeJS.Timeout | null = null;
@@ -44,7 +48,8 @@ export class DreamerService {
         if (this.dreamInterval) return;
 
         // [OPTIMIZATION] Check PowerManager before starting
-        import('./powerManager').then(({ powerManager }) => {
+        this.ownership.invoke('original-power-check', () => import('./powerManager')).then(({ powerManager }) => {
+            if (!this.ownership.open) return;
             if (!powerManager.isDreamerEnabled) {
                 console.log("[DREAMER] 💤 Disabled by PowerManager (BALANCED mode). Use activateDreamer() to enable manually.");
                 return;
@@ -58,9 +63,11 @@ export class DreamerService {
         console.log("[DREAMER] 🌙 Dream Cycle Initiated...");
 
         // Check every 5 minutes if we should dream
-        this.dreamInterval = setInterval(async () => {
+        this.dreamInterval = setInterval(() => {
+            if (!this.ownership.open) return;
+            return this.ownership.invoke('dream-loop-tick', async operation => {
             if (this.memoriesAccumulated >= this.threshold) {
-                this.attemptDream();
+                this.ownership.invoke('accumulated-memories-dream', () => this.attemptDream(), operation);
             }
 
             // Event-based triggers (roadmap item 8): epiphanies, milestones,
@@ -88,6 +95,7 @@ export class DreamerService {
                     await this.triggerNeuralTraining();
                 }
             }
+            });
         }, 300000); // Increased to 5 minutes
     }
 
@@ -370,6 +378,7 @@ export class DreamerService {
             }
 
         } catch (e) {
+            this.ownership.failure('dream:SELECTED_ATTEMPT_FAILED', e);
             console.error("[DREAMER] Nightmare (Error):", e);
             if (propagateFailure) throw e;
         } finally {
@@ -381,6 +390,7 @@ export class DreamerService {
                     recordDreamCycle(loadDreamTriggerConfig().statePath, this.pendingTriggerReasons, this.lastCycleMemoryCount);
                     this.pendingTriggerReasons = [];
                 } catch (e) {
+                    this.ownership.failure('dream:COMPLETED_CYCLE_METRICS_FAILED', e);
                     console.warn('[DREAMER] Completed-cycle metrics persistence failed:', e);
                 }
             }
@@ -842,10 +852,12 @@ export class DreamerService {
                     }
                 }
             } catch (e) {
+                this.ownership.failure('deepdream:SELECTED_EUREKA_INTEGRATION_FAILED', e);
                 console.warn("[DREAMER] Eureka integration skipped:", e);
             }
 
         } catch (e) {
+            this.ownership.failure('deepdream:SELECTED_ATTEMPT_FAILED', e);
             console.error("[DREAMER] Deep Dream Error:", e);
         } finally {
             this.isDreaming = false;
@@ -917,6 +929,7 @@ export class DreamerService {
             }
 
         } catch (e) {
+            this.ownership.failure('eureka:SELECTED_GENERATION_FAILED', e);
             console.error("[DREAMER] Eureka Generation Failed:", e);
         } finally {
             this.isDreaming = false;
@@ -1114,4 +1127,14 @@ export class DreamerService {
 }
 
 
-export const dreamer = new DreamerService();
+function constructOriginalDreamerService(): DreamerService {
+    const owner = dreamerOwner();
+    const operation = owner.beginConstruction();
+    try {
+        const instance = new DreamerService();
+        owner.constructed(operation, instance); return instance;
+    } catch (original) {
+        preserveOriginal(owner, 'construction-failure', () => owner.constructionFailed(operation, original)); throw original;
+    }
+}
+export const dreamer = constructOriginalDreamerService();

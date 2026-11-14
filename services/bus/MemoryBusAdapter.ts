@@ -1,7 +1,15 @@
+import { deliverReservedHelpResponse } from '../lifecycle/correlatedHelpResponse';
+import type { Scope } from '../lifecycle/host';
 import { IBusAdapter } from "./IBusAdapter";
 import { ProtocolEvent, SystemProtocol, InterAgentMessage } from "../../types";
 
 export class MemoryBusAdapter implements IBusAdapter {
+    constructor(private readonly ownership: Scope) {
+        ownership.onSeal(() => {
+            const queued = [...this.mailboxes.values()].reduce((count, messages) => count + messages.length, 0);
+            if (queued) ownership.unknown('memory-mailbox:QUEUED_NOT_DURABLE_AT_SEAL');
+        });
+    }
     private listeners: Record<string, ((event: ProtocolEvent) => void)[]> = {};
     private mailboxes: Map<string, InterAgentMessage[]> = new Map();
 
@@ -18,7 +26,10 @@ export class MemoryBusAdapter implements IBusAdapter {
         if (this.listeners[event.type]) {
             this.listeners[event.type].forEach(handler => {
                 try {
-                    handler(event);
+                    if (!this.ownership.open) {
+                        deliverReservedHelpResponse(handler, event); return;
+                    }
+                    this.ownership.invoke('memory-delivery', () => handler(event));
                 } catch (e) {
                     console.error(`[BUS] Error in handler for ${event.type}`, e);
                 }
@@ -38,6 +49,7 @@ export class MemoryBusAdapter implements IBusAdapter {
     }
 
     async send(message: InterAgentMessage): Promise<void> {
+        if (!this.ownership.open) this.ownership.unknown('memory-mailbox:ADMITTED_SEND_QUEUED_AFTER_SEAL');
         if (!this.mailboxes.has(message.targetId)) {
             this.mailboxes.set(message.targetId, []);
         }

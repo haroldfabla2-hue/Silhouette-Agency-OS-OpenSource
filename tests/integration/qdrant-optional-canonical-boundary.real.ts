@@ -1,3 +1,5 @@
+import { createOwnedLanceDbService } from '../../services/lancedbService';
+import { admitLanceInstance } from '../../services/lifecycle/preparationBindings';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -33,7 +35,7 @@ try{
  const backend=new VectorMemoryService({url,collectionName:collection,enabled:async()=>true});assert.equal((await backend.connect()).state,'ready');
  const identity={model:'PUBLIC_BOUNDARY',version:'1',dimension:768};const vector=Array(768).fill(0);vector[0]=1;
  const node:any={id:'00000000-0000-4000-8000-000000000002',content:'Public canonical retained at optional failure boundary',tier:'DEEP',tags:['PUBLIC'],timestamp:1,importance:0.5,accessCount:0,lastAccess:1,embeddingIdentity:identity};
- const canonical=new LanceDbService(path.join(root,'lance'));await canonical.store(node,vector);
+ const canonical=createOwnedLanceDbService(path.join(root,'lance'), admitLanceInstance());await canonical.store(node,vector);
  const db=await lance.connect(path.join(root,'lance'));const snapshot=async()=>{
   const result:any={};for(const name of await db.tableNames()){const t=await db.openTable(name);const rows=await t.query().toArray();result[name]={version:await t.version(),digest:createHash('sha256').update(JSON.stringify(rows)).digest('hex'),count:rows.length};}return result;
  };

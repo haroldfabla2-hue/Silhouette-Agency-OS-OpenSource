@@ -1,3 +1,5 @@
+import { createOwnedLanceDbService } from '../../services/lancedbService';
+import { admitLanceInstance } from '../../services/lifecycle/preparationBindings';
 import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -100,7 +102,7 @@ describe('LanceDbService semantic search via portable JS scan', () => {
         const { mkdtempSync } = await import('node:fs');
         const { join: joinPath } = await import('node:path');
         const { tmpdir: tmpd } = await import('node:os');
-        const fresh = new LanceDbService(joinPath(mkdtempSync(joinPath(tmpd(), 'paged-')), 'db.lancedb'));
+        const fresh = createOwnedLanceDbService(joinPath(mkdtempSync(joinPath(tmpd(), 'paged-')), 'db.lancedb'), admitLanceInstance());
         await fresh.store(node('paged-a', 'alice') as any);
         await fresh.store(node('paged-b', 'alice') as any);
         await fresh.store(node('paged-c', 'bob') as any);

@@ -1,3 +1,5 @@
+import { createOwnedLanceDbService } from '../services/lancedbService';
+import { admitLanceInstance } from '../services/lifecycle/preparationBindings';
 /** Actual repository text, actual embeddings, real disk-backed LanceDB exact and IVF queries.
  * Lexical hash baseline only: these measurements do not validate a neural provider or production cutover.
  */
@@ -33,7 +35,7 @@ try {
         return { id: n.id, content, originalContent: '', tags: [''], importance: n.importance, timestamp: n.timestamp, tier: n.tier, ownerId: n.ownerId!, accessCount: 0, lastAccess: n.lastAccess, stabilityScore: 0, embedding_state: 'EMBEDDING_PENDING', json_data: JSON.stringify(n) };
     });
     await conn.createTable('memory_records_v2', records);
-    const db = new LanceDbService(path), provider = new LexicalHashProvider(64);
+    const db = createOwnedLanceDbService(path, admitLanceInstance()), provider = new LexicalHashProvider(64);
     const rollout = new MemoryProjectionRollout(path, db, { backfill: true, annShadow: true });
     const backfill = await rollout.backfill(provider, size);
     const index = await rollout.trainAnn(provider.identity, 32);

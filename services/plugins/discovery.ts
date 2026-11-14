@@ -1,3 +1,4 @@
+import { pluginsOwner } from '../lifecycle/preparationBindings';
 /**
  * CUSTOM PLUGIN DISCOVERY (R12)
  *
@@ -108,7 +109,11 @@ export async function discoverCustomPlugins(dir: string = DEFAULT_CUSTOM_PLUGINS
     for (const file of files.filter(isCandidateFile).sort()) {
         const fullPath = path.join(dir, file);
         try {
-            const mod = await import(pathToFileURL(fullPath).href);
+            const owner = pluginsOwner();
+            // Preserve loading support. The object is validated only after
+            // evaluation, so unreviewed source never proves closed evaluation.
+            owner.unknown('plugins:UNREVIEWED_MODULE_EVALUATION', true);
+            const mod = await owner.invoke('original-extension-import', () => import(pathToFileURL(fullPath).href));
             const candidate = mod.default ?? mod.plugin;
             const rejection = validatePlugin(candidate);
             if (rejection) {

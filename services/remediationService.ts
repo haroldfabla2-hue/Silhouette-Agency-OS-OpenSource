@@ -1,3 +1,6 @@
+import { preserveOriginal } from './lifecycle/preserveOriginal';
+import { remediationOwner } from './lifecycle/preparationBindings';
+import type { Operation } from './lifecycle/host';
 import { contextAssembler } from "./contextAssembler";
 import { generateAgentResponse } from "./geminiService";
 import { systemBus } from "./systemBus";
@@ -151,19 +154,29 @@ export class DockerSandbox implements SandboxEnvironment {
 }
 
 export class RemediationService {
+    private readonly ownership = remediationOwner();
     private static instance: RemediationService;
 
     // PA-038: Track repeated failures per agent for evolution escalation
     private failureCounts: Map<string, number> = new Map();
 
-    private constructor() {
+    private constructor(construction: Operation) {
+        this.ownership.validateConstruction(construction);
         // PA-008: Subscribe to voice engine incidents for auto-repair
         this.subscribeToVoiceIncidents();
     }
 
     public static getInstance(): RemediationService {
         if (!RemediationService.instance) {
-            RemediationService.instance = new RemediationService();
+            const owner = remediationOwner();
+            const operation = owner.beginConstruction();
+            try {
+                RemediationService.instance = new RemediationService(operation);
+                owner.constructed(operation, RemediationService.instance);
+            } catch (original) {
+                preserveOriginal(owner, 'construction-failure', () => owner.constructionFailed(operation, original));
+                throw original;
+            }
         }
         return RemediationService.instance;
     }
@@ -172,11 +185,12 @@ export class RemediationService {
      * PA-008: Subscribe to voice engine incident reports
      */
     private subscribeToVoiceIncidents(): void {
-        systemBus.subscribe(SystemProtocol.INCIDENT_REPORT, async (event) => {
+        const unsubscribe = systemBus.subscribe(SystemProtocol.INCIDENT_REPORT, async (event) => {
             if (event.payload?.source === 'voice_engine') {
-                await this.handleVoiceEngineIncident(event.payload);
+                await this.ownership.invoke('original-voice-incident-delivery', () => this.handleVoiceEngineIncident(event.payload));
             }
         });
+        this.ownership.onSeal(unsubscribe);
         console.log('[REMEDIATION] 🎤 Subscribed to voice engine incident reports');
     }
 

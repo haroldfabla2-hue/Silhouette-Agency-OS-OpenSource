@@ -1,3 +1,6 @@
+import { preserveOriginal } from './lifecycle/preserveOriginal';
+import { graphOwner } from './lifecycle/preparationBindings';
+import type { Operation, ChildReservation } from './lifecycle/host';
 import neo4j, { Driver, Session } from 'neo4j-driver';
 import crypto from 'crypto';
 import { lancedbService } from './lancedbService';
@@ -11,8 +14,15 @@ import { incidentRegistry } from './incidentRegistry';
 // The Structural Backbone of the Living Graph
 // Connects to Neo4j to store Nodes (Entities) and Edges (Relationships)
 
+type QueryConnectPlan = {
+    invocation: ChildReservation; schemas: ChildReservation[];
+    invocationTaken: boolean; schemasTaken: boolean;
+};
 class GraphService {
+    private readonly ownership = graphOwner();
     private driver: Driver | null = null;
+    private readonly originalDriverCloses = new WeakMap<Driver, () => ReturnType<Driver['close']>>();
+    private readonly disposedSchemaReservations = new WeakSet<ChildReservation>();
     private _isConnected: boolean = false; // Renamed to avoid conflict with method
     private isRegistered: boolean = false;
     private connectionTimeout: NodeJS.Timeout | null = null;
@@ -30,15 +40,23 @@ class GraphService {
 
     constructor() {
         // Lazy initialization - connection managed by NervousSystem
+        this.ownership.onSeal(() => {
+            if (this.connectionTimeout) clearTimeout(this.connectionTimeout);
+            this.connectionTimeout = null;
+        });
     }
 
     /** Check if Neo4j is connected. Used by health check endpoint. */
-    public async isConnected(): Promise<boolean> {
+    public isConnected(): Promise<boolean> {
+        return this.ownership.invoke('original-health-probe', () => this.isConnectedOriginal());
+    }
+    private async isConnectedOriginal(): Promise<boolean> {
         if (!this.driver) return false;
         try {
             await this.driver.verifyConnectivity();
             return true;
-        } catch {
+        } catch (original) {
+            this.ownership.failure('health:ORIGINAL_UNAVAILABLE', original);
             return false;
         }
     }
@@ -47,23 +65,57 @@ class GraphService {
      * Connects to Neo4j with Exponential Backoff Retry.
      * Fires a SYSTEM_ALERT if all retries fail so the Swarm can self-heal.
      */
-    public async connect(retries = 3, delayMs = 2000, force = false): Promise<boolean> {
+    public connect(retries = 3, delayMs = 2000, force = false): Promise<boolean> {
+        return this.ownership.invoke('connect', operation => this.connectOriginal(operation, retries, delayMs, force));
+    }
+    private async connectOriginal(operation: Operation, retries: number, delayMs: number, force: boolean,
+        admittedSchemas?: ChildReservation[]): Promise<boolean> {
+        try {
         if (this._isConnected && this.driver) {
             this.resetConnectionTimeout(); // Keep alive on manual connect
+            if (admittedSchemas) this.disposeUnselectedSchemas(admittedSchemas);
             return true;
         }
 
         // Circuit breaker (automatic callers only; the nervous system and explicit reconnects pass force=true)
-        if (!force && Date.now() < this.connectCooldownUntil) return false;
+        if (!force && Date.now() < this.connectCooldownUntil) {
+            if (admittedSchemas) this.disposeUnselectedSchemas(admittedSchemas);
+            return false;
+        }
 
         const config = configLoader.getConfig();
         if (config.modules.graph === false) {
             console.log("[GRAPH] 🚫 Graph module disabled in config (Lite Mode). Skipping connection.");
+            if (admittedSchemas) this.disposeUnselectedSchemas(admittedSchemas);
             return false;
         }
 
+        // One exact connect obligation, not a service-wide healthy flag. This
+        // input identity deliberately does not certify environment/credentials;
+        // the retained recovery verdict stays NOT_CERTIFIED and aggregation
+        // remains conservative until that product mapping is reviewed.
+        const recoveryInputs = Object.freeze({ retries, delayMs, force });
+        const recovery = this.ownership.reserveRecovery(operation, 'connect-obligation', recoveryInputs);
+        // Actual SDK inputs captured only in this invocation's private closure.
+        // Never serialize these values or send credential text to the ledger.
+        let originalDriverInputs: readonly unknown[] | undefined;
+        let sameDriverInputs = true;
+        let completeDriverInputAttempts = 0;
+        const schemaPlan: ChildReservation[] = admittedSchemas ?? [];
+        try {
+            if (!admittedSchemas) for (let index = 0; index < retries; index++) schemaPlan.push(this.ownership.reserveChild(operation, 'original-schema-immediate:' + index));
+        } catch (original) {
+            for (const child of schemaPlan) preserveOriginal(this.ownership, 'schema-plan-abandon', () => {
+                this.ownership.abandonChild(child, original); this.disposedSchemaReservations.add(child);
+            });
+            preserveOriginal(this.ownership, 'connect-plan-terminal', () => this.ownership.recoveryTerminal(recovery, operation, recoveryInputs));
+            throw original;
+        }
         let attempt = 0;
         while (attempt < retries) {
+            const schemaChild = schemaPlan[attempt];
+            let schemaInvoked = false;
+            let acquiredCandidate: Driver | undefined;
             try {
                 if (attempt > 0) {
                     console.log(`[GRAPH] 🔄 Reconnection attempt ${attempt + 1}/${retries}...`);
@@ -72,19 +124,77 @@ class GraphService {
                     console.log("[GRAPH] 🔗 Connecting to Neo4j...");
                 }
 
-                this.driver = neo4j.driver(
-                    process.env.NEO4J_URI || 'bolt://127.0.0.1:7787',
+                const reservation = this.ownership.reserveResource(operation, 'driver-candidate');
+                let candidate: Driver;
+                const actualInputs: unknown[] = [];
+                const capture = <T>(value: T): T => { actualInputs.push(value); return value; };
+                try { candidate = neo4j.driver(
+                    capture(process.env.NEO4J_URI || 'bolt://127.0.0.1:7787'),
                     neo4j.auth.basic(
-                        process.env.NEO4J_USER || 'neo4j',
-                        process.env.NEO4J_PASSWORD || 'changeme_on_first_run'
+                        capture(process.env.NEO4J_USER || 'neo4j'),
+                        capture(process.env.NEO4J_PASSWORD || 'changeme_on_first_run')
                     ),
                     {
-                        maxConnectionLifetime: 30 * 60 * 1000,
-                        maxConnectionPoolSize: 50,
-                        connectionAcquisitionTimeout: 5000
+                        maxConnectionLifetime: capture(30 * 60 * 1000),
+                        maxConnectionPoolSize: capture(50),
+                        connectionAcquisitionTimeout: capture(5000)
                     }
                 );
+                if (actualInputs.length === 6) {
+                    if (!originalDriverInputs) originalDriverInputs = [...actualInputs];
+                    else if (!actualInputs.every((value, index) => Object.is(value, originalDriverInputs![index]))) sameDriverInputs = false;
+                    completeDriverInputAttempts++;
+                }
+                actualInputs.length = 0;
 
+                } catch (original) {
+                    // A throwing SDK/auth allocation may not have consumed all
+                    // inputs. Do not infer same-obligation parameter equivalence.
+                    sameDriverInputs = false; actualInputs.length = 0;
+                    preserveOriginal(this.ownership, 'driver-allocation-failed', () => this.ownership.releaseUnused(reservation)); throw original;
+                }
+                this.driver = candidate;
+                let closeSettled = false;
+                let closeState: 'IDLE' | 'CALLING' | 'PENDING' | 'FULFILLED' = 'IDLE';
+                let closeReturned: ReturnType<Driver['close']>;
+                let closeAttempt = 0;
+                const originalClose = (): ReturnType<Driver['close']> => {
+                    if (closeState === 'CALLING') {
+                        const original = new Error('Reentrant Neo4j close before original Promise is published');
+                        preserveOriginal(this.ownership, 'driver:CLOSE_REENTRY_EVIDENCE_FAILED', () => {
+                            this.ownership.failure('driver:CLOSE_REENTRY_DURING_ATTEMPT:' + closeAttempt, original);
+                        });
+                        throw original;
+                    }
+                    if (closeState === 'PENDING' || closeState === 'FULFILLED') return closeReturned;
+                    // Publish CALLING before external SDK code. Synchronous
+                    // reentry cannot receive an uninitialized Promise or start
+                    // a concurrent native close. No invented proxy Promise.
+                    closeState = 'CALLING';
+                    const attempt = ++closeAttempt;
+                    try { closeReturned = candidate.close(); }
+                    catch (original) {
+                        closeState = 'IDLE';
+                        this.ownership.failure('driver:CLOSE_SYNC_FAILED_ATTEMPT:' + attempt, original); throw original;
+                    }
+                    closeState = 'PENDING';
+                    void closeReturned.then(() => {
+                        closeSettled = true; closeState = 'FULFILLED';
+                    }, original => {
+                        // SDK6.0.1 supports a later sequential close after a
+                        // partial rejection. Preserve each failure, share only
+                        // in-flight work and fulfilled success, never poison
+                        // every future original request with the first reject.
+                        closeState = 'IDLE';
+                        this.ownership.failure('driver:CLOSE_FAILED_ATTEMPT:' + attempt, original);
+                    });
+                    return closeReturned;
+                };
+                this.originalDriverCloses.set(candidate, originalClose);
+                this.ownership.acquire(reservation, candidate, originalClose,
+                    () => ({ source: 'graph:driver-candidate', disposition: closeSettled ? 'CLOSED' : 'INCOMPLETE',
+                    ...(!closeSettled ? { reason: 'DRIVER_CLOSE_UNVERIFIED' } : {}) }), [], 'NEO4J_DRIVER_SOURCE_MANAGED');
+                acquiredCandidate = candidate;
                 await this.driver.verifyConnectivity();
                 this._isConnected = true;
                 this.idleClosed = false;
@@ -99,19 +209,32 @@ class GraphService {
                 this.registerWithNervousSystem();
 
                 // Initialize schema in background
-                setImmediate(() => this.initializeSchema().catch(() => { }));
-
+                schemaInvoked = true;
+                this.disposedSchemaReservations.add(schemaChild);
+                setImmediate(() => this.ownership.invokeChild(schemaChild, operation => this.initializeSchema(operation)).catch(() => { }));
+                this.disposeUnselectedSchemas(schemaPlan.slice(attempt + 1));
+                preserveOriginal(this.ownership, 'connect-fulfillment-evidence', () => this.ownership.recoveryFulfilled(recovery, operation, recoveryInputs, true,
+                    sameDriverInputs && completeDriverInputAttempts === attempt + 1 ? 'GRAPH_DRIVER_INPUTS_EQUAL' : 'UNVERIFIED'));
+                originalDriverInputs = undefined;
                 return true;
 
             } catch (error: any) {
                 console.error(`[GRAPH] ❌ Connection failed (Attempt ${attempt + 1}/${retries}):`, error.message);
+                if (!schemaInvoked) {
+                    this.disposedSchemaReservations.add(schemaChild);
+                    preserveOriginal(this.ownership, 'schema-attempt-abandon', () => this.ownership.abandonChild(schemaChild, error));
+                }
+                preserveOriginal(this.ownership, 'connect-attempt-evidence', () => this.ownership.recoveryAttemptFailed(recovery, operation, recoveryInputs, error, acquiredCandidate ? [acquiredCandidate] : []));
                 this._isConnected = false;
+                // Actual failed candidate remains retained by its resource owner.
                 this.driver = null;
                 attempt++;
             }
         }
 
-        // Exhausted retries
+        originalDriverInputs = undefined;
+        // Exhausted retries. Original false/fallback remains unchanged.
+        preserveOriginal(this.ownership, 'connect-terminal-evidence', () => this.ownership.recoveryTerminal(recovery, operation, recoveryInputs));
         this.connectCooldownUntil = Date.now() + this.connectCooldownMs();
         if (this.outageAlerted) return false; // same outage: already alerted, stay quiet
         this.outageAlerted = true;
@@ -134,10 +257,32 @@ class GraphService {
         }
 
         return false;
+        } catch (original) {
+            // Also settle pre-admitted schemas when an earlier original config
+            // or bookkeeping path throws before entering the retry loop.
+            if (admittedSchemas) for (const child of admittedSchemas) {
+                if (this.disposedSchemaReservations.has(child)) continue;
+                preserveOriginal(this.ownership, 'query-connect-schema-abandon', () => {
+                    this.ownership.abandonChild(child, original); this.disposedSchemaReservations.add(child);
+                });
+            }
+            throw original;
+        }
+    }
+
+    private closeOriginalDriverRequest(driver: Driver): ReturnType<Driver['close']> {
+        // Preserve the original public/idle/stale-query close invocation, but
+        // share its source-managed attempt state with host teardown. This is NOT evidence of
+        // exclusive quiescence; caller/borrow/reconnect races remain residual.
+        this.ownership.unknown('driver:ORIGINAL_CLOSE_REQUEST_QUIESCENCE_UNVERIFIED');
+        const close = this.originalDriverCloses.get(driver);
+        if (!close) throw new Error('Graph driver lacks its exact acquired close owner');
+        return close();
     }
 
     private resetConnectionTimeout() {
         if (this.connectionTimeout) clearTimeout(this.connectionTimeout);
+        if (!this.ownership.open) { this.connectionTimeout = null; return; }
         this.connectionTimeout = setTimeout(() => {
             console.log("[GRAPH] 💤 Idle timeout reached. Closing Neo4j connection.");
             this.idleClosed = true;
@@ -186,7 +331,7 @@ class GraphService {
 
         if (this.driver) {
             try {
-                await this.driver.close();
+                await this.closeOriginalDriverRequest(this.driver);
                 console.log("[GRAPH] 🔌 Disconnected from Neo4j.");
             } catch { }
         }
@@ -218,9 +363,46 @@ class GraphService {
     }
 
 
-    private async initializeSchema() {
-        if (!this.driver) return;
-        const session = this.driver.session();
+    /** Each local session is an exclusive allocation at the original source
+     * position, not a borrowed/public driver close. Original finally and host
+     * share exactly one original session.close attempt. The dependency points
+     * to the captured driver object, never the mutable this.driver field.
+     */
+    private retainOriginalSession(operation: Operation, driver: Driver) {
+        const reservation = this.ownership.reserveResource(operation, 'local-session');
+        let session: ReturnType<Driver['session']>;
+        try { session = driver.session(); }
+        catch (original) {
+            preserveOriginal(this.ownership, 'session-allocation-failed', () => this.ownership.releaseUnused(reservation));
+            throw original;
+        }
+        let invoked = false, returned: ReturnType<typeof session.close>, didThrow = false, thrown: unknown;
+        let settled = false;
+        const closeOriginal = (): ReturnType<typeof session.close> => {
+            if (invoked) { if (didThrow) throw thrown; return returned; }
+            invoked = true;
+            try { returned = session.close(); }
+            catch (original) {
+                didThrow = true; thrown = original;
+                this.ownership.failure('session-close-original-sync', original); throw original;
+            }
+            // Observe the same Promise, do not turn rejection into success.
+            void returned.then(() => { settled = true; }, original => {
+                this.ownership.failure('session-close-original', original);
+            });
+            return returned;
+        };
+        this.ownership.acquire(reservation, session, closeOriginal,
+            () => ({ source: 'graph:local-session', disposition: settled ? 'CLOSED' : 'INCOMPLETE',
+                ...(!settled ? { reason: 'SESSION_ORIGINAL_CLOSE_UNVERIFIED' } : {}) }), [driver]);
+        return { session, closeOriginal };
+    }
+
+    private async initializeSchema(operation: Operation) {
+        if (!this.driver) {
+            this.ownership.unknown('schema:SELECTED_WITHOUT_DRIVER'); return;
+        }
+        const { session, closeOriginal } = this.retainOriginalSession(operation, this.driver);
         try {
             // Ensure uniqueness for critical entities
             await session.run(`CREATE CONSTRAINT IF NOT EXISTS FOR (u:User) REQUIRE u.id IS UNIQUE`);
@@ -228,53 +410,113 @@ class GraphService {
             await session.run(`CREATE CONSTRAINT IF NOT EXISTS FOR (e:Entity) REQUIRE e.id IS UNIQUE`);
             console.log("[GRAPH] 🛡️ Schema Constraints Verified.");
         } catch (e) {
+            this.ownership.failure('schema:SELECTED_CONSTRAINT_FAILED', e);
             console.warn("[GRAPH] Schema Init Warning:", e);
         } finally {
-            await session.close();
+            await closeOriginal();
         }
     }
 
-    public async runQuery(cypher: string, params: any = {}) {
-        if (!this._isConnected || !this.driver) {
-            const connected = await this.connect();
-            if (!connected || !this.driver) {
-                // Fallback to SQLite query execution
-                return this.runSqliteQuery(cypher, params);
-            }
+    private disposeUnselectedSchemas(schemas: readonly ChildReservation[]): void {
+        for (const child of schemas) {
+            if (this.disposedSchemaReservations.has(child)) continue;
+            preserveOriginal(this.ownership, 'schema-original-guard', () => {
+                this.ownership.skipChild(child, 'ORIGINAL_GUARD_NOT_SELECTED');
+                this.disposedSchemaReservations.add(child);
+            });
         }
-
-        this.resetConnectionTimeout(); // Keep alive
-
-        const session = this.driver.session();
+    }
+    private reserveQueryConnect(operation: Operation, source: string): QueryConnectPlan {
+        const invocation = this.ownership.reserveChild(operation, source);
+        const schemas: ChildReservation[] = [];
         try {
-            const result = await session.run(cypher, params);
-            return result.records.map(record => record.toObject());
-        } catch (error: any) {
-            // Auto-recovery for stale connections
-            if (error.code === 'ServiceUnavailable' || error.code === 'SessionExpired') {
-                console.warn("[GRAPH] ⚠️ Connection stale, reconnecting...");
-                this._isConnected = false;
-                if (this.driver) await this.driver.close();
-                this.driver = null;
-
-                // Retry once
-                await this.connect();
-                if (this.driver) {
-                    const newSession = this.driver.session();
-                    try {
-                        const result = await newSession.run(cypher, params);
-                        return result.records.map(record => record.toObject());
-                    } finally {
-                        await newSession.close();
-                    }
+            // Both original query connect callsites use the original defaults.
+            // No policy/default value change: three exact schema retry branches.
+            for (let index = 0; index < 3; index++) schemas.push(this.ownership.reserveChild(operation, source + ':schema:' + index));
+        } catch (original) {
+            preserveOriginal(this.ownership, source + ':reserve-abandon', () => this.ownership.abandonChild(invocation, original));
+            for (const child of schemas) preserveOriginal(this.ownership, source + ':reserve-schema-abandon', () => this.ownership.abandonChild(child, original));
+            throw original;
+        }
+        return { invocation, schemas, invocationTaken: false, schemasTaken: false };
+    }
+    private invokeQueryConnect(plan: QueryConnectPlan): Promise<boolean> {
+        plan.invocationTaken = true;
+        return this.ownership.invokeChild(plan.invocation, operation => {
+            plan.schemasTaken = true;
+            return this.connectOriginal(operation, 3, 2000, false, plan.schemas);
+        });
+    }
+    private finishQueryPlan(plan: QueryConnectPlan, failed: boolean, original?: unknown): void {
+        if (!plan.invocationTaken) preserveOriginal(this.ownership, 'query-connect-unselected', () => {
+            if (failed) this.ownership.abandonChild(plan.invocation, original);
+            else this.ownership.skipChild(plan.invocation, 'ORIGINAL_GUARD_NOT_SELECTED');
+        });
+        if (!plan.schemasTaken) {
+            if (!failed) this.disposeUnselectedSchemas(plan.schemas);
+            else for (const child of plan.schemas) preserveOriginal(this.ownership, 'query-connect-not-reached', () => {
+                this.ownership.abandonChild(child, original); this.disposedSchemaReservations.add(child);
+            });
+        }
+    }
+    public runQuery(cypher: string, params: any = {}) {
+        return this.ownership.invoke('query', operation => this.runQueryOriginal(operation, cypher, params));
+    }
+    private async runQueryOriginal(operation: Operation, cypher: string, params: any) {
+        const plans: QueryConnectPlan[] = [];
+        let failed = false, originalError: unknown;
+        try {
+            plans.push(this.reserveQueryConnect(operation, 'original-query-lazy-connect'));
+            plans.push(this.reserveQueryConnect(operation, 'original-query-stale-reconnect'));
+            const [lazyConnect, staleReconnect] = plans;
+            if (!this._isConnected || !this.driver) {
+                const connected = await this.invokeQueryConnect(lazyConnect);
+                if (!connected || !this.driver) {
+                    // Fallback to SQLite query execution
+                    return this.runSqliteQuery(cypher, params);
                 }
             }
 
-            console.error(`[GRAPH] Query Failed: ${cypher.substring(0, 50)}...`, error);
-            throw error;
-        } finally {
-            await session.close();
-        }
+            this.resetConnectionTimeout(); // Keep alive
+
+            const { session, closeOriginal } = this.retainOriginalSession(operation, this.driver);
+            try {
+                const result = await session.run(cypher, params);
+                return result.records.map(record => record.toObject());
+            } catch (error: any) {
+                // Keep actual original failed run even if recovery returns later.
+                // Recovery classification remains conservative, separate from close.
+                this.ownership.failure('query:ORIGINAL_RUN_FAILED', error);
+                // Auto-recovery for stale connections
+                if (error.code === 'ServiceUnavailable' || error.code === 'SessionExpired') {
+                    console.warn("[GRAPH] ⚠️ Connection stale, reconnecting...");
+                    this._isConnected = false;
+                    if (this.driver) await this.closeOriginalDriverRequest(this.driver);
+                    this.driver = null;
+
+                    // Retry once
+                    await this.invokeQueryConnect(staleReconnect);
+                    if (this.driver) {
+                        const retained = this.retainOriginalSession(operation, this.driver);
+                        try {
+                            const result = await retained.session.run(cypher, params);
+                            return result.records.map(record => record.toObject());
+                        } catch (original) {
+                            this.ownership.failure('query:RETRY_RUN_FAILED', original);
+                            throw original;
+                        } finally {
+                            await retained.closeOriginal();
+                        }
+                    }
+                }
+
+                console.error(`[GRAPH] Query Failed: ${cypher.substring(0, 50)}...`, error);
+                throw error;
+            } finally {
+                await closeOriginal();
+            }
+        } catch (original) { failed = true; originalError = original; throw original; }
+        finally { for (const plan of plans) this.finishQueryPlan(plan, failed, originalError); }
     }
 
     /**
@@ -906,7 +1148,7 @@ class GraphService {
 
     public async close() {
         if (this.driver) {
-            await this.driver.close();
+            await this.closeOriginalDriverRequest(this.driver);
             this._isConnected = false;
             console.log("[GRAPH] 🔌 Disconnected.");
         }
@@ -1254,4 +1496,14 @@ class GraphService {
     }
 }
 
-export const graph = new GraphService();
+function constructOriginalGraphService(): GraphService {
+    const owner = graphOwner();
+    const operation = owner.beginConstruction();
+    try {
+        const instance = new GraphService();
+        owner.constructed(operation, instance); return instance;
+    } catch (original) {
+        preserveOriginal(owner, 'construction-failure', () => owner.constructionFailed(operation, original)); throw original;
+    }
+}
+export const graph = constructOriginalGraphService();

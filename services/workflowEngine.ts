@@ -1,3 +1,6 @@
+import { preserveOriginal } from './lifecycle/preserveOriginal';
+import { workflowOwner } from './lifecycle/preparationBindings';
+import type { Operation } from './lifecycle/host';
 import { WorkflowStage, AutonomousConfig, IntrospectionLayer, WorkflowMutation, SystemMode, SystemProtocol, MorphPayload } from "../types";
 import { orchestrator } from "./orchestrator";
 import { continuum } from "./continuumMemory";
@@ -15,6 +18,7 @@ import { remediation } from "./remediationService";
 import { architect } from "./architectService"; // [PHASE 8]
 
 class WorkflowEngine {
+    private readonly ownership = workflowOwner();
   // ... (properties)
   private currentStage: WorkflowStage = WorkflowStage.IDLE;
   private config: AutonomousConfig;
@@ -35,7 +39,8 @@ class WorkflowEngine {
   private pipelineData: any = {};
   private resumeChecked = false;
 
-  constructor() {
+  constructor(construction: Operation) {
+        this.ownership.validateConstruction(construction);
 
     this.config = {
       enabled: false,
@@ -49,18 +54,20 @@ class WorkflowEngine {
 
     // [INTEGRITY FIX] Listen for Distributed Agent Results
     // This allows sub-agents to trigger protocols (Create File, Run Test, etc.)
-    systemBus.subscribe(SystemProtocol.TASK_COMPLETION, async (event) => {
+    const offCompletion = systemBus.subscribe(SystemProtocol.TASK_COMPLETION, async (event) => {
       if (event.payload.result) {
         console.log(`[WORKFLOW] 🔗 Integrating Result from ${event.payload.agentId}`);
         // Use the Robust Neural Feedback Loop
-        await this.handleDistributedResult(event.payload.agentId, event.payload.result);
+        await this.ownership.invoke('original-distributed-result', () => this.handleDistributedResult(event.payload.agentId, event.payload.result));
       }
     });
 
     // Handle standard research requests too
-    systemBus.subscribe(SystemProtocol.RESEARCH_REQUEST, async (event) => {
+    const offResearch = systemBus.subscribe(SystemProtocol.RESEARCH_REQUEST, async (event) => {
       // Logic for research protocols if needed
     });
+    this.ownership.onSeal(offCompletion);
+    this.ownership.onSeal(offResearch);
   }
 
   public updateConfig(newConfig: AutonomousConfig) {
@@ -716,4 +723,15 @@ class WorkflowEngine {
   }
 }
 
-export const workflowEngine = new WorkflowEngine();
+function constructOriginalWorkflowEngine(): WorkflowEngine {
+    const owner = workflowOwner();
+    const operation = owner.beginConstruction();
+    try {
+        const instance = new WorkflowEngine(operation);
+        owner.constructed(operation, instance); return instance;
+    } catch (original) {
+        preserveOriginal(owner, 'construction-failure', () => owner.constructionFailed(operation, original));
+        throw original;
+    }
+}
+export const workflowEngine = constructOriginalWorkflowEngine();

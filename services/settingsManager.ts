@@ -1,3 +1,5 @@
+import { preserveOriginal } from './lifecycle/preserveOriginal';
+import { settingsOwner } from './lifecycle/preparationBindings';
 import { api } from "../utils/api";
 import { SettingsState, IntegrationSchema, PermissionMatrix, UserRole } from "../types";
 
@@ -6,6 +8,7 @@ import { SettingsState, IntegrationSchema, PermissionMatrix, UserRole } from "..
 // Integrates with Continuum for persistence.
 
 class SettingsManager {
+    private readonly ownership = settingsOwner();
     private state: SettingsState;
     private readonly STORAGE_KEY = 'silhouette_settings_v1';
 
@@ -56,9 +59,9 @@ class SettingsManager {
         // Initialize default integrations if missing
         this.ensureDefaultIntegrations();
         // Migrate any existing localStorage secrets to server-side vault
-        this.migrateLocalStorageSecrets();
+        this.ownership.invoke('original-migration', () => this.migrateLocalStorageSecrets());
         // Load server-side secret status (which services are configured)
-        this.loadServerSecrets();
+        this.ownership.invoke('original-status', () => this.loadServerSecrets());
     }
 
     public getSettings(): SettingsState {
@@ -373,4 +376,14 @@ class SettingsManager {
 
 }
 
-export const settingsManager = new SettingsManager();
+function constructOriginalSettingsManager(): SettingsManager {
+    const owner = settingsOwner();
+    const operation = owner.beginConstruction();
+    try {
+        const instance = new SettingsManager();
+        owner.constructed(operation, instance); return instance;
+    } catch (original) {
+        preserveOriginal(owner, 'construction-failure', () => owner.constructionFailed(operation, original)); throw original;
+    }
+}
+export const settingsManager = constructOriginalSettingsManager();

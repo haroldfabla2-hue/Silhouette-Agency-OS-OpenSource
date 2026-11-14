@@ -1,3 +1,5 @@
+import { preserveOriginal } from './lifecycle/preserveOriginal';
+import { neuroLinkOwner } from './lifecycle/preparationBindings';
 
 import { NeuroLinkNode, NeuroLinkStatus, SystemProtocol } from "../types";
 import { systemBus } from "./systemBus";
@@ -7,10 +9,12 @@ import { systemBus } from "./systemBus";
 // Manages real-time WebSocket tunnels to deployed child applications.
 
 export class NeuroLinkService {
+    private readonly ownership = neuroLinkOwner();
     private discoveryInterval: any;
     private nodes: Map<string, NeuroLinkNode> = new Map();
 
     constructor() {
+        this.ownership.onSeal(() => { if (this.discoveryInterval) clearInterval(this.discoveryInterval); });
         this.startDiscovery();
     }
 
@@ -29,7 +33,7 @@ export class NeuroLinkService {
         };
 
         this.nodes.set(projectId, node);
-        this.checkNodeHealth(node); // Immediate check
+        this.ownership.invoke('register-health', () => this.checkNodeHealth(node)); // Immediate check
     }
 
     public getNodes(): NeuroLinkNode[] {
@@ -66,7 +70,8 @@ export class NeuroLinkService {
         // Real Service Discovery Loop
         this.discoveryInterval = setInterval(() => {
             this.nodes.forEach(node => {
-                this.checkNodeHealth(node);
+                if (!this.ownership.open) return;
+                this.ownership.invoke('discovery-health', () => this.checkNodeHealth(node));
             });
         }, 5000); // Check every 5 seconds
     }
@@ -102,4 +107,14 @@ export class NeuroLinkService {
     }
 }
 
-export const neuroLink = new NeuroLinkService();
+function constructOriginalNeuroLinkService(): NeuroLinkService {
+    const owner = neuroLinkOwner();
+    const operation = owner.beginConstruction();
+    try {
+        const instance = new NeuroLinkService();
+        owner.constructed(operation, instance); return instance;
+    } catch (original) {
+        preserveOriginal(owner, 'construction-failure', () => owner.constructionFailed(operation, original)); throw original;
+    }
+}
+export const neuroLink = constructOriginalNeuroLinkService();

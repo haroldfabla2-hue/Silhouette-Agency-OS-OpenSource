@@ -1,3 +1,4 @@
+import { pluginsOwner } from '../lifecycle/preparationBindings';
 import { IPlugin } from './pluginInterface';
 import { toolRegistry, DynamicTool } from '../tools/toolRegistry';
 import { skillRegistry } from '../skills/skillRegistry';
@@ -93,7 +94,7 @@ class PluginRegistry {
             try {
                 // 1. Lifecycle: onInit
                 if (plugin.onInit) {
-                    await plugin.onInit();
+                    await pluginsOwner().invoke('original-plugin-init', () => plugin.onInit!());
                 }
 
                 // 2. Register Tools
@@ -153,7 +154,7 @@ class PluginRegistry {
 
                 // 4. Lifecycle: onStart
                 if (plugin.onStart) {
-                    await plugin.onStart();
+                    await pluginsOwner().invoke('original-plugin-start', () => plugin.onStart!());
                 }
 
                 // 5. Auto-register monitoring with Nervous System
@@ -209,6 +210,7 @@ class PluginRegistry {
                 try {
                     await plugin.onStop();
                 } catch (error) {
+                    pluginsOwner().failure('plugin:onStop', error);
                     console.error(`[PluginRegistry] Error stopping ${plugin.name}:`, error);
                 }
             }

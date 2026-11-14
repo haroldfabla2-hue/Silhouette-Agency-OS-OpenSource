@@ -1,9 +1,13 @@
+import { preserveOriginal } from './lifecycle/preserveOriginal';
+import { redisOwner } from './lifecycle/preparationBindings';
+import type { Operation } from './lifecycle/host';
 import { REDIS_CONFIG } from '../constants';
 import { incidentRegistry } from './incidentRegistry';
 
 const MOCK_STORE_MAX_SIZE = 10000; // Eviction threshold for in-memory fallback
 
 class RedisService {
+    private readonly ownership = redisOwner();
     private client: any;
     private isConnected: boolean = false;
     private isMock: boolean = false;
@@ -18,7 +22,10 @@ class RedisService {
         return this.isMock;
     }
 
-    public async connect() {
+    public connect() {
+        return this.ownership.invoke('original-connect', operation => this.connectOriginal(operation));
+    }
+    private async connectOriginal(operation: Operation) {
         // 1. Browser Safety Check: Never run in browser
         if (typeof window !== 'undefined') return;
 
@@ -32,7 +39,8 @@ class RedisService {
                 const redisUrl = `redis://${REDIS_CONFIG.host}:${REDIS_CONFIG.port}`;
                 console.log(`[REDIS] Connecting to ${REDIS_CONFIG.host}:${REDIS_CONFIG.port}...`);
 
-                this.client = createClient({
+                const reservation = this.ownership.reserveResource(operation, 'service-client-candidate');
+                try { this.client = createClient({
                     url: redisUrl,
                     password: REDIS_CONFIG.password || undefined,
                     socket: {
@@ -45,10 +53,24 @@ class RedisService {
                             return Math.min(retries * 100, 3000);
                         }
                     }
-                });
+                }); }
+                catch (original) {
+                    preserveOriginal(this.ownership, 'client-allocation-failed', () => this.ownership.releaseUnused(reservation));
+                    throw original;
+                }
+                const acquired = this.client;
+                this.ownership.acquire(reservation, acquired, async () => {
+                    // RedisService owns this exact createClient result. A bus or
+                    // borrowed bridge never closes it. Original public/fallback
+                    // disconnect is still unresolved and separately flagged.
+                    if (acquired.isOpen) await acquired.close();
+                }, () => ({ source: 'redis:service-client-candidate',
+                    disposition: acquired.isOpen ? 'INCOMPLETE' : 'CLOSED',
+                    ...(acquired.isOpen ? { reason: 'REDIS_SERVICE_CLIENT_STILL_OPEN' } : {}) }));
 
                 this.client.on('error', (err: any) => {
                     // Only log if not already in mock mode to avoid spam
+                    this.ownership.failure('service-client:EMITTED_ERROR', err);
                     if (!this.isMock) console.error('[REDIS] Client Error:', err.message);
                 });
 
@@ -61,9 +83,14 @@ class RedisService {
 
                 await this.client.connect();
             } catch (e: any) {
+                this.ownership.failure('service-connect:MEMORY_AVAILABILITY_NOT_DURABILITY_FALLBACK', e);
                 console.warn(`[REDIS] Connection Failed: ${e.message || e}. Using In-Memory Fallback (data lost on restart).`);
                 if (this.client) {
-                    try { await this.client.disconnect(); } catch (err) {
+                    try {
+                        this.ownership.unknown('service-fallback:ORIGINAL_DESTRUCTIVE_DISCONNECT_NOT_QUIESCENCE_PROOF');
+                        await this.client.disconnect();
+                    } catch (err) {
+                        this.ownership.failure('service-fallback:ORIGINAL_DISCONNECT_FAILED', err);
                         console.error("[REDIS] Failed to disconnect during fallback:", err);
                     }
                     this.client = null;
@@ -79,11 +106,15 @@ class RedisService {
     }
 
     public async disconnect() {
+        // Preserve original public behavior in this source checkpoint. This
+        // direct path is not accepted final ownership/quiescence semantics.
+        this.ownership.unknown('public-disconnect:ORIGINAL_PATH_NOT_QUIESCENCE_PROOF');
         if (this.client) {
             try {
                 await this.client.disconnect();
                 console.log('[REDIS] Disconnected.');
             } catch (err) {
+                this.ownership.failure('public-disconnect:ORIGINAL_CLOSE_FAILED', err);
                 console.error("[REDIS] Failed to disconnect:", err);
             }
             this.client = null;
@@ -104,12 +135,16 @@ class RedisService {
      *  in-memory fallback). Keeps module import side-effect free - a pending
      *  socket at import time raced test-worker teardown and crashed CI
      *  intermittently. connect() is idempotent and never throws. */
-    private async ensureConnected(): Promise<void> {
-        if (!this.isConnected) await this.connect();
+    private async ensureConnected(operation: Operation): Promise<void> {
+        // Fixed original command continuation, not a new root after seal.
+        if (!this.isConnected) await this.connectOriginal(operation);
     }
 
-    public async set(key: string, value: string, ttl?: number) {
-        await this.ensureConnected();
+    public set(key: string, value: string, ttl?: number) {
+        return this.ownership.invoke('original-command-set', operation => this.setOriginal(operation, key, value, ttl));
+    }
+    private async setOriginal(operation: Operation, key: string, value: string, ttl?: number) {
+        await this.ensureConnected(operation);
         if (!this.isConnected) return;
 
         if (this.isMock) {
@@ -127,8 +162,11 @@ class RedisService {
         }
     }
 
-    public async get(key: string): Promise<string | null> {
-        await this.ensureConnected();
+    public get(key: string): Promise<string | null> {
+        return this.ownership.invoke('original-command-get', operation => this.getOriginal(operation, key));
+    }
+    private async getOriginal(operation: Operation, key: string): Promise<string | null> {
+        await this.ensureConnected(operation);
         if (!this.isConnected) return null;
 
         if (this.isMock) {
@@ -138,8 +176,11 @@ class RedisService {
         return this.client ? await this.client.get(key) : null;
     }
 
-    public async del(key: string) {
-        await this.ensureConnected();
+    public del(key: string) {
+        return this.ownership.invoke('original-command-del', operation => this.delOriginal(operation, key));
+    }
+    private async delOriginal(operation: Operation, key: string) {
+        await this.ensureConnected(operation);
         if (!this.isConnected) return;
 
         if (this.isMock) {
@@ -150,8 +191,11 @@ class RedisService {
         if (this.client) await this.client.del(key);
     }
 
-    public async keys(pattern: string): Promise<string[]> {
-        await this.ensureConnected();
+    public keys(pattern: string): Promise<string[]> {
+        return this.ownership.invoke('original-command-keys', operation => this.keysOriginal(operation, pattern));
+    }
+    private async keysOriginal(operation: Operation, pattern: string): Promise<string[]> {
+        await this.ensureConnected(operation);
         if (!this.isConnected) return [];
 
         if (this.isMock) {
@@ -171,36 +215,54 @@ class RedisService {
      * @param ttlMs Time to live in milliseconds (avoids deadlocks)
      * @returns boolean True if lock acquired, false if already locked
      */
-    public async acquireLock(lockKey: string, ttlMs: number): Promise<boolean> {
-        await this.ensureConnected();
-        if (!this.isConnected) return true; // Fallback to allowing execution if no redis
-
-        if (this.isMock) {
-            // Mock implementation of SET NX EX
-            if (this.mockStore.has(lockKey)) return false;
-            this.mockStore.set(lockKey, 'locked');
-            setTimeout(() => this.mockStore.delete(lockKey), ttlMs);
-            return true;
-        }
-
+    public acquireLock(lockKey: string, ttlMs: number): Promise<boolean> {
+        return this.ownership.invoke('original-command-acquireLock', operation => this.acquireLockOriginal(operation, lockKey, ttlMs));
+    }
+    private async acquireLockOriginal(operation: Operation, lockKey: string, ttlMs: number): Promise<boolean> {
+        const expiry = this.ownership.reserveChild(operation, 'original-memory-lock-expiry');
+        let scheduled = false, failed = false, originalError: unknown;
         try {
-            // SET key value NX PX ttl
-            const result = await this.client.set(lockKey, 'locked', {
-                NX: true,
-                PX: ttlMs
+            await this.ensureConnected(operation);
+            if (!this.isConnected) return true; // Fallback to allowing execution if no redis
+
+            if (this.isMock) {
+                // Mock implementation of SET NX EX
+                if (this.mockStore.has(lockKey)) return false;
+                this.mockStore.set(lockKey, 'locked');
+                setTimeout(() => this.ownership.invokeChild(expiry, () => this.mockStore.delete(lockKey)), ttlMs);
+                scheduled = true;
+                return true;
+            }
+
+            try {
+                // SET key value NX PX ttl
+                const result = await this.client.set(lockKey, 'locked', {
+                    NX: true,
+                    PX: ttlMs
+                });
+                return result === 'OK';
+            } catch (e) {
+                this.ownership.failure('command-acquireLock:ORIGINAL_CAUGHT_FAILURE', e);
+                console.error('[REDIS] Error acquiring lock:', e);
+                return false;
+            }
+        } catch (original) { failed = true; originalError = original; throw original; }
+        finally {
+            if (!scheduled) preserveOriginal(this.ownership, 'lock-expiry-original-guard', () => {
+                if (failed) this.ownership.abandonChild(expiry, originalError);
+                else this.ownership.skipChild(expiry, 'ORIGINAL_GUARD_NOT_SELECTED');
             });
-            return result === 'OK';
-        } catch (e) {
-            console.error('[REDIS] Error acquiring lock:', e);
-            return false;
         }
     }
 
     /**
      * Releases a distributed lock.
      */
-    public async releaseLock(lockKey: string): Promise<void> {
-        await this.ensureConnected();
+    public releaseLock(lockKey: string): Promise<void> {
+        return this.ownership.invoke('original-command-releaseLock', operation => this.releaseLockOriginal(operation, lockKey));
+    }
+    private async releaseLockOriginal(operation: Operation, lockKey: string): Promise<void> {
+        await this.ensureConnected(operation);
         if (!this.isConnected) return;
 
         if (this.isMock) {
@@ -211,6 +273,7 @@ class RedisService {
         try {
             await this.client.del(lockKey);
         } catch (e) {
+            this.ownership.failure('command-releaseLock:ORIGINAL_CAUGHT_FAILURE', e);
             console.error('[REDIS] Error releasing lock:', e);
         }
     }

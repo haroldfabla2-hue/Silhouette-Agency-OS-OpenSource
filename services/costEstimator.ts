@@ -1,3 +1,5 @@
+import { preserveOriginal } from './lifecycle/preserveOriginal';
+import { costOwner } from './lifecycle/preparationBindings';
 import { CostMetrics, ModelUsage } from '../types';
 
 export class CostEstimator {
@@ -89,13 +91,22 @@ export class CostEstimator {
         modelBreakdown: {}
     };
 
-    private constructor() {
-        this.loadPersistedMetrics();
+    private constructor(construction: import('./lifecycle/host').Operation) {
+        costOwner().validateConstruction(construction);
+        costOwner().invoke('original-metrics-hydration', () => this.loadPersistedMetrics(), construction);
     }
 
     public static getInstance(): CostEstimator {
         if (!CostEstimator.instance) {
-            CostEstimator.instance = new CostEstimator();
+            const owner = costOwner();
+            const operation = owner.beginConstruction();
+            try {
+                CostEstimator.instance = new CostEstimator(operation);
+                owner.constructed(operation, CostEstimator.instance);
+            } catch (original) {
+                preserveOriginal(owner, 'construction-failure', () => owner.constructionFailed(operation, original));
+                throw original;
+            }
         }
         return CostEstimator.instance;
     }
@@ -216,6 +227,7 @@ export class CostEstimator {
                 }
             }
         } catch (e) {
+            costOwner().failure('metrics-hydration-fallback', e);
             console.error("[COST] Failed to load metrics:", e);
         }
     }

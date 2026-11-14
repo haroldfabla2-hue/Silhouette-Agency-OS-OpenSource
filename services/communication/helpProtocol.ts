@@ -1,3 +1,4 @@
+import { helpProtocolOwner } from '../lifecycle/preparationBindings';
 import { SystemProtocol } from '../../types';
 import { systemBus, MessagePriority, MessageTag } from '../systemBus';
 import type { ReputationFact } from '../org/reputationLedger';
@@ -66,31 +67,38 @@ export function requestCollaborationAndWait(
     caller?: ToolCaller,
     opts: { timeoutMs?: number } = {}
 ): Promise<CollaborationResult> {
-    const timeoutMs = opts.timeoutMs ?? 45_000;
-    const built = buildHelpRequest(args, caller);
-    if ('error' in built) return Promise.resolve(built);
-    const request = built.request;
-    return new Promise(resolve => {
-        let settled = false;
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        const off = systemBus.subscribe(SystemProtocol.HELP_RESPONSE, event => {
-            const response = event.payload as HelpResponse;
-            if (!response?.requestId || response.requestId !== request.requestId) return;
-            if (settled) return;
-            settled = true;
-            if (timer) clearTimeout(timer);
-            off();
-            resolve({ status: 'answered', id: response.requestId, helperId: response.helperId, solution: response.solution, success: response.success });
+    return helpProtocolOwner().invoke('original-correlated-wait', () => {
+        const timeoutMs = opts.timeoutMs ?? 45_000;
+        const built = buildHelpRequest(args, caller);
+        if ('error' in built) return Promise.resolve(built);
+        const request = built.request;
+        return new Promise(resolve => {
+            let settled = false;
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            const off = systemBus.subscribeCorrelatedHelpResponse(request.requestId, event => {
+                const response = event.payload as HelpResponse;
+                if (!response?.requestId || response.requestId !== request.requestId) return;
+                if (settled) return;
+                settled = true;
+                if (timer) clearTimeout(timer);
+                off();
+                resolve({ status: 'answered', id: response.requestId, helperId: response.helperId, solution: response.solution, success: response.success });
+            });
+            // Subscribe BEFORE emitting: even a fully synchronous failure path
+            // (e.g. unroutable role answered in the same tick) is heard.
+            emitHelpRequest(request);
+            timer = setTimeout(() => {
+                if (settled) return;
+                settled = true;
+                off();
+                resolve({ status: 'timeout', id: request.requestId, message: `No answer from ${args.target_role} within ${timeoutMs}ms.` });
+            }, timeoutMs);
+            // A fully synchronous correlated answer can settle before the original
+            // timeout allocation above. The original timeout body would then only
+            // hit its settled guard. Retire this now-known no-op timer immediately;
+            // do not drop a pending request or manufacture a timeout result.
+            if (settled) clearTimeout(timer);
         });
-        // Subscribe BEFORE emitting: even a fully synchronous failure path
-        // (e.g. unroutable role answered in the same tick) is heard.
-        emitHelpRequest(request);
-        timer = setTimeout(() => {
-            if (settled) return;
-            settled = true;
-            off();
-            resolve({ status: 'timeout', id: request.requestId, message: `No answer from ${args.target_role} within ${timeoutMs}ms.` });
-        }, timeoutMs);
     });
 }
 
@@ -121,7 +129,8 @@ export function subscribeHelpProtocol(deps: {
         const request = event.payload as HelpRequest;
         if (!request?.requesterId || !request.targetRole || !request.problem) return;
         // Keep async failures inside the subscription: the bus does not await handlers.
-        void (async () => {
+        void helpProtocolOwner().invoke('original-help-routing', async () => {
+            const routing = systemBus.reserveOriginalHelpRouting(request);
             let helperId = 'system';
             try {
                 const found = deps.findHelper(request.targetRole, request);
@@ -129,7 +138,7 @@ export function subscribeHelpProtocol(deps: {
                     record({ ts: Date.now(), type: 'COLLAB_UNROUTABLE', agentId: request.requesterId,
                         context: request.targetRole, success: false, requestId: request.requestId,
                         reason: `no specialist found for role '${request.targetRole}'` });
-                    emitHelpResponse(request, helperId, `No specialist found for role: ${request.targetRole}`, false);
+                    routing.respond(helperId, `No specialist found for role: ${request.targetRole}`, false);
                     return;
                 }
                 helperId = found;
@@ -138,15 +147,17 @@ export function subscribeHelpProtocol(deps: {
                 record({ ts: Date.now(), type: 'COLLAB_REQUESTED', agentId: helperId, counterpartId: request.requesterId,
                     context: request.targetRole, requestId: request.requestId,
                     reason: `help request routed to ${helperId}` });
-                systemBus.send(systemBus.createMessage(request.requesterId, helperId, SystemProtocol.HELP_REQUEST,
-                    { ...request, context }, { tag: MessageTag.HELP_REQUEST, priority: request.priority || MessagePriority.HIGH, traceId: request.requestId }));
+                routing.route(helperId, context);
             } catch (error) {
+                helpProtocolOwner().failure('routing:ORIGINAL_FAILURE_RESPONSE', error);
                 record({ ts: Date.now(), type: 'COLLAB_UNROUTABLE', agentId: request.requesterId,
                     context: request.targetRole, success: false, requestId: request.requestId,
                     reason: `routing failed: ${error instanceof Error ? error.message : String(error)}` });
-                emitHelpResponse(request, helperId, `Unable to route help: ${error instanceof Error ? error.message : String(error)}`, false);
+                routing.respond(helperId, `Unable to route help: ${error instanceof Error ? error.message : String(error)}`, false);
+            } finally {
+                routing.finishOriginalGuards();
             }
-        })();
+        });
     });
     const offResponse = systemBus.subscribe(SystemProtocol.HELP_RESPONSE, event => {
         const response = event.payload as HelpResponse;
@@ -164,5 +175,10 @@ export function subscribeHelpProtocol(deps: {
         systemBus.send(systemBus.createMessage(response.helperId, response.requesterId, SystemProtocol.HELP_RESPONSE,
             response, { tag: MessageTag.HELP_REQUEST, priority: MessagePriority.HIGH, traceId: response.requestId }));
     });
-    return () => { offRequest(); offResponse(); };
+    const unsubscribe = () => { offRequest(); offResponse(); };
+    helpProtocolOwner().onSeal(() => {
+        unsubscribe();
+        if (inflight.size) helpProtocolOwner().unknown('help-response:INFLIGHT_FACT_ACCOUNTING_AT_SEAL');
+    });
+    return unsubscribe;
 }

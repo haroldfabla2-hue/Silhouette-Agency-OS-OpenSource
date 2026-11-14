@@ -1,3 +1,5 @@
+import { createOwnedLanceDbService } from '../../services/lancedbService';
+import { admitLanceInstance } from '../../services/lifecycle/preparationBindings';
 import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
 import { LanceDbService } from '../../services/lancedbService';
@@ -35,7 +37,7 @@ function makeService(opts: { projectionRows: any[]; canonicalRows: any[] }) {
             return canonicalTable;
         }
     };
-    const svc = new LanceDbService('/tmp/nonexistent-lancedb-test') as any;
+    const svc = createOwnedLanceDbService('/tmp/nonexistent-lancedb-test', admitLanceInstance()) as any;
     svc.db = fakeDb;
     svc.table = canonicalTable;
     svc.legacyTable = null;
