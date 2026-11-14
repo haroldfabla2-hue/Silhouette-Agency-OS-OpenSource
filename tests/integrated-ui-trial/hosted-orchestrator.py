@@ -104,7 +104,7 @@ def fetch_regular_browser(url):
 try:
  assert os.environ['PRIVATE']=='false'and os.environ['ENVIRONMENT']=='github-hosted'and os.environ['GITHUB_EVENT_NAME']in {'workflow_dispatch','push'}
  if os.environ['GITHUB_EVENT_NAME']=='push':
-  assert subprocess.check_output(['git','rev-parse','HEAD^'],cwd=REPO,text=True).strip()=='bd5072c3a6ac7b9e05ec964ac4f087f37a571950'
+  assert subprocess.check_output(['git','rev-parse','HEAD^'],cwd=REPO,text=True).strip()=='79cac5c5fb6f0b7616d1ce1d246e4899262490e3'
   assert os.environ['GITHUB_REF']=='refs/heads/preparation/sqlite-static-typecheck-db201993-4054-20261114'
  assert os.environ['GITHUB_SHA']==os.environ['EXPECTED_HEAD']==subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip()
  node=Path(shutil.which('node')).resolve();assert sha(node.read_bytes())=='ccacb2d6d87ba6d118b2bffc1ae33747a05cc5fc6b1f1ec4fc1d420b687e952d';assert subprocess.check_output([str(node),'--version'],text=True).strip()=='v22.18.0'
@@ -114,45 +114,49 @@ try:
  # All custody checks consume the original host-qualification30s slot.
  qualificationStarted=time.monotonic()
  from effective_acl_custody import inspect_and_retain, CustodyDenied
- from acl_custody_receipt import finite as finite_acl_receipt
- chains=[];privateFd=None;sinkFd=None
+ from acl_custody_receipt import finite as finite_acl_receipt, classify_at_stage
+ from mount_readonly_model import MountModelUnavailable
+ from acl_metadata_diagnostic import DiagnosticIncomplete
+ chains=[];privateFd=None;sinkFd=None;aclStage='ROOT_CHAIN'
  try:
   def protected_chain(directory,private=False):
-   try:
-    chain=inspect_and_retain(str(directory),qualificationStarted+min(27,30-3),private_leaf=private)
-   except CustodyDenied:
-    emit('qualification-acl-summary.json',finite_acl_receipt(None,'BLOCKED_UNSAFE_ACCESS'));raise
-   except BaseException:
-    emit('qualification-acl-summary.json',finite_acl_receipt(None,'BLOCKED_UNSUPPORTED_OR_INCOMPLETE'));raise RuntimeError('ACL_MODEL_UNAVAILABLE')from None
+   chain=inspect_and_retain(str(directory),qualificationStarted+27,private_leaf=private)
    chains.append(chain)
    return chain
   assert os.geteuid()>0,'NONROOT_RUNNER_REQUIRED'
-  rootChain=protected_chain(ROOT,True);evidenceChain=protected_chain(EV,True)
+  rootChain=protected_chain(ROOT,True)
+  aclStage='EVIDENCE_CHAIN';evidenceChain=protected_chain(EV,True)
+  aclStage='PRIVATE_MKDIR'
   os.mkdir('regular-native-private',mode=0o700,dir_fd=rootChain.leaf_fd)
-  privateNative=ROOT/'regular-native-private';privateChain=protected_chain(privateNative,True)
-  privateFd=os.dup(privateChain.leaf_fd)
+  aclStage='PRIVATE_CHAIN';privateNative=ROOT/'regular-native-private';privateChain=protected_chain(privateNative,True)
+  aclStage='PRIVATE_FD';privateFd=os.dup(privateChain.leaf_fd)
+  aclStage='SINK_OPEN'
   sinkFd=os.open('regular-native-inventory.json',os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_CLOEXEC,0o600,dir_fd=evidenceChain.leaf_fd)
   # 0600 under default ACL has zero effective nonowner mask. Verify exact
   # actual access ACL, not default-inheritance assumption, before any bytes.
   from effective_acl_custody import require_entry_rights
   from acl_metadata_diagnostic import _acl
   privateStat=os.fstat(privateFd);sinkStat=os.fstat(sinkFd)
+  aclStage='SINK_ACL'
   require_entry_rights(sinkStat,_acl(sinkFd,'system.posix_acl_access'),os.geteuid(),True)
   assert stat.S_ISDIR(privateStat.st_mode)and privateStat.st_uid==os.geteuid()and privateStat.st_mode&0o077==0
   assert stat.S_ISREG(sinkStat.st_mode)and sinkStat.st_nlink==1 and sinkStat.st_uid==os.geteuid()and sinkStat.st_mode&0o077==0 and sinkStat.st_size==0
+  aclStage='CHAIN_RECHECK'
   for chain in chains:
    chain.account_expected_directory_mutation((rootChain.entries[-1][1][0],rootChain.entries[-1][1][1]),qualificationStarted+27)
    chain.account_expected_directory_mutation((evidenceChain.entries[-1][1][0],evidenceChain.entries[-1][1][1]),qualificationStarted+27)
   for chain in chains:chain.recheck(qualificationStarted+27)
   emit('qualification-acl-summary.json',finite_acl_receipt(privateChain,'SUPPORTED_MODEL_DAC_CUSTODY'))
+  aclStage='FD_GRANT'
   grant=[str(privateFd),str(sinkFd),str(privateStat.st_dev),str(privateStat.st_ino),str(sinkStat.st_dev),str(sinkStat.st_ino)]
   qualificationRemaining=30-(time.monotonic()-qualificationStarted)
   assert qualificationRemaining>3,'QUALIFICATION_FD_GRANT_BUDGET_EXHAUSTED'
+  aclStage='QUALIFIER_COMMAND'
   command('host-qualification',['/usr/bin/python3',str(HERE/'qualify-host.py'),str(EV/'host-qualification.json'),*grant],REPO,{'PATH':os.environ['PATH'],'ImageOS':os.environ.get('ImageOS',''),'ImageVersion':os.environ.get('ImageVersion',''),'QUALIFICATION_REMAINING_SECONDS':str(qualificationRemaining)},qualificationRemaining,pass_fds=(privateFd,sinkFd))
- except CustodyDenied:
-  emit('qualification-acl-summary.json',finite_acl_receipt(None,'BLOCKED_UNSAFE_ACCESS'));raise RuntimeError('ACL_CUSTODY_DENIED')from None
- except BaseException:
-  emit('qualification-acl-summary.json',finite_acl_receipt(None,'BLOCKED_UNSUPPORTED_OR_INCOMPLETE'));raise RuntimeError('ACL_OR_QUALIFICATION_INCOMPLETE')from None
+ except BaseException as original:
+  reason=classify_at_stage(original,(CustodyDenied,MountModelUnavailable,DiagnosticIncomplete),aclStage)
+  emit('qualification-acl-summary.json',finite_acl_receipt(None,'BLOCKED_UNSUPPORTED_OR_INCOMPLETE',aclStage,reason))
+  raise RuntimeError('ACL_OR_QUALIFICATION_INCOMPLETE')from None
  finally:
   if sinkFd is not None:os.close(sinkFd)
   if privateFd is not None:os.close(privateFd)

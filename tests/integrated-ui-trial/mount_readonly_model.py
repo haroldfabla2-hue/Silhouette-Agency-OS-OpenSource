@@ -1,6 +1,7 @@
 """SOURCE ONLY. No invocation at import except definitions. No acquired code.
 Linux x86_64 v6.11 UAPI layouts. Unsupported syscall/fields => fail closed.
 """
+import errno
 import ctypes
 import os
 import platform
@@ -9,20 +10,26 @@ import struct
 class MountModelUnavailable(Exception):
     pass
 
+def syscall_failure(operation):
+    # errno read immediately after failed syscall; fixed finite category only.
+    code=ctypes.get_errno()
+    label={errno.ENOSYS:'ENOSYS',errno.EPERM:'EPERM',errno.EACCES:'EACCES',errno.EINVAL:'EINVAL',errno.EOVERFLOW:'EOVERFLOW'}.get(code,'OTHER')
+    raise MountModelUnavailable(operation+'_'+label)
+
 def mount_identity(fd):
     if platform.machine()!='x86_64':raise MountModelUnavailable('ARCH_UNSUPPORTED')
     libc=ctypes.CDLL(None,use_errno=True)
     # statx via stable x86_64 syscall332; AT_EMPTY_PATH, BASIC+MNT_ID_UNIQUE.
     buf=ctypes.create_string_buffer(256)
     rc=libc.syscall(ctypes.c_long(332),ctypes.c_int(fd),ctypes.c_char_p(b''),ctypes.c_int(0x1000),ctypes.c_uint(0x47ff),ctypes.byref(buf))
-    if rc!=0:raise MountModelUnavailable('STATX_UNAVAILABLE')
+    if rc!=0:syscall_failure('STATX')
     mask=struct.unpack_from('<I',buf.raw,0)[0]
     if mask&0x4000!=0x4000:raise MountModelUnavailable('UNIQUE_MOUNT_ID_UNAVAILABLE')
     unique=struct.unpack_from('<Q',buf.raw,144)[0]
     req=ctypes.create_string_buffer(struct.pack('<IIQQQ',32,0,unique,3,0))
     out=ctypes.create_string_buffer(512)
     rc=libc.syscall(ctypes.c_long(457),ctypes.byref(req),ctypes.byref(out),ctypes.c_size_t(512),ctypes.c_uint(0))
-    if rc!=0:raise MountModelUnavailable('STATMOUNT_UNAVAILABLE')
+    if rc!=0:syscall_failure('STATMOUNT')
     raw=out.raw;size=struct.unpack_from('<I',raw)[0];fields=struct.unpack_from('<Q',raw,8)[0]
     if not 512<=size<=512 or fields&3!=3:raise MountModelUnavailable('MOUNT_FIELDS_UNAVAILABLE')
     fs_magic=struct.unpack_from('<Q',raw,24)[0];mount_id=struct.unpack_from('<Q',raw,40)[0];attrs=struct.unpack_from('<Q',raw,64)[0]

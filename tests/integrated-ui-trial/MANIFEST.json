@@ -1,10 +1,14 @@
 {
   "status": "SOURCE_ONLY_NO_EXECUTION_PUBLICATION",
-  "parent": "bd5072c3a6ac7b9e05ec964ac4f087f37a571950",
+  "parent": "79cac5c5fb6f0b7616d1ce1d246e4899262490e3",
   "files": {
     "ACL-CUSTODY-DELTA-REVIEW.md": {
       "bytes": 7017,
       "sha256": "57aac0b9938c2fe9f7b9d9963f74e195b5a89280f094e3a260c150fd634742c4"
+    },
+    "ACL-FIRSTFAILURE-DELTA-REVIEW.md": {
+      "bytes": 4806,
+      "sha256": "5e947efba0b711dc93002ad2c2d74b64897a17029a1c46c54d96c2b36492a41d"
     },
     "ASSERTION-DIAGNOSTIC-COMPOSITION-REVIEW.md": {
       "bytes": 1315,
@@ -71,8 +75,8 @@
       "sha256": "b341edd0e58e295cf10b2fb118f57f6ff202d657ff657aa79eaf32363b54bbdf"
     },
     "REVIEW.md": {
-      "bytes": 7583,
-      "sha256": "4c9e8f43190aba1e174f0c8b610bad33341bb7a527c9f96c372b9fbfcd370325"
+      "bytes": 5900,
+      "sha256": "690b260544c603911bdaf72fcc589f196af6755be5017f1817e89aebbd59ef6d"
     },
     "RUNTIME-BOUNDARY-COMPOSITION-REVIEW.md": {
       "bytes": 1130,
@@ -87,8 +91,8 @@
       "sha256": "548cd7fd76f8afe364b6b4cc792002486cf9921bb9397bd933ab4d087894aea2"
     },
     "acl_custody_receipt.py": {
-      "bytes": 1672,
-      "sha256": "e22f0ec6d2cc99e6e16b1dba0bc569efe1d377840dffa81fa63f892db56a9456"
+      "bytes": 4613,
+      "sha256": "4081d491029603ccf9e535560b789b19e40103f736c2c59c948cce5694076e1a"
     },
     "acl_metadata_diagnostic.py": {
       "bytes": 6051,
@@ -319,8 +323,8 @@
       "sha256": "e15226f6a7a65a9c6ed581a3c20c245190127a50bdd0971107acbc2a2c344c10"
     },
     "hosted-orchestrator.py": {
-      "bytes": 35604,
-      "sha256": "b3443b9fa711b744b66275cbd744196b5d47d76527009bd8f9fb8c8728d95372"
+      "bytes": 35634,
+      "sha256": "4840284cc5e0efd12279becb997a89c0b0215a99a9017f2f890135deacffafdb"
     },
     "identity-entry.py": {
       "bytes": 3884,
@@ -335,8 +339,8 @@
       "sha256": "0e3a710ab63232eec31d90e994036b3a3480c65605097fe4a6f0938e2bf33366"
     },
     "integrated-hosted.yml": {
-      "bytes": 3985,
-      "sha256": "145c8ee5b57f6b627e84609ff29792bf170b75b2ce3649b4523b649437a97ae1"
+      "bytes": 3841,
+      "sha256": "f9a2bb0d9e0035eb9d2dfae37cc0e2bcedbdd007148a27501198faa81ad2c7f8"
     },
     "lance-provenance.json": {
       "bytes": 900,
@@ -355,12 +359,12 @@
       "sha256": "20367cd35272db599ff1f7ebfb93409fc61bff9c635b3e01dc544c7cb0029763"
     },
     "lineage-static-audit.json": {
-      "bytes": 505,
-      "sha256": "b87cbeb3ae455068ef77f1ed99ea1355ff76f9d7d7cbdbf9d3ecfee058f757f8"
+      "bytes": 512,
+      "sha256": "33685974bea8c75ba60ee404c6bf991d029f43f6b116980eccc9d84a14fb520c"
     },
     "mount_readonly_model.py": {
-      "bytes": 2875,
-      "sha256": "a5e2d84f0cee111b769bf8f3d1ba09f8a1af18172e7bd0e7e077d603a2ae2520"
+      "bytes": 3177,
+      "sha256": "a61aee5a797d4e92e33a0e118cee6378a62e4337495a8cbadc89fc7e28bf0102"
     },
     "namespace-entry.py": {
       "bytes": 8493,
