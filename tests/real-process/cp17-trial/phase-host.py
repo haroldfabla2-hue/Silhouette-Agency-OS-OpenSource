@@ -142,4 +142,5 @@ finally:
  # No earlier events[] snapshot can become a premature PASS.
  final_pass=status is not None and os.waitstatus_to_exitcode(status)==0 and final_scope['natural_empty'] and not events and removed and remove_error is None
  control.write_text(json.dumps({'status':'FINAL_PASS'if final_pass else'FINAL_FAIL','waitStatus':status,'events':list(events),'elapsedSeconds':time.monotonic()-start,'pre_cleanup_metrics':metrics,'scope_cleanup':final_scope,'removed':removed,'remove_error':remove_error},indent=2))
+print('PHASE_FINAL_VERDICT',json.dumps({'phase':a.phase,'waitstatus':status,'leader_rc':os.waitstatus_to_exitcode(status)if status is not None else None,'natural_empty':final_scope.get('natural_empty')if final_scope else None,'forced_event_count':len(events),'cgroup_removed':removed,'remove_error':remove_error,'diagnostic_issues':final_scope.get('diagnostic_issues')if final_scope else None}),flush=True)
 assert status is not None and os.waitstatus_to_exitcode(status)==0 and final_scope['natural_empty'] and not events and removed and remove_error is None,'final natural scope verdict failed; preserve evidence'

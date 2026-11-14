@@ -14,7 +14,10 @@ scope="/sys/fs/cgroup/silhouette-owner-once-$GITHUB_RUN_ID"
 # Refuse unresolved inputs before privileged provisioning or package fetch.
 python3 - "$ops" <<'PREPARATION_REVIEW_GATE'
 import hashlib,json,pathlib,sys
-ops=pathlib.Path(sys.argv[1]);state=json.loads((ops/'oracle-preparation/preparation-capacity.json').read_text())
+ops=pathlib.Path(sys.argv[1]);budget=json.loads((ops/'export-budget.json').read_text())
+assert len(budget['files'])==len(set(budget['files']))==budget['known_count']==123
+assert budget['cap']==128 and budget['headroom']==5 and budget['known_count']<=budget['cap']-budget['headroom']
+state=json.loads((ops/'oracle-preparation/preparation-capacity.json').read_text())
 assert state['status']=='CANDIDATE_TECHNICAL_INPUTS_PINNED','NOT_STARTED_UNREVIEWED_PREPARATION'
 assert state['source_graph']['candidate_manifest_sha256']==hashlib.sha256((ops/'integral-inputs.json').read_bytes()).hexdigest()
 for name in ['vitest-generation','wal','accepted']:

@@ -1,9 +1,9 @@
-name: POST-CP17 diagnostic integral real validation Node22.18
+name: POST-CP17 evidence integral real validation Node22.18
 
 on:
   push:
     branches:
-      - validation/postcp17-diagnostic-reviewed-20261114
+      - validation/postcp17-evidence-reviewed-20261114
 
 permissions:
   contents: read
@@ -47,7 +47,7 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = '${{ github.sha }}'
           ops="$PWD/tests/real-process/cp17-trial"
-          printf '%s  %s\n' f30b85103fc833188493a4911d89704961d68e5f133b112be8a7fd5ff5044756 "$ops/infrastructure.sha256" | sha256sum --check
+          printf '%s  %s\n' 02470f51c513dfa1f515a1979b9dc84df85c50b7374df92f3fbec6be4a18ac06 "$ops/infrastructure.sha256" | sha256sum --check
           (cd "$ops" && sha256sum --check infrastructure.sha256)
           work="$RUNNER_TEMP/current-suite-work"
           python3 "$ops/prepare-integral.py" "$PWD" "$work" "$ops/integral-inputs.json" d308ac4858f315ecd8eba07a80995963f882c448b085405efc7da7275edeeb89
@@ -147,27 +147,20 @@ jobs:
           c=json.loads(pathlib.Path(sys.argv[1]).read_text());v=min(30,int(c['deadline_monotonic']-time.monotonic()-5));assert v>0,'No export budget';print(v)
           LIMIT
           )
-          timeout --signal=TERM --kill-after=2s "${budget}s" python3 - "$EVIDENCE" <<'PY'
-          import base64,hashlib,io,pathlib,stat,sys,tarfile
-          root=pathlib.Path(sys.argv[1]);files=[]
-          for p in sorted(root.rglob('*')):
-           m=p.lstat()
-           if stat.S_ISDIR(m.st_mode):continue
-           if not stat.S_ISREG(m.st_mode):raise SystemExit('EVIDENCE_NONREGULAR_FAIL')
-           files.append(p)
-          count=len(files);raw=sum(p.stat().st_size for p in files)
-          print('CURRENT_SUITE_EVIDENCE_FILES:'+str(count),flush=True)
-          print('CURRENT_SUITE_EVIDENCE_RAW_BYTES:'+str(raw),flush=True)
-          if count>128 or raw>20*1024*1024:raise SystemExit('EVIDENCE_CAP_FAIL_128FILES_20MIB')
-          out=io.BytesIO()
-          with tarfile.open(fileobj=out,mode='w:gz') as tar:
-           for p in files:tar.add(p,arcname=str(p.relative_to(root)),recursive=False)
-          data=out.getvalue()
-          if len(data)>4*1024*1024:raise SystemExit('EVIDENCE_CAP_FAIL_4MIB_GZIP')
-          print('CURRENT_SUITE_EVIDENCE_SHA256:'+hashlib.sha256(data).hexdigest())
-          print('CURRENT_SUITE_EVIDENCE_BYTES:'+str(len(data)))
-          print('CURRENT_SUITE_EVIDENCE_BASE64_BEGIN')
-          text=base64.b64encode(data).decode()
-          for i in range(0,len(text),4096):print(text[i:i+4096])
-          print('CURRENT_SUITE_EVIDENCE_BASE64_END')
-          PY
+          if test "$budget" -lt 7; then
+            short=$((budget-1)); if test "$short" -lt 1; then short=1; fi
+            printf '%s\n' 'EVIDENCE_INCOMPLETE_INSUFFICIENT_FULL_EXPORT_WINDOW'
+            timeout --signal=TERM --kill-after=1s "${short}s" python3 tests/real-process/cp17-trial/export-evidence.py "$EVIDENCE" --emergency-only || true
+            exit 1
+          fi
+          primary=$((budget-5))
+          if test "$primary" -lt 1; then primary=1; fi
+          if timeout --signal=TERM --kill-after=1s "${primary}s" python3 tests/real-process/cp17-trial/export-evidence.py "$EVIDENCE"; then
+            exit 0
+          else
+            code=$?
+            printf '%s\n' 'EVIDENCE_INCOMPLETE_PRIMARY_EXPORT_FAILED'
+            # Same overall30s allocation, five seconds reserved above.
+            timeout --signal=TERM --kill-after=1s 3s python3 tests/real-process/cp17-trial/export-evidence.py "$EVIDENCE" --emergency-only || true
+            exit "$code"
+          fi

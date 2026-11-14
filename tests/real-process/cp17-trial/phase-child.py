@@ -120,7 +120,7 @@ for name,argv,cwd,limit in phases:
     reporter_rows=[json.loads(line)for line in (ev/'vitest-runtime-observation.jsonl').read_text().splitlines()]
     reporter_state='CAPTURED'if {'resolved-global','resolved-specification-pools'}<={row.get('kind')for row in reporter_rows}else 'MISSING_TELEMETRY'
    except Exception:reporter_state='MISSING_TELEMETRY'
-  (ev/(name+'-process-observation.json')).write_text(json.dumps({'status':telemetry_state,'reporter_status':reporter_state,'cuts':telemetry,'errors':telemetry_errors,'delta':counter_delta(telemetry[0]['counters'],telemetry[-1]['counters'])if len(telemetry)>1 else {'unavailable':True},'leader_returncode':child.returncode if child else None,'leader_signal':-child.returncode if child and child.returncode is not None and child.returncode<0 else None,'worker_exit_history':'UNAVAILABLE_PUBLIC_REPORTER_NO_WORKER_EXIT_HOOK_RAPID_REAP_GAP'},indent=2))
+  with (ev/(mode+'-process-observations.jsonl')).open('a')as diagnostic_stream:diagnostic_stream.write(json.dumps({'status':telemetry_state,'reporter_status':reporter_state,'cuts':telemetry,'errors':telemetry_errors,'delta':counter_delta(telemetry[0]['counters'],telemetry[-1]['counters'])if len(telemetry)>1 else {'unavailable':True},'leader_returncode':child.returncode if child else None,'leader_signal':-child.returncode if child and child.returncode is not None and child.returncode<0 else None,'worker_exit_history':'UNAVAILABLE_PUBLIC_REPORTER_NO_WORKER_EXIT_HOOK_RAPID_REAP_GAP','command':name},separators=(',',':'))+'\n')
   results[-1]['diagnostic_capture_status']=telemetry_state
   results[-1]['reporter_capture_status']=reporter_state
   (ev/(mode+'-session.json')).write_text(json.dumps({'mode':mode,'results':results,'unsafe':unsafe},indent=2))
