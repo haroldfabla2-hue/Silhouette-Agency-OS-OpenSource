@@ -20,13 +20,32 @@ for p in work.rglob('*'):
  else:p.chmod(p.stat().st_mode&0o777)
 cmd=[bwrap,'--die-with-parent','--unshare-user','--uid','1000','--gid','1000','--unshare-pid','--cap-drop','ALL']
 for p in ['/usr','/bin','/lib','/lib64','/etc','/opt']:cmd+=['--ro-bind',p,p]
+if mode in {'install','native'}:
+ target=pathlib.Path('/etc/resolv.conf').resolve(strict=True)
+ assert target==pathlib.Path('/etc/resolv.conf')or(target.is_relative_to('/run')and len(target.parts)<=8)
+ if target!=pathlib.Path('/etc/resolv.conf'):
+  for directory in reversed(target.parent.parents):
+   if str(directory)!='/':cmd+=['--dir',str(directory)]
+  cmd+=['--dir',str(target.parent)]
+ cmd+=['--ro-bind','/etc/resolv.conf',str(target)]
 cmd+=['--proc','/proc','--dev','/dev','--remount-ro','/dev','--bind',str(scratch),'/tmp','--ro-bind','/tmp/harness','/tmp/harness','--ro-bind','/tmp/limits','/tmp/limits']
 # Capped scratch is /tmp, original complete deps reside in separately fixed store.
 cmd+=['--bind'if mode=='install'else'--ro-bind','/tmp/deps-store','/tmp/work/node_modules']
 if mode=='native':
- for rel in ['better-sqlite3','@xenova/transformers/node_modules/sharp']:cmd+=['--bind','/tmp/deps-store/'+rel,'/tmp/work/node_modules/'+rel]
+ for rel in ['better-sqlite3','@xenova/transformers/node_modules/sharp','.silhouette-native-redis']:cmd+=['--bind','/tmp/deps-store/'+rel,'/tmp/work/node_modules/'+rel]
+if mode=='checks':
+ for name in ['.vite-temp','.vite']:
+  # Empty destinations were prepared on fixedstore before RO mount. Only this
+  # scratchdirectory becomes writable, never any dependency package bytes.
+  source=scratch/('private-'+name);source.mkdir(mode=0o777);source.chmod(0o777)
+  destination=pathlib.Path('/tmp/deps-store')/name
+  assert destination.is_dir()and not destination.is_symlink()and not list(destination.iterdir())
+  cmd+=['--bind',str(source),'/tmp/work/node_modules/'+name]
 cmd+=['--remount-ro','/','--chdir','/tmp/work','/usr/bin/python3','/tmp/harness/phase-child.py',mode]
-resource.setrlimit(resource.RLIMIT_FSIZE,(64*1024**2,64*1024**2));resource.setrlimit(resource.RLIMIT_NOFILE,(256,256))
+# INSTALL only: exact locked Lance binary116740704B exceeds64MiB.
+#128MiB is a fixed design bound with17.5MB headroom, not proof all files fit.
+file_limit=(128 if mode=='install'else 64)*1024**2
+resource.setrlimit(resource.RLIMIT_FSIZE,(file_limit,file_limit));resource.setrlimit(resource.RLIMIT_NOFILE,(256,256))
 t=time.monotonic();child=subprocess.Popen(cmd,env={'PATH':'/usr/bin:/bin','PHASE_DEADLINE_MONOTONIC':str(t+duration)},stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True);sel=selectors.DefaultSelector();sel.register(child.stdout,selectors.EVENT_READ);failure=None;signals=[];observed=0;eof=False
 try:
  with(ev/'namespace.log').open('wb')as log:
@@ -51,7 +70,7 @@ finally:
   p=work/row['path']
   if not p.is_file()or p.is_symlink()or hashlib.sha256(p.read_bytes()).hexdigest()!=row['sha256']:post.append(row['path'])
  (ev/'source-post.json').write_text(json.dumps({'drift':post}))
- (ev/'namespace-status.json').write_text(json.dumps({'rc':child.returncode,'failure':failure,'signals':signals,'eof':eof,'seconds':time.monotonic()-t}))
+ (ev/'namespace-status.json').write_text(json.dumps({'rc':child.returncode,'failure':failure,'signals':signals,'eof':eof,'seconds':time.monotonic()-t,'file_limit_bytes':file_limit}))
  # Evidence is copied only by outer supervisor after package/test PID namespace ends.
  for p in sorted(ev.iterdir()):
   if p.is_symlink()or not p.is_file():raise RuntimeError('nonregular evidence')

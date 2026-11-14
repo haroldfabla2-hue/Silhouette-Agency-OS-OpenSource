@@ -1,0 +1,36 @@
+{
+  "status": "CANDIDATE_TECHNICAL_INPUTS_PINNED",
+  "source_graph": {
+    "candidate_commit": "215cbd1b5b430ba88bb85a4173d887347e8037a2",
+    "candidate_manifest_sha256": "d87fbaf17e7cb560fdd89ffc33143b4fe641ec6ea992960d0a53b63ed3a3a167",
+    "status": "SOURCE_DREAMV2_PLUS_CHILD_POLL_OWNER_EARLY_DIAGNOSTIC_NOT_EQUIVALENT_TO_EXECUTED4292",
+    "product_delta_vs_executed4292": [
+      "services/dreamerService.ts",
+      "services/lifecycle/runtimeStopBindings.ts",
+      "tests/automated/channel-ingress-envelope.test.ts",
+      "tests/automated/consent-ledger.test.ts",
+      "tests/setup/original-child-ownership.ts"
+    ]
+  },
+  "wal": {
+    "scopes": 48,
+    "active": 512,
+    "failures": 256,
+    "resources": 256
+  },
+  "accepted": {
+    "scopes": 48,
+    "active": 512,
+    "failures": 256,
+    "resources": 256
+  },
+  "execution_authority": "NONE_FRESH_EXACT_GO_REQUIRED",
+  "diagnostic_envelope_not_proven_maximum": true,
+  "no_auto_enlarge_or_retry": true,
+  "vitest-generation": {
+    "scopes": 48,
+    "active": 512,
+    "failures": 256,
+    "resources": 256
+  }
+}

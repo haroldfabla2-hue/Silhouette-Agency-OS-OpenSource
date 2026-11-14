@@ -3,7 +3,8 @@ NEW scoped sudo self-admission requires separate approval. No systemd/provision 
 Host inputs must be already copied/verified disposable source+harness; no git/home.
 """
 import argparse,hashlib,json,os,pathlib,selectors,shutil,signal,stat,subprocess,time
-p=argparse.ArgumentParser();p.add_argument('--delegated-parent',required=True);p.add_argument('--work',required=True);p.add_argument('--harness',required=True);p.add_argument('--evidence',required=True);p.add_argument('--staged-bwrap',required=True);p.add_argument('--run-id',required=True);p.add_argument('--reviewed-root-helper',required=True);p.add_argument('--root-helper-sha256',required=True);p.add_argument('--dependency-store',required=True);a=p.parse_args()
+from scope_finalize import finish_scope
+p=argparse.ArgumentParser();p.add_argument('--delegated-parent',required=True);p.add_argument('--work',required=True);p.add_argument('--harness',required=True);p.add_argument('--evidence',required=True);p.add_argument('--staged-bwrap',required=True);p.add_argument('--run-id',required=True);p.add_argument('--reviewed-root-helper',required=True);p.add_argument('--root-helper-sha256',required=True);p.add_argument('--dependency-store',required=True);p.add_argument('--preparation-inputs',required=True);a=p.parse_args()
 store=pathlib.Path(a.dependency_store).resolve(strict=True);assert store==pathlib.Path('/var/lib')/('silhouette-cp17-deps-'+a.run_id)/'store';assert os.path.ismount(store)
 parent=pathlib.Path(a.delegated_parent).resolve(strict=True);work=pathlib.Path(a.work).resolve(strict=True);harness=pathlib.Path(a.harness).resolve(strict=True);evidence=pathlib.Path(a.evidence).resolve(strict=True);bwrap=pathlib.Path(a.staged_bwrap).resolve(strict=True)
 assert a.run_id.isdigit() and int(a.run_id)>0
@@ -16,8 +17,16 @@ assert not (work/'.git').exists() and not (work/'.env').exists()
 # Work preparation must supply a full reviewed ledger, independently verified
 # binding and staged-bwrap acquisition proof before this launcher is approved.
 assert bwrap.is_file() and os.access(bwrap,os.X_OK)
+preparation=pathlib.Path(a.preparation_inputs).resolve(strict=True)
+assert preparation.name=='oracle-preparation'and preparation.parent.name=='cp17-trial'
+assert (preparation.parent/'infrastructure.sha256').is_file()
+prepared_names=['runner-integrated.py','namespace-init.py','wal-prepared-entry.mts','accepted-prepared-entry.mts','preparation-capacity.json']
+for name in prepared_names:
+ path=preparation/name
+ assert path.is_file()and not path.is_symlink()
+
 cg=parent/('owner-trial-'+str(os.getpid()));cg.mkdir(mode=0o700)
-child=None;start=time.monotonic();events=[]
+child=None;status=None;start=time.monotonic();events=[];final_scope=None;removed=False;remove_error=None;metrics={};control=evidence/'containment-host.json'
 def write(name,value): (cg/name).write_text(value)
 def kill_scope(reason):
  events.append({'reason':reason,'at':time.monotonic()-start})
@@ -51,6 +60,12 @@ try:
  cmd=[str(bwrap),'--die-with-parent','--unshare-pid','--unshare-user','--uid','0','--gid','0','--unshare-net','--cap-add','CAP_NET_ADMIN','--cap-add','CAP_SETFCAP']
  for source in ['/usr','/bin','/lib','/lib64','/etc','/opt']:cmd+=['--ro-bind',source,source]
  cmd+=['--proc','/proc','--dev','/dev','--size',str(512*1024**2),'--tmpfs','/tmp','--ro-bind',str(work),'/tmp/work','--ro-bind',str(store),'/tmp/work/node_modules','--ro-bind',str(harness),'/tmp/harness','--ro-bind',str(bwrap.parent),'/tmp/security-bin','--ro-bind',str(cg),'/tmp/limits','--bind',str(evidence),'/tmp/export','--remount-ro','/','--chdir','/tmp/work','/usr/bin/python3','/tmp/harness/namespace-init.py',bwrap.name,str(node),node_sha]
+ # Fixed read-only operational overrides, all hash-anchored by workflow ledger.
+ # Existing original namespace-init and real fixture paths remain unchanged.
+ anchor=cmd.index('--remount-ro')
+ overrides=['--ro-bind',str(preparation),'/tmp/preparation']
+ for name in ['runner-integrated.py','namespace-init.py']:overrides+=['--ro-bind',str(preparation/name),'/tmp/harness/'+name]
+ cmd[anchor:anchor]=overrides
  child_process=subprocess.Popen(['sudo','-n','/usr/bin/python3','-',str(os.getuid()),str(os.getgid()),a.run_id,str(os.getpid()),json.dumps(cmd)],stdin=subprocess.PIPE)
  child=child_process.pid
  child_process.stdin.write(helper);child_process.stdin.close()
@@ -62,11 +77,21 @@ try:
   if time.monotonic()-start>=360:
    kill_scope('HARD_WALL_360S');_,status=os.waitpid(pid,0);break
   time.sleep(.05)
- control.write_text(json.dumps({'status':'HOST_SCOPE_FINISHED','waitStatus':status,'events':events,'elapsedSeconds':time.monotonic()-start,'metrics':{n:(cg/n).read_text() for n in ['memory.events','memory.peak','cpu.stat','pids.events','cgroup.events']}},indent=2))
- assert os.waitstatus_to_exitcode(status)==0 and not events,'trial failed; preserve evidence'
+ # Wait status is only preliminary. Final verdict is AFTER scope cleanup.
+ metrics={n:(cg/n).read_text() for n in ['memory.events','memory.peak','cpu.stat','pids.events','cgroup.events']}
 finally:
- if (cg/'cgroup.events').exists() and 'populated 1' in (cg/'cgroup.events').read_text():kill_scope('FINAL_SCOPE_CLEANUP_NOT_PASS')
- deadline=time.monotonic()+5
- while 'populated 1' in (cg/'cgroup.events').read_text() and time.monotonic()<deadline:time.sleep(.05)
- (evidence/'scope-cleanup.json').write_text(json.dumps({'events':events,'state':(cg/'cgroup.events').read_text()},indent=2))
- if 'populated 1' not in (cg/'cgroup.events').read_text():cg.rmdir()
+ final_scope=finish_scope(cg,evidence,events,kill_scope,start+360)
+ if final_scope.get('natural_empty') or final_scope.get('state') is not None and 'populated 1' not in final_scope['state']:
+  try:cg.rmdir();removed=True
+  except OSError as error:remove_error={'errno':error.errno,'error':type(error).__name__}
+
+ if not removed:
+  # rmdir cannot remove a populated cgroup. Diagnostic failure is not a
+  # reason to skip this safe exact-scope cleanup attempt.
+  try:cg.rmdir();removed=True;remove_error=None
+  except OSError as error:remove_error={'errno':error.errno,'error':type(error).__name__}
+
+ # No earlier events[] snapshot can become a premature PASS.
+ final_pass=status is not None and os.waitstatus_to_exitcode(status)==0 and final_scope['natural_empty'] and not events and removed and remove_error is None
+ control.write_text(json.dumps({'status':'FINAL_PASS'if final_pass else'FINAL_FAIL','waitStatus':status,'events':list(events),'elapsedSeconds':time.monotonic()-start,'pre_cleanup_metrics':metrics,'scope_cleanup':final_scope,'removed':removed,'remove_error':remove_error},indent=2))
+assert status is not None and os.waitstatus_to_exitcode(status)==0 and final_scope['natural_empty'] and not events and removed and remove_error is None,'final natural scope verdict failed; preserve evidence'

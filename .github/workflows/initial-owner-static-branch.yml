@@ -1,9 +1,9 @@
-name: CP17 integral real validation Node22.18
+name: POST-CP17 child ownership integral validation Node22.18
 
 on:
   push:
     branches:
-      - validation/cp17-integral-reviewed-20261113
+      - validation/postcp17-childowner-reviewed-20261114
 
 permissions:
   contents: read
@@ -41,16 +41,16 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
           fetch-depth: 1
-      - name: Verify integral CP17 source and operational infrastructure
+      - name: Verify POST-CP17 candidate source and operational infrastructure
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = '${{ github.sha }}'
           ops="$PWD/tests/real-process/cp17-trial"
-          printf '%s  %s\n' 547135a0d8c1aa54352888b06f9328413584b9df903745888ffd24b8d799b22c "$ops/infrastructure.sha256" | sha256sum --check
+          printf '%s  %s\n' cd56d3d4f409f790e6239065e25aa2159afbd323fef3d77386ead29f8fb36b41 "$ops/infrastructure.sha256" | sha256sum --check
           (cd "$ops" && sha256sum --check infrastructure.sha256)
           work="$RUNNER_TEMP/current-suite-work"
-          python3 "$ops/prepare-integral.py" "$PWD" "$work" "$ops/integral-inputs.json" 4f4a129263f790a45ff8c775615a0f1fc51b7876c93ca5cec990ca3e59da0664
+          python3 "$ops/prepare-integral.py" "$PWD" "$work" "$ops/integral-inputs.json" d87fbaf17e7cb560fdd89ffc33143b4fe641ec6ea992960d0a53b63ed3a3a167
           printf 'WORK=%s\n' "$work" >> "$GITHUB_ENV"
       - name: Exact Node floor
         uses: actions/setup-node@v4
@@ -147,27 +147,20 @@ jobs:
           c=json.loads(pathlib.Path(sys.argv[1]).read_text());v=min(30,int(c['deadline_monotonic']-time.monotonic()-5));assert v>0,'No export budget';print(v)
           LIMIT
           )
-          timeout --signal=TERM --kill-after=2s "${budget}s" python3 - "$EVIDENCE" <<'PY'
-          import base64,hashlib,io,pathlib,stat,sys,tarfile
-          root=pathlib.Path(sys.argv[1]);files=[]
-          for p in sorted(root.rglob('*')):
-           m=p.lstat()
-           if stat.S_ISDIR(m.st_mode):continue
-           if not stat.S_ISREG(m.st_mode):raise SystemExit('EVIDENCE_NONREGULAR_FAIL')
-           files.append(p)
-          count=len(files);raw=sum(p.stat().st_size for p in files)
-          print('CURRENT_SUITE_EVIDENCE_FILES:'+str(count),flush=True)
-          print('CURRENT_SUITE_EVIDENCE_RAW_BYTES:'+str(raw),flush=True)
-          if count>128 or raw>20*1024*1024:raise SystemExit('EVIDENCE_CAP_FAIL_128FILES_20MIB')
-          out=io.BytesIO()
-          with tarfile.open(fileobj=out,mode='w:gz') as tar:
-           for p in files:tar.add(p,arcname=str(p.relative_to(root)),recursive=False)
-          data=out.getvalue()
-          if len(data)>4*1024*1024:raise SystemExit('EVIDENCE_CAP_FAIL_4MIB_GZIP')
-          print('CURRENT_SUITE_EVIDENCE_SHA256:'+hashlib.sha256(data).hexdigest())
-          print('CURRENT_SUITE_EVIDENCE_BYTES:'+str(len(data)))
-          print('CURRENT_SUITE_EVIDENCE_BASE64_BEGIN')
-          text=base64.b64encode(data).decode()
-          for i in range(0,len(text),4096):print(text[i:i+4096])
-          print('CURRENT_SUITE_EVIDENCE_BASE64_END')
-          PY
+          if test "$budget" -lt 7; then
+            short=$((budget-1)); if test "$short" -lt 1; then short=1; fi
+            printf '%s\n' 'EVIDENCE_INCOMPLETE_INSUFFICIENT_FULL_EXPORT_WINDOW'
+            timeout --signal=TERM --kill-after=1s "${short}s" python3 tests/real-process/cp17-trial/export-evidence.py "$EVIDENCE" --emergency-only || true
+            exit 1
+          fi
+          primary=$((budget-5))
+          if test "$primary" -lt 1; then primary=1; fi
+          if timeout --signal=TERM --kill-after=1s "${primary}s" python3 tests/real-process/cp17-trial/export-evidence.py "$EVIDENCE"; then
+            exit 0
+          else
+            code=$?
+            printf '%s\n' 'EVIDENCE_INCOMPLETE_PRIMARY_EXPORT_FAILED'
+            # Same overall30s allocation, five seconds reserved above.
+            timeout --signal=TERM --kill-after=1s 3s python3 tests/real-process/cp17-trial/export-evidence.py "$EVIDENCE" --emergency-only || true
+            exit "$code"
+          fi
