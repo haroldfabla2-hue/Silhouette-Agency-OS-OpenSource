@@ -1,48 +1,163 @@
-# Integrated hosted UI attempt, source review only
+# Coherent source-only A/D1 and genuine functional verification
 
-Task: Alberto's authenticated Nov14 11:34:05 message asks to investigate/use means that genuinely help test Silhouette well. Preserve prior zero charges, no local models, no Gemini CLI login, no private data disclosure, screenshots of actual testing, no fake responses, no production mutations. This packet does not authorize its own publication/dispatch/execution. Source/byte checks and public read-only downloads only have occurred. No program here has been run beyond parser checks. No source staging/app/build/native/browser/provider execution by this packet.
+NOT EXECUTED. NOT PUBLICATION AUTHORITY. Parent6a3faba64a9c6a636a40b48b84a55c358e2118f0.
+This review supersedes draft4d93/7baf helper instructions and stale statements
+that no auth product change is included. Historical layer reviews are immutable
+provenance, not the specification of this added layer.
 
-## Scope and acceptance
-One manual standard GitHub-hosted public-repo integration attempt: exact54 product composition, real UI+real backend in same loopback-only namespace, external providersOFF/cloud-only, fresh SQLite/Lance/config paths, actual setup/UI screenshot. Current browser driver deliberately stops at fresh setup. It does not seed an identity, bypass auth or fabricate model results. No authenticated chat/persistence/AI/learning/full product/rootB success claim. Ordinary shutdown plus cgroup/PID/IPv4+IPv6 evidence; any forced kill/OOM/quarantine/truncated capture invalidates scoped success. Screenshot may exist even if startup/cleanup fails and must carry that failure label.
+## Exact selected product changes
 
-This is not another helper replay. Entry is server/bootstrap.preparation.ts and actual app/server imports, current Vite frontend and SSR builds. Root B stays stickyINCOMPLETE. Intentional browser aliases to mocks remain labeled and excluded from functional proof; providersOFF UI setup is visual/backend-route proof only.
+functional-auth-composition.json applies FIVE exact before/after paths after
+immutable latehandle63326507 and verifies a full 1,703-file final product map.
+Three are independently reviewed A/D1 source changes from7baf: protected read-only
+/current-session validates an actual already-issued unexpired SID independently
+with identical header→cookie precedence, positive whitelist, no-store/fixed errors;
+bootstrap reuses that actual credential before old fingerprint fallback; both
+api.ts headerbuilders omit only an exactly empty configured key. No middleware,
+IdentityService, cookie/device trust/session lifetime, fingerprint credential or
+registration policy change. No new human permission from synthetic master state.
+Only401/403 permits old fallback; unavailable/timeout/parse fails unreachable.
+The existing broader emptyDB allowance is preserved, not newly approved policy.
 
-## Workflow and free route
-New file proposed .github/workflows/integrated-silhouette-ui.yml, packet proposed tests/integrated-ui-trial/*. Existing release/static helper workflow not edited. workflow_dispatch only, expected-head/source-branch/repo/public/hosted guards. Standard ubuntu-24.04 only, job20min, no larger/custom/selfhosted paid fallback, no cache/upload-artifact actions, no inference keys or secrets. No main merge/deploy/server action. Actual next runner resources must pass, not inferred from yesterday or previous helper.
+Fourth: existing failure projector keeps old category/kind/outcomes/IDs/counts/
+UNCLASSIFIED/ack/attribution/LIMIT64 EXACT, adds seven exact fixed sourceSites and
+bounded SAME-object-reference first-retained ID. No error properties/getters/
+constructors/names/messages/codes/stacks read. No primitive grouping. Not cause,
+recovery, unique-defect count, historical attribution or acknowledgment.
 
-Official current sources read:
-- https://docs.github.com/en/actions/concepts/billing-and-usage : standard hosted PUBLIC compute free.
-- https://docs.github.com/en/actions/reference/runners/github-hosted-runners : PUBLICubuntu-24.04 4CPU16GB14GB table, Linuxpasswordlesssudo.
-- https://docs.github.com/en/site-policy/github-terms/github-terms-for-additional-products-and-features : application development/testing allowed, unrelatedpersistenthosting/serverless/CDN disallowed. This is bounded repository integration test, not apphosting.
-- https://docs.github.com/en/billing/concepts/product-billing/github-actions : artifacts/cache allowance charges not assumed free. Explicit statement: generated log files and long job summary do NOT count toward artifact storage allowance. Therefore this source uses capped project-test evidence frame in job logs, NOT artifact/cache uploads. No account budget/billing mutations.
-Live get-repo read11:34:53 confirmed private:false at https://github.com/haroldfabla2-hue/Silhouette-Agency-OS-OpenSource . Must recheck before future mutation/dispatch, workflow has its own publicguard.
+Fifth: current server/index emits fixed JSON snapshots at existing drain stages,
+Host result, inner deadline and final frontier; plus fixed failure events in
+original catches. Snapshots contain fixed27 evaluated slot names/construction/
+stop status/elapsed, numeric Host stop topology INCLUDING actual resourceCount,
+11 fixed boot timer labels/phases/fires/failures, Host state/counts/capacity/highwater/
+resource dispositions/residual count and the intact failure projection. No raw
+error/source/resource labels, arbitrary values, trace, paths or identities. No new
+imports, timers, handles, stop calls, unref/cancel or ownership authority. Real
+console output has timing/exception behavior: extra bounded output is not free,
+and does not fix a previous CDP stall, explain prior child23 or prove quiescence.
 
-## Exact source and state
-Base db201993d05124cdb23a84cdfbc695bb3c6680d5 plus frozen0e3a710ab63232eec31d90e994036b3a3480c65605097fe4a6f0938e2bf33366 53paths, then bodyA compositionccb4bb65ec62060b9cfc2fea6172c428b02d7b4e7da7754b8abc44a09a09f520 2paths/54unique. Every preimage/postimage hash checked. state-classification.json contains EACH1695 final member's hash and include/exclude. All16exclusions physically unlinked before runtime marker; no runtime copy of data/tools.db, five agent definitions, props/queues/training/webhooks, silhouette/data/curriculum.jsonl, silhouette_discovery.db, soaklog, config/plugins.json. Keep migration SQL/source/default tool JSON. No original user history modified or sanitized: historical state is NOT input. Missing optional defaults may produce actual startup failure, not substituted fixtures.
+## Actual private fixture path, not a fake
 
-Correction to prior R2 closeout: SILHOUETTE_IDENTITY_DB_PATH DOES exist in SqliteAdapter and memoryStoragePaths (the singleton identityService separately uses mainSILHOUETTE_DB_PATH). Both main/app/db/test.db and adapter/app/db/identity.sqlite are mapped, tools/app/data/tools.db; root-relative defaults fresh/app, Lance/app/data/lance. Workspace/proposal/ingress/confirmation overrides passed but sourceOFF scrub may strip them; their literal fallback is still fresh/app/workspace or/app/data. VISUAL_WORKSPACE_ROOT hardcoded/opt/silhouette default denied. HOME/test+TMPDIR fresh tmpfs, voiceMonitor os.homedir conda probes see EMPTYhome. store-path-supplement.json has actual source excerpts/corrections. State classifier is not a complete dynamic write census; namespace prevents access to unmountedhost roots.
+The real driver uses actual local Chromium UI, genuine setup form and responses,
+actual hardware diagnostics200, both opt-ins OFF and Git fields absent, genuine
+setup and password login, standard issued session and protected routes, and a
+separate readonly native SQLite observer of SAME /app/db/test.db (timeout0).
+The observer joins user/device/session privately and compares SAME SID/expiry/
+trust/sessioncount immediately around current-session and genuine browser reload.
+A separate genuine password login may replace an old same-UA-device session by
+current production design. Never compare across that login as if it were readonly.
 
-## Actual reacquisition/provenance, no local-tree trust
-Node exact22.18.0 SHA ccacb2d6d87ba6d118b2bffc1ae33747a05cc5fc6b1f1ec4fc1d420b687e952d. Fresh package+lock from exact composition, lock039ce85293514e83584ca047d0d8b53eb7bce71bb3b3fe75fc6f96e928a0299c. npm ci --ignore-scripts --no-audit --no-fund with EMPTYhome/cache/separateuser/globalnpmrc, no auth/SSH/git fallback. Actual npm config flags checked. FullSHA libsignal publicarchive verified BEFORE npm can inspect manifest, requires no scripts/workspaces. ALL installed registry package regular members compared to lockSRI cached tar archives; missing only optional packages accepted explicitly; any extra/mismatch/unhandledlink fails. Fullfile checks can expose packaging quirks, no relax-on-failure. Complete acquisition output capped16MiB/naturalexit; no lifecycle scripts/postinstall/nativecompile.
+Genuine negatives: wrong password, missing/invalid SID, master-only rejected by
+current-session, cookie-only HTTP auth, invalid header overrides valid cookie,
+valid header overrides invalid cookie, postsetup anonymous diagnostics rejected,
+invalid/empty Bearer rejected, real nonempty Bearer behavior retained elsewhere,
+actual logout endpoint followed by rejected revoked SID and readonly absence.
+No storage/cookie injection to force UI, response mocks, CSS/DOM edits or auth bypass.
+Cookie-only is HTTP boundary testing, NOT a claim browser secure-cookie persistence
+on plain loopback HTTP was proved.
 
-SQLite package from lockSRI plus explicit reviewed prebuiltv12.5.0-nodev127-linux-x64 tar SHA42451490221883f4edb84fc3453a2fce9b7489ce655192cd5531b5955a8faa4b exactly one addon member, no install script. SQLite dynamicABI is tested only during real bootstrap, not filename claim. Lance SRI/archive independently reacquired read-only locally from https://registry.npmjs.org/@lancedb/lancedb-linux-x64-gnu/-/lancedb-linux-x64-gnu-0.22.3.tgz ; archiveSHA96eeebe05ea1c2524a2a229af73a9546ff7b1965c83839ca6ad6bb996dbc3fd7, all3members equal existing local bytes. Hosted runner reacquires itself via npmSRI, not copying local module. DynamicABI not executed yet.
+Mandatory positive OFF evidence: exact false checkboxes, outgoing setup keys only
+email/name/password (no Git credential/config), actual consent PUTfalse/responsefalse,
+analytics_consent.opted_in=0 persisted in SAME SQLite, no /app/.env.local/.git or
+home .gitconfig/.config/git before/after, and unchanged network isolation evidence.
+No external-account signup, Google interaction, evolution setup, provider enablement,
+network change or real secrets. Current product may start existing internal normal
+boot owners; this is not permission to enable external services. No AI/learning claim.
 
-Chromium source identity now proven beyond directory name: installed Playwright1.58.2 browsers.json maps revision1208→145.0.7632.6; registry cftUrl source selects https://cdn.playwright.dev/builds/cft/145.0.7632.6/linux64/chrome-headless-shell-linux64.zip . Read-onlydownload110MiB SHA2536e97d8f410df0394b3e7c4252e88ce9f239f04f3af4e247a26caf45baf49e; ALL287archive files hashed and match existing assets. Hosted runner independently downloads that exactURL/SHA, validates all members, no Playwrightinstall command. No native/browser executable evaluated locally. Current existing289asset inventory had2installer-markerextras, excluded from official287file tree. No upstream detached signature claimed.
+Loading/unreachable/fallback16GB/incomplete path is failure, not readiness. Real
+fresh setup heading is required. Bodyvisible/nav200 cannot pass the functional path.
+Actual second-context PNG may be captured privately AFTER genuine unchanged-session
+reload and BEFORE actual revocation. It is NEVER in the export allowlist or public
+job frame. Its fixed receipt says exported:false and NOT_INSPECTED_PRIVATE_ONLY.
+No first-context fallback exists even if second-page capture fails. Selectors do
+not prove pixel privacy. No genuinely private review route has been established,
+so visual correctness/privacy stay UNVERIFIED and no screenshot is delivered.
+Failure before capture retains explicit no-verified-second-page or capturefailure
+evidence, never substituted/masked pixels or a fake screenshotproof.
 
-## Containment and resources
-supervisor.py wraps setup/fork/wait/final capture in try/finally. Explicit bwrap --tmpfs / (NOT host root), only readonly/usr,/bin,/lib,/lib64,/etc/fonts,/etc/ld.so.cache,/etc/ssl/certs, exact/node, exactdeps at/app/node_modules, browserassets, project test driver. Fresh/app writable and fresh/tmp,/home; no/run,/root,/home/runner,/home/sandbox,/memory,/downloads,/opt/silhouette,/etc/shadow,.ssh,.git,Docker socket. These absences and mountinfo/rootlisting are checked and receipted BEFORE any build config/plugin or app evaluation. Dependency files readonly EXCEPT empty generated/app/node_modules/.vite-temp scratchtmpfs required by actual Vite6.4 bundle configloader. Normal node_modules location preserves Node module resolution; copying under/deps alone would break bare sibling imports. Exact no-secret allowlisted env, providersOFF+cloud-only, no imported host credentials.
+Twoidentity sameDB, real expiredSID and storeUnavailable503 remain explicitly
+NOT_EXERCISED: no legitimate exposed second-local-registration route, no fakeGoogle
+profile/ad-hocSQLwrites or simulated store failure. They do not become passing tests.
+The current source repair can be evaluated narrowly without claiming full security.
+Full original functional outcome remains FAIL/INCOMPLETE; chatStorageVerified stays
+false, AI/learning/universal drain/native/power-loss durability unproved.
 
-Netnamespace user/PID/ipc/UTSisolated; onlylo enabled, interface list exactlylo, IPv4 routes onlylo, IPv6 routes onlylo. Setup-onlyCAP_NET_ADMIN/SETPCAP dropped bounding/permitted/effective/inheritable=0 and no_new_privs1 before build/app/browser. Browser and app share isolatedloopback, bind127.0.0.1:3005, no tunnel/publicport/externalcloudbrowser.
+## Privacy and exact finite evidence
 
-Kernel cgroup exact per-run tag child under/sys/fs/cgroup, hardaggregate3GiB, swap0, CPUquota1CPU+singleCPUaffinity, pids96. Need ancestor controllers already delegated/enabled; no controller reconfiguration fallback. Eachphase checks ALLfiniteancestor max/current plus physicalavailable >=cap+1GiB and disk>=1GiB (initialdisk>=8GiB). Parent reserve256MiB consistently at preflight ANDduringphase. No arbitraryV8heap fit claim. BuildUI180s, SSRbuild180s, runtime180s each, cgroup cap same across all; Node's actual behavior may fail, no auto resource increase. Runtime startup45s/browsernav15s plus naturalshutdown30s reserve. No pass on kernelOOMkill. Disk accounting512MiB/app, perfile64MiB/outputlog32MiB, capture64MiBraw/8MiBgzip. These disk checks are userspace accounting, NOTfilesystemquota; kernelmemory/cpu/pids enforcement real. Setup failure beforecgroup creation yields failurereceipt, noapp. Alwayscleanup only matchingRUNID-prefixcgroups; emergencycleanupFAIL. Forcedhosttimeout invalidates, never substitutednaturalzero.
+Runtime raw logs runtime.log and runtime/complete.log remain private, mandatory
+presence checked, NEVER returned or hashed for public evidence. Browser rawconsole
+and pageerror text are removed, leaving fixed event kinds. Fixed error kinds distinguish
+CDPsession/screenshot/detach/layout/browserclose failures without original messages.
+Privatecollector reads only exact runtime log paths after the phase with stable,
+nofollow/type/size checks and parses ONLY selected exact marker prefixes. Strict
+positive schema checks every field/name/enum/count; arbitrary log lines are ignored,
+not exported or transformed. Missing Host/final snapshots explicitly mark lifecycle
+MISSING_OR_INCOMPLETE. Failure to collect produces an invalid mandatory diagnostic,
+without discarding the rest of the genuine test frame. No silent raw-log coverage
+loss: receipt says withheld/presence/reason; product status stays INCOMPLETE.
 
-## Evidence and privacy
-ActualPNG, project-only app/build logs and typedreceipts via return-evidence.py. No genericdirectoryupload, no env/HAR/cookies/localStorage/accountfiles/DBs/source/internaltranscripts/buildrecords from assistant. Encoding is transport, notprivacy. Allowlist+secretmarkerquarantine wholefile withhash/count, no truncating/replacing failures. FreshUI contains only disposedemptytestcontext; if privateunexpectedidentity/data appears, do NOTdeliverPNG until reviewed, testinvalid. Publicscope restriction explicit.
-FrameBEGIN includes exactgzipbytes/SHA/chunkcount, numbered2048charbase64chunks, ENDmatchingSHA. decode-evidence.py rejects missing/duplicate/outoforder/truncatedframe, wronglength/hash, unsafe tar path, perfilehash mismatch, capoverflow. Parent must recover actual fulljoblogs and inspect PNGpixels before userdelivery. No logs/text-only substitute for productPNG. Quarantined or missing evidence meansFAIL/UNVERIFIED, notpass.
+runtime/runtime-finite.json, browser.json, runtime-result.json, exit-frontier.json,
+process/cgroup counters and the outer runtime receipt are mandatory after runtime
+admission and strict-schema validated on FINAL bounded bytes before tar insertion.
+New JSON reads reject duplicate keys and nonfinite values. Lifecycle completeness
+requires exact ordered stage/HOST/final markers, FINAL at ORIGINAL_DRAIN_RETURNED,
+both original private raw logs present, and source-ordered postdrain resourcecounts
+before the final snapshot. Earlydeath/deadline/overflow/missing/malformed results
+mark mandatory failure while retaining the rest of the real evidence frame.
+Existing projection sourceHost can drop overcapacity retained records while its
+lifetime counts rise; schema permits honest retained+ack<=lifetime, but completeness
+requires equality and no truncation so lost evidence cannot silently pass.
+The private PNG is NEVER added to the public frame, nor is its hash exported. Existing
+root/network/process/supervisor/source identities and innerdeadline vs outerforced
+receipts remain unchanged and exported. Old raw Redis logs remain excluded. Original
+secret regex, credential regex and private exact API-token denial remain unchanged.
+Additional fixture denial is wx0600/nofollow, same inode/type/mode checked each update,
+max8 values/max2KB, fsync before use; final exporter privately validates it. It is
+mandatory from helper-entry/any credential attempt, including partial failure,
+NOT only after the final authenticated flag. Missing/invalid material marks an
+invalid mandatory receipt and withholds affected browserdata rather than exiting
+before the rest of the genuine frame or allowing a credential leak. No
+credential/session/body/header/storage/DB/hash is included in browser finite receipt.
+Whole-file quarantine remains, no lossy rewrite presented as original evidence.
 
-## Remaining gates and honest limits
-1. Independent source review, fixes, explicitpublicationgate exactpaths/SHA/branch. No push/newrun yet.
-2. Separate exactcommit manualdispatchgate for namedscope after currentrepo/publiceligibility recheck. StandardActions versions v4 are existing repo convention, not immutable actioncommit pins; reviewer may require pinning observedcurrent actioncommit SHAs before publication.
-3. On actualrun, cgroupdelegation/kernel/Pythonlib/bwrapbrowserdependencies may be unavailable; failclosed and retainexactfailure. No install/sudoaptfallback. Packagefileverification may expose legitimate npm metadata changes; report actual rather than relax silently.
-4. Browser stops atsetupUI, so no authenticatedchat/storage/modelproof. That requires later real authenticatedtemporarytestidentity flow and separatelyapproved free model/providerrequest. NVIDIA read-only findings remain evalonly/noprivatedata/noinference authorized; no activepositiveprovider tuple here.
-5. RootB/global/frontier/integratedshutdownfullownership remainINCOMPLETE regardless scoped startup/UI receipt.
+## Async and containment
+
+Both actual pages use identical bounded fixed listeners with pageOrdinal1/2.
+Checkpoint diagnostic storage is capped64 for two page bootstraps/reload, with
+overflow a FAIL, not a truncated green result. No process/resource/time cap changes.
+External stylesheet metadata normalizes only local paths, exact Google Fonts/css2
+and exact jsDelivr/xterm@5.3.0 path to enums; all other external strings are OMITTED.
+Common120s work deadline starts before Chromium launch. Each helper action including
+responses JSON, newContext/newPage, evaluate and waits is raced against remaining
+budget and max15s; actual library timeouts also supplied. Response waiters have
+immediate fulfillment/rejection observers before clicks, so a failed click cannot
+leave floating timeout rejection. Late work promises stay observed, pending work
+makes acceptance FAIL, and late returned scopes get bounded closes. Up to THREE
+contexts: original setup, anonymous HTTP, independent login. Secondary close1s each,
+whole browser close5s. Synchronous SQLite timeout0 plus before/after deadline checks
+cannot control stuck native code; original cgroup supervisor is final authority.
+
+Real viewport CDP capture2+5+1, layout2 and final browserclose5 total at most15s of
+separate diagnostics, with at most2s secondary cleanup. Existing backend30s and
+sampler2s keep nominal worst-case169s inside180; no larger phase/budget. A successful
+auth PNG occurs INSIDE common workbudget, before revocation, and does not consume a
+second capture in finally. The unchanged initial backend polling condition retains
+its old250ms cadence, NOT an added rendering sleep or force-ready shortcut.
+No new sleeps/CSS/render/auth bypass. No unref/cancellation of product-owned work.
+
+All original nine Redis rows and three embedded supplemental children remain exact:
+original fixture76eeffd4, supplemental d30fa940, product Redis94875ae6. Preserve160s
+Redis/180s phases/705s remaining-slot reserve/1020s aggregate/20-minute workflow,
+conditional17+2 ninth slot only when realremaining>=19s. All passing UI/continuum
+assertions and existing isolation/security/resource controls stay mandatory.
+
+## Preparation checks and limits
+
+Node --check passed for browser driver/helper. Python compile passed for source
+scripts, collector/schema/exporter/orchestrator. Pure schema-only checks on original
+run17 runtime-result/frontier/process/cgroup/outer receipts passed; they are not new
+runtime evidence and do not validate a fabricated success fixture. Full TypeScript compile and app,
+addon, UI/browser, network and provider execution NOT performed in preparation.
+No new dependencies installed. No fixture result, screenshot or runtime claim is
+manufactured by these syntax/source checks. Independent review is required for the
+full exact composition and finite schema before ANY run/publication decision.

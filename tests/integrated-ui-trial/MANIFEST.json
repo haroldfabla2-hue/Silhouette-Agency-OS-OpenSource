@@ -1,6 +1,6 @@
 {
   "status": "SOURCE_ONLY_NO_EXECUTION_PUBLICATION",
-  "parent": "d67de94e4efa464529012742035896ee70abd2dc",
+  "parent": "6a3faba64a9c6a636a40b48b84a55c358e2118f0",
   "files": {
     "ASSERTION-DIAGNOSTIC-COMPOSITION-REVIEW.md": {
       "bytes": 1315,
@@ -21,6 +21,10 @@
     "FINITE-VALIDATION-REVIEW.md": {
       "bytes": 4913,
       "sha256": "d20349427a1895e4e116d6ca5654c43763d03fe2d46b1ea0fd383a798c6ea170"
+    },
+    "FUNCTIONAL-AUTH-COMPOSITION-REVIEW.md": {
+      "bytes": 11379,
+      "sha256": "d0418ec0eeeba573cdc62b9a623be3ec09b71d3c54070caf73a2f9e83fc5b88a"
     },
     "GENERATION-BORROW-COMPOSITION-REVIEW.md": {
       "bytes": 5855,
@@ -43,8 +47,8 @@
       "sha256": "5a0cdbe116331bee1980fc58f051430b089b0f8a14d0da60e0d469d99b20ec24"
     },
     "REVIEW.md": {
-      "bytes": 11544,
-      "sha256": "2378c43c3ee001fd9a98412d91e079e18e6bcbd96ca53c1bb2f8eecb5369601a"
+      "bytes": 11379,
+      "sha256": "d0418ec0eeeba573cdc62b9a623be3ec09b71d3c54070caf73a2f9e83fc5b88a"
     },
     "RUNTIME-BOUNDARY-COMPOSITION-REVIEW.md": {
       "bytes": 1130,
@@ -75,8 +79,8 @@
       "sha256": "560bd48e9ca45d06eede21cba609ffc7acccffa113fbfe288f3f275c8f9c731b"
     },
     "browser-driver.cjs": {
-      "bytes": 7688,
-      "sha256": "ebaf69e86e3965b314409b92571c2b6b2f89121c151edaecef569f6ba9ef70d4"
+      "bytes": 10393,
+      "sha256": "b8425a302a9c6523db0bb0db8d6c470c90933f96002a3f5b71dad3aecae20e59"
     },
     "chromium-provenance.json": {
       "bytes": 62542,
@@ -89,6 +93,10 @@
     "cleanup-keyscope.py": {
       "bytes": 1377,
       "sha256": "02334906ca37bdbf6562c06cf523b604f7e71039fc5be286a99553faf5c78b4d"
+    },
+    "collect-runtime-finite.py": {
+      "bytes": 2616,
+      "sha256": "063e7734d923a6fc8d4afadb871d2860a6fc30ebb03e5288c265dd505fcf9794"
     },
     "continuum-composition.json": {
       "bytes": 195861,
@@ -166,6 +174,38 @@
       "bytes": 20160,
       "sha256": "dbf0ff4c7a98a5b0f00b51ee85d978dfd3cc5dde61aac09c28c0ee0fa932f278"
     },
+    "functional-auth-composition.json": {
+      "bytes": 194252,
+      "sha256": "25f49a318b3c98f0959621d89deaf9c11d9075844112efb610669b6d50183cda"
+    },
+    "functional-auth-overlay/server/index.ts": {
+      "bytes": 24027,
+      "sha256": "93fd042c371cd4de06287bd2f3cb367a494c21edeb68fd11c239720305ae8400"
+    },
+    "functional-auth-overlay/server/routes/v1/identity.routes.ts": {
+      "bytes": 21507,
+      "sha256": "ee16fe5dfb00d6bf0842cd939686c5f8e709e8e1f8e97c1fc9da3c8a79f62052"
+    },
+    "functional-auth-overlay/services/lifecycle/retainedFailureCategories.ts": {
+      "bytes": 4371,
+      "sha256": "ad11d086a7df3cb71e0513de326cdf78f0cf2654b44ab49ed4e6c2b94c543385"
+    },
+    "functional-auth-overlay/utils/api.ts": {
+      "bytes": 4763,
+      "sha256": "9c44de894ebc9de941945c47ea3b3c9e1fc452b788bf933fc38d48ca996c444f"
+    },
+    "functional-auth-overlay/utils/fingerprint.ts": {
+      "bytes": 7631,
+      "sha256": "66bddcecc076505f3f45755a0558c927f0c5c73530977c13d6fc8760e21ab481"
+    },
+    "functional-auth.cjs": {
+      "bytes": 14314,
+      "sha256": "b3b9e4d6fc06e4faf0633df654399ae6282c116682839972d73cf34c2a4c2ff1"
+    },
+    "functional-source-grounding.json": {
+      "bytes": 1306,
+      "sha256": "50419294cceeaf763e18e5dfe366dc657413bedd624736e0f9432294cbb82854"
+    },
     "generation-borrow-composition.json": {
       "bytes": 193118,
       "sha256": "0c567fa373d8d6f88de8452a447c800345166710992b7a9f6893c7d32b7e308b"
@@ -175,8 +215,8 @@
       "sha256": "94875ae65d7b0dacc7952bd5a166db4a273ec7ea69c5ffd0a332e6e85527b9c5"
     },
     "hosted-orchestrator.py": {
-      "bytes": 28523,
-      "sha256": "c530514ca9bd79404b01836b6f7ca1735cc97f23d34813fe66c6914952b7afc5"
+      "bytes": 29156,
+      "sha256": "fb9f1dcdb213afb751775019bbcaf68ebf3674ca85f5e9f7afbfecfe5eba92f8"
     },
     "identity-entry.py": {
       "bytes": 3884,
@@ -191,8 +231,8 @@
       "sha256": "0e3a710ab63232eec31d90e994036b3a3480c65605097fe4a6f0938e2bf33366"
     },
     "integrated-hosted.yml": {
-      "bytes": 3930,
-      "sha256": "71ba06be7259c8e3d2c5d6308a03b3bc271a951cd00e44f9078eba36ef148f8f"
+      "bytes": 4436,
+      "sha256": "fdd249af1914b04bcce908637e41e488da42d744bc125b4014eab60f0cc60b4d"
     },
     "lance-provenance.json": {
       "bytes": 900,
@@ -275,8 +315,8 @@
       "sha256": "045f357220cf14f3e24212d06d4b95c5ebfe9a499377df54b5e2416b5f1d0550"
     },
     "return-evidence.py": {
-      "bytes": 15131,
-      "sha256": "f67fc78d5d419e9a0281a5727c023ceb89ab8ec3694f0e98511bb1bbdf44ea04"
+      "bytes": 19388,
+      "sha256": "9b61421faae692efecc6b2a1d6703f0a145dbb32ac3702e706d5e23e84274e14"
     },
     "runtime-boundary-composition.json": {
       "bytes": 194009,
@@ -333,6 +373,10 @@
     "runtime-counters.py": {
       "bytes": 3383,
       "sha256": "be2b8ed47b794712844edb6f2b2df47d1b3292162f14fe8089df33cf1e71f26d"
+    },
+    "runtime-finite-schema.py": {
+      "bytes": 23464,
+      "sha256": "6239dadbf3243de8ce2789d68ec6c1a35b77816156c079d68502ca092fb73ae2"
     },
     "runtime-prerequisites.cjs": {
       "bytes": 2062,

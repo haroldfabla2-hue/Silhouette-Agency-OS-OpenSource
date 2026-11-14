@@ -2,12 +2,22 @@
 """Project test evidence only. Public log transport, NOT privacy by encoding."""
 from pathlib import Path
 import os,hashlib,tarfile,io,json,re,base64,stat
+from importlib.util import spec_from_file_location,module_from_spec
+runtimeSpec=spec_from_file_location('runtime_finite_schema',Path(__file__).with_name('runtime-finite-schema.py'));runtimeSchema=module_from_spec(runtimeSpec);runtimeSpec.loader.exec_module(runtimeSchema)
 assert os.geteuid()==0,'ROOT_READER_REQUIRED_FOR_PRIVATE_PHASE_RECEIPTS'
 root=Path(os.environ['RUNNER_TEMP'])/'silhouette-integrated-ui/evidence';assert root.is_dir(),'NO_EVIDENCE_NO_PASS'
 # Deliberately not generic file upload. Only this project's receipts, test logs,
 # and actual fresh providerOFF UI PNG. No source tree, env, browser HAR/storage,
 # authentication payloads, cookies, profile/database or operating transcripts.
 allowed={'runtime/browser-checkpoints.json','runtime/runtime-process-counters.json','runtime/runtime-cgroup-counters.json','ui-build/finite-validation.json','ui-build/telemetry-regression.json','ui-build/emitted-bootstrap-inspection.json','dependency-archive-verification.json',*(phase+'/identity-map.json'for phase in ['environment-probe','runtime-prerequisites','ui-build','continuum-regressions','redis-regressions','server-build','runtime']),'host-qualification.log','host-qualification-receipt.json','host-qualification.json','security-preparation.log','security-preparation-receipt.json','security-preparation.json','security-chain/result.json','security-chain/gpgv-status.txt','security-chain/selected-stanza.json','security-chain/loader.txt','security-chain/key-fingerprints.txt','security-chain/ip-identity.json','security-helpers-state.json','environment-probe.log','environment-probe-receipt.json','environment-probe/root-preflight.json','environment-probe/network.json','environment-probe/supervisor.json','environment-probe/complete.log','runtime-prerequisites/root-preflight.json','runtime-prerequisites/network.json','runtime-prerequisites/supervisor.json','runtime-prerequisites/complete.log','environment-probe/qualification.json','runtime-prerequisites/prerequisites.json','runtime-prerequisites/prerequisites-failure.json','runtime-prerequisites.log','runtime-prerequisites-receipt.json','ui-build/root-preflight.json','server-build/root-preflight.json','runtime/root-preflight.json','outer-cleanup.json','npm-config-preflight.log','npm-config-preflight-receipt.json','source-materialization.json','dependency-members.json','result.json','failure.json','dependency-acquisition.log','dependency-acquisition-receipt.json','ui-build.log','server-build.log','runtime.log','ui-build-receipt.json','server-build-receipt.json','runtime-receipt.json','ui-build/complete.log','server-build/complete.log','runtime/complete.log','ui-build/supervisor.json','server-build/supervisor.json','runtime/supervisor.json','ui-build/network.json','server-build/network.json','runtime/network.json','runtime/actual-ui.png','runtime/browser.json','runtime/browser-failure.json','runtime/runtime-result.json','runtime/exit-frontier.json'}
+# Credentialled raw runtime logs stay PRIVATE; mandatory presence is unchanged.
+allowed.difference_update({'runtime.log','runtime/complete.log','runtime/actual-ui.png'})
+allowed.add('runtime/runtime-finite.json')
+runtimeCollectionFailed=False
+if (root/'runtime.log').exists():
+ import subprocess
+ try:runtimeCollectionFailed=subprocess.run(['/usr/bin/python3',str(Path(__file__).with_name('collect-runtime-finite.py'))],check=False,timeout=5).returncode!=0
+ except BaseException:runtimeCollectionFailed=True
 # Private evidence root is exactly the launcher-selected temporary test scope.
 # Never follow symlinks in the root ancestry or allowlisted children.
 cur=root
@@ -43,6 +53,21 @@ for phase in ['runtime-prerequisites','ui-build','continuum-regressions','redis-
   assert d.is_file()and not d.is_symlink()and d.stat().st_mode&0o777==0o600,'EXPORT_DENY_FILE_INVALID'
   value=bounded_evidence_read(d,43);assert value is not None and re.fullmatch(rb'[A-Za-z0-9_-]{43}',value),'EXPORT_DENY_VALUE_INVALID'
   denyValues.append(value)
+fixtureDenyInvalid=(root/'runtime.log').exists()and not(root/'runtime/.export-deny-api-token').exists()
+try:
+ d=root/'runtime/.export-deny-browser-secrets.json'
+ if d.exists():
+  assert d.is_file()and not d.is_symlink()and d.stat().st_mode&0o777==0o600,'FIXTURE_DENY_FILE_INVALID'
+  values=runtimeSchema.strict_loads(bounded_evidence_read(d,2048))
+  assert type(values)is list and 1<=len(values)<=8 and all(type(v)is str for v in values)and len(set(values))==len(values),'FIXTURE_DENY_VALUES_INVALID'
+  for value in values:
+   assert re.fullmatch(r'[A-Za-z0-9_-]{16,128}',value),'FIXTURE_DENY_VALUE_INVALID'
+   denyValues.append(value.encode('ascii'))
+ elif (root/'runtime/browser.json').exists():
+  browserPrivate=runtimeSchema.strict_loads(bounded_evidence_read(root/'runtime/browser.json',1024**2))
+  assert not browserPrivate.get('credentialFixtureEntered',False)and 'functional'not in browserPrivate,'MISSING_FIXTURE_DENY_FILE'
+ elif (root/'runtime.log').exists():fixtureDenyInvalid=True
+except BaseException:fixtureDenyInvalid=True
 # Catch labeled assignments/headers too, including a value not yet in the deny
 # file if setup was interrupted. Matching quarantines the ENTIRE original file.
 credentialPattern=re.compile(rb'(?i)(?:SILHOUETTE_API_(?:TOKEN|KEY)\s*[=:]\s*[\"\x27]?[A-Za-z0-9_+/=-]{8,}|(?:authorization|proxy-authorization)\s*[\"\x27]?\s*[:=]\s*[\"\x27]?(?:Bearer|Basic)\s+[A-Za-z0-9_+/=.-]{8,}|(?:x-api-key|x-auth-token)\s*[\"\x27]?\s*[:=]\s*[\"\x27]?[A-Za-z0-9_+/=.-]{8,})')
@@ -53,6 +78,8 @@ missing=[];invalid=[]
 def diagnostic_error(path,kind):
  # Fixed path/category only, never echo possibly secret JSON content/messages.
  invalid.append({'path':path,'reason':kind})
+if runtimeCollectionFailed:diagnostic_error('runtime/runtime-finite.json','FIXED_RUNTIME_COLLECTION_FAILED')
+if fixtureDenyInvalid:diagnostic_error('runtime/browser.json','MISSING_OR_INVALID_FIXTURE_DENY_MATERIAL')
 def mandatory_presence(rel):
  try:
   st=(root/rel).lstat()
@@ -83,6 +110,11 @@ if mandatory_presence('ui-build/complete.log'):
 if mandatory_presence('continuum-regressions/complete.log'):
  for name in ['continuum-validation.json',*('continuum-mode-'+m+'.json'for m in ['constructors','identity-existing','saturated-replay','schema-and-write-failure','power-check','timer-armed','timer-fired','threshold'])]:
   if not mandatory_presence('continuum-regressions/'+name):missing.append('continuum-regressions/'+name)
+if mandatory_presence('runtime.log'):
+ if not mandatory_presence('runtime/runtime-finite.json'):missing.append('runtime/runtime-finite.json')
+ if not mandatory_presence('runtime/browser.json'):missing.append('runtime/browser.json')
+ for requiredRuntime in ['runtime/runtime-result.json','runtime/exit-frontier.json','runtime/runtime-process-counters.json','runtime/runtime-cgroup-counters.json','runtime-receipt.json']:
+  if not mandatory_presence(requiredRuntime):missing.append(requiredRuntime)
 if not mandatory_presence('outer-cleanup.json'):missing.append('outer-cleanup.json')
 # Validate precisely the FINAL bounded bytes that can enter the evidence tar.
 # No invalid/mutated payload can pass merely because an earlier driver read it.
@@ -155,6 +187,8 @@ with tarfile.open(fileobj=buf,mode='w:gz')as t:
   except BaseException:
    diagnostic_error(rel,'INVALID_UNREADABLE_OVERSIZE_OR_MUTATING_ALLOWLISTED_FILE');continue
   if b is None:continue
+  if fixtureDenyInvalid and rel.startswith('runtime/')and rel not in {'runtime/network.json','runtime/root-preflight.json','runtime/identity-map.json','runtime/supervisor.json','runtime/runtime-process-counters.json','runtime/runtime-cgroup-counters.json','runtime/runtime-result.json','runtime/exit-frontier.json','runtime/runtime-finite.json'}:
+   diagnostic_error(rel,'PRIVATE_FIXTURE_DENY_UNAVAILABLE_WITHHELD');continue
   if rel in continuumJson:
    if rel in invalidContinuum or rel not in validatedContinuum or b!=validatedContinuum.get(rel):
     diagnostic_error(rel,'INVALID_OR_MUTATED_FIXED_CONTINUUM_RECEIPT')
@@ -162,6 +196,15 @@ with tarfile.open(fileobj=buf,mode='w:gz')as t:
     continue
   if rel in redisJson and (rel in invalidRedis or rel not in validatedRedis or b!=validatedRedis.get(rel)):
    diagnostic_error(rel,'INVALID_OR_MUTATED_FIXED_REDIS_RECEIPT');quarantine.append({'path':rel,'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest(),'reason':'INVALID_FIXED_RECEIPT_QUARANTINE'});continue
+  if rel in {'runtime/runtime-finite.json','runtime/browser.json','runtime/runtime-result.json','runtime/exit-frontier.json','runtime/runtime-process-counters.json','runtime/runtime-cgroup-counters.json','runtime-receipt.json'}:
+   try:
+    runtimeSpec=spec_from_file_location('runtime_finite_schema',Path(__file__).with_name('runtime-finite-schema.py'));runtimeSchema=module_from_spec(runtimeSpec);runtimeSpec.loader.exec_module(runtimeSchema)
+    fixedReceipt=runtimeSchema.strict_loads(b)
+    validators={'runtime/runtime-finite.json':runtimeSchema.validate,'runtime/browser.json':runtimeSchema.browser,'runtime/runtime-result.json':runtimeSchema.runtime_result,'runtime/exit-frontier.json':runtimeSchema.exit_frontier,'runtime/runtime-process-counters.json':runtimeSchema.process_counters,'runtime/runtime-cgroup-counters.json':runtimeSchema.cgroup_counters,'runtime-receipt.json':runtimeSchema.runtime_outer}
+    validators[rel](fixedReceipt)
+    if rel.endswith('runtime-finite.json')and fixedReceipt['lifecycleEvidence']!='OBSERVED_NOT_GLOBAL_PASS':diagnostic_error(rel,'INCOMPLETE_FIXED_RUNTIME_LIFECYCLE')
+   except BaseException:
+    diagnostic_error(rel,'INVALID_FIXED_RUNTIME_OR_BROWSER_RECEIPT');quarantine.append({'path':rel,'reason':'INVALID_FIXED_RUNTIME_RECEIPT_QUARANTINE'});continue
   if any(value in b for value in denyValues)or(not rel.endswith('.png')and(secret.search(b)or credentialPattern.search(b))):quarantine.append({'path':rel,'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest(),'reason':'POSSIBLE_SECRET_QUARANTINE'});continue
   total+=len(b);assert total<=64*1024**2,'RAW_CAPTURE_CAP'
   row={'path':rel,'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()};rows.append(row);info=tarfile.TarInfo(rel);info.size=len(b);info.mode=0o600;t.addfile(info,io.BytesIO(b))

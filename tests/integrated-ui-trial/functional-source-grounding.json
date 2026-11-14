@@ -1,0 +1,38 @@
+{
+  "currentParent": "6a3faba64a9c6a636a40b48b84a55c358e2118f0",
+  "verifiedSourceOnly": [
+    {
+      "path": "services/lifecycle/runtimeStopBindings.ts",
+      "sha256": "ebe511ddadbf2f20e004a127d7b374bdabcad23fcb1cabf7bcd9c941a5c22dd0"
+    },
+    {
+      "path": "server/lifecycle/bootTimers.ts",
+      "sha256": "4b3fa9d59329b057e517576680118c9e3a462f446f881db344d5b02f76ea3fa9"
+    },
+    {
+      "path": "server/runtimeRootHost.ts",
+      "sha256": "22e8a73d523046d0181eecc4870b911c805f1898f5b2a31b5e1a1f81698cae66"
+    },
+    {
+      "path": "server/index.ts",
+      "sha256": "f3a85e14890eff79419f927b70cad1882cc841cfa68d08053775fb357322e94f"
+    },
+    {
+      "path": "services/telemetryAnalytics.ts",
+      "sha256": "d66ddc99a172cef7359bc42aba51545168516a55fabab3e372fd50b49ba4b9aa"
+    },
+    {
+      "path": "services/sqliteService.ts",
+      "sha256": "bd5e5a62392753361ea87504b562b0383caa1d2898e67bc2dbd99c586ee286a0"
+    },
+    {
+      "path": "server/controllers/systemController.ts",
+      "sha256": "04ee2d7c632f26c6dee80c0b5c98fa094667fd9a915557f933b3a81afc9dc264"
+    }
+  ],
+  "telemetryDb": "SILHOUETTE_DB_PATH",
+  "identityDb": "SILHOUETTE_DB_PATH",
+  "twoIdentityRuntime": "NOT_EXERCISED",
+  "expiredSessionRuntime": "NOT_EXERCISED",
+  "unavailableStoreRuntime": "NOT_EXERCISED"
+}

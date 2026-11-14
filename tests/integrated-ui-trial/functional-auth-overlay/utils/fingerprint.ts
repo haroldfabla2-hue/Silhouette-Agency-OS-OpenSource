@@ -1,0 +1,218 @@
+// =============================================================================
+// Device Fingerprint Utility
+// Generate unique device identifier for auto-login
+// =============================================================================
+
+/**
+ * Generate a device fingerprint based on browser/system characteristics
+ * This runs in the browser (frontend)
+ */
+export function generateFingerprint(): string {
+    const components: string[] = [];
+
+    // User agent
+    components.push(navigator.userAgent);
+
+    // Screen dimensions
+    components.push(`${screen.width}x${screen.height}x${screen.colorDepth}`);
+
+    // Timezone
+    components.push(Intl.DateTimeFormat().resolvedOptions().timeZone);
+
+    // Language
+    components.push(navigator.language);
+
+    // Platform
+    components.push(navigator.platform);
+
+    // Hardware concurrency (CPU cores)
+    components.push(String(navigator.hardwareConcurrency || 0));
+
+    // Device memory (approximate)
+    components.push(String((navigator as any).deviceMemory || 0));
+
+    // Persistent UUID from localStorage (survives browser restart)
+    let persistentId = localStorage.getItem('silhouette_device_id');
+    if (!persistentId) {
+        persistentId = crypto.randomUUID();
+        localStorage.setItem('silhouette_device_id', persistentId);
+    }
+    components.push(persistentId);
+
+    // Hash all components
+    return hashString(components.join('|'));
+}
+
+/**
+ * Simple string hashing (FNV-1a variant)
+ */
+function hashString(str: string): string {
+    let hash = 2166136261;
+    for (let i = 0; i < str.length; i++) {
+        hash ^= str.charCodeAt(i);
+        hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+    }
+    // Convert to hex string
+    return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+/**
+ * Get friendly device name
+ */
+export function getDeviceName(): string {
+    const ua = navigator.userAgent;
+
+    // Try to detect device type
+    if (/Windows/.test(ua)) {
+        if (/Win64|x64/.test(ua)) return 'Windows PC (64-bit)';
+        return 'Windows PC';
+    }
+    if (/Macintosh/.test(ua)) return 'Mac';
+    if (/Linux/.test(ua)) return 'Linux PC';
+    if (/Android/.test(ua)) return 'Android Device';
+    if (/iPhone|iPad/.test(ua)) return 'iOS Device';
+
+    return 'Unknown Device';
+}
+
+/**
+ * Check if current device is trusted (has valid session)
+ */
+export async function checkDeviceTrust(): Promise<{
+    trusted: boolean;
+    user?: { email: string | null; name: string; role: string };
+    isCreator?: boolean;
+    googleLinked?: boolean;
+    needsSetup?: boolean;
+    serverUnreachable?: boolean;
+}> {
+    // Reuse only a real already-issued session. This same-origin request also
+    // supports the existing HttpOnly cookie. The server independently validates
+    // it even if middleware admitted a different system credential.
+    const sessionController = new AbortController();
+    const sessionTimeout = setTimeout(() => sessionController.abort(), 5000);
+    try {
+        const existingSession = localStorage.getItem('silhouette_session_id');
+        const headers: Record<string, string> = {};
+        if (existingSession) headers['x-session-id'] = existingSession;
+        const response = await fetch('/v1/identity/current-session', {
+            method: 'GET', headers, signal: sessionController.signal, cache: 'no-store'
+        });
+        if (response.ok) {
+            const data = await response.json();
+            if (data.success !== true || !data.user || typeof data.user.id !== 'string'
+                || typeof data.user.name !== 'string' || typeof data.user.role !== 'string') {
+                return { trusted: false, serverUnreachable: true };
+            }
+            return { trusted: true, user: data.user, isCreator: data.user.role === 'CREATOR',
+                googleLinked: data.user.googleLinked === true };
+        }
+        // Only an explicit rejection permits the existing fingerprint fallback.
+        // Service failures/timeouts never become authentication or silent login.
+        if (response.status !== 401 && response.status !== 403) {
+            return { trusted: false, serverUnreachable: true };
+        }
+    } catch {
+        return { trusted: false, serverUnreachable: true };
+    } finally {
+        clearTimeout(sessionTimeout);
+    }
+    const fingerprint = generateFingerprint();
+
+    try {
+        // Add timeout to prevent infinite hang if server is slow/unavailable
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
+        const response = await fetch('/v1/identity/auto-login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                fingerprint,
+                deviceName: getDeviceName()
+            }),
+            signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            // 5xx / blocked (e.g. CORS proxy) is not the same as 'not trusted': say so.
+            return { trusted: false, serverUnreachable: response.status >= 500 };
+        }
+
+        const data = await response.json();
+
+        if (data.success && data.user) {
+            // Persist the issued session so the shared api helper authenticates
+            // every call via x-session-id (cookie is also set server-side).
+            if (data.session?.id) {
+                localStorage.setItem('silhouette_session_id', data.session.id);
+            }
+            return {
+                trusted: true,
+                user: data.user,
+                isCreator: data.isCreator,
+                googleLinked: data.googleLinked
+            };
+        }
+
+        // Not trusted - pass through setup/link status for LoginGate
+        return {
+            trusted: false,
+            needsSetup: data.needsSetup,
+            googleLinked: data.googleLinked
+        };
+    } catch (error: any) {
+        // Handle abort (timeout) or network errors gracefully
+        if (error.name === 'AbortError') {
+            console.warn('[Fingerprint] Auto-login timed out - server may be starting');
+        } else {
+            console.error('[Fingerprint] Auto-login check failed:', error.message);
+        }
+        return { trusted: false, serverUnreachable: true };
+    }
+}
+
+/**
+ * Start Google OAuth flow with fingerprint
+ */
+export function startGoogleAuth(): void {
+    const fingerprint = generateFingerprint();
+
+    // Open OAuth in popup, pass fingerprint as state parameter
+    const width = 500;
+    const height = 600;
+    const left = (screen.width - width) / 2;
+    const top = (screen.height - height) / 2;
+
+    // Backend includes state param in OAuth URL to preserve session through redirect
+    const authUrl = `/v1/drive/auth?state=${encodeURIComponent(fingerprint)}`;
+
+    window.open(
+        authUrl,
+        'Google Sign In',
+        `width=${width},height=${height},left=${left},top=${top}`
+    );
+}
+
+/**
+ * Start Google OAuth flow specifically for linking (user already authenticated)
+ * Passes mode=link so the backend links to existing user instead of creating new
+ */
+export function startGoogleLink(): void {
+    const fingerprint = generateFingerprint();
+
+    const width = 500;
+    const height = 600;
+    const left = (screen.width - width) / 2;
+    const top = (screen.height - height) / 2;
+
+    const authUrl = `/v1/drive/auth?state=${encodeURIComponent(fingerprint)}&mode=link`;
+
+    window.open(
+        authUrl,
+        'Link Google Account',
+        `width=${width},height=${height},left=${left},top=${top}`
+    );
+}

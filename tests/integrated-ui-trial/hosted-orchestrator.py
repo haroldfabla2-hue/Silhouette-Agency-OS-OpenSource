@@ -157,6 +157,11 @@ try:
  for r in late['files']:
   p=app/r['path'];b=(HERE/'latehandle-diagnostic-overlay'/r['path']).read_bytes();assert sha(p.read_bytes())==r['beforeSha256'];assert len(b)==r['bytes']and sha(b)==r['afterSha256'];p.write_bytes(b)
  assert {str(p.relative_to(app)):sha(p.read_bytes())for p in app.rglob('*')if p.is_file()}==late['finalProductFiles']
+ functionalRaw=(HERE/'functional-auth-composition.json').read_bytes();assert sha(functionalRaw)=='25f49a318b3c98f0959621d89deaf9c11d9075844112efb610669b6d50183cda'
+ functional=json.loads(functionalRaw);assert functional['priorComposition']==sha(lateRaw)and len(functional['files'])==5
+ for r in functional['files']:
+  p=app/r['path'];b=(HERE/'functional-auth-overlay'/r['path']).read_bytes();assert sha(p.read_bytes())==r['beforeSha256'];assert len(b)==r['bytes']and sha(b)==r['afterSha256'];p.write_bytes(b)
+ assert {str(p.relative_to(app)):sha(p.read_bytes())for p in app.rglob('*')if p.is_file()}==functional['finalProductFiles']
  excluded=[]
  for r in classification['files']:
   if not r['include']:(app/r['path']).unlink();excluded.append(r)
