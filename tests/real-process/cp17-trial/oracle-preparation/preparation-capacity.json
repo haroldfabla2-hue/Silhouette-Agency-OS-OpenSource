@@ -4,8 +4,8 @@
     "candidate_product_commit": "598cb9a60d12af988813818adf1f85302c8a5b6c",
     "product_commit_is_baseline_not_exact_integral": true,
     "candidate_manifest_sha256": "d2194b7aea1e19701159af21ec2b081ab44a46614cb76ffb13c79e37b5d8b4f9",
-    "status": "SOURCE_ONLY_POST_CD6327_ASSEMBLY_NOT_EQUIVALENT_TO_EXECUTED_A109_OR_CP17",
-    "metadata_parent_trial_commit": "cd6327f047eb03bf607b802f29c27ae357248cfc",
+    "status": "SOURCE_ONLY_EXPLICIT_CHECKS256_HELPER_NOT_RUNTIME_VALIDATED",
+    "metadata_parent_trial_commit": "766797d916b428ff96c17eeadc3ddb286d6a122d",
     "base_trial_commit": "6410fc163d847bb629813727899d837ed104c0b6",
     "source_delta_vs_candidate_product_commit": [
       "server/config/runtimeCredentials.ts",
@@ -37,7 +37,8 @@
       "tests/real-process/standalone-preparation.ts"
     ],
     "reviewed_nonsecret_packet_sha256": "8f9b08d8f33bd7240e15936fac7ac7264a7be522263c70be103832123010ad02",
-    "reviewed_checks256_packet_sha256": "6440877fb5b046b54e5cc51bc5d2535a0125a99889cff05b03df5341ad5f42ca"
+    "reviewed_checks256_packet_sha256": "6440877fb5b046b54e5cc51bc5d2535a0125a99889cff05b03df5341ad5f42ca",
+    "prior_metadata_parent_trial_commit": "cd6327f047eb03bf607b802f29c27ae357248cfc"
   },
   "wal": {
     "scopes": 48,
@@ -98,7 +99,28 @@
     "tmp_bytes": 536870912,
     "checks256_is_finite_selected_margin_not_measured_demand_or_fit_guarantee": true,
     "diagnostic_process_rows_bound": 96,
-    "diagnostic_row_bound_is_not_pids_limit": true
+    "diagnostic_row_bound_is_not_pids_limit": true,
+    "root_admission_contract": {
+      "status": "SOURCE_REVIEWED_EXACT_HELPERS_NEW_EXECUTION_NOT_AUTHORIZED",
+      "phase_contract_sha256": "b9d8f4f287f10b4fc54716abcd1bc52b3e4d8176e72201c223ab67d6256fa77d",
+      "original96_helper_path": "tests/real-process/wal-owner/root-self-admit.py",
+      "original96_helper_sha256": "0b15dc9f61dac241681c41ff0d730fe627087b3ed1cde4c3a64683c4606708bc",
+      "checks256_helper_path": "tests/real-process/cp17-trial/root-self-admit-checks256.py",
+      "checks256_helper_sha256": "7a8a9542c8586c715a49a80fe04bc1f3a60e8862f4ea71fb8d6661f2c2f99ff8",
+      "checks_only": true,
+      "oracles_and_legacy96_unchanged": true,
+      "scope_binding": "same exact owned run/supervisor numeric scope, fixed256 and actual checks namespace argv plus exact scope ro-bind to /tmp/limits before self-admission",
+      "checks_namespace_seconds_max": 1000,
+      "checks_host_seconds_max": 1015,
+      "checks_host_supervision_additional_seconds": 15,
+      "checks_oracle_cleanup_admission_seconds_min": 1505
+    },
+    "historical766797": {
+      "run_id": 43568320740,
+      "status": "FAIL_BEFORE_CHECKS_ROOT_ADMISSION",
+      "reason": "Original96 helper rejected checks256; no checks namespace or independent oracles ran",
+      "no_product_failure_inferred": true
+    }
   },
   "historical_source_graph": {
     "candidate_product_commit": "598cb9a60d12af988813818adf1f85302c8a5b6c",

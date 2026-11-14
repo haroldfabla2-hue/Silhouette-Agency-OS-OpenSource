@@ -4,8 +4,12 @@ Host inputs must be already copied/verified disposable source+harness; no git/ho
 """
 import argparse,hashlib,json,os,pathlib,selectors,shutil,signal,stat,subprocess,time
 from scope_finalize import finish_scope
+from phase_contract import contract, validate_helper
 p=argparse.ArgumentParser();p.add_argument('--delegated-parent',required=True);p.add_argument('--work',required=True);p.add_argument('--harness',required=True);p.add_argument('--evidence',required=True);p.add_argument('--staged-bwrap',required=True);p.add_argument('--run-id',required=True);p.add_argument('--reviewed-root-helper',required=True);p.add_argument('--root-helper-sha256',required=True);p.add_argument('--phase',choices=['install','native','browser','checks'],required=True);p.add_argument('--phase-seconds',type=int,required=True);p.add_argument('--dependency-store',required=True);a=p.parse_args()
 assert 0<a.phase_seconds<=1000
+phase_contract=contract(a.phase)
+# Fail before creating any scope, independently of shell selection.
+helper=validate_helper(a.phase,a.reviewed_root_helper,a.root_helper_sha256)
 store=pathlib.Path(a.dependency_store).resolve(strict=True);assert store==pathlib.Path('/var/lib')/('silhouette-cp17-deps-'+a.run_id)/'store';assert os.path.ismount(store)
 parent=pathlib.Path(a.delegated_parent).resolve(strict=True);work=pathlib.Path(a.work).resolve(strict=True);harness=pathlib.Path(a.harness).resolve(strict=True);evidence=pathlib.Path(a.evidence).resolve(strict=True);bwrap=pathlib.Path(a.staged_bwrap).resolve(strict=True)
 assert a.run_id.isdigit() and int(a.run_id)>0
@@ -41,7 +45,7 @@ try:
  except Exception as error:
   node_cut.update({'status':'FAIL','errorType':type(error).__name__,'errno':getattr(error,'errno',None),'filename':getattr(error,'filename',None),'error':str(error)[:1024]});raise
  finally:(evidence/'node-host.json').write_text(json.dumps(node_cut,indent=2))
- for name,value in [('memory.max',str(8*1024**3)),('memory.swap.max','0'),('pids.max','256' if a.phase=='checks' else '96'),('cpu.max','200000 100000'),('memory.oom.group','1')]:write(name,value)
+ for name,value in [('memory.max',str(8*1024**3)),('memory.swap.max','0'),('pids.max',str(phase_contract['pids'])),('cpu.max','200000 100000'),('memory.oom.group','1')]:write(name,value)
  # Cgroup hierarchy/mount provenance before childlaunch. Metadata only.
  provenance={'mountinfo':[line for line in pathlib.Path('/proc/self/mountinfo').read_text().splitlines()if ' - cgroup2 'in line],'hierarchy':[]}
  for scope in [cg,parent,pathlib.Path('/sys/fs/cgroup')]:
@@ -64,8 +68,7 @@ try:
  # Future gate only. No fallback if pinned verified bwrap lacks size/nesting.
  helptext=subprocess.check_output([str(bwrap),'--help'],text=True,timeout=2)
  for option in ['--size','--unshare-user','--uid','--gid','--unshare-pid','--die-with-parent','--cap-drop']:assert option in helptext
- helper=pathlib.Path(a.reviewed_root_helper).read_bytes()
- assert len(helper)<=16384 and hashlib.sha256(helper).hexdigest()==a.root_helper_sha256
+ assert hashlib.sha256(helper).hexdigest()==phase_contract['helper_sha256']
  control=evidence/'containment-host.json';control.write_text(json.dumps({'scope':str(cg),'limits':{n:(cg/n).read_text().strip() for n in ['memory.max','memory.swap.max','pids.max','cpu.max']},'bwrap_sha256':hashlib.sha256(bwrap.read_bytes()).hexdigest(),'wallSeconds':a.phase_seconds+15,'storageBytes':512*1024**2,'status':'PREPARED_NOT_STARTED'},indent=2))
  # Root helper self-admits before executing bwrap, then drops all root IDs.
  # No numeric target-PID attach race and no broad LCA permission delegation.

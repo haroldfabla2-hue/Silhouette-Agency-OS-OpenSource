@@ -47,7 +47,7 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = '${{ github.sha }}'
           ops="$PWD/tests/real-process/cp17-trial"
-          printf '%s  %s\n' 27609666c1cdc178541366848f9d69cc14d46d16695877eb0848c8e0dc1004f5 "$ops/infrastructure.sha256" | sha256sum --check
+          printf '%s  %s\n' fc98fbc91ac3422410e8a180d87ac36c0e80f4deb08e7daa2a37133d4c88be97 "$ops/infrastructure.sha256" | sha256sum --check
           (cd "$ops" && sha256sum --check infrastructure.sha256)
           work="$RUNNER_TEMP/current-suite-work"
           python3 "$ops/prepare-integral.py" "$PWD" "$work" "$ops/integral-inputs.json" d2194b7aea1e19701159af21ec2b081ab44a46614cb76ffb13c79e37b5d8b4f9

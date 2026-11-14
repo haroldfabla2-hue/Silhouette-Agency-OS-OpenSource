@@ -24,6 +24,10 @@ for name in ['vitest-generation','wal','accepted']:
  for key in ['scopes','active','failures','resources']:
   value=state[name][key];assert type(value)is int and value>0,'NOT_STARTED_UNREVIEWED_CAPACITY:'+name+':'+key
 PREPARATION_REVIEW_GATE
+# Pure transitive admission preflight, before volume/delegation/package operations.
+for exact_phase in install native browser checks; do
+  python3 "$ops/phase_contract.py" --phase "$exact_phase" --legacy "$helper/root-self-admit.py" --checks "$ops/root-self-admit-checks256.py"
+done
 cleanup() {
   code=$?;trap - EXIT
   set +e
@@ -59,9 +63,11 @@ if mode in {'install','native','browser'}:
 v=int(min(cap,remaining));assert v>15,'NOT_STARTED_BUDGET';print(v-15)
 PY
 )
+  # Fixed enum selects a fixed pinned helper; host revalidates independently.
+  read -r selected_helper selected_sha < <(python3 "$ops/phase_contract.py" --phase "$mode" --legacy "$helper/root-self-admit.py" --checks "$ops/root-self-admit-checks256.py")
   out="$EVIDENCE/$mode";mkdir "$out"
   start=$(python3 -c 'import time; print(time.monotonic())')
-  if python3 "$ops/phase-host.py" --delegated-parent "$scope" --work "$WORK" --harness "$ops" --evidence "$out" --staged-bwrap "$STAGED_BWRAP" --run-id "$GITHUB_RUN_ID" --reviewed-root-helper "$helper/root-self-admit.py" --root-helper-sha256 0b15dc9f61dac241681c41ff0d730fe627087b3ed1cde4c3a64683c4606708bc --dependency-store "$store" --phase "$mode" --phase-seconds "$duration"; then rc=0; else rc=$?; fi
+  if python3 "$ops/phase-host.py" --delegated-parent "$scope" --work "$WORK" --harness "$ops" --evidence "$out" --staged-bwrap "$STAGED_BWRAP" --run-id "$GITHUB_RUN_ID" --reviewed-root-helper "$selected_helper" --root-helper-sha256 "$selected_sha" --dependency-store "$store" --phase "$mode" --phase-seconds "$duration"; then rc=0; else rc=$?; fi
   python3 - "$EVIDENCE" "$mode" "$start" "$rc" <<'PY'
 import json,pathlib,sys,time
 p=pathlib.Path(sys.argv[1]);mode=sys.argv[2];elapsed=time.monotonic()-float(sys.argv[3]);state=json.loads((p/'host-budget.json').read_text())
