@@ -31,6 +31,22 @@ export async function installTestHostGeneration(): Promise<void> {
     const host=installPreparationHost({scopes:required('SILHOUETTE_OWNER_SCOPES'),active:required('SILHOUETTE_OWNER_ACTIVE'),failures:required('SILHOUETTE_OWNER_FAILURES'),resources:required('SILHOUETTE_OWNER_RESOURCES')});
     const record={host};owner.byAuthority.set(installPreparationHost,record);owner.generations.add(record);
 }
+function diagnosticFailureSamples(report: HostReport) {
+    const redisSources=new Set(['redis:service-client:EMITTED_ERROR','redis:service-connect:MEMORY_AVAILABILITY_NOT_DURABILITY_FALLBACK','redis:service-fallback:ORIGINAL_DISCONNECT_FAILED']);
+    const samples=report.failures.slice(0,16).map(failure => {
+        let name='UNKNOWN',code='UNKNOWN';
+        try {
+            const original=failure.original;
+            if(original instanceof Error && ['Error','ClientClosedError','AggregateError','TypeError','RangeError'].includes(original.name)) name=original.name;
+            if(original && typeof original==='object') {
+                const descriptor=Object.getOwnPropertyDescriptor(original,'code');
+                if(descriptor && 'value'in descriptor && ['ECONNREFUSED','ECONNRESET','ETIMEDOUT','EPIPE','EAI_AGAIN','ENOTFOUND'].includes(descriptor.value)) code=descriptor.value;
+            }
+        } catch {name='DIAGNOSTIC_EXTRACTION_FAILED';}
+        return {id:failure.id,kind:failure.kind,source:redisSources.has(failure.source)?failure.source:'OTHER_SOURCE_REDACTED',name,code};
+    });
+    return {samples,retained:report.failures.length,omitted:Math.max(0,report.failures.length-samples.length),lifetimeUnretained:Math.max(0,report.lifetimeFailures-report.failures.length)};
+}
 export function sealAndDrainTestFileGenerations(): Promise<void> {
     const owner=fileOwner();owner.sealed=true;
     if(owner.joined) return owner.joined;
@@ -41,7 +57,7 @@ export function sealAndDrainTestFileGenerations(): Promise<void> {
         const actualFailures: unknown[]=[];
         for (const result of results) {
             if (result.status==='rejected') {actualFailures.push(result.reason);continue;}
-            console.log('PREPARATION_GENERATION_REPORT',JSON.stringify({state:result.value.state,pending:result.value.pending,lifetimeFailures:result.value.lifetimeFailures,ownerFailures:result.value.ownerFailures,taskOutcomeFailures:result.value.taskOutcomeFailures,residuals:result.value.residuals,coverage:result.value.coverage,capacity:result.value.capacity,highWater:result.value.highWater}));
+            console.log('PREPARATION_GENERATION_REPORT',JSON.stringify({state:result.value.state,pending:result.value.pending,lifetimeFailures:result.value.lifetimeFailures,ownerFailures:result.value.ownerFailures,taskOutcomeFailures:result.value.taskOutcomeFailures,residuals:result.value.residuals,coverage:result.value.coverage,capacity:result.value.capacity,highWater:result.value.highWater,failureDiagnostics:diagnosticFailureSamples(result.value)}));
             if(result.value.lifetimeFailures) actualFailures.push(new Error('Original generation failures: '+result.value.lifetimeFailures));
         }
         if(actualFailures.length) throw new AggregateError(actualFailures,'Original test generation teardown failed');

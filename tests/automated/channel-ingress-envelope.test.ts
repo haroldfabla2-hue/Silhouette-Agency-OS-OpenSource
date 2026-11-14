@@ -1,3 +1,4 @@
+import { retainChildDiagnostics } from '../setup/child-diagnostics';
 /** Channel ingress provenance envelope (R7): two independent identities over
  * the REAL channel router -> real system bus -> authority resolver path.
  * Real identity service (SQLite fixture users), real session manager, real
@@ -226,9 +227,11 @@ describe('R7-H3: replay denial is atomic across processes', () => {
         const runChild = () => new Promise<any>((resolve, reject) => {
             const child = spawn(process.execPath, ['--import', 'tsx/esm', 'tests/fixtures/ingress-verify-child.ts',
                 key.toString('hex'), dir, payloadFile], { stdio: ['ignore', 'pipe', 'pipe'] });
+    retainChildDiagnostics(child, 'ingress-verifier');
             let out = '';
             child.stdout.on('data', d => { out += d.toString(); });
-            child.on('close', () => {
+            child.on('close', (code, signal) => {
+                if (code !== 0 || signal !== null) { reject(new Error('Original child exit failed: code=' + code + ', signal=' + signal)); return; }
                 try { resolve(JSON.parse(out.trim().split('\n').pop()!)); } catch (e) { reject(e); }
             });
             child.on('error', reject);

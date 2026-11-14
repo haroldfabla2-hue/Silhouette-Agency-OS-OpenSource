@@ -1,3 +1,4 @@
+import { retainChildDiagnostics } from '../setup/child-diagnostics';
 /** Durable consent ledger (R8): real on-disk store, real cross-process
  * locking, real child processes killed with SIGKILL. Two independent
  * fixture principals (not real people). No provider/model call.
@@ -32,6 +33,7 @@ const record = (over: Partial<ConsentRecord>): ConsentRecord => ({
 const runChild = (dir: string, token: string, principalId: string, conversationId: string, mode: string) => {
     const child = spawn(process.execPath, ['--import', 'tsx/esm', 'tests/fixtures/consent-ledger-child.ts',
         dir, token, principalId, conversationId, mode], { stdio: ['ignore', 'pipe', 'pipe'] });
+    retainChildDiagnostics(child, 'consent-ledger');
     let out = '';
     child.stdout.on('data', d => { out += d.toString(); });
     return { child, lines: () => out.trim().split('\n').filter(Boolean) };
@@ -57,7 +59,8 @@ describe('R8: durable consent ledger', () => {
         const children = Array.from({ length: 4 }, () => runChild(dir, r.token, A.principalId, A.conversationId, 'race'));
         const results = await Promise.all(children.map(({ child, lines }) =>
             new Promise<any>((resolve, reject) => {
-                child.on('close', () => {
+                child.on('close', (code, signal) => {
+                    if (code !== 0 || signal !== null) { reject(new Error('Original child exit failed: code=' + code + ', signal=' + signal)); return; }
                     try { resolve(JSON.parse(lines()[0]).result); } catch (e) { reject(e); }
                 });
                 child.on('error', reject);
@@ -259,9 +262,11 @@ describe('R8-eventlog: append-only store semantics (H3-root fix on the ledger)',
         const runReoffer = (newToken: string) => new Promise<any>((resolve, reject) => {
             const child = spawn(process.execPath, ['--import', 'tsx/esm', 'tests/fixtures/consent-ledger-child.ts',
                 dir, r.token, A.principalId, A.conversationId, 'reoffer', newToken], { stdio: ['ignore', 'pipe', 'pipe'] });
+    retainChildDiagnostics(child, 'consent-ledger');
             let out = '';
             child.stdout.on('data', d => { out += d.toString(); });
-            child.on('close', () => {
+            child.on('close', (code, signal) => {
+                if (code !== 0 || signal !== null) { reject(new Error('Original child exit failed: code=' + code + ', signal=' + signal)); return; }
                 try { resolve(JSON.parse(out.trim().split('\n').pop()!)); } catch (e) { reject(e); }
             });
             child.on('error', reject);
@@ -325,9 +330,11 @@ describe('R8-v3: adversarial store transitions (review findings 1-5, 7)', () => 
         const runDecide = (decision: string) => new Promise<any>((resolve, reject) => {
             const child = spawn(process.execPath, ['--import', 'tsx/esm', 'tests/fixtures/consent-ledger-child.ts',
                 dir, r.token, A.principalId, A.conversationId, 'decide', decision], { stdio: ['ignore', 'pipe', 'pipe'] });
+    retainChildDiagnostics(child, 'consent-ledger');
             let out = '';
             child.stdout.on('data', d => { out += d.toString(); });
-            child.on('close', () => {
+            child.on('close', (code, signal) => {
+                if (code !== 0 || signal !== null) { reject(new Error('Original child exit failed: code=' + code + ', signal=' + signal)); return; }
                 try { resolve(JSON.parse(out.trim().split('\n').pop()!)); } catch (e) { reject(e); }
             });
             child.on('error', reject);
