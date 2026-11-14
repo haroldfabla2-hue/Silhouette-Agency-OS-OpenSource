@@ -47,7 +47,7 @@ def main():
             'worker_results':[],'failure_causes':[],'signals':[],'cleanup':[],'failure_types':[],
             'redisMainNativeClosure':'UNSUPPORTED_PUBLIC_JOIN_API','lifecycleAcceptance':'INCOMPLETE_NOT_ACCEPTED',
             'functionalStatus':'NOT_COMPLETE','coverage':'SCOPED_REAL_AC_NOT_UI_POSITIVE_GENERATION_FULL_PILLARS_OR_GLOBAL_PRODUCT_ACCEPTANCE',
-            'runtime_libraries':[],'library_observation_errors':0,'actual_java_role_samples':[],'budgets_seconds':{'fixture':550,'admin':35,'startup':90,'cases':355,'stop':30,'evidence':40}}
+            'runtime_libraries':[],'library_observation_errors':0,'library_observation_missing_count':0,'library_observation_error_samples':[],'library_observation_error_samples_omitted':0,'actual_java_role_samples':[],'budgets_seconds':{'fixture':550,'admin':35,'startup':90,'cases':355,'stop':30,'evidence':40}}
     deadline=control['deadline'];server=control['original_server_pid'];server_identity=proc(server);assert server_identity and server_identity['pgid']==server
     sel=selectors.DefaultSelector();server_rc=None;redis=None;worker=None;seen_libraries={};console_bytes=0
     eof=set();labels={};next_sample=0;original_ids={server:server_identity}
@@ -60,10 +60,11 @@ def main():
         # Permission/rapid-exit gaps remain explicit failed provenance evidence.
         for leader in [server]+([redis.pid]if redis else [])+([worker.pid]if worker else []):
             for row in group(leader):
-                pid=row['pid'];base=pathlib.Path('/proc')/str(pid)
+                pid=row['pid'];base=pathlib.Path('/proc')/str(pid);observation_stage='EXECUTABLE';role='ORIGINAL_NEO4J_GROUP'if leader==server else'ORIGINAL_REDIS_GROUP'if redis and leader==redis.pid else'ORIGINAL_PRODUCT_GROUP'
                 try:
                     # Actual executable and numeric roles, no commandline.
                     exe=(base/'exe').resolve(strict=True)
+                    observation_stage='JAVA_ROLE_LIMITS'
                     if exe.name=='java':
                         assert str(exe)=='/usr/lib/jvm/temurin-21-jdk-amd64/bin/java'
                         limits=(base/'limits').read_text();nofile=next(x for x in limits.splitlines()if x.startswith('Max open files')).split()[3:5]
@@ -72,21 +73,30 @@ def main():
                         for name in ['CapEff:','CapPrm:','CapAmb:']:assert int(next(x.split()[1]for x in status.splitlines()if x.startswith(name)),16)==0
                         proof={**row,'pinned_executable':True,'nofile':[40000,40000],'uid':1000,'caps_zero':True}
                         if len(result['actual_java_role_samples'])<4:result['actual_java_role_samples'].append(proof)
+                    observation_stage='MAPS_READ'
                     for line in (base/'maps').read_text().splitlines():
                         f=line.split(None,5)
                         if len(f)!=6 or not f[5].startswith('/') or f[5].endswith(' (deleted)'):continue
                         path=pathlib.Path(f[5])
                         if not(path.suffix=='.node' or '.so' in path.name):continue
-                        real=path.resolve(strict=True)
+                        observation_stage='LIBRARY_RESOLVE';real=path.resolve(strict=True)
                         key=str(real)
                         if key in seen_libraries:
                             seen_libraries[key]['mapping_observation_count']+=1
                             continue
+                        observation_stage='LIBRARY_ALLOWLIST'
                         assert any(real.is_relative_to(root)for root in [W/'node_modules',pathlib.Path('/usr'),pathlib.Path('/opt'),R/'java-tmp'])
+                        observation_stage='LIBRARY_STAT_AND_DIGEST'
                         seen_libraries[key]={'pid':pid,'start_ticks':row['start_ticks'],'path':str(real),'bytes':real.stat().st_size,'sha256':digest(real),'source':'ACTUAL_PROC_MAPS_PHYSICAL_FILE_HASH_NOT_SUPPLYCHAIN_ATTESTATION','mapping_observation_count':1}
+                        observation_stage='LIBRARY_COUNT_BOUND'
                         assert len(seen_libraries)<=256
-                except FileNotFoundError:pass
-                except (OSError,AssertionError):result['library_observation_errors']+=1
+                except (OSError,AssertionError)as error:
+                    missing=isinstance(error,FileNotFoundError)
+                    if missing:result['library_observation_missing_count']+=1
+                    else:result['library_observation_errors']+=1
+                    detail={'stage':observation_stage,'error_type':type(error).__name__ if type(error).__name__ in {'FileNotFoundError','PermissionError','OSError','AssertionError','ProcessLookupError'}else'OTHER_OSERROR','errno':getattr(error,'errno',None),'role':role,'pid':pid,'start_ticks':row['start_ticks'],'missing_in_prior_semantics':missing,'cause_attribution':'OBSERVED_TYPE_STAGE_ONLY_NO_PATH_OR_TRANSIENT_INFERENCE'}
+                    if len(result['library_observation_error_samples'])<64:result['library_observation_error_samples'].append(detail)
+                    else:result['library_observation_error_samples_omitted']+=1
     def drain(until,worker_buffer=None):
         nonlocal server_rc,next_sample,console_bytes
         assert time.monotonic()<min(deadline,until)
@@ -188,6 +198,7 @@ def main():
         result['status']='FAIL';result['failure_types'].append(type(error).__name__)
         result['failure_causes'].append({'stage':stage,'errorType':type(error).__name__,'cause':'FIXED_STAGE_CHECK_FAILED_OR_ORIGINAL_OPERATION_REJECTED'})
     finally:
+        evidence_end=min(deadline,time.monotonic()+40)
         for child,label in [(worker,'product'),(redis,'redis'),(None,'neo4j')]:
             if child is not None or label=='neo4j':
                 try:emergency(child,label)
@@ -218,6 +229,89 @@ def main():
         result['runtime_libraries']=list(seen_libraries.values());result['console_observed_bytes']=console_bytes
         result['cleanup']=[{'pid':pid,'start_ticks':row['start_ticks']if row else None,'remaining_group_count':len(group(pid))}for pid,row in original_ids.items()]
         if any(row['remaining_group_count']for row in result['cleanup']):result['status']='FAIL'
+        # One vendor-supported diagnostic ONLY after actual failed startup,
+        # original process containment and original runtime capture. Not a boot
+        # or a substitute configuration, and never changes original verdict.
+        if any(row['stage']=='STARTUP'for row in result['failure_causes']):
+            diagnostic={'operation':'VENDOR_NEO4J_ADMIN_SERVER_VALIDATE_CONFIG_ONE_ATTEMPT','status':'NOT_STARTED','original_verdict_preserved':True,'snapshot_taken_before_diagnostic':result['runtime_files_complete'],'may_write_log_appender_files_after_snapshot':True,'role':'OBSERVER256_NO_CAPS_NO_NEW_PRIVILEGE','limit_seconds':10,'output_cap_bytes':65536,'stdout_policy':'KNOWN_FIXTURE_SECRET_GUARDED_IN_MEMORY_TYPED_CATEGORIES_ONLY_NO_FREE_TEXT_OR_HASH','errors':[],'signals':[],'observed_bytes':0,'output_complete':False}
+            result['postfailure_config_diagnostic']=diagnostic
+            diagnostic_child=None;diagnostic_selector=None;diagnostic_guard=FixtureExportGuard(secrets_private);diagnostic_bytes=bytearray();diagnostic_eof=False;diagnostic_end=min(evidence_end-5,time.monotonic()+10)
+            def diagnostic_error(stage,error):
+                diagnostic['errors'].append({'stage':stage,'error_type':type(error).__name__ if type(error).__name__ in {'AssertionError','RuntimeError','TimeoutError','OSError','FileNotFoundError','PermissionError','ValueError','BrokenPipeError','FixtureSecretExportDetected'}else'OTHER_EXCEPTION','errno':getattr(error,'errno',None)})
+            try:
+                assert result['runtime_files_complete'] and not any(row['remaining_group_count']for row in result['cleanup']),'diagnostic requires original capture and empty original groups'
+                expected_conf={'conf/neo4j.conf':H/'neo4j-auth.conf','conf/server-logs.xml':H/'neo4j-boot-logs.xml','conf/user-logs.xml':H/'neo4j-boot-user-logs.xml'}
+                captured={row['path']:row for row in result['runtime_files']}
+                for name,admitted in expected_conf.items():assert captured[name]['sha256']==digest(admitted)==digest(R/name)
+                diagnostic['exact_input_snapshot_verified']=True
+                assert diagnostic_end>time.monotonic(),'no diagnostic subwindow remaining'
+                assert resource.getrlimit(resource.RLIMIT_NOFILE)==(256,256)
+                jdk=pathlib.Path(json.loads((H/'neo4j-admission-inputs.json').read_text())['jdk']['home']);asset=W/'node_modules/.silhouette-native-neo4j/neo4j-community-5.26.32'
+                diagnostic_env={'PATH':'/usr/bin:/bin','JAVA_HOME':str(jdk),'JAVACMD':str(jdk/'bin/java'),'NEO4J_HOME':str(asset),'NEO4J_CONF':str(R/'conf'),'HOME':str(R/'home'),'TMPDIR':str(R/'java-tmp'),'LANG':'C.UTF-8','NEO4J_CONFIG_FILE_CHARSET':'utf8'}
+                diagnostic_child=subprocess.Popen([str(asset/'bin/neo4j-admin'),'server','validate-config'],cwd=R,env=diagnostic_env,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True)
+                diagnostic_selector=selectors.DefaultSelector();os.set_blocking(diagnostic_child.stdout.fileno(),False);diagnostic_selector.register(diagnostic_child.stdout,selectors.EVENT_READ)
+                while True:
+                    assert time.monotonic()<diagnostic_end,'diagnostic local evidence subwindow exceeded'
+                    for key,_ in diagnostic_selector.select(.025):
+                        try:chunk=os.read(key.fd,8192)
+                        except BlockingIOError:continue
+                        if not chunk:diagnostic_eof=True;diagnostic_selector.unregister(key.fd);continue
+                        diagnostic['observed_bytes']+=len(chunk)
+                        assert diagnostic['observed_bytes']<=65536,'diagnostic output bound before retain'
+                        diagnostic_bytes.extend(diagnostic_guard.checked_chunk(chunk))
+                    if diagnostic_child.poll()is not None and diagnostic_eof and not group(diagnostic_child.pid):break
+                diagnostic_bytes.extend(diagnostic_guard.checked_eof())
+                diagnostic['status']='VALIDATOR_RC0'if diagnostic_child.returncode==0 else'VALIDATOR_REPORTED_NONZERO'
+                diagnostic['output_complete']=True
+            except BaseException as error:
+                diagnostic['status']='DIAGNOSTIC_INCOMPLETE';diagnostic_error('VALIDATOR_CAPTURE',error)
+            finally:
+                if diagnostic_child:
+                    if group(diagnostic_child.pid):
+                        diagnostic['signals'].append('SIGKILL_DIAGNOSTIC_SCOPE_ONLY')
+                        try:os.killpg(diagnostic_child.pid,signal.SIGKILL)
+                        except ProcessLookupError:pass
+                        except OSError as error:diagnostic_error('VALIDATOR_KILL',error)
+                    try:diagnostic_child.wait(timeout=max(.01,min(2,evidence_end-time.monotonic())))
+                    except BaseException as error:diagnostic_error('VALIDATOR_REAP',error)
+                    until=min(evidence_end,time.monotonic()+2)
+                    while group(diagnostic_child.pid)and time.monotonic()<until:time.sleep(.025)
+                    diagnostic['returncode']=diagnostic_child.poll();diagnostic['group_empty']=not group(diagnostic_child.pid);diagnostic['eof']=diagnostic_eof
+                    if diagnostic_child.stdout:
+                        try:diagnostic_child.stdout.close()
+                        except OSError as error:diagnostic_error('VALIDATOR_PIPE_CLOSE',error)
+                    if not diagnostic['group_empty']or diagnostic['signals']:diagnostic['status']='DIAGNOSTIC_INCOMPLETE';diagnostic['output_complete']=False
+                if diagnostic_selector:
+                    try:diagnostic_selector.close()
+                    except OSError as error:diagnostic_error('VALIDATOR_SELECTOR_CLOSE',error)
+                if diagnostic['errors']:diagnostic['status']='DIAGNOSTIC_INCOMPLETE';diagnostic['output_complete']=False
+                if diagnostic['output_complete']:
+                    # Parse the vendor validation summary without echoing free
+                    # error text, config values, arbitrary file paths or argv.
+                    diagnostic['output_bytes']=len(diagnostic_bytes);diagnostic['typed_issues']=[];diagnostic['unclassified_nonempty_lines']=0;diagnostic['issue_samples_omitted']=0
+                    known_terms={'error','errors','warning','warnings','invalid','failed','failure','unable','cannot','could','not','create','file','directory','permission','denied','access','appender','logger','logging','configuration','config','plugin','factory','method','found','locate','parse','parsing','element','attribute','class','manager','open','read','write','path','user','server','validation','validate','contains','no','such','is','for','to','in','of','with','has','the','a','an','on','at','exception','rollingfile','patternlayout','sizebasedtriggeringpolicy','defaultrolloverstrategy'}
+                    for line in diagnostic_bytes.decode('utf-8','replace').splitlines():
+                        if not line.strip():continue
+                        lower=line.lower();categories=[]
+                        for category,needles in [('PERMISSION_DENIED',('permission denied','accessdeniedexception','access denied')),('FILE_OR_DIRECTORY_MISSING',('no such file','filenotfoundexception','nosuchfileexception')),('FILE_CREATE_FAILED',('unable to create','could not create','cannot create')),('APPENDER_UNRESOLVED',('unable to locate appender','appenderref','null object returned for rollingfile')),('PLUGIN_OR_FACTORY_FAILED',('factory method','unable to invoke','error processing element','classnotfoundexception','noclassdeffounderror')),('XML_PARSE_FAILED',('saxparseexception','parse error','parsing error','invalid xml')),('UNKNOWN_SETTING',('unrecognized setting','unknown setting')),('VALIDATOR_ERRORS',('configuration contains errors','validation failed')),('VALIDATOR_WARNINGS',('configuration contains warnings',)),('VALIDATOR_SUCCESS',('configuration file validation successful','configuration is valid','no issues found'))]:
+                            if any(needle in lower for needle in needles):categories.append(category)
+                        identifiers=[]
+                        for label,value in [('USER_LOG_XML',str(R/'conf/user-logs.xml')),('SERVER_LOG_XML',str(R/'conf/server-logs.xml')),('USER_LOG',str(R/'logs/user.log')),('RUNTIME_LOG',str(R/'logs/runtime.log')),('MAIN_CONFIG',str(R/'conf/neo4j.conf'))]:
+                            if value in line:identifiers.append(label)
+                        types=[name for name in ['AccessDeniedException','FileNotFoundException','NoSuchFileException','IOException','SAXParseException','IllegalStateException','IllegalArgumentException','ClassNotFoundException','NoClassDefFoundError','InvocationTargetException']if name in line]
+                        # Finite vocabulary only; unknown tokens disappear, never
+                        # a regex replacement that could leave an embedded secret.
+                        terms=sorted(set(re.findall(r'[a-z]+',lower))&known_terms)
+                        if categories or types or 'error'in terms or 'errors'in terms:
+                            issue={'line_ordinal':len(diagnostic['typed_issues'])+diagnostic['issue_samples_omitted']+diagnostic['unclassified_nonempty_lines']+1,'categories':categories or ['UNCLASSIFIED_VENDOR_DIAGNOSTIC'],'exception_types':types,'fixed_file_roles':identifiers,'fixed_vocabulary_terms':terms}
+                            if len(diagnostic['typed_issues'])<32:diagnostic['typed_issues'].append(issue)
+                            else:diagnostic['issue_samples_omitted']+=1
+                        else:diagnostic['unclassified_nonempty_lines']+=1
+                    diagnostic['raw_output_exported']=False;diagnostic['raw_free_text_omitted']=True
+                    diagnostic['typed_detail_complete']=not diagnostic['issue_samples_omitted']and all('UNCLASSIFIED_VENDOR_DIAGNOSTIC'not in row['categories']for row in diagnostic['typed_issues'])
+                    diagnostic['no_claim_about_unclassified_lines']=True
+                else:diagnostic['output_unavailable']=True
+                diagnostic_bytes[:]=b'\0'*len(diagnostic_bytes);diagnostic_guard.clear()
         try:writers.finish_console();writers.envelope(result)
         finally:
             guard.clear()

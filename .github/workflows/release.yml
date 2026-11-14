@@ -61,7 +61,7 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = '${{ github.sha }}'
           ops="$PWD/tests/real-process/neo4j-service-trial"
-          printf '%s  %s\n' 175b843b66895ea219d8a17286f0eb3fec6c2a55e343a23fb24533d7c8c3666c "$ops/infrastructure.sha256" | sha256sum --check
+          printf '%s  %s\n' 18a1c310b2013771ac763bb1fc35e9a844fdb74cb0a6bed0a041b42d04e2f86d "$ops/infrastructure.sha256" | sha256sum --check
           (cd "$ops" && sha256sum --check infrastructure.sha256)
           python3 "$ops/source-contract-check.py"
           work="$RUNNER_TEMP/current-suite-work"

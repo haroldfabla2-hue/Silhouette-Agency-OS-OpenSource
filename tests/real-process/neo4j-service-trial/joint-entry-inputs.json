@@ -14,7 +14,7 @@
   "entry_sources": {
     "joint_service_entry.py": "c1d1bf971682c8c0faa6cd7116a0f3e0663b8e022f5b553289c9459acab36cb5",
     "neo4j_admin_private.py": "9f03c75de4a95ebc1ceaa3847448022c22dbfadc3984f44b3a836528c2c2e2db",
-    "joint_composite_supervisor.py": "7012921ba9a1d367766358dd7a6f4857a203add5040c6049b35ecf40e335dbae",
+    "joint_composite_supervisor.py": "9874b69faf51916b5fe94fa584dc7563af3d06e943a6b031216411c16a8396c7",
     "bounded_evidence.py": "0b894b6a41a9f2b2850662d831c75ac33f48c5afbb73b8f98722b0b56a7bbdab",
     "secret_export_guard.py": "e84f326dfadf05db9740833208cc14ef59621b2ae251e0dda230c212afd69019",
     "product_service_child.mts": "a6073337c062fb8a100f1305c3bf060ae033835fd210732d6735be59043f88a8",
