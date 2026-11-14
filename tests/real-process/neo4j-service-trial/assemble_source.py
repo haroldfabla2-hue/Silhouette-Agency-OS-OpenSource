@@ -20,9 +20,10 @@ def assemble_source(source_root,destination_root,packet_root):
         assert not rel.name.startswith('.env')or rel.name=='.env.example'
         p=source/rel;assert p.is_file()and not p.is_symlink()and p.resolve().is_relative_to(source)
         assert p.stat().st_size==row['bytes']and hashlib.sha256(p.read_bytes()).hexdigest()==row['sha256']
-    # Two explicitly reviewed proposed changes only; no fallback or fuzzy patch.
+    # Three explicitly reviewed proposed changes only; no fallback or fuzzy patch.
     overlay={'services/redisClient.ts':packet/'proposed-product-overlay/services/redisClient.ts',
-             'silhouette.config.json':packet/'config/silhouette.config.json'}
+             'silhouette.config.json':packet/'config/silhouette.config.json',
+             'services/userProfileService.ts':packet/'proposed-product-overlay/services/userProfileService.ts'}
     dest.mkdir(mode=0o755)
     for row in proposed:
         rel=row['path'];p=overlay.get(rel,source/rel)

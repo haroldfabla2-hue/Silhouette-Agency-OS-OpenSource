@@ -55,6 +55,16 @@ def main():
     def track(fd,label):
         os.set_blocking(fd,False);labels[fd]=label;sel.register(fd,selectors.EVENT_READ)
     track(control['console_fd'],'neo4j')
+    # Exact readonly mounts in phase-namespace, resolved physically here.
+    # No dynamic root from a mapped filename; external symlink escape rejected.
+    library_roots=[]
+    def admit_library_roots():
+        for label,path in [('PRODUCT_NATIVE',W/'node_modules'),('SYSTEM_USR',pathlib.Path('/usr')),('SYSTEM_OPT',pathlib.Path('/opt')),('SYSTEM_LIB',pathlib.Path('/lib')),('SYSTEM_LIB64',pathlib.Path('/lib64')),('PRIVATE_JAVA_TMP',R/'java-tmp')]:
+            real=path.resolve(strict=True)
+            if label.startswith('SYSTEM_'):
+                assert real==path or(label in {'SYSTEM_LIB','SYSTEM_LIB64'}and real in {pathlib.Path('/usr/lib'),pathlib.Path('/usr/lib64'),pathlib.Path('/lib/x86_64-linux-gnu')})
+                assert os.statvfs(path).f_flag&os.ST_RDONLY
+            library_roots.append((label,real))
     def observe_libraries():
         # Actual loaded physical ELF files, not guessed readelf search results.
         # Permission/rapid-exit gaps remain explicit failed provenance evidence.
@@ -85,16 +95,17 @@ def main():
                             seen_libraries[key]['mapping_observation_count']+=1
                             continue
                         observation_stage='LIBRARY_ALLOWLIST'
-                        assert any(real.is_relative_to(root)for root in [W/'node_modules',pathlib.Path('/usr'),pathlib.Path('/opt'),R/'java-tmp'])
+                        root_classes=[label for label,root in library_roots if real.is_relative_to(root)]
+                        assert root_classes
                         observation_stage='LIBRARY_STAT_AND_DIGEST'
-                        seen_libraries[key]={'pid':pid,'start_ticks':row['start_ticks'],'path':str(real),'bytes':real.stat().st_size,'sha256':digest(real),'source':'ACTUAL_PROC_MAPS_PHYSICAL_FILE_HASH_NOT_SUPPLYCHAIN_ATTESTATION','mapping_observation_count':1}
+                        seen_libraries[key]={'pid':pid,'start_ticks':row['start_ticks'],'path':str(real),'bytes':real.stat().st_size,'sha256':digest(real),'source':'ACTUAL_PROC_MAPS_PHYSICAL_FILE_HASH_NOT_SUPPLYCHAIN_ATTESTATION','physical_root_classes':root_classes,'mapping_observation_count':1}
                         observation_stage='LIBRARY_COUNT_BOUND'
                         assert len(seen_libraries)<=256
                 except (OSError,AssertionError)as error:
                     missing=isinstance(error,FileNotFoundError)
                     if missing:result['library_observation_missing_count']+=1
                     else:result['library_observation_errors']+=1
-                    detail={'stage':observation_stage,'error_type':type(error).__name__ if type(error).__name__ in {'FileNotFoundError','PermissionError','OSError','AssertionError','ProcessLookupError'}else'OTHER_OSERROR','errno':getattr(error,'errno',None),'role':role,'pid':pid,'start_ticks':row['start_ticks'],'missing_in_prior_semantics':missing,'cause_attribution':'OBSERVED_TYPE_STAGE_ONLY_NO_PATH_OR_TRANSIENT_INFERENCE'}
+                    detail={'stage':observation_stage,'error_type':type(error).__name__ if type(error).__name__ in {'FileNotFoundError','PermissionError','OSError','AssertionError','ProcessLookupError'}else'OTHER_OSERROR','errno':getattr(error,'errno',None),'role':role,'pid':pid,'start_ticks':row['start_ticks'],'missing_in_prior_semantics':missing,'path_class':'OUTSIDE_ADMITTED_PHYSICAL_ROOTS'if observation_stage=='LIBRARY_ALLOWLIST'else'NOT_RECORDED','cause_attribution':'OBSERVED_TYPE_STAGE_ONLY_NO_PATH_OR_TRANSIENT_INFERENCE'}
                     if len(result['library_observation_error_samples'])<64:result['library_observation_error_samples'].append(detail)
                     else:result['library_observation_error_samples_omitted']+=1
     def drain(until,worker_buffer=None):
@@ -149,6 +160,8 @@ def main():
             try:os.waitpid(server,0)
             except ChildProcessError:pass
     try:
+        admit_library_roots()
+        result['runtime_library_root_admission']={'status':'READONLY_MOUNTS_PHYSICAL_ROOTS_ADMITTED_NOT_SUPPLYCHAIN_ATTESTATION','classes':[label for label,_ in library_roots]}
         assert resource.getrlimit(resource.RLIMIT_NOFILE)==(256,256)
         assert not listening(6499) and not listening(3405)
         # Single original Neo4j launch, created before observer hardlimit lower.
@@ -177,8 +190,12 @@ def main():
             original_ids[worker.pid]=proc(worker.pid);track(worker.stdout.fileno(),label)
             rc=wait_natural(worker,label,min(case_end,time.monotonic()+limit),buffer)
             parsed=[json.loads(line.split(b':',1)[1])for line in buffer.splitlines()if line.startswith(b'JOINT_PRODUCT_CHILD_RESULT:')]
-            assert len(parsed)==1 and rc==0
-            result['worker_results'].append(parsed[0]);assert parsed[0]['functionalStatus']=='SCOPED_REAL_AC_ASSERTIONS_PASS'
+            assert len(parsed)==1,'Missing or ambiguous original child result'
+            actual=parsed[0];assert actual.get('schema')=='REAL_PRODUCT_SERVICE_AC_CHILD_V1'and actual.get('mode')==mode
+            result['worker_results'].append(actual)
+            result.setdefault('original_worker_returncodes',[]).append({'mode':mode,'returncode':rc})
+            assert rc==0,'Original child returned nonzero; actual result retained'
+            assert actual['functionalStatus']=='SCOPED_REAL_AC_ASSERTIONS_PASS'
             assert parsed[0]['status']=='INCOMPLETE' and parsed[0]['redisMainNativeClosure']=='UNSUPPORTED_PUBLIC_JOIN_API'
             assert not listening(3405)
             worker.stdout.close()

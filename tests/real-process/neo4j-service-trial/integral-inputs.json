@@ -4306,8 +4306,8 @@
   },
   {
     "path": "services/userProfileService.ts",
-    "sha256": "e311c20c407713f4bc65cdc4b91c152a4f77514669608c28ca67dcdb1484a37c",
-    "bytes": 15677
+    "sha256": "fd540e3258c278b5d7ba8905983d33a58f2b086129c90f7755d3aa623b6e9d81",
+    "bytes": 15735
   },
   {
     "path": "services/utils/atomicWrite.ts",

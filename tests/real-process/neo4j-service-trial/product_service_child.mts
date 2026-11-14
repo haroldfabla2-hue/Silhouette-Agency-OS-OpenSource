@@ -41,7 +41,20 @@ const host = installPreparationHost({scopes:48,active:512,failures:256,resources
 const audit = beginProviderAttemptAudit();
 let sql: any, sql2: any, redis: any, driver: any, server: any;
 let product: any, storage: any, lance: any;
-const errors: unknown[] = [];let stage='PRECHECK';
+const errors: unknown[] = [];let stage='PRECHECK',caseStep='CASE_NOT_ENTERED';
+function safeError(error: unknown) {
+    const allowedTypes=new Set(['Error','TypeError','AssertionError','OwnershipConflict','AdmissionClosed','RangeError','SyntaxError','AggregateError']);
+    const candidate=error instanceof Error?error.name:'UNKNOWN';
+    const frames:any[]=[];
+    // Ignore exception message and arbitrary stack paths/functions entirely.
+    const names=new Map([['/tmp/work/services/userProfileService.ts','userProfileService.ts'],['/tmp/work/services/memory/profileAuthority.ts','profileAuthority.ts'],['/tmp/work/services/sqliteService.ts','sqliteService.ts'],['/tmp/work/services/lifecycle/host.ts','host.ts'],['/tmp/work/services/lifecycle/runtimeStopBindings.ts','runtimeStopBindings.ts'],['/tmp/harness/product_service_child.mts','product_service_child.mts']]);
+    if(error instanceof Error)for(const line of (error.stack??'').split('\n').slice(1,33)) {
+        const match=line.match(/(?:\(|at )(\/tmp\/(?:work|harness)\/[A-Za-z0-9_./-]+):(\d+):(\d+)\)?$/);
+        if(match){const file=names.get(match[1]);if(file&&frames.length<12)frames.push({source:file,line:Number(match[2]),column:Number(match[3])});}
+    }
+    return {errorType:allowedTypes.has(candidate)?candidate:'OTHER_EXCEPTION',frames,stackPolicy:'ALLOWLIST_SOURCE_LINE_COLUMN_NO_MESSAGE_PATH_OR_FUNCTION',caseStep};
+}
+
 const current = (id: string) => {
     const row: any = sql.prepare('SELECT * FROM user_profiles WHERE user_id=?').get(id);
     return row ? {id:row.user_id,...(row.name === null ? {} : {name:row.name}),preferredLanguage:row.preferred_language,
@@ -55,9 +68,9 @@ async function cypher(query: string, params: any = {}) {
     try { return await session.run(query,params); } finally { await session.close(); }
 }
 async function check(name: string, run: () => Promise<void> | void) {
-    stage=name;const started = performance.now();
+    stage=name;caseStep='CASE_ENTERED';const started = performance.now();
     try { await run();result.cases.push({name,status:'PASS',seconds:(performance.now()-started)/1000}); }
-    catch (error) { result.cases.push({name,status:'FAIL',errorType:error instanceof Error?error.name:'UNKNOWN'});throw error; }
+    catch (error) { result.cases.push({name,status:'FAIL',...safeError(error)});throw error; }
 }
 async function projection(id: string) {
     const raw = await redis.get('silhouette:user_profile:'+id);
@@ -128,14 +141,15 @@ try {
     const id='fixture-'+mode;
     await check('REAL_SERVICE_TWO_CONNECTION_REBASE_AND_DETACHED_INPUT',async()=>{
         const original={nested:{value:'captured'}};
-        const mutation=userProfile.setPreference('payload',original,id);original.nested.value='caller changed';await mutation;
+        caseStep='SERVICE_PREFERENCE_CALL';const mutation=userProfile.setPreference('payload',original,id);original.nested.value='caller changed';caseStep='SERVICE_PREFERENCE_AWAIT';await mutation;
         const {commitProfileMutation}=await import('/tmp/work/services/memory/profileAuthority.ts');
-        const frozen=commitProfileMutation(sql2,id,{kind:'preference',key:'otherConnection',value:'committed'}).snapshot;
+        caseStep='INDEPENDENT_SQL2_COMMIT';const frozen=commitProfileMutation(sql2,id,{kind:'preference',key:'otherConnection',value:'committed'}).snapshot;
         assert(Object.isFrozen(frozen));assert(Object.isFrozen(frozen.preferences));
-        await userProfile.addFact('original service mutation',id);
-        assert.equal(current(id)?.preferences.otherConnection,'committed');
+        caseStep='SERVICE_ADD_FACT';await userProfile.addFact('original service mutation',id);
+        caseStep='INDEPENDENT_CURRENT_READ_ASSERTIONS';assert.equal(current(id)?.preferences.otherConnection,'committed');
         assert.equal(current(id)?.preferences.payload.nested.value,'captured');
-        assert(userProfile.getProfileContext(id).includes('otherConnection=committed'));
+        caseStep='SERVICE_PROFILE_CONTEXT_FORMAT';assert(userProfile.getProfileContext(id).includes('otherConnection=committed'));
+        caseStep='INDEPENDENT_FACT_READ_ASSERTION';
         assert(current(id)?.facts.includes('original service mutation'));
     });
     await check('ORIGINAL_AFTER_AWAIT_CONCURRENT_SQL_WINNER',async()=>{
@@ -236,11 +250,11 @@ try {
     const effective=configLoader.getConfig(),expected=JSON.parse(readFileSync('/tmp/work/silhouette.config.json','utf8'));
     assert.deepEqual(effective,expected);result.effectiveConfigExact=true;
 } catch(error) {
-    errors.push(error);result.primaryFailureType=error instanceof Error?error.name:'UNKNOWN';result.primaryFailure={stage,errorType:result.primaryFailureType,cause:'FIXED_STAGE_ASSERTION_OR_ORIGINAL_OPERATION_REJECTION'};
+    errors.push(error);result.primaryFailureType=error instanceof Error?error.name:'UNKNOWN';result.primaryFailure={stage,...safeError(error),cause:'FIXED_STAGE_ASSERTION_OR_ORIGINAL_OPERATION_REJECTION'};
 } finally {
     // Request bodies finished before HTTP server close. Never cut them short
     // with closeAllConnections; a stuck borrower is an outer deadline failure.
-    const cleanup=async(name:string,body:()=>unknown)=>{try{await body();result.cleanup.push({name,state:'SETTLED'});}catch(error){errors.push(error);result.cleanup.push({name,state:'FAILED',errorType:error instanceof Error?error.name:'UNKNOWN'});}};
+    const cleanup=async(name:string,body:()=>unknown)=>{try{await body();result.cleanup.push({name,state:'SETTLED'});}catch(error){errors.push(error);result.cleanup.push({name,state:'FAILED',...safeError(error)});}};
     if(server)await cleanup('original-express-server-close',()=>new Promise<void>((yes,no)=>server.close((e:any)=>e?no(e):yes())));
     for(const [name,path,method]of [['narrative','/tmp/work/services/narrativeService.ts','stopAdmissions'],['arbiter','/tmp/work/services/resourceArbiter.ts','stopAdmissions'],['orchestrator','/tmp/work/services/orchestrator.ts','stopUserMessageAdmissions']]as const){
         // All are static dependencies of the successful actual product import.
@@ -258,7 +272,7 @@ try {
     if(driver)await cleanup('independent-driver',()=>driver.close());
     await cleanup('host-stop-with-marker-preserved',async()=>{const report=await host.stop();result.host={state:report.state,pending:report.pending,capacity:report.capacity,highWater:report.highWater,
             lifetimeFailures:report.lifetimeFailures,ownerFailures:report.ownerFailures,taskOutcomeFailures:report.taskOutcomeFailures,
-            failures:report.failures.map((f:any)=>({id:f.id,kind:f.kind,source:f.source})),residuals:report.residuals,resources:report.resources,
+            failures:report.failures.map((f:any)=>({id:f.id,kind:f.kind,source:f.source,originalCause:safeError(f.original)})),residuals:report.residuals,resources:report.resources,
             coverage:report.coverage};if(report.lifetimeFailures||report.ownerFailures)throw new Error('Original owner failures retained');});
     result.attemptAudit=audit.snapshot();audit.stop();delete process.env.NEO4J_PASSWORD;delete process.env.SILHOUETTE_API_TOKEN;
     result.functionalStatus=errors.length?'FAIL':'CASES_ASSERTED';
