@@ -11,4 +11,4 @@ with tarfile.open(fileobj=io.BytesIO(raw))as t:
 receipt=json.loads((out/'capture.json').read_text())
 for r in receipt['files']:
  b=(out/r['path']).read_bytes();assert len(b)==r['bytes']and hashlib.sha256(b).hexdigest()==r['sha256']
-print(json.dumps({'files':len(receipt['files']),'quarantined':receipt['quarantine'],'fullFrameVerified':True,'productPass':False}))
+print(json.dumps({'files':len(receipt['files']),'quarantined':receipt['quarantine'],'fullFrameVerified':True,'diagnosticReceiptsComplete':receipt.get('diagnosticReceiptsComplete',False),'missingMandatoryReceipts':receipt.get('missingMandatoryReceipts',['LEGACY_FRAME_NO_DIAGNOSTIC_COMPLETENESS']),'productPass':False}))

@@ -34,20 +34,20 @@
       "sha256": "02334906ca37bdbf6562c06cf523b604f7e71039fc5be286a99553faf5c78b4d"
     },
     "decode-evidence.py": {
-      "bytes": 1403,
-      "sha256": "0ce3a9b618929259f511a17b98b0b30030908a8663ec3caa9af0afdfb3596b4a"
+      "bytes": 1591,
+      "sha256": "7be882fd19704d5cbe6914f185ac6d0d3b3a6eda0230a545c7291dc13b89b722"
     },
     "hosted-orchestrator.py": {
       "bytes": 14368,
-      "sha256": "4a01c4afb2914f2d06dff78caa41f65fd48e8b1c627ba340adb0b11fbd101480"
+      "sha256": "4632d9613737da3bd33df26c8afa95e0285970d0f122523ff3fcb16df4dc4f1c"
     },
     "integrated-0e3-source.tar.gz": {
       "bytes": 360317,
       "sha256": "0e3a710ab63232eec31d90e994036b3a3480c65605097fe4a6f0938e2bf33366"
     },
     "integrated-hosted.yml": {
-      "bytes": 3683,
-      "sha256": "acdbdce876848a4e23809f410a04796618b74c6a07d0d2526f11687bad16d86e"
+      "bytes": 3685,
+      "sha256": "2b39ae3f15255fac649e5c7e9617d4d690432d5e108eff35e8e0a33bdea44da3"
     },
     "lance-provenance.json": {
       "bytes": 900,
@@ -90,8 +90,8 @@
       "sha256": "6d4db2c333ac887464b161bc1139f1fd86c248e0b43110a758b945c60d7763f1"
     },
     "return-evidence.py": {
-      "bytes": 5405,
-      "sha256": "2de245e12e624756cef0c90650d6b07b7ccbf96273e141f111d7778b67cfe833"
+      "bytes": 8617,
+      "sha256": "049cf0f328be18385b98bc5ee6379377fbfebe7dc4cd5dc7373f710b83464a9f"
     },
     "runtime-prerequisites.cjs": {
       "bytes": 2062,
