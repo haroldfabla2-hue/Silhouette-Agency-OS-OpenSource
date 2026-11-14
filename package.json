@@ -28,7 +28,7 @@
     "personalize": "tsx scripts/personalize.ts",
     "build": "vite build",
     "preview": "vite preview",
-    "server": "node --import tsx/esm server/index.ts",
+    "server": "node --import tsx/esm server/bootstrap.preparation.ts",
     "demo:learning": "tsx scripts/demo_autodidactic.ts",
     "render-video": "tsx scripts/process_video_queue.ts",
     "list-models": "tsx scripts/list_models.ts",

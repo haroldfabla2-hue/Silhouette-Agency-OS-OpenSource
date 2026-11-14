@@ -1,3 +1,4 @@
+import { admitEvaluatedCuriosity, bindEvaluatedCuriosity, failEvaluatedCuriosity } from './lifecycle/runtimeStopBindings';
 /**
  * CURIOSITY SERVICE - Proactive Knowledge Exploration
  * 
@@ -630,4 +631,14 @@ class CuriosityService {
     }
 }
 
-export const curiosity = new CuriosityService();
+const runtimeConstructionPermit = admitEvaluatedCuriosity();
+export const curiosity = (() => {
+    try {
+        const original = new CuriosityService();
+        bindEvaluatedCuriosity(runtimeConstructionPermit,() => original.shutdown());
+        return original;
+    } catch (error) {
+        failEvaluatedCuriosity(runtimeConstructionPermit,error);
+        throw error;
+    }
+})();

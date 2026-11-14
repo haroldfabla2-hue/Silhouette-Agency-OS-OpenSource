@@ -6,6 +6,9 @@
 // CRITICAL: Load Configuration FIRST (Env -> JSON Migration)
 // ═══════════════════════════════════════════════════════════════
 import { configLoader } from './config/configLoader';
+import { createServer } from 'http';
+import { stopRuntimeRootHost } from './runtimeRootHost';
+import { sealEvaluatedRuntimeProducers, drainEvaluatedRuntimeProducers, closeEvaluatedRuntimeStorage, evaluatedRuntimeFrontier } from '../services/lifecycle/runtimeStopBindings';
 
 // Initialize Config (Loads Env or JSON)
 const config = configLoader.getConfig();
@@ -46,7 +49,25 @@ process.on('uncaughtException', async (error: Error) => {
 // this boot belong to a dead executor and are reaped in the listen callback.
 const PROCESS_STARTED_AT = Date.now();
 
-const server = app.listen(PORT, HOST, async () => {
+let isShuttingDown = false;
+let startupGateway: typeof import('./gateway').gateway | undefined;
+let startupTerminalGateway: typeof import('./channels/terminalWebSocket').TerminalGateway | undefined;
+let finishStartup!: () => void;
+let failStartup!: (error: unknown) => void;
+let startupEntered = false;
+const originalStartup = new Promise<void>((resolve, reject) => { finishStartup = resolve;failStartup = reject; });
+// Retain rejection now; shutdown also joins the exact original task.
+void originalStartup.catch(error => console.error('[BOOT] Original startup failed:', error));
+const server = createServer((request, response) => {
+    if (isShuttingDown) {
+        response.statusCode = 503;response.setHeader('Connection', 'close');
+        response.end('Server shutting down');return;
+    }
+    // This retains the actual Express listener but does NOT claim its void
+    // return or response.finish joins all transitive asynchronous route work.
+    app(request, response);
+});
+async function completeOriginalStartup(): Promise<void> {
     console.log(`
     -------------------------------------------
     SILHOUETTE AGENCY OS IS ONLINE
@@ -67,16 +88,21 @@ const server = app.listen(PORT, HOST, async () => {
     // pipelineData.planId, so no resume path ever re-drives a pre-boot
     // row. They are failed honestly (never deleted); re-running the
     // mission is the recovery path.
+    if (isShuttingDown) return;
     try {
         const { reapStaleTasks } = await import('../services/execution/taskLedger');
+        if (isShuttingDown) return;
         reapStaleTasks(PROCESS_STARTED_AT, 'executor lost: process restart (ledger row predates this boot)');
     } catch (e: any) {
         console.warn('[BOOT] stale task sweep failed (non-blocking):', e?.message);
     }
 
     // [GATEWAY] Initialize WebSocket Gateway (shares HTTP server)
+    if (isShuttingDown) return;
     try {
         const { gateway } = await import('./gateway');
+        startupGateway = gateway;
+        if (isShuttingDown) return;
         gateway.initialize(server);
         console.log('[GATEWAY] ✅ WebSocket Gateway initialized');
     } catch (error) {
@@ -84,8 +110,11 @@ const server = app.listen(PORT, HOST, async () => {
     }
 
     // [TERMINAL] Initialize Interactive Terminal WebSocket
+    if (isShuttingDown) return;
     try {
         const { TerminalGateway } = await import('./channels/terminalWebSocket');
+        startupTerminalGateway = TerminalGateway;
+        if (isShuttingDown) return;
         TerminalGateway.initialize(server);
     } catch (error) {
         console.error('[TERMINAL] Failed to initialize Terminal Gateway:', error);
@@ -93,16 +122,20 @@ const server = app.listen(PORT, HOST, async () => {
 
 
     // [CHANNELS] Initialize Messaging Channels (WhatsApp, Telegram, Discord)
+    if (isShuttingDown) return;
     try {
         const { initializeChannels } = await import('./channels');
+        if (isShuttingDown) return;
         await initializeChannels();
     } catch (error) {
         console.error('[CHANNELS] Failed to initialize channels:', error);
     }
 
     // [MCP] Initialize and Mount Standard MCP Server
+    if (isShuttingDown) return;
     try {
         const { mcpWrapper } = await import('./mcp/mcpServer');
+        if (isShuttingDown) return;
         await mcpWrapper.initialize();
         await mcpWrapper.mount(app);
     } catch (error) {
@@ -110,15 +143,19 @@ const server = app.listen(PORT, HOST, async () => {
     }
 
     // [PLUGINS] Initialize Plugin System (Phase 14)
+    if (isShuttingDown) return;
     try {
         const { pluginRegistry } = await import('../services/plugins/pluginRegistry');
+        if (isShuttingDown) return;
         const { registerCorePlugins } = await import('../services/plugins/loader');
+        if (isShuttingDown) return;
 
         // Register Core Plugins
         registerCorePlugins();
 
         // [R12] Discover + validate + register custom plugins (real ESM load)
         const { registerCustomPlugins } = await import('../services/plugins/loader');
+        if (isShuttingDown) return;
         await registerCustomPlugins();
 
         // Initialize Registry (starts plugins and registers tools)
@@ -129,6 +166,7 @@ const server = app.listen(PORT, HOST, async () => {
     }
 
     // [INGESTION] Start Webhook Ingestion Engine
+    if (isShuttingDown) return;
     try {
         await import('../services/ingestionEngine');
         console.log('[INGESTION] ✅ Webhook Ingestion Engine online');
@@ -139,14 +177,17 @@ const server = app.listen(PORT, HOST, async () => {
     // [EVOLUTION] Proactive Self-Evolution is now handled by Unified Daemon
 
     // [COGNITIVE] Start 4-Tier Memory Cognitive Engines & Evolution (Unified Daemon)
+    if (isShuttingDown) return;
     try {
         const { unifiedDaemon } = await import('../services/daemon/unifiedDaemon');
+        if (isShuttingDown) return;
         unifiedDaemon.start();
     } catch (error) {
         console.error('[DAEMON] Failed to start unified daemon:', error);
     }
 
     // [ORCHESTRATOR] Initialize Agent Lifecycle Manager (auto-starts on import)
+    if (isShuttingDown) return;
     try {
         await import('../services/orchestrator');
         console.log('[ORCHESTRATOR] ✅ Agent Lifecycle Manager initialized');
@@ -154,8 +195,10 @@ const server = app.listen(PORT, HOST, async () => {
         // [Ticket W7] Wire the capability-awareness writer: it was imported
         // (promptCompiler) but initialize() was never called, so its event
         // subscriptions never existed and universal_knowledge had no writer.
-        try {
+        if (isShuttingDown) return;
+    try {
             const { capabilityAwareness } = await import('../services/capabilityAwareness');
+            if (isShuttingDown) return;
             await capabilityAwareness.initialize();
             console.log('[CAPABILITY_AWARENESS] ✅ Initialized');
         } catch (caErr) {
@@ -166,93 +209,112 @@ const server = app.listen(PORT, HOST, async () => {
     }
 
     // [EVOLUTION] Start Self-Evolution Scheduler (respects PowerManager mode)
+    if (isShuttingDown) return;
     try {
         const { evolutionScheduler } = await import('../services/evolution/evolutionScheduler');
+        if (isShuttingDown) return;
         evolutionScheduler.start();
         console.log('[EVOLUTION] ✅ Evolution Scheduler started');
     } catch (error) {
         console.error('[EVOLUTION] Failed to start evolution scheduler:', error);
     }
+}
+server.once('listening', () => {
+    startupEntered = true;
+    void completeOriginalStartup().then(finishStartup, failStartup);
 });
+server.once('error', error => {
+    console.error('[HTTP] Original server error:', error);
+    if (!startupEntered) failStartup(error);
+    void gracefulShutdown('HTTP_SERVER_ERROR').catch(failure => console.error('[SHUTDOWN] Server error drain failed:', failure));
+});
+server.listen(PORT, HOST);
 
 // ═══════════════════════════════════════════════════════════════
 // GRACEFUL SHUTDOWN - Clean up all resources properly
 // ═══════════════════════════════════════════════════════════════
-let isShuttingDown = false;
-
-async function gracefulShutdown(signal: string) {
-    if (isShuttingDown) return;
+let originalShutdown: Promise<void> | undefined;
+function gracefulShutdown(signal: string): Promise<void> {
     isShuttingDown = true;
-
-    console.log(`\n[SHUTDOWN] ${signal} received: shutting down gracefully...`);
-    let shutdownFailed = false;
-    // Bound the whole shutdown, including awaited storage drainage.
+    if (originalShutdown) return originalShutdown;
+    let resolve!: () => void;
+    let reject!: (error: unknown) => void;
+    originalShutdown = new Promise<void>((yes, no) => { resolve = yes;reject = no; });
+    void performOriginalShutdown(signal).then(resolve, reject);
+    return originalShutdown;
+}
+async function performOriginalShutdown(signal: string): Promise<void> {
+    // Arm before any original stop callback. External containment still owns
+    // non-cooperative synchronous CPU/native work that cannot service timers.
     const deadline = setTimeout(() => {
         console.error('[SHUTDOWN] Forced exit after timeout; drainage unverified');
         process.exit(1);
     }, 10000);
-    deadline.unref();
-    try {
-        const { curiosity } = await import('../services/curiosityService');
-        await curiosity.shutdown();
-        console.log('[SHUTDOWN] Curiosity accepted work drained');
-    } catch (error) {
-        shutdownFailed = true;
-        console.error('[SHUTDOWN] Curiosity drainage failed; do not claim clean persistence:', error);
-    }
 
-    // 1. Flush pending memory entries
-    try {
-        const { continuousMemory } = await import('../services/memory/continuousMemory');
-        continuousMemory.shutdown();
-        console.log('[SHUTDOWN] Continuous Memory flushed');
-    } catch (error) {
-        shutdownFailed = true;
-        console.error('[SHUTDOWN] Continuous Memory persistence unverified:', error);
-    }
-
-    // 2. Shutdown WS Gateway (notify clients)
-    try {
-        const { gateway } = await import('./gateway');
-        gateway.shutdown();
-        console.log('[SHUTDOWN] WebSocket Gateway closed');
-    } catch { /* ignore if not initialized */ }
-
-    // 3. Disconnect Redis
-    try {
-        const { redisClient } = await import('../services/redisClient');
-        await redisClient.disconnect();
-        console.log('[SHUTDOWN] Redis disconnected');
-    } catch { /* ignore if not initialized */ }
-
-    // 4. Disconnect Neo4j
-    try {
-        const { graph } = await import('../services/graphService');
-        await graph.close();
-        console.log('[SHUTDOWN] Neo4j disconnected');
-    } catch { /* ignore if not initialized */ }
-
-    // 5. Close SQLite
-    try {
-        const { sqliteService } = await import('../services/sqliteService');
-        sqliteService.close();
-        console.log('[SHUTDOWN] SQLite closed');
-    } catch { /* ignore if not initialized */ }
-
-    // 6. Stop Unified Daemon
-    try {
-        const { unifiedDaemon } = await import('../services/daemon/unifiedDaemon');
-        unifiedDaemon.stop();
-        console.log('[SHUTDOWN] Unified Daemon stopped');
-    } catch { /* ignore if not initialized */ }
-
-    // 7. Close HTTP server
-    server.close(() => {
-        console.log('[SHUTDOWN] HTTP server closed');
-        clearTimeout(deadline);
-        process.exit(shutdownFailed ? 1 : 0);
+    console.log(`\n[SHUTDOWN] ${signal} received: shutting down gracefully...`);
+    // Full receiver/transitive frontier remains open. Never turn direct
+    // transport closure into a successful global-quiescence exit receipt.
+    let shutdownFailed = false;
+    console.error('[SHUTDOWN] Product lifecycle frontier remains INCOMPLETE');
+    const httpClosed = new Promise<void>((resolve, reject) => {
+        server.close(error => { if (error) reject(error);else resolve(); });
     });
+    // Observe each rejection immediately while independent producers drain.
+    const httpReceipt = Promise.allSettled([httpClosed]);
+    sealEvaluatedRuntimeProducers();
+    const producerStops: Promise<unknown>[] = [];
+    for (const stop of [
+        () => startupGateway?.sealAndDrain(),
+        () => startupTerminalGateway?.sealAndCloseDirectSessions(),
+    ]) {
+        try { producerStops.push(Promise.resolve(stop())); }
+        catch (error) { producerStops.push(Promise.reject(error)); }
+    }
+    const producerReceipts = Promise.allSettled(producerStops);
+    // Referenced deadline prevents an unresolved join from silently exiting0.
+    // No new graph is imported for these joins. Already-admitted startup may
+    // finish its current original import, but later independent phases skip.
+    const startupReceipts = await Promise.allSettled([originalStartup]);
+    for (const result of [...startupReceipts, ...await producerReceipts]) {
+        if (result.status === 'rejected') { shutdownFailed = true;console.error('[SHUTDOWN] Original startup/producer drain failed:', result.reason); }
+    }
+    for (const result of await httpReceipt) {
+        if (result.status === 'rejected') { shutdownFailed = true;console.error('[SHUTDOWN] HTTP transport close failed:', result.reason); }
+    }
+    try {
+        // Only original evaluated singleton callbacks. No dynamic import here
+        // can instantiate a new producer/storage graph during shutdown.
+        await drainEvaluatedRuntimeProducers();
+    } catch (error) {
+        shutdownFailed = true;
+        console.error('[SHUTDOWN] Evaluated producer drain failed:', error);
+    }
+    try {
+        await closeEvaluatedRuntimeStorage();
+    } catch (error) {
+        shutdownFailed = true;
+        console.error('[SHUTDOWN] Evaluated storage close failed:', error);
+    }
+
+    try {
+        const report = await stopRuntimeRootHost();
+        if (report.lifetimeFailures) shutdownFailed = true;
+        console.error('[SHUTDOWN] Explicit host evidence:', report.state, report.coverage, evaluatedRuntimeFrontier());
+    } catch (error) {
+        shutdownFailed = true;
+        console.error('[SHUTDOWN] Explicit host stop failed:', error);
+    }
+
+    // The original HTTP close callback was already joined above, not issued
+    // after backend release. A forced deadline is still an explicit failure.
+    // Conventional exit code reflects actual shutdown failures, not the
+    // separate INCOMPLETE coverage report. Never force a successful exit.
+    // If handles naturally drain, let Node exit. A real survivor reaching the
+    // original10s timeout still forces1. Avoid restart-on-failure loops caused
+    // solely by honest incomplete bookkeeping, while preserving actual faults.
+    process.exitCode = shutdownFailed ? 1 : 0;
+    deadline.unref();
 }
 
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => { void gracefulShutdown('SIGTERM').catch(error => console.error('[SHUTDOWN] Original shutdown rejected:', error)); });
+process.on('SIGINT', () => { void gracefulShutdown('SIGINT').catch(error => console.error('[SHUTDOWN] Original shutdown rejected:', error)); });

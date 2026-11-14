@@ -6,6 +6,8 @@ interface TerminalSession {
     id: string;
     process: ChildProcessWithoutNullStreams;
     buffer: string;
+    closed: Promise<void>;
+    settleClosed: () => void;
 }
 
 export class TerminalService extends EventEmitter {
@@ -33,29 +35,23 @@ export class TerminalService extends EventEmitter {
 
         console.log(`[Terminal] Spawning ${shell} for session ${sessionId}`);
 
-        const terminals = spawn(shell, [], {
-            name: 'xterm-color',
-            cols: 80,
-            rows: 30,
-            cwd: process.cwd(),
-            env: process.env as any
-        } as any); // Type cast as any because spawn options don't officially support name/cols/rows in standard node types, but node-pty does. Wait, I am using spawn, spawn DOES NOT support cols/rows.
-        // Correction: standard spawn does NOT support cols/rows. I cannot use that here.
-        // I will just use standard spawn. The columns will be determined by the client side wrapping, 
-        // but the backend process won't know about it, which might cause wrapping issues.
-        // For a robust implementation without node-pty, strictly speaking we can't resize "truly",
-        // but for basic usage it works.
-
+        // One child per terminal session. The former unused spawn allocated a
+        // second shell that was never entered in sessions, so kill()/socket
+        // close could not reach it. Keep the original tracked process below.
         const proc = spawn(shell, [], {
             cwd: process.cwd(),
             env: process.env,
             shell: false // We are spawning the shell directly
         });
 
+        let settleClosed!: () => void;
+        const closed = new Promise<void>(resolve => { settleClosed = resolve; });
         const session: TerminalSession = {
             id: sessionId,
             process: proc,
-            buffer: ''
+            buffer: '',
+            closed,
+            settleClosed
         };
 
         this.sessions.set(sessionId, session);
@@ -71,8 +67,11 @@ export class TerminalService extends EventEmitter {
 
         proc.on('close', (code) => {
             console.log(`[Terminal] Session ${sessionId} closed with code ${code}`);
+            // Retire only this exact child after its actual close event. An
+            // observer throwing must not strand ownership or erase a successor.
+            if (this.sessions.get(sessionId) === session) this.sessions.delete(sessionId);
+            session.settleClosed();
             this.emit('close', sessionId, code);
-            this.sessions.delete(sessionId);
         });
 
         proc.on('error', (err) => {
@@ -114,7 +113,13 @@ export class TerminalService extends EventEmitter {
                 session.process.kill();
             }
 
-            this.sessions.delete(sessionId);
+            // Ownership remains until proc.close, including after a failed
+            // signal request. Failure is not proof that the process ended.
         }
+    }
+
+    /** Joins the exact currently-owned shell, not a descendant-tree proof. */
+    public sessionClosed(sessionId: string): Promise<void> {
+        return this.sessions.get(sessionId)?.closed ?? Promise.resolve();
     }
 }

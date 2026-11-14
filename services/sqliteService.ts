@@ -1,3 +1,4 @@
+import { admitEvaluatedSqlite, bindEvaluatedSqlite, failEvaluatedSqlite } from './lifecycle/runtimeStopBindings';
 import { preserveOriginal } from './lifecycle/preserveOriginal';
 import { sqliteOwner } from './lifecycle/preparationBindings';
 import type { Scope, Operation } from './lifecycle/host';
@@ -1055,4 +1056,14 @@ function constructOriginalSqlite(): SqliteService {
         preserveOriginal(sqliteModuleOwner, 'construction-failure', () => sqliteModuleOwner.constructionFailed(operation, original)); throw original;
     }
 }
-export const sqliteService = constructOriginalSqlite();
+const runtimeConstructionPermit = admitEvaluatedSqlite();
+export const sqliteService = (() => {
+    try {
+        const original = constructOriginalSqlite();
+        bindEvaluatedSqlite(runtimeConstructionPermit,() => original.close());
+        return original;
+    } catch (error) {
+        failEvaluatedSqlite(runtimeConstructionPermit,error);
+        throw error;
+    }
+})();

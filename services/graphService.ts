@@ -1,3 +1,4 @@
+import { admitEvaluatedGraph, bindEvaluatedGraph, failEvaluatedGraph } from './lifecycle/runtimeStopBindings';
 import { preserveOriginal } from './lifecycle/preserveOriginal';
 import { graphOwner } from './lifecycle/preparationBindings';
 import type { Operation, ChildReservation } from './lifecycle/host';
@@ -1506,4 +1507,14 @@ function constructOriginalGraphService(): GraphService {
         preserveOriginal(owner, 'construction-failure', () => owner.constructionFailed(operation, original)); throw original;
     }
 }
-export const graph = constructOriginalGraphService();
+const runtimeConstructionPermit = admitEvaluatedGraph();
+export const graph = (() => {
+    try {
+        const original = constructOriginalGraphService();
+        bindEvaluatedGraph(runtimeConstructionPermit,() => original.close());
+        return original;
+    } catch (error) {
+        failEvaluatedGraph(runtimeConstructionPermit,error);
+        throw error;
+    }
+})();

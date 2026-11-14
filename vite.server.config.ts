@@ -5,7 +5,7 @@ export default defineConfig({
   build: {
     ssr: true,
     lib: {
-      entry: path.resolve(__dirname, 'server/index.ts'),
+      entry: path.resolve(__dirname, 'server/bootstrap.preparation.ts'),
       formats: ['es'],
       fileName: () => 'index.js'
     },

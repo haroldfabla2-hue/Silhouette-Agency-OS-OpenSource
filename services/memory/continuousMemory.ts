@@ -1,3 +1,4 @@
+import { admitEvaluatedContinuousMemory, bindEvaluatedContinuousMemory, failEvaluatedContinuousMemory } from '../lifecycle/runtimeStopBindings';
 /**
  * CONTINUOUS MEMORY SERVICE
  * 
@@ -443,4 +444,14 @@ export class ContinuousMemoryService {
 // SINGLETON
 // ═══════════════════════════════════════════════════════════════
 
-export const continuousMemory = new ContinuousMemoryService();
+const runtimeConstructionPermit = admitEvaluatedContinuousMemory();
+export const continuousMemory = (() => {
+    try {
+        const original = new ContinuousMemoryService();
+        bindEvaluatedContinuousMemory(runtimeConstructionPermit,() => original.shutdown());
+        return original;
+    } catch (error) {
+        failEvaluatedContinuousMemory(runtimeConstructionPermit,error);
+        throw error;
+    }
+})();

@@ -1,3 +1,4 @@
+import { admitEvaluatedRedis, bindEvaluatedRedis, failEvaluatedRedis } from './lifecycle/runtimeStopBindings';
 import { preserveOriginal } from './lifecycle/preserveOriginal';
 import { redisOwner } from './lifecycle/preparationBindings';
 import type { Operation } from './lifecycle/host';
@@ -279,4 +280,14 @@ class RedisService {
     }
 }
 
-export const redisClient = new RedisService();
+const runtimeConstructionPermit = admitEvaluatedRedis();
+export const redisClient = (() => {
+    try {
+        const original = new RedisService();
+        bindEvaluatedRedis(runtimeConstructionPermit,() => original.disconnect());
+        return original;
+    } catch (error) {
+        failEvaluatedRedis(runtimeConstructionPermit,error);
+        throw error;
+    }
+})();

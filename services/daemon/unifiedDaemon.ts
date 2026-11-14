@@ -1,3 +1,4 @@
+import { admitEvaluatedDaemon, bindEvaluatedDaemon, failEvaluatedDaemon } from '../lifecycle/runtimeStopBindings';
 /**
  * 🧠 SILHOUETTE AGENCY OS - UNIFIED DAEMON (STATEFUL)
  * ==============================================================================
@@ -587,4 +588,14 @@ export class UnifiedDaemon {
     }
 }
 
-export const unifiedDaemon = new UnifiedDaemon();
+const runtimeConstructionPermit = admitEvaluatedDaemon();
+export const unifiedDaemon = (() => {
+    try {
+        const original = new UnifiedDaemon();
+        bindEvaluatedDaemon(runtimeConstructionPermit,() => original.stop());
+        return original;
+    } catch (error) {
+        failEvaluatedDaemon(runtimeConstructionPermit,error);
+        throw error;
+    }
+})();

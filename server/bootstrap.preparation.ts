@@ -1,8 +1,9 @@
 import { installPreparationHost } from '../services/lifecycle/bootstrapAuthority';
 import { serverOwner } from '../services/lifecycle/preparationBindings';
 import type { Capacity } from '../services/lifecycle/host';
+import { installRuntimeRootHost } from './runtimeRootHost';
 
-/** PROPOSED entry only. package/build/Electron still target the old entry.
+/** Candidate runtime entry. package/server build target this before imports.
  * No production numbers are silently chosen. Capacity inputs must come from
  * the reviewed execution environment, not a source-code guess.
  */
@@ -18,10 +19,23 @@ const capacity: Capacity = {
     resources: required('SILHOUETTE_OWNER_RESOURCES'),
 };
 const preparedHost = installPreparationHost(capacity);
+installRuntimeRootHost(preparedHost);
 // Source preparation deliberately leaves PRODUCT_FRONTIER_INTEGRATION_INCOMPLETE
-// permanent. This entry is not eligible for execution or a COMPLETE claim.
+// permanent. Wiring this entry is not a COMPLETE or runtime-validation claim.
 const applicationImport = serverOwner().invoke('original-entry-import', () => import('./index'));
 void applicationImport.catch(error => {
-    preparedHost.failure('server:original-entry-import', error);
-    preparedHost.unknown('server:ENTRY_EVALUATION_UNVERIFIED', true);
+    // An import failure is a real startup failure, not a live silent server.
+    // Set nonzero first so even an empty event loop cannot look successful.
+    process.exitCode = 1;
+    console.error('[BOOT] Original application import failed:', error);
+    const failedStartupDeadline = setTimeout(() => {
+        console.error('[BOOT] Startup failure cleanup deadline; original error retained above');
+        process.exit(1);
+    }, 10000);
+    failedStartupDeadline.unref();
+    try { preparedHost.failure('server:original-entry-import', error); }
+    finally {
+        preparedHost.unknown('server:ENTRY_EVALUATION_UNVERIFIED', true);
+        void preparedHost.stop().catch(stopError => console.error('[BOOT] Startup failure cleanup rejected:', stopError));
+    }
 });

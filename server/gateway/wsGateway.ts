@@ -41,6 +41,15 @@ class SilhouetteGateway {
     private connections: Map<string, { ws: WebSocket; conn: ClientConnection }> = new Map();
     private idempotencyCache: Map<string, { result: unknown; expiresAt: number }> = new Map();
     private eventSeq = 0;
+    private sealed = false;
+    private shutdownJoin?: Promise<void>;
+    private acceptedSockets = new Set<{ ws: WebSocket; closed: Promise<void>; settle: () => void; handshake?: NodeJS.Timeout }>();
+    private admittedRequests = new Set<Promise<void>>();
+    private requestFailureCount = 0;
+    private requestFailureSample: unknown[] = [];
+    private bridgeStops: (() => void)[] = [];
+    private admittedReplies = new Set<Promise<string | null>>();
+    private pendingTransportCallbacks = new Set<Promise<void>>();
     private replyRoutes = new Map<string, {connectionId:string;sessionId:string;expiresAt:number}>();
     private heartbeatInterval: NodeJS.Timeout | null = null;
     private sweepInterval: NodeJS.Timeout | null = null;
@@ -53,6 +62,7 @@ class SilhouetteGateway {
      * This allows WS to share the same port as the Express API.
      */
     initialize(httpServer: HTTPServer): void {
+        if (this.sealed || this.wss) throw new Error('Gateway already initialized or sealed');
         this.wss = new WebSocketServer({
             server: httpServer,
             path: '/ws',
@@ -60,6 +70,17 @@ class SilhouetteGateway {
         });
 
         this.wss.on('connection', (ws, req) => {
+            let settle!: () => void;
+            const closed = new Promise<void>(resolve => { settle = resolve; });
+            const accepted = { ws, closed, settle, handshake: undefined as NodeJS.Timeout | undefined };
+            this.acceptedSockets.add(accepted);
+            // Covers unauthenticated/handshake sockets, not only connections map.
+            ws.once('close', () => {
+                if (accepted.handshake) clearTimeout(accepted.handshake);
+                accepted.settle();this.acceptedSockets.delete(accepted);
+            });
+            ws.on('error', error => console.error('[Gateway] Accepted socket error:', error));
+            if (this.sealed) { ws.close(1001, 'Gateway stopping'); return; }
             const connectionId = uuidv4();
             const ip = req.socket.remoteAddress ?? 'unknown';
             console.log(`[Gateway] 🔌 New WS connection from ${ip} (${connectionId})`);
@@ -70,9 +91,11 @@ class SilhouetteGateway {
                 ws.close(4001, 'Handshake timeout');
             }, CONFIG.HANDSHAKE_TIMEOUT_MS);
 
+            accepted.handshake = handshakeTimer;
             let isHandshakeComplete = false;
 
             ws.on('message', (data: RawData) => {
+                if (this.sealed) return;
                 try {
                     const raw = data.toString();
                     const frame = JSON.parse(raw);
@@ -96,7 +119,7 @@ class SilhouetteGateway {
 
                     // Route by frame type
                     if (frame.type === 'req') {
-                        this.handleRequest(connectionId, ws, frame as RequestFrame);
+                        this.admitRequest(connectionId, ws, frame as RequestFrame);
                     }
                     // Clients don't send 'res' or 'event' frames (server-only)
                 } catch (err) {
@@ -110,9 +133,7 @@ class SilhouetteGateway {
                 this.handleDisconnect(connectionId, code, reason.toString());
             });
 
-            ws.on('error', (err) => {
-                console.error(`[Gateway] WS error for ${connectionId}:`, err.message);
-            });
+
         });
 
         // Start heartbeat loop
@@ -198,6 +219,24 @@ class SilhouetteGateway {
     }
 
     // ── Request Handler ───────────────────────────────────────────────────
+
+    private admitRequest(connectionId: string, ws: WebSocket, frame: RequestFrame): void {
+        if (this.sealed) return;
+        // Publish the exact join before calling any original handler: reentrant
+        // shutdown must observe it even if routeMethod invokes external code.
+        let resolve!: () => void;
+        let reject!: (error: unknown) => void;
+        const joined = new Promise<void>((yes, no) => { resolve = yes;reject = no; });
+        this.admittedRequests.add(joined);
+        void joined.then(() => { this.admittedRequests.delete(joined); }, error => {
+            this.requestFailureCount++;
+            if (this.requestFailureSample.length < 16) this.requestFailureSample.push(error);
+            this.admittedRequests.delete(joined);
+            console.error('[Gateway] Original request task failed:', error);
+        });
+        try { void this.handleRequest(connectionId, ws, frame).then(resolve, reject); }
+        catch (error) { reject(error); }
+    }
 
     private async handleRequest(connectionId: string, ws: WebSocket, frame: RequestFrame): Promise<void> {
         const { id, method, params, idempotencyKey } = frame;
@@ -521,9 +560,9 @@ class SilhouetteGateway {
     private bridgeSystemBusEvents(): void {
         // Subscribe to all mapped protocols
         for (const [protocol, gatewayEvent] of Object.entries(PROTOCOL_TO_GATEWAY_EVENT)) {
-            systemBus.subscribe(protocol as SystemProtocol, (payload) => {
-                this.broadcast(gatewayEvent!, payload);
-            });
+            this.bridgeStops.push(systemBus.subscribe(protocol as SystemProtocol, (payload) => {
+                if (!this.sealed) this.broadcast(gatewayEvent!, payload);
+            }));
         }
 
         console.log(`[Gateway] 🔗 Bridged ${Object.keys(PROTOCOL_TO_GATEWAY_EVENT).length} SystemProtocol events to WebSocket`);
@@ -535,6 +574,11 @@ class SilhouetteGateway {
      * Broadcast an event to all connected clients.
      */
     broadcast(event: GatewayEvent, payload: unknown): void {
+        if (this.sealed) return;
+        this.broadcastAdmitted(event, payload);
+    }
+
+    private broadcastAdmitted(event: GatewayEvent, payload: unknown): void {
         const frame = createEvent(event, payload, ++this.eventSeq);
         const data = JSON.stringify(frame);
 
@@ -556,6 +600,7 @@ class SilhouetteGateway {
      * Send an event to a specific client by connection ID.
      */
     sendTo(connectionId: string, event: GatewayEvent, payload: unknown): void {
+        if (this.sealed) return;
         const entry = this.connections.get(connectionId);
         if (!entry || entry.ws.readyState !== WebSocket.OPEN) return;
 
@@ -570,6 +615,7 @@ class SilhouetteGateway {
      * Send an event to all clients connected to a specific session.
      */
     sendToSession(sessionId: string, event: GatewayEvent, payload: unknown): void {
+        if (this.sealed) return;
         for (const { ws, conn } of this.connections.values()) {
             if (conn.sessionId === sessionId && ws.readyState === WebSocket.OPEN) {
                 try {
@@ -583,6 +629,7 @@ class SilhouetteGateway {
 
     /** Internal ingress helper. A connection route never grants tool authority. */
     issueReplyRoute(connectionId:string, sessionId?:string):string|null {
+        if (this.sealed) return null;
         const entry=this.connections.get(connectionId);
         if(!entry || entry.ws.readyState!==WebSocket.OPEN) return null;
         const destinationSession=sessionId ?? entry.conn.sessionId;
@@ -594,7 +641,23 @@ class SilhouetteGateway {
 
     /** One-shot route from an accepted gateway connection. A successful send
      * callback is transport acceptance only, not remote read acknowledgement. */
-    async deliverReply(replyRoute:string, text:string, media?:unknown[]):Promise<string|null> {
+    deliverReply(replyRoute:string, text:string, media?:unknown[]):Promise<string|null> {
+        if (this.sealed) return Promise.resolve(null);
+        let resolve!: (result: string | null) => void;
+        let reject!: (error: unknown) => void;
+        const joined = new Promise<string | null>((yes, no) => { resolve = yes;reject = no; });
+        this.admittedReplies.add(joined);
+        void joined.then(() => { this.admittedReplies.delete(joined); }, error => {
+            this.requestFailureCount++;
+            if (this.requestFailureSample.length < 16) this.requestFailureSample.push(error);
+            this.admittedReplies.delete(joined);
+        });
+        try { void this.deliverAdmittedReply(replyRoute, text, media).then(resolve, reject); }
+        catch (error) { reject(error); }
+        return joined;
+    }
+
+    private async deliverAdmittedReply(replyRoute:string, text:string, media?:unknown[]):Promise<string|null> {
         const route=this.replyRoutes.get(replyRoute);
         this.replyRoutes.delete(replyRoute); // Uncertainty must never cause a retry.
         if(!route || route.expiresAt<Date.now()) return null;
@@ -602,10 +665,16 @@ class SilhouetteGateway {
         if(!entry || entry.ws.readyState!==WebSocket.OPEN || !sessionManager.getSession(route.sessionId)) return null;
         const message={id:uuidv4(),role:'agent',content:text,timestamp:Date.now()};
         const frame=createEvent('session.message',{sessionId:route.sessionId,message,...(media?{media}:{})},++this.eventSeq);
+        let finishActualSend!: () => void;
+        const actualSend = new Promise<void>(resolve => { finishActualSend = resolve; });
+        this.pendingTransportCallbacks.add(actualSend);
+        const sendFinished = () => { this.pendingTransportCallbacks.delete(actualSend);finishActualSend(); };
         const accepted=await new Promise<boolean>(resolve=>{
+            // Preserve original uncertainty timeout, but it is NOT actual
+            // send-callback quiescence. The original callback remains owned.
             const deadline=setTimeout(()=>resolve(false),2000);
-            try{entry.ws.send(JSON.stringify(frame),error=>{clearTimeout(deadline);resolve(!error);});}
-            catch{clearTimeout(deadline);resolve(false);}
+            try{entry.ws.send(JSON.stringify(frame),error=>{clearTimeout(deadline);sendFinished();resolve(!error);});}
+            catch{clearTimeout(deadline);sendFinished();resolve(false);}
         });
         if(!accepted) return null;
         try{sessionManager.addMessage(route.sessionId,{role:'agent',content:text,metadata:{channel:entry.conn.clientType}});}
@@ -661,26 +730,61 @@ class SilhouetteGateway {
 
     // ── Shutdown ───────────────────────────────────────────────────────────
 
+    /** Legacy call starts the same owned drain; callers needing proof await
+     * sealAndDrain(). Direct handler joins do not prove transitive event work.
+     */
     shutdown(): void {
-        console.log('[Gateway] 🛑 Shutting down WebSocket Gateway...');
+        void this.sealAndDrain().catch(error => console.error('[Gateway] Drain incomplete:', error));
+    }
 
-        if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
-        if (this.sweepInterval) clearInterval(this.sweepInterval);
-        if (this.idempotencyCleanupInterval) clearInterval(this.idempotencyCleanupInterval);
+    sealAndDrain(): Promise<void> {
+        this.sealed = true;
+        if (this.shutdownJoin) return this.shutdownJoin;
+        // Publish exact task before original stop/subscription/socket callbacks.
+        // Start original stop effects synchronously for legacy shutdown callers.
+        let resolve!: () => void;
+        let reject!: (error: unknown) => void;
+        this.shutdownJoin = new Promise<void>((yes, no) => { resolve = yes;reject = no; });
+        void this.performDirectDrain().then(resolve, reject);
+        return this.shutdownJoin;
+    }
 
-        // Notify all clients
-        this.broadcast('shutdown', { reason: 'Server shutting down' });
-
-        // Close all connections
-        for (const { ws } of this.connections.values()) {
-            ws.close(1001, 'Server shutting down');
-        }
-        this.connections.clear();
-        this.replyRoutes.clear();
-
-        if (this.wss) {
-            this.wss.close();
-        }
+    private async performDirectDrain(): Promise<void> {
+            const failures: unknown[] = [];
+            for (const timer of [this.heartbeatInterval, this.sweepInterval, this.idempotencyCleanupInterval]) {
+                if (timer) clearInterval(timer);
+            }
+            for (const stop of this.bridgeStops) {
+                try { stop(); } catch (error) { failures.push(error); }
+            }
+            // Notify before closing sockets. seal has already stopped new work.
+            try { this.broadcastAdmitted('shutdown', { reason: 'Server shutting down' }); }
+            catch (error) { failures.push(error); }
+            const serverClosed = this.wss ? new Promise<void>((resolve, reject) => {
+                this.wss!.close(error => { if (error) reject(error);else resolve(); });
+            }) : Promise.resolve();
+            // Observe server failure immediately, even while waiting for requests.
+            const socketWork: Promise<unknown>[] = [serverClosed];
+            for (const accepted of this.acceptedSockets) {
+                if (accepted.handshake) clearTimeout(accepted.handshake);
+                try { accepted.ws.close(1001, 'Server shutting down'); }
+                catch (error) { failures.push(error); }
+                socketWork.push(accepted.closed);
+            }
+            const socketsJoined = Promise.allSettled(socketWork);
+            // No fail-fast: keep every originally admitted handler until settled.
+            while (this.admittedRequests.size || this.admittedReplies.size) {
+                await Promise.allSettled([...this.admittedRequests, ...this.admittedReplies]);
+            }
+            // Deadline-returned replies still retain their original actual send
+            // callback until callback/synchronous-throw, not just timeout result.
+            while (this.pendingTransportCallbacks.size) await Promise.allSettled([...this.pendingTransportCallbacks]);
+            for (const result of await socketsJoined) if (result.status === 'rejected') failures.push(result.reason);
+            // WSS close waits accepted sockets, including a late rejected handshake.
+            await Promise.allSettled([...this.acceptedSockets].map(accepted => accepted.closed));
+            this.connections.clear();this.replyRoutes.clear();
+            if (this.requestFailureCount) failures.push(new AggregateError(this.requestFailureSample, 'Original gateway request failures: ' + this.requestFailureCount));
+            if (failures.length) throw new AggregateError(failures, 'Gateway direct ingress drain incomplete');
     }
 
     // ── Stats ─────────────────────────────────────────────────────────────
