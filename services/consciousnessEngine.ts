@@ -1,3 +1,4 @@
+import { admitEvaluatedConsciousnessInitial, bindEvaluatedConsciousnessInitial, failEvaluatedConsciousnessInitial } from './lifecycle/runtimeStopBindings';
 import { preserveOriginal } from './lifecycle/preserveOriginal';
 import { consciousnessOwner } from './lifecycle/preparationBindings';
 
@@ -252,12 +253,18 @@ class ConsciousnessEngine {
 
 function constructOriginalConsciousnessEngine(): ConsciousnessEngine {
     const owner = consciousnessOwner();
-    const operation = owner.beginConstruction();
+    const runtimePermit = admitEvaluatedConsciousnessInitial();
+    let operation: ReturnType<typeof owner.beginConstruction> | undefined;
     try {
+        operation = owner.beginConstruction();
         const instance = new ConsciousnessEngine();
-        owner.constructed(operation, instance); return instance;
+        owner.constructed(operation, instance);
+        bindEvaluatedConsciousnessInitial(runtimePermit, () => instance.ready());
+        return instance;
     } catch (original) {
-        preserveOriginal(owner, 'construction-failure', () => owner.constructionFailed(operation, original)); throw original;
+        preserveOriginal(owner, 'runtime-construction-failure', () => failEvaluatedConsciousnessInitial(runtimePermit, original));
+        if (operation) { const admitted = operation; preserveOriginal(owner, 'construction-failure', () => owner.constructionFailed(admitted, original)); }
+        throw original;
     }
 }
 export const consciousness = constructOriginalConsciousnessEngine();

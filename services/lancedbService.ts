@@ -1,3 +1,6 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { AdmissionClosed, OwnershipConflict } from './lifecycle/host';
+import { admitEvaluatedLance, bindEvaluatedLance, failEvaluatedLance } from './lifecycle/runtimeStopBindings';
 import { preserveOriginal } from './lifecycle/preserveOriginal';
 import { lanceOwner } from './lifecycle/preparationBindings';
 import type { Scope, Operation } from './lifecycle/host';
@@ -50,6 +53,107 @@ function knowledgeSchema(): Schema {
 }
 
 export class LanceDbService {
+    private readonly originalContext = new AsyncLocalStorage<{ live: boolean; operation: Operation }>();
+    private admissionOpen = true;
+    private readonly originalAsync = new Set<Promise<unknown>>();
+    private readonly originalHandles = new Map<object, {
+        source: string; handle: lancedb.Connection | lancedb.Table;
+        dependencies: readonly object[]; close: () => void;
+    }>();
+    private closeOwner: Promise<void> | undefined;
+
+    private original<T>(name: string, body: () => T): T {
+        const continuation = this.originalContext.getStore();
+        if (continuation) {
+            if (!continuation.live) throw new AdmissionClosed('lance:late-original-continuation');
+            return body();
+        }
+        if (!this.admissionOpen) throw new AdmissionClosed('lance:' + name);
+        return this.ownership.invoke('original-root-' + name, operation => {
+            const context = { live: true, operation };
+            let value: T;
+            try { value = this.originalContext.run(context, body); }
+            catch (original) { context.live = false; throw original; }
+            if (value instanceof Promise) {
+                this.originalAsync.add(value);
+                void value.then(() => {
+                    context.live = false; this.originalAsync.delete(value);
+                }, () => {
+                    context.live = false; this.originalAsync.delete(value);
+                });
+            } else context.live = false;
+            return value;
+        });
+    }
+
+    /** Terminal exact-instance owner. Caller must first seal/join the actual
+     * upstream HTTP, cognition, graph and memory borrowers. This does not
+     * establish whole-product quiescence or alter the host evaluation marker.
+     * ANN is explicitly unsupported here: no invented native destructor.
+     */
+    public close(): Promise<void> {
+        if (this.originalContext.getStore()?.live)
+            throw new OwnershipConflict('Lance close cannot join its own original request');
+        if (this.closeOwner) return this.closeOwner;
+        this.admissionOpen = false;
+        if (this.optimizeTimer) clearInterval(this.optimizeTimer);
+        this.optimizeTimer = null;
+        this.closeOwner = (async () => {
+            await Promise.allSettled([...this.originalAsync]);
+            const errors: unknown[] = [];
+            // A selected engine is not proof of a native allocation; these
+            // exact instance objects are. Do not silently fall back or close
+            // ANN SQLite while potentially live indices still borrow it.
+            if (this.annSqlite || this.annIndexes.size) {
+                const error = new OwnershipConflict('Lance ANN native closure unsupported');
+                errors.push(error);
+                this.ownership.failure('ann:ORIGINAL_CLOSE_UNSUPPORTED', error);
+                this.ownership.unknown('ann:NATIVE_HANDLES_OR_TIMERS_REMAIN_UNVERIFIED', true);
+            }
+            const remaining = new Map(this.originalHandles), blocked = new Set<object>();
+            while (remaining.size) {
+                const ready = [...remaining.values()].filter(candidate =>
+                    ![...remaining.values()].some(other => other !== candidate && other.dependencies.includes(candidate.handle)));
+                if (!ready.length) {
+                    const error = new OwnershipConflict('Lance original handle dependency cycle');
+                    errors.push(error); this.ownership.failure('original-close-cycle', error);
+                    break;
+                }
+                for (const record of ready) {
+                    remaining.delete(record.handle);
+                    try {
+                        if (blocked.has(record.handle)) throw new OwnershipConflict('Lance child close unverified: ' + record.source);
+                        record.close();
+                        if (record.handle.isOpen()) throw new OwnershipConflict('Lance original handle still open: ' + record.source);
+                    } catch (original) {
+                        errors.push(original); this.ownership.failure('original-close:' + record.source, original);
+                        for (const dependency of record.dependencies) blocked.add(dependency);
+                    }
+                }
+            }
+            // Never reset admission, initPromise, handles or failure history.
+            // Replaced candidates and failed retry allocations stay retained.
+            this.initialized = false;
+            if (errors.length) throw new AggregateError(errors, 'Original Lance close incomplete');
+        })();
+        void this.closeOwner.catch(() => undefined);
+        return this.closeOwner;
+    }
+
+    /** Sanitized exact-instance evidence, not a global native-memory census. */
+    public originalNativeFrontier() {
+        return {
+            admissionOpen: this.admissionOpen, pendingOriginalRoots: this.originalAsync.size,
+            lanceHandles: [...this.originalHandles.values()].map(record => ({
+                source: record.source, open: record.handle.isOpen(), dependencyCount: record.dependencies.length
+            })),
+            ann: { engine: this.annStatus?.kind ?? 'UNSELECTED',
+                sqliteAcquired: this.annSqlite !== null, indicesAcquired: this.annIndexes.size,
+                closure: this.annSqlite || this.annIndexes.size ? 'UNSUPPORTED' : 'NOT_ACQUIRED_IN_THIS_INSTANCE' }
+        };
+    }
+
+
     private annStatus: ReturnType<typeof selectVectorEngine> | null = null;
     private annModule: UsearchModule | null = null;
     private annSqlite: any = null;
@@ -70,6 +174,7 @@ export class LanceDbService {
     constructor(private readonly databasePath = DB_PATH, private readonly ownership: Scope, operation: Operation) {
         ownership.validateConstruction(operation);
         ownership.onSeal(() => {
+            this.admissionOpen = false;
             if (this.optimizeTimer) clearInterval(this.optimizeTimer);
             this.optimizeTimer = null;
         });
@@ -88,7 +193,10 @@ export class LanceDbService {
      * nothing if the table already exists.
      */
     public async ensureKnowledgeTable(): Promise<void> {
+        return this.original('ensureKnowledgeTable', async () => {
         return this.ownership.invoke('original-ensure-knowledge', operation => this.ensureKnowledgeTableOriginal(operation));
+    
+        });
     }
     private async ensureKnowledgeTableOriginal(operation: Operation): Promise<void> {
         if (this.knowledgeTableEnsured) return;
@@ -123,8 +231,11 @@ export class LanceDbService {
     }
 
     public async ensureInitialized(): Promise<void> {
+        return this.original('ensureInitialized', async () => {
         if (this.initialized) return;
         await this.init();
+    
+        });
     }
 
     private async ensureInitializedOriginal(operation: Operation): Promise<void> {
@@ -146,7 +257,18 @@ export class LanceDbService {
         handle: lancedb.Connection | lancedb.Table, source: string, dependencies: readonly object[] = []): void {
         // The SDK exposes synchronous close/isOpen for these exact handles.
         // Each returned handle is retained, even when a later retry replaces fields.
-        this.ownership.acquire(permit, handle, () => handle.close(),
+        // Keep the actual SDK object before any later field replacement/retry.
+        // One exact native close attempt is shared with the Host callback.
+        let called = false, failed = false, failure: unknown;
+        const close = () => {
+            if (called) { if (failed) throw failure; return; }
+            called = true;
+            try { handle.close(); }
+            catch (original) { failed = true; failure = original; throw original; }
+        };
+        if (this.originalHandles.has(handle)) throw new OwnershipConflict('Duplicate original Lance handle');
+        this.originalHandles.set(handle, { handle, source, dependencies: [...dependencies], close });
+        this.ownership.acquire(permit, handle, close,
             () => ({ source: 'lance:' + source, disposition: handle.isOpen() ? 'INCOMPLETE' : 'CLOSED',
                 ...(handle.isOpen() ? { reason: 'LANCE_HANDLE_STILL_OPEN' } : {}) }), dependencies);
     }
@@ -239,6 +361,7 @@ export class LanceDbService {
     }
 
     public async deleteNode(id: string): Promise<boolean> {
+        return this.original('deleteNode', async () => {
         if (!this.table) await this.init();
         if (!this.table && !this.legacyTable) return false;
         try {
@@ -253,10 +376,13 @@ export class LanceDbService {
             console.error(`[LANCEDB] Failed to delete node ${id}`, e);
             return false;
         }
+    
+        });
     }
 
     /** A successful write is confirmed by a read of the same ID and payload. */
     public async store(node: MemoryNode, vector?: number[]): Promise<{ ok: true; id: string; checksum: string; version: number }> {
+        return this.original('store', async () => {
         if (!node?.id || !node.content?.trim() || node.content === 'undefined') {
             throw new Error('Invalid memory node: refusing persistent write');
         }
@@ -265,6 +391,8 @@ export class LanceDbService {
             const operation = this.writeQueue.then(() => this.writeAndVerify(admitted, node, vector));
             this.writeQueue = operation.then(() => undefined, () => undefined);
             return operation;
+        });
+    
         });
     }
 
@@ -296,6 +424,7 @@ export class LanceDbService {
      * refusal rules and writeQueue serialization as store().
      */
     public async storeMany(nodes: MemoryNode[]): Promise<{ ok: true; count: number }> {
+        return this.original('storeMany', async () => {
         for (const node of nodes) {
             if (!node?.id || !node.content?.trim() || node.content === 'undefined') {
                 throw new Error('Invalid memory node: refusing persistent write');
@@ -305,6 +434,8 @@ export class LanceDbService {
             const operation = this.writeQueue.then(() => this.writeManyAndVerify(admitted, nodes));
             this.writeQueue = operation.then(() => undefined, () => undefined);
             return operation;
+        });
+    
         });
     }
 
@@ -434,7 +565,10 @@ export class LanceDbService {
     }
 
     public async getNodeById(id: string): Promise<MemoryNode | null> {
+        return this.original('getNodeById', async () => {
         return this.ownership.invoke('original-getNodeById', operation => this.getNodeByIdOriginal(operation, id));
+    
+        });
     }
     private async getNodeByIdOriginal(operation: Operation, id: string): Promise<MemoryNode | null> {
         await this.ensureInitializedOriginal(operation);
@@ -506,23 +640,28 @@ export class LanceDbService {
     private static readonly OPTIMIZE_NEVER_PRUNE_BEFORE = new Date(0);
 
     private startOptimizeLoop(): void {
-        if (this.optimizeTimer || !this.ownership.open) return;
+        if (this.optimizeTimer || !this.ownership.open || !this.admissionOpen) return;
         const raw = process.env.LANCEDB_OPTIMIZE_INTERVAL_MINUTES;
         const minutes = raw === undefined ? 360 : Number(raw);
         if (!Number.isFinite(minutes) || minutes <= 0) {
             console.log('[LANCEDB] Periodic optimize disabled (LANCEDB_OPTIMIZE_INTERVAL_MINUTES).');
             return;
         }
-        this.optimizeTimer = setInterval(() => {
-            if (!this.ownership.open) return;
+        // The timer is an independent future root, not a child continuation
+        // of the init operation whose AsyncLocalStorage context will expire.
+        this.optimizeTimer = this.originalContext.exit(() => setInterval(() => {
+            if (!this.ownership.open || !this.admissionOpen) return;
             void this.runOptimizeOnce();
-        }, minutes * 60_000);
+        }, minutes * 60_000));
         this.optimizeTimer.unref?.();
         console.log(`[LANCEDB] Periodic optimize every ${minutes} minutes (compact only, no version prune).`);
     }
 
     public runOptimizeOnce(): Promise<void> {
+        return this.original('runOptimizeOnce', () => {
         return this.ownership.invoke('original-optimize', operation => this.runOptimizeOriginal(operation));
+    
+        });
     }
     private async runOptimizeOriginal(operation: Operation): Promise<void> {
         if (this.optimizeRunning || !this.db) return;
@@ -554,7 +693,10 @@ export class LanceDbService {
         return 'memory_vectors_' + createHash('sha256').update(JSON.stringify(identity)).digest('hex').slice(0, 24);
     }
     public async projectEmbedding(node: MemoryNode, vector: number[], identity: EmbeddingIdentity): Promise<void> {
+        return this.original('projectEmbedding', async () => {
         return this.ownership.invoke('original-project-embedding', operation => this.projectEmbeddingOriginal(operation, node, vector, identity));
+    
+        });
     }
     private async projectEmbeddingOriginal(operation: Operation, node: MemoryNode, vector: number[], identity: EmbeddingIdentity): Promise<void> {
         if (!validEmbedding(vector, identity)) throw new Error('Invalid or incompatible embedding');
@@ -589,7 +731,10 @@ export class LanceDbService {
         if (this.table) await this.withCurrentTable('memory_records_v2', () => this.table!.update({ where: `id = '${node.id.replace(/'/g, "''")}'`, values: { embedding_state: 'READY' } }), operation);
     }
     public async pendingEmbeddings(limit = 100): Promise<MemoryNode[]> {
+        return this.original('pendingEmbeddings', async () => {
         return this.ownership.invoke('original-pendingEmbeddings', operation => this.pendingEmbeddingsOriginal(operation, limit));
+    
+        });
     }
     private async pendingEmbeddingsOriginal(operation: Operation, limit: number): Promise<MemoryNode[]> {
         await this.ensureInitializedOriginal(operation);
@@ -651,7 +796,10 @@ export class LanceDbService {
     }
 
     public async search(queryVector: number[], limit = 10, filter?: string, identity?: EmbeddingIdentity): Promise<MemoryNode[]> {
+        return this.original('search', async () => {
         return this.ownership.invoke('original-vector-search', operation => this.searchOriginal(operation, queryVector, limit, filter, identity));
+    
+        });
     }
     private async searchOriginal(operation: Operation, queryVector: number[], limit: number, filter: string | undefined, identity: EmbeddingIdentity | undefined): Promise<MemoryNode[]> {
         if (!identity || !validEmbedding(queryVector, identity)) return [];
@@ -720,14 +868,20 @@ export class LanceDbService {
      * Finds semantically similar nodes to the given existing node ID.
      */
     public async findSimilarNodes(nodeId: string, limit: number = 5): Promise<(MemoryNode & { similarity?: number })[]> {
+        return this.original('findSimilarNodes', async () => {
         const node = await this.getNodeById(nodeId);
         if (!node?.embeddingIdentity || !node.embeddingVector) return [];
         const neighbors = await this.search(Array.from(node.embeddingVector), limit + 1, undefined, node.embeddingIdentity);
         return neighbors.filter(n => n.id !== nodeId).slice(0, limit);
+    
+        });
     }
 
     public async searchByContent(textQuery: string, limit = 20, scope: MemoryScope = {}): Promise<MemoryNode[]> {
+        return this.original('searchByContent', async () => {
         return this.ownership.invoke('original-searchByContent', operation => this.searchByContentOriginal(operation, textQuery, limit, scope));
+    
+        });
     }
     private async searchByContentOriginal(operation: Operation, textQuery: string, limit: number, scope: MemoryScope): Promise<MemoryNode[]> {
         if (!textQuery.trim()) return [];
@@ -775,7 +929,10 @@ export class LanceDbService {
      * embedding, provider call, access update or corpus truncation. Caller-bounded results. Reads
      * existing canonical tables; legacy then v2, with v2 winning duplicate IDs. */
     public async getRecentObservations(tag:string|string[],limit:number,excludedIds:string[]=[]):Promise<MemoryNode[]>{
+        return this.original('getRecentObservations', async () => {
         return this.ownership.invoke('original-recent-observations', operation => this.getRecentObservationsOriginal(operation, tag, limit, excludedIds));
+    
+        });
     }
     private async getRecentObservationsOriginal(operation: Operation, tag: string|string[], limit: number, excludedIds: string[]): Promise<MemoryNode[]> {
         const tags=Array.isArray(tag)?tag:[tag];
@@ -852,11 +1009,17 @@ export class LanceDbService {
     }
 
     public async getLatestObservation(tag:string,excludedIds:string[]=[]):Promise<MemoryNode|null>{
+        return this.original('getLatestObservation', async () => {
         return (await this.getRecentObservations(tag,1,excludedIds))[0]??null;
+    
+        });
     }
 
     public async getAllNodes(): Promise<MemoryNode[]> {
+        return this.original('getAllNodes', async () => {
         return this.ownership.invoke('original-getAllNodes', operation => this.getAllNodesOriginal(operation));
+    
+        });
     }
     private async getAllNodesOriginal(operation: Operation): Promise<MemoryNode[]> {
         if (!this.table) await this.init(3, 1000, operation);
@@ -883,23 +1046,32 @@ export class LanceDbService {
     }
 
     public async getNodesByTier(tier: MemoryTier, limit: number = 1000): Promise<MemoryNode[]> {
+        return this.original('getNodesByTier', async () => {
         await this.ensureInitialized();
         return (await this.getAllNodes()).filter(n => n.tier === tier)
             .sort((a, b) => b.timestamp - a.timestamp).slice(0, limit);
+    
+        });
     }
 
     // Helper to delete/cleanup if needed
     public async drop() {
+        return this.original('drop', async () => {
         if (this.db) {
             await this.db.dropTable('memory');
             this.table = null;
         }
+    
+        });
     }
 
     // --- UNIVERSAL KNOWLEDGE METHODS ---
 
     public async storeKnowledge(item: any): Promise<void> {
+        return this.original('storeKnowledge', async () => {
         return this.ownership.invoke('original-store-knowledge', operation => this.storeKnowledgeOriginal(operation, item));
+    
+        });
     }
     private async storeKnowledgeOriginal(operation: Operation, item: any): Promise<void> {
         if (!this.db) await this.init();
@@ -960,7 +1132,10 @@ export class LanceDbService {
     }
 
     public async searchKnowledge(queryVector: number[], limit: number = 5): Promise<any[]> {
+        return this.original('searchKnowledge', async () => {
         return this.ownership.invoke('original-search-knowledge', operation => this.searchKnowledgeOriginal(operation, queryVector, limit));
+    
+        });
     }
     private async searchKnowledgeOriginal(operation: Operation, queryVector: number[], limit: number): Promise<any[]> {
         if (!this.knowledgeTable) {
@@ -1013,4 +1188,15 @@ export function createOwnedLanceDbService(databasePath: string | undefined, owne
         preserveOriginal(ownership, 'construction-failure', () => ownership.constructionFailed(operation, original)); throw original;
     }
 }
-export const lancedbService = createOwnedLanceDbService(undefined, lanceOwner());
+const runtimeLancePermit = admitEvaluatedLance();
+function constructRuntimeLance(): LanceDbService {
+    try {
+        const instance = createOwnedLanceDbService(undefined, lanceOwner());
+        bindEvaluatedLance(runtimeLancePermit, () => instance.close());
+        return instance;
+    } catch (original) {
+        preserveOriginal(lanceOwner(), 'runtime-publication-failure', () => failEvaluatedLance(runtimeLancePermit, original));
+        throw original;
+    }
+}
+export const lancedbService = constructRuntimeLance();

@@ -1,3 +1,4 @@
+import { admitEvaluatedContinuumInitial, bindEvaluatedContinuumInitial, failEvaluatedContinuumInitial } from './lifecycle/runtimeStopBindings';
 import { preserveOriginal } from './lifecycle/preserveOriginal';
 import { continuumOwner } from './lifecycle/preparationBindings';
 import { lexicalMatches, lexicalScore } from './lexicalMatch';
@@ -1644,12 +1645,30 @@ class ContinuumMemorySystem {
 
 function constructOriginalContinuumMemorySystem(): ContinuumMemorySystem {
     const owner = continuumOwner();
-    const operation = owner.beginConstruction();
+    const runtimePermit = admitEvaluatedContinuumInitial();
+    let operation: ReturnType<typeof owner.beginConstruction> | undefined;
     try {
+        operation = owner.beginConstruction();
         const instance = new ContinuumMemorySystem();
-        owner.constructed(operation, instance); return instance;
+        owner.constructed(operation, instance);
+        // Caller first joins consciousness/introspection and all upstream
+        // borrowers. Only then is this effect snapshot a complete accepted-set.
+        bindEvaluatedContinuumInitial(runtimePermit, async () => {
+            const results = await Promise.allSettled([instance.readyCore(), instance.settleMemoryEffects()]);
+            const failures: unknown[] = [];
+            for (const result of results) {
+                if (result.status === 'rejected') failures.push(result.reason);
+                else if (Array.isArray(result.value)) for (const receipt of result.value) {
+                    if (receipt.state === 'FAILED') failures.push(new Error('Original constructor memory effect failed: ' + receipt.operationId));
+                }
+            }
+            if (failures.length) throw new AggregateError(failures, 'Original continuum core/effect join failed');
+        });
+        return instance;
     } catch (original) {
-        preserveOriginal(owner, 'construction-failure', () => owner.constructionFailed(operation, original)); throw original;
+        preserveOriginal(owner, 'runtime-construction-failure', () => failEvaluatedContinuumInitial(runtimePermit, original));
+        if (operation) { const admitted = operation; preserveOriginal(owner, 'construction-failure', () => owner.constructionFailed(admitted, original)); }
+        throw original;
     }
 }
 export const continuum = constructOriginalContinuumMemorySystem();

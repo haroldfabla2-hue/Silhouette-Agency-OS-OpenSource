@@ -11,6 +11,9 @@ const redis: Slot = { name:'redis',phase:'UNSEEN' };
 const graph: Slot = { name:'graph',phase:'UNSEEN' };
 const sqlite: Slot = { name:'sqlite',phase:'UNSEEN' };
 const identity: Slot = { name:'identity',phase:'UNSEEN' };
+const lance: Slot = { name:'lance',phase:'UNSEEN' };
+const consciousnessInitial: Slot = { name:'consciousness-initial-identity',phase:'UNSEEN' };
+const continuumInitial: Slot = { name:'continuum-initial-core-effects',phase:'UNSEEN' };
 const profileHydration: Slot = { name:'profile-constructor-hydration',phase:'UNSEEN' };
 const nervous: Slot = { name:'nervous',phase:'UNSEEN' };
 const scheduler: Slot = { name:'scheduler',phase:'UNSEEN' };
@@ -30,6 +33,9 @@ const storage = [continuousMemory,redis,graph,identity,sqlite];
 let registrationSealed = false;
 let producersSealed = false;
 let storageSealed = false;
+let consciousnessInitialSealed = false;
+let continuumInitialSealed = false;
+let lanceSealed = false;
 function admit(slot: Slot): Permit {
     if (registrationSealed) throw new RuntimeConstructionAdmissionClosed('Runtime construction admission closed: ' + slot.name);
     if (slot.phase !== 'UNSEEN') throw new Error('Duplicate runtime original singleton: ' + slot.name);
@@ -58,6 +64,15 @@ function failed(slot: Slot,permit: Permit,error: unknown): void {
     if (slot.phase !== 'CONSTRUCTING' || slot.permit !== permit) throw new Error('Foreign runtime construction failure: ' + slot.name);
     slot.failure=error;slot.phase='FAILED';slot.finishConstruction!();
 }
+export function admitEvaluatedLance(): Permit { return admit(lance); }
+export function bindEvaluatedLance(permit: Permit, close: () => unknown): void { publish(lance, permit, close, lanceSealed); }
+export function failEvaluatedLance(permit: Permit, error: unknown): void { failed(lance, permit, error); }
+export function admitEvaluatedConsciousnessInitial(): Permit { return admit(consciousnessInitial); }
+export function bindEvaluatedConsciousnessInitial(permit: Permit, join: () => unknown): void { publish(consciousnessInitial, permit, join, consciousnessInitialSealed); }
+export function failEvaluatedConsciousnessInitial(permit: Permit, error: unknown): void { failed(consciousnessInitial, permit, error); }
+export function admitEvaluatedContinuumInitial(): Permit { return admit(continuumInitial); }
+export function bindEvaluatedContinuumInitial(permit: Permit, join: () => unknown): void { publish(continuumInitial, permit, join, continuumInitialSealed); }
+export function failEvaluatedContinuumInitial(permit: Permit, error: unknown): void { failed(continuumInitial, permit, error); }
 export function admitEvaluatedIdentity(): Permit { return admit(identity); }
 export function bindEvaluatedIdentity(permit: Permit, stop: () => unknown): void { publish(identity, permit, stop, storageSealed); }
 export function failEvaluatedIdentity(permit: Permit, error: unknown): void { failed(identity, permit, error); }
@@ -172,13 +187,24 @@ export async function closeEvaluatedRuntimeStorage(): Promise<void> {
     // Original constructor hydration may borrow Redis/Graph/SQLite. Join its
     // SAME Promise before any original storage close, even on rejection.
     try { await drain([profileHydration]); } catch (error) { failures.push(error); }
+    // PRECONDITION: original upstream requests and producer/known cognition
+    // borrowers are joined. These are exact constructor operations only,
+    // not a future-admission/global continuum drainage claim.
+    consciousnessInitialSealed = true;
+    try { await drain([consciousnessInitial]); } catch (error) { failures.push(error); }
+    continuumInitialSealed = true;
+    try { await drain([continuumInitial]); } catch (error) { failures.push(error); }
     try { await drain([continuousMemory]); } catch (error) { failures.push(error); }
     try { await drain([redis,graph,identity]); } catch (error) { failures.push(error); }
+    // Graph/constructor paths may borrow original Lance handles. All settle
+    // before this exact source-owned terminal close, even after one rejects.
+    lanceSealed = true;
+    try { await drain([lance]); } catch (error) { failures.push(error); }
     // Graph may borrow SQLite: its original stop settles before SQLite close.
     try { await drain([sqlite]); } catch (error) { failures.push(error); }
     if (failures.length) throw new AggregateError(failures,'Evaluated original storage stop failed');
 }
 export function evaluatedRuntimeFrontier(): readonly Readonly<{name:string;phase:string}>[] {
     // UNSEEN remains UNVERIFIED; never silently becomes NOT_ACQUIRED.
-    return [...producers,introspection,voiceRoutes,resourceManager,telephonyTools,telephony,tts,voiceLibrary,profileHydration,...storage].map(slot => Object.freeze({name:slot.name,phase:slot.phase}));
+    return [...producers,introspection,voiceRoutes,resourceManager,telephonyTools,telephony,tts,voiceLibrary,profileHydration,consciousnessInitial,continuumInitial,lance,...storage].map(slot => Object.freeze({name:slot.name,phase:slot.phase}));
 }
