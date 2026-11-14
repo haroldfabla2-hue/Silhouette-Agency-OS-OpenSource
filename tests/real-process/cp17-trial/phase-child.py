@@ -18,7 +18,7 @@ if mode in {'install','native','browser'}:
  import socket
  resolver=pathlib.Path('/etc/resolv.conf');record={'stage':'innermost','network_ns':os.readlink('/proc/self/ns/net'),'resolver_exists':resolver.exists(),'resolver_symlink':resolver.is_symlink(),'resolver_realpath':str(resolver.resolve(strict=False)),'routes_sha256':hashlib.sha256(pathlib.Path('/proc/net/route').read_bytes()).hexdigest()}
  if resolver.exists():record['resolver_sha256']=hashlib.sha256(resolver.read_bytes()).hexdigest()
- hosts=['cdn.playwright.dev','storage.googleapis.com']if mode=='browser'else['registry.npmjs.org','codeload.github.com']
+ hosts=['cdn.playwright.dev','storage.googleapis.com']if mode=='browser'else['registry.npmjs.org','codeload.github.com','dist.neo4j.org']if mode=='native'else['registry.npmjs.org','codeload.github.com']
  preflight=[node,'--input-type=module','-e',"import dns from 'node:dns/promises'; for (const host of "+json.dumps(hosts)+") { try { const result=await dns.lookup(host); console.log(JSON.stringify({host,result})); } catch (e) { console.log(JSON.stringify({host,error:e.code})); process.exitCode=1; } }"]
  try:
   remaining=min(8,float(os.environ['PHASE_DEADLINE_MONOTONIC'])-time.monotonic()-5);assert remaining>0
@@ -66,11 +66,8 @@ if mode=='install':
  install_preparation={'nofile_soft_hard':list(resource.getrlimit(resource.RLIMIT_NOFILE)),'node':'v22.18.0','npm':package['version'],'npm_root':str(npm_root),'npm_source_hashes':{name:hashlib.sha256((npm_root/name).read_bytes()).hexdigest()for name in metadata_paths},'input_hashes_before':{name:hashlib.sha256((root/name).read_bytes()).hexdigest()for name in ['package.json','package-lock.json']},'effective_environment':{name:env[name]for name in ['npm_config_cache','npm_config_loglevel','npm_config_verbose','PUPPETEER_SKIP_DOWNLOAD','PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD','ELECTRON_SKIP_BINARY_DOWNLOAD']},'command_config':'Exact argv retained in results; ci/ignore-scripts/no-audit/no-fund/fetch-retries0/maxsockets4. No fs concurrency guarantee or hidden npm alteration.'}
 if mode=='install':phases=[('npm-ci',[node,npm,'ci','--ignore-scripts','--no-audit','--no-fund','--fetch-retries=0','--maxsockets=4'],root,150)]
 elif mode=='native':
- audit=json.loads(pathlib.Path('/tmp/harness/native-entry-hashes.json').read_text())
- for rel,expected in audit.items():
-  p=root/rel;assert p.is_file()and not p.is_symlink()and hashlib.sha256(p.read_bytes()).hexdigest()==expected,'native source mismatch:'+rel
- phases=[('better-sqlite3',['/bin/sh','-c','prebuild-install || node-gyp rebuild --release'],root/'node_modules/better-sqlite3',90)]
- env['PATH']=str(root/'node_modules/.bin')+':'+env['PATH']
+ # This candidate dispatch admits only static Neo4j archive bytes, no package code.
+ phases=[('neo4j-admission',['/usr/bin/python3','/tmp/harness/prepare-neo4j.py'],root,55)]
 elif mode=='browser':
  phases=[('browser-asset-preparation',['/usr/bin/python3','/tmp/harness/prepare-browser.py'],root,90)]
 elif mode=='checks':
@@ -89,7 +86,8 @@ for name,argv,cwd,limit in phases:
  capture('prelaunch')
  child=None;sel=selectors.DefaultSelector();signals=[];failure=None;eof=False;observed=0;t=time.monotonic();last=None;baseline={int(p.name)for p in pathlib.Path('/proc').iterdir()if p.name.isdigit()}
  try:
-  phase_env=dict(env,NODE_OPTIONS='--max-old-space-size=4096')if name=='types'else env
+  phase_env=dict(env,NODE_OPTIONS='--max-old-space-size=4096')if name=='types'else dict(env)
+  if name=='neo4j-admission':phase_env['NEO4J_ADMISSION_PHASE_DEADLINE']=str(deadline)
   child=subprocess.Popen(argv,cwd=cwd,env=phase_env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True);os.set_blocking(child.stdout.fileno(),False);sel.register(child.stdout,selectors.EVENT_READ)
   with(ev/(name+'.log')).open('wb')as stream:
    while True:

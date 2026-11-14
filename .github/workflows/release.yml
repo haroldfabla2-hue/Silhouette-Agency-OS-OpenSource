@@ -1,4 +1,4 @@
-name: PROFILE StageA builds native terminal only NO fullsuite verdict
+name: NEO4J ARCHIVE ADMISSION ONLY NO JAVA OR PRODUCT
 
 on:
   workflow_dispatch:
@@ -18,11 +18,14 @@ jobs:
     steps:
       - name: Anchor conservative job deadline before checkout
         shell: bash
+        env:
+          EXPECTED_HEAD: ${{ inputs.expected_head }}
         run: |
           set -euo pipefail
           test '${{ github.event_name }}' = workflow_dispatch
-          test '${{ github.ref }}' = refs/heads/preparation/profile-stageA-source-20261114
-          test '${{ github.sha }}' = '${{ inputs.expected_head }}'
+          test '${{ github.ref }}' = refs/heads/preparation/neo4j-archive-admission-20261114
+          [[ "$EXPECTED_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          test '${{ github.sha }}' = "$EXPECTED_HEAD"
           test '${{ github.event.repository.private }}' = false
           test '${{ runner.environment }}' = github-hosted
           evidence="$RUNNER_TEMP/current-suite-evidence"
@@ -47,13 +50,13 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
           fetch-depth: 1
-      - name: Verify StageA exact source copy and operational infrastructure
+      - name: Verify unchanged product source and admission-only infrastructure
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = '${{ github.sha }}'
           ops="$PWD/tests/real-process/cp17-trial"
-          printf '%s  %s\n' 169888481ad300779ed3782b68bf750c6a36b7e9fd9668764e5e9826623dbb84 "$ops/infrastructure.sha256" | sha256sum --check
+          printf '%s  %s\n' b7cf25d52ab6eace91ba6958b9b5a72bf551d54dd6f082150d2fc8700120a7b2 "$ops/infrastructure.sha256" | sha256sum --check
           (cd "$ops" && sha256sum --check infrastructure.sha256)
           work="$RUNNER_TEMP/current-suite-work"
           python3 "$ops/prepare-integral.py" "$PWD" "$work" "$ops/integral-inputs.json" 953c7f369666c716376dfcdf32b71e0464406da75b0e1cfe5278ebbf7324869a
@@ -109,7 +112,7 @@ jobs:
           run_setup sandbox-apparmor-after sysctl -n "$key"
           test "$(tail -n1 "$EVIDENCE/sandbox-apparmor-after.log")" = 0
           printf 'SETUP_COMPLETE_NOT_RUNTIME_PASS\n' > "$EVIDENCE/sandbox-setup.txt"
-      - name: One StageA build/native/source-body trial under reviewed scopes
+      - name: One static archive admission under reviewed native scope NO JAVA PRODUCT
         shell: bash
         run: |
           set -euo pipefail

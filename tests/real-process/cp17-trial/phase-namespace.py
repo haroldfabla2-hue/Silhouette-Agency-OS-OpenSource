@@ -32,7 +32,7 @@ cmd+=['--proc','/proc','--dev','/dev','--remount-ro','/dev','--bind',str(scratch
 # Capped scratch is /tmp, original complete deps reside in separately fixed store.
 cmd+=['--bind'if mode=='install'else'--ro-bind','/tmp/deps-store','/tmp/work/node_modules']
 if mode=='native':
- for rel in ['better-sqlite3','@xenova/transformers/node_modules/sharp','.silhouette-native-redis']:cmd+=['--bind','/tmp/deps-store/'+rel,'/tmp/work/node_modules/'+rel]
+ for rel in ['.silhouette-native-neo4j']:cmd+=['--bind','/tmp/deps-store/'+rel,'/tmp/work/node_modules/'+rel]
 if mode=='browser':
  cmd+=['--bind','/tmp/deps-store/.silhouette-browser-assets','/tmp/work/node_modules/.silhouette-browser-assets']
 if mode=='checks':

@@ -16,7 +16,11 @@ python3 - "$ops" <<'PREPARATION_REVIEW_GATE'
 import hashlib,json,pathlib,sys
 ops=pathlib.Path(sys.argv[1]);budget=json.loads((ops/'export-budget.json').read_text())
 assert len(budget['files'])==len(set(budget['files']))==budget['known_count']
-assert budget['cap']==128 and budget['headroom']>=3 and budget['known_count']<=125
+assert budget['cap']==128 and budget['headroom']>=1 and budget['known_count']<=127
+admission=json.loads((ops/'neo4j-admission-inputs.json').read_text())
+assert admission['status']=='EXACT_RUNNER_JDK_PIN_INDEPENDENTLY_REVIEWED'and isinstance(admission['jdk'],dict),'NOT_STARTED_MISSING_REVIEWED_JDK_INPUTS'
+assert admission['jdk_source_evidence']['evidence_review']=='ACCEPTED_STATIC_ONLY_BY_PARENT_AFTER_INDEPENDENT_REVIEW','NOT_STARTED_JDK_EVIDENCE_REVIEW_PENDING'
+assert admission['inventory_sha256']==hashlib.sha256((ops/'neo4j-asset-pin.json').read_bytes()).hexdigest(),'NOT_STARTED_NEO4J_INVENTORY_PIN'
 state=json.loads((ops/'oracle-preparation/preparation-capacity.json').read_text())
 assert state['status']=='CANDIDATE_TECHNICAL_INPUTS_PINNED','NOT_STARTED_UNREVIEWED_PREPARATION'
 assert state['source_graph']['candidate_manifest_sha256']==hashlib.sha256((ops/'integral-inputs.json').read_bytes()).hexdigest()
@@ -25,7 +29,7 @@ for name in ['vitest-generation','wal','accepted']:
   value=state[name][key];assert type(value)is int and value>0,'NOT_STARTED_UNREVIEWED_CAPACITY:'+name+':'+key
 PREPARATION_REVIEW_GATE
 # Pure transitive admission preflight, before volume/delegation/package operations.
-for exact_phase in install native browser checks; do
+for exact_phase in native; do
   python3 "$ops/phase_contract.py" --phase "$exact_phase" --legacy "$helper/root-self-admit.py" --checks "$ops/root-self-admit-checks256.py"
 done
 cleanup() {
@@ -76,36 +80,20 @@ if mode in {'install','native','browser'}:
 PY
   return "$rc"
 }
-phase install 150
-python3 - "$store" <<'PRIVATE_CACHE_MOUNTPOINTS'
+# Admission-only source delta: no npm/install/SQLite/browser/checks phases.
+python3 - "$store" <<'NEO4J_MOUNTPOINT'
 import pathlib,sys
 root=pathlib.Path(sys.argv[1]);assert root.is_dir()and not root.is_symlink()
-for name in ['.vite-temp','.vite','.silhouette-native-redis','.silhouette-browser-assets']:
- path=root/name
- assert not path.exists()and not path.is_symlink(),'never replace existing dependency cache path'
- path.mkdir(mode=0o755)
- assert path.is_dir()and not path.is_symlink()and not list(path.iterdir())
-PRIVATE_CACHE_MOUNTPOINTS
-phase native 150
-printf '{}\n' > "$EVIDENCE/native/native-provenance.json"
-# SQLite exact build and smoke are the only StageA native dependency verdicts.
-if phase browser 90; then browser=0; else browser=$?; fi
-# Preserve every browser-preparation evidence byte inside the existing native
-# provenance file, then remove only the verified archived metadata directory.
-python3 "$ops/pack-browser-evidence.py" "$EVIDENCE/browser" "$EVIDENCE/native/native-provenance.json"
-[[ "$browser" = 0 ]]
-# Conservative admission retains 370s unused headroom, no independent CP17 oracle invoked.
-python3 - "$EVIDENCE/job-clock.json" <<'PY'
-import json,pathlib,sys,time
-assert json.loads(pathlib.Path(sys.argv[1]).read_text())['deadline_monotonic']-time.monotonic()>=1505,'NOT_STARTED_INTEGRAL_BUDGET'
-PY
-if phase checks 1015; then checks=0; else checks=$?; fi
-# StageA is not the historical full suite or the six original CP17 oracles.
-python3 - "$EVIDENCE/checks/scope-cleanup.json" "$EVIDENCE/checks/checks-session.json" <<'SAFETY'
+path=root/'.silhouette-native-neo4j';assert not path.exists()and not path.is_symlink()
+path.mkdir(mode=0o755)
+NEO4J_MOUNTPOINT
+phase native 75
+python3 - "$EVIDENCE/native/scope-cleanup.json" "$EVIDENCE/native/native-session.json" "$EVIDENCE/native/neo4j-admission.json" <<'ADMISSION_RESULT'
 import json,pathlib,sys
-scope=json.loads(pathlib.Path(sys.argv[1]).read_text());session=json.loads(pathlib.Path(sys.argv[2]).read_text())
-assert scope['natural_empty'] and not scope['events'],'UNSAFE_OR_FORCED_CHECKS_CLEANUP'
-assert not session.get('unsafe',True),'UNSAFE_INNER_CHECKS'
-SAFETY
-printf '%s\n' "$checks" > "$EVIDENCE/stageA-command.exit"
-[[ "$checks" = 0 ]]
+scope,session,admission=[json.loads(pathlib.Path(p).read_text())for p in sys.argv[1:]]
+assert scope['natural_empty']and not scope['events'],'UNSAFE_OR_FORCED_NATIVE_CLEANUP'
+assert not session.get('unsafe',True),'UNSAFE_INNER_NATIVE'
+assert len(session['results'])==1 and session['results'][0]['name']=='neo4j-admission'and session['results'][0]['status']=='PASS','ARCHIVE_ADMISSION_FAILED'
+assert admission['status']=='ADMITTED_ARCHIVE_ONLY_NOT_BOOTFIT'
+print('NEO4J_STATIC_ARCHIVE_ADMISSION_ONLY_NOT_SERVICE_OR_STAGEB_PASS')
+ADMISSION_RESULT

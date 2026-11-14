@@ -1,5 +1,5 @@
 {
-  "status": "STAGE_A_CONSERVATIVE_SUCCESS_FAILURE_WRITER_UNION_SOURCE_ONLY",
+  "status": "SOURCE_ONLY_NEO4J_ADMISSION_UNION_NO_UI_YET",
   "files": [
     "browser/browser-asset-preparation.log",
     "browser/browser-preparation.json",
@@ -69,6 +69,8 @@
     "native/native-process-observations.jsonl",
     "native/native-provenance.json",
     "native/native-session.json",
+    "native/neo4j-admission.json",
+    "native/neo4j-admission.log",
     "native/network-preflight.json",
     "native/node-host.json",
     "native/pids-hierarchy-before.json",
@@ -127,13 +129,13 @@
     "trial-cgroup-cleanup.log",
     "trial-cleanup.json"
   ],
-  "known_count": 125,
+  "known_count": 127,
   "cap": 128,
-  "headroom": 3,
+  "headroom": 1,
   "hardRawBytes": 20971520,
   "hardGzipBytes": 4194304,
   "unchangedFallback": true,
-  "note": "Conservative union includes pre-pack browser failure metadata and interrupted helper-state atomic temporary. Original hard128/raw20MiB/gzip4MiB/fallback unchanged. Authored DB remains scratch.",
-  "normalPackedCount": 108,
+  "note": "Adds two Neo4j admission outputs to125union without dropping evidence;128/raw20MiB/gzip4MiB/fallback unchanged. Only1slot remains; UI requires separately reviewed lossless packing, not silent extra files.",
+  "normalPackedCount": 110,
   "failureBeforePackExtraCount": 17
 }
