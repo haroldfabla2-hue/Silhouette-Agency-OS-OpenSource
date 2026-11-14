@@ -1,16 +1,30 @@
 {
   "status": "CANDIDATE_TECHNICAL_INPUTS_PINNED",
   "source_graph": {
-    "candidate_commit": "215cbd1b5b430ba88bb85a4173d887347e8037a2",
-    "candidate_manifest_sha256": "d87fbaf17e7cb560fdd89ffc33143b4fe641ec6ea992960d0a53b63ed3a3a167",
-    "status": "SOURCE_DREAMV2_PLUS_CHILD_POLL_OWNER_EARLY_DIAGNOSTIC_NOT_EQUIVALENT_TO_EXECUTED4292",
-    "product_delta_vs_executed4292": [
+    "candidate_product_commit": "598cb9a60d12af988813818adf1f85302c8a5b6c",
+    "candidate_manifest_sha256": "212b85952c533cd0e4da552ee479f8d58e1dbf915a8d053ff935b0544d34daa4",
+    "status": "SOURCE_ONLY_ENVIRONMENT_B_FINAL_ASSEMBLY_NOT_EQUIVALENT_TO_EXECUTED6410",
+    "base_trial_commit": "6410fc163d847bb629813727899d837ed104c0b6",
+    "source_delta_vs_executed6410": [
       "services/dreamerService.ts",
+      "services/introspectionEngine.ts",
       "services/lifecycle/runtimeStopBindings.ts",
-      "tests/automated/channel-ingress-envelope.test.ts",
-      "tests/automated/consent-ledger.test.ts",
-      "tests/setup/original-child-ownership.ts"
-    ]
+      "tests/automated/telephony-call-voice.test.ts",
+      "tests/automated/telephony-truthfulness.test.ts",
+      "tests/real-process/telephony-truthfulness-child.ts",
+      "tests/real-process/telephony-voice-boundary-child.ts",
+      "tests/real-process/standalone-preparation.ts",
+      "services/redisClient.ts",
+      "tests/automated/autonomy-entry-points.test.ts"
+    ],
+    "prior_manifest_sha256": "d87fbaf17e7cb560fdd89ffc33143b4fe641ec6ea992960d0a53b63ed3a3a167",
+    "reviewed_environment_packet_sha256": "6fd7d60afd369e8440aed6621166e23f633f8dae4788a7c7fb2fd60db7c260d1",
+    "source_delta_vs_environment6fd7": [
+      "services/redisClient.ts",
+      "tests/automated/autonomy-entry-points.test.ts"
+    ],
+    "accepted_heartbeat_packet_sha256": "d44a6fb5326250e8f43ad89b53a81101c046a3c57b6e108a34d92c5c2d8ba785",
+    "accepted_redis_packet_sha256": "5e806b4cee3c0d08ebd9443595886c62aebb5ddf4c23a6a4d698841f25060f53"
   },
   "wal": {
     "scopes": 48,
@@ -32,5 +46,24 @@
     "active": 512,
     "failures": 256,
     "resources": 256
+  },
+  "environment_B": {
+    "native_threads": {
+      "GOMAXPROCS": 2,
+      "TOKIO_WORKER_THREADS": 2,
+      "LANCE_CPU_THREADS": 2,
+      "RAYON_NUM_THREADS": 2
+    },
+    "does_not_bound_all_native_or_blocking_threads": true,
+    "suite_seconds": 600,
+    "checks_seconds": 1000,
+    "job_seconds": 1800,
+    "preparation_aggregate_seconds": 240,
+    "cleanup_export_reserve_seconds": 120,
+    "browser_preparation_file_bytes": 268435456,
+    "runtime_file_bytes": 67108864,
+    "install_file_bytes": 134217728,
+    "dependency_store_bytes_including_browser": 4294967296,
+    "new_execution_authority": "NONE"
   }
 }

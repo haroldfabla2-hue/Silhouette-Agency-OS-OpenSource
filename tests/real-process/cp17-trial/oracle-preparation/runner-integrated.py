@@ -68,7 +68,7 @@ except Exception as error:
  temporary_cut.update({'status':'FAIL','errorType':type(error).__name__,'errno':getattr(error,'errno',None),'filename':getattr(error,'filename',None),'error':str(error)[:1024]});raise
 finally:(evidence/'runtime-paths.json').write_text(json.dumps(temporary_cut,indent=2))
 # No secret-bearing inherited environment or provider fallback. No generic PATH expansion.
-env={'PATH':os.environ['PATH'],'HOME':str(work),'TMPDIR':str(runtime_tmp),'TEMP':str(runtime_tmp),'TMP':str(runtime_tmp),'NODE_ENV':'test','SILHOUETTE_PROVIDERS':'off','SILHOUETTE_INFERENCE_MODE':'cloud-only','NODE_OPTIONS':'--max-old-space-size=2048'}
+env={'GOMAXPROCS':'2','TOKIO_WORKER_THREADS':'2','LANCE_CPU_THREADS':'2','RAYON_NUM_THREADS':'2','PATH':os.environ['PATH'],'HOME':str(work),'TMPDIR':str(runtime_tmp),'TEMP':str(runtime_tmp),'TMP':str(runtime_tmp),'NODE_ENV':'test','SILHOUETTE_PROVIDERS':'off','SILHOUETTE_INFERENCE_MODE':'cloud-only','NODE_OPTIONS':'--max-old-space-size=2048'}
 # Per-file hard cap complements mount/cgroup bounds; includes node descendants.
 resource.setrlimit(resource.RLIMIT_FSIZE,(64*1024**2,64*1024**2))
 resource.setrlimit(resource.RLIMIT_NOFILE,(256,256))

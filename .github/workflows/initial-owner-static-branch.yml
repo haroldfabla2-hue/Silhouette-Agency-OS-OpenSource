@@ -1,9 +1,9 @@
-name: POST-CP17 child ownership integral validation Node22.18
+name: POST-CP17 reviewed environmentB integral validation Node22.18
 
 on:
   push:
     branches:
-      - validation/postcp17-childowner-reviewed-20261114
+      - validation/postcp17-environmentB-reviewed-20261114
 
 permissions:
   contents: read
@@ -11,7 +11,7 @@ permissions:
 jobs:
   current-isolated-suite:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Anchor conservative job deadline before checkout
         shell: bash
@@ -32,7 +32,7 @@ jobs:
            pid=int(f[1])
            if pid<=1:break
           assert anchor is not None,'No Runner.Worker conservative start; STOP'
-          (ev/'job-clock.json').write_text(json.dumps({'anchor':'Runner.Worker start before job start','worker':anchor,'ticks_per_second':hz,'deadline_monotonic':anchor['start_ticks']/hz+1200,'observed_monotonic':time.monotonic(),'observed_utc_epoch':time.time(),'cleanup_export_reserve_seconds':60,'job_limit_seconds':1200},indent=2))
+          (ev/'job-clock.json').write_text(json.dumps({'anchor':'Runner.Worker start before job start','worker':anchor,'ticks_per_second':hz,'deadline_monotonic':anchor['start_ticks']/hz+1800,'observed_monotonic':time.monotonic(),'observed_utc_epoch':time.time(),'cleanup_export_reserve_seconds':120,'job_limit_seconds':1800},indent=2))
           (ev/'host-budget.json').write_text(json.dumps({'elapsed_seconds':0,'observed_bytes':0,'retained_bytes':0,'commands':[]},indent=2))
           CLOCK
       - name: Checkout exact reviewed push
@@ -47,10 +47,10 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = '${{ github.sha }}'
           ops="$PWD/tests/real-process/cp17-trial"
-          printf '%s  %s\n' cd56d3d4f409f790e6239065e25aa2159afbd323fef3d77386ead29f8fb36b41 "$ops/infrastructure.sha256" | sha256sum --check
+          printf '%s  %s\n' 42693325dc4c9de887fc56a39a950e0f077546777c8845be67eed4f6b9964e22 "$ops/infrastructure.sha256" | sha256sum --check
           (cd "$ops" && sha256sum --check infrastructure.sha256)
           work="$RUNNER_TEMP/current-suite-work"
-          python3 "$ops/prepare-integral.py" "$PWD" "$work" "$ops/integral-inputs.json" d87fbaf17e7cb560fdd89ffc33143b4fe641ec6ea992960d0a53b63ed3a3a167
+          python3 "$ops/prepare-integral.py" "$PWD" "$work" "$ops/integral-inputs.json" 212b85952c533cd0e4da552ee479f8d58e1dbf915a8d053ff935b0544d34daa4
           printf 'WORK=%s\n' "$work" >> "$GITHUB_ENV"
       - name: Exact Node floor
         uses: actions/setup-node@v4
@@ -60,8 +60,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          control="$PWD/tests/real-process/wal-owner/host-control.py"
-          run_setup() { name=$1; shift; python3 "$control" capture "$name" 180 "$@"; }
+          control="$PWD/tests/real-process/cp17-trial/host-control-reviewed.py"
+          run_setup() { name=$1; shift; python3 "$control" capture "$name" 240 "$@"; }
           # Read-only host identity, no shell sourcing host configuration.
           run_setup security-host python3 - <<'HOST'
           import pathlib,subprocess
@@ -90,7 +90,7 @@ jobs:
           mkdir -m 0700 "$stage"
           printf 'SECURITY_STAGE=%s\n' "$stage" >> "$GITHUB_ENV"
           printf '{"status":"UNSAFE","reason":"acquire not yet safely completed"}\n' > "$EVIDENCE/security-helpers-state.json"
-          run_setup security-chain python3 tests/real-process/security-setup/acquire.py "$stage" "$secure/ubuntu-archive-keyring.gpg"
+          run_setup security-chain python3 tests/real-process/cp17-trial/acquire-security-reviewed.py "$stage" "$secure/ubuntu-archive-keyring.gpg"
           # Namespace policy is the original AppArmor sysctl only. No staged-path profile, setuid, privileged fallback.
           key=kernel.apparmor_restrict_unprivileged_userns
           run_setup sandbox-apparmor-before sysctl -n "$key"
@@ -119,7 +119,7 @@ jobs:
           set -euo pipefail
           script=tests/real-process/wal-owner/cleanup-delegation.sh
           printf '%s  %s\n' c48fc2fd4c0920818e1f2d349a012872ea061f23067d26bd7f2a8a9206c3a35a "$script" | sha256sum --check
-          python3 tests/real-process/wal-owner/host-control.py cleanup cgroup-cleanup 20 bash "$script"
+          python3 tests/real-process/cp17-trial/host-control-reviewed.py cleanup cgroup-cleanup 20 bash "$script"
       - name: Always remove only this trial root-owned apt scope under reserved cleanup budget
         if: always()
         shell: bash
@@ -133,7 +133,7 @@ jobs:
           fi
           if test -z "${APT_TRIAL_SCOPE:-}"; then exit 0; fi
           [[ "$APT_TRIAL_SCOPE" =~ ^/run/initial-owner-apt\.[A-Za-z0-9]{8}$ ]]
-          python3 tests/real-process/wal-owner/host-control.py cleanup sandbox-cleanup 20 sudo -n rm -rf --one-file-system -- "$APT_TRIAL_SCOPE"
+          python3 tests/real-process/cp17-trial/host-control-reviewed.py cleanup sandbox-cleanup 20 sudo -n rm -rf --one-file-system -- "$APT_TRIAL_SCOPE"
           test ! -e "$APT_TRIAL_SCOPE"
           rm -rf -- "$RUNNER_TEMP/security-bwrap-stage"
           rm -f -- "$RUNNER_TEMP/security-key.gpg"

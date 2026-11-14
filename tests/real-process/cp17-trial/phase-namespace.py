@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Outer namespace only. No package code here. REVIEW ONLY."""
 import hashlib,json,os,pathlib,resource,selectors,shutil,signal,subprocess,sys,tarfile,time
-bwrap='/tmp/security-bin/'+sys.argv[1];mode=sys.argv[2];duration=int(sys.argv[3]);assert mode in {'install','native','checks'}and 0<duration<=550
+bwrap='/tmp/security-bin/'+sys.argv[1];mode=sys.argv[2];duration=int(sys.argv[3]);assert mode in {'install','native','browser','checks'}and 0<duration<=1000
 status=pathlib.Path('/proc/self/status').read_text();expected=(1<<31)|((1<<12)if mode=='checks'else 0)
 assert int(next(l.split()[1]for l in status.splitlines()if l.startswith('CapEff:')),16)==expected
 if mode=='checks':subprocess.run(['ip','link','set','lo','up'],check=True,timeout=2)
@@ -20,7 +20,7 @@ for p in work.rglob('*'):
  else:p.chmod(p.stat().st_mode&0o777)
 cmd=[bwrap,'--die-with-parent','--unshare-user','--uid','1000','--gid','1000','--unshare-pid','--cap-drop','ALL']
 for p in ['/usr','/bin','/lib','/lib64','/etc','/opt']:cmd+=['--ro-bind',p,p]
-if mode in {'install','native'}:
+if mode in {'install','native','browser'}:
  target=pathlib.Path('/etc/resolv.conf').resolve(strict=True)
  assert target==pathlib.Path('/etc/resolv.conf')or(target.is_relative_to('/run')and len(target.parts)<=8)
  if target!=pathlib.Path('/etc/resolv.conf'):
@@ -33,6 +33,8 @@ cmd+=['--proc','/proc','--dev','/dev','--remount-ro','/dev','--bind',str(scratch
 cmd+=['--bind'if mode=='install'else'--ro-bind','/tmp/deps-store','/tmp/work/node_modules']
 if mode=='native':
  for rel in ['better-sqlite3','@xenova/transformers/node_modules/sharp','.silhouette-native-redis']:cmd+=['--bind','/tmp/deps-store/'+rel,'/tmp/work/node_modules/'+rel]
+if mode=='browser':
+ cmd+=['--bind','/tmp/deps-store/.silhouette-browser-assets','/tmp/work/node_modules/.silhouette-browser-assets']
 if mode=='checks':
  for name in ['.vite-temp','.vite']:
   # Empty destinations were prepared on fixedstore before RO mount. Only this
@@ -44,7 +46,7 @@ if mode=='checks':
 cmd+=['--remount-ro','/','--chdir','/tmp/work','/usr/bin/python3','/tmp/harness/phase-child.py',mode]
 # INSTALL only: exact locked Lance binary116740704B exceeds64MiB.
 #128MiB is a fixed design bound with17.5MB headroom, not proof all files fit.
-file_limit=(128 if mode=='install'else 64)*1024**2
+file_limit=(256 if mode=='browser'else 128 if mode=='install'else 64)*1024**2
 resource.setrlimit(resource.RLIMIT_FSIZE,(file_limit,file_limit));resource.setrlimit(resource.RLIMIT_NOFILE,(256,256))
 t=time.monotonic();child=subprocess.Popen(cmd,env={'PATH':'/usr/bin:/bin','PHASE_DEADLINE_MONOTONIC':str(t+duration)},stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True);sel=selectors.DefaultSelector();sel.register(child.stdout,selectors.EVENT_READ);failure=None;signals=[];observed=0;eof=False
 try:

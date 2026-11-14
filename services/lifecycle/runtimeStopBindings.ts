@@ -14,6 +14,8 @@ const nervous: Slot = { name:'nervous',phase:'UNSEEN' };
 const scheduler: Slot = { name:'scheduler',phase:'UNSEEN' };
 const cron: Slot = { name:'cron',phase:'UNSEEN' };
 const dreamer: Slot = { name:'dreamer',phase:'UNSEEN' };
+const introspection: Slot = { name:'introspection-known-borrowers',phase:'UNSEEN' };
+let conceptBorrowersSealed = false;
 const producers = [daemon,curiosity,nervous,scheduler,cron,dreamer];
 const storage = [continuousMemory,redis,graph,sqlite];
 let registrationSealed = false;
@@ -77,6 +79,9 @@ export function failEvaluatedCron(permit: Permit,error: unknown): void { failed(
 export function admitEvaluatedDreamer(): Permit { return admit(dreamer); }
 export function bindEvaluatedDreamer(permit: Permit,stop: () => unknown): void { publish(dreamer,permit,stop,producersSealed); }
 export function failEvaluatedDreamer(permit: Permit,error: unknown): void { failed(dreamer,permit,error); }
+export function admitEvaluatedIntrospection(): Permit { return admit(introspection); }
+export function bindEvaluatedIntrospection(permit: Permit,stop: () => unknown): void { publish(introspection,permit,stop,conceptBorrowersSealed); }
+export function failEvaluatedIntrospection(permit: Permit,error: unknown): void { failed(introspection,permit,error); }
 export function sealEvaluatedRuntimeProducers(): void {
     // Close the construction frontier BEFORE producer callbacks. Modules not
     // yet admitted now fail before allocating their original singleton.
@@ -92,7 +97,14 @@ async function drain(slots: readonly Slot[]): Promise<void> {
     if (failures.length) throw new AggregateError(failures,'Evaluated original owner stop failed');
 }
 export async function drainEvaluatedRuntimeProducers(): Promise<void> {
-    sealEvaluatedRuntimeProducers();await drain(producers);
+    sealEvaluatedRuntimeProducers();
+    const failures: unknown[] = [];
+    // Existing original producers may still call addThought while settling.
+    // Join them before sealing this source-fixed known borrower frontier.
+    try { await drain(producers); } catch (error) { failures.push(error); }
+    conceptBorrowersSealed = true;
+    try { await drain([introspection]); } catch (error) { failures.push(error); }
+    if (failures.length) throw new AggregateError(failures, 'Original producer/concept borrower drain failed');
 }
 export async function closeEvaluatedRuntimeStorage(): Promise<void> {
     registrationSealed=true;storageSealed=true;
@@ -107,5 +119,5 @@ export async function closeEvaluatedRuntimeStorage(): Promise<void> {
 }
 export function evaluatedRuntimeFrontier(): readonly Readonly<{name:string;phase:string}>[] {
     // UNSEEN remains UNVERIFIED; never silently becomes NOT_ACQUIRED.
-    return [...producers,...storage].map(slot => Object.freeze({name:slot.name,phase:slot.phase}));
+    return [...producers,introspection,...storage].map(slot => Object.freeze({name:slot.name,phase:slot.phase}));
 }

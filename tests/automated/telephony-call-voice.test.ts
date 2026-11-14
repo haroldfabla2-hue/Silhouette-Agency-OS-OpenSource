@@ -54,7 +54,15 @@ async function runFixture(mode: string): Promise<void> {
                 PATH: process.env.PATH, HOME: directory, TMPDIR: directory,
                 TEMP: directory, TMP: directory, NODE_ENV: 'test',
                 SILHOUETTE_PROVIDERS: 'off', SILHOUETTE_BOOT_MODE: 'normal',
-                SILHOUETTE_DB_PATH: join(directory, 'fixture.sqlite')
+                SILHOUETTE_DB_PATH: join(directory, 'fixture.sqlite'),
+                SILHOUETTE_OWNER_SCOPES: process.env.SILHOUETTE_OWNER_SCOPES,
+                SILHOUETTE_OWNER_ACTIVE: process.env.SILHOUETTE_OWNER_ACTIVE,
+                SILHOUETTE_OWNER_FAILURES: process.env.SILHOUETTE_OWNER_FAILURES,
+                SILHOUETTE_OWNER_RESOURCES: process.env.SILHOUETTE_OWNER_RESOURCES,
+                GOMAXPROCS: process.env.GOMAXPROCS,
+                TOKIO_WORKER_THREADS: process.env.TOKIO_WORKER_THREADS,
+                LANCE_CPU_THREADS: process.env.LANCE_CPU_THREADS,
+                RAYON_NUM_THREADS: process.env.RAYON_NUM_THREADS
             }
         });
         const leader = child;

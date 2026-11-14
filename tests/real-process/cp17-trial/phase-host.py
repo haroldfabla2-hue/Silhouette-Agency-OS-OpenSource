@@ -4,8 +4,8 @@ Host inputs must be already copied/verified disposable source+harness; no git/ho
 """
 import argparse,hashlib,json,os,pathlib,selectors,shutil,signal,stat,subprocess,time
 from scope_finalize import finish_scope
-p=argparse.ArgumentParser();p.add_argument('--delegated-parent',required=True);p.add_argument('--work',required=True);p.add_argument('--harness',required=True);p.add_argument('--evidence',required=True);p.add_argument('--staged-bwrap',required=True);p.add_argument('--run-id',required=True);p.add_argument('--reviewed-root-helper',required=True);p.add_argument('--root-helper-sha256',required=True);p.add_argument('--phase',choices=['install','native','checks'],required=True);p.add_argument('--phase-seconds',type=int,required=True);p.add_argument('--dependency-store',required=True);a=p.parse_args()
-assert 0<a.phase_seconds<=550
+p=argparse.ArgumentParser();p.add_argument('--delegated-parent',required=True);p.add_argument('--work',required=True);p.add_argument('--harness',required=True);p.add_argument('--evidence',required=True);p.add_argument('--staged-bwrap',required=True);p.add_argument('--run-id',required=True);p.add_argument('--reviewed-root-helper',required=True);p.add_argument('--root-helper-sha256',required=True);p.add_argument('--phase',choices=['install','native','browser','checks'],required=True);p.add_argument('--phase-seconds',type=int,required=True);p.add_argument('--dependency-store',required=True);a=p.parse_args()
+assert 0<a.phase_seconds<=1000
 store=pathlib.Path(a.dependency_store).resolve(strict=True);assert store==pathlib.Path('/var/lib')/('silhouette-cp17-deps-'+a.run_id)/'store';assert os.path.ismount(store)
 parent=pathlib.Path(a.delegated_parent).resolve(strict=True);work=pathlib.Path(a.work).resolve(strict=True);harness=pathlib.Path(a.harness).resolve(strict=True);evidence=pathlib.Path(a.evidence).resolve(strict=True);bwrap=pathlib.Path(a.staged_bwrap).resolve(strict=True)
 assert a.run_id.isdigit() and int(a.run_id)>0
@@ -27,6 +27,7 @@ def kill_scope(reason):
 try:
  # Resolve only workflow-selected Node22.18.0, never broaden inner PATH.
  node_cut={'requested':'node','expected':'/opt/hostedtoolcache/node/22.18.0/x64/bin/node'}
+ node_cut['runner_image']={key:os.environ.get(key)for key in ['ImageOS','ImageVersion','ImageRelease','RUNNER_OS','RUNNER_ARCH']}
  try:
   selected=shutil.which('node');node_cut['hostLookup']=selected
   assert selected is not None,'workflow Node not found on host PATH'
@@ -53,7 +54,7 @@ try:
  assert (cg/'cgroup.kill').exists() and os.access(cg/'cgroup.kill',os.W_OK)
  # Preparation resolver snapshot: dereference only this one host file, never bind /run.
  resolver=evidence/'resolver.snapshot';resolver_record={'stage':'host','mode':a.phase,'network_ns':os.readlink('/proc/self/ns/net')}
- if a.phase in {'install','native'}:
+ if a.phase in {'install','native','browser'}:
   source=pathlib.Path('/etc/resolv.conf');resolver_record.update({'source_is_symlink':source.is_symlink(),'source_realpath':str(source.resolve(strict=True))})
   with source.open('rb')as f:
    st=os.fstat(f.fileno());assert stat.S_ISREG(st.st_mode)and st.st_size<=65536
@@ -65,13 +66,13 @@ try:
  for option in ['--size','--unshare-user','--uid','--gid','--unshare-pid','--die-with-parent','--cap-drop']:assert option in helptext
  helper=pathlib.Path(a.reviewed_root_helper).read_bytes()
  assert len(helper)<=16384 and hashlib.sha256(helper).hexdigest()==a.root_helper_sha256
- control=evidence/'containment-host.json';control.write_text(json.dumps({'scope':str(cg),'limits':{n:(cg/n).read_text().strip() for n in ['memory.max','memory.swap.max','pids.max','cpu.max']},'bwrap_sha256':hashlib.sha256(bwrap.read_bytes()).hexdigest(),'wallSeconds':360,'storageBytes':512*1024**2,'status':'PREPARED_NOT_STARTED'},indent=2))
+ control=evidence/'containment-host.json';control.write_text(json.dumps({'scope':str(cg),'limits':{n:(cg/n).read_text().strip() for n in ['memory.max','memory.swap.max','pids.max','cpu.max']},'bwrap_sha256':hashlib.sha256(bwrap.read_bytes()).hexdigest(),'wallSeconds':a.phase_seconds+15,'storageBytes':512*1024**2,'status':'PREPARED_NOT_STARTED'},indent=2))
  # Root helper self-admits before executing bwrap, then drops all root IDs.
  # No numeric target-PID attach race and no broad LCA permission delegation.
  cmd=[str(bwrap),'--die-with-parent','--unshare-pid','--unshare-user','--uid','0','--gid','0','--cap-add','CAP_SETFCAP']
  if a.phase=='checks':cmd+=['--unshare-net','--cap-add','CAP_NET_ADMIN']
  for source in ['/usr','/bin','/lib','/lib64','/etc','/opt']:cmd+=['--ro-bind',source,source]
- if a.phase in {'install','native'}:
+ if a.phase in {'install','native','browser'}:
   target=pathlib.Path(resolver_record['source_realpath'])
   assert target==pathlib.Path('/etc/resolv.conf')or(target.is_relative_to('/run')and len(target.parts)<=8),'resolver target outside reviewed layout'
   if target!=pathlib.Path('/etc/resolv.conf'):
@@ -85,7 +86,7 @@ try:
  child=child_process.pid
  child_process.stdin.write(helper);child_process.stdin.close()
  pid=child
- # Namespace init supervises inner test for340s then exports. Host hard ceiling360s.
+ # Phase-specific reviewed deadline, independent original oracle limits unchanged.
  while True:
   found,status=os.waitpid(pid,os.WNOHANG)
   if found:break

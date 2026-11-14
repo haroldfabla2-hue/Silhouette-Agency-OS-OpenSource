@@ -1,3 +1,4 @@
+import { createStandaloneFixtureHost } from './standalone-preparation';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
@@ -7,6 +8,7 @@ const mode = process.argv[2];
 assert.ok(mode, 'A single scenario selector is required');
 assert.equal(process.env.SILHOUETTE_PROVIDERS, 'off');
 const originalEnv = { ...process.env };
+const fixtureHost = createStandaloneFixtureHost();
 const originalFetch = globalThis.fetch;
 const failures: unknown[] = [];
 const fixtureCalls = new Set<string>();
@@ -171,6 +173,7 @@ try {
     assert.equal(scenarios, 1, 'Exactly one selected scenario must execute');
 } catch (error) { failures.push(error); }
 finally {
+    await cleanup('original producer drain', () => fixtureHost.drainProducers());
     // No real provider calls in cleanup. Removing fixture credentials makes
     // hangup of leftover synthetic calls local; summary policy remains OFF.
     await cleanup('active call cleanup', async () => {
@@ -193,7 +196,7 @@ finally {
             sqlite.db.prepare('DELETE FROM system_config WHERE key = ?').run('voice_settings');
         }
     });
-    await cleanup('owned SQLite close', () => sqlite?.close());
+    await cleanup('owned runtime storage and host close', () => fixtureHost.stop());
     await cleanup('unexpected requests through cleanup', () => {
         assert.deepEqual(unexpectedRequests, [], 'Cleanup cannot hide unexpected transport requests');
     });

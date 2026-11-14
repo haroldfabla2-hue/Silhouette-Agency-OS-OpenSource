@@ -49,13 +49,13 @@ p=pathlib.Path(sys.argv[1]);s=json.loads(p.read_text());e=time.monotonic()-float
 PYSETUP
 phase() {
   mode=$1;ceiling=$2
-  # All setup shares the original host-budget180s, security acquisition included.
+  # All setup shares the explicitly reviewed host-budget240s, security acquisition included.
   duration=$(python3 - "$EVIDENCE" "$mode" "$ceiling" <<'PY'
 import json,pathlib,sys,time
 p=pathlib.Path(sys.argv[1]);mode=sys.argv[2];cap=int(sys.argv[3]);clock=json.loads((p/'job-clock.json').read_text());now=time.monotonic()
-remaining=clock['deadline_monotonic']-now-60
-if mode in {'install','native'}:
- state=json.loads((p/'host-budget.json').read_text());remaining=min(remaining,180-state['elapsed_seconds'])
+remaining=clock['deadline_monotonic']-now-120
+if mode in {'install','native','browser'}:
+ state=json.loads((p/'host-budget.json').read_text());remaining=min(remaining,240-state['elapsed_seconds'])
 v=int(min(cap,remaining));assert v>15,'NOT_STARTED_BUDGET';print(v-15)
 PY
 )
@@ -65,7 +65,7 @@ PY
   python3 - "$EVIDENCE" "$mode" "$start" "$rc" <<'PY'
 import json,pathlib,sys,time
 p=pathlib.Path(sys.argv[1]);mode=sys.argv[2];elapsed=time.monotonic()-float(sys.argv[3]);state=json.loads((p/'host-budget.json').read_text())
-if mode in {'install','native'}:
+if mode in {'install','native','browser'}:
  state['elapsed_seconds']+=elapsed;state['commands'].append({'name':mode,'elapsed_seconds':elapsed,'rc':int(sys.argv[4])});(p/'host-budget.json').write_text(json.dumps(state,indent=2))
 PY
   return "$rc"
@@ -74,7 +74,7 @@ phase install 150
 python3 - "$store" <<'PRIVATE_CACHE_MOUNTPOINTS'
 import pathlib,sys
 root=pathlib.Path(sys.argv[1]);assert root.is_dir()and not root.is_symlink()
-for name in ['.vite-temp','.vite','.silhouette-native-redis']:
+for name in ['.vite-temp','.vite','.silhouette-native-redis','.silhouette-browser-assets']:
  path=root/name
  assert not path.exists()and not path.is_symlink(),'never replace existing dependency cache path'
  path.mkdir(mode=0o755)
@@ -82,12 +82,17 @@ for name in ['.vite-temp','.vite','.silhouette-native-redis']:
 PRIVATE_CACHE_MOUNTPOINTS
 phase native 150
 python3 "$ops/native-provenance.py" "$store" "$EVIDENCE/native"
-# Admit all500s checks plus unchanged370s oracles, not an implicitly selected subset.
+if phase browser 90; then browser=0; else browser=$?; fi
+# Preserve every browser-preparation evidence byte inside the existing native
+# provenance file, then remove only the verified archived metadata directory.
+python3 "$ops/pack-browser-evidence.py" "$EVIDENCE/browser" "$EVIDENCE/native/native-provenance.json"
+[[ "$browser" = 0 ]]
+# Admit1000s checks + unchanged370s oracles +120s cleanup/export together.
 python3 - "$EVIDENCE/job-clock.json" <<'PY'
 import json,pathlib,sys,time
-assert json.loads(pathlib.Path(sys.argv[1]).read_text())['deadline_monotonic']-time.monotonic()>=1000,'NOT_STARTED_INTEGRAL_BUDGET'
+assert json.loads(pathlib.Path(sys.argv[1]).read_text())['deadline_monotonic']-time.monotonic()>=1505,'NOT_STARTED_INTEGRAL_BUDGET'
 PY
-if phase checks 550; then checks=0; else checks=$?; fi
+if phase checks 1015; then checks=0; else checks=$?; fi
 # Independent six oracles run regardless of checks rc, only after verified
 # natural-empty/no-forced-events cleanup. Unsafe/unknown scope stops.
 python3 - "$EVIDENCE/checks/scope-cleanup.json" <<'PY'

@@ -11,14 +11,15 @@ for k,v in [('memory.max',str(8*1024**3)),('memory.swap.max','0'),('pids.max','9
 assert os.statvfs('/tmp').f_blocks*os.statvfs('/tmp').f_frsize<=512*1024**2
 node='/opt/hostedtoolcache/node/22.18.0/x64/bin/node';npm='/opt/hostedtoolcache/node/22.18.0/x64/lib/node_modules/npm/bin/npm-cli.js'
 assert subprocess.check_output([node,'--version'],text=True).strip()=='v22.18.0'
-env={'PATH':str(pathlib.Path(node).parent)+':/usr/bin:/bin','HOME':'/tmp/home','TMPDIR':'/tmp','NODE_ENV':'test','SILHOUETTE_PROVIDERS':'off','SILHOUETTE_INFERENCE_MODE':'cloud-only','SILHOUETTE_SNAPSHOT_DIAGNOSTIC':'metadata-only','NODE_OPTIONS':'--max-old-space-size=2048','npm_config_cache':'/tmp/npm-cache','npm_config_loglevel':'verbose','npm_config_verbose':'true','PUPPETEER_SKIP_DOWNLOAD':'true','PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD':'true','ELECTRON_SKIP_BINARY_DOWNLOAD':'1','SHARP_IGNORE_GLOBAL_LIBVIPS':'1'}
+env={'GOMAXPROCS':'2','TOKIO_WORKER_THREADS':'2','LANCE_CPU_THREADS':'2','RAYON_NUM_THREADS':'2','PATH':str(pathlib.Path(node).parent)+':/usr/bin:/bin','HOME':'/tmp/home','TMPDIR':'/tmp','NODE_ENV':'test','SILHOUETTE_PROVIDERS':'off','SILHOUETTE_INFERENCE_MODE':'cloud-only','SILHOUETTE_SNAPSHOT_DIAGNOSTIC':'metadata-only','NODE_OPTIONS':'--max-old-space-size=2048','npm_config_cache':'/tmp/npm-cache','npm_config_loglevel':'verbose','npm_config_verbose':'true','PUPPETEER_SKIP_DOWNLOAD':'true','PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD':'true','ELECTRON_SKIP_BINARY_DOWNLOAD':'1','SHARP_IGNORE_GLOBAL_LIBVIPS':'1'}
 pathlib.Path('/tmp/home').mkdir(exist_ok=True)
 # Bounded preflight is inside existing aggregate deadline, no retries or package code.
-if mode in {'install','native'}:
+if mode in {'install','native','browser'}:
  import socket
  resolver=pathlib.Path('/etc/resolv.conf');record={'stage':'innermost','network_ns':os.readlink('/proc/self/ns/net'),'resolver_exists':resolver.exists(),'resolver_symlink':resolver.is_symlink(),'resolver_realpath':str(resolver.resolve(strict=False)),'routes_sha256':hashlib.sha256(pathlib.Path('/proc/net/route').read_bytes()).hexdigest()}
  if resolver.exists():record['resolver_sha256']=hashlib.sha256(resolver.read_bytes()).hexdigest()
- preflight=[node,'--input-type=module','-e',"import dns from 'node:dns/promises'; for (const host of ['registry.npmjs.org','codeload.github.com']) { try { const result=await dns.lookup(host); console.log(JSON.stringify({host,result})); } catch (e) { console.log(JSON.stringify({host,error:e.code})); process.exitCode=1; } }"]
+ hosts=['cdn.playwright.dev','storage.googleapis.com']if mode=='browser'else['registry.npmjs.org','codeload.github.com']
+ preflight=[node,'--input-type=module','-e',"import dns from 'node:dns/promises'; for (const host of "+json.dumps(hosts)+") { try { const result=await dns.lookup(host); console.log(JSON.stringify({host,result})); } catch (e) { console.log(JSON.stringify({host,error:e.code})); process.exitCode=1; } }"]
  try:
   remaining=min(8,float(os.environ['PHASE_DEADLINE_MONOTONIC'])-time.monotonic()-5);assert remaining>0
   probe=subprocess.run(preflight,env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=remaining,check=False);record.update({'returncode':probe.returncode,'stdout':probe.stdout[:4096].decode(errors='replace'),'stderr':probe.stderr[:4096].decode(errors='replace')})
@@ -37,6 +38,7 @@ if mode=='checks':
   assert type(value)is int and value>0,'Missing reviewed test capacity:'+key
   env['SILHOUETTE_OWNER_'+key.upper()]=str(value)
  (ev/'test-preparation-inputs.json').write_text(json.dumps({'source_graph':preparation['source_graph'],'capacity':profile,'scope':'Per actual module generation; not process-global upper bound'},indent=2))
+ subprocess.run(['/usr/bin/python3','/tmp/harness/prepare-browser.py','--verify-only'],env=env,check=True,timeout=min(30,max(.1,float(os.environ['PHASE_DEADLINE_MONOTONIC'])-time.monotonic()-5)))
 
 if mode=='checks':
  record={'phase':mode,'dependencies_read_only':bool(os.statvfs(root/'node_modules').f_flag&os.ST_RDONLY),'cache':[]}
@@ -59,10 +61,13 @@ elif mode=='native':
   p=root/rel;assert p.is_file()and not p.is_symlink()and hashlib.sha256(p.read_bytes()).hexdigest()==expected,'native source mismatch:'+rel
  phases=[('better-sqlite3',['/bin/sh','-c','prebuild-install || node-gyp rebuild --release'],root/'node_modules/better-sqlite3',90),('sharp-032',['/bin/sh','-c','(node install/libvips && node install/dll-copy && prebuild-install) || (node install/can-compile && node-gyp rebuild && node install/dll-copy)'],root/'node_modules/@xenova/transformers/node_modules/sharp',90),('real-redis-build',['/usr/bin/python3','/tmp/harness/build-redis.py'],root,100)]
  env['PATH']=str(root/'node_modules/.bin')+':'+env['PATH']
+elif mode=='browser':
+ phases=[('browser-asset-preparation',['/usr/bin/python3','/tmp/harness/prepare-browser.py'],root,90)]
 elif mode=='checks':
- phases=[('native-smoke',[node,'/tmp/harness/native-smoke.cjs'],root,20),('esbuild025',[str(root/'node_modules/@esbuild/linux-x64/bin/esbuild'),'--version'],root,3),('esbuild027',[str(root/'node_modules/tsx/node_modules/@esbuild/linux-x64/bin/esbuild'),'--version'],root,3),('ffmpeg',[str(root/'node_modules/@ffmpeg-installer/linux-x64/ffmpeg'),'-version'],root,3),('lint',[node,npm,'run','lint'],root,90),('types',[node,npm,'run','typecheck'],root,120),('full-existing-suite',[node,npm,'test','--','--reporter=default','--reporter=/tmp/harness/runtime-observation-reporter.mjs','--maxWorkers=2'],root,180),('lifecycle-boot-active-stop',[node,'--import',str(root/'node_modules/tsx/dist/loader.mjs'),'/tmp/harness/boot-ledger-real.mts','boot-active-stop'],root,6),('lifecycle-boot-original-failure',[node,'--import',str(root/'node_modules/tsx/dist/loader.mjs'),'/tmp/harness/boot-ledger-real.mts','boot-original-failure'],root,6),('lifecycle-ledger-capacity',[node,'--import',str(root/'node_modules/tsx/dist/loader.mjs'),'/tmp/harness/boot-ledger-real.mts','ledger-capacity'],root,6),('daemon-startup-stop',[node,'--import',str(root/'node_modules/tsx/dist/loader.mjs'),'/tmp/harness/daemon-start-stop-real.mts','startup-stop'],root,8),('daemon-startup-persistence-denied',[node,'--import',str(root/'node_modules/tsx/dist/loader.mjs'),'/tmp/harness/daemon-start-stop-real.mts','startup-persistence-denied'],root,8),('frontend-build',[node,npm,'run','build'],root,70),('server-build',[node,str(root/'node_modules/vite/bin/vite.js'),'build','--config','vite.server.config.ts'],root,40)]
+ env['PLAYWRIGHT_BROWSERS_PATH']=str(root/'node_modules/.silhouette-browser-assets')
+ phases=[('native-smoke',[node,'/tmp/harness/native-smoke.cjs'],root,20),('esbuild025',[str(root/'node_modules/@esbuild/linux-x64/bin/esbuild'),'--version'],root,3),('esbuild027',[str(root/'node_modules/tsx/node_modules/@esbuild/linux-x64/bin/esbuild'),'--version'],root,3),('ffmpeg',[str(root/'node_modules/@ffmpeg-installer/linux-x64/ffmpeg'),'-version'],root,3),('lint',[node,npm,'run','lint'],root,90),('types',[node,npm,'run','typecheck'],root,120),('full-existing-suite',[node,npm,'test','--','--reporter=default','--reporter=/tmp/harness/runtime-observation-reporter.mjs','--maxWorkers=2'],root,600),('lifecycle-boot-active-stop',[node,'--import',str(root/'node_modules/tsx/dist/loader.mjs'),'/tmp/harness/boot-ledger-real.mts','boot-active-stop'],root,6),('lifecycle-boot-original-failure',[node,'--import',str(root/'node_modules/tsx/dist/loader.mjs'),'/tmp/harness/boot-ledger-real.mts','boot-original-failure'],root,6),('lifecycle-ledger-capacity',[node,'--import',str(root/'node_modules/tsx/dist/loader.mjs'),'/tmp/harness/boot-ledger-real.mts','ledger-capacity'],root,6),('daemon-startup-stop',[node,'--import',str(root/'node_modules/tsx/dist/loader.mjs'),'/tmp/harness/daemon-start-stop-real.mts','startup-stop'],root,8),('daemon-startup-persistence-denied',[node,'--import',str(root/'node_modules/tsx/dist/loader.mjs'),'/tmp/harness/daemon-start-stop-real.mts','startup-persistence-denied'],root,8),('frontend-build',[node,npm,'run','build'],root,70),('server-build',[node,str(root/'node_modules/vite/bin/vite.js'),'build','--config','vite.server.config.ts'],root,40)]
 else:raise SystemExit('unknown mode')
-# Host also enforces remaining setup180s aggregate and absolute1200s job deadline.
+# Host also enforces remaining setup240s aggregate and absolute1800s job deadline.
 results=[];total=0;unsafe=False;deadline=float(os.environ['PHASE_DEADLINE_MONOTONIC'])
 for name,argv,cwd,limit in phases:
  if unsafe or time.monotonic()>=deadline:

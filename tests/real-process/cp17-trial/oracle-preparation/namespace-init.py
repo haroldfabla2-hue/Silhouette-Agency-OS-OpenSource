@@ -23,7 +23,7 @@ cmd+=['--proc','/proc','--dev','/dev','--remount-ro','/dev','--ro-bind','/tmp/wo
 # Only supervisor can export; tests do NOT mount /tmp/export or raw sidecar paths
 # outside authored store. Mount keeps subtree journal operations within SQLite.
 resource.setrlimit(resource.RLIMIT_FSIZE,(64*1024**2,64*1024**2))
-start=time.monotonic();child=subprocess.Popen(cmd,env={'PATH':'/usr/bin:/bin','SILHOUETTE_INFERENCE_MODE':'cloud-only','SILHOUETTE_SNAPSHOT_DIAGNOSTIC':'metadata-only'},start_new_session=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+start=time.monotonic();child=subprocess.Popen(cmd,env={'PATH':'/usr/bin:/bin','SILHOUETTE_INFERENCE_MODE':'cloud-only','SILHOUETTE_SNAPSHOT_DIAGNOSTIC':'metadata-only','GOMAXPROCS':'2','TOKIO_WORKER_THREADS':'2','LANCE_CPU_THREADS':'2','RAYON_NUM_THREADS':'2'},start_new_session=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
 # Parent export capacity: never copy nodes/symlinks, never original user files.
 import selectors
 sel=selectors.DefaultSelector();sel.register(child.stdout,selectors.EVENT_READ);log=(scratch/'namespace.log').open('wb');signals=[];observed=0;failure=None

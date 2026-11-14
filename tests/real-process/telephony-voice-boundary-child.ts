@@ -1,3 +1,4 @@
+import { createStandaloneFixtureHost } from './standalone-preparation';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import fs from 'node:fs';
@@ -6,6 +7,7 @@ const mode = process.argv[2];
 assert.ok(mode === 'voice' || mode === 'health-stop');
 const failures: unknown[] = [];
 const originalEnv = { ...process.env };
+const fixtureHost = createStandaloneFixtureHost();
 let server: http.Server | undefined;
 let tts: typeof import('../../services/ttsService').ttsService | undefined;
 let telephony: typeof import('../../services/telephony/telephonyService').telephonyService | undefined;
@@ -111,6 +113,7 @@ try {
     }
 } catch (error) { failures.push(error); }
 finally {
+    await cleanup('original producer drain', () => fixtureHost.drainProducers());
     await cleanup('hangup', async () => {
         if (callId && telephony) {
             const result = await telephony.hangup(callId, 'Fixture finished');
@@ -137,7 +140,7 @@ finally {
         }
     });
     // This child, unlike a reused Vitest worker, owns its SQLite instance.
-    await cleanup('owned SQLite close', () => { sqlite?.close(); });
+    await cleanup('owned runtime storage and host close', () => fixtureHost.stop());
     for (const key of Object.keys(process.env)) if (!(key in originalEnv)) delete process.env[key];
     Object.assign(process.env, originalEnv);
 }

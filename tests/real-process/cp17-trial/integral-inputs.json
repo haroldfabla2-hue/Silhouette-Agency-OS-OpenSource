@@ -3001,8 +3001,8 @@
   },
   {
     "path": "services/dreamerService.ts",
-    "sha256": "dcda14e27afdf6b36493f3b222750b8aedfcaed9d744b3559a2dd6b97c49365f",
-    "bytes": 57516
+    "sha256": "d3079131aff7fb4223c746213023d2025955784be7ed9605e70aa4c0f3765899",
+    "bytes": 57530
   },
   {
     "path": "services/driveService.ts",
@@ -3201,8 +3201,8 @@
   },
   {
     "path": "services/introspectionEngine.ts",
-    "sha256": "b9990542ff841df7562494cc25da4dacf8aa65b9e29ec49d3462d50cd29d68d5",
-    "bytes": 68751
+    "sha256": "4aeacc4d64be15b7ac710f9e6b7035a12f427ef709c9d6ce8d1dbf988db25d3b",
+    "bytes": 73069
   },
   {
     "path": "services/janitor/exactDuplicateSweep.ts",
@@ -3286,8 +3286,8 @@
   },
   {
     "path": "services/lifecycle/runtimeStopBindings.ts",
-    "sha256": "a16991bc322acce97c796006c754b8d4638d92ee0b68571c86c1c72e470b33c0",
-    "bytes": 8235
+    "sha256": "250cb3ab367b9d189cf1039f15fd70d318df699728cba575fe86067a2bfdc815",
+    "bytes": 9195
   },
   {
     "path": "services/llm/admissionQueue.ts",
@@ -3801,8 +3801,8 @@
   },
   {
     "path": "services/redisClient.ts",
-    "sha256": "f985c1ffc76601188fc847e9dc3b1d2ace7e4d802a0cebf7382b8442b943ae1b",
-    "bytes": 13960
+    "sha256": "a469c97e6291a1549d16f6a1b25d1b73d8cf78764949895eac581a801de779f7",
+    "bytes": 14982
   },
   {
     "path": "services/referenceCollector.ts",
@@ -5311,8 +5311,8 @@
   },
   {
     "path": "tests/automated/autonomy-entry-points.test.ts",
-    "sha256": "5c22a1be8d0d18dab11f5d0fe5020e11fd15795b4528638b16427aaaf5573f2b",
-    "bytes": 12151
+    "sha256": "c567f01ae1faf68485c4d3ff190fbb20a3418b4f6343a22b5f61a8c15e92307f",
+    "bytes": 13000
   },
   {
     "path": "tests/automated/autonomy-policy.test.ts",
@@ -6151,8 +6151,8 @@
   },
   {
     "path": "tests/automated/telephony-call-voice.test.ts",
-    "sha256": "5eccb45926e23ced1f7eb7ea7ab7fb70e0d02d30ff8a77f9cba22110bcaab933",
-    "bytes": 6234
+    "sha256": "f146eb96f1dd4501a8cb05d47887224444a801274a4cdede538dfdafb97f9990",
+    "bytes": 6812
   },
   {
     "path": "tests/automated/telephony-service.test.ts",
@@ -6161,8 +6161,8 @@
   },
   {
     "path": "tests/automated/telephony-truthfulness.test.ts",
-    "sha256": "a7e0936c5ca8c874bdfc435e1e40d2ac6d4fe6b6a1a18260f1a9cb064b265752",
-    "bytes": 6646
+    "sha256": "73498bae0fff1e464acd436b89ec5b4a6d6e11dc7404af842f2b6ab981d273e0",
+    "bytes": 7224
   },
   {
     "path": "tests/automated/temporal-context.test.ts",
@@ -6625,14 +6625,19 @@
     "bytes": 6831
   },
   {
+    "path": "tests/real-process/standalone-preparation.ts",
+    "sha256": "048e1e028d5f7a0d19a2e3a38b4748e4559777e4d5db73e301248e80f5f9d820",
+    "bytes": 2848
+  },
+  {
     "path": "tests/real-process/telephony-truthfulness-child.ts",
-    "sha256": "cefec0efd73afc34fbf02d3e8c83e64526d81425dacadb06e7b47310ab9c1f3c",
-    "bytes": 12366
+    "sha256": "ffda7fba2475c8576bd8f74e76ceedda889a865931f2d7004a26cfadf19ec139",
+    "bytes": 12592
   },
   {
     "path": "tests/real-process/telephony-voice-boundary-child.ts",
-    "sha256": "829c63adf5e42b6e1685807b4d78fe7bea31687d7c93584afb85a78e2d8fadd6",
-    "bytes": 8658
+    "sha256": "1b28ca2a049c36565d193ae31b963b279a3613485495d0ce76679a88378fabe8",
+    "bytes": 8879
   },
   {
     "path": "tests/real-process/wal-owner-control-child.ts",
