@@ -1,4 +1,5 @@
 """Manual compiler-only proposal. No services, product evaluation or npm hooks."""
+from offline_namespace_supervisor import system_binary_manifest, build_exact_namespace_command, run_namespace_phase
 from pathlib import Path
 import os,sys,json,hashlib,subprocess,resource,time,signal,shutil,tarfile,io,base64,urllib.request,difflib,re,gzip,stat
 BASE='db201993d05124cdb23a84cdfbc695bb3c6680d5'
@@ -8,6 +9,7 @@ BRANCH='refs/heads/preparation/sqlite-static-typecheck-db201993-4054-20261114'
 HERE=Path(__file__).resolve().parent;REPO=HERE.parents[1]
 ROOT=Path(os.environ['RUNNER_TEMP'])/'sqlite-static-only';ROOT.mkdir(mode=0o700)
 EV=ROOT/'evidence';EV.mkdir();REPORT={'status':'STARTED_STATIC_ONLY','base':BASE,'candidateSourcePacket':'4054bb42867d09d15740c3b8e47c1c8e9deec8714489ec47ed23c4e10fb98dab','commands':[],'failures':[]}
+NAMESPACE_CLEANUP_SAFE=True
 CAP=8*1024**2;RAW=32*1024**2;GZIP=8*1024**2;START=time.monotonic();DEADLINE=START+1000
 # Conservative job anchor prevents setup latency from consuming cleanup reserve.
 pid=os.getpid();worker_start=None
@@ -248,13 +250,26 @@ try:
   assert all(row.get(k)==other.get(k)for k in ['version','resolved','integrity','link']),'metadata mismatch '+name
  assert not(set(installed)-set(lock['packages']));emit('dependency-metadata.json',{'present':len(installed),'optionalMissing':missing,'remainingBytesNotVerified':'ALL_EXCEPT_COMPILER_DECLARATIONS_LIBSIGNAL'})
  # No legitimate network in compiler phase. Fail before tsc if unshare fails.
- probe=run('offline-probe',['unshare','-rn','true'],ROOT,env,wall=10);assert probe['naturalComplete']and probe['rc']==0,'offline namespace unavailable; no escalation'
+ emit('offline-system-binaries.json',system_binary_manifest())
+ offline_entry=HERE/'offline-compiler-entry.py';namespace_module=HERE/'offline_namespace_supervisor.py'
+ emit('offline-launcher-source.json',{'entrySha256':sha(offline_entry),'supervisorSha256':sha(namespace_module),'scope':'EXTERNAL_EPHEMERAL_GITHUB_VM_SYSTEM_NAMESPACE_ONLY','noHostSecurityConfigChange':True,'noRootRepoCode':True,'ipNetworkNamespaceNotFilesystemSandbox':True})
+ def namespace_phase(phase,cwd):
+  global NAMESPACE_CLEANUP_SAFE
+  receipt=EV/(phase+'-namespace-receipt.json')
+  argv=build_exact_namespace_command(phase,cwd,node,deps/'typescript/bin/tsc',offline_entry,receipt,env)
+  before_safe=NAMESPACE_CLEANUP_SAFE;NAMESPACE_CLEANUP_SAFE=False
+  row=run_namespace_phase(phase,argv,cwd,env,EV,receipt,DEADLINE,8 if phase=='probe'else 280)
+  NAMESPACE_CLEANUP_SAFE=before_safe and row['cleanupSafe']
+  REPORT['commands'].append(row);emit('result.json',REPORT)
+  assert row['cleanupSafe'],'privileged setup/known compiler group still live; cleanup incomplete STOP'
+  return row
+ probe=namespace_phase('probe',ROOT);assert probe['naturalComplete']and probe['rc']==0,'offline namespace unavailable; no fallback/escalation'
  for label,root in [('baseline',baseline),('candidate',candidate)]:
   (root/'node_modules').symlink_to(deps,target_is_directory=True)
-  row=run(label,['unshare','-rn',str(node),'--max-old-space-size=4096',str(deps/'typescript/bin/tsc'),'--project','tsconfig.json','--noEmit','--skipLibCheck','--incremental','false','--pretty','false'],root,env)
+  row=namespace_phase(label,root)
   assert check_inputs(root)==before[label];assert not list(root.rglob('*.tsbuildinfo'))
   drift=[rel for rel,h in input_hashes[label].items()if not(root/rel).is_file()or sha(root/rel)!=h];assert not drift,'source drift'
- runs={r['label']:r for r in REPORT['commands']};assert runs['baseline']['naturalComplete']and runs['candidate']['naturalComplete'],'inconclusive compiler termination'
+ runs={r.get('label',r.get('phase')):r for r in REPORT['commands']};assert runs['baseline']['naturalComplete']and runs['candidate']['naturalComplete'],'inconclusive compiler termination'
  # Natural compiler rc1 can carry noEmit diagnostics. Preserve full diff
  # BEFORE classifying diagnostic exit status; only both0 means clean.
  a=(EV/'baseline.log').read_text(errors='replace').splitlines(True);b=(EV/'candidate.log').read_text(errors='replace').splitlines(True);diff=''.join(difflib.unified_diff(a,b,fromfile='baseline',tofile='candidate'));assert len(diff.encode())<=CAP;(EV/'diagnostics.diff').write_text(diff)
@@ -278,9 +293,9 @@ finally:
   for name in ['baseline','candidate','acquisition','empty-npm-cache','empty-home']:
    p=ROOT/name
    try:
-    if p.exists():shutil.rmtree(p)
+    if p.exists()and NAMESPACE_CLEANUP_SAFE:shutil.rmtree(p)
    except BaseException as cause:finalizationErrors.append({'stage':'cleanup:'+name,'type':type(cause).__name__,'text':str(cause)})
- cleanup={'disposableCopiesRemoved':all(not(ROOT/n).exists()for n in ['baseline','candidate','acquisition','empty-npm-cache','empty-home']),'errors':finalizationErrors,'noNativeServicesStarted':True}
+ cleanup={'disposableCopiesRemoved':all(not(ROOT/n).exists()for n in ['baseline','candidate','acquisition','empty-npm-cache','empty-home']),'errors':finalizationErrors,'noNativeServicesStarted':True,'namespaceCleanupSafe':NAMESPACE_CLEANUP_SAFE,'copiesPreservedIfSetupSurvives':not NAMESPACE_CLEANUP_SAFE}
  if not cleanup['disposableCopiesRemoved']or finalizationErrors:REPORT['productTypecheckPass']=False
  # Even if complete logs exceed policy, export an EXPLICIT failed evidence
  # manifest with hashes/lengths, never a shortened log masquerading complete.
