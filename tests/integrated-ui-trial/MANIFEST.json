@@ -5,6 +5,10 @@
       "bytes": 11544,
       "sha256": "2378c43c3ee001fd9a98412d91e079e18e6bcbd96ca53c1bb2f8eecb5369601a"
     },
+    "archive-member-normalizations.json": {
+      "bytes": 16768,
+      "sha256": "e7ffbf50f9f4f27d17acdf55f27918609302313d0b0adc28df6366eda15ba5b2"
+    },
     "body-custody-composition.json": {
       "bytes": 975,
       "sha256": "ccb4bb65ec62060b9cfc2fea6172c428b02d7b4e7da7754b8abc44a09a09f520"
@@ -38,8 +42,8 @@
       "sha256": "7be882fd19704d5cbe6914f185ac6d0d3b3a6eda0230a545c7291dc13b89b722"
     },
     "hosted-orchestrator.py": {
-      "bytes": 14368,
-      "sha256": "e7d19c36f4e9486159c03c25fec3a7034cfaeeb29cdb35bc273f2db4949c26c0"
+      "bytes": 18250,
+      "sha256": "ecd7681a4c1000148c09162244b5cbe0f090bc24896d8c97886fa5aef5333be1"
     },
     "identity-entry.py": {
       "bytes": 3884,
@@ -50,8 +54,8 @@
       "sha256": "0e3a710ab63232eec31d90e994036b3a3480c65605097fe4a6f0938e2bf33366"
     },
     "integrated-hosted.yml": {
-      "bytes": 3769,
-      "sha256": "f2315fb0ae0c3ed4e7ac3fb7b36dacf40e5d1f06423c67cf72a58ab035cdd7aa"
+      "bytes": 3701,
+      "sha256": "6482de8c165584d69aeacae78ac4419aad40c8ec439d6504ba72972c5c2c2b1d"
     },
     "lance-provenance.json": {
       "bytes": 900,
@@ -94,8 +98,8 @@
       "sha256": "6d4db2c333ac887464b161bc1139f1fd86c248e0b43110a758b945c60d7763f1"
     },
     "return-evidence.py": {
-      "bytes": 8840,
-      "sha256": "5029b8ad87dc5083022b5aa60bacc1e2fdf83300af4f9a328b5e6b21020b691f"
+      "bytes": 8879,
+      "sha256": "3e128423f141412afabad0bc55589d20ab581578e50cac5b801fcc8361e4da1a"
     },
     "runtime-prerequisites.cjs": {
       "bytes": 2062,

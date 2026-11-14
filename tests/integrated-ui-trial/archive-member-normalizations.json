@@ -1,0 +1,536 @@
+{
+  "status": "SOURCE_REVIEW_ONLY_FINITE_BYTE_IDENTICAL_ALIAS_AND_INSTALLER_RENAME_CONTRACT",
+  "lockSha256": "039ce85293514e83584ca047d0d8b53eb7bce71bb3b3fe75fc6f96e928a0299c",
+  "installer": {
+    "node": "22.18.0",
+    "npm": "10.9.3",
+    "pacote": "19.0.1",
+    "tar": "6.2.1"
+  },
+  "packages": {
+    "node_modules/@qdrant/openapi-typescript-fetch": {
+      "integrity": "sha512-oQG/FejNpItrxRHoyctYvT3rwGZOnK4jr3JdppO/c78ktDvkWiPXPHNsrDf33K9sZdRb6PR7gi4noIapu5q4HA==",
+      "archiveSha256": "72718d1bda3b0bbc6e0911014782c4e5ef0a389696a6a8730dcd279adf77d782",
+      "duplicates": [
+        {
+          "canonical": "dist/cjs/index.js",
+          "first": {
+            "index": 4,
+            "member": {
+              "name": "package/./dist/cjs/index.js",
+              "type": "0",
+              "size": 643,
+              "mode": 420,
+              "uid": 0,
+              "gid": 0,
+              "uname": "",
+              "gname": "",
+              "mtime": 499162500,
+              "pax": {},
+              "sha256": "20097f95ee0b344c90a8f3b062aeb87249e8865e93164de3d6618127e6ae4eba"
+            }
+          },
+          "repeat": {
+            "index": 6,
+            "member": {
+              "name": "package/dist/cjs/index.js",
+              "type": "0",
+              "size": 643,
+              "mode": 420,
+              "uid": 0,
+              "gid": 0,
+              "uname": "",
+              "gname": "",
+              "mtime": 499162500,
+              "pax": {},
+              "sha256": "20097f95ee0b344c90a8f3b062aeb87249e8865e93164de3d6618127e6ae4eba"
+            }
+          }
+        },
+        {
+          "canonical": "dist/es6/index.js",
+          "first": {
+            "index": 5,
+            "member": {
+              "name": "package/./dist/es6/index.js",
+              "type": "0",
+              "size": 174,
+              "mode": 420,
+              "uid": 0,
+              "gid": 0,
+              "uname": "",
+              "gname": "",
+              "mtime": 499162500,
+              "pax": {},
+              "sha256": "319dbcb2ff5a198f417ac5f4493411f23949fa521858356aaa6126fa63cdbd9e"
+            }
+          },
+          "repeat": {
+            "index": 7,
+            "member": {
+              "name": "package/dist/es6/index.js",
+              "type": "0",
+              "size": 174,
+              "mode": 420,
+              "uid": 0,
+              "gid": 0,
+              "uname": "",
+              "gname": "",
+              "mtime": 499162500,
+              "pax": {},
+              "sha256": "319dbcb2ff5a198f417ac5f4493411f23949fa521858356aaa6126fa63cdbd9e"
+            }
+          }
+        }
+      ],
+      "renames": []
+    },
+    "node_modules/agent-base": {
+      "integrity": "sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==",
+      "archiveSha256": "7dd4a61668a9a4e8d4e903f1a254f94d53dafd3f316f2b9b597c5ad8c79cb57e",
+      "duplicates": [
+        {
+          "canonical": "dist/index.js",
+          "first": {
+            "index": 2,
+            "member": {
+              "name": "package/./dist/index.js",
+              "type": "0",
+              "size": 7324,
+              "mode": 420,
+              "uid": 0,
+              "gid": 0,
+              "uname": "",
+              "gname": "",
+              "mtime": 499162500,
+              "pax": {},
+              "sha256": "c6503bd5e007db8b73fedf07b6eaaf4a94d5541953f0d06c8a17d1644c29a0c5"
+            }
+          },
+          "repeat": {
+            "index": 3,
+            "member": {
+              "name": "package/dist/index.js",
+              "type": "0",
+              "size": 7324,
+              "mode": 420,
+              "uid": 0,
+              "gid": 0,
+              "uname": "",
+              "gname": "",
+              "mtime": 499162500,
+              "pax": {},
+              "sha256": "c6503bd5e007db8b73fedf07b6eaaf4a94d5541953f0d06c8a17d1644c29a0c5"
+            }
+          }
+        }
+      ],
+      "renames": []
+    },
+    "node_modules/degenerator": {
+      "integrity": "sha512-TllpMR/t0M5sqCXfj85i4XaAzxmS5tVA16dqvdkMwGmzI+dXLXnw3J+3Vdv7VKw+ThlTMboK6i9rnZ6Nntj5CQ==",
+      "archiveSha256": "4b930c5a740d8affd077e7873d2482fb79097e48b9abc821bc16eccfc88039d3",
+      "duplicates": [
+        {
+          "canonical": "dist/index.js",
+          "first": {
+            "index": 2,
+            "member": {
+              "name": "package/./dist/index.js",
+              "type": "0",
+              "size": 884,
+              "mode": 420,
+              "uid": 0,
+              "gid": 0,
+              "uname": "",
+              "gname": "",
+              "mtime": 499162500,
+              "pax": {},
+              "sha256": "8fa57923cd354c8d29251cf0e2729525cb18bc9b7fd9d44722ed50d1f4db679f"
+            }
+          },
+          "repeat": {
+            "index": 3,
+            "member": {
+              "name": "package/dist/index.js",
+              "type": "0",
+              "size": 884,
+              "mode": 420,
+              "uid": 0,
+              "gid": 0,
+              "uname": "",
+              "gname": "",
+              "mtime": 499162500,
+              "pax": {},
+              "sha256": "8fa57923cd354c8d29251cf0e2729525cb18bc9b7fd9d44722ed50d1f4db679f"
+            }
+          }
+        }
+      ],
+      "renames": []
+    },
+    "node_modules/get-uri": {
+      "integrity": "sha512-b1O07XYq8eRuVzBNgJLstU6FYc1tS6wnMtF1I1D9lE8LxZSOGZ7LhxN54yPP6mGw5f2CkXY2BQUL9Fx41qvcIg==",
+      "archiveSha256": "21edd06144ffb0b451bf7b00ecfe4bdfdabda84ebcadf34ed48ef673edfb6247",
+      "duplicates": [
+        {
+          "canonical": "dist/index.js",
+          "first": {
+            "index": 7,
+            "member": {
+              "name": "package/./dist/index.js",
+              "type": "0",
+              "size": 2144,
+              "mode": 420,
+              "uid": 0,
+              "gid": 0,
+              "uname": "",
+              "gname": "",
+              "mtime": 499162500,
+              "pax": {},
+              "sha256": "b0c581ba1c341e54b28442add7ec7985114beac2fa665da40540b00d87b85481"
+            }
+          },
+          "repeat": {
+            "index": 8,
+            "member": {
+              "name": "package/dist/index.js",
+              "type": "0",
+              "size": 2144,
+              "mode": 420,
+              "uid": 0,
+              "gid": 0,
+              "uname": "",
+              "gname": "",
+              "mtime": 499162500,
+              "pax": {},
+              "sha256": "b0c581ba1c341e54b28442add7ec7985114beac2fa665da40540b00d87b85481"
+            }
+          }
+        }
+      ],
+      "renames": []
+    },
+    "node_modules/get-uri/node_modules/data-uri-to-buffer": {
+      "integrity": "sha512-7hvf7/GW8e86rW0ptuwS3OcBGDjIi6SZva7hCyWC0yYry2cOPmLIjXAUHI6DK2HsnwJd9ifmt57i8eV2n4YNpw==",
+      "archiveSha256": "48bf37b2b11271031bb8acdd083b7ae4d542fb91f43d12a23611c8756a888284",
+      "duplicates": [
+        {
+          "canonical": "dist/index.js",
+          "first": {
+            "index": 2,
+            "member": {
+              "name": "package/./dist/index.js",
+              "type": "0",
+              "size": 1836,
+              "mode": 420,
+              "uid": 0,
+              "gid": 0,
+              "uname": "",
+              "gname": "",
+              "mtime": 499162500,
+              "pax": {},
+              "sha256": "1cc60790a4179c75300b28251b92558e5e20c0488fc05fcfcb33f49c0aa3f750"
+            }
+          },
+          "repeat": {
+            "index": 3,
+            "member": {
+              "name": "package/dist/index.js",
+              "type": "0",
+              "size": 1836,
+              "mode": 420,
+              "uid": 0,
+              "gid": 0,
+              "uname": "",
+              "gname": "",
+              "mtime": 499162500,
+              "pax": {},
+              "sha256": "1cc60790a4179c75300b28251b92558e5e20c0488fc05fcfcb33f49c0aa3f750"
+            }
+          }
+        }
+      ],
+      "renames": []
+    },
+    "node_modules/http-proxy-agent": {
+      "integrity": "sha512-T1gkAiYYDWYx3V5Bmyu7HcfcvL7mUrTWiM6yOfa3PIphViJ/gFPbvidQ+veqSOHci/PxBcDabeUNCzpOODJZig==",
+      "archiveSha256": "785f73faa92bfba8d61da20bf59325ab2b3dca1bbc0bbac523406f404d8a6f02",
+      "duplicates": [
+        {
+          "canonical": "dist/index.js",
+          "first": {
+            "index": 1,
+            "member": {
+              "name": "package/./dist/index.js",
+              "type": "0",
+              "size": 6088,
+              "mode": 420,
+              "uid": 0,
+              "gid": 0,
+              "uname": "",
+              "gname": "",
+              "mtime": 499162500,
+              "pax": {},
+              "sha256": "fd33b43da34da60d4914780e13fae5d52a7faaa996d687eea5335128de148627"
+            }
+          },
+          "repeat": {
+            "index": 2,
+            "member": {
+              "name": "package/dist/index.js",
+              "type": "0",
+              "size": 6088,
+              "mode": 420,
+              "uid": 0,
+              "gid": 0,
+              "uname": "",
+              "gname": "",
+              "mtime": 499162500,
+              "pax": {},
+              "sha256": "fd33b43da34da60d4914780e13fae5d52a7faaa996d687eea5335128de148627"
+            }
+          }
+        }
+      ],
+      "renames": []
+    },
+    "node_modules/https-proxy-agent": {
+      "integrity": "sha512-vK9P5/iUfdl95AI+JVyUuIcVtd4ofvtrOr3HNtM2yxC9bnMbEdp3x01OhQNnjb8IJYi38VlTE3mBXwcfvywuSw==",
+      "archiveSha256": "960f89e8e5240882f64249d04a538421dd39d62ffacc138544647cc3251bc0e0",
+      "duplicates": [
+        {
+          "canonical": "dist/index.js",
+          "first": {
+            "index": 1,
+            "member": {
+              "name": "package/./dist/index.js",
+              "type": "0",
+              "size": 7451,
+              "mode": 420,
+              "uid": 0,
+              "gid": 0,
+              "uname": "",
+              "gname": "",
+              "mtime": 499162500,
+              "pax": {},
+              "sha256": "30165586fac3becbc9dbf2b7b5bdaa802a77ac34af9926208f6e94a3bd87ef31"
+            }
+          },
+          "repeat": {
+            "index": 2,
+            "member": {
+              "name": "package/dist/index.js",
+              "type": "0",
+              "size": 7451,
+              "mode": 420,
+              "uid": 0,
+              "gid": 0,
+              "uname": "",
+              "gname": "",
+              "mtime": 499162500,
+              "pax": {},
+              "sha256": "30165586fac3becbc9dbf2b7b5bdaa802a77ac34af9926208f6e94a3bd87ef31"
+            }
+          }
+        }
+      ],
+      "renames": []
+    },
+    "node_modules/pac-proxy-agent": {
+      "integrity": "sha512-TEB8ESquiLMc0lV8vcd5Ql/JAKAoyzHFXaStwjkzpOpC5Yv+pIzLfHvjTSdf3vpa2bMiUQrg9i6276yn8666aA==",
+      "archiveSha256": "d3e7aa760767e6b75dd9e23ee67a24355e2e7cb107c714321554d3a8736593d4",
+      "duplicates": [
+        {
+          "canonical": "dist/index.js",
+          "first": {
+            "index": 1,
+            "member": {
+              "name": "package/./dist/index.js",
+              "type": "0",
+              "size": 9933,
+              "mode": 420,
+              "uid": 0,
+              "gid": 0,
+              "uname": "",
+              "gname": "",
+              "mtime": 499162500,
+              "pax": {},
+              "sha256": "c9403a791f12bdabc3dc4657b6c5aec37874ac0c5c85c6571657f58dc8ff69bf"
+            }
+          },
+          "repeat": {
+            "index": 2,
+            "member": {
+              "name": "package/dist/index.js",
+              "type": "0",
+              "size": 9933,
+              "mode": 420,
+              "uid": 0,
+              "gid": 0,
+              "uname": "",
+              "gname": "",
+              "mtime": 499162500,
+              "pax": {},
+              "sha256": "c9403a791f12bdabc3dc4657b6c5aec37874ac0c5c85c6571657f58dc8ff69bf"
+            }
+          }
+        }
+      ],
+      "renames": []
+    },
+    "node_modules/pac-resolver": {
+      "integrity": "sha512-5NPgf87AT2STgwa2ntRMr45jTKrYBGkVU36yT0ig/n/GMAa3oPqhZfIQ2kMEimReg0+t9kZViDVZ83qfVUlckg==",
+      "archiveSha256": "d986ca69b0e008c779c3194af06e85a081fb018611d2be9823ba20c6877e1634",
+      "duplicates": [
+        {
+          "canonical": "dist/index.js",
+          "first": {
+            "index": 5,
+            "member": {
+              "name": "package/./dist/index.js",
+              "type": "0",
+              "size": 3519,
+              "mode": 420,
+              "uid": 0,
+              "gid": 0,
+              "uname": "",
+              "gname": "",
+              "mtime": 499162500,
+              "pax": {},
+              "sha256": "723399e475f896685df33592c8ab055fd5e7941f06d8bc7c314988363e204e1d"
+            }
+          },
+          "repeat": {
+            "index": 6,
+            "member": {
+              "name": "package/dist/index.js",
+              "type": "0",
+              "size": 3519,
+              "mode": 420,
+              "uid": 0,
+              "gid": 0,
+              "uname": "",
+              "gname": "",
+              "mtime": 499162500,
+              "pax": {},
+              "sha256": "723399e475f896685df33592c8ab055fd5e7941f06d8bc7c314988363e204e1d"
+            }
+          }
+        }
+      ],
+      "renames": []
+    },
+    "node_modules/proxy-agent": {
+      "integrity": "sha512-TmatMXdr2KlRiA2CyDu8GqR8EjahTG3aY3nXjdzFyoZbmB8hrBsTyMezhULIXKnC0jpfjlmiZ3+EaCzoInSu/A==",
+      "archiveSha256": "935cb7cbbeb823bc0d1b406e4ecd1d07e1c953a41886d5ff821db26cb105cdaf",
+      "duplicates": [
+        {
+          "canonical": "dist/index.js",
+          "first": {
+            "index": 1,
+            "member": {
+              "name": "package/./dist/index.js",
+              "type": "0",
+              "size": 5741,
+              "mode": 420,
+              "uid": 0,
+              "gid": 0,
+              "uname": "",
+              "gname": "",
+              "mtime": 499162500,
+              "pax": {},
+              "sha256": "7b322967ff011352cbba8a248db08a92f2fa5a9074329cde81e47d9644dcadad"
+            }
+          },
+          "repeat": {
+            "index": 2,
+            "member": {
+              "name": "package/dist/index.js",
+              "type": "0",
+              "size": 5741,
+              "mode": 420,
+              "uid": 0,
+              "gid": 0,
+              "uname": "",
+              "gname": "",
+              "mtime": 499162500,
+              "pax": {},
+              "sha256": "7b322967ff011352cbba8a248db08a92f2fa5a9074329cde81e47d9644dcadad"
+            }
+          }
+        }
+      ],
+      "renames": []
+    },
+    "node_modules/socks-proxy-agent": {
+      "integrity": "sha512-HehCEsotFqbPW9sJ8WVYB6UbmIMv7kUUORIF2Nncq4VQvBfNBLibW9YZR5dlYCSUhwcD628pRllm7n+E+YTzJw==",
+      "archiveSha256": "d439af91301f84eb6baf190928efaba07db399ad9e602bfd4b24ba240cffc1f6",
+      "duplicates": [
+        {
+          "canonical": "dist/index.js",
+          "first": {
+            "index": 1,
+            "member": {
+              "name": "package/./dist/index.js",
+              "type": "0",
+              "size": 6723,
+              "mode": 420,
+              "uid": 0,
+              "gid": 0,
+              "uname": "",
+              "gname": "",
+              "mtime": 499162500,
+              "pax": {},
+              "sha256": "47958f0349e5310272e1ed3b9a7e80c0369f88426b0df5e53e8049b613e89b4f"
+            }
+          },
+          "repeat": {
+            "index": 2,
+            "member": {
+              "name": "package/dist/index.js",
+              "type": "0",
+              "size": 6723,
+              "mode": 420,
+              "uid": 0,
+              "gid": 0,
+              "uname": "",
+              "gname": "",
+              "mtime": 499162500,
+              "pax": {},
+              "sha256": "47958f0349e5310272e1ed3b9a7e80c0369f88426b0df5e53e8049b613e89b4f"
+            }
+          }
+        }
+      ],
+      "renames": []
+    },
+    "node_modules/tailwindcss": {
+      "integrity": "sha512-6A2rnmW5xZMdw11LYjhcI5846rt9pbLSabY5XPxo+XWdxwZaFEn47Go4NzFiHu9sNNmr/kXivP1vStfvMaK1GQ==",
+      "archiveSha256": "ea04be1f4e7f65840e574e56b662563002b6fdac61c94c8f008adf1da4b7abca",
+      "duplicates": [],
+      "renames": [
+        {
+          "from": "stubs/.gitignore",
+          "to": "stubs/.npmignore",
+          "member": {
+            "index": 0,
+            "member": {
+              "name": "package/stubs/.gitignore",
+              "type": "0",
+              "size": 3,
+              "mode": 420,
+              "uid": 0,
+              "gid": 0,
+              "uname": "",
+              "gname": "",
+              "mtime": 499162500,
+              "pax": {},
+              "sha256": "b39decba66e79d9a8ab7a89e6e3c7942c0c92f125e9ece55c45020b877170638"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
