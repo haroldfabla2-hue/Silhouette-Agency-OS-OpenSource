@@ -1,4 +1,4 @@
-name: NEO4J ONE REAL BOOT QUERY SHUTDOWN NO PRODUCT
+name: NEO4J SEPARATE SERVICE ROLE ONE BOOT NO PRODUCT
 
 on:
   workflow_dispatch:
@@ -23,7 +23,7 @@ jobs:
         run: |
           set -euo pipefail
           test '${{ github.event_name }}' = workflow_dispatch
-          test '${{ github.ref }}' = refs/heads/preparation/neo4j-oneboot-real-20261114
+          test '${{ github.ref }}' = refs/heads/preparation/neo4j-service-boundary-20261114
           [[ "$EXPECTED_HEAD" =~ ^[0-9a-f]{40}$ ]]
           test '${{ github.sha }}' = "$EXPECTED_HEAD"
           test '${{ github.event.repository.private }}' = false
@@ -55,8 +55,8 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = '${{ github.sha }}'
-          ops="$PWD/tests/real-process/cp17-trial"
-          printf '%s  %s\n' a558a5a410e9768fc771df08664377cd4714bf2981f4912160a431cf7b7ad537 "$ops/infrastructure.sha256" | sha256sum --check
+          ops="$PWD/tests/real-process/neo4j-service-trial"
+          printf '%s  %s\n' a116a67cadd5040b6bf07a6b9ad3edaf2cc002c610c8c6164524747b97f8f1a2 "$ops/infrastructure.sha256" | sha256sum --check
           (cd "$ops" && sha256sum --check infrastructure.sha256)
           work="$RUNNER_TEMP/current-suite-work"
           python3 "$ops/prepare-integral.py" "$PWD" "$work" "$ops/integral-inputs.json" 953c7f369666c716376dfcdf32b71e0464406da75b0e1cfe5278ebbf7324869a
@@ -69,7 +69,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          control="$PWD/tests/real-process/cp17-trial/host-control-reviewed.py"
+          control="$PWD/tests/real-process/neo4j-service-trial/host-control-reviewed.py"
           run_setup() { name=$1; shift; python3 "$control" capture "$name" 240 "$@"; }
           # Read-only host identity, no shell sourcing host configuration.
           run_setup security-host python3 - <<'HOST'
@@ -99,7 +99,7 @@ jobs:
           mkdir -m 0700 "$stage"
           printf 'SECURITY_STAGE=%s\n' "$stage" >> "$GITHUB_ENV"
           printf '{"status":"UNSAFE","reason":"acquire not yet safely completed"}\n' > "$EVIDENCE/security-helpers-state.json"
-          run_setup security-chain python3 tests/real-process/cp17-trial/acquire-security-reviewed.py "$stage" "$secure/ubuntu-archive-keyring.gpg"
+          run_setup security-chain python3 tests/real-process/neo4j-service-trial/acquire-security-reviewed.py "$stage" "$secure/ubuntu-archive-keyring.gpg"
           # Namespace policy is the original AppArmor sysctl only. No staged-path profile, setuid, privileged fallback.
           key=kernel.apparmor_restrict_unprivileged_userns
           run_setup sandbox-apparmor-before sysctl -n "$key"
@@ -120,7 +120,7 @@ jobs:
           import json,pathlib,sys
           s=json.loads(pathlib.Path(sys.argv[1]).read_text());assert s['status']=='SAFE' and not s['active'] and not s['sticky_unsafe'] and not s['signals']
           SAFE
-          bash tests/real-process/cp17-trial/run-reviewed-trial.sh
+          bash tests/real-process/neo4j-service-trial/run-reviewed-trial.sh
       - name: Always cleanup only this new delegated run scope
         if: always()
         shell: bash
@@ -128,7 +128,7 @@ jobs:
           set -euo pipefail
           script=tests/real-process/wal-owner/cleanup-delegation.sh
           printf '%s  %s\n' c48fc2fd4c0920818e1f2d349a012872ea061f23067d26bd7f2a8a9206c3a35a "$script" | sha256sum --check
-          python3 tests/real-process/cp17-trial/host-control-reviewed.py cleanup cgroup-cleanup 20 bash "$script"
+          python3 tests/real-process/neo4j-service-trial/host-control-reviewed.py cleanup cgroup-cleanup 20 bash "$script"
       - name: Always remove only this trial root-owned apt scope under reserved cleanup budget
         if: always()
         shell: bash
@@ -142,7 +142,7 @@ jobs:
           fi
           if test -z "${APT_TRIAL_SCOPE:-}"; then exit 0; fi
           [[ "$APT_TRIAL_SCOPE" =~ ^/run/initial-owner-apt\.[A-Za-z0-9]{8}$ ]]
-          python3 tests/real-process/cp17-trial/host-control-reviewed.py cleanup sandbox-cleanup 20 sudo -n rm -rf --one-file-system -- "$APT_TRIAL_SCOPE"
+          python3 tests/real-process/neo4j-service-trial/host-control-reviewed.py cleanup sandbox-cleanup 20 sudo -n rm -rf --one-file-system -- "$APT_TRIAL_SCOPE"
           test ! -e "$APT_TRIAL_SCOPE"
           rm -rf -- "$RUNNER_TEMP/security-bwrap-stage"
           rm -f -- "$RUNNER_TEMP/security-key.gpg"
@@ -159,17 +159,17 @@ jobs:
           if test "$budget" -lt 7; then
             short=$((budget-1)); if test "$short" -lt 1; then short=1; fi
             printf '%s\n' 'EVIDENCE_INCOMPLETE_INSUFFICIENT_FULL_EXPORT_WINDOW'
-            timeout --signal=TERM --kill-after=1s "${short}s" python3 tests/real-process/cp17-trial/export-evidence.py "$EVIDENCE" --emergency-only || true
+            timeout --signal=TERM --kill-after=1s "${short}s" python3 tests/real-process/neo4j-service-trial/export-evidence.py "$EVIDENCE" --emergency-only || true
             exit 1
           fi
           primary=$((budget-5))
           if test "$primary" -lt 1; then primary=1; fi
-          if timeout --signal=TERM --kill-after=1s "${primary}s" python3 tests/real-process/cp17-trial/export-evidence.py "$EVIDENCE"; then
+          if timeout --signal=TERM --kill-after=1s "${primary}s" python3 tests/real-process/neo4j-service-trial/export-evidence.py "$EVIDENCE"; then
             exit 0
           else
             code=$?
             printf '%s\n' 'EVIDENCE_INCOMPLETE_PRIMARY_EXPORT_FAILED'
             # Same overall30s allocation, five seconds reserved above.
-            timeout --signal=TERM --kill-after=1s 3s python3 tests/real-process/cp17-trial/export-evidence.py "$EVIDENCE" --emergency-only || true
+            timeout --signal=TERM --kill-after=1s 3s python3 tests/real-process/neo4j-service-trial/export-evidence.py "$EVIDENCE" --emergency-only || true
             exit "$code"
           fi

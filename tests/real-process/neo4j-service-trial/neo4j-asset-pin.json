@@ -1,0 +1,2097 @@
+[
+  {
+    "path": "neo4j-community-5.26.32",
+    "bytes": 0,
+    "mode": "0o755",
+    "type": "5",
+    "link": ""
+  },
+  {
+    "path": "neo4j-community-5.26.32/plugins",
+    "bytes": 0,
+    "mode": "0o755",
+    "type": "5",
+    "link": ""
+  },
+  {
+    "path": "neo4j-community-5.26.32/plugins/README.txt",
+    "bytes": 2217,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "selected_sha256": "44ffadeb14a99af475dea24eca6049b587f0e08a07b211ea28886f38a16dc0e7",
+    "sha256": "44ffadeb14a99af475dea24eca6049b587f0e08a07b211ea28886f38a16dc0e7"
+  },
+  {
+    "path": "neo4j-community-5.26.32/NOTICE.txt",
+    "bytes": 11382,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "selected_sha256": "156a98a1042bc65573692b7a3f6a40c16dcbadc54b76da14a35a071ea666dcd0",
+    "sha256": "156a98a1042bc65573692b7a3f6a40c16dcbadc54b76da14a35a071ea666dcd0"
+  },
+  {
+    "path": "neo4j-community-5.26.32/licenses",
+    "bytes": 0,
+    "mode": "0o755",
+    "type": "5",
+    "link": ""
+  },
+  {
+    "path": "neo4j-community-5.26.32/import",
+    "bytes": 0,
+    "mode": "0o755",
+    "type": "5",
+    "link": ""
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib",
+    "bytes": 0,
+    "mode": "0o755",
+    "type": "5",
+    "link": ""
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jersey-container-servlet-core-2.46.jar",
+    "bytes": 75742,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "e9be12ee694f541f4acfe29b45b22f03568a2f28fc644f968399186590f8180b"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jline-reader-3.21.0.jar",
+    "bytes": 171621,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "670129bd110cbf9b4b99daeca38b9dbe46361bdd82470e92a9a7464a756dfba7"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/cypher-v5-antlr-parser-5.26.32.jar",
+    "bytes": 552709,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "2e0b77f9227144971847d0a926e4d90d599ed3578e6f6e4e1ad11e15ee3a54e7"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-cypher-rendering-5.26.32.jar",
+    "bytes": 55893,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "284bab0bcdaea46abab1b7afa7cf5c8c710f17a925bb5ebcc9ad0ef6e56dfdca"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/javax.annotation-api-1.3.2.jar",
+    "bytes": 26586,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "e04ba5195bcd555dc95650f7cc614d151e4bcd52d29a10b8aa2197f3ab89ab9b"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-cypher-config-5.26.32.jar",
+    "bytes": 424373,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "f0adffdb2ac9c6869532226e7d6fa952eb76b501f7510306d17b3162ef16e62d"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-cypher-planner-spi-5.26.32.jar",
+    "bytes": 198033,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "a2128be878bcf60b555ba0ba32cd3b85ce345274a2c2485073bbee7ddaee104d"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-exceptions-5.26.32.jar",
+    "bytes": 108593,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "078919130692b1493b52f3c62f91a9ffd33e95e8a0b654c238f1b57906d1e1a8"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/cypher-antlr-ast-common-5.26.32.jar",
+    "bytes": 118052,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "ddc663d00dc752859ecb5ee1dd2a029aef8c5ce592db135f484caadbe47601f5"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jackson-annotations-2.22.jar",
+    "bytes": 84211,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "21ddb598807d3a51a876704eb979d9296e1c6a6f47ab1826ff88c6d6a127a2d0"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-kernel-api-5.26.32.jar",
+    "bytes": 594665,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "85fcaeb1e2a37761e335fd48cf06011a2e85a69f58c276e44fe055585c138b3b"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jetty-ee8-security-12.1.13.jar",
+    "bytes": 82875,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "9edec53a81ca35aa5e5e56ff1f6b6c11a0869aff6877ca1948b876f5901ac061"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/ipaddress-5.5.1.jar",
+    "bytes": 927285,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "5ea45e57db0c2d624192a5046ceea41b0acaf79b768a54a14c86791bb6459270"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-slf4j-provider-5.26.32.jar",
+    "bytes": 54351,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "3b9846ee87e968be5c6e995fd2e791c5f9d62149153218b71ad9140a39d6931c"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/log4j-api-2.26.1.jar",
+    "bytes": 351428,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "f1810a4704ccce019d02bba029dc02a4f2ac0c997f647b465e7d409c1927f822"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/netty-buffer-4.1.138.Final.jar",
+    "bytes": 365379,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "5bef3ea2b9e80c5e8d03151ca1609bd75fd1e264863bf3e2f8d538392c0f2c38"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jackson-jaxrs-base-2.22.3.jar",
+    "bytes": 36398,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "d13b5b6255258e9650123042cb33d50c3faf52afe15c0a3f89b43308c2800f40"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-layout-5.26.32.jar",
+    "bytes": 56131,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "1a87b1258334ab8d7e781a1fe766ed28127c257d38cd3ef3e1d61e5c01637418"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-lucene-index-5.26.32.jar",
+    "bytes": 334008,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "97bf6c7e776ee596baaae13db44b38c14bd74662675a5a338317b8d97eb3fc14"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/netty-transport-native-kqueue-4.1.138.Final-osx-x86_64.jar",
+    "bytes": 25896,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "b23a7f138f865a8190da3c7f39942047f591d82ba0d39984e0b3a7c577f7fb2e"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-cypher-physical-planning-5.26.32.jar",
+    "bytes": 644219,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "c6d8c5b8e9b3089472c165f70c92e2a0783240605845a373c3b8d820a006e25d"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/shiro-core-3.0.0.jar",
+    "bytes": 317538,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "5bdb9235e37018ed2f40e82a4156e3ed165f974698eb04bdf0215cedb1c9d3e1"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/parquet-format-structures-1.18.1.jar",
+    "bytes": 866270,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "6613a8fd105c4f7f1578ff1f39476c30fdf485b0ac714c30444a9f70045892bb"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-bolt-connection-netty-12.0.0.jar",
+    "bytes": 327617,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "fd35f1dca3194e34554641ae70cdbc2141a6c8488e1caa56a275ea8773c1d8f9"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-procedure-api-5.26.32.jar",
+    "bytes": 47699,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "f2220d1146dcca2dfc3eb0e7da0291acb3b2a62f1bbc2405087cfa8d54ecebdd"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/scala-library-2.13.11.jar",
+    "bytes": 5966754,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "71853291f61bda32786a866533361cae474344f5b2772a379179b02112444ed3"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/antlr4-runtime-4.13.2.jar",
+    "bytes": 326307,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "dd3e8a13a2d669bf84fb8d834de35ce4875f27157698d206241ec8488aadcaf7"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-capabilities-5.26.32.jar",
+    "bytes": 55586,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "225cf1fb79849ab9791c3e2ae14f5d3cfa8425a8392c7f5683e76e741d8bc2e0"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/shiro-crypto-core-3.0.0.jar",
+    "bytes": 11562,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "98db76db1a674e345f37ffa639017a5da694c6570ad47dcc8e3731c233498d2f"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/eclipse-collections-11.1.0.jar",
+    "bytes": 10475509,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "8881749de791c28c6ccea621314a3a154cfe76ef77c30054b6e714c3dc76969d"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-ast-5.26.32.jar",
+    "bytes": 2926356,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "2ec1756b33c9385ef4ac16f77723da2db31e21e448c876e4e8ba252c5a1ad9f3"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/cypher-antlr-common-5.26.32.jar",
+    "bytes": 14149,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "5808941bd0eca4e5b79da7d957947f74a899d15084748faedccab019af078cbc"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/slf4j-api-2.0.9.jar",
+    "bytes": 64579,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "0818930dc8d7debb403204611691da58e49d42c50b6ffcfdce02dadb7c3c2b6c"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-storage-engine-util-5.26.32.jar",
+    "bytes": 209779,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "a2ed0ab1621d02374de1283c4d76fbcdda50d4ebf13b5d91f0817bf24f3b6223"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/cypher-v5-parser-listener-5.26.32.jar",
+    "bytes": 44577,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "4a68dc5368fd95c1e45df7127600b69c36848e56a7e8f3e6399c8924151acefe"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jetty-session-12.1.13.jar",
+    "bytes": 118666,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "30ebd5d63895f97aad0d626a567b40552d4c2bd9978adedc46e7a23b4652f595"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-graph-algo-5.26.32.jar",
+    "bytes": 175777,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "2c4547b07dcef6ca5873ff720cc1050674b87f143a476a99c98e0c4d8dc183f6"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-gql-status-5.26.32.jar",
+    "bytes": 143737,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "7608b8f45b15d6c1e2eaf9f9743a35ac872196f5731f4787dc40124ab8a7a291"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-util-5.26.32.jar",
+    "bytes": 1020286,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "1ad63f77e460f02079d7d7dcd722aaef18f85ba8c65be7dcdbc91500565828ac"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jctools-core-4.0.5.jar",
+    "bytes": 493530,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "d65e5f38bcd0984e26f87187687f1f70dd52740c4d5e046f8d104e01ab5db95f"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jPowerShell-3.0.jar",
+    "bytes": 19289,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "706451f6a1ff22cf477957bb280593d81d1a975263c3ff2ba1bab15b749a6168"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jetty-io-12.1.13.jar",
+    "bytes": 386926,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "946338a5db4e906ba0698dcdae350394736062cf915b5f16ebf787bcee7fffae"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/cypher-v25-antlr-parser-5.26.32.jar",
+    "bytes": 540716,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "4ee2e392e1ed6349347948a5828ab0b40007bb8889363680bb5583cf620b2713"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/netty-tcnative",
+    "bytes": 0,
+    "mode": "0o755",
+    "type": "5",
+    "link": ""
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/netty-tcnative/netty-tcnative-2.0.84.Final-osx-aarch_64.jar",
+    "bytes": 42724,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "0c90092d7b76df608bf4cfae9e2af1f61741544b0e13e660fd58541dc67fbdcf"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/netty-tcnative/netty-tcnative-2.0.84.Final-osx-x86_64.jar",
+    "bytes": 43080,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "c84e545248679753f90bc05a5fcc011f70ef1034b4aceb20280d9859be4bd5ae"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/netty-tcnative/netty-tcnative-2.0.84.Final-linux-x86_64-fedora.jar",
+    "bytes": 58800,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "a39f8b748cdfaacf8be9efb9d5a172283ead6ab57b185cd1dd6686ebe186a2d3"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/netty-tcnative/netty-tcnative-2.0.84.Final-linux-x86_64.jar",
+    "bytes": 60200,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "e19cb1590564b2e551b18cc97021dab8ec996feec578c591eba45a6f836f5663"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/hadoop-common-3.5.0.jar",
+    "bytes": 4862416,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "dad07af66b59454e71b046a2fce0c0fddb9c522eadd146075e6add82aad86ce6"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-import-tool-5.26.32.jar",
+    "bytes": 124578,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "c52aad8ea07e2f19e5c4ef503df143d994c73e7cf3b9fd7767e0104fab7db596"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/shiro-event-3.0.0.jar",
+    "bytes": 20723,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "0fb3291d0300b34806a9fba55970781b32fa44cab7ba0c8a88659647d383ae31"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/parquet-common-1.18.1.jar",
+    "bytes": 131243,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "a8c710f2d0ddb4b1332e596cd91f74305b66ae1d7235c798a8b48ddbfb9d31d6"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-cypher-5.26.32.jar",
+    "bytes": 1820319,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "5676c5ae42ea31dedbdb61c2618c72921804eb9656e62e469f00deb64a96f178"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-import-util-5.26.32.jar",
+    "bytes": 514403,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "8d9cc7626722486303e1e4a481f1b69a4b4f30be7f0d2f34b3fdadc63913d7b1"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-cypher-logical-plans-5.26.32.jar",
+    "bytes": 2111772,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "074ce55ec033a219365a857b11905287fb96245d9d4bd1a0375c6794f44f08bc"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-security-5.26.32.jar",
+    "bytes": 124174,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "0dc409cbeb436788d116b2cbb516fa8b54d3cf063add9e46d805c74f50a224bd"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jetty-alpn-server-12.1.13.jar",
+    "bytes": 8392,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "e282181358dcb5a4872c9363c926c856564c94e5432a91e67e1b2ae309c7d50a"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/kiama_2.13-2.5.1.jar",
+    "bytes": 556697,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "3aeb92f378ca8a22a40825a93150ee7b81ae8a48456dbe69f1cd0cecd7f67843"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-dbms-5.26.32.jar",
+    "bytes": 320714,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "44d8fc0ea12e28f9762c0eec215384f3db56165d735296176e976343de30b668"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jersey-container-servlet-2.46.jar",
+    "bytes": 32929,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "1953e27fa86b95ebc16caa393ce0c3ba3e7c445f2b2793ad5c4bc7d4c0f63a46"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/FastInfoset-1.2.16.jar",
+    "bytes": 317195,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "056f3a1e144409f21ed16afc26805f58e9a21f3fce1543c42d400719d250c511"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-server-5.26.32.jar",
+    "bytes": 515943,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "57ab9f8b2b9b499bb8560a870a7046a163f926e0dfa559d4ada1a0f5f1269862"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jts-core-1.20.0.jar",
+    "bytes": 1239978,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "6a783d8f9dba3d3cf7265435f134402f63c05838aa6cbcc4297ad3a5b2842baf"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-wal-5.26.32.jar",
+    "bytes": 194308,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "be665080d8402b01ae86fd6a75fe55793e5af7017e037f9a1beb0c611e7e1a20"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jetty-alpn-java-server-12.1.13.jar",
+    "bytes": 7228,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "746df9c84a60d865d33d90fe69b8f09c010a2b55f1979147357a90172ec1e07f"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-cloud-5.26.32.jar",
+    "bytes": 103928,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "7f7f5dbe240339eb32ca317ab9ad9b620c015356837536ff7d25d80280cb4cbe"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-bolt-5.26.32.jar",
+    "bytes": 647736,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "192da9f12bf4ccfb1fdd19f07b90cdf47f202465e734d11bdf7053e7f0048e0c"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-kernel-5.26.32.jar",
+    "bytes": 2463994,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "c8f1578d4e78397b6898f36a4dd760aca513fe42b0c8092a3d2ff0eb663cea67"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jakarta.inject-2.6.1.jar",
+    "bytes": 18140,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "5e88c123b3e41bca788b2683118867d9b6dec714247ea91c588aed46a36ee24f"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-cypher-macros-5.26.32.jar",
+    "bytes": 29038,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "94662a56076c80ecd77092acdee400b2119c144fa3c8f557159be7487eb638b3"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/scala-collection-contrib_2.13-0.3.0.jar",
+    "bytes": 226927,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "76266adbf15946d7495bf00b3db92c59c462b3e30f087a596cec7739749311ca"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/snappy-java-1.1.10.8.jar",
+    "bytes": 2445419,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "50485d06037fea3d6e40c968386feeca6338cc9872e25549593ff3eb352cefcc"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-id-generator-5.26.32.jar",
+    "bytes": 185681,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "0aeabcfde173ea724c57354b1813a390151bde7bad25e68a85c504cbdaf6916b"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/shiro-crypto-hash-3.0.0.jar",
+    "bytes": 46496,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "6267003124f882fd28f6e457e59f326bfae135c61f8f10656b1a74da61b7f26b"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-command-line-5.26.32.jar",
+    "bytes": 82853,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "f261aef277292c49a05ebe7d7c08631fc700140c5af170e9925382e255016705"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/commons-text-1.12.0.jar",
+    "bytes": 251227,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "de023257ff166044a56bd1aa9124e843cd05dac5806cc705a9311f3556d5a15f"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-record-storage-engine-5.26.32.jar",
+    "bytes": 1299825,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "bf31d73eb9af24494886ee7362608f9551c88fad3ee217fa294af1fea7fbd420"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/shiro-crypto-cipher-3.0.0.jar",
+    "bytes": 25978,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "3d74c414982ebb941e0e5857f4a6c3e14d7dcf52a5b7d577491163b4d5b99cf7"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-cypher-cache-5.26.32.jar",
+    "bytes": 111471,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "f47a7865c9f8a9ba284370185154ab3403a31c98a249e9be9726657d1c972091"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/cypher-ast-factory-5.26.32.jar",
+    "bytes": 29166,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "d5b3c544558f8922063df1cf89a6c23251f91a50d9b2f485692fc63bb4c1b452"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jetty-server-12.1.13.jar",
+    "bytes": 705631,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "978265f1ac637c504b537f5d56e07d4a47e7c4bb0752d9dd66b79f5be754abfa"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jetty-xml-12.1.13.jar",
+    "bytes": 88042,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "ccf30ddde0326b9691818a3f797a1fc443a0633bf1b04989ed2387b7574f1e01"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/commons-configuration2-2.15.1.jar",
+    "bytes": 689129,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "61ba5eaab8a17087042fe3d6811573bb85ccbdd6bd9d21ad464e6e20559dd1e8"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-fabric-5.26.32.jar",
+    "bytes": 659212,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "bc12661cf6d3f755d283fe2c6361f1ffa1b033a3e4f0aeedc11e2ab77c807401"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-io-5.26.32.jar",
+    "bytes": 335814,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "5312925473ffbf535c56ad46b029ca40a3bb0a457653584a588c269ed1d6844d"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-values-5.26.32.jar",
+    "bytes": 509623,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "66f92652b3f74b413de2d3273fb2c8ecc0913cf59506485128d51f336342772d"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/netty-codec-http-4.1.138.Final.jar",
+    "bytes": 694763,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "7d9000e53c8e37504be42b8dd7b646a7d1c73ad2cf801527fe3c6301880fe06f"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jaxb-runtime-2.3.2.jar",
+    "bytes": 1013367,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "e6e0a1e89fb6ff786279e6a0082d5cef52dc2ebe67053d041800737652b4fd1b"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/stax-ex-1.8.1.jar",
+    "bytes": 38099,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "20522549056e9e50aa35ef0b445a2e47a53d06be0b0a9467d704e2483ffb049a"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jakarta.ws.rs-api-2.1.6.jar",
+    "bytes": 140376,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "4cea299c846c8a6e6470cbfc2f7c391bc29b9caa2f9264ac1064ba91691f4adf"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/WMI4Java-1.6.3.jar",
+    "bytes": 54620,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "7b9955ac56dcef6731961588f037b56d3e27f36222a3ec4ead2cd315059eea72"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-csv-5.26.32.jar",
+    "bytes": 138609,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "3c531347aa934336707925988a56665a8611fe4e27750c4c74de2f0f3bf98983"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/cypher-v5-ast-factory-5.26.32.jar",
+    "bytes": 270922,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "288f5d7283624943acdd2ab466b07bdaff7b370298ce204f182cb99b29b3d035"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-common-5.26.32.jar",
+    "bytes": 334588,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "b8ee265e92d47177f7199f57f05367a5312312ca4e55d08d5ecde918817f3e84"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/parquet-hadoop-1.18.1.jar",
+    "bytes": 1655031,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "efbf7b0374a14f075afbad53632fb6ed76d39239ce39d970f581f3512d00ee0b"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/lucene-queryparser-9.11.1.jar",
+    "bytes": 421480,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "63e3f7d0cd7a08975d0cba31d2898de7fa00dc9f3677e37820f4413824538898"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/log4j-layout-template-json-2.26.1.jar",
+    "bytes": 231112,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "91783f86db7f17700e4c4b4c2a1ea14132485d4faee91a11ff62fb6320eb26f7"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/lucene-backward-codecs-9.11.1.jar",
+    "bytes": 700199,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "d542520817bc9e30b4ece418b36696cfa913425ba6ccdabcb1b5250c08316556"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-cypher-runtime-util-5.26.32.jar",
+    "bytes": 1156811,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "9e9aa667d8d4590fc17effbc5dccee470ee4e57e52060c22d98e4c59676f3ef2"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-fulltext-index-5.26.32.jar",
+    "bytes": 140335,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "685635f4f6ed8bca2b1875f928b7744c6d3b9834a9a2cec353e5f1bcb3a6973d"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/netty-resolver-4.1.138.Final.jar",
+    "bytes": 37904,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "50c338a0e5c9997513e738f0fcb47d579a9e8852d317ba367f5d141e210187c0"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-rewriting-5.26.32.jar",
+    "bytes": 855554,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "4884576a5b128537d9a8e896a115b683dac04b3355a9f7ea2f5c0266e2e8a9ca"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-unsafe-5.26.32.jar",
+    "bytes": 63195,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "4844bfe6771836caef3782c3bed1862527226c0e59a50dc58181c090812f1cc0"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/log4j-core-2.26.1.jar",
+    "bytes": 2015459,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "2ec8c3bf5a6d7c89be8620116a2fc973f7dda1ad0261ad393c4d4726edfd3dcb"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/hk2-utils-2.6.1.jar",
+    "bytes": 131590,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "30727f79086452fdefdab08451d982c2082aa239d9f75cdeb1ba271e3c887036"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-cypher-ir-5.26.32.jar",
+    "bytes": 829645,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "fd0ffe5541638862742ce4ce910111a8ea3438445eecb510e0beb980147c9a21"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jansi-2.4.0.jar",
+    "bytes": 221009,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "6cd91991323dd7b2fb28ca93d7ac12af5a86a2f53279e2b35827b30313fd0b9f"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-data-collector-5.26.32.jar",
+    "bytes": 141862,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "071438143d30d91ff9a971a95c6b02c808997992a74c3e4cca3c4fe30bc138d8"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jersey-client-2.46.jar",
+    "bytes": 311826,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "97318a81535314bf9a3ef7ed92ccdd62d42000971fea74807f3668afc95aa694"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-consistency-check-5.26.32.jar",
+    "bytes": 77883,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "72cf6754a5c8ca961431fd4b7f2aac1dc7109ed48df8a292ca33c9fa63966ae3"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/scala-reflect-2.13.11.jar",
+    "bytes": 3760106,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "6a46ed9b333857e8b5ea668bb254ed8e47dacd1116bf53ade9467aa4ae8f1818"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/netty-common-4.1.138.Final.jar",
+    "bytes": 740310,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "b4ebb8fa44cd5790731928a83fd0f25a530e41c407c093bef4a0196db30b693f"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jetty-util-12.1.13.jar",
+    "bytes": 731436,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "3e408e60fe71a337979004fc4e47bfd3c08a931cf33b46b6a5dc4dbdd088c2fd"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jakarta.activation-api-1.2.2.jar",
+    "bytes": 46613,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "a187a939103aef5849a7af84bd7e27be2d120c410af291437375ffe061f4f09d"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jetty-ee8-nested-12.1.13.jar",
+    "bytes": 438807,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "8b8f01f07ea260336a1b1be4f1fc395f1583e3c9375cce0bfd89ac05502a0661"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-cypher-ast-factory-5.26.32.jar",
+    "bytes": 134624,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "d63b4894e1410e7a31dd65f6a3f771758b38bf8bbcc50a272817ea84fbc28794"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jakarta.annotation-api-1.3.5.jar",
+    "bytes": 25058,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "85fb03fc054cdf4efca8efd9b6712bbb418e1ab98241c4539c8585bbc23e1b8a"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-graphdb-api-5.26.32.jar",
+    "bytes": 240545,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "976242b0a36d017be30c2c685b0774cefcae762bb125ea3342741cf484f7a185"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jline-terminal-jansi-3.21.0.jar",
+    "bytes": 39477,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "dc7a0b2f1577623048c514615ca14dd81e3220fc97ff1ea44b7d230ad830beec"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jackson-core-2.22.3.jar",
+    "bytes": 594776,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "8a501126a385b25841915d839508f8a66e2a0dbc8a6709d055ef3b3e852b094c"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/parquet-jackson-1.18.1.jar",
+    "bytes": 2437060,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "1914fed4ed18999ce98ad844aa5d0b09f31027be329ffd82d861d6f7c6f097c7"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-native-5.26.32.jar",
+    "bytes": 41571,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "ef1a7d3bf89ded33cec20c4007d84545309c21e91cedd3d6721c5005fd1cb8cd"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jersey-hk2-2.46.jar",
+    "bytes": 80272,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "1f5973286b514d758ea1b447aaf844c1cab0d50b77509d123f2bc8fd6db23886"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/cypher-shell-5.26.32.jar",
+    "bytes": 600499,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "617d2ee74f70e71b4263a164d7342160d95a25ab7ff5c39def0f5b28688b2082"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-index-5.26.32.jar",
+    "bytes": 373170,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "b0e74fc9b26a1a5e86a64fdd6a444c8a413bd4a8e74ad4aeafce317dcb48c22f"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/reactor-core-3.7.12.jar",
+    "bytes": 1897776,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "474f94cabe5fda8877147521f37c791c95ef6b4a9dd59e589a6ddcc21b0d8e39"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jackson-databind-2.22.3.jar",
+    "bytes": 1709604,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "556db5439e206114346043f68d200497dc96a0bca62a360a81784092ebd0e0a9"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/javassist-3.30.2-GA.jar",
+    "bytes": 794714,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "eba37290994b5e4868f3af98ff113f6244a6b099385d9ad46881307d3cb01aaf"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/netty-handler-4.1.138.Final.jar",
+    "bytes": 588803,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "a79fb814e029db17da82baea25a0340172af2c59f107fd20b394c1fa28680f21"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/netty-transport-classes-epoll-4.1.138.Final.jar",
+    "bytes": 147750,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "a3caf181f3af1665a7cd8b5d409ffe425308da49bf9297482df3942411a7707c"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-bolt-connection-pooled-12.0.0.jar",
+    "bytes": 27323,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "590b54a551b3158bfed1831995b8df4064c352d179b67c2653e129bb6ebfea40"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/netty-tcnative-classes-2.0.84.Final.jar",
+    "bytes": 37308,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "7a4437abf98b0cec053af4443fe321177d2cfccfec7bcad4e7d8b75571bbec4d"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-cypher-expression-evaluator-5.26.32.jar",
+    "bytes": 107859,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "7284fa8300782e8a8ecf78050ecd9c49366e6b9fa47c8fb87ba82d73c8ebe44e"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jline-terminal-3.21.0.jar",
+    "bytes": 228777,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "3a05a1602f9d51428908879350f2cf5be87fcefced2f56c6e88d9d76f41a73fe"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/lucene-analysis-common-9.11.1.jar",
+    "bytes": 1723718,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "8dfda34e75bc53906a611bae1b5870b38fd5aa3779a390565da40aa71e98d5d9"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-query-router-5.26.32.jar",
+    "bytes": 180345,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "0d1a4ac291a068e2b1ee13bfbc995f5651c80de11ac28d050ae91c50279f4881"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/netty-transport-native-kqueue-4.1.138.Final-osx-aarch_64.jar",
+    "bytes": 26636,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "406a243cafe930389bc73dc316aa72a1adb6127bc479e3416f3fc0296bc3158d"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jaxb-api-2.2.12.jar",
+    "bytes": 102480,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "68a621ec18485f951d09ac76f43e57eee394dbe42cb8f2a4c59c93296fa9dcc6"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/zstd-jni-1.5.6-6.jar",
+    "bytes": 7325504,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "1f85db623bf653860d10e13e7b1ca6609301f66994dc93784c92a66019516bb9"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/annotations-5.26.32.jar",
+    "bytes": 64036,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "40426286ca5682547f69d80cd2a9314fa4ebbbd5e3030ce019fe512bfd0f2ea2"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-bolt-connection-routed-12.0.0.jar",
+    "bytes": 64345,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "34af2a8aea3998848806d12848868eb1b35a7292e82b24adcdcc2b8be24f179a"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/cypher-parser-ast-common-5.26.32.jar",
+    "bytes": 20536,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "6eb66d6addb0a247015c998e5911a59f6792790a7aa9335c413a84dbf2ef11db"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/netty-transport-native-unix-common-4.1.138.Final.jar",
+    "bytes": 44328,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "8d1ada8f185d6f6da4cd79f9daeef39f1db49908cfec8bc2a1fb602458aa2341"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-procedure-5.26.32.jar",
+    "bytes": 353127,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "6447c583a9513e1a101a18b4cf5c532755fca76426ab9bd3d231c7efa2b76ee6"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-ssl-5.26.32.jar",
+    "bytes": 77701,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "97447a9084382f88faddcc5c77bfc005207407375baf6464d32ea9db4fcbf4a7"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-spatial-index-5.26.32.jar",
+    "bytes": 57503,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "e682f18957210d4398ab1c5125098582a78e262568e4b8e2190a9825cb1b14a7"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-concurrent-5.26.32.jar",
+    "bytes": 66596,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "0f079f64916360cb048b45aee94d7c079a2de66d7386597d3decf2f3aba21fc8"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-schema-5.26.32.jar",
+    "bytes": 216776,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "ae577b0c6d736ebc417242819bd997ed68dd3a958e70f5945dacf89e98d1ccb1"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/commons-io-2.17.0.jar",
+    "bytes": 515978,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "4aa4ca48f3dfd30b78220b7881d8cb93eac4093ec94361b6befa9487998a550b"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/reactive-streams-1.0.4.jar",
+    "bytes": 11640,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "f75ca597789b3dac58f61857b9ac2e1034a68fa672db35055a8fb4509e325f28"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jersey-common-2.46.jar",
+    "bytes": 1267957,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "a2e2aae5e63c4bb55f47508702ebecc3598802e758de75d92c7bda985bc6415f"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/magnolia_2.13-1.1.8.jar",
+    "bytes": 215308,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "3b1c926023175290e04078ee881f0d01a394bb4dad1569e2bed132e613d36395"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/shiro-cache-3.0.0.jar",
+    "bytes": 14494,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "00ef759562842c5bb1c2a373104084c2121bd9ec6bfdb87fd8721f8b0e298684"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/cypher-v25-parser-listener-5.26.32.jar",
+    "bytes": 43616,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "b0d3421d38ce4f14f8fe77dccdcf268ce4dd9f1278e053bde151ae5f99dc0587"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-5.26.32.jar",
+    "bytes": 317307,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "9fcf80d5713d519384ae5be983bf97fa71d80845398f2609f9eb29d0407c8d62"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/netty-transport-4.1.138.Final.jar",
+    "bytes": 522089,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "6c064c1cae4d410b920abfc07959a49db1b4778a9547614373e97d31cab0cad6"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/parquet-floor-1.62.jar",
+    "bytes": 40452,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "fcb153c9778fb5547ebf61b5014d45663538b87cd1f76999a933c15a7909944b"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jetty-ee8-webapp-12.1.13.jar",
+    "bytes": 125197,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "9c35ad71f60b943b7259862f0f7ecbb0a119c4d6404d911fcde488b2be095b9c"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jersey-server-2.46.jar",
+    "bytes": 964550,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "4e79f6cac34a675798e4626c2517dcc6179dd84ff2ed9165ddec7b8b113256e3"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-cypher-interpreted-runtime-5.26.32.jar",
+    "bytes": 3547030,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "04c1b6f8789ae70fc9a0977986285a5d55c0832d866597d1bb787e7d50438363"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jetty-http2-common-12.1.13.jar",
+    "bytes": 224428,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "611bcccb69ec472af076f356667a53d75e75a61a4c213d15928a65e4342d452e"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-udc-5.26.32.jar",
+    "bytes": 57161,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "6cb8b42b78989f23a5805ed8ec3fd34e5b70b08cefab6f78eaf2d3b9397ac2eb"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jakarta.xml.bind-api-2.3.2.jar",
+    "bytes": 115498,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "69156304079bdeed9fc0ae3b39389f19b3cc4ba4443bc80508995394ead742ea"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-token-api-5.26.32.jar",
+    "bytes": 60714,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "f652674d47fed065038583ff33bc2b28380254c6d16ee00e8e4709e87501ba28"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-diagnostics-5.26.32.jar",
+    "bytes": 39248,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "e0fabf2dbd4d5d8fcbeddec47c1cf9a71e984302ca28e2772194d4d0a0526574"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/cypher-v25-ast-factory-5.26.32.jar",
+    "bytes": 261177,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "566709a1181b612ee3ca1e84c507e3f1dafa4c2c94e7bdd67923d1d45614396b"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/argparse4j-0.9.0.jar",
+    "bytes": 121908,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "9eb3b54043038bc111bf0e15a8f69895244f92e3c2bc2800158578ca711f6117"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/netty-transport-classes-kqueue-4.1.138.Final.jar",
+    "bytes": 112738,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "7ce582c50ea47249ceb67bf36f21e403733c6c27b589dcc7e2da479f490c1b07"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-monitoring-5.26.32.jar",
+    "bytes": 53070,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "7386239d07152aa8d1e092dd8a9764e8054b74ccee4311f6f3acd5423e1da2aa"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jetty-http-12.1.13.jar",
+    "bytes": 480370,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "3bb84bfdd0992453986a8f7422dbf55cf779a0a780ff8a68041bb6119fb997fd"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/server-api-5.26.32.jar",
+    "bytes": 99401,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "1068cc2dc818792d1b92e40fb197ceda2682a79b765450b47d5f06df5ae67258"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-bootcheck-5.26.32.jar",
+    "bytes": 61415,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "2557d83d4600014284f30e073414c63feb8b9bbc2535729c96e173a9a6182bf2"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-cypher-slotted-runtime-5.26.32.jar",
+    "bytes": 1698851,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "c4fc6003bb3ba9e90a3460dc18dd1725ba56f2006223bf5d3cb5f4997c6162b7"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jackson-module-jaxb-annotations-2.22.3.jar",
+    "bytes": 37021,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "cdf7277e57e6aeb8414acdc1ca2b5de61e158db9c96d2a55f6f02285b87dda85"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/picocli-4.7.6.jar",
+    "bytes": 415723,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "ed441183f309b93f104ca9e071e314a4062a893184e18a3c7ad72ec9cba12ba0"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-configuration-5.26.32.jar",
+    "bytes": 296568,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "f7b4faa1adea06363367e56463316c0e876499917246a40c285edfc286d25849"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-push-to-cloud-5.26.32.jar",
+    "bytes": 100187,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "3c7f75104c81f40825f84208b4d88b19d482602744a3e8bd7ce8a9d1a193495a"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/zstd-proxy-5.26.32.jar",
+    "bytes": 3761,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "2a871145916a3c7889f2333db900b48462e38868119bbb8da0f2066aae8579dc"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/netty-transport-native-epoll-4.1.138.Final-linux-aarch_64.jar",
+    "bytes": 42886,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "e641ec92dc991fe16d57891bd50054958459768c2dd80fd195daa3f318fe64cf"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jProcesses-1.6.5.jar",
+    "bytes": 24947,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "57f61d01102f0e88e87c4a3cae6ccea3e5b390a38aeb3abd2ed20b06f25466ea"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/istack-commons-runtime-3.0.8.jar",
+    "bytes": 27156,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "4ffabb06be454a05e4398e20c77fa2b6308d4b88dfbef7ca30a76b5b7d5505ef"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-bolt-connection-12.0.0.jar",
+    "bytes": 101822,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "0764393f7c7bb38dbdede6e8d9ba3183be9d045f90fc61d5c9704813c39f3dbf"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/parquet-encoding-1.18.1.jar",
+    "bytes": 835487,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "a9414b00d8a4658933476aab8a7a64c51ad669fd7b752cbe5809bcd0e29e2c00"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/eclipse-collections-api-11.1.0.jar",
+    "bytes": 1789461,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "1b8608ecf4e681f031c29a28c403f71476fe5df3a8f0c0dd8c7ad33b91984212"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/commons-logging-1.3.4.jar",
+    "bytes": 73721,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "bc2dfe32f1ef06509e6a065144c1adf7b420eabf11a87f30bd127f8faa332016"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/txw2-2.3.2.jar",
+    "bytes": 72080,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "4a6a9f483388d461b81aa9a28c685b8b74c0597993bf1884b04eddbca95f48fe"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jetty-http2-server-12.1.13.jar",
+    "bytes": 50327,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "608f849b824d8f8ee0c34a704651157fe793ab73f7d793d86dbd84c04e1d79f2"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/hk2-locator-2.6.1.jar",
+    "bytes": 203358,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "febc668deb9f2000c76bd4918d8086c0a4c74d07bd0c60486b72c6bd38b62874"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-expressions-5.26.32.jar",
+    "bytes": 1540897,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "0b064f2f31e023da69e3107789b27eb27323af61ce450137fd6d43d5118267b7"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jakarta.validation-api-2.0.2.jar",
+    "bytes": 91930,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "b42d42428f3d922c892a909fa043287d577c0c5b165ad9b7d568cebf87fc9ea4"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/caffeine-3.1.8.jar",
+    "bytes": 889211,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "7dd15f9df1be238ffaa367ce6f556737a88031de4294dad18eef57c474ddf1d3"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-resource-5.26.32.jar",
+    "bytes": 40786,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "97ab6e2d15a1f62875b7c23891d8cf970cf06241b77b60f0ab82587386b76aeb"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-java-driver-5.28.15.jar",
+    "bytes": 592081,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "be890bbb403e23e4a93c370e7c8658fe4e70e05f8d399677f922d31980aad1cd"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jetty-ee8-servlet-12.1.13.jar",
+    "bytes": 145941,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "084695e621ad2204744e13f66a7dfc3187a38ada535a3ddf1f609dbf3cb214a0"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-notifications-5.26.32.jar",
+    "bytes": 150527,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "e85c86ae8261a414d80e97f27039f4c1e0a97675de106af8021b11e1d8092a90"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jettison-1.5.4.jar",
+    "bytes": 90184,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "fc3a68a7c17688ee50817340fef265d8d3f6c192c92bbee00d17f18a6d3dfeda"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-cypher-dsl-2024.2.0.jar",
+    "bytes": 558478,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "0b6acff7935fee25ae4c20ad708713f2da81dd0229b0c0eb89fef7373d264bfa"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-lock-5.26.32.jar",
+    "bytes": 101860,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "a53e2ed254416e1834dcc112f1b7125754ed4539fc6aea0d2a4600b13239ea85"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/commons-compress-1.27.1.jar",
+    "bytes": 1087319,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "293d80f54b536b74095dcd7ea3cf0a29bbfc3402519281332495f4420d370d16"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/netty-codec-4.1.138.Final.jar",
+    "bytes": 360280,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "21b9b7717da9ed7034c7a9ef4fcea4a08825e8f52d775da4d898364edf99327f"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-logging-5.26.32.jar",
+    "bytes": 121608,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "c2c4a9b6c17ee304d0303278ddc9d5dae765c71e50e3fb639b7e3dedec045040"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/lucene-core-9.11.1.jar",
+    "bytes": 4218654,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "cb7a9b121bce4ce054ab690ab43ac13ee11ae516d6cef67650130066beee7c9b"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-front-end-5.26.32.jar",
+    "bytes": 699442,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "ee76a4230bc1fd1d839e168073d21b470b9c11f101361036166b4751c2ddd610"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jna-5.15.0.jar",
+    "bytes": 2001532,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "a564158d28ab5127fc6a958028ed54279fe0999662c46425b6a3b09a2a52094d"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jackson-jaxrs-json-provider-2.22.3.jar",
+    "bytes": 16610,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "96108c66309b42f618c07237f62e8c9a1555871dd7494c4c3eb9f0b41a761aae"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/hk2-api-2.6.1.jar",
+    "bytes": 200223,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "c2cb80a01e58440ae57d5ee59af4d4d94e5180e04aff112b0cb611c07d61e773"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/commons-lang3-3.18.0.jar",
+    "bytes": 702952,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "4eeeae8d20c078abb64b015ec158add383ac581571cddc45c68f0c9ae0230720"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-collections-5.26.32.jar",
+    "bytes": 262612,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "a5ca5661866b81dba022e1cf776a196c31ff02b7bcee8372677650c529b97046"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-cypher-planner-5.26.32.jar",
+    "bytes": 3792148,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "941b2fed34ce3dd7ee0f31555d7518834273e117f40c2b55635c7a76c95deada"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jetty-security-12.1.13.jar",
+    "bytes": 169852,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "64b15214158097af40db345a31bb71cfe0d4a6c7c19cb59cd4c0a97245999ee8"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-cypher-javacc-parser-5.26.32.jar",
+    "bytes": 269984,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "045241ce2403bf67b70a8a3716f2f684d0e3c3407bd9c6de485bef3597f5437d"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jetty-servlet-api-4.0.9.jar",
+    "bytes": 314446,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "89916c0360ad8be8b0b6bab41d9f0d5d03b742abb5e13aeeac06817c14fdf037"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/parquet-column-1.18.1.jar",
+    "bytes": 3265116,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "2bfc18fbf3fe8e971780a080e46f6d6cb3e69695ad3a746bd11d46ea8fd90171"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-codegen-5.26.32.jar",
+    "bytes": 966244,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "0a0f80e01d5bcd053ea393fdad26f49fd329e8a79e45074ecaa51f41ed50b7ea"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/netty-transport-native-epoll-4.1.138.Final-linux-x86_64.jar",
+    "bytes": 41505,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "64550d1a5cbbb2e90f7c4aee91b53346862382ab6e579d081fbbf45e9038acfa"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jetty-http2-hpack-12.1.13.jar",
+    "bytes": 39243,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "d96a2e7c902a33206b3181d5e5c10855367f5305a45c5bcf7bb7c52959638350"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/neo4j-import-api-5.26.32.jar",
+    "bytes": 70122,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "34019a5827ebd6be2d9b2c04603ec6ec6a0f52a26a65a8d21376f72b410aab75"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/shiro-lang-3.0.0.jar",
+    "bytes": 55798,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "b0df11cf377da6e56608e59c777f239222c08102bc5f6ceb0ac66b85de7d91e0"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/cypher-v5-literal-interpreter-5.26.32.jar",
+    "bytes": 48920,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "0f462b9f34bbec76cb8c6d4112bf3807001e745e21bdff4a36b79fbc74340412"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/shiro-config-core-3.0.0.jar",
+    "bytes": 18574,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "dba0ed07bb36a315c5e0e18ad512de595d865670aa95dca82381908a66f5857f"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/jetty-ee-webapp-12.1.13.jar",
+    "bytes": 16967,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "15c82c0ecd1be08ef776a06bf138f5351c2554d84fd02bd72aa1d0dc88c10a0e"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/commons-codec-1.17.1.jar",
+    "bytes": 372687,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "f9f6cb103f2ddc3c99a9d80ada2ae7bf0685111fd6bffccb72033d1da4e6ff23"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/cypher-parser-factory-5.26.32.jar",
+    "bytes": 25656,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "a4053f3a0f8749d24b2739f112e9f6667228296ba88b7a48ca1f271fe241f6b3"
+  },
+  {
+    "path": "neo4j-community-5.26.32/lib/cypher-parser-common-5.26.32.jar",
+    "bytes": 48198,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "8f15ebc2db57b912e5230187dbf50b9e4057cdb8dd9a23cef1c41a4c6c5908e8"
+  },
+  {
+    "path": "neo4j-community-5.26.32/run",
+    "bytes": 0,
+    "mode": "0o755",
+    "type": "5",
+    "link": ""
+  },
+  {
+    "path": "neo4j-community-5.26.32/web",
+    "bytes": 0,
+    "mode": "0o755",
+    "type": "5",
+    "link": ""
+  },
+  {
+    "path": "neo4j-community-5.26.32/web/neo4j-browser-2026.10.08+0.zip",
+    "bytes": 30960233,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "80ef0bc8d709eb1d0e37cc9c99b54a182f6dd6619f85dccf4f72f87cfd1d1906"
+  },
+  {
+    "path": "neo4j-community-5.26.32/conf",
+    "bytes": 0,
+    "mode": "0o755",
+    "type": "5",
+    "link": ""
+  },
+  {
+    "path": "neo4j-community-5.26.32/conf/neo4j-admin.conf",
+    "bytes": 4129,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "a7dbacd92ae405c63b201072daffd9d00551d5bcb3d74328f978c59850f04c8d"
+  },
+  {
+    "path": "neo4j-community-5.26.32/conf/server-logs.xml",
+    "bytes": 4359,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "935f9a02b965c08d7e5069bfef6c3b4ca29b20ea5ac6dab3317a3f05e7043be1"
+  },
+  {
+    "path": "neo4j-community-5.26.32/conf/user-logs.xml",
+    "bytes": 2299,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "67d3911d9acae3c42223669968501f89160dc863f7cdd536768d40a4a2ce5194"
+  },
+  {
+    "path": "neo4j-community-5.26.32/conf/neo4j.conf",
+    "bytes": 16065,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "selected_sha256": "5fefd0e7480aeeb17d3ef787282af010b513051fb605111d38414690da5f05bc",
+    "sha256": "5fefd0e7480aeeb17d3ef787282af010b513051fb605111d38414690da5f05bc"
+  },
+  {
+    "path": "neo4j-community-5.26.32/certificates",
+    "bytes": 0,
+    "mode": "0o755",
+    "type": "5",
+    "link": ""
+  },
+  {
+    "path": "neo4j-community-5.26.32/labs",
+    "bytes": 0,
+    "mode": "0o755",
+    "type": "5",
+    "link": ""
+  },
+  {
+    "path": "neo4j-community-5.26.32/labs/apoc-5.26.32-core.jar",
+    "bytes": 3077005,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "ea6f46b541c473ab79fff4359524027a462d031f21048b8a8acbceb4fa46a92f"
+  },
+  {
+    "path": "neo4j-community-5.26.32/labs/LICENSE",
+    "bytes": 11330,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "selected_sha256": "5549f4c9cb9ec67e7cd9bfc6dad47c98ca9c765b7b1d4c3afe3752a332172b7a",
+    "sha256": "5549f4c9cb9ec67e7cd9bfc6dad47c98ca9c765b7b1d4c3afe3752a332172b7a"
+  },
+  {
+    "path": "neo4j-community-5.26.32/labs/README.txt",
+    "bytes": 1183,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "selected_sha256": "47d85993ab7f8da2a72fd1222e1636bd82d5b02e1e74154f2d811c6fa291a24b",
+    "sha256": "47d85993ab7f8da2a72fd1222e1636bd82d5b02e1e74154f2d811c6fa291a24b"
+  },
+  {
+    "path": "neo4j-community-5.26.32/bin",
+    "bytes": 0,
+    "mode": "0o755",
+    "type": "5",
+    "link": ""
+  },
+  {
+    "path": "neo4j-community-5.26.32/bin/neo4j-admin",
+    "bytes": 3564,
+    "mode": "0o755",
+    "type": "0",
+    "link": "",
+    "sha256": "2a39f983eeba8dd94034b05bcf7dec9d927fbc50b9eac8851c36e82858d1acd6"
+  },
+  {
+    "path": "neo4j-community-5.26.32/bin/neo4j",
+    "bytes": 3553,
+    "mode": "0o755",
+    "type": "0",
+    "link": "",
+    "sha256": "ef0877a3a23b214c9225c7a58ce8d91b774d268ec4238a14dd4272bc19969833"
+  },
+  {
+    "path": "neo4j-community-5.26.32/bin/cypher-shell",
+    "bytes": 3696,
+    "mode": "0o755",
+    "type": "0",
+    "link": "",
+    "sha256": "5af04746a440114f500295eb924341b6bb7716836091b3daec0c774f21999439"
+  },
+  {
+    "path": "neo4j-community-5.26.32/bin/completion",
+    "bytes": 0,
+    "mode": "0o755",
+    "type": "5",
+    "link": ""
+  },
+  {
+    "path": "neo4j-community-5.26.32/bin/completion/neo4j_completion",
+    "bytes": 12581,
+    "mode": "0o755",
+    "type": "0",
+    "link": "",
+    "sha256": "1953465d8df0abc12c63bdd68986ed6a874ad9efd79bc6b4ef803b72659f631d"
+  },
+  {
+    "path": "neo4j-community-5.26.32/bin/completion/neo4j-admin_completion",
+    "bytes": 48491,
+    "mode": "0o755",
+    "type": "0",
+    "link": "",
+    "sha256": "8f760fdfc56b38bba67b92c6b376273f388dfce0ef1169206723de0402cfb4f8"
+  },
+  {
+    "path": "neo4j-community-5.26.32/products",
+    "bytes": 0,
+    "mode": "0o755",
+    "type": "5",
+    "link": ""
+  },
+  {
+    "path": "neo4j-community-5.26.32/products/neo4j-genai-plugin-5.26.32.jar",
+    "bytes": 105718,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "f355e1e755adbb8de773c5592ab0739dc1064066891e951ed0e39d4d7bdf8123"
+  },
+  {
+    "path": "neo4j-community-5.26.32/products/neo4j-fleet-management-plugin-1.2.0-v5.jar",
+    "bytes": 274816,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "e4c3250a60ba3cf341c60573c8ac202377a93a82f62172d94ca6cc5462222faf"
+  },
+  {
+    "path": "neo4j-community-5.26.32/UPGRADE.txt",
+    "bytes": 94,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "sha256": "e3d6cd776478ea8f2870ed3009b08678be752383dfc0a64fbcefe7293c79b5bf"
+  },
+  {
+    "path": "neo4j-community-5.26.32/data",
+    "bytes": 0,
+    "mode": "0o755",
+    "type": "5",
+    "link": ""
+  },
+  {
+    "path": "neo4j-community-5.26.32/data/transactions",
+    "bytes": 0,
+    "mode": "0o755",
+    "type": "5",
+    "link": ""
+  },
+  {
+    "path": "neo4j-community-5.26.32/data/databases",
+    "bytes": 0,
+    "mode": "0o755",
+    "type": "5",
+    "link": ""
+  },
+  {
+    "path": "neo4j-community-5.26.32/logs",
+    "bytes": 0,
+    "mode": "0o755",
+    "type": "5",
+    "link": ""
+  },
+  {
+    "path": "neo4j-community-5.26.32/README.txt",
+    "bytes": 1908,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "selected_sha256": "4a2d7f4065bee3efd50d7ee3236ea8bdef72f56b6cbada1a8e2fd6d18ce8b1c4",
+    "sha256": "4a2d7f4065bee3efd50d7ee3236ea8bdef72f56b6cbada1a8e2fd6d18ce8b1c4"
+  },
+  {
+    "path": "neo4j-community-5.26.32/LICENSES.txt",
+    "bytes": 118612,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "selected_sha256": "7d6b62bc953deedfddde19730dc9c1912d9fb854279e8bd31770e80a503796d4",
+    "sha256": "7d6b62bc953deedfddde19730dc9c1912d9fb854279e8bd31770e80a503796d4"
+  },
+  {
+    "path": "neo4j-community-5.26.32/LICENSE.txt",
+    "bytes": 36008,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "selected_sha256": "a27565f141354ee9f8ece5c579f35706ef560353a95103b1ec33dd03cffd90ea",
+    "sha256": "a27565f141354ee9f8ece5c579f35706ef560353a95103b1ec33dd03cffd90ea"
+  },
+  {
+    "path": "neo4j-community-5.26.32/packaging_info",
+    "bytes": 53,
+    "mode": "0o644",
+    "type": "0",
+    "link": "",
+    "selected_sha256": "8c13080a6030095938e0cba04cf57d7cee6b0c51b88cdbc7dd5b93fb561816f0",
+    "sha256": "8c13080a6030095938e0cba04cf57d7cee6b0c51b88cdbc7dd5b93fb561816f0"
+  }
+]

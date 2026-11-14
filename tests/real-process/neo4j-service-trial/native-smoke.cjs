@@ -1,0 +1,1 @@
+const assert=require('node:assert/strict'),Database=require('/tmp/work/node_modules/better-sqlite3');const d=new Database(':memory:');assert.equal(d.prepare('SELECT 1 AS actual').get().actual,1);d.close();console.log('ACTUAL_NATIVE_SQLITE_SMOKE_PASS');
