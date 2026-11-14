@@ -20,7 +20,14 @@ for p in work.rglob('*'):
  else:p.chmod(p.stat().st_mode&0o777)
 cmd=[bwrap,'--die-with-parent','--unshare-user','--uid','1000','--gid','1000','--unshare-pid','--cap-drop','ALL']
 for p in ['/usr','/bin','/lib','/lib64','/etc','/opt']:cmd+=['--ro-bind',p,p]
-if mode in {'install','native'}:cmd+=['--ro-bind','/etc/resolv.conf','/etc/resolv.conf']
+if mode in {'install','native'}:
+ target=pathlib.Path('/etc/resolv.conf').resolve(strict=True)
+ assert target==pathlib.Path('/etc/resolv.conf')or(target.is_relative_to('/run')and len(target.parts)<=8)
+ if target!=pathlib.Path('/etc/resolv.conf'):
+  for directory in reversed(target.parent.parents):
+   if str(directory)!='/':cmd+=['--dir',str(directory)]
+  cmd+=['--dir',str(target.parent)]
+ cmd+=['--ro-bind','/etc/resolv.conf',str(target)]
 cmd+=['--proc','/proc','--dev','/dev','--remount-ro','/dev','--bind',str(scratch),'/tmp','--ro-bind','/tmp/harness','/tmp/harness','--ro-bind','/tmp/limits','/tmp/limits']
 # Capped scratch is /tmp, original complete deps reside in separately fixed store.
 cmd+=['--bind'if mode=='install'else'--ro-bind','/tmp/deps-store','/tmp/work/node_modules']

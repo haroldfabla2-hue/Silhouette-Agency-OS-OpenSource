@@ -61,7 +61,15 @@ try:
  cmd=[str(bwrap),'--die-with-parent','--unshare-pid','--unshare-user','--uid','0','--gid','0','--cap-add','CAP_SETFCAP']
  if a.phase=='checks':cmd+=['--unshare-net','--cap-add','CAP_NET_ADMIN']
  for source in ['/usr','/bin','/lib','/lib64','/etc','/opt']:cmd+=['--ro-bind',source,source]
- if a.phase in {'install','native'}:cmd+=['--ro-bind',str(resolver),'/etc/resolv.conf']
+ if a.phase in {'install','native'}:
+  target=pathlib.Path(resolver_record['source_realpath'])
+  assert target==pathlib.Path('/etc/resolv.conf')or(target.is_relative_to('/run')and len(target.parts)<=8),'resolver target outside reviewed layout'
+  if target!=pathlib.Path('/etc/resolv.conf'):
+   # Only empty private mountpoint directories, never a bind of host /run.
+   for directory in reversed(target.parent.parents):
+    if str(directory)!='/':cmd+=['--dir',str(directory)]
+   cmd+=['--dir',str(target.parent)]
+  cmd+=['--ro-bind',str(resolver),str(target)]
  cmd+=['--proc','/proc','--dev','/dev','--size',str(512*1024**2),'--tmpfs','/tmp','--ro-bind',str(work),'/tmp/work','--bind',str(store),'/tmp/deps-store','--ro-bind',str(harness),'/tmp/harness','--ro-bind',str(bwrap.parent),'/tmp/security-bin','--ro-bind',str(cg),'/tmp/limits','--bind',str(evidence),'/tmp/export','--remount-ro','/','--chdir','/tmp/work','/usr/bin/python3','/tmp/harness/phase-namespace.py',bwrap.name,a.phase,str(a.phase_seconds)]
  child_process=subprocess.Popen(['sudo','-n','/usr/bin/python3','-',str(os.getuid()),str(os.getgid()),a.run_id,str(os.getpid()),json.dumps(cmd)],stdin=subprocess.PIPE)
  child=child_process.pid
