@@ -27,7 +27,7 @@ jobs:
         run: |
           set -euo pipefail
           case "$GITHUB_EVENT_NAME" in
-            push) test "${{ github.event.before }}" = de2f1b5548d529615c239262fa4da562fb922ab9 ;;
+            push) test "${{ github.event.before }}" = d67de94e4efa464529012742035896ee70abd2dc ;;
             workflow_dispatch) test -n "${{ inputs.expected_head }}" ;;
             *) exit 96 ;;
           esac
@@ -46,10 +46,10 @@ jobs:
         run: |
           set -euo pipefail
           if test "$GITHUB_EVENT_NAME" = push; then
-            test "$(git rev-parse HEAD^)" = de2f1b5548d529615c239262fa4da562fb922ab9
+            test "$(git rev-parse HEAD^)" = d67de94e4efa464529012742035896ee70abd2dc
             test "$(git rev-list --parents -n 1 HEAD | wc -w)" -eq 2
             git diff-tree --no-commit-id --name-only -r HEAD | sort > "$RUNNER_TEMP/integrated-actual-paths"
-            printf '%s\n' .github/workflows/integrated-silhouette-ui.yml tests/integrated-ui-trial/GENERATION-BORROW-COMPOSITION-REVIEW.md tests/integrated-ui-trial/GENERATION-BORROW-PRODUCT-REVIEW.md tests/integrated-ui-trial/MANIFEST.json tests/integrated-ui-trial/generation-borrow-composition.json tests/integrated-ui-trial/generation-borrow-overlay/services/redisClient.ts tests/integrated-ui-trial/hosted-orchestrator.py tests/integrated-ui-trial/integrated-hosted.yml tests/integrated-ui-trial/packet.sha256 tests/integrated-ui-trial/redis-generation-supplement.mts tests/integrated-ui-trial/redis-receipt-schema.py tests/integrated-ui-trial/redis-supplement-batch.py tests/integrated-ui-trial/redis-validation.py tests/integrated-ui-trial/redis_supplement_schema.py tests/integrated-ui-trial/return-evidence.py | sort > "$RUNNER_TEMP/integrated-expected-paths"
+            printf '%s\n' .github/workflows/integrated-silhouette-ui.yml tests/integrated-ui-trial/LATEHANDLE-DIAGNOSTIC-COMPOSITION-REVIEW.md tests/integrated-ui-trial/MANIFEST.json tests/integrated-ui-trial/SUPPLEMENT-RESOLUTION-COMPOSITION-REVIEW.md tests/integrated-ui-trial/hosted-orchestrator.py tests/integrated-ui-trial/integrated-hosted.yml tests/integrated-ui-trial/latehandle-diagnostic-composition.json tests/integrated-ui-trial/latehandle-diagnostic-overlay/server/index.ts tests/integrated-ui-trial/packet.sha256 tests/integrated-ui-trial/redis-generation-supplement.mts | sort > "$RUNNER_TEMP/integrated-expected-paths"
             diff -u "$RUNNER_TEMP/integrated-expected-paths" "$RUNNER_TEMP/integrated-actual-paths"
           fi
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020

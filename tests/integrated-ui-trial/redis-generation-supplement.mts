@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHook } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
 const MODES=['generation-mutations','live-borrow','before-borrow'] as const;
 const mode=process.argv[2] as typeof MODES[number];
 assert.ok(MODES.includes(mode));
@@ -190,7 +191,7 @@ try{
  if(mode==='live-borrow')await mark('COALESCED_LIVE_BORROW_AND_LATE_REJECTION',async()=>{
   // Separate real read-only fixture observer, not a product admission escape.
   // Open before sealing and always close in finally. Never returned to product.
-  const Database=(await import('better-sqlite3')).default;
+  const Database=createRequire('/app/package.json')('better-sqlite3') as typeof import('better-sqlite3');
   observer=new Database(SQLITE_DB_PATH,{readonly:true,fileMustExist:true});
   assert.equal((observer.prepare('SELECT count(*) AS n FROM incidents').get() as {n:number}).n,0);
   const first=service!.connect(),second=service!.connect();assert.ok(first instanceof Promise);assert.equal(first,second);extra.coalescedSame=true;
@@ -215,7 +216,15 @@ try{
  if(mode==='before-borrow')await mark('REJECTION_BEFORE_BORROW',async()=>{
   await admission.sealAndJoin();assert.equal(admission.snapshot().pendingOriginals,0);
   try{service!.connect();assert.fail('SEALED_BORROW_ACCEPTED');}catch(error){assert.ok(error instanceof AdmissionClosed);beforeError=error;}
-  assert.equal(ownValue(service!,'connectingOwner'),undefined);assert.equal(ownValue(service!,'client'),undefined);
+  // TS useDefineForClassFields=false can omit declared uninitialized fields.
+  // Only these exact two fields may be absent, otherwise require own data
+  // descriptor with undefined value. Reject accessors, inherited values, or
+  // any actual created client/Promise. Do not change the product to fit a test.
+  for(const field of ['connectingOwner','client'] as const){
+   const d=Object.getOwnPropertyDescriptor(service!,field);
+   if(d){assert.ok(Object.hasOwn(d,'value')&&!d.get&&!d.set);assert.equal(d.value,undefined);}
+   else assert.equal(field in service!,false);
+  }
   assert.equal(admission.snapshot().pendingOriginals,0);extra.beforeBorrowSameError=true;
  });
 }catch(error){recordFailure(error);primary=error;}

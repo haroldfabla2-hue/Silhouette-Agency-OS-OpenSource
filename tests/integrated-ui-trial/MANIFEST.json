@@ -1,6 +1,6 @@
 {
   "status": "SOURCE_ONLY_NO_EXECUTION_PUBLICATION",
-  "parent": "de2f1b5548d529615c239262fa4da562fb922ab9",
+  "parent": "d67de94e4efa464529012742035896ee70abd2dc",
   "files": {
     "ASSERTION-DIAGNOSTIC-COMPOSITION-REVIEW.md": {
       "bytes": 1315,
@@ -30,6 +30,10 @@
       "bytes": 6206,
       "sha256": "5a4a3e904827e456ac8c7b63569223125c56ecf6f5ac3f35acde5dd706159411"
     },
+    "LATEHANDLE-DIAGNOSTIC-COMPOSITION-REVIEW.md": {
+      "bytes": 3905,
+      "sha256": "3591c60ce53fc3c6ac4c75d58e94319bf2c687064c9b5dcd354585987a91efb2"
+    },
     "REDIS-PRECONDITION-COMPOSITION-REVIEW.md": {
       "bytes": 3999,
       "sha256": "ef780953484f2255cbb18c8de96183eb89de4b2efe9ebc48e4a315b4a5419c74"
@@ -49,6 +53,10 @@
     "SNAPSHOT-BINDING-COMPOSITION-REVIEW.md": {
       "bytes": 1396,
       "sha256": "e57fef193ac203b01386438f0b1af333183bf5d99ee6183e6025de07e9895851"
+    },
+    "SUPPLEMENT-RESOLUTION-COMPOSITION-REVIEW.md": {
+      "bytes": 2531,
+      "sha256": "548cd7fd76f8afe364b6b4cc792002486cf9921bb9397bd933ab4d087894aea2"
     },
     "archive-member-normalizations.json": {
       "bytes": 16768,
@@ -167,8 +175,8 @@
       "sha256": "94875ae65d7b0dacc7952bd5a166db4a273ec7ea69c5ffd0a332e6e85527b9c5"
     },
     "hosted-orchestrator.py": {
-      "bytes": 27920,
-      "sha256": "a17283e1b815e7ba9824ac4ed9eb0d63bd4439496ab1f2de68e9e7dabf4cffbc"
+      "bytes": 28523,
+      "sha256": "c530514ca9bd79404b01836b6f7ca1735cc97f23d34813fe66c6914952b7afc5"
     },
     "identity-entry.py": {
       "bytes": 3884,
@@ -183,12 +191,20 @@
       "sha256": "0e3a710ab63232eec31d90e994036b3a3480c65605097fe4a6f0938e2bf33366"
     },
     "integrated-hosted.yml": {
-      "bytes": 4164,
-      "sha256": "f2065c3aa74e5bd95cb3bbc4a85c0d2f4968311a154115d0a9d547b0ebaa76a7"
+      "bytes": 3930,
+      "sha256": "71ba06be7259c8e3d2c5d6308a03b3bc271a951cd00e44f9078eba36ef148f8f"
     },
     "lance-provenance.json": {
       "bytes": 900,
       "sha256": "22ed7cae46a956a4351653ff1580b4f43afc416fd5654f006536e7f2702f4e10"
+    },
+    "latehandle-diagnostic-composition.json": {
+      "bytes": 193197,
+      "sha256": "63326507938259a3deb68e2768cbaed8519f3c21990e962a4f74bb646b08af2f"
+    },
+    "latehandle-diagnostic-overlay/server/index.ts": {
+      "bytes": 22098,
+      "sha256": "f3a85e14890eff79419f927b70cad1882cc841cfa68d08053775fb357322e94f"
     },
     "libsignal-packed-files.json": {
       "bytes": 1986,
@@ -227,8 +243,8 @@
       "sha256": "6d4db2c333ac887464b161bc1139f1fd86c248e0b43110a758b945c60d7763f1"
     },
     "redis-generation-supplement.mts": {
-      "bytes": 19842,
-      "sha256": "da4096752a71828a7fca404b28380e1efbc1a6508c2b71c7f9b67d0e9c9d2b8f"
+      "bytes": 20396,
+      "sha256": "d30fa940538cd2d2fbf210dc38ff4d89678bcef6a4b0df43e6b9c7eea265f299"
     },
     "redis-receipt-schema.py": {
       "bytes": 8614,
