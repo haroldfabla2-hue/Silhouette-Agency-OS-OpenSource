@@ -34,16 +34,16 @@
       "sha256": "0ce3a9b618929259f511a17b98b0b30030908a8663ec3caa9af0afdfb3596b4a"
     },
     "hosted-orchestrator.py": {
-      "bytes": 12468,
-      "sha256": "5c32d0952445643ee4481c9d089942411e4665f607f4cb0b47bee2e86d7a76eb"
+      "bytes": 12763,
+      "sha256": "8e7b4b5458c4429e3da233251df08e03adcfb593d95708d3b37f83c16fc2c374"
     },
     "integrated-0e3-source.tar.gz": {
       "bytes": 360317,
       "sha256": "0e3a710ab63232eec31d90e994036b3a3480c65605097fe4a6f0938e2bf33366"
     },
     "integrated-hosted.yml": {
-      "bytes": 2302,
-      "sha256": "d1685dec06f7af0d92acd8b53199c5497e7a4e75ebeccb896fa52b6a31bbfe4d"
+      "bytes": 3547,
+      "sha256": "fba154e956877033ccc1f918c4006f8edaa5a803c2542e1abbda2dbaee289526"
     },
     "lance-provenance.json": {
       "bytes": 900,

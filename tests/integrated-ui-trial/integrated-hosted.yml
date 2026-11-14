@@ -1,5 +1,10 @@
 name: MANUAL INTEGRATED SILHOUETTE UI - PROVIDERS OFF - ROOT INCOMPLETE
 on:
+  push:
+    branches:
+      - preparation/sqlite-static-typecheck-db201993-4054-20261114
+    paths:
+      - .github/workflows/integrated-silhouette-ui.yml
   workflow_dispatch:
     inputs:
       expected_head:
@@ -17,11 +22,15 @@ jobs:
         shell: bash
         env:
           PRIVATE: ${{ github.event.repository.private }}
-          EXPECTED_HEAD: ${{ inputs.expected_head }}
+          EXPECTED_HEAD: ${{ inputs.expected_head || github.sha }}
           ENVIRONMENT: ${{ runner.environment }}
         run: |
           set -euo pipefail
-          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          case "$GITHUB_EVENT_NAME" in
+            push) test "${{ github.event.before }}" = 82a19131a82a86b669bc1e20ff6b76d1527cd190 ;;
+            workflow_dispatch) test -n "${{ inputs.expected_head }}" ;;
+            *) exit 96 ;;
+          esac
           test "$PRIVATE" = false
           test "$ENVIRONMENT" = github-hosted
           test "$GITHUB_REPOSITORY" = haroldfabla2-hue/Silhouette-Agency-OS-OpenSource
@@ -32,13 +41,24 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - name: Exact one-shot push lineage and path identity before execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test "$GITHUB_EVENT_NAME" = push; then
+            test "$(git rev-parse HEAD^)" = 82a19131a82a86b669bc1e20ff6b76d1527cd190
+            test "$(git rev-list --parents -n 1 HEAD | wc -w)" -eq 2
+            git diff-tree --no-commit-id --name-only -r HEAD | sort > "$RUNNER_TEMP/integrated-actual-paths"
+            printf '%s\n' .github/workflows/integrated-silhouette-ui.yml tests/integrated-ui-trial/MANIFEST.json tests/integrated-ui-trial/hosted-orchestrator.py tests/integrated-ui-trial/integrated-hosted.yml tests/integrated-ui-trial/packet.sha256 | sort > "$RUNNER_TEMP/integrated-expected-paths"
+            diff -u "$RUNNER_TEMP/integrated-expected-paths" "$RUNNER_TEMP/integrated-actual-paths"
+          fi
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22.18.0'
       - name: Exact packet verification and bounded integration attempt
         shell: bash
         env:
-          EXPECTED_HEAD: ${{ inputs.expected_head }}
+          EXPECTED_HEAD: ${{ inputs.expected_head || github.sha }}
           PRIVATE: ${{ github.event.repository.private }}
           ENVIRONMENT: ${{ runner.environment }}
         run: |
