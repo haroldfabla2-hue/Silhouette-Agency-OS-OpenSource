@@ -133,10 +133,12 @@ def run_namespace_phase(label,argv,cwd,env,evidence,receipt_path,deadline,root_w
  original_survivors=[row for row in rows if row['pid']!=p.pid or not leader_done]
  group_live=namespace_group is not None and group_alive(namespace_group)
  if not leader_done or original_survivors or group_live:stop_cause=stop_cause or 'SURVIVORS_NO_CLEANUP_CLAIM'
- receipt=json.loads(receipt_path.read_text())if receipt_path.is_file()else None
- if not receipt:stop_cause=stop_cause or 'NO_NAMESPACE_LAUNCH_RECEIPT'
+ try:receipt=json.loads(receipt_path.read_text())if receipt_path.is_file()else None
+ except(Exception)as invalid:receipt=None;stop_cause=stop_cause or 'INVALID_RECEIPT:'+type(invalid).__name__
+ receipt_valid=bool(receipt and receipt.get('isolationValidated')is True and receipt.get('rootTimeoutGroupMatchesEntry')is True)
+ if not receipt_valid:stop_cause=stop_cause or 'MISSING_OR_INVALID_NAMESPACE_LAUNCH_RECEIPT'
  if p.returncode in[124,137,-signal.SIGKILL]:stop_cause=stop_cause or 'ROOT_WATCHDOG_FORCED_TERMINATION'
- row={'phase':label,'argv':argv,'rc':p.returncode,'wallSeconds':time.monotonic()-t,'rootWatchdogSeconds':root_watchdog_seconds,'logObservedBytes':count,'logStoredBytes':(evidence/(label+'.log')).stat().st_size,'logComplete':not overflow and eof,'eof':eof,'cause':stop_cause,'signals':signals,'naturalComplete':leader_done and eof and not stop_cause,'setupChainSnapshotSamples':samples,'knownProcessIdentities':known,'supervisorPid':os.getpid(),'supervisorPgid':os.getpgrp(),'leaderPid':p.pid,'namespaceGroup':namespace_group,'namespaceGroupLive':group_live,'survivors':original_survivors,'namespaceReceipt':receipt,'cleanupSafe':leader_done and not original_survivors and not group_live,'containment':'PER_PROCESS_AND_KNOWN_GROUP_NOT_ADVERSARIAL_CGROUP'}
+ row={'phase':label,'argv':argv,'rc':p.returncode,'wallSeconds':time.monotonic()-t,'rootWatchdogSeconds':root_watchdog_seconds,'logObservedBytes':count,'logStoredBytes':(evidence/(label+'.log')).stat().st_size,'logComplete':not overflow and eof,'eof':eof,'cause':stop_cause,'signals':signals,'naturalComplete':leader_done and eof and not stop_cause,'setupChainSnapshotSamples':samples,'knownProcessIdentities':known,'supervisorPid':os.getpid(),'supervisorPgid':os.getpgrp(),'leaderPid':p.pid,'namespaceGroup':namespace_group,'namespaceGroupLive':group_live,'survivors':original_survivors,'namespaceReceipt':receipt,'chainReaped':leader_done and not original_survivors and not group_live,'isolationValidated':receipt_valid,'cleanupSafe':not stop_cause and receipt_valid and leader_done and not original_survivors and not group_live,'containment':'PER_PROCESS_AND_KNOWN_GROUP_NOT_ADVERSARIAL_CGROUP'}
  (evidence/(label+'-supervisor.json')).write_text(json.dumps(row,indent=2)+'\n')
  # Parent finally still exports all logs/receipts. If cleanupSafe false, preserve
  # tree until outer GitHub job20min kills VM; do not delete still-used sources.
