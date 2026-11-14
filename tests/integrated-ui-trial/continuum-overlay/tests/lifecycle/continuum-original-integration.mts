@@ -19,15 +19,17 @@ assert.equal(process.env.NODE_ENV, 'test');
 assert.equal(process.env.SILHOUETTE_FINITE_CONTINUUM, 'exact-original-boundaries-v1');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'silhouette-continuum-original-'));
 process.chdir(root);
+// Retain authored binding locally: provider-OFF scrub may remove env inputs.
+const authoredSnapshotPath = path.join(root,'memory_snapshot.json');
 Object.assign(process.env, {
  SILHOUETTE_DB_PATH:path.join(root,'main.sqlite'), SILHOUETTE_IDENTITY_DB_PATH:path.join(root,'identity.sqlite'),
  SILHOUETTE_TOOLS_DB_PATH:path.join(root,'tools.db'), SILHOUETTE_LANCEDB_PATH:path.join(root,'memory.lancedb'),
- SILHOUETTE_MEMORY_SNAPSHOT_PATH:path.join(root,'memory_snapshot.json'),
+ SILHOUETTE_MEMORY_SNAPSHOT_PATH:authoredSnapshotPath,
  SILHOUETTE_MEMORY_TRANSITIONS_DIR:path.join(root,'memory-transitions'),
  SILHOUETTE_CONTINUUM_REDIS_KEY:'continuum:test-owner:'+randomUUID()+':volatile',
  WORKSPACE_ROOT:path.join(root,'workspace'), PROPOSAL_OWNER_DIR:root, INGRESS_REPLAY_DIR:root, CONFIRMATION_GATE_DIR:root,
 });
-fs.writeFileSync(process.env.SILHOUETTE_MEMORY_SNAPSHOT_PATH!, JSON.stringify({working:[],ultraShort:[],short:[]}));
+fs.writeFileSync(authoredSnapshotPath, JSON.stringify({working:[],ultraShort:[],short:[]}));
 const host = installPreparationHost({scopes:128,active:512,failures:64,resources:256});
 const checkpoints = await import('../../services/lifecycle/finiteContinuumCheckpoints');
 const permits = await import('../../services/lifecycle/continuumDreamerNotification');
@@ -46,6 +48,7 @@ const assertionDiagnostic = {
  stage:'NOT_REACHED', predicate:'NOT_REACHED',
  filesystem:{observed:false,code:'NOT_OBSERVED',syscall:'NOT_OBSERVED',destinationMatches:'NOT_OBSERVED'},
  schemaDisposition:'NOT_OBSERVED', thrownKind:'NOT_OBSERVED',
+ obstruction:{binding:'NOT_OBSERVED',envPresent:false,targetKind:'NOT_OBSERVED',observed:false,code:'NOT_OBSERVED',syscall:'NOT_OBSERVED',destinationMatches:'NOT_OBSERVED'},
 };
 
 const modeReceiptPath = process.env.SILHOUETTE_FINITE_MODE_RECEIPT;
@@ -129,9 +132,32 @@ try {
    assertionDiagnostic.stage='SCHEMA_CALLBACK_COUNT'; assertionDiagnostic.predicate='NO_SCHEMA_CALLBACK';
    assert.equal(dreamer.finiteOriginalBoundarySnapshot().acceptedCallbackCount,before.acceptedCallbackCount);
    // Real immutable filesystem obstruction, not a fake canonical response.
-   const snapshot = process.env.SILHOUETTE_MEMORY_SNAPSHOT_PATH!;
+   const snapshot = authoredSnapshotPath;
+   assertionDiagnostic.stage='FILESYSTEM_BINDING'; assertionDiagnostic.predicate='ACTUAL_SNAPSHOT_BINDING';
+   const {MEMORY_SNAPSHOT_PATH} = await import('../../services/memoryStoragePaths');
+   assertionDiagnostic.obstruction.binding=MEMORY_SNAPSHOT_PATH===snapshot?'MATCH':'MISMATCH';
+   assertionDiagnostic.obstruction.envPresent=typeof process.env.SILHOUETTE_MEMORY_SNAPSHOT_PATH==='string';
+   // Fail rather than move a different real store or weaken provider-OFF scrub.
+   assert.equal(MEMORY_SNAPSHOT_PATH,snapshot);
+   try {
+    const stat=fs.lstatSync(snapshot);
+    assertionDiagnostic.obstruction.targetKind=stat.isSymbolicLink()?'SYMLINK':stat.isFile()?'REGULAR_FILE':stat.isDirectory()?'DIRECTORY':'OTHER';
+   } catch (original) {
+    assertionDiagnostic.obstruction.targetKind=(original as NodeJS.ErrnoException)?.code==='ENOENT'?'ABSENT':'UNREADABLE_OR_UNKNOWN';
+    throw original;
+   }
+   assertionDiagnostic.predicate='AUTHORED_TARGET_REGULAR_FILE';
+   assert.equal(assertionDiagnostic.obstruction.targetKind,'REGULAR_FILE');
    assertionDiagnostic.stage='FILESYSTEM_OBSTRUCTION'; assertionDiagnostic.predicate='BACKUP_RENAME';
-   fs.renameSync(snapshot,snapshot+'.authored-backup');
+   try { fs.renameSync(snapshot,snapshot+'.authored-backup'); }
+   catch (original) {
+    const error=original as NodeJS.ErrnoException & {dest?:string};
+    assertionDiagnostic.obstruction.observed=true;
+    assertionDiagnostic.obstruction.code=error?.code==='ENOENT'?'ENOENT':error?.code==='EACCES'?'EACCES':error?.code==='EPERM'?'EPERM':error?.code==='EISDIR'?'EISDIR':error?.code==='ENOTDIR'?'ENOTDIR':error?.code==='EINVAL'?'EINVAL':error?.code==='ERR_INVALID_ARG_TYPE'?'INVALID_ARGUMENT_TYPE':'OTHER_OR_UNKNOWN';
+    assertionDiagnostic.obstruction.syscall=error?.syscall==='rename'?'RENAME':'OTHER_OR_UNKNOWN';
+    assertionDiagnostic.obstruction.destinationMatches=error?.dest===snapshot+'.authored-backup'?'MATCH':'MISMATCH_OR_MISSING';
+    throw original;
+   }
    assertionDiagnostic.predicate='CREATE_TARGET_DIRECTORY'; fs.mkdirSync(snapshot);
    assertionDiagnostic.stage='CANONICAL_WRITE'; assertionDiagnostic.predicate='WRITE_REJECTS';
    await assert.rejects(continuum.storeWithEffectReceipt('Authored real denied write',MemoryTier.ULTRA_SHORT),original=>{

@@ -27,7 +27,7 @@ jobs:
         run: |
           set -euo pipefail
           case "$GITHUB_EVENT_NAME" in
-            push) test "${{ github.event.before }}" = 88377f03f19e2b606c94774c513ab276d363d49c ;;
+            push) test "${{ github.event.before }}" = 39be237722acdf70547d0888ac6d5b417f29022b ;;
             workflow_dispatch) test -n "${{ inputs.expected_head }}" ;;
             *) exit 96 ;;
           esac
@@ -46,10 +46,10 @@ jobs:
         run: |
           set -euo pipefail
           if test "$GITHUB_EVENT_NAME" = push; then
-            test "$(git rev-parse HEAD^)" = 88377f03f19e2b606c94774c513ab276d363d49c
+            test "$(git rev-parse HEAD^)" = 39be237722acdf70547d0888ac6d5b417f29022b
             test "$(git rev-list --parents -n 1 HEAD | wc -w)" -eq 2
             git diff-tree --no-commit-id --name-only -r HEAD | sort > "$RUNNER_TEMP/integrated-actual-paths"
-            printf '%s\n' .github/workflows/integrated-silhouette-ui.yml tests/integrated-ui-trial/ASSERTION-DIAGNOSTIC-COMPOSITION-REVIEW.md tests/integrated-ui-trial/MANIFEST.json tests/integrated-ui-trial/continuum-composition.json tests/integrated-ui-trial/continuum-overlay/tests/lifecycle/continuum-original-integration.mts tests/integrated-ui-trial/continuum-receipt-schema.py tests/integrated-ui-trial/hosted-orchestrator.py tests/integrated-ui-trial/integrated-hosted.yml tests/integrated-ui-trial/packet.sha256 | sort > "$RUNNER_TEMP/integrated-expected-paths"
+            printf '%s\n' .github/workflows/integrated-silhouette-ui.yml tests/integrated-ui-trial/MANIFEST.json tests/integrated-ui-trial/SNAPSHOT-BINDING-COMPOSITION-REVIEW.md tests/integrated-ui-trial/continuum-composition.json tests/integrated-ui-trial/continuum-overlay/tests/lifecycle/continuum-original-integration.mts tests/integrated-ui-trial/continuum-receipt-schema.py tests/integrated-ui-trial/hosted-orchestrator.py tests/integrated-ui-trial/integrated-hosted.yml tests/integrated-ui-trial/packet.sha256 | sort > "$RUNNER_TEMP/integrated-expected-paths"
             diff -u "$RUNNER_TEMP/integrated-expected-paths" "$RUNNER_TEMP/integrated-actual-paths"
           fi
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
