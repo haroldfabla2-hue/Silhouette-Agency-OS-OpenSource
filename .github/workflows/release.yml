@@ -6,6 +6,14 @@ on:
         description: Exact reviewed static-only source commit
         required: true
         type: string
+      validation:
+        description: Exact reviewed validation scope (static remains the default)
+        required: true
+        default: static
+        type: choice
+        options:
+          - static
+          - native-account-wal
 permissions:
   contents: read
 jobs:
@@ -35,17 +43,30 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22.18.0'
-      - name: Verify exact static packet and run only acquisition plus offline compiler
+      - name: Verify exact selected packet and run only the reviewed validation scope
         shell: bash
         env:
+          VALIDATION: ${{ inputs.validation || 'static' }}
           EXPECTED_HEAD: ${{ inputs.expected_head }}
           REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
           RUNNER_ENVIRONMENT: ${{ runner.environment }}
         run: |
           set -euo pipefail
           cd tests/static-sqlite-typecheck
-          sha256sum --check packet.sha256
-          python3 run-static.py
+          case "$VALIDATION" in
+            static)
+              sha256sum --check packet.sha256
+              python3 run-static.py
+              ;;
+            native-account-wal)
+              sha256sum --check native-packet.sha256
+              python3 run-native-sqlite.py
+              ;;
+            *)
+              printf '%s\n' 'Unreviewed validation selector refused' >&2
+              exit 96
+              ;;
+          esac
       - name: Always upload bounded static evidence including failed prerequisites
         if: always()
         uses: actions/upload-artifact@v4
