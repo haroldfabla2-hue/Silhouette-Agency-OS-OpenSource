@@ -4,7 +4,7 @@ import type { Scope } from './host';
 // installPreparationHost. Application sources import only their fixed binding.
 export const fixedNames = ['systemBus', 'sqlite', 'sensory', 'power', 'hub', 'nervous', 'neuroLink', 'settings',
     'continuum', 'introspection', 'consciousness', 'narrative', 'arbiter', 'dreamer', 'graph', 'redis',
-    'lance', 'brainBridge', 'plugins', 'proStudio', 'server', 'cost', 'runtimeEnvironment', 'config', 'orchestrator', 'neuroSynapse', 'architecturalReview', 'remediation', 'helpProtocol', 'codebase', 'architect', 'workflow', 'daemon', 'scheduler', 'cron', 'tts', 'voiceLibrary', 'telephony'] as const;
+    'lance', 'brainBridge', 'plugins', 'proStudio', 'server', 'cost', 'runtimeEnvironment', 'config', 'orchestrator', 'neuroSynapse', 'architecturalReview', 'remediation', 'helpProtocol', 'codebase', 'architect', 'workflow', 'daemon', 'scheduler', 'cron', 'tts', 'voiceLibrary', 'telephony', 'resourceManager'] as const;
 type Name = typeof fixedNames[number];
 let installed: Readonly<Record<Name, Scope>> | undefined;
 let independentAdmissions: { lance: () => Scope; introspection: () => Scope; brainBridge: () => Scope; codebase: () => Scope; daemon: () => Scope };
@@ -83,3 +83,5 @@ export const ttsOwner = () => required('tts');
 export const voiceLibraryOwner = () => required('voiceLibrary');
 
 export const telephonyOwner = () => required('telephony');
+
+export const resourceManagerOwner = () => required('resourceManager');

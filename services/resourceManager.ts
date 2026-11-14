@@ -1,3 +1,6 @@
+import { resourceManagerOwner } from './lifecycle/preparationBindings';
+import { AdmissionClosed, type Operation } from './lifecycle/host';
+import { admitEvaluatedResourceManager, bindEvaluatedResourceManager, failEvaluatedResourceManager } from './lifecycle/runtimeStopBindings';
 
 import { ollamaService } from './ollamaService';
 import { systemBus } from './systemBus';
@@ -6,18 +9,50 @@ import { SystemProtocol } from '../types';
 type ResourceClient = 'LLM' | 'VIDEO' | 'TRAINING' | 'IDLE';
 
 class ResourceManager {
+    private readonly ownership = resourceManagerOwner();
+    private knownWorkSealed = false;
+    private readonly knownWork = new Set<Promise<unknown>>();
+    private knownDrain: Promise<void> | undefined;
+    private admitKnown<T>(source: string, original: () => Promise<T>): Promise<T> {
+        if (this.knownWorkSealed) throw new AdmissionClosed(source);
+        const work = this.ownership.invoke(source, original);
+        this.knownWork.add(work);
+        const settled = () => { this.knownWork.delete(work); };
+        void work.then(settled, settled);
+        return work;
+    }
+    /** Wait original shunt/restore promises before sealing downstream TTS.
+     * The current exclusive lease still belongs to its original client; do not
+     * manufacture release, warm a model or revoke that client's authority.
+     */
+    public sealAndDrainKnownWork(): Promise<void> {
+        if (this.knownDrain) return this.knownDrain;
+        this.knownWorkSealed = true;
+        this.knownDrain = Promise.allSettled([...this.knownWork]).then(results => {
+            if (this.currentOwner === 'VIDEO' || this.currentOwner === 'TRAINING')
+                this.ownership.unknown('EXCLUSIVE_CLIENT_LEASE_LIFETIME_UNVERIFIED', true);
+            const errors = results.flatMap(result => result.status === 'rejected' ? [result.reason] : []);
+            if (errors.length) throw new AggregateError(errors, 'Known resource-manager work drain failed');
+        });
+        void this.knownDrain.catch(() => undefined);
+        return this.knownDrain;
+    }
     private currentOwner: ResourceClient = 'LLM';
     private lockPromise: Promise<void> | null = null;
 
     // Default LLM Model to restore (unified to GLM-4 Light)
     private defaultLlmModel = 'glm4:light';
 
-    constructor() {
+    constructor(operation: Operation) {
+        this.ownership.validateConstruction(operation);
         // Listen for Video Requests (if we implement event-driven video later)
         console.log("[RESOURCE MANAGER] 🛡️ Initialized. VRAM Guardian active.");
     }
 
     public async requestExclusiveAccess(client: 'VIDEO' | 'TRAINING'): Promise<boolean> {
+        return this.admitKnown('original-request-access', () => this.requestExclusiveAccessOriginal(client));
+    }
+    private async requestExclusiveAccessOriginal(client: 'VIDEO' | 'TRAINING'): Promise<boolean> {
         if (this.currentOwner === client) return true;
 
         if (client === 'VIDEO') {
@@ -30,6 +65,9 @@ class ResourceManager {
     }
 
     public async releaseExclusiveAccess(client: 'VIDEO' | 'TRAINING'): Promise<void> {
+        return this.admitKnown('original-release-access', () => this.releaseExclusiveAccessOriginal(client));
+    }
+    private async releaseExclusiveAccessOriginal(client: 'VIDEO' | 'TRAINING'): Promise<void> {
         if (client === 'VIDEO' && this.currentOwner === 'VIDEO') {
             await this.restoreLlm();
         }
@@ -164,4 +202,17 @@ class ResourceManager {
     }
 }
 
-export const resourceManager = new ResourceManager();
+function constructOriginalResourceManager(): ResourceManager {
+    const permit = admitEvaluatedResourceManager();
+    try {
+        const owner = resourceManagerOwner();
+        const operation = owner.beginConstruction();
+        let original: ResourceManager;
+        try { original = new ResourceManager(operation); }
+        catch (error) { owner.constructionFailed(operation, error); throw error; }
+        owner.constructed(operation, original);
+        bindEvaluatedResourceManager(permit, () => original.sealAndDrainKnownWork());
+        return original;
+    } catch (error) { failEvaluatedResourceManager(permit, error); throw error; }
+}
+export const resourceManager = constructOriginalResourceManager();
