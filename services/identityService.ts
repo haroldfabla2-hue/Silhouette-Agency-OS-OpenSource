@@ -1,3 +1,8 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { identityOwner } from './lifecycle/preparationBindings';
+import { AdmissionClosed, OwnershipConflict, type Operation } from './lifecycle/host';
+import { preserveOriginal } from './lifecycle/preserveOriginal';
+import { admitEvaluatedIdentity, bindEvaluatedIdentity, failEvaluatedIdentity } from './lifecycle/runtimeStopBindings';
 // =============================================================================
 // Identity Service
 // User authentication, device recognition, and session management
@@ -64,6 +69,95 @@ export interface Session {
 }
 
 class IdentityService {
+    private readonly ownership = identityOwner();
+    private readonly originalContext = new AsyncLocalStorage<{ live: boolean; operation: Operation }>();
+    private admissionOpen = true;
+    private readonly originalAsync = new Set<Promise<unknown>>();
+    private readonly originalDatabaseCloses: (() => void)[] = [];
+    private closeOwner: Promise<void> | undefined;
+
+    constructor() {
+        // Host seal denies new independent roots. Runtime close still requires
+        // upstream HTTP/authentication/channel borrowers to have been joined.
+        this.ownership.onSeal(() => { this.admissionOpen = false; });
+    }
+
+    private original<T>(name: string, body: () => T): T {
+        const continuation = this.originalContext.getStore();
+        if (continuation) {
+            if (!continuation.live) throw new AdmissionClosed('identity:late-original-continuation');
+            return body(); // Nested synchronous/awaited work belongs to this root.
+        }
+        if (!this.admissionOpen) throw new AdmissionClosed('identity:' + name);
+        return this.ownership.invoke('original-' + name, operation => {
+            const context = { live: true, operation };
+            let value: T;
+            try { value = this.originalContext.run(context, body); }
+            catch (original) { context.live = false; throw original; }
+            if (value instanceof Promise) {
+                this.originalAsync.add(value);
+                // Observe, never replace the original rejecting Promise/error.
+                void value.then(() => {
+                    context.live = false; this.originalAsync.delete(value);
+                }, () => {
+                    context.live = false; this.originalAsync.delete(value);
+                });
+            } else context.live = false;
+            return value;
+        });
+    }
+
+    private openOriginalDatabase(): Database.Database {
+        const context = this.originalContext.getStore();
+        if (!context?.live) throw new OwnershipConflict('Identity allocation requires original init');
+        const reservation = this.ownership.reserveResource(context.operation, 'database');
+        let acquired: Database.Database;
+        try { acquired = new Database(DB_PATH, { timeout: 5000 }); }
+        catch (original) {
+            preserveOriginal(this.ownership, 'database-allocation-failed', () => this.ownership.releaseUnused(reservation));
+            throw original;
+        }
+        // Retain EVERY original acquired handle, including a schema-failed init.
+        // Public close and host release share one exact native close attempt.
+        let called = false, failure: unknown, failed = false;
+        const close = () => {
+            if (called) { if (failed) throw failure; return; }
+            called = true;
+            try { if (acquired.open) acquired.close(); }
+            catch (original) { failed = true; failure = original; throw original; }
+        };
+        this.originalDatabaseCloses.push(close);
+        this.ownership.acquire(reservation, acquired, close,
+            () => ({ source: 'identity:database', disposition: acquired.open ? 'INCOMPLETE' : 'CLOSED',
+                ...(acquired.open ? { reason: 'IDENTITY_DATABASE_STILL_OPEN' } : {}) }));
+        return acquired;
+    }
+
+    /** Terminal original-owner close. Call only after all upstream request and
+     * channel admissions are sealed and their original borrowers joined.
+     * Does NOT grant global quiescence or clear the product frontier marker.
+     */
+    public close(): Promise<void> {
+        if (this.originalContext.getStore()?.live)
+            throw new OwnershipConflict('Identity close cannot join its own original request');
+        if (this.closeOwner) return this.closeOwner;
+        this.admissionOpen = false;
+        this.closeOwner = (async () => {
+            // Every admitted async root remains retained through its last await.
+            // Nested original calls may finish; new external roots are denied.
+            await Promise.allSettled([...this.originalAsync]);
+            const errors: unknown[] = [];
+            for (const close of this.originalDatabaseCloses) {
+                try { close(); }
+                catch (original) { errors.push(original); this.ownership.failure('database-original-close', original); }
+            }
+            this.initialized = false;
+            if (errors.length) throw new AggregateError(errors, 'Original identity database close failed');
+        })();
+        void this.closeOwner.catch(() => undefined);
+        return this.closeOwner;
+    }
+
     private db: Database.Database | null = null;
     private initialized = false;
     private currentUser: User | null = null;
@@ -77,10 +171,13 @@ class IdentityService {
      *  fail closed during early boot instead of reading a null database as an
      *  empty one. */
     isInitialized(): boolean {
+        return this.original('isInitialized', () => {
         return this.initialized;
+            });
     }
 
     async init(): Promise<void> {
+        return this.original('init', async () => {
         if (this.initialized) return;
 
         // Ensure directory exists
@@ -89,12 +186,13 @@ class IdentityService {
             fs.mkdirSync(dbDir, { recursive: true });
         }
 
-        this.db = new Database(DB_PATH, { timeout: 5000 });
+        this.db = this.openOriginalDatabase();
         this.createTables();
         this.migrateSchema();
         this.initialized = true;
 
         console.log('[IdentityService] Initialized');
+            });
     }
 
     /**
@@ -197,9 +295,11 @@ class IdentityService {
      * Check if any users exist (determines if setup is needed)
      */
     hasAnyUsers(): boolean {
+        return this.original('hasAnyUsers', () => {
         if (!this.db) return false;
         const row = this.db.prepare('SELECT COUNT(*) as count FROM users').get() as any;
         return row.count > 0;
+            });
     }
 
     /**
@@ -211,6 +311,7 @@ class IdentityService {
         fingerprint: string,
         deviceName: string
     ): { user: User; device: Device; session: Session } {
+        return this.original('setupFirstUser', () => {
         if (!this.db) throw new Error('IdentityService not initialized');
 
         if (this.hasAnyUsers()) {
@@ -245,6 +346,7 @@ class IdentityService {
 
         console.log(`[IdentityService] Setup complete: ${name} (CREATOR) on ${deviceName}`);
         return { user, device, session };
+            });
     }
 
     // ─── Google Linking ─────────────────────────────────────────
@@ -254,6 +356,7 @@ class IdentityService {
      * Unlocks: Drive, Gmail, Calendar, cross-device login
      */
     linkGoogleAccount(userId: string, googleEmail: string, googleName?: string, avatarUrl?: string): User {
+        return this.original('linkGoogleAccount', () => {
         if (!this.db) throw new Error('IdentityService not initialized');
 
         const now = Date.now();
@@ -277,25 +380,30 @@ class IdentityService {
         this.currentUser = updated;
         console.log(`[IdentityService] Google linked: ${googleEmail} -> user ${userId}`);
         return updated;
+            });
     }
 
     /**
      * Check if current user has Google linked
      */
     isGoogleLinked(): boolean {
+        return this.original('isGoogleLinked', () => {
         return this.currentUser?.googleLinked === true;
+            });
     }
 
     /**
      * Get Google link status for any user by ID
      */
     getUserGoogleStatus(userId: string): { linked: boolean; email: string | null } {
+        return this.original('getUserGoogleStatus', () => {
         if (!this.db) return { linked: false, email: null };
         const row = this.db.prepare('SELECT google_email FROM users WHERE id = ?').get(userId) as any;
         return {
             linked: !!row?.google_email,
             email: row?.google_email || null
         };
+            });
     }
 
     // ─── User CRUD ──────────────────────────────────────────────
@@ -308,6 +416,7 @@ class IdentityService {
         name: string;
         avatarUrl?: string;
     }): Promise<User> {
+        return this.original('upsertUser', async () => {
         if (!this.db) throw new Error('IdentityService not initialized');
 
         const now = Date.now();
@@ -385,48 +494,56 @@ class IdentityService {
 
         console.log(`[IdentityService] Created user: ${googleUser.email} (${role})`);
         return user;
+            });
     }
 
     /**
      * Get user by email
      */
     getUserByEmail(email: string): User | null {
+        return this.original('getUserByEmail', () => {
         if (!this.db) return null;
 
         const row = this.db.prepare('SELECT * FROM users WHERE email = ?').get(email) as any;
         if (!row) return null;
 
         return this.rowToUser(row);
+            });
     }
 
     /**
      * Get user by Google email
      */
     getUserByGoogleEmail(googleEmail: string): User | null {
+        return this.original('getUserByGoogleEmail', () => {
         if (!this.db) return null;
 
         const row = this.db.prepare('SELECT * FROM users WHERE google_email = ?').get(googleEmail) as any;
         if (!row) return null;
 
         return this.rowToUser(row);
+            });
     }
 
     /**
      * Get user by ID
      */
     getUserById(userId: string): User | null {
+        return this.original('getUserById', () => {
         if (!this.db) return null;
 
         const row = this.db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as any;
         if (!row) return null;
 
         return this.rowToUser(row);
+            });
     }
 
     /**
      * Get a user by their external channel ID (telegram, discord, whatsapp)
      */
     getUserByChannelId(channel: string, channelId: string): User | null {
+        return this.original('getUserByChannelId', () => {
         if (!this.db) return null;
 
         let query = '';
@@ -439,12 +556,14 @@ class IdentityService {
         if (!row) return null;
 
         return this.rowToUser(row);
+            });
     }
 
     /**
      * Link an external channel ID to an existing user
      */
     linkChannelId(userId: string, channel: string, channelId: string): User {
+        return this.original('linkChannelId', () => {
         if (!this.db) throw new Error('IdentityService not initialized');
 
         // Check if ID is already claimed by someone else
@@ -470,6 +589,7 @@ class IdentityService {
 
         console.log(`[IdentityService] Linked ${channel} ID ${channelId} to user ${userId}`);
         return updated;
+            });
     }
 
     /**
@@ -496,6 +616,7 @@ class IdentityService {
      * Get creator's display name (for dynamic prompts)
      */
     getCreatorName(): string | null {
+        return this.original('getCreatorName', () => {
         if (!this.db) return null;
 
         const row = this.db.prepare(
@@ -503,6 +624,7 @@ class IdentityService {
         ).get() as any;
 
         return row?.name || null;
+            });
     }
 
     // ─── Local Auth (main branch methods) ───────────────────────
@@ -511,15 +633,18 @@ class IdentityService {
      * Check if ANY user exists in the database
      */
     hasAnyUser(): boolean {
+        return this.original('hasAnyUser', () => {
         if (!this.db) return false;
         const row = this.db.prepare('SELECT COUNT(*) as count FROM users').get() as any;
         return row && row.count > 0;
+            });
     }
 
     /**
      * Register the initial admin user (Local Auth)
      */
     async registerInitialAdmin(email: string, passwordHash: string, name: string): Promise<User> {
+        return this.original('registerInitialAdmin', async () => {
         if (!this.db) throw new Error('IdentityService not initialized');
 
         if (this.hasAnyUser()) {
@@ -549,14 +674,17 @@ class IdentityService {
         this.currentUser = user;
         console.log(`[IdentityService] 👑 Initial Admin Created: ${email}`);
         return user;
+            });
     }
 
     /**
      * Update a user's stored password hash (used for transparent legacy upgrades).
      */
     setPasswordHash(userId: string, passwordHash: string): void {
+        return this.original('setPasswordHash', () => {
         if (!this.db) return;
         this.db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(passwordHash, userId);
+            });
     }
 
     /**
@@ -564,6 +692,7 @@ class IdentityService {
      * verification (with backward-compatible legacy SHA-256 support + upgrade).
      */
     async loginLocalVerify(email: string, plainPassword: string): Promise<User | null> {
+        return this.original('loginLocalVerify', async () => {
         if (!this.db) return null;
 
         const user = this.getUserByEmail(email);
@@ -591,6 +720,7 @@ class IdentityService {
         this.currentUser = user;
         console.log(`[IdentityService] 🔓 Local login: ${email}`);
         return user;
+            });
     }
 
     /**
@@ -598,6 +728,7 @@ class IdentityService {
      * compatibility; prefer loginLocalVerify(email, plainPassword).
      */
     async loginLocal(email: string, passwordHash: string): Promise<User | null> {
+        return this.original('loginLocal', async () => {
         if (!this.db) return null;
 
         const user = this.getUserByEmail(email);
@@ -613,6 +744,7 @@ class IdentityService {
 
         console.log(`[IdentityService] 🔓 Local login: ${email}`);
         return user;
+            });
     }
 
     // ─── Devices ────────────────────────────────────────────────
@@ -621,6 +753,7 @@ class IdentityService {
      * Register a device for a user
      */
     registerDevice(userId: string, fingerprint: string, deviceName: string, trusted = true): Device {
+        return this.original('registerDevice', () => {
         if (!this.db) throw new Error('IdentityService not initialized');
 
         const now = Date.now();
@@ -658,12 +791,14 @@ class IdentityService {
 
         console.log(`[IdentityService] Registered device: ${deviceName}`);
         return device;
+            });
     }
 
     /**
      * Get device by fingerprint
      */
     getDeviceByFingerprint(fingerprint: string, userId?: string): Device | null {
+        return this.original('getDeviceByFingerprint', () => {
         if (!this.db) return null;
 
         let query = 'SELECT * FROM devices WHERE fingerprint = ?';
@@ -686,6 +821,7 @@ class IdentityService {
             lastSeen: row.last_seen,
             createdAt: row.created_at
         };
+            });
     }
 
     // ─── Sessions & Auto-login ──────────────────────────────────
@@ -694,6 +830,7 @@ class IdentityService {
      * Try auto-login using device fingerprint
      */
     async tryAutoLogin(fingerprint: string): Promise<User | null> {
+        return this.original('tryAutoLogin', async () => {
         if (!this.db) return null;
 
         // Find trusted device with this fingerprint
@@ -726,12 +863,14 @@ class IdentityService {
 
         console.log(`[IdentityService] Auto-login: ${user.name} on ${row.device_name}`);
         return user;
+            });
     }
 
     /**
      * Create a new session
      */
     createSession(userId: string, deviceId: string, durationMs = 30 * 24 * 60 * 60 * 1000): Session {
+        return this.original('createSession', () => {
         if (!this.db) throw new Error('IdentityService not initialized');
 
         const now = Date.now();
@@ -756,6 +895,7 @@ class IdentityService {
 
         this.currentSession = session;
         return session;
+            });
     }
 
     // ─── Accessors ──────────────────────────────────────────────
@@ -764,35 +904,44 @@ class IdentityService {
      * Get current user
      */
     getCurrentUser(): User | null {
+        return this.original('getCurrentUser', () => {
         return this.currentUser;
+            });
     }
 
     /**
      * Get current device
      */
     getCurrentDevice(): Device | null {
+        return this.original('getCurrentDevice', () => {
         return this.currentDevice;
+            });
     }
 
     /**
      * Check if current user is creator
      */
     isCreator(): boolean {
+        return this.original('isCreator', () => {
         return this.currentUser?.role === UserRole.CREATOR;
+            });
     }
 
     /**
      * Check if current user has at least admin role
      */
     isAdmin(): boolean {
+        return this.original('isAdmin', () => {
         return this.currentUser?.role === UserRole.CREATOR ||
             this.currentUser?.role === UserRole.ADMIN;
+            });
     }
 
     /**
      * Validate an existing session ID and return the User (Stateless / Request-Scoped)
      */
     validateSessionAndGetUser(sessionId: string): User | null {
+        return this.original('validateSessionAndGetUser', () => {
         if (!this.db) return null;
 
         const now = Date.now();
@@ -804,19 +953,23 @@ class IdentityService {
 
         if (!row) return null;
         return this.rowToUser(row);
+            });
     }
 
     /**
      * Validate an existing session ID (DEPRECATED: Use validateSessionAndGetUser instead)
      */
     validateSession(sessionId: string): boolean {
+        return this.original('validateSession', () => {
         return this.validateSessionAndGetUser(sessionId) !== null;
+            });
     }
 
     /**
      * Logout - clear a specific session
      */
     logoutSession(sessionId: string): void {
+        return this.original('logoutSession', () => {
         if (this.db) {
             this.db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
         }
@@ -825,12 +978,14 @@ class IdentityService {
         if (this.currentSession?.id === sessionId) {
             this.logout();
         }
+            });
     }
 
     /**
      * Logout - clear current session (Legacy stateful method)
      */
     logout(): void {
+        return this.original('logout', () => {
         if (this.currentSession && this.db) {
             this.db.prepare('DELETE FROM sessions WHERE id = ?').run(this.currentSession.id);
         }
@@ -840,6 +995,7 @@ class IdentityService {
         this.currentSession = null;
 
         console.log('[IdentityService] Logged out (Legacy Stateful)');
+            });
     }
 
     // ─── Creator emails: env + user-configured (system_config) ──────────────
@@ -862,6 +1018,7 @@ class IdentityService {
      * system_config table of the same SQLite DB). Never includes env values.
      */
     getConfiguredCreatorEmails(): string[] {
+        return this.original('getConfiguredCreatorEmails', () => {
         if (!this.db) return [];
         this.ensureSystemConfigTable();
         const row = this.db.prepare('SELECT value FROM system_config WHERE key = ?')
@@ -874,6 +1031,7 @@ class IdentityService {
         } catch {
             return [];
         }
+            });
     }
 
     /**
@@ -881,7 +1039,9 @@ class IdentityService {
      * These can only be changed by editing the env config, not from the UI.
      */
     getEnvCreatorEmails(): string[] {
+        return this.original('getEnvCreatorEmails', () => {
         return [...ENV_CREATOR_EMAILS];
+            });
     }
 
     /**
@@ -889,8 +1049,10 @@ class IdentityService {
      * lowercase). Used everywhere a creator check by email is needed.
      */
     getCreatorEmails(): string[] {
+        return this.original('getCreatorEmails', () => {
         const all = [...ENV_CREATOR_EMAILS, ...this.getConfiguredCreatorEmails()];
         return [...new Set(all.map(e => e.toLowerCase()))];
+            });
     }
 
     /**
@@ -898,6 +1060,7 @@ class IdentityService {
      * Returns the updated configured list.
      */
     addCreatorEmail(email: string): string[] {
+        return this.original('addCreatorEmail', () => {
         if (!this.db) throw new Error('IdentityService not initialized');
         const clean = email.trim().toLowerCase();
         if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(clean)) {
@@ -909,6 +1072,7 @@ class IdentityService {
             this.persistConfiguredCreatorEmails(current);
         }
         return this.getConfiguredCreatorEmails();
+            });
     }
 
     /**
@@ -916,6 +1080,7 @@ class IdentityService {
      * removed here (edit CREATOR_EMAILS instead); returns false in that case.
      */
     removeCreatorEmail(email: string): boolean {
+        return this.original('removeCreatorEmail', () => {
         if (!this.db) throw new Error('IdentityService not initialized');
         const clean = email.trim().toLowerCase();
         const current = this.getConfiguredCreatorEmails();
@@ -924,6 +1089,7 @@ class IdentityService {
         current.splice(idx, 1);
         this.persistConfiguredCreatorEmails(current);
         return true;
+            });
     }
 
     private persistConfiguredCreatorEmails(emails: string[]): void {
@@ -945,6 +1111,7 @@ class IdentityService {
         isCreator: boolean;
         googleLinked: boolean;
     } {
+        return this.original('getStatus', () => {
         return {
             authenticated: this.currentUser !== null,
             user: this.currentUser,
@@ -952,7 +1119,17 @@ class IdentityService {
             isCreator: this.isCreator(),
             googleLinked: this.isGoogleLinked()
         };
+            });
     }
 }
 
-export const identityService = new IdentityService();
+const identityConstructionPermit = admitEvaluatedIdentity();
+export const identityService = (() => {
+    try {
+        const original = new IdentityService();
+        bindEvaluatedIdentity(identityConstructionPermit, () => original.close());
+        return original;
+    } catch (original) {
+        failEvaluatedIdentity(identityConstructionPermit, original); throw original;
+    }
+})();

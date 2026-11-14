@@ -10,6 +10,8 @@ const continuousMemory: Slot = { name:'continuousMemory',phase:'UNSEEN' };
 const redis: Slot = { name:'redis',phase:'UNSEEN' };
 const graph: Slot = { name:'graph',phase:'UNSEEN' };
 const sqlite: Slot = { name:'sqlite',phase:'UNSEEN' };
+const identity: Slot = { name:'identity',phase:'UNSEEN' };
+const profileHydration: Slot = { name:'profile-constructor-hydration',phase:'UNSEEN' };
 const nervous: Slot = { name:'nervous',phase:'UNSEEN' };
 const scheduler: Slot = { name:'scheduler',phase:'UNSEEN' };
 const cron: Slot = { name:'cron',phase:'UNSEEN' };
@@ -24,7 +26,7 @@ const voiceLibrary: Slot = { name:'voice-library-known-borrowers',phase:'UNSEEN'
 let voiceBorrowersSealed = false;
 let conceptBorrowersSealed = false;
 const producers = [daemon,curiosity,nervous,scheduler,cron,dreamer];
-const storage = [continuousMemory,redis,graph,sqlite];
+const storage = [continuousMemory,redis,graph,identity,sqlite];
 let registrationSealed = false;
 let producersSealed = false;
 let storageSealed = false;
@@ -56,6 +58,12 @@ function failed(slot: Slot,permit: Permit,error: unknown): void {
     if (slot.phase !== 'CONSTRUCTING' || slot.permit !== permit) throw new Error('Foreign runtime construction failure: ' + slot.name);
     slot.failure=error;slot.phase='FAILED';slot.finishConstruction!();
 }
+export function admitEvaluatedIdentity(): Permit { return admit(identity); }
+export function bindEvaluatedIdentity(permit: Permit, stop: () => unknown): void { publish(identity, permit, stop, storageSealed); }
+export function failEvaluatedIdentity(permit: Permit, error: unknown): void { failed(identity, permit, error); }
+export function admitEvaluatedProfileHydration(): Permit { return admit(profileHydration); }
+export function bindEvaluatedProfileHydration(permit: Permit, join: () => unknown): void { publish(profileHydration, permit, join, storageSealed); }
+export function failEvaluatedProfileHydration(permit: Permit, error: unknown): void { failed(profileHydration, permit, error); }
 export function admitEvaluatedCuriosity(): Permit { return admit(curiosity); }
 export function bindEvaluatedCuriosity(permit: Permit,stop: () => unknown): void { publish(curiosity,permit,stop,producersSealed); }
 export function failEvaluatedCuriosity(permit: Permit,error: unknown): void { failed(curiosity,permit,error); }
@@ -161,13 +169,16 @@ export async function closeEvaluatedRuntimeStorage(): Promise<void> {
     // Original persistence before backends, with independent backends joined
     // allSettled even if one original close rejects.
     const failures: unknown[] = [];
+    // Original constructor hydration may borrow Redis/Graph/SQLite. Join its
+    // SAME Promise before any original storage close, even on rejection.
+    try { await drain([profileHydration]); } catch (error) { failures.push(error); }
     try { await drain([continuousMemory]); } catch (error) { failures.push(error); }
-    try { await drain([redis,graph]); } catch (error) { failures.push(error); }
+    try { await drain([redis,graph,identity]); } catch (error) { failures.push(error); }
     // Graph may borrow SQLite: its original stop settles before SQLite close.
     try { await drain([sqlite]); } catch (error) { failures.push(error); }
     if (failures.length) throw new AggregateError(failures,'Evaluated original storage stop failed');
 }
 export function evaluatedRuntimeFrontier(): readonly Readonly<{name:string;phase:string}>[] {
     // UNSEEN remains UNVERIFIED; never silently becomes NOT_ACQUIRED.
-    return [...producers,introspection,voiceRoutes,resourceManager,telephonyTools,telephony,tts,voiceLibrary,...storage].map(slot => Object.freeze({name:slot.name,phase:slot.phase}));
+    return [...producers,introspection,voiceRoutes,resourceManager,telephonyTools,telephony,tts,voiceLibrary,profileHydration,...storage].map(slot => Object.freeze({name:slot.name,phase:slot.phase}));
 }

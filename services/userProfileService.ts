@@ -1,3 +1,5 @@
+import { userProfileOwner } from './lifecycle/preparationBindings';
+import { admitEvaluatedProfileHydration, bindEvaluatedProfileHydration, failEvaluatedProfileHydration } from './lifecycle/runtimeStopBindings';
 /** Authoritative per-user SQLite state. Cache and graph are projections only.
  * Existing identity resolution/local legacy compatibility and data retention are
  * preserved. This is NOT a runtime owner/closure or power-loss durability proof.
@@ -37,9 +39,14 @@ export class UserProfileService {
     // Last confirmed snapshots only. Not the current-state read authority.
     private profiles = new Map<string, UserProfile>();
     private readonly PROFILE_ID = 'user_primary';
+    private readonly initialProfileOwner: Promise<UserProfile | null>;
     constructor() {
-        this.loadProfile().catch(original => console.warn('[USER_PROFILE] Failed to load initial profile:', original));
+        // Same one original load, started at the same constructor frontier.
+        this.initialProfileOwner = userProfileOwner().invoke('original-constructor-hydration', () => this.loadProfile());
+        void this.initialProfileOwner.catch(original => console.warn('[USER_PROFILE] Failed to load initial profile:', original));
     }
+    /** Original constructor hydration only, not projections/global readiness. */
+    public readyInitialProfile(): Promise<UserProfile | null> { return this.initialProfileOwner; }
     private resolveId(userId?: string): string {
         return userId && userId !== 'anonymous' ? userId : this.PROFILE_ID;
     }
@@ -248,4 +255,13 @@ export class UserProfileService {
     /** Last confirmed snapshot in THIS instance, not a cross-instance current read. */
     getName(userId?: string): string | undefined { return this.profiles.get(this.resolveId(userId))?.name; }
 }
-export const userProfile = new UserProfileService();
+const profileHydrationPermit = admitEvaluatedProfileHydration();
+export const userProfile = (() => {
+    try {
+        const original = new UserProfileService();
+        bindEvaluatedProfileHydration(profileHydrationPermit, () => original.readyInitialProfile());
+        return original;
+    } catch (original) {
+        failEvaluatedProfileHydration(profileHydrationPermit, original); throw original;
+    }
+})();
