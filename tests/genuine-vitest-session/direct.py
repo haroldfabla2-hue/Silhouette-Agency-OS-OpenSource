@@ -3,6 +3,9 @@
 import os,sys,json,signal,subprocess,time,resource,struct,socket,errno,stat,selectors,hashlib,base64
 from pathlib import Path
 ROOT=Path('/mnt/silhouette-genuine-vitest')
+def exact_compiler(phase,executable,argv):
+ return (phase=='candidate' and executable==str(ROOT/'fixtures/toolchain/bin/node')
+  and argv==[str(ROOT/'sources/candidate/node_modules/typescript/bin/tsc'),'--noEmit','--incremental','false','--pretty','false'])
 def cg():
  rows=Path('/proc/self/cgroup').read_text().splitlines();assert len(rows)==1 and rows[0].startswith('0::/')
  p=Path('/sys/fs/cgroup'+rows[0][3:]);assert p.name=='silhouette-vitest-coordinator.service'
@@ -200,8 +203,10 @@ def admit():
  STAGE='EXEC'
  assert os.path.isabs(executable)
  os.environ.pop('LC_CTYPE',None)
- # Prefix alone may write the bounded status pipe. Target output remains null.
- null=os.open('/dev/null',os.O_WRONLY);os.dup2(null,1);os.close(null)
+ # Only the exact compiler retains fd1 in the existing bounded outer pipe.
+ # Its fd2 already shares that pipe; every other target keeps stdout null.
+ if not exact_compiler(phase,executable,args):
+  null=os.open('/dev/null',os.O_WRONLY);os.dup2(null,1);os.close(null)
  os.execve(executable,[executable,*args],dict(os.environ))
 def run():
  phase,uid,gid,seconds,hostnet,hostpid,executable,*argv=sys.argv[2:];uid=int(uid);gid=int(gid);seconds=int(seconds)
@@ -212,8 +217,7 @@ def run():
  env={'PATH':str(ROOT/'fixtures/toolchain/bin')+':/usr/sbin:/usr/bin:/sbin:/bin'}
  fd=None;code=None;stream=None;diagnostic=bytearray();observed=0;wrapper_error='NONE'
  # Exact reviewed compiler invocation only. No general output-export switch.
- compiler_diagnostic=(phase=='candidate' and executable==str(ROOT/'fixtures/toolchain/bin/node')
-  and argv==[str(ROOT/'sources/candidate/node_modules/typescript/bin/tsc'),'--noEmit','--incremental','false','--pretty','false'])
+ compiler_diagnostic=exact_compiler(phase,executable,argv)
  compiler_head=bytearray();compiler_tail=bytearray();compiler_hash=hashlib.sha256();compiler_eof=False
  def stop(*unused):
   nonlocal forced
@@ -286,13 +290,15 @@ def run():
   natural=type(code)is int and code>=0 and wrapper_error=='NONE'and not forced and not residual and all(after.get(k,0)==before.get(k,0)for k in('oom','oom_kill','oom_group_kill'))
   row={'schema':1,'phase':phase,'rawReturnCode':code,'natural':natural,'forced':forced,'residualUidProcesses':len(residual),'oomBefore':before,'oomAfter':after,'aggregateMemoryMax':10737418240,'aggregateTasksMax':384,'swapMax':0,'cpuCount':2,'elapsedSeconds':round(time.monotonic()-start,3),'boundary':'DIRECT_CHILD_BWRAP_OFFLINE_CONFIGURED_NOT_EXECUTION_PROOF'if phase!='transport'else'DIRECT_BWRAP_TRANSPORT_CONFIGURED_NOT_EXECUTION_PROOF'}
   row['wrapperError']=wrapper_error
-  row['prefix']=prefix_evidence(bytes(diagnostic),observed>1024)
+  # Compiler bytes share the bootstrap pipe, so none can be attributed to prefix.
+  # Do not let arbitrary compiler text populate a pre-exec failure classification.
+  row['prefix']=({'authority':'UNAUTHENTICATED_CORROBORATION_ONLY','status':'COMPILER_SHARED_PIPE_NOT_PREFIX_ATTRIBUTABLE'} if compiler_diagnostic else prefix_evidence(bytes(diagnostic),observed>1024))
   if phase=='acquire':row['acquisition']=acquisition_evidence(not residual)
   if compiler_diagnostic:
    # Encode arbitrary child bytes so log command/control text cannot execute.
    # At most32768raw bytes / ~44KiBencoded, existing root log channel only.
    captured=bytes(compiler_head) if observed<=16384 else (bytes(compiler_head)+bytes(compiler_tail)[max(0,32768-observed):] if observed<32768 else bytes(compiler_head)+bytes(compiler_tail))
-   print('COMPILER_DIAGNOSTIC '+json.dumps({'schema':1,'origin':'EXACT_COMPILER_INVOCATION_MERGED_PIPE_UNTRUSTED_TEXT_NOT_AUTHORITY','observedBytes':observed,'observedSha256':compiler_hash.hexdigest(),'pipeEOF':compiler_eof,'truncated':observed>32768,'headLimit':16384,'tailLimit':16384,'capturedBytes':len(captured),'capturedSha256':hashlib.sha256(captured).hexdigest(),'encoding':'base64','data':base64.b64encode(captured).decode('ascii'),'exitCode':code},separators=(',',':')),flush=True)
+   print('COMPILER_DIAGNOSTIC '+json.dumps({'schema':1,'origin':'EXACT_COMPILER_INVOCATION_MERGED_PIPE_UNTRUSTED_TEXT_NOT_AUTHORITY','fdScope':'EXACT_COMPILER_FD1_FD2_AND_BOOTSTRAP_SHARED_PIPE_NOT_SEPARATELY_ATTRIBUTABLE','observedBytes':observed,'observedSha256':compiler_hash.hexdigest(),'pipeEOF':compiler_eof,'truncated':observed>32768,'headLimit':16384,'tailLimit':16384,'capturedBytes':len(captured),'capturedSha256':hashlib.sha256(captured).hexdigest(),'encoding':'base64','data':base64.b64encode(captured).decode('ascii'),'exitCode':code},separators=(',',':')),flush=True)
   # Root-created finite fields only; emit before private receipt write and cleanup.
   print('DIRECT_CHILD_RECEIPT '+json.dumps(row,separators=(',',':')),flush=True)
   receipt.write_text(json.dumps(row)+'\n');receipt.chmod(0o600)
