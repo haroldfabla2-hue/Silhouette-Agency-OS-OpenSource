@@ -10,8 +10,13 @@ export function passivePairs() {
     const states: number[][] = [], pairs: number[][] = [], events: number[][] = [];
     const cleanups: Array<() => void> = [];
     let post8 = 0;
+    // Same128 total rows, not an expanded cap. Reserve32 for POST8/HPE.
+    // Generic loss ALWAYS keeps overflow=true/UNKNOWN; never claim full history.
+    let genericRows = 0, decisiveRows = 0;
     function event(kind: number, side: number, id: number, detail = 0) {
-        if (events.length >= 128) { overflow = true; return; }
+        const decisive = kind === 6 || kind === 7 || kind === 8 || kind === 9;
+        if (decisive ? decisiveRows >= 32 : genericRows >= 96) { overflow = true; return; }
+        if (decisive) decisiveRows++; else genericRows++;
         events.push([kind, side, id, detail]);
     }
     function mark(side: number, id: number, bit: number) {

@@ -3318,8 +3318,8 @@
       "path": "tests/real-process/mcp-passive-pairs.ts",
       "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
       "fixturePath": "tests/genuine-vitest-session/main-mcp-integration/tests/real-process/mcp-passive-pairs.ts",
-      "bytes": 5927,
-      "sha256": "5841710f7387ba9bdb69d26b2566fd0f6055cd5c8093f0d57eb85a071126f065"
+      "bytes": 6291,
+      "sha256": "4040c61161bf7ef5e5f8c3ff3127fb70c38d3fd33360d905da4d85b405048039"
     },
     {
       "path": "tests/real-process/mcp-pooled-coherent-child.ts",
