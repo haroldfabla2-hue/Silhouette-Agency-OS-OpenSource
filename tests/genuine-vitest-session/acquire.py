@@ -120,12 +120,16 @@ for rel,row in json.loads((acquisition/'package-lock.json').read_text())['packag
 deps=acquisition/'node_modules'
 for p in list(deps.rglob('*')):
  if p.is_symlink():
-  assert '.bin'in p.relative_to(deps).parts,'UNREVIEWED_INSTALLED_SYMLINK'
+  assert str(p.relative_to(acquisition))not in admittedFiles,'ADMITTED_SOURCE_SYMLINK'
+  assert p.parent.name=='.bin'and p.parent.parent.name=='node_modules','UNREVIEWED_INSTALLED_SYMLINK'
   target=p.resolve(strict=True);assert target.is_relative_to(deps.resolve()),'BIN_TARGET_OUTSIDE_DEPS'
   assert str(target.relative_to(acquisition))in admittedFiles,'BIN_TARGET_NOT_VERIFIED_MEMBER'
   p.unlink()
 for p in list(deps.rglob('.package-lock.json')):
- assert p.parent.name=='node_modules';p.unlink()
+ # Archive-authenticated members are source, regardless of their basename.
+ if str(p.relative_to(acquisition))in admittedFiles:continue
+ assert p==deps/'.package-lock.json'and p.parent.name=='node_modules'and p.is_file()and not p.is_symlink(),'UNREVIEWED_INSTALLER_METADATA'
+ p.unlink()
 actual={str(p.relative_to(acquisition))for p in deps.rglob('*')if p.is_file()}
 assert actual==admittedFiles,'UNREVIEWED_EXTRA_INSTALLED_FILE'
 PHASE='NATIVE_PROVENANCE'

@@ -34,7 +34,7 @@ for q in(p,p.parent):
 PY
 [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
 test "$(git -C "$repo" rev-parse HEAD)" = "$expected"
-test "$(git -C "$repo" rev-parse HEAD^)" = d917a1782c95001a844084a307bcb2a79f55f6b2
+test "$(git -C "$repo" rev-parse HEAD^)" = 4edc2151437cc2e1900eeb73f18b5a2465b20462
 # Fail before allocating, never resize a previous attempt or use an existing account/root.
 test ! -e "$root"
 ! id silhouette-acquire >/dev/null 2>&1
