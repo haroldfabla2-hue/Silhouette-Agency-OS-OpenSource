@@ -82,8 +82,32 @@ async function until(predicate: () => boolean, ms = 3000) {
     while (!predicate()) { assert.ok(Date.now() < deadline, 'deadline exceeded'); await new Promise(r => setTimeout(r, 10)); }
 }
 async function post(stream: (typeof streams)[number], key: string, id: number, method = 'ping', params?: object) {
-    const reply = await request(stream.endpoint, key, JSON.stringify({ jsonrpc: '2.0', id, method, ...(params ? { params } : {}) }));
-    assert.equal(reply.status, 202, reply.text); await until(() => stream.messages.some(m => m.id === id));
+    // Content-free phase evidence, never a request retry or alternate path.
+    const ordinal = [1,2,3,4,6,7,9,8].indexOf(id) + 1;
+    let phase = 'REQUEST_START';
+    let status = 0;
+    const emit = (next: string, error?: unknown) => {
+        phase = next;
+        const k = error && typeof error === 'object' ? error as Record<string, unknown> : {};
+        const name = typeof k.name === 'string' && ['Error','AssertionError','TypeError','RangeError','AbortError'].includes(k.name) ? k.name : 'UNKNOWN';
+        const code = typeof k.code === 'string' && ['ERR_ASSERTION','ECONNRESET','ECONNREFUSED','EPIPE','ENOENT','EACCES','EPERM','ETIMEDOUT','ENOBUFS','ERR_STREAM_PREMATURE_CLOSE','ERR_HTTP_HEADERS_SENT'].includes(k.code) ? k.code : 'UNKNOWN';
+        process.stdout.write('MCP_POST_PHASE ' + JSON.stringify({ schema: 1,
+            ordinal: ordinal >= 1 && ordinal <= 8 ? ordinal : 0, phase,
+            status: Number.isInteger(status) && status >= 100 && status <= 599 ? status : 0,
+            errorName: error === undefined ? 'NONE' : name,
+            errorCode: error === undefined ? 'NONE' : code }) + '\n');
+    };
+    emit('REQUEST_START');
+    let reply: { status: number; text: string };
+    try { reply = await request(stream.endpoint, key, JSON.stringify({ jsonrpc: '2.0', id, method, ...(params ? { params } : {}) })); }
+    catch (error) { emit('REQUEST_ERROR', error); throw error; }
+    status = reply.status; emit('HTTP_REPLY');
+    try { assert.equal(reply.status, 202, 'MCP HTTP acceptance required'); }
+    catch (error) { emit('HTTP_STATUS_ASSERTION', error); throw error; }
+    emit('SSE_WAIT');
+    try { await until(() => stream.messages.some(m => m.id === id)); }
+    catch (error) { emit('SSE_WAIT_ERROR', error); throw error; }
+    emit('SSE_REPLY');
     return stream.messages.find(m => m.id === id);
 }
 try {
@@ -202,6 +226,11 @@ try {
         composedBoundary: true, fullApplicationBoot: false, transport: 'AF_UNIX',
         disposableSqliteWrites: true, providerCalls: 0, executedTools: 0,
         provisionalUntilNaturalExitAndOuterCleanup: true }));
+} catch (error) {
+    const k = error && typeof error === 'object' ? error as Record<string, unknown> : {};
+    const kind = k.code === 'ERR_ASSERTION' ? 'ASSERTION' : 'OTHER';
+    process.stdout.write('MCP_OUTER_FAILURE ' + kind + '\n');
+    throw error;
 } finally {
     process.stdout.write('MCP_CHECKPOINT {"id":31}\n');
     await wrapper.close();

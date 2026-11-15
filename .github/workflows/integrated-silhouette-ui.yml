@@ -62,7 +62,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
-          test "$(git rev-parse HEAD^)" = 30479185ef58f3ff92a84fc86b5d1c595e36cd16
+          test "$(git rev-parse HEAD^)" = 59c3a855feedafc9c090435e54dc898e4f0b26ac
           test "$(git rev-list --parents -n 1 HEAD | wc -w)" -eq 2
           python3 - <<'PY'
           import subprocess
