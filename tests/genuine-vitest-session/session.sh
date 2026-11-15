@@ -50,7 +50,7 @@ quota,period=(p/'cpu.max').read_text().split();assert int(quota)==2*int(period)
 PYLIMIT
 [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
 test "$(git -C "$repo" rev-parse HEAD)" = "$expected"
-test "$(git -C "$repo" rev-parse HEAD^)" = a82f0c88ad30371e9fa73f380509810e1eadeebe
+test "$(git -C "$repo" rev-parse HEAD^)" = 1d2610d8c9e2f3075e43142e8f4da81afe86dc68
 # Fail before allocating, never resize a previous attempt or use an existing account/root.
 test ! -e "$root"
 ! id silhouette-acquire >/dev/null 2>&1
