@@ -248,7 +248,7 @@ quota,period=(p/'cpu.max').read_text().split();assert int(quota)==2*int(period)
 PYLIMIT
 [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
 test "$(git -C "$repo" rev-parse HEAD)" = "$expected"
-test "$(git -C "$repo" rev-parse HEAD^)" = bd7d91496bd16dcfbdf83ef22bd5be478926684b
+test "$(git -C "$repo" rev-parse HEAD^)" = e32fce23450e25e26e6794e518e080d336626527
 # Fail before allocating, never resize a previous attempt or use an existing account/root.
 test ! -e "$root"
 ! id silhouette-acquire >/dev/null 2>&1
@@ -458,7 +458,7 @@ current_exit=
 failure_captured=false
 unit_finished=
 unit_started=$(date +%s.%6N)
-if timeout --signal=TERM --kill-after=2s 20s systemd-run --quiet --unit silhouette-vitest-transport --slice=silhouette-vitest.slice --service-type=exec \
+if timeout --signal=TERM --kill-after=2s 20s /usr/bin/python3 -I - "$repo" "$(dirname "$(dirname "$node")")" /usr/bin/systemd-run --unit silhouette-vitest-transport --slice=silhouette-vitest.slice --service-type=exec \
   -p User=silhouette-acquire -p Group=silhouette-acquire -p NoNewPrivileges=yes \
   -p ProtectSystem=strict -p ProtectHome=yes -p PrivateDevices=yes -p ProtectProc=invisible -p ProcSubset=pid \
   -p InaccessiblePaths="$repo $root/private $root/work $root/sources $root/runtime /tmp /var/tmp /dev/shm" \
@@ -469,7 +469,71 @@ if timeout --signal=TERM --kill-after=2s 20s systemd-run --quiet --unit silhouet
   -p LimitNOFILE=256 -p LimitFSIZE=67108864 -p RuntimeMaxSec=180 -p TimeoutStartSec=15 \
   -p TimeoutStopSec=5 -p KillMode=control-group -p RemainAfterExit=yes -p StandardOutput=null -p StandardError=null \
   /usr/bin/env -i PATH=/usr/bin:/bin HOME="$root/transport/home" \
-  "$root/fixtures/toolchain/bin/node" "$root/fixtures/public-transport.cjs"; then
+  "$root/fixtures/toolchain/bin/node" "$root/fixtures/public-transport.cjs" <<'PYLAUNCH'
+# Only trusted launcher stderr, never child output or a journal. Existing timeout20/kill2
+# remains the outer guardian. Handle its TERM so the bounded record can be emitted.
+import json,os,selectors,signal,subprocess,sys,time
+prefixes=[os.fsencode(p)for p in sys.argv[1:3]]
+labels=[b'<PUBLIC_REPO>',b'<PUBLIC_NODE>']
+cap=16384;data=bytearray();seen=0;process=None;sel=None;forced=False
+launch_exit=None;capture='COMPLETE';deadline_hit=False;term_requested=False
+start=time.monotonic();deadline=start+20
+# No stdout/stderr inheritance by the launched service: its unit properties remain null.
+def on_term(signum,frame):
+ global term_requested
+ term_requested=True
+signal.signal(signal.SIGTERM,on_term)
+signal.signal(signal.SIGINT,on_term)
+def stop_launcher():
+ global forced
+ if process is None:return
+ forced=True
+ try:os.killpg(process.pid,signal.SIGTERM)
+ except ProcessLookupError:pass
+ # Bounded escalation even if a descendant holds stderr after launcher exit.
+ until=time.monotonic()+1
+ while process.poll()is None and time.monotonic()<until:time.sleep(.01)
+ try:os.killpg(process.pid,signal.SIGKILL)
+ except ProcessLookupError:pass
+ try:process.wait(timeout=.2)
+ except subprocess.TimeoutExpired:pass
+try:
+ process=subprocess.Popen(sys.argv[3:],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,
+  stderr=subprocess.PIPE,start_new_session=True,env={'PATH':os.environ['PATH'],'LC_ALL':'C'})
+ os.set_blocking(process.stderr.fileno(),False)
+ sel=selectors.DefaultSelector();sel.register(process.stderr,selectors.EVENT_READ)
+ while sel.get_map()or process.poll()is None:
+  remaining=deadline-time.monotonic()
+  if term_requested or remaining<=0:
+   deadline_hit=True;capture='DEADLINE';stop_launcher();break
+  for key,_ in sel.select(min(.05,remaining)):
+   b=os.read(key.fileobj.fileno(),4096)
+   if not b:sel.unregister(key.fileobj);continue
+   seen=min(2**63-1,seen+len(b))
+   if len(data)<cap:data.extend(b[:cap-len(data)])
+ launch_exit=process.poll()
+except BaseException:
+ capture='CAPTURE_FAILED';stop_launcher()
+ if process is not None:launch_exit=process.poll()
+finally:
+ if sel is not None:sel.close()
+ if process is not None:
+  if process.poll()is None:stop_launcher()
+  if process.stderr is not None:process.stderr.close()
+# Exact byte-prefix replacement; Latin1+ASCII JSON preserves every other retained byte.
+raw=bytes(data)
+for prefix,label in sorted(zip(prefixes,labels),key=lambda x:len(x[0]),reverse=True):
+ if prefix:raw=raw.replace(prefix,label)
+natural=None if launch_exit is None else(128-launch_exit if launch_exit<0 else launch_exit)
+status=124 if deadline_hit else(natural if natural not in (None,0) else(125 if capture!='COMPLETE'or natural is None or seen>len(data) else 0))
+record={'schema':1,'source':'TRUSTED_TRANSPORT_LAUNCHER_STDERR_ONLY','status':status,
+ 'launcherReturnCode':launch_exit,'capture':capture,'deadline':deadline_hit,'forcedStop':forced,
+ 'retainedBytes':len(data),'observedBytes':seen,'truncated':seen>len(data),
+ 'encoding':'LATIN1_ESCAPED_JSON_WITH_EXACT_PUBLIC_PREFIX_REDACTION','stderr':raw.decode('latin1')}
+print('TRANSPORT_LAUNCHER_DIAGNOSTIC '+json.dumps(record,ensure_ascii=True,separators=(',',':')),flush=True)
+sys.exit(status)
+PYLAUNCH
+then
   printf 'TRANSPORT_STARTUP exit=0 typeExecStartupOnly=yes\n'
 else
   current_exit=$?

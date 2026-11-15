@@ -62,13 +62,13 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
-          test "$(git rev-parse HEAD^)" = bd7d91496bd16dcfbdf83ef22bd5be478926684b
+          test "$(git rev-parse HEAD^)" = e32fce23450e25e26e6794e518e080d336626527
           test "$(git rev-list --parents -n 1 HEAD | wc -w)" -eq 2
           python3 - <<'PY'
           import subprocess
           expected={'.github/workflows/integrated-silhouette-ui.yml','tests/genuine-vitest-session/session.sh'}
           actual=set(subprocess.check_output(['git','diff','--name-only','HEAD^','HEAD'],text=True).splitlines())
-          assert actual==expected,'EXACT_REVIEWED_LAUNCH_WAIT_CORRECTION_REQUIRED'
+          assert actual==expected,'EXACT_REVIEWED_LAUNCHER_STDERR_CORRECTION_REQUIRED'
           PY
           elapsed=$(( $(date +%s) - $(cat "$RUNNER_TEMP/silhouette-session-job-start") ))
           test "$elapsed" -ge 0
