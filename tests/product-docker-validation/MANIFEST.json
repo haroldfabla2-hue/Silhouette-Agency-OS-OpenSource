@@ -1,0 +1,54 @@
+{
+  "status": "SOURCE_ONLY_CLOSED_GATES_NOT_EXECUTION_READY",
+  "sourceParent": "5c64ee5a7308934a5bedb271c9045015f0784b12",
+  "unchangedDriverSha256": "5e179aa4a8e105d50868e5f5705e4727bd58844617036ab24d9cb9c4fc3a3b52",
+  "inheritedPublicSourceManifest": "ad8f28f8c1e4cc1437bc44dd2199b38d929b10141aac71ef6dc3028c99275c2c",
+  "daemonStorageTradeoff": "OBSERVED_GROWTH_ONLY_NOT_KERNEL_HARD_QUOTA",
+  "files": [
+    {
+      "path": "host-envelope.py",
+      "bytes": 18093,
+      "sha256": "e619c443e314f353a67e32c98e8bf2d1487c9e68a44131d6e10d10350ae5e5f9"
+    },
+    {
+      "path": "qualification.cjs",
+      "bytes": 3413,
+      "sha256": "f8c61394ab309607618013c0becffbe3e7ed7f6b406cdcba288765b0561148f2"
+    },
+    {
+      "path": "enforcement.py",
+      "bytes": 4956,
+      "sha256": "4fa391952f2313381313e1a3f0f6c2d301249dad8f6a83f9b80e18dfbd108c1f"
+    },
+    {
+      "path": "cleanup-envelope.py",
+      "bytes": 4261,
+      "sha256": "830fb54f6ec0c601bba90ee5fdd5179d3a294bbe406f81f597aeb629e501fdad"
+    },
+    {
+      "path": "finite_projection.py",
+      "bytes": 2291,
+      "sha256": "761b7707c7c7d1af87f4716fd4a00df1f68a6b0bdf7f2e16121f51a45a5f7c90"
+    },
+    {
+      "path": "host-validation.py",
+      "bytes": 5047,
+      "sha256": "b8a13f9a7689c3e3105ea55883dc0183425ce4ec5c40e580cf1908be004babd6"
+    },
+    {
+      "path": "finite-export.py",
+      "bytes": 2755,
+      "sha256": "3625084980e64b2b5d54ec4d778d297a4f6ca4e6390ec12d02eea3d39da0d1b5"
+    },
+    {
+      "path": "driver/validate.cjs",
+      "bytes": 11346,
+      "sha256": "5e179aa4a8e105d50868e5f5705e4727bd58844617036ab24d9cb9c4fc3a3b52"
+    },
+    {
+      "path": "REVIEW.md",
+      "bytes": 14594,
+      "sha256": "05ceda8f1902ca250379bb079c467da7507632c18a12eaaeeeab1558b187f1aa"
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 # EXACT PROPOSAL ONLY, not yet published or activated.
 # Branch-only replacement at the EXISTING registered integrated workflow path.
 # No push trigger. One separate manual dispatch requires exact reviewed head.
-name: SCOPED PRODUCT COMPILER AND REAL FILESYSTEM - NO PRODUCT ACCEPTANCE
+name: SOURCE PROPOSAL DOCKER QUALIFICATION THEN SAME SCOPED DRIVER
 on:
   workflow_dispatch:
     inputs:
@@ -41,33 +41,35 @@ jobs:
       - name: Exact single-child lineage changed-path allowlist and complete source identity
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = 68b7ab208b45e02751caf148c55231798db1403b
+          test "$(git rev-parse HEAD^)" = 5c64ee5a7308934a5bedb271c9045015f0784b12
           test "$(git rev-list --parents -n 1 HEAD | wc -w)" -eq 2
           python3 - <<'PYVERIFY'
           from pathlib import Path
           import hashlib,json,subprocess
-          root=Path('tests/product-source-validation')
+          root=Path('tests/product-docker-validation')
           manifest=root/'MANIFEST.json'
-          assert hashlib.sha256(manifest.read_bytes()).hexdigest()=='ad8f28f8c1e4cc1437bc44dd2199b38d929b10141aac71ef6dc3028c99275c2c'
-          rows=json.loads(manifest.read_text())['files']
-          expected={str(root/p)for p in ['launcher/supervisor.py', 'launcher/python_bootstrap.py', 'launcher/bootstrap_projection.py', 'supervisor_projection.py', 'finite_projection.py', 'finite-export.py', 'MANIFEST.json']}|{'.github/workflows/integrated-silhouette-ui.yml'}
+          assert hashlib.sha256(manifest.read_bytes()).hexdigest()=='2937d4956c73980e5ae2957dbfa226998c80189cb5559c7ccd03028749ce4b9f'
+          expected={'.github/workflows/integrated-silhouette-ui.yml', 'tests/product-docker-validation/host-validation.py', 'tests/product-docker-validation/cleanup-envelope.py', 'tests/product-docker-validation/finite-export.py', 'tests/product-docker-validation/enforcement.py', 'tests/product-docker-validation/finite_projection.py', 'tests/product-docker-validation/MANIFEST.json', 'tests/product-docker-validation/host-envelope.py', 'tests/product-docker-validation/REVIEW.md', 'tests/product-docker-validation/qualification.cjs', 'tests/product-docker-validation/driver/validate.cjs'}
           actual=set(subprocess.check_output(['git','diff','--name-only','HEAD^','HEAD'],text=True).splitlines())
           assert actual==expected
-          assert len(rows)==3434
-          for r in rows:
-              p=root/r['path'];assert p.is_file()and not p.is_symlink()
-              b=p.read_bytes();assert len(b)==r['bytes']and hashlib.sha256(b).hexdigest()==r['sha256']
+          for folder,digest,count in [(root,'2937d4956c73980e5ae2957dbfa226998c80189cb5559c7ccd03028749ce4b9f',9),(Path('tests/product-source-validation'),'ad8f28f8c1e4cc1437bc44dd2199b38d929b10141aac71ef6dc3028c99275c2c',3434)]:
+              manifest=folder/'MANIFEST.json';assert hashlib.sha256(manifest.read_bytes()).hexdigest()==digest
+              rows=json.loads(manifest.read_text())['files'];assert len(rows)==count
+              for r in rows:
+                  p=folder/r['path'];assert p.is_file()and not p.is_symlink()
+                  b=p.read_bytes();assert len(b)==r['bytes']and hashlib.sha256(b).hexdigest()==r['sha256']
           PYVERIFY
       - name: Exact reviewed source gate and bounded isolated helper scope
         env:
           REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
           RUNNER_ENVIRONMENT: ${{ runner.environment }}
-        run: python3 tests/product-source-validation/host-validation.py
+          DOCKER_SOURCE_MANIFEST_SHA256: 2937d4956c73980e5ae2957dbfa226998c80189cb5559c7ccd03028749ce4b9f
+        run: python3 tests/product-docker-validation/host-validation.py
       # No artifact upload, cache, provider, browser, native-store or public raw
       # runtime export. Fixed export and independent tagged cleanup follow.
       - name: Independent exact-tag cleanup
         if: always()
-        run: sudo -n env GITHUB_RUN_ID="$GITHUB_RUN_ID" RUNNER_TEMP="$RUNNER_TEMP" /usr/bin/python3 tests/product-source-validation/launcher/cleanup-hosted.py
+        run: env GITHUB_RUN_ID="$GITHUB_RUN_ID" RUNNER_TEMP="$RUNNER_TEMP" /usr/bin/python3 tests/product-docker-validation/cleanup-envelope.py
       - name: Fixed scoped evidence only, never raw source or diagnostics
         if: always()
-        run: python3 tests/product-source-validation/finite-export.py
+        run: python3 tests/product-docker-validation/finite-export.py
