@@ -128,13 +128,41 @@ assert reference(top[0])=='4.0.16','WRONG_GENUINE_VITEST_VERSION'
 assert reference(top[2])==[],'GENUINE_VITEST_UNHANDLED_ERRORS'
 r=json.loads(Path(report).read_text())
 assert r.get('numRuntimeErrorTestSuites',0)==0 and not r.get('unhandledErrors')and not r.get('errors'),'RUNTIME_OR_UNHANDLED_ERROR'
-assert len(r['testResults'])==1 and all(f.get('message')==''for f in r['testResults']),'FILE_SETUP_TEARDOWN_ERROR'
+assert len(r['testResults'])==3 and all(isinstance(f.get('assertionResults'),list) for f in r['testResults']),'FILE_SETUP_TEARDOWN_ERROR'
 a=[a for f in r['testResults']for a in f['assertionResults']]
 # Explicit known setup/teardown/native failures may not count as discriminating assertion-red.
 private_text=json.dumps(r)
 for forbidden in ['Original test generation teardown failed','Original generation failures:','INDEPENDENT_MEMORY_SCOPE_INVALID','Missing explicit test preparation capacity','Cannot find module','Failed to load url','Unhandled Error','Worker exited unexpectedly','Hook timed out','beforeAll hook','afterAll hook','beforeEach hook','afterEach hook']:
  assert forbidden not in private_text,'INFRASTRUCTURE_OR_CLEANUP_FAILURE_NOT_NEGATIVE_CONTROL'
-assert name=='mcp' and int(code)==0 and r['success']is True and r['numFailedTests']==0,'MCP_TEST_FAILURE'
-assert len(a)==3 and all(x['status']=='passed'for x in a)and r['numPendingTests']==0,'EXACT_THREE_REAL_CASES_NO_SKIP'
-assert {Path(f['name']).name for f in r['testResults']}=={'mcp-client-isolation-real.test.ts'},'EXACT_MCP_FILE'
-print(json.dumps({'session':'mcp','selectedAssertions':3,'passed':3,'failed':0,'status':'REAL_COMPOSED_EPHEMERAL_SQLITE_CUSTODY_SHARED_KEY_LOGIC_NOT_PRODUCTION_CREDENTIAL_PERSISTENCE','keyStoreKind':'fresh-exclusive-ephemeral-sqlite','productionCredentialPersistenceVerified':False,'productionStoreCorruptionVerified':False,'fullApplicationBoot':False,'naturalWholeChildExit':True,'builtinBlobUnhandledErrors':0,'blobSha256':hashlib.sha256(Path(blob).read_bytes()).hexdigest(),'reportSha256':hashlib.sha256(Path(report).read_bytes()).hexdigest(),'wholeProductAccepted':False,'usefulLearningAccepted':False}))
+expected = {
+ 'mcp-client-isolation-real.test.ts': [
+  ('bounded-json', 'bounds a single object, depth and nodes, rejecting legacy batches'),
+  ('deadline-boundaries', 'expires absolute and idle deadlines at the boundary without resetting birth on activity'),
+  ('nonpooled', 'runs actual composed identity/key/parser/two-client SDK behavior in a fresh natural child')],
+ 'mcp-pooled-coherent-real.test.ts': [('pooled-coherent', 'real pooled-coherent MCP client must preserve isolation and revocation without retry')],
+ 'mcp-pooled-original-mixed-real.test.ts': [('pooled-original-mixed', 'real pooled-original-mixed MCP client must preserve isolation and revocation without retry')],
+}
+assert name=='mcp' and {Path(f['name']).name for f in r['testResults']}==set(expected),'EXACT_MATRIX_FILES'
+assert len(a)==5 and r['numTotalTests']==5 and r['numPendingTests']==0,'EXACT_FIVE_ASSERTIONS_NO_SKIP'
+rows=[]
+for filename, cases in expected.items():
+ f=next(f for f in r['testResults'] if Path(f['name']).name==filename)
+ assert len(f['assertionResults'])==len(cases),'EXACT_PER_FILE_ASSERTIONS'
+ for scenario,title in cases:
+  matches=[v for v in f['assertionResults'] if v.get('title')==title]
+  assert len(matches)==1 and matches[0]['status']in ('passed','failed'),'EXACT_NORMAL_ASSERTION_STATUS'
+  rows.append({'scenario':scenario,'status':matches[0]['status'].upper()})
+passed=sum(x['status']=='PASSED' for x in rows)
+assert r['numPassedTests']==passed and r['numFailedTests']==5-passed,'REPORT_COUNTS_DISAGREE'
+allpass=passed==5
+assert type(r['success'])is bool and r['success']==allpass,'REPORT_SUCCESS_DISAGREES'
+assert (int(code)==0)==allpass,'EXIT_REPORT_DISAGREES'
+print(json.dumps({'session':'mcp','selectedAssertions':5,'passed':passed,'failed':5-passed,
+ 'status':'PASS' if allpass else 'FAIL','scenarios':rows,
+ 'originalMixedIsMandatoryNormalAssertion':True,'historicalOriginalPooledFailureResolved':False,
+ 'keyStoreKind':'fresh-exclusive-ephemeral-sqlite','productionCredentialPersistenceVerified':False,
+ 'productionStoreCorruptionVerified':False,'fullApplicationBoot':False,'naturalWholeChildExit':True,
+ 'builtinBlobUnhandledErrors':0,'blobSha256':hashlib.sha256(Path(blob).read_bytes()).hexdigest(),
+ 'reportSha256':hashlib.sha256(Path(report).read_bytes()).hexdigest(),
+ 'wholeProductAccepted':False,'usefulLearningAccepted':False}),flush=True)
+sys.exit(0 if allpass else 1)

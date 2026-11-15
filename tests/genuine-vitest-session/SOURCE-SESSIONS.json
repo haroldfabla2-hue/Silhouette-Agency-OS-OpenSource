@@ -1,5 +1,5 @@
 {
-  "selection": "EXACT_ACTUAL_MAIN_PLUS_TEN_MCP_BLOBS_EXPLICIT_EPHEMERAL_CUSTODY",
+  "selection": "EXACT_MAIN_PLUS_FOURTEEN_MCP_BLOBS_MATRIX_EPHEMERAL_CUSTODY",
   "mainCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
   "files": [
     {
@@ -3276,6 +3276,20 @@
       "sha256": "122576eb3836caadd6e5e2d7203d6ab57047261fc74116f5669dfd775e2ad2f2"
     },
     {
+      "path": "tests/automated/mcp-pooled-coherent-real.test.ts",
+      "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
+      "fixturePath": "tests/genuine-vitest-session/main-mcp-integration/tests/automated/mcp-pooled-coherent-real.test.ts",
+      "bytes": 14234,
+      "sha256": "0c86a35f84be510dcc5499fe7fd38c71c7ef5422f71f1e243b0f85bee3aaf006"
+    },
+    {
+      "path": "tests/automated/mcp-pooled-original-mixed-real.test.ts",
+      "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
+      "fixturePath": "tests/genuine-vitest-session/main-mcp-integration/tests/automated/mcp-pooled-original-mixed-real.test.ts",
+      "bytes": 14246,
+      "sha256": "ced3aec2afe878b6f3ebd84bc8f6d19daee5ce735ea7dcf76faff5e44e707d03"
+    },
+    {
       "path": "tests/automated/memory-transitions-p0.test.ts",
       "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
       "bytes": 10626,
@@ -3299,6 +3313,20 @@
       "fixturePath": "tests/genuine-vitest-session/main-mcp-integration/tests/real-process/mcp-boundary-child.ts",
       "bytes": 21290,
       "sha256": "fcb5070ba52262dc9376bf1205049c0d74ce47d9617745183d9f7588f69ba376"
+    },
+    {
+      "path": "tests/real-process/mcp-pooled-coherent-child.ts",
+      "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
+      "fixturePath": "tests/genuine-vitest-session/main-mcp-integration/tests/real-process/mcp-pooled-coherent-child.ts",
+      "bytes": 22390,
+      "sha256": "8f00edc5cb5cab34ea67a3dc71f47c63f47fa78b3ee2f0037f771d6c7d638eef"
+    },
+    {
+      "path": "tests/real-process/mcp-pooled-original-mixed-child.ts",
+      "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
+      "fixturePath": "tests/genuine-vitest-session/main-mcp-integration/tests/real-process/mcp-pooled-original-mixed-child.ts",
+      "bytes": 22364,
+      "sha256": "10d41f7ab40087690b644d05e391733e9cb78977fbf952ccf4f0e40a11e18e62"
     },
     {
       "path": "tests/setup/fetch-teardown.ts",
@@ -3423,7 +3451,7 @@
   ],
   "sessions": {
     "candidate": {
-      "productCommit": "MAIN_PLUS_TEN_MCP_BLOBS_EXPLICIT_EPHEMERAL_CUSTODY",
+      "productCommit": "MAIN_PLUS_FOURTEEN_MCP_BLOBS_MATRIX_EPHEMERAL_CUSTODY",
       "overrides": []
     }
   }

@@ -128,11 +128,11 @@ for name,session in spec['sessions'].items():
  overrides={r['path']:r for r in session['overrides']}
  for candidateRow in spec['files']:
   row=overrides.get(candidateRow['path'],candidateRow)
-  assert session['productCommit']=='MAIN_PLUS_TEN_MCP_BLOBS_EXPLICIT_EPHEMERAL_CUSTODY'
+  assert session['productCommit']=='MAIN_PLUS_FOURTEEN_MCP_BLOBS_MATRIX_EPHEMERAL_CUSTODY'
   assert spec['mainCommit']=='1f0d967abf81b86e666d26eeb20f6dc97662a525'
   commit=row['sourceCommit']
   if commit=='WORKFLOW_FIXTURE_EXACT':
-   assert row['path']in {'server/app.ts', 'server/mcp/mcpServer.ts', 'services/apiKeyService.ts', 'package.json', 'tests/real-process/mcp-boundary-child.ts', 'services/ephemeralMcpKeyRegistry.ts', 'tests/automated/mcp-client-isolation-real.test.ts', 'package-lock.json', 'services/mcpKeyService.ts', 'server/index.ts'}
+   assert row['path']in {'server/app.ts', 'server/mcp/mcpServer.ts', 'services/apiKeyService.ts', 'package.json', 'tests/real-process/mcp-boundary-child.ts', 'services/ephemeralMcpKeyRegistry.ts', 'tests/automated/mcp-client-isolation-real.test.ts', 'package-lock.json', 'services/mcpKeyService.ts', 'server/index.ts', 'tests/automated/mcp-pooled-coherent-real.test.ts', 'tests/automated/mcp-pooled-original-mixed-real.test.ts', 'tests/real-process/mcp-pooled-coherent-child.ts', 'tests/real-process/mcp-pooled-original-mixed-child.ts'}
    assert row['fixturePath']=='tests/genuine-vitest-session/main-mcp-integration/'+row['path']
    commit=sys.argv[3];sourcePath=row['fixturePath']
   else:
@@ -194,7 +194,7 @@ for validation in typecheck mcp; do
  phase=$validation
  case "$validation" in
   typecheck) args=("$src/node_modules/typescript/bin/tsc" --noEmit --incremental false --pretty false) ;;
-  mcp) args=("$src/node_modules/vitest/vitest.mjs" run tests/automated/mcp-client-isolation-real.test.ts) ;;
+  mcp) args=("$src/node_modules/vitest/vitest.mjs" run tests/automated/mcp-client-isolation-real.test.ts tests/automated/mcp-pooled-coherent-real.test.ts tests/automated/mcp-pooled-original-mixed-real.test.ts) ;;
  esac
  if test "$validation" != typecheck; then
   args+=(--maxWorkers=1 --retry=0 --configLoader=runner --config="$src/offline-vitest.config.mjs" --no-cache --reporter=json --reporter=blob --outputFile.json="$data/$validation.report.json" --outputFile.blob="$data/$validation.blob.json")
@@ -208,13 +208,20 @@ for validation in typecheck mcp; do
  if test "$validation" != typecheck; then
   python3 -I "$repo/tests/genuine-vitest-session/classify.py" --failure-diagnostic "$validation" "$data/$validation.report.json" "$data/$validation.blob.json" "$root/private/$validation.child.json" "$code"
  fi
+ set +e
  python3 -I "$repo/tests/genuine-vitest-session/classify.py" "$validation" "$data/$validation.report.json" "$data/$validation.blob.json" "$root/private/$validation.child.json" "$code" > "$root/private/$validation.summary.json"
+ classification=$?
+ set -e
+ # Classifier emits only reconstructed fixed-enum rows after all integrity gates.
+ # Publish scenario truth even when a normal original-mixed assertion fails.
+ if test "$validation" = mcp && test -s "$root/private/$validation.summary.json"; then cat "$root/private/$validation.summary.json"; fi
+ test "$classification" -eq 0
 done
 summary=$(python3 - "$root/private" <<'PYCODE'
 from pathlib import Path
 import sys,json
 p=Path(sys.argv[1]);rows=[json.loads((p/(n+'.summary.json')).read_text())for n in ['typecheck','mcp']]
-print(json.dumps({'scope':'ACTUAL_MAIN_TEN_PATH_MCP_EXPLICIT_EPHEMERAL_CUSTODY_NOT_PRODUCTION_CREDENTIAL_PERSISTENCE','sessions':rows,'audit':json.loads((p/'mcp-audit.summary.json').read_text()),'usefulLearningAccepted':False,'fullProductAccepted':False}))
+print(json.dumps({'scope':'ACTUAL_MAIN_FOURTEEN_PATH_MCP_MATRIX_EPHEMERAL_NOT_PRODUCTION_CREDENTIAL_PERSISTENCE','sessions':rows,'audit':json.loads((p/'mcp-audit.summary.json').read_text()),'usefulLearningAccepted':False,'fullProductAccepted':False}))
 PYCODE
 )
 cleanup
