@@ -583,9 +583,16 @@ class ContinuumMemorySystem {
         for (const entry of entries) {
             if (scope === 'pending' && !isOutstandingTransition(entry)) continue;
             try {
+                // Recovery verifies the journal's source payload, never a new
+                // same-ID working node that arrived while durable I/O awaited.
+                const sourcePayload = JSON.stringify(entry.source);
+                let recoveredWorkingSource: MemoryNode | undefined;
                 if (entry.state !== 'COMMITTED') {
                     if (entry.source.tier === MemoryTier.WORKING && !this.working.some(n => n.id === entry.source.id)) {
                         this.working.push(entry.source);
+                    }
+                    if (entry.source.tier === MemoryTier.WORKING) {
+                        recoveredWorkingSource = this.working.find(n => n.id === entry.source.id && JSON.stringify(n) === sourcePayload);
                     }
                     if (entry.source.tier !== MemoryTier.WORKING) {
                         const current = await lancedbService.getNodeById(entry.source.id);
@@ -595,12 +602,19 @@ class ContinuumMemorySystem {
                     }
                     await memoryTransitions.resume(entry);
                 } else {
+                    if (entry.source.tier === MemoryTier.WORKING) {
+                        recoveredWorkingSource = this.working.find(n => n.id === entry.source.id && JSON.stringify(n) === sourcePayload);
+                    }
                     const stored = await lancedbService.getNodeById(entry.destination.id);
                     if (JSON.stringify(stored) !== JSON.stringify(entry.destination)) {
                         throw new Error(`Committed transition missing destination: ${entry.key}`);
                     }
                 }
-                if (entry.source.tier === MemoryTier.WORKING) this.working = this.working.filter(n => n.id !== entry.source.id);
+                if (entry.source.tier === MemoryTier.WORKING && recoveredWorkingSource) {
+                    // Retain both replacement objects and in-place payload edits
+                    // not covered by the completed destination verification.
+                    this.working = this.working.filter(n => n !== recoveredWorkingSource || JSON.stringify(n) !== sourcePayload);
+                }
                 this.markDirty();
                 await this.saveRecoverySnapshot();
                 result.verified++;
@@ -886,7 +900,7 @@ class ContinuumMemorySystem {
                 const evicted = this.working[0];
                 if (evicted && evicted !== node) {
                     try { await this.promoteWorking(evicted, ['EVICTED']); }
-                    catch (error) { console.error('[CONTINUUM] Eviction deferred; source remains in RAM:', error); }
+                    catch (error) { console.error('[CONTINUUM] Eviction failed; source custody and recovery state require inspection:', error); }
                 }
             }
         }
