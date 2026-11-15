@@ -1,0 +1,32 @@
+# SOURCE DESIGN ONLY. Not in .github/workflows. Publication not authorized.
+# EXECUTION_ADMITTED in host-validation.py remains false.
+name: PROPOSED scoped compiler and actual helper filesystem validation
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-helper-validation:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+      - name: Exact reviewed source gate and bounded isolated helper scope
+        env:
+          REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: python3 tests/product-source-validation/host-validation.py
+      # No artifact upload, cache, provider, browser, native-store or public raw
+      # runtime export. Fixed export and independent tagged cleanup follow.
+      - name: Independent exact-tag cleanup
+        if: always()
+        run: sudo -n env GITHUB_RUN_ID="$GITHUB_RUN_ID" RUNNER_TEMP="$RUNNER_TEMP" /usr/bin/python3 tests/product-source-validation/launcher/cleanup-hosted.py
+      - name: Fixed scoped evidence only, never raw source or diagnostics
+        if: always()
+        run: python3 tests/product-source-validation/finite-export.py

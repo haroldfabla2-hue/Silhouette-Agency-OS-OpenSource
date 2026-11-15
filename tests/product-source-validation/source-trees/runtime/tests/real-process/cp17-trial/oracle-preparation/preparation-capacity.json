@@ -1,0 +1,156 @@
+{
+  "status": "CANDIDATE_TECHNICAL_INPUTS_PINNED",
+  "source_graph": {
+    "candidate_product_commit": "598cb9a60d12af988813818adf1f85302c8a5b6c",
+    "product_commit_is_baseline_not_exact_integral": true,
+    "candidate_manifest_sha256": "953c7f369666c716376dfcdf32b71e0464406da75b0e1cfe5278ebbf7324869a",
+    "status": "STAGE_A_ONLY_NOT_INTEGRAL_SUITE_EQUIVALENT",
+    "metadata_parent_trial_commit": "766797d916b428ff96c17eeadc3ddb286d6a122d",
+    "base_trial_commit": "6410fc163d847bb629813727899d837ed104c0b6",
+    "source_delta_vs_candidate_product_commit": [
+      "server/config/runtimeCredentials.ts",
+      "tests/automated/autonomy-entry-points.test.ts",
+      "tests/automated/channel-ingress-envelope.test.ts",
+      "tests/automated/consent-ledger.test.ts",
+      "tests/automated/telephony-call-voice.test.ts",
+      "tests/automated/telephony-truthfulness.test.ts",
+      "tests/real-process/standalone-preparation.ts",
+      "tests/real-process/telephony-truthfulness-child.ts",
+      "tests/real-process/telephony-voice-boundary-child.ts",
+      "tests/setup/original-child-ownership.ts"
+    ],
+    "source_delta_vs_executed6410": [
+      "server/config/runtimeCredentials.ts",
+      "services/dreamerService.ts",
+      "services/introspectionEngine.ts",
+      "services/lifecycle/runtimeStopBindings.ts",
+      "services/redisClient.ts",
+      "tests/automated/autonomy-entry-points.test.ts",
+      "tests/automated/telephony-call-voice.test.ts",
+      "tests/automated/telephony-truthfulness.test.ts",
+      "tests/real-process/standalone-preparation.ts",
+      "tests/real-process/telephony-truthfulness-child.ts",
+      "tests/real-process/telephony-voice-boundary-child.ts"
+    ],
+    "source_delta_vs_executed_a109": [
+      "server/config/runtimeCredentials.ts",
+      "tests/real-process/standalone-preparation.ts"
+    ],
+    "reviewed_nonsecret_packet_sha256": "8f9b08d8f33bd7240e15936fac7ac7264a7be522263c70be103832123010ad02",
+    "reviewed_checks256_packet_sha256": "6440877fb5b046b54e5cc51bc5d2535a0125a99889cff05b03df5341ad5f42ca",
+    "prior_metadata_parent_trial_commit": "cd6327f047eb03bf607b802f29c27ae357248cfc"
+  },
+  "wal": {
+    "scopes": 48,
+    "active": 512,
+    "failures": 256,
+    "resources": 256
+  },
+  "accepted": {
+    "scopes": 48,
+    "active": 512,
+    "failures": 256,
+    "resources": 256
+  },
+  "execution_authority": "NONE_FRESH_EXACT_GO_REQUIRED",
+  "diagnostic_envelope_not_proven_maximum": true,
+  "no_auto_enlarge_or_retry": true,
+  "vitest-generation": {
+    "scopes": 48,
+    "active": 512,
+    "failures": 256,
+    "resources": 256
+  },
+  "environment_B": {
+    "native_threads": {
+      "GOMAXPROCS": 2,
+      "TOKIO_WORKER_THREADS": 2,
+      "LANCE_CPU_THREADS": 2,
+      "RAYON_NUM_THREADS": 2
+    },
+    "does_not_bound_all_native_or_blocking_threads": true,
+    "suite_seconds": 600,
+    "checks_seconds": 1000,
+    "job_seconds": 1800,
+    "preparation_aggregate_seconds": 240,
+    "cleanup_export_reserve_seconds": 120,
+    "browser_preparation_file_bytes": 268435456,
+    "runtime_file_bytes": 67108864,
+    "install_file_bytes": 134217728,
+    "dependency_store_bytes_including_browser": 4294967296,
+    "new_execution_authority": "NONE",
+    "pids_max_by_phase": {
+      "install": 96,
+      "native": 96,
+      "browser": 96,
+      "checks": 256,
+      "oracles": 96
+    },
+    "nofile_soft_hard_by_phase": {
+      "install": 4096,
+      "native": 256,
+      "browser": 256,
+      "checks": 256,
+      "oracles": 256
+    },
+    "memory_max_bytes": 8589934592,
+    "memory_swap_max_bytes": 0,
+    "cpu_max": "200000 100000",
+    "tmp_bytes": 536870912,
+    "checks256_is_finite_selected_margin_not_measured_demand_or_fit_guarantee": true,
+    "diagnostic_process_rows_bound": 96,
+    "diagnostic_row_bound_is_not_pids_limit": true,
+    "root_admission_contract": {
+      "status": "SOURCE_REVIEWED_EXACT_HELPERS_NEW_EXECUTION_NOT_AUTHORIZED",
+      "phase_contract_sha256": "b9d8f4f287f10b4fc54716abcd1bc52b3e4d8176e72201c223ab67d6256fa77d",
+      "original96_helper_path": "tests/real-process/wal-owner/root-self-admit.py",
+      "original96_helper_sha256": "0b15dc9f61dac241681c41ff0d730fe627087b3ed1cde4c3a64683c4606708bc",
+      "checks256_helper_path": "tests/real-process/cp17-trial/root-self-admit-checks256.py",
+      "checks256_helper_sha256": "7a8a9542c8586c715a49a80fe04bc1f3a60e8862f4ea71fb8d6661f2c2f99ff8",
+      "checks_only": true,
+      "oracles_and_legacy96_unchanged": true,
+      "scope_binding": "same exact owned run/supervisor numeric scope, fixed256 and actual checks namespace argv plus exact scope ro-bind to /tmp/limits before self-admission",
+      "checks_namespace_seconds_max": 1000,
+      "checks_host_seconds_max": 1015,
+      "checks_host_supervision_additional_seconds": 15,
+      "checks_oracle_cleanup_admission_seconds_min": 1505
+    },
+    "historical766797": {
+      "run_id": 43568320740,
+      "status": "FAIL_BEFORE_CHECKS_ROOT_ADMISSION",
+      "reason": "Original96 helper rejected checks256; no checks namespace or independent oracles ran",
+      "no_product_failure_inferred": true
+    }
+  },
+  "historical_source_graph": {
+    "candidate_product_commit": "598cb9a60d12af988813818adf1f85302c8a5b6c",
+    "candidate_manifest_sha256": "212b85952c533cd0e4da552ee479f8d58e1dbf915a8d053ff935b0544d34daa4",
+    "status": "SOURCE_ONLY_ENVIRONMENT_B_FINAL_ASSEMBLY_NOT_EQUIVALENT_TO_EXECUTED6410",
+    "base_trial_commit": "6410fc163d847bb629813727899d837ed104c0b6",
+    "source_delta_vs_executed6410": [
+      "services/dreamerService.ts",
+      "services/introspectionEngine.ts",
+      "services/lifecycle/runtimeStopBindings.ts",
+      "tests/automated/telephony-call-voice.test.ts",
+      "tests/automated/telephony-truthfulness.test.ts",
+      "tests/real-process/telephony-truthfulness-child.ts",
+      "tests/real-process/telephony-voice-boundary-child.ts",
+      "tests/real-process/standalone-preparation.ts",
+      "services/redisClient.ts",
+      "tests/automated/autonomy-entry-points.test.ts"
+    ],
+    "prior_manifest_sha256": "d87fbaf17e7cb560fdd89ffc33143b4fe641ec6ea992960d0a53b63ed3a3a167",
+    "reviewed_environment_packet_sha256": "6fd7d60afd369e8440aed6621166e23f633f8dae4788a7c7fb2fd60db7c260d1",
+    "source_delta_vs_environment6fd7": [
+      "services/redisClient.ts",
+      "tests/automated/autonomy-entry-points.test.ts"
+    ],
+    "accepted_heartbeat_packet_sha256": "d44a6fb5326250e8f43ad89b53a81101c046a3c57b6e108a34d92c5c2d8ba785",
+    "accepted_redis_packet_sha256": "5e806b4cee3c0d08ebd9443595886c62aebb5ddf4c23a6a4d698841f25060f53"
+  },
+  "stageA_exact_source": {
+    "tree": "174fec15e328323bb3dc62694a8c7f89c1a1bd35",
+    "ledger": "953c7f369666c716376dfcdf32b71e0464406da75b0e1cfe5278ebbf7324869a",
+    "historicalSourceGraphMetadata": "Retained prior graph capacity metadata, not an equivalence claim or executed oracle."
+  }
+}

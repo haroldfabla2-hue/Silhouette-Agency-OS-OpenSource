@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SOURCE DESIGN ONLY. Preserve all log levels INFO+, bounded rotation; any rotation makes lifetime evidence unproven and FAIL. -->
+<Configuration status="ERROR">
+  <Appenders>
+    <RollingFile name="Runtime" fileName="/tmp/neo4j-runtime/logs/user.log" filePattern="/tmp/neo4j-runtime/logs/user.%i.log">
+      <PatternLayout pattern="%d{ISO8601} %-5p [%c] %m%n"/>
+      <Policies><SizeBasedTriggeringPolicy size="256 KB"/></Policies>
+      <DefaultRolloverStrategy max="2"/>
+    </RollingFile>
+  </Appenders>
+  <Loggers><Root level="INFO"><AppenderRef ref="Runtime"/></Root></Loggers>
+</Configuration>

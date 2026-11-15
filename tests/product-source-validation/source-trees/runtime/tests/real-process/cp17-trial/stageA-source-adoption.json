@@ -1,0 +1,20 @@
+{
+  "status": "NEW_STAGE_A_SOURCE_LEDGER_NOT_FULL_SUITE_EQUIVALENCE",
+  "productBase": "fc5bd04462200f0d12c7559015e743d9a9c7527a",
+  "productTree": "174fec15e328323bb3dc62694a8c7f89c1a1bd35",
+  "missingValidationOnlyNotAdmitted": [
+    "tests/real-process/standalone-preparation.ts",
+    "tests/setup/original-child-ownership.ts"
+  ],
+  "historical1550UntouchedInNamedArchive": true,
+  "noRuntimeAuthorization": true,
+  "frozenProfileFourTree": "d0e80234ff0c173e6e74a2fbfbc612544579cc0c",
+  "productTreeDelta": [
+    {
+      "path": "vite.config.ts",
+      "kind": "bounded Rollup concurrency64, no source selection or input/feature change"
+    }
+  ],
+  "priorLedger": "dbeaef4276185ca323b1216fdeb5a5d73ab0ed6cf660f892d651eb2f894ae30d",
+  "currentLedger": "953c7f369666c716376dfcdf32b71e0464406da75b0e1cfe5278ebbf7324869a"
+}

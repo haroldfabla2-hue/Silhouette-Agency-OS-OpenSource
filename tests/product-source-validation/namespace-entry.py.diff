@@ -1,0 +1,14 @@
+--- a/namespace-entry.py
++++ b/namespace-entry.py
+@@ -38,6 +38,11 @@
+  n=subprocess.check_output(['/node/bin/node','--version'],env={'PATH':'/node/bin:/usr/bin:/bin'},timeout=5).decode().strip();assert n=='v22.18.0'
+  pathlib.Path('/evidence/qualification.json').write_text(json.dumps({'status':'REAL_EMPTY_ENVIRONMENT_PROBE_ONLY','noProjectModulesEvaluated':True,'bothLoopbackBinds':True,'nodeVersion':n,'networkNamespace':os.readlink('/proc/self/ns/net'),'noPolicyChanges':True})+'\n')
+  raise SystemExit(0)
++if phase=='product-validation':
++ # Exact helper compiler/real-FS only. No token/model/provider/native store.
++ env={'PATH':'/node/bin:/usr/bin:/bin','HOME':'/home/test','TMPDIR':'/fixtures',
++      'SILHOUETTE_PROVIDERS':'off','SILHOUETTE_INFERENCE_MODE':'cloud-only'}
++ raise SystemExit(subprocess.call(['/node/bin/node','/driver/driver/validate.cjs'],env=env))
+ env={'PATH':'/node/bin:/usr/bin:/bin','HOME':'/home/test','TMPDIR':'/tmp','NODE_ENV':'production','SILHOUETTE_PROVIDERS':'off','SILHOUETTE_INFERENCE_MODE':'cloud-only','SILHOUETTE_BOOT_MODE':'normal','SILHOUETTE_HOST':'127.0.0.1','PORT':'3005','WORKSPACE_ROOT':'/app/workspace','PROPOSAL_OWNER_DIR':'/app/data','INGRESS_REPLAY_DIR':'/app/data','CONFIRMATION_GATE_DIR':'/app/data','SILHOUETTE_DB_PATH':'/app/db/test.db','SILHOUETTE_IDENTITY_DB_PATH':'/app/db/identity.sqlite','SILHOUETTE_TOOLS_DB_PATH':'/app/data/tools.db','SILHOUETTE_LANCEDB_PATH':'/app/data/lance','SILHOUETTE_OWNER_SCOPES':'128','SILHOUETTE_OWNER_ACTIVE':'512','SILHOUETTE_OWNER_FAILURES':'64','SILHOUETTE_OWNER_RESOURCES':'256','GOMAXPROCS':'1','TOKIO_WORKER_THREADS':'1','LANCE_CPU_THREADS':'1','RAYON_NUM_THREADS':'1'}
+ # API token stays ephemeral in process-local env, never printed or saved.
+ import secrets

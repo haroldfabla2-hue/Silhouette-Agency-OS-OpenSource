@@ -1,0 +1,53 @@
+--- a/supervisor.py
++++ b/supervisor.py
+@@ -3,7 +3,7 @@
+ import argparse,json,os,pathlib,resource,signal,subprocess,hashlib,time,selectors,shutil,socket,select,stat
+ P=pathlib.Path;p=argparse.ArgumentParser()
+ for name in ['bwrap','phase','app','deps','browser','review-dir','node-root','cgroup-parent','cgroup-tag','memory-bytes','wall-seconds','evidence']:p.add_argument('--'+name,required=True)
+-a=p.parse_args();assert a.phase in ['preflight','runtime-prerequisites','ui-build','continuum-regressions','redis-regressions','server-build','runtime'];memory=int(a.memory_bytes);wall=int(a.wall_seconds);assert memory==3*1024**3 and wall==180 and a.cgroup_tag.isdigit()
++a=p.parse_args();assert a.phase in ['preflight','runtime-prerequisites','ui-build','continuum-regressions','redis-regressions','server-build','runtime','product-validation'];memory=int(a.memory_bytes);wall=int(a.wall_seconds);assert memory==3*1024**3 and wall==180 and a.cgroup_tag.isdigit()
+ app=P(a.app).resolve();evidence=P(a.evidence).resolve();assert not evidence.exists();evidence.mkdir(mode=0o700)
+ start=time.monotonic();childcg=None;proc=None;failure=None;events=[];receipts=[];mem={};written=0;procs=[];memoryEvents='UNVERIFIED';code=None;removed=False;identity={'status':'NOT_STARTED'};pidfd=None;channel=None;phaseLog=None
+ 
+@@ -34,8 +34,11 @@
+  cmd=[str(bwrap),'--die-with-parent','--new-session','--uid','0','--gid','0','--unshare-net','--unshare-pid','--unshare-ipc','--unshare-uts','--cap-drop','ALL','--cap-add','CAP_NET_ADMIN','--cap-add','CAP_SETPCAP','--clearenv','--tmpfs','/','--proc','/proc','--dev','/dev','--tmpfs','/tmp','--tmpfs','/home','--dir','/home/test']
+  for x in ['/usr','/bin','/lib','/lib64','/etc/fonts','/etc/ld.so.cache','/etc/ssl/certs']:
+   if P(x).exists():cmd+=['--ro-bind',x,x]
+- for src,dst,mode in [(app,'/app','--bind'),(P(a.deps),'/app/node_modules','--ro-bind'),(P(a.browser),'/browser-assets','--ro-bind'),(P(a.review_dir),'/driver','--ro-bind'),(P(a.node_root),'/node','--ro-bind'),(evidence,'/evidence','--bind')]:cmd+=[mode,str(src.resolve()),dst]
+- cmd+=['--tmpfs','/app/node_modules/.vite-temp','--chdir','/app','--setenv','PATH','/node/bin:/usr/bin:/bin','--setenv','HOST_NETNS',os.readlink('/proc/self/ns/net'),'--setenv','HOME','/home/test','--setenv','TMPDIR','/tmp','/usr/bin/python3','/driver/namespace-entry.py',a.phase]
++ for src,dst,mode in [(app,'/app','--ro-bind'if a.phase=='product-validation'else'--bind'),(P(a.deps),'/app/node_modules','--ro-bind'),(P(a.browser),'/browser-assets','--ro-bind'),(P(a.review_dir),'/driver','--ro-bind'),(P(a.node_root),'/node','--ro-bind'),(evidence,'/evidence','--bind')]:cmd+=[mode,str(src.resolve()),dst]
++ if a.phase=='product-validation':
++  fixtureRoot=app.parent/'product-fixtures';fixtureStat=fixtureRoot.lstat();assert stat.S_ISDIR(fixtureStat.st_mode)and not fixtureRoot.is_symlink()and stat.S_IMODE(fixtureStat.st_mode)==0o700 and not any(fixtureRoot.iterdir())
++  cmd+=['--bind',str(fixtureRoot),'/fixtures']
++ cmd+=['--tmpfs','/app/node_modules/.vite-temp','--chdir','/app','--setenv','PATH','/node/bin:/usr/bin:/bin','--setenv','HOST_NETNS',os.readlink('/proc/self/ns/net'),'--setenv','HOME','/home/test','--setenv','TMPDIR','/tmp','/usr/bin/python3','/driver/launcher/namespace-entry.py',a.phase]
+  # One coherent private identity for every bind and later read/write phase.
+  scope=app.parent;scopeStat=scope.lstat();assert stat.S_ISDIR(scopeStat.st_mode)and not scope.is_symlink()and stat.S_IMODE(scopeStat.st_mode)==0o700
+  owner=scopeStat.st_uid;group=scopeStat.st_gid;assert owner>0 and group>0,'FRESH_NONROOT_OWNER_REQUIRED'
+@@ -45,6 +48,7 @@
+  for x in [*roots,evidence,bwrap]:
+   for item in [*reversed(x.parents),x]:assert not item.is_symlink(),'PRIVATE_SOURCE_ANCESTOR_SYMLINK'
+  assert all(x.is_relative_to(scope)and x.lstat().st_uid==owner and x.lstat().st_gid==group for x in roots),'FRESH_ROOT_OWNER_MISMATCH'
++ if a.phase=='product-validation':assert fixtureStat.st_uid==owner and fixtureStat.st_gid==group
+  assert evidence.parent==scope/'evidence'and evidence.lstat().st_uid==0 and not any(evidence.iterdir()),'ONLY_NEW_EMPTY_PHASE_DIR'
+  os.chown(evidence,owner,group,follow_symlinks=False);assert stat.S_IMODE(evidence.stat().st_mode)==0o700
+  fixed=[P(x)for x in ['/usr','/bin','/lib','/lib64','/etc/fonts','/etc/ld.so.cache','/etc/ssl/certs']if P(x).exists()]+[app,P(a.deps),P(a.browser),P(a.review_dir),P(a.node_root),evidence,bwrap]
+@@ -60,7 +64,7 @@
+  identity={'status':'MAPPING_PENDING','hostOwnerUid':owner,'hostOwnerGid':group,'supervisorUserns':os.readlink('/proc/self/ns/user'),'fixedSources':metadata(),'mapOrder':['setgroups','gid_map','uid_map'],'noRecursivePermissionChanges':True}
+  phaseLog=(evidence/'complete.log').open('xb')
+  channel,childChannel=socket.socketpair(socket.AF_UNIX,socket.SOCK_SEQPACKET);childChannel.set_inheritable(True)
+- try:proc=subprocess.Popen(['/usr/bin/python3',str(P(a.review_dir)/'identity-entry.py'),str(childChannel.fileno()),str(bwrap)],pass_fds=(childChannel.fileno(),),stdout=subprocess.PIPE,stderr=subprocess.STDOUT,env={'PATH':'/usr/bin:/bin'},preexec_fn=setup)
++ try:proc=subprocess.Popen(['/usr/bin/python3',str(P(a.review_dir)/'launcher/identity-entry.py'),str(childChannel.fileno()),str(bwrap)],pass_fds=(childChannel.fileno(),),stdout=subprocess.PIPE,stderr=subprocess.STDOUT,env={'PATH':'/usr/bin:/bin'},preexec_fn=setup)
+  finally:childChannel.close()
+  pidfd=os.pidfd_open(proc.pid,0)
+  def processIdentity():
+@@ -106,8 +110,9 @@
+   (evidence/'runtime-cgroup-counters.json').write_text(json.dumps({'phase':a.phase,'status':'COUNTERS_ONLY_NOT_UI_OR_DRAIN_PROOF','samples':counterSamples},indent=2)+'\n')
+  with phaseLog as log:
+   while True:
+-   if time.monotonic()-start>wall:raise TimeoutError('WALL_LIMIT')
++   if time.monotonic()-start>(wall-40 if a.phase=='product-validation'else wall):raise TimeoutError('WALL_LIMIT')
+    if a.phase=='runtime'and time.monotonic()-start>=nextCounterAt:counters();nextCounterAt+=10
++   if a.phase=='product-validation'and sum(f.stat().st_size for f in fixtureRoot.rglob('*')if f.is_file())>64*1024**2:raise RuntimeError('VALIDATION_FIXTURE_DISK_CAP')
+    if sum(f.stat().st_size for f in app.rglob('*')if f.is_file())>512*1024**2:raise RuntimeError('DISK_OUTPUT_CAP')
+    for r in receipts:
+     maximum=(P(r['path'])/'memory.max').read_text().strip();current=int((P(r['path'])/'memory.current').read_text())

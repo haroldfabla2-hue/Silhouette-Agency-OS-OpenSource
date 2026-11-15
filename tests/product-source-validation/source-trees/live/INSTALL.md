@@ -1,0 +1,252 @@
+# Installation Guide: Silhouette Agency OS
+
+This guide provides detailed installation instructions for **Silhouette Agency OS**.
+
+---
+
+## Minimum Requirements (Alpha)
+
+To start the orchestrator you only need **two things**:
+
+1. **An AI API key** (at least one provider — free tiers available)
+2. **A way to interact** — web UI (browser/terminal) or a messaging channel (Telegram, Discord, WhatsApp)
+
+Everything else (Neo4j, Redis, voice engine, media pipelines) is **optional** and degrades gracefully when absent.
+
+### Required Software
+
+- **Node.js**: v22.18.0 or higher (enforced by `engines` in `package.json`; CI tests 22.18.0 and latest 22.x)
+- **npm**: v9.0.0 or higher
+
+### Optional (for enhanced capabilities)
+
+- **Docker** — for Neo4j (knowledge graph) and Redis (persistent cache)
+- **Python 3.10+** — for the reasoning engine and video generation modules
+
+---
+
+## Quick Start (Minimal — Terminal + One API Key)
+
+### 1. Clone
+
+```bash
+git clone https://github.com/haroldfabla2-hue/Silhouette-Agency-OS-OpenSource.git
+cd Silhouette-Agency-OS-OpenSource
+```
+
+### 2. Install dependencies
+
+```bash
+npm install
+```
+
+### 3. Configure your API key
+
+Copy the example environment file and add your key:
+
+```bash
+cp .env.example .env.local
+```
+
+Edit `.env.local` and add **at least one** of these:
+
+```env
+# Free tier available — recommended for getting started
+GEMINI_API_KEY=your_key_here
+
+# Fast inference, free tier
+GROQ_API_KEY=your_key_here
+
+# Multi-model access
+OPENROUTER_API_KEY=your_key_here
+
+# Coding specialist
+DEEPSEEK_API_KEY=your_key_here
+```
+
+> **Tip:** Gemini and Groq both offer free tiers — no billing required to start.
+
+## Starting the System
+
+Once configured, boot the Cognitive Kernel and its interfaces with a single command:
+
+```bash
+npm run boot
+```
+
+*This unified bootloader will spin up both the Kernel (Backend) and the UI (Frontend) in the same terminal, coloring their logs for easy reading. To safely shut down all processes without leaving zombie ports, simply press `Ctrl+C`.*
+
+The system starts on `http://localhost:3005`. The orchestrator is now alive and thinking.
+
+- **API**: `http://localhost:3005/v1/system/status`
+- **WebSocket**: `ws://localhost:3005/ws`
+- **Health**: `http://localhost:3005/v1/system/health`
+
+
+In a second terminal:
+
+```bash
+npm run dev
+```
+
+Frontend: `http://localhost:5173`
+
+---
+
+## What Works Without Docker
+
+| Capability | Without Docker | With Docker |
+|---|---|---|
+| Orchestrator + Core Agents | Full | Full |
+| Chat (terminal / WebSocket) | Full | Full |
+| Memory (working / episodic) | SQLite + in-memory | + Redis persistent |
+| Knowledge graph | Full (via SQLite fallback) | Full (via Neo4j) |
+| Vector semantic search | LanceDB (local file) | Full |
+| Evolution scheduler | Full | Full |
+| Telegram / Discord channel | Full (with token) | Full (with token) |
+| Image / video generation | Full (with provider key) | Full (with provider key) |
+| Voice synthesis | Full (with ElevenLabs key) | Full (with ElevenLabs key) |
+
+> **Note on SQLite Graph Fallback:** If Neo4j is offline or Docker is not running, the system automatically and transparently activates the SQLite Graph Database Fallback. All entities, relationships, GraphRAG queries, 3D visualization, and user facts continue to work 100% locally with zero configuration.
+
+---
+
+## Interactive Setup Wizard (Alternative to manual setup)
+
+The multi-step CLI and web wizard automatically handles backend API provider selection, `.env` file generation, and Docker startup:
+
+```bash
+npm run setup:intelligent
+```
+
+**Hardware Profiling:** The setup now includes an intelligent hardware check (`/v1/system/diagnostics`).
+- **Heavy Local (>= 16GB RAM):** Recommends spinning up Neo4j via Docker locally for maximum data privacy.
+- **Cloud Lightweight (< 16GB RAM):** Recommends using the free **Neo4j Aura Cloud** tier to save local resources, guiding you through the correct `.env` configuration.
+
+---
+
+## Adding a Communication Channel (Optional)
+
+Channels let you interact with the orchestrator through messaging apps instead of the web UI.
+
+### Telegram
+
+1. Create a bot via [@BotFather](https://t.me/BotFather) on Telegram
+2. Add to `.env.local`:
+   ```env
+   TELEGRAM_BOT_TOKEN=your_bot_token
+   ```
+3. In `silhouette.config.json`, set:
+   ```json
+   "channels": { "telegram": { "enabled": true, "botToken": "your_bot_token" } }
+   ```
+4. Restart the server — the orchestrator will listen for messages in your Telegram chat.
+
+### Discord
+
+Same process — get a bot token from the Discord Developer Portal and set `DISCORD_BOT_TOKEN` in `.env.local`.
+
+### WhatsApp
+
+Set `WHATSAPP_SESSION_PATH=./data/whatsapp_session` in `.env.local`. On first start, scan the QR code printed in the terminal.
+
+---
+
+## Personalize Your Orchestrator
+
+Give your AGI a name and personality:
+
+```bash
+npm run personalize
+```
+
+---
+
+## Full Stack with Docker (Recommended for Production)
+
+```bash
+# Start all services (Neo4j, Redis, main app)
+docker-compose up --build
+
+# Production deployment
+npm run docker:prod
+```
+
+Key ports:
+- `3005` — API + WebSocket (main entry point)
+- `5173` — React UI (dev only)
+- `7474 / 7687` — Neo4j (knowledge graph)
+- `6379` — Redis (persistent cache)
+- `8000` — Python reasoning engine
+
+---
+
+## Desktop Application & Installation (Electron)
+
+For a native desktop experience, Silhouette Agency OS can be compiled and installed as a standalone desktop application.
+
+### 1. Download & Build
+* **Download Official Releases:** Go to the [Releases](https://github.com/haroldfabla2-hue/Silhouette-Agency-OS-OpenSource/releases) page on GitHub to download the pre-compiled installer for your platform.
+* **Build from Source:**
+  ```bash
+  # Compile frontend & server, and pack executable
+  npm run desktop:build
+  ```
+  This generates the NSIS executable installer inside `dist-desktop/`.
+
+### 2. Windows Installation (Unsigned Binaries Bypass)
+Because the open-source binaries are not signed with a paid commercial certificate, Windows SmartScreen will flag the installer:
+1. When launching the `.exe` installer, you will see a blue **"Windows protected your PC"** popup.
+2. Click on **"More info"** (under the title text).
+3. Click the **"Run anyway"** button.
+4. Follow the NSIS setup wizard to configure shortcuts, installation directory, and complete the installation.
+
+### 3. macOS Installation (Gatekeeper Bypass)
+To run the unsigned application on macOS:
+1. Double-clicking the app might show a **"Developer cannot be verified"** block.
+2. Instead, **Right-click (or Ctrl+click) the app icon** and choose **Open** from the context menu.
+3. In the dialog that appears, click **Open** again to authorize the launch.
+4. (Alternative) Go to **System Settings** -> **Privacy & Security**, scroll down, and click **"Open Anyway"** under the security section.
+
+### 4. Features & System Integration
+* **Custom Protocol handler (`silhouette://`):** The installer automatically registers the `silhouette://` custom URI scheme on your machine. This allows you to launch the application or trigger actions (such as starting an agent) directly from links on websites.
+* **Startup Auto-Launch:** You can toggle whether the app boots automatically when you turn on your PC. Go to **Settings** -> **System** -> **Startup & Updates** and toggle *Auto-Launch*.
+* **Silent Updates Check:** You can enable or disable automated checking for updates under the **Startup & Updates** settings.
+
+---
+
+## Troubleshooting
+
+**"No LLM provider configured" warning at startup**
+Add at least one API key to `.env.local` (see step 3 above). The orchestrator needs a provider to think.
+
+**Neo4j connection failed**
+Not required to start. The system degrades gracefully — memory and reasoning still work via SQLite and in-memory stores. Install Docker and run `docker-compose up -d` for the full knowledge graph.
+
+**Redis connection failed**
+Not required. An in-memory fallback activates automatically. Persistent session caching requires Redis.
+
+**Port conflict on 3005**
+Add `PORT=3006` to `.env.local`.
+
+**Module not found / install errors**
+```bash
+npm cache clean --force && rm -rf node_modules && npm install
+```
+
+**`npm run dev` shows only the frontend but no backend**
+Run `npm run server` in a separate terminal first. The frontend connects to the backend on port 3005.
+
+---
+
+## Further Documentation
+
+- **[README.md](README.md)** — System overview and architecture
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** — Technical design
+- **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** — Full configuration reference
+- **[docs/USAGE_GUIDE.md](docs/USAGE_GUIDE.md)** — How to interact with the system
+- **[SECURITY.md](SECURITY.md)** — Security guidelines
+
+---
+
+**Silhouette Agency OS** — *Cognition meets Creation.*

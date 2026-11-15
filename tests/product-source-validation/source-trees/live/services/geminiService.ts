@@ -1,0 +1,1583 @@
+import { apiKeys, currentKeyIndex, apiKey, ai, ensureClient, rotateKey, configureGenAI } from './geminiClientState';
+import { generateEmbedding, generateEmbeddingWithIdentity } from './embeddingResolver';
+export { configureGenAI } from './geminiClientState';
+export { generateEmbedding, generateEmbeddingWithIdentity } from './embeddingResolver';
+import { localInferenceAllowed } from './security/localInferencePolicy';
+import { externalProvidersDisabled, assertExternalProvidersEnabled } from './security/bootMode';
+import { ToolCaller } from './communication/helpProtocol';
+import type { GoogleGenAI } from "@google/genai";
+import { IntrospectionLayer, AgentRoleType, WorkflowStage, SensoryData, AgentCategory, CommunicationLevel, AgentCapability, SystemProtocol } from "../types";
+import { systemBus } from "./systemBus";
+import { introspection } from "./introspectionEngine";
+import { continuum } from "./continuumMemory";
+import { consciousness } from "./consciousnessEngine";
+import { costEstimator } from "./costEstimator";
+import { DEFAULT_GEMINI_MODEL, DEFAULT_GEMINI_BACKGROUND_MODEL, DEFAULT_OPENROUTER_MODEL, DEFAULT_GROQ_MODEL } from "./llm/defaultModels";
+import { promptCompiler } from "./promptCompiler"; // Import Compiler
+import { DONNA_PERSONA } from "../constants/personalities";
+import { narrative } from "./narrativeService";
+import { chronos } from "./chronosService";
+import { cfo } from "./cfoService";
+import { contextAssembler } from "./contextAssembler";
+import { quotaLedger } from './quotaLedger'; // [PR-K]
+
+
+
+// Function to get current client (for internal use)
+function getAI(): GoogleGenAI | null {
+    return ensureClient();
+}
+
+// [ROBUST] Lazy getter for Groq key
+function getGroqKey(): string {
+    if (externalProvidersDisabled()) return '';
+    return process.env.GROQ_API_KEY || '';
+}
+
+// --- GROQ FALLBACK IMPLEMENTATION ---
+const callGroq = async (
+    systemPrompt: string,
+    userMessage: string,
+    temperature: number,
+    imageBase64?: string
+): Promise<{ text: string; usage: any } | null> => {
+    if (externalProvidersDisabled()) return null;
+    const apiKey = process.env.GROQ_API_KEY;
+    if (!apiKey) return null;
+
+    console.log("[GROQ] ⚠️ Attempting Groq Fallback...");
+
+    // [PA-045] Truncate System Prompt if too long for Llama 3 (Groq limit often 8k)
+    const MAX_SYS_CHARS = 12000; // conservative for ~3k tokens + user input
+    let safeSystemPrompt = systemPrompt;
+    if (safeSystemPrompt.length > MAX_SYS_CHARS) {
+        console.warn(`[GEMINI] ⚠️ Truncating System Prompt for Groq (Length: ${safeSystemPrompt.length} > ${MAX_SYS_CHARS})`);
+        safeSystemPrompt = safeSystemPrompt.substring(0, MAX_SYS_CHARS) + "\n...[TRUNCATED_FOR_CAPACITY]...";
+    }
+
+    const messages: any[] = [
+        { role: "system", content: safeSystemPrompt },
+    ];
+
+    // [PA-045] Truncate User Message if too long (Groq 400 Protection)
+    const MAX_USER_CHARS = 24000; // ~6k tokens
+    let safeUserMessage = userMessage;
+    if (safeUserMessage.length > MAX_USER_CHARS) {
+        console.warn(`[GEMINI] ⚠️ Truncating User Message for Groq (Length: ${safeUserMessage.length} > ${MAX_USER_CHARS})`);
+        safeUserMessage = safeUserMessage.substring(0, MAX_USER_CHARS) + "\n...[TRUNCATED_FOR_CAPACITY]...";
+    }
+
+    if (imageBase64) {
+        messages.push({
+            role: "user",
+            content: [
+                { type: "text", text: safeUserMessage },
+                {
+                    type: "image_url",
+                    image_url: {
+                        url: `data:image/jpeg;base64,${imageBase64}`
+                    }
+                }
+            ]
+        });
+    } else {
+        messages.push({ role: "user", content: safeUserMessage });
+    }
+
+    try {
+        // [ROOT FIX] the previous Groq chat and vision models here are RETIRED
+        // (404 model_not_found on every fallback). Verified live
+        // against GET /models with the account key: this account offers
+        // openai/gpt-oss-120b and NO vision model - so for images we honestly
+        // skip Groq (UNAVAILABLE beats a pretty 404) and let the next provider try.
+        if (imageBase64) {
+            console.warn("[GROQ] Vision fallback unavailable: no vision model in this Groq account (verified live). Skipping to next provider.");
+            return null;
+        }
+        const modelToUse = DEFAULT_GROQ_MODEL;
+
+        console.log(`[GROQ] Using Model: ${modelToUse}`);
+
+        const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${apiKey}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                model: modelToUse,
+                messages: messages,
+                temperature: temperature,
+                max_tokens: 4096
+            })
+        });
+
+        if (!response.ok) {
+            const err = await response.text();
+
+            // [PA-045] Robust 429 Handling
+            if (response.status === 429) {
+                // Try parse Retry-After header
+                const retryAfter = response.headers.get('Retry-After');
+                let waitMs = 3600000; // Default 1 hour
+                if (retryAfter) {
+                    // If it's seconds
+                    const seconds = parseInt(retryAfter, 10);
+                    if (!isNaN(seconds)) waitMs = seconds * 1000;
+                }
+
+                const { providerHealth } = await import('./providerHealthManager');
+                providerHealth.suspendProvider('groq', waitMs, 'Groq Rate Limit (429)');
+                throw new Error(`Groq Rate Limit: Suspended for ${waitMs / 60000} mins.`);
+            }
+
+            throw new Error(`Groq API Error: ${response.status} - ${err}`);
+        }
+
+        const json = await response.json();
+        return {
+            text: json.choices[0]?.message?.content || "",
+            usage: {
+                promptTokenCount: json.usage?.prompt_tokens || 0,
+                candidatesTokenCount: json.usage?.completion_tokens || 0,
+                totalTokenCount: json.usage?.total_tokens || 0
+            }
+        };
+
+    } catch (error: any) {
+        console.error("[GROQ] Fallback failed:", error.message);
+        return null;
+    }
+};
+
+export const generateAgentResponse = async (
+    agentName: string,
+    agentRole: string,
+    category: string,
+    task: string,
+    previousOutput: string | null,
+    introspectionDepth: IntrospectionLayer,
+    currentStage: WorkflowStage = WorkflowStage.EXECUTION,
+    projectContext?: any,
+    sensoryData: any = {},
+    agentCapabilities: AgentCapability[] = [], // [DCR] Dynamic Injection
+    communicationLevel: CommunicationLevel = CommunicationLevel.USER_FACING, // New Argument
+    modelOverride?: string // Explicit Model Request (e.g., 'gemini-1.5-flash' for speed)
+): Promise<{ output: string; thoughts: string[]; usage: number; qualityScore?: number }> => {
+    const client = ensureClient();
+    if (!client) {
+        return {
+            output: "Error: API Key not found. Please configure it in Settings > Integrations.",
+            thoughts: ["System check failed.", "Missing credentials."],
+            usage: 0
+        };
+    }
+
+
+
+    // [PHASE 10] COGNITIVE HARDENING: PROMPT GUARD
+    const { promptGuard } = await import('./security/promptGuard');
+    const guardResult = promptGuard.inspect(task);
+
+    if (!guardResult.safe) {
+        return {
+            output: `🛡️ SECURITY ALERT: ${guardResult.reason}`,
+            thoughts: ["Prompt Injection Detected.", "Action Blocked."],
+            usage: 0,
+            qualityScore: 0
+        };
+    }
+
+    try {
+        // --- CFO INTERVENTION (BUDGET & MODEL NEGOTIATION) ---
+        // 1. Determine preferred model based on task type (Heuristic) or Override
+        // PR-N: generateAgentResponse is the AGENT/BACKGROUND entry (chat uses the
+        // stream path with DEFAULT_GEMINI_MODEL). Seed and negotiate on the
+        // background bucket so loops never touch the chat quota.
+        let preferredModel = modelOverride || DEFAULT_GEMINI_BACKGROUND_MODEL;
+        if (!modelOverride && (category === 'DEV' || category === 'SCIENCE')) preferredModel = DEFAULT_GEMINI_BACKGROUND_MODEL;
+
+        // 2. Ask CFO for permission and best model
+        const negotiatedModel = cfo.negotiateModel(task, preferredModel, { agentName, category, trafficClass: 'background' });
+
+        // 3. Check for Anomalies (Cost Spike)
+        // We'll check this after execution based on cost, but pre-check is good too if we had history.
+
+        // [PHASE 10] SAFETY SETTINGS (Explicit Configuration)
+        // We want BLOCK_NONE for Research/Analysis to avoid false positives on technical content,
+        // but we rely on PromptGuard for input sanitization.
+        const safetySettings = [
+            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_ONLY_HIGH" },
+            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_ONLY_HIGH" },
+            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" }
+        ];
+
+
+
+
+        // 1. GATHER CONTEXT
+        // [MODIFIED] Use ContextAssembler for Unified Reality
+        // Use DEEP mode for background autonomous agents to grant them more time and RAG budget.
+        const fetchMode = communicationLevel === CommunicationLevel.USER_FACING ? 'FAST' : 'DEEP';
+        const globalContext = await contextAssembler.getGlobalContext(task, { mode: fetchMode });
+        const { systemMetrics, orchestratorState, screenContext, narrativeState, relevantMemory, graphConnections, chatHistory } = globalContext;
+
+        const memoryContext = `${relevantMemory}\n${graphConnections}`;
+
+        // ... (systemContext generation using unified globalContext properties instead of Manual) ...
+        // Actually, let's keep the existing Manual generation logic for systemContext but use globalContext data where possible to minimize diff, 
+        // OR better: Just map the globalContext.chatHistory to the `contents` array.
+
+        // ... (Keep existing systemInstruction compilation) ...
+        // Re-compile System Instruction using Prompt Compiler
+        // For USER_FACING, don't include structured/JSON context - it confuses the LLM into outputting JSON
+        const contextDataForPrompt = communicationLevel === CommunicationLevel.USER_FACING
+            ? memoryContext // Only include natural language memory context for user chat
+            : `
+                ${projectContext ? JSON.stringify(projectContext) : ''}
+                ${memoryContext}
+                [NARRATIVE_STATE]: ${JSON.stringify(narrativeState)}
+            `.trim();
+
+        let systemInstruction = promptCompiler.compile(communicationLevel, {
+            role: agentRole,
+            category,
+            task,
+            contextData: contextDataForPrompt,
+            constraints: communicationLevel === CommunicationLevel.USER_FACING
+                ? [] // No technical constraints for user chat
+                : [`Introspection Depth: ${introspectionDepth}`, `Workflow Stage: ${currentStage}`]
+        });
+
+        // --- CONSTRUCT HISTORY & USER MESSAGE ---
+
+        const contents: any[] = [];
+
+        // 1. Inject History (Turns)
+        // Gemini expects alternating User/Model. 
+        if (chatHistory && chatHistory.length > 0) {
+            chatHistory.forEach(turn => {
+                // Map 'user' -> 'user', 'model' -> 'model'
+                // Ensure content is not empty
+                if (turn.content && turn.content.trim()) {
+                    contents.push({ role: turn.role, parts: [{ text: turn.content }] });
+                }
+            });
+        }
+
+        // 2. Add System Instruction as the *Context* for the current turn (or use systemInstruction param if supported)
+        // For Robustness with standard Gemini API calls via Rest:
+        // We will prepend the system instruction to the LAST user message (the Task), 
+        // OR if using the official SDK, use the `systemInstruction` field in model config.
+        // Assuming we pass `contents` to generateContent.
+
+        // ... existing userMessageText logic ...
+        let userMessageText = "";
+        if (currentStage === WorkflowStage.REMEDIATION) {
+            userMessageText = `Task: ${task}\n\nFAILED DRAFT & QA REPORT:\n"${previousOutput}"\n\nACTION: FIX ALL ISSUES.`;
+        } else if (previousOutput) {
+            userMessageText = `Task: ${task}\n\nINPUT TO PROCESS:\n"${previousOutput}"`;
+        } else {
+            userMessageText = `Task: ${task}\n\nContext: ${memoryContext}`;
+        }
+
+        // Attach System Instruction to the CURRENT message? 
+        // Or keep it as First Message?
+        // IF we have history, putting system prompt as message 0 (User) is tricky if history follows.
+        // Strategy: 
+        // - System Prompt (Role: system? No, Gemini uses specific field).
+        // - History (User/Model)
+        // - Current Message (User)
+
+
+        const currentMessageParts: any[] = [{ text: userMessageText }];
+
+        // Visuals
+        if (sensoryData.visualSnapshot) {
+            currentMessageParts.push({
+                inlineData: { mimeType: "image/png", data: sensoryData.visualSnapshot }
+            });
+        }
+
+        contents.push({ role: 'user', parts: currentMessageParts });
+
+        // ... (Proceed to call model) ...
+
+        // --- WEB SEARCH CONFIGURATION (DCR) ---
+        const tools: any[] = [];
+
+        // [DCR] Check Capability: WEB SEARCH
+        if (agentCapabilities.includes(AgentCapability.TOOL_WEB_SEARCH)) {
+            tools.push({ googleSearch: {} });
+            systemInstruction += `\n
+        PROTOCOL: RESEARCH_ANALYST
+        CAPABILITY: ACTIVE_WEB_ACCESS
+        OBJECTIVE: Use Google Search to find real-time, factual information. 
+        CITATION RULE: You MUST use the citations provided by the search tool.
+        `;
+        }
+
+        // [DCR] Check Capability: CODE EXECUTION
+        if (agentCapabilities.includes(AgentCapability.TOOL_CODE_EXECUTION)) {
+            tools.push({ codeExecution: {} });
+            systemInstruction += `\n
+        PROTOCOL: PRINCIPAL_ENGINEER
+        CAPABILITY: PYTHON_INTERPRETER
+        OBJECTIVE: You have a Python sandbox. Use it to run complex calculations, data analysis, or logic verification.
+        `;
+        }
+
+        // [DCR][W3] Check Capability: CONFINED FILESYSTEM
+        {
+            const { fsToolsForCapabilities, FS_JAIL_INSTRUCTION } = await import('./tools/toolSelection');
+            const fsBundles = fsToolsForCapabilities(agentCapabilities);
+            if (fsBundles.length > 0) {
+                tools.push(...fsBundles);
+                systemInstruction += FS_JAIL_INSTRUCTION;
+            }
+        }
+
+        // [DCR][REA-F2] Check Capability: BOUNDED REVERSE ENGINEERING
+        {
+            const { reaToolsForCapabilities, REA_INSTRUCTION } = await import('./tools/toolSelection');
+            const reaBundles = reaToolsForCapabilities(agentCapabilities);
+            if (reaBundles.length > 0) {
+                tools.push(...reaBundles);
+                systemInstruction += REA_INSTRUCTION;
+            }
+        }
+
+        // [DCR] Check Capability: IMAGE GENERATION
+        if (agentCapabilities.includes(AgentCapability.TOOL_IMAGE_GENERATION)) {
+            // Note: Native Imagen is not yet exposed via this API in all regions, so we use a Protocol Instruction for now.
+            // The Agent should ask the User or Orchestrator to "Imagine" something.
+            systemInstruction += `\n
+        PROTOCOL: CREATIVE_DIRECTOR
+        CAPABILITY: IMAGE_BREEDING
+        OBJECTIVE: You can design visual assets.
+        INSTRUCTION: To generate an image, output a distinct block: [IMAGINE: <detailed_prompt>].
+        `;
+        }
+
+        // [DCR] Check Capability: MEMORY WRITE
+        if (agentCapabilities.includes(AgentCapability.TOOL_MEMORY_WRITE)) {
+            systemInstruction += `\n
+        PROTOCOL: CHIEF_ARCHIVIST
+        CAPABILITY: LONG_TERM_ENCODING
+        OBJECTIVE: You have authority to commit data to permanent storage.
+        INSTRUCTION: To save a memory, output: [AUTHORIZE_MEMORY: <content>].
+        `;
+        }
+
+        // [DCR] Check Capability: RFC REQUEST (Phase 8)
+        if (agentCapabilities.includes(AgentCapability.TOOL_RFC_REQUEST)) {
+            systemInstruction += `\n
+        PROTOCOL: RESEARCH_LEAD
+        CAPABILITY: ARCHITECTURAL_PROPOSAL
+        OBJECTIVE: If you have validated a significant insight, request a formal RFC.
+        INSTRUCTION: Output: [REQUEST_RFC: <Title> | <Findings> | <Recommendation>].
+        Example: [REQUEST_RFC: New Cache Layer | Current cache is slow | Implement Redis L2]
+        `;
+        }
+
+        // [PA-055] Check Capability: SYSTEM CONTROL (Desktop Integration & Self-Awareness)
+        if (agentCapabilities.includes(AgentCapability.TOOL_SYSTEM_CONTROL)) {
+            // Import specific tools to avoid polluting context with everything
+            const {
+                SYSTEM_EXECUTE_COMMAND_TOOL,
+                SYSTEM_OPEN_APP_TOOL,
+                SYSTEM_GET_SCREENSHOT_TOOL,
+                GET_SYSTEM_CONFIG_TOOL,
+                UPDATE_SYSTEM_CONFIG_TOOL,
+                READ_ARCHITECTURE_TOOL,
+                READ_SYSTEM_LOGS_TOOL,
+                ANALYZE_AND_REPAIR_TOOL,
+                BROWSER_NAVIGATE_TOOL,
+                BROWSER_ACTION_TOOL,
+                BROWSER_EXTRACT_TOOL,
+                BROWSER_SCREENSHOT_TOOL
+            } = await import('./tools/definitions');
+
+            tools.push(
+                SYSTEM_EXECUTE_COMMAND_TOOL,
+                SYSTEM_OPEN_APP_TOOL,
+                SYSTEM_GET_SCREENSHOT_TOOL,
+                GET_SYSTEM_CONFIG_TOOL,
+                UPDATE_SYSTEM_CONFIG_TOOL,
+                READ_ARCHITECTURE_TOOL,
+                READ_SYSTEM_LOGS_TOOL,
+                ANALYZE_AND_REPAIR_TOOL,
+                BROWSER_NAVIGATE_TOOL,
+                BROWSER_ACTION_TOOL,
+                BROWSER_EXTRACT_TOOL,
+                BROWSER_SCREENSHOT_TOOL
+            );
+
+            systemInstruction += `\n
+        PROTOCOL: SYSTEM_OPERATOR
+        CAPABILITY: HOST_CONTROL
+        OBJECTIVE: You have permission to control the host system and the OS configuration itself.
+        SAFETY RULE: ONLY execute commands or modify config explicitly requested by the user or strictly necessary for the task.
+        SAFETY RULE: Do NOT execute destructive commands (rm -rf, etc).
+        SAFETY RULE: When updating configuration (UPDATE_SYSTEM_CONFIG_TOOL), you MUST ask for the user's explicit permission first before writing to the config files.
+        `;
+        }
+
+        let response;
+        let retries = 0;
+        const maxRetries = 3;
+        let useOpenRouter = false;
+        let useGroq = false;
+
+        // Initialize Circuit Breaker
+        const { providerHealth } = await import('./providerHealthManager');
+        const errors: any[] = [];
+
+        while (retries <= maxRetries) {
+            try {
+                // --- STRATEGY: CHECK HEALTH BEFORE ATTEMPTING ---
+
+                if (useGroq) {
+                    // Check Circuit Breaker
+                    if (!providerHealth.isAvailable('groq')) {
+                        console.warn(`[GEMINI] ⏭️ Skipping Groq (Suspended via Circuit Breaker).`);
+                        throw new Error('Circuit Breaker: Groq Suspended'); // Force jump to next block/catch
+                    }
+
+                    let visualDataForGroq: string | undefined = undefined;
+                    if (sensoryData.visualSnapshot) {
+                        visualDataForGroq = sensoryData.visualSnapshot;
+                    }
+
+                    // --- GROQ ATTEMPT ---
+                    try {
+                        const groqResp = await callGroq(
+                            systemInstruction,
+                            userMessageText,
+                            category === 'MARKETING' ? 0.8 : 0.2,
+                            visualDataForGroq
+                        );
+
+                        if (groqResp) {
+                            response = {
+                                text: groqResp.text,
+                                usageMetadata: groqResp.usage
+                            };
+                            providerHealth.reportSuccess('groq'); // ✅ Success
+                            break;
+                        } else {
+                            throw new Error("Groq returned empty response");
+                        }
+                    } catch (gError: any) {
+                        // Check for Quota/Rate Limit specifically
+                        if (gError.message?.includes('429') || gError.message?.includes('Quota') || gError.message?.includes('insufficient_quota')) {
+                            providerHealth.observePersistence(providerHealth.reportFailure('groq', gError.message), 'services/geminiService.ts:failure-1'); // ⛔ Trigger Suspension
+                        }
+                        throw gError; // Re-throw to trigger fallback logic below
+                    }
+
+                } else if (useOpenRouter) {
+                    // Check Circuit Breaker
+                    if (!providerHealth.isAvailable('openrouter')) {
+                        console.warn(`[GEMINI] ⏭️ Skipping OpenRouter (Suspended via Circuit Breaker).`);
+                        throw new Error('Circuit Breaker: OpenRouter Suspended');
+                    }
+
+                    // --- OPENROUTER ATTEMPT ---
+                    try {
+                        console.log("[GEMINI] ⚠️ Using OpenRouter Fallback...");
+                        const orResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                            method: "POST",
+                            headers: {
+                                "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`, // Requires OPENROUTER_API_KEY in .env.local
+                                "Content-Type": "application/json",
+                                "HTTP-Referer": "https://silhouette.agency",
+                                "X-Title": "Silhouette Agency OS"
+                            },
+                            body: JSON.stringify({
+                                model: DEFAULT_OPENROUTER_MODEL,
+                                messages: [
+                                    { role: "system", content: systemInstruction },
+                                    { role: "user", content: userMessageText }
+                                ],
+                                temperature: category === 'MARKETING' ? 0.8 : 0.2,
+                            })
+                        });
+
+                        if (!orResponse.ok) {
+                            const errText = await orResponse.text();
+                            const status = orResponse.status;
+                            // Check Quota
+                            if (status === 429 || status === 402 || errText.includes('quota') || errText.includes('credit')) {
+                                providerHealth.observePersistence(providerHealth.reportFailure('openrouter', `Status ${status}: ${errText}`), 'services/geminiService.ts:failure-2');
+                            }
+                            throw new Error(`OpenRouter Error: ${status} - ${errText}`);
+                        }
+
+                        const orJson = await orResponse.json();
+                        response = {
+                            text: orJson.choices[0].message.content,
+                            usageMetadata: {
+                                totalTokenCount: orJson.usage?.total_tokens || 0,
+                                promptTokenCount: orJson.usage?.prompt_tokens || 0,
+                                candidatesTokenCount: orJson.usage?.completion_tokens || 0
+                            }
+                        };
+                        providerHealth.reportSuccess('openrouter'); // ✅ Success
+                        break;
+
+                    } catch (orError: any) {
+                        throw orError;
+                    }
+
+                } else {
+                    // --- STANDARD GEMINI CALL ---
+                    // Primary provider usually has way higher limits, but we can track it too if desired.
+                    // For now, we assume Gemini Primary is robust, but let's wrap it to be safe.
+
+                    // [PR-4a] Health is tracked PER MODEL: a quota suspension on
+                    // one Gemini model (e.g. a 12h Retry-After on a flash variant)
+                    // must not suspend the provider's other live models.
+                    const geminiHealthId = `gemini:${negotiatedModel}`;
+                    if (!providerHealth.isAvailable(geminiHealthId)) {
+                        console.warn(`[GEMINI] ⏭️ Skipping Gemini Primary model ${negotiatedModel} (Suspended via Circuit Breaker).`);
+                        throw new Error(`Circuit Breaker: Gemini model ${negotiatedModel} Suspended`);
+                    }
+
+
+                    // [NEW] MINIMAX PRIME: "The Brain" (Minimax) + "The Eyes" (Gemini)
+                    if (negotiatedModel.includes('abab') || negotiatedModel.includes('minimax')) {
+                        console.log(`[GEMINI] 🔀 Routing to Minimax Service (${negotiatedModel})...`);
+                        const { minimaxService } = await import('./minimaxService');
+
+                        // 1. "THE EYES": Check for Visual Data in the last turn
+                        // Standard Minimax is text-only. If we have images, we must describe them first.
+                        let visualContext = "";
+                        const lastMsg = contents[contents.length - 1];
+                        const hasImage = lastMsg?.parts?.some((p: any) => p.inlineData);
+
+                        if (hasImage) {
+                            console.log("[GEMINI] 👁️ Visual Data detected. asking Gemini Flash to describe it for Minimax...");
+                            try {
+                                // Extract the image part
+                                const imagePart = lastMsg.parts.find((p: any) => p.inlineData);
+
+                                // Quick Vision Call
+                                const visionResp = await ai.models.generateContent({
+                                    model: 'gemini-1.5-flash',
+                                    contents: [{
+                                        role: 'user',
+                                        parts: [
+                                            { text: "Describe this image in extreme detail for a blind AI. Focus on text, UI elements, and layout." },
+                                            imagePart
+                                        ]
+                                    }]
+                                });
+                                visualContext = `\n[VISUAL CONTEXT FROM EYES: ${(visionResp as any).response.text()}]`;
+                            } catch (visionErr) {
+                                console.warn("[GEMINI] 🙈 Vision check failed:", visionErr);
+                                visualContext = "\n[VISUAL CONTEXT: Image present but analysis failed.]";
+                            }
+                        }
+
+                        // 2. TRANSFORM HISTORY & INJECT VISION
+                        const mmMessages: any[] = [
+                            { role: 'system', content: systemInstruction },
+                            ...contents.map(c => {
+                                const textParts = c.parts.filter((p: any) => p.text).map((p: any) => p.text).join('\n');
+                                // If this is the last message and we have vision context, append it
+                                const content = (c === lastMsg) ? (textParts + visualContext) : textParts;
+
+                                // Skip empty messages (e.g. only image, no text/vision)
+                                if (!content.trim()) return null;
+
+                                return {
+                                    role: c.role === 'model' ? 'assistant' : 'user',
+                                    content: content
+                                };
+
+                            }).filter(Boolean)
+                        ];
+
+                        const mmText = await minimaxService.chat(mmMessages, { model: negotiatedModel });
+
+                        response = {
+                            text: mmText,
+                            usageMetadata: { totalTokenCount: 0, promptTokenCount: 0, candidatesTokenCount: 0 }
+                        };
+                        break; // Success
+                    }
+
+                    // PR-K: local daily budget check before the real call (fail fast, degrade honest)
+                    const qMain = quotaLedger.recordAttempt('gemini', negotiatedModel);
+                    if (!qMain.allowed) {
+                        throw new Error(`QUOTA_BUDGET_EXCEEDED: local daily budget for gemini:${negotiatedModel} spent (${qMain.used}/${qMain.budget} attempts, day ${qMain.day} America/Los_Angeles). Degrading honestly until quota reset.`);
+                    }
+                    console.log(`[GEMINI] Generating with model: ${negotiatedModel}`);
+
+
+                    // --- INTERNAL ROTATION LOOP ---
+                    // Try current key, if Rate Limit -> Rotate & Retry immediately
+                    let rotationAttempts = 0;
+                    const maxRotations = apiKeys.length;
+
+                    while (rotationAttempts <= maxRotations) {
+                        try {
+                            // [Phase 7] Tool Handling Loop
+                            // ... (Logic extracted slightly to support rotation or kept here?)
+                            // We duplicate the generation call inside this loop to keep it simple context-wise
+
+                            const currentContents = [...contents];
+                            let finalResponseText = "";
+                            let toolSteps = 0;
+                            const MAX_TOOL_STEPS = 5;
+
+                            // Check if we have new visual tools enabled
+                            if (agentCapabilities.includes(AgentCapability.TOOL_VIDEO_GENERATION)) {
+                                // 1. Native Tools for Gemini
+                                // Note: We might re-import definitions unnecessarily but it's safe
+                                const { AGENT_TOOLS } = await import('./tools/definitions');
+                                if (!tools.some(t => t === AGENT_TOOLS[0])) tools.push(...AGENT_TOOLS);
+
+                                // 2. Text Protocol Fallback already added to systemInstruction outside loop
+                            }
+
+                            while (toolSteps < MAX_TOOL_STEPS) {
+                                const result = await ai.models.generateContent({
+                                    model: negotiatedModel,
+                                    contents: currentContents,
+                                    tools: tools.length > 0 ? tools : undefined,
+                                    toolConfig: tools.length > 0 ? { functionCallingConfig: { mode: "AUTO" } } : undefined,
+                                    config: {
+                                        temperature: category === 'MARKETING' ? 0.8 : 0.2,
+                                    }
+                                } as any);
+
+                                const stepResponse = result;
+                                // @ts-ignore
+                                const calls = typeof stepResponse.functionCalls === 'function' ? stepResponse.functionCalls() : undefined;
+
+                                if (calls && calls.length > 0) {
+                                    console.log(`[GEMINI] 🛠️ Tool Call Detected (Step ${toolSteps + 1}):`, calls[0].name);
+                                    const functionCallPart = { functionCall: calls[0] };
+                                    currentContents.push({ role: 'model', parts: [functionCallPart as any] });
+
+                                    const { toolHandler } = await import('./tools/toolHandler');
+                                    // Identity fallback: callers that never pass projectContext.toolCaller
+                                    // (workflowEngine, pluginManager, ingestionService) still have the
+                                    // executing agent's name/role right here — identity comes from the
+                                    // executing agent, never from model-supplied args.
+                                    const toolCaller = projectContext?.toolCaller
+                                        ?? { requesterId: agentName, requesterRole: agentRole };
+                                    // EFFECT GATE (2026-11-05): provider function-calling is a DIRECT
+                                    // path that never crossed the confirmation chokepoints - a model
+                                    // response could fire gated effects (email, plugins, wallet) with
+                                    // no human in the loop. Route through the same consent helper as
+                                    // orchestrator: ungated tools pass; gated effects require human
+                                    // approval at /v1/autonomy/confirmations; denial is reported to
+                                    // the model honestly, never simulated success.
+                                    const { executeWithEffectConsent } = await import('./security/gatedExecution');
+                                    const { EffectDeniedError } = await import('./security/effectGate');
+                                    let toolResult: any;
+                                    try {
+                                        toolResult = await executeWithEffectConsent(
+                                            calls[0].name, calls[0].args,
+                                            `geminiService:function-call:${agentName}`,
+                                            () => toolHandler.handleFunctionCall(calls[0].name, calls[0].args, toolCaller));
+                                    } catch (gateErr: any) {
+                                        if (gateErr instanceof EffectDeniedError || gateErr?.code === 'EFFECT_DENIED' || gateErr?.code === 'CONFIRMATION_UNAVAILABLE') {
+                                            toolResult = { error: gateErr.message, blocked: true, tool: calls[0].name };
+                                        } else {
+                                            throw gateErr;
+                                        }
+                                    }
+
+                                    currentContents.push({
+                                        role: 'function',
+                                        parts: [{
+                                            functionResponse: {
+                                                name: calls[0].name,
+                                                response: { result: toolResult }
+                                            }
+                                        } as any]
+                                    });
+                                    toolSteps++;
+                                } else {
+                                    // @ts-ignore
+                                    finalResponseText = typeof result.text === 'function' ? result.text() : (result.text || "");
+                                    response = {
+                                        text: finalResponseText,
+                                        usageMetadata: {
+                                            totalTokenCount: 0,
+                                            promptTokenCount: 0,
+                                            candidatesTokenCount: 0
+                                        }
+                                    };
+                                    break;
+                                }
+                            }
+
+                            providerHealth.reportSuccess('gemini'); // ✅ Success
+                            break; // Break Rotation Loop (Success)
+
+                        } catch (gemError: any) {
+                            const isRateLimit = gemError.status === 429 || gemError.message?.includes('429');
+                            const isAuthError = gemError.status === 401 || gemError.message?.includes('401') || gemError.message?.includes('API key');
+
+                            if (isRateLimit || isAuthError) {
+                                console.warn(`[GEMINI] ⚠️ Error on Key #${currentKeyIndex + 1}: ${gemError.message}`);
+                                if (rotateKey()) {
+                                    rotationAttempts++;
+                                    continue; // Retry with new key
+                                }
+                                // No more keys? Report failure (per-model) and throw to outer loop
+                                providerHealth.observePersistence(providerHealth.reportFailure(`gemini:${negotiatedModel}`, gemError.message), 'services/geminiService.ts:failure-3');
+                            }
+                            throw gemError; // Non-rotation error or exhausted keys
+                        }
+                    } // End Rotation Loop
+
+
+
+                }
+            } catch (error: any) {
+                // Collect error for final report if all fail
+                errors.push(error.message);
+
+                // Handle Rate Limits (429) & Overloads (503) & Circuit Breaker Skips
+                const isOverloaded = error.status === 503 || error.message?.includes('503') || error.message?.includes('Overloaded');
+                const isRateLimit = error.status === 429 || error.message?.includes('429');
+                const isCircuitBreaker = error.message?.includes('Circuit Breaker');
+
+                // If Circuit Breaker, we move IMMEDIATELY to next provider without waiting/retry on same provider
+
+                // Failover Logic: Gemini -> OpenRouter -> Groq -> Local
+                // Logic: 
+                // 1. Initial: Gemini (useOpen=false, useGroq=false)
+                // 2. Fail -> OpenRouter (useOpen=true, useGroq=false)
+                // 3. Fail -> Groq (useOpen=false, useGroq=true)
+                // 4. Fail -> ZhipuAI (cloud, multimodal, free)
+                // 5. Fail -> Local Ollama
+
+                if (!useOpenRouter && !useGroq) {
+                    useOpenRouter = true; // Try OpenRouter next
+                } else if (useOpenRouter && !useGroq) {
+                    useOpenRouter = false;
+                    useGroq = true; // Try Groq next
+                } else {
+                    // --- ZHIPUAI FALLBACK (Cloud, Multimodal, Free) with AGENTS key ---
+                    try {
+                        const { zhipuService } = await import('./zhipuService');
+
+                        if (zhipuService.isAvailable('agents')) {
+                            console.warn("[GEMINI] ☁️ Trying ZhipuAI GLM-4.6V-Flash (multimodal fallback) - AGENTS key...");
+                            const fullPrompt = `${systemInstruction}\n\n[USER]: ${userMessageText}`;
+
+                            const zhipuResponse = await zhipuService.generateCompletion(fullPrompt, {
+                                maxTokens: 4096,
+                                temperature: 0.7,
+                                model: 'glm-4.6v-flash' // Best free multimodal
+                            }, 'agents'); // Uses dedicated agents key
+
+                            response = {
+                                text: zhipuResponse,
+                                usageMetadata: { totalTokenCount: 0, promptTokenCount: 0, candidatesTokenCount: 0 }
+                            };
+                            console.log("[GEMINI] ✅ ZhipuAI responded successfully");
+                            break; // Success (ZhipuAI)
+                        }
+                    } catch (zhipuError: any) {
+                        console.warn("[GEMINI] ⚠️ ZhipuAI failed:", zhipuError.message);
+                    }
+
+                    // --- [PR-4a] OLLAMA CLOUD FALLBACK (free tier, OpenAI-compatible) ---
+                    const ollamaCloudKey = process.env.OLLAMA_CLOUD_API_KEY?.trim();
+                    if (ollamaCloudKey && providerHealth.isAvailable('ollama-cloud')) {
+                        try {
+                            console.warn("[GEMINI] ☁️ Trying Ollama Cloud (free tier)...");
+                            const ocResponse = await fetch("https://ollama.com/v1/chat/completions", {
+                                method: "POST",
+                                headers: {
+                                    "Authorization": `Bearer ${ollamaCloudKey}`,
+                                    "Content-Type": "application/json"
+                                },
+                                body: JSON.stringify({
+                                    model: process.env.OLLAMA_CLOUD_MODEL?.trim() || 'gpt-oss:20b',
+                                    messages: [
+                                        { role: "system", content: systemInstruction },
+                                        { role: "user", content: userMessageText }
+                                    ],
+                                    temperature: category === 'MARKETING' ? 0.8 : 0.2,
+                                })
+                            });
+                            if (!ocResponse.ok) {
+                                const ocErr = await ocResponse.text();
+                                if (ocResponse.status === 429 || ocResponse.status === 402) {
+                                    providerHealth.observePersistence(providerHealth.reportFailure('ollama-cloud', `Status ${ocResponse.status}: ${ocErr.slice(0, 200)}`), 'services/geminiService.ts:failure-4');
+                                }
+                                throw new Error(`Ollama Cloud Error: ${ocResponse.status} - ${ocErr.slice(0, 200)}`);
+                            }
+                            const ocJson = await ocResponse.json();
+                            response = {
+                                text: ocJson.choices[0].message.content,
+                                usageMetadata: {
+                                    totalTokenCount: ocJson.usage?.total_tokens || 0,
+                                    promptTokenCount: ocJson.usage?.prompt_tokens || 0,
+                                    candidatesTokenCount: ocJson.usage?.completion_tokens || 0
+                                }
+                            };
+                            providerHealth.reportSuccess('ollama-cloud');
+                            console.log("[GEMINI] ✅ Ollama Cloud responded successfully");
+                            break; // Success (Ollama Cloud)
+                        } catch (ocError: any) {
+                            console.warn("[GEMINI] ⚠️ Ollama Cloud failed:", ocError.message);
+                        }
+                    }
+
+                    // --- ULTIMATE FALLBACK: LOCAL HIVE MIND ---
+                    // [PR-4a] Local Ollama is disabled by default (small server;
+                    // owner decision 2026-10-16). With it disabled we degrade
+                    // HONESTLY with a loud system error instead of burning CPU.
+                    if (localInferenceAllowed() && process.env.OLLAMA_LOCAL_ENABLED === 'true') {
+                    console.warn("[GEMINI] 🌩️ ALL CLOUDS FAILED. Switching to LOCAL HIVE MIND (Ollama).");
+                    try {
+                        const { ollamaService } = await import('./ollamaService');
+                        const localTier = (category === 'DEV' || category === 'SCIENCE') ? 'smart' : 'fast';
+                        const fullPrompt = `${systemInstruction}\n\n[SYSTEM]: CLOUDS UNREACHABLE. AUTONOMOUS MODE. ${new Date().toISOString()}\n\n[USER]: ${userMessageText}`;
+
+                        const localResponseText = await ollamaService.generateCompletion(
+                            fullPrompt,
+                            ["User:", "System:"],
+                            localTier
+                        );
+
+                        response = {
+                            text: localResponseText,
+                            usageMetadata: { totalTokenCount: 0, promptTokenCount: 0, candidatesTokenCount: 0 }
+                        };
+                        break; // Success (Local)
+
+                    } catch (localError: any) {
+                        console.error("Critical Failure: Local Hive Mind unresponsive.", localError);
+                        // [ROBUSTNESS] Do NOT throw. Return a system error message to preserve memory integrity.
+                        response = {
+                            text: JSON.stringify({
+                                thoughts: ["[SYSTEM ERROR] All AI Circuits Failed. Low Memory/Credits."],
+                                response: "I am experiencing a total cognitive failure. Please check my API credits and local resources."
+                            }),
+                            usageMetadata: { totalTokenCount: 0, promptTokenCount: 0, candidatesTokenCount: 0 }
+                        };
+                        break;
+                    }
+                    } else {
+                        console.error("[GEMINI] 🌩️ ALL CLOUDS FAILED and local Ollama is disabled (OLLAMA_LOCAL_ENABLED!=true). Degrading honestly.");
+                        response = {
+                            text: JSON.stringify({
+                                thoughts: ["[SYSTEM ERROR] All AI providers exhausted (cloud quotas) and local fallback disabled."],
+                                response: "All AI providers are exhausted right now (daily free quotas). Please retry later or add provider credits."
+                            }),
+                            usageMetadata: { totalTokenCount: 0, promptTokenCount: 0, candidatesTokenCount: 0 }
+                        };
+                        break;
+                    }
+                }
+
+                retries++;
+                if (retries > 6) {
+                    // Safety Valve Fallback
+                    response = {
+                        text: JSON.stringify({
+                            thoughts: ["[SYSTEM ERROR] Max Fallback Retries Exceeded."],
+                            response: "System Overload. Rebooting cognitive loops."
+                        }),
+                        usageMetadata: { totalTokenCount: 0, promptTokenCount: 0, candidatesTokenCount: 0 }
+                    };
+                    break;
+                }
+            }
+        }
+
+
+        const fullText = response.text || "";
+        const usage = response.usageMetadata?.totalTokenCount || 0;
+
+        // Track Cost
+        const inputTokens = response.usageMetadata?.promptTokenCount || 0;
+        const outputTokens = response.usageMetadata?.candidatesTokenCount || 0;
+        let modelUsed = useOpenRouter ? DEFAULT_OPENROUTER_MODEL : DEFAULT_GEMINI_MODEL;
+        modelUsed = useOpenRouter ? DEFAULT_OPENROUTER_MODEL : DEFAULT_GEMINI_MODEL;
+        if (useGroq) modelUsed = DEFAULT_GROQ_MODEL;
+
+        costEstimator.trackTransaction(inputTokens, outputTokens, modelUsed);
+
+        const result = introspection.processNeuralOutput(fullText);
+
+        // --- CRITICAL UPDATE: INJECT THOUGHTS INTO CENTRAL HUB ---
+        if (result.thoughts.length > 0) {
+            introspection.setRecentThoughts(result.thoughts);
+
+            // --- PERSIST REASONING (USER REQUEST) ---
+            continuum.store(
+                `[${agentName}][REASONING]: ${result.thoughts.join('\n')}`,
+                undefined,
+                ['internal-monologue', 'reasoning', category.toLowerCase(), `owner:${agentName}`]
+            );
+        }
+
+        let qualityScore = undefined;
+        if (currentStage === WorkflowStage.QA_AUDIT) {
+            const scoreMatch = fullText.match(/FINAL SCORE:\s*(\d+)\/100/i);
+            if (scoreMatch) qualityScore = parseInt(scoreMatch[1]);
+            else qualityScore = 85;
+        }
+
+        if (result.cleanOutput.length > 50) {
+            continuum.store(
+                `[${agentName}][${currentStage}]: ${result.cleanOutput.substring(0, 150)}...`,
+                undefined,
+                ['agent-output', category.toLowerCase(), currentStage.toLowerCase(), `owner:${agentName}`]
+            );
+        }
+
+        // --- CONSCIOUSNESS LOOP ---
+        // Update Phi, Identity, and Emergence based on this thought
+        consciousness.tick(result.thoughts, 50); // Base awareness 50 for now, could be dynamic
+
+        // --- NARRATIVE CORTEX UPDATE ---
+        // Fire and forget update loop
+        narrative.updateNarrative(task, result.cleanOutput).catch(err => console.error("Narrative Update Error", err));
+
+        // --- STORE USER INPUT (NEW) ---
+        // Ensure user's voice is part of the continuum, BUT ONLY IF IT IS ACTUALLY FROM THE USER
+        if (communicationLevel === CommunicationLevel.USER_FACING && task.length > 5) {
+            continuum.store(
+                `[USER]: ${task}`,
+                undefined,
+                ['user-input', category.toLowerCase()]
+            );
+        }
+
+        // --------------------------
+
+        return {
+            output: result.cleanOutput,
+            thoughts: result.thoughts.length > 0 ? result.thoughts : ["(Introspection stream hidden or empty)"],
+            usage: usage,
+            qualityScore: qualityScore
+        };
+
+    } catch (error: any) {
+        console.error("Gemini API Error:", error);
+        introspection.setRecentThoughts(["Error detected during processing.", error.message || "Unknown error"]);
+        return {
+            output: "An error occurred during agent processing.",
+            thoughts: ["Error detected.", error.message],
+            usage: 0
+        };
+    }
+};
+
+
+
+
+export const analyzeSystemHealth = async (metrics: any) => {
+    const status = metrics.vramUsage > 3.8 ? "CRITICAL" : "OPTIMAL";
+    return {
+        status: status,
+        recommendation: status === "CRITICAL" ? "VRAM Saturation imminent." : "System stable."
+    };
+};
+
+export const generateShotlist = async (
+    objective: string,
+    brand: any, // BrandDigitalTwin
+    rules: string
+): Promise<any | null> => {
+    if (!apiKey) return null;
+
+    const systemPrompt = `
+        ROLE: World-Class Creative Director (Cannes Lion Winner).
+        TASK: Create a Technical Shotlist for a high-end commercial campaign.
+    
+    BRAND CONTEXT:
+        - Name: ${brand.name}
+        - Primary Emotion: ${brand.manifesto.emotionalSpectrum.primary}
+        - Forbidden Elements: ${brand.manifesto.emotionalSpectrum.forbidden.join(', ')}
+        - Visual Rules: ${rules}
+
+    CAMPAIGN OBJECTIVE: "${objective}"
+
+    OUTPUT FORMAT:
+    You must return a VALID JSON object matching this structure exactly:
+        {
+            "id": "camp_uuid",
+            "name": "Campaign Name",
+            "objective": "Summary of objective",
+            "platform": "Instagram Reels",
+            "shotlist": [
+                {
+                    "id": "shot_1",
+                    "description": "Visual description of the scene",
+                    "angle": "Low Angle | Eye Level | Aerial",
+                    "lighting": "Softbox | Neon | Natural",
+                    "lens": "35mm | 85mm | Anamorphic",
+                    "movement": "Static | Pan | Dolly Zoom",
+                    "productPlacement": "Center | Background | Subtle",
+                    "audioCue": "Sound effect or music vibe"
+                }
+            ]
+        }
+
+        CRITICAL:
+        - Return ONLY the JSON. No markdown formatting.
+        - Ensure at least 3 distinct shots.
+        - The "description" must be a high-quality image generation prompt.
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: DEFAULT_GEMINI_MODEL,
+            contents: [{ role: 'user', parts: [{ text: systemPrompt }] }],
+            config: { temperature: 0.7 }
+        } as any);
+
+        const text = response.text || "{}";
+
+        // Track Cost
+        const inputTokens = response.usageMetadata?.promptTokenCount || 0;
+        const outputTokens = response.usageMetadata?.candidatesTokenCount || 0;
+        costEstimator.trackTransaction(inputTokens, outputTokens);
+
+        // Clean markdown if present
+        const jsonStr = text.replace(/```json/g, '').replace(/```/g, '').trim();
+        return JSON.parse(jsonStr);
+
+    } catch (e) {
+        console.error("[GeminiService] Shotlist Generation Failed:", e);
+        return null;
+    }
+};
+
+export const analyzeImage = async (
+    imageUrl: string,
+    prompt: string,
+    brandContext: any
+): Promise<any | null> => {
+    if (!apiKey) return null;
+
+    const systemPrompt = `
+    ROLE: Strict Creative Director & Technical QA.
+    TASK: Critique this image against the Brand DNA and Technical Standards.
+
+    BRAND CONTEXT:
+    - Name: ${brandContext.name}
+    - Primary Emotion: ${brandContext.manifesto.emotionalSpectrum.primary}
+    - Forbidden: ${brandContext.manifesto.emotionalSpectrum.forbidden.join(', ')}
+
+    ORIGINAL PROMPT: "${prompt}"
+
+    CRITERIA:
+    1. Brand Alignment (Does it feel like ${brandContext.name}?)
+    2. Photorealism (Lighting, Shadows, Texture)
+    3. Prompt Adherence (Did it draw what was asked?)
+    4. Artifacts (Glitches, weird hands, floating objects)
+
+    OUTPUT JSON:
+    {
+      "score": number (0-100),
+      "reasoning": "Brief explanation",
+      "feedback": "Specific instructions to fix it (e.g. 'Lighting is too flat, add contrast')",
+      "pass": boolean (score >= 80)
+    }
+    `;
+
+    try {
+        // Fetch image and convert to base64
+        const imageResp = await fetch(imageUrl);
+        const imageBlob = await imageResp.blob();
+        const arrayBuffer = await imageBlob.arrayBuffer();
+        const base64Image = Buffer.from(arrayBuffer).toString('base64');
+
+        const response = await ai.models.generateContent({
+            model: DEFAULT_GEMINI_MODEL, // Use Flash for speed/vision
+            contents: [
+                {
+                    role: 'user',
+                    parts: [
+                        { text: systemPrompt },
+                        {
+                            inlineData: {
+                                mimeType: "image/png",
+                                data: base64Image
+                            }
+                        }
+                    ]
+                }
+            ],
+            config: { temperature: 0.2 }
+        } as any);
+
+        const text = response.text || "{}";
+
+        // Track Cost
+        const inputTokens = response.usageMetadata?.promptTokenCount || 0;
+        const outputTokens = response.usageMetadata?.candidatesTokenCount || 0;
+        costEstimator.trackTransaction(inputTokens, outputTokens);
+
+        const jsonStr = text.replace(/```json/g, '').replace(/```/g, '').trim();
+        return JSON.parse(jsonStr);
+
+    } catch (e) {
+        console.error("[GeminiService] Image Analysis Failed:", e);
+        return { score: 0, reasoning: "Analysis Failed", feedback: "System Error", pass: false };
+    }
+};
+
+/** Current Gemini SDK client (null when no API key is configured). */
+export function getGeminiClient(): GoogleGenAI | null {
+    return ensureClient();
+}
+
+/** Pure availability check: true when a Gemini API key is configured. Never performs network calls. */
+export function hasGeminiKey(): boolean {
+    return ensureClient() !== null;
+}
+
+/**
+ * Direct Gemini text completion with NO fallback (R1). The previous generateText
+ * chain hid the real answering provider from the gateway; gateway/router callers
+ * use this pure transport and the router owns fallback.
+ */
+export const generateGeminiTextPure = async (prompt: string, model?: string): Promise<string> => {
+    assertExternalProvidersEnabled();
+    const client = ensureClient();
+    if (!client) throw new Error('GEMINI: API key not configured');
+    // PR-K: fail fast on the local daily budget BEFORE burning a real API
+    // call - the 2026-10-16 429 storm burned the whole free bucket on retries.
+    const quotaModel = model || DEFAULT_GEMINI_MODEL;
+    const q = quotaLedger.recordAttempt('gemini', quotaModel);
+    if (!q.allowed) {
+        throw new Error(`QUOTA_BUDGET_EXCEEDED: local daily budget for gemini:${quotaModel} spent (${q.used}/${q.budget} attempts, day ${q.day} America/Los_Angeles). Degrading honestly until quota reset.`);
+    }
+    const result = await client.models.generateContent({
+        model: model || DEFAULT_GEMINI_MODEL,
+        contents: [{ parts: [{ text: prompt }] }]
+    });
+
+    // Try multiple extraction methods for SDK compatibility
+    let text = '';
+    if (typeof result.text === 'string') {
+        text = result.text;
+    } else if (typeof (result as any).text === 'function') {
+        text = (result as any).text();
+    } else if ((result as any).candidates?.[0]?.content?.parts?.[0]?.text) {
+        text = (result as any).candidates[0].content.parts[0].text;
+    }
+    if (!text) throw new Error('GEMINI: empty response');
+    return text;
+};
+
+/**
+ * Non-stream text generation with REAL cloud failover (W6 follow-up).
+ * Chain: Gemini background model (own quota bucket) -> Groq -> NVIDIA NIM
+ * (when NVIDIA_API_KEY is set) -> OpenRouter,
+ * each guarded by the providerHealth circuit breaker. Built for the
+ * background/spawn path, which previously died when a single Gemini model
+ * hit its quota ("[BACKGROUND_LLM] No providers available" with 0 births).
+ * Every default model here was probed live 2026-10-15 (200) with the
+ * project keys: gemini-3.1-flash-lite non-stream, openai/gpt-oss-120b (Groq),
+ * nvidia/nemotron-3-super-120b-a12b:free (OpenRouter).
+ */
+export const generateTextWithCloudFallbacks = async (
+    prompt: string,
+    opts: { maxTokens?: number; temperature?: number } = {}
+): Promise<string> => {
+    assertExternalProvidersEnabled();
+    const { providerHealth } = await import('./providerHealthManager');
+    const { DEFAULT_GEMINI_BACKGROUND_MODEL, DEFAULT_OPENROUTER_MODEL } = await import('./llm/defaultModels');
+    const errors: string[] = [];
+    const isQuota = (m: string) => /429|quota|rate.?limit|insufficient/i.test(m || '');
+
+    // 1) Gemini background model (non-stream; per-model quota bucket)
+    if (providerHealth.isAvailable('gemini-bg')) {
+        try {
+            const text = await generateGeminiTextPure(prompt, DEFAULT_GEMINI_BACKGROUND_MODEL);
+            providerHealth.reportSuccess('gemini-bg');
+            console.log('[CLOUD_FALLBACK] ✅ Gemini background model responded');
+            return text;
+        } catch (e: any) {
+            errors.push(`gemini-bg: ${e.message}`);
+            if (isQuota(e.message)) providerHealth.observePersistence(providerHealth.reportFailure('gemini-bg', e.message), 'services/geminiService.ts:failure-5');
+        }
+    } else errors.push('gemini-bg: circuit open');
+
+    // 2) Groq (free tier)
+    if (providerHealth.isAvailable('groq')) {
+        try {
+            const r = await callGroq('', prompt, opts.temperature ?? 0.7);
+            if (r?.text) {
+                providerHealth.reportSuccess('groq');
+                console.log('[CLOUD_FALLBACK] ✅ Groq responded');
+                return r.text;
+            }
+            throw new Error('empty response');
+        } catch (e: any) {
+            errors.push(`groq: ${e.message}`);
+            if (isQuota(e.message)) providerHealth.observePersistence(providerHealth.reportFailure('groq', e.message), 'services/geminiService.ts:failure-6');
+        }
+    } else errors.push('groq: circuit open');
+
+    // 3) NVIDIA NIM (free tier; only when NVIDIA_API_KEY is set)
+    if (process.env.NVIDIA_API_KEY?.trim() && providerHealth.isAvailable('nvidia')) {
+        try {
+            const { ProviderRegistry } = await import('./llm/providerRegistry');
+            const { OpenAICompatibleClient } = await import('./llm/openAICompatible');
+            const definition = ProviderRegistry.fromEnvironment().get('NVIDIA');
+            if (!definition) throw new Error('NVIDIA provider not registered');
+            const client = new OpenAICompatibleClient();
+            const result = await client.complete(definition, [{ role: 'user', content: prompt }], {
+                maxTokens: opts.maxTokens ?? 1024,
+                temperature: opts.temperature ?? 0.7
+            });
+            if (result.text) {
+                providerHealth.reportSuccess('nvidia');
+                console.log('[CLOUD_FALLBACK] ✅ NVIDIA NIM responded');
+                return result.text;
+            }
+            throw new Error('empty response');
+        } catch (e: any) {
+            errors.push(`nvidia: ${e.message}`);
+            if (isQuota(e.message)) providerHealth.observePersistence(providerHealth.reportFailure('nvidia', e.message), 'services/geminiService.ts:failure-7');
+        }
+    } else errors.push(process.env.NVIDIA_API_KEY?.trim() ? 'nvidia: circuit open' : 'nvidia: no key');
+
+    // 4) OpenRouter (:free model)
+    if (providerHealth.isAvailable('openrouter')) {
+        try {
+            const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+                    'Content-Type': 'application/json',
+                    'HTTP-Referer': 'https://silhouette.agency',
+                    'X-Title': 'Silhouette Agency OS'
+                },
+                body: JSON.stringify({
+                    model: process.env.OPENROUTER_MODEL?.trim() || DEFAULT_OPENROUTER_MODEL,
+                    messages: [{ role: 'user', content: prompt }],
+                    max_tokens: opts.maxTokens ?? 1024,
+                    temperature: opts.temperature ?? 0.7
+                })
+            });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${(await resp.text()).slice(0, 160)}`);
+            const data: any = await resp.json();
+            const text = data?.choices?.[0]?.message?.content;
+            if (text) {
+                providerHealth.reportSuccess('openrouter');
+                console.log('[CLOUD_FALLBACK] ✅ OpenRouter responded');
+                return text;
+            }
+            throw new Error('empty response');
+        } catch (e: any) {
+            errors.push(`openrouter: ${e.message}`);
+            if (isQuota(e.message)) providerHealth.observePersistence(providerHealth.reportFailure('openrouter', e.message), 'services/geminiService.ts:failure-8');
+        }
+    } else errors.push('openrouter: circuit open');
+
+    throw new Error(`[CLOUD_FALLBACK] all cloud providers failed -> ${errors.join(' | ')}`);
+};
+
+export const generateText = async (prompt: string, options: { model?: string } = {}): Promise<string> => {
+    assertExternalProvidersEnabled();
+    ensureClient();
+    const modelToUse = options.model || DEFAULT_GEMINI_MODEL;
+
+    // === PRIMARY: ZHIPUAI (FREE, 12 concurrent) ===
+    try {
+        const { zhipuService } = await import('./zhipuService');
+        if (zhipuService.isAvailable('agents')) {
+            console.log("[GeminiService] 🇨🇳 Using ZhipuAI as PRIMARY (FREE)...");
+            const response = await zhipuService.generateCompletion(prompt, {
+                maxTokens: 1024,
+                temperature: 0.3
+            }, 'agents');
+            if (response) {
+                console.log("[GeminiService] ✅ ZhipuAI PRIMARY responded successfully");
+                return response;
+            }
+        }
+    } catch (zhipuError: any) {
+        console.warn("[GeminiService] ⚠️ ZhipuAI PRIMARY failed:", zhipuError.message);
+    }
+
+    // === SECONDARY: Gemini ===
+    if (apiKey) {
+        try {
+            console.log("[GeminiService] 📡 Trying Gemini (secondary)...");
+            const result = await ai.models.generateContent({
+                model: modelToUse,
+                contents: [{ parts: [{ text: prompt }] }]
+            });
+
+            // Try multiple extraction methods for SDK compatibility
+            let text = '';
+            if (typeof result.text === 'string') {
+                text = result.text;
+            } else if (typeof result.text === 'function') {
+                text = (result as any).text();
+            } else if ((result as any).candidates?.[0]?.content?.parts?.[0]?.text) {
+                text = (result as any).candidates[0].content.parts[0].text;
+            }
+
+            if (text) return text;
+            console.warn("[GeminiService] ⚠️ generateText: Gemini returned empty, trying fallback...");
+
+        } catch (e: any) {
+            console.warn("[GeminiService] ⚠️ Gemini failed, trying fallbacks...", e?.message?.substring(0, 100));
+        }
+    }
+
+    // Fallback 1: OpenRouter (Higher Priority)
+    const orKey = process.env.OPENROUTER_API_KEY;
+    if (orKey) {
+        try {
+            console.log("[GeminiService] 🔄 Using OpenRouter Fallback for generateText...");
+            const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${orKey}`,
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://silhouette.agency",
+                    "X-Title": "Silhouette Agency OS"
+                },
+                body: JSON.stringify({
+                    model: "meta-llama/llama-3.3-70b-instruct",
+                    messages: [{ role: "user", content: prompt }],
+                    temperature: 0.3,
+                    max_tokens: 4096
+                })
+            });
+
+            if (response.ok) {
+                const json = await response.json();
+                return json.choices?.[0]?.message?.content || "";
+            } else {
+                console.warn("[GeminiService] ⚠️ OpenRouter returned non-OK, trying Groq...");
+            }
+        } catch (orError: any) {
+            console.warn("[GeminiService] ⚠️ OpenRouter fallback failed:", orError?.message);
+        }
+    }
+
+    // Fallback 2: Groq
+    const groqKey = process.env.GROQ_API_KEY;
+    if (groqKey) {
+        try {
+            console.log("[GeminiService] 🔄 Using Groq Fallback for generateText...");
+            const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+                method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${groqKey}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    // [ROOT FIX] retired literal -> verified default (llm/defaultModels.ts)
+                    model: DEFAULT_GROQ_MODEL,
+                    messages: [{ role: "user", content: prompt }],
+                    temperature: 0.3,
+                    max_tokens: 4096
+                })
+            });
+
+            if (response.ok) {
+                const json = await response.json();
+                return json.choices?.[0]?.message?.content || "";
+            } else {
+                console.warn("[GeminiService] ⚠️ Groq returned non-OK status, trying local...");
+            }
+        } catch (groqError: any) {
+            console.error("[GeminiService] ❌ Groq fallback failed:", groqError?.message);
+        }
+    }
+
+    // Fallback 3: ZhipuAI (FREE Cloud - before local)
+    try {
+        const { zhipuService } = await import('./zhipuService');
+        if (zhipuService.isAvailable('agents')) {
+            console.log("[GeminiService] 🇨🇳 Using ZhipuAI Fallback for generateText...");
+            const zhipuResponse = await zhipuService.generateCompletion(prompt, {
+                maxTokens: 1024,
+                temperature: 0.3
+            }, 'agents');
+            if (zhipuResponse) return zhipuResponse;
+        }
+    } catch (zhipuError: any) {
+        console.warn("[GeminiService] ⚠️ ZhipuAI fallback failed:", zhipuError?.message);
+    }
+
+    // Final Fallback: Local Ollama, never in a cloud-only deployment.
+    if (!localInferenceAllowed()) throw new Error('INFERENCE_UNAVAILABLE: All cloud AI providers failed or unavailable; local inference is disabled.');
+    try {
+        const { ollamaService } = await import('./ollamaService');
+        if (await ollamaService.isAvailable()) {
+            console.log("[GeminiService] 🏠 Using LOCAL Ollama Fallback for generateText...");
+            const localResponse = await ollamaService.generateSimpleResponse(prompt);
+            if (localResponse) return localResponse;
+        }
+    } catch (localError: any) {
+        console.error("[GeminiService] ❌ Local Ollama fallback also failed:", localError?.message);
+    }
+
+    throw new Error('INFERENCE_UNAVAILABLE: All AI providers failed or unavailable.');
+};
+
+/**
+ * [NEW] Generic Multimodal Completion for Visual Analysis
+ * Supports images and flexible configuration.
+ */
+export const createCompletion = async (
+    prompt: string,
+    options: {
+        communicationLevel?: CommunicationLevel;
+        images?: string[]; // Base64 strings
+        temperature?: number;
+        model?: string;
+    } = {}
+): Promise<string> => {
+    ensureClient();
+    if (!apiKey) return "";
+
+    try {
+        const parts: any[] = [{ text: prompt }];
+
+        // Add images if present
+        if (options.images && options.images.length > 0) {
+            options.images.forEach(base64 => {
+                // If base64 has full data URI scheme, strip it, otherwise use raw
+                const cleanBase64 = base64.includes(',') ? base64.split(',')[1] : base64;
+                parts.push({
+                    inlineData: {
+                        mimeType: "image/png", // Assume PNG from canvas
+                        data: cleanBase64
+                    }
+                });
+            });
+        }
+
+        const result = await ai.models.generateContent({
+            model: options.model || DEFAULT_GEMINI_MODEL, // verified live default (was gemini-2.5-flash, 404 dead)
+            contents: [{ role: 'user', parts }],
+            config: {
+                temperature: options.temperature || 0.2
+            }
+        });
+
+        // Track Cost
+        const inputTokens = result.usageMetadata?.promptTokenCount || 0;
+        const outputTokens = result.usageMetadata?.candidatesTokenCount || 0;
+        costEstimator.trackTransaction(inputTokens, outputTokens, options.model || DEFAULT_GEMINI_MODEL);
+
+        return result.text || "";
+
+    } catch (e: any) {
+        console.error("[GeminiService] createCompletion Failed:", e);
+        return "";
+    }
+};
+
+
+
+
+// --- STREAMING SUPPORT ---
+/**
+ * [R1] Backwards-compatible wrapper. All provider transports, tools bridging and
+ * fallback policy now live exclusively in the agent inference router
+ * (services/llm/agentInferenceRouter.ts). This wrapper preserves the legacy
+ * string-chunk contract for existing script/test callers.
+ */
+export async function* generateAgentResponseStream(
+    agentName: string,
+    role: string,
+    category: string,
+    task: string,
+    context: any,
+    introspectionDepth: IntrospectionLayer,
+    currentStage: WorkflowStage,
+    agentCapabilities: AgentCapability[] = [], // [DCR]
+    config: any = {},
+    tools: any = {},
+    level: CommunicationLevel = CommunicationLevel.USER_FACING
+): AsyncGenerator<string, void, unknown> {
+    const { agentInferenceRouter } = await import('./llm/agentInferenceRouter');
+    const { capabilitiesFromAgentCapabilities } = await import('./llm/inference');
+    try {
+        for await (const event of agentInferenceRouter.stream({
+            agentName,
+            role,
+            category,
+            task,
+            context,
+            introspectionDepth,
+            stage: currentStage,
+            capabilities: capabilitiesFromAgentCapabilities(agentCapabilities),
+            level,
+            model: config?.modelOverride,
+            temperature: config?.temperature ?? 0.7
+        })) {
+            if (event.type === 'text') yield event.text;
+        }
+    } catch (e: any) {
+        // Legacy explicit-failure contract for script callers (never a fake success)
+        console.error("[GEMINI STREAM] FATAL: all inference providers failed:", e?.message);
+        yield "\n\n[SYSTEM CRITICAL FAILURE]: Unable to generate response from any source (Cloud/Local).";
+    }
+}
+
+/**
+ * [NEW] Transcribe Audio using Gemini 1.5 Flash (Multimodal)
+ * @param base64Audio - Base64 encoded audio data
+ * @param mimeType - Mime type of the audio (e.g. audio/ogg)
+ */
+export const transcribeAudio = async (base64Audio: string, mimeType: string): Promise<string> => {
+    const client = ensureClient();
+    if (!client) return "[Transcription Error: No API Key]";
+
+    try {
+        // [SDK INFO] @google/genai uses client.models.generateContent
+        const result = await (client as any).models.generateContent({
+            model: "gemini-1.5-flash",
+            contents: [{
+                role: 'user',
+                parts: [
+                    {
+                        inlineData: {
+                            mimeType: mimeType,
+                            data: base64Audio
+                        }
+                    },
+                    { text: "Transcribe this audio exactly. If it's a command, just transcribe the words. Do not add any preamble." }
+                ]
+            }]
+        });
+
+        return result.response.text() || "[Empty transcription]";
+    } catch (err: any) {
+        console.error("[GEMINI] Transcription failed:", err.message);
+        return `[Transcription failed: ${err.message}]`;
+    }
+};
+
+export const geminiService = {
+    transcribeAudio,
+    configureGenAI,
+    generateAgentResponse,
+    generateAgentResponseStream,
+    analyzeSystemHealth,
+    generateShotlist,
+    analyzeImage,
+    generateEmbedding,
+    generateEmbeddingWithIdentity,
+    generateText,
+    createCompletion // [NEW] exposed for visual analysis
+};

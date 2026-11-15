@@ -1,0 +1,1557 @@
+import { runSqliteOperation } from './lifecycle/sqliteAdmission';
+import { admitEvaluatedGraph, bindEvaluatedGraph, failEvaluatedGraph } from './lifecycle/runtimeStopBindings';
+import { preserveOriginal } from './lifecycle/preserveOriginal';
+import { graphOwner } from './lifecycle/preparationBindings';
+import type { Operation, ChildReservation } from './lifecycle/host';
+import neo4j, { Driver, Session } from 'neo4j-driver';
+import crypto from 'crypto';
+import { lancedbService } from './lancedbService';
+import { generateEmbedding as geminiEmbed } from './geminiService';
+import { configLoader } from '../server/config/configLoader'; // [PA-058]
+import { MemoryTier, MemoryNode } from '../types';
+import { nervousSystem } from './connectionNervousSystem';
+import { incidentRegistry } from './incidentRegistry';
+
+// --- SILHOUETTE GRAPH SERVICE (NEO4J) ---
+// The Structural Backbone of the Living Graph
+// Connects to Neo4j to store Nodes (Entities) and Edges (Relationships)
+
+type QueryConnectPlan = {
+    invocation: ChildReservation; schemas: ChildReservation[];
+    invocationTaken: boolean; schemasTaken: boolean;
+};
+class GraphService {
+    private readonly ownership = graphOwner();
+    private driver: Driver | null = null;
+    private readonly originalDriverCloses = new WeakMap<Driver, () => ReturnType<Driver['close']>>();
+    private readonly disposedSchemaReservations = new WeakSet<ChildReservation>();
+    private _isConnected: boolean = false; // Renamed to avoid conflict with method
+    private isRegistered: boolean = false;
+    private connectionTimeout: NodeJS.Timeout | null = null;
+    private readonly TIMEOUT_MS = 5 * 60 * 1000; // 5 Minutes
+    // Circuit breaker: after connect() exhausts its retries, further automatic connects are skipped for
+    // this long so every graph query does not block ~6 s (3 attempts with backoff) while Neo4j is down.
+    private connectCooldownUntil = 0;
+    private outageAlerted = false; // one CRITICAL alert per outage episode, not one per query
+    private idleClosed = false; // Neo4j was closed on purpose by the idle timer (not an outage)
+
+    private connectCooldownMs(): number {
+        const v = Number(process.env.GRAPH_CONNECT_COOLDOWN_MS);
+        return Number.isFinite(v) && v >= 0 ? v : 30_000;
+    }
+
+    constructor() {
+        // Lazy initialization - connection managed by NervousSystem
+        this.ownership.onSeal(() => {
+            if (this.connectionTimeout) clearTimeout(this.connectionTimeout);
+            this.connectionTimeout = null;
+        });
+    }
+
+    /** Check if Neo4j is connected. Used by health check endpoint. */
+    public isConnected(): Promise<boolean> {
+        return this.ownership.invoke('original-health-probe', () => this.isConnectedOriginal());
+    }
+    private async isConnectedOriginal(): Promise<boolean> {
+        if (!this.driver) return false;
+        try {
+            await this.driver.verifyConnectivity();
+            return true;
+        } catch (original) {
+            this.ownership.failure('health:ORIGINAL_UNAVAILABLE', original);
+            return false;
+        }
+    }
+
+    /**
+     * Connects to Neo4j with Exponential Backoff Retry.
+     * Fires a SYSTEM_ALERT if all retries fail so the Swarm can self-heal.
+     */
+    public connect(retries = 3, delayMs = 2000, force = false): Promise<boolean> {
+        return this.ownership.invoke('connect', operation => this.connectOriginal(operation, retries, delayMs, force));
+    }
+    private async connectOriginal(operation: Operation, retries: number, delayMs: number, force: boolean,
+        admittedSchemas?: ChildReservation[]): Promise<boolean> {
+        try {
+        if (this._isConnected && this.driver) {
+            this.resetConnectionTimeout(); // Keep alive on manual connect
+            if (admittedSchemas) this.disposeUnselectedSchemas(admittedSchemas);
+            return true;
+        }
+
+        // Circuit breaker (automatic callers only; the nervous system and explicit reconnects pass force=true)
+        if (!force && Date.now() < this.connectCooldownUntil) {
+            if (admittedSchemas) this.disposeUnselectedSchemas(admittedSchemas);
+            return false;
+        }
+
+        const config = configLoader.getConfig();
+        if (config.modules.graph === false) {
+            console.log("[GRAPH] 🚫 Graph module disabled in config (Lite Mode). Skipping connection.");
+            if (admittedSchemas) this.disposeUnselectedSchemas(admittedSchemas);
+            return false;
+        }
+
+        // One exact connect obligation, not a service-wide healthy flag. This
+        // input identity deliberately does not certify environment/credentials;
+        // the retained recovery verdict stays NOT_CERTIFIED and aggregation
+        // remains conservative until that product mapping is reviewed.
+        const recoveryInputs = Object.freeze({ retries, delayMs, force });
+        const recovery = this.ownership.reserveRecovery(operation, 'connect-obligation', recoveryInputs);
+        // Actual SDK inputs captured only in this invocation's private closure.
+        // Never serialize these values or send credential text to the ledger.
+        let originalDriverInputs: readonly unknown[] | undefined;
+        let sameDriverInputs = true;
+        let completeDriverInputAttempts = 0;
+        const schemaPlan: ChildReservation[] = admittedSchemas ?? [];
+        try {
+            if (!admittedSchemas) for (let index = 0; index < retries; index++) schemaPlan.push(this.ownership.reserveChild(operation, 'original-schema-immediate:' + index));
+        } catch (original) {
+            for (const child of schemaPlan) preserveOriginal(this.ownership, 'schema-plan-abandon', () => {
+                this.ownership.abandonChild(child, original); this.disposedSchemaReservations.add(child);
+            });
+            preserveOriginal(this.ownership, 'connect-plan-terminal', () => this.ownership.recoveryTerminal(recovery, operation, recoveryInputs));
+            throw original;
+        }
+        let attempt = 0;
+        while (attempt < retries) {
+            const schemaChild = schemaPlan[attempt];
+            let schemaInvoked = false;
+            let acquiredCandidate: Driver | undefined;
+            try {
+                if (attempt > 0) {
+                    console.log(`[GRAPH] 🔄 Reconnection attempt ${attempt + 1}/${retries}...`);
+                    await new Promise(r => setTimeout(r, delayMs * Math.pow(2, attempt - 1)));
+                } else {
+                    console.log("[GRAPH] 🔗 Connecting to Neo4j...");
+                }
+
+                const reservation = this.ownership.reserveResource(operation, 'driver-candidate');
+                let candidate: Driver;
+                const actualInputs: unknown[] = [];
+                const capture = <T>(value: T): T => { actualInputs.push(value); return value; };
+                try { candidate = neo4j.driver(
+                    capture(process.env.NEO4J_URI || 'bolt://127.0.0.1:7787'),
+                    neo4j.auth.basic(
+                        capture(process.env.NEO4J_USER || 'neo4j'),
+                        capture(process.env.NEO4J_PASSWORD || 'changeme_on_first_run')
+                    ),
+                    {
+                        maxConnectionLifetime: capture(30 * 60 * 1000),
+                        maxConnectionPoolSize: capture(50),
+                        connectionAcquisitionTimeout: capture(5000)
+                    }
+                );
+                if (actualInputs.length === 6) {
+                    if (!originalDriverInputs) originalDriverInputs = [...actualInputs];
+                    else if (!actualInputs.every((value, index) => Object.is(value, originalDriverInputs![index]))) sameDriverInputs = false;
+                    completeDriverInputAttempts++;
+                }
+                actualInputs.length = 0;
+
+                } catch (original) {
+                    // A throwing SDK/auth allocation may not have consumed all
+                    // inputs. Do not infer same-obligation parameter equivalence.
+                    sameDriverInputs = false; actualInputs.length = 0;
+                    preserveOriginal(this.ownership, 'driver-allocation-failed', () => this.ownership.releaseUnused(reservation)); throw original;
+                }
+                this.driver = candidate;
+                let closeSettled = false;
+                let closeState: 'IDLE' | 'CALLING' | 'PENDING' | 'FULFILLED' = 'IDLE';
+                let closeReturned: ReturnType<Driver['close']>;
+                let closeAttempt = 0;
+                const originalClose = (): ReturnType<Driver['close']> => {
+                    if (closeState === 'CALLING') {
+                        const original = new Error('Reentrant Neo4j close before original Promise is published');
+                        preserveOriginal(this.ownership, 'driver:CLOSE_REENTRY_EVIDENCE_FAILED', () => {
+                            this.ownership.failure('driver:CLOSE_REENTRY_DURING_ATTEMPT:' + closeAttempt, original);
+                        });
+                        throw original;
+                    }
+                    if (closeState === 'PENDING' || closeState === 'FULFILLED') return closeReturned;
+                    // Publish CALLING before external SDK code. Synchronous
+                    // reentry cannot receive an uninitialized Promise or start
+                    // a concurrent native close. No invented proxy Promise.
+                    closeState = 'CALLING';
+                    const attempt = ++closeAttempt;
+                    try { closeReturned = candidate.close(); }
+                    catch (original) {
+                        closeState = 'IDLE';
+                        this.ownership.failure('driver:CLOSE_SYNC_FAILED_ATTEMPT:' + attempt, original); throw original;
+                    }
+                    closeState = 'PENDING';
+                    void closeReturned.then(() => {
+                        closeSettled = true; closeState = 'FULFILLED';
+                    }, original => {
+                        // SDK6.0.1 supports a later sequential close after a
+                        // partial rejection. Preserve each failure, share only
+                        // in-flight work and fulfilled success, never poison
+                        // every future original request with the first reject.
+                        closeState = 'IDLE';
+                        this.ownership.failure('driver:CLOSE_FAILED_ATTEMPT:' + attempt, original);
+                    });
+                    return closeReturned;
+                };
+                this.originalDriverCloses.set(candidate, originalClose);
+                this.ownership.acquire(reservation, candidate, originalClose,
+                    () => ({ source: 'graph:driver-candidate', disposition: closeSettled ? 'CLOSED' : 'INCOMPLETE',
+                    ...(!closeSettled ? { reason: 'DRIVER_CLOSE_UNVERIFIED' } : {}) }), [], 'NEO4J_DRIVER_SOURCE_MANAGED');
+                acquiredCandidate = candidate;
+                await this.driver.verifyConnectivity();
+                this._isConnected = true;
+                this.idleClosed = false;
+                this.connectCooldownUntil = 0;
+                if (this.outageAlerted) console.log("[GRAPH] ✅ Neo4j recovered after outage.");
+                this.outageAlerted = false;
+                // [R6] recovery closes the SAME incident the outage opened
+                incidentRegistry.resolveIncidents('neo4j');
+                console.log("[GRAPH] ✅ Connected to Neo4j.");
+
+                this.resetConnectionTimeout();
+                this.registerWithNervousSystem();
+
+                // Initialize schema in background
+                schemaInvoked = true;
+                this.disposedSchemaReservations.add(schemaChild);
+                setImmediate(() => this.ownership.invokeChild(schemaChild, operation => this.initializeSchema(operation)).catch(() => { }));
+                this.disposeUnselectedSchemas(schemaPlan.slice(attempt + 1));
+                preserveOriginal(this.ownership, 'connect-fulfillment-evidence', () => this.ownership.recoveryFulfilled(recovery, operation, recoveryInputs, true,
+                    sameDriverInputs && completeDriverInputAttempts === attempt + 1 ? 'GRAPH_DRIVER_INPUTS_EQUAL' : 'UNVERIFIED'));
+                originalDriverInputs = undefined;
+                return true;
+
+            } catch (error: any) {
+                console.error(`[GRAPH] ❌ Connection failed (Attempt ${attempt + 1}/${retries}):`, error.message);
+                if (!schemaInvoked) {
+                    this.disposedSchemaReservations.add(schemaChild);
+                    preserveOriginal(this.ownership, 'schema-attempt-abandon', () => this.ownership.abandonChild(schemaChild, error));
+                }
+                preserveOriginal(this.ownership, 'connect-attempt-evidence', () => this.ownership.recoveryAttemptFailed(recovery, operation, recoveryInputs, error, acquiredCandidate ? [acquiredCandidate] : []));
+                this._isConnected = false;
+                // Actual failed candidate remains retained by its resource owner.
+                this.driver = null;
+                attempt++;
+            }
+        }
+
+        originalDriverInputs = undefined;
+        // Exhausted retries. Original false/fallback remains unchanged.
+        preserveOriginal(this.ownership, 'connect-terminal-evidence', () => this.ownership.recoveryTerminal(recovery, operation, recoveryInputs));
+        this.connectCooldownUntil = Date.now() + this.connectCooldownMs();
+        if (this.outageAlerted) return false; // same outage: already alerted, stay quiet
+        this.outageAlerted = true;
+        console.error("[GRAPH] 🚨 FATAL: Neo4j connection completely failed after retries.");
+        // [R6] durable incident: console alone is ephemeral, nothing could perceive it
+        incidentRegistry.recordIncident('neo4j', 'outage',
+            'Neo4j connection failed after all retries',
+            'Graph queries fall back to SQLite where implemented; graph-only topology is unavailable.');
+        try {
+            const { systemBus } = await import('./systemBus');
+            systemBus.emit('PROTOCOL_SYSTEM_ALERT' as any, {
+                component: 'Neo4j',
+                error: 'Connection Exhaustion',
+                severity: 'CRITICAL',
+                message: 'Neo4j database failed to connect after multiple exponential backoff retries. Recommend deploying Remediation Agent.',
+                timestamp: Date.now()
+            }, 'system-kernel');
+        } catch (e) {
+            console.error("[GRAPH] Could not emit SYSTEM_ALERT:", e);
+        }
+
+        return false;
+        } catch (original) {
+            // Also settle pre-admitted schemas when an earlier original config
+            // or bookkeeping path throws before entering the retry loop.
+            if (admittedSchemas) for (const child of admittedSchemas) {
+                if (this.disposedSchemaReservations.has(child)) continue;
+                preserveOriginal(this.ownership, 'query-connect-schema-abandon', () => {
+                    this.ownership.abandonChild(child, original); this.disposedSchemaReservations.add(child);
+                });
+            }
+            throw original;
+        }
+    }
+
+    private closeOriginalDriverRequest(driver: Driver): ReturnType<Driver['close']> {
+        // Preserve the original public/idle/stale-query close invocation, but
+        // share its source-managed attempt state with host teardown. This is NOT evidence of
+        // exclusive quiescence; caller/borrow/reconnect races remain residual.
+        this.ownership.unknown('driver:ORIGINAL_CLOSE_REQUEST_QUIESCENCE_UNVERIFIED');
+        const close = this.originalDriverCloses.get(driver);
+        if (!close) throw new Error('Graph driver lacks its exact acquired close owner');
+        return close();
+    }
+
+    private resetConnectionTimeout() {
+        if (this.connectionTimeout) clearTimeout(this.connectionTimeout);
+        if (!this.ownership.open) { this.connectionTimeout = null; return; }
+        this.connectionTimeout = setTimeout(() => {
+            console.log("[GRAPH] 💤 Idle timeout reached. Closing Neo4j connection.");
+            this.idleClosed = true;
+            this.disconnect();
+        }, this.TIMEOUT_MS);
+    }
+
+    /**
+     * Truthful backend state for health reporting.
+     * Unlike isConnectedStatus() (always true because SQLite takes over), this says WHICH backend is serving:
+     *  - 'neo4j': driver connected
+     *  - 'sqlite-fallback': Neo4j unreachable, queries are served by the SQLite fallback (degraded)
+     *  - 'disabled': graph module turned off in config (Lite Mode), SQLite by design
+     */
+    public getBackendStatus(): { backend: 'neo4j' | 'sqlite-fallback' | 'disabled'; connected: boolean } {
+        if (configLoader.getConfig().modules.graph === false) return { backend: 'disabled', connected: false };
+        if (this._isConnected && this.driver) return { backend: 'neo4j', connected: true };
+        return { backend: 'sqlite-fallback', connected: false };
+    }
+
+    /**
+     * Check if connected (used by NervousSystem health check)
+     */
+    public isConnectedStatus(): boolean {
+        return true; // Always operational: Neo4j when reachable, SQLite fallback otherwise. Use getBackendStatus() for the truth.
+    }
+
+    /**
+     * Real health probe for the nervous system. Unlike isConnectedStatus() it can be false:
+     *  - disabled by config (Lite Mode) => healthy (by design, not an outage)
+     *  - driver present => verifyConnectivity()
+     *  - closed on purpose by the idle timer => healthy (reconnects lazily on next query)
+     *  - otherwise (Neo4j unreachable, SQLite fallback serving) => unhealthy so the nervous system reconnects
+     */
+    public async probeHealth(): Promise<boolean> {
+        if (configLoader.getConfig().modules.graph === false) return true;
+        if (this.driver) return this.isConnected();
+        return this.idleClosed;
+    }
+
+    /**
+     * Force disconnect (for reconnection attempts)
+     */
+    public async disconnect(): Promise<void> {
+        if (this.connectionTimeout) clearTimeout(this.connectionTimeout);
+
+        if (this.driver) {
+            try {
+                await this.closeOriginalDriverRequest(this.driver);
+                console.log("[GRAPH] 🔌 Disconnected from Neo4j.");
+            } catch { }
+        }
+        this.driver = null;
+        this._isConnected = false;
+    }
+
+    private registerWithNervousSystem() {
+        if (this.isRegistered) return;
+        // Never overwrite an existing 'neo4j' registration (initializeNervousSystem registers the truthful one at boot);
+        // the old always-healthy check replaced it after the first successful connect, hiding later drops.
+        if (nervousSystem.isRegistered('neo4j')) {
+            this.isRegistered = true;
+            return;
+        }
+
+        nervousSystem.register({
+            id: 'neo4j',
+            name: 'Neo4j Graph',
+            type: 'DATABASE',
+            isRequired: false,
+            checkHealth: () => this.probeHealth(),
+            reconnect: async () => {
+                await this.disconnect();
+                return await this.connect(3, 2000, true);
+            }
+        });
+        this.isRegistered = true;
+    }
+
+
+    /** Each local session is an exclusive allocation at the original source
+     * position, not a borrowed/public driver close. Original finally and host
+     * share exactly one original session.close attempt. The dependency points
+     * to the captured driver object, never the mutable this.driver field.
+     */
+    private retainOriginalSession(operation: Operation, driver: Driver) {
+        const reservation = this.ownership.reserveResource(operation, 'local-session');
+        let session: ReturnType<Driver['session']>;
+        try { session = driver.session(); }
+        catch (original) {
+            preserveOriginal(this.ownership, 'session-allocation-failed', () => this.ownership.releaseUnused(reservation));
+            throw original;
+        }
+        let invoked = false, returned: ReturnType<typeof session.close>, didThrow = false, thrown: unknown;
+        let settled = false;
+        const closeOriginal = (): ReturnType<typeof session.close> => {
+            if (invoked) { if (didThrow) throw thrown; return returned; }
+            invoked = true;
+            try { returned = session.close(); }
+            catch (original) {
+                didThrow = true; thrown = original;
+                this.ownership.failure('session-close-original-sync', original); throw original;
+            }
+            // Observe the same Promise, do not turn rejection into success.
+            void returned.then(() => { settled = true; }, original => {
+                this.ownership.failure('session-close-original', original);
+            });
+            return returned;
+        };
+        this.ownership.acquire(reservation, session, closeOriginal,
+            () => ({ source: 'graph:local-session', disposition: settled ? 'CLOSED' : 'INCOMPLETE',
+                ...(!settled ? { reason: 'SESSION_ORIGINAL_CLOSE_UNVERIFIED' } : {}) }), [driver]);
+        return { session, closeOriginal };
+    }
+
+    private async initializeSchema(operation: Operation) {
+        if (!this.driver) {
+            this.ownership.unknown('schema:SELECTED_WITHOUT_DRIVER'); return;
+        }
+        const { session, closeOriginal } = this.retainOriginalSession(operation, this.driver);
+        try {
+            // Ensure uniqueness for critical entities
+            await session.run(`CREATE CONSTRAINT IF NOT EXISTS FOR (u:User) REQUIRE u.id IS UNIQUE`);
+            await session.run(`CREATE CONSTRAINT IF NOT EXISTS FOR (c:Concept) REQUIRE c.name IS UNIQUE`);
+            await session.run(`CREATE CONSTRAINT IF NOT EXISTS FOR (e:Entity) REQUIRE e.id IS UNIQUE`);
+            console.log("[GRAPH] 🛡️ Schema Constraints Verified.");
+        } catch (e) {
+            this.ownership.failure('schema:SELECTED_CONSTRAINT_FAILED', e);
+            console.warn("[GRAPH] Schema Init Warning:", e);
+        } finally {
+            await closeOriginal();
+        }
+    }
+
+    private disposeUnselectedSchemas(schemas: readonly ChildReservation[]): void {
+        for (const child of schemas) {
+            if (this.disposedSchemaReservations.has(child)) continue;
+            preserveOriginal(this.ownership, 'schema-original-guard', () => {
+                this.ownership.skipChild(child, 'ORIGINAL_GUARD_NOT_SELECTED');
+                this.disposedSchemaReservations.add(child);
+            });
+        }
+    }
+    private reserveQueryConnect(operation: Operation, source: string): QueryConnectPlan {
+        const invocation = this.ownership.reserveChild(operation, source);
+        const schemas: ChildReservation[] = [];
+        try {
+            // Both original query connect callsites use the original defaults.
+            // No policy/default value change: three exact schema retry branches.
+            for (let index = 0; index < 3; index++) schemas.push(this.ownership.reserveChild(operation, source + ':schema:' + index));
+        } catch (original) {
+            preserveOriginal(this.ownership, source + ':reserve-abandon', () => this.ownership.abandonChild(invocation, original));
+            for (const child of schemas) preserveOriginal(this.ownership, source + ':reserve-schema-abandon', () => this.ownership.abandonChild(child, original));
+            throw original;
+        }
+        return { invocation, schemas, invocationTaken: false, schemasTaken: false };
+    }
+    private invokeQueryConnect(plan: QueryConnectPlan): Promise<boolean> {
+        plan.invocationTaken = true;
+        return this.ownership.invokeChild(plan.invocation, operation => {
+            plan.schemasTaken = true;
+            return this.connectOriginal(operation, 3, 2000, false, plan.schemas);
+        });
+    }
+    private finishQueryPlan(plan: QueryConnectPlan, failed: boolean, original?: unknown): void {
+        if (!plan.invocationTaken) preserveOriginal(this.ownership, 'query-connect-unselected', () => {
+            if (failed) this.ownership.abandonChild(plan.invocation, original);
+            else this.ownership.skipChild(plan.invocation, 'ORIGINAL_GUARD_NOT_SELECTED');
+        });
+        if (!plan.schemasTaken) {
+            if (!failed) this.disposeUnselectedSchemas(plan.schemas);
+            else for (const child of plan.schemas) preserveOriginal(this.ownership, 'query-connect-not-reached', () => {
+                this.ownership.abandonChild(child, original); this.disposedSchemaReservations.add(child);
+            });
+        }
+    }
+    public runQuery(cypher: string, params: any = {}) {
+        return runSqliteOperation('services/graphService.ts:runQuery', () => {
+        return this.ownership.invoke('query', operation => this.runQueryOriginal(operation, cypher, params));
+    
+        });
+    }
+    private async runQueryOriginal(operation: Operation, cypher: string, params: any) {
+        return runSqliteOperation('services/graphService.ts:runQueryOriginal', async () => {
+        const plans: QueryConnectPlan[] = [];
+        let failed = false, originalError: unknown;
+        try {
+            plans.push(this.reserveQueryConnect(operation, 'original-query-lazy-connect'));
+            plans.push(this.reserveQueryConnect(operation, 'original-query-stale-reconnect'));
+            const [lazyConnect, staleReconnect] = plans;
+            if (!this._isConnected || !this.driver) {
+                const connected = await this.invokeQueryConnect(lazyConnect);
+                if (!connected || !this.driver) {
+                    // Fallback to SQLite query execution
+                    return this.runSqliteQuery(cypher, params);
+                }
+            }
+
+            this.resetConnectionTimeout(); // Keep alive
+
+            const { session, closeOriginal } = this.retainOriginalSession(operation, this.driver);
+            try {
+                const result = await session.run(cypher, params);
+                return result.records.map(record => record.toObject());
+            } catch (error: any) {
+                // Keep actual original failed run even if recovery returns later.
+                // Recovery classification remains conservative, separate from close.
+                this.ownership.failure('query:ORIGINAL_RUN_FAILED', error);
+                // Auto-recovery for stale connections
+                if (error.code === 'ServiceUnavailable' || error.code === 'SessionExpired') {
+                    console.warn("[GRAPH] ⚠️ Connection stale, reconnecting...");
+                    this._isConnected = false;
+                    if (this.driver) await this.closeOriginalDriverRequest(this.driver);
+                    this.driver = null;
+
+                    // Retry once
+                    await this.invokeQueryConnect(staleReconnect);
+                    if (this.driver) {
+                        const retained = this.retainOriginalSession(operation, this.driver);
+                        try {
+                            const result = await retained.session.run(cypher, params);
+                            return result.records.map(record => record.toObject());
+                        } catch (original) {
+                            this.ownership.failure('query:RETRY_RUN_FAILED', original);
+                            throw original;
+                        } finally {
+                            await retained.closeOriginal();
+                        }
+                    }
+                }
+
+                console.error(`[GRAPH] Query Failed: ${cypher.substring(0, 50)}...`, error);
+                throw error;
+            } finally {
+                await closeOriginal();
+            }
+        } catch (original) { failed = true; originalError = original; throw original; }
+        finally { for (const plan of plans) this.finishQueryPlan(plan, failed, originalError); }
+    
+        });
+    }
+
+    /**
+     * True when the Cypher statement mutates the graph. Write statements must
+     * NEVER fall through to the read-pattern handlers below: a CREATE/SET/DELETE
+     * that matches a read pattern (e.g. any query containing "fact") used to
+     * return SELECT results without writing, producing false success.
+     */
+    private isWriteQuery(cypher: string): boolean {
+        return /\b(CREATE|MERGE|SET|DELETE|DETACH|REMOVE)\b/i.test(cypher);
+    }
+
+    /**
+     * Parse a Cypher property map (`{ id: $id, createdAt: timestamp(), ... }`)
+     * into a plain object using the supplied params.
+     */
+    private parseCypherProps(propsBlock: string, params: any): Record<string, any> {
+        const props: Record<string, any> = {};
+        const inner = propsBlock.trim().replace(/^\{/, '').replace(/\}$/, '').trim();
+        if (!inner) return props;
+
+        for (const part of inner.split(',')) {
+            const m = part.match(/^\s*([\w]+)\s*:\s*(.+?)\s*$/s);
+            if (!m) continue;
+            const [, key, rawVal] = m;
+            if (rawVal.startsWith('$')) {
+                props[key] = params[rawVal.slice(1)] ?? null;
+            } else if (/^timestamp\(\)$/i.test(rawVal)) {
+                props[key] = Date.now();
+            } else if (/^true$/i.test(rawVal)) {
+                props[key] = true;
+            } else if (/^false$/i.test(rawVal)) {
+                props[key] = false;
+            } else if (!isNaN(Number(rawVal)) && rawVal.trim() !== '') {
+                props[key] = Number(rawVal);
+            } else {
+                props[key] = rawVal.replace(/^['"]|['"]$/g, '');
+            }
+        }
+        return props;
+    }
+
+    /**
+     * Execute a write Cypher statement against the SQLite fallback graph.
+     * Supports the statement shapes the services actually emit (Fact CRUD,
+     * User MERGE + relationship MERGE). Anything else throws an explicit
+     * error: an unsupported write must fail loudly, never fake success.
+     */
+    private async runSqliteWrite(cypher: string, params: any = {}): Promise<any[]> {
+        return runSqliteOperation('services/graphService.ts:runSqliteWrite', async () => {
+        const { sqliteService } = await import('./sqliteService');
+        const now = Date.now();
+
+        // A) CREATE (n:Label { ...props }) — single node creation
+        const createMatch = cypher.match(/CREATE\s*\(\s*(\w+)\s*(?::\s*(\w+))?\s*(\{[\s\S]*?\})?\s*\)/i);
+        if (createMatch && !/\b(MATCH|MERGE|DELETE)\b/i.test(cypher)) {
+            const label = createMatch[2] || 'Node';
+            const properties = this.parseCypherProps(createMatch[3] || '', params);
+            const id = String(properties.id || `node-${now}-${Math.random().toString(36).slice(2, 8)}`);
+            properties.id = id;
+            sqliteService.sql.prepare(
+                'INSERT OR REPLACE INTO graph_nodes (id, label, name, properties, last_updated) VALUES (?, ?, ?, ?, ?)'
+            ).run(id, label, properties.name ? String(properties.name) : null, JSON.stringify(properties), now);
+            console.log(`[GRAPH] 💾 SQLite fallback: CREATE (:${label}) id=${id}`);
+            return [{ created: 1, id, backend: 'sqlite' }];
+        }
+
+        // B) MERGE (u:User {id: $userId}) ... MERGE (u)-[:REL]->(f) — user + relationship upsert
+        const userMerge = cypher.match(/MERGE\s*\(\s*(\w+)\s*:\s*User\s*\{[\s\S]*?\}/i);
+        const relMerge = cypher.match(/MERGE\s*\(\s*\w+\s*\)\s*-\s*\[\s*:\s*(\w+)\s*\]\s*->\s*\(\s*\w+\s*\)/i);
+        if (userMerge && relMerge) {
+            const userId = params.userId;
+            const factId = params.factId;
+            if (!userId || !factId) {
+                throw new Error('[GRAPH] SQLite fallback: MERGE User relationship requires $userId and $factId params.');
+            }
+            const factNode = sqliteService.sql.prepare('SELECT id FROM graph_nodes WHERE id = ?').get(factId);
+            if (!factNode) {
+                throw new Error(`[GRAPH] SQLite fallback: cannot link ${relMerge[1]} — target node ${factId} does not exist.`);
+            }
+            sqliteService.sql.prepare(
+                'INSERT OR IGNORE INTO graph_nodes (id, label, name, properties, last_updated) VALUES (?, ?, ?, ?, ?)'
+            ).run(userId, 'User', null, JSON.stringify({ id: userId }), now);
+            sqliteService.sql.prepare(
+                'INSERT OR IGNORE INTO graph_edges (source, target, type, properties, last_updated) VALUES (?, ?, ?, ?, ?)'
+            ).run(userId, factId, relMerge[1], '{}', now);
+            console.log(`[GRAPH] 💾 SQLite fallback: MERGE (:User {id: ${userId}})-[:${relMerge[1]}]->(${factId})`);
+            return [{ created: 1, backend: 'sqlite' }];
+        }
+
+        // C) MATCH (f:Fact {id: $id}) SET f.prop = ... — fact update
+        if (/^\s*MATCH\s*\(\s*\w+\s*:\s*Fact/i.test(cypher) && /\bSET\b/i.test(cypher)) {
+            const id = params.id;
+            const row = sqliteService.sql.prepare('SELECT properties FROM graph_nodes WHERE id = ?').get(id) as any;
+            if (!row) {
+                console.warn(`[GRAPH] SQLite fallback: SET matched 0 Fact nodes (id=${id}).`);
+                return [{ updated: 0, backend: 'sqlite' }];
+            }
+            const properties = JSON.parse(row.properties);
+            const setClause = cypher.slice(cypher.search(/\bSET\b/i) + 3);
+            const assignRe = /\w+\.(\w+)\s*=\s*(\$\w+|timestamp\(\))/g;
+            let m: RegExpExecArray | null;
+            while ((m = assignRe.exec(setClause)) !== null) {
+                const [, key, rawVal] = m;
+                if (rawVal.startsWith('$')) properties[key] = params[rawVal.slice(1)] ?? null;
+                else if (/^timestamp\(\)$/i.test(rawVal)) properties[key] = Date.now();
+            }
+            sqliteService.sql.prepare('UPDATE graph_nodes SET properties = ?, last_updated = ? WHERE id = ?')
+                .run(JSON.stringify(properties), now, id);
+            console.log(`[GRAPH] 💾 SQLite fallback: UPDATE (:Fact) id=${id}`);
+            return [{ updated: 1, id, backend: 'sqlite' }];
+        }
+
+        // D) MATCH (f:Fact {id: $id}) DETACH DELETE f — fact removal
+        if (/DETACH\s+DELETE/i.test(cypher) && /\(\s*\w+\s*:\s*Fact/i.test(cypher)) {
+            const id = params.id;
+            const edges = sqliteService.sql.prepare('DELETE FROM graph_edges WHERE source = ? OR target = ?').run(id, id);
+            const node = sqliteService.sql.prepare('DELETE FROM graph_nodes WHERE id = ? AND label = ?').run(id, 'Fact');
+            console.log(`[GRAPH] 💾 SQLite fallback: DELETE (:Fact) id=${id} (nodes=${node.changes}, edges=${edges.changes})`);
+            return [{ deleted: node.changes, edgesDeleted: edges.changes, backend: 'sqlite' }];
+        }
+
+        // Anything else: fail honestly. A swallowed write is worse than a loud error.
+        throw new Error(
+            `[GRAPH] SQLite fallback does not support this write statement; it was NOT executed. ` +
+            `Run with Neo4j available or extend runSqliteWrite. Statement: ${cypher.replace(/\s+/g, ' ').slice(0, 160)}`
+        );
+    
+        });
+    }
+
+    private async runSqliteQuery(cypher: string, params: any = {}): Promise<any[]> {
+        return runSqliteOperation('services/graphService.ts:runSqliteQuery', async () => {
+        const { sqliteService } = await import('./sqliteService');
+        const queryLower = cypher.toLowerCase().trim();
+
+        // 0. Write statements: execute them for real or fail honestly.
+        if (this.isWriteQuery(cypher)) {
+            return this.runSqliteWrite(cypher, params);
+        }
+
+        // 1. Connection check / test query
+        if (queryLower.includes('return 1') && queryLower.length < 20) {
+            return [{ '1': 1 }];
+        }
+
+        // 2. Node Count query
+        if (queryLower.includes('count(n)') && queryLower.includes('nodecount')) {
+            const row = sqliteService.sql.prepare('SELECT COUNT(*) as count FROM graph_nodes').get() as any;
+            return [{ nodeCount: row?.count || 0 }];
+        }
+
+        // 3. Relationship Count query
+        if (queryLower.includes('count(r)') && queryLower.includes('relcount')) {
+            const row = sqliteService.sql.prepare('SELECT COUNT(*) as count FROM graph_edges').get() as any;
+            return [{ relCount: row?.count || 0 }];
+        }
+
+        // 4. Get Labels query
+        if (queryLower.includes('db.labels()')) {
+            const rows = sqliteService.sql.prepare('SELECT DISTINCT label FROM graph_nodes').all() as any[];
+            return [{ labels: rows.map(r => r.label) }];
+        }
+
+        // 5. Get Relationship Types query
+        if (queryLower.includes('db.relationshiptypes()')) {
+            const rows = sqliteService.sql.prepare('SELECT DISTINCT type FROM graph_edges').all() as any[];
+            return [{ types: rows.map(r => r.type) }];
+        }
+
+        // 6. Stats calculation for Small-World Index
+        if (queryLower.includes('with count(n) as n') && queryLower.includes('count(r) as e')) {
+            const NRow = sqliteService.sql.prepare('SELECT COUNT(*) as count FROM graph_nodes').get() as any;
+            const ERow = sqliteService.sql.prepare('SELECT COUNT(*) as count FROM graph_edges').get() as any;
+            return [{ N: NRow?.count || 0, E: ERow?.count || 0 }];
+        }
+
+        // 7. Hubs query (order by degree desc)
+        if (queryLower.includes('degree > 5') || (queryLower.includes('degree') && queryLower.includes('hubs'))) {
+            const limit = typeof params.limit === 'number' ? params.limit : (params.limit && typeof params.limit.low === 'number' ? params.limit.low : 5);
+            const rows = sqliteService.sql.prepare(`
+                WITH degrees AS (
+                    SELECT node_id, COUNT(*) as degree
+                    FROM (
+                        SELECT source as node_id FROM graph_edges
+                        UNION ALL
+                        SELECT target as node_id FROM graph_edges
+                    )
+                    GROUP BY node_id
+                )
+                SELECT n.id, n.label, n.name, d.degree, n.properties
+                FROM graph_nodes n
+                JOIN degrees d ON n.id = d.node_id
+                WHERE d.degree > 5
+                ORDER BY d.degree DESC
+                LIMIT ?
+            `).all(limit) as any[];
+            return rows.map(row => ({
+                id: row.id,
+                label: row.label,
+                name: row.name,
+                degree: row.degree,
+                ...JSON.parse(row.properties)
+            }));
+        }
+
+        // 8. Open Triangles query (for advanced discovery)
+        if (queryLower.includes('not (a)-[:related]-(b)') || queryLower.includes('bridge')) {
+            const limit = typeof params.limit === 'number' ? params.limit : (params.limit && typeof params.limit.low === 'number' ? params.limit.low : 5);
+            const concepts = sqliteService.sql.prepare("SELECT id, properties FROM graph_nodes WHERE label = 'Concept'").all() as any[];
+            const edges = sqliteService.sql.prepare("SELECT source, target FROM graph_edges WHERE type = 'RELATED'").all() as any[];
+            
+            const conceptMap = new Map(concepts.map(c => [c.id, JSON.parse(c.properties)]));
+            const adj = new Map<string, Set<string>>();
+            for (const edge of edges) {
+                if (!adj.has(edge.source)) adj.set(edge.source, new Set());
+                if (!adj.has(edge.target)) adj.set(edge.target, new Set());
+                adj.get(edge.source)!.add(edge.target);
+                adj.get(edge.target)!.add(edge.source);
+            }
+            
+            const triangles: any[] = [];
+            const keys = Array.from(conceptMap.keys());
+            for (let i = 0; i < keys.length; i++) {
+                for (let j = i + 1; j < keys.length; j++) {
+                    const a = keys[i];
+                    const b = keys[j];
+                    const areRelated = adj.get(a)?.has(b) || adj.get(b)?.has(a);
+                    if (areRelated) continue;
+                    
+                    const neighborsA = adj.get(a) || new Set();
+                    const neighborsB = adj.get(b) || new Set();
+                    for (const bridge of neighborsA) {
+                        if (neighborsB.has(bridge)) {
+                            triangles.push({
+                                a: { properties: conceptMap.get(a) },
+                                b: { properties: conceptMap.get(b) },
+                                bridge: { properties: conceptMap.get(bridge) }
+                            });
+                            if (triangles.length >= limit) break;
+                        }
+                    }
+                    if (triangles.length >= limit) break;
+                }
+                if (triangles.length >= limit) break;
+            }
+            return triangles;
+        }
+
+        // 9. Weak Ties query
+        if (queryLower.includes('coalesce(r.weight, r.confidence, 1.0) as weight')) {
+            const nodeId = params.nodeId;
+            const threshold = typeof params.threshold === 'number' ? params.threshold : 0.3;
+            const rows = sqliteService.sql.prepare(`
+                SELECT source, target, properties FROM graph_edges 
+                WHERE source = ? OR target = ?
+            `).all(nodeId, nodeId) as any[];
+            
+            const results: any[] = [];
+            for (const r of rows) {
+                const targetId = r.source === nodeId ? r.target : r.source;
+                const props = JSON.parse(r.properties);
+                const weight = typeof props.weight === 'number' ? props.weight : (typeof props.confidence === 'number' ? props.confidence : 1.0);
+                if (weight < threshold) {
+                    results.push({ targetId, weight });
+                }
+            }
+            return results;
+        }
+
+        // 10. Local Clustering Coefficient calculation
+        if (queryLower.includes('count(distinct n1) as k') && queryLower.includes('clustering')) {
+            const nodeId = params.nodeId;
+            const edges = sqliteService.sql.prepare('SELECT source, target FROM graph_edges').all() as any[];
+            const neighbors = new Set<string>();
+            for (const edge of edges) {
+                if (edge.source === nodeId) neighbors.add(edge.target);
+                if (edge.target === nodeId) neighbors.add(edge.source);
+            }
+            const k = neighbors.size;
+            if (k <= 1) return [{ clustering: 0.0 }];
+            
+            let e = 0;
+            for (const edge of edges) {
+                if (neighbors.has(edge.source) && neighbors.has(edge.target)) {
+                    e++;
+                }
+            }
+            const clustering = (2 * e) / (k * (k - 1));
+            return [{ clustering }];
+        }
+
+        // 11. Candidate selection for Global Clustering
+        if (queryLower.includes('degree >= 2') && queryLower.includes('n.id as id')) {
+            const sampleSize = typeof params.sampleSize === 'number' ? params.sampleSize : 30;
+            const rows = sqliteService.sql.prepare(`
+                WITH degrees AS (
+                    SELECT node_id, COUNT(*) as degree
+                    FROM (
+                        SELECT source as node_id FROM graph_edges
+                        UNION ALL
+                        SELECT target as node_id FROM graph_edges
+                    )
+                    GROUP BY node_id
+                )
+                SELECT n.id
+                FROM graph_nodes n
+                JOIN degrees d ON n.id = d.node_id
+                WHERE d.degree >= 2
+                ORDER BY random()
+                LIMIT ?
+            `).all(sampleSize) as any[];
+            return rows.map(r => ({ id: r.id }));
+        }
+
+        // 12. Shortest Path length calculation
+        if (queryLower.includes('shortestpath') && queryLower.includes('pathlength')) {
+            const samplePairs = typeof params.samplePairs === 'number' ? params.samplePairs : 50;
+            const nodes = sqliteService.sql.prepare('SELECT id FROM graph_nodes').all() as any[];
+            if (nodes.length < 2) return [];
+            
+            const edges = sqliteService.sql.prepare('SELECT source, target FROM graph_edges').all() as any[];
+            const adj: Record<string, string[]> = {};
+            for (const edge of edges) {
+                if (!adj[edge.source]) adj[edge.source] = [];
+                if (!adj[edge.target]) adj[edge.target] = [];
+                adj[edge.source].push(edge.target);
+                adj[edge.target].push(edge.source);
+            }
+            
+            const pathLengths: any[] = [];
+            let pairsCount = 0;
+            const maxAttempts = samplePairs * 5;
+            let attempts = 0;
+            
+            while (pairsCount < samplePairs && attempts < maxAttempts) {
+                attempts++;
+                const u = nodes[Math.floor(Math.random() * nodes.length)].id;
+                const v = nodes[Math.floor(Math.random() * nodes.length)].id;
+                if (u === v) continue;
+                
+                const queue: { id: string, dist: number }[] = [{ id: u, dist: 0 }];
+                const visited = new Set<string>([u]);
+                
+                while (queue.length > 0) {
+                    const curr = queue.shift()!;
+                    if (curr.id === v) {
+                        pathLengths.push({ pathLength: curr.dist });
+                        pairsCount++;
+                        break;
+                    }
+                    if (curr.dist < 15) {
+                        const neighbors = adj[curr.id] || [];
+                        for (const neigh of neighbors) {
+                            if (!visited.has(neigh)) {
+                                visited.add(neigh);
+                                queue.push({ id: neigh, dist: curr.dist + 1 });
+                            }
+                        }
+                    }
+                }
+            }
+            return pathLengths;
+        }
+
+        // 13. Candidate bridges selection
+        if (queryLower.includes('degree > 3') && queryLower.includes('n.id as id')) {
+            const rows = sqliteService.sql.prepare(`
+                WITH degrees AS (
+                    SELECT node_id, COUNT(*) as degree
+                    FROM (
+                        SELECT source as node_id FROM graph_edges
+                        UNION ALL
+                        SELECT target as node_id FROM graph_edges
+                    )
+                    GROUP BY node_id
+                )
+                SELECT n.id, n.name, d.degree
+                FROM graph_nodes n
+                JOIN degrees d ON n.id = d.node_id
+                WHERE d.degree > 3
+                ORDER BY d.degree DESC
+                LIMIT 50
+            `).all() as any[];
+            return rows.map(r => ({ id: r.id, name: r.name, degree: r.degree }));
+        }
+
+        // 14. User facts query (HAS_FACT relation)
+        if (queryLower.includes('has_fact') || queryLower.includes('fact')) {
+            const userId = params.userId;
+            let rows: any[];
+            if (userId) {
+                rows = sqliteService.sql.prepare(`
+                    SELECT n2.properties
+                    FROM graph_edges e
+                    JOIN graph_nodes n1 ON e.source = n1.id
+                    JOIN graph_nodes n2 ON e.target = n2.id
+                    WHERE n1.id = ? AND e.type = 'HAS_FACT' AND n2.label = 'Fact'
+                `).all(userId) as any[];
+            } else {
+                rows = sqliteService.sql.prepare(`
+                    SELECT properties FROM graph_nodes WHERE label = 'Fact'
+                `).all() as any[];
+            }
+            
+            const facts = rows.map(r => {
+                const props = JSON.parse(r.properties);
+                // Writers store `type`/`createdAt`; legacy readers expected
+                // `category`/`timestamp`. Accept both so written facts are readable.
+                return {
+                    category: props.category || props.type || 'general',
+                    content: props.content || '',
+                    confidence: typeof props.confidence === 'number' ? props.confidence : 0.9,
+                    timestamp: typeof props.timestamp === 'number' ? props.timestamp
+                        : (typeof props.createdAt === 'number' ? props.createdAt : Date.now())
+                };
+            });
+            facts.sort((a, b) => b.timestamp - a.timestamp);
+            return facts.slice(0, 50).map(f => ({
+                category: f.category,
+                content: f.content,
+                confidence: f.confidence,
+                timestamp: f.timestamp
+            }));
+        }
+
+        // 15. Neighbors traversal query (path search with depth r*1..depth)
+        if (queryLower.includes('-[r*')) {
+            const nodeId = params.nodeId;
+            const depthMatch = cypher.match(/r\*1\.\.(\d+)/);
+            const depth = depthMatch ? parseInt(depthMatch[1]) : 1;
+            
+            const edges = sqliteService.sql.prepare('SELECT source, target FROM graph_edges').all() as any[];
+            const adj: Record<string, string[]> = {};
+            for (const edge of edges) {
+                if (!adj[edge.source]) adj[edge.source] = [];
+                if (!adj[edge.target]) adj[edge.target] = [];
+                adj[edge.source].push(edge.target);
+                adj[edge.target].push(edge.source);
+            }
+            
+            const visited = new Set<string>([nodeId]);
+            const queue: { id: string, d: number }[] = [{ id: nodeId, d: 0 }];
+            const resultIds = new Set<string>();
+            
+            while (queue.length > 0) {
+                const curr = queue.shift()!;
+                if (curr.d > 0) {
+                    resultIds.add(curr.id);
+                }
+                if (curr.d < depth) {
+                    const neighbors = adj[curr.id] || [];
+                    for (const neigh of neighbors) {
+                        if (!visited.has(neigh)) {
+                            visited.add(neigh);
+                            queue.push({ id: neigh, d: curr.d + 1 });
+                        }
+                    }
+                }
+            }
+            
+            if (resultIds.size === 0) return [];
+            const placeholders = Array.from(resultIds).map(() => '?').join(',');
+            const rows = sqliteService.sql.prepare(`SELECT id, label, properties FROM graph_nodes WHERE id IN (${placeholders}) LIMIT 100`).all(...Array.from(resultIds)) as any[];
+            return rows.map(row => ({
+                nodeId: row.id,
+                labels: [row.label],
+                node: {
+                    labels: [row.label],
+                    properties: JSON.parse(row.properties)
+                }
+            }));
+        }
+
+        // 16. Related concepts query (GraphRAG matching nodeIds)
+        if (queryLower.includes('related.id') && queryLower.includes('relationship')) {
+            const nodeIds = params.nodeIds || [];
+            if (nodeIds.length === 0) return [];
+            
+            const placeholders = nodeIds.map(() => '?').join(',');
+            const edges = sqliteService.sql.prepare(`
+                SELECT source, target, type FROM graph_edges 
+                WHERE source IN (${placeholders}) OR target IN (${placeholders})
+            `).all(...nodeIds, ...nodeIds) as any[];
+            
+            const relatedIds = new Set<string>();
+            const edgeMatches: any[] = [];
+            
+            for (const edge of edges) {
+                const isSourceIn = nodeIds.includes(edge.source);
+                const isTargetIn = nodeIds.includes(edge.target);
+                if (isSourceIn && !isTargetIn) {
+                    relatedIds.add(edge.target);
+                    edgeMatches.push({ sourceId: edge.source, relatedId: edge.target, type: edge.type });
+                } else if (!isSourceIn && isTargetIn) {
+                    relatedIds.add(edge.source);
+                    edgeMatches.push({ sourceId: edge.target, relatedId: edge.source, type: edge.type });
+                } else if (isSourceIn && isTargetIn) {
+                    edgeMatches.push({ sourceId: edge.source, relatedId: edge.target, type: edge.type });
+                }
+            }
+            
+            if (edgeMatches.length === 0) return [];
+            
+            const allIds = Array.from(new Set([...nodeIds, ...Array.from(relatedIds)]));
+            const idPlaceholders = allIds.map(() => '?').join(',');
+            const nodes = sqliteService.sql.prepare(`
+                SELECT id, label, properties FROM graph_nodes WHERE id IN (${idPlaceholders})
+            `).all(...allIds) as any[];
+            
+            const nodeMap = new Map(nodes.map(n => [n.id, n]));
+            
+            const results: any[] = [];
+            for (const match of edgeMatches) {
+                const relatedNode = nodeMap.get(match.relatedId);
+                if (!relatedNode) continue;
+                results.push({
+                    sourceId: match.sourceId,
+                    relatedId: match.relatedId,
+                    name: relatedNode.name || relatedNode.id,
+                    label: relatedNode.label,
+                    relationship: match.type,
+                    props: JSON.parse(relatedNode.properties)
+                });
+            }
+            return results.slice(0, 20);
+        }
+
+        // 17. Visualize nodes query
+        if (queryLower.includes('nodeid, n, labels(n)')) {
+            const limit = typeof params.limit === 'number' ? params.limit : 500;
+            const rows = sqliteService.sql.prepare('SELECT id, label, properties FROM graph_nodes LIMIT ?').all(limit) as any[];
+            return rows.map(row => ({
+                nodeId: row.id,
+                labels: [row.label],
+                n: {
+                    labels: [row.label],
+                    properties: JSON.parse(row.properties)
+                }
+            }));
+        }
+
+        // 18. Visualize links query
+        if (queryLower.includes('n.id as source, m.id as target, type(r)')) {
+            const limit = typeof params.limit === 'number' ? params.limit : 1000;
+            const rows = sqliteService.sql.prepare('SELECT source, target, type FROM graph_edges LIMIT ?').all(limit) as any[];
+            return rows.map(row => ({
+                source: row.source,
+                target: row.target,
+                type: row.type
+            }));
+        }
+
+        // 19. Paginated nodes query
+        if (queryLower.includes('match (n') && queryLower.includes('return n skip')) {
+            const labelMatch = cypher.match(/match\s*\(n:?`?([A-Za-z0-9_]*)`?\)/i);
+            const label = labelMatch ? labelMatch[1] : null;
+            const skip = typeof params.skip === 'number' ? params.skip : 0;
+            const limit = typeof params.limit === 'number' ? params.limit : 100;
+            
+            let rows: any[];
+            if (label) {
+                rows = sqliteService.sql.prepare('SELECT id, label, properties FROM graph_nodes WHERE label = ? LIMIT ? OFFSET ?').all(label, limit, skip) as any[];
+            } else {
+                rows = sqliteService.sql.prepare('SELECT id, label, properties FROM graph_nodes LIMIT ? OFFSET ?').all(limit, skip) as any[];
+            }
+            return rows.map(row => ({
+                n: {
+                    labels: [row.label],
+                    properties: JSON.parse(row.properties)
+                }
+            }));
+        }
+
+        // 20. Communities query
+        if (queryLower.includes('n.community') && queryLower.includes('members')) {
+            const rows = sqliteService.sql.prepare('SELECT id, properties FROM graph_nodes').all() as any[];
+            const communities: Record<string, string[]> = {};
+            for (const row of rows) {
+                const props = JSON.parse(row.properties);
+                if (props.community !== undefined && props.community !== null) {
+                    const comm = String(props.community);
+                    if (!communities[comm]) communities[comm] = [];
+                    communities[comm].push(row.id);
+                }
+            }
+            const result = Object.entries(communities).map(([comm, members]) => ({
+                community: comm,
+                members
+            }));
+            result.sort((a, b) => b.members.length - a.members.length);
+            return result.slice(0, 50);
+        }
+
+        // 21. Leiden Cartographer: Fetch all nodes query
+        if (queryLower.includes("where not 'community' in labels(n)")) {
+            const rows = sqliteService.sql.prepare("SELECT id, label, name FROM graph_nodes WHERE label != 'Community'").all() as any[];
+            return rows.map(r => ({
+                id: r.id,
+                label: r.label,
+                name: r.name
+            }));
+        }
+
+        // 22. Generic fallback parser for other Match/Return queries
+        console.warn(`[GRAPH] SQLite fallback: Cypher query not explicitly matched: "${cypher.substring(0, 100)}". Running generic parser.`);
+        const isCount = queryLower.includes('count(');
+        const isEdge = queryLower.includes('-[') || queryLower.includes('type(');
+        
+        if (isCount) {
+            const table = isEdge ? 'graph_edges' : 'graph_nodes';
+            const row = sqliteService.sql.prepare(`SELECT COUNT(*) as count FROM ${table}`).get() as any;
+            return [{ count: row?.count || 0 }];
+        }
+        
+        if (isEdge) {
+            const rows = sqliteService.sql.prepare('SELECT source, target, type FROM graph_edges LIMIT 100').all() as any[];
+            return rows.map(row => ({
+                source: row.source,
+                target: row.target,
+                type: row.type
+            }));
+        } else {
+            const rows = sqliteService.sql.prepare('SELECT id, label, properties FROM graph_nodes LIMIT 100').all() as any[];
+            return rows.map(row => ({
+                n: {
+                    labels: [row.label],
+                    properties: JSON.parse(row.properties)
+                }
+            }));
+        }
+    
+        });
+    }
+
+    public async close() {
+        if (this.driver) {
+            await this.closeOriginalDriverRequest(this.driver);
+            this._isConnected = false;
+            console.log("[GRAPH] 🔌 Disconnected.");
+        }
+    }
+
+    // --- HELPER METHODS ---
+
+    public async createNode(label: string, properties: any, mergeKey: string = 'id') {
+        return runSqliteOperation('services/graphService.ts:createNode', async () => {
+        if (!properties.id) properties.id = crypto.randomUUID();
+
+        if (!this._isConnected || !this.driver) {
+            // Fallback to SQLite
+            const { sqliteService } = await import('./sqliteService');
+            let existingId: string | null = null;
+            if (mergeKey !== 'id') {
+                const val = properties[mergeKey];
+                const rows = sqliteService.sql.prepare('SELECT id, properties FROM graph_nodes WHERE label = ?').all(label) as { id: string, properties: string }[];
+                for (const r of rows) {
+                    const props = JSON.parse(r.properties);
+                    if (props[mergeKey] === val) {
+                        existingId = r.id;
+                        break;
+                    }
+                }
+            }
+            const nodeId = existingId || properties.id || crypto.randomUUID();
+            properties.id = nodeId;
+            const name = properties.name || properties.id;
+            
+            const stmt = sqliteService.sql.prepare(`
+                INSERT INTO graph_nodes (id, label, name, properties, last_updated)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    label = excluded.label,
+                    name = excluded.name,
+                    properties = excluded.properties,
+                    last_updated = excluded.last_updated
+            `);
+            stmt.run(nodeId, label, name, JSON.stringify(properties), Date.now());
+
+            // If it's a Concept, sync to vector store
+            if (label === 'Concept') {
+                this.syncConceptToVectorStore(properties).catch(() => {});
+            }
+
+            return [{
+                n: {
+                    labels: [label],
+                    properties
+                }
+            }];
+        }
+
+        const query = `
+            MERGE (n:${label} {${mergeKey}: $mergeVal})
+            SET n += $props, n.lastUpdated = timestamp()
+            RETURN n
+        `;
+
+        try {
+            const results = await this.runQuery(query, {
+                mergeVal: properties[mergeKey],
+                props: properties
+            });
+            
+            // If it's a Concept, sync to vector store
+            if (label === 'Concept') {
+                this.syncConceptToVectorStore(properties).catch(() => {});
+            }
+            
+            return results;
+        } catch (error: any) {
+            console.error(`[GRAPH] Node creation failed for ${label}:`, error);
+            throw error;
+        }
+    
+        });
+    }
+
+    public async createRelationship(fromId: string, toId: string, type: string, properties: any = {}) {
+        return runSqliteOperation('services/graphService.ts:createRelationship', async () => {
+        if (!this._isConnected || !this.driver) {
+            // Fallback to SQLite
+            const { sqliteService } = await import('./sqliteService');
+            // Check if source and target exist
+            const sourceExists = sqliteService.sql.prepare('SELECT 1 FROM graph_nodes WHERE id = ?').get(fromId);
+            const targetExists = sqliteService.sql.prepare('SELECT 1 FROM graph_nodes WHERE id = ?').get(toId);
+            if (!sourceExists || !targetExists) {
+                console.warn(`[GRAPH] SQLite: Cannot create relationship ${fromId} -[${type}]-> ${toId} because one of the nodes does not exist.`);
+                return [];
+            }
+
+            const stmt = sqliteService.sql.prepare(`
+                INSERT INTO graph_edges (source, target, type, properties, last_updated)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(source, target, type) DO UPDATE SET
+                    properties = excluded.properties,
+                    last_updated = excluded.last_updated
+            `);
+            stmt.run(fromId, toId, type, JSON.stringify(properties), Date.now());
+
+            return [{
+                r: {
+                    source: fromId,
+                    target: toId,
+                    type,
+                    properties
+                }
+            }];
+        }
+
+        const query = `
+            MATCH (a {id: $fromId}), (b {id: $toId})
+            MERGE (a)-[r:${type}]->(b)
+            SET r += $props, r.lastUpdated = timestamp()
+            RETURN r
+        `;
+        return this.runQuery(query, { fromId, toId, props: properties });
+    
+        });
+    }
+
+    public async createDiscoveryRelationship(fromId: string, toId: string, type: 'CAUSES' | 'INHIBITS' | 'IMPLIES', confidence: number, source: string) {
+        return runSqliteOperation('services/graphService.ts:createDiscoveryRelationship', async () => {
+        // [SCALE-FREE NETWORK] Preferential Attachment Mechanism
+        // When a new connection is formed, there's a chance to also reinforce a connection to a Hub
+        // mimicking "Rich get Richer" (Matthew Effect) in neural networks.
+
+        // 10% chance to trigger preferential attachment on discovery
+        if (Math.random() < 0.1) {
+            this.applyPreferentialAttachment(fromId).catch(e => console.warn("[GRAPH] Pref. Attachment failed:", e));
+        }
+
+        return this.createRelationship(fromId, toId, type, {
+            confidence,
+            discoverySource: source,
+            isHypothesis: true,
+            verified: false
+        });
+    
+        });
+    }
+
+    // --- SCALE-FREE NETWORK MECHANISMS (BIOMIMETIC) ---
+
+    /**
+     * Finds "Hubs" - nodes with the highest degree of connections.
+     * These act as master concepts or functional centers.
+     */
+    public async getHubs(limit: number = 5): Promise<any[]> {
+        return runSqliteOperation('services/graphService.ts:getHubs', async () => {
+        const query = `
+            MATCH (n)
+            OPTIONAL MATCH (n)-[r]-()
+            WITH n, count(r) as degree
+            WHERE degree > 5  // Minimum requirement to be a "mini-hub"
+            RETURN n.id as id, n.label as label, n.name as name, degree
+            ORDER BY degree DESC
+            LIMIT $limit
+        `;
+        return this.runQuery(query, { limit: neo4j.int(limit) });
+    
+        });
+    }
+
+    /**
+     * Implements "Preferential Attachment":
+     * Connects the target node to a random Hub with probability proportional to the Hub's degree.
+     */
+    public async applyPreferentialAttachment(nodeId: string) {
+        return runSqliteOperation('services/graphService.ts:applyPreferentialAttachment', async () => {
+        try {
+            const hubs = await this.getHubs(5);
+            if (hubs.length === 0) return;
+
+            // Roulette Wheel Selection based on Degree
+            const totalDegree = hubs.reduce((sum, h) => sum + (h.degree as number), 0);
+            let random = Math.random() * totalDegree;
+            let selectedHub = hubs[0];
+
+            for (const hub of hubs) {
+                random -= (hub.degree as number);
+                if (random <= 0) {
+                    selectedHub = hub;
+                    break;
+                }
+            }
+
+            // Don't connect to self
+            if (selectedHub.id === nodeId) return;
+
+            console.log(`[GRAPH] 🕸️ Scale-Free Growth: Connecting ${nodeId} to Hub ${selectedHub.name || selectedHub.id}`);
+
+            // Create a weak "ASSOCIATED_WITH" link (Neuroplasticity start)
+            await this.createRelationship(nodeId, selectedHub.id, 'ASSOCIATED_WITH', {
+                source: 'PREFERENTIAL_ATTACHMENT',
+                weight: 0.1 // Starts weak, must be reinforced
+            });
+
+        } catch (e) {
+            console.warn("[GRAPH] Scale-free growth error:", e);
+        }
+    
+        });
+    }
+
+    // --- GRAPHRAG CAPABILITIES (NEW) ---
+
+    // Given a list of Node IDs (from Vector Search), find their neighbors
+    public async getRelatedConcepts(nodeIds: string[], depth: number = 1): Promise<any[]> {
+        return runSqliteOperation('services/graphService.ts:getRelatedConcepts', async () => {
+        // runQuery decides the backend (Neo4j or the SQLite fallback); no early return here.
+        if (nodeIds.length === 0) return [];
+
+        // Query: Find nodes with these IDs, and traverse OUT/IN relationships
+        // We limit to 20 related items to avoid context overflow
+        const query = `
+            MATCH (n)
+            WHERE n.id IN $nodeIds
+            MATCH (n)-[r]-(related)
+            RETURN n.id as sourceId, related.id as relatedId, related.name as name, related.label as label, type(r) as relationship, properties(related) as props
+            LIMIT 20
+        `;
+
+        try {
+            const results = await this.runQuery(query, { nodeIds });
+
+            // [HEBBIAN LEARNING] Reinforce accessed connections
+            // Import dynamically to avoid circular dependency
+            if (results.length > 0) {
+                import('./hubStrengtheningService').then(({ hubStrengthening }) => {
+                    for (const result of results.slice(0, 5)) { // Limit reinforcement to top 5
+                        hubStrengthening.reinforceConnection(result.sourceId, result.relatedId)
+                            .catch(() => { }); // Non-blocking
+                    }
+                }).catch(() => { }); // Ignore if service unavailable
+            }
+
+            return results;
+        } catch (e: any) {
+            console.warn("[GRAPH] GraphRAG Traversal Failed:", e.message);
+            return [];
+        }
+    
+        });
+    }
+    // --- DISCOVERY ALGORITHMS ---
+
+    // Find "Open Triangles" (A connected to C, B connected to C, but A not connected to B)
+    // This suggests A and B might be related via C.
+    public async findOpenTriangles(limit: number = 5): Promise<{ nodeA: any, nodeB: any, bridge: any }[]> {
+        return runSqliteOperation('services/graphService.ts:findOpenTriangles', async () => {
+        // runQuery decides the backend (Neo4j or the SQLite fallback); no early return here.
+
+        const query = `
+            MATCH (a:Concept)-[:RELATED]-(bridge:Concept)-[:RELATED]-(b:Concept)
+            WHERE NOT (a)-[:RELATED]-(b) AND a.id < b.id
+            RETURN a, b, bridge
+            LIMIT $limit
+        `;
+
+        try {
+            const records = await this.runQuery(query, { limit: neo4j.int(limit) });
+            return records.map(r => ({
+                nodeA: r.a.properties,
+                nodeB: r.b.properties,
+                bridge: r.bridge.properties
+            }));
+        } catch (e) {
+            console.warn("[GRAPH] Failed to find open triangles:", e);
+            return [];
+        }
+    
+        });
+    }
+
+    /**
+     * Get all user facts from Neo4j
+     * Used by UI to display eternal memory
+     */
+    public async getUserFacts(userId?: string): Promise<{ category: string; content: string; confidence: number; timestamp: number; source?: string }[]> {
+        return runSqliteOperation('services/graphService.ts:getUserFacts', async () => {
+        try {
+            // If userId is provided, filter by that user. Otherwise, fallback to global (admin only)
+            // Writers store `type`/`createdAt`; legacy readers expected
+            // `category`/`timestamp`. Coalesce both so facts are readable
+            // regardless of which schema wrote them.
+            const query = userId ? `
+                MATCH (u:User {id: $userId})-[:HAS_FACT]->(f:Fact)
+                RETURN coalesce(f.category, f.type, 'general') as category, f.content as content,
+                       f.confidence as confidence, coalesce(f.timestamp, f.createdAt, 0) as timestamp,
+                       coalesce(f.source, 'LEGACY') as source
+                ORDER BY timestamp DESC
+                LIMIT 50
+            ` : `
+                MATCH (f:Fact)
+                RETURN coalesce(f.category, f.type, 'general') as category, f.content as content,
+                       f.confidence as confidence, coalesce(f.timestamp, f.createdAt, 0) as timestamp,
+                       coalesce(f.source, 'LEGACY') as source
+                ORDER BY timestamp DESC
+                LIMIT 50
+            `;
+
+            const records = await this.runQuery(query, { userId });
+            return records.map((r: any) => ({
+                category: r.category || 'general',
+                content: r.content || '',
+                confidence: typeof r.confidence === 'number' ? r.confidence : 0.9,
+                source: r.source || 'LEGACY',
+                timestamp: typeof r.timestamp === 'number' ? r.timestamp : Date.now()
+            }));
+        } catch (e) {
+            console.warn("[GRAPH] Failed to get user facts:", e);
+            return [];
+        }
+    
+        });
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // SYNC NEO4J CONCEPTS TO LANCEDB FOR CROSS-DOMAIN DISCOVERY
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Syncs a Concept node to LanceDB with vector embedding.
+     * This enables EurekaService to find cross-domain connections.
+     */
+    public async syncConceptToVectorStore(concept: {
+        id: string;
+        name: string;
+        description?: string;
+        tags?: string[];
+    }): Promise<boolean> {
+        try {
+            const content = `${concept.name}: ${concept.description || 'No description'}`;
+
+            // Generate embedding (try Gemini first, falls back to Local xenova/transformers)
+            const embedding = await geminiEmbed(content);
+
+            if (!embedding) {
+                console.warn(`[GRAPH] ⚠️ No embedding generated for concept: ${concept.id}`);
+                return false;
+            }
+
+            // Create MemoryNode representation
+            const memoryNode: MemoryNode = {
+                id: concept.id,
+                content: content,
+                originalContent: content,
+                timestamp: Date.now(),
+                tier: MemoryTier.LONG, // Concepts are long-term knowledge
+                importance: 0.8, // High importance
+                tags: [...(concept.tags || []), 'concept', 'neo4j-synced'],
+                accessCount: 0,
+                lastAccess: Date.now(),
+                decayHealth: 100,
+                compressionLevel: 0
+            };
+
+            await lancedbService.store(memoryNode, embedding);
+            console.log(`[GRAPH] 🔗→📊 Synced concept to VectorStore: ${concept.name}`);
+            return true;
+
+        } catch (e) {
+            console.error(`[GRAPH] syncConceptToVectorStore failed:`, e);
+            return false;
+        }
+    }
+}
+
+function constructOriginalGraphService(): GraphService {
+    const owner = graphOwner();
+    const operation = owner.beginConstruction();
+    try {
+        const instance = new GraphService();
+        owner.constructed(operation, instance); return instance;
+    } catch (original) {
+        preserveOriginal(owner, 'construction-failure', () => owner.constructionFailed(operation, original)); throw original;
+    }
+}
+const runtimeConstructionPermit = admitEvaluatedGraph();
+export const graph = (() => {
+    try {
+        const original = constructOriginalGraphService();
+        bindEvaluatedGraph(runtimeConstructionPermit,() => original.close());
+        return original;
+    } catch (error) {
+        failEvaluatedGraph(runtimeConstructionPermit,error);
+        throw error;
+    }
+})();

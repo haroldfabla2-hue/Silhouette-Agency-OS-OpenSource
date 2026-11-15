@@ -1,0 +1,325 @@
+[
+  {
+    "archive": "control",
+    "name": ".",
+    "type": "directory",
+    "mode": 493,
+    "bytes": 0,
+    "uid": 0,
+    "gid": 0
+  },
+  {
+    "archive": "control",
+    "name": "./control",
+    "type": "regular",
+    "mode": 420,
+    "bytes": 1159,
+    "uid": 0,
+    "gid": 0,
+    "sha256": "22e827ac8b3b472f8cbe4d95f0f2a45862bae2cbe1a340891c04c28d6210d859"
+  },
+  {
+    "archive": "control",
+    "name": "./md5sums",
+    "type": "regular",
+    "mode": 420,
+    "bytes": 1027,
+    "uid": 0,
+    "gid": 0,
+    "sha256": "f1cc5dc0a2db67cf926a1ff22657ebb8b6353c5db02da8278bbbbaf214d2fdf4"
+  },
+  {
+    "archive": "control",
+    "name": "./postinst",
+    "type": "regular",
+    "mode": 493,
+    "bytes": 187,
+    "uid": 0,
+    "gid": 0,
+    "sha256": "8a0d18a37185a8634d9d7259dddf9b18b1f970608490d61510fb8a67b355a7ec"
+  },
+  {
+    "archive": "data",
+    "name": ".",
+    "type": "directory",
+    "mode": 493,
+    "bytes": 0,
+    "uid": 0,
+    "gid": 0
+  },
+  {
+    "archive": "data",
+    "name": "./usr",
+    "type": "directory",
+    "mode": 493,
+    "bytes": 0,
+    "uid": 0,
+    "gid": 0
+  },
+  {
+    "archive": "data",
+    "name": "./usr/bin",
+    "type": "directory",
+    "mode": 493,
+    "bytes": 0,
+    "uid": 0,
+    "gid": 0
+  },
+  {
+    "archive": "data",
+    "name": "./usr/bin/bwrap",
+    "type": "regular",
+    "mode": 493,
+    "bytes": 72160,
+    "uid": 0,
+    "gid": 0,
+    "sha256": "e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71"
+  },
+  {
+    "archive": "data",
+    "name": "./usr/lib",
+    "type": "directory",
+    "mode": 493,
+    "bytes": 0,
+    "uid": 0,
+    "gid": 0
+  },
+  {
+    "archive": "data",
+    "name": "./usr/lib/sysctl.d",
+    "type": "directory",
+    "mode": 493,
+    "bytes": 0,
+    "uid": 0,
+    "gid": 0
+  },
+  {
+    "archive": "data",
+    "name": "./usr/lib/sysctl.d/50-bubblewrap.conf",
+    "type": "regular",
+    "mode": 420,
+    "bytes": 403,
+    "uid": 0,
+    "gid": 0,
+    "sha256": "7f34e797bf48d7273c1145ef2d0031f481dfe242c34d48b5f99d49fe3dd359b9"
+  },
+  {
+    "archive": "data",
+    "name": "./usr/share",
+    "type": "directory",
+    "mode": 493,
+    "bytes": 0,
+    "uid": 0,
+    "gid": 0
+  },
+  {
+    "archive": "data",
+    "name": "./usr/share/bash-completion",
+    "type": "directory",
+    "mode": 493,
+    "bytes": 0,
+    "uid": 0,
+    "gid": 0
+  },
+  {
+    "archive": "data",
+    "name": "./usr/share/bash-completion/completions",
+    "type": "directory",
+    "mode": 493,
+    "bytes": 0,
+    "uid": 0,
+    "gid": 0
+  },
+  {
+    "archive": "data",
+    "name": "./usr/share/bash-completion/completions/bwrap",
+    "type": "regular",
+    "mode": 420,
+    "bytes": 1159,
+    "uid": 0,
+    "gid": 0,
+    "sha256": "13256032bbbba72e84815b4b2024491a4a229500ad793ac6eee639225b3c0312"
+  },
+  {
+    "archive": "data",
+    "name": "./usr/share/bug",
+    "type": "directory",
+    "mode": 493,
+    "bytes": 0,
+    "uid": 0,
+    "gid": 0
+  },
+  {
+    "archive": "data",
+    "name": "./usr/share/bug/bubblewrap",
+    "type": "regular",
+    "mode": 493,
+    "bytes": 319,
+    "uid": 0,
+    "gid": 0,
+    "sha256": "24e70c24df1d1dd865f1bcb537a14dff2d5cd8aff598855b7c527943ac738263"
+  },
+  {
+    "archive": "data",
+    "name": "./usr/share/doc",
+    "type": "directory",
+    "mode": 493,
+    "bytes": 0,
+    "uid": 0,
+    "gid": 0
+  },
+  {
+    "archive": "data",
+    "name": "./usr/share/doc/bubblewrap",
+    "type": "directory",
+    "mode": 493,
+    "bytes": 0,
+    "uid": 0,
+    "gid": 0
+  },
+  {
+    "archive": "data",
+    "name": "./usr/share/doc/bubblewrap/README.Debian.gz",
+    "type": "regular",
+    "mode": 420,
+    "bytes": 2391,
+    "uid": 0,
+    "gid": 0,
+    "sha256": "ee819920c9031e0fc8c0c81af8bea0ab939fed89b9793bca4682204bf1e61205"
+  },
+  {
+    "archive": "data",
+    "name": "./usr/share/doc/bubblewrap/README.md.gz",
+    "type": "regular",
+    "mode": 420,
+    "bytes": 4692,
+    "uid": 0,
+    "gid": 0,
+    "sha256": "11b08a1f8599ba2ad495588f11a8c9c08a5d7be6f8edb2bda534cf52bda71c40"
+  },
+  {
+    "archive": "data",
+    "name": "./usr/share/doc/bubblewrap/changelog.Debian.gz",
+    "type": "regular",
+    "mode": 420,
+    "bytes": 3409,
+    "uid": 0,
+    "gid": 0,
+    "sha256": "cc6d8b029259ba75feadcd90ac473c5c64df145e1a6c00618984cf7ff92db314"
+  },
+  {
+    "archive": "data",
+    "name": "./usr/share/doc/bubblewrap/copyright",
+    "type": "regular",
+    "mode": 420,
+    "bytes": 3388,
+    "uid": 0,
+    "gid": 0,
+    "sha256": "229a402fddba5c81005950f28de162359383cba731f5b859b8f82a03c338bf01"
+  },
+  {
+    "archive": "data",
+    "name": "./usr/share/doc/bubblewrap/examples",
+    "type": "directory",
+    "mode": 493,
+    "bytes": 0,
+    "uid": 0,
+    "gid": 0
+  },
+  {
+    "archive": "data",
+    "name": "./usr/share/doc/bubblewrap/examples/bubblewrap-shell.sh",
+    "type": "regular",
+    "mode": 493,
+    "bytes": 1204,
+    "uid": 0,
+    "gid": 0,
+    "sha256": "dd2ed261e8a29df26d4ca8e629d57e882b7fdf0f019cb495a26bc1a74ca17c51"
+  },
+  {
+    "archive": "data",
+    "name": "./usr/share/doc/bubblewrap/examples/flatpak-run.sh",
+    "type": "regular",
+    "mode": 493,
+    "bytes": 2642,
+    "uid": 0,
+    "gid": 0,
+    "sha256": "571dbc8beb5a43236dd4142345ad74c6a536027820747ac9f6eea86925c23610"
+  },
+  {
+    "archive": "data",
+    "name": "./usr/share/doc/bubblewrap/examples/flatpak.bpf",
+    "type": "regular",
+    "mode": 420,
+    "bytes": 744,
+    "uid": 0,
+    "gid": 0,
+    "sha256": "8fd08d3d6db04338dd4ac9b710b14b23a21162154359c6ef5cf16810802eed66"
+  },
+  {
+    "archive": "data",
+    "name": "./usr/share/doc/bubblewrap/examples/userns-block-fd.py",
+    "type": "regular",
+    "mode": 493,
+    "bytes": 969,
+    "uid": 0,
+    "gid": 0,
+    "sha256": "3df0a68201b58c20144a29cb748e0fc3ac3881c09a427d315e5132f627e041bc"
+  },
+  {
+    "archive": "data",
+    "name": "./usr/share/man",
+    "type": "directory",
+    "mode": 493,
+    "bytes": 0,
+    "uid": 0,
+    "gid": 0
+  },
+  {
+    "archive": "data",
+    "name": "./usr/share/man/man1",
+    "type": "directory",
+    "mode": 493,
+    "bytes": 0,
+    "uid": 0,
+    "gid": 0
+  },
+  {
+    "archive": "data",
+    "name": "./usr/share/man/man1/bwrap.1.gz",
+    "type": "regular",
+    "mode": 420,
+    "bytes": 5338,
+    "uid": 0,
+    "gid": 0,
+    "sha256": "c8e082335ec4161443db6eabffdc7b6f40e9c04fc6d5672205ae8d9a95ab2812"
+  },
+  {
+    "archive": "data",
+    "name": "./usr/share/zsh",
+    "type": "directory",
+    "mode": 493,
+    "bytes": 0,
+    "uid": 0,
+    "gid": 0
+  },
+  {
+    "archive": "data",
+    "name": "./usr/share/zsh/vendor-completions",
+    "type": "directory",
+    "mode": 493,
+    "bytes": 0,
+    "uid": 0,
+    "gid": 0
+  },
+  {
+    "archive": "data",
+    "name": "./usr/share/zsh/vendor-completions/_bwrap",
+    "type": "regular",
+    "mode": 420,
+    "bytes": 7396,
+    "uid": 0,
+    "gid": 0,
+    "sha256": "7b0de2aafa68f7a4936d1323c4301cd491bf8c0598f1965d1bce6042a3525666"
+  }
+]

@@ -1,0 +1,590 @@
+[
+  {
+    "file": "scripts/benchmark_memory_rollout.ts",
+    "line": 2,
+    "module": "../services/lifecycle/preparationBindings",
+    "clause": "{ admitLanceInstance }"
+  },
+  {
+    "file": "scripts/test_autonomy.ts",
+    "line": 2,
+    "module": "../services/lifecycle/preparationBindings",
+    "clause": "{ admitIntrospectionInstance }"
+  },
+  {
+    "file": "server/bootstrap.preparation.ts",
+    "line": 1,
+    "module": "../services/lifecycle/bootstrapAuthority",
+    "clause": "{ installPreparationHost }"
+  },
+  {
+    "file": "server/bootstrap.preparation.ts",
+    "line": 2,
+    "module": "../services/lifecycle/preparationBindings",
+    "clause": "{ serverOwner }"
+  },
+  {
+    "file": "server/bootstrap.preparation.ts",
+    "line": 3,
+    "module": "../services/lifecycle/host",
+    "clause": "type { Capacity }"
+  },
+  {
+    "file": "server/config/configLoader.ts",
+    "line": 1,
+    "module": "../../services/lifecycle/preserveOriginal",
+    "clause": "{ preserveOriginal }"
+  },
+  {
+    "file": "server/config/configLoader.ts",
+    "line": 2,
+    "module": "../../services/lifecycle/preparationBindings",
+    "clause": "{ configOwner }"
+  },
+  {
+    "file": "server/config/runtimeCredentials.ts",
+    "line": 1,
+    "module": "../../services/lifecycle/preparationBindings",
+    "clause": "{ runtimeEnvironmentOwner }"
+  },
+  {
+    "file": "server/retainedShutdown.preparation.ts",
+    "line": 1,
+    "module": "../services/lifecycle/host",
+    "clause": "type { Host, HostReport }"
+  },
+  {
+    "file": "services/architectService.ts",
+    "line": 1,
+    "module": "./lifecycle/preserveOriginal",
+    "clause": "{ preserveOriginal }"
+  },
+  {
+    "file": "services/architectService.ts",
+    "line": 2,
+    "module": "./lifecycle/preparationBindings",
+    "clause": "{ architectOwner }"
+  },
+  {
+    "file": "services/architectService.ts",
+    "line": 3,
+    "module": "./lifecycle/host",
+    "clause": "type { Operation }"
+  },
+  {
+    "file": "services/architecturalReview.ts",
+    "line": 1,
+    "module": "./lifecycle/preserveOriginal",
+    "clause": "{ preserveOriginal }"
+  },
+  {
+    "file": "services/architecturalReview.ts",
+    "line": 2,
+    "module": "./lifecycle/preparationBindings",
+    "clause": "{ architecturalReviewOwner }"
+  },
+  {
+    "file": "services/architecturalReview.ts",
+    "line": 3,
+    "module": "./lifecycle/host",
+    "clause": "type { Operation }"
+  },
+  {
+    "file": "services/brain/brainMemoryBridge.ts",
+    "line": 1,
+    "module": "../lifecycle/preserveOriginal",
+    "clause": "{ preserveOriginal }"
+  },
+  {
+    "file": "services/brain/brainMemoryBridge.ts",
+    "line": 2,
+    "module": "../lifecycle/preparationBindings",
+    "clause": "{ brainBridgeOwner }"
+  },
+  {
+    "file": "services/brain/brainMemoryBridge.ts",
+    "line": 3,
+    "module": "../lifecycle/host",
+    "clause": "type { Scope, Operation }"
+  },
+  {
+    "file": "services/bus/MemoryBusAdapter.ts",
+    "line": 1,
+    "module": "../lifecycle/correlatedHelpResponse",
+    "clause": "{ deliverReservedHelpResponse }"
+  },
+  {
+    "file": "services/bus/MemoryBusAdapter.ts",
+    "line": 2,
+    "module": "../lifecycle/host",
+    "clause": "type { Scope }"
+  },
+  {
+    "file": "services/bus/RedisBusAdapter.ts",
+    "line": 1,
+    "module": "../lifecycle/correlatedHelpResponse",
+    "clause": "{ deliverReservedHelpResponse }"
+  },
+  {
+    "file": "services/bus/RedisBusAdapter.ts",
+    "line": 2,
+    "module": "../lifecycle/preserveOriginal",
+    "clause": "{ preserveOriginal }"
+  },
+  {
+    "file": "services/bus/RedisBusAdapter.ts",
+    "line": 3,
+    "module": "../lifecycle/host",
+    "clause": "type { Scope, Operation }"
+  },
+  {
+    "file": "services/codebaseAwareness.ts",
+    "line": 1,
+    "module": "./lifecycle/preserveOriginal",
+    "clause": "{ preserveOriginal }"
+  },
+  {
+    "file": "services/codebaseAwareness.ts",
+    "line": 2,
+    "module": "./lifecycle/preparationBindings",
+    "clause": "{ codebaseOwner }"
+  },
+  {
+    "file": "services/codebaseAwareness.ts",
+    "line": 3,
+    "module": "./lifecycle/host",
+    "clause": "type { Scope, Operation }"
+  },
+  {
+    "file": "services/communication/helpProtocol.ts",
+    "line": 1,
+    "module": "../lifecycle/preparationBindings",
+    "clause": "{ helpProtocolOwner }"
+  },
+  {
+    "file": "services/connectionNervousSystem.ts",
+    "line": 1,
+    "module": "./lifecycle/preserveOriginal",
+    "clause": "{ preserveOriginal }"
+  },
+  {
+    "file": "services/connectionNervousSystem.ts",
+    "line": 2,
+    "module": "./lifecycle/preparationBindings",
+    "clause": "{ nervousOwner }"
+  },
+  {
+    "file": "services/consciousnessEngine.ts",
+    "line": 1,
+    "module": "./lifecycle/preserveOriginal",
+    "clause": "{ preserveOriginal }"
+  },
+  {
+    "file": "services/consciousnessEngine.ts",
+    "line": 2,
+    "module": "./lifecycle/preparationBindings",
+    "clause": "{ consciousnessOwner }"
+  },
+  {
+    "file": "services/continuumMemory.ts",
+    "line": 1,
+    "module": "./lifecycle/preserveOriginal",
+    "clause": "{ preserveOriginal }"
+  },
+  {
+    "file": "services/continuumMemory.ts",
+    "line": 2,
+    "module": "./lifecycle/preparationBindings",
+    "clause": "{ continuumOwner }"
+  },
+  {
+    "file": "services/costEstimator.ts",
+    "line": 1,
+    "module": "./lifecycle/preserveOriginal",
+    "clause": "{ preserveOriginal }"
+  },
+  {
+    "file": "services/costEstimator.ts",
+    "line": 2,
+    "module": "./lifecycle/preparationBindings",
+    "clause": "{ costOwner }"
+  },
+  {
+    "file": "services/dreamerService.ts",
+    "line": 1,
+    "module": "./lifecycle/preserveOriginal",
+    "clause": "{ preserveOriginal }"
+  },
+  {
+    "file": "services/dreamerService.ts",
+    "line": 2,
+    "module": "./lifecycle/preparationBindings",
+    "clause": "{ dreamerOwner }"
+  },
+  {
+    "file": "services/graphService.ts",
+    "line": 1,
+    "module": "./lifecycle/preserveOriginal",
+    "clause": "{ preserveOriginal }"
+  },
+  {
+    "file": "services/graphService.ts",
+    "line": 2,
+    "module": "./lifecycle/preparationBindings",
+    "clause": "{ graphOwner }"
+  },
+  {
+    "file": "services/graphService.ts",
+    "line": 3,
+    "module": "./lifecycle/host",
+    "clause": "type { Operation, ChildReservation }"
+  },
+  {
+    "file": "services/hubStrengtheningService.ts",
+    "line": 1,
+    "module": "./lifecycle/preserveOriginal",
+    "clause": "{ preserveOriginal }"
+  },
+  {
+    "file": "services/hubStrengtheningService.ts",
+    "line": 2,
+    "module": "./lifecycle/preparationBindings",
+    "clause": "{ hubOwner }"
+  },
+  {
+    "file": "services/introspectionEngine.ts",
+    "line": 1,
+    "module": "./lifecycle/preserveOriginal",
+    "clause": "{ preserveOriginal }"
+  },
+  {
+    "file": "services/introspectionEngine.ts",
+    "line": 2,
+    "module": "./lifecycle/preparationBindings",
+    "clause": "{ introspectionOwner }"
+  },
+  {
+    "file": "services/introspectionEngine.ts",
+    "line": 3,
+    "module": "./lifecycle/host",
+    "clause": "type { Scope, Operation }"
+  },
+  {
+    "file": "services/lancedbService.ts",
+    "line": 1,
+    "module": "./lifecycle/preserveOriginal",
+    "clause": "{ preserveOriginal }"
+  },
+  {
+    "file": "services/lancedbService.ts",
+    "line": 2,
+    "module": "./lifecycle/preparationBindings",
+    "clause": "{ lanceOwner }"
+  },
+  {
+    "file": "services/lancedbService.ts",
+    "line": 3,
+    "module": "./lifecycle/host",
+    "clause": "type { Scope, Operation }"
+  },
+  {
+    "file": "services/narrativeService.ts",
+    "line": 1,
+    "module": "./lifecycle/preserveOriginal",
+    "clause": "{ preserveOriginal }"
+  },
+  {
+    "file": "services/narrativeService.ts",
+    "line": 2,
+    "module": "./lifecycle/preparationBindings",
+    "clause": "{ narrativeOwner }"
+  },
+  {
+    "file": "services/neuroLinkService.ts",
+    "line": 1,
+    "module": "./lifecycle/preserveOriginal",
+    "clause": "{ preserveOriginal }"
+  },
+  {
+    "file": "services/neuroLinkService.ts",
+    "line": 2,
+    "module": "./lifecycle/preparationBindings",
+    "clause": "{ neuroLinkOwner }"
+  },
+  {
+    "file": "services/neuroSynapseService.ts",
+    "line": 1,
+    "module": "./lifecycle/preserveOriginal",
+    "clause": "{ preserveOriginal }"
+  },
+  {
+    "file": "services/neuroSynapseService.ts",
+    "line": 2,
+    "module": "./lifecycle/preparationBindings",
+    "clause": "{ neuroSynapseOwner }"
+  },
+  {
+    "file": "services/neuroSynapseService.ts",
+    "line": 3,
+    "module": "./lifecycle/host",
+    "clause": "type { Operation }"
+  },
+  {
+    "file": "services/orchestrator.ts",
+    "line": 1,
+    "module": "./lifecycle/preserveOriginal",
+    "clause": "{ preserveOriginal }"
+  },
+  {
+    "file": "services/orchestrator.ts",
+    "line": 2,
+    "module": "./lifecycle/preparationBindings",
+    "clause": "{ orchestratorOwner }"
+  },
+  {
+    "file": "services/orchestrator.ts",
+    "line": 3,
+    "module": "./lifecycle/host",
+    "clause": "type { Operation }"
+  },
+  {
+    "file": "services/plugins/discovery.ts",
+    "line": 1,
+    "module": "../lifecycle/preparationBindings",
+    "clause": "{ pluginsOwner }"
+  },
+  {
+    "file": "services/plugins/pluginRegistry.ts",
+    "line": 1,
+    "module": "../lifecycle/preparationBindings",
+    "clause": "{ pluginsOwner }"
+  },
+  {
+    "file": "services/powerManager.ts",
+    "line": 1,
+    "module": "./lifecycle/preserveOriginal",
+    "clause": "{ preserveOriginal }"
+  },
+  {
+    "file": "services/powerManager.ts",
+    "line": 2,
+    "module": "./lifecycle/preparationBindings",
+    "clause": "{ powerOwner }"
+  },
+  {
+    "file": "services/redisClient.ts",
+    "line": 1,
+    "module": "./lifecycle/preserveOriginal",
+    "clause": "{ preserveOriginal }"
+  },
+  {
+    "file": "services/redisClient.ts",
+    "line": 2,
+    "module": "./lifecycle/preparationBindings",
+    "clause": "{ redisOwner }"
+  },
+  {
+    "file": "services/redisClient.ts",
+    "line": 3,
+    "module": "./lifecycle/host",
+    "clause": "type { Operation }"
+  },
+  {
+    "file": "services/remediationService.ts",
+    "line": 1,
+    "module": "./lifecycle/preserveOriginal",
+    "clause": "{ preserveOriginal }"
+  },
+  {
+    "file": "services/remediationService.ts",
+    "line": 2,
+    "module": "./lifecycle/preparationBindings",
+    "clause": "{ remediationOwner }"
+  },
+  {
+    "file": "services/remediationService.ts",
+    "line": 3,
+    "module": "./lifecycle/host",
+    "clause": "type { Operation }"
+  },
+  {
+    "file": "services/resourceArbiter.ts",
+    "line": 1,
+    "module": "./lifecycle/preserveOriginal",
+    "clause": "{ preserveOriginal }"
+  },
+  {
+    "file": "services/resourceArbiter.ts",
+    "line": 2,
+    "module": "./lifecycle/preparationBindings",
+    "clause": "{ arbiterOwner }"
+  },
+  {
+    "file": "services/sensoryService.ts",
+    "line": 1,
+    "module": "./lifecycle/preparationBindings",
+    "clause": "{ sensoryOwner }"
+  },
+  {
+    "file": "services/sensoryService.ts",
+    "line": 2,
+    "module": "./lifecycle/ownedGlobal",
+    "clause": "{ installOwnedFunction }"
+  },
+  {
+    "file": "services/settingsManager.ts",
+    "line": 1,
+    "module": "./lifecycle/preserveOriginal",
+    "clause": "{ preserveOriginal }"
+  },
+  {
+    "file": "services/settingsManager.ts",
+    "line": 2,
+    "module": "./lifecycle/preparationBindings",
+    "clause": "{ settingsOwner }"
+  },
+  {
+    "file": "services/sqliteService.ts",
+    "line": 1,
+    "module": "./lifecycle/preserveOriginal",
+    "clause": "{ preserveOriginal }"
+  },
+  {
+    "file": "services/sqliteService.ts",
+    "line": 2,
+    "module": "./lifecycle/preparationBindings",
+    "clause": "{ sqliteOwner }"
+  },
+  {
+    "file": "services/sqliteService.ts",
+    "line": 3,
+    "module": "./lifecycle/host",
+    "clause": "type { Scope, Operation }"
+  },
+  {
+    "file": "services/systemBus.ts",
+    "line": 1,
+    "module": "./lifecycle/host",
+    "clause": "type { Operation, ChildReservation }"
+  },
+  {
+    "file": "services/systemBus.ts",
+    "line": 3,
+    "module": "./lifecycle/correlatedHelpResponse",
+    "clause": "{ reserveCorrelatedHelpResponse }"
+  },
+  {
+    "file": "services/systemBus.ts",
+    "line": 4,
+    "module": "./lifecycle/preserveOriginal",
+    "clause": "{ preserveOriginal }"
+  },
+  {
+    "file": "services/systemBus.ts",
+    "line": 5,
+    "module": "./lifecycle/preparationBindings",
+    "clause": "{ systemBusOwner }"
+  },
+  {
+    "file": "services/videoStudioService.ts",
+    "line": 1,
+    "module": "./lifecycle/preparationBindings",
+    "clause": "{ proStudioOwner }"
+  },
+  {
+    "file": "services/workflowEngine.ts",
+    "line": 1,
+    "module": "./lifecycle/preserveOriginal",
+    "clause": "{ preserveOriginal }"
+  },
+  {
+    "file": "services/workflowEngine.ts",
+    "line": 2,
+    "module": "./lifecycle/preparationBindings",
+    "clause": "{ workflowOwner }"
+  },
+  {
+    "file": "services/workflowEngine.ts",
+    "line": 3,
+    "module": "./lifecycle/host",
+    "clause": "type { Operation }"
+  },
+  {
+    "file": "tests/automated/brain-integration.test.ts",
+    "line": 2,
+    "module": "../../services/lifecycle/preparationBindings",
+    "clause": "{ admitBrainBridgeInstance }"
+  },
+  {
+    "file": "tests/automated/lancedb-fts-commit-conflict.test.ts",
+    "line": 2,
+    "module": "../../services/lifecycle/preparationBindings",
+    "clause": "{ admitLanceInstance }"
+  },
+  {
+    "file": "tests/automated/lancedb-hydration-batch.test.ts",
+    "line": 2,
+    "module": "../../services/lifecycle/preparationBindings",
+    "clause": "{ admitLanceInstance }"
+  },
+  {
+    "file": "tests/automated/lancedb-knowledge-table.test.ts",
+    "line": 2,
+    "module": "../../services/lifecycle/preparationBindings",
+    "clause": "{ admitLanceInstance }"
+  },
+  {
+    "file": "tests/automated/lancedb-stale-handle-retry.test.ts",
+    "line": 2,
+    "module": "../../services/lifecycle/preparationBindings",
+    "clause": "{ admitLanceInstance }"
+  },
+  {
+    "file": "tests/automated/lancedb-store-many.test.ts",
+    "line": 2,
+    "module": "../../services/lifecycle/preparationBindings",
+    "clause": "{ admitLanceInstance }"
+  },
+  {
+    "file": "tests/automated/memory-retrieval-p1.test.ts",
+    "line": 2,
+    "module": "../../services/lifecycle/preparationBindings",
+    "clause": "{ admitLanceInstance }"
+  },
+  {
+    "file": "tests/automated/memory-rollout.test.ts",
+    "line": 2,
+    "module": "../../services/lifecycle/preparationBindings",
+    "clause": "{ admitLanceInstance }"
+  },
+  {
+    "file": "tests/automated/native-pipeline-recovery.test.ts",
+    "line": 2,
+    "module": "../../services/lifecycle/preparationBindings",
+    "clause": "{ admitLanceInstance }"
+  },
+  {
+    "file": "tests/automated/observation-latest-real.test.ts",
+    "line": 2,
+    "module": "../../services/lifecycle/preparationBindings",
+    "clause": "{ admitLanceInstance }"
+  },
+  {
+    "file": "tests/automated/vector-scan.test.ts",
+    "line": 2,
+    "module": "../../services/lifecycle/preparationBindings",
+    "clause": "{ admitLanceInstance }"
+  },
+  {
+    "file": "tests/integration/qdrant-optional-canonical-boundary.real.ts",
+    "line": 2,
+    "module": "../../services/lifecycle/preparationBindings",
+    "clause": "{ admitLanceInstance }"
+  },
+  {
+    "file": "tests/integration/safe-codebase-null.real.ts",
+    "line": 1,
+    "module": "../../services/lifecycle/preparationBindings",
+    "clause": "{ admitCodebaseInstance }"
+  }
+]

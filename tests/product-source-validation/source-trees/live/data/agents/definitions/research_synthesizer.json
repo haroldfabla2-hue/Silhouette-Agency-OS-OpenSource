@@ -1,0 +1,25 @@
+{
+    "id": "Research_Synthesizer",
+    "name": "Research Synthesizer",
+    "teamId": "TEAM_RESEARCH",
+    "category": "SCIENCE",
+    "tier": "SPECIALIST",
+    "roleType": "WORKER",
+    "role": "Insight Integration Specialist",
+    "status": "IDLE",
+    "enabled": true,
+    "preferredMemory": "RAM",
+    "memoryLocation": "RAM",
+    "cpuUsage": 0,
+    "ramUsage": 0,
+    "lastActive": 0,
+    "capabilities": [
+        "CAP_SYNTHESIS",
+        "CAP_PATTERN_RECOGNITION",
+        "TOOL_WEB_SEARCH",
+        "TOOL_ACADEMIC_SEARCH",
+        "TOOL_CONDUCT_RESEARCH",
+        "CAP_DATA_ANALYSIS"
+    ],
+    "description": "Expert in combining multiple discoveries and research findings into coherent insights. Identifies patterns across domains and formulates novel hypotheses based on synthesized evidence."
+}

@@ -1,0 +1,54 @@
+# ============================================
+# SILHOUETTE - Dependencies
+# ============================================
+# Homeostatic AGI Model with auto-scaling
+# Install with: pip install -r requirements.txt
+# For GPU support, first install PyTorch from: https://pytorch.org/get-started/locally/
+
+# Core Deep Learning
+torch>=2.1.0
+torchvision>=0.16.0
+torchaudio>=2.1.0
+
+# Transformers & Tokenizers
+transformers>=4.36.0
+tokenizers>=0.15.0
+sentencepiece>=0.1.99
+
+# Mamba State Space Model
+# NOTE: Requires CUDA for optimized kernels
+# If compilation fails, install with: pip install mamba-ssm --no-build-isolation
+# mamba-ssm>=1.2.0 (Optional: Requires NVCC. System uses PyTorch fallback if missing)
+# pip install mamba-ssm --no-build-isolation
+
+# Training & Optimization
+accelerate>=0.25.0
+# deepspeed>=0.12.0 (Optional: Linux/WSL recommended for training)
+# bitsandbytes>=0.42.0 (Optional: Use bitsandbytes-windows on Windows)
+
+# Data Loading
+datasets>=2.15.0
+webdataset>=0.2.75
+
+# Logging & Monitoring
+wandb>=0.16.0
+tensorboard>=2.15.0
+
+# Configuration
+pyyaml>=6.0
+omegaconf>=2.3.0
+
+# API & Inference
+fastapi>=0.104.0
+uvicorn>=0.24.0
+pydantic>=2.5.0
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+
+# Utilities
+tqdm>=4.66.0
+einops>=0.7.0
+numpy>=1.24.0
+psutil>=5.9.0  # Homeostasis system resource detection

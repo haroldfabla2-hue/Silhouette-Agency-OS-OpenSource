@@ -1,0 +1,15 @@
+{
+  "sourceOnly": true,
+  "localExecutionStopped": true,
+  "compilerProductExecuted": false,
+  "nodeSha256": "ccacb2d6d87ba6d118b2bffc1ae33747a05cc5fc6b1f1ec4fc1d420b687e952d",
+  "compilerCurrentFileCount": 130,
+  "nodeTypesCurrentFileCount": 73,
+  "undiciTypesCurrentFileCount": 41,
+  "currentTreeSymlinksOrSpecialFiles": 0,
+  "archiveMemberVerification": "NOT_COMPLETED_AFTER_ENFORCEMENT_STOP",
+  "memoryMax": 1944928256,
+  "cpuMax": "max 100000",
+  "pidsMax": "max",
+  "isolatedReadOnlyAndNetworkOff": "NOT_ESTABLISHED"
+}

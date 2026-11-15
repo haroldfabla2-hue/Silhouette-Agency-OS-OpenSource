@@ -1,0 +1,1961 @@
+
+import { FunctionDeclaration, Type } from "@google/genai";
+
+// --- INTERFACES ---
+
+export interface GenerateVideoArgs {
+    prompt: string;
+    engine?: 'WAN' | 'SVD' | 'ANIMATEDIFF' | 'VID2VID';
+    input_asset_path?: string;
+    duration?: number;
+}
+
+export interface GenerateVoiceArgs {
+    text: string;
+    voiceId?: string;
+}
+
+export interface GenerateImageArgs {
+    prompt: string;
+    style: 'PHOTOREALISTIC' | 'ILLUSTRATION' | 'ICON' | 'VECTOR' | 'STOCK_PHOTO';
+    aspectRatio?: '1:1' | '16:9' | '9:16';
+    negativePrompt?: string;
+    count?: number;
+}
+
+export interface ListVisualAssetsArgs {
+    filter_type?: 'video' | 'image' | 'all';
+    limit?: number;
+}
+
+export interface DelegateTaskArgs {
+    target_role: string;
+    task: string;
+    context?: string;
+}
+
+// --- JSON SCHEMAS (Gemini Compatible) ---
+
+export const GENERATE_VIDEO_TOOL: FunctionDeclaration = {
+    name: "generate_video",
+    description: "Generates a video from a text prompt or transforms an existing video/image. Use 'WAN' for text-to-video, 'SVD' for image-to-video, 'VID2VID' for video transformation.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            prompt: {
+                type: Type.STRING,
+                description: "The text description of the video to generate. Be descriptive."
+            },
+            engine: {
+                type: Type.STRING,
+                description: "The generation engine to use. Defaults to 'WAN'.",
+                enum: ["WAN", "SVD", "ANIMATEDIFF", "VID2VID"]
+            },
+            input_asset_path: {
+                type: Type.STRING,
+                description: "Absolute path to a source image or video file. Required for SVD and VID2VID."
+            },
+            duration: {
+                type: Type.NUMBER,
+                description: "Target duration in seconds (approximate). Default is 5."
+            }
+        },
+        required: ["prompt"]
+    }
+};
+
+export const LIST_VISUAL_ASSETS_TOOL: FunctionDeclaration = {
+    name: "list_visual_assets",
+    description: "Lists recently generated visual assets (images/videos) available in the system output directory.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            filter_type: {
+                type: Type.STRING,
+                description: "Filter by asset type.",
+                enum: ["video", "image", "all"]
+            },
+            limit: {
+                type: Type.NUMBER,
+                description: "Number of most recent assets to return. Default is 10."
+            }
+        }
+    }
+};
+
+export const GENERATE_IMAGE_TOOL: FunctionDeclaration = {
+    name: "generate_image",
+    description: "Generates an image from a text prompt. Use this for all image generation requests.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            prompt: {
+                type: Type.STRING,
+                description: "The detailed description of the image to generate."
+            },
+            style: {
+                type: Type.STRING,
+                description: "The visual style.",
+                enum: ["PHOTOREALISTIC", "ILLUSTRATION", "ICON", "VECTOR", "STOCK_PHOTO"]
+            },
+            aspectRatio: {
+                type: Type.STRING,
+                description: "Aspect ratio. Default is 16:9.",
+                enum: ["1:1", "16:9", "9:16"]
+            }
+        },
+        required: ["prompt", "style"]
+    }
+};
+
+export const GENERATE_VOICE_TOOL: FunctionDeclaration = {
+    name: "generate_voice",
+    description: "Generates realistic, human-like voice audio from text. Use this when you need spoken audio or want to send a voice note.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            text: {
+                type: Type.STRING,
+                description: "The text to be spoken."
+            },
+            voiceId: {
+                type: Type.STRING,
+                description: "Optional specific voice ID to use (e.g. from ElevenLabs or OpenAI). If omitted, a default voice is used."
+            }
+        },
+        required: ["text"]
+    }
+};
+
+
+export const DELEGATE_TASK_TOOL: FunctionDeclaration = {
+    name: "delegate_task",
+    description: "Delegates a specific sub-task to a specialized agent role. Use this when you need information, research, or verification that is outside your immediate context.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            target_role: {
+                type: Type.STRING,
+                description: "The role of the agent to delegate to (e.g., 'RESEARCHER', 'QA_ENGINEER', 'DEV_LEAD')."
+            },
+            task: {
+                type: Type.STRING,
+                description: "The specific task instructions for the delegate."
+            },
+            context: {
+                type: Type.STRING,
+                description: "Optional context or background information needed for the task."
+            }
+        },
+        required: ["target_role", "task"]
+    }
+};
+
+// ==================== ASSET MANAGEMENT TOOLS ====================
+
+export interface SearchAssetsArgs {
+    query?: string;
+    type?: 'image' | 'video' | 'audio' | 'document';
+    tags?: string[];
+    folder?: string;
+    limit?: number;
+}
+
+export interface ManageAssetArgs {
+    action: 'rename' | 'tag' | 'untag' | 'move' | 'delete' | 'favorite' | 'archive';
+    asset_id: string;
+    new_name?: string;
+    tags?: string[];
+    folder?: string;
+}
+
+export const SEARCH_ASSETS_TOOL: FunctionDeclaration = {
+    name: "search_assets",
+    description: "Search and list generated assets (images, videos, documents). Use this to find assets by name, type, or tags.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            query: {
+                type: Type.STRING,
+                description: "Text to search in asset names, descriptions, and prompts."
+            },
+            type: {
+                type: Type.STRING,
+                description: "Filter by asset type.",
+                enum: ["image", "video", "audio", "document"]
+            },
+            tags: {
+                type: Type.ARRAY,
+                description: "Filter by tags.",
+                items: { type: Type.STRING }
+            },
+            folder: {
+                type: Type.STRING,
+                description: "Filter by folder path."
+            },
+            limit: {
+                type: Type.NUMBER,
+                description: "Maximum number of results. Default 20."
+            }
+        }
+    }
+};
+
+export const MANAGE_ASSET_TOOL: FunctionDeclaration = {
+    name: "manage_asset",
+    description: "Perform actions on an asset: rename, add/remove tags, move to folder, mark as favorite, archive, or delete.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            action: {
+                type: Type.STRING,
+                description: "The action to perform.",
+                enum: ["rename", "tag", "untag", "move", "delete", "favorite", "archive"]
+            },
+            asset_id: {
+                type: Type.STRING,
+                description: "The ID of the asset to manage."
+            },
+            new_name: {
+                type: Type.STRING,
+                description: "New name for the asset (for 'rename' action)."
+            },
+            tags: {
+                type: Type.ARRAY,
+                description: "Tags to add or remove (for 'tag' and 'untag' actions).",
+                items: { type: Type.STRING }
+            },
+            folder: {
+                type: Type.STRING,
+                description: "Target folder path (for 'move' action)."
+            }
+        },
+        required: ["action", "asset_id"]
+    }
+};
+
+// PREVIEW ASSET - Show asset in UI popup
+export interface PreviewAssetArgs {
+    asset_id: string;
+    edit_mode?: boolean;
+}
+
+export const PREVIEW_ASSET_TOOL: FunctionDeclaration = {
+    name: "preview_asset",
+    description: "Show an asset preview popup to the user. Use this when the user asks to see, view, or preview a specific asset.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            asset_id: {
+                type: Type.STRING,
+                description: "The ID of the asset to preview."
+            },
+            edit_mode: {
+                type: Type.BOOLEAN,
+                description: "Whether to open in edit mode (for code/text files)."
+            }
+        },
+        required: ["asset_id"]
+    }
+};
+
+// ==================== RESEARCH TOOLS ====================
+
+export interface WebSearchArgs {
+    query: string;
+    max_results?: number;
+}
+
+export interface ReadUrlArgs {
+    url: string;
+}
+
+export interface AcademicSearchArgs {
+    query: string;
+    max_results?: number;
+}
+
+export interface ConductResearchArgs {
+    query: string;
+    include_web?: boolean;
+    include_academic?: boolean;
+    max_results?: number;
+}
+
+export const WEB_SEARCH_TOOL: FunctionDeclaration = {
+    name: "web_search",
+    description: "Search the web for current information on any topic. Use this to find news, articles, documentation, and general web content.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            query: {
+                type: Type.STRING,
+                description: "The search query. Be specific for better results."
+            },
+            max_results: {
+                type: Type.NUMBER,
+                description: "Maximum number of results to return. Default is 5."
+            }
+        },
+        required: ["query"]
+    }
+};
+
+export interface RecallDeepArgs {
+    query: string;
+    limit?: number;
+}
+
+export const RECALL_DEEP_TOOL: FunctionDeclaration = {
+    name: "recall_deep",
+    description: "Deep recall over the cold memory archive: searches full archived originals (complete memory copies preserved forever, e.g. versions superseded by truth revisions) and returns them VERBATIM. Use this when normal memory search doesn't surface something old, superseded, or consolidated, and you need the exact original content rather than a summary.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            query: {
+                type: Type.STRING,
+                description: "What to look for in the archive. Lexical match over full original contents."
+            },
+            limit: {
+                type: Type.NUMBER,
+                description: "Maximum archived originals to return. Default 5."
+            }
+        },
+        required: ["query"]
+    }
+};
+
+export const READ_URL_TOOL: FunctionDeclaration = {
+    name: "read_url",
+    description: "Fetches and extracts the main text content from a specific URL. Use this to read articles, documentation, or links found via web_search.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            url: {
+                type: Type.STRING,
+                description: "The absolute URL to read (e.g. 'https://en.wikipedia.org/wiki/AI')"
+            }
+        },
+        required: ["url"]
+    }
+};
+
+export const ACADEMIC_SEARCH_TOOL: FunctionDeclaration = {
+    name: "academic_search",
+    description: "Search academic papers and research publications on Semantic Scholar. Use this for scientific research, peer-reviewed papers, and academic citations.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            query: {
+                type: Type.STRING,
+                description: "The research topic or paper search query."
+            },
+            max_results: {
+                type: Type.NUMBER,
+                description: "Maximum number of papers to return. Default is 5."
+            }
+        },
+        required: ["query"]
+    }
+};
+
+export const CONDUCT_RESEARCH_TOOL: FunctionDeclaration = {
+    name: "conduct_research",
+    description: "Conduct comprehensive research on a topic using both web and academic sources. Returns combined results with citations. Use this for thorough investigation of hypotheses.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            query: {
+                type: Type.STRING,
+                description: "The research query or hypothesis to investigate."
+            },
+            include_web: {
+                type: Type.BOOLEAN,
+                description: "Whether to include web search results. Default true."
+            },
+            include_academic: {
+                type: Type.BOOLEAN,
+                description: "Whether to include academic papers. Default true."
+            },
+            max_results: {
+                type: Type.NUMBER,
+                description: "Maximum results per source. Default is 5."
+            }
+        },
+        required: ["query"]
+    }
+};
+
+// ==================== SYNTHESIS TOOLS ====================
+
+export const SYNTHESIZE_DISCOVERIES_TOOL: FunctionDeclaration = {
+    name: "synthesize_discoveries",
+    description: "Synthesize recent discoveries into a coherent insight. Identifies patterns across discoveries, formulates novel hypotheses, and gathers supporting evidence. Use when you have accumulated enough discoveries (default 3+) to create higher-level insights.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            min_discoveries: {
+                type: Type.NUMBER,
+                description: "Minimum number of accepted discoveries required. Default is 3."
+            },
+            include_research: {
+                type: Type.BOOLEAN,
+                description: "Whether to gather supporting evidence via web/academic search. Default true."
+            },
+            domain: {
+                type: Type.STRING,
+                description: "Optional domain filter (e.g., 'biology', 'technology', 'philosophy')."
+            }
+        },
+        required: []
+    }
+};
+
+export const GENERATE_PAPER_TOOL: FunctionDeclaration = {
+    name: "generate_paper",
+    description: "Generate a professional academic paper from a synthesized insight. Creates structured sections (Introduction, Background, Methodology, Findings, Discussion, Conclusion) with proper citations and peer review.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            insight_id: {
+                type: Type.STRING,
+                description: "ID of the insight to generate paper from. If not provided, uses the most recent high-confidence insight."
+            },
+            format: {
+                type: Type.STRING,
+                description: "Output format: 'markdown', 'latex', or 'json'. Default is 'markdown'."
+            },
+            authors: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: "List of author names. Default is ['Silhouette AI Research']."
+            },
+            peer_review: {
+                type: Type.BOOLEAN,
+                description: "Whether to run automated peer review. Default true."
+            }
+        },
+        required: []
+    }
+};
+
+// ==================== RIGOROUS PAPER TOOLS ====================
+
+export const COLLECT_REFERENCES_TOOL: FunctionDeclaration = {
+    name: "collect_references",
+    description: "Collect academic references from Semantic Scholar for a research insight. Builds a bibliography with verified papers.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            insight_id: {
+                type: Type.STRING,
+                description: "ID of the insight to collect references for."
+            },
+            min_references: {
+                type: Type.NUMBER,
+                description: "Minimum number of references to collect. Default is 20."
+            },
+            min_citations: {
+                type: Type.NUMBER,
+                description: "Minimum citation count for included papers. Default is 5."
+            }
+        },
+        required: []
+    }
+};
+
+export const GENERATE_FIGURES_TOOL: FunctionDeclaration = {
+    name: "generate_figures",
+    description: "Generate academic figures for a research paper, including concept diagrams, charts, and relationship graphs.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            insight_id: {
+                type: Type.STRING,
+                description: "ID of the insight to generate figures for."
+            },
+            include_concept_diagram: {
+                type: Type.BOOLEAN,
+                description: "Whether to generate AI conceptual diagram. Default true."
+            },
+            include_charts: {
+                type: Type.BOOLEAN,
+                description: "Whether to generate data charts. Default true."
+            }
+        },
+        required: []
+    }
+};
+
+export const GENERATE_RIGOROUS_PAPER_TOOL: FunctionDeclaration = {
+    name: "generate_rigorous_paper",
+    description: "Generate a publication-quality academic paper with full rigor: 20+ verified references, figures, methodology, defined metrics, and peer review.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            insight_id: {
+                type: Type.STRING,
+                description: "ID of the insight to generate paper from."
+            },
+            min_references: {
+                type: Type.NUMBER,
+                description: "Minimum references. Default 20."
+            },
+            generate_figures: {
+                type: Type.BOOLEAN,
+                description: "Generate concept diagrams and charts. Default true."
+            },
+            format: {
+                type: Type.STRING,
+                description: "Output format: 'markdown', 'latex', or 'json'."
+            },
+            max_revisions: {
+                type: Type.NUMBER,
+                description: "Maximum revision iterations based on peer review. Default 2."
+            }
+        },
+        required: []
+    }
+};
+
+// ==================== GITHUB TOOLS ====================
+
+export interface GitHubCreatePRArgs {
+    title: string;
+    body: string;
+    branch_name: string;
+    files: Array<{
+        path: string; // Relative path
+        content: string; // Text content
+        message?: string; // Commit message for this file
+    }>;
+}
+
+export interface GitHubListPRsArgs {
+    state?: 'open' | 'closed' | 'all';
+    limit?: number;
+}
+
+export interface GitHubCheckPRArgs {
+    pr_number: number;
+}
+
+export const GITHUB_CREATE_PR_TOOL: FunctionDeclaration = {
+    name: "github_create_pr",
+    description: "Create a new Pull Request with code changes. Use this to propose code modifications, fix bugs, or add features. Automatically handles branch creation and file updates.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            title: {
+                type: Type.STRING,
+                description: "Title of the Pull Request."
+            },
+            body: {
+                type: Type.STRING,
+                description: "Description of the changes and rationale."
+            },
+            branch_name: {
+                type: Type.STRING,
+                description: "Name of the new branch (e.g., 'fix/login-bug', 'feat/new-tool')."
+            },
+            files: {
+                type: Type.ARRAY,
+                description: "List of files to create or modify.",
+                items: {
+                    type: Type.OBJECT,
+                    properties: {
+                        path: { type: Type.STRING, description: "Relative file path" },
+                        content: { type: Type.STRING, description: "New file content" },
+                        message: { type: Type.STRING, description: "Commit message for this file" }
+                    },
+                    required: ["path", "content"]
+                }
+            }
+        },
+        required: ["title", "body", "branch_name", "files"]
+    }
+};
+
+export const GITHUB_LIST_PRS_TOOL: FunctionDeclaration = {
+    name: "github_list_prs",
+    description: "List active Pull Requests. Use to check status of ongoing changes or reviews.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            state: {
+                type: Type.STRING,
+                enum: ["open", "closed", "all"],
+                description: "Filter by PR state. Default 'open'."
+            },
+            limit: {
+                type: Type.NUMBER,
+                description: "Max results. Default 10."
+            }
+        }
+    }
+};
+
+export const GITHUB_CHECK_PR_TOOL: FunctionDeclaration = {
+    name: "github_check_pr",
+    description: "Check the CI/CD status of a Pull Request. Use to see if tests passed.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            pr_number: {
+                type: Type.NUMBER,
+                description: "The PR number to check."
+            }
+        },
+        required: ["pr_number"]
+    }
+};
+
+// ==================== META TOOLS (Self-Extension) ====================
+
+export interface CreateToolArgs {
+    name: string;
+    purpose: string;
+    category: 'MEDIA' | 'RESEARCH' | 'ASSET' | 'WORKFLOW' | 'UTILITY';
+    implementation?: 'COMPOSE' | 'CODE';
+    inputs: Array<{
+        name: string;
+        type: 'string' | 'number' | 'boolean' | 'array' | 'object';
+        description: string;
+        required?: boolean;
+    }>;
+    // For COMPOSE
+    compose_from?: Array<{
+        tool_name: string;
+        input_mapping: Record<string, string>;
+        output_as?: string;
+    }>;
+    // For CODE
+    code?: string;
+    tags?: string[];
+}
+
+export const CREATE_TOOL: FunctionDeclaration = {
+    name: "create_tool",
+    description: "Create a new tool dynamically. Supports two modes: 1) Composition (chaining existing tools) or 2) Code (providing a TypeScript handler). Use this to extend system capabilities.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            name: {
+                type: Type.STRING,
+                description: "Tool name in snake_case (e.g., 'generate_campaign', 'batch_upscale')"
+            },
+            purpose: {
+                type: Type.STRING,
+                description: "Clear description of what the tool does and when to use it"
+            },
+            category: {
+                type: Type.STRING,
+                description: "Tool category for organization",
+                enum: ["MEDIA", "RESEARCH", "ASSET", "WORKFLOW", "UTILITY"]
+            },
+            implementation: {
+                type: Type.STRING,
+                description: "Implementation type: 'COMPOSE' (chaining) or 'CODE' (TypeScript). Default 'COMPOSE'.",
+                enum: ["COMPOSE", "CODE"]
+            },
+            inputs: {
+                type: Type.ARRAY,
+                description: "List of input parameters the tool accepts",
+                items: {
+                    type: Type.OBJECT,
+                    properties: {
+                        name: { type: Type.STRING },
+                        type: { type: Type.STRING, enum: ['string', 'number', 'boolean', 'array', 'object'] },
+                        description: { type: Type.STRING },
+                        required: { type: Type.BOOLEAN }
+                    },
+                    required: ['name', 'type', 'description']
+                }
+            },
+            compose_from: {
+                type: Type.ARRAY,
+                description: "[COMPOSE ONLY] List of existing tools to compose from.",
+                items: {
+                    type: Type.OBJECT,
+                    properties: {
+                        tool_name: { type: Type.STRING },
+                        input_mapping: { type: Type.OBJECT },
+                        output_as: { type: Type.STRING }
+                    },
+                    required: ["tool_name", "input_mapping"]
+                }
+            },
+            code: {
+                type: Type.STRING,
+                description: "[CODE ONLY] The TypeScript code for the handler. Must export an async function matching the handler name."
+            },
+            tags: {
+                type: Type.ARRAY,
+                description: "Optional tags for searchability",
+                items: { type: Type.STRING }
+            }
+        },
+        required: ["name", "purpose", "category", "inputs"]
+    }
+};
+
+export const LIST_MY_TOOLS: FunctionDeclaration = {
+    name: "list_my_tools",
+    description: "List all available tools, optionally filtered by category. Use this to discover what capabilities are available.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            category: {
+                type: Type.STRING,
+                description: "Filter by category",
+                enum: ["MEDIA", "RESEARCH", "ASSET", "WORKFLOW", "UTILITY", "META", "ALL"]
+            },
+            include_disabled: {
+                type: Type.BOOLEAN,
+                description: "Include disabled tools. Default false."
+            }
+        }
+    }
+};
+
+export const CREATE_SKILL: FunctionDeclaration = {
+    name: "create_skill",
+    description: "Create a new skill (SKILL.md) for the system. Use this to permanently teach the system a new procedure or best practice. Requires a clear set of instructions.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            name: {
+                type: Type.STRING,
+                description: "Skill name in snake_case (e.g., 'deploy_to_vercel', 'audit_security')."
+            },
+            description: {
+                type: Type.STRING,
+                description: "Brief description of what the skill does."
+            },
+            instructions: {
+                type: Type.STRING,
+                description: "Detailed Markdown instructions for the skill. Include steps, examples, and rules."
+            },
+            metadata: {
+                type: Type.OBJECT,
+                description: "Optional metadata for the skill.",
+                properties: {
+                    userInvocable: { type: Type.BOOLEAN },
+                    commandDispatch: { type: Type.STRING, enum: ['prompt', 'tool', 'agent'] },
+                    tags: { type: Type.ARRAY, items: { type: Type.STRING } },
+                    requires: { type: Type.ARRAY, items: { type: Type.STRING } }
+                }
+            }
+        },
+        required: ["name", "description", "instructions"]
+    }
+};
+
+// ==================== SYSTEM CONTROL TOOLS ====================
+
+export const SYSTEM_EXECUTE_COMMAND_TOOL: FunctionDeclaration = {
+    name: "system_execute_command",
+    description: "Execute a shell command on the host system. CAUTION: Use with extreme care. This tool gives you direct access to the terminal.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            command: {
+                type: Type.STRING,
+                description: "The shell command to execute (e.g., 'npm install', 'python script.py')."
+            },
+            cwd: {
+                type: Type.STRING,
+                description: "Optional current working directory."
+            },
+            background: {
+                type: Type.BOOLEAN,
+                description: "Run in background (fire and forget). Default false."
+            }
+        },
+        required: ["command"]
+    }
+};
+
+export const SYSTEM_OPEN_APP_TOOL: FunctionDeclaration = {
+    name: "system_open_app",
+    description: "Launch an application or open a file with the default associated program.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            target: {
+                type: Type.STRING,
+                description: "Name of the application or path to the file (e.g., 'notepad', 'calc', 'C:/Report.pdf')."
+            }
+        },
+        required: ["target"]
+    }
+};
+
+export const SYSTEM_GET_SCREENSHOT_TOOL: FunctionDeclaration = {
+    name: "system_get_screenshot",
+    description: "Capture a screenshot of the entire desktop visible area.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            monitor_index: {
+                type: Type.NUMBER,
+                description: "Index of monitor to capture (default 0)."
+            }
+        }
+    }
+};
+
+export const SYSTEM_GET_INFO_TOOL: FunctionDeclaration = {
+    name: "system_get_info",
+    description: "Get detailed system information including OS, CPU, Memory, and Process statistics. Use this to understand the environment constraints.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {}
+    }
+};
+
+// ==================== SELF-CONFIGURATION TOOLS (Phase 17) ====================
+
+export const GET_SYSTEM_CONFIG_TOOL: FunctionDeclaration = {
+    name: "get_system_config",
+    description: "Read configuration values from .env.local or silhouette.config.json. Use this to check your current mode, channel states, or API keys.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            keys: {
+                type: Type.ARRAY,
+                description: "Array of keys to retrieve (e.g., ['WHATSAPP_RESPONSE_MODE', 'TELEGRAM_ACCESS_MODE', 'PORT']). Pass an empty array to read the entire public config.",
+                items: { type: Type.STRING }
+            }
+        }
+    }
+};
+
+export const UPDATE_SYSTEM_CONFIG_TOOL: FunctionDeclaration = {
+    name: "update_system_config",
+    description: "Modify configuration values in .env.local or silhouette.config.json. CRITICAL SECURITY RULE: You MUST ask the user for explicit permission BEFORE calling this tool. NEVER invoke this tool unless the user has confirmed the exact change.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            updates: {
+                type: Type.OBJECT,
+                description: "Key-value pairs to update (e.g., { 'WHATSAPP_RESPONSE_MODE': 'auto-reply', 'TELEGRAM_ACCESS_MODE': 'allowlist' })"
+            },
+            reason: {
+                type: Type.STRING,
+                description: "A brief explanation of why this configuration is being changed, for the audit log."
+            }
+        },
+        required: ["updates", "reason"]
+    }
+};
+
+export const READ_ARCHITECTURE_TOOL: FunctionDeclaration = {
+    name: "read_architecture",
+    description: "Read the ARCHITECTURE.md file of Silhouette Agency OS. Use this when you need absolute clarity on how your subsystems, orchestrator, tools, and agents interoperate.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {}
+    }
+};
+
+// ==================== SELF-HEALING KERNEL TOOLS (Phase 18) ====================
+
+export const READ_SYSTEM_LOGS_TOOL: FunctionDeclaration = {
+    name: "read_system_logs",
+    description: "Read recent system error logs from logs/system_errors.log. Used by Developer Agents to detect node crashes, syntax errors, or logical failures in their own source code.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            lines: {
+                type: Type.INTEGER,
+                description: "Number of trailing lines to read from the log file (e.g., 50)."
+            }
+        }
+    }
+};
+
+export const ANALYZE_AND_REPAIR_TOOL: FunctionDeclaration = {
+    name: "analyze_and_repair",
+    description: "Submit an automated repair hypothesis. Triggers a specialized sub-routine that takes your hypothesis, tests it, and provides the terminal output to confirm if your fix resolved the system error.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            file: {
+                type: Type.STRING,
+                description: "The absolute path of the file requiring a fix."
+            },
+            hypothesis: {
+                type: Type.STRING,
+                description: "Your technical explanation of the bug and how it should be fixed."
+            },
+            proposed_code_change: {
+                type: Type.STRING,
+                description: "The exact code snippet or sed replacement script to apply."
+            }
+        },
+        required: ["file", "hypothesis", "proposed_code_change"]
+    }
+};
+
+// ==================== BROWSER SUBAGENT TOOLS (Phase 18) ====================
+
+export const BROWSER_NAVIGATE_TOOL: FunctionDeclaration = {
+    name: "browser_navigate",
+    description: "Opens a headless browser and navigates to a URL. Returns the page title.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            url: { type: Type.STRING, description: "The full URL to load (e.g., https://news.ycombinator.com)" }
+        },
+        required: ["url"]
+    }
+};
+
+export const BROWSER_ACTION_TOOL: FunctionDeclaration = {
+    name: "browser_action",
+    description: "Performs a DOM action (click or type) on the current browser page.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            actionType: { type: Type.STRING, description: "Either 'click' or 'type'" },
+            selector: { type: Type.STRING, description: "The CSS selector for the element" },
+            text: { type: Type.STRING, description: "The text to type (if actionType is 'type')" }
+        },
+        required: ["actionType", "selector"]
+    }
+};
+
+export const BROWSER_EXTRACT_TOOL: FunctionDeclaration = {
+    name: "browser_extract",
+    description: "Extracts all readable text content from the current browser page. Use this after navigating to a page to read it.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {}
+    }
+};
+
+export const BROWSER_SCREENSHOT_TOOL: FunctionDeclaration = {
+    name: "browser_screenshot",
+    description: "Takes a full-page screenshot of the current browser page. Returns the file path to the saved PNG image. Use this to capture visual evidence of web pages for the user.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {}
+    }
+};
+
+export const BROWSER_VISUAL_ACT_TOOL: FunctionDeclaration = {
+    name: "browser_visual_act",
+    description: "Performs a visual natural-language action on the page (click, type, navigate, fill) without requiring fragile CSS selectors. Uses Set-of-Marks and spatial grounding to detect buttons, links, and forms as a human would.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            instruction: { type: Type.STRING, description: "Natural language instruction of what to do (e.g. 'Click the Book Flight button', 'Type user@email.com in email field', 'Click element #4')" },
+            text: { type: Type.STRING, description: "Optional text to type if the action is typing into an input" }
+        },
+        required: ["instruction"]
+    }
+};
+
+export const BROWSER_VISUAL_OBSERVE_TOOL: FunctionDeclaration = {
+    name: "browser_visual_observe",
+    description: "Visually inspects the current page and returns a catalog of all interactive elements, buttons, links, inputs, and their spatial coordinates.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            instruction: { type: Type.STRING, description: "Optional filtering instruction or goal (e.g., 'find flight search form')" }
+        }
+    }
+};
+
+export const BROWSER_AI_PERCEPTION_TOOL: FunctionDeclaration = {
+    name: "browser_ai_perception",
+    description: "AI 'eyes' for the browser (Stagehand). Understands the page semantically ('the pay button', 'the email field') and can act/extract on it. Operations: status (is Stagehand REAL or UNAVAILABLE and what is missing), goto, observe, extract, act. When Stagehand is not configured the call transparently falls back to the built-in visual engine and says so in the result (provider='builtin'). act on payment/commitment controls always requires human approval. Note: Stagehand uses its own browser session, separate from browser_navigate.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            operation: { type: Type.STRING, description: "One of: status, goto, observe, extract, act" },
+            url: { type: Type.STRING, description: "URL for goto" },
+            instruction: { type: Type.STRING, description: "Natural-language goal for observe/extract/act" },
+            text: { type: Type.STRING, description: "Optional text to type (built-in fallback only)" }
+        },
+        required: ["operation"]
+    }
+};
+
+const MONEY_PROPS = {
+    provider: { type: Type.STRING, description: "Payment provider id (e.g. 'paypal'). Optional if PAYMENT_PROVIDER is configured." },
+    amount_cents: { type: Type.NUMBER, description: "Amount in minor units (cents), positive integer" },
+    currency: { type: Type.STRING, description: "ISO 4217 currency code, e.g. USD" },
+    destination: { type: Type.STRING, description: "Counterparty: payee email for a payout, payer/customer label for a collection" },
+    purpose: { type: Type.STRING, description: "Short human-readable purpose" },
+    reference: { type: Type.STRING, description: "Optional internal reference" }
+};
+
+export const PAYMENTS_PROVIDERS_TOOL: FunctionDeclaration = {
+    name: "payments_providers",
+    description: "Lists payment/collection providers (PayPal, Stripe Issuing, ...) with their real state: REAL or UNAVAILABLE, sandbox/live mode, and exactly which settings are missing. Read-only.",
+    parameters: { type: Type.OBJECT, properties: {} }
+};
+
+export const PAYMENTS_INITIATE_TOOL: FunctionDeclaration = {
+    name: "payments_initiate",
+    description: "Creates a collection (cobro) on a payment provider and returns the link the payer must approve. Requires explicit human approval bound to provider, destination, amount and currency. UNAVAILABLE without provider credentials; never simulated.",
+    parameters: { type: Type.OBJECT, properties: MONEY_PROPS, required: ["amount_cents", "currency", "destination"] }
+};
+
+export const PAYMENTS_CONFIRM_TOOL: FunctionDeclaration = {
+    name: "payments_confirm",
+    description: "Captures a collection the payer already approved. Requires explicit human approval bound to the exact amount, currency and destination; the provider refuses to capture if the order differs.",
+    parameters: { type: Type.OBJECT, properties: { ...MONEY_PROPS, payment_id: { type: Type.STRING, description: "Id returned by payments_initiate" } }, required: ["payment_id", "amount_cents", "currency", "destination"] }
+};
+
+export const PAYMENTS_STATUS_TOOL: FunctionDeclaration = {
+    name: "payments_status",
+    description: "Reads the real status of a payment or payout from the provider. Read-only.",
+    parameters: { type: Type.OBJECT, properties: { provider: MONEY_PROPS.provider, payment_id: { type: Type.STRING, description: "Id returned by payments_initiate or payments_payout" } }, required: ["payment_id"] }
+};
+
+export const PAYMENTS_PAYOUT_TOOL: FunctionDeclaration = {
+    name: "payments_payout",
+    description: "Sends money out to a recipient through a payment provider. Moves real money: requires explicit human approval bound to provider, recipient, amount and currency. UNAVAILABLE without credentials.",
+    parameters: { type: Type.OBJECT, properties: MONEY_PROPS, required: ["amount_cents", "currency", "destination"] }
+};
+
+export const BROWSER_VISUAL_OVERLAY_TOOL: FunctionDeclaration = {
+    name: "browser_visual_overlay",
+    description: "Renders numbered visual badges (Set-of-Marks) on every clickable/interactive element and takes a marked screenshot. Allows 100% precision by choosing an element by ID.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {}
+    }
+};
+
+export const BROWSER_CLICK_COORDINATE_TOOL: FunctionDeclaration = {
+    name: "browser_click_coordinate",
+    description: "Performs a direct spatial click on specific (x, y) pixel coordinates on the page with human-like mouse curve trajectory.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            x: { type: Type.NUMBER, description: "Horizontal pixel coordinate X" },
+            y: { type: Type.NUMBER, description: "Vertical pixel coordinate Y" }
+        },
+        required: ["x", "y"]
+    }
+};
+
+export const BROWSER_CLEAR_OBSTRUCTIONS_TOOL: FunctionDeclaration = {
+    name: "browser_clear_obstructions",
+    description: "Autonomous self-healing DOM cleanup: identifies and clears blocking popups, cookie consent banners (GDPR/CCPA), dark backdrops, and modal overlays that obstruct page interactions.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {}
+    }
+};
+
+export const BROWSER_AUDIT_SESSION_TOOL: FunctionDeclaration = {
+    name: "browser_audit_session",
+    description: "Controls the cryptographic visual audit ledger (Ed25519/HMAC-SHA256 frame-by-frame hash chaining) for tamper-evident browser automation replay.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            action: { type: Type.STRING, description: "Either 'start' to begin recording a new session, or 'seal' to finalize and verify chain integrity." },
+            session_id: { type: Type.STRING, description: "Optional session ID to seal. If omitted, seals the currently active session." }
+        },
+        required: ["action"]
+    }
+};
+
+// ==================== FINANCIAL VAULT & EPHEMERAL CARDS (Phase 22) ====================
+
+export const VAULT_REQUEST_VCARD_TOOL: FunctionDeclaration = {
+    name: "vault_request_vcard",
+    description: "Requests issuance of an ephemeral, single-use virtual credit card with a strict maximum dollar spend limit and merchant lock. Triggers human-in-the-loop authorization to ensure zero-risk purchases.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            merchant: { type: Type.STRING, description: "The specific merchant or website domain (e.g., 'americanairlines.com', 'iberia.com', 'amazon.com')" },
+            max_amount_dollars: { type: Type.NUMBER, description: "Strict maximum spend limit in USD for this transaction (e.g., 149.99)" },
+            purpose: { type: Type.STRING, description: "Detailed description of the purchase intent (e.g., 'Economy flight JFK to MIA on Nov 12')" }
+        },
+        required: ["merchant", "max_amount_dollars", "purpose"]
+    }
+};
+
+export const BROWSER_AUTOFILL_PAYMENT_TOOL: FunctionDeclaration = {
+    name: "browser_autofill_payment",
+    description: "Safely injects virtual card payment details directly into the active browser page's checkout form without leaking the sensitive card number or CVV to model logs.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            card_id: { type: Type.STRING, description: "The ID of the active virtual card issued by vault_request_vcard" }
+        },
+        required: ["card_id"]
+    }
+};
+
+export const VAULT_GET_SPEND_SUMMARY_TOOL: FunctionDeclaration = {
+    name: "vault_get_spend_summary",
+    description: "Returns the current financial spending summary, including today's total spent against the safety ceiling and active virtual cards.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {}
+    }
+};
+
+export const VAULT_BURN_CARD_TOOL: FunctionDeclaration = {
+    name: "vault_burn_card",
+    description: "Immediately burns/destroys an active virtual card, rendering it permanently unusable after a completed or cancelled purchase.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            card_id: { type: Type.STRING, description: "The ID of the virtual card to revoke" }
+        },
+        required: ["card_id"]
+    }
+};
+
+// ==================== REAL-TIME TELEPHONY & VOIP TOOLS (Phase 22) ====================
+
+export const TELEPHONY_DIAL_TOOL: FunctionDeclaration = {
+    name: "telephony_dial_phone",
+    description: "Places a real telephone call to a business, airline, customer service line, or individual. The agent speaks by voice, listens to caller responses, and navigates automated phone menus.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            phone_number: { type: Type.STRING, description: "The destination telephone number including country code (e.g., '+18004337300' or '+34912345678')" },
+            purpose: { type: Type.STRING, description: "The specific objective of the phone call (e.g., 'Ask airline about status of reservation 8X9KP4')" },
+            initial_greeting: { type: Type.STRING, description: "Optional initial sentence spoken by the agent when the call connects" },
+            voice_id: { type: Type.STRING, description: "Optional voice persona ID from the voice library (e.g., 'xtts_es_sample', 'xtts_en_sample')" }
+        },
+        required: ["phone_number", "purpose"]
+    }
+};
+
+export const TELEPHONY_PROCESS_TURN_TOOL: FunctionDeclaration = {
+    name: "telephony_process_turn",
+    description: "Processes an ongoing telephone turn: takes what the representative/caller said, reasons, and returns the agent's natural spoken voice response.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            call_id: { type: Type.STRING, description: "Active call ID returned by telephony_dial_phone" },
+            caller_utterance: { type: Type.STRING, description: "Transcript of what the person on the other end said" }
+        },
+        required: ["call_id", "caller_utterance"]
+    }
+};
+
+export const TELEPHONY_BARGE_IN_TOOL: FunctionDeclaration = {
+    name: "telephony_barge_in",
+    description: "Sub-100ms full-duplex interruption (Barge-in): immediately cuts off outgoing agent speech and clears media stream buffers when the caller interrupts.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            call_id: { type: Type.STRING, description: "Active call ID" }
+        },
+        required: ["call_id"]
+    }
+};
+
+export const TELEPHONY_ANALYZE_SENTIMENT_TOOL: FunctionDeclaration = {
+    name: "telephony_analyze_sentiment",
+    description: "Acoustic Negotiation Radar: analyzes speaker utterance cadence, hesitation index, urgency score, and objections to provide tactical negotiation recommendations.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            text: { type: Type.STRING, description: "Caller utterance or transcribed speech to evaluate" },
+            latency_ms: { type: Type.NUMBER, description: "Optional pause duration or response latency in milliseconds" }
+        },
+        required: ["text"]
+    }
+};
+
+export const TELEPHONY_SEND_DTMF_TOOL: FunctionDeclaration = {
+    name: "telephony_send_dtmf",
+    description: "Sends DTMF touch-tone keypad digits ('1', '2', '#', etc.) to navigate automated phone trees and Interactive Voice Response (IVR) systems.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            call_id: { type: Type.STRING, description: "Active call ID" },
+            digits: { type: Type.STRING, description: "Keypad characters to press (e.g. '1' for English, '2' for customer service, '#')" }
+        },
+        required: ["call_id", "digits"]
+    }
+};
+
+export const TELEPHONY_HANGUP_TOOL: FunctionDeclaration = {
+    name: "telephony_hangup",
+    description: "Terminates an ongoing phone call, generates an executive transcript summary, and anchors agreed items into Silhouette's memory.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            call_id: { type: Type.STRING, description: "Active call ID to end" },
+            reason: { type: Type.STRING, description: "Reason for ending call (e.g. 'Flight rebooked successfully', 'Placed on hold over limit')" }
+        },
+        required: ["call_id"]
+    }
+};
+
+
+
+
+// ==================== CODE EXECUTION TOOL ====================
+
+export interface ExecuteCodeArgs {
+    language: 'python' | 'javascript' | 'typescript' | 'bash';
+    code: string;
+    timeout?: number;
+    purpose?: string;  // Optional: Describe what the code should do (for security review)
+}
+
+export const EXECUTE_CODE_TOOL: FunctionDeclaration = {
+    name: "execute_code",
+    description: "Execute code in a sandboxed environment. Use for testing, data processing, or automation. Safety limits apply.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            language: {
+                type: Type.STRING,
+                description: "Programming language.",
+                enum: ["python", "javascript", "typescript", "bash"]
+            },
+            code: {
+                type: Type.STRING,
+                description: "The code to execute."
+            },
+            timeout: {
+                type: Type.NUMBER,
+                description: "Maximum execution time in seconds. Default: 30."
+            }
+        },
+        required: ["language", "code"]
+    }
+};
+
+export const ARCHITECT_AUDIT_TOOL: FunctionDeclaration = {
+    name: "architect_audit",
+    description: "Perform a self-audit of the system architecture, documentation sync, and structural alignment. Use this to verify the health of the Agency OS code and documentation.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {}
+    }
+};
+
+export interface IntrospectDatabaseArgs {
+    uri: string;
+    dbType: 'sqlite' | 'postgres' | 'mysql' | 'mongo';
+}
+
+export const INTROSPECT_DATABASE_TOOL: FunctionDeclaration = {
+    name: "introspect_database",
+    description: "Introspects an external database schema based on a connection URI. Automatically adapts Silhouette OS by generating new Database Query Tools. Use this when the user wants to connect the system to an external database to make the system independent and universally adaptable.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            uri: { type: Type.STRING, description: 'The absolute file path (for SQLite) or connection string (for Postgres/MySQL)' },
+            dbType: { type: Type.STRING, description: 'Type of database: sqlite, postgres, mysql, mongo', enum: ['sqlite', 'postgres', 'mysql', 'mongo'] }
+        },
+        required: ['uri', 'dbType']
+    }
+};
+
+/**
+ * Capability tools that have handlers in toolHandler but were never offered to the model.
+ * Risky ones (payments, calls) stay protected by the fail-closed gates, approvals and capability states.
+ */
+export const CAPABILITY_TOOLS = [
+    // Browser subagent
+    BROWSER_NAVIGATE_TOOL,
+    BROWSER_ACTION_TOOL,
+    BROWSER_EXTRACT_TOOL,
+    BROWSER_SCREENSHOT_TOOL,
+    BROWSER_VISUAL_ACT_TOOL,
+    BROWSER_VISUAL_OBSERVE_TOOL,
+    BROWSER_AI_PERCEPTION_TOOL,
+    BROWSER_VISUAL_OVERLAY_TOOL,
+    BROWSER_CLICK_COORDINATE_TOOL,
+    BROWSER_CLEAR_OBSTRUCTIONS_TOOL,
+    BROWSER_AUDIT_SESSION_TOOL,
+    // Financial vault
+    VAULT_REQUEST_VCARD_TOOL,
+    PAYMENTS_PROVIDERS_TOOL,
+    PAYMENTS_INITIATE_TOOL,
+    PAYMENTS_CONFIRM_TOOL,
+    PAYMENTS_STATUS_TOOL,
+    PAYMENTS_PAYOUT_TOOL,
+    BROWSER_AUTOFILL_PAYMENT_TOOL,
+    VAULT_GET_SPEND_SUMMARY_TOOL,
+    VAULT_BURN_CARD_TOOL,
+    // Telephony
+    TELEPHONY_DIAL_TOOL,
+    TELEPHONY_PROCESS_TURN_TOOL,
+    TELEPHONY_BARGE_IN_TOOL,
+    TELEPHONY_ANALYZE_SENTIMENT_TOOL,
+    TELEPHONY_SEND_DTMF_TOOL,
+    TELEPHONY_HANGUP_TOOL,
+    // Misc
+    GENERATE_VOICE_TOOL,
+    READ_URL_TOOL,
+    INTROSPECT_DATABASE_TOOL
+];
+
+export const AGENT_TOOLS = [
+    GENERATE_VIDEO_TOOL,
+    GENERATE_IMAGE_TOOL,
+    LIST_VISUAL_ASSETS_TOOL,
+    DELEGATE_TASK_TOOL,
+    SEARCH_ASSETS_TOOL,
+    MANAGE_ASSET_TOOL,
+    PREVIEW_ASSET_TOOL,
+    // Research Tools
+    WEB_SEARCH_TOOL,
+    RECALL_DEEP_TOOL,
+    ACADEMIC_SEARCH_TOOL,
+    CONDUCT_RESEARCH_TOOL,
+    // Synthesis Tools
+    SYNTHESIZE_DISCOVERIES_TOOL,
+    GENERATE_PAPER_TOOL,
+    // Rigorous Paper Tools
+    COLLECT_REFERENCES_TOOL,
+    GENERATE_FIGURES_TOOL,
+    GENERATE_RIGOROUS_PAPER_TOOL,
+    // Meta Tools (Self-Extension)
+    CREATE_TOOL,
+    CREATE_SKILL,
+    LIST_MY_TOOLS,
+    // GitHub Tools (Engineered Flow)
+    GITHUB_CREATE_PR_TOOL,
+    GITHUB_LIST_PRS_TOOL,
+    GITHUB_CHECK_PR_TOOL,
+    // System Control Tools (Exposed to Agent)
+    SYSTEM_EXECUTE_COMMAND_TOOL,
+    SYSTEM_OPEN_APP_TOOL,
+    SYSTEM_GET_SCREENSHOT_TOOL,
+    SYSTEM_GET_INFO_TOOL,
+    // Code Execution
+    EXECUTE_CODE_TOOL,
+    // Architectural Self-Awareness
+    ARCHITECT_AUDIT_TOOL,
+    // Capabilities previously implemented but never offered to the model
+    ...CAPABILITY_TOOLS
+];
+
+// ==================== PRODUCTION VIDEO TOOLS ====================
+
+export interface StartVideoProductionArgs {
+    brief: string;
+    target_minutes: number;
+    platform?: 'youtube' | 'reels' | 'tiktok' | 'cinema' | 'ad' | 'documentary';
+}
+
+export interface GetProductionStatusArgs {
+    project_id: string;
+}
+
+export const START_VIDEO_PRODUCTION_TOOL: FunctionDeclaration = {
+    name: "start_video_production",
+    description: "Start a full video production pipeline. This creates a storyboard, generates consistent characters, produces all clips with transitions, and composes a final long-form video. Use for videos longer than 30 seconds.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            brief: {
+                type: Type.STRING,
+                description: "Creative brief describing the video content. Be detailed about the story, message, and style."
+            },
+            target_minutes: {
+                type: Type.NUMBER,
+                description: "Target duration in minutes (0.5 to 120). Example: 5 for a 5-minute video."
+            },
+            platform: {
+                type: Type.STRING,
+                description: "Target platform affects aspect ratio and pacing.",
+                enum: ["youtube", "reels", "tiktok", "cinema", "ad", "documentary"]
+            }
+        },
+        required: ["brief", "target_minutes"]
+    }
+};
+
+export const GET_PRODUCTION_STATUS_TOOL: FunctionDeclaration = {
+    name: "get_production_status",
+    description: "Get the current status and progress of a video production project.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            project_id: {
+                type: Type.STRING,
+                description: "The production project ID returned from start_video_production."
+            }
+        },
+        required: ["project_id"]
+    }
+};
+
+export const LIST_PRODUCTIONS_TOOL: FunctionDeclaration = {
+    name: "list_productions",
+    description: "List all video production projects with their status.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {}
+    }
+};
+
+// Extended AGENT_TOOLS with production capabilities
+export const ALL_TOOLS = [
+    ...AGENT_TOOLS,
+    // Production Video Tools
+    START_VIDEO_PRODUCTION_TOOL,
+    GET_PRODUCTION_STATUS_TOOL,
+    LIST_PRODUCTIONS_TOOL,
+    // System Control Tools
+    SYSTEM_EXECUTE_COMMAND_TOOL,
+    SYSTEM_OPEN_APP_TOOL,
+    SYSTEM_GET_SCREENSHOT_TOOL,
+    SYSTEM_GET_INFO_TOOL
+];
+
+
+// ==================== FILESYSTEM TOOLS (Antigravity Parity) ====================
+
+export interface ReadFileArgs {
+    path: string;
+}
+
+export interface WriteFileArgs {
+    path: string;
+    content: string;
+    create_dirs?: boolean;
+}
+
+export interface ListFilesArgs {
+    directory: string;
+    pattern?: string;
+    recursive?: boolean;
+}
+
+export const READ_FILE_TOOL: FunctionDeclaration = {
+    name: "read_file",
+    description: "Read a file inside the jailed read roots. Secret files (.env, keys, databases, .git) and paths outside the roots are denied and audited.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            path: {
+                type: Type.STRING,
+                description: "Absolute or relative path to the file to read."
+            }
+        },
+        required: ["path"]
+    }
+};
+
+export const WRITE_FILE_TOOL: FunctionDeclaration = {
+    name: "write_file",
+    description: "Write a file inside the jailed write roots (the factory workspace). Denied outside the roots, for secret names, or over the size cap; audited with sha256.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            path: {
+                type: Type.STRING,
+                description: "Path to the file to write. Must resolve inside the jailed write roots."
+            },
+            content: {
+                type: Type.STRING,
+                description: "The content to write to the file."
+            },
+            create_dirs: {
+                type: Type.BOOLEAN,
+                description: "Create parent directories if they don't exist. Default: true."
+            }
+        },
+        required: ["path", "content"]
+    }
+};
+
+export const LIST_FILES_TOOL: FunctionDeclaration = {
+    name: "list_files",
+    description: "List files and directories in a given path. Use to explore project structure.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            directory: {
+                type: Type.STRING,
+                description: "Path to the directory to list."
+            },
+            pattern: {
+                type: Type.STRING,
+                description: "Optional glob pattern to filter files (e.g., '*.ts', '*.md')."
+            },
+            recursive: {
+                type: Type.BOOLEAN,
+                description: "List files recursively. Default: false."
+            }
+        },
+        required: ["directory"]
+    }
+};
+
+export interface ReaAnalyzeArgs {
+    command: string;
+    target?: string;
+    args?: string[];
+    filter?: string;
+    entitlement: string;
+    purpose?: string;
+}
+
+export const REA_ANALYZE_TOOL: FunctionDeclaration = {
+    name: "rea_analyze",
+    description: "Bounded reverse-engineering analysis via the REA CLI. Daylight: JavaScript/Electron/web static analysis only; native/binary commands run only in the overnight window. Output is always JSON with a token cap - use filter for key-path subsets, NEVER request or paste raw output. entitlement is REQUIRED: why we may analyze this target (own build, open source, user-owned software, public web surface). HARD RULES: never copy decompiled code (understand, then rewrite from scratch); never analyze or bypass DRM/license/activation protections; cite evidence ids; absent facts are NOT proof of absence.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            command: {
+                type: Type.STRING,
+                description: "REA subcommand, e.g. analyze-javascript-application, analyze-web-bundle, compare, trace-javascript-semantics."
+            },
+            target: {
+                type: Type.STRING,
+                description: "Path or URL of the analysis target."
+            },
+            args: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: "Extra CLI arguments (passed through positionally, no shell)."
+            },
+            filter: {
+                type: Type.STRING,
+                description: "REA --filter-output key paths (e.g. 'modules,endpoints') to bound the output."
+            },
+            entitlement: {
+                type: Type.STRING,
+                description: "REQUIRED. Why we are entitled to analyze this target."
+            },
+            purpose: {
+                type: Type.STRING,
+                description: "What behavioral spec this analysis should produce."
+            }
+        },
+        required: ["command", "entitlement"]
+    }
+};
+
+// ==================== WORKSPACE TOOLS ====================
+
+export interface WorkspaceCreateArgs {
+    title: string;
+    content: string;
+    format?: 'markdown' | 'code' | 'document' | 'presentation';
+    tags?: string[];
+}
+
+export interface WorkspaceReadArgs {
+    documentId: string;
+}
+
+export interface WorkspaceUpdateArgs {
+    documentId: string;
+    content?: string;
+    title?: string;
+    append?: boolean;
+}
+
+export interface WorkspaceSearchArgs {
+    query: string;
+    limit?: number;
+}
+
+export const WORKSPACE_CREATE_TOOL: FunctionDeclaration = {
+    name: "workspace_create",
+    description: "Create a new document in the Dynamic Workspace. Use for writing reports, plans, presentations, or any structured content.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            title: {
+                type: Type.STRING,
+                description: "Title of the document."
+            },
+            content: {
+                type: Type.STRING,
+                description: "Initial content of the document (Markdown supported)."
+            },
+            format: {
+                type: Type.STRING,
+                description: "Document format.",
+                enum: ["markdown", "code", "document", "presentation"]
+            },
+            tags: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: "Tags for organizing the document."
+            }
+        },
+        required: ["title", "content"]
+    }
+};
+
+export const WORKSPACE_READ_TOOL: FunctionDeclaration = {
+    name: "workspace_read",
+    description: "Read the contents of a document from the Dynamic Workspace.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            documentId: {
+                type: Type.STRING,
+                description: "ID of the document to read."
+            }
+        },
+        required: ["documentId"]
+    }
+};
+
+export const WORKSPACE_UPDATE_TOOL: FunctionDeclaration = {
+    name: "workspace_update",
+    description: "Update an existing document in the Dynamic Workspace.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            documentId: {
+                type: Type.STRING,
+                description: "ID of the document to update."
+            },
+            content: {
+                type: Type.STRING,
+                description: "New content (replaces existing unless append=true)."
+            },
+            title: {
+                type: Type.STRING,
+                description: "New title (optional)."
+            },
+            append: {
+                type: Type.BOOLEAN,
+                description: "Append content instead of replacing. Default: false."
+            }
+        },
+        required: ["documentId"]
+    }
+};
+
+export const WORKSPACE_LIST_TOOL: FunctionDeclaration = {
+    name: "workspace_list",
+    description: "List all documents in the Dynamic Workspace.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {}
+    }
+};
+
+export const WORKSPACE_SEARCH_TOOL: FunctionDeclaration = {
+    name: "workspace_search",
+    description: "Search for documents in the Dynamic Workspace by content or title.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            query: {
+                type: Type.STRING,
+                description: "Search query."
+            },
+            limit: {
+                type: Type.NUMBER,
+                description: "Maximum results. Default: 10."
+            }
+        },
+        required: ["query"]
+    }
+};
+
+
+
+// ==================== COMPLETE TOOLS EXPORT ====================
+
+export const DEVELOPMENT_TOOLS = [
+    REA_ANALYZE_TOOL, // [REA Fase 2] bounded analysis; capability-gated attach
+    // Filesystem
+    READ_FILE_TOOL,
+    WRITE_FILE_TOOL,
+    LIST_FILES_TOOL,
+    // Workspace
+    WORKSPACE_CREATE_TOOL,
+    WORKSPACE_READ_TOOL,
+    WORKSPACE_UPDATE_TOOL,
+    WORKSPACE_LIST_TOOL,
+    WORKSPACE_SEARCH_TOOL,
+    // Code Execution
+    EXECUTE_CODE_TOOL
+];
+
+// ==================== UI CONTROL TOOLS (Omnipresent Silhouette) ====================
+
+export interface NavigateToArgs {
+    destination: 'dashboard' | 'chat' | 'orchestrator' | 'canvas' | 'media' | 'system' |
+    'memory' | 'settings' | 'introspection' | 'workspace' | 'training' | 'terminal';
+    highlight_element?: string;
+    message?: string;
+}
+
+export interface UIActionArgs {
+    action: 'open_panel' | 'close_panel' | 'click_button' | 'highlight' | 'scroll_to' | 'show_tooltip';
+    target?: string;
+    panel?: 'drive' | 'email' | 'notifications' | 'settings';
+    message?: string;
+    duration_ms?: number;
+}
+
+export const NAVIGATE_TO_TOOL: FunctionDeclaration = {
+    name: "navigate_to",
+    description: "Navigate the user to a specific section of the application. Use this to guide users to the right place or when they ask to go somewhere. You can also highlight a specific element.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            destination: {
+                type: Type.STRING,
+                description: "The section to navigate to.",
+                enum: ["dashboard", "chat", "orchestrator", "canvas", "media", "system",
+                    "memory", "settings", "introspection", "workspace", "training", "terminal"]
+            },
+            highlight_element: {
+                type: Type.STRING,
+                description: "Optional CSS selector or element ID to highlight after navigation."
+            },
+            message: {
+                type: Type.STRING,
+                description: "Optional message to show to the user after navigation."
+            }
+        },
+        required: ["destination"]
+    }
+};
+
+export const UI_ACTION_TOOL: FunctionDeclaration = {
+    name: "ui_action",
+    description: "Perform actions on the user interface. Open/close panels, highlight elements, show tooltips. Use this to guide users through the interface or demonstrate features.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            action: {
+                type: Type.STRING,
+                description: "The UI action to perform.",
+                enum: ["open_panel", "close_panel", "click_button", "highlight", "scroll_to", "show_tooltip"]
+            },
+            target: {
+                type: Type.STRING,
+                description: "CSS selector or element ID to target."
+            },
+            panel: {
+                type: Type.STRING,
+                description: "For open_panel/close_panel: which panel.",
+                enum: ["drive", "email", "notifications", "settings"]
+            },
+            message: {
+                type: Type.STRING,
+                description: "Message to show in tooltip or notification."
+            },
+            duration_ms: {
+                type: Type.NUMBER,
+                description: "Duration for highlights/tooltips in milliseconds. Default: 3000."
+            }
+        },
+        required: ["action"]
+    }
+};
+
+export const UI_CONTROL_TOOLS = [
+    NAVIGATE_TO_TOOL,
+    UI_ACTION_TOOL
+];
+
+// ==================== PRESENTATION TOOLS ====================
+
+export interface CreatePresentationArgs {
+    topic: string;
+    num_slides?: number;
+    theme?: 'modern-dark' | 'corporate' | 'pitch-deck' | 'academic' | 'minimal' | 'creative';
+    include_research?: boolean;
+    generate_images?: boolean;
+    target_audience?: string;
+    style?: 'formal' | 'casual' | 'technical';
+    language?: string;
+}
+
+export const CREATE_PRESENTATION_TOOL: FunctionDeclaration = {
+    name: "create_presentation",
+    description: "Create a professional presentation with AI-generated slides, research, and visuals. The presentation will be saved to the workspace and can be viewed in the Dynamic Workspace. Use this when the user asks for presentations, slide decks, pitch decks, or similar formats.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            topic: {
+                type: Type.STRING,
+                description: "Main topic or title for the presentation. Be specific and descriptive."
+            },
+            num_slides: {
+                type: Type.NUMBER,
+                description: "Number of slides to generate (5-15 recommended). Default: 7"
+            },
+            theme: {
+                type: Type.STRING,
+                description: "Visual theme for the presentation.",
+                enum: ["modern-dark", "corporate", "pitch-deck", "academic", "minimal", "creative"]
+            },
+            include_research: {
+                type: Type.BOOLEAN,
+                description: "Whether to search the web for current information on the topic. Default: true"
+            },
+            generate_images: {
+                type: Type.BOOLEAN,
+                description: "Whether to generate AI images for slides. Default: true"
+            },
+            target_audience: {
+                type: Type.STRING,
+                description: "Who the presentation is for (e.g., 'executives', 'students', 'technical team')"
+            },
+            style: {
+                type: Type.STRING,
+                description: "Communication style.",
+                enum: ["formal", "casual", "technical"]
+            },
+            language: {
+                type: Type.STRING,
+                description: "Language for the presentation content. Default: Spanish"
+            }
+        },
+        required: ["topic"]
+    }
+};
+
+export const PRESENTATION_TOOLS = [
+    CREATE_PRESENTATION_TOOL
+];
+
+export const COMPLETE_TOOLS = [
+    ...ALL_TOOLS,
+    ...DEVELOPMENT_TOOLS,
+    ...UI_CONTROL_TOOLS
+];
+// ==================== PLUGIN TOOLS (Phase 14) ====================
+
+export interface CreatePluginArgs {
+    name: string;
+    id: string;
+    category: string;
+    description: string;
+    tools: string[];
+}
+
+export const CREATE_PLUGIN_TOOL: FunctionDeclaration = {
+    name: "create_plugin",
+    description: "Create a new Plugin with standardized structure. Use this to extend the system with complex functionality (unlike simple skills) that requires TypeScript code. Scaffolds directory, index.ts, and tools.ts.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            name: { type: Type.STRING, description: "Human readable name (e.g., 'Google Calendar')" },
+            id: { type: Type.STRING, description: "Kebab-case ID (e.g., 'google-calendar')" },
+            category: { type: Type.STRING, description: "Category folder (e.g., 'integrations', 'media')" },
+            description: { type: Type.STRING, description: "Description of the plugin's purpose." },
+            tools: {
+                type: Type.ARRAY,
+                description: "List of tool names to scaffold (e.g., ['list_events', 'create_event'])",
+                items: { type: Type.STRING }
+            }
+        },
+        required: ["name", "id", "category", "description", "tools"]
+    }
+};
+
+export interface RequestCollaborationArgs {
+    target_role: string;
+    message: string;
+    context?: string;
+    priority?: 'LOW' | 'NORMAL' | 'HIGH' | 'CRITICAL';
+}
+
+export const REQUEST_COLLABORATION_TOOL: FunctionDeclaration = {
+    name: "request_collaboration",
+    description: "Request collaboration or send a message to another agent. Use this to ask for help, delegate tasks, or share information with agents in different roles.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            target_role: {
+                type: Type.STRING,
+                description: "The role of the target agent (e.g., 'RESEARCHER', 'DEV_LEAD')."
+            },
+            message: {
+                type: Type.STRING,
+                description: "The message or request content."
+            },
+            context: {
+                type: Type.STRING,
+                description: "Optional context or data to share."
+            },
+            priority: {
+                type: Type.STRING,
+                description: "Priority of the request. Default 'NORMAL'.",
+                enum: ["LOW", "NORMAL", "HIGH", "CRITICAL"]
+            }
+        },
+        required: ["target_role", "message"]
+    }
+};
+
+export const AGENT_TOOLS_EXPANDED = [
+    ...AGENT_TOOLS,
+    CREATE_PLUGIN_TOOL,
+    REQUEST_COLLABORATION_TOOL
+];
+
+// --- VISUAL CORTEX (local PhotoCraft engine: composition/edition, NOT prompt-to-image) ---
+
+export interface VisualComposeArgs {
+    width: number;
+    height: number;
+    resolution?: number;
+    background?: { type: 'gradient'; from: string; to: string; angle?: number } | { type: 'color'; color: string };
+    texts?: Array<{ x: number; y: number; text: string; size?: number; color?: string; font?: string; align?: 'left' | 'center' | 'right' }>;
+    images?: Array<{ path: string; scale?: number; fit?: boolean }>;
+    adjustments?: Array<{ command: string; params?: Record<string, any> }>;
+    out: string;
+}
+
+export interface VisualExecuteArgs {
+    command?: string;
+    params?: Record<string, any>;
+    steps?: Array<{ command: string; params?: Record<string, any> }>;
+    doc?: string;
+    newDoc?: { width: number; height: number; resolution?: number; mode?: string };
+    out?: string;
+}
+
+export const VISUAL_COMPOSE_TOOL: FunctionDeclaration = {
+    name: "visual_compose",
+    description: "Composes a real visual asset locally (no cloud, no cost): sized canvas with background (color or gradient), placed images, styled text layers and adjustments, exported to PNG/JPG/WebP/PSD. Use for brand posts, thumbnails, cards and template-based pieces. This is composition/edition, not prompt-to-image generation.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            width: { type: Type.NUMBER, description: "Canvas width in px (1-30000)" },
+            height: { type: Type.NUMBER, description: "Canvas height in px (1-30000)" },
+            background: { type: Type.STRING, description: 'JSON: {"type":"gradient","from":"#0f2050","to":"#501478","angle":45} or {"type":"color","color":"#101010"}' },
+            texts: { type: Type.STRING, description: 'JSON array: [{"x":120,"y":540,"text":"HEADLINE","size":72,"color":"#ffffff"}]' },
+            images: { type: Type.STRING, description: 'JSON array of images to place: [{"path":"/opt/silhouette/workspace/visual/bg.png","fit":true}]' },
+            out: { type: Type.STRING, description: "Output path under /opt/silhouette/output (png, jpg, webp, tif, psd)" }
+        },
+        required: ["width", "height", "out"]
+    }
+};
+
+export const VISUAL_EXECUTE_TOOL: FunctionDeclaration = {
+    name: "visual_execute",
+    description: "Runs arbitrary PhotoCraft engine commands (900+: filters, adjustments, selections, type, vectors, PSD I/O) against a document. Discover available commands first via the visual commands endpoint or ask for a filter. Validated against the live engine registry.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            command: { type: Type.STRING, description: 'Engine command id, e.g. "filter.sharpen.smartSharpen" or "image.adjustments.hueSaturation"' },
+            params: { type: Type.STRING, description: "JSON object of command params" },
+            steps: { type: Type.STRING, description: "JSON array of {command, params} for multi-step execution" },
+            doc: { type: Type.STRING, description: "Existing document path under /opt/silhouette/workspace (omit if newDoc)" },
+            newDoc: { type: Type.STRING, description: 'JSON: {"width":1080,"height":1080} to start from a blank document' },
+            out: { type: Type.STRING, description: "Optional output path under /opt/silhouette/output" }
+        }
+    }
+};
+
+// Expose Visual Cortex tools in the model catalog (declarations appended after the arrays;
+// module fully evaluates before importers read AGENT_TOOLS).
+AGENT_TOOLS.push(VISUAL_COMPOSE_TOOL, VISUAL_EXECUTE_TOOL);

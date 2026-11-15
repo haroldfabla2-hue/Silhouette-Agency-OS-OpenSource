@@ -1,38 +1,32 @@
-name: MANUAL INTEGRATED SILHOUETTE UI - PROVIDERS OFF - ROOT INCOMPLETE
+# EXACT PROPOSAL ONLY, not yet published or activated.
+# Branch-only replacement at the EXISTING registered integrated workflow path.
+# No push trigger. One separate manual dispatch requires exact reviewed head.
+name: SCOPED PRODUCT COMPILER AND REAL FILESYSTEM - NO PRODUCT ACCEPTANCE
 on:
-  push:
-    branches:
-      - preparation/sqlite-static-typecheck-db201993-4054-20261114
-    paths:
-      - .github/workflows/integrated-silhouette-ui.yml
   workflow_dispatch:
     inputs:
       expected_head:
-        description: Exact reviewed integrated test source commit
+        description: Exact reviewed single-child source publication commit
         required: true
         type: string
 permissions:
   contents: read
 jobs:
-  integrated-ui:
+  source-helper-validation:
+    if: github.event.repository.private == false
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 6
     steps:
-      - name: Public standard-hosted zero-charge compute guard
-        shell: bash
+      - name: Exact manual event public standard hosted and branch guard
         env:
+          EXPECTED_HEAD: ${{ inputs.expected_head }}
           PRIVATE: ${{ github.event.repository.private }}
-          EXPECTED_HEAD: ${{ inputs.expected_head || github.sha }}
-          ENVIRONMENT: ${{ runner.environment }}
+          RUNNER_KIND: ${{ runner.environment }}
         run: |
           set -euo pipefail
-          case "$GITHUB_EVENT_NAME" in
-            push) test "${{ github.event.before }}" = 26c801546d6bf0d1c63b67ccbee136d5016778bf ;;
-            workflow_dispatch) test -n "${{ inputs.expected_head }}" ;;
-            *) exit 96 ;;
-          esac
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
           test "$PRIVATE" = false
-          test "$ENVIRONMENT" = github-hosted
+          test "$RUNNER_KIND" = github-hosted
           test "$GITHUB_REPOSITORY" = haroldfabla2-hue/Silhouette-Agency-OS-OpenSource
           test "$GITHUB_REF" = refs/heads/preparation/sqlite-static-typecheck-db201993-4054-20261114
           [[ "$EXPECTED_HEAD" =~ ^[0-9a-f]{40}$ ]]
@@ -40,42 +34,40 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-          fetch-depth: 0
-      - name: Exact one-shot push lineage and path identity before execution
-        shell: bash
-        run: |
-          set -euo pipefail
-          if test "$GITHUB_EVENT_NAME" = push; then
-            test "$(git rev-parse HEAD^)" = 26c801546d6bf0d1c63b67ccbee136d5016778bf
-            test "$(git rev-list --parents -n 1 HEAD | wc -w)" -eq 2
-            git diff-tree --no-commit-id --name-only -r HEAD | sort > "$RUNNER_TEMP/integrated-actual-paths"
-            printf '%s\n' .github/workflows/integrated-silhouette-ui.yml tests/integrated-ui-trial/MANIFEST.json tests/integrated-ui-trial/NATIVE-FIRSTFAILURE-DELTA-REVIEW.md tests/integrated-ui-trial/REVIEW.md tests/integrated-ui-trial/hosted-orchestrator.py tests/integrated-ui-trial/integrated-hosted.yml tests/integrated-ui-trial/lineage-static-audit.json tests/integrated-ui-trial/native_fd_coordinator.py tests/integrated-ui-trial/native_finite_exporter.py tests/integrated-ui-trial/native_fixed_boundary.py tests/integrated-ui-trial/native_receipt_schema.py tests/integrated-ui-trial/packet.sha256 tests/integrated-ui-trial/qualify-host.py tests/integrated-ui-trial/qualify-regular-native-inventory-source.py | sort > "$RUNNER_TEMP/integrated-expected-paths"
-            diff -u "$RUNNER_TEMP/integrated-expected-paths" "$RUNNER_TEMP/integrated-actual-paths"
-          fi
+          fetch-depth: 2
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: '22.18.0'
-      - name: Exact packet verification and bounded integration attempt
-        shell: bash
+          node-version: 22.18.0
+      - name: Exact single-child lineage changed-path allowlist and complete source identity
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = 586d0b007a9256bb6aa5b45b348f84e6fec5994d
+          test "$(git rev-list --parents -n 1 HEAD | wc -w)" -eq 2
+          python3 - <<'PYVERIFY'
+          from pathlib import Path
+          import hashlib,json,subprocess
+          root=Path('tests/product-source-validation')
+          manifest=root/'MANIFEST.json'
+          assert hashlib.sha256(manifest.read_bytes()).hexdigest()=='e1df0c41580ee3ff8d3052abd3af180e8b3f85e7b512d3b20aa80c62fdb27be0'
+          rows=json.loads(manifest.read_text())['files']
+          expected={str(root/r['path'])for r in rows}|{str(manifest),'.github/workflows/integrated-silhouette-ui.yml'}
+          actual=set(subprocess.check_output(['git','diff','--name-only','HEAD^','HEAD'],text=True).splitlines())
+          assert actual==expected
+          assert len(rows)==3427
+          for r in rows:
+              p=root/r['path'];assert p.is_file()and not p.is_symlink()
+              b=p.read_bytes();assert len(b)==r['bytes']and hashlib.sha256(b).hexdigest()==r['sha256']
+          PYVERIFY
+      - name: Exact reviewed source gate and bounded isolated helper scope
         env:
-          EXPECTED_HEAD: ${{ inputs.expected_head || github.sha }}
-          PRIVATE: ${{ github.event.repository.private }}
-          ENVIRONMENT: ${{ runner.environment }}
-        run: |
-          set -euo pipefail
-          cd tests/integrated-ui-trial
-          sha256sum --check packet.sha256
-          python3 hosted-orchestrator.py
-      - name: Always contain only this run's tagged phase cgroups
+          REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: python3 tests/product-source-validation/host-validation.py
+      # No artifact upload, cache, provider, browser, native-store or public raw
+      # runtime export. Fixed export and independent tagged cleanup follow.
+      - name: Independent exact-tag cleanup
         if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo -n env GITHUB_RUN_ID="$GITHUB_RUN_ID" RUNNER_TEMP="$RUNNER_TEMP" python3 tests/integrated-ui-trial/cleanup-hosted.py
-      - name: Return bounded test evidence in job log, no artifact or cache storage
+        run: sudo -n env GITHUB_RUN_ID="$GITHUB_RUN_ID" RUNNER_TEMP="$RUNNER_TEMP" /usr/bin/python3 tests/product-source-validation/launcher/cleanup-hosted.py
+      - name: Fixed scoped evidence only, never raw source or diagnostics
         if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd tests/integrated-ui-trial
-          sudo -n env RUNNER_TEMP="$RUNNER_TEMP" /usr/bin/python3 return-evidence.py
+        run: python3 tests/product-source-validation/finite-export.py

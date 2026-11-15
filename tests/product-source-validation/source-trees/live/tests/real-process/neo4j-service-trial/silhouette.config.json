@@ -1,0 +1,87 @@
+{
+  "system": {
+    "name": "Silhouette Agency OS",
+    "port": 3405,
+    "env": "test",
+    "debug": false,
+    "version": "3.0.0",
+    "autoCheckUpdates": true,
+    "autoLaunch": false
+  },
+  "modules": {
+    "graph": true,
+    "vectorDB": true,
+    "redis": true,
+    "browser": true
+  },
+  "gateway": {
+    "path": "/ws",
+    "heartbeatMs": 30000,
+    "maxPayloadBytes": 10485760,
+    "handshakeTimeoutMs": 5000
+  },
+  "llm": {
+    "defaultProvider": "gemini",
+    "providers": {},
+    "fallbackChain": [
+      "gemini",
+      "groq",
+      "deepseek",
+      "ollama"
+    ],
+    "circuitBreaker": {
+      "maxFailures": 3,
+      "resetTimeMs": 60000
+    }
+  },
+  "memory": {
+    "neo4j": {
+      "uri": "bolt://127.0.0.1:7787",
+      "user": "neo4j",
+      "password": ""
+    },
+    "redis": {
+      "host": "127.0.0.1",
+      "port": 6499
+    },
+    "workingMemoryLimit": 1000,
+    "sweepIntervalMs": 300000
+  },
+  "channels": {},
+  "tools": {
+    "allowlist": [],
+    "denylist": [],
+    "requireApproval": true,
+    "sandbox": {
+      "enabled": false,
+      "image": "silhouette-sandbox:latest",
+      "memoryLimit": "512m",
+      "timeoutMs": 30000
+    }
+  },
+  "scheduler": {
+    "enabled": true,
+    "persistJobs": true,
+    "maxConcurrent": 5
+  },
+  "media": {
+    "uploadsDir": "./uploads",
+    "imageGeneration": {
+      "provider": "gemini"
+    }
+  },
+  "brain": {
+    "enabled": false,
+    "baseUrl": "http://localhost:9876",
+    "timeoutMs": 8000,
+    "mirrorMemory": true
+  },
+  "autonomy": {
+    "enabled": false,
+    "maxDailyTokens": 100000,
+    "allowEvolution": false,
+    "maxConcurrentAgents": 10,
+    "enableNarrative": false,
+    "enableIntrospection": false
+  }
+}

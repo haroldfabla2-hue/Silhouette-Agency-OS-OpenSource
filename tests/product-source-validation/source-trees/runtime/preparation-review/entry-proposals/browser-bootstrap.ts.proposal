@@ -1,0 +1,20 @@
+import { installPreparationHost } from '../../services/lifecycle/bootstrapAuthority';
+
+// Intended final location: browser.bootstrap.ts at project root, with import
+// path adjusted at application. No HTML entry or Vite config changed now.
+function required(name: string): number {
+    const value = Number(import.meta.env[name]);
+    if (!Number.isSafeInteger(value) || value < 1) throw new Error('Missing explicit browser capacity: ' + name);
+    return value;
+}
+const host = installPreparationHost({
+    scopes: required('VITE_OWNER_SCOPES'), active: required('VITE_OWNER_ACTIVE'),
+    failures: required('VITE_OWNER_FAILURES'), resources: required('VITE_OWNER_RESOURCES'),
+});
+const application = import('../../index');
+void application.catch(error => {
+    host.failure('browser:original-entry-import', error);
+    host.unknown('browser:ENTRY_EVALUATION_UNVERIFIED', true);
+});
+// No page-unload cancellation or physical browser-request-close claim.
+// SPA disposal and hot reload remain explicit integration blockers.

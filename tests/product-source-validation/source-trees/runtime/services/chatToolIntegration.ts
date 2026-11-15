@@ -1,0 +1,564 @@
+/**
+ * CHAT TOOL INTEGRATION SERVICE
+ * ═══════════════════════════════════════════════════════════════
+ * Bridges the chat interface with the dynamic tool system.
+ * 
+ * Features:
+ * 1. Detects tool invocation requests in chat
+ * 2. Executes tools via toolExecutor
+ * 3. Records experiences for learning
+ * 4. Auto-creates missing tools using toolFactory
+ */
+
+import { toolRegistry, DynamicTool } from './tools/toolRegistry';
+import { toolExecutor } from './tools/toolExecutor';
+import { toolFactory } from './tools/toolFactory';
+import { orchestrator } from './orchestrator'; // Unified Capability Execution
+import { experienceBuffer } from './experienceBuffer';
+import { FunctionDeclaration } from '@google/genai';
+import { extractExecuteMarkers, normalizeToolName } from './tools/execMarker';
+
+// Patterns to detect tool invocation in chat response
+const TOOL_INVOCATION_PATTERNS = [
+    // Pattern: [TOOL: tool_name(arg1, arg2)] — namespaced names (tool.x) allowed
+    /\[TOOL:\s*([\w.]+)\((.*?)\)\]/gi,
+    // Pattern: [EXECUTE: tool_name {args}]
+    /\[EXECUTE:\s*([\w.]+)\s*(\{.*?\})\]/gi,
+    // Pattern: [IMAGINE: prompt] for images (legacy)
+    /\[IMAGINE:\s*(.*?)\]/gi,
+    // Pattern: [SEARCH: query] for web search (legacy)
+    /\[SEARCH:\s*(.*?)\]/gi,
+];
+
+// Mapping from legacy tags to tool names
+const LEGACY_TAG_MAP: Record<string, string> = {
+    'IMAGINE': 'generate_image',
+    'SEARCH': 'web_search',
+};
+
+export interface ToolCallResult {
+    toolName: string;
+    success: boolean;
+    result?: any;
+    error?: string;
+    executionTimeMs: number;
+    audit?: { experience: 'failed'; warning: string };
+}
+
+export interface ParsedToolCall {
+    toolName: string;
+    args: Record<string, any>;
+    originalMatch: string;
+}
+
+import { confirmationGate } from './tools/confirmationGate';
+
+class ChatToolIntegration {
+    /**
+     * Get tool declarations for LLM function calling
+     * Returns Gemini-compatible FunctionDeclaration array
+     */
+    getToolDeclarations(): FunctionDeclaration[] {
+        try {
+            return toolRegistry.getToolDeclarations();
+        } catch (e) {
+            console.warn('[CHAT_TOOLS] Failed to get tool declarations:', e);
+            return [];
+        }
+    }
+
+    /**
+     * Get tool descriptions for system prompt injection
+     * Use this when direct function calling isn't supported
+     */
+    getToolInstructionsForPrompt(): string {
+        const tools = toolRegistry.getAllTools().filter(t => t.enabled);
+
+        if (tools.length === 0) return '';
+
+        const toolDescriptions = tools.map(t => {
+            const params = Object.entries(t.parameters.properties || {})
+                .map(([name, info]: [string, any]) => `${name}: ${info.type} - ${info.description}`)
+                .join(', ');
+            return `- **${t.name}**: ${t.description}\n  Parameters: ${params || 'none'}`;
+        }).join('\n');
+
+        return `
+[AVAILABLE TOOLS]
+You have access to the following tools. To use a tool, output EXACTLY this format:
+[TOOL: tool_name(param1="value1", param2="value2")]
+
+Available Tools:
+${toolDescriptions}
+
+IMPORTANT: Only use tools when the user explicitly requests an action that requires them.
+For general questions, respond conversationally without using tools.
+
+File tools (read_file, write_file, list_files) operate inside a secure workspace folder. Always use plain relative filenames like 'report.txt' - never absolute system paths like '/etc/...' or '/work/...'.
+`;
+    }
+
+    /**
+     * Parse tool calls from LLM response text
+     * Handles both structured [TOOL:...] format and legacy [IMAGINE:...] tags
+     */
+    parseToolCalls(responseText: string): ParsedToolCall[] {
+        const calls: ParsedToolCall[] = [];
+
+        // Pattern 1: [TOOL: name(args)] — namespaced names (tool.x) allowed
+        const toolPattern = /\[TOOL:\s*([\w.]+)\((.*?)\)\]/gi;
+        let match;
+        while ((match = toolPattern.exec(responseText)) !== null) {
+            const toolName = match[1];
+            const argsString = match[2];
+            calls.push({
+                toolName,
+                args: this.parseArgs(argsString),
+                originalMatch: match[0]
+            });
+        }
+
+        // Pattern 1b: [EXECUTE: name {json}] — emitted by native-tool-call
+        // translation (streamAdapters) and by some models directly. Balanced-brace
+        // extraction: nested args survive; invalid JSON is skipped, never run.
+        for (const marker of extractExecuteMarkers(responseText)) {
+            calls.push({
+                toolName: marker.name,
+                args: marker.args,
+                originalMatch: marker.originalMatch
+            });
+        }
+
+        // Pattern 2: [IMAGINE: prompt] -> generate_image
+        const imaginePattern = /\[IMAGINE:\s*(.*?)\]/gi;
+        while ((match = imaginePattern.exec(responseText)) !== null) {
+            calls.push({
+                toolName: 'generate_image',
+                args: { prompt: match[1], style: 'PHOTOREALISTIC' },
+                originalMatch: match[0]
+            });
+        }
+
+        // Pattern 3: [SEARCH: query] -> web_search
+        const searchPattern = /\[SEARCH:\s*(.*?)\]/gi;
+        while ((match = searchPattern.exec(responseText)) !== null) {
+            calls.push({
+                toolName: 'web_search',
+                args: { query: match[1] },
+                originalMatch: match[0]
+            });
+        }
+
+        return calls;
+    }
+
+    /**
+     * Parse arguments string into object
+     * Handles: name="value", name=123, name=true
+     */
+    private parseArgs(argsString: string): Record<string, any> {
+        const args: Record<string, any> = {};
+
+        // Pattern: param="value" or param='value' or param=value
+        const argPattern = /(\w+)\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+))/g;
+        let match;
+
+        while ((match = argPattern.exec(argsString)) !== null) {
+            const [, name, quotedDouble, quotedSingle, unquoted] = match;
+            const value = quotedDouble ?? quotedSingle ?? unquoted;
+
+            // Try to parse as JSON (number, boolean)
+            try {
+                args[name] = JSON.parse(value);
+            } catch {
+                args[name] = value;
+            }
+        }
+
+        return args;
+    }
+
+    /**
+     * Execute a single tool call
+     */
+    async executeTool(rawToolName: string, args: Record<string, any>, userRole: string = 'GUEST', gateContext?: { principalId?: string; conversationId?: string }): Promise<ToolCallResult> {
+        const startTime = Date.now();
+        // Providers namespace native tool names ("tool.write_file"): resolve the
+        // registry name before policy checks and execution.
+        const toolName = normalizeToolName(rawToolName);
+
+        console.log(`[CHAT_TOOLS] 🔧 Executing tool: ${toolName}`, args);
+
+        let gatePermitToken: string | undefined;
+        let gatePermitReceipt: string | undefined;
+
+        try {
+            // [ANTI-PROMPT INJECTION] Hard Security Enforcement
+            // NOTE: code execution (execute_code/code_execution), git operations and
+            // HTTP egress are now blocked for GUESTs too — these were the gaps that
+            // let an untrusted Telegram/Discord visitor run arbitrary code.
+            const highRiskTools = new Set([
+                'execute_command', 'execute_code', 'code_execution', 'run_code',
+                'write_file', 'delete_file', 'edit_file',
+                'janus_repair', 'shell', 'shell_exec', 'spawn_agent', 'create_tool',
+                'git_commit', 'git_push', 'git_operations', 'github_create_pr',
+                'http_request', 'send_email',
+            ]);
+            if (userRole === 'GUEST' && highRiskTools.has(toolName.toLowerCase())) {
+                console.error(`[SECURITY] 🚨 Blocked high-risk tool "${toolName}" for GUEST user`);
+                return {
+                    toolName,
+                    success: false,
+                    error: `SECURITY_VIOLATION: Insufficient privileges (GUEST). This action is prohibited.`,
+                    executionTimeMs: Date.now() - startTime
+                };
+            }
+
+            // Check if tool exists
+            if (!toolRegistry.hasTool(toolName)) {
+                // [SECURITY] LLM-driven tool auto-creation is ADMIN/CREATOR-only: model
+                // output must not let a GUEST mint new composed tools.
+                if (userRole !== 'ADMIN' && userRole !== 'CREATOR') {
+                    console.warn(`[SECURITY] 🚫 Unknown tool "${toolName}" — auto-creation requires ADMIN/CREATOR (role: ${userRole})`);
+                    return {
+                        toolName,
+                        success: false,
+                        error: `Tool "${toolName}" not found`,
+                        executionTimeMs: Date.now() - startTime
+                    };
+                }
+                // PR-J: auto-creation is FAIL-CLOSED. A model typo (live incident 2026-10-16:
+                // the model emitted literal "TOOL" and the system minted + "successfully"
+                // executed a nonsense tool) must fail loudly, never mint a tool. Operators
+                // who want LLM tool synthesis opt in explicitly.
+                if (process.env.CHAT_TOOL_AUTOCREATE !== 'true') {
+                    console.warn(`[SECURITY] 🚫 Unknown tool "${toolName}" — auto-creation disabled (set CHAT_TOOL_AUTOCREATE=true to enable)`);
+                    return {
+                        toolName,
+                        success: false,
+                        error: `Tool "${toolName}" not found`,
+                        executionTimeMs: Date.now() - startTime
+                    };
+                }
+                console.log(`[CHAT_TOOLS] ⚠️ Tool not found: ${toolName}, attempting auto-creation...`);
+
+                // Try to create the tool dynamically
+                const created = await this.tryCreateTool(toolName, args);
+                if (!created) {
+                    return {
+                        toolName,
+                        success: false,
+                        error: `Tool "${toolName}" not found and could not be auto-created`,
+                        executionTimeMs: Date.now() - startTime
+                    };
+                }
+            }
+
+            // [CONFIRMATION GATE v2] External effects (email, PRs) execute only
+            // after an EXPLICIT authenticated yes: the first call stores a
+            // pending action (full content shown to the user, one-time token);
+            // the user replies "CONFIRMAR <token>" in this same conversation;
+            // only then does an identical re-issued call execute - once.
+            // Classification-driven (2026-11-05): isGatedEffect covers the
+            // dedicated five AND every tool whose effect class requires
+            // confirmation (plugin mutations, unclassified tools). The fixed
+            // EXTERNAL_EFFECT_TOOLS list was the plugin bypass.
+            const { isGatedEffect } = await import('./security/effectGate');
+            if (isGatedEffect(toolName) && process.env.CHAT_EFFECT_GATE !== 'off') {
+                const decision = confirmationGate.check(toolName, args, gateContext?.principalId, gateContext?.conversationId);
+                if (decision.action === 'EXECUTE') { gatePermitToken = decision.token; gatePermitReceipt = decision.receipt; }
+                if (decision.action === 'PENDING') {
+                    console.log(`[CONFIRM_GATE] ⏸️ ${toolName} pending explicit confirmation (${decision.pending.token})`);
+                    return {
+                        toolName,
+                        success: true,
+                        result: {
+                            status: 'PENDING_CONFIRMATION',
+                            token: decision.pending.token,
+                            expiresAt: new Date(decision.pending.expiresAt).toISOString(),
+                            summary: decision.pending.summary,
+                            instructions: `Muestra al usuario el resumen COMPLETO tal cual y dile: para ejecutarla responde "CONFIRMAR ${decision.pending.token}"; para descartarla, "RECHAZAR ${decision.pending.token}". NO ejecutes nada hasta que el usuario confirme con ese token. Cuando confirme, reemite la MISMA herramienta con argumentos IDENTICOS (se ejecuta una sola vez). Cualquier cambio en los argumentos requiere una nueva confirmación.`
+                        },
+                        executionTimeMs: Date.now() - startTime
+                    };
+                }
+                if (decision.action === 'REJECTED') {
+                    console.log(`[CONFIRM_GATE] ⛔ ${toolName} was rejected by the user`);
+                    return {
+                        toolName,
+                        success: true,
+                        result: {
+                            status: 'REJECTED_BY_USER',
+                            instructions: 'El usuario rechazó esta acción exacta. No la reintenten ni la propongas de nuevo salvo que el usuario lo pida explícitamente.'
+                        },
+                        executionTimeMs: Date.now() - startTime
+                    };
+                }
+                if (decision.action === 'ALREADY_CONSUMED') {
+                    // This call holds NO permit: the single permit was taken
+                    // by a concurrent call (or its durable claim failed
+                    // safe). What the gate proves stops at the permit; the
+                    // EFFECT outcome is whatever the winner recorded (or
+                    // UNKNOWN until it does). So: executing here could
+                    // duplicate a completed effect; re-pending would ask the
+                    // user to confirm a spent permit; claiming 'already
+                    // executed' would assert an effect nobody verified.
+                    const recorded = confirmationGate.outcomeOf(decision.token);
+                    const outcomeTxt = recorded
+                        ? (recorded.status === 'EXECUTOR_OK'
+                            ? 'La llamada que consumió el permiso registró ejecución correcta (su propia observación, no una garantía de entrega): NO repetir.'
+                            : `La llamada que consumió el permiso registró FALLO de ejecución${recorded.detail ? ` (${recorded.detail})` : ''}. Aun así NO se reintenta automáticamente; si el usuario quiere repetirla, debe pedirla de nuevo.`)
+                        : 'La llamada que consumió el permiso aún no registró resultado (puede seguir en ejecución o haber fallado antes de registrarlo).';
+                    console.warn(`[CONFIRM_GATE] ⛔ ${toolName} not executed: this call holds no permit (concurrent consumer won); recorded outcome: ${recorded?.status ?? 'unknown'}`);
+                    return {
+                        toolName,
+                        // Neutral, NOT success: this call executed nothing; a
+                        // planner must not count the action as accomplished.
+                        success: false,
+                        error: `NOT_EXECUTED_PERMIT_SPENT: esta llamada no ejecutó ${toolName} (permiso único ya consumido por otra llamada).`,
+                        result: {
+                            status: recorded ? 'PERMIT_CONSUMED_OUTCOME_RECORDED' : 'PERMIT_CONSUMED_UNCONFIRMED',
+                            instructions: `Esta llamada NO obtuvo el permiso de un solo uso de esta acción exacta (lo tomó otra llamada concurrente); esta llamada NO ejecutó nada. ${outcomeTxt} Si el usuario quiere la acción, debe pedirla como una acción nueva que requerirá su propia confirmación.`
+                        },
+                        executionTimeMs: Date.now() - startTime
+                    };
+                }
+                if (decision.action === 'ADMISSION_FULL') {
+                    return {
+                        toolName,
+                        success: false,
+                        error: 'ADMISSION_FULL: el usuario tiene demasiadas acciones pendientes de confirmación. Debe confirmar o rechazar algunas (o responder "RECHAZAR TODO" en el chat para descartarlas todas) antes de proponer acciones nuevas. No se ejecutó nada y el rechazo quedó auditado.',
+                        executionTimeMs: Date.now() - startTime
+                    };
+                }
+                if (decision.action === 'BLOCKED_NO_PRINCIPAL') {
+                    console.warn(`[CONFIRM_GATE] ⛔ ${toolName} blocked: no authenticated principal to bind a confirmation to`);
+                    return {
+                        toolName,
+                        success: false,
+                        error: 'BLOCKED_NO_PRINCIPAL: esta herramienta tiene efectos externos irreversibles y requiere una sesión de chat autenticada donde el usuario pueda confirmarla con un token. No se ejecutó.',
+                        executionTimeMs: Date.now() - startTime
+                    };
+                }
+                console.log(`[CONFIRM_GATE] ✅ ${toolName} confirmed by authenticated user - executing once`);
+            }
+
+            // Execute the tool via orchestrator (unified capability execution).
+            // For gated effects the confirmationGate decision above is the
+            // user's explicit yes to THESE EXACT args: issue a single-use,
+            // args-bound grant for this one execution. Anything else (other
+            // args, a second piece, a replay) gates again at the boundary.
+            let capabilityResult;
+            if (isGatedEffect(toolName) && process.env.CHAT_EFFECT_GATE !== 'off') {
+                const { issueEffectGrant } = await import('./security/effectGate');
+                const { runWithEffectContext } = await import('./security/effectContext');
+                const grantCtx = issueEffectGrant(toolName, args, `chat:${gateContext?.principalId ?? 'unknown'}`);
+                capabilityResult = await runWithEffectContext(grantCtx, () =>
+                    orchestrator.executeCapability(toolName, args, {
+                        requesterId: 'chat',
+                        priority: 'NORMAL'
+                    })
+                );
+            } else {
+                capabilityResult = await orchestrator.executeCapability(toolName, args, {
+                    requesterId: 'chat',
+                    priority: 'NORMAL'
+                });
+            }
+
+            // A capability-level denial may have data:null with its error on
+            // the envelope. Never turn that into a green tool success.
+            if (!capabilityResult.success) {
+                throw new Error(capabilityResult.error || 'Capability execution failed without a confirmed result');
+            }
+
+            // Extract result data
+            const result = capabilityResult.data;
+
+            // PR-G: handlers sometimes report failure as an { error: '...' } payload instead
+            // of throwing. An error wrapped in success renders a lying green checkmark and
+            // pollutes the experience buffer with a fake win - unwrap it into honest failure.
+            if (result && typeof result === 'object' && typeof (result as any).error === 'string') {
+                console.error(`[CHAT_TOOLS] ❌ Tool ${toolName} returned an error payload:`, (result as any).error);
+                if (gatePermitToken) {
+                    try { confirmationGate.recordOutcome(gatePermitToken, gatePermitReceipt!, false, String((result as any).error).substring(0, 200)); }
+                    catch (e: any) { console.warn(`[CONFIRM_GATE] ⚠️ outcome record failed for ${gatePermitToken}: ${e?.message}`); }
+                }
+                return {
+                    toolName,
+                    success: false,
+                    error: String((result as any).error),
+                    executionTimeMs: Date.now() - startTime
+                };
+            }
+
+            // Record success (already done by orchestrator, but keep for backward compat)
+            if (capabilityResult.success) {
+                toolRegistry.recordUsage(toolName, true);
+            }
+
+            let audit: ToolCallResult['audit'];
+            try {
+                await experienceBuffer.recordSuccess(
+                    `Tool ${toolName}`,
+                    JSON.stringify(args).substring(0, 100),
+                    'Chat tool execution succeeded',
+                    'CHAT'
+                );
+            } catch (error) {
+                audit = {experience:'failed', warning:'The tool result was returned, but its learning-memory receipt could not be verified. Do not repeat the tool to repair this audit failure.'};
+                console.warn('[CHAT_TOOLS] Completed tool has an unverified experience receipt:', error);
+            }
+
+            if (gatePermitToken) {
+                try { confirmationGate.recordOutcome(gatePermitToken, gatePermitReceipt!, true); }
+                catch (e: any) { console.warn(`[CONFIRM_GATE] ⚠️ outcome record failed for ${gatePermitToken}: ${e?.message}`); }
+            }
+            console.log(`[CHAT_TOOLS] ✅ Tool ${toolName} completed in ${Date.now() - startTime}ms`);
+
+            return {
+                toolName,
+                success: true,
+                result,
+                ...(audit ? { audit } : {}),
+                executionTimeMs: Date.now() - startTime
+            };
+
+        } catch (error: any) {
+            console.error(`[CHAT_TOOLS] ❌ Tool ${toolName} failed:`, error);
+            if (gatePermitToken) {
+                try { confirmationGate.recordOutcome(gatePermitToken, gatePermitReceipt!, false, String(error?.message ?? error).substring(0, 200)); }
+                catch (e: any) { console.warn(`[CONFIRM_GATE] ⚠️ outcome record failed for ${gatePermitToken}: ${e?.message}`); }
+            }
+
+            // Record failure
+            toolRegistry.recordUsage(toolName, false);
+
+            let audit: ToolCallResult['audit'];
+            try {
+                await experienceBuffer.recordFailure(
+                    `Tool ${toolName}`,
+                    JSON.stringify(args).substring(0, 100),
+                    error.message,
+                    `Investigate ${toolName} implementation`,
+                    'CHAT'
+                );
+            } catch (auditError) {
+                audit = {experience:'failed', warning:'The tool failure is unchanged; its learning-memory receipt could not be verified.'};
+                console.warn('[CHAT_TOOLS] Failed tool also has an unverified experience receipt:', auditError);
+            }
+
+            return {
+                toolName,
+                success: false,
+                ...(audit ? { audit } : {}),
+                error: error.message,
+                executionTimeMs: Date.now() - startTime
+            };
+        }
+    }
+
+    /**
+     * Process all tool calls from response text
+     */
+    async processToolCalls(responseText: string, userRole: string = 'GUEST', gateContext?: { principalId?: string; conversationId?: string }): Promise<{
+        toolResults: ToolCallResult[];
+        enhancedResponse: string;
+    }> {
+        const calls = this.parseToolCalls(responseText);
+
+        if (calls.length === 0) {
+            return { toolResults: [], enhancedResponse: responseText };
+        }
+
+        console.log(`[CHAT_TOOLS] 📋 Found ${calls.length} tool call(s) to process`);
+
+        const results: ToolCallResult[] = [];
+        let enhancedResponse = responseText;
+
+        for (const call of calls) {
+            const result = await this.executeTool(call.toolName, call.args, userRole, gateContext);
+            results.push(result);
+
+            // Replace tool tag with result in response
+            const resultText = this.formatResultForDisplay(call.toolName, result)
+                + (result.audit ? `\n[Learning-memory warning: ${result.audit.warning}]` : '');
+            enhancedResponse = enhancedResponse.replace(call.originalMatch, resultText);
+        }
+
+        return { toolResults: results, enhancedResponse };
+    }
+
+    /**
+     * Format tool result for display in chat
+     */
+    private formatResultForDisplay(toolName: string, result: ToolCallResult): string {
+        if (!result.success) {
+            return `[⚠️ Tool Error: ${result.error}]`;
+        }
+
+        // Special formatting for common tools
+        switch (toolName) {
+            case 'generate_image':
+                if (result.result?.url) {
+                    return `\n\n![Generated Image](${result.result.url})\n`;
+                }
+                if (result.result?.localPath) {
+                    return `\n\n[🖼️ Image generated: ${result.result.localPath}]\n`;
+                }
+                return `[🖼️ Image: ${JSON.stringify(result.result)}]`;
+
+            case 'web_search':
+                if (Array.isArray(result.result)) {
+                    return `\n**Search Results:**\n${result.result.slice(0, 3).map((r: any) =>
+                        `- [${r.title}](${r.url})`
+                    ).join('\n')}\n`;
+                }
+                return `[🔍 ${JSON.stringify(result.result)}]`;
+
+            default:
+                // Generic formatting
+                const preview = JSON.stringify(result.result).substring(0, 200);
+                return `[✅ ${toolName}: ${preview}${preview.length >= 200 ? '...' : ''}]`;
+        }
+    }
+
+    /**
+     * Try to auto-create a missing tool
+     */
+    private async tryCreateTool(toolName: string, args: Record<string, any>): Promise<boolean> {
+        try {
+            console.log(`[CHAT_TOOLS] 🏭 Attempting to create tool: ${toolName}`);
+
+            // Infer purpose from name and args
+            const purpose = this.inferToolPurpose(toolName, args);
+
+            await toolFactory.createFromDescription(purpose, 'WORKFLOW');
+
+            console.log(`[CHAT_TOOLS] ✅ Successfully created tool: ${toolName}`);
+            return true;
+
+        } catch (error: any) {
+            console.warn(`[CHAT_TOOLS] ⚠️ Failed to auto-create tool ${toolName}:`, error.message);
+            return false;
+        }
+    }
+
+    /**
+     * Infer tool purpose from name and arguments
+     */
+    private inferToolPurpose(toolName: string, args: Record<string, any>): string {
+        const argsList = Object.keys(args).join(', ');
+        const nameParts = toolName.split('_').join(' ');
+        return `Create a tool that can ${nameParts}. It should accept these inputs: ${argsList || 'none'}`;
+    }
+
+    /**
+     * Check if response contains any tool calls
+     */
+    hasToolCalls(responseText: string): boolean {
+        return TOOL_INVOCATION_PATTERNS.some(pattern => pattern.test(responseText));
+    }
+}
+
+export const chatToolIntegration = new ChatToolIntegration();

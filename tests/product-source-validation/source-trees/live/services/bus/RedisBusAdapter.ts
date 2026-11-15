@@ -1,0 +1,170 @@
+import { deliverReservedHelpResponse } from '../lifecycle/correlatedHelpResponse';
+import { preserveOriginal } from '../lifecycle/preserveOriginal';
+import type { Scope, Operation } from '../lifecycle/host';
+import { IBusAdapter } from "./IBusAdapter";
+import { ProtocolEvent, SystemProtocol, InterAgentMessage } from "../../types";
+import { createClient, RedisClientType } from 'redis';
+
+export class RedisBusAdapter implements IBusAdapter {
+    private pubClient: RedisClientType;
+    private subClient: RedisClientType;
+    private isConnected: boolean = false;
+    private listeners: Record<string, ((event: ProtocolEvent) => void)[]> = {};
+
+    constructor(url: string | undefined, private readonly ownership: Scope, operation: Operation) {
+        const redisUrl = url || process.env.REDIS_URL || 'redis://localhost:6379';
+
+        const redisOptions = {
+            url: redisUrl,
+            socket: {
+                reconnectStrategy: (retries: number) => {
+                    if (retries > 3) return new Error('Max retries reached');
+                    return Math.min(retries * 50, 500);
+                }
+            }
+        };
+
+        const pubPermit = ownership.reserveResource(operation, 'publisher');
+        try { this.pubClient = createClient(redisOptions); }
+        catch (error) { preserveOriginal(ownership, 'pubPermit-allocation-failed', () => ownership.releaseUnused(pubPermit)); throw error; }
+        if (pubPermit) this.recordClient(this.pubClient, pubPermit);
+        const subPermit = ownership.reserveResource(operation, 'subscriber');
+        try { this.subClient = createClient(redisOptions); }
+        catch (error) { preserveOriginal(ownership, 'subPermit-allocation-failed', () => ownership.releaseUnused(subPermit)); throw error; }
+        if (subPermit) this.recordClient(this.subClient, subPermit);
+
+        this.pubClient.on('error', (err) => {
+            // Uncomment to debug detailed Redis connection errors
+            // console.error('[REDIS PUB ERROR]', err.message)
+        });
+        this.subClient.on('error', (err) => {
+            // console.error('[REDIS SUB ERROR]', err.message)
+        });
+    }
+
+    private recordClient(client: RedisClientType, permit: import('../lifecycle/host').ResourceReservation): void {
+        let closeSettled = false;
+        this.ownership.acquire(permit, client, async () => {
+            if (client.isOpen) await client.close();
+            closeSettled = true;
+        }, () => ({ source: 'systemBus:redis-client',
+            disposition: closeSettled && !client.isOpen ? 'CLOSED' : 'INCOMPLETE',
+            ...(!closeSettled || client.isOpen ? { reason: 'CLIENT_RELEASE_UNVERIFIED' } : {}) }));
+    }
+
+    async connect(): Promise<void> {
+        if (this.isConnected) return;
+        await this.pubClient.connect();
+        await this.subClient.connect();
+        this.isConnected = true;
+        console.log("[BUS] Redis Adapter Connected.");
+
+        // Subscribe to global channel for events
+        await this.subClient.subscribe('silhouette:events', (message) => {
+            try {
+                const event: ProtocolEvent = JSON.parse(message);
+                this.handleIncomingEvent(event);
+            } catch (e) {
+                console.error("[REDIS] Failed to parse event", e);
+            }
+        });
+    }
+
+    private handleIncomingEvent(event: ProtocolEvent) {
+        if (this.listeners[event.type]) {
+            this.listeners[event.type].forEach(handler => {
+                if (!this.ownership.open) {
+                        deliverReservedHelpResponse(handler, event); return;
+                    }
+                this.ownership.invoke('redis-delivery', () => handler(event));
+            });
+        }
+    }
+
+    async disconnect(): Promise<void> {
+        return this.ownership.invoke('public-disconnect-request', async operation => {
+            // Same memoized graceful releases as host teardown. No destructive
+            // disconnect/destroy that could cut admitted commands short.
+            const results = await Promise.allSettled([
+                Promise.resolve().then(() => this.ownership.closeResource(operation, this.pubClient)),
+                Promise.resolve().then(() => this.ownership.closeResource(operation, this.subClient)),
+            ]);
+            const failed = results.find(result => result.status === 'rejected');
+            if (failed?.status === 'rejected') throw failed.reason;
+            this.isConnected = false;
+        });
+    }
+
+    async publish(event: ProtocolEvent): Promise<void> {
+        if (!this.isConnected) await this.connect();
+        // Publish to Redis Pub/Sub for real-time
+        await this.pubClient.publish('silhouette:events', JSON.stringify(event));
+
+        // Also store in Stream for history/replay if needed (Optional for V1)
+        // await this.pubClient.xAdd('silhouette:stream', '*', { event: JSON.stringify(event) });
+    }
+
+    async subscribe(protocol: SystemProtocol, handler: (event: ProtocolEvent) => void): Promise<void> {
+        if (!this.listeners[protocol]) {
+            this.listeners[protocol] = [];
+        }
+        this.listeners[protocol].push(handler);
+    }
+
+    unsubscribe(protocol: SystemProtocol, handler: (event: ProtocolEvent) => void): void {
+        // Same local listener-list removal as MemoryBusAdapter. No native
+        // channel unsubscribe: other handlers still own that channel. Repeated
+        // explicit unsubscribe + host seal filters the same handler harmlessly.
+        this.listeners[protocol] = (this.listeners[protocol] || []).filter(listener => listener !== handler);
+    }
+
+    async send(message: InterAgentMessage): Promise<void> {
+        if (!this.isConnected) await this.connect();
+
+        // Use Redis Lists as Mailboxes
+        // Key: mailbox:{agentId}
+        const key = `mailbox:${message.targetId}`;
+
+        if (message.priority === 'CRITICAL') {
+            await this.pubClient.lPush(key, JSON.stringify(message)); // Jump to front
+        } else {
+            await this.pubClient.rPush(key, JSON.stringify(message)); // Append to end
+        }
+
+        // Notify agent via Pub/Sub to wake up
+        await this.pubClient.publish(`wake:${message.targetId}`, 'MAIL');
+    }
+
+    async checkMailbox(agentId: string): Promise<InterAgentMessage[]> {
+        if (!this.isConnected) await this.connect();
+
+        const key = `mailbox:${agentId}`;
+        const messages: InterAgentMessage[] = [];
+
+        // Pop all messages atomically? 
+        // For now, we pop one by one or get range and del.
+        // RPOP is standard queue behavior.
+
+        // Let's fetch all current items
+        const len = await this.pubClient.lLen(key);
+        if (len === 0) return [];
+
+        // Transaction to get and clear
+        // Ideally we use LPOP count in newer Redis, but let's be safe
+        for (let i = 0; i < len; i++) {
+            const msgStr = await this.pubClient.lPop(key);
+            if (msgStr) {
+                // In newer Redis types, lPop might return generic, casting to string to be safe
+                messages.push(JSON.parse(msgStr as string));
+            }
+        }
+
+        return messages;
+    }
+
+    async hasMail(agentId: string): Promise<boolean> {
+        if (!this.isConnected) await this.connect();
+        const len = await this.pubClient.lLen(`mailbox:${agentId}`);
+        return len > 0;
+    }
+}

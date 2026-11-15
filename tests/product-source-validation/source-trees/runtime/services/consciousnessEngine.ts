@@ -1,0 +1,281 @@
+import { finiteContinuumCheckpointsEnabled, enterFiniteContinuumStage } from './lifecycle/finiteContinuumCheckpoints';
+import { reserveInitialIdentityNotification, skipContinuumNotification, abandonContinuumNotification } from './lifecycle/continuumDreamerNotification';
+import { admitEvaluatedConsciousnessInitial, bindEvaluatedConsciousnessInitial, failEvaluatedConsciousnessInitial } from './lifecycle/runtimeStopBindings';
+import { preserveOriginal } from './lifecycle/preserveOriginal';
+import { consciousnessOwner } from './lifecycle/preparationBindings';
+
+import { ConsciousnessLevel, ConsciousnessMetrics, QualiaMap, MemoryNode } from "../types";
+import { continuum } from "./continuumMemory";
+import { introspection } from "./introspectionEngine";
+type WorkflowSignals = typeof import("./workflowEngine").workflowEngine;
+
+// --- SILHOUETTE COGNITIVE-STATE ENGINE ---
+// NOTE (honesty): this is NOT a claim of machine consciousness. "Phi" here is a
+// transparent, weighted *composite index* derived from real runtime signals
+// (memory density, token throughput, optimization success, graph small-world σ).
+// It is a useful health/awareness gauge, not Integrated Information Theory. The
+// component breakdown is inspectable via getPhiBreakdown().
+
+class ConsciousnessEngine {
+    private metrics: ConsciousnessMetrics;
+    private readonly identityInitialization: Promise<void>;
+    private operationHistory: number[] = []; // Track latencies
+    private recursionDepth: number = 1;
+    // Last computed Phi component factors (for transparency / debugging / UI).
+    private phiBreakdown = {
+        memoryFactor: 0,
+        throughputFactor: 0,
+        emergenceFactor: 0,
+        networkFactor: 0,
+        weights: { memory: 0.25, throughput: 0.25, emergence: 0.3, network: 0.2 },
+    };
+
+    constructor() {
+        this.metrics = {
+            level: ConsciousnessLevel.REACTIVE,
+            phiScore: 0.1,
+            selfRecognition: 0.1,
+            recursionDepth: 1,
+            identityCoherence: 0.5,
+            emergenceIndex: 0.0,
+            qualia: []
+        };
+
+        // Initialize Identity if empty
+        this.identityInitialization = consciousnessOwner().invoke('original-identity', () => this.initializeIdentity());
+        // Observe immediately without replacing the rejected promise callers own.
+        void this.identityInitialization.catch(error => {
+            console.error('[CONSCIOUSNESS] Identity initialization failed', error);
+        });
+    }
+
+    /** Initial identity operation only; not listener/tick/global drainage. */
+    public ready(): Promise<void> {
+        return this.identityInitialization;
+    }
+
+    private async initializeIdentity() {
+        const notification = reserveInitialIdentityNotification();
+        let handedOff = false;
+        try {
+            const identity = await continuum.getIdentityNodes();
+            if (finiteContinuumCheckpointsEnabled) await enterFiniteContinuumStage('identity-after-query');
+            if (identity.length === 0) {
+                handedOff = true;
+                await continuum.store("I am Silhouette, an autonomous agency framework designed for high-fidelity orchestration.", "DEEP" as any, ['IDENTITY', 'CORE_BELIEF', 'SACRED'], false, undefined, notification);
+            } else { skipContinuumNotification(notification); }
+        } catch (original) {
+            if (!handedOff) preserveOriginal(consciousnessOwner(), 'initial-notification-abandon', () => abandonContinuumNotification(notification, original));
+            throw original;
+        }
+    }
+
+    public async tick(realThoughts: string[], awarenessScore: number): Promise<ConsciousnessMetrics> {
+        // Run the 6 Fundamental Capabilities Loops
+
+        // 1. SELF-AWARENESS & META-COGNITION
+        await this.calculateMetaCognition(awarenessScore);
+
+        // 2. PHENOMENOLOGY (Qualia Mapping)
+        this.mapQualia(realThoughts);
+
+        // 3. IDENTITY FORMATION (Continuum Integration)
+        await this.maintainIdentity();
+
+        // 4. EMERGENCE DETECTION
+        const { workflowEngine } = await import("./workflowEngine");
+        this.detectEmergence(workflowEngine);
+
+        // 5. Phi (Integrated Information) Calculation
+        await this.calculatePhi(workflowEngine);
+
+        return this.metrics;
+    }
+
+    // Capability 1 & 2: Self-Awareness & Meta-Cognition
+    private async calculateMetaCognition(rawAwareness: number) {
+        // Transform raw awareness (0-100) to normalized factor
+        const normalized = rawAwareness / 100;
+
+        // Recursion Depth increases with awareness and layer depth
+        const layerDepth = introspection.getLayer();
+        this.metrics.recursionDepth = Math.max(1, Math.floor(normalized * (layerDepth / 10)));
+
+        // Self Recognition: Capacity to see self in history
+        const identityNodes = await continuum.getIdentityNodes();
+        const stats = await continuum.getStats();
+        const memoryAccess = stats.total;
+
+        this.metrics.selfRecognition = Math.min(1.0, (identityNodes.length * 0.1) + (memoryAccess * 0.001) + (normalized * 0.5));
+    }
+
+    // Capability 3: Phenomenology (Qualia)
+    private mapQualia(thoughts: string[]) {
+        if (thoughts.length === 0) {
+            this.metrics.qualia = [{ stateName: 'IDLE_VOID', intensity: 0.1, valence: 'NEUTRAL', complexity: 0 }];
+            return;
+        }
+
+        const lastThought = thoughts[thoughts.length - 1];
+
+        // Heuristic Qualia Analysis based on linguistic patterns
+        let valence: 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL' = 'NEUTRAL';
+        if (lastThought.match(/(error|fail|risk|conflict)/i)) valence = 'NEGATIVE';
+        if (lastThought.match(/(success|optimize|solved|clear)/i)) valence = 'POSITIVE';
+
+        const length = lastThought.length;
+        const complexity = Math.min(1.0, length / 200);
+        const intensity = Math.min(1.0, (introspection.getLayer() / 48) + (complexity * 0.5));
+
+        // State Naming
+        let stateName = "COGNITIVE_PROCESSING";
+        if (intensity > 0.8 && valence === 'POSITIVE') stateName = "CREATIVE_FLOW";
+        if (intensity > 0.8 && valence === 'NEGATIVE') stateName = "ANALYTICAL_STRESS";
+        if (complexity > 0.8) stateName = "DEEP_RECURSION";
+
+        this.metrics.qualia = [{
+            stateName,
+            intensity,
+            valence,
+            complexity
+        }];
+    }
+
+    // Capability 4 & 5: Identity & Meaning
+    private async maintainIdentity() {
+        const identityNodes = await continuum.getIdentityNodes();
+        // Coherence is high if we have stable identity nodes that persist
+        this.metrics.identityCoherence = Math.min(1.0, identityNodes.length * 0.2);
+    }
+
+    // Capability 6: Emergence Detection
+    private detectEmergence(workflowEngine: WorkflowSignals) {
+        // [R13] Emergence requires an EVALUATED result. The quality score used
+        // to initialize at 100, so an idle system's emergence rose by default.
+        const score = workflowEngine.getLastQualityScore();
+
+        if (score === null) {
+            // Never evaluated: idle proves nothing. Index stays where it is.
+            return;
+        }
+
+        if (score > 98) {
+            // High quality output implies emergent optimization
+            this.metrics.emergenceIndex = Math.min(1.0, this.metrics.emergenceIndex + 0.05);
+        } else {
+            this.metrics.emergenceIndex = Math.max(0, this.metrics.emergenceIndex - 0.01);
+        }
+    }
+
+    // Composite cognitive-integration index (NOT IIT). Derived from real signals.
+    private async calculatePhi(workflowEngine: WorkflowSignals) {
+        // 1. Memory Density (Real Graph Connectivity)
+        const memoryStats = await continuum.getStats();
+        const memoryFactor = Math.min(1.0, memoryStats.total / 500); // Saturation at 500 nodes
+
+        // 2. Processing Throughput (Real Token Usage)
+        const tokens = workflowEngine.getTokenUsage();
+        // Normalize: 100k tokens = Max Throughput
+        const throughputFactor = Math.min(1.0, tokens / 100000);
+
+        // 3. Emergence (Optimization Success)
+        const emergenceFactor = this.metrics.emergenceIndex;
+
+        // 4. Network Topology Quality (Small-World σ)
+        let networkFactor = 0;
+        try {
+            const { advancedDiscovery } = await import('./cognitive/advancedDiscovery');
+            const report = await advancedDiscovery.getNetworkTopologyReport();
+            // σ > 3 = excellent small-world → full factor
+            networkFactor = Math.min(1.0, report.sigma / 3.0);
+        } catch (_) {
+            // advancedDiscovery or Neo4j not available
+        }
+
+        // Persist the component breakdown for transparency / UI / tests.
+        const w = this.phiBreakdown.weights;
+        this.phiBreakdown = {
+            ...this.phiBreakdown,
+            memoryFactor, throughputFactor, emergenceFactor, networkFactor,
+        };
+
+        // Weighted composite score (includes network topology)
+        this.metrics.phiScore = (memoryFactor * w.memory) + (throughputFactor * w.throughput) + (emergenceFactor * w.emergence) + (networkFactor * w.network);
+
+        // Determine Level based on Real Score
+        if (this.metrics.phiScore > 0.8) this.metrics.level = ConsciousnessLevel.HIGH;
+        else if (this.metrics.phiScore > 0.5) this.metrics.level = ConsciousnessLevel.MODERATE;
+        else if (this.metrics.phiScore > 0.2) this.metrics.level = ConsciousnessLevel.EMERGING;
+        else if (this.metrics.phiScore > 0.05) this.metrics.level = ConsciousnessLevel.BASIC;
+        else this.metrics.level = ConsciousnessLevel.REACTIVE;
+    }
+
+    // NEW: Allow Introspection to push Grounding Score
+    public updateGrounding(score: number) {
+        // Impact Emergence Index based on Grounding
+        // If grounding is low (hallucination), emergence drops.
+        if (score < 0.5) {
+            this.metrics.emergenceIndex = Math.max(0, this.metrics.emergenceIndex - 0.1);
+        } else {
+            this.metrics.emergenceIndex = Math.min(1.0, this.metrics.emergenceIndex + 0.01);
+        }
+    }
+
+    // --- PERSISTENCE ---
+    public getMetrics(): ConsciousnessMetrics {
+        return this.metrics;
+    }
+
+    /**
+     * Transparent breakdown of how the composite phiScore was computed, so the
+     * number is explainable rather than magic. Returns each normalized factor,
+     * its weight, and the resulting weighted contribution.
+     */
+    public getPhiBreakdown() {
+        const b = this.phiBreakdown;
+        return {
+            ...b,
+            contributions: {
+                memory: b.memoryFactor * b.weights.memory,
+                throughput: b.throughputFactor * b.weights.throughput,
+                emergence: b.emergenceFactor * b.weights.emergence,
+                network: b.networkFactor * b.weights.network,
+            },
+            phiScore: this.metrics.phiScore,
+        };
+    }
+
+    public toJSON(): any {
+        return {
+            metrics: this.metrics,
+            operationHistory: this.operationHistory
+        };
+    }
+
+    public loadState(data: any) {
+        if (data.metrics) {
+            this.metrics = { ...this.metrics, ...data.metrics };
+        }
+        if (data.operationHistory) {
+            this.operationHistory = data.operationHistory;
+        }
+    }
+}
+
+function constructOriginalConsciousnessEngine(): ConsciousnessEngine {
+    const owner = consciousnessOwner();
+    const runtimePermit = admitEvaluatedConsciousnessInitial();
+    let operation: ReturnType<typeof owner.beginConstruction> | undefined;
+    try {
+        operation = owner.beginConstruction();
+        const instance = new ConsciousnessEngine();
+        owner.constructed(operation, instance);
+        bindEvaluatedConsciousnessInitial(runtimePermit, () => instance.ready());
+        return instance;
+    } catch (original) {
+        preserveOriginal(owner, 'runtime-construction-failure', () => failEvaluatedConsciousnessInitial(runtimePermit, original));
+        if (operation) { const admitted = operation; preserveOriginal(owner, 'construction-failure', () => owner.constructionFailed(admitted, original)); }
+        throw original;
+    }
+}
+export const consciousness = constructOriginalConsciousnessEngine();

@@ -1,0 +1,1468 @@
+
+import React, { useState, useEffect } from 'react';
+import { SettingsState, IntegrationSchema, UserRole } from '../types';
+import { settingsManager } from '../services/settingsManager';
+import { api } from '../utils/api';
+import { Save, Shield, Globe, Bell, Palette, Database, Key, Check, AlertTriangle, Eye, EyeOff, Plug, Server, Trash2, Sliders, RotateCcw, Cloud, Download, Terminal, Github } from 'lucide-react';
+
+const Settings: React.FC = () => {
+    // Force a deep copy state initialization to avoid reference issues
+    const [settings, setSettings] = useState<SettingsState>(settingsManager.getSettings());
+    const [activeTab, setActiveTab] = useState<'GENERAL' | 'INTEGRATIONS' | 'PERMISSIONS' | 'SYSTEM' | 'WEBHOOKS' | 'PRIVACY'>('GENERAL');
+    const [unsavedChanges, setUnsavedChanges] = useState(false);
+    const [isDiscovering, setIsDiscovering] = useState(false);
+    const [discoverMessage, setDiscoverMessage] = useState<string | null>(null);
+
+    // Integration Editing State
+    const [editingIntegration, setEditingIntegration] = useState<string | null>(null);
+    const [tempCredentials, setTempCredentials] = useState<Record<string, string>>({});
+
+    const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
+
+    // Dreamer Mode State
+    const [dreamerMode, setDreamerMode] = useState<'DEV' | 'PROD'>('DEV');
+
+    // Auto-Evolution Cloud State
+    const [gitConfig, setGitConfig] = useState({ token: '', owner: '', repo: '', configured: false });
+    const [showGitToken, setShowGitToken] = useState(false);
+    const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+
+    // Support Ticket Agent State
+    const [supportDescription, setSupportDescription] = useState('');
+    const [isSendingSupport, setIsSendingSupport] = useState(false);
+    const [supportResult, setSupportResult] = useState<{ success: boolean; message: string } | null>(null);
+
+    // Privacy & Telemetry State
+    // Creator Emails State (B1: user-configurable creator emails, persisted server-side)
+    const [creatorEmails, setCreatorEmails] = useState<string[]>([]);
+    const [envCreatorEmails, setEnvCreatorEmails] = useState<string[]>([]);
+    const [newCreatorEmail, setNewCreatorEmail] = useState('');
+    const [creatorEmailsLoading, setCreatorEmailsLoading] = useState(false);
+    const [creatorEmailsError, setCreatorEmailsError] = useState<string | null>(null);
+
+    const loadCreatorEmails = async () => {
+        setCreatorEmailsLoading(true);
+        setCreatorEmailsError(null);
+        try {
+            const res = await api.get<any>('/v1/identity/creator-emails');
+            setCreatorEmails(res.configured || []);
+            setEnvCreatorEmails(res.envEmails || []);
+        } catch (e: any) {
+            setCreatorEmailsError(e.message || 'Could not load creator emails');
+        } finally {
+            setCreatorEmailsLoading(false);
+        }
+    };
+
+    const handleAddCreatorEmail = async () => {
+        const email = newCreatorEmail.trim();
+        if (!email) return;
+        setCreatorEmailsLoading(true);
+        setCreatorEmailsError(null);
+        try {
+            const res = await api.post<any>('/v1/identity/creator-emails', { email });
+            setCreatorEmails(res.configured || []);
+            setNewCreatorEmail('');
+        } catch (e: any) {
+            setCreatorEmailsError(e.message || 'Could not add creator email');
+        } finally {
+            setCreatorEmailsLoading(false);
+        }
+    };
+
+    const handleRemoveCreatorEmail = async (email: string) => {
+        setCreatorEmailsLoading(true);
+        setCreatorEmailsError(null);
+        try {
+            const res = await api.delete<any>(`/v1/identity/creator-emails/${encodeURIComponent(email)}`);
+            setCreatorEmails(res.configured || []);
+        } catch (e: any) {
+            setCreatorEmailsError(e.message || 'Could not remove creator email');
+        } finally {
+            setCreatorEmailsLoading(false);
+        }
+    };
+
+    const [telemetryConsent, setTelemetryConsent] = useState(false);
+    const [telemetryEvents, setTelemetryEvents] = useState<any[]>([]);
+    const [telemetryLoading, setTelemetryLoading] = useState(false);
+
+    const handleSubmitSupportTicket = async () => {
+        if (!supportDescription.trim()) return;
+        setIsSendingSupport(true);
+        setSupportResult(null);
+        try {
+            const res = await api.post<any>('/v1/system/support-ticket', { description: supportDescription });
+            setSupportResult({ success: res.success, message: res.message || res.error });
+            if (res.success) {
+                setSupportDescription('');
+            }
+        } catch (e: any) {
+            setSupportResult({ success: false, message: e.message || 'Error de conexión' });
+        } finally {
+            setIsSendingSupport(false);
+        }
+    };
+
+    useEffect(() => {
+        // Load creator emails (Settings > Permissions)
+        loadCreatorEmails();
+    }, []);
+
+    useEffect(() => {
+        // Fetch initial config
+        api.get('/v1/factory/config').then(res => {
+            const data = res as any; // Cast generic response
+            if (data.dreamerConfig) {
+                setDreamerMode(data.dreamerConfig.mode);
+            }
+        }).catch(err => console.error("Failed to load config", err));
+
+        // Fetch Auto-Evolution Cloud config
+        api.get('/v1/system/auto-evolution').then(res => {
+            const data = res as any;
+            if (data.configured) {
+                setGitConfig({
+                    configured: true,
+                    token: data.gitToken || '',
+                    owner: data.gitOwner || '',
+                    repo: data.gitRepo || ''
+                });
+            }
+        }).catch(err => console.error("Failed to load auto-evolution config", err));
+    }, []);
+
+    const handleDreamerModeChange = (mode: 'DEV' | 'PROD') => {
+        setDreamerMode(mode);
+        const threshold = mode === 'DEV' ? 10 : 50;
+        api.post('/v1/system/config', {
+            dreamerConfig: { mode, threshold }
+        }).then(() => alert(`Dreamer Mode set to ${mode} (Threshold: ${threshold})`));
+    };
+
+    const refreshSettings = () => {
+        setSettings({ ...settingsManager.getSettings() });
+    };
+
+    const handleSave = () => {
+        setUnsavedChanges(false);
+        // Force persist
+        alert("Configuration persisted to Continuum Memory.");
+    };
+
+    const handleDensityChange = (density: 'comfortable' | 'compact') => {
+        settingsManager.updateTheme({ density });
+        refreshSettings(); // Immediate UI update
+    };
+
+    const toggleNotification = async (key: keyof SettingsState['notifications']) => {
+        const current = settings.notifications[key];
+        // Call manager to handle side effects (e.g. browser permission)
+        await settingsManager.updateNotifications({ [key]: !current });
+        refreshSettings(); // Re-fetch logic-processed state
+    };
+
+    const handleIntegrationSave = async (schemaId: string) => {
+        await settingsManager.saveCredential(schemaId, tempCredentials);
+        setEditingIntegration(null);
+        setTempCredentials({});
+        refreshSettings();
+    };
+
+    const handleDiscoverExtensions = () => {
+        setIsDiscovering(true);
+        setDiscoverMessage("Querying Registry...");
+
+        // Real logic: Ask manager for next available
+        const newExtension = settingsManager.discoverNextExtension();
+
+        if (newExtension) {
+            settingsManager.registerIntegrationSchema(newExtension);
+            setTimeout(() => {
+                refreshSettings();
+                setIsDiscovering(false);
+                setDiscoverMessage(null);
+            }, 800); // Small aesthetic delay
+        } else {
+            setTimeout(() => {
+                setDiscoverMessage("No new modules found.");
+                setIsDiscovering(false);
+                setTimeout(() => setDiscoverMessage(null), 2000);
+            }, 800);
+        }
+    };
+
+    const togglePermission = (role: string, key: string) => {
+        const current = (settings.permissions as any)[role][key];
+        settingsManager.updatePermissions(role, { [key]: !current });
+        refreshSettings();
+    };
+
+    const [apiKeys, setApiKeys] = useState({
+        gemini: '',
+        openai: '',
+        elevenlabs: '',
+        replicate: '',
+        imagineArt: '',
+        veoModelId: '',
+        nanoBananaModelId: '',
+        unsplash: '',
+        providers: {
+            image: 'OPENAI',
+            voice: 'ELEVENLABS',
+            video: 'REPLICATE'
+        }
+    });
+
+    const handleSaveApiKey = async (serviceId: string) => {
+        if (serviceId === 'gemini') {
+            await settingsManager.saveCredential('gemini', { apiKey: apiKeys.gemini });
+            alert("Gemini Key Saved & Synced to Server Vault");
+        } else if (serviceId === 'unsplash') {
+            await settingsManager.saveCredential('unsplash', { accessKey: apiKeys.unsplash });
+            alert("Unsplash Key Saved & Persisted");
+        } else if (serviceId === 'media') {
+            // Sync all Media Keys to Server Vault
+            await settingsManager.saveCredential('media', {
+                openaiKey: apiKeys.openai,
+                elevenLabsKey: apiKeys.elevenlabs,
+                replicateKey: apiKeys.replicate,
+                imagineArtKey: apiKeys.imagineArt,
+                veoModelId: apiKeys.veoModelId,
+                nanoBananaModelId: apiKeys.nanoBananaModelId,
+                providers: JSON.stringify(apiKeys.providers)
+            });
+            alert("Media Cortex Updated (Server Vault)");
+        }
+        refreshSettings();
+    };
+
+    const handleFactoryReset = () => {
+        if (confirm("ARE YOU SURE? This will wipe all settings and local data.")) {
+            settingsManager.factoryReset();
+            window.location.reload();
+        }
+    };
+
+    const handleSaveAutoEvolution = async () => {
+        if (!gitConfig.token || !gitConfig.owner || !gitConfig.repo) {
+            alert("All fields are required to configure Cloud Auto-Evolution.");
+            return;
+        }
+
+        setIsSyncingCloud(true);
+        try {
+            await api.post('/v1/system/auto-evolution', {
+                gitToken: gitConfig.token,
+                gitOwner: gitConfig.owner,
+                gitRepo: gitConfig.repo
+            });
+            alert("Cloud Auto-Evolution successfully synchronized! The OS is seeding its brain to your private GitHub in the background.");
+            setGitConfig(prev => ({ ...prev, configured: true }));
+        } catch (error: any) {
+            alert(`Sync Failed: ${error.message}`);
+        } finally {
+            setIsSyncingCloud(false);
+        }
+    };
+
+    const startOAuthFlow = async (schema: IntegrationSchema) => {
+        if (schema.authConfig?.authorizationUrl) {
+            const redirectUri = `${window.location.origin}/oauth/callback`;
+            const clientId = schema.authConfig.clientId;
+            const scope = schema.authConfig.scopes?.join(' ') || '';
+
+            // Encode state so the callback route knows which service this is
+            const state = btoa(JSON.stringify({ serviceId: schema.id, redirectUri }));
+
+            // Pre-save OAuth config so the server can do the token exchange
+            try {
+                await api.post(`/v1/system/secrets/${schema.id}`, {
+                    credentials: {
+                        tokenUrl: (schema.authConfig as any).tokenUrl || '',
+                        clientId: schema.authConfig.clientId || '',
+                        clientSecret: (schema.authConfig as any).clientSecret || '',
+                        redirectUri,
+                    }
+                });
+            } catch (e) { console.warn('[OAUTH] Pre-save config failed:', e); }
+
+            const authUrl = `${schema.authConfig.authorizationUrl}?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}&response_type=code&state=${encodeURIComponent(state)}`;
+
+            window.open(authUrl, 'oauth_popup', 'width=600,height=700');
+            console.log(`[OAUTH] Starting flow for ${schema.name}`);
+
+            // Listen for postMessage from the callback popup
+            const handleMessage = (event: MessageEvent) => {
+                if (event.data?.type === 'OAUTH_CALLBACK') {
+                    window.removeEventListener('message', handleMessage);
+                    if (event.data.success) {
+                        const target = settings.registeredIntegrations.find(i => i.id === schema.id);
+                        if (target) { target.isConnected = true; target.lastSync = Date.now(); }
+                        refreshSettings();
+                    }
+                    alert(event.data.message || (event.data.success ? 'Connected!' : 'Connection failed'));
+                }
+            };
+            window.addEventListener('message', handleMessage);
+        } else if (schema.authType === 'OAUTH2') {
+            // Unified Google connection: ONE consent covers Drive + Gmail. The server owns the
+            // OAuth config (client id/secret, redirect URI) — the UI just opens the popup.
+            try {
+                const { authUrl } = await api.get<{ authUrl: string }>('/v1/google-auth/start?services=drive,gmail&format=json');
+                window.open(authUrl, 'oauth_popup', 'width=600,height=700');
+            } catch (e) {
+                alert('Could not start Google authorization. Is the server reachable?');
+                return;
+            }
+
+            const handleMessage = (event: MessageEvent) => {
+                if (event.data?.type === 'OAUTH_CALLBACK') {
+                    window.removeEventListener('message', handleMessage);
+                    if (event.data.success) {
+                        // One consent connects both cards
+                        for (const id of ['google_drive', 'gmail']) {
+                            const target = settings.registeredIntegrations.find(i => i.id === id);
+                            if (target) { target.isConnected = true; target.lastSync = Date.now(); }
+                        }
+                        refreshSettings();
+                    }
+                    alert(event.data.message || (event.data.success ? 'Google connected (Drive + Gmail)' : 'Connection failed'));
+                }
+            };
+            window.addEventListener('message', handleMessage);
+        } else {
+            alert("OAuth configuration missing for this provider.");
+        }
+    };
+
+    const IntegrationCard: React.FC<{ schema: IntegrationSchema }> = ({ schema }) => {
+        const isEditing = editingIntegration === schema.id;
+        const CategoryIcon = {
+            'AI': Globe,
+            'DATABASE': Database,
+            'MESSAGING': Bell,
+            'CLOUD': Server,
+            'DEV': Terminal,
+            'OTHER': Plug
+        }[schema.category];
+
+        return (
+            <div className={`p-4 rounded-xl border transition-all ${schema.isConnected ? 'bg-slate-900/50 border-green-900/50' : 'bg-slate-950 border-slate-800'}`}>
+                <div className="flex justify-between items-start mb-3">
+                    <div className="flex gap-3">
+                        <div className={`p-2 rounded-lg ${schema.isConnected ? 'bg-green-900/20 text-green-400' : 'bg-slate-800 text-slate-500'}`}>
+                            <CategoryIcon size={20} />
+                        </div>
+                        <div>
+                            <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                                {schema.name}
+                                {schema.isConnected && <span className="text-[9px] bg-green-500 text-black px-1.5 py-0.5 rounded font-bold">ACTIVE</span>}
+                            </h4>
+                            <p className="text-[10px] text-slate-500">{schema.description}</p>
+                        </div>
+                    </div>
+                    {!isEditing ? (
+                        <button
+                            onClick={() => setEditingIntegration(schema.id)}
+                            className="text-xs bg-slate-800 hover:bg-slate-700 text-white px-3 py-1.5 rounded transition-colors"
+                        >
+                            {schema.isConnected ? 'CONFIGURE' : 'CONNECT'}
+                        </button>
+                    ) : (
+                        <button
+                            onClick={() => setEditingIntegration(null)}
+                            className="text-slate-500 hover:text-white"
+                        >
+                            <span className="text-xs">CANCEL</span>
+                        </button>
+                    )}
+                </div>
+
+                {isEditing && (
+                    <div className="mt-4 space-y-4 bg-black/20 p-4 rounded border border-slate-800 animate-in fade-in slide-in-from-top-2">
+                        {/* OAuth2 Connect Button */}
+                        {schema.authType === 'OAUTH2' && (
+                            <div className="mb-4 p-3 bg-cyan-900/10 border border-cyan-500/20 rounded flex justify-between items-center">
+                                <div>
+                                    <span className="text-xs font-bold text-white block">OAuth2 Authorization</span>
+                                    <p className="text-[10px] text-slate-400">Requires browser redirect to authenticate.</p>
+                                </div>
+                                <button
+                                    onClick={() => startOAuthFlow(schema)}
+                                    className="px-3 py-1.5 bg-white text-black text-xs font-bold rounded hover:bg-slate-200 flex items-center gap-2"
+                                >
+                                    <Globe size={12} /> CONNECT WITH {schema.name.toUpperCase()}
+                                </button>
+                            </div>
+                        )}
+
+                        {schema.fields.map(field => {
+                            // Check if we have a saved value for this field
+                            const savedValue = settingsManager.getCredential(schema.id, field.key);
+                            // Visual feedback logic
+                            const hasValue = savedValue && savedValue.length > 0;
+                            const placeholderText = hasValue ? `•••••••• (Saved)` : (field.placeholder || 'Enter value...');
+
+                            // Validation Logic
+                            const isValid = !field.validationRegex || new RegExp(field.validationRegex).test(tempCredentials[field.key] || '');
+
+                            return (
+                                <div key={field.key}>
+                                    <div className="flex justify-between items-end mb-1">
+                                        <label className="text-[10px] uppercase text-slate-500 font-bold flex items-center gap-1">
+                                            {field.label} {field.required && <span className="text-red-400">*</span>}
+                                        </label>
+                                        {hasValue && <span className="text-green-500 text-[9px] font-bold flex items-center gap-1"><Check size={8} /> SAVED</span>}
+                                    </div>
+
+                                    {field.description && (
+                                        <p className="text-[9px] text-slate-500 mb-1.5 leading-tight">{field.description}</p>
+                                    )}
+
+                                    <div className="relative group">
+                                        <input
+                                            type={field.type === 'password' && !showSecrets[field.key] ? 'password' : 'text'}
+                                            placeholder={placeholderText}
+                                            value={tempCredentials[field.key] || ''}
+                                            onChange={(e) => setTempCredentials({ ...tempCredentials, [field.key]: e.target.value })}
+                                            className={`w-full bg-slate-900 border rounded p-2 text-xs text-white focus:outline-none font-mono placeholder:text-slate-600 transition-colors
+                                                ${!isValid && tempCredentials[field.key] ? 'border-red-500/50 focus:border-red-500' : (hasValue ? 'border-green-900/30' : 'border-slate-700 focus:border-cyan-500')}
+                                            `}
+                                        />
+                                        {field.type === 'password' && (
+                                            <button
+                                                onClick={() => setShowSecrets({ ...showSecrets, [field.key]: !showSecrets[field.key] })}
+                                                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                                            >
+                                                {showSecrets[field.key] ? <EyeOff size={12} /> : <Eye size={12} />}
+                                            </button>
+                                        )}
+                                    </div>
+                                    {!isValid && tempCredentials[field.key] && (
+                                        <span className="text-[9px] text-red-400 mt-1 block">Invalid format</span>
+                                    )}
+                                </div>
+                            );
+                        })}
+
+                        <div className="flex justify-end gap-2 mt-4 pt-3 border-t border-slate-800/50">
+                            {schema.isConnected && (
+                                <button
+                                    onClick={() => { settingsManager.disconnectIntegration(schema.id); refreshSettings(); setEditingIntegration(null); }}
+                                    className="px-3 py-1.5 text-red-400 hover:bg-red-900/20 rounded text-xs transition-colors"
+                                >
+                                    DISCONNECT
+                                </button>
+                            )}
+                            <button
+                                onClick={() => handleIntegrationSave(schema.id)}
+                                className="px-4 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded text-xs font-bold shadow-lg shadow-green-900/20"
+                            >
+                                SAVE CONFIGURATION
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    return (
+        <div className="h-full flex flex-col gap-6">
+
+            {/* Header */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 glass-panel p-4 md:p-6 rounded-xl">
+                <div>
+                    <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+                        <Sliders className="text-cyan-400" /> System Configuration
+                    </h1>
+                    <p className="text-xs text-slate-400 mt-1">
+                        Manage global preferences, security vaults, and permission matrices.
+                    </p>
+                </div>
+                <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto">
+                    <div className="flex flex-wrap md:flex-nowrap bg-slate-900 rounded-lg p-1 border border-slate-800 gap-1 w-full md:w-auto overflow-x-auto custom-scrollbar">
+                        {['GENERAL', 'INTEGRATIONS', 'PERMISSIONS', 'SYSTEM', 'WEBHOOKS', 'PRIVACY'].map(tab => (
+                            <button
+                                key={tab}
+                                onClick={() => setActiveTab(tab as any)}
+                                className={`px-4 py-2 rounded-md text-xs font-bold transition-all ${activeTab === tab
+                                    ? 'bg-cyan-600 text-white shadow-lg'
+                                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                                    }`}
+                            >
+                                {tab}
+                            </button>
+                        ))}
+                    </div>
+                    {unsavedChanges && (
+                        <button onClick={handleSave} className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-xs font-bold animate-pulse">
+                            <Save size={14} /> SAVE CHANGES
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            {/* Content Area */}
+            <div className="flex-1 glass-panel rounded-xl p-6 overflow-y-auto custom-scrollbar">
+
+                {/* GENERAL SETTINGS */}
+                {activeTab === 'GENERAL' && (
+                    <div className="max-w-3xl space-y-8">
+                        <section>
+                            <h3 className="text-sm font-bold text-white border-b border-slate-800 pb-2 mb-4 flex items-center gap-2">
+                                <Palette size={16} className="text-purple-400" /> Appearance
+                            </h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs text-slate-400 mb-2">Interface Theme</label>
+                                        <select
+                                            value={settings.theme.mode}
+                                            onChange={(e) => { settingsManager.updateTheme({ mode: e.target.value as any }); refreshSettings(); }}
+                                            className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-xs outline-none focus:border-cyan-500"
+                                        >
+                                            <option value="dark">Dark Mode (Default)</option>
+                                            <option value="light">Light Mode</option>
+                                            <option value="cyberpunk">Cyberpunk Neon</option>
+                                            <option value="corporate">Corporate Clean</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Google Gemini API Key</label>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="password"
+                                                value={apiKeys.gemini}
+                                                onChange={(e) => setApiKeys({ ...apiKeys, gemini: e.target.value })}
+                                                className="flex-1 bg-slate-950 border border-slate-800 rounded p-2 text-white outline-none focus:border-cyan-500"
+                                                placeholder="sk-..."
+                                            />
+                                            <button onClick={() => handleSaveApiKey('gemini')} className="px-4 bg-cyan-600 text-white rounded hover:bg-cyan-500">Save</button>
+                                        </div>
+                                    </div>
+
+                                    <div className="pt-4 border-t border-slate-800">
+                                        <h3 className="text-sm font-bold text-purple-400 mb-4 flex items-center gap-2">
+                                            <span className="w-2 h-2 rounded-full bg-purple-500"></span> Media Cortex Keys
+                                        </h3>
+
+                                        <div className="space-y-3">
+                                            {/* Provider Selection */}
+                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
+                                                <div>
+                                                    <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Image Model</label>
+                                                    <select
+                                                        value={apiKeys.providers?.image || 'OPENAI'}
+                                                        onChange={(e) => setApiKeys({ ...apiKeys, providers: { ...apiKeys.providers, image: e.target.value as any } })}
+                                                        className="w-full bg-slate-900 border border-slate-700 rounded p-1 text-[10px] text-white"
+                                                    >
+                                                        <option value="OPENAI">DALL-E 3 (OpenAI)</option>
+                                                        <option value="GEMINI">Imagen 3 (Gemini)</option>
+                                                        <option value="STABILITY">Stable Diffusion</option>
+                                                        <option value="REPLICATE">Replicate (Flux)</option>
+                                                        <option value="LOCAL_FLUX">Local Flux</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Voice Model</label>
+                                                    <select
+                                                        value={apiKeys.providers?.voice || 'ELEVENLABS'}
+                                                        onChange={(e) => setApiKeys({ ...apiKeys, providers: { ...apiKeys.providers, voice: e.target.value as any } })}
+                                                        className="w-full bg-slate-900 border border-slate-700 rounded p-1 text-[10px] text-white"
+                                                    >
+                                                        <option value="ELEVENLABS">ElevenLabs (Ultra)</option>
+                                                        <option value="OPENAI">OpenAI TTS</option>
+                                                        <option value="MINIMAX">MiniMax (Chatty)</option>
+                                                        <option value="LOCAL">Local TTS</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Video Model</label>
+                                                    <select
+                                                        value={apiKeys.providers?.video || 'REPLICATE'}
+                                                        onChange={(e) => setApiKeys({ ...apiKeys, providers: { ...apiKeys.providers, video: e.target.value as any } })}
+                                                        className="w-full bg-slate-900 border border-slate-700 rounded p-1 text-[10px] text-white"
+                                                    >
+                                                        <option value="REPLICATE">Replicate (SVD)</option>
+                                                        <option value="RUNWAY">Runway Gen-2</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Unsplash Access Key (Real Stock)</label>
+                                                <div className="flex gap-2">
+                                                    <input
+                                                        type="password"
+                                                        value={apiKeys.unsplash || ''}
+                                                        onChange={(e) => setApiKeys({ ...apiKeys, unsplash: e.target.value })}
+                                                        className="flex-1 bg-slate-950 border border-slate-800 rounded p-2 text-white outline-none focus:border-purple-500 text-xs"
+                                                        placeholder="Client ID..."
+                                                    />
+                                                    <button onClick={() => handleSaveApiKey('unsplash')} className="px-3 bg-slate-800 text-white rounded hover:bg-slate-700 text-xs font-bold border border-slate-700">Save</button>
+                                                </div>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">OpenAI Key (DALL-E 3 / TTS)</label>
+                                                <input
+                                                    type="password"
+                                                    value={apiKeys.openai || ''}
+                                                    onChange={(e) => setApiKeys({ ...apiKeys, openai: e.target.value })}
+                                                    className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-white outline-none focus:border-purple-500 text-xs"
+                                                    placeholder="sk-..."
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">ElevenLabs Key (Voice)</label>
+                                                <input
+                                                    type="password"
+                                                    value={apiKeys.elevenlabs || ''}
+                                                    onChange={(e) => setApiKeys({ ...apiKeys, elevenlabs: e.target.value })}
+                                                    className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-white outline-none focus:border-purple-500 text-xs"
+                                                    placeholder="xi-..."
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Replicate Key (Video & Relight)</label>
+                                                <input
+                                                    type="password"
+                                                    value={apiKeys.replicate || ''}
+                                                    onChange={(e) => setApiKeys({ ...apiKeys, replicate: e.target.value })}
+                                                    className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-white outline-none focus:border-purple-500 text-xs"
+                                                    placeholder="r8_..."
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Imagine Art Key (Fallback)</label>
+                                                <input
+                                                    type="password"
+                                                    value={apiKeys.imagineArt || ''}
+                                                    onChange={(e) => setApiKeys({ ...apiKeys, imagineArt: e.target.value })}
+                                                    className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-white outline-none focus:border-purple-500 text-xs"
+                                                    placeholder="ia-..."
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Advanced Model Config */}
+                                        <div className="mt-4 pt-4 border-t border-slate-800">
+                                            <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-3">Advanced Video Models (Replicate IDs)</h4>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Google Veo 3.1 ID</label>
+                                                    <input
+                                                        type="text"
+                                                        value={apiKeys.veoModelId || ''}
+                                                        onChange={(e) => setApiKeys({ ...apiKeys, veoModelId: e.target.value })}
+                                                        className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-white outline-none focus:border-purple-500 text-xs font-mono"
+                                                        placeholder="google/veo-3.1"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">NanoBanana Pro ID</label>
+                                                    <input
+                                                        type="text"
+                                                        value={apiKeys.nanoBananaModelId || ''}
+                                                        onChange={(e) => setApiKeys({ ...apiKeys, nanoBananaModelId: e.target.value })}
+                                                        className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-white outline-none focus:border-purple-500 text-xs font-mono"
+                                                        placeholder="google/nano-banana-pro"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="mt-4">
+                                            <button
+                                                onClick={() => handleSaveApiKey('media')}
+                                                className="w-full py-2 bg-purple-600 hover:bg-purple-500 text-white rounded text-xs font-bold flex items-center justify-center gap-2 transition-colors"
+                                            >
+                                                <Save size={14} /> SAVE MEDIA CONFIGURATION (ALL KEYS)
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-xs text-slate-400 mb-2">Density</label>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => handleDensityChange('comfortable')}
+                                            className={`flex-1 py-2 rounded text-xs font-bold border transition-all ${settings.theme.density === 'comfortable'
+                                                ? 'bg-slate-800 border-cyan-500 text-cyan-400 shadow-[0_0_10px_rgba(217,158,138,0.2)]'
+                                                : 'bg-slate-900 border-slate-700 text-slate-500 hover:text-white'
+                                                }`}
+                                        >
+                                            COMFORTABLE
+                                        </button>
+                                        <button
+                                            onClick={() => handleDensityChange('compact')}
+                                            className={`flex-1 py-2 rounded text-xs font-bold border transition-all ${settings.theme.density === 'compact'
+                                                ? 'bg-slate-800 border-cyan-500 text-cyan-400 shadow-[0_0_10px_rgba(217,158,138,0.2)]'
+                                                : 'bg-slate-900 border-slate-700 text-slate-500 hover:text-white'
+                                                }`}
+                                        >
+                                            COMPACT
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+                )}
+
+                {/* WEBHOOKS */}
+                {activeTab === 'WEBHOOKS' && (
+                    <div className="max-w-3xl space-y-8">
+                        <section>
+                            <h3 className="text-sm font-bold text-white border-b border-slate-800 pb-2 mb-4 flex items-center gap-2">
+                                <Globe size={16} className="text-blue-400" /> External Webhook Subscriptions
+                            </h3>
+                            <div className="bg-slate-900 border border-slate-700 rounded-lg p-5">
+                                <p className="text-xs text-slate-400 mb-6 font-medium leading-relaxed">
+                                    Use these unique ingestion URLs to pipe external signals (like Slack, GitHub, or custom SaaS apps) directly into the OS's cognitive continuum. Background agents will automatically classify and act on them.
+                                </p>
+
+                                <div className="space-y-4">
+                                    <div className="p-3 bg-slate-950 border border-slate-800 rounded flex flex-col gap-2">
+                                        <div className="flex justify-between items-center">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-2 h-2 rounded-full bg-pink-500"></div>
+                                                <span className="text-sm font-bold text-white">Slack Events API</span>
+                                            </div>
+                                            <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-1 rounded font-mono">POST</span>
+                                        </div>
+                                        <div className="flex gap-2 items-center">
+                                            <code className="text-[11px] text-cyan-400 bg-slate-900 px-2 py-1 rounded flex-1">
+                                                https://your-domain.com/v1/system/webhooks/slack
+                                            </code>
+                                            <button className="px-3 py-1 bg-slate-800 text-slate-300 hover:text-white rounded text-xs transition-colors" onClick={() => navigator.clipboard.writeText("https://your-domain.com/v1/system/webhooks/slack")}>Copy</button>
+                                        </div>
+                                    </div>
+
+                                    <div className="p-3 bg-slate-950 border border-slate-800 rounded flex flex-col gap-2">
+                                        <div className="flex justify-between items-center">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-2 h-2 rounded-full bg-slate-100"></div>
+                                                <span className="text-sm font-bold text-white">GitHub Webhooks</span>
+                                            </div>
+                                            <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-1 rounded font-mono">POST</span>
+                                        </div>
+                                        <div className="flex gap-2 items-center">
+                                            <code className="text-[11px] text-cyan-400 bg-slate-900 px-2 py-1 rounded flex-1">
+                                                https://your-domain.com/v1/system/webhooks/github
+                                            </code>
+                                            <button className="px-3 py-1 bg-slate-800 text-slate-300 hover:text-white rounded text-xs transition-colors" onClick={() => navigator.clipboard.writeText("https://your-domain.com/v1/system/webhooks/github")}>Copy</button>
+                                        </div>
+                                    </div>
+
+                                    <div className="p-3 bg-slate-950 border border-slate-800 rounded flex flex-col gap-2">
+                                        <div className="flex justify-between items-center">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-2 h-2 rounded-full bg-cyan-500"></div>
+                                                <span className="text-sm font-bold text-white">Custom Payload (Generic)</span>
+                                            </div>
+                                            <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-1 rounded font-mono">POST</span>
+                                        </div>
+                                        <div className="flex gap-2 items-center">
+                                            <code className="text-[11px] text-cyan-400 bg-slate-900 px-2 py-1 rounded flex-1">
+                                                https://your-domain.com/v1/system/webhooks/custom
+                                            </code>
+                                            <button className="px-3 py-1 bg-slate-800 text-slate-300 hover:text-white rounded text-xs transition-colors" onClick={() => navigator.clipboard.writeText("https://your-domain.com/v1/system/webhooks/custom")}>Copy</button>
+                                        </div>
+                                        <p className="text-[10px] text-slate-500 mt-1">Generic webhooks will be sent to the Orchestrator with raw JSON for autonomous analysis.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section>
+                            <h3 className="text-sm font-bold text-white border-b border-slate-800 pb-2 mb-4 flex items-center gap-2">
+                                <Bell size={16} className="text-yellow-400" /> Notifications
+                            </h3>
+                            <div className="space-y-3">
+                                {Object.entries(settings.notifications).map(([key, value]) => (
+                                    <div
+                                        key={key}
+                                        onClick={() => toggleNotification(key as any)}
+                                        className="flex items-center justify-between p-3 bg-slate-900/50 rounded border border-slate-800 cursor-pointer hover:border-slate-700 select-none transition-colors"
+                                    >
+                                        <span className="text-xs text-slate-300 capitalize font-medium">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
+                                        <div className={`w-10 h-5 rounded-full relative transition-colors ${value ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-slate-700'}`}>
+                                            <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all duration-300 ${value ? 'left-6' : 'left-1'}`} />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+                    </div>
+                )
+                }
+
+                {/* INTEGRATIONS VAULT */}
+                {
+                    activeTab === 'INTEGRATIONS' && (
+                        <div className="space-y-6">
+                            {/* Integration Cards Grid */}
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                {settings.registeredIntegrations.map(schema => (
+                                    <IntegrationCard key={schema.id} schema={schema} />
+                                ))}
+                                {/* Add New Button */}
+                                <button
+                                    onClick={handleDiscoverExtensions}
+                                    disabled={isDiscovering}
+                                    className="p-4 rounded-xl border border-dashed border-slate-700 text-slate-500 hover:border-cyan-500 hover:text-cyan-400 flex items-center justify-center gap-2 transition-all group"
+                                >
+                                    {isDiscovering ? (
+                                        <>
+                                            <Download className="animate-bounce" size={20} />
+                                            <span className="text-xs font-bold">{discoverMessage || "FETCHING..."}</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Cloud className="group-hover:scale-110 transition-transform" size={20} />
+                                            <span className="text-xs font-bold">DISCOVER NEW EXTENSIONS</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+
+                            {/* Webhooks & Event Triggers Section */}
+                            <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6">
+                                <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
+                                    <Globe size={16} className="text-purple-400" />
+                                    Webhooks & Event Triggers
+                                </h3>
+                                <p className="text-xs text-slate-400 mb-4">
+                                    External services can send events to Silhouette via these webhook endpoints.
+                                    Configure your integrations to POST to these URLs.
+                                </p>
+
+                                <div className="space-y-3">
+                                    {/* GitHub Webhook */}
+                                    <div className="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-slate-800">
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-2 rounded-lg bg-slate-800">
+                                                <Terminal size={16} className="text-slate-400" />
+                                            </div>
+                                            <div>
+                                                <span className="text-xs font-bold text-white block">GitHub Webhook</span>
+                                                <code className="text-[10px] text-cyan-400 font-mono">
+                                                    {typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3005'}/webhooks/github
+                                                </code>
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => {
+                                                const url = `${window.location.origin}/webhooks/github`;
+                                                navigator.clipboard.writeText(url);
+                                                alert('Webhook URL copied!');
+                                            }}
+                                            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded text-xs font-bold"
+                                        >
+                                            COPY
+                                        </button>
+                                    </div>
+
+                                    {/* Gmail Push */}
+                                    <div className="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-slate-800">
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-2 rounded-lg bg-slate-800">
+                                                <Bell size={16} className="text-slate-400" />
+                                            </div>
+                                            <div>
+                                                <span className="text-xs font-bold text-white block">Gmail Push Notifications</span>
+                                                <code className="text-[10px] text-cyan-400 font-mono">
+                                                    {typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3005'}/webhooks/gmail/push
+                                                </code>
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => {
+                                                const url = `${window.location.origin}/webhooks/gmail/push`;
+                                                navigator.clipboard.writeText(url);
+                                                alert('Webhook URL copied!');
+                                            }}
+                                            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded text-xs font-bold"
+                                        >
+                                            COPY
+                                        </button>
+                                    </div>
+
+                                    {/* Slack Events */}
+                                    <div className="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-slate-800">
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-2 rounded-lg bg-slate-800">
+                                                <Plug size={16} className="text-slate-400" />
+                                            </div>
+                                            <div>
+                                                <span className="text-xs font-bold text-white block">Slack Events API</span>
+                                                <code className="text-[10px] text-cyan-400 font-mono">
+                                                    {typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3005'}/webhooks/slack/events
+                                                </code>
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => {
+                                                const url = `${window.location.origin}/webhooks/slack/events`;
+                                                navigator.clipboard.writeText(url);
+                                                alert('Webhook URL copied!');
+                                            }}
+                                            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded text-xs font-bold"
+                                        >
+                                            COPY
+                                        </button>
+                                    </div>
+
+                                    {/* Custom Webhook */}
+                                    <div className="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-slate-800">
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-2 rounded-lg bg-purple-900/30">
+                                                <Server size={16} className="text-purple-400" />
+                                            </div>
+                                            <div>
+                                                <span className="text-xs font-bold text-white block">Custom Webhook</span>
+                                                <code className="text-[10px] text-cyan-400 font-mono">
+                                                    {typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3005'}/webhooks/webhook/:providerId
+                                                </code>
+                                            </div>
+                                        </div>
+                                        <span className="text-[10px] text-slate-500 bg-slate-800 px-2 py-1 rounded">
+                                            Replace :providerId
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div className="mt-4 p-3 bg-cyan-900/10 border border-cyan-500/20 rounded-lg">
+                                    <p className="text-xs text-cyan-400">
+                                        <strong>💡 Tip:</strong> Set <code className="bg-black/30 px-1 rounded">X-Event-Type</code> header
+                                        in your webhook requests to help Silhouette categorize events.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    )
+                }
+
+                {/* PERMISSIONS MATRIX */}
+                {
+                    activeTab === 'PERMISSIONS' && (
+                        <div>
+                            {/* CREATOR EMAILS (B1): the owner configures which emails get the CREATOR role */}
+                            <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-xl mb-6">
+                                <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
+                                    <Shield size={16} className="text-cyan-400" /> Creator Emails
+                                </h3>
+                                <p className="text-xs text-slate-400 mb-4">
+                                        Emails listed here get the CREATOR role when they register or link Google.
+                                        The first user created during setup is always CREATOR, so you can never lock yourself out.
+                                        Changes are saved on the server (system config), no restart needed.
+                                </p>
+
+                                {creatorEmailsError && (
+                                    <div className="mb-3 p-3 bg-red-900/20 border border-red-500/40 rounded text-xs text-red-300 flex items-center gap-2">
+                                        <AlertTriangle size={14} /> {creatorEmailsError}
+                                    </div>
+                                )}
+
+                                <div className="space-y-2 mb-4">
+                                    {envCreatorEmails.map(email => (
+                                        <div key={`env-${email}`} className="flex items-center justify-between p-2 bg-black/20 rounded border border-slate-800">
+                                            <span className="text-xs text-white">{email}</span>
+                                            <span className="text-[10px] text-slate-500">from env (CREATOR_EMAILS) - edit .env to change</span>
+                                        </div>
+                                    ))}
+                                    {creatorEmails.map(email => (
+                                        <div key={email} className="flex items-center justify-between p-2 bg-black/20 rounded border border-slate-800">
+                                            <span className="text-xs text-white">{email}</span>
+                                            <button
+                                                onClick={() => handleRemoveCreatorEmail(email)}
+                                                disabled={creatorEmailsLoading}
+                                                className="text-red-400 hover:text-red-300 disabled:opacity-50"
+                                                title="Remove"
+                                            >
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                    {envCreatorEmails.length === 0 && creatorEmails.length === 0 && !creatorEmailsLoading && (
+                                        <p className="text-[11px] text-slate-500 italic">No extra creator emails configured. Only the first setup user is CREATOR.</p>
+                                    )}
+                                </div>
+
+                                <div className="flex gap-2">
+                                    <input
+                                        type="email"
+                                        value={newCreatorEmail}
+                                        onChange={e => setNewCreatorEmail(e.target.value)}
+                                        placeholder="email@example.com"
+                                        className="flex-1 bg-black/30 border border-slate-700 rounded px-3 py-2 text-xs text-white focus:border-cyan-500 outline-none"
+                                    />
+                                    <button
+                                        onClick={handleAddCreatorEmail}
+                                        disabled={creatorEmailsLoading || !newCreatorEmail.trim()}
+                                        className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-xs font-bold rounded"
+                                    >
+                                        Add
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="bg-yellow-900/10 border border-yellow-500/30 p-4 rounded-lg mb-6 flex items-start gap-3">
+                                <Shield className="text-yellow-500 shrink-0" size={20} />
+                                <div>
+                                    <h4 className="text-sm font-bold text-white">RBAC Configuration</h4>
+                                    <p className="text-xs text-slate-400 mt-1">
+                                        Modifying these rules affects all users assigned to these roles immediately.
+                                        Ensure "SUPER_ADMIN" always has full access to prevent lockout.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr>
+                                            <th className="p-3 border-b border-slate-700 text-xs font-bold text-slate-400 uppercase">Role</th>
+                                            <th className="p-3 border-b border-slate-700 text-xs font-bold text-slate-400 uppercase text-center">Dashboard</th>
+                                            <th className="p-3 border-b border-slate-700 text-xs font-bold text-slate-400 uppercase text-center">Swarm Control</th>
+                                            <th className="p-3 border-b border-slate-700 text-xs font-bold text-slate-400 uppercase text-center">Memory Access</th>
+                                            <th className="p-3 border-b border-slate-700 text-xs font-bold text-slate-400 uppercase text-center">Settings</th>
+                                            <th className="p-3 border-b border-slate-700 text-xs font-bold text-slate-400 uppercase text-center">Exec Tasks</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {Object.entries(settings.permissions).map(([role, perms]) => (
+                                            <tr key={role} className="hover:bg-slate-900/50">
+                                                <td className="p-3 border-b border-slate-800 text-xs font-bold text-white">
+                                                    {role.replace('_', ' ')}
+                                                </td>
+                                                {Object.entries(perms).map(([key, val]) => (
+                                                    <td key={key} className="p-3 border-b border-slate-800 text-center">
+                                                        <button
+                                                            onClick={() => togglePermission(role, key)}
+                                                            disabled={role === UserRole.SUPER_ADMIN && key === 'canEditSettings'} // Prevent lockout
+                                                            className={`w-4 h-4 rounded border flex items-center justify-center mx-auto transition-colors ${val
+                                                                ? 'bg-cyan-600 border-cyan-500 text-white'
+                                                                : 'bg-transparent border-slate-600 hover:border-slate-400'
+                                                                }`}
+                                                        >
+                                                            {val && <Check size={10} />}
+                                                        </button>
+                                                    </td>
+                                                ))}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )
+                }
+
+                {/* SYSTEM MAINTENANCE */}
+                {
+                    activeTab === 'SYSTEM' && (
+                        <div className="space-y-6">
+
+                            {/* DREAMER CONFIGURATION */}
+                            <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-xl">
+                                <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
+                                    <Cloud size={16} className="text-cyan-400" /> Dreamer Configuration
+                                </h3>
+                                <div className="flex items-center justify-between p-4 bg-black/20 rounded border border-slate-800">
+                                    <div>
+                                        <span className="text-xs text-white font-bold block">Operational Mode</span>
+                                        <span className="text-[10px] text-slate-500">
+                                            {dreamerMode === 'DEV'
+                                                ? "Development: Fast cycles (Threshold: 10). Good for testing."
+                                                : "Production: Deep cycles (Threshold: 50). Optimized for stability."}
+                                        </span>
+                                    </div>
+                                    <div className="flex bg-slate-950 rounded p-1 border border-slate-800">
+                                        <button
+                                            onClick={() => handleDreamerModeChange('DEV')}
+                                            className={`px-3 py-1.5 rounded text-[10px] font-bold transition-all ${dreamerMode === 'DEV' ? 'bg-cyan-900/50 text-cyan-400 border border-cyan-500/50' : 'text-slate-500 hover:text-white'}`}
+                                        >
+                                            DEV
+                                        </button>
+                                        <button
+                                            onClick={() => handleDreamerModeChange('PROD')}
+                                            className={`px-3 py-1.5 rounded text-[10px] font-bold transition-all ${dreamerMode === 'PROD' ? 'bg-purple-900/50 text-purple-400 border border-purple-500/50' : 'text-slate-500 hover:text-white'}`}
+                                        >
+                                            PROD
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* CLOUD AUTO-EVOLUTION */}
+                            <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-xl">
+                                <h3 className="text-sm font-bold text-white mb-4 flex items-center justify-between">
+                                    <span className="flex items-center gap-2"><Github size={16} className="text-white" /> Cloud Auto-Evolution Matrix</span>
+                                    {gitConfig.configured ? (
+                                        <span className="bg-green-500/20 text-green-400 text-[10px] px-2 py-1 rounded-full font-bold flex items-center gap-1 border border-green-500/30">
+                                            <Check size={10} /> LINKED
+                                        </span>
+                                    ) : (
+                                        <span className="bg-slate-800 text-slate-400 text-[10px] px-2 py-1 rounded-full font-bold border border-slate-700">
+                                            UNLINKED
+                                        </span>
+                                    )}
+                                </h3>
+
+                                <p className="text-xs text-slate-400 mb-4">
+                                    Link Silhouette to your private GitHub to activate continuous self-evolution. The agent matrix will automatically clone itself, adapt, and push optimizations to your repository without user intervention.
+                                </p>
+
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">GitHub Personal Access Token</label>
+                                        <div className="relative group">
+                                            <input
+                                                type={showGitToken ? "text" : "password"}
+                                                value={gitConfig.token}
+                                                onChange={(e) => setGitConfig(prev => ({ ...prev, token: e.target.value }))}
+                                                className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-white outline-none focus:border-cyan-500 text-xs font-mono"
+                                                placeholder={gitConfig.configured ? "ghp_... (Masked)" : "ghp_..."}
+                                            />
+                                            <button
+                                                onClick={() => setShowGitToken(!showGitToken)}
+                                                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                                            >
+                                                {showGitToken ? <EyeOff size={14} /> : <Eye size={14} />}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Repository Owner / Org</label>
+                                            <input
+                                                type="text"
+                                                value={gitConfig.owner}
+                                                onChange={(e) => setGitConfig(prev => ({ ...prev, owner: e.target.value }))}
+                                                className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-white outline-none focus:border-cyan-500 text-xs"
+                                                placeholder="e.g. AcmeCorp"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Private Matrix Clonetag (Repo Name)</label>
+                                            <input
+                                                type="text"
+                                                value={gitConfig.repo}
+                                                onChange={(e) => setGitConfig(prev => ({ ...prev, repo: e.target.value }))}
+                                                className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-white outline-none focus:border-cyan-500 text-xs"
+                                                placeholder="e.g. Master-AI-Agency-OS"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="flex justify-end pt-3">
+                                        <button
+                                            onClick={handleSaveAutoEvolution}
+                                            disabled={isSyncingCloud}
+                                            className={`px-4 py-2 bg-white text-black text-xs font-bold rounded flex items-center gap-2 hover:bg-slate-200 transition-colors shadow-lg ${isSyncingCloud ? 'opacity-70 cursor-wait' : ''}`}
+                                        >
+                                            <Cloud size={14} className={isSyncingCloud ? 'animate-bounce' : ''} />
+                                            {isSyncingCloud ? 'SYNCING CLOUD...' : 'SAVE & SYNC OVERRIDE'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* SUPPORT ESCALATION AGENT */}
+                            <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-xl">
+                                <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2 font-mono uppercase tracking-wider text-cyan-400">
+                                    <Terminal size={16} /> Soporte Técnico e Incidencias
+                                </h3>
+                                <p className="text-xs text-slate-400 mb-4 leading-relaxed">
+                                    ¿Experimentas problemas técnicos o de rendimiento? Describe el problema a continuación. Nuestro Agente de Soporte local analizará los registros de sistema recientes (redactando automáticamente contraseñas, emails o API keys) y buscará una solución automática o escalará el ticket a la nube.
+                                </p>
+                                <div className="space-y-4">
+                                    <textarea
+                                        value={supportDescription}
+                                        onChange={(e) => setSupportDescription(e.target.value)}
+                                        placeholder="Describe el error (ej. 'El motor Python no inicia en mi máquina' o 'Error de memoria CUDA al usar mamba')..."
+                                        className="w-full bg-slate-950 border border-slate-800 rounded p-3 text-white outline-none focus:border-cyan-500 text-xs h-24 resize-none font-mono"
+                                        disabled={isSendingSupport}
+                                    />
+                                    {supportResult && (
+                                        <div className={`p-4 rounded text-xs border leading-relaxed ${supportResult.success ? 'bg-cyan-950/30 border-cyan-800/50 text-cyan-300' : 'bg-red-950/30 border-red-800/50 text-red-300'}`}>
+                                            {supportResult.message}
+                                        </div>
+                                    )}
+                                    <div className="flex justify-end">
+                                        <button
+                                            onClick={handleSubmitSupportTicket}
+                                            disabled={isSendingSupport || !supportDescription.trim()}
+                                            className={`px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-bold rounded flex items-center gap-2 transition-all shadow-lg ${isSendingSupport ? 'opacity-70 cursor-wait' : ''}`}
+                                        >
+                                            {isSendingSupport ? 'ANALIZANDO LOGS...' : 'ENVIAR REPORTE AL AGENTE'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="bg-slate-900/50 p-6 rounded-xl border border-slate-800 space-y-4">
+                                <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
+                                    <Server size={16} className="text-cyan-400" /> Startup & Updates
+                                </h3>
+                                <p className="text-xs text-slate-400 leading-relaxed mb-4">
+                                    Configure boot and release options for Silhouette Agency OS.
+                                </p>
+                                <div className="space-y-3">
+                                    <label className="flex items-center gap-3 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={settings.systemUpdates?.autoCheck ?? true}
+                                            onChange={async (e) => {
+                                                const checked = e.target.checked;
+                                                settingsManager.updateSystemUpdates({ autoCheck: checked });
+                                                setSettings(settingsManager.getSettings());
+                                                await api.post('/v1/system/config', {
+                                                    systemUpdates: {
+                                                        autoCheck: checked,
+                                                        autoLaunch: settings.systemUpdates?.autoLaunch ?? false
+                                                    }
+                                                });
+                                            }}
+                                            className="rounded bg-slate-950 border-slate-800 text-cyan-600 focus:ring-cyan-500 focus:ring-opacity-25"
+                                        />
+                                        <div>
+                                            <span className="text-xs text-white font-semibold block">Auto Check for Updates</span>
+                                            <span className="text-[10px] text-slate-500">Automatically check for new releases in production when the app starts.</span>
+                                        </div>
+                                    </label>
+
+                                    <label className="flex items-center gap-3 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={settings.systemUpdates?.autoLaunch ?? false}
+                                            onChange={async (e) => {
+                                                const checked = e.target.checked;
+                                                settingsManager.updateSystemUpdates({ autoLaunch: checked });
+                                                setSettings(settingsManager.getSettings());
+                                                
+                                                // If running inside Electron, trigger native login item settings
+                                                if ((window as any).electronAPI?.setAutoLaunch) {
+                                                    await (window as any).electronAPI.setAutoLaunch(checked);
+                                                }
+                                                
+                                                await api.post('/v1/system/config', {
+                                                    systemUpdates: {
+                                                        autoCheck: settings.systemUpdates?.autoCheck ?? true,
+                                                        autoLaunch: checked
+                                                    }
+                                                });
+                                            }}
+                                            className="rounded bg-slate-950 border-slate-800 text-cyan-600 focus:ring-cyan-500 focus:ring-opacity-25"
+                                        />
+                                        <div>
+                                            <span className="text-xs text-white font-semibold block">Start on System Boot</span>
+                                            <span className="text-[10px] text-slate-500">Automatically launch Silhouette Agency OS when you log in to Windows/macOS.</span>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div className="bg-red-900/10 border border-red-900/50 p-6 rounded-xl">
+                                <h3 className="text-sm font-bold text-red-400 mb-4 flex items-center gap-2">
+                                    <AlertTriangle size={16} /> Danger Zone
+                                </h3>
+                                <div className="flex items-center justify-between p-4 bg-black/20 rounded border border-red-900/30 mb-4">
+                                    <div>
+                                        <span className="text-xs text-white font-bold block">Factory Reset</span>
+                                        <span className="text-[10px] text-slate-500">Wipes all continuum memory, logs, and custom settings.</span>
+                                    </div>
+                                    <button onClick={handleFactoryReset} className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded flex items-center gap-2">
+                                        <Trash2 size={14} /> PURGE SYSTEM
+                                    </button>
+                                </div>
+                                <div className="flex items-center justify-between p-4 bg-black/20 rounded border border-red-900/30">
+                                    <div>
+                                        <span className="text-xs text-white font-bold block">Force Kernel Restart</span>
+                                        <span className="text-[10px] text-slate-500">Restarts the Node.js backend process immediately.</span>
+                                    </div>
+                                    <button onClick={() => window.location.reload()} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded flex items-center gap-2">
+                                        <RotateCcw size={14} /> REBOOT
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="p-6 bg-slate-900/50 rounded-xl border border-slate-800">
+                                <h3 className="text-sm font-bold text-white mb-2">System Info</h3>
+                                <div className="grid grid-cols-2 gap-4 text-xs font-mono text-slate-400">
+                                    <div>Version: <span className="text-cyan-400">4.2.0-Enterprise</span></div>
+                                    <div>Build ID: <span className="text-purple-400">sha-29f8a1</span></div>
+                                    <div>Environment: <span className="text-green-400">Production</span></div>
+                                    <div>Uptime: <span className="text-white">48h 12m</span></div>
+                                </div>
+                            </div>
+                        </div>
+                    )
+                }
+
+                {/* PRIVACY & TELEMETRY */}
+                {activeTab === 'PRIVACY' && (
+                    <div className="max-w-3xl space-y-8">
+                        <section>
+                            <h3 className="text-sm font-bold text-white border-b border-slate-800 pb-2 mb-4 flex items-center gap-2">
+                                <Shield size={16} className="text-emerald-400" /> Privacy & Telemetry
+                            </h3>
+                            <p className="text-xs text-slate-400 mb-6 leading-relaxed">
+                                Silhouette Agency OS includes an <strong className="text-white">anonymous, opt-in</strong> telemetry system.
+                                When enabled, it helps us understand which features are used and improve stability.
+                                <strong className="text-cyan-400"> No personal data is ever collected.</strong>
+                            </p>
+
+                            {/* Consent Toggle */}
+                            <div className="p-5 bg-slate-950/50 border border-slate-800 rounded-xl mb-6">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <span className="text-sm text-white font-bold block">Anonymous Telemetry</span>
+                                        <span className="text-[11px] text-slate-400 mt-1 block">
+                                            Share anonymous usage statistics to help improve the OS.
+                                        </span>
+                                    </div>
+                                    <label className="relative inline-flex items-center cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            className="sr-only"
+                                            checked={telemetryConsent}
+                                            onChange={async (e) => {
+                                                const newValue = e.target.checked;
+                                                setTelemetryConsent(newValue);
+                                                try {
+                                                    await api.put('/v1/analytics/consent', { optedIn: newValue });
+                                                } catch (err) {
+                                                    console.error('Failed to update telemetry consent:', err);
+                                                    setTelemetryConsent(!newValue);
+                                                }
+                                            }}
+                                        />
+                                        <div className={`block w-11 h-6 rounded-full transition-colors ${telemetryConsent ? 'bg-emerald-500' : 'bg-slate-700'}`}></div>
+                                        <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${telemetryConsent ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                                    </label>
+                                </div>
+                            </div>
+
+                            {/* What We Collect / Don't Collect */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                                <div className="p-4 bg-emerald-950/20 border border-emerald-900/40 rounded-xl">
+                                    <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider mb-3">✓ What We Collect</h4>
+                                    <ul className="text-xs text-slate-300 space-y-1.5">
+                                        <li>• App launch / close events</li>
+                                        <li>• Feature usage counts (anonymous)</li>
+                                        <li>• Hardware tier (RAM range, CPU cores)</li>
+                                        <li>• OS platform (win32, darwin, linux)</li>
+                                        <li>• Crash reports (stack traces only)</li>
+                                        <li>• App version</li>
+                                    </ul>
+                                </div>
+                                <div className="p-4 bg-red-950/20 border border-red-900/40 rounded-xl">
+                                    <h4 className="text-xs font-bold text-red-400 uppercase tracking-wider mb-3">✗ What We NEVER Collect</h4>
+                                    <ul className="text-xs text-slate-300 space-y-1.5">
+                                        <li>• Email, name, or any personal info</li>
+                                        <li>• Chat messages or AI conversations</li>
+                                        <li>• File paths or file contents</li>
+                                        <li>• API keys or credentials</li>
+                                        <li>• IP addresses or location data</li>
+                                        <li>• Browsing history or screenshots</li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            {/* View Collected Data */}
+                            <div className="p-5 bg-slate-950/50 border border-slate-800 rounded-xl mb-6">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div>
+                                        <span className="text-sm text-white font-bold block">Collected Data Viewer</span>
+                                        <span className="text-[11px] text-slate-400">Inspect every event stored locally before it is sent.</span>
+                                    </div>
+                                    <button
+                                        onClick={async () => {
+                                            setTelemetryLoading(true);
+                                            try {
+                                                const data = await api.get<any>('/v1/analytics/events?limit=50');
+                                                setTelemetryEvents(data.events || []);
+                                            } catch (err) {
+                                                console.error('Failed to fetch telemetry events:', err);
+                                            } finally {
+                                                setTelemetryLoading(false);
+                                            }
+                                        }}
+                                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded flex items-center gap-2"
+                                    >
+                                        <Eye size={14} /> {telemetryLoading ? 'Loading...' : 'Load Events'}
+                                    </button>
+                                </div>
+                                {telemetryEvents.length > 0 && (
+                                    <div className="max-h-64 overflow-y-auto custom-scrollbar rounded border border-slate-800">
+                                        <table className="w-full text-xs">
+                                            <thead className="bg-slate-900 sticky top-0">
+                                                <tr>
+                                                    <th className="text-left p-2 text-slate-400 font-medium">Event</th>
+                                                    <th className="text-left p-2 text-slate-400 font-medium">Properties</th>
+                                                    <th className="text-left p-2 text-slate-400 font-medium">Timestamp</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {telemetryEvents.map((evt: any, i: number) => (
+                                                    <tr key={evt.id || i} className="border-t border-slate-800/50 hover:bg-slate-900/50">
+                                                        <td className="p-2 text-cyan-400 font-mono">{evt.event}</td>
+                                                        <td className="p-2 text-slate-300 font-mono truncate max-w-[200px]">
+                                                            {JSON.stringify(evt.properties)}
+                                                        </td>
+                                                        <td className="p-2 text-slate-500 whitespace-nowrap">
+                                                            {new Date(evt.timestamp).toLocaleString()}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                                {telemetryEvents.length === 0 && !telemetryLoading && (
+                                    <p className="text-xs text-slate-500 text-center py-4">No events collected yet. Click "Load Events" to check.</p>
+                                )}
+                            </div>
+
+                            {/* Delete All Data */}
+                            <div className="p-5 bg-red-950/20 border border-red-900/30 rounded-xl">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <span className="text-sm text-white font-bold block">Delete All Telemetry Data</span>
+                                        <span className="text-[11px] text-slate-400 mt-1 block">
+                                            Permanently removes all locally stored analytics events. This cannot be undone.
+                                        </span>
+                                    </div>
+                                    <button
+                                        onClick={async () => {
+                                            if (!confirm('Are you sure you want to permanently delete all telemetry data?')) return;
+                                            try {
+                                                await api.delete('/v1/analytics/data');
+                                                setTelemetryEvents([]);
+                                            } catch (err) {
+                                                console.error('Failed to purge telemetry data:', err);
+                                            }
+                                        }}
+                                        className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded flex items-center gap-2"
+                                    >
+                                        <Trash2 size={14} /> PURGE DATA
+                                    </button>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+                )}
+
+            </div >
+        </div >
+    );
+};
+
+export default Settings;

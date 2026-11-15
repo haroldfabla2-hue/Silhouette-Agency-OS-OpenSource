@@ -1,0 +1,56 @@
+/**
+ * Feedback Buttons Styles
+ */
+
+.feedback-buttons {
+    display: flex;
+    gap: 0.5rem;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+/* Show on message hover */
+.chat-message:hover .feedback-buttons,
+.message-container:hover .feedback-buttons {
+    opacity: 1;
+}
+
+.feedback-buttons.submitted {
+    opacity: 0.7;
+}
+
+.feedback-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.feedback-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.1);
+    transform: scale(1.1);
+}
+
+.feedback-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.feedback-btn.positive:hover:not(:disabled) {
+    border-color: #22c55e;
+    box-shadow: 0 0 8px rgba(34, 197, 94, 0.3);
+}
+
+.feedback-btn.negative:hover:not(:disabled) {
+    border-color: #ef4444;
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.3);
+}
+
+.feedback-thanks {
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.5);
+    padding: 0.35rem 0;
+}

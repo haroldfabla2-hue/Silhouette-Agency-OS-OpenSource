@@ -1,0 +1,19 @@
+{
+  "full_app_process_started": true,
+  "http_response": {
+    "status": 503,
+    "body": "{\"status\":\"degraded\",\"timestamp\":\"2026-11-11T13:09:56.832Z\",\"uptime\":4,\"services\":{\"redis\":{\"status\":\"degraded\",\"backend\":\"in-memory-fallback\",\"latencyMs\":0,\"note\":\"Redis unavailable; in-memory fallback loses data on restart.\"},\"neo4j\":{\"status\":\"up\",\"backend\":\"disabled\",\"note\":\"Graph module disabled in config (Lite Mode); SQLite by design.\"},\"qdrant\":{\"status\":\"up\",\"latencyMs\":0},\"sqlite\":{\"status\":\"up\",\"latencyMs\":1},\"daemon\":{\"status\":\"up\"}}}"
+  },
+  "provider_calls_authorized": false,
+  "external_network_namespace": true,
+  "production_data": false,
+  "exit_before_probe": null,
+  "process_terminated": true,
+  "known_limits": [
+    "not UI/end-to-end",
+    "not full typecheck",
+    "not production memory/restart",
+    "Redis fallback has no durability",
+    "external graph/vector disabled"
+  ]
+}

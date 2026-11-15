@@ -1,0 +1,23 @@
+{
+    "system": {
+        "port": 3000,
+        "env": "development"
+    },
+    "llm": {
+        "providers": {
+            "gemini": {
+                "apiKey": "YOUR_GEMINI_API_KEY_HERE",
+                "model": "gemini-1.5-pro-latest"
+            }
+        }
+    },
+    "channels": {
+        "telegram": {
+            "enabled": false,
+            "botToken": "YOUR_TELEGRAM_BOT_TOKEN_HERE",
+            "accessMode": "allowlist",
+            "allowedChatIds": []
+        }
+    },
+    "media": {}
+}

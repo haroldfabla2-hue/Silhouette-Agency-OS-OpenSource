@@ -1,0 +1,152 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop, fix/memory-p0-transactional-20260929]
+
+jobs:
+  quality:
+    name: Code Quality & Tests
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        # Floor required by package.json engines (Stagehand needs >=22.18) plus latest 22.x.
+        node-version: ['22.18.0', '22']
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 'true'
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Install real Linux sandbox dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap libseccomp2
+          # Ubuntu AppArmor otherwise denies CI runner user namespaces.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Install Chromium for browser tests
+        run: npx playwright install --with-deps chromium
+
+      - name: F0 verification coverage and hermetic legacy checks
+        run: npx vitest run tests/automated/help-protocol.test.ts tests/automated/legacy-hermetic.test.ts tests/automated/verification-inventory.test.ts
+
+      - name: Real process boot gates and provider OFF/ON transport
+        run: |
+          bwrap --unshare-user --uid 0 --gid 0 --unshare-net --cap-add CAP_NET_ADMIN \
+            --ro-bind / / --proc /proc --dev-bind /dev /dev --tmpfs /tmp \
+            --ro-bind "$PWD" /tmp/project \
+            /bin/bash -c 'ip link set lo up; cd /tmp/project; env -i PATH="$PATH" HOME=/tmp python3 tests/real-process/run-boot-checks.py /tmp/project/node_modules/.bin/tsx'
+
+      - name: Production provider-OFF local API authentication (disposable data)
+        run: |
+          fixture=$(mktemp -d)
+          git archive HEAD | tar -xf - -C "$fixture"
+          rm -f "$fixture/.env" "$fixture/.env.local"
+          mkdir -p "$fixture/db"
+          touch "$fixture/FIXTURE_ONLY"
+          ln -s "$PWD/node_modules" "$fixture/node_modules"
+          bwrap --unshare-user --uid 0 --gid 0 --unshare-net --cap-add CAP_NET_ADMIN \
+            --ro-bind / / --proc /proc --dev-bind /dev /dev --tmpfs /tmp \
+            --bind "$fixture" /tmp/work \
+            /bin/bash -c 'ip link set lo up; env -i PATH="$PATH" HOME=/tmp python3 /tmp/work/tests/real-process/production-off-auth.py'
+
+      - name: Unit tests
+        run: npm test -- --detectAsyncLeaks
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Build server
+        run: npx vite build --config vite.server.config.ts
+
+  security:
+    name: Security Audit
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 'true'
+
+      # All production and development dependencies remain in scope.
+      # Remaining high/critical findings must fail this job, even during repair.
+      - name: Dependency audit (fail closed)
+        run: npm audit --audit-level=high
+
+  build-check:
+    name: Windows Build Verification (frontend + server)
+    runs-on: windows-latest
+    needs: quality
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 'true'
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Build server
+        run: npx vite build --config vite.server.config.ts
+
+      - name: Electron Builder dry-run
+        run: npx electron-builder build --win --dir
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify packaged files
+        shell: pwsh
+        run: |
+          $requiredFiles = @(
+            'dist-desktop/win-unpacked/resources/app.asar',
+            'dist-desktop/win-unpacked/resources/splash.html'
+          )
+          foreach ($file in $requiredFiles) {
+            if (Test-Path $file) {
+              Write-Host "✅ Found: $file"
+            } else {
+              Write-Host "❌ Missing: $file"
+              exit 1
+            }
+          }
+          Write-Host '✅ All required packaged files present'

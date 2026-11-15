@@ -1,0 +1,10 @@
+[
+  {
+    "id": "mcp-default",
+    "description": "Default MCP Inbound Webhook",
+    "endpoint": "/v1/webhooks/mcp",
+    "method": "POST",
+    "status": "ACTIVE",
+    "provider": "CUSTOM"
+  }
+]

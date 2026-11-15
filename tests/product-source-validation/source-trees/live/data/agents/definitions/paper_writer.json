@@ -1,0 +1,25 @@
+{
+    "id": "Paper_Writer",
+    "name": "Paper Writer",
+    "teamId": "TEAM_RESEARCH",
+    "category": "SCIENCE",
+    "tier": "SPECIALIST",
+    "roleType": "WORKER",
+    "role": "Academic Publication Specialist",
+    "status": "IDLE",
+    "enabled": true,
+    "preferredMemory": "RAM",
+    "memoryLocation": "RAM",
+    "cpuUsage": 0,
+    "ramUsage": 0,
+    "lastActive": 0,
+    "capabilities": [
+        "CAP_PAPER_WRITING",
+        "CAP_DELEGATION",
+        "TOOL_DELEGATE_TASK",
+        "TOOL_COLLECT_REFERENCES",
+        "TOOL_GENERATE_FIGURES",
+        "TOOL_GENERATE_RIGOROUS_PAPER"
+    ],
+    "description": "Expert academic writer specializing in publication-quality research papers. Coordinates with Researcher, Synthesizer, and Figure Generator agents to produce rigorous papers with verified references, generated figures, and proper methodology sections."
+}

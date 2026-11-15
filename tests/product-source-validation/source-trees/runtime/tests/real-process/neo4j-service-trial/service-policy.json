@@ -1,0 +1,20 @@
+{
+  "status": "FIXED_LOCAL_SOURCE_SERVICE_ROLE_POLICY_NO_EXECUTION_AUTHORITY",
+  "service_nofile": 40000,
+  "client_nofile": 256,
+  "shared_parent_memory_bytes": 8589934592,
+  "shared_parent_swap_bytes": 0,
+  "shared_parent_pids_tasks": 256,
+  "shared_parent_cpu_max": "200000 100000",
+  "shared_scratch_bytes": 536870912,
+  "per_file_bytes": 67108864,
+  "fixture_absolute_seconds": 175,
+  "gate_wait_seconds": 30,
+  "worst_fd_slots_all_tasks_independent_filetables": 10240000,
+  "new_privileged_helper": false,
+  "historical_contracts_unchanged": true,
+  "file_handle_free_reserve": 65536,
+  "kernel_global_handle_headroom_required": 10305536,
+  "sampled_aggregate_fd_alarm": 1000000,
+  "alarm_is_enforcement": false
+}

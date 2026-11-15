@@ -1,0 +1,33 @@
+{
+  "corpus": "unique non-overlapping 60-word passages from services/docs/server on this branch",
+  "corpusSize": 4952,
+  "embedding": {
+    "provider": "local-lexical-hash",
+    "model": "token-sha256",
+    "version": "1",
+    "dimension": 64
+  },
+  "index": {
+    "rows": 4952,
+    "partitions": 32
+  },
+  "backfill": {
+    "projected": 4952,
+    "stale": 0,
+    "remaining": 0
+  },
+  "queries": 100,
+  "warmupQueries": 10,
+  "k": 10,
+  "nprobes": 8,
+  "recallAt10": 0.8540000000000001,
+  "exactP95Ms": 10.67001099999834,
+  "annP95Ms": 9.572567999999592,
+  "measurement": "raw projection candidates including connection/table-open time; excludes canonical hydration and provider latency",
+  "environment": {
+    "node": "v22.23.3",
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.60GHz",
+    "logicalCpus": 2
+  },
+  "caveats": "lexical hash baseline, not neural semantic quality; source-derived queries are not held-out relevance labels; no production rollout"
+}

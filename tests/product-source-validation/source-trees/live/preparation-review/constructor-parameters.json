@@ -1,0 +1,233 @@
+[
+  {
+    "file": "server/config/configLoader.ts",
+    "line": 17,
+    "parameters": [
+      {
+        "name": "construction",
+        "question": false,
+        "initializer": false
+      }
+    ]
+  },
+  {
+    "file": "services/architectService.ts",
+    "line": 22,
+    "parameters": [
+      {
+        "name": "construction",
+        "question": false,
+        "initializer": false
+      }
+    ]
+  },
+  {
+    "file": "services/architecturalReview.ts",
+    "line": 21,
+    "parameters": [
+      {
+        "name": "construction",
+        "question": false,
+        "initializer": false
+      }
+    ]
+  },
+  {
+    "file": "services/brain/brainMemoryBridge.ts",
+    "line": 44,
+    "parameters": [
+      {
+        "name": "client",
+        "question": false,
+        "initializer": true
+      },
+      {
+        "name": "ownership",
+        "question": false,
+        "initializer": false
+      },
+      {
+        "name": "operation",
+        "question": false,
+        "initializer": false
+      }
+    ]
+  },
+  {
+    "file": "services/bus/MemoryBusAdapter.ts",
+    "line": 7,
+    "parameters": [
+      {
+        "name": "ownership",
+        "question": false,
+        "initializer": false
+      }
+    ]
+  },
+  {
+    "file": "services/bus/RedisBusAdapter.ts",
+    "line": 14,
+    "parameters": [
+      {
+        "name": "url",
+        "question": false,
+        "initializer": false
+      },
+      {
+        "name": "ownership",
+        "question": false,
+        "initializer": false
+      },
+      {
+        "name": "operation",
+        "question": false,
+        "initializer": false
+      }
+    ]
+  },
+  {
+    "file": "services/codebaseAwareness.ts",
+    "line": 21,
+    "parameters": [
+      {
+        "name": "embed",
+        "question": false,
+        "initializer": true
+      },
+      {
+        "name": "subscribe",
+        "question": false,
+        "initializer": true
+      },
+      {
+        "name": "ownership",
+        "question": false,
+        "initializer": false
+      },
+      {
+        "name": "construction",
+        "question": false,
+        "initializer": false
+      }
+    ]
+  },
+  {
+    "file": "services/costEstimator.ts",
+    "line": 94,
+    "parameters": [
+      {
+        "name": "construction",
+        "question": false,
+        "initializer": false
+      }
+    ]
+  },
+  {
+    "file": "services/introspectionEngine.ts",
+    "line": 146,
+    "parameters": [
+      {
+        "name": "ownership",
+        "question": false,
+        "initializer": false
+      },
+      {
+        "name": "operation",
+        "question": false,
+        "initializer": false
+      }
+    ]
+  },
+  {
+    "file": "services/lancedbService.ts",
+    "line": 70,
+    "parameters": [
+      {
+        "name": "databasePath",
+        "question": false,
+        "initializer": true
+      },
+      {
+        "name": "ownership",
+        "question": false,
+        "initializer": false
+      },
+      {
+        "name": "operation",
+        "question": false,
+        "initializer": false
+      }
+    ]
+  },
+  {
+    "file": "services/neuroSynapseService.ts",
+    "line": 16,
+    "parameters": [
+      {
+        "name": "construction",
+        "question": false,
+        "initializer": false
+      }
+    ]
+  },
+  {
+    "file": "services/orchestrator.ts",
+    "line": 227,
+    "parameters": [
+      {
+        "name": "construction",
+        "question": false,
+        "initializer": false
+      }
+    ]
+  },
+  {
+    "file": "services/remediationService.ts",
+    "line": 163,
+    "parameters": [
+      {
+        "name": "construction",
+        "question": false,
+        "initializer": false
+      }
+    ]
+  },
+  {
+    "file": "services/sqliteService.ts",
+    "line": 33,
+    "parameters": [
+      {
+        "name": "ownership",
+        "question": false,
+        "initializer": false
+      },
+      {
+        "name": "operation",
+        "question": false,
+        "initializer": false
+      }
+    ]
+  },
+  {
+    "file": "services/systemBus.ts",
+    "line": 63,
+    "parameters": [
+      {
+        "name": "construction",
+        "question": false,
+        "initializer": false
+      }
+    ]
+  },
+  {
+    "file": "services/workflowEngine.ts",
+    "line": 42,
+    "parameters": [
+      {
+        "name": "construction",
+        "question": false,
+        "initializer": false
+      }
+    ]
+  }
+]

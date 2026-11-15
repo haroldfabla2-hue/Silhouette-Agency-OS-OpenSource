@@ -1,0 +1,1325 @@
+{
+  "warning": "All constructor direct call/new expression leads in pinned120-source syntactic envelope. Includes nested callback expressions, not proof of synchronous evaluation. Getter/field/module/dependency effects and callbacks remain separate frontiers.",
+  "constructors": [
+    {
+      "file": "server/config/configLoader.ts",
+      "line": 17,
+      "calls": [
+        {
+          "line": 18,
+          "text": "configOwner().validateConstruction(construction)"
+        },
+        {
+          "line": 18,
+          "text": "configOwner()"
+        },
+        {
+          "line": 19,
+          "text": "configOwner().invoke('original-config-read-migrate', () => this.loadOrMigrate(), construction)"
+        },
+        {
+          "line": 19,
+          "text": "configOwner()"
+        },
+        {
+          "line": 19,
+          "text": "this.loadOrMigrate()"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/agents/StandardAgent.ts",
+      "line": 12,
+      "calls": [
+        {
+          "line": 13,
+          "text": "super(config)"
+        },
+        {
+          "line": 18,
+          "text": "this.thoughtProcess.push(\"[SYSTEM] Bootstrapped with legacy instructions.\")"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/architectService.ts",
+      "line": 22,
+      "calls": [
+        {
+          "line": 23,
+          "text": "this.ownership.validateConstruction(construction)"
+        },
+        {
+          "line": 24,
+          "text": "this.ownership.invoke('original-directory-effect', () => this.ensureDirectories(), construction)"
+        },
+        {
+          "line": 24,
+          "text": "this.ensureDirectories()"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/architecturalReview.ts",
+      "line": 21,
+      "calls": [
+        {
+          "line": 22,
+          "text": "this.ownership.validateConstruction(construction)"
+        },
+        {
+          "line": 23,
+          "text": "this.initialize()"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/backgroundLLMService.ts",
+      "line": 54,
+      "calls": [
+        {
+          "line": 55,
+          "text": "console.log('[BACKGROUND_LLM] V2 Initialized - Intelligent Routing Active')"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/brain/brainClient.ts",
+      "line": 122,
+      "calls": [
+        {
+          "line": 123,
+          "text": "readEnvConfig()"
+        },
+        {
+          "line": 124,
+          "text": "externalProvidersDisabled()"
+        },
+        {
+          "line": 126,
+          "text": "log.info({ baseUrl: this.config.baseUrl }, '🧠 Silhouette Brain integration enabled')"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/brain/brainMemoryBridge.ts",
+      "line": 44,
+      "calls": [
+        {
+          "line": 45,
+          "text": "ownership.validateConstruction(operation)"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/bus/MemoryBusAdapter.ts",
+      "line": 7,
+      "calls": [
+        {
+          "line": 8,
+          "text": "ownership.onSeal(() => {\n            const queued = [...this.mailboxes.values()].reduce((count, messages) => count + messages.length, 0);\n            if (queued) ownership.unknown('memory-mailbox:QUEUED_NOT_DURABLE_AT_SEAL');\n        })"
+        },
+        {
+          "line": 9,
+          "text": "[...this.mailboxes.values()].reduce((count, messages) => count + messages.length, 0)"
+        },
+        {
+          "line": 9,
+          "text": "this.mailboxes.values()"
+        },
+        {
+          "line": 10,
+          "text": "ownership.unknown('memory-mailbox:QUEUED_NOT_DURABLE_AT_SEAL')"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/cfoService.ts",
+      "line": 26,
+      "calls": [
+        {
+          "line": 27,
+          "text": "console.log(\"[CFO] Guardian Active. Monitoring Wallet.\")"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/codebaseAwareness.ts",
+      "line": 21,
+      "calls": [
+        {
+          "line": 22,
+          "text": "(await import('./geminiService')).generateEmbedding(text)"
+        },
+        {
+          "line": 22,
+          "text": "import('./geminiService')"
+        },
+        {
+          "line": 24,
+          "text": "ownership.validateConstruction(construction)"
+        },
+        {
+          "line": 25,
+          "text": "this.initialize()"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/connectionNervousSystem.ts",
+      "line": 52,
+      "calls": [
+        {
+          "line": 53,
+          "text": "console.log(\"[NERVOUS] 🧠 Connection Nervous System initializing...\")"
+        },
+        {
+          "line": 54,
+          "text": "this.ownership.onSeal(() => this.stop())"
+        },
+        {
+          "line": 54,
+          "text": "this.stop()"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/consciousnessEngine.ts",
+      "line": 30,
+      "calls": [
+        {
+          "line": 42,
+          "text": "consciousnessOwner().invoke('original-identity', () => this.initializeIdentity())"
+        },
+        {
+          "line": 42,
+          "text": "consciousnessOwner()"
+        },
+        {
+          "line": 42,
+          "text": "this.initializeIdentity()"
+        },
+        {
+          "line": 44,
+          "text": "this.identityInitialization.catch(error => {\n            console.error('[CONSCIOUSNESS] Identity initialization failed', error);\n        })"
+        },
+        {
+          "line": 45,
+          "text": "console.error('[CONSCIOUSNESS] Identity initialization failed', error)"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/context/contextCompactionService.ts",
+      "line": 42,
+      "calls": [
+        {
+          "line": 43,
+          "text": "console.log(\"[COMPACTION] 📉 Service initialized.\")"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/contextAssembler.ts",
+      "line": 112,
+      "calls": [
+        {
+          "line": 113,
+          "text": "console.log(\"[CONTEXT ASSEMBLER] 🧠 Initializing Omniscient Cortex...\")"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/contextJanitor.ts",
+      "line": 49,
+      "calls": [
+        {
+          "line": 50,
+          "text": "console.log(\"[JANITOR] Initialized V3. Contradiction Resolution Active.\")"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/continuumMemory.ts",
+      "line": 271,
+      "calls": [
+        {
+          "line": 272,
+          "text": "this.snapshotDiagnostic('OWNER_DECLARED', { backingStoreIdentity: 'UNKNOWN', generation: 'UNKNOWN' })"
+        },
+        {
+          "line": 283,
+          "text": "continuumOwner().invoke('original-hydration', () => this.loadSnapshot(report)).then(() => {\n            this.hydrationState = 'VALID';\n        }, error => {\n            this.hydrationState = 'FAILED';\n            throw error;\n        })"
+        },
+        {
+          "line": 283,
+          "text": "continuumOwner().invoke('original-hydration', () => this.loadSnapshot(report))"
+        },
+        {
+          "line": 283,
+          "text": "continuumOwner()"
+        },
+        {
+          "line": 283,
+          "text": "this.loadSnapshot(report)"
+        },
+        {
+          "line": 289,
+          "text": "continuumOwner().invoke('original-core-recovery', () => this.recoverCore(report))"
+        },
+        {
+          "line": 289,
+          "text": "continuumOwner()"
+        },
+        {
+          "line": 289,
+          "text": "this.recoverCore(report)"
+        },
+        {
+          "line": 291,
+          "text": "this.coreRecovery.catch(err => console.error('[CONTINUUM] Failed to recover memory:', err))"
+        },
+        {
+          "line": 291,
+          "text": "console.error('[CONTINUUM] Failed to recover memory:', err)"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/costEstimator.ts",
+      "line": 94,
+      "calls": [
+        {
+          "line": 95,
+          "text": "costOwner().validateConstruction(construction)"
+        },
+        {
+          "line": 95,
+          "text": "costOwner()"
+        },
+        {
+          "line": 96,
+          "text": "costOwner().invoke('original-metrics-hydration', () => this.loadPersistedMetrics(), construction)"
+        },
+        {
+          "line": 96,
+          "text": "costOwner()"
+        },
+        {
+          "line": 96,
+          "text": "this.loadPersistedMetrics()"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/deepSeekService.ts",
+      "line": 57,
+      "calls": [
+        {
+          "line": 58,
+          "text": "this.loadApiKey()"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/dreamerService.ts",
+      "line": 15,
+      "calls": [
+        {
+          "line": 15,
+          "text": "this.ownership.onSeal(() => this.stopDreamingLoop())"
+        },
+        {
+          "line": 15,
+          "text": "this.stopDreamingLoop()"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/graphService.ts",
+      "line": 41,
+      "calls": [
+        {
+          "line": 43,
+          "text": "this.ownership.onSeal(() => {\n            if (this.connectionTimeout) clearTimeout(this.connectionTimeout);\n            this.connectionTimeout = null;\n        })"
+        },
+        {
+          "line": 44,
+          "text": "clearTimeout(this.connectionTimeout)"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/identity/identityEvolution.ts",
+      "line": 114,
+      "calls": [
+        {
+          "line": 115,
+          "text": "super(message)"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/introspectionEngine.ts",
+      "line": 146,
+      "calls": [
+        {
+          "line": 147,
+          "text": "ownership.validateConstruction(operation)"
+        },
+        {
+          "line": 149,
+          "text": "this.observeOwnedWork(\n            this.ownership.invoke('original-concept', child => this.injectInitialConcept(child), operation), this.initialStatus.concept)"
+        },
+        {
+          "line": 150,
+          "text": "this.ownership.invoke('original-concept', child => this.injectInitialConcept(child), operation)"
+        },
+        {
+          "line": 150,
+          "text": "this.injectInitialConcept(child)"
+        },
+        {
+          "line": 152,
+          "text": "this.observeOwnedWork(this.ownership.invoke('original-goals', child => this.loadGoalsFromMemory(child), operation), this.initialStatus.goals)"
+        },
+        {
+          "line": 152,
+          "text": "this.ownership.invoke('original-goals', child => this.loadGoalsFromMemory(child), operation)"
+        },
+        {
+          "line": 152,
+          "text": "this.loadGoalsFromMemory(child)"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/lancedbService.ts",
+      "line": 70,
+      "calls": [
+        {
+          "line": 71,
+          "text": "ownership.validateConstruction(operation)"
+        },
+        {
+          "line": 72,
+          "text": "ownership.onSeal(() => {\n            if (this.optimizeTimer) clearInterval(this.optimizeTimer);\n            this.optimizeTimer = null;\n        })"
+        },
+        {
+          "line": 73,
+          "text": "clearInterval(this.optimizeTimer)"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/llm/inference.ts",
+      "line": 28,
+      "calls": [
+        {
+          "line": 29,
+          "text": "super(message, options)"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/llm/providerRegistry.ts",
+      "line": 46,
+      "calls": [
+        {
+          "line": 47,
+          "text": "this.register(definition)"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/llmGateway.ts",
+      "line": 76,
+      "calls": [
+        {
+          "line": 76,
+          "text": "ProviderRegistry.fromEnvironment()"
+        },
+        {
+          "line": 76,
+          "text": "new OpenAICompatibleClient()"
+        },
+        {
+          "line": 77,
+          "text": "registry.list()"
+        },
+        {
+          "line": 77,
+          "text": "this.providers.set(definition.id, {\n            name: definition.id, failures: 0, lastFailure: 0, circuitOpen: false, totalCalls: 0, totalLatencyMs: 0, currentModel: definition.model\n        })"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/logger.ts",
+      "line": 68,
+      "calls": [
+        {
+          "line": 70,
+          "text": "getMinLevel()"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/memoryTransitions.ts",
+      "line": 23,
+      "calls": [
+        {
+          "line": 24,
+          "text": "path.join(process.cwd(), 'data', 'memory-transitions')"
+        },
+        {
+          "line": 24,
+          "text": "process.cwd()"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/narrativeService.ts",
+      "line": 15,
+      "calls": [
+        {
+          "line": 16,
+          "text": "super(`Narrative queued presentation not started at terminal stop: ${queued}`)"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/narrativeService.ts",
+      "line": 334,
+      "calls": [
+        {
+          "line": 335,
+          "text": "narrativeOwner().onSeal(() => this.stopAdmissions())"
+        },
+        {
+          "line": 335,
+          "text": "narrativeOwner()"
+        },
+        {
+          "line": 335,
+          "text": "this.stopAdmissions()"
+        },
+        {
+          "line": 336,
+          "text": "this.retain(narrativeOwner().invoke('original-aggregator', () => this.initializeStreamAggregator()))"
+        },
+        {
+          "line": 336,
+          "text": "narrativeOwner().invoke('original-aggregator', () => this.initializeStreamAggregator())"
+        },
+        {
+          "line": 336,
+          "text": "narrativeOwner()"
+        },
+        {
+          "line": 336,
+          "text": "this.initializeStreamAggregator()"
+        },
+        {
+          "line": 337,
+          "text": "this.startBatchProcessor()"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/neuroLinkService.ts",
+      "line": 16,
+      "calls": [
+        {
+          "line": 17,
+          "text": "this.ownership.onSeal(() => { if (this.discoveryInterval) clearInterval(this.discoveryInterval); })"
+        },
+        {
+          "line": 17,
+          "text": "clearInterval(this.discoveryInterval)"
+        },
+        {
+          "line": 18,
+          "text": "this.startDiscovery()"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/neuroSynapseService.ts",
+      "line": 16,
+      "calls": [
+        {
+          "line": 17,
+          "text": "this.ownership.validateConstruction(construction)"
+        },
+        {
+          "line": 18,
+          "text": "console.log(\"[NEURO-LINK] 🧠 Initializing Synaptic Bridge...\")"
+        },
+        {
+          "line": 19,
+          "text": "this.initializeListeners()"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/ollamaService.ts",
+      "line": 42,
+      "calls": [
+        {
+          "line": 42,
+          "text": "new Ollama({ host: 'http://localhost:11434' })"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/orchestrator.ts",
+      "line": 93,
+      "calls": [
+        {
+          "line": 93,
+          "text": "super('User-message admission stopped')"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/orchestrator.ts",
+      "line": 227,
+      "calls": [
+        {
+          "line": 228,
+          "text": "this.ownership.validateConstruction(construction)"
+        },
+        {
+          "line": 229,
+          "text": "this.initializeSwarm(construction)"
+        },
+        {
+          "line": 230,
+          "text": "this.applyMode(SystemMode.ECO)"
+        },
+        {
+          "line": 233,
+          "text": "new ReputationLedger(defaultReputationLedgerPath())"
+        },
+        {
+          "line": 233,
+          "text": "defaultReputationLedgerPath()"
+        },
+        {
+          "line": 234,
+          "text": "loadOrganization(defaultOrganizationPath(), INITIAL_AGENTS)"
+        },
+        {
+          "line": 234,
+          "text": "defaultOrganizationPath()"
+        },
+        {
+          "line": 243,
+          "text": "this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.SQUAD_EXPANSION, (event) => {\n            const raw = event?.payload ?? {};\n            const inner = raw?.payload ?? raw;\n            const hasName = typeof inner.name === 'string' && inner.name.trim().length > 0;\n            const hasCategory = typeof inner.category === 'string' && inner.category.trim().length > 0;\n            if (!hasName || !hasCategory) {\n                console.warn(`[ORCHESTRATOR] ⛔ SQUAD_EXPANSION rejected: birth command requires name+category (got keys: ${Object.keys(inner).join(',') || 'none'}). Use SQUAD_MOBILIZED for mobilization notices and AGENT_HYDRATION_REQUEST to wake an existing agent.`);\n                return;\n            }\n            this.ownership.invoke('original-handleDynamicExpansion', () => this.handleDynamicExpansion(event.payload));\n        }))"
+        },
+        {
+          "line": 243,
+          "text": "systemBus.subscribe(SystemProtocol.SQUAD_EXPANSION, (event) => {\n            const raw = event?.payload ?? {};\n            const inner = raw?.payload ?? raw;\n            const hasName = typeof inner.name === 'string' && inner.name.trim().length > 0;\n            const hasCategory = typeof inner.category === 'string' && inner.category.trim().length > 0;\n            if (!hasName || !hasCategory) {\n                console.warn(`[ORCHESTRATOR] ⛔ SQUAD_EXPANSION rejected: birth command requires name+category (got keys: ${Object.keys(inner).join(',') || 'none'}). Use SQUAD_MOBILIZED for mobilization notices and AGENT_HYDRATION_REQUEST to wake an existing agent.`);\n                return;\n            }\n            this.ownership.invoke('original-handleDynamicExpansion', () => this.handleDynamicExpansion(event.payload));\n        })"
+        },
+        {
+          "line": 246,
+          "text": "inner.name.trim()"
+        },
+        {
+          "line": 247,
+          "text": "inner.category.trim()"
+        },
+        {
+          "line": 249,
+          "text": "console.warn(`[ORCHESTRATOR] ⛔ SQUAD_EXPANSION rejected: birth command requires name+category (got keys: ${Object.keys(inner).join(',') || 'none'}). Use SQUAD_MOBILIZED for mobilization notices and AGENT_HYDRATION_REQUEST to wake an existing agent.`)"
+        },
+        {
+          "line": 249,
+          "text": "Object.keys(inner).join(',')"
+        },
+        {
+          "line": 249,
+          "text": "Object.keys(inner)"
+        },
+        {
+          "line": 252,
+          "text": "this.ownership.invoke('original-handleDynamicExpansion', () => this.handleDynamicExpansion(event.payload))"
+        },
+        {
+          "line": 252,
+          "text": "this.handleDynamicExpansion(event.payload)"
+        },
+        {
+          "line": 257,
+          "text": "this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.AGENT_HYDRATION_REQUEST, (event) => {\n            const agentId = event?.payload?.agentId;\n            if (typeof agentId !== 'string' || !agentId.trim()) {\n                console.warn('[ORCHESTRATOR] ⛔ AGENT_HYDRATION_REQUEST rejected: missing agentId.');\n                return;\n            }\n            if (!this.knownAgentIds.includes(agentId)) {\n                console.warn(`[ORCHESTRATOR] ⛔ AGENT_HYDRATION_REQUEST rejected: unknown agent ${agentId}.`);\n                return;\n            }\n            this.ownership.invoke('original-hydrateAgent', () => this.hydrateAgent(agentId)).catch(e => console.error(`[ORCHESTRATOR] Hydration failed for ${agentId}:`, e));\n        }))"
+        },
+        {
+          "line": 257,
+          "text": "systemBus.subscribe(SystemProtocol.AGENT_HYDRATION_REQUEST, (event) => {\n            const agentId = event?.payload?.agentId;\n            if (typeof agentId !== 'string' || !agentId.trim()) {\n                console.warn('[ORCHESTRATOR] ⛔ AGENT_HYDRATION_REQUEST rejected: missing agentId.');\n                return;\n            }\n            if (!this.knownAgentIds.includes(agentId)) {\n                console.warn(`[ORCHESTRATOR] ⛔ AGENT_HYDRATION_REQUEST rejected: unknown agent ${agentId}.`);\n                return;\n            }\n            this.ownership.invoke('original-hydrateAgent', () => this.hydrateAgent(agentId)).catch(e => console.error(`[ORCHESTRATOR] Hydration failed for ${agentId}:`, e));\n        })"
+        },
+        {
+          "line": 259,
+          "text": "agentId.trim()"
+        },
+        {
+          "line": 260,
+          "text": "console.warn('[ORCHESTRATOR] ⛔ AGENT_HYDRATION_REQUEST rejected: missing agentId.')"
+        },
+        {
+          "line": 263,
+          "text": "this.knownAgentIds.includes(agentId)"
+        },
+        {
+          "line": 264,
+          "text": "console.warn(`[ORCHESTRATOR] ⛔ AGENT_HYDRATION_REQUEST rejected: unknown agent ${agentId}.`)"
+        },
+        {
+          "line": 267,
+          "text": "this.ownership.invoke('original-hydrateAgent', () => this.hydrateAgent(agentId)).catch(e => console.error(`[ORCHESTRATOR] Hydration failed for ${agentId}:`, e))"
+        },
+        {
+          "line": 267,
+          "text": "this.ownership.invoke('original-hydrateAgent', () => this.hydrateAgent(agentId))"
+        },
+        {
+          "line": 267,
+          "text": "this.hydrateAgent(agentId)"
+        },
+        {
+          "line": 267,
+          "text": "console.error(`[ORCHESTRATOR] Hydration failed for ${agentId}:`, e)"
+        },
+        {
+          "line": 271,
+          "text": "this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.TASK_ASSIGNMENT, (event) => {\n            this.ownership.invoke('original-handleTaskAssignment', () => this.handleTaskAssignment(event.payload));\n        }))"
+        },
+        {
+          "line": 271,
+          "text": "systemBus.subscribe(SystemProtocol.TASK_ASSIGNMENT, (event) => {\n            this.ownership.invoke('original-handleTaskAssignment', () => this.handleTaskAssignment(event.payload));\n        })"
+        },
+        {
+          "line": 272,
+          "text": "this.ownership.invoke('original-handleTaskAssignment', () => this.handleTaskAssignment(event.payload))"
+        },
+        {
+          "line": 272,
+          "text": "this.handleTaskAssignment(event.payload)"
+        },
+        {
+          "line": 276,
+          "text": "this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.EPISTEMIC_GAP_DETECTED, (event) => {\n            this.ownership.invoke('original-handleEpistemicGap', () => this.handleEpistemicGap(event.payload));\n        }))"
+        },
+        {
+          "line": 276,
+          "text": "systemBus.subscribe(SystemProtocol.EPISTEMIC_GAP_DETECTED, (event) => {\n            this.ownership.invoke('original-handleEpistemicGap', () => this.handleEpistemicGap(event.payload));\n        })"
+        },
+        {
+          "line": 277,
+          "text": "this.ownership.invoke('original-handleEpistemicGap', () => this.handleEpistemicGap(event.payload))"
+        },
+        {
+          "line": 277,
+          "text": "this.handleEpistemicGap(event.payload)"
+        },
+        {
+          "line": 281,
+          "text": "this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.TASK_COMPLETION, (event) => {\n            this.ownership.invoke('original-handleTaskCompletion', () => this.handleTaskCompletion(event.payload));\n        }))"
+        },
+        {
+          "line": 281,
+          "text": "systemBus.subscribe(SystemProtocol.TASK_COMPLETION, (event) => {\n            this.ownership.invoke('original-handleTaskCompletion', () => this.handleTaskCompletion(event.payload));\n        })"
+        },
+        {
+          "line": 282,
+          "text": "this.ownership.invoke('original-handleTaskCompletion', () => this.handleTaskCompletion(event.payload))"
+        },
+        {
+          "line": 282,
+          "text": "this.handleTaskCompletion(event.payload)"
+        },
+        {
+          "line": 286,
+          "text": "this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.SQUAD_REASSIGNMENT, (event) => {\n            this.ownership.invoke('original-handleSquadReassignment', () => this.handleSquadReassignment(event.payload));\n        }))"
+        },
+        {
+          "line": 286,
+          "text": "systemBus.subscribe(SystemProtocol.SQUAD_REASSIGNMENT, (event) => {\n            this.ownership.invoke('original-handleSquadReassignment', () => this.handleSquadReassignment(event.payload));\n        })"
+        },
+        {
+          "line": 287,
+          "text": "this.ownership.invoke('original-handleSquadReassignment', () => this.handleSquadReassignment(event.payload))"
+        },
+        {
+          "line": 287,
+          "text": "this.handleSquadReassignment(event.payload)"
+        },
+        {
+          "line": 291,
+          "text": "this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.SENSORY_SNAPSHOT, (event) => {\n            // Forward visual info to agents if relevant\n            console.log(\"[ORCHESTRATOR] 👁️ Visual Context Updated\");\n        }))"
+        },
+        {
+          "line": 291,
+          "text": "systemBus.subscribe(SystemProtocol.SENSORY_SNAPSHOT, (event) => {\n            // Forward visual info to agents if relevant\n            console.log(\"[ORCHESTRATOR] 👁️ Visual Context Updated\");\n        })"
+        },
+        {
+          "line": 293,
+          "text": "console.log(\"[ORCHESTRATOR] 👁️ Visual Context Updated\")"
+        },
+        {
+          "line": 298,
+          "text": "subscribeHelpProtocol({\n            findHelper: (role, request) => {\n                // Escalation path: an executor can ask for its team head directly.\n                if (role === '@team-head' && request) {\n                    const team = teamOfAgent(this.orgChart, request.requesterId);\n                    return team ? team.headAgentId : null;\n                }\n                return this.findAgentByRole(role);\n            },\n            recordFact: fact => this.reputationLedger.append(fact),\n            prepare: async (request, helperId) => {\n                const enrichedContext = typeof request.context === 'object' && request.context !== null\n                    ? { ...request.context } : { sharedContext: request.context };\n                const cognitive = await this.buildCognitiveContextForTask(request.problem, helperId);\n                if (cognitive) Object.assign(enrichedContext, { semanticDeepMemory: cognitive });\n                await this.hydrateAgent(helperId);\n                if (!this.activeActors.has(helperId)) throw new Error(`Unable to hydrate specialist ${helperId}`);\n                return enrichedContext;\n            }\n        })"
+        },
+        {
+          "line": 302,
+          "text": "teamOfAgent(this.orgChart, request.requesterId)"
+        },
+        {
+          "line": 305,
+          "text": "this.findAgentByRole(role)"
+        },
+        {
+          "line": 307,
+          "text": "this.reputationLedger.append(fact)"
+        },
+        {
+          "line": 311,
+          "text": "this.buildCognitiveContextForTask(request.problem, helperId)"
+        },
+        {
+          "line": 312,
+          "text": "Object.assign(enrichedContext, { semanticDeepMemory: cognitive })"
+        },
+        {
+          "line": 313,
+          "text": "this.hydrateAgent(helperId)"
+        },
+        {
+          "line": 314,
+          "text": "this.activeActors.has(helperId)"
+        },
+        {
+          "line": 314,
+          "text": "new Error(`Unable to hydrate specialist ${helperId}`)"
+        },
+        {
+          "line": 320,
+          "text": "this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.TRUTH_REVISION_APPLIED, (event) => {\n            this.ownership.invoke('original-handleTruthRevisionApplied', () => this.handleTruthRevisionApplied(event.payload));\n        }))"
+        },
+        {
+          "line": 320,
+          "text": "systemBus.subscribe(SystemProtocol.TRUTH_REVISION_APPLIED, (event) => {\n            this.ownership.invoke('original-handleTruthRevisionApplied', () => this.handleTruthRevisionApplied(event.payload));\n        })"
+        },
+        {
+          "line": 321,
+          "text": "this.ownership.invoke('original-handleTruthRevisionApplied', () => this.handleTruthRevisionApplied(event.payload))"
+        },
+        {
+          "line": 321,
+          "text": "this.handleTruthRevisionApplied(event.payload)"
+        },
+        {
+          "line": 325,
+          "text": "this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.COST_ANOMALY, (event) => {\n            if (event.payload.agentId && event.payload.cost) {\n                this.ownership.invoke('original-handleCostAnomaly', () => this.handleCostAnomaly(event.payload.agentId, event.payload.cost));\n            }\n        }))"
+        },
+        {
+          "line": 325,
+          "text": "systemBus.subscribe(SystemProtocol.COST_ANOMALY, (event) => {\n            if (event.payload.agentId && event.payload.cost) {\n                this.ownership.invoke('original-handleCostAnomaly', () => this.handleCostAnomaly(event.payload.agentId, event.payload.cost));\n            }\n        })"
+        },
+        {
+          "line": 327,
+          "text": "this.ownership.invoke('original-handleCostAnomaly', () => this.handleCostAnomaly(event.payload.agentId, event.payload.cost))"
+        },
+        {
+          "line": 327,
+          "text": "this.handleCostAnomaly(event.payload.agentId, event.payload.cost)"
+        },
+        {
+          "line": 332,
+          "text": "this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.DATA_CORRUPTION, (event) => {\n            this.ownership.invoke('original-handleDataCorruption', () => this.handleDataCorruption(event.payload));\n        }))"
+        },
+        {
+          "line": 332,
+          "text": "systemBus.subscribe(SystemProtocol.DATA_CORRUPTION, (event) => {\n            this.ownership.invoke('original-handleDataCorruption', () => this.handleDataCorruption(event.payload));\n        })"
+        },
+        {
+          "line": 333,
+          "text": "this.ownership.invoke('original-handleDataCorruption', () => this.handleDataCorruption(event.payload))"
+        },
+        {
+          "line": 333,
+          "text": "this.handleDataCorruption(event.payload)"
+        },
+        {
+          "line": 337,
+          "text": "this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.RESEARCH_REQUEST, (event) => {\n            this.ownership.invoke('original-handleResearchRequest', () => this.handleResearchRequest(event.payload));\n        }))"
+        },
+        {
+          "line": 337,
+          "text": "systemBus.subscribe(SystemProtocol.RESEARCH_REQUEST, (event) => {\n            this.ownership.invoke('original-handleResearchRequest', () => this.handleResearchRequest(event.payload));\n        })"
+        },
+        {
+          "line": 338,
+          "text": "this.ownership.invoke('original-handleResearchRequest', () => this.handleResearchRequest(event.payload))"
+        },
+        {
+          "line": 338,
+          "text": "this.handleResearchRequest(event.payload)"
+        },
+        {
+          "line": 342,
+          "text": "this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.SYNTHESIS_REQUEST, (event) => {\n            this.ownership.invoke('original-handleSynthesisRequest', () => this.handleSynthesisRequest(event.payload));\n        }))"
+        },
+        {
+          "line": 342,
+          "text": "systemBus.subscribe(SystemProtocol.SYNTHESIS_REQUEST, (event) => {\n            this.ownership.invoke('original-handleSynthesisRequest', () => this.handleSynthesisRequest(event.payload));\n        })"
+        },
+        {
+          "line": 343,
+          "text": "this.ownership.invoke('original-handleSynthesisRequest', () => this.handleSynthesisRequest(event.payload))"
+        },
+        {
+          "line": 343,
+          "text": "this.handleSynthesisRequest(event.payload)"
+        },
+        {
+          "line": 346,
+          "text": "this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.PAPER_GENERATION_REQUEST, (event) => {\n            this.ownership.invoke('original-handlePaperGenerationRequest', () => this.handlePaperGenerationRequest(event.payload));\n        }))"
+        },
+        {
+          "line": 346,
+          "text": "systemBus.subscribe(SystemProtocol.PAPER_GENERATION_REQUEST, (event) => {\n            this.ownership.invoke('original-handlePaperGenerationRequest', () => this.handlePaperGenerationRequest(event.payload));\n        })"
+        },
+        {
+          "line": 347,
+          "text": "this.ownership.invoke('original-handlePaperGenerationRequest', () => this.handlePaperGenerationRequest(event.payload))"
+        },
+        {
+          "line": 347,
+          "text": "this.handlePaperGenerationRequest(event.payload)"
+        },
+        {
+          "line": 352,
+          "text": "this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.USER_MESSAGE, (event) => {\n            if (!this.userMessageAdmissionOpen) { this.countUserMessage('denied'); return; }\n            console.log('[ORCHESTRATOR] 🔔 USER_MESSAGE event received from systemBus');\n            this.ownership.invoke('original-handleUserMessage', () => this.handleUserMessage(event.payload)).catch((err: any) => {\n                console.error('[ORCHESTRATOR] ❌ handleUserMessage FAILED:', err?.message || err);\n            });\n        }))"
+        },
+        {
+          "line": 352,
+          "text": "systemBus.subscribe(SystemProtocol.USER_MESSAGE, (event) => {\n            if (!this.userMessageAdmissionOpen) { this.countUserMessage('denied'); return; }\n            console.log('[ORCHESTRATOR] 🔔 USER_MESSAGE event received from systemBus');\n            this.ownership.invoke('original-handleUserMessage', () => this.handleUserMessage(event.payload)).catch((err: any) => {\n                console.error('[ORCHESTRATOR] ❌ handleUserMessage FAILED:', err?.message || err);\n            });\n        })"
+        },
+        {
+          "line": 353,
+          "text": "this.countUserMessage('denied')"
+        },
+        {
+          "line": 354,
+          "text": "console.log('[ORCHESTRATOR] 🔔 USER_MESSAGE event received from systemBus')"
+        },
+        {
+          "line": 355,
+          "text": "this.ownership.invoke('original-handleUserMessage', () => this.handleUserMessage(event.payload)).catch((err: any) => {\n                console.error('[ORCHESTRATOR] ❌ handleUserMessage FAILED:', err?.message || err);\n            })"
+        },
+        {
+          "line": 355,
+          "text": "this.ownership.invoke('original-handleUserMessage', () => this.handleUserMessage(event.payload))"
+        },
+        {
+          "line": 355,
+          "text": "this.handleUserMessage(event.payload)"
+        },
+        {
+          "line": 356,
+          "text": "console.error('[ORCHESTRATOR] ❌ handleUserMessage FAILED:', err?.message || err)"
+        },
+        {
+          "line": 361,
+          "text": "this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.SQUAD_DEBATE_START, (event) => {\n            this.ownership.invoke('original-handleSquadDebateStart', () => this.handleSquadDebateStart(event.payload));\n        }))"
+        },
+        {
+          "line": 361,
+          "text": "systemBus.subscribe(SystemProtocol.SQUAD_DEBATE_START, (event) => {\n            this.ownership.invoke('original-handleSquadDebateStart', () => this.handleSquadDebateStart(event.payload));\n        })"
+        },
+        {
+          "line": 362,
+          "text": "this.ownership.invoke('original-handleSquadDebateStart', () => this.handleSquadDebateStart(event.payload))"
+        },
+        {
+          "line": 362,
+          "text": "this.handleSquadDebateStart(event.payload)"
+        },
+        {
+          "line": 365,
+          "text": "this.retainOriginalSubscription(systemBus.subscribe(SystemProtocol.AGENT_DEBATE_MESSAGE, (event) => {\n            this.ownership.invoke('original-handleAgentDebateMessage', () => this.handleAgentDebateMessage(event.payload));\n        }))"
+        },
+        {
+          "line": 365,
+          "text": "systemBus.subscribe(SystemProtocol.AGENT_DEBATE_MESSAGE, (event) => {\n            this.ownership.invoke('original-handleAgentDebateMessage', () => this.handleAgentDebateMessage(event.payload));\n        })"
+        },
+        {
+          "line": 366,
+          "text": "this.ownership.invoke('original-handleAgentDebateMessage', () => this.handleAgentDebateMessage(event.payload))"
+        },
+        {
+          "line": 366,
+          "text": "this.handleAgentDebateMessage(event.payload)"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/powerManager.ts",
+      "line": 113,
+      "calls": [
+        {
+          "line": 114,
+          "text": "console.log(`[POWER_MANAGER] ⚡ Initialized with mode: ${this.currentMode}`)"
+        },
+        {
+          "line": 115,
+          "text": "this.ownership.onSeal(() => { if (this.throttleCheckInterval) clearInterval(this.throttleCheckInterval); })"
+        },
+        {
+          "line": 115,
+          "text": "clearInterval(this.throttleCheckInterval)"
+        },
+        {
+          "line": 116,
+          "text": "this.startAdaptiveThrottling()"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/quotaLedger.ts",
+      "line": 48,
+      "calls": [
+        {
+          "line": 49,
+          "text": "path.join(process.cwd(), 'data', 'quota-ledger.json')"
+        },
+        {
+          "line": 49,
+          "text": "process.cwd()"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/remediationService.ts",
+      "line": 163,
+      "calls": [
+        {
+          "line": 164,
+          "text": "this.ownership.validateConstruction(construction)"
+        },
+        {
+          "line": 166,
+          "text": "this.subscribeToVoiceIncidents()"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/resourceArbiter.ts",
+      "line": 96,
+      "calls": [
+        {
+          "line": 97,
+          "text": "arbiterOwner().onSeal(() => this.stopAdmissions())"
+        },
+        {
+          "line": 97,
+          "text": "arbiterOwner()"
+        },
+        {
+          "line": 97,
+          "text": "this.stopAdmissions()"
+        },
+        {
+          "line": 99,
+          "text": "console.log(`[ARBITER] Initialized. Environment: ${this.isServer ? 'SERVER (Real Metrics)' : 'CLIENT (Simulated)'}`)"
+        },
+        {
+          "line": 102,
+          "text": "this.retain(arbiterOwner().invoke('original-processing', () => this.startProcessing()))"
+        },
+        {
+          "line": 102,
+          "text": "arbiterOwner().invoke('original-processing', () => this.startProcessing())"
+        },
+        {
+          "line": 102,
+          "text": "arbiterOwner()"
+        },
+        {
+          "line": 102,
+          "text": "this.startProcessing()"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/sensoryService.ts",
+      "line": 15,
+      "calls": [
+        {
+          "line": 16,
+          "text": "this.initLogInterceptor()"
+        },
+        {
+          "line": 17,
+          "text": "this.initNetworkInterceptor()"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/settingsManager.ts",
+      "line": 57,
+      "calls": [
+        {
+          "line": 58,
+          "text": "this.loadSettings()"
+        },
+        {
+          "line": 60,
+          "text": "this.ensureDefaultIntegrations()"
+        },
+        {
+          "line": 62,
+          "text": "this.ownership.invoke('original-migration', () => this.migrateLocalStorageSecrets())"
+        },
+        {
+          "line": 62,
+          "text": "this.migrateLocalStorageSecrets()"
+        },
+        {
+          "line": 64,
+          "text": "this.ownership.invoke('original-status', () => this.loadServerSecrets())"
+        },
+        {
+          "line": 64,
+          "text": "this.loadServerSecrets()"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/sqliteService.ts",
+      "line": 33,
+      "calls": [
+        {
+          "line": 34,
+          "text": "ownership.validateConstruction(operation)"
+        },
+        {
+          "line": 35,
+          "text": "ownership.reserveResource(operation, 'database')"
+        },
+        {
+          "line": 39,
+          "text": "new Database(DB_PATH, { timeout: 5000 })"
+        },
+        {
+          "line": 40,
+          "text": "preserveOriginal(ownership, 'database-allocation-failed', () => ownership.releaseUnused(reservation))"
+        },
+        {
+          "line": 40,
+          "text": "ownership.releaseUnused(reservation)"
+        },
+        {
+          "line": 42,
+          "text": "ownership.acquire(reservation, acquired, () => { if (acquired.open) acquired.close(); },\n            () => ({ source: 'sqlite:database', disposition: acquired.open ? 'INCOMPLETE' : 'CLOSED',\n                ...(acquired.open ? { reason: 'DATABASE_STILL_OPEN' } : {}) }))"
+        },
+        {
+          "line": 42,
+          "text": "acquired.close()"
+        },
+        {
+          "line": 47,
+          "text": "this.db.pragma('journal_mode = WAL')"
+        },
+        {
+          "line": 48,
+          "text": "this.db.pragma('synchronous = NORMAL')"
+        },
+        {
+          "line": 49,
+          "text": "this.db.pragma('busy_timeout = 5000')"
+        },
+        {
+          "line": 51,
+          "text": "this.initializeSchema()"
+        },
+        {
+          "line": 52,
+          "text": "this.runMigrations()"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/systemBus.ts",
+      "line": 63,
+      "calls": [
+        {
+          "line": 64,
+          "text": "this.ownership.validateConstruction(construction)"
+        },
+        {
+          "line": 66,
+          "text": "console.log(\"[SYSTEM BUS] Initializing Memory Adapter (Default)...\")"
+        },
+        {
+          "line": 67,
+          "text": "new MemoryBusAdapter(this.ownership)"
+        },
+        {
+          "line": 70,
+          "text": "this.ownership.invoke('original-upgrade', operation => this.upgradeToRedis(operation), construction)"
+        },
+        {
+          "line": 70,
+          "text": "this.upgradeToRedis(operation)"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/vectorEngine.ts",
+      "line": 156,
+      "calls": [
+        {
+          "line": 167,
+          "text": "path.join(opts.dir, `${opts.name}.usearch`)"
+        },
+        {
+          "line": 168,
+          "text": "opts.sqlite.exec(`CREATE TABLE IF NOT EXISTS \"${opts.name}\" (u64 TEXT PRIMARY KEY, id TEXT NOT NULL, owner_id TEXT NOT NULL)`)"
+        },
+        {
+          "line": 169,
+          "text": "opts.sqlite.exec(`CREATE TABLE IF NOT EXISTS \"${opts.name}__meta\" (k TEXT PRIMARY KEY, v TEXT NOT NULL)`)"
+        },
+        {
+          "line": 170,
+          "text": "opts.sqlite.exec(`CREATE TABLE IF NOT EXISTS \"${opts.name}__pending\" (u64 TEXT PRIMARY KEY, id TEXT NOT NULL, owner_id TEXT NOT NULL, op TEXT NOT NULL, vector TEXT, ts INTEGER NOT NULL)`)"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/vectorMemoryService.ts",
+      "line": 8,
+      "calls": [
+        {
+          "line": 8,
+          "text": "super('Qdrant is unavailable or its collection is incompatible')"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/vectorMemoryService.ts",
+      "line": 21,
+      "calls": [
+        {
+          "line": 25,
+          "text": "import('../server/config/configLoader')"
+        },
+        {
+          "line": 26,
+          "text": "configLoader.getConfig()"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/visualCortex.ts",
+      "line": 10,
+      "calls": [
+        {
+          "line": 11,
+          "text": "console.log('[VisualCortex] Initialized. Ready for Hybrid Flow.')"
+        },
+        {
+          "line": 12,
+          "text": "this.setupListeners()"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    },
+    {
+      "file": "services/workflowEngine.ts",
+      "line": 42,
+      "calls": [
+        {
+          "line": 43,
+          "text": "this.ownership.validateConstruction(construction)"
+        },
+        {
+          "line": 57,
+          "text": "systemBus.subscribe(SystemProtocol.TASK_COMPLETION, async (event) => {\n      if (event.payload.result) {\n        console.log(`[WORKFLOW] 🔗 Integrating Result from ${event.payload.agentId}`);\n        // Use the Robust Neural Feedback Loop\n        await this.ownership.invoke('original-distributed-result', () => this.handleDistributedResult(event.payload.agentId, event.payload.result));\n      }\n    })"
+        },
+        {
+          "line": 59,
+          "text": "console.log(`[WORKFLOW] 🔗 Integrating Result from ${event.payload.agentId}`)"
+        },
+        {
+          "line": 61,
+          "text": "this.ownership.invoke('original-distributed-result', () => this.handleDistributedResult(event.payload.agentId, event.payload.result))"
+        },
+        {
+          "line": 61,
+          "text": "this.handleDistributedResult(event.payload.agentId, event.payload.result)"
+        },
+        {
+          "line": 66,
+          "text": "systemBus.subscribe(SystemProtocol.RESEARCH_REQUEST, async (event) => {\n      // Logic for research protocols if needed\n    })"
+        },
+        {
+          "line": 69,
+          "text": "this.ownership.onSeal(offCompletion)"
+        },
+        {
+          "line": 70,
+          "text": "this.ownership.onSeal(offResearch)"
+        }
+      ],
+      "status": "SOURCE_EFFECT_FRONTIER_NOT_YET_CERTIFIED"
+    }
+  ]
+}

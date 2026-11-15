@@ -1,0 +1,18 @@
+:80 {
+    # Serve Vite frontend bundle
+    root * /usr/share/caddy
+    encode gzip
+    
+    # Try static files first, then fallback to index.html for SPA frontend routing
+    try_files {path} /index.html
+
+    # Proxy API and WebSockets to the Node.js backend
+    # Note: handle_path strips the prefix, while route/handle does not.
+    # We use route to preserve the /v1 prefix as expected by the backend
+    route /v1/* {
+        reverse_proxy bot:3005
+    }
+
+    # Serve static assets and frontend bundle
+    file_server
+}

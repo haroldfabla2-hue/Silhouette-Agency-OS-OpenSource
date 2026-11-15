@@ -1,0 +1,26 @@
+{
+  "production_data": false,
+  "network_namespace": true,
+  "fixture": "isolated-restart-memory-fixture-20261111",
+  "provider_policy": "off",
+  "boot_mode": "normal",
+  "cycles": [
+    {
+      "cycle": 1,
+      "pid": 7926,
+      "route_state_count": 1,
+      "node_id": "d941caeb-4e01-4eb7-91e9-727c91022ee9",
+      "content_equal": true,
+      "terminated": true
+    },
+    {
+      "cycle": 2,
+      "pid": 7993,
+      "route_state_count": 1,
+      "node_id": "d941caeb-4e01-4eb7-91e9-727c91022ee9",
+      "content_equal": true,
+      "terminated": true
+    }
+  ],
+  "scope": "working-memory fixture through real HTTP across two real app processes, not four-tier memory or production durability"
+}

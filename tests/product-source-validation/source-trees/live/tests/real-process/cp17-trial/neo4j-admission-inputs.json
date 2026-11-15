@@ -1,0 +1,50 @@
+{
+  "status": "EXACT_RUNNER_JDK_PIN_INDEPENDENTLY_REVIEWED",
+  "url": "https://dist.neo4j.org/neo4j-community-5.26.32-unix.tar.gz",
+  "archive_bytes": 152610441,
+  "archive_sha256": "d279ae6a9b38034280681a558b0cd222dce89f87cc3d9867f1f7bd28ef5ebc30",
+  "inventory_sha256": "77fcac7eb4355e0344879d09760757529154892069fb9d6b3fd3dbf73e136cd2",
+  "archive_cap": 167772160,
+  "expanded_cap": 178257920,
+  "member_cap": 33554432,
+  "member_count": 263,
+  "download_seconds": 45,
+  "total_seconds": 50,
+  "min_free_bytes": 268435456,
+  "min_free_inodes": 1024,
+  "jdk": {
+    "home": "/usr/lib/jvm/temurin-21-jdk-amd64",
+    "release_sha256": "f83f6dcc966043c93cd498ac8e7ee7c310852074970d62c702e4ad2710002898",
+    "files": {
+      "bin/java": "9cad3f2620d3ef2ed10b26f922af7e773d54fdaa05f615d6d6df014f3fec4155",
+      "lib/modules": "a5fd7c311fbd96adcbd43757dbb94461e14df353b6ae9f5c029c45805a39782c",
+      "lib/server/libjvm.so": "b1a6a98962406718a491922ea6a3f8d898ea7c4a9ebe814a7963defc61ce62b2"
+    }
+  },
+  "jdk_pin_required_fields": [
+    "home",
+    "release_sha256",
+    "files"
+  ],
+  "jdk_files_required": [
+    "bin/java",
+    "lib/modules",
+    "lib/server/libjvm.so"
+  ],
+  "jdk_file_cap": 268435456,
+  "note": "Measured43576613631 static pin accepted by parent03:39:32 after independent live/source/log/cleanup review. Source proposal only, not adopted/executable GO. Exact JDK SHA/home/readonly drift rejects before download; no fallback/autorepin. Static acceptance is not JVM/bootfit.",
+  "jdk_source_evidence": {
+    "run_url": "https://github.com/haroldfabla2-hue/Silhouette-Agency-OS-OpenSource/actions/runs/43576613631",
+    "run_id": 43576613631,
+    "head": "5916fa393fe8e02aa6e056e5e9d4c455f5f168f3",
+    "static_scope": "STATIC_JDK21_FILES_ONLY_NOT_JVM_OR_PRODUCT_COMPATIBILITY",
+    "image": {
+      "ImageOS": "ubuntu24",
+      "ImageVersion": "20261111.127.1",
+      "RUNNER_OS": "Linux",
+      "RUNNER_ARCH": "X64"
+    },
+    "os_release_sha256": "87458b3b1f1ca0e5c693ade771de7007c3783bdc692fa6b39eb6414bf2af2763",
+    "evidence_review": "ACCEPTED_STATIC_ONLY_BY_PARENT_AFTER_INDEPENDENT_REVIEW"
+  }
+}

@@ -1,0 +1,97 @@
+name: MANUAL STATIC SQLITE TYPECHECK ONLY - GLOBAL LIFECYCLE INCOMPLETE
+on:
+  workflow_dispatch:
+    inputs:
+      expected_head:
+        description: Exact reviewed static-only source commit
+        required: true
+        type: string
+      validation:
+        description: Exact reviewed validation scope (static remains the default)
+        required: true
+        default: static
+        type: choice
+        options:
+          - static
+          - native-account-wal
+          - native-factory-stop
+          - native-manager-start-seal
+          - static-body-custody
+          - native-body-helper-uds
+permissions:
+  contents: read
+jobs:
+  static-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Refuse wrong audience, branch, runner or commit before checkout
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ inputs.expected_head }}
+          REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$REPOSITORY_PRIVATE" = false
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$GITHUB_REF" = refs/heads/preparation/sqlite-static-typecheck-db201993-4054-20261114
+          [[ "$EXPECTED_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          test "$GITHUB_SHA" = "$EXPECTED_HEAD"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Verify exact selected packet and run only the reviewed validation scope
+        shell: bash
+        env:
+          VALIDATION: ${{ inputs.validation || 'static' }}
+          EXPECTED_HEAD: ${{ inputs.expected_head }}
+          REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          cd tests/static-sqlite-typecheck
+          case "$VALIDATION" in
+            static)
+              sha256sum --check packet.sha256
+              python3 run-static.py
+              ;;
+            native-account-wal)
+              sha256sum --check native-packet.sha256
+              python3 run-native-sqlite.py
+              ;;
+            native-factory-stop)
+              sha256sum --check factory-packet.sha256
+              python3 run-native-factory.py
+              ;;
+            native-manager-start-seal)
+              sha256sum --check manager-packet.sha256
+              python3 run-native-manager.py
+              ;;
+            static-body-custody)
+              sha256sum --check body-custody-static-packet.sha256
+              python3 run-static-body-custody.py
+              ;;
+            native-body-helper-uds)
+              sha256sum --check body-helper-packet.sha256
+              python3 run-native-body-helper.py
+              ;;
+            *)
+              printf '%s\n' 'Unreviewed validation selector refused' >&2
+              exit 96
+              ;;
+          esac
+      - name: Always upload bounded static evidence including failed prerequisites
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: static-sqlite-typecheck-evidence
+          path: ${{ runner.temp }}/sqlite-static-only/static-evidence.tar.gz
+          if-no-files-found: error
+          retention-days: 7

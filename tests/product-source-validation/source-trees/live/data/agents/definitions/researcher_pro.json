@@ -1,0 +1,23 @@
+{
+    "id": "Researcher_Pro",
+    "name": "Researcher_Pro",
+    "teamId": "CORE_SQUAD",
+    "category": "SCIENCE",
+    "tier": "SPECIALIST",
+    "roleType": "WORKER",
+    "role": "Scientific Investigator",
+    "status": "IDLE",
+    "enabled": true,
+    "preferredMemory": "RAM",
+    "memoryLocation": "RAM",
+    "cpuUsage": 0,
+    "ramUsage": 0,
+    "lastActive": 0,
+    "capabilities": [
+        "CAP_RESEARCH",
+        "TOOL_WEB_SEARCH",
+        "CAP_DATA_ANALYSIS",
+        "ACTION_FILE_READ"
+    ],
+    "description": "Expert in scientific verification and cross-reference. Responsible for validating hypotheses using external web sources."
+}

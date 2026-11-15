@@ -1,0 +1,8 @@
+[Unit]
+Description=Watch for operator-approved self-dev PR requests
+
+[Path]
+PathChanged=/var/lib/silhouette/selfdev/pr-requests
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,399 @@
+import { assertExternalProvidersEnabled } from './security/bootMode';
+/**
+ * LLM GATEWAY SERVICE - Unified Multi-Provider Access
+ * 
+ * Centralizes all LLM calls with:
+ * - Automatic fallback chain (Gemini → Groq → DeepSeek → Ollama)
+ * - Circuit breaker per provider
+ * - Retry with exponential backoff
+ * - Latency and cost tracking
+ * - Provider health monitoring
+ * 
+ * Usage:
+ *   const result = await llmGateway.complete("Your prompt here");
+ *   const stream = llmGateway.stream("Your prompt here");
+ */
+
+import { ProviderRegistry } from './llm/providerRegistry';
+import { OpenAICompatibleClient, type ChatMessage, type ChatOptions, type ChatResult } from './llm/openAICompatible';
+
+// Provider status for circuit breaker
+interface ProviderStatus {
+    name: string;
+    failures: number;
+    lastFailure: number;
+    circuitOpen: boolean;
+    totalCalls: number;
+    totalLatencyMs: number;
+    currentModel?: string; // NEW: Track currently active model for this provider
+}
+
+// Completion options
+export interface CompletionOptions extends ChatOptions {
+    temperature?: number;
+    maxTokens?: number;
+    systemPrompt?: string;
+    preferredProvider?: string;
+    /** When true with preferredProvider set, the call may use ONLY that
+     *  provider - no fallback chain. Autonomous spend uses this so a
+     *  reserved free route can never leak into unmeasured legs. */
+    exclusiveProvider?: boolean;
+    skipProviders?: string[];
+    timeout?: number;
+}
+
+// Completion result
+interface CompletionResult {
+    text: string;
+    provider: string;
+    latencyMs: number;
+    usage?: {
+        promptTokens?: number;
+        completionTokens?: number;
+        totalTokens?: number;
+    };
+}
+
+const logger = {
+    info: (msg: string, data?: any) => console.log(`[LLM_GATEWAY] ℹ️ ${msg}`, data || ''),
+    warn: (msg: string, data?: any) => console.warn(`[LLM_GATEWAY] ⚠️ ${msg}`, data || ''),
+    error: (msg: string, data?: any) => console.error(`[LLM_GATEWAY] ❌ ${msg}`, data || ''),
+    debug: (msg: string, data?: any) => {
+        if (process.env.DEBUG_LLM_GATEWAY) console.log(`[LLM_GATEWAY] 🔍 ${msg}`, data || '');
+    }
+};
+
+export class LLMGatewayService {
+    private readonly CONFIG = {
+        CIRCUIT_BREAKER_THRESHOLD: 3,      // Failures before opening circuit
+        CIRCUIT_BREAKER_RESET_MS: 60000,   // 1 minute before retrying failed provider
+        RETRY_DELAY_BASE_MS: 1000,         // Base delay for exponential backoff
+        MAX_RETRIES: 2,                    // Max retries per provider
+        DEFAULT_TIMEOUT_MS: 30000          // 30 second timeout
+    };
+
+    private providers = new Map<string, ProviderStatus>();
+    constructor(public readonly registry = ProviderRegistry.fromEnvironment(), private client = new OpenAICompatibleClient()) {
+        for (const definition of registry.list()) this.providers.set(definition.id, {
+            name: definition.id, failures: 0, lastFailure: 0, circuitOpen: false, totalCalls: 0, totalLatencyMs: 0, currentModel: definition.model
+        });
+    }
+    private providerOrder(preferred?: string): string[] {
+        // Registry can be extended after construction without editing this gateway.
+        for (const definition of this.registry.list()) if (!this.providers.has(definition.id)) this.providers.set(definition.id, {
+            name: definition.id, failures: 0, lastFailure: 0, circuitOpen: false, totalCalls: 0, totalLatencyMs: 0, currentModel: definition.model
+        });
+        const order = this.registry.order();
+        return preferred ? [preferred, ...order.filter(p => p !== preferred)] : order;
+    }
+    public async discoverModels(provider: string, refresh = false) {
+        assertExternalProvidersEnabled();
+        const definition = this.registry.get(provider);
+        if (!definition) throw new Error(`Unknown provider: ${provider}`);
+        if (definition.transport === 'legacy') return { ids: [definition.model], source: 'configured' as const, capabilities: 'unknown' as const };
+        return this.client.discover(definition, refresh);
+    }
+    /** Structured tool calls are returned, never executed here. No lossy legacy conversion. */
+    public async chat(provider: string, messages: ChatMessage[], options: ChatOptions = {}): Promise<ChatResult> {
+        assertExternalProvidersEnabled();
+        this.providerOrder();
+        const definition = this.registry.get(provider);
+        if (definition?.transport !== 'openai-compatible') throw new Error('Structured chat requires a configured OpenAI-compatible provider');
+        if (!this.isProviderAvailable(provider)) throw new Error(`${provider}: unavailable`);
+        const start = Date.now();
+        await this.client.discover(definition);
+        try {
+            const result = await this.client.complete(definition, messages, options);
+            const status = this.providers.get(provider)!;
+            status.totalCalls++; status.totalLatencyMs += Date.now() - start; status.failures = 0;
+            return result;
+        } catch (error) { this.recordFailure(provider, error); throw error; }
+    }
+
+    /**
+     * Complete a prompt using the best available provider
+     */
+    public async complete(prompt: string, options: CompletionOptions = {}): Promise<CompletionResult> {
+        assertExternalProvidersEnabled();
+        if (options.tools?.length) throw new Error('Use chat() for structured tools');
+        const skipProviders = new Set(options.skipProviders || []);
+
+        // Build provider order
+        let providerOrder = this.providerOrder(options.preferredProvider);
+        if (options.preferredProvider) {
+            providerOrder = options.exclusiveProvider
+                ? [options.preferredProvider]
+                : [options.preferredProvider, ...providerOrder.filter(p => p !== options.preferredProvider)];
+        }
+
+        // Try each provider in order
+        for (const providerName of providerOrder) {
+            if (skipProviders.has(providerName)) continue;
+            if (!this.isProviderAvailable(providerName)) continue;
+
+            try {
+                const result = await this.callProvider(providerName, prompt, options);
+
+                // Update success metrics
+                const provider = this.providers.get(providerName)!;
+                provider.totalCalls++;
+                provider.totalLatencyMs += result.latencyMs;
+                provider.failures = 0; // Reset failures on success
+
+                return result;
+
+            } catch (error: any) {
+                this.recordFailure(providerName, error);
+                logger.warn(`${providerName} failed, trying next provider...`, error.message);
+            }
+        }
+
+        // All providers failed
+        throw new Error(`All LLM providers failed. Last fallback exhausted.`);
+    }
+
+    /**
+     * Stream a completion (returns async generator)
+     */
+    public async *stream(prompt: string, options: CompletionOptions = {}): AsyncGenerator<string, void, unknown> {
+        assertExternalProvidersEnabled();
+        if (options.tools?.length) throw new Error('Use OpenAICompatibleClient.stream() for structured tools');
+        const skipProviders = new Set(options.skipProviders || []);
+        let providerOrder = this.providerOrder(options.preferredProvider);
+
+        if (options.preferredProvider) {
+            providerOrder = [options.preferredProvider, ...providerOrder.filter(p => p !== options.preferredProvider)];
+        }
+
+        for (const providerName of providerOrder) {
+            if (skipProviders.has(providerName)) continue;
+            if (!this.isProviderAvailable(providerName)) continue;
+
+            let emitted = false;
+            try {
+                for await (const chunk of this.streamFromProvider(providerName, prompt, options)) { emitted = true; yield chunk; }
+                return; // Success - exit
+            } catch (error: any) {
+                // Never concatenate another model's answer after a partial response.
+                if (emitted) { this.recordFailure(providerName, error); throw error; }
+                this.recordFailure(providerName, error);
+                logger.warn(`${providerName} streaming failed, trying next...`);
+            }
+        }
+
+        yield "[ERROR] All streaming providers failed";
+    }
+
+    /**
+     * Check if a provider is available (circuit not open)
+     */
+    private isProviderAvailable(providerName: string): boolean {
+        const provider = this.providers.get(providerName);
+        if (!provider) return false;
+        const definition = this.registry.get(providerName);
+        if (definition?.transport === 'openai-compatible' && !this.client.configured(definition)) return false;
+
+        // Check if circuit is open but enough time has passed to retry
+        if (provider.circuitOpen) {
+            if (Date.now() - provider.lastFailure > this.CONFIG.CIRCUIT_BREAKER_RESET_MS) {
+                provider.circuitOpen = false;
+                provider.failures = 0;
+                logger.info(`Circuit closed for ${providerName}, retrying...`);
+            } else {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Record a failure for circuit breaker
+     */
+    private recordFailure(providerName: string, error: any) {
+        const provider = this.providers.get(providerName);
+        if (!provider) return;
+
+        provider.failures++;
+        provider.lastFailure = Date.now();
+
+        if (provider.failures >= this.CONFIG.CIRCUIT_BREAKER_THRESHOLD) {
+            provider.circuitOpen = true;
+            logger.warn(`Circuit OPEN for ${providerName} after ${provider.failures} failures`);
+        }
+    }
+
+    /**
+     * Call a specific provider
+     */
+    private async callProvider(
+        providerName: string,
+        prompt: string,
+        options: CompletionOptions
+    ): Promise<CompletionResult> {
+        const startTime = Date.now();
+        const systemPrompt = options.systemPrompt || 'You are a helpful AI assistant.';
+        const temperature = options.temperature ?? 0.7;
+        const providerStatus = this.providers.get(providerName);
+        const modelId = options.model || providerStatus?.currentModel || 'default';
+        const definition = this.registry.get(providerName);
+        if (definition?.transport === 'openai-compatible') {
+            await this.client.discover(definition);
+            const result = await this.client.complete(definition, [{ role: 'system', content: systemPrompt }, { role: 'user', content: prompt }], options);
+            if (result.toolCalls.length) throw new Error('Use chat() for structured tool responses');
+            return { text: result.text, provider: providerName, latencyMs: Date.now() - startTime, usage: result.usage };
+        }
+
+        let text: string;
+        let usage: any;
+
+        switch (providerName) {
+            case 'GEMINI': {
+                // Pure Gemini transport: no provider-internal fallback, so the
+                // gateway's attribution always names the real answering provider.
+                const { generateGeminiTextPure } = await import('./geminiService');
+                text = await generateGeminiTextPure(`${systemPrompt}\n\n${prompt}`, modelId);
+                break;
+            }
+
+            case 'DEEPSEEK': {
+                const { deepSeekService } = await import('./deepSeekService');
+                text = await deepSeekService.chat([
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: prompt }
+                ], { temperature, model: modelId });
+                break;
+            }
+
+            case 'OLLAMA': {
+                const { ollamaService } = await import('./ollamaService');
+                // Pass model as 5th argument: generateCompletion(prompt, stop, tier, priority, model)
+                text = await ollamaService.generateCompletion(`${systemPrompt}\n\n${prompt}`, undefined, 'fast', 0, modelId);
+                break;
+            }
+
+            case 'MINIMAX': {
+                const { minimaxService } = await import('./minimaxService');
+                text = await minimaxService.generateCompletion(prompt, {
+                    // System prompt handled inside service
+                });
+                break;
+            }
+
+            case 'ZHIPUAI': {
+                const { zhipuService } = await import('./zhipuService');
+                text = await zhipuService.generateCompletion(prompt, {
+                    temperature,
+                    model: modelId
+                });
+                break;
+            }
+
+            default:
+                throw new Error(`Unknown provider: ${providerName}`);
+        }
+
+        return {
+            text,
+            provider: providerName,
+            latencyMs: Date.now() - startTime,
+            usage
+        };
+    }
+
+    /**
+     * Stream from a specific provider
+     */
+    private async *streamFromProvider(
+        providerName: string,
+        prompt: string,
+        options: CompletionOptions
+    ): AsyncGenerator<string, void, unknown> {
+        const systemPrompt = options.systemPrompt || 'You are a helpful AI assistant.';
+
+        const definition = this.registry.get(providerName);
+        if (definition?.transport === 'openai-compatible') {
+            await this.client.discover(definition);
+            for await (const event of this.client.stream(definition, [{ role: 'system', content: systemPrompt }, { role: 'user', content: prompt }], options)) {
+                if (event.type === 'tool') throw new Error('Use OpenAICompatibleClient.stream() for tool deltas');
+                if (event.type === 'text') yield event.text;
+            }
+            return;
+        }
+        switch (providerName) {
+            case 'GEMINI': {
+                const { generateGeminiTextPure } = await import('./geminiService');
+                // Use streaming if available, otherwise chunk the response
+                const text = await generateGeminiTextPure(`${systemPrompt}\n\n${prompt}`);
+                // Simulate streaming for non-streaming providers
+                const words = text.split(' ');
+                for (const word of words) {
+                    yield word + ' ';
+                }
+                break;
+            }
+
+            case 'OLLAMA': {
+                const { ollamaService } = await import('./ollamaService');
+                // Note: generateStream takes (prompt, model), so we combine systemPrompt into prompt
+                yield* ollamaService.generateStream(`${systemPrompt}\n\n${prompt}`);
+                break;
+            }
+
+            default:
+                // For providers without native streaming, simulate it
+                const result = await this.callProvider(providerName, prompt, options);
+                const words = result.text.split(' ');
+                for (const word of words) {
+                    yield word + ' ';
+                }
+        }
+    }
+
+    /**
+     * Get health status of all providers
+     */
+    public getProviderHealth(): Record<string, any> {
+        const health: Record<string, any> = {};
+
+        for (const [name, status] of this.providers) {
+            health[name] = {
+                available: !status.circuitOpen,
+                failures: status.failures,
+                circuitOpen: status.circuitOpen,
+                totalCalls: status.totalCalls,
+                avgLatencyMs: status.totalCalls > 0
+                    ? Math.round(status.totalLatencyMs / status.totalCalls)
+                    : 0
+            };
+        }
+
+        return health;
+    }
+
+    /**
+     * Reset circuit breaker for a specific provider
+     */
+    public resetCircuit(providerName: string) {
+        const provider = this.providers.get(providerName);
+        if (provider) {
+            provider.failures = 0;
+            provider.circuitOpen = false;
+            logger.info(`Circuit manually reset for ${providerName}`);
+        }
+    }
+
+    /**
+     * Quick completion for internal use (lower temperature, concise output)
+     */
+    public async quickComplete(prompt: string): Promise<string> {
+        const result = await this.complete(prompt, {
+            temperature: 0.3,
+            maxTokens: 500,
+            systemPrompt: 'Be concise and direct.'
+        });
+        return result.text;
+    }
+}
+
+export const llmGateway = new LLMGatewayService();

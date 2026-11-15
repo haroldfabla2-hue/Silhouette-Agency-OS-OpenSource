@@ -1,0 +1,114 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Silhouette OS Specific
+sandbox/
+backups/
+archives/
+.gemini/
+db/*.lancedb
+db/*.sqlite
+db/*.sqlite-*
+*.db-journal
+
+# Secrets & API Keys (CRITICAL)
+.env
+.env.*
+!.env.example
+appsettings.local.json
+secrets/
+*.pem
+*.key
+client_secret_*.json
+
+# Data storage (User Identity & Memory)
+data/
+data/agents/
+
+
+# Data files (user-specific)
+silhouette_*.json
+cost_metrics.json
+*.mp3
+*.wav
+
+# Large files
+*.gguf
+*.bin
+*.safetensors
+uploads/
+*.tar.gz
+silhouette/checkpoints/
+
+# Python cache (training engine)
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# External Tools
+ComfyUI/
+*.7z
+
+# Build outputs
+output/
+temp/
+models/
+"silhouette/checkpoints/*.pt"
+"**/*.ckpt"
+
+# Brain & Agentic Context (Self-Evolving Data)
+# NOTE: scoped to the repo root so it does not swallow `services/brain/` (the
+# silhouette-brain integration code, which IS tracked).
+.gemini/
+.agent/
+/brain/
+*task.md
+*implementation_plan.md
+*walkthrough.md
+*.txt.log
+*.session.json
+silhouette.config.json
+data/
+
+# Local PowerShell helper scripts (contain secrets)
+scripts/create_repo.ps1
+scripts/deploy_fix.ps1
+scripts/fix_lfs.ps1
+scripts/force_push.ps1
+
+# Desktop packaging build output
+dist-desktop/
+
+# Stray artifacts / scratch files (should never be committed)
+*.m4a
+*.temp_actions
+pr*.json
+env_snippet.txt
+types.ts.temp*
+
+# Corrupted SQLite DB backups
+db/*corrupted*
+db/silhouette.sqlite.*
