@@ -2883,8 +2883,8 @@
     },
     {
       "path": "tests/automated/product-learning-proposal-real.test.ts",
-      "bytes": 1901,
-      "sha256": "aad3651d310070f5bb62bbd228157bf4db7cf50b5c170d209e690aecf78c939a"
+      "bytes": 1954,
+      "sha256": "8e5c7ed705e46780298ad307853444251a9ed5465abcbae518172b5ba50bd8c8"
     },
     {
       "path": "tests/automated/selfdev-preservation.test.ts",
