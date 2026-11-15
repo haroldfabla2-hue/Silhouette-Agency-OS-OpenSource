@@ -176,6 +176,37 @@ if raw is not None:
    elif key=='InvocationID':result[key]=value if re.fullmatch('[0-9a-f]{32}',value)else'UNKNOWN'
    else:result[key]=int(value)if value.isdigit()and len(value)<=20 else'UNKNOWN'
  except BaseException:result['properties']='PARSE_FAILED'
+# Failure-only fixed public candidates, NOT the actual/exhaustive prerequisite graph.
+# Same shared two-second read deadline. No unit discovery or raw identifiers/reasons.
+if unit=='silhouette-vitest-transport':
+ candidates=['silhouette-vitest-transport.service','silhouette-vitest.slice','silhouette.slice','-.slice','-.mount',r'mnt-silhouette\x2dgenuine\x2dvitest.mount','basic.target','sysinit.target']
+ wanted=['Id','LoadState','ActiveState','SubState','Result','ConditionResult','ExecMainCode','ExecMainStatus']
+ snapshot={'scope':'FIXED_PUBLIC_CANDIDATES_NOT_ACTUAL_OR_EXHAUSTIVE_GRAPH','units':{name:{'status':'MISSING_UNKNOWN'}for name in candidates}}
+ raw,state=bounded(['/usr/bin/systemctl','show','--property='+','.join(wanted),'--',*candidates],8192)
+ snapshot['capture']=state
+ if raw is not None:
+  try:
+   blocks=raw.decode('utf8').strip().split('\n\n');assert len(blocks)<=len(candidates)
+   seen=set()
+   allowed_values={
+    'LoadState':{'loaded','not-found','error','bad-setting','masked','stub','merged'},
+    'ActiveState':{'active','inactive','failed','activating','deactivating','reloading','maintenance','refreshing'},
+    'SubState':{'active','inactive','failed','dead','exited','running','waiting','mounted','mounting','mounting-done','remounting','unmounting','start','start-pre','start-post','stop','stop-pre','stop-post','stop-sigterm','stop-sigkill','final-sigterm','final-sigkill','auto-restart','cleaning','reload','reload-signal','reload-notify'},
+    'Result':{'success','exit-code','signal','core-dump','watchdog','timeout','oom-kill','resources','protocol','start-limit-hit','dependency','assert','condition','start-limit','unmount-failure'},
+    'ConditionResult':{'yes','no'}}
+   for block in blocks:
+    values=dict(line.split('=',1)for line in block.splitlines()if'='in line)
+    name=values.get('Id');assert name in candidates and name not in seen;seen.add(name)
+    row={'status':'CAPTURED','Id':name}
+    for key in wanted[1:]:
+     value=values.get(key,'')
+     if key in allowed_values:row[key]=value if value in allowed_values[key]else'UNKNOWN'
+     else:row[key]=int(value)if value.isdigit()and len(value)<=20 else'UNKNOWN'
+    snapshot['units'][name]=row
+  except BaseException:
+   snapshot['capture']='PARSE_FAILED_UNKNOWN'
+   snapshot['units']={name:{'status':'UNKNOWN'}for name in candidates}
+ result['fixedPublicCandidates']=snapshot
 raw,state=bounded(['/usr/bin/journalctl','--unit='+unit+'.service','--since=@'+started,'--until=@'+finished,'--lines=8','--output=json','--output-fields=MESSAGE','--no-pager','--quiet'],32768)
 result['journal']=state
 if raw is not None:
@@ -248,7 +279,7 @@ quota,period=(p/'cpu.max').read_text().split();assert int(quota)==2*int(period)
 PYLIMIT
 [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
 test "$(git -C "$repo" rev-parse HEAD)" = "$expected"
-test "$(git -C "$repo" rev-parse HEAD^)" = e32fce23450e25e26e6794e518e080d336626527
+test "$(git -C "$repo" rev-parse HEAD^)" = e87218a16ebe6aa8141f372669589452e265beeb
 # Fail before allocating, never resize a previous attempt or use an existing account/root.
 test ! -e "$root"
 ! id silhouette-acquire >/dev/null 2>&1
