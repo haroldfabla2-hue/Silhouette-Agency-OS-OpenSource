@@ -1,10 +1,11 @@
+from supervisor_projection import project_supervisor, fixed_driver, NAMESPACE_STAGES
 """Fixed explicit-input projection; no filesystem, imports or runtime acceptance."""
-RECEIPT_NAMES=('host','security','validation','supervisor','cleanup')
+RECEIPT_NAMES=('host','security','validation','supervisor','cleanup','namespace','driverLaunch','driverStarted','driverReceiptFailure','supervisorReceiptFailure')
 def project(receipts,states):
     result={'version':2,'status':'INCOMPLETE','receiptStates':{},'hostStage':None,'hostFailure':None,
         'helperFilesystemComplete':None,'fullModuleTypecheckComplete':None,'realCaseCount':None,
         'failedCaseCount':None,'baselineOverwriteObserved':None,'naturalSupervisorExit':None,
-        'outerCleanupClean':None,'securityStaged':None,'rootKeyScopeAbsent':None,'productPass':False}
+        'outerCleanupClean':None,'securityStaged':None,'rootKeyScopeAbsent':None,'supervisorDiagnostic':None,'namespaceOperation':None,'nodeLaunchAttempted':None,'driverStarted':None,'driverFirstFailure':None,'driverLateFailures':None,'driverReceiptWriteFailed':None,'supervisorReceiptWriteFailed':None,'productPass':False}
     for name in RECEIPT_NAMES:
         state=states.get(name,'MISSING')
         result['receiptStates'][name]=state if state in ('PRESENT','MISSING','INVALID','UNREADABLE')else'INVALID'
@@ -38,6 +39,25 @@ def project(receipts,states):
             result['securityStaged']=security['status']=='AUTHENTICATED_STAGED_NOT_RUNTIME_PASS'and not security['forced']and not security['cleanupErrors']
             result['rootKeyScopeAbsent']=security['rootKeyScopeAbsent']
         else:result['receiptStates']['security']='INVALID'
-    if all(result[k]is True for k in ['helperFilesystemComplete','fullModuleTypecheckComplete','naturalSupervisorExit','outerCleanupClean','securityStaged','rootKeyScopeAbsent'])and result['hostStage']=='COMPLETE'and result['hostFailure']is None and all(x=='PRESENT'for x in result['receiptStates'].values()):
+    supervisor=receipts.get('supervisor')
+    if states.get('supervisor')=='PRESENT':result['supervisorDiagnostic']=project_supervisor(supervisor)
+    fallback=receipts.get('supervisorReceiptFailure')
+    if states.get('supervisorReceiptFailure')=='PRESENT'and type(fallback)is dict and fallback.get('version')==1 and fallback.get('receiptWriteFailed')is True:
+        result['supervisorReceiptWriteFailed']=True
+        if result['supervisorDiagnostic']is None:result['supervisorDiagnostic']=project_supervisor(fallback)
+    n=receipts.get('namespace')
+    if states.get('namespace')=='PRESENT'and type(n)is dict and n.get('version')==1 and n.get('operation')in NAMESPACE_STAGES:result['namespaceOperation']=n['operation']
+    for name,key in [('driverLaunch','nodeLaunchAttempted'),('driverStarted','driverStarted')]:
+        value=receipts.get(name)
+        if states.get(name)=='PRESENT'and type(value)is dict and value.get('version')==1 and value.get(key)is True:result[key]=True
+    for name in ['validation','driverReceiptFailure']:
+        value=receipts.get(name)
+        if states.get(name)!='PRESENT'or type(value)is not dict:continue
+        first=fixed_driver(value.get('firstFailure'))
+        if first is not None and result['driverFirstFailure']is None:result['driverFirstFailure']=first
+        late=value.get('lateFailures')
+        if type(late)is list and len(late)<=32 and all(fixed_driver(x)is not None for x in late):result['driverLateFailures']=[fixed_driver(x)for x in late]
+        if value.get('receiptWriteFailed')is True:result['driverReceiptWriteFailed']=True
+    if all(result[k]is True for k in ['helperFilesystemComplete','fullModuleTypecheckComplete','naturalSupervisorExit','outerCleanupClean','securityStaged','rootKeyScopeAbsent'])and result['hostStage']=='COMPLETE'and result['hostFailure']is None and all(result['receiptStates'][name]=='PRESENT'for name in ['host','security','validation','supervisor','cleanup'])and result['driverReceiptWriteFailed']is not True and result['supervisorReceiptWriteFailed']is not True:
         result['status']='SCOPED_COMPILER_HELPER_FILESYSTEM_COMPLETE_NOT_PRODUCT_ACCEPTANCE'
     return result

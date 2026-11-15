@@ -32,7 +32,7 @@ def read_receipt(path):
 
 def main():
     root=Path(os.environ['RUNNER_TEMP'])/'silhouette-integrated-ui/evidence'
-    paths={'host':'host-validation.json','security':'security-preparation.json','validation':'product-validation/product-validation.json','supervisor':'product-validation/supervisor.json','cleanup':'outer-cleanup.json'}
+    paths={'host':'host-validation.json','security':'security-preparation.json','validation':'product-validation/product-validation.json','supervisor':'product-validation/supervisor.json','cleanup':'outer-cleanup.json','namespace':'product-validation/namespace-fixed.json','driverLaunch':'product-validation/driver-launch.json','driverStarted':'product-validation/driver-started.json','driverReceiptFailure':'product-validation/driver-receipt-failure.json','supervisorReceiptFailure':'product-validation/supervisor-receipt-failure.json'}
     receipts={};states={}
     for name,relative in paths.items():
         # Per-receipt read/close failures never skip any other receipt.

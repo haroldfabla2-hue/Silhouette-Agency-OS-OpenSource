@@ -1,15 +1,19 @@
 /* SOURCE ONLY, never executed. Exact TS-helper extraction, real Node FS only. */
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
-const ts=require('/app/node_modules/typescript/lib/typescript.js');
+let ts,operation='DRIVER_BOOTSTRAP';
+const finiteFailures=[];
+const authoredReasons=new Set(['VALIDATION_WORK_RESERVE','SOURCE_PARSE','EXACT_SPILL_DECLARATIONS_REQUIRED','HELPER_COMPILE_INCOMPLETE','HELPER_EMIT_SKIPPED','COMPILER_DIAGNOSTIC_BOUND','NAMED_SOURCE_TREE_REQUIRED','FULL_MODULE_DIAGNOSTICS']);
+function recordFailure(error){finiteFailures.push({operation,reason:authoredReasons.has(error?.message)?error.message:'OTHER'});}
+
 const start=process.hrtime.bigint(),out='/evidence/product-validation.json';
 const result={scope:'COMPILER_AND_ACTUAL_HELPER_FILESYSTEM_ONLY',fullProductVerified:false,
- fullModuleTypechecks:[],helperCompiles:[],realCases:[],failures:[],baselineFinding:null};
+ fullModuleTypechecks:[],helperCompiles:[],realCases:[],failures:[],baselineFinding:null,firstFailure:null,lateFailures:[],receiptWriteFailed:false};
 function deadline(){if(Number(process.hrtime.bigint()-start)/1e9>125)throw Error('VALIDATION_WORK_RESERVE');}
 function sha(b){return crypto.createHash('sha256').update(b).digest('hex');}
-function check(name,fn){deadline();try{fn();result.realCases.push({name,pass:true});}catch(e){result.realCases.push({name,pass:false});result.failures.push(name);}}
+function check(name,fn){operation='REAL_FILESYSTEM_CASE';deadline();try{fn();result.realCases.push({name,pass:true});}catch(e){recordFailure(e);result.realCases.push({name,pass:false});result.failures.push(name);}}
 function compile(name,file,helper){
- deadline();const output='/fixtures/generated/'+name;fs.mkdirSync(output,{recursive:true});
+ operation='COMPILER_OUTPUT_DIRECTORY';deadline();const output='/fixtures/generated/'+name;fs.mkdirSync(output,{recursive:true});
  let options,configDiagnostics=[],configSha256=null;
  if(helper){
   options={target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,
@@ -26,20 +30,21 @@ function compile(name,file,helper){
   configDiagnostics.push(...parsed.errors);
   options={...parsed.options,noEmit:true};
  }
- const program=ts.createProgram([file],options);
- const diagnostics=[...configDiagnostics,...ts.getPreEmitDiagnostics(program)];const finite=diagnostics.map(d=>({code:d.code,
+ operation='COMPILER_PROGRAM_CREATE';const program=ts.createProgram([file],options);
+ operation='COMPILER_COMPLETE_DIAGNOSTICS';const diagnostics=[...configDiagnostics,...ts.getPreEmitDiagnostics(program)];const finite=diagnostics.map(d=>({code:d.code,
   message:ts.flattenDiagnosticMessageText(d.messageText,' '),file:d.file?.fileName,
   start:d.start}));
  if(Buffer.byteLength(JSON.stringify(finite))>2*1024**2)throw Error('COMPILER_DIAGNOSTIC_BOUND');
- fs.writeFileSync('/evidence/'+name+'-diagnostics.json',JSON.stringify(finite,null,2));
+ operation='COMPILER_DIAGNOSTIC_WRITE';fs.writeFileSync('/evidence/'+name+'-diagnostics.json',JSON.stringify(finite,null,2));
+ if(!helper&&diagnostics.length){operation='COMPILER_COMPLETE_DIAGNOSTICS';recordFailure(Error('FULL_MODULE_DIAGNOSTICS'));}
  const row={name,diagnostics:diagnostics.length,complete:diagnostics.length===0,configSha256,scope:helper?'EXACT_EXTRACTED_HELPER':'TARGET_MODULE_IMPORT_CLOSURE_WITH_ACTUAL_TREE_TSCONFIG'};
  if(helper)result.helperCompiles.push(row);else result.fullModuleTypechecks.push(row);
  if(helper&&diagnostics.length)throw Error('HELPER_COMPILE_INCOMPLETE');
- if(helper){const emitted=program.emit();if(emitted.emitSkipped)throw Error('HELPER_EMIT_SKIPPED');}
+ if(helper){operation='HELPER_COMPILER_EMIT';const emitted=program.emit();if(emitted.emitSkipped)throw Error('HELPER_EMIT_SKIPPED');}
  return output;
 }
 function spillHelper(name,source){
- const text=fs.readFileSync(source,'utf8'),sf=ts.createSourceFile(source,text,ts.ScriptTarget.ES2022,true);
+ operation='HELPER_SOURCE_READ_PARSE';const text=fs.readFileSync(source,'utf8'),sf=ts.createSourceFile(source,text,ts.ScriptTarget.ES2022,true);
  if(sf.parseDiagnostics.length)throw Error('SOURCE_PARSE');
  const wanted=['OUTPUT_INLINE_LIMIT_CHARS','OUTPUT_PREVIEW_CHARS','taskOutputDir','persistOutputForLedger'];
  const chosen=[];
@@ -49,13 +54,15 @@ function spillHelper(name,source){
  }
  if(chosen.length!==4)throw Error('EXACT_SPILL_DECLARATIONS_REQUIRED');
  const code="import fs from 'node:fs';\nimport path from 'node:path';\nimport crypto from 'node:crypto';\n"+chosen.join('\n')+'\nexport { persistOutputForLedger };\n';
- const target='/fixtures/generated/'+name+'.ts';fs.mkdirSync(path.dirname(target),{recursive:true});fs.writeFileSync(target,code);
+ operation='HELPER_SOURCE_WRITE';const target='/fixtures/generated/'+name+'.ts';fs.mkdirSync(path.dirname(target),{recursive:true});fs.writeFileSync(target,code);
  const dir=compile(name,target,true),module=path.join(dir,name+'.js');
  result.helperCompiles[result.helperCompiles.length-1].sourceSha256=sha(Buffer.from(code));
- return require(module).persistOutputForLedger;
+ operation='EXACT_HELPER_MODULE_LOAD';return require(module).persistOutputForLedger;
 }
 function sameReference(ref,text){const b=fs.readFileSync(ref.path);if(b.length!==ref.bytes||sha(b)!==ref.sha256||b.toString('utf8')!==text)throw Error('ACTUAL_OUTPUT_REFERENCE_MISMATCH');}
 try{
+ operation='DRIVER_STARTED_RECEIPT';fs.writeFileSync('/evidence/driver-started.json',JSON.stringify({version:1,driverStarted:true,productPass:false})+'\n');
+ operation='COMPILER_MODULE_LOAD';ts=require('/app/node_modules/typescript/lib/typescript.js');
  // No native/product import. Full typecheck only reads exact source trees.
  for(const variant of ['live','runtime'])for(const file of ['services/execution/taskLedger.ts','services/memoryTransitions.ts'])
   compile('full-'+variant+'-'+path.basename(file),'/app/trees/'+variant+'/'+file,false);
@@ -109,13 +116,17 @@ try{
    const r=fn('task_fixture_1',A);if(r.output!==A||r.extra.outputSpillFailed!==true||fs.readFileSync(file,'utf8')!=='UNCHANGED')throw Error('REAL_ERROR_NOT_PRESERVED');
   });
  }
-}catch(error){result.failures.push('VALIDATION_INCOMPLETE');}
+}catch(error){recordFailure(error);result.failures.push('VALIDATION_INCOMPLETE');}
 finally{
  result.seconds=Number(process.hrtime.bigint()-start)/1e9;
  result.helperFilesystemComplete=result.failures.length===0;
  result.fullModuleTypecheckComplete=result.fullModuleTypechecks.length===4&&result.fullModuleTypechecks.every(x=>x.complete);
  result.status='SCOPED_HELPER_EVIDENCE_NOT_PRODUCT_ACCEPTANCE';
- fs.writeFileSync(out,JSON.stringify(result,null,2)+'\n');
+ result.firstFailure=finiteFailures[0]||null;result.lateFailures=finiteFailures.slice(1,33);
+ try{operation='VALIDATION_RECEIPT_WRITE';fs.writeFileSync(out,JSON.stringify(result,null,2)+'\n');}
+ catch(error){recordFailure(error);result.receiptWriteFailed=true;
+  try{fs.writeFileSync('/evidence/driver-receipt-failure.json',JSON.stringify({version:1,firstFailure:finiteFailures[0],lateFailures:finiteFailures.slice(1,33),receiptWriteFailed:true,productPass:false})+'\n');}catch{}
+ }
  console.log(JSON.stringify({status:result.status,helperFilesystemComplete:result.helperFilesystemComplete,fullModuleTypecheckComplete:result.fullModuleTypecheckComplete,fullProductVerified:false}));
 }
-process.exitCode=result.helperFilesystemComplete&&result.fullModuleTypecheckComplete?0:1;
+process.exitCode=result.helperFilesystemComplete&&result.fullModuleTypecheckComplete&&!result.receiptWriteFailed?0:1;

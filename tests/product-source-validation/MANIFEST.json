@@ -1,6 +1,6 @@
 {
-  "status": "EXACT_SIGNED_STAGING_PRODUCT_ACTIVATION_PROPOSAL_NOT_EXECUTED",
-  "sourceParent": "7dcdf18ca64700a428899bc2f5a99d72077727b2",
+  "status": "EXACT_FIXED_BOUNDARY_ACTIVATION_PROPOSAL_NOT_EXECUTED",
+  "sourceParent": "5609910e7501df19aa5dae13732c98668d1c17fb",
   "currentRuntimeParentAtPackaging": "586d0b007a9256bb6aa5b45b348f84e6fec5994d",
   "publicStandardOnly": true,
   "localQualification": "STOPPED_ENFORCEMENT_UNAVAILABLE",
@@ -22,18 +22,18 @@
     },
     {
       "path": "driver/validate.cjs",
-      "bytes": 9724,
-      "sha256": "82f2b8425fd86c9492ce339a58fdf475624c6816563cf6c0eef8856057520fbb"
+      "bytes": 11346,
+      "sha256": "5e179aa4a8e105d50868e5f5705e4727bd58844617036ab24d9cb9c4fc3a3b52"
     },
     {
       "path": "finite-export.py",
-      "bytes": 2274,
-      "sha256": "57f06a5c407c66d2ecec9d13033d2ee9286137cf9a873b3cebe3ba7a5387288f"
+      "bytes": 2592,
+      "sha256": "ab66810ea61ed8ee95ac85809673f3857fff22725ba0a70826841c9cf75f5ee7"
     },
     {
       "path": "finite_projection.py",
-      "bytes": 4707,
-      "sha256": "eb90fb6dfc87bee6bf83abc7cbbffffc416d71e49d41075c455cf0b732a28cd8"
+      "bytes": 6854,
+      "sha256": "d2ff3ea62f1534e11c61ffdbabfbc85053c23bbd132095725fb5f0e0584013c7"
     },
     {
       "path": "host-validation.py",
@@ -87,18 +87,18 @@
     },
     {
       "path": "launcher/identity-entry.py",
-      "bytes": 3884,
-      "sha256": "2e3ce961bd60e019711453de7ee45f9a5b7cef31a77fc547e699f7e24e5c9819"
+      "bytes": 4385,
+      "sha256": "607435bed2e5eeb0a0c00a11301d67f27ccf2d34d4f7d34da91384b1cc858fc2"
     },
     {
       "path": "launcher/namespace-entry.py",
-      "bytes": 8853,
-      "sha256": "a4e84b60036d3fadb82bef38ac0b8530ed4b3c42032640e59c406c2a3da7dc98"
+      "bytes": 9638,
+      "sha256": "b28a07480901397af7341c6d2d9e65bd48e48a112f61af25197853b9939c6548"
     },
     {
       "path": "launcher/supervisor.py",
-      "bytes": 14673,
-      "sha256": "a7993a021ee449978b8f02b2d07b8f769d0b3791438e049496eadcf9ce3064f0"
+      "bytes": 16496,
+      "sha256": "cf9f55fbd5ccfee4f1357ba1754ce627fa16cb015d9ffdcbc7b1ff7161490a34"
     },
     {
       "path": "launcher-preimages/cleanup-hosted.py",
@@ -17154,6 +17154,11 @@
       "path": "supervisor.py.diff",
       "bytes": 6416,
       "sha256": "5b8381e648a69702f57242c736f6fb7516972013f089393daca4f863bd9d473f"
+    },
+    {
+      "path": "supervisor_projection.py",
+      "bytes": 4033,
+      "sha256": "feb813ad523b764d3b6fe162c74996a9c29fc1c8a914bead05e5613e176c10ac"
     },
     {
       "path": "workflow-proposal.yml",
