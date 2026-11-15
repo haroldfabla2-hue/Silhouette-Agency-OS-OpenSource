@@ -2,7 +2,7 @@ import { performance } from 'node:perf_hooks';
 import express, { type Application, type Request, type Response, type NextFunction } from 'express';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
-import type { ApiKey } from '../../services/apiKeyService';
+import type { ApiKey, ApiKeyService } from '../../services/mcpKeyService';
 
 // Deliberately conservative limits for a zero-tool, category-list-only surface.
 export const MCP_LIMITS = Object.freeze({ sessions: 32, perKey: 4,
@@ -20,6 +20,7 @@ export class MCPWrapper {
     private mounted = false;
     private stopped = false;
 
+    constructor(private readonly keyService: ApiKeyService) {}
     public async initialize(): Promise<void> { /* No shared SDK server or tool registration. */ }
     private createServer(): McpServer {
         const server = new McpServer({ name: 'Silhouette Agency OS', version: '1.0.0' },
@@ -61,7 +62,7 @@ export class MCPWrapper {
     }
     private async checkSessions(): Promise<void> {
         try {
-            const { apiKeyService } = await import('../../services/apiKeyService');
+            const apiKeyService = this.keyService;
             for (const [id, session] of this.sessions) {
                 const key = apiKeyService.readActiveKey(session.keyId);
                 if (this.expired(session) || !key || !apiKeyService.hasPermission(key, 'tools:read')) await this.drop(id);
@@ -88,7 +89,7 @@ export class MCPWrapper {
             const raw = explicit === undefined ? bearer?.[1] : (typeof explicit === 'string' ? explicit : undefined);
             if (!raw) { res.status(401).json({ error: 'Managed MCP API key required' }); return; }
             try {
-                const { apiKeyService } = await import('../../services/apiKeyService');
+                const apiKeyService = this.keyService;
                 const validated = apiKeyService.validateMcpKey(raw); // Transactional usage write is intentional.
                 const key = validated && apiKeyService.readActiveKey(validated.id);
                 if (!key || key.keyHash !== validated?.keyHash) { res.status(403).json({ error: 'Invalid MCP key' }); return; }
@@ -102,7 +103,7 @@ export class MCPWrapper {
         });
         router.get('/sse', async (req, res) => {
             await this.checkSessions();
-            const { apiKeyService } = await import('../../services/apiKeyService');
+            const apiKeyService = this.keyService;
             const key = apiKeyService.readActiveKey((res.locals.mcpKey as ApiKey).id);
             if (!key || !apiKeyService.hasPermission(key, 'tools:read')) {
                 res.status(403).json({ error: 'MCP key no longer authorized' }); return;
@@ -159,7 +160,7 @@ export class MCPWrapper {
             // Recheck key and stream after parsing, including revocation/expiry
             // while a slow body arrived. Do not trust admission-time metadata.
             try {
-                const { apiKeyService } = await import('../../services/apiKeyService');
+                const apiKeyService = this.keyService;
                 const key = apiKeyService.readActiveKey(session.keyId);
                 if (!key || !apiKeyService.hasPermission(key, 'tools:read') || !apiKeyService.hasPermission(key, 'tools:execute') ||
                     this.expired(session) || this.sessions.get(session.transport.sessionId) !== session) {
@@ -199,4 +200,3 @@ export function boundedMessage(value: unknown): boolean {
     }
     return true;
 }
-export const mcpWrapper = new MCPWrapper();

@@ -34,7 +34,7 @@ for q in(p,p.parent):
 PY
 [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
 test "$(git -C "$repo" rev-parse HEAD)" = "$expected"
-test "$(git -C "$repo" rev-parse HEAD^)" = cf3ffcdf311ebf80d9ab46812b96b1a38fc4de89
+test "$(git -C "$repo" rev-parse HEAD^)" = 0cc057f572a00dab087d363a24db5aefa03d47e9
 # Fail before allocating, never resize a previous attempt or use an existing account/root.
 test ! -e "$root"
 ! id silhouette-acquire >/dev/null 2>&1
@@ -128,11 +128,11 @@ for name,session in spec['sessions'].items():
  overrides={r['path']:r for r in session['overrides']}
  for candidateRow in spec['files']:
   row=overrides.get(candidateRow['path'],candidateRow)
-  assert session['productCommit']=='MAIN_PLUS_EIGHT_MCP_BLOBS'
+  assert session['productCommit']=='MAIN_PLUS_TEN_MCP_BLOBS_EXPLICIT_EPHEMERAL_CUSTODY'
   assert spec['mainCommit']=='1f0d967abf81b86e666d26eeb20f6dc97662a525'
   commit=row['sourceCommit']
   if commit=='WORKFLOW_FIXTURE_EXACT':
-   assert row['path']in {'tests/real-process/mcp-boundary-child.ts', 'tests/automated/mcp-client-isolation-real.test.ts', 'package.json', 'server/app.ts', 'package-lock.json', 'server/mcp/mcpServer.ts', 'server/index.ts', 'services/apiKeyService.ts'}
+   assert row['path']in {'server/app.ts', 'server/mcp/mcpServer.ts', 'services/apiKeyService.ts', 'package.json', 'tests/real-process/mcp-boundary-child.ts', 'services/ephemeralMcpKeyRegistry.ts', 'tests/automated/mcp-client-isolation-real.test.ts', 'package-lock.json', 'services/mcpKeyService.ts', 'server/index.ts'}
    assert row['fixturePath']=='tests/genuine-vitest-session/main-mcp-integration/'+row['path']
    commit=sys.argv[3];sourcePath=row['fixturePath']
   else:
@@ -214,7 +214,7 @@ summary=$(python3 - "$root/private" <<'PYCODE'
 from pathlib import Path
 import sys,json
 p=Path(sys.argv[1]);rows=[json.loads((p/(n+'.summary.json')).read_text())for n in ['typecheck','mcp']]
-print(json.dumps({'scope':'ACTUAL_MAIN_EIGHT_PATH_MCP_NPM_LOCK_AUDIT_TYPECHECK_AND_REAL_COMPOSED_BOUNDARY','sessions':rows,'audit':json.loads((p/'mcp-audit.summary.json').read_text()),'usefulLearningAccepted':False,'fullProductAccepted':False}))
+print(json.dumps({'scope':'ACTUAL_MAIN_TEN_PATH_MCP_EXPLICIT_EPHEMERAL_CUSTODY_NOT_PRODUCTION_CREDENTIAL_PERSISTENCE','sessions':rows,'audit':json.loads((p/'mcp-audit.summary.json').read_text()),'usefulLearningAccepted':False,'fullProductAccepted':False}))
 PYCODE
 )
 cleanup

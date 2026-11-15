@@ -34,7 +34,7 @@ it('runs actual composed identity/key/parser/two-client SDK behavior in a fresh 
         expect(result.signal).toBeNull(); expect(result.status, result.stderr).toBe(0);
         const rows = result.stdout.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line));
         expect(rows.at(-1)).toMatchObject({ actualAuth: true, actualKeyStore: true,
-            actualSdk: true, composedBoundary: true, fullApplicationBoot: false,
+            actualSdk: true, keyStoreKind: 'fresh-exclusive-ephemeral-sqlite', productionCredentialPersistenceVerified: false, composedBoundary: true, fullApplicationBoot: false,
             transport: 'AF_UNIX', disposableSqliteWrites: true, providerCalls: 0, executedTools: 0 });
     } finally {
         // Includes SQLite+WAL+SHM and any UNIX socket. A timed-out child fails

@@ -102,7 +102,7 @@ const server = app.listen(PORT, HOST, async () => {
 
     // [MCP] Initialize and Mount Standard MCP Server
     try {
-        const { mcpWrapper } = await import('./mcp/mcpServer');
+        const { mcpWrapper } = await import('./app');
         await mcpWrapper.initialize();
         // Routes are synchronously registered by app before fallback handlers.
     } catch (error) {
@@ -194,7 +194,7 @@ async function gracefulShutdown(signal: string) {
     deadline.unref();
     // Close all authenticated MCP streams BEFORE key-store teardown.
     try {
-        const { mcpWrapper } = await import('./mcp/mcpServer');
+        const { mcpWrapper } = await import('./app');
         await mcpWrapper.close();
     } catch (error) {
         shutdownFailed = true;

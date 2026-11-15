@@ -17,12 +17,17 @@ const master = crypto.randomBytes(32).toString('hex');
 process.env.SILHOUETTE_API_KEY = master;
 const { authMiddleware, resetTokenCache } = await import('../../server/middleware/authMiddleware');
 const { MCPWrapper, MCP_LIMITS } = await import('../../server/mcp/mcpServer');
-const { apiKeyService } = await import('../../services/apiKeyService');
+const { createEphemeralMcpKeyService } = await import('../../services/ephemeralMcpKeyRegistry');
+const custody = createEphemeralMcpKeyService();
+const apiKeyService = custody.service;
 const { sqliteService } = await import('../../services/sqliteService');
+const { apiKeyService: guardedProductionService } = await import('../../services/apiKeyService');
+assert.equal(guardedProductionService.readActiveKey('unknown'), null);
+assert.throws(() => guardedProductionService.createApiKey({ name: 'must-remain-denied', permissions: ['tools:read'] }, 'authored'), /Credential writes disabled/);
 resetTokenCache();
 const a = apiKeyService.createApiKey({ name: 'authored-A', permissions: ['tools:read', 'tools:execute'] }, 'test-owner');
 const b = apiKeyService.createApiKey({ name: 'authored-B', permissions: ['tools:read', 'tools:execute'] }, 'test-owner');
-const wrapper = new MCPWrapper();
+const wrapper = new MCPWrapper(apiKeyService);
 const app = express();
 // Same ordering as production app: MCP excluded from general parser, unchanged
 // identity middleware, synchronous wrapper mount, then terminal404.
@@ -129,21 +134,22 @@ try {
     assert.equal(sb.response.destroyed, false);
     for (const stream of capacityStreams) { stream.request.destroy(); stream.response.destroy(); }
     await new Promise(r => setTimeout(r, 30));
-    const expiring = apiKeyService.createApiKey({ name: 'expiring', permissions: ['tools:read'] }, 'test-owner');
-    const keys = sqliteService.getConfig('mcp_api_keys');
-    keys.find((k: { id: string }) => k.id === expiring.id).expiresAt = Date.now() + 200;
-    sqliteService.setConfig('mcp_api_keys', keys);
+    const expiring = apiKeyService.createApiKey({ name: 'expiring', permissions: ['tools:read'],
+        expiresInDays: 1200 / 86_400_000 }, 'test-owner');
     const expiringStream = await open(expiring.key); await until(() => expiringStream.response.destroyed);
     assert.equal((await request('/mcp/sse', expiring.key)).status, 403);
-    // Missing store => no valid key; malformed store =>503 and all streams close.
-    const saved = sqliteService.getConfig('mcp_api_keys');
-    sqliteService.setConfig('mcp_api_keys', { corrupt: true });
+    assert.ok(apiKeyService.listKeys().find(k => k.id === b.id)!.usageCount > 0);
+    const last = await open(b.key);
+    custody.dispose();
     assert.equal((await request('/mcp/sse', b.key)).status, 503);
-    await until(() => sb.response.destroyed);
-    sqliteService.setConfig('mcp_api_keys', saved);
-    const last = await open(b.key); await wrapper.close(); await until(() => last.response.destroyed);
+    await until(() => last.response.destroyed);
+    await wrapper.close();
     assert.equal((await request('/mcp/sse', b.key)).status, 503);
-    console.log(JSON.stringify({ actualAuth: true, actualKeyStore: true, actualSdk: true,
+    const isolated = createEphemeralMcpKeyService();
+    assert.equal(isolated.service.validateKey(b.key), null, 'fresh custody cannot read another registry');
+    isolated.dispose();
+    assert.throws(() => isolated.service.readActiveKey(b.id), /disposed/);
+    console.log(JSON.stringify({ actualAuth: true, actualKeyStore: true, keyStoreKind: 'fresh-exclusive-ephemeral-sqlite', productionCredentialPersistenceVerified: false, actualSdk: true,
         composedBoundary: true, fullApplicationBoot: false, transport: 'AF_UNIX',
         disposableSqliteWrites: true, providerCalls: 0, executedTools: 0,
         provisionalUntilNaturalExitAndOuterCleanup: true }));
@@ -151,6 +157,7 @@ try {
     await wrapper.close();
     for (const s of streams) { s.request.destroy(); s.response.destroy(); }
     const closed = once(server, 'close'); server.close(); server.closeAllConnections(); await closed;
+    custody.dispose();
     sqliteService.close();
     // Identity's private SQLite connection closes on natural process exit.
     // Parent removes authored DB/WAL/SHM/socket directory AFTER natural exit.

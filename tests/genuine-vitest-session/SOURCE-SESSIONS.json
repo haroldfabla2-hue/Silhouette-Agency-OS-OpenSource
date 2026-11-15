@@ -1,5 +1,5 @@
 {
-  "selection": "EXACT_ACTUAL_MAIN_PLUS_EIGHT_MCP_BLOBS",
+  "selection": "EXACT_ACTUAL_MAIN_PLUS_TEN_MCP_BLOBS_EXPLICIT_EPHEMERAL_CUSTODY",
   "mainCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
   "files": [
     {
@@ -716,8 +716,8 @@
       "path": "server/app.ts",
       "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
       "fixturePath": "tests/genuine-vitest-session/main-mcp-integration/server/app.ts",
-      "bytes": 14577,
-      "sha256": "75c2eb04ed6a0eb6bb8f5ef455a3a3ec2ccad1f255cdb689642efc927f738dcc"
+      "bytes": 14693,
+      "sha256": "24f196f79bc4782f21f7685de15a10ba1ea2a6af1522a4edf9173c02af296dff"
     },
     {
       "path": "server/channels/channelInterface.ts",
@@ -867,8 +867,8 @@
       "path": "server/index.ts",
       "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
       "fixturePath": "tests/genuine-vitest-session/main-mcp-integration/server/index.ts",
-      "bytes": 12142,
-      "sha256": "a90af08dcb8a635b82a6b85de0d30def33733fb8d1cece0e98caae58f972e09c"
+      "bytes": 12122,
+      "sha256": "a38dc120999eeb6762fda2057222656d8adf5b1b3f3c9f692429341f21b6e671"
     },
     {
       "path": "server/jobs/heartbeat.ts",
@@ -910,8 +910,8 @@
       "path": "server/mcp/mcpServer.ts",
       "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
       "fixturePath": "tests/genuine-vitest-session/main-mcp-integration/server/mcp/mcpServer.ts",
-      "bytes": 12540,
-      "sha256": "ec572781b25493e7e3b9cda1ae69b67e31ef4e393361a6fbae921e8270dc989f"
+      "bytes": 12442,
+      "sha256": "60b21f7417c70c595390d4476db8d81a07aebd69d1fa4ba099b8f5c1097801df"
     },
     {
       "path": "server/middleware/authMiddleware.ts",
@@ -1253,8 +1253,8 @@
       "path": "services/apiKeyService.ts",
       "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
       "fixturePath": "tests/genuine-vitest-session/main-mcp-integration/services/apiKeyService.ts",
-      "bytes": 10230,
-      "sha256": "9e482a5aa049b71d8e4cd86b04f518cfacbb86b4cc5f4adad8b7aced99bda069"
+      "bytes": 1952,
+      "sha256": "d42e500f425290814c25b669b36f2dc34706e8d338ec19db4fa45ab737b0c92d"
     },
     {
       "path": "services/architectService.ts",
@@ -1737,6 +1737,13 @@
       "sha256": "94cf0bb04f575494f6614f3571ce2ca8ad562ea269392abf8dce191996b2bbb3"
     },
     {
+      "path": "services/ephemeralMcpKeyRegistry.ts",
+      "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
+      "fixturePath": "tests/genuine-vitest-session/main-mcp-integration/services/ephemeralMcpKeyRegistry.ts",
+      "bytes": 1324,
+      "sha256": "0512f0fd66b57fa31bb75aa2ca40353916543c9c3ab95d4d98a5c394f53eef8b"
+    },
+    {
       "path": "services/eurekaService.ts",
       "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
       "bytes": 12256,
@@ -2065,6 +2072,13 @@
       "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
       "bytes": 12139,
       "sha256": "a51cd046c0385d6508c2835bc7938c98391f5b309bd09f197bf2afb57409237f"
+    },
+    {
+      "path": "services/mcpKeyService.ts",
+      "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
+      "fixturePath": "tests/genuine-vitest-session/main-mcp-integration/services/mcpKeyService.ts",
+      "bytes": 8043,
+      "sha256": "b9754be69889e5d5cf6efb68a7b1d456bdcc10ffd23748643eddec0175bffaa6"
     },
     {
       "path": "services/media/canvasService.ts",
@@ -3258,8 +3272,8 @@
       "path": "tests/automated/mcp-client-isolation-real.test.ts",
       "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
       "fixturePath": "tests/genuine-vitest-session/main-mcp-integration/tests/automated/mcp-client-isolation-real.test.ts",
-      "bytes": 2618,
-      "sha256": "c946abca763eca99f4812e080e3900904c351b6d8b6c9b4698b75179d092c89c"
+      "bytes": 2716,
+      "sha256": "7dce9fedf674344c96e4d9b7e84f7f01d4a12e2749a4bfce13e6719e23d3a070"
     },
     {
       "path": "tests/automated/memory-transitions-p0.test.ts",
@@ -3283,8 +3297,8 @@
       "path": "tests/real-process/mcp-boundary-child.ts",
       "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
       "fixturePath": "tests/genuine-vitest-session/main-mcp-integration/tests/real-process/mcp-boundary-child.ts",
-      "bytes": 11392,
-      "sha256": "72d408b3c42f3c7d32c58e6a58b588da019d66ab33ec3306bbdbe3c16746712f"
+      "bytes": 11882,
+      "sha256": "83cd9f7ade3b36551d0a5774465f43acb09608791702ec8a7be59ab26c7cf525"
     },
     {
       "path": "tests/setup/fetch-teardown.ts",
@@ -3409,7 +3423,7 @@
   ],
   "sessions": {
     "candidate": {
-      "productCommit": "MAIN_PLUS_EIGHT_MCP_BLOBS",
+      "productCommit": "MAIN_PLUS_TEN_MCP_BLOBS_EXPLICIT_EPHEMERAL_CUSTODY",
       "overrides": []
     }
   }

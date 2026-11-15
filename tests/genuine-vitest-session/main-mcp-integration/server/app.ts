@@ -104,7 +104,9 @@ app.use('/oauth', oauthRoutes);
 app.use(authMiddleware);
 
 // Register before static/SPA/terminal404 handlers, not later during boot.
-import { mcpWrapper } from './mcp/mcpServer';
+import { MCPWrapper } from './mcp/mcpServer';
+import { apiKeyService } from '../services/apiKeyService';
+export const mcpWrapper = new MCPWrapper(apiKeyService);
 mcpWrapper.mount(app);
 
 // ─── STATIC FILES ────────────────────────────────────────────────────────────
