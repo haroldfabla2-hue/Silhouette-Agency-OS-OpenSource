@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MemoryTier, type MemoryNode } from '../../types';
@@ -136,5 +136,63 @@ describe('transition admission payload ownership (real journal files)', () => {
         await expect(transitions.run(entry)).rejects.toThrow('Transition payload changed after admission');
         expect(JSON.stringify((await transitions.pending())[0])).toBe(expected);
         expect(entry.state).toBe('PENDING');
+    });
+});
+
+
+describe('journal rejection does not publish newer in-memory state (real filesystem/store)', () => {
+    async function fixture(id: string) {
+        const dir = await mkdtemp(join(tmpdir(), 'memory-state-order-'));
+        directories.push(dir);
+        const transitions = new MemoryTransitions(dir);
+        const original = source(id);
+        const entry = await transitions.begin(original, { ...original, tier: MemoryTier.MEDIUM });
+        return { dir, transitions, original, entry };
+    }
+
+    it('keeps PENDING when destination store succeeds but WRITTEN publication is rejected', async () => {
+        const { dir, transitions, original, entry } = await fixture('state-written-rejection');
+        const canonical = join(dir, `${entry.key}.json`);
+        const prior = await readFile(canonical);
+        await rm(canonical);
+        await mkdir(canonical); // Actual rename-over-directory failure, not a mocked filesystem error.
+        try {
+            await expect(transitions.run(entry)).rejects.toThrow();
+            expect(entry.state).toBe('PENDING');
+            expect(await lancedbService.getNodeById(original.id)).toEqual(entry.destination);
+        } finally {
+            await rm(canonical, { recursive: true, force: true });
+            await writeFile(canonical, prior);
+        }
+        // Restore only the deliberately obstructed fixture journal, then exercise real replay.
+        const reopened = new MemoryTransitions(dir);
+        const persisted = (await reopened.pending())[0];
+        expect(persisted.state).toBe('PENDING');
+        expect(persisted.source).toEqual(original);
+        await reopened.resume(persisted);
+        expect(persisted.state).toBe('COMMITTED');
+        expect((await reopened.pending())[0].state).toBe('COMMITTED');
+    });
+
+    it('keeps VERIFIED when COMMITTED publication is rejected and permits explicit replay', async () => {
+        const { dir, transitions, original, entry } = await fixture('state-commit-rejection');
+        await transitions.run(entry); // Genuine destination store/readback and WRITTEN/VERIFIED journal writes.
+        expect(entry.state).toBe('VERIFIED');
+        const canonical = join(dir, `${entry.key}.json`);
+        const prior = await readFile(canonical);
+        await rm(canonical);
+        await mkdir(canonical);
+        try {
+            await expect(transitions.commit(entry)).rejects.toThrow();
+            expect(entry.state).toBe('VERIFIED');
+            expect(await lancedbService.getNodeById(original.id)).toEqual(entry.destination);
+        } finally {
+            await rm(canonical, { recursive: true, force: true });
+            await writeFile(canonical, prior);
+        }
+        await transitions.commit(entry);
+        expect(entry.state).toBe('COMMITTED');
+        expect((await transitions.pending())[0].state).toBe('COMMITTED');
+        await expect(transitions.commit(entry)).rejects.toThrow('Unverified');
     });
 });

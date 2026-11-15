@@ -131,16 +131,20 @@ export class MemoryTransitions {
         if (captured.state === 'COMMITTED') return entry;
         // Only privately captured runtime values cross the native store/readback awaits.
         await this.lance.store(captured.destination);
+        await this.write({ ...captured, state: 'WRITTEN' });
+        // Publish logical progress only after the journal operation returns.
+        // A rejected rename/cleanup may already have applied bytes: inspect on recovery.
         captured.state = 'WRITTEN';
         entry.state = 'WRITTEN';
-        await this.write(captured);
         const stored = await this.lance.getNodeById(captured.destination.id);
         if (JSON.stringify(stored) !== JSON.stringify(captured.destination)) {
             throw new Error(`Destination verification failed for ${captured.destination.id}`);
         }
+        await this.write({ ...captured, state: 'VERIFIED' });
+        // Publish logical progress only after the journal operation returns.
+        // A rejected rename/cleanup may already have applied bytes: inspect on recovery.
         captured.state = 'VERIFIED';
         entry.state = 'VERIFIED';
-        await this.write(captured);
         return entry;
     }
 
@@ -183,9 +187,11 @@ export class MemoryTransitions {
 
     private async commitCaptured(entry: MemoryTransition, captured: MemoryTransition): Promise<void> {
         if (captured.state !== 'VERIFIED') throw new Error(`Unverified transition: ${captured.key}`);
+        await this.write({ ...captured, state: 'COMMITTED' });
+        // Publish logical progress only after the journal operation returns.
+        // A rejected rename/cleanup may already have applied bytes: inspect on recovery.
         captured.state = 'COMMITTED';
         entry.state = 'COMMITTED';
-        await this.write(captured);
     }
 
     public async pending(): Promise<MemoryTransition[]> {
