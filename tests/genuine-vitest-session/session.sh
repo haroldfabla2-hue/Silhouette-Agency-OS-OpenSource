@@ -34,7 +34,7 @@ for q in(p,p.parent):
 PY
 [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
 test "$(git -C "$repo" rev-parse HEAD)" = "$expected"
-test "$(git -C "$repo" rev-parse HEAD^)" = 97000d4b87635cc9f8a5bfce00abb5985e6d3590
+test "$(git -C "$repo" rev-parse HEAD^)" = cf3ffcdf311ebf80d9ab46812b96b1a38fc4de89
 # Fail before allocating, never resize a previous attempt or use an existing account/root.
 test ! -e "$root"
 ! id silhouette-acquire >/dev/null 2>&1
@@ -66,6 +66,7 @@ mkdir -m 700 "$root"
 mount -t tmpfs -o size=6140M,nr_inodes=249488,noswap,nosuid,nodev,mode=0755 tmpfs "$root"
 mkdir "$root/work" "$root/private" "$root/sources" "$root/runtime" "$root/fixtures" "$root/transport"
 mkdir "$root/fixtures/empty"
+test "$(sha256sum "$repo/tests/genuine-vitest-session/direct.py" | cut -d' ' -f1)" = cd0b03b721af18e3ef344791505f1786d5a301e81c29656853d952861811fbdd
 cp "$repo/tests/genuine-vitest-session/direct.py" "$root/fixtures/direct.py"
 python3 -I "$root/fixtures/direct.py" policy "$root/fixtures/filter.bpf"
 python3 -I "$root/fixtures/direct.py" policy "$root/fixtures/transport-filter.bpf" transport

@@ -23,6 +23,44 @@ def owned_pids(uid):
     if p.stat().st_uid==uid:out.append(int(p.name))
    except FileNotFoundError:pass
  return out
+def residual_identity_snapshot(pids,expected_uid):
+ # Diagnostic ONLY, AFTER the immutable residual list has already failed the
+ # existing acceptance gate. Never reread the UID census or wait for a PASS.
+ out={'schema':1,'origin':'ROOT_PROC_IDENTITY_DIAGNOSTIC_NOT_AUTHORIZATION',
+      'initialCount':len(pids),'recordLimit':16,'truncated':len(pids)>16,'records':[]}
+ for pid in pids[:16]:
+  record={'pid':pid,'observation':'UNAVAILABLE_UNKNOWN'}
+  try:
+   proc=Path('/proc')/str(pid)
+   def stat_fields(raw):
+    # comm may contain spaces or parentheses; never retain/emit it.
+    end=raw.rfind(')');assert end>0
+    fields=raw[end+2:].split();assert len(fields)>=20
+    state=fields[0];assert state in 'RSDZTtXxKWPI'
+    return {'state':state,'ppid':int(fields[1]),'startTicks':int(fields[19])}
+   before=stat_fields((proc/'stat').read_text())
+   uid=proc.stat().st_uid
+   # Dedicated session owns the UID. Capture only expected workload's process.
+   if uid!=expected_uid:
+    record['observation']='PID_UID_CHANGED_NO_IDENTITY_CAPTURE'
+   else:
+    cgroup=(proc/'cgroup').read_text()
+    assert len(cgroup)<=4096
+    rows=cgroup.splitlines();assert len(rows)==1 and rows[0].startswith('0::/')
+    # Classify fixed owned boundary; do not emit arbitrary host cgroup paths.
+    placement='EXPECTED_COORDINATOR'if rows[0].endswith('/silhouette-vitest-coordinator.service')else'OTHER_OR_UNKNOWN'
+    after=stat_fields((proc/'stat').read_text())
+    if before['startTicks']!=after['startTicks']:
+     record['observation']='PID_REUSED_DURING_CAPTURE_NO_IDENTITY_ACCEPTANCE'
+    else:
+     record.update({'observation':'STABLE_START_IDENTITY_OBSERVED_NOT_QUIESCENCE_PROOF',
+                    'uidMatched':True,'before':before,'after':after,'cgroupClass':placement})
+  except FileNotFoundError:record['observation']='DISAPPEARED_DURING_DIAGNOSTIC_NOT_AT_GATE'
+  except ProcessLookupError:record['observation']='DISAPPEARED_DURING_DIAGNOSTIC_NOT_AT_GATE'
+  except PermissionError:record['observation']='PROC_READ_DENIED_UNKNOWN'
+  except (OSError,ValueError,AssertionError,IndexError):record['observation']='PROC_READ_OR_SCHEMA_UNKNOWN'
+  out['records'].append(record)
+ return out
 def policy(target,transport=False):
  assert os.uname().machine=='x86_64'
  # cBPF little-endian x86_64 only. Refuse x32/foreign ABI; require AF_UNIX.
@@ -289,6 +327,7 @@ def run():
   # Any UID residual is a failure, not a completed child. Cleanup owns removing it.
   natural=type(code)is int and code>=0 and wrapper_error=='NONE'and not forced and not residual and all(after.get(k,0)==before.get(k,0)for k in('oom','oom_kill','oom_group_kill'))
   row={'schema':1,'phase':phase,'rawReturnCode':code,'natural':natural,'forced':forced,'residualUidProcesses':len(residual),'oomBefore':before,'oomAfter':after,'aggregateMemoryMax':10737418240,'aggregateTasksMax':384,'swapMax':0,'cpuCount':2,'elapsedSeconds':round(time.monotonic()-start,3),'boundary':'DIRECT_CHILD_BWRAP_OFFLINE_CONFIGURED_NOT_EXECUTION_PROOF'if phase!='transport'else'DIRECT_BWRAP_TRANSPORT_CONFIGURED_NOT_EXECUTION_PROOF'}
+  if residual:row['residualIdentity']=residual_identity_snapshot(residual,uid)
   row['wrapperError']=wrapper_error
   # Compiler bytes share the bootstrap pipe, so none can be attributed to prefix.
   # Do not let arbitrary compiler text populate a pre-exec failure classification.
