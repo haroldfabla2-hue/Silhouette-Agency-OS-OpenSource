@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Exact-lock acquisition only. No product imports or lifecycle scripts. SOURCE PROPOSAL."""
 from pathlib import Path
-import os,sys,json,hashlib,base64,tarfile,io,subprocess,urllib.request,shutil
+import os,sys,json,hashlib,base64,tarfile,io,subprocess,shutil
 # Diagnostic only. Fixed endpoint under root-owned parent; no messages/paths/argv.
 DIAGNOSTIC='/mnt/silhouette-genuine-vitest/diagnostic/acquire.json'
 PHASE='PAYLOAD_INIT'
@@ -29,11 +29,6 @@ LOCK='039ce85293514e83584ca047d0d8b53eb7bce71bb3b3fe75fc6f96e928a0299c'
 def sha(b):return hashlib.sha256(b).hexdigest()
 def emit(n,o):
  b=(json.dumps(o,indent=2)+'\n').encode();assert len(b)<=8*1024**2;(EV/n).write_bytes(b)
-def fetch(url,cap):
- assert url.startswith(('https://registry.npmjs.org/','https://codeload.github.com/whiskeysockets/libsignal-node/'))
- with urllib.request.urlopen(url,timeout=30)as r:
-  assert r.url.startswith(('https://registry.npmjs.org/','https://codeload.github.com/whiskeysockets/libsignal-node/'));b=r.read(cap+1)
- assert len(b)<=cap;return b
 NORMALIZATION_MANIFEST_SHA='e7ffbf50f9f4f27d17acdf55f27918609302313d0b0adc28df6366eda15ba5b2'
 normalizationRaw=(HERE/'archive-member-normalizations.json').read_bytes();assert sha(normalizationRaw)==NORMALIZATION_MANIFEST_SHA
 normalizations=json.loads(normalizationRaw);assert normalizations['lockSha256']==LOCK
@@ -85,11 +80,11 @@ PHASE='SOURCE_COPY'
 app=ROOT/'candidate';acquisition=ROOT/'acquisition';acquisition.mkdir()
 for n in ['package.json','package-lock.json']:shutil.copyfile(app/n,acquisition/n)
 assert sha((acquisition/'package-lock.json').read_bytes())==LOCK
-cache=ROOT/'npm-cache';cache.mkdir();home=ROOT/'npm-home';home.mkdir();empty=ROOT/'empty-npmrc';empty.write_text('');globalempty=ROOT/'empty-globalnpmrc';globalempty.write_text('')
+cache=ROOT/'npm-cache';assert cache.is_dir();home=ROOT/'npm-home';home.mkdir();empty=ROOT/'empty-npmrc';empty.write_text('');globalempty=ROOT/'empty-globalnpmrc';globalempty.write_text('')
 guard=ROOT/'git-guard';guard.mkdir();g=guard/'git';g.write_text('#!/bin/sh\ncase "$*" in --version|version) exec /usr/bin/git "$@" ;; *) printf "GIT_FALLBACK_DENIED\\n" >&2; exit 97 ;; esac\n');g.chmod(0o700)
-env={'PATH':str(guard)+':'+os.environ['PATH'],'HOME':str(home),'NPM_CONFIG_USERCONFIG':str(empty),'NPM_CONFIG_GLOBALCONFIG':str(globalempty),'NPM_CONFIG_CACHE':str(cache),'NPM_CONFIG_IGNORE_SCRIPTS':'true','NPM_CONFIG_AUDIT':'false','NPM_CONFIG_FUND':'false','NPM_CONFIG_FETCH_RETRIES':'0','PUPPETEER_SKIP_DOWNLOAD':'true','PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD':'true','GIT_CONFIG_NOSYSTEM':'1','GIT_CONFIG_GLOBAL':str(empty),'GIT_CONFIG_COUNT':'2','GIT_CONFIG_KEY_0':'url.https://github.com/whiskeysockets/libsignal-node.git.insteadOf','GIT_CONFIG_VALUE_0':'ssh://git@github.com/whiskeysockets/libsignal-node.git','GIT_CONFIG_KEY_1':'credential.helper','GIT_CONFIG_VALUE_1':'','GIT_TERMINAL_PROMPT':'0','GIT_ASKPASS':'/bin/false','GIT_SSH_COMMAND':'/bin/false'}
-PHASE='PUBLIC_SOURCE_FETCH'
-public=fetch('https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/1c30d7d7e76a3b0aa120b04dc6a26f5a12dccf67',1024**2);assert sha(public)=='a9e14823efa911474aaa9e8f6bfb88759f869a3bc25116e969be943b84bef318';lp=json.loads(members(public,mode='raw-libsignal-source')['package.json']);assert not lp.get('scripts')and not lp.get('workspaces')
+env={'PATH':str(guard)+':'+os.environ['PATH'],'HOME':str(home),'NPM_CONFIG_USERCONFIG':str(empty),'NPM_CONFIG_GLOBALCONFIG':str(globalempty),'NPM_CONFIG_CACHE':str(cache),'NPM_CONFIG_OFFLINE':'true','NPM_CONFIG_IGNORE_SCRIPTS':'true','NPM_CONFIG_AUDIT':'false','NPM_CONFIG_FUND':'false','NPM_CONFIG_FETCH_RETRIES':'0','PUPPETEER_SKIP_DOWNLOAD':'true','PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD':'true','GIT_CONFIG_NOSYSTEM':'1','GIT_CONFIG_GLOBAL':str(empty),'GIT_CONFIG_COUNT':'2','GIT_CONFIG_KEY_0':'url.https://github.com/whiskeysockets/libsignal-node.git.insteadOf','GIT_CONFIG_VALUE_0':'ssh://git@github.com/whiskeysockets/libsignal-node.git','GIT_CONFIG_KEY_1':'credential.helper','GIT_CONFIG_VALUE_1':'','GIT_TERMINAL_PROMPT':'0','GIT_ASKPASS':'/bin/false','GIT_SSH_COMMAND':'/bin/false'}
+PHASE='PUBLIC_SOURCE_READ'
+public=(HERE/'libsignal-source.tar.gz').read_bytes();assert len(public)==46103;assert sha(public)=='a9e14823efa911474aaa9e8f6bfb88759f869a3bc25116e969be943b84bef318';lp=json.loads(members(public,mode='raw-libsignal-source')['package.json']);assert not lp.get('scripts')and not lp.get('workspaces')
 PHASE='INSTALLER_IDENTITY'
 node=Path(shutil.which('node')).resolve();assert sha(node.read_bytes())=='ccacb2d6d87ba6d118b2bffc1ae33747a05cc5fc6b1f1ec4fc1d420b687e952d'
 assert subprocess.check_output([str(node),'--version'],text=True).strip()=='v22.18.0'
@@ -99,9 +94,9 @@ assert all(sha((npmRoot/n).read_bytes())==v for n,v in installerHashes.items()),
 PHASE='NPM_CONFIG';ROLE='NPM_CONFIG'
 conf=json.loads(subprocess.check_output([str(node),str(npm),'config','list','--json'],cwd=acquisition,env=env,text=True,timeout=10))
 ROLE='NONE'
-assert conf['ignore-scripts']is True and conf['audit']is False and conf['fund']is False and conf['fetch-retries']==0 and conf['userconfig']==str(empty)and conf['globalconfig']==str(globalempty),'INSTALLER_CONFIG_MISMATCH'
+assert conf['offline']is True and conf['ignore-scripts']is True and conf['audit']is False and conf['fund']is False and conf['fetch-retries']==0 and conf['userconfig']==str(empty)and conf['globalconfig']==str(globalempty),'INSTALLER_CONFIG_MISMATCH'
 PHASE='NPM_CI';ROLE='NPM_CI'
-subprocess.run([str(node),str(npm),'ci','--ignore-scripts','--no-audit','--no-fund'],cwd=acquisition,env=env,check=True,timeout=480)
+subprocess.run([str(node),str(npm),'ci','--offline','--ignore-scripts','--no-audit','--no-fund'],cwd=acquisition,env=env,check=True,timeout=480)
 ROLE='NONE';PHASE='LOCK_VERIFY'
 assert sha((acquisition/'package-lock.json').read_bytes())==LOCK
 proof=[];missing=[];admittedFiles=set()
@@ -137,6 +132,16 @@ PHASE='NATIVE_PROVENANCE'
 archive=HERE/'native-provenance/better-sqlite3-v12.5.0-node-v127-linux-x64.tar.gz';assert sha(archive.read_bytes())=='42451490221883f4edb84fc3453a2fce9b7489ce655192cd5531b5955a8faa4b'
 with tarfile.open(archive)as t:
  ms=t.getmembers();assert len(ms)==1 and ms[0].name=='build/Release/better_sqlite3.node'and ms[0].isfile();b=t.extractfile(ms[0]).read();f=acquisition/'node_modules/better-sqlite3'/ms[0].name;f.parent.mkdir(parents=True,exist_ok=True);f.write_bytes(b)
+# Required genuine validation native/CLI artifacts must not disappear as optional failures.
+required={
+ 'node_modules/@lancedb/lancedb-linux-x64-gnu/lancedb.linux-x64-gnu.node':(116507864,'b2413445fb6e661c6d4d53c7e69d4184d62d918c1a34db53bee84d1ea3a1232a'),
+ 'node_modules/@esbuild/linux-x64/bin/esbuild':(10358936,'bab29b2ca7a9e89b67cf720b77b2d743f9f31f5cf0d5bd74ee8c8de30ced7014'),
+ 'node_modules/tsx/node_modules/@esbuild/linux-x64/bin/esbuild':(11100344,'ecd2aeff7d78a9feefa96d9c6f3bb9a9cbb38cc74ec3e7f044e8e6ed02e33d00'),
+ 'node_modules/better-sqlite3/build/Release/better_sqlite3.node':(2091392,'10fede42d3f9c81930258a9e6690c36a7be6ad09cd8438245c719b2e1a9d6f56'),
+}
+for rel,(size,digest)in required.items():
+ f=acquisition/rel;assert f.is_file()and not f.is_symlink();data=f.read_bytes();assert len(data)==size and sha(data)==digest,'REQUIRED_NATIVE_OR_CLI_MISSING'
+ if rel.endswith('/bin/esbuild'):assert f.stat().st_mode&0o111,'ESBUILD_NOT_EXECUTABLE'
 emit('complete.json',{'lock':LOCK,'verified':proof,'optionalAbsent':missing,'scriptsExecuted':False,'nativeTarSha256':sha(archive.read_bytes()),'productImported':False})
 
 PHASE='COMPLETE'

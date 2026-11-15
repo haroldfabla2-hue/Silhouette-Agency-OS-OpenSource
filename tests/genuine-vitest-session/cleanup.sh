@@ -14,7 +14,7 @@ fi
 test "$(stat -c %u "$marker")" = 0
 test "$(cat "$marker")" = "$expected:$runid"
 failed=0
-for unit in silhouette-vitest-acquire silhouette-vitest-baseline-admission silhouette-vitest-baseline-state silhouette-vitest-candidate; do
+for unit in silhouette-vitest-transport silhouette-vitest-acquire silhouette-vitest-baseline-admission silhouette-vitest-baseline-state silhouette-vitest-candidate; do
   if systemctl show "$unit" --property=LoadState --value | grep -qv '^not-found$'; then
     systemctl stop "$unit" || failed=1
     main=$(systemctl show "$unit" --property=MainPID --value)

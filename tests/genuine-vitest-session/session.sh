@@ -29,7 +29,7 @@ wait_unit() {
 # This runs after wait and before classifying/accepting any product evidence.
 verify_unit_policy() {
   local unit=$1 phase=$2
-  systemctl show "$unit" --property=User,Group,MemoryMax,MemorySwapMax,TasksMax,CPUQuotaPerSecUSec,TemporaryFileSystem,NoNewPrivileges,ProtectSystem,RestrictAddressFamilies,PrivateNetwork,ReadWritePaths |
+  systemctl show "$unit" --property=User,Group,MemoryMax,MemorySwapMax,TasksMax,CPUQuotaPerSecUSec,TemporaryFileSystem,NoNewPrivileges,ProtectSystem,RestrictAddressFamilies,PrivateNetwork,ReadWritePaths,LimitFSIZE |
     /usr/bin/python3 -I -c '
 import sys
 phase=sys.argv[1]
@@ -41,8 +41,8 @@ assert v["MemorySwapMax"]=="0"and v["TasksMax"]=="256"and v["CPUQuotaPerSecUSec"
 assert v["NoNewPrivileges"]=="yes"and v["ProtectSystem"]=="strict"
 if phase=="acquire":
  assert set(v["ReadWritePaths"].split())=={"/mnt/silhouette-genuine-vitest/work","/mnt/silhouette-genuine-vitest/diagnostic/acquire.json"}
-if phase!="acquire":
- assert v["RestrictAddressFamilies"].split()==["AF_UNIX"]and v["PrivateNetwork"]=="yes"
+assert v["RestrictAddressFamilies"].split()==["AF_UNIX"]and v["PrivateNetwork"]=="yes"
+assert v["LimitFSIZE"]==("134217728"if phase=="acquire"else"8388608")
 rows=v["TemporaryFileSystem"].split();assert len(rows)==1
 path,opts=rows[0].split(":",1);assert path=="/run"
 options=set(opts.split(","));assert {"rw","noswap","nodev","nosuid","noexec"}<=options
@@ -64,7 +64,7 @@ project_failure() {
   /usr/bin/python3 -I - "$current_unit" "$unit_started" "$unit_finished" "$1" <<'PYEVIDENCE'
 import json,os,re,selectors,subprocess,sys,time,stat
 unit,started,finished,original=sys.argv[1:]
-allowed={'silhouette-vitest-acquire','silhouette-vitest-baseline-admission','silhouette-vitest-baseline-state','silhouette-vitest-candidate'}
+allowed={'silhouette-vitest-transport','silhouette-vitest-acquire','silhouette-vitest-baseline-admission','silhouette-vitest-baseline-state','silhouette-vitest-candidate'}
 result={'phase':unit.removeprefix('silhouette-vitest-')if unit in allowed else'UNKNOWN','properties':'UNKNOWN','journal':'UNKNOWN','category':'UNKNOWN','path':'UNKNOWN'}
 result['originalExit']=int(original)if original.isdigit()and len(original)<=3 else'UNKNOWN'
 if unit=='silhouette-vitest-acquire':
@@ -89,7 +89,7 @@ if unit=='silhouette-vitest-acquire':
     assert(row['stage'],row['event'])in {('ADMISSION','ADMISSION_REJECTED'),('ADMISSION','ADMISSION_EXCEPTION'),('EXECVE','EXECVE_PENDING'),('EXECVE','EXECVE_EXCEPTION')}
     assert row['role']=='NONE'and row['subprocessExit']=='UNKNOWN'
    else:
-    assert row['stage']in {'PAYLOAD_INIT','SOURCE_COPY','PUBLIC_SOURCE_FETCH','INSTALLER_IDENTITY','NPM_CONFIG','NPM_CI','LOCK_VERIFY','ARCHIVE_VERIFY','MEMBER_VERIFY','NATIVE_PROVENANCE','COMPLETE'}
+    assert row['stage']in {'PAYLOAD_INIT','SOURCE_COPY','PUBLIC_SOURCE_READ','INSTALLER_IDENTITY','NPM_CONFIG','NPM_CI','LOCK_VERIFY','ARCHIVE_VERIFY','MEMBER_VERIFY','NATIVE_PROVENANCE','COMPLETE'}
     assert row['event']in {'ENTERED','UNCAUGHT_EXCEPTION','COMPLETED'}
    result['diagnostic']={'status':'CAPTURED','authority':'UNAUTHENTICATED_CORROBORATION_ONLY','receipt':row}
  except BaseException:result['diagnostic']['status']='READ_OR_SCHEMA_FAILED_UNKNOWN'
@@ -213,7 +213,7 @@ quota,period=(p/'cpu.max').read_text().split();assert int(quota)==2*int(period)
 PYLIMIT
 [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
 test "$(git -C "$repo" rev-parse HEAD)" = "$expected"
-test "$(git -C "$repo" rev-parse HEAD^)" = a348bf08b9406b88d26ff272cc1f4e4c450fc276
+test "$(git -C "$repo" rev-parse HEAD^)" = 98691af2afdcaa99b218d178df14996f0374cc9a
 # Fail before allocating, never resize a previous attempt or use an existing account/root.
 test ! -e "$root"
 ! id silhouette-acquire >/dev/null 2>&1
@@ -243,7 +243,7 @@ mkdir -m 700 "$root"
 # Conservative aggregate: 6140MiB/249488 inodes plus four 1MiB/128-inode private /run mounts.
 # Kernel hard aggregate bytes AND inode count, not a du/df polling claim.
 mount -t tmpfs -o size=6140M,nr_inodes=249488,noswap,nosuid,nodev,mode=0755 tmpfs "$root"
-mkdir "$root/work" "$root/private" "$root/sources" "$root/runtime" "$root/fixtures"
+mkdir "$root/work" "$root/private" "$root/sources" "$root/runtime" "$root/fixtures" "$root/transport"
 cp "$repo/tests/genuine-vitest-session/acquire.py" "$root/fixtures/acquire.py"
 cp "$repo/tests/integrated-ui-trial/"{archive-member-normalizations.json,libsignal-packed-files.json} "$root/fixtures/"
 mkdir "$root/fixtures/native-provenance"
@@ -252,7 +252,7 @@ cat > "$root/fixtures/policy-admission.py" <<'PYADMISSION'
 # This is an admission prefix, not a product/test driver. It has no subprocess,
 # network, product imports, writable receipt, or alternate test/config invocation.
 # Execute with python3 -I; only an immutable root-owned copy is admissible.
-import os,stat,sys,json
+import os,stat,sys,json,resource
 from pathlib import Path
 
 def gate_diagnostic(event,exc=None):
@@ -288,10 +288,11 @@ def admit():
  status=dict(line.split(':',1)for line in Path('/proc/self/status').read_text().splitlines()if':'in line)
  assert all(int(status[key].strip(),16)==0 for key in ['CapInh','CapPrm','CapEff','CapBnd','CapAmb'])
  assert status['NoNewPrivs'].strip()=='1' and status['Seccomp'].strip()=='2'
- if phase!='acquire':
-  # Actual network namespace must differ from the trusted coordinator reference.
-  assert os.readlink('/proc/self/ns/net')!=hostnet
-  assert sorted(p.name for p in Path('/sys/class/net').iterdir())==['lo']
+ # Acquisition and product work are now both offline in distinct namespaces.
+ assert os.readlink('/proc/self/ns/net')!=hostnet
+ assert sorted(p.name for p in Path('/sys/class/net').iterdir())==['lo']
+ expected_fsize=134217728 if phase=='acquire' else 8388608
+ assert resource.getrlimit(resource.RLIMIT_FSIZE)==(expected_fsize,expected_fsize)
  # Read only mount metadata, never traverse inaccessible /run descendants.
  mounts=[]
  for line in Path('/proc/self/mountinfo').read_text().splitlines():
@@ -348,6 +349,35 @@ try:
 except BaseException as error:
  gate_diagnostic('EXECVE_EXCEPTION',error);os._exit(126)
 PYADMISSION
+# Complete Node-bundled npm provenance, not registry npm's different packaging.
+python3 - "$repo" "$root" "$node" <<'PYTOOLCHAIN'
+from pathlib import Path
+import sys,hashlib,json,shutil,stat
+repo,root,node=map(Path,sys.argv[1:]);fixture=root/'fixtures'
+raw=(repo/'tests/genuine-vitest-session/node-bundled-npm-members.json').read_bytes()
+assert hashlib.sha256(raw).hexdigest()=='b0f244f332ccad6e5f6805d866b9b5d7f2e7a3a51e0d1b3703b185c2546f9348'
+rows=json.loads(raw);assert len(rows)==2245
+source=node.parent.parent/'lib/node_modules/npm';dest=fixture/'toolchain/npm'
+expected={r['path']for r in rows};actual=set()
+for f in source.rglob('*'):
+ st=f.lstat();assert not stat.S_ISLNK(st.st_mode)
+ if stat.S_ISREG(st.st_mode):actual.add(str(f.relative_to(source)))
+ else:assert stat.S_ISDIR(st.st_mode)
+assert actual==expected
+for row in rows:
+ rel=Path(row['path']);assert not rel.is_absolute()and'..'not in rel.parts
+ f=source/rel;b=f.read_bytes();assert len(b)==row['bytes']and hashlib.sha256(b).hexdigest()==row['sha256']
+ target=dest/rel;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(b);target.chmod(row['mode']&0o555)
+b=node.read_bytes();assert hashlib.sha256(b).hexdigest()=='ccacb2d6d87ba6d118b2bffc1ae33747a05cc5fc6b1f1ec4fc1d420b687e952d'
+(fixture/'toolchain/bin').mkdir();(fixture/'toolchain/bin/node').write_bytes(b);(fixture/'toolchain/bin/node').chmod(0o555)
+(fixture/'toolchain/bin/npm').symlink_to('../npm/bin/npm-cli.js')
+for name,want in {
+ 'public-transport.cjs':'3b63546a498234cd7b9d27f956bfbce733d4a6b6f17c7a2214c6930ff0d8db8f',
+ 'public-transport-inventory.json':'6fee6ef7df0f89e18dfd6de8620f42f1fc2e8916f5b905e04c99326b32042e51',
+}.items():
+ b=(repo/'tests/genuine-vitest-session'/name).read_bytes();assert hashlib.sha256(b).hexdigest()==want
+ (fixture/name).write_bytes(b)
+PYTOOLCHAIN
 chmod -R a-w "$root/fixtures"
 chmod 700 "$root/private"
 # Parent is root-owned and nonwritable; only this fixed file content is writable.
@@ -384,10 +414,54 @@ for name,session in spec['sessions'].items():
  (dest/'node_modules').mkdir();(dest/'db').mkdir();(dest/'data').mkdir()
 assert hashlib.sha256((root/'sources/candidate/package-lock.json').read_bytes()).hexdigest()=='039ce85293514e83584ca047d0d8b53eb7bce71bb3b3fe75fc6f96e928a0299c'
 PY
+# Trusted fixed-public-byte transport, separate from offline package installation.
+# Normal runner resolver is allowed ONLY in this reviewed byte helper unit.
+# No project/Git/npmrc/user-home access or package archive extraction.
+chown "$auid:$agid" "$root/transport"
+current_unit=silhouette-vitest-transport
+current_exit=
+failure_captured=false
+unit_finished=
+unit_started=$(date +%s.%6N)
+systemd-run --quiet --no-block --unit silhouette-vitest-transport --slice=silhouette-vitest.slice --service-type=exec \
+  -p User=silhouette-acquire -p Group=silhouette-acquire -p NoNewPrivileges=yes \
+  -p ProtectSystem=strict -p ProtectHome=yes -p PrivateDevices=yes -p ProtectProc=invisible -p ProcSubset=pid \
+  -p InaccessiblePaths="$repo $root/private $root/work $root/sources $root/runtime /tmp /var/tmp /dev/shm" \
+  -p PrivateIPC=yes -p RestrictSUIDSGID=yes -p CapabilityBoundingSet= \
+  -p SystemCallArchitectures=native -p RestrictNamespaces=yes -p ProtectKernelTunables=yes -p ProtectControlGroups=yes -p ProtectKernelModules=yes -p LockPersonality=yes -p RestrictRealtime=yes \
+  -p ReadWritePaths="$root/transport" -p WorkingDirectory="$root/transport" \
+  -p MemoryMax=1G -p MemorySwapMax=0 -p CPUQuota=100% -p TasksMax=64 \
+  -p LimitNOFILE=256 -p LimitFSIZE=67108864 -p RuntimeMaxSec=180 \
+  -p TimeoutStopSec=5 -p KillMode=control-group -p RemainAfterExit=yes -p StandardOutput=null -p StandardError=null \
+  /usr/bin/env -i PATH=/usr/bin:/bin HOME="$root/transport/home" \
+  "$root/fixtures/toolchain/bin/node" "$root/fixtures/public-transport.cjs"
+wait_unit silhouette-vitest-transport 190
+# Manager-owned transport identity/resource/result corroboration. No product PASS.
+test "$(systemctl show silhouette-vitest-transport --property=Result --value)" = success
+test "$(systemctl show silhouette-vitest-transport --property=User --value)" = silhouette-acquire
+test "$(systemctl show silhouette-vitest-transport --property=MemoryMax --value)" = 1073741824
+test "$(systemctl show silhouette-vitest-transport --property=MemorySwapMax --value)" = 0
+test "$(systemctl show silhouette-vitest-transport --property=TasksMax --value)" = 64
+test "$(systemctl show silhouette-vitest-transport --property=ReadWritePaths --value)" = "$root/transport"
+tgroup=$(systemctl show silhouette-vitest-transport --property=ControlGroup --value)
+if test -n "$tgroup" && test -e "/sys/fs/cgroup$tgroup/cgroup.events"; then grep -q '^populated 0$' "/sys/fs/cgroup$tgroup/cgroup.events"; fi
+systemctl stop silhouette-vitest-transport
+current_unit=
+python3 - "$root" <<'PYHANDOFF'
+from pathlib import Path
+import sys,json,hashlib,stat
+root=Path(sys.argv[1]);t=root/'transport';proof=json.loads((t/'complete.json').read_text())
+assert proof['status']=='PUBLIC_BYTES_CACHED_NOT_INSTALL_OR_PRODUCT_PASS'and proof['requests']==1174 and proof['downloadedBytes']==443214404 and proof['cacheBytes']<=536870912
+f=t/'libsignal-source.tar.gz';st=f.lstat();assert stat.S_ISREG(st.st_mode)and st.st_nlink==1
+b=f.read_bytes();assert len(b)==46103 and hashlib.sha256(b).hexdigest()=='a9e14823efa911474aaa9e8f6bfb88759f869a3bc25116e969be943b84bef318'
+# Byte file becomes immutable fixture only after helper has naturally exited.
+f.rename(root/'fixtures/libsignal-source.tar.gz');f=root/'fixtures/libsignal-source.tar.gz';f.chown(0,0);f.chmod(0o444)
+(t/'cache').rename(root/'work/npm-cache')
+PYHANDOFF
 cp -a "$root/sources/candidate" "$root/work/candidate"
 chown -R "$auid:$agid" "$root/work"
 # Acquisition is separate UID/cgroup with no GitHub token, no product source execution, no scripts.
-# Only this phase has network; private checkout/protected evidence are inaccessible.
+# No package installer/product network. Missing cached data is an incomplete result, never fallback.
 current_unit=silhouette-vitest-acquire
 current_exit=
 failure_captured=false
@@ -401,12 +475,13 @@ systemd-run --quiet --no-block --unit silhouette-vitest-acquire --slice=silhouet
   -p ProtectProc=invisible -p ProcSubset=pid -p PrivateIPC=yes -p RestrictSUIDSGID=yes -p CapabilityBoundingSet= \
   -p SystemCallArchitectures=native -p RestrictNamespaces=yes -p ProtectKernelTunables=yes -p ProtectControlGroups=yes -p ProtectKernelModules=yes -p LockPersonality=yes -p RestrictRealtime=yes -p ReadWritePaths="$root/work $root/diagnostic/acquire.json" \
   -p MemoryMax=8G -p MemorySwapMax=0 -p CPUQuota=100% -p TasksMax=256 \
-  -p LimitNOFILE=4096 -p LimitFSIZE=67108864 -p RuntimeMaxSec=540 \
+  -p RestrictAddressFamilies=AF_UNIX -p PrivateNetwork=yes \
+  -p LimitNOFILE=4096 -p LimitFSIZE=134217728 -p RuntimeMaxSec=360 \
   -p TimeoutStopSec=10 -p KillMode=control-group -p RemainAfterExit=yes -p StandardOutput=null -p StandardError=null \
-  /usr/bin/env -i PATH="$PATH" HOME="$root/work/npm-home" \
+  /usr/bin/env -i PATH="$root/fixtures/toolchain/bin:/usr/sbin:/usr/bin:/sbin:/bin" HOME="$root/work/npm-home" \
   /usr/bin/python3 -I "$root/fixtures/policy-admission.py" acquire "$auid" "$agid" "$root" "$repo" "$host_network_namespace" /usr/bin/python3 "$root/fixtures/acquire.py" \
   "$root/fixtures" "$root/work"
-wait_unit silhouette-vitest-acquire 560
+wait_unit silhouette-vitest-acquire 380
 verify_unit_policy silhouette-vitest-acquire acquire
 test -f "$root/work/acquisition-evidence/complete.json"
 test "$(systemctl show silhouette-vitest-acquire --property=Result --value)" = success

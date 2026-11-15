@@ -62,13 +62,13 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
-          test "$(git rev-parse HEAD^)" = a348bf08b9406b88d26ff272cc1f4e4c450fc276
+          test "$(git rev-parse HEAD^)" = 98691af2afdcaa99b218d178df14996f0374cc9a
           test "$(git rev-list --parents -n 1 HEAD | wc -w)" -eq 2
           python3 - <<'PY'
           import subprocess
-          expected={'.github/workflows/integrated-silhouette-ui.yml','tests/genuine-vitest-session/session.sh','tests/genuine-vitest-session/acquire.py'}
+          expected={'.github/workflows/integrated-silhouette-ui.yml','tests/genuine-vitest-session/session.sh','tests/genuine-vitest-session/acquire.py','tests/genuine-vitest-session/cleanup.sh','tests/genuine-vitest-session/public-transport.cjs','tests/genuine-vitest-session/public-transport-inventory.json','tests/genuine-vitest-session/node-bundled-npm-members.json'}
           actual=set(subprocess.check_output(['git','diff','--name-only','HEAD^','HEAD'],text=True).splitlines())
-          assert actual==expected,'EXACT_REVIEWED_THREE_FILE_ACQUISITION_DIAGNOSTICS_REQUIRED'
+          assert actual==expected,'EXACT_REVIEWED_OFFLINE_ACQUISITION_DELTA_REQUIRED'
           PY
           elapsed=$(( $(date +%s) - $(cat "$RUNNER_TEMP/silhouette-session-job-start") ))
           test "$elapsed" -ge 0
