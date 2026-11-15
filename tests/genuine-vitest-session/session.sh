@@ -10,7 +10,7 @@ phase=PREPARATION
 cleanup() { bash "$repo/tests/genuine-vitest-session/cleanup.sh" "$expected" "$runid"; }
 close_out() {
  original=$?;trap - EXIT;set +e
- case "$phase" in PREPARATION|transport|acquire|typecheck|regressions|mechanisms|candidate) ;; *) phase=UNKNOWN;;esac
+ case "$phase" in PREPARATION|transport|acquire|typecheck|regressions|mechanisms|continuity|candidate) ;; *) phase=UNKNOWN;;esac
  printf 'DIRECT_ROUTE_CLOSEOUT {"phase":"%s","coordinatorExit":%s}\n' "$phase" "$original"
 
  if $owned; then cleanup; c=$?;if test "$c" != 0; then echo CLEANUP_FAILED_NO_ACCEPTANCE;if test "$original" = 0; then original=$c;fi;fi;fi
@@ -34,7 +34,7 @@ for q in(p,p.parent):
 PY
 [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
 test "$(git -C "$repo" rev-parse HEAD)" = "$expected"
-test "$(git -C "$repo" rev-parse HEAD^)" = 15d799c0cccb6874d021351f30725de1eb70e884
+test "$(git -C "$repo" rev-parse HEAD^)" = 3c562e402f883717a90cb544afa299fe8d3628fc
 # Fail before allocating, never resize a previous attempt or use an existing account/root.
 test ! -e "$root"
 ! id silhouette-acquire >/dev/null 2>&1
@@ -121,12 +121,12 @@ for name,session in spec['sessions'].items():
  overrides={r['path']:r for r in session['overrides']}
  for candidateRow in spec['files']:
   row=overrides.get(candidateRow['path'],candidateRow)
-  assert session['productCommit']=='MAIN_BASE_PLUS_EXACT_TWO_REVIEWED_OVERRIDES'
-  assert spec['mainCommit']=='66faa5ed01788ca141fa0e04d97a97c3bd1946de'
+  assert session['productCommit']=='MAIN_PLUS_SEVEN_CONTINUITY_BLOBS'
+  assert spec['mainCommit']=='1f0d967abf81b86e666d26eeb20f6dc97662a525'
   commit=row['sourceCommit']
   if commit=='WORKFLOW_FIXTURE_EXACT':
-   assert row['path']in {'services/memoryTransitions.ts','tests/automated/memory-transitions-p0.test.ts'}
-   assert row['fixturePath']=='tests/genuine-vitest-session/main-memory-integration/'+row['path']
+   assert row['path']in {'tests/automated/cycle-store-continuity.test.ts', 'services/selfdev/cycleStoreContinuity.ts', 'tests/automated/selfdev-cycle.test.ts', 'tests/real-process/cycle-continuity-child.ts', 'tests/automated/cycle-service-continuity-real.test.ts', 'server/routes/v1/selfdev.routes.ts', 'services/selfdev/cycleService.ts'}
+   assert row['fixturePath']=='tests/genuine-vitest-session/main-continuity-integration/'+row['path']
    commit=sys.argv[3];sourcePath=row['fixturePath']
   else:
    assert commit==spec['mainCommit'];sourcePath=row['path']
@@ -180,11 +180,12 @@ mkdir "$data" "$data/tmp" "$data/home" "$data/db" "$data/data"
 # Reviewed public migration fixtures only. They are disposable input, never a real DB.
 cp -a "$src/db/migrations" "$data/db/migrations"
 chown -R "$ruid:$rgid" "$data"
-for validation in typecheck regressions; do
+for validation in typecheck continuity; do
  test "$((SECONDS-start))" -lt 800
  phase=$validation
  case "$validation" in
   typecheck) args=("$src/node_modules/typescript/bin/tsc" --noEmit --incremental false --pretty false) ;;
+  continuity) args=("$src/node_modules/vitest/vitest.mjs" run tests/automated/cycle-store-continuity.test.ts tests/automated/cycle-service-continuity-real.test.ts tests/automated/selfdev-cycle.test.ts tests/automated/selfdev-preservation.test.ts) ;;
   regressions) args=("$src/node_modules/vitest/vitest.mjs" run tests/automated/memory-transitions-p0.test.ts -t 'captures typed payload|owns Float32Array|rejects mutation of an admitted|keeps PENDING when destination|keeps VERIFIED when COMMITTED') ;;
   mechanisms) args=("$src/node_modules/vitest/vitest.mjs" run tests/automated/product-learning-proposal-real.test.ts tests/automated/selfdev-preservation.test.ts tests/automated/independent-verifier-receipt-contract.test.ts tests/automated/learning-analysis-input.test.ts tests/automated/learning-status-copy.test.ts) ;;
  esac
@@ -205,8 +206,8 @@ done
 summary=$(python3 - "$root/private" <<'PYCODE'
 from pathlib import Path
 import sys,json
-p=Path(sys.argv[1]);rows=[json.loads((p/(n+'.summary.json')).read_text())for n in ['typecheck','regressions']]
-print(json.dumps({'scope':'ACTUAL_MAIN_BASE_TWO_PATH_MEMORY_INTEGRATION_TYPECHECK_AND_FIVE_REAL_REGRESSIONS','sessions':rows,'usefulLearningAccepted':False,'fullProductAccepted':False}))
+p=Path(sys.argv[1]);rows=[json.loads((p/(n+'.summary.json')).read_text())for n in ['typecheck','continuity']]
+print(json.dumps({'scope':'ACTUAL_MAIN_SEVEN_PATH_CONTINUITY_TYPECHECK_AND_REAL_SERVICE_RESTARTS','sessions':rows,'usefulLearningAccepted':False,'fullProductAccepted':False}))
 PYCODE
 )
 cleanup
