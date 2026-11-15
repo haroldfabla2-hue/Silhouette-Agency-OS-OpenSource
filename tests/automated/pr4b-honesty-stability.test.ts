@@ -67,9 +67,26 @@ describe('PR-4b: memory transitions', () => {
         expect(cm).toContain('memoryTransitions.transition(node, archived)');
         expect(cm).toContain('memoryTransitions.resume(entry)');
     });
-    it('consolidateRamImmediate isolates per-node failures (no unhandled rejection, honest count)', () => {
-        expect(cm).toContain('Consolidation failed for ${node.id}; source remains in RAM');
-        expect(cm).toContain('let failed = 0;');
+    it('consolidateRamImmediate isolates per-node failures without inventing custody or empty RAM', () => {
+        const start = cm.indexOf('public async consolidateRamImmediate()');
+        expect(start).toBeGreaterThanOrEqual(0);
+        const end = cm.indexOf('\n}\n', start);
+        expect(end).toBeGreaterThan(start);
+        const consolidation = cm.slice(start, end);
+        // Preserve isolation, completion counting, failure counting and health reporting.
+        expect(consolidation).toContain('for (const node of [...this.working])');
+        expect(consolidation).toContain("try { await this.promoteWorking(node, ['CONSOLIDATED']); count++; await this.notePromoteSuccess(); }");
+        expect(consolidation).toContain('let failed = 0;');
+        expect(consolidation).toContain('catch (error) { failed++;');
+        expect(consolidation).toContain('await this.notePromoteFailure(node.id, error);');
+        expect(consolidation).toContain('return { promoted: count };');
+        // A failure can precede transition, follow RAM removal at snapshot, or be health reporting.
+        expect(consolidation).toContain('Consolidation attempt failed for ${node.id}; stage not classified, source custody requires inspection:');
+        expect(consolidation).toContain('${count} promotion calls returned; ${failed} attempts reported errors; ${this.working.length} WORKING entries currently in RAM. These counts do not verify source custody or recovery.');
+        expect(consolidation).not.toContain('source remains in RAM');
+        expect(consolidation).not.toContain('sources kept in RAM');
+        expect(consolidation).not.toContain('RAM is empty.');
+        expect(consolidation).not.toContain('memories to L3');
     });
 });
 

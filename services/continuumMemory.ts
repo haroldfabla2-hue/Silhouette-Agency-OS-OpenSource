@@ -1649,10 +1649,10 @@ class ContinuumMemorySystem {
         let failed = 0;
         for (const node of [...this.working]) {
             try { await this.promoteWorking(node, ['CONSOLIDATED']); count++; await this.notePromoteSuccess(); }
-            catch (error) { failed++; console.error(`[CONTINUUM] Consolidation failed for ${node.id}; source remains in RAM:`, error); await this.notePromoteFailure(node.id, error); }
+            catch (error) { failed++; console.error(`[CONTINUUM] Consolidation attempt failed for ${node.id}; stage not classified, source custody requires inspection:`, error); await this.notePromoteFailure(node.id, error); }
         }
 
-        console.log(`[CONTINUUM] 🌪️ Consolidated ${count} memories to L3 (LanceDB). ${failed > 0 ? `⚠️ ${failed} failed (sources kept in RAM).` : 'RAM is empty.'}`);
+        console.log(`[CONTINUUM] Consolidation: ${count} promotion calls returned; ${failed} attempts reported errors; ${this.working.length} WORKING entries currently in RAM. These counts do not verify source custody or recovery.`);
         return { promoted: count };
     }
 }
