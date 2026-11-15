@@ -28,6 +28,57 @@ export class MemoryTransitions {
         return createHash('sha256').update(JSON.stringify([source.id, source.timestamp, source.tier, destination.tier])).digest('hex');
     }
 
+    // Bind public entry payloads without freezing or changing their historical shape/state field.
+    private readonly entryPayloads = new WeakMap<MemoryTransition, string>();
+
+    private payload(entry: MemoryTransition): string {
+        return JSON.stringify([entry.key, entry.source, entry.destination]);
+    }
+
+    private captureNodes(source: MemoryNode, destination: MemoryNode): { source: MemoryNode; destination: MemoryNode } {
+        const before = JSON.stringify([source, destination]);
+        // JSON round-trip is not a runtime clone: embeddingVector may be Float32Array.
+        const captured = structuredClone({ source, destination });
+        // Structured clone of a SharedArrayBuffer-backed Float32Array still aliases
+        // the caller's shared data block. Copy the declared vector values as well.
+        const vectors = new Map<Float32Array, Float32Array>();
+        for (const node of [captured.source, captured.destination]) {
+            if (node.embeddingVector instanceof Float32Array) {
+                const vector = node.embeddingVector;
+                let owned = vectors.get(vector);
+                if (!owned) { owned = new Float32Array(vector); vectors.set(vector, owned); }
+                node.embeddingVector = owned;
+            }
+        }
+        if (JSON.stringify([captured.source, captured.destination]) !== before) {
+            throw new Error('Transition capture would change legacy serialization');
+        }
+        if (captured.source.id !== captured.destination.id) throw new Error('A tier transition must preserve the memory ID');
+        return captured;
+    }
+
+    private bind(entry: MemoryTransition): MemoryTransition {
+        if (entry.key !== this.key(entry.source, entry.destination)) throw new Error('Transition key does not match captured source');
+        this.entryPayloads.set(entry, this.payload(entry));
+        return entry;
+    }
+
+    private captureEntry(entry: MemoryTransition): MemoryTransition {
+        const payload = this.payload(entry);
+        const bound = this.entryPayloads.get(entry);
+        if (bound !== undefined && bound !== payload) throw new Error('Transition payload changed after admission');
+        const captured = this.captureNodes(entry.source, entry.destination);
+        // Preserve unknown legacy JSON fields on the public journal entry as well.
+        const copy = structuredClone(entry) as MemoryTransition;
+        copy.source = captured.source;
+        copy.destination = captured.destination;
+        if (JSON.stringify(copy) !== JSON.stringify(entry)) throw new Error('Transition entry capture would change legacy serialization');
+        if (copy.key !== this.key(copy.source, copy.destination)) throw new Error('Transition key does not match captured source');
+        // Legacy/external entries are still accepted on first use when their key is consistent.
+        if (bound === undefined) this.entryPayloads.set(entry, payload);
+        return copy;
+    }
+
     private file(key: string): string { return path.join(this.directory, `${key}.json`); }
 
     private async write(entry: MemoryTransition): Promise<void> {
@@ -43,7 +94,9 @@ export class MemoryTransitions {
     }
 
     public async begin(source: MemoryNode, destination: MemoryNode): Promise<MemoryTransition> {
-        if (source.id !== destination.id) throw new Error('A tier transition must preserve the memory ID');
+        const captured = this.captureNodes(source, destination);
+        source = captured.source;
+        destination = captured.destination;
         const key = this.key(source, destination);
         try {
             const entry = JSON.parse(await fs.readFile(this.file(key), 'utf8')) as MemoryTransition;
@@ -60,27 +113,37 @@ export class MemoryTransitions {
                 }
                 console.warn(`[MEMORY_TRANSITIONS] Volatile-only conflict for ${source.id}; adopting journaled transition ${entry.key} (divergent metadata dropped).`);
             }
-            return entry;
+            return this.bind(entry);
         } catch (error: any) {
             if (error.code !== 'ENOENT') throw error;
         }
         const entry: MemoryTransition = { key, source, destination, state: 'PENDING' };
         await this.write(entry);
-        return entry;
+        return this.bind(entry);
     }
 
     public async run(entry: MemoryTransition): Promise<MemoryTransition> {
-        if (entry.state === 'COMMITTED') return entry;
-        // Replay is safe: LanceDB's merge by ID is atomic and idempotent.
-        await this.lance.store(entry.destination);
+        return this.runCaptured(entry, this.captureEntry(entry));
+    }
+
+    private async runCaptured(entry: MemoryTransition, captured: MemoryTransition): Promise<MemoryTransition> {
+        if (captured.state === 'COMMITTED') return entry;
+        // Only privately captured runtime values cross the native store/readback awaits.
+        await this.lance.store(captured.destination);
+        await this.write({ ...captured, state: 'WRITTEN' });
+        // Publish logical progress only after the journal operation returns.
+        // A rejected rename/cleanup may already have applied bytes: inspect on recovery.
+        captured.state = 'WRITTEN';
         entry.state = 'WRITTEN';
-        await this.write(entry);
-        const stored = await this.lance.getNodeById(entry.destination.id);
-        if (JSON.stringify(stored) !== JSON.stringify(entry.destination)) {
-            throw new Error(`Destination verification failed for ${entry.destination.id}`);
+        const stored = await this.lance.getNodeById(captured.destination.id);
+        if (JSON.stringify(stored) !== JSON.stringify(captured.destination)) {
+            throw new Error(`Destination verification failed for ${captured.destination.id}`);
         }
+        await this.write({ ...captured, state: 'VERIFIED' });
+        // Publish logical progress only after the journal operation returns.
+        // A rejected rename/cleanup may already have applied bytes: inspect on recovery.
+        captured.state = 'VERIFIED';
         entry.state = 'VERIFIED';
-        await this.write(entry);
         return entry;
     }
 
@@ -100,8 +163,9 @@ export class MemoryTransitions {
      * with an unhandled 'Conflicting transition' rejection.
      */
     public async transition(source: MemoryNode, destination: MemoryNode): Promise<void> {
-        return this.enqueue(source.id, async () => {
-            const entry = await this.begin(source, destination);
+        const captured = this.captureNodes(source, destination);
+        return this.enqueue(captured.source.id, async () => {
+            const entry = await this.begin(captured.source, captured.destination);
             await this.run(entry);
             await this.commit(entry);
         });
@@ -109,16 +173,24 @@ export class MemoryTransitions {
 
     /** [PR-4b] Crash-recovery replay, serialized against live transitions of the same id. */
     public async resume(entry: MemoryTransition): Promise<void> {
-        return this.enqueue(entry.source.id, async () => {
-            await this.run(entry);
-            await this.commit(entry);
+        const captured = this.captureEntry(entry);
+        return this.enqueue(captured.source.id, async () => {
+            await this.runCaptured(entry, captured);
+            await this.commitCaptured(entry, captured);
         });
     }
 
     public async commit(entry: MemoryTransition): Promise<void> {
-        if (entry.state !== 'VERIFIED') throw new Error(`Unverified transition: ${entry.key}`);
+        await this.commitCaptured(entry, this.captureEntry(entry));
+    }
+
+    private async commitCaptured(entry: MemoryTransition, captured: MemoryTransition): Promise<void> {
+        if (captured.state !== 'VERIFIED') throw new Error(`Unverified transition: ${captured.key}`);
+        await this.write({ ...captured, state: 'COMMITTED' });
+        // Publish logical progress only after the journal operation returns.
+        // A rejected rename/cleanup may already have applied bytes: inspect on recovery.
+        captured.state = 'COMMITTED';
         entry.state = 'COMMITTED';
-        await this.write(entry);
     }
 
     public async pending(): Promise<MemoryTransition[]> {
