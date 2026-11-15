@@ -34,7 +34,7 @@ for q in(p,p.parent):
 PY
 [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
 test "$(git -C "$repo" rev-parse HEAD)" = "$expected"
-test "$(git -C "$repo" rev-parse HEAD^)" = 078e40af9e18e88ea1b0ddce30c37c85fec7e290
+test "$(git -C "$repo" rev-parse HEAD^)" = ccad929bc12e92c70aaeebafd14c618c797b1a60
 # Fail before allocating, never resize a previous attempt or use an existing account/root.
 test ! -e "$root"
 ! id silhouette-acquire >/dev/null 2>&1
@@ -133,13 +133,13 @@ phase=transport
 python3 -I "$root/fixtures/direct.py" run transport "$auid" "$agid" 180 "$hostnet" "$hostpid" "$root/fixtures/toolchain/bin/node" "$root/fixtures/public-transport.cjs"
 python3 - "$root" <<'PYHANDOFF'
 from pathlib import Path
-import sys,json,hashlib,stat
+import sys,json,hashlib,stat,os
 root=Path(sys.argv[1]);t=root/'transport';proof=json.loads((t/'complete.json').read_text())
 assert proof['status']=='PUBLIC_BYTES_CACHED_NOT_INSTALL_OR_PRODUCT_PASS'and proof['requests']==1174 and proof['downloadedBytes']==443214404 and proof['cacheBytes']<=536870912
 f=t/'libsignal-source.tar.gz';st=f.lstat();assert stat.S_ISREG(st.st_mode)and st.st_nlink==1
 b=f.read_bytes();assert len(b)==46103 and hashlib.sha256(b).hexdigest()=='a9e14823efa911474aaa9e8f6bfb88759f869a3bc25116e969be943b84bef318'
 # Byte file becomes immutable fixture only after helper has naturally exited.
-f.rename(root/'fixtures/libsignal-source.tar.gz');f=root/'fixtures/libsignal-source.tar.gz';f.chown(0,0);f.chmod(0o444)
+f.rename(root/'fixtures/libsignal-source.tar.gz');f=root/'fixtures/libsignal-source.tar.gz';os.chown(f,0,0);f.chmod(0o444)
 (t/'cache').rename(root/'work/npm-cache')
 PYHANDOFF
 cp -a "$root/sources/candidate" "$root/work/candidate"
