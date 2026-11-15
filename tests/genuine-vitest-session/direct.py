@@ -246,6 +246,8 @@ def run():
    cmd+=['--ro-bind',str(src),str(src),'--ro-bind',str(ROOT/'work/acquisition/node_modules'),str(src/'node_modules'),'--bind',str(data),str(data),'--bind',str(data/'db'),str(src/'db'),'--bind',str(data/'data'),str(src/'data')]
   env.update({'HOME':str(home),'TMPDIR':str(tmp)})
   if phase not in('acquire','transport'):env.update({'NODE_ENV':'test','NODE_OPTIONS':'--max-old-space-size=2048','SILHOUETTE_INFERENCE_MODE':'cloud-only','SILHOUETTE_PROVIDERS':'off','SILHOUETTE_OWNER_SCOPES':'128','SILHOUETTE_OWNER_ACTIVE':'512','SILHOUETTE_OWNER_FAILURES':'64','SILHOUETTE_OWNER_RESOURCES':'256','GOMAXPROCS':'1','TOKIO_WORKER_THREADS':'1','LANCE_CPU_THREADS':'1','RAYON_NUM_THREADS':'1'})
+  # Only the exact full application compiler, never Vitest/product children.
+  if compiler_diagnostic:env['NODE_OPTIONS']='--max-old-space-size=4096'
   for k,v in env.items():cmd+=['--setenv',k,v]
   cmd+=['--chdir',str(cwd),'--remount-ro','/','--seccomp',str(fd),'/usr/bin/python3','-I',str(ROOT/'fixtures/direct.py'),'admit',phase,str(uid),str(gid),hostnet,hostpid,executable,*argv]
   def limits():
