@@ -42,14 +42,61 @@ def policy(target,transport=False):
 STAGE='UNKNOWN'
 STAGES={'UNKNOWN','UID_GROUPS','CAPS_NNP','APPARMOR','NET_PID','AF_POLICY','RLIMIT','CGROUP','MOUNT_POLICY','EXEC'}
 ERRORS={'AssertionError','OSError','PermissionError','FileNotFoundError','ValueError','KeyError'}
+# Same six device capabilities previously installed implicitly by --dev.
+DEVICES={'/dev/null':(1,3),'/dev/zero':(1,5),'/dev/full':(1,7),'/dev/random':(1,8),'/dev/urandom':(1,9),'/dev/tty':(5,0)}
+DEVLINKS={'fd':'/proc/self/fd','stdin':'/proc/self/fd/0','stdout':'/proc/self/fd/1','stderr':'/proc/self/fd/2','core':'/proc/kcore','ptmx':'pts/ptmx'}
 def parse_mountinfo(line):
  a,b=line.split(' - ',1);a=a.split();b=b.split()
- return a[4],set(a[5].split(',')),set(b[2].split(',')),b[0]
+ assert len(a)>=6 and len(b)>=3
+ path=a[4]
+ # Fixed generated paths have no mountinfo escapes; unexpected topology fails closed.
+ assert path.startswith('/')and chr(92)not in path
+ return path,set(a[5].split(',')),set(b[2].split(',')),b[0]
 def mount_writable(per_mount,superblock):
- # Both levels can deny writes. A bind's per-mount ro is not undone by superblock rw.
  assert ('ro'in per_mount)^('rw'in per_mount)
  assert ('ro'in superblock)^('rw'in superblock)
  return 'rw'in per_mount and 'rw'in superblock
+def mount_spec(phase):
+ assert phase in('transport','acquire','baseline-admission','baseline-state','candidate')
+ ro_dirs={'/usr','/lib','/lib64','/tmp','/var/tmp','/run','/dev/shm','/dev/pts','/control',str(ROOT/'fixtures')}
+ ro_files=set()
+ writable={str(ROOT/('work'if phase=='acquire'else('transport'if phase=='transport'else'runtime/'+phase)))}
+ if phase=='acquire':writable.add(str(ROOT/'diagnostic/acquire.json'))
+ else:writable.update({str(ROOT/'sources'/phase/'db'),str(ROOT/'sources'/phase/'data')})
+ if phase=='transport':
+  writes={str(ROOT/'transport')};ro_dirs.add('/etc/ssl/certs');ro_files.update({'/etc/resolv.conf','/etc/hosts','/etc/nsswitch.conf'})
+ elif phase=='acquire':writes=set(writable)
+ else:
+  writes=set(writable);ro_dirs.update({str(ROOT/'sources'/phase),str(ROOT/'sources'/phase/'node_modules')})
+ return ro_dirs,ro_files,writable,writes
+def check_mounts(rows,phase,devices):
+ ro_dirs,ro_files,writable,writes=mount_spec(phase)
+ points=[r[0]for r in rows]
+ # No intentionally covered mounts in construction. Refuse any unexpected stack,
+ # rather than implementing a general visibility graph or ignoring hidden RW rows.
+ assert len(points)==len(set(points)),'STACKED_OR_DUPLICATE_MOUNT'
+ required={'/','/proc',*DEVICES,*ro_dirs,*ro_files,*writes}
+ assert required<=set(points),'MISSING_CONSTRUCTED_MOUNT'
+ assert '/dev'not in points,'UNEXPECTED_DEV_FILESYSTEM'
+ for path,per_mount,superblock,kind in rows:
+  effective_write=mount_writable(per_mount,superblock)
+  if path in DEVICES:
+   mode,major,minor=devices[path]
+   assert stat.S_ISCHR(mode)and(major,minor)==DEVICES[path],'WRONG_FIXED_CHARACTER_DEVICE'
+   assert kind in('tmpfs','devtmpfs')and'nosuid'in per_mount and'nodev'not in per_mount,'WRONG_DEVICE_MOUNT_FLAGS'
+   # Character-device I/O is not a writable filesystem-data bind. No directory,
+   # regular file, symlink or other device can use this fixed six-node branch.
+   continue
+  assert path=='/'or path=='/proc'or path.startswith('/proc/')or path in ro_files or path in writes or any(path==r or path.startswith(r+'/')for r in ro_dirs),'UNEXPECTED_MOUNT'
+  if path=='/'or path in writes or path==str(ROOT/'fixtures')or path.startswith(str(ROOT/'fixtures')+'/')or path in('/tmp','/var/tmp','/run','/dev/shm','/dev/pts'):
+   assert kind=='tmpfs','WRONG_SESSION_OR_EMPTY_FILESYSTEM'
+  if path=='/':assert{'nosuid','nodev'}<=per_mount,'WRONG_ROOT_FLAGS'
+  if path=='/control':assert kind=='cgroup2','WRONG_CONTROL_FILESYSTEM'
+  if path=='/proc'or path.startswith('/proc/'):
+   assert kind=='proc'and{'nosuid','nodev','noexec'}<=per_mount,'WRONG_PRIVATE_PROC_MOUNT'
+  if path not in writable:assert not effective_write,'UNEXPECTED_WRITABLE_MOUNT'
+  if path not in writes:assert'ro'in per_mount,'EXPECTED_READONLY_MOUNT'
+  if path!='/'and path not in writes:assert'nodev'in per_mount,'EXPECTED_NODEV_READONLY_BIND'
 def prefix_evidence(raw,overflow):
  result={'authority':'UNAUTHENTICATED_CORROBORATION_ONLY','status':'MISSING_UNKNOWN'}
  if overflow:return {**result,'status':'OVERSIZE_UNKNOWN'}
@@ -97,15 +144,12 @@ def admit():
  q,t=map(int,(p/'cpu.max').read_text().split());assert q==2*t
  assert not os.access(p,os.W_OK)
  STAGE='MOUNT_POLICY'
- writable={str(ROOT/('work'if phase=='acquire'else('transport'if phase=='transport'else'runtime/'+phase)))}
- if phase=='acquire':writable.add(str(ROOT/'diagnostic/acquire.json'))
- else:writable.update({str(ROOT/'sources'/phase/'db'),str(ROOT/'sources'/phase/'data')})
- mounts=[]
- for line in Path('/proc/self/mountinfo').read_text().splitlines():
-  mounts.append(parse_mountinfo(line))
- for path,per_mount,superblock,kind in mounts:
-  if path=='/proc':continue
-  if mount_writable(per_mount,superblock):assert path in writable,'UNEXPECTED_WRITABLE_MOUNT'
+ device_metadata={}
+ for path in DEVICES:
+  st=os.lstat(path);device_metadata[path]=(st.st_mode,os.major(st.st_rdev),os.minor(st.st_rdev))
+ check_mounts([parse_mountinfo(line)for line in Path('/proc/self/mountinfo').read_text().splitlines()],phase,device_metadata)
+ assert set(os.listdir('/dev'))=={*(Path(p).name for p in DEVICES),*DEVLINKS,'shm','pts'},'UNEXPECTED_DEV_ENTRY'
+ for name,target in DEVLINKS.items():assert os.readlink('/dev/'+name)==target,'WRONG_DEV_SYMLINK'
  assert not any(str(p)in('/run/systemd','/run/docker.sock','/home/runner')for p in Path('/run').iterdir())
  for path in('/run','/tmp','/var/tmp','/dev/shm'):
   assert not os.access(path,os.W_OK)
@@ -137,9 +181,11 @@ def run():
   cmd+=['/usr/bin/bwrap','--unshare-user','--uid',str(uid),'--gid',str(gid),'--unshare-pid','--unshare-ipc','--unshare-uts','--cap-drop','ALL','--die-with-parent','--new-session','--clearenv']
   if phase!='transport':cmd+=['--unshare-net']
   for a in('/usr','/lib','/lib64'):cmd+=['--ro-bind',a,a]
-  cmd+=['--symlink','usr/bin','/bin','--symlink','usr/sbin','/sbin','--proc','/proc','--dev','/dev']
+  cmd+=['--symlink','usr/bin','/bin','--symlink','usr/sbin','/sbin','--proc','/proc','--dir','/dev']
+  for path in DEVICES:cmd+=['--dev-bind',path,path]
+  for name,target in DEVLINKS.items():cmd+=['--symlink',target,'/dev/'+name]
   for a in('/tmp','/var/tmp','/run','/dev/shm','/dev/pts'):cmd+=['--ro-bind',str(ROOT/'fixtures/empty'),a]
-  cmd+=['--remount-ro','/dev','--remount-ro','/proc']
+  cmd+=['--remount-ro','/proc']
   cmd+=['--ro-bind',str(p),'/control','--ro-bind',str(ROOT/'fixtures'),str(ROOT/'fixtures')]
   if phase=='transport':
    cmd+=['--bind',str(ROOT/'transport'),str(ROOT/'transport')]
