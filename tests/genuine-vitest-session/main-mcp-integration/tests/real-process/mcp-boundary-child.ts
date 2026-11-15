@@ -77,10 +77,14 @@ const onConnection = (socket: Socket) => {
 starts.subscribe(onStart); server.on('connection', onConnection);
 
 const streams: Array<{ endpoint: string; messages: any[]; response: http.IncomingMessage; request: http.ClientRequest }> = [];
+// Own the test client's transport resources. No globalAgent free-pool reuse
+// of an SSE request marked Connection:close whose SDK response says keep-alive.
+// Connections remain real AF_UNIX; no request replay, mock or response rewrite.
+const clientAgent = new http.Agent({ keepAlive: false });
 const headers = (key: string) => ({ Authorization: `Bearer ${master}`, 'x-mcp-api-key': key, Connection: 'close' });
 function request(url: string, key: string | null, body?: string, extra: Record<string, string> = {}, useMaster = true): Promise<{ status: number; text: string }> {
     return new Promise((resolve, reject) => {
-        const req = http.request({ socketPath, path: url, method: body === undefined ? 'GET' : 'POST', headers: {
+        const req = http.request({ agent: clientAgent, socketPath, path: url, method: body === undefined ? 'GET' : 'POST', headers: {
             ...(key ? headers(key) : {}), ...(!useMaster ? { Authorization: `Bearer ${key}` } : {}),
             ...(body !== undefined ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } : {}), ...extra
         } }, res => {
@@ -91,7 +95,7 @@ function request(url: string, key: string | null, body?: string, extra: Record<s
 }
 async function open(key: string, extra: Record<string, string> = {}) {
     return new Promise<(typeof streams)[number]>((resolve, reject) => {
-        const request = http.get({ socketPath, path: '/mcp/sse', headers: { ...headers(key), ...extra } }, response => {
+        const request = http.get({ agent: clientAgent, socketPath, path: '/mcp/sse', headers: { ...headers(key), ...extra } }, response => {
             if (response.statusCode !== 200) { response.resume(); reject(new Error(`SSE ${response.statusCode}`)); return; }
             let buffer = ''; const item = { endpoint: '', messages: [] as any[], response, request };
             streams.push(item); response.setEncoding('utf8');
@@ -289,6 +293,7 @@ try {
     await wrapper.close();
     process.stdout.write('MCP_CHECKPOINT {"id":32}\n');
     for (const s of streams) { s.request.destroy(); s.response.destroy(); }
+    clientAgent.destroy();
     const closed = once(server, 'close'); server.close(); server.closeAllConnections(); await closed;
     process.stdout.write('MCP_CHECKPOINT {"id":33}\n');
     custody.dispose();

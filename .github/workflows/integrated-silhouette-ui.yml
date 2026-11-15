@@ -62,11 +62,11 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
-          test "$(git rev-parse HEAD^)" = 5ce7e60dd88ebaae867e97df0f21e2f6079c2076
+          test "$(git rev-parse HEAD^)" = 13beefa9294ee228dd088c079edfec5ede32e116
           test "$(git rev-list --parents -n 1 HEAD | wc -w)" -eq 2
           python3 - <<'PY'
           import subprocess
-          expected={'tests/genuine-vitest-session/main-mcp-integration/tests/automated/mcp-client-isolation-real.test.ts', 'tests/genuine-vitest-session/main-mcp-integration/tests/real-process/mcp-boundary-child.ts', '.github/workflows/integrated-silhouette-ui.yml', 'tests/genuine-vitest-session/SOURCE-SESSIONS.json', 'tests/genuine-vitest-session/session.sh'}
+          expected={'tests/genuine-vitest-session/session.sh', 'tests/genuine-vitest-session/main-mcp-integration/tests/real-process/mcp-boundary-child.ts', 'tests/genuine-vitest-session/SOURCE-SESSIONS.json', '.github/workflows/integrated-silhouette-ui.yml'}
           actual=set(subprocess.check_output(['git','diff','--name-only','HEAD^','HEAD'],text=True).splitlines())
           assert actual==expected,'EXACT_REVIEWED_LEARNING_VALIDATION_INTEGRATION_REQUIRED'
           PY

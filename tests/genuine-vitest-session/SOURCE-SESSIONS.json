@@ -3297,8 +3297,8 @@
       "path": "tests/real-process/mcp-boundary-child.ts",
       "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
       "fixturePath": "tests/genuine-vitest-session/main-mcp-integration/tests/real-process/mcp-boundary-child.ts",
-      "bytes": 20926,
-      "sha256": "6835003e043f1f48030584e728079004af8a67f2a1fe19aa80a0175f93155e73"
+      "bytes": 21290,
+      "sha256": "fcb5070ba52262dc9376bf1205049c0d74ce47d9617745183d9f7588f69ba376"
     },
     {
       "path": "tests/setup/fetch-teardown.ts",
