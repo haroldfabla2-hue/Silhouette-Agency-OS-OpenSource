@@ -5,7 +5,7 @@ def project(receipts,states):
     result={'version':2,'status':'INCOMPLETE','receiptStates':{},'hostStage':None,'hostFailure':None,
         'helperFilesystemComplete':None,'fullModuleTypecheckComplete':None,'realCaseCount':None,
         'failedCaseCount':None,'baselineOverwriteObserved':None,'naturalSupervisorExit':None,
-        'outerCleanupClean':None,'securityStaged':None,'rootKeyScopeAbsent':None,'supervisorDiagnostic':None,'namespaceOperation':None,'nodeLaunchAttempted':None,'driverStarted':None,'driverFirstFailure':None,'driverLateFailures':None,'driverReceiptWriteFailed':None,'supervisorReceiptWriteFailed':None,'productPass':False}
+        'outerCleanupClean':None,'securityStaged':None,'rootKeyScopeAbsent':None,'supervisorDiagnostic':None,'namespaceOperation':None,'nodeLaunchAttempted':None,'driverStarted':None,'driverFirstFailure':None,'driverLateFailures':None,'driverReceiptWriteFailed':None,'supervisorReceiptWriteFailed':None,'bwrapStatus':None,'productPass':False}
     for name in RECEIPT_NAMES:
         state=states.get(name,'MISSING')
         result['receiptStates'][name]=state if state in ('PRESENT','MISSING','INVALID','UNREADABLE')else'INVALID'
@@ -41,6 +41,15 @@ def project(receipts,states):
         else:result['receiptStates']['security']='INVALID'
     supervisor=receipts.get('supervisor')
     if states.get('supervisor')=='PRESENT':result['supervisorDiagnostic']=project_supervisor(supervisor)
+    if type(supervisor)is dict:
+        native=supervisor.get('bwrapStatus')
+        allowed={'UNKNOWN','INVALID','FORK_ONLY_NOT_SETUP_PROOF','PRE_EXEC_MARKER_WITHOUT_REPORTED_EXEC_FAILURE'}
+        valid=False
+        if type(native)is dict and set(native)=={'status','forkObserved','preExecMarkerObserved','exitCode','productPass'}and type(native['status'])is str and native['status']in allowed and native['productPass']is False:
+            if native['status']in {'UNKNOWN','INVALID'}:valid=native['forkObserved']is None and native['preExecMarkerObserved']is None and native['exitCode']is None
+            elif native['status']=='FORK_ONLY_NOT_SETUP_PROOF':valid=native['forkObserved']is True and native['preExecMarkerObserved']is None and native['exitCode']is None
+            else:valid=native['forkObserved']is True and native['preExecMarkerObserved']is True and type(native['exitCode'])is int and 0<=native['exitCode']<=255
+        if valid:result['bwrapStatus']={key:native[key]for key in ['status','forkObserved','preExecMarkerObserved','exitCode','productPass']}
     fallback=receipts.get('supervisorReceiptFailure')
     if states.get('supervisorReceiptFailure')=='PRESENT'and type(fallback)is dict and fallback.get('version')==1 and fallback.get('receiptWriteFailed')is True:
         result['supervisorReceiptWriteFailed']=True

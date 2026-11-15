@@ -5,7 +5,7 @@ P=pathlib.Path;p=argparse.ArgumentParser()
 for name in ['bwrap','phase','app','deps','browser','review-dir','node-root','cgroup-parent','cgroup-tag','memory-bytes','wall-seconds','evidence']:p.add_argument('--'+name,required=True)
 a=p.parse_args();assert a.phase in ['preflight','runtime-prerequisites','ui-build','continuum-regressions','redis-regressions','server-build','runtime','product-validation'];memory=int(a.memory_bytes);wall=int(a.wall_seconds);assert memory==3*1024**3 and wall==180 and a.cgroup_tag.isdigit()
 app=P(a.app).resolve();evidence=P(a.evidence).resolve();assert not evidence.exists();evidence.mkdir(mode=0o700)
-start=time.monotonic();childcg=None;proc=None;failure=None;events=[];receipts=[];mem={};written=0;procs=[];memoryEvents='UNVERIFIED';code=None;removed=False;identity={'status':'NOT_STARTED'};pidfd=None;channel=None;phaseLog=None;failureStage=None;identityFailureOperation=None;stage='PREFLIGHT'
+start=time.monotonic();childcg=None;proc=None;failure=None;events=[];receipts=[];mem={};written=0;procs=[];memoryEvents='UNVERIFIED';code=None;removed=False;identity={'status':'NOT_STARTED'};pidfd=None;channel=None;phaseLog=None;failureStage=None;identityFailureOperation=None;stage='PREFLIGHT';bwrapStatusFd=None;bwrapStatus={'status':'UNKNOWN','forkObserved':None,'preExecMarkerObserved':None,'exitCode':None,'productPass':False}
 
 def interrupted(signum,frame):raise RuntimeError('SUPERVISOR_INTERRUPTED:'+str(signum))
 signal.signal(signal.SIGTERM,interrupted);signal.signal(signal.SIGINT,interrupted)
@@ -35,6 +35,8 @@ try:
   os.sched_setaffinity(0,{min(os.sched_getaffinity(0))})
  # Explicit empty root first. Only reviewed bind roots enter it, never '/' host.
  stage='BINARY_AND_BIND_PLAN'
+ from python_bootstrap import BOOTSTRAP
+ from bootstrap_projection import project_bwrap
  bwrap=P(a.bwrap).resolve(strict=True);assert hashlib.sha256(bwrap.read_bytes()).hexdigest()=='e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71'
  cmd=[str(bwrap),'--die-with-parent','--new-session','--uid','0','--gid','0','--unshare-net','--unshare-pid','--unshare-ipc','--unshare-uts','--cap-drop','ALL','--cap-add','CAP_NET_ADMIN','--cap-add','CAP_SETPCAP','--clearenv','--tmpfs','/','--proc','/proc','--dev','/dev','--tmpfs','/tmp','--tmpfs','/home','--dir','/home/test']
  for x in ['/usr','/bin','/lib','/lib64','/etc/fonts','/etc/ld.so.cache','/etc/ssl/certs']:
@@ -43,7 +45,7 @@ try:
  if a.phase=='product-validation':
   fixtureRoot=app.parent/'product-fixtures';fixtureStat=fixtureRoot.lstat();assert stat.S_ISDIR(fixtureStat.st_mode)and not fixtureRoot.is_symlink()and stat.S_IMODE(fixtureStat.st_mode)==0o700 and not any(fixtureRoot.iterdir())
   cmd+=['--bind',str(fixtureRoot),'/fixtures']
- cmd+=['--tmpfs','/app/node_modules/.vite-temp','--chdir','/app','--setenv','PATH','/node/bin:/usr/bin:/bin','--setenv','HOST_NETNS',os.readlink('/proc/self/ns/net'),'--setenv','HOME','/home/test','--setenv','TMPDIR','/tmp','/usr/bin/python3','/driver/launcher/namespace-entry.py',a.phase]
+ cmd+=['--tmpfs','/app/node_modules/.vite-temp','--chdir','/app','--setenv','PATH','/node/bin:/usr/bin:/bin','--setenv','HOST_NETNS',os.readlink('/proc/self/ns/net'),'--setenv','HOME','/home/test','--setenv','TMPDIR','/tmp','/usr/bin/python3','-c',BOOTSTRAP,a.phase]
  # One coherent private identity for every bind and later read/write phase.
  stage='SOURCE_CUSTODY'
  scope=app.parent;scopeStat=scope.lstat();assert stat.S_ISDIR(scopeStat.st_mode)and not scope.is_symlink()and stat.S_IMODE(scopeStat.st_mode)==0o700
@@ -70,9 +72,15 @@ try:
  identity={'status':'MAPPING_PENDING','hostOwnerUid':owner,'hostOwnerGid':group,'supervisorUserns':os.readlink('/proc/self/ns/user'),'fixedSources':metadata(),'mapOrder':['setgroups','gid_map','uid_map'],'noRecursivePermissionChanges':True}
  stage='LOG_OPEN'
  phaseLog=(evidence/'complete.log').open('xb')
+ # Root-owned bounded-status descriptor: inherited only by trusted identity/bwrap.
+ # bwrap closes it in the command child before Python/app entry. Keep this fd
+ # pinned in the parent, so a replaced pathname cannot forge native status.
+ bwrapStatusFd=os.open(evidence/'bwrap-status-private.jsonl',os.O_RDWR|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+ os.set_inheritable(bwrapStatusFd,True)
+ cmd[1:1]=['--json-status-fd',str(bwrapStatusFd)]
  channel,childChannel=socket.socketpair(socket.AF_UNIX,socket.SOCK_SEQPACKET);childChannel.set_inheritable(True)
  stage='IDENTITY_SPAWN'
- try:proc=subprocess.Popen(['/usr/bin/python3',str(P(a.review_dir)/'launcher/identity-entry.py'),str(childChannel.fileno()),str(bwrap)],pass_fds=(childChannel.fileno(),),stdout=subprocess.PIPE,stderr=subprocess.STDOUT,env={'PATH':'/usr/bin:/bin'},preexec_fn=setup)
+ try:proc=subprocess.Popen(['/usr/bin/python3',str(P(a.review_dir)/'launcher/identity-entry.py'),str(childChannel.fileno()),str(bwrap)],pass_fds=(childChannel.fileno(),bwrapStatusFd),stdout=subprocess.PIPE,stderr=subprocess.STDOUT,env={'PATH':'/usr/bin:/bin'},preexec_fn=setup)
  finally:childChannel.close()
  pidfd=os.pidfd_open(proc.pid,0)
  def processIdentity():
@@ -166,6 +174,18 @@ finally:
    try:os.killpg(proc.pid,signal.SIGKILL);code=proc.wait(timeout=5)
    except BaseException as e:events.append('WAIT_UNVERIFIED:'+type(e).__name__)
   except BaseException as e:events.append('WAIT_UNVERIFIED:'+type(e).__name__)
+ # Native status is diagnostic only. A missing exit record is UNKNOWN, never
+ # proof that Python/namespace/driver did not start. Keep raw status private.
+ try:
+  if bwrapStatusFd is not None:
+   info=os.fstat(bwrapStatusFd);os.lseek(bwrapStatusFd,0,os.SEEK_SET)
+   raw=os.read(bwrapStatusFd,4097)
+   bwrapStatus=project_bwrap(raw)if stat.S_ISREG(info.st_mode)and info.st_size==len(raw)and len(raw)<=4096 else {'status':'INVALID','forkObserved':None,'preExecMarkerObserved':None,'exitCode':None,'productPass':False}
+   if bwrapStatus['status']=='INVALID':events.append('FIXED_BWRAP_STATUS_INVALID')
+ except BaseException:events.append('FIXED_BWRAP_STATUS_READ_FAILED')
+ try:
+  if bwrapStatusFd is not None:os.close(bwrapStatusFd)
+ except BaseException:events.append('FIXED_BWRAP_STATUS_CLOSE_FAILED')
  # Preserve bounded helper diagnostics even if the identity handshake failed.
  try:
   if phaseLog is not None and not phaseLog.closed:
@@ -194,7 +214,7 @@ finally:
  try:
   if proc is not None and proc.stdout is not None:proc.stdout.close()
  except BaseException:events.append('FIXED_CLEANUP_PIPE_FAILED')
- verdict={'failureStage':failureStage,'identityFailureOperation':identityFailureOperation,'identity':identity,'phase':a.phase,'code':code,'failure':failure,'events':events,'seconds':time.monotonic()-start,'logBytes':written,'remainingPids':procs,'memoryEvents':memoryEvents,'cgroupRemoved':removed,'ancestorPreflight':receipts,'physicalPreflight':mem,'memoryCap':memory,'reserveBytes':256*1024**2,'status':'PHASE_EXIT_ONLY_NOT_PRODUCT_COMPLETE','rootBComplete':False}
+ verdict={'bwrapStatus':bwrapStatus,'failureStage':failureStage,'identityFailureOperation':identityFailureOperation,'identity':identity,'phase':a.phase,'code':code,'failure':failure,'events':events,'seconds':time.monotonic()-start,'logBytes':written,'remainingPids':procs,'memoryEvents':memoryEvents,'cgroupRemoved':removed,'ancestorPreflight':receipts,'physicalPreflight':mem,'memoryCap':memory,'reserveBytes':256*1024**2,'status':'PHASE_EXIT_ONLY_NOT_PRODUCT_COMPLETE','rootBComplete':False}
  try:(evidence/'supervisor.json').write_text(json.dumps(verdict,indent=2)+'\n')
  except BaseException:
   try:(evidence/'supervisor-receipt-failure.json').write_text(json.dumps({'version':1,'failureStage':failureStage,'identityFailureOperation':identityFailureOperation,'failure':failure,'events':events,'code':code,'receiptWriteFailed':True,'productPass':False},sort_keys=True)+'\n')

@@ -1,6 +1,6 @@
 {
-  "status": "EXACT_FIXED_BOUNDARY_ACTIVATION_PROPOSAL_NOT_EXECUTED",
-  "sourceParent": "5609910e7501df19aa5dae13732c98668d1c17fb",
+  "status": "EXACT_BOOTSTRAP_DIAGNOSTIC_ACTIVATION_PROPOSAL_NOT_EXECUTED",
+  "sourceParent": "68b7ab208b45e02751caf148c55231798db1403b",
   "currentRuntimeParentAtPackaging": "586d0b007a9256bb6aa5b45b348f84e6fec5994d",
   "publicStandardOnly": true,
   "localQualification": "STOPPED_ENFORCEMENT_UNAVAILABLE",
@@ -27,13 +27,13 @@
     },
     {
       "path": "finite-export.py",
-      "bytes": 2592,
-      "sha256": "ab66810ea61ed8ee95ac85809673f3857fff22725ba0a70826841c9cf75f5ee7"
+      "bytes": 4938,
+      "sha256": "5301f78c8105780554bab423966132584a62a380f556d8f61970221215370ea7"
     },
     {
       "path": "finite_projection.py",
-      "bytes": 6854,
-      "sha256": "d2ff3ea62f1534e11c61ffdbabfbc85053c23bbd132095725fb5f0e0584013c7"
+      "bytes": 7946,
+      "sha256": "2db43ef7d41479f6626790df238414b720416e7b26e2c616c58cb6f852b97ab5"
     },
     {
       "path": "host-validation.py",
@@ -76,31 +76,6 @@
       "sha256": "abafbf7426ead4cf81b74e726f4efc60aec0f736156a221cfe3b03df0f2e6021"
     },
     {
-      "path": "launcher/cleanup-hosted.py",
-      "bytes": 3237,
-      "sha256": "6168f23e6582ccf2850131e7652ffb3e1396afda21b810b443417c6d91d60cd1"
-    },
-    {
-      "path": "launcher/cleanup-keyscope.py",
-      "bytes": 1377,
-      "sha256": "02334906ca37bdbf6562c06cf523b604f7e71039fc5be286a99553faf5c78b4d"
-    },
-    {
-      "path": "launcher/identity-entry.py",
-      "bytes": 4385,
-      "sha256": "607435bed2e5eeb0a0c00a11301d67f27ccf2d34d4f7d34da91384b1cc858fc2"
-    },
-    {
-      "path": "launcher/namespace-entry.py",
-      "bytes": 9638,
-      "sha256": "b28a07480901397af7341c6d2d9e65bd48e48a112f61af25197853b9939c6548"
-    },
-    {
-      "path": "launcher/supervisor.py",
-      "bytes": 16496,
-      "sha256": "cf9f55fbd5ccfee4f1357ba1754ce627fa16cb015d9ffdcbc7b1ff7161490a34"
-    },
-    {
       "path": "launcher-preimages/cleanup-hosted.py",
       "bytes": 3237,
       "sha256": "6168f23e6582ccf2850131e7652ffb3e1396afda21b810b443417c6d91d60cd1"
@@ -124,6 +99,41 @@
       "path": "launcher-preimages/supervisor.py",
       "bytes": 13965,
       "sha256": "13f74d646eb4b5cd81900b34c825b37154efdf3d6b574ba52b14f5a2774f70c9"
+    },
+    {
+      "path": "launcher/bootstrap_projection.py",
+      "bytes": 2990,
+      "sha256": "ee9c61c7bbd6e31707a9b910cc37709fbf8602c7f72ae81128bc8032194dd36b"
+    },
+    {
+      "path": "launcher/cleanup-hosted.py",
+      "bytes": 3237,
+      "sha256": "6168f23e6582ccf2850131e7652ffb3e1396afda21b810b443417c6d91d60cd1"
+    },
+    {
+      "path": "launcher/cleanup-keyscope.py",
+      "bytes": 1377,
+      "sha256": "02334906ca37bdbf6562c06cf523b604f7e71039fc5be286a99553faf5c78b4d"
+    },
+    {
+      "path": "launcher/identity-entry.py",
+      "bytes": 4385,
+      "sha256": "607435bed2e5eeb0a0c00a11301d67f27ccf2d34d4f7d34da91384b1cc858fc2"
+    },
+    {
+      "path": "launcher/namespace-entry.py",
+      "bytes": 9638,
+      "sha256": "b28a07480901397af7341c6d2d9e65bd48e48a112f61af25197853b9939c6548"
+    },
+    {
+      "path": "launcher/python_bootstrap.py",
+      "bytes": 2572,
+      "sha256": "25591a25a11889279ed58d83be3cb9339e5e3cd3cffac12eaacf5fda5378dde6"
+    },
+    {
+      "path": "launcher/supervisor.py",
+      "bytes": 17978,
+      "sha256": "8d7fdff5b6c741c91b26722753cb3337b5e881b1e66359ccb44f1ea0adb08bef"
     },
     {
       "path": "live-tree-map.json",
@@ -926,6 +936,11 @@
       "sha256": "a44dccc02fcb6b3734e3610e6ee07857e76ffb5c6deb0e67a169165d23bbc054"
     },
     {
+      "path": "source-trees/live/constants.ts",
+      "bytes": 8157,
+      "sha256": "e1f8b3c01ead73b610c5a51ecc48f175dd42fc2a536b2350559a6a5c76676dbf"
+    },
+    {
       "path": "source-trees/live/constants/buildVersion.ts",
       "bytes": 734,
       "sha256": "ce17a083885b4e60c03ea9218e66cd19d585357b6fa0f4094c4e1108ea44f918"
@@ -939,11 +954,6 @@
       "path": "source-trees/live/constants/silhouetteIdentity.ts",
       "bytes": 3075,
       "sha256": "0d4359081d80d77d958466116b2bb25fb2070db85bdfdce2f6d19be141fc05e3"
-    },
-    {
-      "path": "source-trees/live/constants.ts",
-      "bytes": 8157,
-      "sha256": "e1f8b3c01ead73b610c5a51ecc48f175dd42fc2a536b2350559a6a5c76676dbf"
     },
     {
       "path": "source-trees/live/data/agents/definitions/asset_curator.json",
@@ -4646,6 +4656,11 @@
       "sha256": "0353b4b421c0263108dbbb0c8097846d21726179e84ea76ee404bd188247d982"
     },
     {
+      "path": "source-trees/live/silhouette.config.example.json",
+      "bytes": 524,
+      "sha256": "3a2d55517af881ba9c2d1ce3de078347d6a4074cab515898bc2f550f11b32728"
+    },
+    {
       "path": "source-trees/live/silhouette/BITACORA.md",
       "bytes": 2584,
       "sha256": "03077d200360315b88906817fa851772a2ba12a2da1ac2892903aab8bfea5c14"
@@ -4976,6 +4991,11 @@
       "sha256": "b4750ce6ca22fa094b105758b67e776192214e85c0cb9a082be868c37aab7e61"
     },
     {
+      "path": "source-trees/live/silhouette/universalprompts/Anthropic/Claude Code 2.0.txt",
+      "bytes": 57324,
+      "sha256": "3faaec1c4aa292e433c00800546a80ae15a31560fc36a50691d707eeb6ca3767"
+    },
+    {
       "path": "source-trees/live/silhouette/universalprompts/Anthropic/Claude Code/Prompt.txt",
       "bytes": 13019,
       "sha256": "281b3455da9a49f1ca042601f2a1c1f4694137f06de09514762b6507f88af972"
@@ -4984,11 +5004,6 @@
       "path": "source-trees/live/silhouette/universalprompts/Anthropic/Claude Code/Tools.json",
       "bytes": 48962,
       "sha256": "9ee1436ccc92f9003fc8eb60ce023657a2055c49d9b4b9bbe88b8f39c4ab8fa4"
-    },
-    {
-      "path": "source-trees/live/silhouette/universalprompts/Anthropic/Claude Code 2.0.txt",
-      "bytes": 57324,
-      "sha256": "3faaec1c4aa292e433c00800546a80ae15a31560fc36a50691d707eeb6ca3767"
     },
     {
       "path": "source-trees/live/silhouette/universalprompts/Anthropic/Sonnet 4.5 Prompt.txt",
@@ -5461,11 +5476,6 @@
       "sha256": "3bd7797b58c4e4be17ab456d57cae00876dcc8bfafbfcebc231c1e83ebecd93b"
     },
     {
-      "path": "source-trees/live/silhouette.config.example.json",
-      "bytes": 524,
-      "sha256": "3a2d55517af881ba9c2d1ce3de078347d6a4074cab515898bc2f550f11b32728"
-    },
-    {
       "path": "source-trees/live/soak-evidence.jsonl",
       "bytes": 2419,
       "sha256": "9cbd387fb9dcf710cdf613d222143963d49cbbd02df3ce8ba505543afbce1c3e"
@@ -5504,6 +5514,11 @@
       "path": "source-trees/live/tests/automated/atomic-write.test.ts",
       "bytes": 2021,
       "sha256": "0826bc0ec70323af39698ff92aefb41ecce83f5fa17301d43787c2cbdda4a3db"
+    },
+    {
+      "path": "source-trees/live/tests/automated/auth-middleware.test.ts",
+      "bytes": 4393,
+      "sha256": "3702eafc700c2d7e4e62f4fb36450b1728f9ba6144ebc6f92a27f6f46d8528e8"
     },
     {
       "path": "source-trees/live/tests/automated/auth/accountStore.test.ts",
@@ -5584,11 +5599,6 @@
       "path": "source-trees/live/tests/automated/auth/tokenVault.test.ts",
       "bytes": 2271,
       "sha256": "97b2359d87f7eead34374a682cb06e506f69534ef5ed09b0e5d5adf75c5a6c86"
-    },
-    {
-      "path": "source-trees/live/tests/automated/auth-middleware.test.ts",
-      "bytes": 4393,
-      "sha256": "3702eafc700c2d7e4e62f4fb36450b1728f9ba6144ebc6f92a27f6f46d8528e8"
     },
     {
       "path": "source-trees/live/tests/automated/autonomy-approvals-auth.test.ts",
@@ -7516,6 +7526,11 @@
       "sha256": "829c63adf5e42b6e1685807b4d78fe7bea31687d7c93584afb85a78e2d8fadd6"
     },
     {
+      "path": "source-trees/live/tests/real-process/wal-owner-control-child.ts",
+      "bytes": 4879,
+      "sha256": "24fc02a405c3db552f0034a3a900ac94a9298bb0d2da80d664390be6b2a6a3c0"
+    },
+    {
       "path": "source-trees/live/tests/real-process/wal-owner/cleanup-delegation.sh",
       "bytes": 1211,
       "sha256": "c48fc2fd4c0920818e1f2d349a012872ea061f23067d26bd7f2a8a9206c3a35a"
@@ -7564,11 +7579,6 @@
       "path": "source-trees/live/tests/real-process/wal-owner/verify-evidence.py",
       "bytes": 2576,
       "sha256": "4580b533a8e6d64dc925614abe95095c35dc799f1f871432fc6c41f4efe398b8"
-    },
-    {
-      "path": "source-trees/live/tests/real-process/wal-owner-control-child.ts",
-      "bytes": 4879,
-      "sha256": "24fc02a405c3db552f0034a3a900ac94a9298bb0d2da80d664390be6b2a6a3c0"
     },
     {
       "path": "source-trees/live/tests/real-process/web-handler-receipt-child.ts",
@@ -8006,6 +8016,11 @@
       "sha256": "1f3bc6493087beffba4a6604da4772e367f917fb077b7e9894700f4b962c024f"
     },
     {
+      "path": "source-trees/live/types.ts",
+      "bytes": 39262,
+      "sha256": "e67f357e90ea6f5cfcf13415aff223805da0f18ba3176d2384dda441ab156598"
+    },
+    {
       "path": "source-trees/live/types/canvas.ts",
       "bytes": 6555,
       "sha256": "d1d7e7e6e514bd3381b01f07b4e72fb8f36ab06017275f4054a1e6124d4865aa"
@@ -8041,11 +8056,6 @@
       "sha256": "6bc51bfd9cc628371ebd99cac1a7c65caf5e96ff8e90d1365922b7d745850fff"
     },
     {
-      "path": "source-trees/live/types.ts",
-      "bytes": 39262,
-      "sha256": "e67f357e90ea6f5cfcf13415aff223805da0f18ba3176d2384dda441ab156598"
-    },
-    {
       "path": "source-trees/live/universalprompts/.github/FUNDING.yml",
       "bytes": 81,
       "sha256": "a2f2c4cc30346cdc22c0261887d97e276b4cb82f492b8ef85d13de53fb277525"
@@ -8071,6 +8081,11 @@
       "sha256": "b4750ce6ca22fa094b105758b67e776192214e85c0cb9a082be868c37aab7e61"
     },
     {
+      "path": "source-trees/live/universalprompts/Anthropic/Claude Code 2.0.txt",
+      "bytes": 57324,
+      "sha256": "3faaec1c4aa292e433c00800546a80ae15a31560fc36a50691d707eeb6ca3767"
+    },
+    {
       "path": "source-trees/live/universalprompts/Anthropic/Claude Code/Prompt.txt",
       "bytes": 13019,
       "sha256": "281b3455da9a49f1ca042601f2a1c1f4694137f06de09514762b6507f88af972"
@@ -8079,11 +8094,6 @@
       "path": "source-trees/live/universalprompts/Anthropic/Claude Code/Tools.json",
       "bytes": 48962,
       "sha256": "9ee1436ccc92f9003fc8eb60ce023657a2055c49d9b4b9bbe88b8f39c4ab8fa4"
-    },
-    {
-      "path": "source-trees/live/universalprompts/Anthropic/Claude Code 2.0.txt",
-      "bytes": 57324,
-      "sha256": "3faaec1c4aa292e433c00800546a80ae15a31560fc36a50691d707eeb6ca3767"
     },
     {
       "path": "source-trees/live/universalprompts/Anthropic/Sonnet 4.5 Prompt.txt",
@@ -8796,14 +8806,14 @@
       "sha256": "c6bd22d7266e2fa121854f6bd2a95a9124226651ab85a6f84575d047220d53d4"
     },
     {
-      "path": "source-trees/runtime/browser/ownershipCapacity.ts",
-      "bytes": 436,
-      "sha256": "41f62d193e58d6da27128e848ae6e64b4f5faa45182ef6c89dd89e5c22e39451"
-    },
-    {
       "path": "source-trees/runtime/browser.bootstrap.ts",
       "bytes": 1755,
       "sha256": "a0d3c5c34d1636ddbe933398d820656dcff623f15d71756520000ea8663e7d43"
+    },
+    {
+      "path": "source-trees/runtime/browser/ownershipCapacity.ts",
+      "bytes": 436,
+      "sha256": "41f62d193e58d6da27128e848ae6e64b4f5faa45182ef6c89dd89e5c22e39451"
     },
     {
       "path": "source-trees/runtime/build/icons/icon.ico",
@@ -9396,6 +9406,11 @@
       "sha256": "a44dccc02fcb6b3734e3610e6ee07857e76ffb5c6deb0e67a169165d23bbc054"
     },
     {
+      "path": "source-trees/runtime/constants.ts",
+      "bytes": 8157,
+      "sha256": "e1f8b3c01ead73b610c5a51ecc48f175dd42fc2a536b2350559a6a5c76676dbf"
+    },
+    {
       "path": "source-trees/runtime/constants/buildVersion.ts",
       "bytes": 734,
       "sha256": "ce17a083885b4e60c03ea9218e66cd19d585357b6fa0f4094c4e1108ea44f918"
@@ -9409,11 +9424,6 @@
       "path": "source-trees/runtime/constants/silhouetteIdentity.ts",
       "bytes": 3075,
       "sha256": "0d4359081d80d77d958466116b2bb25fb2070db85bdfdce2f6d19be141fc05e3"
-    },
-    {
-      "path": "source-trees/runtime/constants.ts",
-      "bytes": 8157,
-      "sha256": "e1f8b3c01ead73b610c5a51ecc48f175dd42fc2a536b2350559a6a5c76676dbf"
     },
     {
       "path": "source-trees/runtime/data/agents/definitions/asset_curator.json",
@@ -13156,6 +13166,11 @@
       "sha256": "0353b4b421c0263108dbbb0c8097846d21726179e84ea76ee404bd188247d982"
     },
     {
+      "path": "source-trees/runtime/silhouette.config.example.json",
+      "bytes": 524,
+      "sha256": "3a2d55517af881ba9c2d1ce3de078347d6a4074cab515898bc2f550f11b32728"
+    },
+    {
       "path": "source-trees/runtime/silhouette/BITACORA.md",
       "bytes": 2584,
       "sha256": "03077d200360315b88906817fa851772a2ba12a2da1ac2892903aab8bfea5c14"
@@ -13486,6 +13501,11 @@
       "sha256": "b4750ce6ca22fa094b105758b67e776192214e85c0cb9a082be868c37aab7e61"
     },
     {
+      "path": "source-trees/runtime/silhouette/universalprompts/Anthropic/Claude Code 2.0.txt",
+      "bytes": 57324,
+      "sha256": "3faaec1c4aa292e433c00800546a80ae15a31560fc36a50691d707eeb6ca3767"
+    },
+    {
       "path": "source-trees/runtime/silhouette/universalprompts/Anthropic/Claude Code/Prompt.txt",
       "bytes": 13019,
       "sha256": "281b3455da9a49f1ca042601f2a1c1f4694137f06de09514762b6507f88af972"
@@ -13494,11 +13514,6 @@
       "path": "source-trees/runtime/silhouette/universalprompts/Anthropic/Claude Code/Tools.json",
       "bytes": 48962,
       "sha256": "9ee1436ccc92f9003fc8eb60ce023657a2055c49d9b4b9bbe88b8f39c4ab8fa4"
-    },
-    {
-      "path": "source-trees/runtime/silhouette/universalprompts/Anthropic/Claude Code 2.0.txt",
-      "bytes": 57324,
-      "sha256": "3faaec1c4aa292e433c00800546a80ae15a31560fc36a50691d707eeb6ca3767"
     },
     {
       "path": "source-trees/runtime/silhouette/universalprompts/Anthropic/Sonnet 4.5 Prompt.txt",
@@ -13971,11 +13986,6 @@
       "sha256": "3bd7797b58c4e4be17ab456d57cae00876dcc8bfafbfcebc231c1e83ebecd93b"
     },
     {
-      "path": "source-trees/runtime/silhouette.config.example.json",
-      "bytes": 524,
-      "sha256": "3a2d55517af881ba9c2d1ce3de078347d6a4074cab515898bc2f550f11b32728"
-    },
-    {
       "path": "source-trees/runtime/soak-evidence.jsonl",
       "bytes": 2419,
       "sha256": "9cbd387fb9dcf710cdf613d222143963d49cbbd02df3ce8ba505543afbce1c3e"
@@ -14014,6 +14024,11 @@
       "path": "source-trees/runtime/tests/automated/atomic-write.test.ts",
       "bytes": 2021,
       "sha256": "0826bc0ec70323af39698ff92aefb41ecce83f5fa17301d43787c2cbdda4a3db"
+    },
+    {
+      "path": "source-trees/runtime/tests/automated/auth-middleware.test.ts",
+      "bytes": 4393,
+      "sha256": "3702eafc700c2d7e4e62f4fb36450b1728f9ba6144ebc6f92a27f6f46d8528e8"
     },
     {
       "path": "source-trees/runtime/tests/automated/auth/accountStore.test.ts",
@@ -14094,11 +14109,6 @@
       "path": "source-trees/runtime/tests/automated/auth/tokenVault.test.ts",
       "bytes": 2271,
       "sha256": "97b2359d87f7eead34374a682cb06e506f69534ef5ed09b0e5d5adf75c5a6c86"
-    },
-    {
-      "path": "source-trees/runtime/tests/automated/auth-middleware.test.ts",
-      "bytes": 4393,
-      "sha256": "3702eafc700c2d7e4e62f4fb36450b1728f9ba6144ebc6f92a27f6f46d8528e8"
     },
     {
       "path": "source-trees/runtime/tests/automated/autonomy-approvals-auth.test.ts",
@@ -16036,6 +16046,11 @@
       "sha256": "829c63adf5e42b6e1685807b4d78fe7bea31687d7c93584afb85a78e2d8fadd6"
     },
     {
+      "path": "source-trees/runtime/tests/real-process/wal-owner-control-child.ts",
+      "bytes": 4879,
+      "sha256": "24fc02a405c3db552f0034a3a900ac94a9298bb0d2da80d664390be6b2a6a3c0"
+    },
+    {
       "path": "source-trees/runtime/tests/real-process/wal-owner/cleanup-delegation.sh",
       "bytes": 1211,
       "sha256": "c48fc2fd4c0920818e1f2d349a012872ea061f23067d26bd7f2a8a9206c3a35a"
@@ -16084,11 +16099,6 @@
       "path": "source-trees/runtime/tests/real-process/wal-owner/verify-evidence.py",
       "bytes": 2576,
       "sha256": "4580b533a8e6d64dc925614abe95095c35dc799f1f871432fc6c41f4efe398b8"
-    },
-    {
-      "path": "source-trees/runtime/tests/real-process/wal-owner-control-child.ts",
-      "bytes": 4879,
-      "sha256": "24fc02a405c3db552f0034a3a900ac94a9298bb0d2da80d664390be6b2a6a3c0"
     },
     {
       "path": "source-trees/runtime/tests/real-process/web-handler-receipt-child.ts",
@@ -16526,6 +16536,11 @@
       "sha256": "1f3bc6493087beffba4a6604da4772e367f917fb077b7e9894700f4b962c024f"
     },
     {
+      "path": "source-trees/runtime/types.ts",
+      "bytes": 39262,
+      "sha256": "e67f357e90ea6f5cfcf13415aff223805da0f18ba3176d2384dda441ab156598"
+    },
+    {
       "path": "source-trees/runtime/types/canvas.ts",
       "bytes": 6555,
       "sha256": "d1d7e7e6e514bd3381b01f07b4e72fb8f36ab06017275f4054a1e6124d4865aa"
@@ -16561,11 +16576,6 @@
       "sha256": "6bc51bfd9cc628371ebd99cac1a7c65caf5e96ff8e90d1365922b7d745850fff"
     },
     {
-      "path": "source-trees/runtime/types.ts",
-      "bytes": 39262,
-      "sha256": "e67f357e90ea6f5cfcf13415aff223805da0f18ba3176d2384dda441ab156598"
-    },
-    {
       "path": "source-trees/runtime/universalprompts/.github/FUNDING.yml",
       "bytes": 81,
       "sha256": "a2f2c4cc30346cdc22c0261887d97e276b4cb82f492b8ef85d13de53fb277525"
@@ -16591,6 +16601,11 @@
       "sha256": "b4750ce6ca22fa094b105758b67e776192214e85c0cb9a082be868c37aab7e61"
     },
     {
+      "path": "source-trees/runtime/universalprompts/Anthropic/Claude Code 2.0.txt",
+      "bytes": 57324,
+      "sha256": "3faaec1c4aa292e433c00800546a80ae15a31560fc36a50691d707eeb6ca3767"
+    },
+    {
       "path": "source-trees/runtime/universalprompts/Anthropic/Claude Code/Prompt.txt",
       "bytes": 13019,
       "sha256": "281b3455da9a49f1ca042601f2a1c1f4694137f06de09514762b6507f88af972"
@@ -16599,11 +16614,6 @@
       "path": "source-trees/runtime/universalprompts/Anthropic/Claude Code/Tools.json",
       "bytes": 48962,
       "sha256": "9ee1436ccc92f9003fc8eb60ce023657a2055c49d9b4b9bbe88b8f39c4ab8fa4"
-    },
-    {
-      "path": "source-trees/runtime/universalprompts/Anthropic/Claude Code 2.0.txt",
-      "bytes": 57324,
-      "sha256": "3faaec1c4aa292e433c00800546a80ae15a31560fc36a50691d707eeb6ca3767"
     },
     {
       "path": "source-trees/runtime/universalprompts/Anthropic/Sonnet 4.5 Prompt.txt",
@@ -17157,8 +17167,8 @@
     },
     {
       "path": "supervisor_projection.py",
-      "bytes": 4033,
-      "sha256": "feb813ad523b764d3b6fe162c74996a9c29fc1c8a914bead05e5613e176c10ac"
+      "bytes": 4129,
+      "sha256": "4b93c7bd08e0bed9fcc91c6047c0d10dd8833ffc4169972ab332dbf0e9a25c11"
     },
     {
       "path": "workflow-proposal.yml",
