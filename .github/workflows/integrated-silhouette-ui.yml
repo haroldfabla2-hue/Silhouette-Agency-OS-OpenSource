@@ -62,13 +62,13 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
-          test "$(git rev-parse HEAD^)" = 4edc2151437cc2e1900eeb73f18b5a2465b20462
+          test "$(git rev-parse HEAD^)" = d3c67b289993c371f1f2142475c49da10554b8e4
           test "$(git rev-list --parents -n 1 HEAD | wc -w)" -eq 2
           python3 - <<'PY'
           import subprocess
-          expected={'.github/workflows/integrated-silhouette-ui.yml','tests/genuine-vitest-session/session.sh','tests/genuine-vitest-session/acquire.py'}
+          expected={'.github/workflows/integrated-silhouette-ui.yml','tests/genuine-vitest-session/session.sh','tests/genuine-vitest-session/offline-vitest.config.mjs'}
           actual=set(subprocess.check_output(['git','diff','--name-only','HEAD^','HEAD'],text=True).splitlines())
-          assert actual==expected,'EXACT_REVIEWED_SOURCE_MEMBER_PRESERVING_CLEANUP_REQUIRED'
+          assert actual==expected,'EXACT_REVIEWED_LITERAL_HOST_CONFIG_ADAPTER_REQUIRED'
           PY
           timeout --signal=TERM --kill-after=5s 75s sudo /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin SILHOUETTE_FRESH_PUBLIC_GITHUB_VM=yes /bin/bash "$GITHUB_WORKSPACE/tests/genuine-vitest-session/setup-bwrap.sh" setup "$EXPECTED_HEAD" "$GITHUB_RUN_ID"
           elapsed=$(( $(date +%s) - $(cat "$RUNNER_TEMP/silhouette-session-job-start") ))

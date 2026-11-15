@@ -34,7 +34,7 @@ for q in(p,p.parent):
 PY
 [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
 test "$(git -C "$repo" rev-parse HEAD)" = "$expected"
-test "$(git -C "$repo" rev-parse HEAD^)" = 4edc2151437cc2e1900eeb73f18b5a2465b20462
+test "$(git -C "$repo" rev-parse HEAD^)" = d3c67b289993c371f1f2142475c49da10554b8e4
 # Fail before allocating, never resize a previous attempt or use an existing account/root.
 test ! -e "$root"
 ! id silhouette-acquire >/dev/null 2>&1
@@ -124,6 +124,11 @@ for name,session in spec['sessions'].items():
   b=subprocess.check_output(['/usr/bin/git','-c','safe.directory='+str(repo),'show',commit+':'+row['path']],cwd=repo)
   assert len(b)==row['bytes']and hashlib.sha256(b).hexdigest()==row['sha256']
   f=dest/p;f.parent.mkdir(parents=True,exist_ok=True);f.write_bytes(b)
+ # Additional harness config, not an alteration of any SOURCE-SESSIONS member.
+ adapter=(repo/'tests/genuine-vitest-session/offline-vitest.config.mjs').read_bytes()
+ assert hashlib.sha256(adapter).hexdigest()=='230eda279c62bf03f420f8e0ade450f7b0b208a232d4fc1f953c8ae234e86a3f'
+ assert not(dest/'offline-vitest.config.mjs').exists()
+ (dest/'offline-vitest.config.mjs').write_bytes(adapter)
  # Empty bind targets only. Actual source tree remains read-only at runtime.
  (dest/'node_modules').mkdir();(dest/'db').mkdir();(dest/'data').mkdir()
 assert hashlib.sha256((root/'sources/candidate/package-lock.json').read_bytes()).hexdigest()=='039ce85293514e83584ca047d0d8b53eb7bce71bb3b3fe75fc6f96e928a0299c'
@@ -169,7 +174,7 @@ for name in baseline-admission baseline-state candidate; do
  esac
  phase=$name
  set +e
- python3 -I "$root/fixtures/direct.py" run "$name" "$ruid" "$rgid" 85 "$hostnet" "$hostpid" "$root/fixtures/toolchain/bin/node" "$src/node_modules/vitest/vitest.mjs" run "${args[@]}" --maxWorkers=1 --retry=0 --configLoader=runner --no-cache --reporter=json --reporter=blob --outputFile.json="$data/report.json" --outputFile.blob="$data/blob.json"
+ python3 -I "$root/fixtures/direct.py" run "$name" "$ruid" "$rgid" 85 "$hostnet" "$hostpid" "$root/fixtures/toolchain/bin/node" "$src/node_modules/vitest/vitest.mjs" run "${args[@]}" --maxWorkers=1 --retry=0 --configLoader=runner --config="$src/offline-vitest.config.mjs" --no-cache --reporter=json --reporter=blob --outputFile.json="$data/report.json" --outputFile.blob="$data/blob.json"
  code=$?
  set -e
  # Reporter/blob/assertions unchanged. Root-owned actual childreceipt replaces managerdefaults.
