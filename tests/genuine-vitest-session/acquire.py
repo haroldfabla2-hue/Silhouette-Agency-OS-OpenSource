@@ -136,6 +136,52 @@ PHASE='NATIVE_PROVENANCE'
 archive=HERE/'native-provenance/better-sqlite3-v12.5.0-node-v127-linux-x64.tar.gz';assert sha(archive.read_bytes())=='42451490221883f4edb84fc3453a2fce9b7489ce655192cd5531b5955a8faa4b'
 with tarfile.open(archive)as t:
  ms=t.getmembers();assert len(ms)==1 and ms[0].name=='build/Release/better_sqlite3.node'and ms[0].isfile();b=t.extractfile(ms[0]).read();f=acquisition/'node_modules/better-sqlite3'/ms[0].name;f.parent.mkdir(parents=True,exist_ok=True);f.write_bytes(b)
+# Exact nested Sharp native closure. No installscript, compiler, download or load.
+sharpSpecRaw=(HERE/'native-provenance/sharp-native-members.json').read_bytes()
+assert sha(sharpSpecRaw)=='3d936b4a5ae3723bc9450292622cfa69478ffc6d07f6222b75118d1a37d8f9cf','SHARP_NATIVE_MANIFEST_IDENTITY'
+sharpSpec=json.loads(sharpSpecRaw)
+assert sharpSpec['target']=='node_modules/@xenova/transformers/node_modules/sharp'
+sharpRoot=acquisition/sharpSpec['target']
+assert sharpRoot.is_dir()and not sharpRoot.is_symlink()
+assert not(sharpRoot/'build').exists()and not(sharpRoot/'vendor').exists(),'SHARP_NATIVE_TARGET_ALREADY_EXISTS'
+for artifact in sharpSpec['assets']:
+ raw=(HERE/'native-provenance'/artifact['file']).read_bytes()
+ assert len(raw)==artifact['bytes']and sha(raw)==artifact['sha256'],'SHARP_NATIVE_ARCHIVE_IDENTITY'
+ with tarfile.open(fileobj=io.BytesIO(raw),mode='r:gz')as nativeTar:
+  members=nativeTar.getmembers();expected=artifact['members']
+  assert len(members)==len(expected)and len({m.name for m in members})==len(members),'SHARP_NATIVE_MEMBER_COUNT'
+  dest=sharpRoot/artifact['destination']
+  for member,row in zip(members,expected):
+   rel=Path(member.name)
+   assert not rel.is_absolute()and '..'not in rel.parts and str(rel)==member.name.rstrip('/'),'SHARP_NATIVE_MEMBER_PATH'
+   assert {'path':member.name,'type':member.type.decode(),'bytes':member.size,'mode':member.mode,'link':member.linkname}=={k:row[k]for k in ['path','type','bytes','mode','link']},'SHARP_NATIVE_MEMBER_METADATA'
+   assert member.isdir()or member.isfile()or member.islnk(),'SHARP_NATIVE_SPECIAL_MEMBER'
+   if member.islnk():
+    target=Path(member.linkname)
+    assert not target.is_absolute()and '..'not in target.parts and str(target)==member.linkname,'SHARP_NATIVE_LINK_PATH'
+    assert any(r['path']==member.linkname and r['type']=='0'for r in expected),'SHARP_NATIVE_LINK_NOT_REGULAR'
+  # Validate every member and hash before writing any bytes from this archive.
+  for member,row in zip(members,expected):
+   if member.isfile():assert sha(nativeTar.extractfile(member).read())==row['sha256'],'SHARP_NATIVE_MEMBER_BYTES'
+  for member,row in zip(members,expected):
+   f=dest/member.name
+   if member.isdir():f.mkdir(parents=True,exist_ok=True)
+   elif member.isfile():
+    f.parent.mkdir(parents=True,exist_ok=True);assert not f.exists()and not f.is_symlink()
+    f.write_bytes(nativeTar.extractfile(member).read());f.chmod(0o755 if member.mode&0o111 else 0o644)
+  for member in members:
+   if member.islnk():
+    f=dest/member.name;target=dest/member.linkname
+    assert target.is_file()and not target.is_symlink()and not f.exists()and not f.is_symlink()
+    os.link(target,f)
+  for member,row in zip(members,expected):
+   f=dest/member.name
+   assert not f.is_symlink()
+   if member.isfile():assert f.is_file()and sha(f.read_bytes())==row['sha256']
+   elif member.islnk():assert f.stat().st_ino==(dest/member.linkname).stat().st_ino
+assert (sharpRoot/'build/Release/sharp-linux-x64.node').is_file()
+assert json.loads((sharpRoot/'vendor/8.14.5/linux-x64/platform.json').read_text())=='linux-x64'
+assert json.loads((sharpRoot/'vendor/8.14.5/linux-x64/versions.json').read_text())['vips']=='8.14.5'
 # Required genuine validation native/CLI artifacts must not disappear as optional failures.
 required={
  'node_modules/@lancedb/lancedb-linux-x64-gnu/lancedb.linux-x64-gnu.node':(116507864,'b2413445fb6e661c6d4d53c7e69d4184d62d918c1a34db53bee84d1ea3a1232a'),
@@ -146,7 +192,7 @@ required={
 for rel,(size,digest)in required.items():
  f=acquisition/rel;assert f.is_file()and not f.is_symlink();data=f.read_bytes();assert len(data)==size and sha(data)==digest,'REQUIRED_NATIVE_OR_CLI_MISSING'
  if rel.endswith('/bin/esbuild'):assert f.stat().st_mode&0o111,'ESBUILD_NOT_EXECUTABLE'
-emit('complete.json',{'lock':LOCK,'verified':proof,'optionalAbsent':missing,'scriptsExecuted':False,'nativeTarSha256':sha(archive.read_bytes()),'productImported':False})
+emit('complete.json',{'lock':LOCK,'verified':proof,'optionalAbsent':missing,'scriptsExecuted':False,'sharpNativeManifestSha256':sha(sharpSpecRaw),'sharpNativeAssets':[{'file':a['file'],'sha256':a['sha256'],'bytes':a['bytes'],'members':len(a['members'])}for a in sharpSpec['assets']],'nativeTarSha256':sha(archive.read_bytes()),'productImported':False})
 
 PHASE='COMPLETE'
 diagnostic('COMPLETED')

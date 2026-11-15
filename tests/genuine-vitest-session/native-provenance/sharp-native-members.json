@@ -1,0 +1,5490 @@
+{
+  "schema": 1,
+  "target": "node_modules/@xenova/transformers/node_modules/sharp",
+  "version": "0.32.6",
+  "libvips": "8.14.5",
+  "platform": "linux-x64",
+  "scope": "Exact upstream native assets; no lifecycle scripts/model/provider/runtime acceptance",
+  "assets": [
+    {
+      "file": "sharp-v0.32.6-napi-v7-linux-x64.tar.gz",
+      "bytes": 104408,
+      "sha256": "994679b5089fee0608f94f1b5f6f75a0dcc79a64f3a929d147503e8d0e91dd2f",
+      "destination": "",
+      "members": [
+        {
+          "path": "build/Release/sharp-linux-x64.node",
+          "type": "0",
+          "bytes": 256512,
+          "mode": 511,
+          "link": "",
+          "sha256": "282c93e4113a05841f827943c9f6cd6d4188bfda819ab562b27b278d2fcebfda"
+        }
+      ]
+    },
+    {
+      "file": "libvips-8.14.5-linux-x64.tar.gz",
+      "bytes": 8088403,
+      "sha256": "56605aa5928c0ad778392a320d55eb9a4efab5d2cd8054d2dd967942b1938824",
+      "destination": "vendor/8.14.5/linux-x64",
+      "members": [
+        {
+          "path": "include",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/jmorecfg.h",
+          "type": "0",
+          "bytes": 14192,
+          "mode": 420,
+          "link": "",
+          "sha256": "fce3a180e48bb49a5f8f5965a840b34774e7f194a8b3ba9159c7d5d39b347835"
+        },
+        {
+          "path": "include/archive.h",
+          "type": "0",
+          "bytes": 53759,
+          "mode": 420,
+          "link": "",
+          "sha256": "f454bbb6b3c707d617f428ca1927afac8f2c082d846bbf4d21d37467c31ba914"
+        },
+        {
+          "path": "include/zlib.h",
+          "type": "0",
+          "bytes": 94323,
+          "mode": 420,
+          "link": "",
+          "sha256": "692840243f67fbb24d3e1f1a353f6c7a915c459b1edd82f841249f1ba7a50415"
+        },
+        {
+          "path": "include/jconfig.h",
+          "type": "0",
+          "bytes": 1092,
+          "mode": 420,
+          "link": "",
+          "sha256": "1ea822b2ef3bba56c95d59bc2e2f88fa1f6bf2700c819fa6992f18ab2f26234d"
+        },
+        {
+          "path": "include/expat_config.h",
+          "type": "0",
+          "bytes": 4061,
+          "mode": 420,
+          "link": "",
+          "sha256": "cf496c370b6db1288e5d294607da0d3ee8a501d5b872848e2f771d055c1ba975"
+        },
+        {
+          "path": "include/ffi.h",
+          "type": "0",
+          "bytes": 14287,
+          "mode": 420,
+          "link": "",
+          "sha256": "f49fc7045d930af653d73aa480b645b296399a6205002215894d90de4de8355a"
+        },
+        {
+          "path": "include/ffitarget.h",
+          "type": "0",
+          "bytes": 4928,
+          "mode": 420,
+          "link": "",
+          "sha256": "45e4fd2585aaed711e4fa3d1377b70c8e54dcdc56bdf402fa23a8816d19cc58a"
+        },
+        {
+          "path": "include/libheif",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/libheif/heif_cxx.h",
+          "type": "0",
+          "bytes": 39900,
+          "mode": 420,
+          "link": "",
+          "sha256": "cacd328113542c287f6fef321e58dc0cb96c684016011b9bfea3ee6dbec68b81"
+        },
+        {
+          "path": "include/libheif/heif_plugin.h",
+          "type": "0",
+          "bytes": 10306,
+          "mode": 420,
+          "link": "",
+          "sha256": "b5df67e316a8fc0bfde13f5b4445977ac40998b393384e93cc4a8541152886dc"
+        },
+        {
+          "path": "include/libheif/heif_version.h",
+          "type": "0",
+          "bytes": 1218,
+          "mode": 420,
+          "link": "",
+          "sha256": "41aa2012de532d8e515ae641f4c7576823187a5a9a0cbcd74f5f33ffd84bc323"
+        },
+        {
+          "path": "include/libheif/heif.h",
+          "type": "0",
+          "bytes": 86476,
+          "mode": 420,
+          "link": "",
+          "sha256": "c81acf20c0dd0824dfa5fe7dc118436487051981760e5d5276194b9e61dad6b6"
+        },
+        {
+          "path": "include/libxml2",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/libxml2/libxml",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/libxml2/libxml/c14n.h",
+          "type": "0",
+          "bytes": 3085,
+          "mode": 420,
+          "link": "",
+          "sha256": "914fe6e8d00a6820887b6bdcc713aee2c1d374d1f90c472cbb7cda6a667234b1"
+        },
+        {
+          "path": "include/libxml2/libxml/dict.h",
+          "type": "0",
+          "bytes": 1740,
+          "mode": 420,
+          "link": "",
+          "sha256": "580d5e92d2d282e2d8ad9c7b666754af327fd5ddc2232ef3e190be83f7c5113d"
+        },
+        {
+          "path": "include/libxml2/libxml/HTMLparser.h",
+          "type": "0",
+          "bytes": 9489,
+          "mode": 420,
+          "link": "",
+          "sha256": "e562e30783d07dbec529bb6d94b175d5b05e752dc575e0ac83c70f5f039ee7b8"
+        },
+        {
+          "path": "include/libxml2/libxml/xmlautomata.h",
+          "type": "0",
+          "bytes": 3787,
+          "mode": 420,
+          "link": "",
+          "sha256": "e95ffdf4ece67e3cb5132c070721cb06b82f06c22db98a15df8aa27c90dd5c37"
+        },
+        {
+          "path": "include/libxml2/libxml/debugXML.h",
+          "type": "0",
+          "bytes": 4928,
+          "mode": 420,
+          "link": "",
+          "sha256": "5b427115bc6a64a103c324df7c135e54fc878c540be308f756bf4f0a5eb7600e"
+        },
+        {
+          "path": "include/libxml2/libxml/xmlreader.h",
+          "type": "0",
+          "bytes": 11911,
+          "mode": 420,
+          "link": "",
+          "sha256": "d89f20f315fbc49769ff858c5ffd4f23835c4ebc710dee7ae19b5e0dafe51726"
+        },
+        {
+          "path": "include/libxml2/libxml/schemasInternals.h",
+          "type": "0",
+          "bytes": 26208,
+          "mode": 420,
+          "link": "",
+          "sha256": "c1f796f56fd7db73ba4d414ee21041b65f89089c370c7c72fd80089b3246d9d1"
+        },
+        {
+          "path": "include/libxml2/libxml/uri.h",
+          "type": "0",
+          "bytes": 2544,
+          "mode": 420,
+          "link": "",
+          "sha256": "e0cda51f7556363064559c3d77fe69bade9ee966453269b95165bb45a1356bd7"
+        },
+        {
+          "path": "include/libxml2/libxml/nanoftp.h",
+          "type": "0",
+          "bytes": 3964,
+          "mode": 420,
+          "link": "",
+          "sha256": "25cfc19bfdaba0ebba1a7a9b71f04740793c60ccaca4743f99808ce132d3b73c"
+        },
+        {
+          "path": "include/libxml2/libxml/xmlunicode.h",
+          "type": "0",
+          "bytes": 8665,
+          "mode": 420,
+          "link": "",
+          "sha256": "c6a85f99c864f8610bc266566761dad08828b02cbd72c66cc150e76e6bf34632"
+        },
+        {
+          "path": "include/libxml2/libxml/schematron.h",
+          "type": "0",
+          "bytes": 4226,
+          "mode": 420,
+          "link": "",
+          "sha256": "f1686b9fa2121ffb71b3b119ec1fefe473a4934bf0113c2956c6804d78f89579"
+        },
+        {
+          "path": "include/libxml2/libxml/nanohttp.h",
+          "type": "0",
+          "bytes": 1869,
+          "mode": 420,
+          "link": "",
+          "sha256": "8dc6b967d8f3bbf2dbe9ecbb07dd2aea08d91c694ef362d4c743ac4ee94297c1"
+        },
+        {
+          "path": "include/libxml2/libxml/xlink.h",
+          "type": "0",
+          "bytes": 5002,
+          "mode": 420,
+          "link": "",
+          "sha256": "53025542f1406b1ebdb5d32478f6220257e4a734d319933b8563321b31037709"
+        },
+        {
+          "path": "include/libxml2/libxml/HTMLtree.h",
+          "type": "0",
+          "bytes": 3502,
+          "mode": 420,
+          "link": "",
+          "sha256": "c5031e1130ed63c5d99e457dac6908e14814229ef5238cf63b747f3f5004c1ce"
+        },
+        {
+          "path": "include/libxml2/libxml/xpath.h",
+          "type": "0",
+          "bytes": 16419,
+          "mode": 420,
+          "link": "",
+          "sha256": "e86d4d438844a77454aae8cc684d3b0338c27552665c3b4a8b1748d9334edc16"
+        },
+        {
+          "path": "include/libxml2/libxml/SAX2.h",
+          "type": "0",
+          "bytes": 4469,
+          "mode": 420,
+          "link": "",
+          "sha256": "60ed0ac0a9a33441ebe07b80571363811c6af5b1f0719c59eed0b7941d839528"
+        },
+        {
+          "path": "include/libxml2/libxml/parser.h",
+          "type": "0",
+          "bytes": 39606,
+          "mode": 420,
+          "link": "",
+          "sha256": "cded8a24c7fa32334caab6ddb5a38215d2d39e957114d5f9691d3b172ebb7f47"
+        },
+        {
+          "path": "include/libxml2/libxml/pattern.h",
+          "type": "0",
+          "bytes": 2466,
+          "mode": 420,
+          "link": "",
+          "sha256": "f9167738683845f817d59cfb3b539b74b48ee14e45ae17b50a602d786eaa612f"
+        },
+        {
+          "path": "include/libxml2/libxml/valid.h",
+          "type": "0",
+          "bytes": 12781,
+          "mode": 420,
+          "link": "",
+          "sha256": "ac31abe70dbe14bec22c54e0fa39e49d51115870b5ae5ab3aaf83741006bda61"
+        },
+        {
+          "path": "include/libxml2/libxml/list.h",
+          "type": "0",
+          "bytes": 3140,
+          "mode": 420,
+          "link": "",
+          "sha256": "93030372d740811b421889e3757b9a04094d0eb9f955cf3badd50d8c7814347e"
+        },
+        {
+          "path": "include/libxml2/libxml/xmlsave.h",
+          "type": "0",
+          "bytes": 2257,
+          "mode": 420,
+          "link": "",
+          "sha256": "794654bf385af1a27839db806c872c5343248bf7e65d97173b8eb5802cf752a2"
+        },
+        {
+          "path": "include/libxml2/libxml/relaxng.h",
+          "type": "0",
+          "bytes": 5801,
+          "mode": 420,
+          "link": "",
+          "sha256": "6e0a160eabccea67b3b49454508916dd428ab2828a195de78e28e402fa51cae4"
+        },
+        {
+          "path": "include/libxml2/libxml/xmlstring.h",
+          "type": "0",
+          "bytes": 5271,
+          "mode": 420,
+          "link": "",
+          "sha256": "7793e9ab13f5235b1f982507bd526d8e80bd87b84b1dc000439a24fd1b5fe742"
+        },
+        {
+          "path": "include/libxml2/libxml/hash.h",
+          "type": "0",
+          "bytes": 6401,
+          "mode": 420,
+          "link": "",
+          "sha256": "36c6e090dd7f54ebc4a7dd8841a1bcec541d225e40579f4535a47873af9475d2"
+        },
+        {
+          "path": "include/libxml2/libxml/SAX.h",
+          "type": "0",
+          "bytes": 4457,
+          "mode": 420,
+          "link": "",
+          "sha256": "741be18833dd1fbb1bdb42f1a73c718e42366add72f8d9717776d3a3747cba4b"
+        },
+        {
+          "path": "include/libxml2/libxml/catalog.h",
+          "type": "0",
+          "bytes": 4618,
+          "mode": 420,
+          "link": "",
+          "sha256": "fda4efa8f96f5bd592c06af452c52be741f7c6f2cadca8c84fb344684f0be16c"
+        },
+        {
+          "path": "include/libxml2/libxml/globals.h",
+          "type": "0",
+          "bytes": 14402,
+          "mode": 420,
+          "link": "",
+          "sha256": "c180034e4a25ef30433469b6a3762d630c460b2885f91393799120148b5d3fbe"
+        },
+        {
+          "path": "include/libxml2/libxml/xmlschemas.h",
+          "type": "0",
+          "bytes": 6825,
+          "mode": 420,
+          "link": "",
+          "sha256": "6692844aa06f246d694917ce440dbcc819d41d10e5dbdd609f3dd268134ede5e"
+        },
+        {
+          "path": "include/libxml2/libxml/xmlversion.h",
+          "type": "0",
+          "bytes": 9303,
+          "mode": 420,
+          "link": "",
+          "sha256": "20da952dc891f23ee00eaaa9ff90ce0b01acb61abae286238f8a0dcca00ed20c"
+        },
+        {
+          "path": "include/libxml2/libxml/xmlexports.h",
+          "type": "0",
+          "bytes": 992,
+          "mode": 420,
+          "link": "",
+          "sha256": "199d4edaa2eaf4d1d379475dba9d9a73dd0c7682262ee1fcd47bc0e7da181726"
+        },
+        {
+          "path": "include/libxml2/libxml/xmlIO.h",
+          "type": "0",
+          "bytes": 10203,
+          "mode": 420,
+          "link": "",
+          "sha256": "8981b281e229c63c3fe2ddfc51855031c6bc902159f98792c7e4b45f4487e6f9"
+        },
+        {
+          "path": "include/libxml2/libxml/xmlregexp.h",
+          "type": "0",
+          "bytes": 5218,
+          "mode": 420,
+          "link": "",
+          "sha256": "556aefe9576e34ebe2e02717065777af830dadc7ca1aa28f812124482c2c11ae"
+        },
+        {
+          "path": "include/libxml2/libxml/xmlmodule.h",
+          "type": "0",
+          "bytes": 1138,
+          "mode": 420,
+          "link": "",
+          "sha256": "cbc026ca066b477c1fe5411fca1bba49feac9fb4d33b8ee0d0551fc1db5ec40f"
+        },
+        {
+          "path": "include/libxml2/libxml/parserInternals.h",
+          "type": "0",
+          "bytes": 16579,
+          "mode": 420,
+          "link": "",
+          "sha256": "4c9f5ad7200c0eea869ded19cd99d6d81c34961af55fe34b331f0f6e027d1953"
+        },
+        {
+          "path": "include/libxml2/libxml/xpathInternals.h",
+          "type": "0",
+          "bytes": 18417,
+          "mode": 420,
+          "link": "",
+          "sha256": "7324760f7abb505461d2d4b223c04122e119241e191de9718f7c32a1d3d40817"
+        },
+        {
+          "path": "include/libxml2/libxml/chvalid.h",
+          "type": "0",
+          "bytes": 5087,
+          "mode": 420,
+          "link": "",
+          "sha256": "4d971c78da7a0b0d10958c08a8af46c7262a2f9522023a50ca3b7fcab6464d01"
+        },
+        {
+          "path": "include/libxml2/libxml/xmlerror.h",
+          "type": "0",
+          "bytes": 36101,
+          "mode": 420,
+          "link": "",
+          "sha256": "182ebd3829c7888772e13415250fb3d08e1f246d668008495298cbd0c3679396"
+        },
+        {
+          "path": "include/libxml2/libxml/encoding.h",
+          "type": "0",
+          "bytes": 7909,
+          "mode": 420,
+          "link": "",
+          "sha256": "5155fb7b427b1d00ab7d91191a6f97aa501995234b9b8ec4bf642159382ea2a7"
+        },
+        {
+          "path": "include/libxml2/libxml/xinclude.h",
+          "type": "0",
+          "bytes": 2887,
+          "mode": 420,
+          "link": "",
+          "sha256": "d8ce43e0aa1ee10e335f5a986a22a6a7416ae63a02e54a58e1f715e851bcd17c"
+        },
+        {
+          "path": "include/libxml2/libxml/xpointer.h",
+          "type": "0",
+          "bytes": 3616,
+          "mode": 420,
+          "link": "",
+          "sha256": "13167273306adf1713c3b19a85b27015db9f6894428a3b1cb8f1de5d09279a22"
+        },
+        {
+          "path": "include/libxml2/libxml/threads.h",
+          "type": "0",
+          "bytes": 1875,
+          "mode": 420,
+          "link": "",
+          "sha256": "55589d2e830377d6772b748e1b9e9b8f8e9e8269eeefd5a3f09106cad6937910"
+        },
+        {
+          "path": "include/libxml2/libxml/xmlmemory.h",
+          "type": "0",
+          "bytes": 5825,
+          "mode": 420,
+          "link": "",
+          "sha256": "94af5d65042e48a683f28bf1221c364ad664ca70d5122984e19751834b5e302b"
+        },
+        {
+          "path": "include/libxml2/libxml/tree.h",
+          "type": "0",
+          "bytes": 36886,
+          "mode": 420,
+          "link": "",
+          "sha256": "f09e9cfbdabb004d7a513de44379f57fec31423e1a9e67b22cca4673c9434c2d"
+        },
+        {
+          "path": "include/libxml2/libxml/entities.h",
+          "type": "0",
+          "bytes": 4550,
+          "mode": 420,
+          "link": "",
+          "sha256": "ad760571a921ad0ca6ab228465343f45555fa6575db20dc9ffc80daac0b30956"
+        },
+        {
+          "path": "include/libxml2/libxml/xmlschemastypes.h",
+          "type": "0",
+          "bytes": 4583,
+          "mode": 420,
+          "link": "",
+          "sha256": "318c251a6a0a028de51d169a2a09c25e22e63d3f4a463771c8227b4c4c99ea33"
+        },
+        {
+          "path": "include/libxml2/libxml/xmlwriter.h",
+          "type": "0",
+          "bytes": 20625,
+          "mode": 420,
+          "link": "",
+          "sha256": "eed5cda97ca71fbb5b79e32bc5c6e923f4c8fd94a3c66711e37c17c5583d5fda"
+        },
+        {
+          "path": "include/webp",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/webp/decode.h",
+          "type": "0",
+          "bytes": 23781,
+          "mode": 420,
+          "link": "",
+          "sha256": "00ee3d5716a5c334fc82b794356b8065276224d7ad484cf0fde71e62e642dd45"
+        },
+        {
+          "path": "include/webp/mux.h",
+          "type": "0",
+          "bytes": 22833,
+          "mode": 420,
+          "link": "",
+          "sha256": "3c1db467a27b7bc26f1848f493af1a36366cbc488535b7d84779cc78e60c9f95"
+        },
+        {
+          "path": "include/webp/mux_types.h",
+          "type": "0",
+          "bytes": 3193,
+          "mode": 420,
+          "link": "",
+          "sha256": "624d40af94f4b842ccdd8dcc14a198b40703e167e4323719d2d16320c941f81b"
+        },
+        {
+          "path": "include/webp/demux.h",
+          "type": "0",
+          "bytes": 15603,
+          "mode": 420,
+          "link": "",
+          "sha256": "c37bd27299d984b7d9ee564bf25873f6620a0a6a0975e44adf0abeed628999af"
+        },
+        {
+          "path": "include/webp/sharpyuv",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/webp/sharpyuv/sharpyuv.h",
+          "type": "0",
+          "bytes": 4603,
+          "mode": 420,
+          "link": "",
+          "sha256": "5e853c65d95871297e446b22f09e8309f3b70dd9669904d1bc17ff45947325de"
+        },
+        {
+          "path": "include/webp/sharpyuv/sharpyuv_csp.h",
+          "type": "0",
+          "bytes": 1812,
+          "mode": 420,
+          "link": "",
+          "sha256": "2af5cd15f60e6777fbfc6fd42a57545f65219a714822c6444f07efec2465c946"
+        },
+        {
+          "path": "include/webp/types.h",
+          "type": "0",
+          "bytes": 2214,
+          "mode": 420,
+          "link": "",
+          "sha256": "e44edea00ce2de2b9a9c59d5a13bafe4334094985205eb68e6a96bb31c2d8d93"
+        },
+        {
+          "path": "include/webp/encode.h",
+          "type": "0",
+          "bytes": 28010,
+          "mode": 420,
+          "link": "",
+          "sha256": "f5c2b687b7be49635afb07ddc3fb69402eb9ab990449c6a5400537537bacf9c4"
+        },
+        {
+          "path": "include/pixman-1",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/pixman-1/pixman-version.h",
+          "type": "0",
+          "bytes": 1786,
+          "mode": 420,
+          "link": "",
+          "sha256": "8f5241f7b5d7241fa43bfd421b030fd3bcd24bd5e522b16e3955ef16f06a90b6"
+        },
+        {
+          "path": "include/pixman-1/pixman.h",
+          "type": "0",
+          "bytes": 48229,
+          "mode": 420,
+          "link": "",
+          "sha256": "eaae36aba2b7a50f2e3104aab51e5746c9bd5aa92ad8bd55590c7a1e9d9101db"
+        },
+        {
+          "path": "include/gdk-pixbuf-2.0",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/gdk-pixbuf-2.0/gdk-pixbuf",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/gdk-pixbuf-2.0/gdk-pixbuf/gdk-pixbuf-animation.h",
+          "type": "0",
+          "bytes": 9686,
+          "mode": 420,
+          "link": "",
+          "sha256": "ff72d426a611110f579fe7446f370653cce239dc478268c66fd58a9d532615a8"
+        },
+        {
+          "path": "include/gdk-pixbuf-2.0/gdk-pixbuf/gdk-pixbuf-autocleanups.h",
+          "type": "0",
+          "bytes": 1521,
+          "mode": 420,
+          "link": "",
+          "sha256": "149c5d60ea9468c559ee22958f14dae03f6b98944a866414fe31672bc3f6c50e"
+        },
+        {
+          "path": "include/gdk-pixbuf-2.0/gdk-pixbuf/gdk-pixbuf-loader.h",
+          "type": "0",
+          "bytes": 4608,
+          "mode": 420,
+          "link": "",
+          "sha256": "e73846ab11fbaf6281d7e10ae8e40890b7d852020c1a3261bc421ffb93741676"
+        },
+        {
+          "path": "include/gdk-pixbuf-2.0/gdk-pixbuf/gdk-pixbuf-io.h",
+          "type": "0",
+          "bytes": 17667,
+          "mode": 420,
+          "link": "",
+          "sha256": "beeff53914d8876eca1dcd2acdf6405c46404c96269f86b7aed2243ab4e22a6a"
+        },
+        {
+          "path": "include/gdk-pixbuf-2.0/gdk-pixbuf/gdk-pixbuf-core.h",
+          "type": "0",
+          "bytes": 19359,
+          "mode": 420,
+          "link": "",
+          "sha256": "d8f2bb0a9553ab45d06f7415aaea84df6da8374a93e68ee02bf6e82e798172c3"
+        },
+        {
+          "path": "include/gdk-pixbuf-2.0/gdk-pixbuf/gdk-pixdata.h",
+          "type": "0",
+          "bytes": 6116,
+          "mode": 420,
+          "link": "",
+          "sha256": "dcfb3f7cd0c827b0e1367bf0157f71de7c0c6d505b297497a3c5798b50ee776d"
+        },
+        {
+          "path": "include/gdk-pixbuf-2.0/gdk-pixbuf/gdk-pixbuf.h",
+          "type": "0",
+          "bytes": 1572,
+          "mode": 420,
+          "link": "",
+          "sha256": "e543bd450e6377a72adf378830d2849d450cc483ec5923db72d9b18ceaf3ffa8"
+        },
+        {
+          "path": "include/gdk-pixbuf-2.0/gdk-pixbuf/gdk-pixbuf-simple-anim.h",
+          "type": "0",
+          "bytes": 3186,
+          "mode": 420,
+          "link": "",
+          "sha256": "404658ea450eb8b9864a7bf69ae1f185c5697782b759e35a6d2faec59c99746f"
+        },
+        {
+          "path": "include/gdk-pixbuf-2.0/gdk-pixbuf/gdk-pixbuf-marshal.h",
+          "type": "0",
+          "bytes": 1562,
+          "mode": 420,
+          "link": "",
+          "sha256": "ce38cdd628912e9a9d9577e6a190397747eec3d3583d7b1fa4cccbc22c63ea7e"
+        },
+        {
+          "path": "include/gdk-pixbuf-2.0/gdk-pixbuf/gdk-pixbuf-features.h",
+          "type": "0",
+          "bytes": 3328,
+          "mode": 420,
+          "link": "",
+          "sha256": "0851da98ca1a47dde10add07bfd378f746e51c84f1bbe967d088644ec18b1c5a"
+        },
+        {
+          "path": "include/gdk-pixbuf-2.0/gdk-pixbuf/gdk-pixbuf-transform.h",
+          "type": "0",
+          "bytes": 6201,
+          "mode": 420,
+          "link": "",
+          "sha256": "65de6bd415eb358fd3038d9d156bdff6b085e4e55655ef88d3ca18c3ea3075ad"
+        },
+        {
+          "path": "include/gdk-pixbuf-2.0/gdk-pixbuf/gdk-pixbuf-macros.h",
+          "type": "0",
+          "bytes": 23603,
+          "mode": 420,
+          "link": "",
+          "sha256": "6d31f1337d3fae7f1446b837e55b447f2729b086ee780fb0f0aed23e2ac8303c"
+        },
+        {
+          "path": "include/gdk-pixbuf-2.0/gdk-pixbuf/gdk-pixbuf-enum-types.h",
+          "type": "0",
+          "bytes": 1468,
+          "mode": 420,
+          "link": "",
+          "sha256": "7fcd3497d67ba6484ef675e883872b5fc4ac80b90e56a74e17999a0d3bf890f5"
+        },
+        {
+          "path": "include/librsvg-2.0",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/librsvg-2.0/librsvg",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/librsvg-2.0/librsvg/rsvg-cairo.h",
+          "type": "0",
+          "bytes": 17851,
+          "mode": 420,
+          "link": "",
+          "sha256": "1ae0c3aee151e2c5c3a35396865264eb5922a5b61618f3dc13224546c0d2b733"
+        },
+        {
+          "path": "include/librsvg-2.0/librsvg/rsvg-features.h",
+          "type": "0",
+          "bytes": 6058,
+          "mode": 420,
+          "link": "",
+          "sha256": "f7aaed5f37ba82b67124e2fbf73ba77cc1ed01b09a8bc8d1d9694fc60de3366f"
+        },
+        {
+          "path": "include/librsvg-2.0/librsvg/rsvg.h",
+          "type": "0",
+          "bytes": 55715,
+          "mode": 420,
+          "link": "",
+          "sha256": "f1042407b70e214395d4286de7eb04a65f61dbda486c3b37c7566c90927dc162"
+        },
+        {
+          "path": "include/librsvg-2.0/librsvg/rsvg-version.h",
+          "type": "0",
+          "bytes": 338,
+          "mode": 420,
+          "link": "",
+          "sha256": "4f626439675024b73dc05ca49ff1fd3850cc1a3a4c6117b23724386de4d269e7"
+        },
+        {
+          "path": "include/glib-2.0",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/glib-2.0/gmodule",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/glib-2.0/gmodule/gmodule-visibility.h",
+          "type": "0",
+          "bytes": 46130,
+          "mode": 420,
+          "link": "",
+          "sha256": "bd5b39f4ce7db4d5c89387123c4bf0fbb43f2c3643d38d061d71f29c5456bb6b"
+        },
+        {
+          "path": "include/glib-2.0/gio",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/glib-2.0/gio/gtlsserverconnection.h",
+          "type": "0",
+          "bytes": 2395,
+          "mode": 420,
+          "link": "",
+          "sha256": "895112ec878aa9a079177fd91ed68f960bc4f44dcc234ea3cbbd671b4858d2d0"
+        },
+        {
+          "path": "include/glib-2.0/gio/gfilterinputstream.h",
+          "type": "0",
+          "bytes": 2877,
+          "mode": 420,
+          "link": "",
+          "sha256": "2523dabd8892ec422c3e7598ad0fc3c729e88e44beda620f7d1ace92d47c8fcb"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdataoutputstream.h",
+          "type": "0",
+          "bytes": 4960,
+          "mode": 420,
+          "link": "",
+          "sha256": "326c0d5e3a8cc56ca871e00069674ee7d5a146a3463be2c87df1701d5fa15b5e"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdbusobjectmanager.h",
+          "type": "0",
+          "bytes": 4518,
+          "mode": 420,
+          "link": "",
+          "sha256": "8a447a2b4694c3ef9ce3385494b4c624a8518602726dd4d11d216db797c96897"
+        },
+        {
+          "path": "include/glib-2.0/gio/gsimpleproxyresolver.h",
+          "type": "0",
+          "bytes": 3575,
+          "mode": 420,
+          "link": "",
+          "sha256": "a368008ff1a68801b30567d79543020284fa083bf35dd13237346db96a3dd33e"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdbusobjectskeleton.h",
+          "type": "0",
+          "bytes": 3999,
+          "mode": 420,
+          "link": "",
+          "sha256": "e0592b026a6291da567832c4819f0075e72a724da818bd31ae138255b5579bff"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdbusmethodinvocation.h",
+          "type": "0",
+          "bytes": 6954,
+          "mode": 420,
+          "link": "",
+          "sha256": "8547fdf7a53a009d4c48f00e8f7f32292d19294fd43db06723f0828f4da0aca8"
+        },
+        {
+          "path": "include/glib-2.0/gio/gtcpconnection.h",
+          "type": "0",
+          "bytes": 3003,
+          "mode": 420,
+          "link": "",
+          "sha256": "409c3d0f79bc047a273cbc93d59048ca1ee8e91d8c1fdcb3672d5ca9b3934386"
+        },
+        {
+          "path": "include/glib-2.0/gio/gsocket.h",
+          "type": "0",
+          "bytes": 16172,
+          "mode": 420,
+          "link": "",
+          "sha256": "a5b644645a7c3c504b964ffa0e0a3848407b6298928eac54241bfc60bcad8730"
+        },
+        {
+          "path": "include/glib-2.0/gio/gappinfo.h",
+          "type": "0",
+          "bytes": 20457,
+          "mode": 420,
+          "link": "",
+          "sha256": "306d40cdcee446b68cc7a5675f42b8e8bfbd9c8dc0b1468ea73f8b1607891f8d"
+        },
+        {
+          "path": "include/glib-2.0/gio/gsrvtarget.h",
+          "type": "0",
+          "bytes": 1975,
+          "mode": 420,
+          "link": "",
+          "sha256": "b9dc8dce56abb188cbc0981486fdbb2c10178e692cff6156edf657a967aa94f1"
+        },
+        {
+          "path": "include/glib-2.0/gio/gpropertyaction.h",
+          "type": "0",
+          "bytes": 2041,
+          "mode": 420,
+          "link": "",
+          "sha256": "94d2af3438ebee6715306a53fb7e2120ce73c81f8c0d777c7be1856420869c76"
+        },
+        {
+          "path": "include/glib-2.0/gio/gfilemonitor.h",
+          "type": "0",
+          "bytes": 3324,
+          "mode": 420,
+          "link": "",
+          "sha256": "b312c3c0124a5ad70e4890460ad07600d24142c416f543cf8f2d286ab1a20984"
+        },
+        {
+          "path": "include/glib-2.0/gio/gvolume.h",
+          "type": "0",
+          "bytes": 11764,
+          "mode": 420,
+          "link": "",
+          "sha256": "2d4ba81852c9cde492728a6747cfb7dd35b4bac0b2f3f6092346b0c6e4ea68f2"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdbusaddress.h",
+          "type": "0",
+          "bytes": 2712,
+          "mode": 420,
+          "link": "",
+          "sha256": "6c32b74649dac773077522aed4de55cfc3bece1a0d762abe97f21f0f68d5fc3d"
+        },
+        {
+          "path": "include/glib-2.0/gio/gsettingsbackend.h",
+          "type": "0",
+          "bytes": 8545,
+          "mode": 420,
+          "link": "",
+          "sha256": "2278cff044966bb0915e9a83803c09f68e8507075b37f52bb9eab678fb47770d"
+        },
+        {
+          "path": "include/glib-2.0/gio/gfileiostream.h",
+          "type": "0",
+          "bytes": 5085,
+          "mode": 420,
+          "link": "",
+          "sha256": "97983cfcf305a9ba98b741af2a27e623bf7fc04c92dd8642037083e1266ad6bc"
+        },
+        {
+          "path": "include/glib-2.0/gio/ginputstream.h",
+          "type": "0",
+          "bytes": 9217,
+          "mode": 420,
+          "link": "",
+          "sha256": "dd2c3d6d7d7d425d4f3438a5b654e97b034ea361c5e74998beb6d22f0bde4706"
+        },
+        {
+          "path": "include/glib-2.0/gio/gicon.h",
+          "type": "0",
+          "bytes": 4337,
+          "mode": 420,
+          "link": "",
+          "sha256": "e728dd36dedb0c528eff5ccd0c851b74ce43f4a9439c2284cf4b2de9aca59117"
+        },
+        {
+          "path": "include/glib-2.0/gio/gio-visibility.h",
+          "type": "0",
+          "bytes": 42546,
+          "mode": 420,
+          "link": "",
+          "sha256": "a8b2c4a5b5a2e9e70e9d7a7754a5e7edb68f6d0d74c509f98c47c6a17eaf79aa"
+        },
+        {
+          "path": "include/glib-2.0/gio/gnativesocketaddress.h",
+          "type": "0",
+          "bytes": 2583,
+          "mode": 420,
+          "link": "",
+          "sha256": "ec8e9aa5811258b03116018504152d379a7f4afff293a8a3153a60edec735a95"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdbusobjectproxy.h",
+          "type": "0",
+          "bytes": 2681,
+          "mode": 420,
+          "link": "",
+          "sha256": "bbc360be67bca01d8f8e42c3c1c6eb45deb140093557b5ac8bbdc6b5d146723c"
+        },
+        {
+          "path": "include/glib-2.0/gio/gvfs.h",
+          "type": "0",
+          "bytes": 6655,
+          "mode": 420,
+          "link": "",
+          "sha256": "7d40f7f59cb33759b05385fef70382fdbc4fc3c3b2288f855553280450450331"
+        },
+        {
+          "path": "include/glib-2.0/gio/goutputstream.h",
+          "type": "0",
+          "bytes": 15777,
+          "mode": 420,
+          "link": "",
+          "sha256": "703522107a4d567e4c4d7b24a8029f2a1419736c7bfcba5b4d53ec1a12218b80"
+        },
+        {
+          "path": "include/glib-2.0/gio/gfileenumerator.h",
+          "type": "0",
+          "bytes": 6429,
+          "mode": 420,
+          "link": "",
+          "sha256": "66843a13bb329d034a85b250dc9c73dc65cb9c4cbf34f2c5a828de686ac7eb7a"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdbusactiongroup.h",
+          "type": "0",
+          "bytes": 2786,
+          "mode": 420,
+          "link": "",
+          "sha256": "b46017b82913b16d5e49e1355359cc38ca9900a64fee2e7e7068e335c134704b"
+        },
+        {
+          "path": "include/glib-2.0/gio/gfile.h",
+          "type": "0",
+          "bytes": 85396,
+          "mode": 420,
+          "link": "",
+          "sha256": "4265f4c9354a60f99238529086c009392ddb5190e5154c03e4f2f2d2f71c3d4e"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdbuserror.h",
+          "type": "0",
+          "bytes": 4344,
+          "mode": 420,
+          "link": "",
+          "sha256": "fcdd5566a2d5a16cda26b81efe0cda60d5b2a6709293d3d882cf2fdf8e6cde7a"
+        },
+        {
+          "path": "include/glib-2.0/gio/gunixfdlist.h",
+          "type": "0",
+          "bytes": 4286,
+          "mode": 420,
+          "link": "",
+          "sha256": "a135d205037163c04dedcbd5b88b393b0083c0160c5ae8acf3697cc90c8cb9cd"
+        },
+        {
+          "path": "include/glib-2.0/gio/gthemedicon.h",
+          "type": "0",
+          "bytes": 2685,
+          "mode": 420,
+          "link": "",
+          "sha256": "8c1a83e9de45ea436b87dba075a9fc62c7eba3c0e79380205a5b35f02f984709"
+        },
+        {
+          "path": "include/glib-2.0/gio/giomodule.h",
+          "type": "0",
+          "bytes": 8278,
+          "mode": 420,
+          "link": "",
+          "sha256": "7b8ff58de4f891050351c5bdcc5ab5b1014fab02563a9b4b351564c98359c3b9"
+        },
+        {
+          "path": "include/glib-2.0/gio/ginetaddressmask.h",
+          "type": "0",
+          "bytes": 3158,
+          "mode": 420,
+          "link": "",
+          "sha256": "4415387534c47d114cb2328f356930aad2dec5cd4b2e06549abae160614cc392"
+        },
+        {
+          "path": "include/glib-2.0/gio/gcontenttype.h",
+          "type": "0",
+          "bytes": 3004,
+          "mode": 420,
+          "link": "",
+          "sha256": "19ab1f0fe0bcdda93529f4417f79495a22aff5d65c7e13f1a2d226dc6f363834"
+        },
+        {
+          "path": "include/glib-2.0/gio/gmemoryoutputstream.h",
+          "type": "0",
+          "bytes": 3974,
+          "mode": 420,
+          "link": "",
+          "sha256": "dd315b0bf9ba7d2f498128357b16ec55e19bf27e182e8fc2b022582c2abc3056"
+        },
+        {
+          "path": "include/glib-2.0/gio/gresource.h",
+          "type": "0",
+          "bytes": 4681,
+          "mode": 420,
+          "link": "",
+          "sha256": "fd3d3cb55766bce9f108afa328ae4170a3c0db310dff5da1eb5ed59fe46589c0"
+        },
+        {
+          "path": "include/glib-2.0/gio/gproxyaddress.h",
+          "type": "0",
+          "bytes": 3206,
+          "mode": 420,
+          "link": "",
+          "sha256": "ad54b376369c0bbee13b942312ffdb2e1721b4595dde5da0498614ae92a975a5"
+        },
+        {
+          "path": "include/glib-2.0/gio/gtcpwrapperconnection.h",
+          "type": "0",
+          "bytes": 3019,
+          "mode": 420,
+          "link": "",
+          "sha256": "104f6807c8d9d7774c1487e61f8b70e804a42ffd3de390b4a07590d41a1cf9fa"
+        },
+        {
+          "path": "include/glib-2.0/gio/gproxyaddressenumerator.h",
+          "type": "0",
+          "bytes": 2987,
+          "mode": 420,
+          "link": "",
+          "sha256": "140207cbc540ebd2293126001470262c475b4678aa4159af7e75dd146d3ac740"
+        },
+        {
+          "path": "include/glib-2.0/gio/gtlsinteraction.h",
+          "type": "0",
+          "bytes": 8373,
+          "mode": 420,
+          "link": "",
+          "sha256": "8b6d39fe8d55c5eb3c0cf44cfd00b457c64b01a576ed84340dcb7b70f5d0421a"
+        },
+        {
+          "path": "include/glib-2.0/gio/gmemorymonitor.h",
+          "type": "0",
+          "bytes": 2187,
+          "mode": 420,
+          "link": "",
+          "sha256": "f9f83d8bd955de1519ac350f0586304a550c630fab5ed3c45cb4ea2f9077e31f"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdatainputstream.h",
+          "type": "0",
+          "bytes": 11165,
+          "mode": 420,
+          "link": "",
+          "sha256": "f34cfd752da2efc0d31a5ad9ae4f2ea82f0c4b05b2fb3f126572aae889eaa843"
+        },
+        {
+          "path": "include/glib-2.0/gio/gemblemedicon.h",
+          "type": "0",
+          "bytes": 2831,
+          "mode": 420,
+          "link": "",
+          "sha256": "3ce1a0d6c70b11f86a3bbc17f84180e696dae7314c716224834a3684f9e16714"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdatagrambased.h",
+          "type": "0",
+          "bytes": 6704,
+          "mode": 420,
+          "link": "",
+          "sha256": "a65b8d3ad8c6a2a9527ad3962337cc162e8015bef4e04d97d552835d6122dc07"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdbusnameowning.h",
+          "type": "0",
+          "bytes": 4921,
+          "mode": 420,
+          "link": "",
+          "sha256": "da46af4324eda93a79a91b51aea8a6b060dd9c22e7075570b5165d754e47123d"
+        },
+        {
+          "path": "include/glib-2.0/gio/gsocketlistener.h",
+          "type": "0",
+          "bytes": 7715,
+          "mode": 420,
+          "link": "",
+          "sha256": "8fc9ded34f402fed38e2312f86fed1b35e029a51a4aadc9fdcad3b12a0006523"
+        },
+        {
+          "path": "include/glib-2.0/gio/gmenu.h",
+          "type": "0",
+          "bytes": 8954,
+          "mode": 420,
+          "link": "",
+          "sha256": "253727be92d7c0eff150dd1db174de5ad79115e190255a5a45d96d4f1ab437dd"
+        },
+        {
+          "path": "include/glib-2.0/gio/gzlibcompressor.h",
+          "type": "0",
+          "bytes": 2395,
+          "mode": 420,
+          "link": "",
+          "sha256": "3c70c282f1172e5b2c98f5990d06e04364e3a219e6ff4433e5d49773084b5abd"
+        },
+        {
+          "path": "include/glib-2.0/gio/gnetworkmonitor.h",
+          "type": "0",
+          "bytes": 4280,
+          "mode": 420,
+          "link": "",
+          "sha256": "338abe77b12feccfd645331aed5343b0d15c369215a8a0adb7dae1438ef24b20"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdebugcontrollerdbus.h",
+          "type": "0",
+          "bytes": 2206,
+          "mode": 420,
+          "link": "",
+          "sha256": "d49ec49df88bb5129bf105bfdd0ddea795a389b4e128e7f040fc5a336688fdf5"
+        },
+        {
+          "path": "include/glib-2.0/gio/gbufferedoutputstream.h",
+          "type": "0",
+          "bytes": 3376,
+          "mode": 420,
+          "link": "",
+          "sha256": "ee4560103c766eaa7dfe72546652aa91db5ab0940ab5ea151273ac3600a0296f"
+        },
+        {
+          "path": "include/glib-2.0/gio/gioerror.h",
+          "type": "0",
+          "bytes": 1720,
+          "mode": 420,
+          "link": "",
+          "sha256": "189e41832ccf2dfd7755ca1c46b3d596376274221982112aed212c302874f408"
+        },
+        {
+          "path": "include/glib-2.0/gio/gsubprocesslauncher.h",
+          "type": "0",
+          "bytes": 6559,
+          "mode": 420,
+          "link": "",
+          "sha256": "ab91da2357f8df1072a1802135ef4080324608197fcaf0db92785efff5c93f51"
+        },
+        {
+          "path": "include/glib-2.0/gio/gactionmap.h",
+          "type": "0",
+          "bytes": 4374,
+          "mode": 420,
+          "link": "",
+          "sha256": "7e1cb78599ad96df3fd92ffebf453e4f6fefca64dced9d242fc764b5a5327e87"
+        },
+        {
+          "path": "include/glib-2.0/gio/gunixcredentialsmessage.h",
+          "type": "0",
+          "bytes": 3241,
+          "mode": 420,
+          "link": "",
+          "sha256": "c1abfe89e4482fae3028a229ba1c9167ff9831d58db95e01a05a1e0688b9f390"
+        },
+        {
+          "path": "include/glib-2.0/gio/gtlsclientconnection.h",
+          "type": "0",
+          "bytes": 3726,
+          "mode": 420,
+          "link": "",
+          "sha256": "5b97d2e4a16bffad48c52328a1f7d649a9f6d7e1652a8151360123cb727c6804"
+        },
+        {
+          "path": "include/glib-2.0/gio/gloadableicon.h",
+          "type": "0",
+          "bytes": 3716,
+          "mode": 420,
+          "link": "",
+          "sha256": "dcfaec0f6501a789dd06010e54b2f7a855e6fcad8d156cc23650b5404259ebd1"
+        },
+        {
+          "path": "include/glib-2.0/gio/gunixconnection.h",
+          "type": "0",
+          "bytes": 5801,
+          "mode": 420,
+          "link": "",
+          "sha256": "07f6415b4db556067f7d0275f8d8eee6fb81c83cc496ed0d39dddf905a77e5a9"
+        },
+        {
+          "path": "include/glib-2.0/gio/gsimpleactiongroup.h",
+          "type": "0",
+          "bytes": 4398,
+          "mode": 420,
+          "link": "",
+          "sha256": "f0bc08613cf9bfc2dcf80b848fc84e24e8379a36855d6a2c72c0175d415e54b8"
+        },
+        {
+          "path": "include/glib-2.0/gio/gpermission.h",
+          "type": "0",
+          "bytes": 5900,
+          "mode": 420,
+          "link": "",
+          "sha256": "5b63d643fc265fe7ebd3824b0eb38304445b663bae645ddcbc77f7cf1f7b19d0"
+        },
+        {
+          "path": "include/glib-2.0/gio/giotypes.h",
+          "type": "0",
+          "bytes": 24831,
+          "mode": 420,
+          "link": "",
+          "sha256": "a6e94845c22ef2dbeb9fba61e9220b7b7f5bbe772129722e1b63f3140c6e7f84"
+        },
+        {
+          "path": "include/glib-2.0/gio/gactiongroup.h",
+          "type": "0",
+          "bytes": 9227,
+          "mode": 420,
+          "link": "",
+          "sha256": "656359eb184a1198ee7231afdcb577002e771b11fb5b91ffcb010b6830130a3a"
+        },
+        {
+          "path": "include/glib-2.0/gio/gsocketcontrolmessage.h",
+          "type": "0",
+          "bytes": 4929,
+          "mode": 420,
+          "link": "",
+          "sha256": "85e7b3107106130c610d42bf8e6ed70400f99c499b519681d8e1e4c9e568b8b4"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdbusconnection.h",
+          "type": "0",
+          "bytes": 39087,
+          "mode": 420,
+          "link": "",
+          "sha256": "7bc6114ca9eaeb9878193e39ed577a7c2cadd49fe81a090714fed3cfd189fa25"
+        },
+        {
+          "path": "include/glib-2.0/gio/ginetaddress.h",
+          "type": "0",
+          "bytes": 4557,
+          "mode": 420,
+          "link": "",
+          "sha256": "aef3ef2013d714d13180efc5478b217c8eced1aebec3d108bfe5fca1b6f47530"
+        },
+        {
+          "path": "include/glib-2.0/gio/gunixsocketaddress.h",
+          "type": "0",
+          "bytes": 3464,
+          "mode": 420,
+          "link": "",
+          "sha256": "e0cc0bba4243928847c9dc3f2d4671b69374d4df60e5bb4334908b240422cb18"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdbusproxy.h",
+          "type": "0",
+          "bytes": 12147,
+          "mode": 420,
+          "link": "",
+          "sha256": "a6b405736c474700982ae0c87c4e4153f09e96def7b36cc8dcf40dde53b8714d"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdbusinterfaceskeleton.h",
+          "type": "0",
+          "bytes": 6090,
+          "mode": 420,
+          "link": "",
+          "sha256": "9542fb4e422b071c0c9191a55f7a622591b3468562a130546330489cedef8684"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdbusnamewatching.h",
+          "type": "0",
+          "bytes": 4565,
+          "mode": 420,
+          "link": "",
+          "sha256": "92edf2a7992a22a66b40247ce3d68ad95ebaf5aaffa8c89d902dfc017883c475"
+        },
+        {
+          "path": "include/glib-2.0/gio/gnativevolumemonitor.h",
+          "type": "0",
+          "bytes": 2318,
+          "mode": 420,
+          "link": "",
+          "sha256": "ffc0ed48c4638fb1aa4ecfa54048b107a2ffa2604b0592b3bc7de1133c988310"
+        },
+        {
+          "path": "include/glib-2.0/gio/gtlsconnection.h",
+          "type": "0",
+          "bytes": 8626,
+          "mode": 420,
+          "link": "",
+          "sha256": "c82f158b28ffa1c4f41e6856fe080709931433a76b5abbf83d5fd4019e7902cd"
+        },
+        {
+          "path": "include/glib-2.0/gio/gtlsfiledatabase.h",
+          "type": "0",
+          "bytes": 1956,
+          "mode": 420,
+          "link": "",
+          "sha256": "d967e52001067542ea57c47967ab8ddbfe68eab7ce4c152cdcc0dfe653caed5c"
+        },
+        {
+          "path": "include/glib-2.0/gio/gliststore.h",
+          "type": "0",
+          "bytes": 4731,
+          "mode": 420,
+          "link": "",
+          "sha256": "7f8a5cf6c5b3de554cb128d8b720e1941b36b243821087e0a8245dd73b880411"
+        },
+        {
+          "path": "include/glib-2.0/gio/gsettings.h",
+          "type": "0",
+          "bytes": 21145,
+          "mode": 420,
+          "link": "",
+          "sha256": "63e101f4d9e5dec2792d10422119e662aa13877056e573cdc9ab61ecb24c4c50"
+        },
+        {
+          "path": "include/glib-2.0/gio/gfilenamecompleter.h",
+          "type": "0",
+          "bytes": 3134,
+          "mode": 420,
+          "link": "",
+          "sha256": "19382b18879debf0d54b0269160f9d9e5e37f4ab539d3a66beba30c4469c92ae"
+        },
+        {
+          "path": "include/glib-2.0/gio/gaction.h",
+          "type": "0",
+          "bytes": 4647,
+          "mode": 420,
+          "link": "",
+          "sha256": "004ed10e93454b50d2fd8664aebe2bcd9a3eb0e43e6d21fc75baa4b5e804ee1d"
+        },
+        {
+          "path": "include/glib-2.0/gio/gmountoperation.h",
+          "type": "0",
+          "bytes": 6793,
+          "mode": 420,
+          "link": "",
+          "sha256": "a17d24054ee02e7cfda0ad3fa4e8caf03062e3ce2276e5b615717ac0d7349853"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdbusauthobserver.h",
+          "type": "0",
+          "bytes": 2175,
+          "mode": 420,
+          "link": "",
+          "sha256": "8b40cfdb1c1107a9408b1bf08084beee251ba6623fa3ace0bccf550403dcf47d"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdrive.h",
+          "type": "0",
+          "bytes": 14521,
+          "mode": 420,
+          "link": "",
+          "sha256": "a31e0ca649ed992e1cb097d5d1c1d41bbbcce76e7fd04baf1b24a97eb2ed708b"
+        },
+        {
+          "path": "include/glib-2.0/gio/gsimpleasyncresult.h",
+          "type": "0",
+          "bytes": 7832,
+          "mode": 420,
+          "link": "",
+          "sha256": "553a42ff6a60cc5cd4c2a356ef485242e38962d5182ac8139d6a0d4036bde322"
+        },
+        {
+          "path": "include/glib-2.0/gio/gtask.h",
+          "type": "0",
+          "bytes": 9367,
+          "mode": 420,
+          "link": "",
+          "sha256": "5f6e8609e6869b56d68154135250d31281b776269f047b180b6e129e583f4a4f"
+        },
+        {
+          "path": "include/glib-2.0/gio/gsettingsschema.h",
+          "type": "0",
+          "bytes": 5988,
+          "mode": 420,
+          "link": "",
+          "sha256": "239655a6e97b005a4e8867a5db3925ca0d42e9d8eb2a7df3566caa6ee54bb8d8"
+        },
+        {
+          "path": "include/glib-2.0/gio/gioscheduler.h",
+          "type": "0",
+          "bytes": 2044,
+          "mode": 420,
+          "link": "",
+          "sha256": "546e1c36e8429c403cb720b16fcc17a99b6422ee2e7c2f57c03809fab42195e5"
+        },
+        {
+          "path": "include/glib-2.0/gio/gremoteactiongroup.h",
+          "type": "0",
+          "bytes": 3681,
+          "mode": 420,
+          "link": "",
+          "sha256": "d49e953825b9be43c33b08fb8cc5b2dc2d468e92605e4020488a26f8a9a3728d"
+        },
+        {
+          "path": "include/glib-2.0/gio/gio-autocleanups.h",
+          "type": "0",
+          "bytes": 9115,
+          "mode": 420,
+          "link": "",
+          "sha256": "cf029c18e5c1dab629109eccd3713712abe273032d7dca9d5ee0baf2182e26bb"
+        },
+        {
+          "path": "include/glib-2.0/gio/gresolver.h",
+          "type": "0",
+          "bytes": 17196,
+          "mode": 420,
+          "link": "",
+          "sha256": "07df58844963535900843ac609450de6cc99a86c395c627d11d3a53f5953a115"
+        },
+        {
+          "path": "include/glib-2.0/gio/ginitable.h",
+          "type": "0",
+          "bytes": 3020,
+          "mode": 420,
+          "link": "",
+          "sha256": "bb389ee703d5d075b25532a90d9292e62d81d926eacb9169a77b0fcffd75add6"
+        },
+        {
+          "path": "include/glib-2.0/gio/gsocketaddressenumerator.h",
+          "type": "0",
+          "bytes": 3942,
+          "mode": 420,
+          "link": "",
+          "sha256": "cd709e3ad11ce3b9a4736c5680b3f0d811d9a0fc08342801bcea7551877f2124"
+        },
+        {
+          "path": "include/glib-2.0/gio/gcharsetconverter.h",
+          "type": "0",
+          "bytes": 2562,
+          "mode": 420,
+          "link": "",
+          "sha256": "13cfa41651a697e50da4ae279420871b0763af9d6c3bd93d1940ee14a753102c"
+        },
+        {
+          "path": "include/glib-2.0/gio/gio.h",
+          "type": "0",
+          "bytes": 5943,
+          "mode": 420,
+          "link": "",
+          "sha256": "17f70a06048fa02b29a7ff342ca52b434c91174397daea7f4efb2ea8363288f1"
+        },
+        {
+          "path": "include/glib-2.0/gio/gtlscertificate.h",
+          "type": "0",
+          "bytes": 5206,
+          "mode": 420,
+          "link": "",
+          "sha256": "3bbbfc8197c010f4e7c7ee52bc61bc01c020e62eabd65c71680cd5bfed3e4b0a"
+        },
+        {
+          "path": "include/glib-2.0/gio/gconverterinputstream.h",
+          "type": "0",
+          "bytes": 3061,
+          "mode": 420,
+          "link": "",
+          "sha256": "787a78d040a8d0cae1057679d4e198fd40641fd0499c8c853e3d9c95251632d3"
+        },
+        {
+          "path": "include/glib-2.0/gio/gsimpleiostream.h",
+          "type": "0",
+          "bytes": 1769,
+          "mode": 420,
+          "link": "",
+          "sha256": "9c83d39ce2e2c65b734afe1342136b00f696d227dde08e6ad13ee854fb65632d"
+        },
+        {
+          "path": "include/glib-2.0/gio/gioenums.h",
+          "type": "0",
+          "bytes": 84618,
+          "mode": 420,
+          "link": "",
+          "sha256": "29e0994b099fa9e1b98062f441bef5b493014c6fa11b531ea423538729eb21e3"
+        },
+        {
+          "path": "include/glib-2.0/gio/gemblem.h",
+          "type": "0",
+          "bytes": 2199,
+          "mode": 420,
+          "link": "",
+          "sha256": "e961cd54c23114a5d25eb86c4ee7466021dfe5eafed0709cd4a0d4a475c2e844"
+        },
+        {
+          "path": "include/glib-2.0/gio/gseekable.h",
+          "type": "0",
+          "bytes": 3323,
+          "mode": 420,
+          "link": "",
+          "sha256": "690a371c58a0c602abb5810d731f4f1a147dedb2e8dd3a5a0af29fe3b027433f"
+        },
+        {
+          "path": "include/glib-2.0/gio/giostream.h",
+          "type": "0",
+          "bytes": 4899,
+          "mode": 420,
+          "link": "",
+          "sha256": "fd83de507883b092addf15e758cecd7efde7e9a8e41a2ba19b224cc19d8d3159"
+        },
+        {
+          "path": "include/glib-2.0/gio/gactiongroupexporter.h",
+          "type": "0",
+          "bytes": 1815,
+          "mode": 420,
+          "link": "",
+          "sha256": "a61b252d4d9ad93201d575b0f1bb945f4217ed5a76acc9d276817c7f87417e6c"
+        },
+        {
+          "path": "include/glib-2.0/gio/gnetworkaddress.h",
+          "type": "0",
+          "bytes": 2997,
+          "mode": 420,
+          "link": "",
+          "sha256": "b824416be0d67c790091935975832ef9e0f6d07ece60495fddf8e6c0149f0149"
+        },
+        {
+          "path": "include/glib-2.0/gio/gnetworking.h",
+          "type": "0",
+          "bytes": 2037,
+          "mode": 420,
+          "link": "",
+          "sha256": "38a50c9793b5796460fe3732d2ea5683858114279c520a3b0b9ea5b81f288c1d"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdtlsclientconnection.h",
+          "type": "0",
+          "bytes": 3239,
+          "mode": 420,
+          "link": "",
+          "sha256": "d3b58923c0fcd49bdeff4e93e6333ee4e48c30bdf459ed4061cb32e9652f1634"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdebugcontroller.h",
+          "type": "0",
+          "bytes": 2648,
+          "mode": 420,
+          "link": "",
+          "sha256": "e8a13689d9cedc328b9f827826cf8457d6186e0c8db4f6a8f5b530e3ac8ab5b1"
+        },
+        {
+          "path": "include/glib-2.0/gio/gconverteroutputstream.h",
+          "type": "0",
+          "bytes": 3100,
+          "mode": 420,
+          "link": "",
+          "sha256": "d6b49134fd0dc6aecae71d6644094089e9f4c73859ca1d2ef901a9b412c3f712"
+        },
+        {
+          "path": "include/glib-2.0/gio/gfileinfo.h",
+          "type": "0",
+          "bytes": 53057,
+          "mode": 420,
+          "link": "",
+          "sha256": "799e6aedf6db9f01b936164fc23e1883f1b7cdd9dfb82bbb35f26f0cec2a9a5d"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdbusobject.h",
+          "type": "0",
+          "bytes": 2986,
+          "mode": 420,
+          "link": "",
+          "sha256": "e7b2466bd684cd2713e18ba6a9585b5352f8502873c35596f8b90dc1ed7afbd3"
+        },
+        {
+          "path": "include/glib-2.0/gio/gconverter.h",
+          "type": "0",
+          "bytes": 2931,
+          "mode": 420,
+          "link": "",
+          "sha256": "5eab106408fe93f4bfbf3ff6c809ac9bec2edd96b2c24d2800ec9023815a2bde"
+        },
+        {
+          "path": "include/glib-2.0/gio/gtlsdatabase.h",
+          "type": "0",
+          "bytes": 17306,
+          "mode": 420,
+          "link": "",
+          "sha256": "b7f61da13dadb4fd9a32d21a339c94a97f1cb38ecd8c9c3d3803f54f23928f0a"
+        },
+        {
+          "path": "include/glib-2.0/gio/gfileattribute.h",
+          "type": "0",
+          "bytes": 2843,
+          "mode": 420,
+          "link": "",
+          "sha256": "d71bb17525e14cd05b9c92c7518a98133f8a0341874e3da25cdcbca7c706781d"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdbusmessage.h",
+          "type": "0",
+          "bytes": 11425,
+          "mode": 420,
+          "link": "",
+          "sha256": "b0b78046eeb8b1673bb2cbfb86f596ac528a6fc1be4b0241afbd3ae67eb8d257"
+        },
+        {
+          "path": "include/glib-2.0/gio/gsocketconnection.h",
+          "type": "0",
+          "bytes": 5094,
+          "mode": 420,
+          "link": "",
+          "sha256": "8797c845444d49479bb488c3543086cee6450377ba06365b48c43e2f40d17938"
+        },
+        {
+          "path": "include/glib-2.0/gio/gfileicon.h",
+          "type": "0",
+          "bytes": 2005,
+          "mode": 420,
+          "link": "",
+          "sha256": "cf5bb1b9222870e335e9d2619069ae1d027e9f9ba1d0e8bf47e0ff07a77bcbbe"
+        },
+        {
+          "path": "include/glib-2.0/gio/gcredentials.h",
+          "type": "0",
+          "bytes": 3449,
+          "mode": 420,
+          "link": "",
+          "sha256": "2a06b076b8352a2139527fba9a5fc87cc6c6891448f89e4d5bc8a5940e32712f"
+        },
+        {
+          "path": "include/glib-2.0/gio/gproxyresolver.h",
+          "type": "0",
+          "bytes": 3436,
+          "mode": 420,
+          "link": "",
+          "sha256": "3f9426e64445156a319057992bffecd642a2cc852176d6e61f7771a348769f26"
+        },
+        {
+          "path": "include/glib-2.0/gio/gsocketservice.h",
+          "type": "0",
+          "bytes": 3663,
+          "mode": 420,
+          "link": "",
+          "sha256": "337ea8f69b00a24760651b0322d9d4bfbdb46a10a6620329b9d894758dcd6b18"
+        },
+        {
+          "path": "include/glib-2.0/gio/gmenuexporter.h",
+          "type": "0",
+          "bytes": 1980,
+          "mode": 420,
+          "link": "",
+          "sha256": "fa3f15ebcc2ed9f5d4ff16c3ce887aa3d48b24d504b8a6c8fde42e2496281b40"
+        },
+        {
+          "path": "include/glib-2.0/gio/gcancellable.h",
+          "type": "0",
+          "bytes": 4092,
+          "mode": 420,
+          "link": "",
+          "sha256": "3b8f54ed6990e749325559abf833fd0eda0483ffd3a1fe07b5466184c6070e7e"
+        },
+        {
+          "path": "include/glib-2.0/gio/gnetworkservice.h",
+          "type": "0",
+          "bytes": 2797,
+          "mode": 420,
+          "link": "",
+          "sha256": "109971af42259b1413e338da962af1c1903f886858945c6df06cc25764d8e28d"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdbusmenumodel.h",
+          "type": "0",
+          "bytes": 1777,
+          "mode": 420,
+          "link": "",
+          "sha256": "5f56f84a39f91e2d10c9ff7fd0fa7cb59c1e575c5a985f178b8dba2d12ac473d"
+        },
+        {
+          "path": "include/glib-2.0/gio/gpollableoutputstream.h",
+          "type": "0",
+          "bytes": 4961,
+          "mode": 420,
+          "link": "",
+          "sha256": "5f9221d5c20c7012124f7c040ba8955a700d6b311aac1754b26b4b3c634abb0f"
+        },
+        {
+          "path": "include/glib-2.0/gio/gbufferedinputstream.h",
+          "type": "0",
+          "bytes": 5266,
+          "mode": 420,
+          "link": "",
+          "sha256": "284cb05799f6f084a5bbcff453bbc9815316ca2590ec7deb0c44bf9f2496deeb"
+        },
+        {
+          "path": "include/glib-2.0/gio/gtlspassword.h",
+          "type": "0",
+          "bytes": 4856,
+          "mode": 420,
+          "link": "",
+          "sha256": "8bb784f374556d2a8628a7d8270335ef1240c4466fb0938d2d07db76a5b02765"
+        },
+        {
+          "path": "include/glib-2.0/gio/gpowerprofilemonitor.h",
+          "type": "0",
+          "bytes": 2348,
+          "mode": 420,
+          "link": "",
+          "sha256": "e0027bdc4edb6bbe3c11c6568d682dd817999ea7bd27745afbd39e4e97998e27"
+        },
+        {
+          "path": "include/glib-2.0/gio/glistmodel.h",
+          "type": "0",
+          "bytes": 2619,
+          "mode": 420,
+          "link": "",
+          "sha256": "f4b2429391b96ddd080cbf0b4917386c45eb21174d4a17728a447f7b94afaad0"
+        },
+        {
+          "path": "include/glib-2.0/gio/gpollableinputstream.h",
+          "type": "0",
+          "bytes": 3872,
+          "mode": 420,
+          "link": "",
+          "sha256": "bf4a3422fab49c7022123641467ac186d0131396a94c2d2e398348675c954c29"
+        },
+        {
+          "path": "include/glib-2.0/gio/ginetsocketaddress.h",
+          "type": "0",
+          "bytes": 3153,
+          "mode": 420,
+          "link": "",
+          "sha256": "bf3151a631773fe1b2bc78c4912991a106bd0e3f08615f1cc78212f155e022fb"
+        },
+        {
+          "path": "include/glib-2.0/gio/gsubprocess.h",
+          "type": "0",
+          "bytes": 8628,
+          "mode": 420,
+          "link": "",
+          "sha256": "85658f5e6fe27176d060a75631e78fe6207f16c1086dc11113c622be37d8b054"
+        },
+        {
+          "path": "include/glib-2.0/gio/gsocketaddress.h",
+          "type": "0",
+          "bytes": 3130,
+          "mode": 420,
+          "link": "",
+          "sha256": "6f058f3afc56bb301e5c8101173f33a5741c73410601f8725011665567d9b72b"
+        },
+        {
+          "path": "include/glib-2.0/gio/gmemoryinputstream.h",
+          "type": "0",
+          "bytes": 3477,
+          "mode": 420,
+          "link": "",
+          "sha256": "6a027ff8f82fb96bbc83ab7914df21f25a3809cce31a32a1d1520220cb10def5"
+        },
+        {
+          "path": "include/glib-2.0/gio/gfileinputstream.h",
+          "type": "0",
+          "bytes": 4701,
+          "mode": 420,
+          "link": "",
+          "sha256": "8a162dbd746c44acffcb45e3e78633b8fc850a0cafe890a5095680f26b84c0fe"
+        },
+        {
+          "path": "include/glib-2.0/gio/gtlsbackend.h",
+          "type": "0",
+          "bytes": 4624,
+          "mode": 420,
+          "link": "",
+          "sha256": "d0924954f811ee293faa081faca3e80d56e85ac2bad9e35480fb02473035d18a"
+        },
+        {
+          "path": "include/glib-2.0/gio/gasyncinitable.h",
+          "type": "0",
+          "bytes": 4465,
+          "mode": 420,
+          "link": "",
+          "sha256": "782eeb1e1658a73e8b4d07be5e8f626d4642990f6e2a4ddfeeadef6358e5d996"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdbusintrospection.h",
+          "type": "0",
+          "bytes": 12523,
+          "mode": 420,
+          "link": "",
+          "sha256": "ed5476d7a069895dfbedef098a1bf11cd810ab8464a69a7c7816885cd0306ad2"
+        },
+        {
+          "path": "include/glib-2.0/gio/gmenumodel.h",
+          "type": "0",
+          "bytes": 14364,
+          "mode": 420,
+          "link": "",
+          "sha256": "a44ef200e9703117a84c56fb4fd3c28ee4cbdbc33f77d5af50900237cc56c2d1"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdbusutils.h",
+          "type": "0",
+          "bytes": 2133,
+          "mode": 420,
+          "link": "",
+          "sha256": "be1d35960e57d92e26c8afcaa8eee2f4a33110be1d154d50261917162c815775"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdbusobjectmanagerserver.h",
+          "type": "0",
+          "bytes": 4161,
+          "mode": 420,
+          "link": "",
+          "sha256": "2d993787072d51f978b8553afd45854e468b0a45722bd4aef91d833edf0bb36d"
+        },
+        {
+          "path": "include/glib-2.0/gio/gsimpleaction.h",
+          "type": "0",
+          "bytes": 2958,
+          "mode": 420,
+          "link": "",
+          "sha256": "c29d67509cd3a7f6ead523f509d2e628f4a91c5cf96660a322bcfbebf2e43ec8"
+        },
+        {
+          "path": "include/glib-2.0/gio/gzlibdecompressor.h",
+          "type": "0",
+          "bytes": 2258,
+          "mode": 420,
+          "link": "",
+          "sha256": "57b37b1d44de8ee9a440e639c197471532cb2d331f4e74ff7870382bc1597d29"
+        },
+        {
+          "path": "include/glib-2.0/gio/gasyncresult.h",
+          "type": "0",
+          "bytes": 2862,
+          "mode": 420,
+          "link": "",
+          "sha256": "377cf7c062d2161e336a3bfc361f8c35f5dd2f6cbdebf617f8929e266d48e270"
+        },
+        {
+          "path": "include/glib-2.0/gio/gmount.h",
+          "type": "0",
+          "bytes": 15812,
+          "mode": 420,
+          "link": "",
+          "sha256": "8705819650b9e69d182b0f92c941c1b16bcede397a3f0da1eeb9f76b932f46d2"
+        },
+        {
+          "path": "include/glib-2.0/gio/gsimplepermission.h",
+          "type": "0",
+          "bytes": 1733,
+          "mode": 420,
+          "link": "",
+          "sha256": "ce15e953a8675f946f9cec19b8216729e1db38352a9c947f7ce57a3896927ccc"
+        },
+        {
+          "path": "include/glib-2.0/gio/gfilteroutputstream.h",
+          "type": "0",
+          "bytes": 2920,
+          "mode": 420,
+          "link": "",
+          "sha256": "4f60eba6759a7c43ed58e47ec7118654cfa43ebe3565b4dd2d0ce821e6e7dd93"
+        },
+        {
+          "path": "include/glib-2.0/gio/gtestdbus.h",
+          "type": "0",
+          "bytes": 2343,
+          "mode": 420,
+          "link": "",
+          "sha256": "73a7766c8e436698399db467df96e2998403fe83ca299c865203d6c7be6b2056"
+        },
+        {
+          "path": "include/glib-2.0/gio/gsocketclient.h",
+          "type": "0",
+          "bytes": 11229,
+          "mode": 420,
+          "link": "",
+          "sha256": "614fa37d5c4b4e5317ed18700fb131d2981a0ff6cbac6c57d1e60861adecef63"
+        },
+        {
+          "path": "include/glib-2.0/gio/gproxy.h",
+          "type": "0",
+          "bytes": 4110,
+          "mode": 420,
+          "link": "",
+          "sha256": "4474956f0c131425fe9ccb63e581d86120368999f817a9dcc11184cf57661ecd"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdbusobjectmanagerclient.h",
+          "type": "0",
+          "bytes": 9838,
+          "mode": 420,
+          "link": "",
+          "sha256": "8e873b36ad03ad89aae048c3c348fcfb037acff0e27ae218c5bce3ef15ac2435"
+        },
+        {
+          "path": "include/glib-2.0/gio/gioenumtypes.h",
+          "type": "0",
+          "bytes": 13735,
+          "mode": 420,
+          "link": "",
+          "sha256": "43dd5b838ad08d05eefca9496912b260ee1f162889cbccba1cd7a73b5c479fae"
+        },
+        {
+          "path": "include/glib-2.0/gio/gsocketconnectable.h",
+          "type": "0",
+          "bytes": 2931,
+          "mode": 420,
+          "link": "",
+          "sha256": "c1b5ae5997077936abc0f790a75080a36220646f86b1255444283bd2c7bd824f"
+        },
+        {
+          "path": "include/glib-2.0/gio/gapplicationcommandline.h",
+          "type": "0",
+          "bytes": 6203,
+          "mode": 420,
+          "link": "",
+          "sha256": "1d2635d57e4eb7986cd12557e6a280b33f4aada26eee50b165acbf931e4e4562"
+        },
+        {
+          "path": "include/glib-2.0/gio/gpollableutils.h",
+          "type": "0",
+          "bytes": 2178,
+          "mode": 420,
+          "link": "",
+          "sha256": "b48f91cfffaf99a22ff9968dc893599575817f43557baa8607b98b7484851856"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdtlsconnection.h",
+          "type": "0",
+          "bytes": 12607,
+          "mode": 420,
+          "link": "",
+          "sha256": "535c9f82b18ee300530b9b3ff23c0693f0cbfa936bf97e455e3f3b65d10e8ae4"
+        },
+        {
+          "path": "include/glib-2.0/gio/gthreadedsocketservice.h",
+          "type": "0",
+          "bytes": 3712,
+          "mode": 420,
+          "link": "",
+          "sha256": "ccee3e97d693826356b92b5efc8c0cf067e3d06765ec32be2018f047a3d31e00"
+        },
+        {
+          "path": "include/glib-2.0/gio/gbytesicon.h",
+          "type": "0",
+          "bytes": 1698,
+          "mode": 420,
+          "link": "",
+          "sha256": "28f81fcc1a6cb7f7904bdd1731800f59e9f7fa6193041c77f8934379098b4bf4"
+        },
+        {
+          "path": "include/glib-2.0/gio/gnotification.h",
+          "type": "0",
+          "bytes": 5158,
+          "mode": 420,
+          "link": "",
+          "sha256": "cdb3e86c732fbb5cb16168f4996cd78284311ff5e66c7e7a3f83018b1138aa2e"
+        },
+        {
+          "path": "include/glib-2.0/gio/gvolumemonitor.h",
+          "type": "0",
+          "bytes": 6039,
+          "mode": 420,
+          "link": "",
+          "sha256": "17ac8a88275538dada71f6b3c4832905ebc8e4400010f7c18c686b0950445cae"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdtlsserverconnection.h",
+          "type": "0",
+          "bytes": 2493,
+          "mode": 420,
+          "link": "",
+          "sha256": "5eca8b352e5f586473662fe3a4c80c12062880850de2118fde1c238cf0e7c596"
+        },
+        {
+          "path": "include/glib-2.0/gio/gapplication.h",
+          "type": "0",
+          "bytes": 14726,
+          "mode": 420,
+          "link": "",
+          "sha256": "7651f21ec67a4ac15b08c3c06f07d61d419924dd1e5e805dc81d02f1f58601d7"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdbusinterface.h",
+          "type": "0",
+          "bytes": 3113,
+          "mode": 420,
+          "link": "",
+          "sha256": "37648327a398bd8be5a2458ca67f7a21ecd8eda304967e302d9918ce480270cb"
+        },
+        {
+          "path": "include/glib-2.0/gio/gdbusserver.h",
+          "type": "0",
+          "bytes": 2575,
+          "mode": 420,
+          "link": "",
+          "sha256": "2501555143739e9947d8a0e3fcb9508a9adac8b20d50b9b99a571ea404f29447"
+        },
+        {
+          "path": "include/glib-2.0/gio/gfileoutputstream.h",
+          "type": "0",
+          "bytes": 5382,
+          "mode": 420,
+          "link": "",
+          "sha256": "55f9d02c4377dc3130eda618ba1b752ebbdd8515e2a2cce43b6914c134b8852d"
+        },
+        {
+          "path": "include/glib-2.0/glib.h",
+          "type": "0",
+          "bytes": 3488,
+          "mode": 420,
+          "link": "",
+          "sha256": "e188728ce149ce54310d2010782dabb1ef8fac349e2a9f3fc2b39db86f3893f7"
+        },
+        {
+          "path": "include/glib-2.0/glib",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/glib-2.0/glib/gunicode.h",
+          "type": "0",
+          "bytes": 42808,
+          "mode": 420,
+          "link": "",
+          "sha256": "898dc562645e55c193ea314a952d1acc552082b5b3bac79f47e6be61cdc5d7f6"
+        },
+        {
+          "path": "include/glib-2.0/glib/glib-autocleanups.h",
+          "type": "0",
+          "bytes": 4957,
+          "mode": 420,
+          "link": "",
+          "sha256": "1bed4fb9ba486040551fa961969f06b86bed1aa1d6cb360aedf8ad17d6aa3cfa"
+        },
+        {
+          "path": "include/glib-2.0/glib/gbitlock.h",
+          "type": "0",
+          "bytes": 2951,
+          "mode": 420,
+          "link": "",
+          "sha256": "53f5f943f04698a7800d984bab89ba91a64b95dfb1e70ef9ad4659358c8e968f"
+        },
+        {
+          "path": "include/glib-2.0/glib/gtimer.h",
+          "type": "0",
+          "bytes": 2625,
+          "mode": 420,
+          "link": "",
+          "sha256": "316476a78e241c4bf3886f1c5833a8631d22d042ba82e27304792a862d0cf159"
+        },
+        {
+          "path": "include/glib-2.0/glib/gbacktrace.h",
+          "type": "0",
+          "bytes": 2842,
+          "mode": 420,
+          "link": "",
+          "sha256": "f587bc7568a1e41b5398e7e54606f4e9835c20fcd5f06c97cefe3e9314dd65b2"
+        },
+        {
+          "path": "include/glib-2.0/glib/guuid.h",
+          "type": "0",
+          "bytes": 1291,
+          "mode": 420,
+          "link": "",
+          "sha256": "356fd3f2381a68933ba4c19e22d2e6162a7940c7e73a9f3e2f9ba2d7e64eb726"
+        },
+        {
+          "path": "include/glib-2.0/glib/gmessages.h",
+          "type": "0",
+          "bytes": 27455,
+          "mode": 420,
+          "link": "",
+          "sha256": "2b858e1316f33a0c2a684481b73fd9195ce2542ace86bc22b826b33f28b69e41"
+        },
+        {
+          "path": "include/glib-2.0/glib/gpoll.h",
+          "type": "0",
+          "bytes": 4174,
+          "mode": 420,
+          "link": "",
+          "sha256": "c48074f7b7ab6d13572f1ec445d5fdf84579bd62b9d016eefffff4e52dc5308b"
+        },
+        {
+          "path": "include/glib-2.0/glib/gcharset.h",
+          "type": "0",
+          "bytes": 1627,
+          "mode": 420,
+          "link": "",
+          "sha256": "18f78ad2c6050ce1d9359de906435d9e0d5436956cd59100454055b52eba75be"
+        },
+        {
+          "path": "include/glib-2.0/glib/grefstring.h",
+          "type": "0",
+          "bytes": 1917,
+          "mode": 420,
+          "link": "",
+          "sha256": "2f4baa6a02f129242be9d7b1ef39878e35ecf383660bec2655de676f4f67acb5"
+        },
+        {
+          "path": "include/glib-2.0/glib/gmappedfile.h",
+          "type": "0",
+          "bytes": 2035,
+          "mode": 420,
+          "link": "",
+          "sha256": "9a81686c79212be22d95ea3571dff300db823af436379b3cc9b596d6d790b7d6"
+        },
+        {
+          "path": "include/glib-2.0/glib/grcbox.h",
+          "type": "0",
+          "bytes": 3856,
+          "mode": 420,
+          "link": "",
+          "sha256": "97ff37002f38583b5d0ebb00daa35993d8fb39ef8e694c31dbc88d77920b090e"
+        },
+        {
+          "path": "include/glib-2.0/glib/gi18n-lib.h",
+          "type": "0",
+          "bytes": 1419,
+          "mode": 420,
+          "link": "",
+          "sha256": "fe39a999b3476fd3410d3aa5a4e700077afd1f64ffa2ddda7a94343145f7d418"
+        },
+        {
+          "path": "include/glib-2.0/glib/gkeyfile.h",
+          "type": "0",
+          "bytes": 14962,
+          "mode": 420,
+          "link": "",
+          "sha256": "67daed26de8615bef11067cb4466babaee2ca24c3bcc570f61ba6ca6bddbaa62"
+        },
+        {
+          "path": "include/glib-2.0/glib/gtypes.h",
+          "type": "0",
+          "bytes": 20553,
+          "mode": 420,
+          "link": "",
+          "sha256": "ca967dc92010a8d124969a008b919621e7550f0cad0cb85b9f65cd054cdb72ac"
+        },
+        {
+          "path": "include/glib-2.0/glib/gstring.h",
+          "type": "0",
+          "bytes": 11540,
+          "mode": 420,
+          "link": "",
+          "sha256": "f38789b1d27aad107cdb315dfd429e4d3fc29578852bf2f4e3475aa3c362ca15"
+        },
+        {
+          "path": "include/glib-2.0/glib/gdate.h",
+          "type": "0",
+          "bytes": 12470,
+          "mode": 420,
+          "link": "",
+          "sha256": "1e6c4f403fb8b52f7ef8f2e22d6d5343ff4248ddbf6aa9b101336ab3cb9d7717"
+        },
+        {
+          "path": "include/glib-2.0/glib/guri.h",
+          "type": "0",
+          "bytes": 16495,
+          "mode": 420,
+          "link": "",
+          "sha256": "a4fee65abf491f15356dc37d0d60a898b18b21ce0a8e236fe492065545854032"
+        },
+        {
+          "path": "include/glib-2.0/glib/gpattern.h",
+          "type": "0",
+          "bytes": 2359,
+          "mode": 420,
+          "link": "",
+          "sha256": "f95f0521ea27f51749ba2efae6eb664009eae937c35cafc9031de4148af7fd9b"
+        },
+        {
+          "path": "include/glib-2.0/glib/gfileutils.h",
+          "type": "0",
+          "bytes": 7903,
+          "mode": 420,
+          "link": "",
+          "sha256": "0be58afe3891de00e1aa6fec0c738e1b4b308df6593b8b74d69117336d308e2e"
+        },
+        {
+          "path": "include/glib-2.0/glib/gscanner.h",
+          "type": "0",
+          "bytes": 8910,
+          "mode": 420,
+          "link": "",
+          "sha256": "881f46d946f58014f31ba2a16d6b4b9b042d399715a9d9081c5d578e529c5b96"
+        },
+        {
+          "path": "include/glib-2.0/glib/garray.h",
+          "type": "0",
+          "bytes": 13835,
+          "mode": 420,
+          "link": "",
+          "sha256": "b6eeb7918356bd0be0600426de6e56a3626f0e6cd45c29a5241da3e0c0df0b6a"
+        },
+        {
+          "path": "include/glib-2.0/glib/gthread.h",
+          "type": "0",
+          "bytes": 18818,
+          "mode": 420,
+          "link": "",
+          "sha256": "70d5701d375ed683df05bf00788fe19f6219ae685ced7b58f8bd3fd3378a1c46"
+        },
+        {
+          "path": "include/glib-2.0/glib/gversionmacros.h",
+          "type": "0",
+          "bytes": 13254,
+          "mode": 420,
+          "link": "",
+          "sha256": "741a0d0e0e9819d703abcda78663515ee03ce69a22a4e6b1d84a5114c8ec2828"
+        },
+        {
+          "path": "include/glib-2.0/glib/gquark.h",
+          "type": "0",
+          "bytes": 2737,
+          "mode": 420,
+          "link": "",
+          "sha256": "542a0572b58bc983b7868291713945b6884cb4679e33b2e02c0179b5d8f4f48f"
+        },
+        {
+          "path": "include/glib-2.0/glib/ghook.h",
+          "type": "0",
+          "bytes": 6407,
+          "mode": 420,
+          "link": "",
+          "sha256": "12fac87955514fe024e314159d92b84dc69ccd822ec46af6d6b6deae0327edc4"
+        },
+        {
+          "path": "include/glib-2.0/glib/gprintf.h",
+          "type": "0",
+          "bytes": 2033,
+          "mode": 420,
+          "link": "",
+          "sha256": "d0bde603f7734da145f7807f8494305f61472a0d89fe66de47b0f237db17fd01"
+        },
+        {
+          "path": "include/glib-2.0/glib/gsequence.h",
+          "type": "0",
+          "bytes": 8860,
+          "mode": 420,
+          "link": "",
+          "sha256": "36f1d599a2db918aeae2842bb4a32505f010ccc7b2aeffe534d3dcfbdc3aacbc"
+        },
+        {
+          "path": "include/glib-2.0/glib/gdatetime.h",
+          "type": "0",
+          "bytes": 12782,
+          "mode": 420,
+          "link": "",
+          "sha256": "f87e25b6990de630ac416c06d5984095ff4fce7fed936ef96e449a907c67f53e"
+        },
+        {
+          "path": "include/glib-2.0/glib/gatomic.h",
+          "type": "0",
+          "bytes": 35206,
+          "mode": 420,
+          "link": "",
+          "sha256": "5c41539237834552bfff7511a42ea528d06f929f68076edaf11590990df01559"
+        },
+        {
+          "path": "include/glib-2.0/glib/gprimes.h",
+          "type": "0",
+          "bytes": 1743,
+          "mode": 420,
+          "link": "",
+          "sha256": "38736c190298d71c831c6087790873152ed610ff393f69d6450278a726c48d88"
+        },
+        {
+          "path": "include/glib-2.0/glib/gtimezone.h",
+          "type": "0",
+          "bytes": 3954,
+          "mode": 420,
+          "link": "",
+          "sha256": "55f1656503344425eb48e578048397f570001b07ec591170727bbc57011ae9ea"
+        },
+        {
+          "path": "include/glib-2.0/glib/gmarkup.h",
+          "type": "0",
+          "bytes": 11051,
+          "mode": 420,
+          "link": "",
+          "sha256": "68fd25bd7ed4c615c11c33d2850ee7535760abba83e394a4707daeb54848663f"
+        },
+        {
+          "path": "include/glib-2.0/glib/gutils.h",
+          "type": "0",
+          "bytes": 14245,
+          "mode": 420,
+          "link": "",
+          "sha256": "39040879b3af851f4ea660867e7b2de7c227b6a83ded24be41930149161bd4a9"
+        },
+        {
+          "path": "include/glib-2.0/glib/gbytes.h",
+          "type": "0",
+          "bytes": 3710,
+          "mode": 420,
+          "link": "",
+          "sha256": "23d00e6de7aca933045281f3063d89eb18989d2a5a2f2eefce24da5eb9e67359"
+        },
+        {
+          "path": "include/glib-2.0/glib/gmacros.h",
+          "type": "0",
+          "bytes": 52116,
+          "mode": 420,
+          "link": "",
+          "sha256": "c610903eeb7e8c1ee478d5532379b4f1df1a3ddd9cde222512f2c1d2d8e21f32"
+        },
+        {
+          "path": "include/glib-2.0/glib/gchecksum.h",
+          "type": "0",
+          "bytes": 3916,
+          "mode": 420,
+          "link": "",
+          "sha256": "6fcb62f398a4e7a91a469a15c01e2ea28cd79386eeffdcf6c3c6c9dcc81e1731"
+        },
+        {
+          "path": "include/glib-2.0/glib/gstrfuncs.h",
+          "type": "0",
+          "bytes": 19413,
+          "mode": 420,
+          "link": "",
+          "sha256": "28b862f7d70b85d63fdd1136f4be5e02a6d9a4a0e6e0b2123ce95739783b7cfd"
+        },
+        {
+          "path": "include/glib-2.0/glib/gvarianttype.h",
+          "type": "0",
+          "bytes": 13293,
+          "mode": 420,
+          "link": "",
+          "sha256": "400c1ebc4c677b227df46a5385fceeedcaf8040cafbbdbf8de8c37d68b539da6"
+        },
+        {
+          "path": "include/glib-2.0/glib/gvariant.h",
+          "type": "0",
+          "bytes": 30690,
+          "mode": 420,
+          "link": "",
+          "sha256": "b39faa192219d0043d866252ff246ea44b9520c3fad51aea93f9ae07c3b395eb"
+        },
+        {
+          "path": "include/glib-2.0/glib/gerror.h",
+          "type": "0",
+          "bytes": 11385,
+          "mode": 420,
+          "link": "",
+          "sha256": "60a154f68919cbabfbdac14af43871a46314a859517fbadf4c44c07cb6e61e19"
+        },
+        {
+          "path": "include/glib-2.0/glib/gbookmarkfile.h",
+          "type": "0",
+          "bytes": 12741,
+          "mode": 420,
+          "link": "",
+          "sha256": "37cd191b47dfeb7c49139cdea0673d02fd87119dc4dacee8356f7fb1b5cbf402"
+        },
+        {
+          "path": "include/glib-2.0/glib/gstrvbuilder.h",
+          "type": "0",
+          "bytes": 1959,
+          "mode": 420,
+          "link": "",
+          "sha256": "f9ca589c3178033918c5979e0d4f97bb38f6ac90bd59c2f16b3a9a68f2ce1bb8"
+        },
+        {
+          "path": "include/glib-2.0/glib/gslice.h",
+          "type": "0",
+          "bytes": 4634,
+          "mode": 420,
+          "link": "",
+          "sha256": "888164f21521a48cc02ed2bb62b60961073253a39405bfb78ee0c4f8ffe42d90"
+        },
+        {
+          "path": "include/glib-2.0/glib/gshell.h",
+          "type": "0",
+          "bytes": 1801,
+          "mode": 420,
+          "link": "",
+          "sha256": "7b64a16225e137aa024537d4f789f0b109d003b4e2c3f3899f25b0cd50fc4e8f"
+        },
+        {
+          "path": "include/glib-2.0/glib/gwin32.h",
+          "type": "0",
+          "bytes": 4716,
+          "mode": 420,
+          "link": "",
+          "sha256": "449da69291d93d8d8249c6129148f1feccbceda674e04106a726a8bbabdd5971"
+        },
+        {
+          "path": "include/glib-2.0/glib/gstringchunk.h",
+          "type": "0",
+          "bytes": 2179,
+          "mode": 420,
+          "link": "",
+          "sha256": "06e1d69ba1c1d47feff1c8b8f20609b012aee58815b4c49e6b6c31abad3dd671"
+        },
+        {
+          "path": "include/glib-2.0/glib/gtestutils.h",
+          "type": "0",
+          "bytes": 40218,
+          "mode": 420,
+          "link": "",
+          "sha256": "469c94d9f60f05cd0037e117fe23ee0a0c32e7bb95cf0c142b67eda8a2fec9b8"
+        },
+        {
+          "path": "include/glib-2.0/glib/gmain.h",
+          "type": "0",
+          "bytes": 30434,
+          "mode": 420,
+          "link": "",
+          "sha256": "e286c18b766823d38827bd9a2c70afcbdf8e658cbec7e3ee8ca561134399793d"
+        },
+        {
+          "path": "include/glib-2.0/glib/galloca.h",
+          "type": "0",
+          "bytes": 5435,
+          "mode": 420,
+          "link": "",
+          "sha256": "37761621cf111e8eba5f81554dd35bdf2c728bb5142fb74764d86d7bc78160f7"
+        },
+        {
+          "path": "include/glib-2.0/glib/gnode.h",
+          "type": "0",
+          "bytes": 8749,
+          "mode": 420,
+          "link": "",
+          "sha256": "236ba9605793b973be0b89140a276c6c4ca234112db41460502f2f4a467aa34c"
+        },
+        {
+          "path": "include/glib-2.0/glib/grefcount.h",
+          "type": "0",
+          "bytes": 5196,
+          "mode": 420,
+          "link": "",
+          "sha256": "19e1010dcaa1bf2ca349f5e32fba870427b6141ed2ee92770d0e4d7f98ccf24c"
+        },
+        {
+          "path": "include/glib-2.0/glib/gasyncqueue.h",
+          "type": "0",
+          "bytes": 5775,
+          "mode": 420,
+          "link": "",
+          "sha256": "894f1f1e9cba6f0c27393d51a5c7a954293c7849e27b50f6aa46cf14314d4466"
+        },
+        {
+          "path": "include/glib-2.0/glib/gconvert.h",
+          "type": "0",
+          "bytes": 5972,
+          "mode": 420,
+          "link": "",
+          "sha256": "37e3abdc61f2c59acacb1035631ef6f49e1e09de87de627844db3ce9cae9be38"
+        },
+        {
+          "path": "include/glib-2.0/glib/gqsort.h",
+          "type": "0",
+          "bytes": 1548,
+          "mode": 420,
+          "link": "",
+          "sha256": "eafdf7777360720ea656cade3b5bf1d11965847db2181f6addd8096c06290fe9"
+        },
+        {
+          "path": "include/glib-2.0/glib/glib-visibility.h",
+          "type": "0",
+          "bytes": 43442,
+          "mode": 420,
+          "link": "",
+          "sha256": "34859ddf3ba125113698edf964e0f22f6fa07e6b3d30a954a7d894edf98f1d16"
+        },
+        {
+          "path": "include/glib-2.0/glib/giochannel.h",
+          "type": "0",
+          "bytes": 14059,
+          "mode": 420,
+          "link": "",
+          "sha256": "8732734a89c5fa3724704d1b258a769f8eb0bf2b798178de8b6ceaeade63246e"
+        },
+        {
+          "path": "include/glib-2.0/glib/gdataset.h",
+          "type": "0",
+          "bytes": 6522,
+          "mode": 420,
+          "link": "",
+          "sha256": "51f3d2ccd8f78b6fb91a154d1d620c4ff39b065e639ba233c42d4f8fd775f160"
+        },
+        {
+          "path": "include/glib-2.0/glib/ghmac.h",
+          "type": "0",
+          "bytes": 3518,
+          "mode": 420,
+          "link": "",
+          "sha256": "54df4453a5b544be241728426b034b072bb520ecc0dd94f965332af90629f80c"
+        },
+        {
+          "path": "include/glib-2.0/glib/gstdio.h",
+          "type": "0",
+          "bytes": 6273,
+          "mode": 420,
+          "link": "",
+          "sha256": "bd90b2adde8449b39d01d4039c6c11a3885ddccd88f9b9191192c6e4420694b4"
+        },
+        {
+          "path": "include/glib-2.0/glib/glib-typeof.h",
+          "type": "0",
+          "bytes": 1706,
+          "mode": 420,
+          "link": "",
+          "sha256": "787e0a7c1e19382c15d7a871be704218ca4348183cd245227034a3541a3bf8dd"
+        },
+        {
+          "path": "include/glib-2.0/glib/ghostutils.h",
+          "type": "0",
+          "bytes": 1505,
+          "mode": 420,
+          "link": "",
+          "sha256": "999217d1fa5d839fe925414b18d243aa76be4b23a46fb09b258358bd14e87cbb"
+        },
+        {
+          "path": "include/glib-2.0/glib/gbase64.h",
+          "type": "0",
+          "bytes": 2372,
+          "mode": 420,
+          "link": "",
+          "sha256": "ebf27f7cb916e7ec0b28f59269a3f16d8c569589a002d7a9bcb3f4ffda04f40c"
+        },
+        {
+          "path": "include/glib-2.0/glib/gqueue.h",
+          "type": "0",
+          "bytes": 7799,
+          "mode": 420,
+          "link": "",
+          "sha256": "ef28b29a70556a847f4a00f4e816f03435941bad25f68671ac3d5a453d21677a"
+        },
+        {
+          "path": "include/glib-2.0/glib/genviron.h",
+          "type": "0",
+          "bytes": 2413,
+          "mode": 420,
+          "link": "",
+          "sha256": "8d874f2aa016f31df0743abaa5dd80f6856a87f7012234afb7da4dfb1e837ec4"
+        },
+        {
+          "path": "include/glib-2.0/glib/goption.h",
+          "type": "0",
+          "bytes": 16635,
+          "mode": 420,
+          "link": "",
+          "sha256": "89ca2cef0d61bd3e37aa33a61b1f15019f1af23e0c3445866f3a7ac401af10d7"
+        },
+        {
+          "path": "include/glib-2.0/glib/ggettext.h",
+          "type": "0",
+          "bytes": 2473,
+          "mode": 420,
+          "link": "",
+          "sha256": "3d27f62cef97f1849fa75d8938b3b320a7c56a06e4c02c2d751bc5c6dc63caf6"
+        },
+        {
+          "path": "include/glib-2.0/glib/gversion.h",
+          "type": "0",
+          "bytes": 2030,
+          "mode": 420,
+          "link": "",
+          "sha256": "554d6eb15172eb55a0133c8023b1e0a5fd68c0c9454a50a917fd18fa472d97fa"
+        },
+        {
+          "path": "include/glib-2.0/glib/deprecated",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/glib-2.0/glib/deprecated/gallocator.h",
+          "type": "0",
+          "bytes": 3256,
+          "mode": 420,
+          "link": "",
+          "sha256": "5fcfeedce2b1c72df6a9840534a32a57d9e13fd311d9020f6f58c91be5f5fee4"
+        },
+        {
+          "path": "include/glib-2.0/glib/deprecated/grel.h",
+          "type": "0",
+          "bytes": 3731,
+          "mode": 420,
+          "link": "",
+          "sha256": "98ccbf2799cbf59d5a395394d0a62f1e7d9e3a905b35dbd0511eb18ef07d4980"
+        },
+        {
+          "path": "include/glib-2.0/glib/deprecated/gthread.h",
+          "type": "0",
+          "bytes": 11131,
+          "mode": 420,
+          "link": "",
+          "sha256": "c88e897459125fc7bcfbc6186bd5c8f926f9d907e9e7c37e63fcabcb7e3db493"
+        },
+        {
+          "path": "include/glib-2.0/glib/deprecated/gmain.h",
+          "type": "0",
+          "bytes": 4442,
+          "mode": 420,
+          "link": "",
+          "sha256": "72322bcbf1fc6336dba37cbc00431b172918a1aa1e97b9d6b15036463f287729"
+        },
+        {
+          "path": "include/glib-2.0/glib/deprecated/gcache.h",
+          "type": "0",
+          "bytes": 3036,
+          "mode": 420,
+          "link": "",
+          "sha256": "4355a64befcf717950d4beac8c3b8642b1c884ccc8c8ec05c24b2b353cfc9a8f"
+        },
+        {
+          "path": "include/glib-2.0/glib/deprecated/gcompletion.h",
+          "type": "0",
+          "bytes": 2971,
+          "mode": 420,
+          "link": "",
+          "sha256": "f418a773fa6255c631bd8450e4cfefb94e2ba6a3f2c1cd86ea1943e2c3ee2b69"
+        },
+        {
+          "path": "include/glib-2.0/glib/grand.h",
+          "type": "0",
+          "bytes": 3230,
+          "mode": 420,
+          "link": "",
+          "sha256": "9b447f5ecae63a8e3c73f96f5918ada4cab9f28a29d83643f7734c3588c3ca63"
+        },
+        {
+          "path": "include/glib-2.0/glib/gthreadpool.h",
+          "type": "0",
+          "bytes": 4357,
+          "mode": 420,
+          "link": "",
+          "sha256": "cce4bd554a3207d75ff91670b9e2eacb61c2534d5c5ab23048caa3fcb26a6f9f"
+        },
+        {
+          "path": "include/glib-2.0/glib/gspawn.h",
+          "type": "0",
+          "bytes": 14250,
+          "mode": 420,
+          "link": "",
+          "sha256": "c60483f710113cbaf67e98068efd5e63689206f269b8cfb63edd7374e7a535da"
+        },
+        {
+          "path": "include/glib-2.0/glib/glist.h",
+          "type": "0",
+          "bytes": 6979,
+          "mode": 420,
+          "link": "",
+          "sha256": "452c9630d10791f6275127bbc4b62d9b88d9c1ad692b8270e3e959a4a8ecca84"
+        },
+        {
+          "path": "include/glib-2.0/glib/gtrashstack.h",
+          "type": "0",
+          "bytes": 1955,
+          "mode": 420,
+          "link": "",
+          "sha256": "b44a7c735e2aa51eb63b0f6c0cf401c5126f6818d14e3bd5ce1c01be65217d38"
+        },
+        {
+          "path": "include/glib-2.0/glib/gdir.h",
+          "type": "0",
+          "bytes": 1690,
+          "mode": 420,
+          "link": "",
+          "sha256": "2e75179ae9d210ce67bd6fdf80bb2e6f1c94e1a3453fd36458041c9a94cc3977"
+        },
+        {
+          "path": "include/glib-2.0/glib/gtree.h",
+          "type": "0",
+          "bytes": 6588,
+          "mode": 420,
+          "link": "",
+          "sha256": "ac7bf3599faeace791615e39653a08e33eb3055874d4d295f57e51f546d7854b"
+        },
+        {
+          "path": "include/glib-2.0/glib/ghash.h",
+          "type": "0",
+          "bytes": 8613,
+          "mode": 420,
+          "link": "",
+          "sha256": "a42530b22c661438bdf1259b4d79453629bb4d5cc29f8ac7d0ef6784208eadcc"
+        },
+        {
+          "path": "include/glib-2.0/glib/gi18n.h",
+          "type": "0",
+          "bytes": 1216,
+          "mode": 420,
+          "link": "",
+          "sha256": "a7f9e6845c9d47db1a37fc4fa302e93d7ce21f8121caa6da8af161c5a7968b34"
+        },
+        {
+          "path": "include/glib-2.0/glib/gmem.h",
+          "type": "0",
+          "bytes": 15943,
+          "mode": 420,
+          "link": "",
+          "sha256": "03ed80329e113c8fa2122c33dff87a8f893ec02af46df5e217b1d05b7bb2654f"
+        },
+        {
+          "path": "include/glib-2.0/glib/gpathbuf.h",
+          "type": "0",
+          "bytes": 2592,
+          "mode": 420,
+          "link": "",
+          "sha256": "f4435a77a53ef7dcf3f4a26e45cb633532a8c48218ff62ca43638fb388471a2b"
+        },
+        {
+          "path": "include/glib-2.0/glib/gslist.h",
+          "type": "0",
+          "bytes": 6600,
+          "mode": 420,
+          "link": "",
+          "sha256": "b0a77cf06286d8ed9b77d18e39e22615b8f587c6b7fa2bb45f9a2e324fef4f26"
+        },
+        {
+          "path": "include/glib-2.0/gmodule.h",
+          "type": "0",
+          "bytes": 5312,
+          "mode": 420,
+          "link": "",
+          "sha256": "8efe942aa4846fa21dd7d117cf1b2b848bae4c52768d77145dcf9bf007ce736c"
+        },
+        {
+          "path": "include/glib-2.0/glib-object.h",
+          "type": "0",
+          "bytes": 1580,
+          "mode": 420,
+          "link": "",
+          "sha256": "060b79399c3828720d2265c22053e36f5ae30315fd1c0bd0a470901c90c0ee12"
+        },
+        {
+          "path": "include/glib-2.0/gobject",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/glib-2.0/gobject/gmarshal.h",
+          "type": "0",
+          "bytes": 21973,
+          "mode": 420,
+          "link": "",
+          "sha256": "a0bf6b50af3703586f22f4f69bf7a32f6672e384bf64d391c77597de44a76833"
+        },
+        {
+          "path": "include/glib-2.0/gobject/gtypemodule.h",
+          "type": "0",
+          "bytes": 10967,
+          "mode": 420,
+          "link": "",
+          "sha256": "ecea223061b0540b6c95409912e889578db8cceb7f419025e7c790d547e5edd0"
+        },
+        {
+          "path": "include/glib-2.0/gobject/gobject-autocleanups.h",
+          "type": "0",
+          "bytes": 1431,
+          "mode": 420,
+          "link": "",
+          "sha256": "7fb61b88dd55f68e9271d8880217ffa9eabf298fd4486207edaf613baa426dc1"
+        },
+        {
+          "path": "include/glib-2.0/gobject/gsourceclosure.h",
+          "type": "0",
+          "bytes": 1330,
+          "mode": 420,
+          "link": "",
+          "sha256": "b3fddf72cafbff985b1c47736e13ae8de81864b865931de7d354a2115114cfcc"
+        },
+        {
+          "path": "include/glib-2.0/gobject/gobject-visibility.h",
+          "type": "0",
+          "bytes": 46130,
+          "mode": 420,
+          "link": "",
+          "sha256": "f6bce378d31c02fed878c18280caccc3b3c89bbf1c20aef2b25253819554e299"
+        },
+        {
+          "path": "include/glib-2.0/gobject/gbinding.h",
+          "type": "0",
+          "bytes": 6681,
+          "mode": 420,
+          "link": "",
+          "sha256": "d6db0acec9526011b556cbfe4f2ec75eeb01cb87f47f1a7fadfea163e4ed9c43"
+        },
+        {
+          "path": "include/glib-2.0/gobject/gparamspecs.h",
+          "type": "0",
+          "bytes": 34179,
+          "mode": 420,
+          "link": "",
+          "sha256": "15e677d389e094d547932f33f03f4ad01392f77e242d8bcf9ab30a1d65d5c4ac"
+        },
+        {
+          "path": "include/glib-2.0/gobject/gvaluecollector.h",
+          "type": "0",
+          "bytes": 10723,
+          "mode": 420,
+          "link": "",
+          "sha256": "ed6987e61feb5d44df6f5f646d40905a53583dae086694204f3f160390fbd4f8"
+        },
+        {
+          "path": "include/glib-2.0/gobject/glib-enumtypes.h",
+          "type": "0",
+          "bytes": 1026,
+          "mode": 420,
+          "link": "",
+          "sha256": "0085553ad39cf744e3985b7d6a0f8f9f3adee571f588232c0ef33e5e58fae1b9"
+        },
+        {
+          "path": "include/glib-2.0/gobject/gvalue.h",
+          "type": "0",
+          "bytes": 6159,
+          "mode": 420,
+          "link": "",
+          "sha256": "e931b6f3f36621d0c4a9b601984fcffea4e88761e53deb28b2cd083b5ca559f7"
+        },
+        {
+          "path": "include/glib-2.0/gobject/gparam.h",
+          "type": "0",
+          "bytes": 17453,
+          "mode": 420,
+          "link": "",
+          "sha256": "a86600ce6fb31870e2cf30699f3ebc1ebed47becc9fedfd9fd4c5e208d75bb2d"
+        },
+        {
+          "path": "include/glib-2.0/gobject/gsignal.h",
+          "type": "0",
+          "bytes": 26189,
+          "mode": 420,
+          "link": "",
+          "sha256": "661d4a566d25d98e613b8af571089511be3b90d5e8c8099029b87eff74beb6e2"
+        },
+        {
+          "path": "include/glib-2.0/gobject/gobjectnotifyqueue.c",
+          "type": "0",
+          "bytes": 5567,
+          "mode": 420,
+          "link": "",
+          "sha256": "8514069323dc12bdd8cd724394469873af6ab81ddb3040f4345d89773e98e508"
+        },
+        {
+          "path": "include/glib-2.0/gobject/gbindinggroup.h",
+          "type": "0",
+          "bytes": 4067,
+          "mode": 420,
+          "link": "",
+          "sha256": "b10bcd806591a1436a647f4b5b57fcd3f40cbceed59567a71b576d6ebd8d16a8"
+        },
+        {
+          "path": "include/glib-2.0/gobject/gobject.h",
+          "type": "0",
+          "bytes": 35476,
+          "mode": 420,
+          "link": "",
+          "sha256": "8eed3c5d9febc6a0f935094a95936c7a6b78dca1fca7b3b909c4a4eb7152b249"
+        },
+        {
+          "path": "include/glib-2.0/gobject/gboxed.h",
+          "type": "0",
+          "bytes": 4047,
+          "mode": 420,
+          "link": "",
+          "sha256": "9b27a09669ab10c979e6dde4ae97b92b7cc5378c331350f29b2549ef29ffd522"
+        },
+        {
+          "path": "include/glib-2.0/gobject/gtype.h",
+          "type": "0",
+          "bytes": 102197,
+          "mode": 420,
+          "link": "",
+          "sha256": "42f975beaf4e2a61387527541fe834f40ae111349d1017560d693fb8d17954d0"
+        },
+        {
+          "path": "include/glib-2.0/gobject/genums.h",
+          "type": "0",
+          "bytes": 11599,
+          "mode": 420,
+          "link": "",
+          "sha256": "c5b3ff2b637f7b695447cceb62e8e125adbe4f353e6b636b75b91d4013de6fb5"
+        },
+        {
+          "path": "include/glib-2.0/gobject/gvaluetypes.h",
+          "type": "0",
+          "bytes": 10431,
+          "mode": 420,
+          "link": "",
+          "sha256": "b1f9287ce84a983b5c5881dc4dc8617e4223f69a9c241280e0574616b4199551"
+        },
+        {
+          "path": "include/glib-2.0/gobject/glib-types.h",
+          "type": "0",
+          "bytes": 9590,
+          "mode": 420,
+          "link": "",
+          "sha256": "928bdc75999dcbe8da0d6ae3cca660d2d481aa652da26924a531d1fc394beb3a"
+        },
+        {
+          "path": "include/glib-2.0/gobject/gsignalgroup.h",
+          "type": "0",
+          "bytes": 4429,
+          "mode": 420,
+          "link": "",
+          "sha256": "6c6e6253adafb4bec7f18f894f915dcddddf513fff037f70f9ade2815eedf853"
+        },
+        {
+          "path": "include/glib-2.0/gobject/gvaluearray.h",
+          "type": "0",
+          "bytes": 3303,
+          "mode": 420,
+          "link": "",
+          "sha256": "6fa87a560c9b3e8176ea5c4cdc53a33462b9ed28827bdae0e09327f9e4f6c83b"
+        },
+        {
+          "path": "include/glib-2.0/gobject/gclosure.h",
+          "type": "0",
+          "bytes": 11142,
+          "mode": 420,
+          "link": "",
+          "sha256": "433dc6af3032eb274bae9f71bf349cda1cdb8bf9d4bac417b64faa4ec5c28457"
+        },
+        {
+          "path": "include/glib-2.0/gobject/gtypeplugin.h",
+          "type": "0",
+          "bytes": 5031,
+          "mode": 420,
+          "link": "",
+          "sha256": "a535f3e051e64dba57b5139c9e4b69ec20f8b8b768ee54bf09f1653dbe21a914"
+        },
+        {
+          "path": "include/glib-2.0/glib-unix.h",
+          "type": "0",
+          "bytes": 4510,
+          "mode": 420,
+          "link": "",
+          "sha256": "a5014a0f74c32239bda3f7534450839fa602b6d7424d36145820236acc0b62ff"
+        },
+        {
+          "path": "include/vips",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/vips/VRegion8.h",
+          "type": "0",
+          "bytes": 3011,
+          "mode": 420,
+          "link": "",
+          "sha256": "685db3c03f8dbc6f6a6c349e6e3ad5c46026af00c99e034bc2106c1142f641e7"
+        },
+        {
+          "path": "include/vips/basic.h",
+          "type": "0",
+          "bytes": 2712,
+          "mode": 420,
+          "link": "",
+          "sha256": "bc78e9519aefe53caf8f658a87f298d6b872520179110eaac333f17ba3f0df5b"
+        },
+        {
+          "path": "include/vips/connection.h",
+          "type": "0",
+          "bytes": 16696,
+          "mode": 420,
+          "link": "",
+          "sha256": "a084ddf44a893631738f7b4af9cf240ef084f81334b49a8045fdaaf9b1f1813d"
+        },
+        {
+          "path": "include/vips/histogram.h",
+          "type": "0",
+          "bytes": 2331,
+          "mode": 420,
+          "link": "",
+          "sha256": "34e896874eff253fbde90ed1555b59105b88e155ab56bc6311052806931ae168"
+        },
+        {
+          "path": "include/vips/version.h",
+          "type": "0",
+          "bytes": 1882,
+          "mode": 420,
+          "link": "",
+          "sha256": "e9cd6b89defe2df48f053b06da862dbffd308c0dff191addeb75c64c0f506854"
+        },
+        {
+          "path": "include/vips/thread.h",
+          "type": "0",
+          "bytes": 1887,
+          "mode": 420,
+          "link": "",
+          "sha256": "477235c942de0363067331145d740c62589a69024879561d5091e50d8c1a91f6"
+        },
+        {
+          "path": "include/vips/image.h",
+          "type": "0",
+          "bytes": 17956,
+          "mode": 420,
+          "link": "",
+          "sha256": "ee3e4db37989ebb51cf5b5aa617bb651db267cf7508099d34fe1ac0aea99494f"
+        },
+        {
+          "path": "include/vips/freqfilt.h",
+          "type": "0",
+          "bytes": 1591,
+          "mode": 420,
+          "link": "",
+          "sha256": "20df0575883ff93728ecbc1b295f050b6e7b3d92e3b902e90dd5d8d1fea82204"
+        },
+        {
+          "path": "include/vips/mosaicing.h",
+          "type": "0",
+          "bytes": 2149,
+          "mode": 420,
+          "link": "",
+          "sha256": "c240e286921cfef540f9e1871dcf329cc8d4a19a01ca560c5a71b45fe1242cf0"
+        },
+        {
+          "path": "include/vips/transform.h",
+          "type": "0",
+          "bytes": 2622,
+          "mode": 420,
+          "link": "",
+          "sha256": "3224f304af87bc81d792f40ff32c23329efdf69d9f342a91ffd2f2376f8aad66"
+        },
+        {
+          "path": "include/vips/conversion.h",
+          "type": "0",
+          "bytes": 9787,
+          "mode": 420,
+          "link": "",
+          "sha256": "4abfdb475691741650f98f5ef6961439a8680e6b26e219d2af086065b50ef0ee"
+        },
+        {
+          "path": "include/vips/vips.h",
+          "type": "0",
+          "bytes": 4793,
+          "mode": 420,
+          "link": "",
+          "sha256": "3de4083fd096bfeed06e07f96cefc7267cb5c711c8c28b9fe29cbe613a3ceff2"
+        },
+        {
+          "path": "include/vips/type.h",
+          "type": "0",
+          "bytes": 7666,
+          "mode": 420,
+          "link": "",
+          "sha256": "2a14ad532d40c099d857bb0f65e3baf89aa9958256550d2601c27ec78872c104"
+        },
+        {
+          "path": "include/vips/sbuf.h",
+          "type": "0",
+          "bytes": 3711,
+          "mode": 420,
+          "link": "",
+          "sha256": "a6048c4e62bdbbbe3c8571b8194daff468026a5ac125795883425ef2ffc74598"
+        },
+        {
+          "path": "include/vips/colour.h",
+          "type": "0",
+          "bytes": 8047,
+          "mode": 420,
+          "link": "",
+          "sha256": "b72b1512e1f15ef03ae7869dc867c367852fcc4399e6edbeefaa9257a6fa8d1e"
+        },
+        {
+          "path": "include/vips/gate.h",
+          "type": "0",
+          "bytes": 2037,
+          "mode": 420,
+          "link": "",
+          "sha256": "44289b9ec2931bd070f7ed096012738448272d09d88cc35f4e5be2b4edbf628e"
+        },
+        {
+          "path": "include/vips/dbuf.h",
+          "type": "0",
+          "bytes": 2677,
+          "mode": 420,
+          "link": "",
+          "sha256": "7dd086c06700cfadf22934a891e4f029772ffba1d5b676d6c1678ba3e88fbb19"
+        },
+        {
+          "path": "include/vips/memory.h",
+          "type": "0",
+          "bytes": 2412,
+          "mode": 420,
+          "link": "",
+          "sha256": "fb1cb83518e219dda70c03e5d7677965b6a9a0296291d32db0b86aca0fd51e40"
+        },
+        {
+          "path": "include/vips/create.h",
+          "type": "0",
+          "bytes": 4615,
+          "mode": 420,
+          "link": "",
+          "sha256": "08917b6624d35fe0c2714c8d3dc769858df453328867570ececa198bc6eb04af"
+        },
+        {
+          "path": "include/vips/format.h",
+          "type": "0",
+          "bytes": 3659,
+          "mode": 420,
+          "link": "",
+          "sha256": "4ad1773f11624db04ceb1f4f5b02dd0fce074357eded244d6672e3cc9d532ec8"
+        },
+        {
+          "path": "include/vips/threadpool.h",
+          "type": "0",
+          "bytes": 4267,
+          "mode": 420,
+          "link": "",
+          "sha256": "d0e48e3c152de00aa59e23d0d4778ffdfcccc47a6db1aa37c643d8cf8088f25c"
+        },
+        {
+          "path": "include/vips/arithmetic.h",
+          "type": "0",
+          "bytes": 17170,
+          "mode": 420,
+          "link": "",
+          "sha256": "c5f1336e6202331315429d22deb1c1cb5838cf5882f24cf96760e5f327777730"
+        },
+        {
+          "path": "include/vips/convolution.h",
+          "type": "0",
+          "bytes": 2549,
+          "mode": 420,
+          "link": "",
+          "sha256": "aab5ac808d277adfaff88b4ec1b3461e175d48cc9e221a955b9739e80e12127f"
+        },
+        {
+          "path": "include/vips/VInterpolate8.h",
+          "type": "0",
+          "bytes": 2086,
+          "mode": 420,
+          "link": "",
+          "sha256": "e6c719bc26d997b0e13ad25e462846630a7aa99a808c842988d29e37912c10c2"
+        },
+        {
+          "path": "include/vips/foreign.h",
+          "type": "0",
+          "bytes": 29753,
+          "mode": 420,
+          "link": "",
+          "sha256": "b2d145f3f02c89194a9b2f40a95aec0ae47413952633efe09e3eb6f1f27a6fbc"
+        },
+        {
+          "path": "include/vips/VConnection8.h",
+          "type": "0",
+          "bytes": 3448,
+          "mode": 420,
+          "link": "",
+          "sha256": "fb30365235f8ab9dae92dec40039dcaf1f6c0546c0fa285607c9c19e56b0ad98"
+        },
+        {
+          "path": "include/vips/operation.h",
+          "type": "0",
+          "bytes": 5079,
+          "mode": 420,
+          "link": "",
+          "sha256": "47bf5262f3993bfe668646305212baf61be5b5afa189926fd5c8cf27dd0cbef4"
+        },
+        {
+          "path": "include/vips/morphology.h",
+          "type": "0",
+          "bytes": 1927,
+          "mode": 420,
+          "link": "",
+          "sha256": "ada0f3b4c670e5cdeacd0ac3862e24890a71c30a1c09df3444a326e50f0df4d3"
+        },
+        {
+          "path": "include/vips/enumtypes.h",
+          "type": "0",
+          "bytes": 7454,
+          "mode": 420,
+          "link": "",
+          "sha256": "af6ad4544228cfcdfb30674239d2699866eb7070f790afed7b35f640109b1110"
+        },
+        {
+          "path": "include/vips/semaphore.h",
+          "type": "0",
+          "bytes": 1855,
+          "mode": 420,
+          "link": "",
+          "sha256": "4f1f5976ef159f034ddbd288e9111b69fcf3d002322f73425b7ddd8f82a8c500"
+        },
+        {
+          "path": "include/vips/private.h",
+          "type": "0",
+          "bytes": 6617,
+          "mode": 420,
+          "link": "",
+          "sha256": "a27f12786dc207fc755c7b8ec1e09e7d74366aaacb52515bf71e741de1482449"
+        },
+        {
+          "path": "include/vips/resample.h",
+          "type": "0",
+          "bytes": 3167,
+          "mode": 420,
+          "link": "",
+          "sha256": "cfba5366d9a2f0073a7bbe2ec82e19f3a8c573d4f7c6c7279832324c04a1e025"
+        },
+        {
+          "path": "include/vips/region.h",
+          "type": "0",
+          "bytes": 6599,
+          "mode": 420,
+          "link": "",
+          "sha256": "b8582622a835a96d7f87d70c615074519b6d299c7655c09c3e15da24a7845663"
+        },
+        {
+          "path": "include/vips/VError8.h",
+          "type": "0",
+          "bytes": 1829,
+          "mode": 420,
+          "link": "",
+          "sha256": "dac800f97c7ec7bf9b0dbb7e53972d8a7f5d491ee0978ac9e374e375d0aa99f4"
+        },
+        {
+          "path": "include/vips/object.h",
+          "type": "0",
+          "bytes": 21487,
+          "mode": 420,
+          "link": "",
+          "sha256": "a8c86a6ea8cf97b2ae9f1f559c7c5e824fecfa02bb6244120f462164d0c9f12e"
+        },
+        {
+          "path": "include/vips/vips8",
+          "type": "0",
+          "bytes": 1582,
+          "mode": 420,
+          "link": "",
+          "sha256": "81f5a804e5419fad7b45753b34c9617a6141763729710a81936e1cd16b9b94ed"
+        },
+        {
+          "path": "include/vips/debug.h",
+          "type": "0",
+          "bytes": 1951,
+          "mode": 420,
+          "link": "",
+          "sha256": "f81961d19005c95f80ab61c4b7e64c5f2ff49475abe0799f90e0b5820ca9f7ad"
+        },
+        {
+          "path": "include/vips/util.h",
+          "type": "0",
+          "bytes": 11433,
+          "mode": 420,
+          "link": "",
+          "sha256": "1ef70b403ab26e08755c5a77ad11914487610b7075dcc76b5e7795b46708a41f"
+        },
+        {
+          "path": "include/vips/buf.h",
+          "type": "0",
+          "bytes": 3301,
+          "mode": 420,
+          "link": "",
+          "sha256": "2d2d4df2fe92110fe27e43bdded884421f4fd91c7367b04b25a9bdeb7af61e37"
+        },
+        {
+          "path": "include/vips/draw.h",
+          "type": "0",
+          "bytes": 2988,
+          "mode": 420,
+          "link": "",
+          "sha256": "e25045ec4fac6cea6bc9a75eaa4c1fc7c8a1f4c891bfbb0b31d3e08575b51d83"
+        },
+        {
+          "path": "include/vips/vector.h",
+          "type": "0",
+          "bytes": 4424,
+          "mode": 420,
+          "link": "",
+          "sha256": "a597b284ff039e70defe584e5a08076d6055d432742020923b6a15500fa3d429"
+        },
+        {
+          "path": "include/vips/rect.h",
+          "type": "0",
+          "bytes": 2155,
+          "mode": 420,
+          "link": "",
+          "sha256": "a7efbcd7d38d7b62fb31ec2242d9e616753fbd6e68e0b58bee92621135c633b8"
+        },
+        {
+          "path": "include/vips/error.h",
+          "type": "0",
+          "bytes": 4374,
+          "mode": 420,
+          "link": "",
+          "sha256": "a0600509634bcdb13fc34404a061ebc467f7f9cfae857dbec63bbeba9b9a24cd"
+        },
+        {
+          "path": "include/vips/header.h",
+          "type": "0",
+          "bytes": 9420,
+          "mode": 420,
+          "link": "",
+          "sha256": "9e8c168e947aa9d418f452f36bcbb6c2a337c6ddf7cf703c2a0c446b463be079"
+        },
+        {
+          "path": "include/vips/generate.h",
+          "type": "0",
+          "bytes": 2566,
+          "mode": 420,
+          "link": "",
+          "sha256": "d33936af360915c90218eed834383ec5c7e1a390a862710c4729a6728d55ca51"
+        },
+        {
+          "path": "include/vips/interpolate.h",
+          "type": "0",
+          "bytes": 4320,
+          "mode": 420,
+          "link": "",
+          "sha256": "71648a8b052e1fdd1b3925148fc0b68bd761293e4350144de499fb6b56b348bc"
+        },
+        {
+          "path": "include/vips/VImage8.h",
+          "type": "0",
+          "bytes": 179678,
+          "mode": 420,
+          "link": "",
+          "sha256": "8422a43b6c3e0c6e83cf490d7757510e43a2f19fabb193bc509d44d2ef95da7e"
+        },
+        {
+          "path": "include/tiffvers.h",
+          "type": "0",
+          "bytes": 1415,
+          "mode": 420,
+          "link": "",
+          "sha256": "a0f620b586318ba965cae1688eb17d3c89bea2cc858c5c23f40a11dd19a04710"
+        },
+        {
+          "path": "include/freetype2",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/freetype2/ft2build.h",
+          "type": "0",
+          "bytes": 990,
+          "mode": 420,
+          "link": "",
+          "sha256": "4a03081962780f1bebda042fb9b4aeef59661efd6f31eebcf0a6762dab2d7418"
+        },
+        {
+          "path": "include/freetype2/freetype",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/freetype2/freetype/t1tables.h",
+          "type": "0",
+          "bytes": 23188,
+          "mode": 420,
+          "link": "",
+          "sha256": "e49d9cf493a6c69a295f636406118659b4ff9fb455168651570ea3b3ff3a2599"
+        },
+        {
+          "path": "include/freetype2/freetype/ftbdf.h",
+          "type": "0",
+          "bytes": 5322,
+          "mode": 420,
+          "link": "",
+          "sha256": "476f23cd319c49ac3fb791d97780296cdf0073d140f5356a45f14281c482b635"
+        },
+        {
+          "path": "include/freetype2/freetype/ftsystem.h",
+          "type": "0",
+          "bytes": 8502,
+          "mode": 420,
+          "link": "",
+          "sha256": "d9553b76be3d258d7b80f439ec14dee5f7bb47dd3d796aafcce3781a0731a048"
+        },
+        {
+          "path": "include/freetype2/freetype/ftbzip2.h",
+          "type": "0",
+          "bytes": 2786,
+          "mode": 420,
+          "link": "",
+          "sha256": "8151c78e894005634cf6c29238ae0d81a5a1c9787d1b254e2b7c9688c3a9dd62"
+        },
+        {
+          "path": "include/freetype2/freetype/ftgasp.h",
+          "type": "0",
+          "bytes": 4138,
+          "mode": 420,
+          "link": "",
+          "sha256": "495d56e53b7e647d9404b5a9be206a2d83511cf14bddd94b27d3a248552c10ee"
+        },
+        {
+          "path": "include/freetype2/freetype/ftimage.h",
+          "type": "0",
+          "bytes": 41833,
+          "mode": 420,
+          "link": "",
+          "sha256": "6e205ce3792bc3a4f06ea3e217e19d71e6f024b880efa009ba45f27839c4ba5d"
+        },
+        {
+          "path": "include/freetype2/freetype/ftlist.h",
+          "type": "0",
+          "bytes": 7100,
+          "mode": 420,
+          "link": "",
+          "sha256": "92aa16592b60633b85def997fecf2ce2f2488fc2b9ebfae65f3ed0456b62756c"
+        },
+        {
+          "path": "include/freetype2/freetype/fterrdef.h",
+          "type": "0",
+          "bytes": 12559,
+          "mode": 420,
+          "link": "",
+          "sha256": "2855d8caefb0fb36794269c340f492bc34dafbcbc56864bbe641f854ebf8da0d"
+        },
+        {
+          "path": "include/freetype2/freetype/ftpfr.h",
+          "type": "0",
+          "bytes": 4908,
+          "mode": 420,
+          "link": "",
+          "sha256": "ff93a615ec3ab21a2886ec576a8b078e71fae40574627f7de663b8ef98f13ba3"
+        },
+        {
+          "path": "include/freetype2/freetype/ftcid.h",
+          "type": "0",
+          "bytes": 4022,
+          "mode": 420,
+          "link": "",
+          "sha256": "c8b2c625cc226562f25a9b00e68f3f9f3ef499c66c372210a6c25ed73e3183de"
+        },
+        {
+          "path": "include/freetype2/freetype/ftdriver.h",
+          "type": "0",
+          "bytes": 47533,
+          "mode": 420,
+          "link": "",
+          "sha256": "e141ecf8b7adf06bd7b3b7726baa1a877ef620544f8484f324551415a4e3afd1"
+        },
+        {
+          "path": "include/freetype2/freetype/ttnameid.h",
+          "type": "0",
+          "bytes": 58769,
+          "mode": 420,
+          "link": "",
+          "sha256": "8dff25cf9c02a2c3bd3eb10e67ce5e534b984330052928d45ddbaeb43031a302"
+        },
+        {
+          "path": "include/freetype2/freetype/ftwinfnt.h",
+          "type": "0",
+          "bytes": 7965,
+          "mode": 420,
+          "link": "",
+          "sha256": "9e47e9220b00ba05cb99fce792bec8500b3f35ed14638404c1cdd0641379422e"
+        },
+        {
+          "path": "include/freetype2/freetype/ftcolor.h",
+          "type": "0",
+          "bytes": 50199,
+          "mode": 420,
+          "link": "",
+          "sha256": "c5a122e1f7627722d48d067b16d94cb591d7618abac9a4f2b3417a75541e7203"
+        },
+        {
+          "path": "include/freetype2/freetype/ftfntfmt.h",
+          "type": "0",
+          "bytes": 2213,
+          "mode": 420,
+          "link": "",
+          "sha256": "006667aa73082618d4e2f5335b8ce7a161519fb5e8ed119c4bde073c8c8b1bcc"
+        },
+        {
+          "path": "include/freetype2/freetype/otsvg.h",
+          "type": "0",
+          "bytes": 10457,
+          "mode": 420,
+          "link": "",
+          "sha256": "0d21871a949b9219da10275d07da48beaa41ff72d5103f7895b62ce30faa7e5d"
+        },
+        {
+          "path": "include/freetype2/freetype/tttables.h",
+          "type": "0",
+          "bytes": 25227,
+          "mode": 420,
+          "link": "",
+          "sha256": "f48136a5f76c6e2e480688aad46a929d4bf3fa1fcc79183e4d5e17ef8b9edd53"
+        },
+        {
+          "path": "include/freetype2/freetype/ftcache.h",
+          "type": "0",
+          "bytes": 34179,
+          "mode": 420,
+          "link": "",
+          "sha256": "d5763f54bf75aded425b1dc9f76f911d2602ed81cfee7982b73c77600a4450e1"
+        },
+        {
+          "path": "include/freetype2/freetype/freetype.h",
+          "type": "0",
+          "bytes": 178794,
+          "mode": 420,
+          "link": "",
+          "sha256": "f8405ec80687d9e6c5fddb301288c370fe702f159a98b6152e9d32b3f68c2d46"
+        },
+        {
+          "path": "include/freetype2/freetype/ftrender.h",
+          "type": "0",
+          "bytes": 6625,
+          "mode": 420,
+          "link": "",
+          "sha256": "fc2a48134ed605c9b6624923b3787ab996073e2320d36bd336fa098c92b1cd62"
+        },
+        {
+          "path": "include/freetype2/freetype/ftsnames.h",
+          "type": "0",
+          "bytes": 7730,
+          "mode": 420,
+          "link": "",
+          "sha256": "638361bbe459c05b1cd8a53260385e740ecd0202a24227afe3b0b2e193492824"
+        },
+        {
+          "path": "include/freetype2/freetype/ftchapters.h",
+          "type": "0",
+          "bytes": 2933,
+          "mode": 420,
+          "link": "",
+          "sha256": "c7d1c2ca13903fb6d0b3b37850344d805280856fb87c7597087ce2352573f752"
+        },
+        {
+          "path": "include/freetype2/freetype/ftmm.h",
+          "type": "0",
+          "bytes": 23797,
+          "mode": 420,
+          "link": "",
+          "sha256": "f3498197823c72b3763df4ce532aaf55bb9c680cc946e729dd405daac2981f1d"
+        },
+        {
+          "path": "include/freetype2/freetype/fterrors.h",
+          "type": "0",
+          "bytes": 9301,
+          "mode": 420,
+          "link": "",
+          "sha256": "de6b792f90a81ef8e68a5138401e58ce7b69c33da88e844b6c01147ed1cb574f"
+        },
+        {
+          "path": "include/freetype2/freetype/ftsynth.h",
+          "type": "0",
+          "bytes": 4483,
+          "mode": 420,
+          "link": "",
+          "sha256": "c790e51fcb546bf9f0aed51ae19a0111f6cf1a9c63e197050ea0aef618901d8a"
+        },
+        {
+          "path": "include/freetype2/freetype/ftstroke.h",
+          "type": "0",
+          "bytes": 21773,
+          "mode": 420,
+          "link": "",
+          "sha256": "4e65d52a6cc4d0d10f47963d5e7bc38668714bd00d298de6f1155eebef6a2cf5"
+        },
+        {
+          "path": "include/freetype2/freetype/ftbbox.h",
+          "type": "0",
+          "bytes": 2638,
+          "mode": 420,
+          "link": "",
+          "sha256": "40312d4801e491246f483b83e8cf310a328b0ba41998a1e1cac79a7b157b12cb"
+        },
+        {
+          "path": "include/freetype2/freetype/ftlcdfil.h",
+          "type": "0",
+          "bytes": 11744,
+          "mode": 420,
+          "link": "",
+          "sha256": "fe7302d67f8c66b655e8a7e88d133a66fa107a1e89c8f851b334746eced225ac"
+        },
+        {
+          "path": "include/freetype2/freetype/ftadvanc.h",
+          "type": "0",
+          "bytes": 5470,
+          "mode": 420,
+          "link": "",
+          "sha256": "b9e9f8918c9f4f6b95f01688df51a5cc72470c5c6024615e873b65a2b671d5ef"
+        },
+        {
+          "path": "include/freetype2/freetype/ftmodapi.h",
+          "type": "0",
+          "bytes": 22544,
+          "mode": 420,
+          "link": "",
+          "sha256": "d2e10217ad225527ef653aceba882d103e13761b5257d9a0b25495903c2916b5"
+        },
+        {
+          "path": "include/freetype2/freetype/ftbitmap.h",
+          "type": "0",
+          "bytes": 9051,
+          "mode": 420,
+          "link": "",
+          "sha256": "12ae3987570f57cc55ecf4c2976da483069f48f3dc3d23fd639fd81b8834db90"
+        },
+        {
+          "path": "include/freetype2/freetype/ftsizes.h",
+          "type": "0",
+          "bytes": 4288,
+          "mode": 420,
+          "link": "",
+          "sha256": "f7a07f8b54a891b11566bb066d8d953633f86606077c83677792be9860bc7bf8"
+        },
+        {
+          "path": "include/freetype2/freetype/ftparams.h",
+          "type": "0",
+          "bytes": 6041,
+          "mode": 420,
+          "link": "",
+          "sha256": "b6cfe3b027cd8b6d051168019fe0bf8d8ce2e6ce09a5aff5ba519b374d6e56d0"
+        },
+        {
+          "path": "include/freetype2/freetype/ftotval.h",
+          "type": "0",
+          "bytes": 5346,
+          "mode": 420,
+          "link": "",
+          "sha256": "9089464ace0fd5163cab67af29c0118f8f00138c1dd929c4c822d0b42f534b26"
+        },
+        {
+          "path": "include/freetype2/freetype/ftincrem.h",
+          "type": "0",
+          "bytes": 10696,
+          "mode": 420,
+          "link": "",
+          "sha256": "93f09717519e14c57f371df48050d8ba35d82b151bc4e2e1e881a9092207dc19"
+        },
+        {
+          "path": "include/freetype2/freetype/config",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/freetype2/freetype/config/ftconfig.h",
+          "type": "0",
+          "bytes": 1614,
+          "mode": 420,
+          "link": "",
+          "sha256": "d4d3f993f3db4c22229f60fc031a81f5632add9a332552540e34ec85ea589c8a"
+        },
+        {
+          "path": "include/freetype2/freetype/config/ftheader.h",
+          "type": "0",
+          "bytes": 23919,
+          "mode": 420,
+          "link": "",
+          "sha256": "a108f40ae2861dbf363b247317a79b182018ea6a5e6aa51bcdf94ffd455139f7"
+        },
+        {
+          "path": "include/freetype2/freetype/config/public-macros.h",
+          "type": "0",
+          "bytes": 4207,
+          "mode": 420,
+          "link": "",
+          "sha256": "9e67676ec0f7938640025edc90dd59423e6f9ecb2fb84519ad59243fc1a73f82"
+        },
+        {
+          "path": "include/freetype2/freetype/config/mac-support.h",
+          "type": "0",
+          "bytes": 1597,
+          "mode": 420,
+          "link": "",
+          "sha256": "edfff8664d9db28252f36f7a317d5955caac02c3c339e27645acc394567963bd"
+        },
+        {
+          "path": "include/freetype2/freetype/config/ftmodule.h",
+          "type": "0",
+          "bytes": 1106,
+          "mode": 420,
+          "link": "",
+          "sha256": "db666f77ecee22b01ec8c833aacaa75cb461b87caf599b8f7ed13e46eb167f98"
+        },
+        {
+          "path": "include/freetype2/freetype/config/ftstdlib.h",
+          "type": "0",
+          "bytes": 4576,
+          "mode": 420,
+          "link": "",
+          "sha256": "50cd64ed4fd37fc55424f8e2ffb4c2b7be1eae3e99a9be476744e41a48e33f28"
+        },
+        {
+          "path": "include/freetype2/freetype/config/integer-types.h",
+          "type": "0",
+          "bytes": 7072,
+          "mode": 420,
+          "link": "",
+          "sha256": "ceeb1668232498bdb626a41f81aecf861b90f486a907339bd4a7802fce8adfb8"
+        },
+        {
+          "path": "include/freetype2/freetype/config/ftoption.h",
+          "type": "0",
+          "bytes": 39622,
+          "mode": 420,
+          "link": "",
+          "sha256": "75a7a021ff1c3c62f2cd462a7820b816439f4ee14de34ed802bd73dcdf744ad9"
+        },
+        {
+          "path": "include/freetype2/freetype/ftglyph.h",
+          "type": "0",
+          "bytes": 20912,
+          "mode": 420,
+          "link": "",
+          "sha256": "f961296de35e5d0d2cc913ea9da5a239bb53dfbd36daa6ac6ab79a76e96af533"
+        },
+        {
+          "path": "include/freetype2/freetype/ftgzip.h",
+          "type": "0",
+          "bytes": 4211,
+          "mode": 420,
+          "link": "",
+          "sha256": "34ed51848fad016fcd83dc24d9b9c54afb7c3a0917f8e776c4bf92daa535df1f"
+        },
+        {
+          "path": "include/freetype2/freetype/ftoutln.h",
+          "type": "0",
+          "bytes": 17402,
+          "mode": 420,
+          "link": "",
+          "sha256": "51ae54efd56f13ddba5e2cf43029673b3ca9b453c572ea8008d5419be83c2255"
+        },
+        {
+          "path": "include/freetype2/freetype/fttrigon.h",
+          "type": "0",
+          "bytes": 7411,
+          "mode": 420,
+          "link": "",
+          "sha256": "50dacb1566e0e35ded290001ae5a3c59c2967253a5ab26986e2ab130a104d4f1"
+        },
+        {
+          "path": "include/freetype2/freetype/ftlzw.h",
+          "type": "0",
+          "bytes": 2768,
+          "mode": 420,
+          "link": "",
+          "sha256": "5a15b6e6da79afc5525bf92160fcca3141dec9e9fec9c5e2d1c1c6fa07153c86"
+        },
+        {
+          "path": "include/freetype2/freetype/ftmoderr.h",
+          "type": "0",
+          "bytes": 6675,
+          "mode": 420,
+          "link": "",
+          "sha256": "59e384834592dae9a8ebd2879da1d3b381a829ad0608f0469595492326a21ce0"
+        },
+        {
+          "path": "include/freetype2/freetype/ftmac.h",
+          "type": "0",
+          "bytes": 7771,
+          "mode": 420,
+          "link": "",
+          "sha256": "6e1d657d81720b73f05b465ebd2fd3826bb0300ed855ecc4d12474d12652c4c4"
+        },
+        {
+          "path": "include/freetype2/freetype/fttypes.h",
+          "type": "0",
+          "bytes": 14735,
+          "mode": 420,
+          "link": "",
+          "sha256": "62c9af68d390a6c9d1b4f4ddace7a258dcebafa56fc35a41f407366b24d158ae"
+        },
+        {
+          "path": "include/freetype2/freetype/tttags.h",
+          "type": "0",
+          "bytes": 5145,
+          "mode": 420,
+          "link": "",
+          "sha256": "29e6f610cf51a493e5bac591db318737231393af1b50ba080d26b8a25aefb166"
+        },
+        {
+          "path": "include/freetype2/freetype/ftgxval.h",
+          "type": "0",
+          "bytes": 10625,
+          "mode": 420,
+          "link": "",
+          "sha256": "2c731bfd8f1828d9a28b06fc77ec8473478bc45f32b34f85fc83470e493525ff"
+        },
+        {
+          "path": "include/png.h",
+          "type": "0",
+          "bytes": 142841,
+          "mode": 420,
+          "link": "",
+          "sha256": "991aebcc58cafb2f762916565e5a89295641a90ba01eaf58e87baef4f0df6460"
+        },
+        {
+          "path": "include/pngconf.h",
+          "type": "0",
+          "bytes": 22806,
+          "mode": 420,
+          "link": "",
+          "sha256": "3a608a84e77464c4c6380261ac34bcf244b518955aeb92b2c8c2388cdda7c906"
+        },
+        {
+          "path": "include/pango-1.0",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/pango-1.0/pango",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-modules.h",
+          "type": "0",
+          "bytes": 2646,
+          "mode": 420,
+          "link": "",
+          "sha256": "fa00a4b3ceb9429ba8102a54f384e6e2994064fab2ac7f1c1cddadcb51401815"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-break.h",
+          "type": "0",
+          "bytes": 6787,
+          "mode": 420,
+          "link": "",
+          "sha256": "799f2069b0f1cb4d3605efe096c4941669a1fa49ed407867b029f59ca5f98e91"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-direction.h",
+          "type": "0",
+          "bytes": 2658,
+          "mode": 420,
+          "link": "",
+          "sha256": "5f674c7c001b07a5963aa32e67d92d9f410047b4a880557297ef7e308099b9f3"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-glyph-item.h",
+          "type": "0",
+          "bytes": 6066,
+          "mode": 420,
+          "link": "",
+          "sha256": "1b22c61e4156fa3ec8da3ce3590d8b7ae1ea54d6a8678afded704fb874d09ea1"
+        },
+        {
+          "path": "include/pango-1.0/pango/pangocairo.h",
+          "type": "0",
+          "bytes": 7935,
+          "mode": 420,
+          "link": "",
+          "sha256": "2f36a8c731959d00431c91143229b54cc18782fd77124c3e32c28295ee0416b4"
+        },
+        {
+          "path": "include/pango-1.0/pango/pangofc-fontmap.h",
+          "type": "0",
+          "bytes": 7738,
+          "mode": 420,
+          "link": "",
+          "sha256": "ecee2710b0d3dec133a8d2d273ec8c629a015cfaac5410c2b8e8a0c39f980ca7"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-script.h",
+          "type": "0",
+          "bytes": 15188,
+          "mode": 420,
+          "link": "",
+          "sha256": "12c0a6ae6134e25f45bdc228d5e2e296186900472f2c5cf53313619be5102b8e"
+        },
+        {
+          "path": "include/pango-1.0/pango/pangofc-decoder.h",
+          "type": "0",
+          "bytes": 4674,
+          "mode": 420,
+          "link": "",
+          "sha256": "9067685135c9a2d3eab0ae80dce1c7268b830ce684677d03cfde367016532b3e"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-layout.h",
+          "type": "0",
+          "bytes": 21593,
+          "mode": 420,
+          "link": "",
+          "sha256": "f63cfd7d4c4eba911a88944cc3e5e8605e3fb0e0d213ce035ac48cd02fbf5134"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-renderer.h",
+          "type": "0",
+          "bytes": 11952,
+          "mode": 420,
+          "link": "",
+          "sha256": "7ba870bcfcb9a266e86252aaa8030ce8ce07ef09161a418c681309292c7768d4"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-utils.h",
+          "type": "0",
+          "bytes": 5964,
+          "mode": 420,
+          "link": "",
+          "sha256": "02a392c8b95c07cd8f2c58832656b3926bcf1f08db1eec77f54d656919defa61"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-item.h",
+          "type": "0",
+          "bytes": 5349,
+          "mode": 420,
+          "link": "",
+          "sha256": "8e0d89a80407975e01da071807ce5fe92b56c36e71778a6e0e3d8c341a613df1"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-attributes.h",
+          "type": "0",
+          "bytes": 32222,
+          "mode": 420,
+          "link": "",
+          "sha256": "2aa162c31c91a8cd9f65e1041f965905320da770ccd7ce456b776182882e48c3"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-features.h",
+          "type": "0",
+          "bytes": 212,
+          "mode": 420,
+          "link": "",
+          "sha256": "00b1b955b70028847629a76dacc631afb29251e8907597d320280571663f0d13"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-engine.h",
+          "type": "0",
+          "bytes": 15282,
+          "mode": 420,
+          "link": "",
+          "sha256": "345621c3d0453bcb16deaeb4ad6116fe9d925bac423addd99ea6d6524b1f2dad"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-coverage.h",
+          "type": "0",
+          "bytes": 3813,
+          "mode": 420,
+          "link": "",
+          "sha256": "2cc522124332ca121ce7d549a674b50864393fd470076268f128f89cbc9711af"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-glyph.h",
+          "type": "0",
+          "bytes": 11939,
+          "mode": 420,
+          "link": "",
+          "sha256": "2a286e970d236e6b18dbd64978d6925d9f7a44d80c77ed41b69351beaa4dfa61"
+        },
+        {
+          "path": "include/pango-1.0/pango/pangoft2.h",
+          "type": "0",
+          "bytes": 5661,
+          "mode": 420,
+          "link": "",
+          "sha256": "8757bb60d0491badf14ca3cdb444f362709dc5facc79e19b8f72db99f36a7f38"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-version-macros.h",
+          "type": "0",
+          "bytes": 24563,
+          "mode": 420,
+          "link": "",
+          "sha256": "2c40dbe1df0edc13980d812de2a61d1d5483f21b1564e37c3a6be5864aba7e53"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-matrix.h",
+          "type": "0",
+          "bytes": 3775,
+          "mode": 420,
+          "link": "",
+          "sha256": "195af4e34fe2f434c9cee6fa67fe853e2216b697e010bf23f2ee1ffc26ace0a7"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-fontset-simple.h",
+          "type": "0",
+          "bytes": 2299,
+          "mode": 420,
+          "link": "",
+          "sha256": "547c74d8cc3e0464d8b535efcf712a7f21f0d2554a51d1af49611f1020be07b5"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-font.h",
+          "type": "0",
+          "bytes": 27692,
+          "mode": 420,
+          "link": "",
+          "sha256": "67c34bd3c6027046f26bcc7025d0c683f0f5727b9541eb90718d7ee97269f2b6"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-markup.h",
+          "type": "0",
+          "bytes": 2156,
+          "mode": 420,
+          "link": "",
+          "sha256": "9c4c3fad4b84ccc1f39960710884c186da954e9c23d204d830aeafbfbd8acc82"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-gravity.h",
+          "type": "0",
+          "bytes": 4692,
+          "mode": 420,
+          "link": "",
+          "sha256": "2c878a426ba431e10230b4442ddf48c74e5a6f7a9aa6af0338b03a51741a2e1c"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-fontmap.h",
+          "type": "0",
+          "bytes": 5407,
+          "mode": 420,
+          "link": "",
+          "sha256": "1a3ec37dc334a1a26deb4589ef84196fd167ccbef6453542da584afda64697bc"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-color.h",
+          "type": "0",
+          "bytes": 2140,
+          "mode": 420,
+          "link": "",
+          "sha256": "0eb2d69a8e8d77038ee65efec2e4a11a1feacaa1ca81d93e2c1635d192d23484"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-fontset.h",
+          "type": "0",
+          "bytes": 4851,
+          "mode": 420,
+          "link": "",
+          "sha256": "8ec84bf410ee677c340363154727f6b95fe8ff1264da8d9fee9382a0942fc500"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-tabs.h",
+          "type": "0",
+          "bytes": 4534,
+          "mode": 420,
+          "link": "",
+          "sha256": "961780ea98356ff03d438f10e3446b8b333d4631d9857086c3190ec502bfe41a"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-ot.h",
+          "type": "0",
+          "bytes": 15564,
+          "mode": 420,
+          "link": "",
+          "sha256": "8a1edd42cf2f3d2bada24db988199ad37b8248e196f1fc8e73e75a9cadd76159"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-bidi-type.h",
+          "type": "0",
+          "bytes": 3633,
+          "mode": 420,
+          "link": "",
+          "sha256": "f068849d55d733440bfd29ce4bc8d5c52922024bcf72968fe6a7dad7b563db02"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango.h",
+          "type": "0",
+          "bytes": 1810,
+          "mode": 420,
+          "link": "",
+          "sha256": "0a1d2ff88aea4f6a49773f1eb4ccec995bdbdb9c84b4c8e928facb0bab238a7c"
+        },
+        {
+          "path": "include/pango-1.0/pango/pangofc-font.h",
+          "type": "0",
+          "bytes": 4143,
+          "mode": 420,
+          "link": "",
+          "sha256": "dc0d61b2351732ce3b0fbb848e3481a51f2300065c27cfde7412bd642b1e272a"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-context.h",
+          "type": "0",
+          "bytes": 6511,
+          "mode": 420,
+          "link": "",
+          "sha256": "623cc37f2cba156b0f29bb3adc7cc054d3ba75f7fc9b6c8659299f4415f940dd"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-language.h",
+          "type": "0",
+          "bytes": 2651,
+          "mode": 420,
+          "link": "",
+          "sha256": "108d0b5089fdae7a65080d1853aade304ee30bf258343feee3a42fa3272a3d93"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-enum-types.h",
+          "type": "0",
+          "bytes": 4693,
+          "mode": 420,
+          "link": "",
+          "sha256": "114182303afd831da9fe756abd19e65f0ff6d1eb12b0ece26369e0f862013cae"
+        },
+        {
+          "path": "include/pango-1.0/pango/pango-types.h",
+          "type": "0",
+          "bytes": 6683,
+          "mode": 420,
+          "link": "",
+          "sha256": "411c230b883ad744ca8f5471a5e528e68c3e6540007b8511ba4f020da5558d98"
+        },
+        {
+          "path": "include/zlib_name_mangling.h",
+          "type": "0",
+          "bytes": 230,
+          "mode": 420,
+          "link": "",
+          "sha256": "38e51a846d6c2bd6100298c55328dba4437c08fa1dceda4eb2e06ecb1d142058"
+        },
+        {
+          "path": "include/expat.h",
+          "type": "0",
+          "bytes": 43535,
+          "mode": 420,
+          "link": "",
+          "sha256": "f521acdad222644365b0e81a33bcd6939a98c91b225c47582cc84bd73d96febc"
+        },
+        {
+          "path": "include/orc-0.4",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/orc-0.4/orc",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/orc-0.4/orc/orclimits.h",
+          "type": "0",
+          "bytes": 1497,
+          "mode": 420,
+          "link": "",
+          "sha256": "5d1b55a7d9ef39b1dcee85d9cd4993a75b284c17901a25092f2dae4bcf61bf9a"
+        },
+        {
+          "path": "include/orc-0.4/orc/orcsse.h",
+          "type": "0",
+          "bytes": 1288,
+          "mode": 420,
+          "link": "",
+          "sha256": "34122bfdd1b4fe64d5242df1e989fd6ab06fa599c16ad71b0a94f9e3a0ef89cd"
+        },
+        {
+          "path": "include/orc-0.4/orc/orcmips.h",
+          "type": "0",
+          "bytes": 11373,
+          "mode": 420,
+          "link": "",
+          "sha256": "9582ec9e464a360951ec49ec5f51c1f100f54de820065b5e0f16be0922963c2a"
+        },
+        {
+          "path": "include/orc-0.4/orc/orcrule.h",
+          "type": "0",
+          "bytes": 917,
+          "mode": 420,
+          "link": "",
+          "sha256": "ffff432707622ce241fe71ca9aca8f8ee8d7b141e361932c887ac25d41f3b12c"
+        },
+        {
+          "path": "include/orc-0.4/orc/orcinternal.h",
+          "type": "0",
+          "bytes": 1111,
+          "mode": 420,
+          "link": "",
+          "sha256": "a0e09f970b88e5726b2589cb912a2546cd6bc5bfe27f39643ca1e94db88eb86e"
+        },
+        {
+          "path": "include/orc-0.4/orc/orcconstant.h",
+          "type": "0",
+          "bytes": 505,
+          "mode": 420,
+          "link": "",
+          "sha256": "76e4ea0671e482d76050a9431e89a33221e2ab430839e45c24295c0c3c7375ca"
+        },
+        {
+          "path": "include/orc-0.4/orc/orcutils.h",
+          "type": "0",
+          "bytes": 6951,
+          "mode": 420,
+          "link": "",
+          "sha256": "302b58c9571483faa9c726466c0c2dc39a6a2c40a70ffe104bcddaf61636c955"
+        },
+        {
+          "path": "include/orc-0.4/orc/orcarm.h",
+          "type": "0",
+          "bytes": 50835,
+          "mode": 420,
+          "link": "",
+          "sha256": "be534b317328060dbb4dbeb4f2326294fab5a53e6cba0bf3989c17b8d05a40cd"
+        },
+        {
+          "path": "include/orc-0.4/orc/orcvariable.h",
+          "type": "0",
+          "bytes": 1268,
+          "mode": 420,
+          "link": "",
+          "sha256": "d6c38132396b5c308815eb6d3309158d5bcf90989a9903ce0096885fb4c7184d"
+        },
+        {
+          "path": "include/orc-0.4/orc/orcparse.h",
+          "type": "0",
+          "bytes": 669,
+          "mode": 420,
+          "link": "",
+          "sha256": "62eebc8fbe864a7565cee26761ae97efd7fa60fd451028e8c2b033a23f912a8a"
+        },
+        {
+          "path": "include/orc-0.4/orc/orcdebug.h",
+          "type": "0",
+          "bytes": 5148,
+          "mode": 420,
+          "link": "",
+          "sha256": "a82384f8cabfa18b179a6255d71840fb8f37705beb131a732e75136bd24b9b00"
+        },
+        {
+          "path": "include/orc-0.4/orc/orcx86.h",
+          "type": "0",
+          "bytes": 8647,
+          "mode": 420,
+          "link": "",
+          "sha256": "49c425491b3c1c45398d11f74fe0c8d595a9001f9a5fdf8fb715d2e874adec69"
+        },
+        {
+          "path": "include/orc-0.4/orc/orcmmx.h",
+          "type": "0",
+          "bytes": 2567,
+          "mode": 420,
+          "link": "",
+          "sha256": "38897a783fa2fd99e53274e03e182ee5532caef7ea18c1917427f21be481662f"
+        },
+        {
+          "path": "include/orc-0.4/orc/orcexecutor.h",
+          "type": "0",
+          "bytes": 3659,
+          "mode": 420,
+          "link": "",
+          "sha256": "921d4aebfe177a5e702330a7e57cb69efbaf1242d48f8f9b3948f1e78b7beb54"
+        },
+        {
+          "path": "include/orc-0.4/orc/orcopcode.h",
+          "type": "0",
+          "bytes": 1498,
+          "mode": 420,
+          "link": "",
+          "sha256": "fe336b5654baa8b0ce0a1a99bd7240126f4ef2de379a48023285972ebfbcc74c"
+        },
+        {
+          "path": "include/orc-0.4/orc/orcbytecodes.h",
+          "type": "0",
+          "bytes": 4392,
+          "mode": 420,
+          "link": "",
+          "sha256": "5cb2df6a8184fbf8ba8897aa1839d6156026e98bc87c9a07013ee8b692ed44a0"
+        },
+        {
+          "path": "include/orc-0.4/orc/orc.h",
+          "type": "0",
+          "bytes": 285,
+          "mode": 420,
+          "link": "",
+          "sha256": "107c0bd9b5813243dd9f62ef8ada7db8f7998bcb3ace737a96ab8086723bf398"
+        },
+        {
+          "path": "include/orc-0.4/orc/orcbytecode.h",
+          "type": "0",
+          "bytes": 606,
+          "mode": 420,
+          "link": "",
+          "sha256": "15c078374f1827e77b38b9773af4b3012344e0ea4c29610c9e0d3811b0825a9e"
+        },
+        {
+          "path": "include/orc-0.4/orc/orccpu.h",
+          "type": "0",
+          "bytes": 350,
+          "mode": 420,
+          "link": "",
+          "sha256": "80d2daa37011fc805331e56e96a307d0e41befeca836c240021b1c00e51ef7e2"
+        },
+        {
+          "path": "include/orc-0.4/orc/orccode.h",
+          "type": "0",
+          "bytes": 836,
+          "mode": 420,
+          "link": "",
+          "sha256": "4ed0d598e3d83ec5e6afc5553376a5c5c60d0dfdb52899a8c51a3fdb25087244"
+        },
+        {
+          "path": "include/orc-0.4/orc/orctarget.h",
+          "type": "0",
+          "bytes": 3037,
+          "mode": 420,
+          "link": "",
+          "sha256": "40f2860fc3d86f7f910e7f349d3f71d35cddd4115cf4c912ee260b62c534ae57"
+        },
+        {
+          "path": "include/orc-0.4/orc/orcfunctions.h",
+          "type": "0",
+          "bytes": 2431,
+          "mode": 420,
+          "link": "",
+          "sha256": "3803016ae5db62f028538353f4dcd227ca5905e88808f54cc178ce704a390931"
+        },
+        {
+          "path": "include/orc-0.4/orc/orcemulateopcodes.h",
+          "type": "0",
+          "bytes": 11533,
+          "mode": 420,
+          "link": "",
+          "sha256": "b0e5144fec8bd76d600b12b9bd042f8511f8bd835475f4b0bc1d36798fc0f997"
+        },
+        {
+          "path": "include/orc-0.4/orc/orc-stdint.h",
+          "type": "0",
+          "bytes": 46,
+          "mode": 420,
+          "link": "",
+          "sha256": "8f1b0650684e949eefef919ed657ee47d5ea16a3532fc641c7465c996c949228"
+        },
+        {
+          "path": "include/orc-0.4/orc/orcinstruction.h",
+          "type": "0",
+          "bytes": 707,
+          "mode": 420,
+          "link": "",
+          "sha256": "abe1be2e35ae224fda573179502f7792cb9ed7512d46e34fc7bc0655b835a1a8"
+        },
+        {
+          "path": "include/orc-0.4/orc/orconce.h",
+          "type": "0",
+          "bytes": 4047,
+          "mode": 420,
+          "link": "",
+          "sha256": "ab8c12ce7cb68dbf8a57779521da6d4e97390e3ae2a0f206d847921dd1750d58"
+        },
+        {
+          "path": "include/orc-0.4/orc/orccpuinsn.h",
+          "type": "0",
+          "bytes": 532,
+          "mode": 420,
+          "link": "",
+          "sha256": "1bcc6e4121fbfa35add60c7da9fb17586b196194e936adb642cccb959f4b6748"
+        },
+        {
+          "path": "include/orc-0.4/orc/orcprogram.h",
+          "type": "0",
+          "bytes": 7427,
+          "mode": 420,
+          "link": "",
+          "sha256": "6207196cc105c708f4abf3a9c11f781e594a0bb5220ae054ab2e17e8ceb4a91a"
+        },
+        {
+          "path": "include/orc-0.4/orc/orcx86insn.h",
+          "type": "0",
+          "bytes": 39013,
+          "mode": 420,
+          "link": "",
+          "sha256": "1e8a761e144d3b0086e21419cf0ac1c33b487f6245fc638300602bd2e3e0e494"
+        },
+        {
+          "path": "include/orc-0.4/orc/orcpowerpc.h",
+          "type": "0",
+          "bytes": 9767,
+          "mode": 420,
+          "link": "",
+          "sha256": "c861841ec326a34b328b1bed3f7e85d22b01a0d592a745045d91670d4a016e82"
+        },
+        {
+          "path": "include/orc-0.4/orc/orcneon.h",
+          "type": "0",
+          "bytes": 1863,
+          "mode": 420,
+          "link": "",
+          "sha256": "37ea33cab14b88b814007d53e42c80819f85ea65ccc305248b10e267cd1e6fd0"
+        },
+        {
+          "path": "include/orc-0.4/orc/orccompiler.h",
+          "type": "0",
+          "bytes": 3927,
+          "mode": 420,
+          "link": "",
+          "sha256": "d0be94011295b74e65e32b029af658d2259cfe1b88871224d8ebad26f46fcf03"
+        },
+        {
+          "path": "include/spng.h",
+          "type": "0",
+          "bytes": 13338,
+          "mode": 420,
+          "link": "",
+          "sha256": "3f398e878a94c49ba8735ba1b410a904a3667ffdf6924f82d6cf5bee61a87cb6"
+        },
+        {
+          "path": "include/aom",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/aom/aom.h",
+          "type": "0",
+          "bytes": 3873,
+          "mode": 420,
+          "link": "",
+          "sha256": "dd3b2d4ef0e384cb6b33321c26c2af5cbb73a110a713cd89fe4092c3ccc82712"
+        },
+        {
+          "path": "include/aom/aom_external_partition.h",
+          "type": "0",
+          "bytes": 17888,
+          "mode": 420,
+          "link": "",
+          "sha256": "dc8acec5521bfecdc0f560ee4970648228ea52c4406fe701c720cdb3b9ce1ab8"
+        },
+        {
+          "path": "include/aom/aomcx.h",
+          "type": "0",
+          "bytes": 67564,
+          "mode": 420,
+          "link": "",
+          "sha256": "308bd4fbbe4e595e4580363fb21d15df7de2e5ceb82432b5a537ef73d8a178e3"
+        },
+        {
+          "path": "include/aom/aom_decoder.h",
+          "type": "0",
+          "bytes": 10418,
+          "mode": 420,
+          "link": "",
+          "sha256": "cdd21eba3a7234774cbde9e6fc9062cdc9fc1d90d53dec5490f6059f961c5052"
+        },
+        {
+          "path": "include/aom/aomdx.h",
+          "type": "0",
+          "bytes": 19299,
+          "mode": 420,
+          "link": "",
+          "sha256": "d44d0dc2cd53dc92ccbd40e9b405f6a98b65e141bcc760e3743743b26d649600"
+        },
+        {
+          "path": "include/aom/aom_frame_buffer.h",
+          "type": "0",
+          "bytes": 3326,
+          "mode": 420,
+          "link": "",
+          "sha256": "41fb5154aa5e997ad2391045955f2ff005e8fce94cdd6ca5a4e2a7110df2f3aa"
+        },
+        {
+          "path": "include/aom/aom_integer.h",
+          "type": "0",
+          "bytes": 2287,
+          "mode": 420,
+          "link": "",
+          "sha256": "ef8c0940d43d930a55dbb0370860cc2e316ce44f0962934137a684e2d881701b"
+        },
+        {
+          "path": "include/aom/aom_image.h",
+          "type": "0",
+          "bytes": 19240,
+          "mode": 420,
+          "link": "",
+          "sha256": "0545ae33f648e120206f47709269d701f6be485fe169f2efb30624411d24f304"
+        },
+        {
+          "path": "include/aom/aom_codec.h",
+          "type": "0",
+          "bytes": 20283,
+          "mode": 420,
+          "link": "",
+          "sha256": "8d421189d4ec010ff80b7a2fb44ebc1e0347e98f297ec0d301118012e318b94d"
+        },
+        {
+          "path": "include/aom/aom_encoder.h",
+          "type": "0",
+          "bytes": 41118,
+          "mode": 420,
+          "link": "",
+          "sha256": "45a650684677b538f8da1fe7b4c80cc210615e5728b275062b03fbe63c4495d8"
+        },
+        {
+          "path": "include/libpng16",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/libpng16/png.h",
+          "type": "1",
+          "bytes": 0,
+          "mode": 420,
+          "link": "include/png.h"
+        },
+        {
+          "path": "include/libpng16/pngconf.h",
+          "type": "1",
+          "bytes": 0,
+          "mode": 420,
+          "link": "include/pngconf.h"
+        },
+        {
+          "path": "include/libpng16/pnglibconf.h",
+          "type": "0",
+          "bytes": 7602,
+          "mode": 420,
+          "link": "",
+          "sha256": "648e288d4f1de54b5d0bbb3a176503caf86933e2bcc0b614393a7affa625c723"
+        },
+        {
+          "path": "include/lcms2_plugin.h",
+          "type": "0",
+          "bytes": 31568,
+          "mode": 420,
+          "link": "",
+          "sha256": "7239223c1bfbca117c08d548535cd9b60f1d64e7c7f5e6ec5258b8eb071e1d29"
+        },
+        {
+          "path": "include/tiff.h",
+          "type": "0",
+          "bytes": 59865,
+          "mode": 420,
+          "link": "",
+          "sha256": "ec0904a51c9392cb6a63dc5e9d563e5adb8af64517264176f370b96b6deb5200"
+        },
+        {
+          "path": "include/cgif.h",
+          "type": "0",
+          "bytes": 4904,
+          "mode": 420,
+          "link": "",
+          "sha256": "cc5bc4df174c966116c45197fba4ec34615e7bda76273c0d00e29c2429c3fd94"
+        },
+        {
+          "path": "include/tiffio.h",
+          "type": "0",
+          "bytes": 28488,
+          "mode": 420,
+          "link": "",
+          "sha256": "02fbbdae5d73ef0d748c7574c0b9373c8ef8c8bb4e379c12f0cbf17e76b5f18d"
+        },
+        {
+          "path": "include/fontconfig",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/fontconfig/fcprivate.h",
+          "type": "0",
+          "bytes": 4489,
+          "mode": 420,
+          "link": "",
+          "sha256": "2d0b07968f4d7d09318d0f284dde0388f0c97f50f67bddd490a6ae5272cabd36"
+        },
+        {
+          "path": "include/fontconfig/fontconfig.h",
+          "type": "0",
+          "bytes": 28853,
+          "mode": 420,
+          "link": "",
+          "sha256": "655ac4c4854140cef3d4eb04514c1c36ffb48cbedb59fe2cf0853b27d4f98638"
+        },
+        {
+          "path": "include/fontconfig/fcfreetype.h",
+          "type": "0",
+          "bytes": 1958,
+          "mode": 420,
+          "link": "",
+          "sha256": "c69d08b5e9720e15291ca30fcb706cdc58515dbf21a6cfd4818bbd142976d697"
+        },
+        {
+          "path": "include/archive_entry.h",
+          "type": "0",
+          "bytes": 33796,
+          "mode": 420,
+          "link": "",
+          "sha256": "e0358da9fa8da5a97be41d0105a3ec2d7c39fa5aaaa3e7ab5b85d344ce31c15b"
+        },
+        {
+          "path": "include/tiffconf.h",
+          "type": "0",
+          "bytes": 3992,
+          "mode": 420,
+          "link": "",
+          "sha256": "642877cfb919b2f49766a910bec44f2d925d9cf34c280454241ad650ead1b0d3"
+        },
+        {
+          "path": "include/libimagequant.h",
+          "type": "0",
+          "bytes": 4202,
+          "mode": 420,
+          "link": "",
+          "sha256": "22d7a9cda806fcd58d8cc6a0c4a248036050e5d26bba512c14ef3491156c22b7"
+        },
+        {
+          "path": "include/lcms2.h",
+          "type": "0",
+          "bytes": 105244,
+          "mode": 420,
+          "link": "",
+          "sha256": "f9e70c06cc20dd967205e64ad9040f57a366a1f659a8072d5c8733014a6a61f3"
+        },
+        {
+          "path": "include/jpeglib.h",
+          "type": "0",
+          "bytes": 54316,
+          "mode": 420,
+          "link": "",
+          "sha256": "dcbbb986b3f74ce87dd73dbd1264445fd4b34fbf1cf225aa75cc468711e0116e"
+        },
+        {
+          "path": "include/pnglibconf.h",
+          "type": "1",
+          "bytes": 0,
+          "mode": 420,
+          "link": "include/libpng16/pnglibconf.h"
+        },
+        {
+          "path": "include/fribidi",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/fribidi/fribidi-joining-types-list.h",
+          "type": "0",
+          "bytes": 1697,
+          "mode": 420,
+          "link": "",
+          "sha256": "00b499c280d1331d802c5c778b66d4c2f80fb894c94dbdcb162c05fe8cfe4f8e"
+        },
+        {
+          "path": "include/fribidi/fribidi-joining.h",
+          "type": "0",
+          "bytes": 2868,
+          "mode": 420,
+          "link": "",
+          "sha256": "c9bbe87f5c5ce2ce99cd8568a0a79fc715c216de9f677973e711a798085099a1"
+        },
+        {
+          "path": "include/fribidi/fribidi-bidi-types.h",
+          "type": "0",
+          "bytes": 14990,
+          "mode": 420,
+          "link": "",
+          "sha256": "693930457d718570f795fb0a02d3aa85188dc702e62f9707dc44a28ab5d2b260"
+        },
+        {
+          "path": "include/fribidi/fribidi-begindecls.h",
+          "type": "0",
+          "bytes": 80,
+          "mode": 420,
+          "link": "",
+          "sha256": "7a8cd3e05e46dee19f658d67e485fca4acd06b96b4773bbf4607530564f3117f"
+        },
+        {
+          "path": "include/fribidi/fribidi-shape.h",
+          "type": "0",
+          "bytes": 2670,
+          "mode": 420,
+          "link": "",
+          "sha256": "4c57bf3ed59c8f425990ca5df1a696a98f87075db00e0f1b6c99b8de0c2588d7"
+        },
+        {
+          "path": "include/fribidi/fribidi-char-sets.h",
+          "type": "0",
+          "bytes": 3322,
+          "mode": 420,
+          "link": "",
+          "sha256": "bb3b0fea74d9e4d456a1241cc63a557365260180b8382bb622891df3c164647c"
+        },
+        {
+          "path": "include/fribidi/fribidi-arabic.h",
+          "type": "0",
+          "bytes": 2823,
+          "mode": 420,
+          "link": "",
+          "sha256": "f4c5231a027536077ff577aa375e95f93ccd3275fd31a1951244ec449d4fd7cb"
+        },
+        {
+          "path": "include/fribidi/fribidi-types.h",
+          "type": "0",
+          "bytes": 2428,
+          "mode": 420,
+          "link": "",
+          "sha256": "c959bf5f15c0fc405205136cc0ed9c03aa63a9fc285696444dc594b0d6f4845f"
+        },
+        {
+          "path": "include/fribidi/fribidi-brackets.h",
+          "type": "0",
+          "bytes": 3180,
+          "mode": 420,
+          "link": "",
+          "sha256": "f5a32f2ac8c0cdc445f82b9d81f6a5b4ae103ca65e03838eb09453b5185988d1"
+        },
+        {
+          "path": "include/fribidi/fribidi-mirroring.h",
+          "type": "0",
+          "bytes": 3028,
+          "mode": 420,
+          "link": "",
+          "sha256": "cc531e106e7b42748a997459464c8a08cc38cef4273d41afdbf2aa1bc36393f3"
+        },
+        {
+          "path": "include/fribidi/fribidi-common.h",
+          "type": "0",
+          "bytes": 4788,
+          "mode": 420,
+          "link": "",
+          "sha256": "7e0f4a124344941c40a3c3244ff30d0e9df8968b6287fc1f3a7a6495c7093e7b"
+        },
+        {
+          "path": "include/fribidi/fribidi-char-sets-list.h",
+          "type": "0",
+          "bytes": 2266,
+          "mode": 420,
+          "link": "",
+          "sha256": "93aec7f29320d82933f5a4f18bf5bed4a4be8bb9a16cc0b7ad6452f4647840ef"
+        },
+        {
+          "path": "include/fribidi/fribidi-joining-types.h",
+          "type": "0",
+          "bytes": 8180,
+          "mode": 420,
+          "link": "",
+          "sha256": "f4703cad6845a1e4c11702999716b1667ad6e268ecfa64f91585d739e2ffd913"
+        },
+        {
+          "path": "include/fribidi/fribidi-enddecls.h",
+          "type": "0",
+          "bytes": 74,
+          "mode": 420,
+          "link": "",
+          "sha256": "5d140c2e49a3d4d0b5d9519df860e56ebeabbbf991fec37bde9ce7d868d12236"
+        },
+        {
+          "path": "include/fribidi/fribidi-unicode-version.h",
+          "type": "0",
+          "bytes": 327,
+          "mode": 420,
+          "link": "",
+          "sha256": "74b3013b9dc5af48e0909cfecb0da94ff265f537bda990c37a217d418e4f773d"
+        },
+        {
+          "path": "include/fribidi/fribidi-flags.h",
+          "type": "0",
+          "bytes": 2038,
+          "mode": 420,
+          "link": "",
+          "sha256": "819bf2e462e20a3f79a9f959be173550aa609f12eeecbf62e87109b8034dfb20"
+        },
+        {
+          "path": "include/fribidi/fribidi.h",
+          "type": "0",
+          "bytes": 4831,
+          "mode": 420,
+          "link": "",
+          "sha256": "a3c26eda78b6563361253a094f2a7f5b725ed2bd7c6a8dfaa65883cf174ee18b"
+        },
+        {
+          "path": "include/fribidi/fribidi-unicode.h",
+          "type": "0",
+          "bytes": 3352,
+          "mode": 420,
+          "link": "",
+          "sha256": "21ee4bf3f7a6dd19e5b35566cdf10a2cdf22b52d01aa3fe467d2da8f11cec2fe"
+        },
+        {
+          "path": "include/fribidi/fribidi-config.h",
+          "type": "0",
+          "bytes": 673,
+          "mode": 420,
+          "link": "",
+          "sha256": "29b2901919abc37c7b585f1a43f7b8d9fafb7d373b306767becc9b8503f2bbb0"
+        },
+        {
+          "path": "include/fribidi/fribidi-bidi.h",
+          "type": "0",
+          "bytes": 6253,
+          "mode": 420,
+          "link": "",
+          "sha256": "819ec96d0a479a8516260b1a3b3993a244214ad6c0586d304249a691e1b5b274"
+        },
+        {
+          "path": "include/fribidi/fribidi-bidi-types-list.h",
+          "type": "0",
+          "bytes": 3773,
+          "mode": 420,
+          "link": "",
+          "sha256": "f8bbfd157de60bd62b2f565488c22630dda9315e50af7002856de557c0a1daa3"
+        },
+        {
+          "path": "include/fribidi/fribidi-deprecated.h",
+          "type": "0",
+          "bytes": 6049,
+          "mode": 420,
+          "link": "",
+          "sha256": "8839fbc0faaa654dc2f166862962d74ec2c29932373eed1e35809b35eaa352f3"
+        },
+        {
+          "path": "include/cairo",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/cairo/cairo.h",
+          "type": "0",
+          "bytes": 115197,
+          "mode": 420,
+          "link": "",
+          "sha256": "415c196435100e810dafd237031bd472d22d49e87618928c6659259c55092d41"
+        },
+        {
+          "path": "include/cairo/cairo-svg.h",
+          "type": "0",
+          "bytes": 4501,
+          "mode": 420,
+          "link": "",
+          "sha256": "f46933912ff044fa73071d767323f373d0bf4da1dc0ee0e3fdd57e0e70032f9c"
+        },
+        {
+          "path": "include/cairo/cairo-ft.h",
+          "type": "0",
+          "bytes": 3721,
+          "mode": 420,
+          "link": "",
+          "sha256": "489f74a852339fc04eb11e26ddd22536e0147967ea67b301f6636e21bb7c15fa"
+        },
+        {
+          "path": "include/cairo/cairo-gobject.h",
+          "type": "0",
+          "bytes": 6452,
+          "mode": 420,
+          "link": "",
+          "sha256": "f8043a9f13867abaca4664a1263a38a19075f6387ca4ef3d7403db3764385d2c"
+        },
+        {
+          "path": "include/cairo/cairo-features.h",
+          "type": "0",
+          "bytes": 477,
+          "mode": 420,
+          "link": "",
+          "sha256": "8292b64eed1405a003db96958e666d67355c05e267e4333ca0b3f17e934215da"
+        },
+        {
+          "path": "include/cairo/cairo-deprecated.h",
+          "type": "0",
+          "bytes": 8698,
+          "mode": 420,
+          "link": "",
+          "sha256": "873654913917ec9623c0d6f4a940f8ea638c0954cd2c01471df570046bea2bbf"
+        },
+        {
+          "path": "include/cairo/cairo-version.h",
+          "type": "0",
+          "bytes": 148,
+          "mode": 420,
+          "link": "",
+          "sha256": "ee3f122c081b60a21096d02ce99162e3d077626dab0757063dad455771c64343"
+        },
+        {
+          "path": "include/gio-unix-2.0",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/gio-unix-2.0/gio",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/gio-unix-2.0/gio/gunixfdmessage.h",
+          "type": "0",
+          "bytes": 3810,
+          "mode": 420,
+          "link": "",
+          "sha256": "d7e69ce5fe5a8b949b2d0edf09f99bc17e1651004a51388cbc26649240168393"
+        },
+        {
+          "path": "include/gio-unix-2.0/gio/gdesktopappinfo.h",
+          "type": "0",
+          "bytes": 8696,
+          "mode": 420,
+          "link": "",
+          "sha256": "84b40f2359c24a327a6c86a970e538c6372ae5f539247d1acf8b41bb1bb8ef4f"
+        },
+        {
+          "path": "include/gio-unix-2.0/gio/gunixoutputstream.h",
+          "type": "0",
+          "bytes": 3094,
+          "mode": 420,
+          "link": "",
+          "sha256": "a1a6e264bc39cda72d194e29862e5e14a9086f4afd3da417af80cbb9404fe1e1"
+        },
+        {
+          "path": "include/gio-unix-2.0/gio/gfiledescriptorbased.h",
+          "type": "0",
+          "bytes": 2264,
+          "mode": 420,
+          "link": "",
+          "sha256": "23903177e1fd2e5119b1df1d1d9a3b05cfffa7ff565cbfc79093a972d9805046"
+        },
+        {
+          "path": "include/gio-unix-2.0/gio/gunixinputstream.h",
+          "type": "0",
+          "bytes": 3062,
+          "mode": 420,
+          "link": "",
+          "sha256": "4461534612a7bfff555e91aa70a9ebcd2a74d8ff5ee4067702b84845c30d0df8"
+        },
+        {
+          "path": "include/gio-unix-2.0/gio/gunixmounts.h",
+          "type": "0",
+          "bytes": 7546,
+          "mode": 420,
+          "link": "",
+          "sha256": "94c7990bd3c9fd9f136ba2c8ad8805d462fdb6eb6cf1e6e61a2b274e72d472af"
+        },
+        {
+          "path": "include/expat_external.h",
+          "type": "0",
+          "bytes": 6029,
+          "mode": 420,
+          "link": "",
+          "sha256": "7ca9ed28dd5e08eac425931894fabd4c876db8f4be26f9b9a33c2e4f70a0d6c3"
+        },
+        {
+          "path": "include/zconf.h",
+          "type": "0",
+          "bytes": 5462,
+          "mode": 420,
+          "link": "",
+          "sha256": "b3743ec4aceb4bd69fe6848154484fdc80e01cae1280774983fddd44b754edd4"
+        },
+        {
+          "path": "include/jerror.h",
+          "type": "0",
+          "bytes": 16028,
+          "mode": 420,
+          "link": "",
+          "sha256": "9c5db9f422000422682a52fa8b5c099295969206acdbd61edea3c92c0a0335e8"
+        },
+        {
+          "path": "include/harfbuzz",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/harfbuzz/hb-aat.h",
+          "type": "0",
+          "bytes": 1243,
+          "mode": 420,
+          "link": "",
+          "sha256": "bce10093cad39cfbd5355d763368b22a04ae2bec9289ef0642e5f752bd6e79ff"
+        },
+        {
+          "path": "include/harfbuzz/hb-ot-shape.h",
+          "type": "0",
+          "bytes": 1757,
+          "mode": 420,
+          "link": "",
+          "sha256": "3b7a14d01eb04ff51ac59f1e0ead8df2a3952e6c7e7d81344c6925cd00d9b52f"
+        },
+        {
+          "path": "include/harfbuzz/hb-ft.h",
+          "type": "0",
+          "bytes": 4471,
+          "mode": 420,
+          "link": "",
+          "sha256": "8110b119a57126440838022d20cf2dd3c75cff578ec97a04b9cbac6a09e30ba9"
+        },
+        {
+          "path": "include/harfbuzz/hb-set.h",
+          "type": "0",
+          "bytes": 5054,
+          "mode": 420,
+          "link": "",
+          "sha256": "0ee36c1a0926e51bb2a050687930db464b8e719f5823cd93a0c96226b8ccb783"
+        },
+        {
+          "path": "include/harfbuzz/hb-style.h",
+          "type": "0",
+          "bytes": 3340,
+          "mode": 420,
+          "link": "",
+          "sha256": "6e88aec3ae6db176b37e4d6089923f78859134a26fd12b33b40b772e91673b5a"
+        },
+        {
+          "path": "include/harfbuzz/hb-ot-name.h",
+          "type": "0",
+          "bytes": 5536,
+          "mode": 420,
+          "link": "",
+          "sha256": "5be924687f71a0f98149b1987f3de3fd766ed9e84c4e144250e97048a36cb1ac"
+        },
+        {
+          "path": "include/harfbuzz/hb-subset-repacker.h",
+          "type": "0",
+          "bytes": 2272,
+          "mode": 420,
+          "link": "",
+          "sha256": "84cd128482a79a3c24ad1ee0b2c4aefde6df8c1dfeb0d3d3578395a913ec19e2"
+        },
+        {
+          "path": "include/harfbuzz/hb-draw.h",
+          "type": "0",
+          "bytes": 10094,
+          "mode": 420,
+          "link": "",
+          "sha256": "5d727bf80f13608c6c9a4fe828200552a65fc0c6ed04d5540cccb2c9dbb78752"
+        },
+        {
+          "path": "include/harfbuzz/hb-shape.h",
+          "type": "0",
+          "bytes": 2310,
+          "mode": 420,
+          "link": "",
+          "sha256": "e9bd1f738210aa884454eadb282633f4b270bb6c78fb3bdb11162c1bba0d54ad"
+        },
+        {
+          "path": "include/harfbuzz/hb-buffer.h",
+          "type": "0",
+          "bytes": 28660,
+          "mode": 420,
+          "link": "",
+          "sha256": "43b09d72c23f3ce2e5016589d6d1e62791e28147a625575c9c73fcb26f953cac"
+        },
+        {
+          "path": "include/harfbuzz/hb-aat-layout.h",
+          "type": "0",
+          "bytes": 57382,
+          "mode": 420,
+          "link": "",
+          "sha256": "96ad7f16616f60570aa831790100fee81e1771b0257530588955f50588900a6a"
+        },
+        {
+          "path": "include/harfbuzz/hb-blob.h",
+          "type": "0",
+          "bytes": 4731,
+          "mode": 420,
+          "link": "",
+          "sha256": "710fe0a1be3b3a344154939be9bf6cc30674f6abd4ae0fcc0d3144b9d6b9a6bd"
+        },
+        {
+          "path": "include/harfbuzz/hb-common.h",
+          "type": "0",
+          "bytes": 30320,
+          "mode": 420,
+          "link": "",
+          "sha256": "5dbad3219a807afdc06f9e8b8ac6828e951bb5447b3b4723544b145a7b30f6c4"
+        },
+        {
+          "path": "include/harfbuzz/hb-ot-meta.h",
+          "type": "0",
+          "bytes": 2553,
+          "mode": 420,
+          "link": "",
+          "sha256": "1d38c9bcbc0d417f8b7e0e818c2f5f9b83d2abddc39f2f116cc0ae84157a572d"
+        },
+        {
+          "path": "include/harfbuzz/hb-ot-math.h",
+          "type": "0",
+          "bytes": 13761,
+          "mode": 420,
+          "link": "",
+          "sha256": "4e737e5ed9dcb3db18a64534a1ff2faf638ef720dc30db0ee821324099432f90"
+        },
+        {
+          "path": "include/harfbuzz/hb-glib.h",
+          "type": "0",
+          "bytes": 1625,
+          "mode": 420,
+          "link": "",
+          "sha256": "05402cbae1f44fc2587ea8f59afa235107f9e568e5a4aa93c12ed2727de74aac"
+        },
+        {
+          "path": "include/harfbuzz/hb-ot-layout.h",
+          "type": "0",
+          "bytes": 18997,
+          "mode": 420,
+          "link": "",
+          "sha256": "a178b541f07052c97471f4a23a5851d624bcadedd7633c1af7a21a2c294f3c8d"
+        },
+        {
+          "path": "include/harfbuzz/hb-unicode.h",
+          "type": "0",
+          "bytes": 22980,
+          "mode": 420,
+          "link": "",
+          "sha256": "6131f0eb9e411fa392101f58793f4e4347ec3bc6fe45226736b186004cea8038"
+        },
+        {
+          "path": "include/harfbuzz/hb-cplusplus.hh",
+          "type": "0",
+          "bytes": 6211,
+          "mode": 420,
+          "link": "",
+          "sha256": "10630001b84a9a1603a44ddb5a81affba4d3c9d0223efa1d6c3e0933e7f72d9c"
+        },
+        {
+          "path": "include/harfbuzz/hb-paint.h",
+          "type": "0",
+          "bytes": 39766,
+          "mode": 420,
+          "link": "",
+          "sha256": "8afdeb8df3d2f75c93822dc012aee56a20c8e4122335e0b848b15c7159f19126"
+        },
+        {
+          "path": "include/harfbuzz/hb-ot-deprecated.h",
+          "type": "0",
+          "bytes": 4130,
+          "mode": 420,
+          "link": "",
+          "sha256": "c3a9878ac0633d5e6d7e16821114ad4555458a6924100581f0d16fef5728b1c4"
+        },
+        {
+          "path": "include/harfbuzz/hb-features.h",
+          "type": "0",
+          "bytes": 2601,
+          "mode": 420,
+          "link": "",
+          "sha256": "6750acce3cebf8decff8a8effe0ca47dfcff38aaded7abc7affd8d6b46bfd8c6"
+        },
+        {
+          "path": "include/harfbuzz/hb-ot-color.h",
+          "type": "0",
+          "bytes": 4471,
+          "mode": 420,
+          "link": "",
+          "sha256": "3216a51aabe5e3961e2c11af854ddad57471009cccd8790e2d26e18eaa1f139c"
+        },
+        {
+          "path": "include/harfbuzz/hb-ot.h",
+          "type": "0",
+          "bytes": 1502,
+          "mode": 420,
+          "link": "",
+          "sha256": "c5c821c47756741bae7a0121f440391a28d5e188824469f2281dd08b8c655a16"
+        },
+        {
+          "path": "include/harfbuzz/hb-version.h",
+          "type": "0",
+          "bytes": 2595,
+          "mode": 420,
+          "link": "",
+          "sha256": "dd40b6a927da3e217c7f8bbe1413d02dadd9d92a37bd2d0715c19face21b794c"
+        },
+        {
+          "path": "include/harfbuzz/hb-shape-plan.h",
+          "type": "0",
+          "bytes": 4121,
+          "mode": 420,
+          "link": "",
+          "sha256": "03555c82558fa347e96549ec99698fae790c2cfb9ee795c5ea48ff4134e06224"
+        },
+        {
+          "path": "include/harfbuzz/hb.h",
+          "type": "0",
+          "bytes": 1555,
+          "mode": 420,
+          "link": "",
+          "sha256": "31a1b53db3ee4395916e6d4f105b2c64772b8037bbb97d0e6d1e4a905eb6c6c9"
+        },
+        {
+          "path": "include/harfbuzz/hb-font.h",
+          "type": "0",
+          "bytes": 37315,
+          "mode": 420,
+          "link": "",
+          "sha256": "646f1c5d1172b97c0c6a7d3a3def938b61dda8c74ea9972145e6a5a531731a51"
+        },
+        {
+          "path": "include/harfbuzz/hb-ot-metrics.h",
+          "type": "0",
+          "bytes": 6020,
+          "mode": 420,
+          "link": "",
+          "sha256": "c65239f100590cf1b1f647bba6ccd1a548a4e89cb80978601ca3050e9884e724"
+        },
+        {
+          "path": "include/harfbuzz/hb-deprecated.h",
+          "type": "0",
+          "bytes": 9982,
+          "mode": 420,
+          "link": "",
+          "sha256": "7f86fe527dfa467b8a838138069b4e57f4640047f7b4e625b910181413566df8"
+        },
+        {
+          "path": "include/harfbuzz/hb-subset.h",
+          "type": "0",
+          "bytes": 8367,
+          "mode": 420,
+          "link": "",
+          "sha256": "d8560f9b6b68d5b112232e4cee47c697ef28106ab99bcdc3cd6fd89230a03e60"
+        },
+        {
+          "path": "include/harfbuzz/hb-ot-font.h",
+          "type": "0",
+          "bytes": 1410,
+          "mode": 420,
+          "link": "",
+          "sha256": "e62d178aa73ef9c80b08d3c076db3e99bb8cb4e8219e978e793ef7ffe965f8f1"
+        },
+        {
+          "path": "include/harfbuzz/hb-map.h",
+          "type": "0",
+          "bytes": 3347,
+          "mode": 420,
+          "link": "",
+          "sha256": "b073aa19718e43e3535caeddc0015a4e45a89032a76059cc5ab8f3f0d220bece"
+        },
+        {
+          "path": "include/harfbuzz/hb-ot-var.h",
+          "type": "0",
+          "bytes": 5209,
+          "mode": 420,
+          "link": "",
+          "sha256": "9c438bc34f43afcc95c3f5f390b929903156af93e19473fc29daa650d98cf20e"
+        },
+        {
+          "path": "include/harfbuzz/hb-face.h",
+          "type": "0",
+          "bytes": 4523,
+          "mode": 420,
+          "link": "",
+          "sha256": "a62ded74b8cf2117b84f1b886b184e97d1c0d173c8fd75bd31cdeecccd4b9dfc"
+        },
+        {
+          "path": "include/libexif",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "include/libexif/exif-data-type.h",
+          "type": "0",
+          "bytes": 1461,
+          "mode": 420,
+          "link": "",
+          "sha256": "9d9b172f55ee1928c3ad44462379e8cf8144553afe5d9ca814c4c6c5ab250a14"
+        },
+        {
+          "path": "include/libexif/_stdint.h",
+          "type": "0",
+          "bytes": 76,
+          "mode": 420,
+          "link": "",
+          "sha256": "4f0de7785dd7e001a7d6f6d949d756d42727dab4cb80cb10a376ac8c64fd8982"
+        },
+        {
+          "path": "include/libexif/exif-loader.h",
+          "type": "0",
+          "bytes": 4301,
+          "mode": 420,
+          "link": "",
+          "sha256": "9cfcc342d5f13d7f81b8187b2a1413934726fb9329ab757386d721d1fe45020d"
+        },
+        {
+          "path": "include/libexif/exif-format.h",
+          "type": "0",
+          "bytes": 1981,
+          "mode": 420,
+          "link": "",
+          "sha256": "77534040ba6c3cd355c5fbbc702f09f0735fc0bf352ca9c997e9993fd9779270"
+        },
+        {
+          "path": "include/libexif/exif-content.h",
+          "type": "0",
+          "bytes": 5598,
+          "mode": 420,
+          "link": "",
+          "sha256": "77f08e06c3efbfa2e108bd4431665016117f21038ae16e591338a4c24cae4183"
+        },
+        {
+          "path": "include/libexif/exif-utils.h",
+          "type": "0",
+          "bytes": 5951,
+          "mode": 420,
+          "link": "",
+          "sha256": "840ab5434754cc3c6ff38f19265f59d528e96874a7bc42e7669df81d03214d18"
+        },
+        {
+          "path": "include/libexif/exif-ifd.h",
+          "type": "0",
+          "bytes": 1675,
+          "mode": 420,
+          "link": "",
+          "sha256": "43bf598838ef5189bb6c635a1a5024be167820ef1d1dab716523e797cb436def"
+        },
+        {
+          "path": "include/libexif/exif-tag.h",
+          "type": "0",
+          "bytes": 11334,
+          "mode": 420,
+          "link": "",
+          "sha256": "e7d1088beb48c7c68880f30a980ca4ee423c01f7a7b12b036a3b3f6575e243c8"
+        },
+        {
+          "path": "include/libexif/exif-byte-order.h",
+          "type": "0",
+          "bytes": 1563,
+          "mode": 420,
+          "link": "",
+          "sha256": "6f0c0d986111e103a27b95e00feec5857440db04e0fd276922bb6f05530135aa"
+        },
+        {
+          "path": "include/libexif/exif-entry.h",
+          "type": "0",
+          "bytes": 6316,
+          "mode": 420,
+          "link": "",
+          "sha256": "d51e27e354fdc041e901a97457d40bfc061a93af87bf5cc45c8125552a619c88"
+        },
+        {
+          "path": "include/libexif/exif-mnote-data.h",
+          "type": "0",
+          "bytes": 4333,
+          "mode": 420,
+          "link": "",
+          "sha256": "2c120327a3cf71cc5aeb008a6ff7c99338ce1a7c2c6b60811110b062393f84f0"
+        },
+        {
+          "path": "include/libexif/exif-data.h",
+          "type": "0",
+          "bytes": 8948,
+          "mode": 420,
+          "link": "",
+          "sha256": "995fc836945a46521a9ca015f07e05154c173338612ce8fd1592b0c9196274bc"
+        },
+        {
+          "path": "include/libexif/exif-mem.h",
+          "type": "0",
+          "bytes": 2654,
+          "mode": 420,
+          "link": "",
+          "sha256": "881840f5a863686b40ff9dfefaa5183eb635d64aa83c4ae6a5f6dd510e544fd2"
+        },
+        {
+          "path": "include/libexif/exif-log.h",
+          "type": "0",
+          "bytes": 3452,
+          "mode": 420,
+          "link": "",
+          "sha256": "ae84cccc7a86ba6efb5308bd52a5eb820582013a17512fe6914e0302af3c45fa"
+        },
+        {
+          "path": "lib",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "lib/libvips-cpp.so.42",
+          "type": "0",
+          "bytes": 16392536,
+          "mode": 420,
+          "link": "",
+          "sha256": "a784f9f4bc0a0d2a2b00e5bdad2f59c540142e7503168d42088edae0afe1e472"
+        },
+        {
+          "path": "lib/glib-2.0",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "lib/glib-2.0/include",
+          "type": "5",
+          "bytes": 0,
+          "mode": 493,
+          "link": ""
+        },
+        {
+          "path": "lib/glib-2.0/include/glibconfig.h",
+          "type": "0",
+          "bytes": 5954,
+          "mode": 420,
+          "link": "",
+          "sha256": "6a2ef36774a483aea6d461c2590a2553e5b31f97252a967d579bdd4507c73000"
+        },
+        {
+          "path": "platform.json",
+          "type": "0",
+          "bytes": 11,
+          "mode": 420,
+          "link": "",
+          "sha256": "8def0d7e4a8dd04bd853afa8d981a0fad00544bc8fcf500a450912f130bab394"
+        },
+        {
+          "path": "versions.json",
+          "type": "0",
+          "bytes": 612,
+          "mode": 420,
+          "link": "",
+          "sha256": "92f91dfd29af500d327fbd9b5f5d88d7d1b7933f9ea5752c16af157a79403401"
+        },
+        {
+          "path": "THIRD-PARTY-NOTICES.md",
+          "type": "0",
+          "bytes": 4356,
+          "mode": 420,
+          "link": "",
+          "sha256": "84cf5c4d9765d7dc7c748064f34af6c30ac16048b3a74dbc51902f8fecdd905b"
+        }
+      ]
+    }
+  ]
+}

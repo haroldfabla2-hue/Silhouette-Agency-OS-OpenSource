@@ -34,7 +34,7 @@ for q in(p,p.parent):
 PY
 [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
 test "$(git -C "$repo" rev-parse HEAD)" = "$expected"
-test "$(git -C "$repo" rev-parse HEAD^)" = a1a14ce76b9669442c03bfc0ed1ab7e5cac174ed
+test "$(git -C "$repo" rev-parse HEAD^)" = ccf405ee55aa86b851a638e8c71c64e5c5038646
 # Fail before allocating, never resize a previous attempt or use an existing account/root.
 test ! -e "$root"
 ! id silhouette-acquire >/dev/null 2>&1
@@ -73,6 +73,9 @@ cp "$repo/tests/genuine-vitest-session/acquire.py" "$root/fixtures/acquire.py"
 cp "$repo/tests/integrated-ui-trial/"{archive-member-normalizations.json,libsignal-packed-files.json} "$root/fixtures/"
 mkdir "$root/fixtures/native-provenance"
 cp "$repo/tests/integrated-ui-trial/native-provenance/better-sqlite3-v12.5.0-node-v127-linux-x64.tar.gz" "$root/fixtures/native-provenance/"
+for native in sharp-v0.32.6-napi-v7-linux-x64.tar.gz libvips-8.14.5-linux-x64.tar.gz sharp-native-members.json; do
+ cp "$repo/tests/genuine-vitest-session/native-provenance/$native" "$root/fixtures/native-provenance/"
+done
 # Complete Node-bundled npm provenance, not registry npm's different packaging.
 python3 - "$repo" "$root" "$node" <<'PYTOOLCHAIN'
 from pathlib import Path
