@@ -25,6 +25,41 @@ wait_unit() {
   done
   return 124
 }
+# Transport only: a queued start is not proof of execution. Never accept default dead state.
+wait_transport() {
+  local until=$((SECONDS+190)) values load active sub invocation began code status expected_invocation=
+  while test "$SECONDS" -le "$until"; do
+    values=$(systemctl show silhouette-vitest-transport --property=LoadState,ActiveState,SubState,InvocationID,ExecMainStartTimestampMonotonic,ExecMainCode,ExecMainStatus) || return 125
+    load= active= sub= invocation= began= code= status=
+    while IFS='=' read -r key value; do
+      case "$key" in
+        LoadState) load=$value ;; ActiveState) active=$value ;; SubState) sub=$value ;;
+        InvocationID) invocation=$value ;; ExecMainStartTimestampMonotonic) began=$value ;;
+        ExecMainCode) code=$value ;; ExecMainStatus) status=$value ;;
+      esac
+    done <<< "$values"
+    test "$load" = loaded || return 125
+    [[ "$invocation" =~ ^[0-9a-f]{32}$ ]] && [[ "$invocation" != 00000000000000000000000000000000 ]] || return 125
+    [[ "$began" =~ ^[0-9]+$ ]] && test "$began" -gt 0 || return 125
+    if test -z "$expected_invocation"; then
+      expected_invocation=$invocation
+      printf 'TRANSPORT_INVOCATION id=%s startMonotonic=%s\n' "$invocation" "$began"
+    fi
+    test "$invocation" = "$expected_invocation" || return 125
+    case "$active:$sub" in
+      active:exited|failed:failed)
+        [[ "$code" =~ ^[0-9]+$ ]] && [[ "$status" =~ ^[0-9]+$ ]] || return 125
+        test "$code" = 1 || return 125
+        # A failed service cannot be promoted by a default-looking zero status.
+        if test "$active" = failed && test "$status" = 0; then return 125; fi
+        return "$status" ;;
+      active:running|activating:start|activating:start-post) ;;
+      *) return 125 ;;
+    esac
+    sleep 1
+  done
+  return 124
+}
 # Manager-owned configuration corroboration, not a substitute for same-PID admission.
 # This runs after wait and before classifying/accepting any product evidence.
 verify_unit_policy() {
@@ -128,18 +163,18 @@ def bounded(argv,cap):
    except ProcessLookupError:pass
    try:process.wait(timeout=.1)
    except BaseException:pass
-fields=['Result','ExecMainCode','ExecMainStatus','ActiveState','SubState','InvocationID']
+fields=['Result','ExecMainCode','ExecMainStatus','ActiveState','SubState','InvocationID','LoadState','ExecMainStartTimestampMonotonic']
 raw,state=bounded(['/usr/bin/systemctl','show',unit,'--property='+','.join(fields)],4096)
 result['properties']=state
 if raw is not None:
  try:
   values=dict(line.split('=',1)for line in raw.decode('utf8').splitlines()if'='in line)
-  enums={'Result':{'success','exit-code','signal','core-dump','watchdog','timeout','oom-kill','resources','protocol','start-limit-hit'},'ActiveState':{'active','inactive','failed','activating','deactivating'},'SubState':{'exited','failed','dead','running','start','start-pre','start-post','stop','stop-sigterm','stop-sigkill'}}
+  enums={'LoadState':{'loaded','not-found','error','bad-setting','masked','stub','merged'},'Result':{'success','exit-code','signal','core-dump','watchdog','timeout','oom-kill','resources','protocol','start-limit-hit'},'ActiveState':{'active','inactive','failed','activating','deactivating'},'SubState':{'exited','failed','dead','running','start','start-pre','start-post','stop','stop-sigterm','stop-sigkill'}}
   for key in fields:
    value=values.get(key,'')
    if key in enums:result[key]=value if value in enums[key]else'UNKNOWN'
    elif key=='InvocationID':result[key]=value if re.fullmatch('[0-9a-f]{32}',value)else'UNKNOWN'
-   else:result[key]=int(value)if value.isdigit()and len(value)<=10 else'UNKNOWN'
+   else:result[key]=int(value)if value.isdigit()and len(value)<=20 else'UNKNOWN'
  except BaseException:result['properties']='PARSE_FAILED'
 raw,state=bounded(['/usr/bin/journalctl','--unit='+unit+'.service','--since=@'+started,'--until=@'+finished,'--lines=8','--output=json','--output-fields=MESSAGE','--no-pager','--quiet'],32768)
 result['journal']=state
@@ -213,7 +248,7 @@ quota,period=(p/'cpu.max').read_text().split();assert int(quota)==2*int(period)
 PYLIMIT
 [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
 test "$(git -C "$repo" rev-parse HEAD)" = "$expected"
-test "$(git -C "$repo" rev-parse HEAD^)" = 98691af2afdcaa99b218d178df14996f0374cc9a
+test "$(git -C "$repo" rev-parse HEAD^)" = bd7d91496bd16dcfbdf83ef22bd5be478926684b
 # Fail before allocating, never resize a previous attempt or use an existing account/root.
 test ! -e "$root"
 ! id silhouette-acquire >/dev/null 2>&1
@@ -423,7 +458,7 @@ current_exit=
 failure_captured=false
 unit_finished=
 unit_started=$(date +%s.%6N)
-systemd-run --quiet --no-block --unit silhouette-vitest-transport --slice=silhouette-vitest.slice --service-type=exec \
+if timeout --signal=TERM --kill-after=2s 20s systemd-run --quiet --unit silhouette-vitest-transport --slice=silhouette-vitest.slice --service-type=exec \
   -p User=silhouette-acquire -p Group=silhouette-acquire -p NoNewPrivileges=yes \
   -p ProtectSystem=strict -p ProtectHome=yes -p PrivateDevices=yes -p ProtectProc=invisible -p ProcSubset=pid \
   -p InaccessiblePaths="$repo $root/private $root/work $root/sources $root/runtime /tmp /var/tmp /dev/shm" \
@@ -431,11 +466,17 @@ systemd-run --quiet --no-block --unit silhouette-vitest-transport --slice=silhou
   -p SystemCallArchitectures=native -p RestrictNamespaces=yes -p ProtectKernelTunables=yes -p ProtectControlGroups=yes -p ProtectKernelModules=yes -p LockPersonality=yes -p RestrictRealtime=yes \
   -p ReadWritePaths="$root/transport" -p WorkingDirectory="$root/transport" \
   -p MemoryMax=1G -p MemorySwapMax=0 -p CPUQuota=100% -p TasksMax=64 \
-  -p LimitNOFILE=256 -p LimitFSIZE=67108864 -p RuntimeMaxSec=180 \
+  -p LimitNOFILE=256 -p LimitFSIZE=67108864 -p RuntimeMaxSec=180 -p TimeoutStartSec=15 \
   -p TimeoutStopSec=5 -p KillMode=control-group -p RemainAfterExit=yes -p StandardOutput=null -p StandardError=null \
   /usr/bin/env -i PATH=/usr/bin:/bin HOME="$root/transport/home" \
-  "$root/fixtures/toolchain/bin/node" "$root/fixtures/public-transport.cjs"
-wait_unit silhouette-vitest-transport 190
+  "$root/fixtures/toolchain/bin/node" "$root/fixtures/public-transport.cjs"; then
+  printf 'TRANSPORT_STARTUP exit=0 typeExecStartupOnly=yes\n'
+else
+  current_exit=$?
+  printf 'TRANSPORT_STARTUP exit=%s typeExecStartupOnly=yes\n' "$current_exit"
+  exit "$current_exit"
+fi
+wait_transport
 # Manager-owned transport identity/resource/result corroboration. No product PASS.
 test "$(systemctl show silhouette-vitest-transport --property=Result --value)" = success
 test "$(systemctl show silhouette-vitest-transport --property=User --value)" = silhouette-acquire
