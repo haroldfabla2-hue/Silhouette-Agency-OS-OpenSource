@@ -9,9 +9,9 @@ const fixtures = base + '/fixtures'
 const out = base + '/transport'
 const fetch = require(fixtures + '/toolchain/npm/node_modules/make-fetch-happen')
 const inventory = JSON.parse(fs.readFileSync(fixtures + '/public-transport-inventory.json', 'utf8'))
-assert.equal(inventory.lockSha256, '5545703d69f821bc68765948f91a91cd14ec782835dd7839f0099f0bebbf63f3')
-assert.equal(inventory.requests.length, 1173)
-assert.equal(inventory.requests.reduce((n, r) => n + r.bytes, 0), 442177664)
+assert.equal(inventory.lockSha256, '0aab8555d2b4615e2ff2a55df8920b18bd846a3cc2524d55cfe95fef2d278f89')
+assert.equal(inventory.requests.length, 1187)
+assert.equal(inventory.requests.reduce((n, r) => n + r.bytes, 0), 443014963)
 const cache = out + '/cache/_cacache'
 const began = Date.now()
 const deadline = began + 170000
@@ -51,7 +51,7 @@ async function consume(row, offline) {
       assert(received <= row.bytes && Date.now() < deadline)
       if (!offline) {
         aggregate += chunk.length
-        assert(aggregate <= 442177664)
+        assert(aggregate <= 443014963)
       }
       digest.update(chunk)
       if (archive !== null) fs.writeSync(archive, chunk)
@@ -89,9 +89,23 @@ function cacheSize(p) {
 ;(async () => {
   await Promise.all(Array.from({ length: 4 }, () => worker()))
   assert.equal(complete.length, inventory.requests.length)
-  assert.equal(aggregate, 442177664)
+  assert.equal(aggregate, 443014963)
   const bytes = cacheSize(out + '/cache')
   const proof = { status: 'PUBLIC_BYTES_CACHED_NOT_INSTALL_OR_PRODUCT_PASS', requests: complete.length, downloadedBytes: aggregate, cacheBytes: bytes, elapsedMilliseconds: Date.now() - began, lockSha256: inventory.lockSha256 }
   fs.writeFileSync(out + '/complete.json', JSON.stringify(proof) + '\n', { flag: 'wx', mode: 0o600 })
+  const payload = JSON.parse(fs.readFileSync(fixtures + '/audit-payload.json', 'utf8'))
+  const auditResponse = await fetch('https://registry.npmjs.org/-/npm/v1/security/advisories/bulk', {
+    method: 'POST', body: JSON.stringify(payload), headers: { 'content-type': 'application/json' },
+    retry: { retries: 0 }, redirect: 'error', strictSSL: true, timeout: 15000,
+    signal: AbortSignal.timeout(Math.min(15000, Math.max(1, deadline - Date.now()))),
+  })
+  assert.equal(auditResponse.status, 200)
+  const auditChunks = []; let auditBytes = 0
+  for await (const chunk of auditResponse.body) {
+    auditBytes += chunk.length; assert(auditBytes <= 4194304 && Date.now() < deadline); auditChunks.push(chunk)
+  }
+  const auditRaw = Buffer.concat(auditChunks)
+  assert.equal(typeof JSON.parse(auditRaw.toString('utf8')), 'object')
+  fs.writeFileSync(out + '/audit-response.json', auditRaw, { flag: 'wx', mode: 0o600 })
   clearTimeout(timer)
 })().catch(() => { stopped(); clearTimeout(timer); process.exitCode = 1 })

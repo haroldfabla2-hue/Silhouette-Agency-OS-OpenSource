@@ -10,7 +10,7 @@ phase=PREPARATION
 cleanup() { bash "$repo/tests/genuine-vitest-session/cleanup.sh" "$expected" "$runid"; }
 close_out() {
  original=$?;trap - EXIT;set +e
- case "$phase" in PREPARATION|transport|acquire|typecheck|regressions|mechanisms|continuity|candidate) ;; *) phase=UNKNOWN;;esac
+ case "$phase" in PREPARATION|transport|acquire|typecheck|regressions|mechanisms|continuity|mcp|candidate) ;; *) phase=UNKNOWN;;esac
  printf 'DIRECT_ROUTE_CLOSEOUT {"phase":"%s","coordinatorExit":%s}\n' "$phase" "$original"
 
  if $owned; then cleanup; c=$?;if test "$c" != 0; then echo CLEANUP_FAILED_NO_ACCEPTANCE;if test "$original" = 0; then original=$c;fi;fi;fi
@@ -34,7 +34,7 @@ for q in(p,p.parent):
 PY
 [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
 test "$(git -C "$repo" rev-parse HEAD)" = "$expected"
-test "$(git -C "$repo" rev-parse HEAD^)" = 3c562e402f883717a90cb544afa299fe8d3628fc
+test "$(git -C "$repo" rev-parse HEAD^)" = 559afe6310666019f25b99effd461202bdd9b190
 # Fail before allocating, never resize a previous attempt or use an existing account/root.
 test ! -e "$root"
 ! id silhouette-acquire >/dev/null 2>&1
@@ -99,12 +99,18 @@ b=node.read_bytes();assert hashlib.sha256(b).hexdigest()=='ccacb2d6d87ba6d118b2b
 (fixture/'toolchain/bin').mkdir();(fixture/'toolchain/bin/node').write_bytes(b);(fixture/'toolchain/bin/node').chmod(0o555)
 (fixture/'toolchain/bin/npm').symlink_to('../npm/bin/npm-cli.js')
 for name,want in {
- 'public-transport.cjs':'e5d9458c04913455fd8202f54e6731da8bca4f2f44d57a9cdae23f6b60bd4e53',
- 'public-transport-inventory.json':'362462d9dfdf483d512849dca63977a276d19d24b88b4f3cc99fad0facef3e36',
+ 'public-transport.cjs':'aba6004333ff03f2ca844894f76539bf9da8cc82b9ba6984e141f22a193c8a67',
+ 'public-transport-inventory.json':'af3a9fe9a9da965e189ff5d13c398a2becbec0e56c835740389c6abe3ceb719d',
 }.items():
  b=(repo/'tests/genuine-vitest-session'/name).read_bytes();assert hashlib.sha256(b).hexdigest()==want
  (fixture/name).write_bytes(b)
 PYTOOLCHAIN
+test "$(sha256sum "$repo/tests/genuine-vitest-session/audit-payload.json" | cut -d' ' -f1)" = f3cfe47ece0641c094e62c149913bb61ad285b76afa7c68b776465903e12b49a
+cp "$repo/tests/genuine-vitest-session/audit-payload.json" "$root/fixtures/audit-payload.json"
+test "$(sha256sum "$repo/tests/genuine-vitest-session/audit-graphs.json" | cut -d' ' -f1)" = 6446d1f7bf794d520eda11326ecf4a87fffce8538dbcab29a779a6b21973df90
+cp "$repo/tests/genuine-vitest-session/audit-graphs.json" "$root/fixtures/audit-graphs.json"
+test "$(sha256sum "$repo/tests/genuine-vitest-session/audit-classify.cjs" | cut -d' ' -f1)" = 35cb7dd33b37cd1156cb25aed5c21c26b104f4c798336dd482ea5eaafe935924
+cp "$repo/tests/genuine-vitest-session/audit-classify.cjs" "$root/fixtures/audit-classify.cjs"
 chmod -R a-w "$root/fixtures"
 chmod 700 "$root/private"
 mkdir -m 755 "$root/diagnostic"
@@ -121,12 +127,12 @@ for name,session in spec['sessions'].items():
  overrides={r['path']:r for r in session['overrides']}
  for candidateRow in spec['files']:
   row=overrides.get(candidateRow['path'],candidateRow)
-  assert session['productCommit']=='MAIN_PLUS_SEVEN_CONTINUITY_BLOBS'
+  assert session['productCommit']=='MAIN_PLUS_EIGHT_MCP_BLOBS'
   assert spec['mainCommit']=='1f0d967abf81b86e666d26eeb20f6dc97662a525'
   commit=row['sourceCommit']
   if commit=='WORKFLOW_FIXTURE_EXACT':
-   assert row['path']in {'tests/automated/cycle-store-continuity.test.ts', 'services/selfdev/cycleStoreContinuity.ts', 'tests/automated/selfdev-cycle.test.ts', 'tests/real-process/cycle-continuity-child.ts', 'tests/automated/cycle-service-continuity-real.test.ts', 'server/routes/v1/selfdev.routes.ts', 'services/selfdev/cycleService.ts'}
-   assert row['fixturePath']=='tests/genuine-vitest-session/main-continuity-integration/'+row['path']
+   assert row['path']in {'tests/real-process/mcp-boundary-child.ts', 'tests/automated/mcp-client-isolation-real.test.ts', 'package.json', 'server/app.ts', 'package-lock.json', 'server/mcp/mcpServer.ts', 'server/index.ts', 'services/apiKeyService.ts'}
+   assert row['fixturePath']=='tests/genuine-vitest-session/main-mcp-integration/'+row['path']
    commit=sys.argv[3];sourcePath=row['fixturePath']
   else:
    assert commit==spec['mainCommit'];sourcePath=row['path']
@@ -143,7 +149,7 @@ for name,session in spec['sessions'].items():
  (dest/'offline-vitest.config.mjs').write_bytes(adapter)
  # Empty bind targets only. Actual source tree remains read-only at runtime.
  (dest/'node_modules').mkdir();(dest/'db').mkdir(exist_ok=True);(dest/'data').mkdir()
-assert hashlib.sha256((root/'sources/candidate/package-lock.json').read_bytes()).hexdigest()=='5545703d69f821bc68765948f91a91cd14ec782835dd7839f0099f0bebbf63f3'
+assert hashlib.sha256((root/'sources/candidate/package-lock.json').read_bytes()).hexdigest()=='0aab8555d2b4615e2ff2a55df8920b18bd846a3cc2524d55cfe95fef2d278f89'
 PY
 # Trusted exact byte helper only, no installer/package/product code on host network.
 phase=transport
@@ -152,13 +158,15 @@ python3 - "$root" <<'PYHANDOFF'
 from pathlib import Path
 import sys,json,hashlib,stat,os
 root=Path(sys.argv[1]);t=root/'transport';proof=json.loads((t/'complete.json').read_text())
-assert proof['status']=='PUBLIC_BYTES_CACHED_NOT_INSTALL_OR_PRODUCT_PASS'and proof['requests']==1173 and proof['downloadedBytes']==442177664 and proof['cacheBytes']<=536870912
+assert proof['status']=='PUBLIC_BYTES_CACHED_NOT_INSTALL_OR_PRODUCT_PASS'and proof['requests']==1187 and proof['downloadedBytes']==443014963 and proof['cacheBytes']<=536870912
 f=t/'libsignal-source.tar.gz';st=f.lstat();assert stat.S_ISREG(st.st_mode)and st.st_nlink==1
 b=f.read_bytes();assert len(b)==46103 and hashlib.sha256(b).hexdigest()=='a9e14823efa911474aaa9e8f6bfb88759f869a3bc25116e969be943b84bef318'
 # Byte file becomes immutable fixture only after helper has naturally exited.
 f.rename(root/'fixtures/libsignal-source.tar.gz');f=root/'fixtures/libsignal-source.tar.gz';os.chown(f,0,0);f.chmod(0o444)
 (t/'cache').rename(root/'work/npm-cache')
 PYHANDOFF
+# Trusted feed classifier runs only after byte transport naturally exited.
+"$root/fixtures/toolchain/bin/node" "$root/fixtures/audit-classify.cjs"
 cp -a "$root/sources/candidate" "$root/work/candidate"
 chown -R "$auid:$agid" "$root/work"
 mkdir "$root/work/tmp"
@@ -180,14 +188,12 @@ mkdir "$data" "$data/tmp" "$data/home" "$data/db" "$data/data"
 # Reviewed public migration fixtures only. They are disposable input, never a real DB.
 cp -a "$src/db/migrations" "$data/db/migrations"
 chown -R "$ruid:$rgid" "$data"
-for validation in typecheck continuity; do
+for validation in typecheck mcp; do
  test "$((SECONDS-start))" -lt 800
  phase=$validation
  case "$validation" in
   typecheck) args=("$src/node_modules/typescript/bin/tsc" --noEmit --incremental false --pretty false) ;;
-  continuity) args=("$src/node_modules/vitest/vitest.mjs" run tests/automated/cycle-store-continuity.test.ts tests/automated/cycle-service-continuity-real.test.ts tests/automated/selfdev-cycle.test.ts tests/automated/selfdev-preservation.test.ts) ;;
-  regressions) args=("$src/node_modules/vitest/vitest.mjs" run tests/automated/memory-transitions-p0.test.ts -t 'captures typed payload|owns Float32Array|rejects mutation of an admitted|keeps PENDING when destination|keeps VERIFIED when COMMITTED') ;;
-  mechanisms) args=("$src/node_modules/vitest/vitest.mjs" run tests/automated/product-learning-proposal-real.test.ts tests/automated/selfdev-preservation.test.ts tests/automated/independent-verifier-receipt-contract.test.ts tests/automated/learning-analysis-input.test.ts tests/automated/learning-status-copy.test.ts) ;;
+  mcp) args=("$src/node_modules/vitest/vitest.mjs" run tests/automated/mcp-client-isolation-real.test.ts) ;;
  esac
  if test "$validation" != typecheck; then
   args+=(--maxWorkers=1 --retry=0 --configLoader=runner --config="$src/offline-vitest.config.mjs" --no-cache --reporter=json --reporter=blob --outputFile.json="$data/$validation.report.json" --outputFile.blob="$data/$validation.blob.json")
@@ -206,8 +212,8 @@ done
 summary=$(python3 - "$root/private" <<'PYCODE'
 from pathlib import Path
 import sys,json
-p=Path(sys.argv[1]);rows=[json.loads((p/(n+'.summary.json')).read_text())for n in ['typecheck','continuity']]
-print(json.dumps({'scope':'ACTUAL_MAIN_SEVEN_PATH_CONTINUITY_TYPECHECK_AND_REAL_SERVICE_RESTARTS','sessions':rows,'usefulLearningAccepted':False,'fullProductAccepted':False}))
+p=Path(sys.argv[1]);rows=[json.loads((p/(n+'.summary.json')).read_text())for n in ['typecheck','mcp']]
+print(json.dumps({'scope':'ACTUAL_MAIN_EIGHT_PATH_MCP_NPM_LOCK_AUDIT_TYPECHECK_AND_REAL_COMPOSED_BOUNDARY','sessions':rows,'audit':json.loads((p/'mcp-audit.summary.json').read_text()),'usefulLearningAccepted':False,'fullProductAccepted':False}))
 PYCODE
 )
 cleanup

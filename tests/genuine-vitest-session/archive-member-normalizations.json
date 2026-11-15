@@ -1,6 +1,6 @@
 {
   "status": "SOURCE_REVIEW_ONLY_FINITE_BYTE_IDENTICAL_ALIAS_AND_INSTALLER_RENAME_CONTRACT",
-  "lockSha256": "5545703d69f821bc68765948f91a91cd14ec782835dd7839f0099f0bebbf63f3",
+  "lockSha256": "0aab8555d2b4615e2ff2a55df8920b18bd846a3cc2524d55cfe95fef2d278f89",
   "installer": {
     "node": "22.18.0",
     "npm": "10.9.3",

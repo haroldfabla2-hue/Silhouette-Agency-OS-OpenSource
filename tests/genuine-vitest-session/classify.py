@@ -6,7 +6,7 @@ def selected_failure_diagnostic(name,report,blob,service,code):
  # Only the existing exact public-fixture selections, never arbitrary stdout/files.
  import os,stat,base64
  expected=Path('/mnt/silhouette-genuine-vitest/runtime/candidate')
- if name not in ('regressions','mechanisms','continuity')or Path(report)!=expected/(name+'.report.json')or Path(blob)!=expected/(name+'.blob.json')or Path(service)!=Path('/mnt/silhouette-genuine-vitest/private')/(name+'.child.json'):
+ if name not in ('mcp',)or Path(report)!=expected/(name+'.report.json')or Path(blob)!=expected/(name+'.blob.json')or Path(service)!=Path('/mnt/silhouette-genuine-vitest/private')/(name+'.child.json'):
   raise ValueError('EXACT_SELECTED_REPORT_PATHS_REQUIRED')
  out={'schema':1,'selection':name,'origin':'SELECTED_VITEST_REPORTS_UNTRUSTED_NOT_AUTHORITY','status':'UNKNOWN','exitCode':int(code),'textBudgetBytes':12288,'records':[],'truncated':False}
  remaining=12288
@@ -104,7 +104,7 @@ if len(sys.argv)==7 and sys.argv[1]=='--failure-diagnostic':
  selection,report_path,blob_path,receipt_path,exit_code=sys.argv[2:]
  sys.exit(0 if selected_failure_diagnostic(selection,report_path,blob_path,receipt_path,exit_code)else 1)
 name,report,blob,service,code=sys.argv[1:]
-assert name in ('typecheck','regressions','mechanisms','continuity'),'UNKNOWN_VALIDATION_SELECTION'
+assert name in ('typecheck','mcp'),'UNKNOWN_VALIDATION_SELECTION'
 s=json.loads(Path(service).read_text())
 assert s['schema']==1 and s['phase']=='candidate' and s['natural'] is True,'NATURAL_WHOLE_CHILD_REQUIRED'
 assert s['forced'] is False and s['residualUidProcesses']==0,'FORCED_OR_RESIDUAL_CHILD'
@@ -128,25 +128,13 @@ assert reference(top[0])=='4.0.16','WRONG_GENUINE_VITEST_VERSION'
 assert reference(top[2])==[],'GENUINE_VITEST_UNHANDLED_ERRORS'
 r=json.loads(Path(report).read_text())
 assert r.get('numRuntimeErrorTestSuites',0)==0 and not r.get('unhandledErrors')and not r.get('errors'),'RUNTIME_OR_UNHANDLED_ERROR'
-assert len(r['testResults'])==(4 if name=='continuity'else(5 if name=='mechanisms'else 1)) and all(f.get('message')==''for f in r['testResults']),'FILE_SETUP_TEARDOWN_ERROR'
-a=[a for f in r['testResults']for a in f['assertionResults']if a['status']not in ('skipped','pending','todo')]
+assert len(r['testResults'])==1 and all(f.get('message')==''for f in r['testResults']),'FILE_SETUP_TEARDOWN_ERROR'
+a=[a for f in r['testResults']for a in f['assertionResults']]
 # Explicit known setup/teardown/native failures may not count as discriminating assertion-red.
 private_text=json.dumps(r)
 for forbidden in ['Original test generation teardown failed','Original generation failures:','INDEPENDENT_MEMORY_SCOPE_INVALID','Missing explicit test preparation capacity','Cannot find module','Failed to load url','Unhandled Error','Worker exited unexpectedly','Hook timed out','beforeAll hook','afterAll hook','beforeEach hook','afterEach hook']:
  assert forbidden not in private_text,'INFRASTRUCTURE_OR_CLEANUP_FAILURE_NOT_NEGATIVE_CONTROL'
-if name in ('regressions','mechanisms','continuity'):
- assert int(code)==0 and r['success']is True and r['numFailedTests']==0 and all(x['status']=='passed'for x in a),'CANDIDATE_TEST_FAILURE'
- if name=='regressions':
-  assert any('journal rejection does not publish'in x['fullName']for x in a),'STATE_CASES_NOT_COLLECTED'
-  assert any('transition admission payload ownership'in x['fullName']for x in a),'ADMISSION_CASES_NOT_COLLECTED'
-  assert len(a)==5,'EXACT_FIVE_GENUINE_CASES_REQUIRED'
- elif name=='continuity':
-  expected={'cycle-store-continuity.test.ts':11,'cycle-service-continuity-real.test.ts':7,'selfdev-cycle.test.ts':4,'selfdev-preservation.test.ts':1}
-  assert len(a)==23 and {Path(f['name']).name:len(f['assertionResults'])for f in r['testResults']}==expected,'EXACT_CONTINUITY_CASES_REQUIRED'
-  assert r['numPendingTests']==0,'NO_CONTINUITY_SKIP'
- else:
-  assert len(a)==7,'EXACT_SEVEN_AUTHORED_MECHANISM_ASSERTIONS_REQUIRED'
-  expected={'product-learning-proposal-real.test.ts':1,'selfdev-preservation.test.ts':1,'independent-verifier-receipt-contract.test.ts':3,'learning-analysis-input.test.ts':1,'learning-status-copy.test.ts':1}
-  assert {Path(f['name']).name:len(f['assertionResults'])for f in r['testResults']}==expected,'WRONG_AUTHORED_MECHANISM_SELECTION'
-
-print(json.dumps({'session':name,'selectedAssertions':len(a),'passed':sum(x['status']=='passed'for x in a),'failed':sum(x['status']=='failed'for x in a),'status':'REAL_FILESYSTEM_FULL_SERVICE_RESTARTS_OPERATOR_REPAIR_ONLY'if name=='continuity'else('FIVE_REAL_REGRESSIONS_ONLY'if name=='regressions'else'AUTHORED_MECHANISMS_NOT_GENERATED_USEFUL_REPAIR'),'naturalWholeChildExit':True,'builtinBlobUnhandledErrors':0,'blobSha256':hashlib.sha256(Path(blob).read_bytes()).hexdigest(),'reportSha256':hashlib.sha256(Path(report).read_bytes()).hexdigest(),'wholeProductAccepted':False,'usefulLearningAccepted':False}))
+assert name=='mcp' and int(code)==0 and r['success']is True and r['numFailedTests']==0,'MCP_TEST_FAILURE'
+assert len(a)==3 and all(x['status']=='passed'for x in a)and r['numPendingTests']==0,'EXACT_THREE_REAL_CASES_NO_SKIP'
+assert {Path(f['name']).name for f in r['testResults']}=={'mcp-client-isolation-real.test.ts'},'EXACT_MCP_FILE'
+print(json.dumps({'session':'mcp','selectedAssertions':3,'passed':3,'failed':0,'status':'REAL_COMPOSED_AUTH_KEYSTORE_PARSER_SDK_TWO_CLIENTS_NOT_FULL_APP_BOOT','naturalWholeChildExit':True,'builtinBlobUnhandledErrors':0,'blobSha256':hashlib.sha256(Path(blob).read_bytes()).hexdigest(),'reportSha256':hashlib.sha256(Path(report).read_bytes()).hexdigest(),'wholeProductAccepted':False,'usefulLearningAccepted':False}))

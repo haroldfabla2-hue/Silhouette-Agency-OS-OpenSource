@@ -25,11 +25,11 @@ def acquisition_exception(kind,value,traceback):
 sys.excepthook=acquisition_exception
 diagnostic('ENTERED')
 HERE=Path(sys.argv[1]);ROOT=Path(sys.argv[2]);EV=ROOT/'acquisition-evidence';EV.mkdir(exist_ok=False)
-LOCK='5545703d69f821bc68765948f91a91cd14ec782835dd7839f0099f0bebbf63f3'
+LOCK='0aab8555d2b4615e2ff2a55df8920b18bd846a3cc2524d55cfe95fef2d278f89'
 def sha(b):return hashlib.sha256(b).hexdigest()
 def emit(n,o):
  b=(json.dumps(o,indent=2)+'\n').encode();assert len(b)<=8*1024**2;(EV/n).write_bytes(b)
-NORMALIZATION_MANIFEST_SHA='104fca21369caebf16b022f5b9ee049428d210421fa57b3f4e1c13aec28336e0'
+NORMALIZATION_MANIFEST_SHA='892ce97c123d8933baefd8b82476e193526200e75a2b546b1f1613fad437c71e'
 normalizationRaw=(HERE/'archive-member-normalizations.json').read_bytes();assert sha(normalizationRaw)==NORMALIZATION_MANIFEST_SHA
 normalizations=json.loads(normalizationRaw);assert normalizations['lockSha256']==LOCK
 archiveDiagnostics={'status':'VERIFYING_NOT_PRODUCT_PASS','normalizations':[],'failure':None}

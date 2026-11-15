@@ -1,5 +1,5 @@
 {
-  "selection": "EXACT_ACTUAL_MAIN_PLUS_SEVEN_CONTINUITY_BLOBS",
+  "selection": "EXACT_ACTUAL_MAIN_PLUS_EIGHT_MCP_BLOBS",
   "mainCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
   "files": [
     {
@@ -688,15 +688,17 @@
     },
     {
       "path": "package-lock.json",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
-      "bytes": 659660,
-      "sha256": "5545703d69f821bc68765948f91a91cd14ec782835dd7839f0099f0bebbf63f3"
+      "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
+      "fixturePath": "tests/genuine-vitest-session/main-mcp-integration/package-lock.json",
+      "bytes": 668393,
+      "sha256": "0aab8555d2b4615e2ff2a55df8920b18bd846a3cc2524d55cfe95fef2d278f89"
     },
     {
       "path": "package.json",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
-      "bytes": 6780,
-      "sha256": "d1a568e3551e929c0f1e4b304b7f50eaf40dbfb88aa199f70a213e9bd1e82846"
+      "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
+      "fixturePath": "tests/genuine-vitest-session/main-mcp-integration/package.json",
+      "bytes": 6783,
+      "sha256": "2f2a0f9217f23c7f11afea0648bb5a0aa6ab5540dd4f4e0b5f70f62731eb44af"
     },
     {
       "path": "remotion.config.ts",
@@ -712,9 +714,10 @@
     },
     {
       "path": "server/app.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
-      "bytes": 14201,
-      "sha256": "e66c5f0753d113c231e74c894a4dce8323790d00fcaa6675e9056df7515469d1"
+      "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
+      "fixturePath": "tests/genuine-vitest-session/main-mcp-integration/server/app.ts",
+      "bytes": 14577,
+      "sha256": "75c2eb04ed6a0eb6bb8f5ef455a3a3ec2ccad1f255cdb689642efc927f738dcc"
     },
     {
       "path": "server/channels/channelInterface.ts",
@@ -862,9 +865,10 @@
     },
     {
       "path": "server/index.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
-      "bytes": 11799,
-      "sha256": "a38e4d6b4762bb4fe2c6bb05a975b1532980d3854e77134ad1c256ecfd50bf6b"
+      "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
+      "fixturePath": "tests/genuine-vitest-session/main-mcp-integration/server/index.ts",
+      "bytes": 12142,
+      "sha256": "a90af08dcb8a635b82a6b85de0d30def33733fb8d1cece0e98caae58f972e09c"
     },
     {
       "path": "server/jobs/heartbeat.ts",
@@ -904,9 +908,10 @@
     },
     {
       "path": "server/mcp/mcpServer.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
-      "bytes": 6903,
-      "sha256": "de7c45b515194378d4ea691fac336af867c20d37f81f968daa758ad2f3e07bb2"
+      "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
+      "fixturePath": "tests/genuine-vitest-session/main-mcp-integration/server/mcp/mcpServer.ts",
+      "bytes": 12540,
+      "sha256": "ec572781b25493e7e3b9cda1ae69b67e31ef4e393361a6fbae921e8270dc989f"
     },
     {
       "path": "server/middleware/authMiddleware.ts",
@@ -1108,10 +1113,9 @@
     },
     {
       "path": "server/routes/v1/selfdev.routes.ts",
-      "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
-      "bytes": 3023,
-      "sha256": "71866d21940217d8f0468ac61c86632b33455540afdeead2acff80659987052c",
-      "fixturePath": "tests/genuine-vitest-session/main-continuity-integration/server/routes/v1/selfdev.routes.ts"
+      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "bytes": 2818,
+      "sha256": "cf72cee8adab35c2a039df037bf3e2fb321949fbd8506441d73c4c36cee5df04"
     },
     {
       "path": "server/routes/v1/squads.routes.ts",
@@ -1247,9 +1251,10 @@
     },
     {
       "path": "services/apiKeyService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
-      "bytes": 8345,
-      "sha256": "6eb9cf20fa05d525d5544a8fda20989287ee68a95dcb20095052e41b118a1aea"
+      "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
+      "fixturePath": "tests/genuine-vitest-session/main-mcp-integration/services/apiKeyService.ts",
+      "bytes": 10230,
+      "sha256": "9e482a5aa049b71d8e4cd86b04f518cfacbb86b4cc5f4adad8b7aced99bda069"
     },
     {
       "path": "services/architectService.ts",
@@ -2783,17 +2788,9 @@
     },
     {
       "path": "services/selfdev/cycleService.ts",
-      "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
-      "bytes": 37110,
-      "sha256": "f0b0008f114cda8d73fff4b37de9bae33e095ea92eeca070aea4186104fc873e",
-      "fixturePath": "tests/genuine-vitest-session/main-continuity-integration/services/selfdev/cycleService.ts"
-    },
-    {
-      "path": "services/selfdev/cycleStoreContinuity.ts",
-      "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
-      "bytes": 3181,
-      "sha256": "49b59d82254323ef3ccd4cca7004321e8b2746267f17b86c26f8ff65ce495e8d",
-      "fixturePath": "tests/genuine-vitest-session/main-continuity-integration/services/selfdev/cycleStoreContinuity.ts"
+      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "bytes": 36829,
+      "sha256": "0bae253724693a5706542725d069c4fe93e2a2daeb01288ce15993ca6eb4d649"
     },
     {
       "path": "services/selfdev/gates.ts",
@@ -3258,18 +3255,11 @@
       "sha256": "0353b4b421c0263108dbbb0c8097846d21726179e84ea76ee404bd188247d982"
     },
     {
-      "path": "tests/automated/cycle-service-continuity-real.test.ts",
+      "path": "tests/automated/mcp-client-isolation-real.test.ts",
       "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
-      "bytes": 4718,
-      "sha256": "be6938d16b22817d2bd9481ad952f2b641ca1ee669896e2086e8593176f3b0c6",
-      "fixturePath": "tests/genuine-vitest-session/main-continuity-integration/tests/automated/cycle-service-continuity-real.test.ts"
-    },
-    {
-      "path": "tests/automated/cycle-store-continuity.test.ts",
-      "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
-      "bytes": 3797,
-      "sha256": "03563b192e2ced1cc098ae735e5f562d154bbcd579188a612f345117b15bc552",
-      "fixturePath": "tests/genuine-vitest-session/main-continuity-integration/tests/automated/cycle-store-continuity.test.ts"
+      "fixturePath": "tests/genuine-vitest-session/main-mcp-integration/tests/automated/mcp-client-isolation-real.test.ts",
+      "bytes": 2618,
+      "sha256": "c946abca763eca99f4812e080e3900904c351b6d8b6c9b4698b75179d092c89c"
     },
     {
       "path": "tests/automated/memory-transitions-p0.test.ts",
@@ -3279,10 +3269,9 @@
     },
     {
       "path": "tests/automated/selfdev-cycle.test.ts",
-      "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
-      "bytes": 5780,
-      "sha256": "f82ee7a073c808319ca7cb21f50a521c391cc6f0b73fb8fa705f467750c569e5",
-      "fixturePath": "tests/genuine-vitest-session/main-continuity-integration/tests/automated/selfdev-cycle.test.ts"
+      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "bytes": 5673,
+      "sha256": "bbbce84c3926cf7c67daf2114a0b1b8d02100e952e738d8e579fb111dd299cf7"
     },
     {
       "path": "tests/automated/selfdev-preservation.test.ts",
@@ -3291,11 +3280,11 @@
       "sha256": "b7e4dd9f8f34ecf3a0e2496d327d31a7b10b4f054b2d6f554a52e7beb5349aa4"
     },
     {
-      "path": "tests/real-process/cycle-continuity-child.ts",
+      "path": "tests/real-process/mcp-boundary-child.ts",
       "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
-      "bytes": 5059,
-      "sha256": "f2c4563b68036fb55762c499ecfc721c9c6493fa51b8fde8a47fd42b6c047dcd",
-      "fixturePath": "tests/genuine-vitest-session/main-continuity-integration/tests/real-process/cycle-continuity-child.ts"
+      "fixturePath": "tests/genuine-vitest-session/main-mcp-integration/tests/real-process/mcp-boundary-child.ts",
+      "bytes": 11392,
+      "sha256": "72d408b3c42f3c7d32c58e6a58b588da019d66ab33ec3306bbdbe3c16746712f"
     },
     {
       "path": "tests/setup/fetch-teardown.ts",
@@ -3420,7 +3409,7 @@
   ],
   "sessions": {
     "candidate": {
-      "productCommit": "MAIN_PLUS_SEVEN_CONTINUITY_BLOBS",
+      "productCommit": "MAIN_PLUS_EIGHT_MCP_BLOBS",
       "overrides": []
     }
   }
