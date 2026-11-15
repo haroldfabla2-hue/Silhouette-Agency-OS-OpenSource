@@ -63,7 +63,7 @@ it('runs actual composed identity/key/parser/two-client SDK behavior in a fresh 
             else checkpointOverflow = true;
         }
         let postPhase: { schema: number; ordinal: number; phase: string; status: number;
-            errorName: string; errorCode: string } | null = null;
+            errorName: string; errorCode: string; origin: string; ingress: boolean; fidelity: boolean } | null = null;
         let postState: 'ABSENT' | 'VALID' | 'INVALID_OR_OVERFLOW' = 'ABSENT';
         let postCount = 0;
         let outerFailure: 'NONE' | 'ASSERTION' | 'OTHER' | 'INVALID_OR_DUPLICATE' = 'NONE';
@@ -81,14 +81,16 @@ it('runs actual composed identity/key/parser/two-client SDK behavior in a fresh 
                 const v: unknown = JSON.parse(line.slice('MCP_POST_PHASE '.length));
                 if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error();
                 const k = v as Record<string, unknown>;
-                if (Object.keys(k).sort().join(',') !== 'errorCode,errorName,ordinal,phase,schema,status' || k.schema !== 1 ||
+                if (Object.keys(k).sort().join(',') !== 'errorCode,errorName,fidelity,ingress,ordinal,origin,phase,schema,status' || k.schema !== 1 ||
+                    typeof k.ingress !== 'boolean' || typeof k.fidelity !== 'boolean' || typeof k.origin !== 'string' ||
+                    !['NOT_RECEIVED','WRAPPER_BOUNDED','WRAPPER_PARSER','SDK_MESSAGE_SCHEMA','SDK_NO_STREAM','SDK_ACCEPTED','PRE_EXPRESS_400_CANDIDATE','UNKNOWN'].includes(k.origin) ||
                     typeof k.ordinal !== 'number' || !Number.isInteger(k.ordinal) || k.ordinal < 0 || k.ordinal > 8 ||
                     typeof k.status !== 'number' || !Number.isInteger(k.status) || !(k.status === 0 || k.status >= 100 && k.status <= 599) ||
                     typeof k.phase !== 'string' || !['REQUEST_START','REQUEST_ERROR','HTTP_REPLY','HTTP_STATUS_ASSERTION','SSE_WAIT','SSE_WAIT_ERROR','SSE_REPLY'].includes(k.phase) ||
                     typeof k.errorName !== 'string' || !['NONE','UNKNOWN','Error','AssertionError','TypeError','RangeError','AbortError'].includes(k.errorName) ||
                     typeof k.errorCode !== 'string' || !['NONE','UNKNOWN','ERR_ASSERTION','ECONNRESET','ECONNREFUSED','EPIPE','ENOENT','EACCES','EPERM','ETIMEDOUT','ENOBUFS','ERR_STREAM_PREMATURE_CLOSE','ERR_HTTP_HEADERS_SENT'].includes(k.errorCode)) throw new Error();
                 postPhase = { schema: 1, ordinal: k.ordinal, phase: k.phase, status: k.status,
-                    errorName: k.errorName, errorCode: k.errorCode }; postState = 'VALID';
+                    errorName: k.errorName, errorCode: k.errorCode, origin: k.origin, ingress: k.ingress, fidelity: k.fidelity }; postState = 'VALID';
             } catch { postState = 'INVALID_OR_OVERFLOW'; postPhase = null; }
         }
         const enumField = (value: unknown, values: readonly string[]) =>
@@ -112,7 +114,7 @@ it('runs actual composed identity/key/parser/two-client SDK behavior in a fresh 
         expect(result.error === undefined, diagnostic).toBe(true);
         expect(result.signal === null, diagnostic).toBe(true);
         expect(result.status === 0, diagnostic).toBe(true);
-        expect(postState === 'VALID' && postPhase?.phase === 'SSE_REPLY' && outerFailure === 'NONE', diagnostic).toBe(true);
+        expect(postState === 'VALID' && postPhase?.phase === 'SSE_REPLY' && postPhase.origin === 'SDK_ACCEPTED' && postPhase.ingress && postPhase.fidelity && outerFailure === 'NONE', diagnostic).toBe(true);
         expect(shapeState === 'VALID', diagnostic).toBe(true);
         expect(toolDenialShape, diagnostic).toEqual({ schema: 1, rpcError: false,
             resultObject: true, isError: 'TRUE', contentArray: true, contentSize: 'ONE', firstType: 'TEXT' });

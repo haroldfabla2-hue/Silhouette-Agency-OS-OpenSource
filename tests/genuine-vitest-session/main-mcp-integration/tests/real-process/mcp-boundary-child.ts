@@ -33,6 +33,8 @@ const b = apiKeyService.createApiKey({ name: 'authored-B', permissions: ['tools:
     process.stdout.write('MCP_CHECKPOINT {"id":4}\n');
 const wrapper = new MCPWrapper(apiKeyService);
 const app = express();
+let ingressCount = 0;
+app.use((_req, _res, next) => { ingressCount++; next(); });
 // Same ordering as production app: MCP excluded from general parser, unchanged
 // identity middleware, synchronous wrapper mount, then terminal404.
 const general = express.json({ limit: '10mb' });
@@ -86,6 +88,9 @@ async function post(stream: (typeof streams)[number], key: string, id: number, m
     const ordinal = [1,2,3,4,6,7,9,8].indexOf(id) + 1;
     let phase = 'REQUEST_START';
     let status = 0;
+    let origin = 'NOT_RECEIVED';
+    let ingress = false;
+    let fidelity = false;
     const emit = (next: string, error?: unknown) => {
         phase = next;
         const k = error && typeof error === 'object' ? error as Record<string, unknown> : {};
@@ -95,12 +100,31 @@ async function post(stream: (typeof streams)[number], key: string, id: number, m
             ordinal: ordinal >= 1 && ordinal <= 8 ? ordinal : 0, phase,
             status: Number.isInteger(status) && status >= 100 && status <= 599 ? status : 0,
             errorName: error === undefined ? 'NONE' : name,
-            errorCode: error === undefined ? 'NONE' : code }) + '\n');
+            errorCode: error === undefined ? 'NONE' : code, origin, ingress, fidelity }) + '\n');
     };
     emit('REQUEST_START');
     let reply: { status: number; text: string };
-    try { reply = await request(stream.endpoint, key, JSON.stringify({ jsonrpc: '2.0', id, method, ...(params ? { params } : {}) })); }
+    const payload = JSON.stringify({ jsonrpc: '2.0', id, method, ...(params ? { params } : {}) });
+    const beforeIngress = ingressCount;
+    // Validate the authored outgoing request shape without exposing its values.
+    const message: unknown = JSON.parse(payload);
+    const m = message as Record<string, unknown>;
+    const endpoint = new URL(stream.endpoint, 'http://localhost');
+    fidelity = m.jsonrpc === '2.0' && m.id === id && m.method === method &&
+        endpoint.pathname === '/mcp/messages' && endpoint.searchParams.getAll('sessionId').length === 1 &&
+        /^[0-9a-f-]{36}$/i.test(endpoint.searchParams.get('sessionId') ?? '') &&
+        Buffer.byteLength(payload) < MCP_LIMITS.bodyBytes;
+    try { reply = await request(stream.endpoint, key, payload); }
     catch (error) { emit('REQUEST_ERROR', error); throw error; }
+    ingress = ingressCount > beforeIngress;
+    // Match only exact constant bodies from the reviewed wrapper/SDK/Node.
+    // Never publish any text, substring, hash, length or unrecognized value.
+    origin = reply.text === '{"error":"Single bounded JSON-RPC object required"}' ? 'WRAPPER_BOUNDED' :
+        reply.text === '{"error":"Invalid MCP JSON body"}' ? 'WRAPPER_PARSER' :
+        reply.text === 'Invalid message: [object Object]' ? 'SDK_MESSAGE_SCHEMA' :
+        reply.text === 'SSE connection not established' ? 'SDK_NO_STREAM' :
+        reply.text === 'Accepted' ? 'SDK_ACCEPTED' :
+        !ingress && (reply.text === '' || reply.text === 'Bad Request') ? 'PRE_EXPRESS_400_CANDIDATE' : 'UNKNOWN';
     status = reply.status; emit('HTTP_REPLY');
     try { assert.equal(reply.status, 202, 'MCP HTTP acceptance required'); }
     catch (error) { emit('HTTP_STATUS_ASSERTION', error); throw error; }
