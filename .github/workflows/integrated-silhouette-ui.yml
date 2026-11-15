@@ -28,7 +28,7 @@ jobs:
           test "$PRIVATE" = false
           test "$RUNNER_KIND" = github-hosted
           test "$GITHUB_REPOSITORY" = haroldfabla2-hue/Silhouette-Agency-OS-OpenSource
-          test "$GITHUB_REF" = refs/heads/preparation/sqlite-static-typecheck-db201993-4054-20261114
+          test "$GITHUB_REF" = refs/heads/preparation/learning-provenance-80e2176-20261115
           test "$EXPECTED_HEAD" = "$GITHUB_SHA"
           [[ "$EXPECTED_HEAD" =~ ^[0-9a-f]{40}$ ]]
           # Read this job's actual controller start, not a later step's clock.
@@ -62,13 +62,13 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
-          test "$(git rev-parse HEAD^)" = d3c67b289993c371f1f2142475c49da10554b8e4
+          test "$(git rev-parse HEAD^)" = e6d55f116f93a5c8eae5957c72865efbd06a30d9
           test "$(git rev-list --parents -n 1 HEAD | wc -w)" -eq 2
           python3 - <<'PY'
           import subprocess
-          expected={'.github/workflows/integrated-silhouette-ui.yml','tests/genuine-vitest-session/session.sh','tests/genuine-vitest-session/offline-vitest.config.mjs'}
+          expected={'tests/genuine-vitest-session/direct.py', 'tests/real-process/learning-proposal-child.ts', '.github/workflows/integrated-silhouette-ui.yml', 'tests/genuine-vitest-session/session.sh', 'tests/genuine-vitest-session/classify.py', 'tests/genuine-vitest-session/SOURCE-SESSIONS.json', 'tests/automated/product-learning-proposal-real.test.ts'}
           actual=set(subprocess.check_output(['git','diff','--name-only','HEAD^','HEAD'],text=True).splitlines())
-          assert actual==expected,'EXACT_REVIEWED_LITERAL_HOST_CONFIG_ADAPTER_REQUIRED'
+          assert actual==expected,'EXACT_REVIEWED_LEARNING_VALIDATION_INTEGRATION_REQUIRED'
           PY
           timeout --signal=TERM --kill-after=5s 75s sudo /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin SILHOUETTE_FRESH_PUBLIC_GITHUB_VM=yes /bin/bash "$GITHUB_WORKSPACE/tests/genuine-vitest-session/setup-bwrap.sh" setup "$EXPECTED_HEAD" "$GITHUB_RUN_ID"
           elapsed=$(( $(date +%s) - $(cat "$RUNNER_TEMP/silhouette-session-job-start") ))

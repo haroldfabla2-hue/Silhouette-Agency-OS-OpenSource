@@ -10,7 +10,7 @@ phase=PREPARATION
 cleanup() { bash "$repo/tests/genuine-vitest-session/cleanup.sh" "$expected" "$runid"; }
 close_out() {
  original=$?;trap - EXIT;set +e
- case "$phase" in PREPARATION|transport|acquire|baseline-admission|baseline-state|candidate) ;; *) phase=UNKNOWN;;esac
+ case "$phase" in PREPARATION|transport|acquire|typecheck|regressions|mechanisms|candidate) ;; *) phase=UNKNOWN;;esac
  printf 'DIRECT_ROUTE_CLOSEOUT {"phase":"%s","coordinatorExit":%s}\n' "$phase" "$original"
 
  if $owned; then cleanup; c=$?;if test "$c" != 0; then echo CLEANUP_FAILED_NO_ACCEPTANCE;if test "$original" = 0; then original=$c;fi;fi;fi
@@ -34,7 +34,7 @@ for q in(p,p.parent):
 PY
 [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
 test "$(git -C "$repo" rev-parse HEAD)" = "$expected"
-test "$(git -C "$repo" rev-parse HEAD^)" = d3c67b289993c371f1f2142475c49da10554b8e4
+test "$(git -C "$repo" rev-parse HEAD^)" = e6d55f116f93a5c8eae5957c72865efbd06a30d9
 # Fail before allocating, never resize a previous attempt or use an existing account/root.
 test ! -e "$root"
 ! id silhouette-acquire >/dev/null 2>&1
@@ -108,16 +108,18 @@ mkdir -m 755 "$root/diagnostic"
 install -o root -g "$agid" -m 0620 /dev/null "$root/diagnostic/acquire.json"
 chown "$auid:$agid" "$root/work" "$root/transport"
 chown "$ruid:$rgid" "$root/runtime"
-python3 - "$repo" "$root" <<'PY'
+python3 - "$repo" "$root" "$expected" <<'PY'
 from pathlib import Path
 import sys,json,subprocess,hashlib
 repo=Path(sys.argv[1]);root=Path(sys.argv[2]);spec=json.loads((repo/'tests/genuine-vitest-session/SOURCE-SESSIONS.json').read_text())
+assert set(spec['sessions'])=={'candidate'}
 for name,session in spec['sessions'].items():
  dest=root/'sources'/name;dest.mkdir()
  overrides={r['path']:r for r in session['overrides']}
  for candidateRow in spec['files']:
   row=overrides.get(candidateRow['path'],candidateRow)
-  commit=session['p0TestCommit']if row['path']=='tests/automated/memory-transitions-p0.test.ts'else session['productCommit']
+  assert session['productCommit']=='WORKFLOW_HEAD_EXACT_HASHED_MEMBERS'
+  commit=sys.argv[3]
   p=Path(row['path']);assert not p.is_absolute()and '..'not in p.parts
   mode=subprocess.check_output(['/usr/bin/git','-c','safe.directory='+str(repo),'ls-tree',commit,'--',row['path']],cwd=repo,text=True).split()[0]
   assert mode in ('100644','100755'),'NON_REGULAR_SOURCE'
@@ -130,7 +132,7 @@ for name,session in spec['sessions'].items():
  assert not(dest/'offline-vitest.config.mjs').exists()
  (dest/'offline-vitest.config.mjs').write_bytes(adapter)
  # Empty bind targets only. Actual source tree remains read-only at runtime.
- (dest/'node_modules').mkdir();(dest/'db').mkdir();(dest/'data').mkdir()
+ (dest/'node_modules').mkdir();(dest/'db').mkdir(exist_ok=True);(dest/'data').mkdir()
 assert hashlib.sha256((root/'sources/candidate/package-lock.json').read_bytes()).hexdigest()=='039ce85293514e83584ca047d0d8b53eb7bce71bb3b3fe75fc6f96e928a0299c'
 PY
 # Trusted exact byte helper only, no installer/package/product code on host network.
@@ -161,31 +163,36 @@ iptables -I OUTPUT 1 -m owner --uid-owner "$ruid" -j REJECT
 ip6tables -I OUTPUT 1 -m owner --uid-owner "$ruid" -j REJECT
 iptables -C OUTPUT -m owner --uid-owner "$ruid" -j REJECT
 ip6tables -C OUTPUT -m owner --uid-owner "$ruid" -j REJECT
-for name in baseline-admission baseline-state candidate; do
+# One coherent candidate session, separated verdicts. No historical baseline rerun.
+name=candidate
+src="$root/sources/$name";data="$root/runtime/$name"
+mkdir "$data" "$data/tmp" "$data/home" "$data/db" "$data/data"
+# Reviewed public migration fixtures only. They are disposable input, never a real DB.
+cp -a "$src/db/migrations" "$data/db/migrations"
+chown -R "$ruid:$rgid" "$data"
+for validation in typecheck regressions mechanisms; do
  test "$((SECONDS-start))" -lt 800
- src="$root/sources/$name";data="$root/runtime/$name"
- mkdir "$data" "$data/tmp" "$data/home" "$data/db" "$data/data"
- chown -R "$ruid:$rgid" "$data"
- args=(tests/automated/memory-transitions-p0.test.ts)
- case "$name" in
-  baseline-admission) args+=(-t 'captures typed payload|owns Float32Array|rejects mutation of an admitted') ;;
-  baseline-state) args+=(-t 'keeps PENDING when destination|keeps VERIFIED when COMMITTED') ;;
-  candidate) args+=(-t 'captures typed payload|owns Float32Array|rejects mutation of an admitted|keeps PENDING when destination|keeps VERIFIED when COMMITTED') ;;
+ phase=$validation
+ case "$validation" in
+  typecheck) args=("$src/node_modules/typescript/bin/tsc" --noEmit --incremental false --pretty false) ;;
+  regressions) args=("$src/node_modules/vitest/vitest.mjs" run tests/automated/memory-transitions-p0.test.ts -t 'captures typed payload|owns Float32Array|rejects mutation of an admitted|keeps PENDING when destination|keeps VERIFIED when COMMITTED') ;;
+  mechanisms) args=("$src/node_modules/vitest/vitest.mjs" run tests/automated/product-learning-proposal-real.test.ts tests/automated/selfdev-preservation.test.ts tests/automated/independent-verifier-receipt-contract.test.ts tests/automated/learning-analysis-input.test.ts tests/automated/learning-status-copy.test.ts) ;;
  esac
- phase=$name
+ if test "$validation" != typecheck; then
+  args+=(--maxWorkers=1 --retry=0 --configLoader=runner --config="$src/offline-vitest.config.mjs" --no-cache --reporter=json --reporter=blob --outputFile.json="$data/$validation.report.json" --outputFile.blob="$data/$validation.blob.json")
+ fi
  set +e
- python3 -I "$root/fixtures/direct.py" run "$name" "$ruid" "$rgid" 85 "$hostnet" "$hostpid" "$root/fixtures/toolchain/bin/node" "$src/node_modules/vitest/vitest.mjs" run "${args[@]}" --maxWorkers=1 --retry=0 --configLoader=runner --config="$src/offline-vitest.config.mjs" --no-cache --reporter=json --reporter=blob --outputFile.json="$data/report.json" --outputFile.blob="$data/blob.json"
+ python3 -I "$root/fixtures/direct.py" run candidate "$ruid" "$rgid" 85 "$hostnet" "$hostpid" "$root/fixtures/toolchain/bin/node" "${args[@]}"
  code=$?
  set -e
- # Reporter/blob/assertions unchanged. Root-owned actual childreceipt replaces managerdefaults.
- python3 -I "$repo/tests/genuine-vitest-session/classify.py" "$name" "$data/report.json" "$data/blob.json" "$root/private/$name.child.json" "$code" > "$root/private/$name.summary.json"
+ mv "$root/private/candidate.child.json" "$root/private/$validation.child.json"
+ python3 -I "$repo/tests/genuine-vitest-session/classify.py" "$validation" "$data/$validation.report.json" "$data/$validation.blob.json" "$root/private/$validation.child.json" "$code" > "$root/private/$validation.summary.json"
 done
-# Summaries are finite prevalidated numbers/enums; clean every resource before publishing them.
 summary=$(python3 - "$root/private" <<'PYCODE'
 from pathlib import Path
 import sys,json
-p=Path(sys.argv[1]);rows=[json.loads((p/(n+'.summary.json')).read_text())for n in ['baseline-admission','baseline-state','candidate']]
-print(json.dumps({'scope':'FIVE_CURRENT_REAL_MEMORY_REGRESSIONS_ONLY','sessions':rows,'fullProductAccepted':False}))
+p=Path(sys.argv[1]);rows=[json.loads((p/(n+'.summary.json')).read_text())for n in ['typecheck','regressions','mechanisms']]
+print(json.dumps({'scope':'TYPECHECK_PLUS_FIVE_REAL_REGRESSIONS_AND_AUTHORED_MECHANISMS','sessions':rows,'usefulLearningAccepted':False,'fullProductAccepted':False}))
 PYCODE
 )
 cleanup

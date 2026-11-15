@@ -2,6 +2,8 @@ import { bootstrapStandaloneFixture } from './standalone-fixture-bootstrap';
 import fs from 'node:fs';import assert from 'node:assert/strict';
 // Original abrupt probe semantics remain. Bootstrap is not closure evidence.
 bootstrapStandaloneFixture();
+assert.equal(process.env.SILHOUETTE_INFERENCE_MODE,'cloud-only','Explicit no-local-model policy required before product imports');
+assert.equal(process.env.SILHOUETTE_PROVIDERS,'off','Explicit provider-OFF policy required before product imports');
 await import('../../server/config/runtimeCredentials');
 const {env}=await import('@xenova/transformers');env.allowRemoteModels=false;
 env.allowLocalModels=false;
