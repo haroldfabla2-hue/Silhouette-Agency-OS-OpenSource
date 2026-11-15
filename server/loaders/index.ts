@@ -90,7 +90,9 @@ export const initServer = async () => {
             scheduleInitialLearning(async () => {
                 console.log("[LOADER] 🔍 Running initial self-evolution analysis...");
                 try {
-                    const insights = await learningLoop.analyzeFailures();
+                    const analysis = await learningLoop.analyzeFailures();
+                    if (analysis.status !== 'COMPLETE') throw new Error(`${analysis.status}: ${analysis.detail}`);
+                    const insights = analysis.insights;
                     if(bootTimersAreSealed())return;
                     console.log(`[LOADER] 💡 Initial analysis complete: ${insights.length} insights found`);
                 } catch (e) {

@@ -1,0 +1,2 @@
+-- Destructive rollback is not automatic. Preserve unknown-call evidence.
+-- Operator must archive/reconcile learning_analysis before any manual removal.

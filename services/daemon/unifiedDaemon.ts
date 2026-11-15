@@ -558,7 +558,9 @@ export class UnifiedDaemon {
 
         try {
             const { learningLoop } = await import('../learningLoop');
-            const insights = await learningLoop.analyzeFailures(24 * 60 * 60 * 1000);
+            const analysis = await learningLoop.analyzeFailures(24 * 60 * 60 * 1000);
+            if (analysis.status !== 'COMPLETE') throw new Error(`${analysis.status}: ${analysis.detail}`);
+            const insights = analysis.insights;
             for (const insight of insights) {
                 if (insight.autoApplicable && insight.confidence > 0.75) {
                     const outcome = await learningLoop.routeInsight(insight);

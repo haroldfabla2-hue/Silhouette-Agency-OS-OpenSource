@@ -99,6 +99,19 @@ class IncidentRegistry {
         return rows.map(r => this.toIncident(r));
     }
 
+    /** Bounded original episodes, not recurrence counts or last sweep time. */
+    getIncidentEpisodesSince(since: number, limit: number): Incident[] {
+        if (!Number.isFinite(since) || !Number.isInteger(limit) || limit < 1 || limit > 101) throw new Error('Invalid episode query bound');
+        return (sqliteService.db.prepare('SELECT * FROM incidents WHERE first_seen > ? ORDER BY first_seen DESC, id LIMIT ?')
+            .all(since, limit) as any[]).map(r => this.toIncident(r));
+    }
+
+    /** Exact original IDs, including resolved episodes used as pattern evidence. */
+    getIncident(id: string): Incident | null {
+        const row = sqliteService.db.prepare('SELECT * FROM incidents WHERE id = ?').get(id);
+        return row ? this.toIncident(row) : null;
+    }
+
     private toIncident(r: any): Incident {
         return {
             id: r.id, source: r.source, kind: r.kind, summary: r.summary,

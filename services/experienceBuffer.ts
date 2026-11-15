@@ -8,6 +8,8 @@
  * Rate Limit Safe: Only uses local storage, no LLM calls
  */
 
+import crypto from 'node:crypto';
+import type { Incident } from './incidentRegistry';
 import { continuum } from './continuumMemory';
 import { MemoryTier, type MemoryNode } from '../types';
 
@@ -25,6 +27,8 @@ export interface Experience {
     /** Legacy text had no original experience UUID/time. These fields then
      * identify the actual memory node, not a recovered original experience. */
     identityProvenance?: 'legacy-memory-node';
+    /** One original SQLite episode, never a daemon sweep or occurrence count. */
+    incident?: { id: string; source: string; firstSeen: number };
 }
 
 class ExperienceBufferService {
@@ -60,6 +64,33 @@ class ExperienceBufferService {
             console.warn('[EXPERIENCE] Failed to persist:', e);
             throw e;
         }
+    }
+
+    /** Canonical immutable episode identity. Repeats/restarts read back the same
+     * payload. Concurrent physical rows can share a logical ID; history dedupes
+     * them and refuses conflicts. No claim of a cross-store transaction. */
+    async recordIncidentFailure(incident: Incident): Promise<string> {
+        if (!incident.id || !incident.source || !Number.isFinite(incident.firstSeen) || incident.firstSeen <= 0) {
+            throw new Error('Invalid incident identity');
+        }
+        const experience: Experience = {
+            id: `incident:${incident.id}`, type: 'FAILURE', context: incident.source,
+            action: `Observe original ${incident.kind} incident`,
+            outcome: incident.summary + (incident.detail ? `: ${incident.detail}` : ''),
+            timestamp: incident.firstSeen, agentId: 'SYSTEM',
+            incident: { id: incident.id, source: incident.source, firstSeen: incident.firstSeen }
+        };
+        const content = this.formatExperience(experience), tag = `experience:${experience.id}`;
+        const existing = await continuum.getLatestObservation(tag);
+        if (existing) {
+            if (existing.content !== content) throw new Error('Incident experience identity conflict');
+            return experience.id;
+        }
+        // Explicit canonical tier and skip ingestion: no inference to record a failure.
+        await continuum.store(content, MemoryTier.LONG, ['EXPERIENCE', 'FAILURE', tag, `incident:${incident.id}`], true);
+        const readback = await continuum.getLatestObservation(tag);
+        if (!readback || readback.content !== content) throw new Error('Incident experience persistence unverified');
+        return experience.id;
     }
 
     /**
@@ -118,15 +149,19 @@ class ExperienceBufferService {
     /** Bounded canonical history, independent of process-local RAM and semantic
      * search. Failure is observable: unreadable durable data must not be
      * reported as a successful empty learning window. Does not rewrite memory. */
-    async getRecentDurable(count: number = 100, type?: ExperienceType): Promise<Experience[]> {
+    async getRecentDurable(count: number = 100, type?: ExperienceType, requireComplete: boolean = false): Promise<Experience[]> {
         if (!Number.isInteger(count) || count < 1 || count > 100) throw new Error('Experience history limit must be 1..100');
-        const nodes = await continuum.getRecentObservations(type ? ['EXPERIENCE', type] : ['EXPERIENCE'], count);
-        return nodes.map(n => {
+        const nodes = await continuum.getRecentObservations(type ? ['EXPERIENCE', type] : ['EXPERIENCE'], count + (requireComplete ? 1 : 0));
+        if (requireComplete && nodes.length > count) throw new Error('Durable experience history bound exhausted; coverage unavailable');
+        const identities = new Map<string, Experience>();
+        for (const n of nodes) {
             const experience = this.parseExperience(n);
             if (!experience || (type && experience.type !== type)) throw new Error(`Invalid durable experience ${n.id}`);
-            return experience;
-        })
-            .sort((a, b) => b.timestamp - a.timestamp || a.id.localeCompare(b.id)).slice(0, count);
+            const prior = identities.get(experience.id);
+            if (prior && JSON.stringify(prior) !== JSON.stringify(experience)) throw new Error('Conflicting durable experience identity');
+            identities.set(experience.id, experience);
+        }
+        return [...identities.values()].sort((a, b) => b.timestamp - a.timestamp || a.id.localeCompare(b.id)).slice(0, count);
     }
 
     /**
@@ -165,8 +200,12 @@ class ExperienceBufferService {
                     || !['context', 'action', 'outcome'].every(k => typeof exp[k] === 'string')
                     || (exp.lesson !== undefined && typeof exp.lesson !== 'string')
                     || (exp.agentId !== undefined && typeof exp.agentId !== 'string')) return null;
+                if (exp.incident !== undefined && (!exp.incident || typeof exp.incident.id !== 'string' || !exp.incident.id
+                    || exp.incident.source !== exp.context || exp.incident.firstSeen !== exp.timestamp
+                    || exp.id !== `incident:${exp.incident.id}` || exp.type !== 'FAILURE')) return null;
                 return { id: exp.id, type: exp.type, context: exp.context, action: exp.action,
-                    outcome: exp.outcome, lesson: exp.lesson, agentId: exp.agentId, timestamp: exp.timestamp };
+                    outcome: exp.outcome, lesson: exp.lesson, agentId: exp.agentId, timestamp: exp.timestamp,
+                    ...(exp.incident ? { incident: exp.incident } : {}) };
             } catch { return null; }
         }
         // Legacy content did not store the experience UUID/time. Preserve

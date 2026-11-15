@@ -47,54 +47,23 @@ export const selfHealingTask: DaemonTask = {
             const { incidentRegistry } = await import('../incidentRegistry');
             const openIncidents = incidentRegistry.getOpenIncidents();
 
-            if ((!content || content.trim() === '') && openIncidents.length === 0) {
-                daemonLog.debug({}, 'Self-Healing: No trailing errors and no open incidents.');
-                return;
-            }
-
-            // Parse structured JSON log lines into Experience objects
             const lines = content.split('\n').filter(Boolean);
+            // Even an episode resolved before this sweep must reach canonical
+            // ingestion. A healthy empty analysis is explicit, not an early return.
 
-            // [R6] incidents alone justify the cycle even with zero log lines
-            if (lines.length === 0 && openIncidents.length === 0) return;
-
-            daemonLog.warn({}, `Self-Healing: Found ${lines.length} error entries and ${openIncidents.length} open incident(s). Feeding to LearningLoop.`);
+            daemonLog.warn({}, `Self-Healing: Found ${lines.length} error entries and ${openIncidents.length} open incident(s). Checking canonical incident analysis; log text is diagnostic only.`);
 
             // Dynamically import LearningLoop to avoid circular dependencies
             const { learningLoop } = await import('../learningLoop');
 
-            // Feed each error as a failure experience
-            const { continuum } = await import('../continuumMemory');
-
-            for (const incident of openIncidents.slice(0, 20)) {
-                try {
-                    await continuum.store(
-                        `SYSTEM_INCIDENT [${incident.kind}] ${incident.source}: ${incident.summary} (x${incident.occurrenceCount}, open since ${new Date(incident.firstSeen).toISOString()})`,
-                        undefined,
-                        ['system_incident', 'self_healing', incident.kind, incident.source],
-                        false
-                    );
-                } catch { /* continuum unavailable: incident stays durable in the registry */ }
-            }
-
-            for (const line of lines.slice(-50)) { // Process last 50 errors max
-                try {
-                    const entry = JSON.parse(line);
-                    // Store as a failure experience in Continuum Memory
-                    // so LearningLoop can pick it up during its next analyzeFailures() call
-                    await continuum.store(
-                        `SYSTEM_ERROR [${entry.level}]: ${entry.msg}`,
-                        undefined,
-                        ['system_error', 'self_healing', entry.level || 'error'],
-                        false // Not critical enough for eternal memory yet
-                    );
-                } catch (parseErr) {
-                    // Skip malformed lines
-                }
-            }
+            // Canonical mapped incidents are read/deduped by analysis itself.
+            // Raw file lines lack an immutable event ID: retain diagnostics but
+            // do not manufacture FAILURE experiences or clear another writer's log.
 
             // Trigger an immediate analysis cycle on these fresh errors
-            const insights = await learningLoop.analyzeFailures(15 * 60 * 1000); // Last 15 min window
+            const analysis = await learningLoop.analyzeFailures(15 * 60 * 1000);
+            if (analysis.status !== 'COMPLETE') throw new Error(`${analysis.status}: ${analysis.detail}`);
+            const insights = analysis.insights;
 
             // [SECURITY] Auto-applying a fix IS evolution: respect the same
             // operator authority (autonomy.allowEvolution) that gates the
@@ -122,8 +91,9 @@ export const selfHealingTask: DaemonTask = {
                 }
             }
 
-            // Clear the log file to prevent re-processing
-            await fs.writeFile(logPath, '', 'utf8');
+            // Raw log lines have no immutable event identity. Retain them rather
+            // than pretending ingestion acknowledged them or truncating concurrent
+            // writes. Log rotation/identity ingestion is a separate contract.
 
             daemonLog.info({}, `Self-Healing: Cycle complete. ${insights.length} insights, ${appliedCount} auto-applied.`);
 

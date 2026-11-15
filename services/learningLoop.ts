@@ -14,6 +14,7 @@ import { startLearningAnalysisTimer } from '../server/lifecycle/bootTimers';
  */
 
 import crypto from 'node:crypto';
+import { canonicalLearningAnalysisInput } from './selfdev/learningAnalysisInput';
 import { backgroundLLM } from './backgroundLLMService';
 import { continuum } from './continuumMemory';
 import { systemBus } from './systemBus';
@@ -21,6 +22,8 @@ import { SystemProtocol, MemoryTier } from '../types';
 import type { Experience as RecordedExperience, ExperienceType } from './experienceBuffer';
 
 interface Experience {
+    id: string;
+    incident?: RecordedExperience['incident'];
     timestamp: number;
     context: string;
     action: string;
@@ -30,7 +33,9 @@ interface Experience {
     source: string;
 }
 
-interface LearningInsight {
+export interface LearningInsight {
+    /** Captured by analysis, never supplied by model JSON. */
+    failureExperienceIds?: string[];
     context: string;
     failureCount: number;
     pattern: string;
@@ -49,6 +54,10 @@ export interface LearningOutcome {
     verification?: 'BASELINE_ORACLE_REQUIRED';
     detail?: string;
 }
+
+export type LearningAnalysisResult =
+    | { status: 'COMPLETE'; insights: LearningInsight[]; failureCount: number }
+    | { status: 'FAILED' | 'UNAVAILABLE'; detail: string };
 
 interface LearningStats {
     insightsGenerated: number;
@@ -84,17 +93,32 @@ class LearningLoop {
     /**
      * Analyze recent failures and generate insights
      */
-    public async analyzeFailures(timeWindowMs: number = 24 * 60 * 60 * 1000): Promise<LearningInsight[]> {
+    public async analyzeFailures(timeWindowMs: number = 24 * 60 * 60 * 1000): Promise<LearningAnalysisResult> {
         console.log('[LEARNING_LOOP] 🔍 Analyzing failures from last 24h...');
 
+        let phase: 'VALIDATION' | 'INPUT' | 'ANALYSIS' = 'VALIDATION';
         try {
             // Get failures from experienceBuffer (dynamic import)
+            if (!Number.isFinite(timeWindowMs) || timeWindowMs <= 0) throw new Error('Invalid analysis window');
+            phase = 'INPUT';
             const { experienceBuffer } = await import('./experienceBuffer');
+            const { incidentRegistry } = await import('./incidentRegistry');
+            const { memoryRepairMapping } = await import('./selfdev/incidentMappings');
+            // Bounded episode history, including recovery before next sweep. The
+            // original firstSeen time is never refreshed to create new failures.
+            const episodes = incidentRegistry.getIncidentEpisodesSince(Date.now() - timeWindowMs, 101);
+            if (episodes.length > 100) throw new Error('Incident scan bound exhausted; coverage unavailable');
+            for (const incident of episodes) {
+                if (memoryRepairMapping(incident.source) && incident.firstSeen > Date.now() - timeWindowMs) {
+                    await experienceBuffer.recordIncidentFailure(incident);
+                }
+            }
             const recentFailures = await this.getRecentFailures(experienceBuffer, timeWindowMs);
+            phase = 'ANALYSIS';
 
             if (recentFailures.length === 0) {
                 console.log('[LEARNING_LOOP] ✅ No failures to analyze');
-                return [];
+                return { status: 'COMPLETE', insights: [], failureCount: 0 };
             }
 
             console.log(`[LEARNING_LOOP] Found ${recentFailures.length} failures`);
@@ -112,12 +136,10 @@ class LearningLoop {
                     const insight = await this.generateInsight(context, failures);
                     if (insight) {
                         insights.push(insight);
-                        this.stats.patternsDetected++;
                     }
                 }
             }
 
-            this.stats.insightsGenerated += insights.length;
             this.stats.lastAnalysis = Date.now();
 
             // Store insights in memory
@@ -131,11 +153,11 @@ class LearningLoop {
                 stats: this.stats
             }, 'LEARNING_LOOP');
 
-            return insights;
+            return { status: 'COMPLETE', insights, failureCount: recentFailures.length };
 
         } catch (error: any) {
             console.error('[LEARNING_LOOP] ❌ Analysis failed:', error.message);
-            return [];
+            return { status: phase === 'INPUT' ? 'UNAVAILABLE' : 'FAILED', detail: String(error.message || error) };
         }
     }
 
@@ -143,7 +165,7 @@ class LearningLoop {
      * Get recent failures from experience buffer
      */
     private async getRecentFailures(
-        experienceBuffer: { getRecentDurable(count: number, type?: ExperienceType): Promise<RecordedExperience[]> },
+        experienceBuffer: { getRecentDurable(count: number, type?: ExperienceType, requireComplete?: boolean): Promise<RecordedExperience[]> },
         timeWindowMs: number
     ): Promise<Experience[]> {
         if (!Number.isFinite(timeWindowMs) || timeWindowMs <= 0) {
@@ -152,9 +174,9 @@ class LearningLoop {
         const cutoff = Date.now() - timeWindowMs;
         // Read original durable experiences after restart, not only this process's
         // RAM. Observation-only storage reads do not invoke a provider or ranking.
-        return (await experienceBuffer.getRecentDurable(100, 'FAILURE'))
+        return (await experienceBuffer.getRecentDurable(100, 'FAILURE', true))
             .filter(e => e.type === 'FAILURE' && e.timestamp > cutoff)
-            .map(e => ({ timestamp: e.timestamp, context: e.context,
+            .map(e => ({ id: e.id, incident: e.incident, timestamp: e.timestamp, context: e.context,
                 action: e.action, result: 'FAILURE', error: e.outcome,
                 solution: e.lesson, source: e.agentId || 'SYSTEM' }));
     }
@@ -205,6 +227,23 @@ Respond with JSON:
 }`;
 
         try {
+            const { memoryRepairMapping } = await import('./selfdev/incidentMappings');
+            let admission: { hash: string; cachedResult?: string } | undefined;
+            const ledger = await import('./selfdev/learningAnalysisLedger');
+            if (memoryRepairMapping(context)) {
+                const input = canonicalLearningAnalysisInput(context, failures);
+                admission = ledger.admitLearningAnalysis(input);
+                if (admission.cachedResult !== undefined) {
+                    const cached = JSON.parse(admission.cachedResult) as LearningInsight;
+                    if (!cached || cached.context !== context || cached.failureCount !== failures.length
+                        || !['pattern', 'rootCause', 'suggestedFix'].every(key => typeof (cached as any)[key] === 'string' && (cached as any)[key].length > 0)
+                        || !Number.isFinite(cached.confidence) || cached.confidence < 0 || cached.confidence > 1 || typeof cached.autoApplicable !== 'boolean'
+                        || JSON.stringify(cached.failureExperienceIds) !== JSON.stringify(failures.map(f => f.id).sort())) {
+                        throw new Error('Analysis cached provenance mismatch');
+                    }
+                    return cached;
+                }
+            }
             const response = await backgroundLLM.generate(prompt, {
                 taskType: 'ANALYSIS',
                 priority: 'LOW'
@@ -214,24 +253,32 @@ Respond with JSON:
             const jsonMatch = response.match(/\{[\s\S]*\}/);
             if (!jsonMatch) {
                 console.warn('[LEARNING_LOOP] Failed to parse LLM response');
-                return null;
+                throw new Error('Invalid insight response: no JSON');
             }
 
             const parsed = JSON.parse(jsonMatch[0]);
+            if (!['pattern', 'rootCause', 'suggestedFix'].every(key => typeof parsed[key] === 'string' && parsed[key].length > 0)
+                || !Number.isFinite(parsed.confidence) || parsed.confidence < 0 || parsed.confidence > 1
+                || typeof parsed.autoApplicable !== 'boolean') throw new Error('Invalid insight response fields');
 
-            return {
+            const insight: LearningInsight = {
                 context,
+                failureExperienceIds: failures.map(f => f.id).sort(),
                 failureCount: failures.length,
                 pattern: parsed.pattern || 'Unknown pattern',
                 rootCause: parsed.rootCause || 'Unknown cause',
                 suggestedFix: parsed.suggestedFix || 'No fix suggested',
-                confidence: Math.min(1, Math.max(0, parsed.confidence || 0.5)),
+                confidence: parsed.confidence,
                 autoApplicable: parsed.autoApplicable === true
             };
+            if (admission) ledger.completeLearningAnalysis(admission.hash, JSON.stringify(insight));
+            this.stats.insightsGenerated++;
+            this.stats.patternsDetected++;
+            return insight;
 
         } catch (error: any) {
             console.error('[LEARNING_LOOP] Failed to generate insight:', error.message);
-            return null;
+            throw error;
         }
     }
 
@@ -248,11 +295,12 @@ Confidence: ${(insight.confidence * 100).toFixed(0)}%
 Auto-applicable: ${insight.autoApplicable}
         `.trim();
 
-        await continuum.store(
-            content,
-            undefined,
-            ['LEARNING', 'SYSTEM', 'INSIGHT', insight.context]
-        );
+        const tag = `learning-insight:${crypto.createHash('sha256').update(JSON.stringify(insight)).digest('hex')}`;
+        const prior = await continuum.getLatestObservation(tag);
+        if (prior && prior.content !== content) throw new Error('Insight identity conflict');
+        if (!prior) await continuum.store(content, MemoryTier.LONG, ['LEARNING', 'SYSTEM', 'INSIGHT', insight.context, tag], true);
+        const readback = await continuum.getLatestObservation(tag);
+        if (!readback || readback.content !== content) throw new Error('Insight persistence unverified');
 
         console.log(`[LEARNING_LOOP] 💾 Stored insight for: ${insight.context}`);
     }
@@ -273,12 +321,12 @@ Auto-applicable: ${insight.autoApplicable}
             return { stage: 'REJECTED', applied: false };
         }
 
-        if (insight.confidence < this.AUTO_APPLY_CONFIDENCE) {
+        if (!Number.isFinite(insight.confidence) || insight.confidence < this.AUTO_APPLY_CONFIDENCE) {
             console.log(`[LEARNING_LOOP] ⚠️ Confidence too low: ${insight.confidence}`);
             return { stage: 'REJECTED', applied: false };
         }
 
-        if (insight.failureCount < this.AUTO_APPLY_MIN_FAILURES) {
+        if (!Number.isInteger(insight.failureCount) || insight.failureCount < this.AUTO_APPLY_MIN_FAILURES) {
             console.log(`[LEARNING_LOOP] ⚠️ Not enough failures to auto-apply: ${insight.failureCount}`);
             return { stage: 'REJECTED', applied: false };
         }
@@ -300,15 +348,73 @@ Auto-applicable: ${insight.autoApplicable}
             if (memoryRepairMapping(insight.context)) {
                 // Exact durable incident source, not a substring inferred by a planner.
                 const { incidentRegistry } = await import('./incidentRegistry');
-                const incident = incidentRegistry.getOpenIncidents().find(i => i.source === insight.context);
-                if (!incident) return { stage: 'UNHANDLED', applied: false, detail: 'No open durable incident for declared memory repair source' };
-                const proposalMemoryId = await recordProposal(
-                    `MEMORY_REPAIR_PROPOSAL: ${insight.context}\nIncident: ${incident.id}\nPattern: ${insight.pattern}\nSuggested fix (untrusted proposal, not authority): ${insight.suggestedFix}`,
-                    ['LEARNING', 'MEMORY_REPAIR', 'PROPOSED', insight.context]
-                );
+                const { experienceBuffer } = await import('./experienceBuffer');
+                const ids = insight.failureExperienceIds;
+                if (!ids || ids.length !== insight.failureCount || new Set(ids).size !== ids.length) {
+                    return { stage: 'REJECTED', applied: false, detail: 'Original distinct durable failure IDs required' };
+                }
+                const history = await experienceBuffer.getRecentDurable(100, 'FAILURE', true);
+                const evidence = ids.map(id => history.find(e => e.id === id));
+                if (evidence.some(e => {
+                    if (!e || e.context !== insight.context || !e.incident || e.incident.source !== insight.context) return true;
+                    const original = incidentRegistry.getIncident(e.incident.id);
+                    return !original || original.source !== e.context || original.firstSeen !== e.timestamp
+                        || e.outcome !== original.summary + (original.detail ? `: ${original.detail}` : '');
+                })) {
+                    return { stage: 'REJECTED', applied: false, detail: 'Original incident evidence unavailable or mismatched' };
+                }
+                const cycles = (await import('./selfdev/cycleService')).selfDevCycleService.list();
+                const originals = evidence.map(e => incidentRegistry.getIncident(e!.incident!.id)!);
+                const replayEpisode = originals.find(i => cycles.some(c => c.learningProposal?.incidentId === i.id && c.learningProposal?.source === i.source));
+                const incident = originals.filter(i => i.status === 'open' && i.source === insight.context)
+                    .sort((a, b) => a.firstSeen - b.firstSeen || a.id.localeCompare(b.id))[0] || replayEpisode;
+                if (!incident) return { stage: 'UNHANDLED', applied: false, detail: 'No original open incident remains' };
                 const { selfDevCycleService } = await import('./selfdev/cycleService');
+                const prior = selfDevCycleService.list().find(c => c.learningProposal?.source === incident.source
+                    && c.learningProposal?.incidentId === incident.id);
+                if (prior) {
+                    const linked = prior.learningProposal!;
+                    if (!linked.failureExperienceIds?.length) throw new Error('Legacy proposal lacks verified provenance; review required');
+                    const original = await continuum.getLatestObservation(`learning-origin:${incident.id}`);
+                    if (!original || original.id !== linked.memoryId) throw new Error('Original proposal persistence unavailable');
+                    const saved = JSON.parse(original.content);
+                    if (saved.version !== 1 || saved.source !== linked.source || saved.incidentId !== linked.incidentId
+                        || JSON.stringify(saved.failureExperienceIds) !== JSON.stringify(linked.failureExperienceIds)) {
+                        throw new Error('Original proposal content/linkage conflict');
+                    }
+                    const replay = selfDevCycleService.createLearningProposal({ memoryId: linked.memoryId,
+                        source: linked.source, incidentId: linked.incidentId, failureExperienceIds: linked.failureExperienceIds,
+                        issue: prior.issue });
+                    return { stage: 'PROPOSAL_RECORDED', applied: false, proposalMemoryId: linked.memoryId, cycleId: replay.id,
+                        verification: 'BASELINE_ORACLE_REQUIRED', detail: 'Original proposal replayed; no planner or patch executed' };
+                }
+                const originTag = `learning-origin:${incident.id}`;
+                const orphan = await continuum.getLatestObservation(originTag);
+                let proposalMemoryId: string;
+                let originalIds: string[];
+                if (orphan) {
+                    const saved = JSON.parse(orphan.content);
+                    if (saved.version !== 1 || saved.incidentId !== incident.id || saved.source !== incident.source
+                        || !Array.isArray(saved.failureExperienceIds) || saved.failureExperienceIds.length < 5
+                        || saved.failureExperienceIds.some((id: unknown) => typeof id !== 'string')) {
+                        throw new Error('Orphan proposal has invalid original provenance');
+                    }
+                    originalIds = saved.failureExperienceIds;
+                    // Revalidate original evidence rather than substituting newer model output.
+                    if (new Set(originalIds).size !== originalIds.length || originalIds.some(id => !history.some(e => e.id === id
+                        && e.context === insight.context && e.incident && incidentRegistry.getIncident(e.incident.id)))) {
+                        throw new Error('Orphan proposal original evidence unavailable');
+                    }
+                    proposalMemoryId = orphan.id;
+                } else {
+                    originalIds = [...ids].sort();
+                    proposalMemoryId = await recordProposal(JSON.stringify({ version: 1, source: incident.source,
+                        incidentId: incident.id, failureExperienceIds: originalIds, pattern: insight.pattern,
+                        suggestedFix: insight.suggestedFix, authority: 'UNTRUSTED_PROPOSAL_ONLY' }),
+                        ['LEARNING', 'MEMORY_REPAIR', 'PROPOSED', insight.context, originTag]);
+                }
                 const cycle = selfDevCycleService.createLearningProposal({ memoryId: proposalMemoryId,
-                    source: incident.source, incidentId: incident.id, issue: `Memory repair proposal for incident ${incident.id}: ${incident.summary}` });
+                    source: incident.source, incidentId: incident.id, failureExperienceIds: originalIds, issue: `Memory repair proposal for incident ${incident.id}: ${incident.summary}` });
                 return { stage: 'PROPOSAL_RECORDED', applied: false, proposalMemoryId, cycleId: cycle.id,
                     verification: 'BASELINE_ORACLE_REQUIRED', detail: 'HUMAN_APPROVAL_PENDING; no planner or patch executed; independent baseline/oracle required' };
             }
@@ -413,7 +519,8 @@ Auto-applicable: ${insight.autoApplicable}
                 }
             } catch { /* throttle unavailable -> full capability */ }
             console.log('[LEARNING_LOOP] ⏰ Running scheduled analysis...');
-            await this.analyzeFailures();
+            const result = await this.analyzeFailures();
+            if (result.status !== 'COMPLETE') console.warn(`[LEARNING_LOOP] ${result.status}: ${result.detail}`);
         }, intervalMs);
     }
 
