@@ -1,26 +1,26 @@
-# EXACT PROPOSAL ONLY, not yet published or activated.
-# Branch-only replacement at the EXISTING registered integrated workflow path.
-# No push trigger. One separate manual dispatch requires exact reviewed head.
-name: SOURCE PROPOSAL DOCKER QUALIFICATION THEN SAME SCOPED DRIVER
+# SOURCE PROPOSAL ONLY. No push/PR/schedule trigger; separate activation admission required.
+name: Manual current product Vitest on one disposable public VM
 on:
   workflow_dispatch:
     inputs:
       expected_head:
-        description: Exact reviewed single-child source publication commit
+        description: Exact independently reviewed workflow publication commit
         required: true
         type: string
 permissions:
   contents: read
+  actions: read
 jobs:
-  source-helper-validation:
+  current-product-vitest:
     if: github.event.repository.private == false
     runs-on: ubuntu-24.04
-    timeout-minutes: 6
+    timeout-minutes: 20
     steps:
-      - name: Exact manual event public standard hosted and branch guard
+      - name: Refuse wrong event audience runner branch or head
         env:
           EXPECTED_HEAD: ${{ inputs.expected_head }}
           PRIVATE: ${{ github.event.repository.private }}
+          GH_TOKEN: ${{ github.token }}
           RUNNER_KIND: ${{ runner.environment }}
         run: |
           set -euo pipefail
@@ -29,47 +29,69 @@ jobs:
           test "$RUNNER_KIND" = github-hosted
           test "$GITHUB_REPOSITORY" = haroldfabla2-hue/Silhouette-Agency-OS-OpenSource
           test "$GITHUB_REF" = refs/heads/preparation/sqlite-static-typecheck-db201993-4054-20261114
+          test "$EXPECTED_HEAD" = "$GITHUB_SHA"
           [[ "$EXPECTED_HEAD" =~ ^[0-9a-f]{40}$ ]]
-          test "$GITHUB_SHA" = "$EXPECTED_HEAD"
+          # Read this job's actual controller start, not a later step's clock.
+          python3 - <<'PY'
+          import os,json,urllib.request,datetime,pathlib
+          url='https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/actions/runs/'+os.environ['GITHUB_RUN_ID']+'/attempts/'+os.environ['GITHUB_RUN_ATTEMPT']+'/jobs?per_page=100'
+          request=urllib.request.Request(url,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+          with urllib.request.urlopen(request,timeout=15) as response: body=json.load(response)
+          jobs=[j for j in body['jobs'] if j['name']=='current-product-vitest' and j['status']=='in_progress']
+          assert len(jobs)==1 and body['total_count']==1
+          start=int(datetime.datetime.fromisoformat(jobs[0]['started_at'].replace('Z','+00:00')).timestamp())
+          pathlib.Path(os.environ['RUNNER_TEMP'],'silhouette-session-job-start').write_text(str(start))
+          PY
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
+          fetch-depth: 0
           persist-credentials: false
-          fetch-depth: 2
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.github/workflows/integrated-silhouette-ui.yml
+            /tests/genuine-vitest-session/
+            /tests/integrated-ui-trial/archive-member-normalizations.json
+            /tests/integrated-ui-trial/libsignal-packed-files.json
+            /tests/integrated-ui-trial/native-provenance/better-sqlite3-v12.5.0-node-v127-linux-x64.tar.gz
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22.18.0
-      - name: Exact single-child lineage changed-path allowlist and complete source identity
+      - name: Existing genuine Vitest route only, bounded session and cleanup
+        env:
+          EXPECTED_HEAD: ${{ inputs.expected_head }}
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = 5c64ee5a7308934a5bedb271c9045015f0784b12
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git rev-parse HEAD^)" = a82f0c88ad30371e9fa73f380509810e1eadeebe
           test "$(git rev-list --parents -n 1 HEAD | wc -w)" -eq 2
-          python3 - <<'PYVERIFY'
-          from pathlib import Path
-          import hashlib,json,subprocess
-          root=Path('tests/product-docker-validation')
-          manifest=root/'MANIFEST.json'
-          assert hashlib.sha256(manifest.read_bytes()).hexdigest()=='2937d4956c73980e5ae2957dbfa226998c80189cb5559c7ccd03028749ce4b9f'
-          expected={'.github/workflows/integrated-silhouette-ui.yml', 'tests/product-docker-validation/host-validation.py', 'tests/product-docker-validation/cleanup-envelope.py', 'tests/product-docker-validation/finite-export.py', 'tests/product-docker-validation/enforcement.py', 'tests/product-docker-validation/finite_projection.py', 'tests/product-docker-validation/MANIFEST.json', 'tests/product-docker-validation/host-envelope.py', 'tests/product-docker-validation/REVIEW.md', 'tests/product-docker-validation/qualification.cjs', 'tests/product-docker-validation/driver/validate.cjs'}
+          python3 - <<'PY'
+          import subprocess
+          expected={'.github/workflows/integrated-silhouette-ui.yml','tests/genuine-vitest-session/acquire.py','tests/genuine-vitest-session/classify.py','tests/genuine-vitest-session/session.sh','tests/genuine-vitest-session/cleanup.sh','tests/genuine-vitest-session/SOURCE-SESSIONS.json'}
           actual=set(subprocess.check_output(['git','diff','--name-only','HEAD^','HEAD'],text=True).splitlines())
-          assert actual==expected
-          for folder,digest,count in [(root,'2937d4956c73980e5ae2957dbfa226998c80189cb5559c7ccd03028749ce4b9f',9),(Path('tests/product-source-validation'),'ad8f28f8c1e4cc1437bc44dd2199b38d929b10141aac71ef6dc3028c99275c2c',3434)]:
-              manifest=folder/'MANIFEST.json';assert hashlib.sha256(manifest.read_bytes()).hexdigest()==digest
-              rows=json.loads(manifest.read_text())['files'];assert len(rows)==count
-              for r in rows:
-                  p=folder/r['path'];assert p.is_file()and not p.is_symlink()
-                  b=p.read_bytes();assert len(b)==r['bytes']and hashlib.sha256(b).hexdigest()==r['sha256']
-          PYVERIFY
-      - name: Exact reviewed source gate and bounded isolated helper scope
+          assert actual==expected,'EXACT_REVIEWED_SIX_FILE_DELTA_REQUIRED'
+          PY
+          elapsed=$(( $(date +%s) - $(cat "$RUNNER_TEMP/silhouette-session-job-start") ))
+          test "$elapsed" -ge 0
+          test "$elapsed" -le 90
+          nodebin=$(readlink -f "$(command -v node)")
+          safepath="$(dirname "$nodebin"):/usr/sbin:/usr/bin:/sbin:/bin"
+          # 15min work + 2min cleanup, after <=90s setup, fits within 20min.
+          timeout --signal=TERM --kill-after=5s 910s sudo /usr/bin/env -i PATH="$safepath" \
+            /usr/bin/systemd-run --quiet --pipe --wait --unit=silhouette-vitest-coordinator --slice=silhouette-vitest.slice --service-type=exec \
+            -p MemoryMax=512M -p MemorySwapMax=0 -p CPUQuota=50% -p TasksMax=64 \
+            -p RuntimeMaxSec=900 -p TimeoutStopSec=5 -p KillMode=control-group \
+            -p StandardError=null \
+            /usr/bin/env -i PATH="$safepath" /bin/bash tests/genuine-vitest-session/session.sh "$PWD" "$EXPECTED_HEAD" "$GITHUB_RUN_ID"
+      - name: Final cleanup and finite public-fixture summary only
+        if: always()
         env:
-          REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
-          RUNNER_ENVIRONMENT: ${{ runner.environment }}
-          DOCKER_SOURCE_MANIFEST_SHA256: 2937d4956c73980e5ae2957dbfa226998c80189cb5559c7ccd03028749ce4b9f
-        run: python3 tests/product-docker-validation/host-validation.py
-      # No artifact upload, cache, provider, browser, native-store or public raw
-      # runtime export. Fixed export and independent tagged cleanup follow.
-      - name: Independent exact-tag cleanup
-        if: always()
-        run: env GITHUB_RUN_ID="$GITHUB_RUN_ID" RUNNER_TEMP="$RUNNER_TEMP" /usr/bin/python3 tests/product-docker-validation/cleanup-envelope.py
-      - name: Fixed scoped evidence only, never raw source or diagnostics
-        if: always()
-        run: python3 tests/product-docker-validation/finite-export.py
+          EXPECTED_HEAD: ${{ inputs.expected_head }}
+        run: |
+          set -euo pipefail
+          timeout --signal=TERM --kill-after=5s 120s sudo /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin \
+            /usr/bin/systemd-run --quiet --pipe --wait --unit=silhouette-vitest-final-cleanup --slice=silhouette-vitest.slice --service-type=exec \
+            -p MemoryMax=512M -p MemorySwapMax=0 -p CPUQuota=50% -p TasksMax=64 \
+            -p RuntimeMaxSec=110 -p TimeoutStopSec=5 -p KillMode=control-group \
+            -p StandardError=null \
+            /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin /bin/bash tests/genuine-vitest-session/cleanup.sh "$EXPECTED_HEAD" "$GITHUB_RUN_ID"
+# No artifact/cache upload, browser/model/provider acquisition, matrix or rerun.
