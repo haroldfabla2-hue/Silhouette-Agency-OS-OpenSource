@@ -29,7 +29,7 @@ wait_unit() {
 # This runs after wait and before classifying/accepting any product evidence.
 verify_unit_policy() {
   local unit=$1 phase=$2
-  systemctl show "$unit" --property=User,Group,MemoryMax,MemorySwapMax,TasksMax,CPUQuotaPerSecUSec,TemporaryFileSystem,NoNewPrivileges,ProtectSystem,RestrictAddressFamilies,PrivateNetwork |
+  systemctl show "$unit" --property=User,Group,MemoryMax,MemorySwapMax,TasksMax,CPUQuotaPerSecUSec,TemporaryFileSystem,NoNewPrivileges,ProtectSystem,RestrictAddressFamilies,PrivateNetwork,ReadWritePaths |
     /usr/bin/python3 -I -c '
 import sys
 phase=sys.argv[1]
@@ -39,6 +39,8 @@ assert v["User"]==identity and v["Group"]==identity
 assert v["MemoryMax"]==("8589934592"if phase=="acquire"else"6442450944")
 assert v["MemorySwapMax"]=="0"and v["TasksMax"]=="256"and v["CPUQuotaPerSecUSec"]=="1s"
 assert v["NoNewPrivileges"]=="yes"and v["ProtectSystem"]=="strict"
+if phase=="acquire":
+ assert set(v["ReadWritePaths"].split())=={"/mnt/silhouette-genuine-vitest/work","/mnt/silhouette-genuine-vitest/diagnostic/acquire.json"}
 if phase!="acquire":
  assert v["RestrictAddressFamilies"].split()==["AF_UNIX"]and v["PrivateNetwork"]=="yes"
 rows=v["TemporaryFileSystem"].split();assert len(rows)==1
@@ -60,11 +62,42 @@ unit_finished=
 failure_projection=
 project_failure() {
   /usr/bin/python3 -I - "$current_unit" "$unit_started" "$unit_finished" "$1" <<'PYEVIDENCE'
-import json,os,re,selectors,subprocess,sys,time
+import json,os,re,selectors,subprocess,sys,time,stat
 unit,started,finished,original=sys.argv[1:]
 allowed={'silhouette-vitest-acquire','silhouette-vitest-baseline-admission','silhouette-vitest-baseline-state','silhouette-vitest-candidate'}
 result={'phase':unit.removeprefix('silhouette-vitest-')if unit in allowed else'UNKNOWN','properties':'UNKNOWN','journal':'UNKNOWN','category':'UNKNOWN','path':'UNKNOWN'}
 result['originalExit']=int(original)if original.isdigit()and len(original)<=3 else'UNKNOWN'
+if unit=='silhouette-vitest-acquire':
+ result['diagnostic']={'status':'UNKNOWN','authority':'UNAUTHENTICATED_CORROBORATION_ONLY'}
+ fd=None
+ try:
+  fd=os.open('/mnt/silhouette-genuine-vitest/diagnostic/acquire.json',os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK|os.O_CLOEXEC)
+  info=os.fstat(fd)
+  if not stat.S_ISREG(info.st_mode)or info.st_uid!=0 or info.st_nlink!=1 or stat.S_IMODE(info.st_mode)!=0o620:raise ValueError()
+  raw=os.read(fd,1025)
+  if not raw:result['diagnostic']['status']='MISSING'
+  elif len(raw)>1024 or info.st_size>1024:result['diagnostic']['status']='OVERSIZE'
+  else:
+   row=json.loads(raw);assert type(row)is dict and set(row)=={'version','origin','stage','event','exception','errno','role','subprocessExit'}
+   assert type(row['version'])is int and row['version']==1
+   assert row['origin']in {'GATE','ACQUIRE'}
+   assert row['exception']in {'NONE','OTHER','AssertionError','OSError','PermissionError','FileNotFoundError','FileExistsError','TimeoutError','CalledProcessError','TimeoutExpired','ValueError','KeyError','JSONDecodeError','HTTPError','URLError'}
+   assert row['errno']=='UNKNOWN'or type(row['errno'])is int and row['errno']in {1,2,5,7,8,12,13,20,21,22,24,27,28,30,31,32,38,95,110,111}
+   assert row['role']in {'NONE','NPM_CONFIG','NPM_CI'}
+   assert row['subprocessExit']=='UNKNOWN'or type(row['subprocessExit'])is int and -128<=row['subprocessExit']<=255
+   if row['origin']=='GATE':
+    assert(row['stage'],row['event'])in {('ADMISSION','ADMISSION_REJECTED'),('ADMISSION','ADMISSION_EXCEPTION'),('EXECVE','EXECVE_PENDING'),('EXECVE','EXECVE_EXCEPTION')}
+    assert row['role']=='NONE'and row['subprocessExit']=='UNKNOWN'
+   else:
+    assert row['stage']in {'PAYLOAD_INIT','SOURCE_COPY','PUBLIC_SOURCE_FETCH','INSTALLER_IDENTITY','NPM_CONFIG','NPM_CI','LOCK_VERIFY','ARCHIVE_VERIFY','MEMBER_VERIFY','NATIVE_PROVENANCE','COMPLETE'}
+    assert row['event']in {'ENTERED','UNCAUGHT_EXCEPTION','COMPLETED'}
+   result['diagnostic']={'status':'CAPTURED','authority':'UNAUTHENTICATED_CORROBORATION_ONLY','receipt':row}
+ except BaseException:result['diagnostic']['status']='READ_OR_SCHEMA_FAILED_UNKNOWN'
+ finally:
+  if fd is not None:
+   try:os.close(fd)
+   except OSError:pass
+
 if unit not in allowed or not re.fullmatch(r'[0-9]+\.[0-9]{6}',started) or not re.fullmatch(r'[0-9]+\.[0-9]{6}',finished):
  print(json.dumps(result));sys.exit(0)
 # One shared two-second budget, finite pipes, no stderr/raw exceptions.
@@ -180,7 +213,7 @@ quota,period=(p/'cpu.max').read_text().split();assert int(quota)==2*int(period)
 PYLIMIT
 [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
 test "$(git -C "$repo" rev-parse HEAD)" = "$expected"
-test "$(git -C "$repo" rev-parse HEAD^)" = 8b8e5d3f14bb9dcab0e46718b6c2c6221c03ae70
+test "$(git -C "$repo" rev-parse HEAD^)" = a348bf08b9406b88d26ff272cc1f4e4c450fc276
 # Fail before allocating, never resize a previous attempt or use an existing account/root.
 test ! -e "$root"
 ! id silhouette-acquire >/dev/null 2>&1
@@ -219,8 +252,22 @@ cat > "$root/fixtures/policy-admission.py" <<'PYADMISSION'
 # This is an admission prefix, not a product/test driver. It has no subprocess,
 # network, product imports, writable receipt, or alternate test/config invocation.
 # Execute with python3 -I; only an immutable root-owned copy is admissible.
-import os,stat,sys
+import os,stat,sys,json
 from pathlib import Path
+
+def gate_diagnostic(event,exc=None):
+ try:
+  if sys.argv[1]!='acquire':return
+  kind=type(exc).__name__ if exc is not None else'NONE'
+  row={'version':1,'origin':'GATE','stage':'ADMISSION'if event.startswith('ADMISSION')else'EXECVE','event':event,'exception':kind if kind in {'AssertionError','OSError','PermissionError','FileNotFoundError','ValueError','KeyError','NONE'}else'OTHER','errno':'UNKNOWN','role':'NONE','subprocessExit':'UNKNOWN'}
+  if isinstance(exc,OSError)and exc.errno in {1,2,5,7,8,12,13,20,21,22,24,27,28,30,31,32,38,95,110,111}:row['errno']=exc.errno
+  b=json.dumps(row,separators=(',',':')).encode();assert len(b)<=1024
+  fd=os.open('/mnt/silhouette-genuine-vitest/diagnostic/acquire.json',os.O_WRONLY|os.O_NOFOLLOW|os.O_CLOEXEC)
+  try:
+   os.ftruncate(fd,0);assert os.write(fd,b)==len(b)
+  finally:os.close(fd)
+ except BaseException:pass
+
 
 def admit():
  phase,uid,gid,root,repo,hostnet,executable,*argv=sys.argv[1:]
@@ -228,6 +275,12 @@ def admit():
  uid=int(uid);assert uid>0 and os.getresuid()==(uid,uid,uid)
  gid=int(gid);assert gid>0 and os.getresgid()==(gid,gid,gid)
  assert set(os.getgroups()) <= {gid}
+ if phase=='acquire':
+  endpoint=Path('/mnt/silhouette-genuine-vitest/diagnostic/acquire.json')
+  st=endpoint.lstat();parent=endpoint.parent.stat()
+  assert stat.S_ISREG(st.st_mode)and st.st_uid==0 and st.st_gid==gid and st.st_nlink==1 and stat.S_IMODE(st.st_mode)==0o620
+  assert parent.st_uid==0 and parent.st_mode&0o022==0
+  assert not os.access(endpoint.parent,os.W_OK)and os.access(endpoint,os.W_OK)
  gate=Path(__file__)
  for path in (gate,gate.parent,gate.parent.parent):
   st=path.stat();assert st.st_uid==0 and st.st_mode&0o022==0
@@ -282,15 +335,24 @@ def admit():
  return executable,[executable,*argv]
 try:
  executable,argv=admit()
-except BaseException:
- # Includes hidden/unreadable/ambiguous mount or cgroup state: UNKNOWN, blocked.
- os._exit(125)
+except (AssertionError,OSError,ValueError,KeyError) as error:
+ # Includes hidden/unreadable/ambiguous policy state: UNKNOWN, blocked.
+ gate_diagnostic('ADMISSION_REJECTED',error);os._exit(125)
+except BaseException as error:
+ gate_diagnostic('ADMISSION_EXCEPTION',error);os._exit(126)
 # env -i specifies no locale variables; undo CPython's optional locale coercion.
-os.environ.pop('LC_CTYPE',None)
-os.execve(executable,argv,dict(os.environ))
+try:
+ os.environ.pop('LC_CTYPE',None)
+ gate_diagnostic('EXECVE_PENDING')
+ os.execve(executable,argv,dict(os.environ))
+except BaseException as error:
+ gate_diagnostic('EXECVE_EXCEPTION',error);os._exit(126)
 PYADMISSION
 chmod -R a-w "$root/fixtures"
 chmod 700 "$root/private"
+# Parent is root-owned and nonwritable; only this fixed file content is writable.
+mkdir -m 755 "$root/diagnostic"
+install -o root -g "$agid" -m 0620 /dev/null "$root/diagnostic/acquire.json"
 # systemd documents that proc isolation can degrade on unsupported kernels: prove features first.
 mkdir "$root/private/proc-probe"
 mount -t proc -o hidepid=invisible,subset=pid proc "$root/private/proc-probe"
@@ -337,7 +399,7 @@ systemd-run --quiet --no-block --unit silhouette-vitest-acquire --slice=silhouet
   -p TemporaryFileSystem=/run:rw,size=1M,nr_inodes=128,noswap,nodev,nosuid,noexec,mode=0700,uid=0,gid=0 \
   -p InaccessiblePaths="$repo $root/private /tmp /var/tmp /dev/shm" \
   -p ProtectProc=invisible -p ProcSubset=pid -p PrivateIPC=yes -p RestrictSUIDSGID=yes -p CapabilityBoundingSet= \
-  -p SystemCallArchitectures=native -p RestrictNamespaces=yes -p ProtectKernelTunables=yes -p ProtectControlGroups=yes -p ProtectKernelModules=yes -p LockPersonality=yes -p RestrictRealtime=yes -p ReadWritePaths="$root/work" \
+  -p SystemCallArchitectures=native -p RestrictNamespaces=yes -p ProtectKernelTunables=yes -p ProtectControlGroups=yes -p ProtectKernelModules=yes -p LockPersonality=yes -p RestrictRealtime=yes -p ReadWritePaths="$root/work $root/diagnostic/acquire.json" \
   -p MemoryMax=8G -p MemorySwapMax=0 -p CPUQuota=100% -p TasksMax=256 \
   -p LimitNOFILE=4096 -p LimitFSIZE=67108864 -p RuntimeMaxSec=540 \
   -p TimeoutStopSec=10 -p KillMode=control-group -p RemainAfterExit=yes -p StandardOutput=null -p StandardError=null \
