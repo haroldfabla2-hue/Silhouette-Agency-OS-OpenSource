@@ -34,7 +34,7 @@ for q in(p,p.parent):
 PY
 [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
 test "$(git -C "$repo" rev-parse HEAD)" = "$expected"
-test "$(git -C "$repo" rev-parse HEAD^)" = 559afe6310666019f25b99effd461202bdd9b190
+test "$(git -C "$repo" rev-parse HEAD^)" = 97000d4b87635cc9f8a5bfce00abb5985e6d3590
 # Fail before allocating, never resize a previous attempt or use an existing account/root.
 test ! -e "$root"
 ! id silhouette-acquire >/dev/null 2>&1
@@ -109,7 +109,7 @@ test "$(sha256sum "$repo/tests/genuine-vitest-session/audit-payload.json" | cut 
 cp "$repo/tests/genuine-vitest-session/audit-payload.json" "$root/fixtures/audit-payload.json"
 test "$(sha256sum "$repo/tests/genuine-vitest-session/audit-graphs.json" | cut -d' ' -f1)" = 6446d1f7bf794d520eda11326ecf4a87fffce8538dbcab29a779a6b21973df90
 cp "$repo/tests/genuine-vitest-session/audit-graphs.json" "$root/fixtures/audit-graphs.json"
-test "$(sha256sum "$repo/tests/genuine-vitest-session/audit-classify.cjs" | cut -d' ' -f1)" = 35cb7dd33b37cd1156cb25aed5c21c26b104f4c798336dd482ea5eaafe935924
+test "$(sha256sum "$repo/tests/genuine-vitest-session/audit-classify.cjs" | cut -d' ' -f1)" = f3f69489b0088bf797940e5fbe2cd8d4f1b164e5fc814915f59cf8ef060953b7
 cp "$repo/tests/genuine-vitest-session/audit-classify.cjs" "$root/fixtures/audit-classify.cjs"
 chmod -R a-w "$root/fixtures"
 chmod 700 "$root/private"
