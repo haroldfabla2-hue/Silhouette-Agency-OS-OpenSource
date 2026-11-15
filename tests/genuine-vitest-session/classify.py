@@ -18,7 +18,7 @@ assert s['schema']==1 and s['phase']==name and s['natural'] is True,'NATURAL_WHO
 assert s['forced'] is False and s['residualUidProcesses']==0,'FORCED_OR_RESIDUAL_CHILD'
 assert s['rawReturnCode']==int(code),'ACTUAL_EXIT_MISMATCH'
 assert s['aggregateMemoryMax']==10737418240 and s['swapMax']==0 and s['aggregateTasksMax']==384 and s['cpuCount']==2,'AGGREGATE_BOUNDS_NOT_VERIFIED'
-assert s['boundary']=='DIRECT_CHILD_BWRAP_AF_UNIX_VERIFIED','ACTUAL_NAMESPACE_ADMISSION_REQUIRED'
+assert s['boundary']=='DIRECT_CHILD_BWRAP_OFFLINE_CONFIGURED_NOT_EXECUTION_PROOF','BOUNDARY_CONFIGURATION_REQUIRED_NOT_EXECUTION_PROOF'
 assert all(s['oomAfter'].get(k,0)==s['oomBefore'].get(k,0)for k in ('oom','oom_kill','oom_group_kill')),'OOM_INVALIDATES_ACCEPTANCE'
 assert r.get('numRuntimeErrorTestSuites',0)==0 and not r.get('unhandledErrors')and not r.get('errors'),'RUNTIME_OR_UNHANDLED_ERROR'
 assert len(r['testResults'])==1 and all(f.get('message')==''for f in r['testResults']),'FILE_SETUP_TEARDOWN_ERROR'

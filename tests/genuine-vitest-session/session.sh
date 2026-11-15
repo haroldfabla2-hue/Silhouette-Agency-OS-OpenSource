@@ -6,9 +6,13 @@ root=/mnt/silhouette-genuine-vitest
 [[ "$expected" =~ ^[0-9a-f]{40}$ && "$runid" =~ ^[0-9]+$ ]]
 git() { /usr/bin/git -c safe.directory="$repo" "$@"; }
 owned=false
+phase=PREPARATION
 cleanup() { bash "$repo/tests/genuine-vitest-session/cleanup.sh" "$expected" "$runid"; }
 close_out() {
  original=$?;trap - EXIT;set +e
+ case "$phase" in PREPARATION|transport|acquire|baseline-admission|baseline-state|candidate) ;; *) phase=UNKNOWN;;esac
+ printf 'DIRECT_ROUTE_CLOSEOUT {"phase":"%s","coordinatorExit":%s}\n' "$phase" "$original"
+
  if $owned; then cleanup; c=$?;if test "$c" != 0; then echo CLEANUP_FAILED_NO_ACCEPTANCE;if test "$original" = 0; then original=$c;fi;fi;fi
  exit "$original"
 }
@@ -30,7 +34,7 @@ for q in(p,p.parent):
 PY
 [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
 test "$(git -C "$repo" rev-parse HEAD)" = "$expected"
-test "$(git -C "$repo" rev-parse HEAD^)" = edca2102da7686bc03013530443444c298f36dc4
+test "$(git -C "$repo" rev-parse HEAD^)" = c3a715eea1b1246c36b76ac65606792a413eed75
 # Fail before allocating, never resize a previous attempt or use an existing account/root.
 test ! -e "$root"
 ! id silhouette-acquire >/dev/null 2>&1
@@ -125,6 +129,7 @@ for name,session in spec['sessions'].items():
 assert hashlib.sha256((root/'sources/candidate/package-lock.json').read_bytes()).hexdigest()=='039ce85293514e83584ca047d0d8b53eb7bce71bb3b3fe75fc6f96e928a0299c'
 PY
 # Trusted exact byte helper only, no installer/package/product code on host network.
+phase=transport
 python3 -I "$root/fixtures/direct.py" run transport "$auid" "$agid" 180 "$hostnet" "$hostpid" "$root/fixtures/toolchain/bin/node" "$root/fixtures/public-transport.cjs"
 python3 - "$root" <<'PYHANDOFF'
 from pathlib import Path
@@ -141,6 +146,7 @@ cp -a "$root/sources/candidate" "$root/work/candidate"
 chown -R "$auid:$agid" "$root/work"
 mkdir "$root/work/tmp"
 chown "$auid:$agid" "$root/work/tmp"
+phase=acquire
 python3 -I "$root/fixtures/direct.py" run acquire "$auid" "$agid" 360 "$hostnet" "$hostpid" /usr/bin/python3 "$root/fixtures/acquire.py" "$root/fixtures" "$root/work"
 test -f "$root/work/acquisition-evidence/complete.json"
 chown -R root:root "$root/work/acquisition/node_modules"
@@ -161,6 +167,7 @@ for name in baseline-admission baseline-state candidate; do
   baseline-state) args+=(-t 'keeps PENDING when destination|keeps VERIFIED when COMMITTED') ;;
   candidate) args+=(-t 'captures typed payload|owns Float32Array|rejects mutation of an admitted|keeps PENDING when destination|keeps VERIFIED when COMMITTED') ;;
  esac
+ phase=$name
  set +e
  python3 -I "$root/fixtures/direct.py" run "$name" "$ruid" "$rgid" 85 "$hostnet" "$hostpid" "$root/fixtures/toolchain/bin/node" "$src/node_modules/vitest/vitest.mjs" run "${args[@]}" --maxWorkers=1 --retry=0 --configLoader=runner --no-cache --reporter=json --reporter=blob --outputFile.json="$data/report.json" --outputFile.blob="$data/blob.json"
  code=$?
