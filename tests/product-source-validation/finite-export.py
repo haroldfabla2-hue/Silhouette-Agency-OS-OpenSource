@@ -1,27 +1,44 @@
-"""Fixed authored-fixture validation counts only; never raw compiler/source."""
+"""Read every available receipt independently. Missing evidence is unknown."""
 from pathlib import Path
-import json,os
-root=Path(os.environ['RUNNER_TEMP'])/'silhouette-integrated-ui/evidence'
-result={'version':1,'status':'INCOMPLETE','helperFilesystemComplete':False,'fullModuleTypecheckComplete':False,
-        'realCaseCount':0,'failedCaseCount':0,'baselineOverwriteObserved':False,
-        'naturalSupervisorExit':False,'outerCleanupClean':False,'productPass':False}
-try:
-    def read(relative):
-        p=root/relative;assert p.is_file()and not p.is_symlink()and p.stat().st_size<=2*1024**2
-        return json.loads(p.read_text())
-    source=read('product-validation/product-validation.json')
-    for key in ['helperFilesystemComplete','fullModuleTypecheckComplete']:
-        assert type(source[key])is bool;result[key]=source[key]
-    cases=source['realCases'];assert type(cases)is list and len(cases)<=32
-    assert all(type(x)is dict and type(x.get('pass'))is bool for x in cases)
-    result['realCaseCount']=len(cases);result['failedCaseCount']=sum(not x['pass']for x in cases)
-    finding=source.get('baselineFinding')
-    result['baselineOverwriteObserved']=type(finding)is dict and finding.get('originalReferencePreserved')is False and finding.get('actualLateBytesMatched')is True
-    supervisor=read('product-validation/supervisor.json')
-    result['naturalSupervisorExit']=supervisor.get('code')==0 and not supervisor.get('failure')and not supervisor.get('events')and not supervisor.get('remainingPids')and supervisor.get('cgroupRemoved')is True
-    cleanup=read('outer-cleanup.json');result['outerCleanupClean']=cleanup.get('status')=='CLEAN_NO_EMERGENCY'and not cleanup.get('errors')and not cleanup.get('emergencyCleanupInvalidatesPass')
-    if all(result[x]for x in ['helperFilesystemComplete','fullModuleTypecheckComplete','naturalSupervisorExit','outerCleanupClean']):
-        result['status']='SCOPED_COMPILER_HELPER_FILESYSTEM_COMPLETE_NOT_PRODUCT_ACCEPTANCE'
-except BaseException:pass
-print(json.dumps(result,sort_keys=True))
-raise SystemExit(0 if result['status']!='INCOMPLETE'else 1)
+import json,os,stat
+from finite_projection import project
+
+def read_receipt(path):
+    fd=None
+    try:
+        fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+        before=os.fstat(fd)
+        if not stat.S_ISREG(before.st_mode)or before.st_nlink!=1 or before.st_size>2*1024**2:return None,'INVALID'
+        raw=bytearray()
+        while len(raw)<=2*1024**2:
+            block=os.read(fd,min(65536,2*1024**2+1-len(raw)))
+            if not block:break
+            raw.extend(block)
+        after=os.fstat(fd)
+        if len(raw)>2*1024**2 or len(raw)!=before.st_size or (before.st_dev,before.st_ino,before.st_size,before.st_mtime_ns,before.st_ctime_ns)!=(after.st_dev,after.st_ino,after.st_size,after.st_mtime_ns,after.st_ctime_ns):return None,'INVALID'
+        def pairs(items):
+            result={}
+            for key,value in items:
+                if key in result:raise ValueError('DUPLICATE_KEY')
+                result[key]=value
+            return result
+        value=json.loads(bytes(raw),object_pairs_hook=pairs,parse_constant=lambda _:(_ for _ in ()).throw(ValueError('NONFINITE')))
+        return (value,'PRESENT')if type(value)is dict else(None,'INVALID')
+    except FileNotFoundError:return None,'MISSING'
+    except (ValueError,UnicodeError):return None,'INVALID'
+    except BaseException:return None,'UNREADABLE'
+    finally:
+        if fd is not None:os.close(fd)
+
+def main():
+    root=Path(os.environ['RUNNER_TEMP'])/'silhouette-integrated-ui/evidence'
+    paths={'host':'host-validation.json','security':'security-preparation.json','validation':'product-validation/product-validation.json','supervisor':'product-validation/supervisor.json','cleanup':'outer-cleanup.json'}
+    receipts={};states={}
+    for name,relative in paths.items():
+        # Per-receipt read/close failures never skip any other receipt.
+        try:receipts[name],states[name]=read_receipt(root/relative)
+        except BaseException:receipts[name]=None;states[name]='UNREADABLE'
+    result=project(receipts,states)
+    print(json.dumps(result,sort_keys=True))
+    return 0 if result['status']!='INCOMPLETE'else 1
+if __name__=='__main__':raise SystemExit(main())

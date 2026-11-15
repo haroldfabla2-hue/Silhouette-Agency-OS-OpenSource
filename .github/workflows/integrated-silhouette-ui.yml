@@ -41,19 +41,19 @@ jobs:
       - name: Exact single-child lineage changed-path allowlist and complete source identity
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = 586d0b007a9256bb6aa5b45b348f84e6fec5994d
+          test "$(git rev-parse HEAD^)" = 7dcdf18ca64700a428899bc2f5a99d72077727b2
           test "$(git rev-list --parents -n 1 HEAD | wc -w)" -eq 2
           python3 - <<'PYVERIFY'
           from pathlib import Path
           import hashlib,json,subprocess
           root=Path('tests/product-source-validation')
           manifest=root/'MANIFEST.json'
-          assert hashlib.sha256(manifest.read_bytes()).hexdigest()=='e1df0c41580ee3ff8d3052abd3af180e8b3f85e7b512d3b20aa80c62fdb27be0'
+          assert hashlib.sha256(manifest.read_bytes()).hexdigest()=='ef3f1970014339356df6b599e2d4b0e354b44c4ad00e206138bcf8cb22440972'
           rows=json.loads(manifest.read_text())['files']
-          expected={str(root/r['path'])for r in rows}|{str(manifest),'.github/workflows/integrated-silhouette-ui.yml'}
+          expected={str(root/p)for p in ['host-validation.py', 'finite-export.py', 'prepare-toolchain.py', 'prepare-security.py', 'security-setup/acquire.py', 'security-setup/package-member-manifest.json', 'finite_projection.py', 'MANIFEST.json']}|{'.github/workflows/integrated-silhouette-ui.yml'}
           actual=set(subprocess.check_output(['git','diff','--name-only','HEAD^','HEAD'],text=True).splitlines())
           assert actual==expected
-          assert len(rows)==3427
+          assert len(rows)==3431
           for r in rows:
               p=root/r['path'];assert p.is_file()and not p.is_symlink()
               b=p.read_bytes();assert len(b)==r['bytes']and hashlib.sha256(b).hexdigest()==r['sha256']

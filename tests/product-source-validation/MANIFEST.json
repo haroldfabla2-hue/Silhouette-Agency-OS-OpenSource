@@ -1,6 +1,6 @@
 {
-  "status": "EXACT_PUBLICATION_ACTIVATION_PROPOSAL_NOT_EXECUTED",
-  "sourceParent": "586d0b007a9256bb6aa5b45b348f84e6fec5994d",
+  "status": "EXACT_SIGNED_STAGING_PRODUCT_ACTIVATION_PROPOSAL_NOT_EXECUTED",
+  "sourceParent": "7dcdf18ca64700a428899bc2f5a99d72077727b2",
   "currentRuntimeParentAtPackaging": "586d0b007a9256bb6aa5b45b348f84e6fec5994d",
   "publicStandardOnly": true,
   "localQualification": "STOPPED_ENFORCEMENT_UNAVAILABLE",
@@ -27,13 +27,18 @@
     },
     {
       "path": "finite-export.py",
-      "bytes": 2109,
-      "sha256": "72e0cf00f47f8489c142e066323afd83e556ae4883db707e626bf3300c0b6f37"
+      "bytes": 2274,
+      "sha256": "57f06a5c407c66d2ecec9d13033d2ee9286137cf9a873b3cebe3ba7a5387288f"
+    },
+    {
+      "path": "finite_projection.py",
+      "bytes": 4707,
+      "sha256": "eb90fb6dfc87bee6bf83abc7cbbffffc416d71e49d41075c455cf0b732a28cd8"
     },
     {
       "path": "host-validation.py",
-      "bytes": 3213,
-      "sha256": "866b58ef6872bbc86e7c551a3a2d2a625b0a9ed384d61a52156c974c8d751d57"
+      "bytes": 6430,
+      "sha256": "7bd6d29a9b766519682584397b5d84a648cd4ad30803af507fdc8be3e7ab8d27"
     },
     {
       "path": "identity-entry.py.diff",
@@ -136,14 +141,29 @@
       "sha256": "0399e125b0a158dbc668438810b0b1a352dffd260bf5b15577d477fd208e4c24"
     },
     {
+      "path": "prepare-security.py",
+      "bytes": 4113,
+      "sha256": "9800f149e450c5b4a22757a816e73f1512ec2977731cc940a05a5edad074d963"
+    },
+    {
       "path": "prepare-toolchain.py",
-      "bytes": 3780,
-      "sha256": "16eeb27a590b07ee637893e7372c9ac7dc62d7cefd73228756b8fc8fb5c4d58f"
+      "bytes": 4082,
+      "sha256": "a556a91cfc833dbe18ea36734623ed6678ee293774735d280c0b3eba37883bd7"
     },
     {
       "path": "runtime-tree-map.json",
       "bytes": 192996,
       "sha256": "132a6c01d66f63f2514f7277e7fb3fd89a603e8c986923aed7a8180928bdcef9"
+    },
+    {
+      "path": "security-setup/acquire.py",
+      "bytes": 23866,
+      "sha256": "5cfd0f986f55d283ef55182cfd2fb821879e3169e120689db7ae89e654d36936"
+    },
+    {
+      "path": "security-setup/package-member-manifest.json",
+      "bytes": 6831,
+      "sha256": "963026ed4a0c7daf658828364908696efedfcfea76a9c0afb3b2a6395a9a7406"
     },
     {
       "path": "source-trees/live/.dockerignore",

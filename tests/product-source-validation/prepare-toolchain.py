@@ -10,11 +10,15 @@ SPECS=[('typescript','https://registry.npmjs.org/typescript/-/typescript-5.8.3.t
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self,*args,**kwargs):raise RuntimeError('NO_TOOLCHAIN_REDIRECT_ADMITTED')
 start=time.monotonic();total=0;decoded=0;receipts=[]
-assert not ROOT.exists();ROOT.mkdir(mode=0o700)
-for name in ['app','deps','browser','evidence','product-fixtures']:(ROOT/name).mkdir(mode=0o700)
+budget=float(os.environ['TOOLCHAIN_BUDGET_SECONDS']);assert 0<budget<=75
+def checktime():
+    if time.monotonic()-start>=budget:raise TimeoutError('TOOLCHAIN_BUDGET')
+assert ROOT.is_dir()and not ROOT.is_symlink()and ROOT.stat().st_uid==os.geteuid()and ROOT.stat().st_mode&0o077==0
+assert {p.name for p in ROOT.iterdir()}=={'evidence'}
+for name in ['app','deps','browser','product-fixtures']:(ROOT/name).mkdir(mode=0o700)
 for name,url,integrity in SPECS:
-    assert time.monotonic()-start<75
-    with urllib.request.build_opener(NoRedirect()).open(url,timeout=15)as response:
+    checktime()
+    with urllib.request.build_opener(NoRedirect()).open(url,timeout=min(15,max(.1,budget-(time.monotonic()-start))))as response:
         assert response.url==url and response.status==200
         data=response.read(16*1024**2+1)
     total+=len(data);assert len(data)<=16*1024**2 and total<=24*1024**2
@@ -24,6 +28,7 @@ for name,url,integrity in SPECS:
     with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz')as archive:
         members=archive.getmembers();assert len(members)<=1024
         for member in members:
+            checktime()
             p=Path(member.name)
             assert not p.is_absolute()and '..'not in p.parts and len(p.parts)>0
             if prefix is None:prefix=p.parts[0]
@@ -52,5 +57,5 @@ for name,url,integrity in SPECS:
     actual={str(p.relative_to(destination)):hashlib.sha256(p.read_bytes()).hexdigest()for p in destination.rglob('*')if p.is_file()}
     assert actual=={r['path']:r['sha256']for r in rows}
     receipts.append({'package':name,'url':url,'integrity':integrity,'archiveBytes':len(data),'archiveSha256':hashlib.sha256(data).hexdigest(),'allMembersVerified':rows})
-assert time.monotonic()-start<=75
+checktime()
 (ROOT/'evidence'/'toolchain-source.json').write_text(json.dumps({'status':'COMPLETE_DATA_MEMBER_PROVENANCE_NOT_EXECUTION','seconds':time.monotonic()-start,'archives':receipts},indent=2)+'\n')
