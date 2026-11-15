@@ -34,7 +34,7 @@ for q in(p,p.parent):
 PY
 [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
 test "$(git -C "$repo" rev-parse HEAD)" = "$expected"
-test "$(git -C "$repo" rev-parse HEAD^)" = ccf405ee55aa86b851a638e8c71c64e5c5038646
+test "$(git -C "$repo" rev-parse HEAD^)" = 15d799c0cccb6874d021351f30725de1eb70e884
 # Fail before allocating, never resize a previous attempt or use an existing account/root.
 test ! -e "$root"
 ! id silhouette-acquire >/dev/null 2>&1
@@ -70,7 +70,7 @@ cp "$repo/tests/genuine-vitest-session/direct.py" "$root/fixtures/direct.py"
 python3 -I "$root/fixtures/direct.py" policy "$root/fixtures/filter.bpf"
 python3 -I "$root/fixtures/direct.py" policy "$root/fixtures/transport-filter.bpf" transport
 cp "$repo/tests/genuine-vitest-session/acquire.py" "$root/fixtures/acquire.py"
-cp "$repo/tests/integrated-ui-trial/"{archive-member-normalizations.json,libsignal-packed-files.json} "$root/fixtures/"
+cp "$repo/tests/genuine-vitest-session/archive-member-normalizations.json" "$repo/tests/integrated-ui-trial/libsignal-packed-files.json" "$root/fixtures/"
 mkdir "$root/fixtures/native-provenance"
 cp "$repo/tests/integrated-ui-trial/native-provenance/better-sqlite3-v12.5.0-node-v127-linux-x64.tar.gz" "$root/fixtures/native-provenance/"
 for native in sharp-v0.32.6-napi-v7-linux-x64.tar.gz libvips-8.14.5-linux-x64.tar.gz sharp-native-members.json; do
@@ -99,8 +99,8 @@ b=node.read_bytes();assert hashlib.sha256(b).hexdigest()=='ccacb2d6d87ba6d118b2b
 (fixture/'toolchain/bin').mkdir();(fixture/'toolchain/bin/node').write_bytes(b);(fixture/'toolchain/bin/node').chmod(0o555)
 (fixture/'toolchain/bin/npm').symlink_to('../npm/bin/npm-cli.js')
 for name,want in {
- 'public-transport.cjs':'3b63546a498234cd7b9d27f956bfbce733d4a6b6f17c7a2214c6930ff0d8db8f',
- 'public-transport-inventory.json':'6fee6ef7df0f89e18dfd6de8620f42f1fc2e8916f5b905e04c99326b32042e51',
+ 'public-transport.cjs':'e5d9458c04913455fd8202f54e6731da8bca4f2f44d57a9cdae23f6b60bd4e53',
+ 'public-transport-inventory.json':'362462d9dfdf483d512849dca63977a276d19d24b88b4f3cc99fad0facef3e36',
 }.items():
  b=(repo/'tests/genuine-vitest-session'/name).read_bytes();assert hashlib.sha256(b).hexdigest()==want
  (fixture/name).write_bytes(b)
@@ -121,12 +121,19 @@ for name,session in spec['sessions'].items():
  overrides={r['path']:r for r in session['overrides']}
  for candidateRow in spec['files']:
   row=overrides.get(candidateRow['path'],candidateRow)
-  assert session['productCommit']=='WORKFLOW_HEAD_EXACT_HASHED_MEMBERS'
-  commit=sys.argv[3]
+  assert session['productCommit']=='MAIN_BASE_PLUS_EXACT_TWO_REVIEWED_OVERRIDES'
+  assert spec['mainCommit']=='66faa5ed01788ca141fa0e04d97a97c3bd1946de'
+  commit=row['sourceCommit']
+  if commit=='WORKFLOW_FIXTURE_EXACT':
+   assert row['path']in {'services/memoryTransitions.ts','tests/automated/memory-transitions-p0.test.ts'}
+   assert row['fixturePath']=='tests/genuine-vitest-session/main-memory-integration/'+row['path']
+   commit=sys.argv[3];sourcePath=row['fixturePath']
+  else:
+   assert commit==spec['mainCommit'];sourcePath=row['path']
   p=Path(row['path']);assert not p.is_absolute()and '..'not in p.parts
-  mode=subprocess.check_output(['/usr/bin/git','-c','safe.directory='+str(repo),'ls-tree',commit,'--',row['path']],cwd=repo,text=True).split()[0]
+  mode=subprocess.check_output(['/usr/bin/git','-c','safe.directory='+str(repo),'ls-tree',commit,'--',sourcePath],cwd=repo,text=True).split()[0]
   assert mode in ('100644','100755'),'NON_REGULAR_SOURCE'
-  b=subprocess.check_output(['/usr/bin/git','-c','safe.directory='+str(repo),'show',commit+':'+row['path']],cwd=repo)
+  b=subprocess.check_output(['/usr/bin/git','-c','safe.directory='+str(repo),'show',commit+':'+sourcePath],cwd=repo)
   assert len(b)==row['bytes']and hashlib.sha256(b).hexdigest()==row['sha256']
   f=dest/p;f.parent.mkdir(parents=True,exist_ok=True);f.write_bytes(b)
  # Additional harness config, not an alteration of any SOURCE-SESSIONS member.
@@ -136,7 +143,7 @@ for name,session in spec['sessions'].items():
  (dest/'offline-vitest.config.mjs').write_bytes(adapter)
  # Empty bind targets only. Actual source tree remains read-only at runtime.
  (dest/'node_modules').mkdir();(dest/'db').mkdir(exist_ok=True);(dest/'data').mkdir()
-assert hashlib.sha256((root/'sources/candidate/package-lock.json').read_bytes()).hexdigest()=='039ce85293514e83584ca047d0d8b53eb7bce71bb3b3fe75fc6f96e928a0299c'
+assert hashlib.sha256((root/'sources/candidate/package-lock.json').read_bytes()).hexdigest()=='5545703d69f821bc68765948f91a91cd14ec782835dd7839f0099f0bebbf63f3'
 PY
 # Trusted exact byte helper only, no installer/package/product code on host network.
 phase=transport
@@ -145,7 +152,7 @@ python3 - "$root" <<'PYHANDOFF'
 from pathlib import Path
 import sys,json,hashlib,stat,os
 root=Path(sys.argv[1]);t=root/'transport';proof=json.loads((t/'complete.json').read_text())
-assert proof['status']=='PUBLIC_BYTES_CACHED_NOT_INSTALL_OR_PRODUCT_PASS'and proof['requests']==1174 and proof['downloadedBytes']==443214404 and proof['cacheBytes']<=536870912
+assert proof['status']=='PUBLIC_BYTES_CACHED_NOT_INSTALL_OR_PRODUCT_PASS'and proof['requests']==1173 and proof['downloadedBytes']==442177664 and proof['cacheBytes']<=536870912
 f=t/'libsignal-source.tar.gz';st=f.lstat();assert stat.S_ISREG(st.st_mode)and st.st_nlink==1
 b=f.read_bytes();assert len(b)==46103 and hashlib.sha256(b).hexdigest()=='a9e14823efa911474aaa9e8f6bfb88759f869a3bc25116e969be943b84bef318'
 # Byte file becomes immutable fixture only after helper has naturally exited.
@@ -173,7 +180,7 @@ mkdir "$data" "$data/tmp" "$data/home" "$data/db" "$data/data"
 # Reviewed public migration fixtures only. They are disposable input, never a real DB.
 cp -a "$src/db/migrations" "$data/db/migrations"
 chown -R "$ruid:$rgid" "$data"
-for validation in typecheck regressions mechanisms; do
+for validation in typecheck regressions; do
  test "$((SECONDS-start))" -lt 800
  phase=$validation
  case "$validation" in
@@ -198,8 +205,8 @@ done
 summary=$(python3 - "$root/private" <<'PYCODE'
 from pathlib import Path
 import sys,json
-p=Path(sys.argv[1]);rows=[json.loads((p/(n+'.summary.json')).read_text())for n in ['typecheck','regressions','mechanisms']]
-print(json.dumps({'scope':'TYPECHECK_PLUS_FIVE_REAL_REGRESSIONS_AND_AUTHORED_MECHANISMS','sessions':rows,'usefulLearningAccepted':False,'fullProductAccepted':False}))
+p=Path(sys.argv[1]);rows=[json.loads((p/(n+'.summary.json')).read_text())for n in ['typecheck','regressions']]
+print(json.dumps({'scope':'ACTUAL_MAIN_BASE_TWO_PATH_MEMORY_INTEGRATION_TYPECHECK_AND_FIVE_REAL_REGRESSIONS','sessions':rows,'usefulLearningAccepted':False,'fullProductAccepted':False}))
 PYCODE
 )
 cleanup

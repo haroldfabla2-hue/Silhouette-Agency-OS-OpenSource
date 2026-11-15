@@ -76,7 +76,7 @@ def selected_failure_diagnostic(name,report,blob,service,code):
   def ref(v):
    if not isinstance(v,str)or not v.isascii()or not v.isdigit()or len(v)>8:raise ValueError('BLOB_REFERENCE')
    return pool[int(v)]
-  if ref(pool[0][0])!='4.1.12':raise ValueError('BLOB_VERSION')
+  if ref(pool[0][0])!='4.0.16':raise ValueError('BLOB_VERSION')
   errors=ref(pool[0][2])
   if not isinstance(errors,list):raise ValueError('BLOB_ERRORS_SCHEMA')
   out['blobUnhandledErrorCount']=len(errors)
@@ -116,7 +116,7 @@ if name=='typecheck':
  assert int(code)==0,'TYPECHECK_FAILED_NO_ACCEPTANCE'
  print(json.dumps({'session':name,'status':'COMPILER_NATURAL_EXIT_ZERO_NOT_RUNTIME_PROOF','naturalWholeChildExit':True,'fullProductAccepted':False}))
  sys.exit(0)
-# Built-in JSON does not expose all unhandled errors in 4.1.12. Its own built-in
+# Built-in JSON does not expose all unhandled errors in 4.0.16. Its own built-in
 # blob reporter serializes [version, files, unhandledErrors, coverage, time, modules].
 # Read only the two top-level flatted references needed here; no product/library imports.
 pool=json.loads(Path(blob).read_text());top=pool[0]
@@ -124,7 +124,7 @@ assert isinstance(top,list)and len(top)==6,'UNKNOWN_BUILTIN_BLOB_SCHEMA'
 def reference(value):
  assert isinstance(value,str)and value.isdigit(),'UNKNOWN_FLATTED_REFERENCE'
  return pool[int(value)]
-assert reference(top[0])=='4.1.12','WRONG_GENUINE_VITEST_VERSION'
+assert reference(top[0])=='4.0.16','WRONG_GENUINE_VITEST_VERSION'
 assert reference(top[2])==[],'GENUINE_VITEST_UNHANDLED_ERRORS'
 r=json.loads(Path(report).read_text())
 assert r.get('numRuntimeErrorTestSuites',0)==0 and not r.get('unhandledErrors')and not r.get('errors'),'RUNTIME_OR_UNHANDLED_ERROR'

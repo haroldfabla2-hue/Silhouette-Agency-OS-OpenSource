@@ -9,9 +9,9 @@ const fixtures = base + '/fixtures'
 const out = base + '/transport'
 const fetch = require(fixtures + '/toolchain/npm/node_modules/make-fetch-happen')
 const inventory = JSON.parse(fs.readFileSync(fixtures + '/public-transport-inventory.json', 'utf8'))
-assert.equal(inventory.lockSha256, '039ce85293514e83584ca047d0d8b53eb7bce71bb3b3fe75fc6f96e928a0299c')
-assert.equal(inventory.requests.length, 1174)
-assert.equal(inventory.requests.reduce((n, r) => n + r.bytes, 0), 443214404)
+assert.equal(inventory.lockSha256, '5545703d69f821bc68765948f91a91cd14ec782835dd7839f0099f0bebbf63f3')
+assert.equal(inventory.requests.length, 1173)
+assert.equal(inventory.requests.reduce((n, r) => n + r.bytes, 0), 442177664)
 const cache = out + '/cache/_cacache'
 const began = Date.now()
 const deadline = began + 170000
@@ -51,7 +51,7 @@ async function consume(row, offline) {
       assert(received <= row.bytes && Date.now() < deadline)
       if (!offline) {
         aggregate += chunk.length
-        assert(aggregate <= 443214404)
+        assert(aggregate <= 442177664)
       }
       digest.update(chunk)
       if (archive !== null) fs.writeSync(archive, chunk)
@@ -89,7 +89,7 @@ function cacheSize(p) {
 ;(async () => {
   await Promise.all(Array.from({ length: 4 }, () => worker()))
   assert.equal(complete.length, inventory.requests.length)
-  assert.equal(aggregate, 443214404)
+  assert.equal(aggregate, 442177664)
   const bytes = cacheSize(out + '/cache')
   const proof = { status: 'PUBLIC_BYTES_CACHED_NOT_INSTALL_OR_PRODUCT_PASS', requests: complete.length, downloadedBytes: aggregate, cacheBytes: bytes, elapsedMilliseconds: Date.now() - began, lockSha256: inventory.lockSha256 }
   fs.writeFileSync(out + '/complete.json', JSON.stringify(proof) + '\n', { flag: 'wx', mode: 0o600 })

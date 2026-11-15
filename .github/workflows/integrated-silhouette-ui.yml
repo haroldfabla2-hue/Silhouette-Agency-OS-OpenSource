@@ -62,11 +62,11 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
-          test "$(git rev-parse HEAD^)" = ccf405ee55aa86b851a638e8c71c64e5c5038646
+          test "$(git rev-parse HEAD^)" = 15d799c0cccb6874d021351f30725de1eb70e884
           test "$(git rev-list --parents -n 1 HEAD | wc -w)" -eq 2
           python3 - <<'PY'
           import subprocess
-          expected={'tests/genuine-vitest-session/acquire.py', 'tests/genuine-vitest-session/native-provenance/sharp-v0.32.6-napi-v7-linux-x64.tar.gz', 'tests/genuine-vitest-session/native-provenance/sharp-native-members.json', 'tests/genuine-vitest-session/session.sh', 'tests/genuine-vitest-session/native-provenance/libvips-8.14.5-linux-x64.tar.gz', '.github/workflows/integrated-silhouette-ui.yml'}
+          expected={'tests/genuine-vitest-session/public-transport.cjs', 'tests/genuine-vitest-session/main-memory-integration/tests/automated/memory-transitions-p0.test.ts', 'tests/genuine-vitest-session/public-transport-inventory.json', 'tests/genuine-vitest-session/main-memory-integration/services/memoryTransitions.ts', 'tests/genuine-vitest-session/acquire.py', 'tests/genuine-vitest-session/archive-member-normalizations.json', 'tests/genuine-vitest-session/classify.py', 'tests/genuine-vitest-session/SOURCE-SESSIONS.json', '.github/workflows/integrated-silhouette-ui.yml', 'tests/genuine-vitest-session/session.sh'}
           actual=set(subprocess.check_output(['git','diff','--name-only','HEAD^','HEAD'],text=True).splitlines())
           assert actual==expected,'EXACT_REVIEWED_LEARNING_VALIDATION_INTEGRATION_REQUIRED'
           PY

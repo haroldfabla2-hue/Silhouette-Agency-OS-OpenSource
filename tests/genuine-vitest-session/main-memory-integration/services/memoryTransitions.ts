@@ -1,0 +1,207 @@
+import { createHash } from 'node:crypto';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+import { MemoryNode } from '../types';
+import { lancedbService } from './lancedbService';
+
+export type TransitionState = 'PENDING' | 'WRITTEN' | 'VERIFIED' | 'COMMITTED';
+export interface MemoryTransition {
+    key: string;
+    source: MemoryNode;
+    destination: MemoryNode;
+    state: TransitionState;
+}
+
+/** Durable local journal: a failed or interrupted transition always retains its source. */
+type LanceLike = Pick<typeof lancedbService, 'store' | 'getNodeById'>;
+
+/** A transition whose journal entry still needs recovery work (periodic reconcile scope). */
+export const isOutstandingTransition = (e: MemoryTransition): boolean => e.state !== 'COMMITTED';
+
+export class MemoryTransitions {
+    constructor(
+        private readonly directory = path.join(process.cwd(), 'data', 'memory-transitions'),
+        private readonly lance: LanceLike = lancedbService,
+    ) { }
+
+    private key(source: MemoryNode, destination: MemoryNode): string {
+        return createHash('sha256').update(JSON.stringify([source.id, source.timestamp, source.tier, destination.tier])).digest('hex');
+    }
+
+    // Bind public entry payloads without freezing or changing their historical shape/state field.
+    private readonly entryPayloads = new WeakMap<MemoryTransition, string>();
+
+    private payload(entry: MemoryTransition): string {
+        return JSON.stringify([entry.key, entry.source, entry.destination]);
+    }
+
+    private captureNodes(source: MemoryNode, destination: MemoryNode): { source: MemoryNode; destination: MemoryNode } {
+        const before = JSON.stringify([source, destination]);
+        // JSON round-trip is not a runtime clone: embeddingVector may be Float32Array.
+        const captured = structuredClone({ source, destination });
+        // Structured clone of a SharedArrayBuffer-backed Float32Array still aliases
+        // the caller's shared data block. Copy the declared vector values as well.
+        const vectors = new Map<Float32Array, Float32Array>();
+        for (const node of [captured.source, captured.destination]) {
+            if (node.embeddingVector instanceof Float32Array) {
+                const vector = node.embeddingVector;
+                let owned = vectors.get(vector);
+                if (!owned) { owned = new Float32Array(vector); vectors.set(vector, owned); }
+                node.embeddingVector = owned;
+            }
+        }
+        if (JSON.stringify([captured.source, captured.destination]) !== before) {
+            throw new Error('Transition capture would change legacy serialization');
+        }
+        if (captured.source.id !== captured.destination.id) throw new Error('A tier transition must preserve the memory ID');
+        return captured;
+    }
+
+    private bind(entry: MemoryTransition): MemoryTransition {
+        if (entry.key !== this.key(entry.source, entry.destination)) throw new Error('Transition key does not match captured source');
+        this.entryPayloads.set(entry, this.payload(entry));
+        return entry;
+    }
+
+    private captureEntry(entry: MemoryTransition): MemoryTransition {
+        const payload = this.payload(entry);
+        const bound = this.entryPayloads.get(entry);
+        if (bound !== undefined && bound !== payload) throw new Error('Transition payload changed after admission');
+        const captured = this.captureNodes(entry.source, entry.destination);
+        // Preserve unknown legacy JSON fields on the public journal entry as well.
+        const copy = structuredClone(entry) as MemoryTransition;
+        copy.source = captured.source;
+        copy.destination = captured.destination;
+        if (JSON.stringify(copy) !== JSON.stringify(entry)) throw new Error('Transition entry capture would change legacy serialization');
+        if (copy.key !== this.key(copy.source, copy.destination)) throw new Error('Transition key does not match captured source');
+        // Legacy/external entries are still accepted on first use when their key is consistent.
+        if (bound === undefined) this.entryPayloads.set(entry, payload);
+        return copy;
+    }
+
+    private file(key: string): string { return path.join(this.directory, `${key}.json`); }
+
+    private async write(entry: MemoryTransition): Promise<void> {
+        await fs.mkdir(this.directory, { recursive: true });
+        const file = this.file(entry.key);
+        const temporary = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
+        try {
+            await fs.writeFile(temporary, JSON.stringify(entry));
+            await fs.rename(temporary, file);
+        } finally {
+            await fs.rm(temporary, { force: true });
+        }
+    }
+
+    public async begin(source: MemoryNode, destination: MemoryNode): Promise<MemoryTransition> {
+        const captured = this.captureNodes(source, destination);
+        source = captured.source;
+        destination = captured.destination;
+        const key = this.key(source, destination);
+        try {
+            const entry = JSON.parse(await fs.readFile(this.file(key), 'utf8')) as MemoryTransition;
+            if (JSON.stringify(entry.destination) !== JSON.stringify(destination)) {
+                // [PR-4b] Divergence limited to volatile metadata (tags/access counters)
+                // is the prod case: concurrent promoters (EVICTED vs CONSOLIDATED vs
+                // plain) race the same node. The journaled transition is durable and
+                // replay is idempotent, so adopt it and continue loudly instead of
+                // throwing into an unhandled rejection (prod FATAL x33). A divergence
+                // in real content still rejects (P0 tamper contract kept).
+                const volatile = ({ accessCount, lastAccess, tags, ...rest }: any) => rest;
+                if (JSON.stringify(volatile(entry.destination)) !== JSON.stringify(volatile(destination))) {
+                    throw new Error(`Conflicting transition for ${source.id}`);
+                }
+                console.warn(`[MEMORY_TRANSITIONS] Volatile-only conflict for ${source.id}; adopting journaled transition ${entry.key} (divergent metadata dropped).`);
+            }
+            return this.bind(entry);
+        } catch (error: any) {
+            if (error.code !== 'ENOENT') throw error;
+        }
+        const entry: MemoryTransition = { key, source, destination, state: 'PENDING' };
+        await this.write(entry);
+        return this.bind(entry);
+    }
+
+    public async run(entry: MemoryTransition): Promise<MemoryTransition> {
+        return this.runCaptured(entry, this.captureEntry(entry));
+    }
+
+    private async runCaptured(entry: MemoryTransition, captured: MemoryTransition): Promise<MemoryTransition> {
+        if (captured.state === 'COMMITTED') return entry;
+        // Only privately captured runtime values cross the native store/readback awaits.
+        await this.lance.store(captured.destination);
+        await this.write({ ...captured, state: 'WRITTEN' });
+        // Publish logical progress only after the journal operation returns.
+        // A rejected rename/cleanup may already have applied bytes: inspect on recovery.
+        captured.state = 'WRITTEN';
+        entry.state = 'WRITTEN';
+        const stored = await this.lance.getNodeById(captured.destination.id);
+        if (JSON.stringify(stored) !== JSON.stringify(captured.destination)) {
+            throw new Error(`Destination verification failed for ${captured.destination.id}`);
+        }
+        await this.write({ ...captured, state: 'VERIFIED' });
+        // Publish logical progress only after the journal operation returns.
+        // A rejected rename/cleanup may already have applied bytes: inspect on recovery.
+        captured.state = 'VERIFIED';
+        entry.state = 'VERIFIED';
+        return entry;
+    }
+
+    private chains = new Map<string, Promise<unknown>>();
+
+    private enqueue<T>(id: string, fn: () => Promise<T>): Promise<T> {
+        const prev = this.chains.get(id) ?? Promise.resolve();
+        const next = prev.then(fn, fn);
+        // The stored chain must survive individual failures so later work is not blocked.
+        this.chains.set(id, next.catch(() => undefined));
+        return next;
+    }
+
+    /**
+     * [PR-4b] Serialized begin -> run -> commit per memory id. Concurrent promoters
+     * of the same node used to interleave journal reads/writes and crash the process
+     * with an unhandled 'Conflicting transition' rejection.
+     */
+    public async transition(source: MemoryNode, destination: MemoryNode): Promise<void> {
+        const captured = this.captureNodes(source, destination);
+        return this.enqueue(captured.source.id, async () => {
+            const entry = await this.begin(captured.source, captured.destination);
+            await this.run(entry);
+            await this.commit(entry);
+        });
+    }
+
+    /** [PR-4b] Crash-recovery replay, serialized against live transitions of the same id. */
+    public async resume(entry: MemoryTransition): Promise<void> {
+        const captured = this.captureEntry(entry);
+        return this.enqueue(captured.source.id, async () => {
+            await this.runCaptured(entry, captured);
+            await this.commitCaptured(entry, captured);
+        });
+    }
+
+    public async commit(entry: MemoryTransition): Promise<void> {
+        await this.commitCaptured(entry, this.captureEntry(entry));
+    }
+
+    private async commitCaptured(entry: MemoryTransition, captured: MemoryTransition): Promise<void> {
+        if (captured.state !== 'VERIFIED') throw new Error(`Unverified transition: ${captured.key}`);
+        await this.write({ ...captured, state: 'COMMITTED' });
+        // Publish logical progress only after the journal operation returns.
+        // A rejected rename/cleanup may already have applied bytes: inspect on recovery.
+        captured.state = 'COMMITTED';
+        entry.state = 'COMMITTED';
+    }
+
+    public async pending(): Promise<MemoryTransition[]> {
+        try {
+            const names = (await fs.readdir(this.directory)).filter(n => n.endsWith('.json'));
+            return await Promise.all(names.map(async name => JSON.parse(await fs.readFile(path.join(this.directory, name), 'utf8'))));
+        } catch (error: any) {
+            if (error.code === 'ENOENT') return [];
+            throw error;
+        }
+    }
+}
+
+export const memoryTransitions = new MemoryTransitions();
