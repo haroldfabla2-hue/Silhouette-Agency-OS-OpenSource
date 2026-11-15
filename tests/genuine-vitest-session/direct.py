@@ -107,6 +107,49 @@ def prefix_evidence(raw,overflow):
   assert row['errno']=='UNKNOWN'or(type(row['errno'])is int and 0<=row['errno']<=4095)
   return {**result,'status':'CAPTURED','receipt':row}
  except BaseException:return {**result,'status':'INVALID_UNKNOWN'}
+def acquisition_row(raw):
+ def unique(pairs):
+  out={}
+  for key,value in pairs:
+   if key in out:raise ValueError()
+   out[key]=value
+  return out
+ data=json.loads(raw,object_pairs_hook=unique)
+ keys=('version','origin','stage','event','exception','errno','role','subprocessExit')
+ assert type(data)is dict and set(data)==set(keys)
+ assert type(data['version'])is int and data['version']==1
+ assert data['origin']=='ACQUIRE'
+ assert data['stage']in {'PAYLOAD_INIT','SOURCE_COPY','PUBLIC_SOURCE_READ','INSTALLER_IDENTITY','NPM_CONFIG','NPM_CI','LOCK_VERIFY','ARCHIVE_VERIFY','MEMBER_VERIFY','NATIVE_PROVENANCE','COMPLETE'}
+ assert data['event']in {'ENTERED','UNCAUGHT_EXCEPTION','COMPLETED'}
+ assert data['exception']in {'NONE','OTHER','AssertionError','OSError','PermissionError','FileNotFoundError','FileExistsError','TimeoutError','CalledProcessError','TimeoutExpired','ValueError','KeyError','JSONDecodeError','HTTPError','URLError'}
+ assert data['errno']=='UNKNOWN'or(type(data['errno'])is int and data['errno']in {1,2,5,7,8,12,13,20,21,22,24,27,28,30,31,32,38,95,110,111})
+ assert data['role']in {'NONE','NPM_CONFIG','NPM_CI'}
+ assert data['subprocessExit']=='UNKNOWN'or(type(data['subprocessExit'])is int and -128<=data['subprocessExit']<=255)
+ # Reconstruct only validated finite fields. Never retain the raw bytes.
+ return {key:data[key]for key in keys}
+def acquisition_evidence(quiescent):
+ result={'authority':'UNAUTHENTICATED_CORROBORATION_ONLY','status':'MISSING_UNKNOWN'}
+ if not quiescent:return {**result,'status':'NONQUIESCENT_UNKNOWN'}
+ fd=None
+ try:
+  # Existing fixed root-created endpoint only, never caller-selected paths or logs.
+  fd=os.open(ROOT/'diagnostic/acquire.json',os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC|os.O_NONBLOCK)
+  before=os.fstat(fd)
+  if not(stat.S_ISREG(before.st_mode)and before.st_uid==0 and before.st_nlink==1 and stat.S_IMODE(before.st_mode)==0o620):
+   return {**result,'status':'INVALID_FILE_UNKNOWN'}
+  if before.st_size>1024:return {**result,'status':'OVERSIZE_UNKNOWN'}
+  raw=os.read(fd,1025);after=os.fstat(fd)
+  if len(raw)>1024:return {**result,'status':'OVERSIZE_UNKNOWN'}
+  stable=('st_dev','st_ino','st_mode','st_uid','st_gid','st_nlink','st_size','st_mtime_ns','st_ctime_ns')
+  if any(getattr(before,key)!=getattr(after,key)for key in stable)or len(raw)!=before.st_size:return {**result,'status':'CHANGED_UNKNOWN'}
+  if not raw:return result
+  return {**result,'status':'CAPTURED','receipt':acquisition_row(raw)}
+ except FileNotFoundError:return result
+ except BaseException:return {**result,'status':'INVALID_OR_UNREADABLE_UNKNOWN'}
+ finally:
+  if fd is not None:
+   try:os.close(fd)
+   except OSError:pass
 def admit():
  global STAGE
  STAGE='UID_GROUPS'
@@ -232,6 +275,7 @@ def run():
   row={'schema':1,'phase':phase,'rawReturnCode':code,'natural':natural,'forced':forced,'residualUidProcesses':len(residual),'oomBefore':before,'oomAfter':after,'aggregateMemoryMax':10737418240,'aggregateTasksMax':384,'swapMax':0,'cpuCount':2,'elapsedSeconds':round(time.monotonic()-start,3),'boundary':'DIRECT_CHILD_BWRAP_OFFLINE_CONFIGURED_NOT_EXECUTION_PROOF'if phase!='transport'else'DIRECT_BWRAP_TRANSPORT_CONFIGURED_NOT_EXECUTION_PROOF'}
   row['wrapperError']=wrapper_error
   row['prefix']=prefix_evidence(bytes(diagnostic),observed>1024)
+  if phase=='acquire':row['acquisition']=acquisition_evidence(not residual)
   # Root-created finite fields only; emit before private receipt write and cleanup.
   print('DIRECT_CHILD_RECEIPT '+json.dumps(row,separators=(',',':')),flush=True)
   receipt.write_text(json.dumps(row)+'\n');receipt.chmod(0o600)
