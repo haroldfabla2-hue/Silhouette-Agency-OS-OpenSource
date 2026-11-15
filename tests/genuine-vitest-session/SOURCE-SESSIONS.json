@@ -3272,8 +3272,8 @@
       "path": "tests/automated/mcp-client-isolation-real.test.ts",
       "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
       "fixturePath": "tests/genuine-vitest-session/main-mcp-integration/tests/automated/mcp-client-isolation-real.test.ts",
-      "bytes": 6058,
-      "sha256": "413cc4445462c4fe36c00a7497c57cc7cc693ff2c70be637c050818b3c048854"
+      "bytes": 8212,
+      "sha256": "602cde94241bf0c35630e04fd5ca7ea3cfa7a9f38ccb9fe74ea1695549f2c6dd"
     },
     {
       "path": "tests/automated/memory-transitions-p0.test.ts",
@@ -3297,8 +3297,8 @@
       "path": "tests/real-process/mcp-boundary-child.ts",
       "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
       "fixturePath": "tests/genuine-vitest-session/main-mcp-integration/tests/real-process/mcp-boundary-child.ts",
-      "bytes": 13833,
-      "sha256": "caea2e59a53512877512c55678d91729911247e97443e438043147f1d853a56a"
+      "bytes": 15458,
+      "sha256": "93ba530626c8efa45b0bbab881df6dc59de1660fee492a054abae85b47e54329"
     },
     {
       "path": "tests/setup/fetch-teardown.ts",

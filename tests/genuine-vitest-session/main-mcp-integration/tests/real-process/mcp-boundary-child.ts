@@ -138,7 +138,26 @@ try {
     process.stdout.write('MCP_CHECKPOINT {"id":21}\n');
     // Explicit empty tools/list, never advertise excluded internal tools.
     assert.deepEqual((await post(sa, a.key, 7, 'tools/list')).result.tools, []);
-    assert.ok((await post(sa, a.key, 9, 'tools/call', { name: 'shell', arguments: {} })).error);
+    const denied = await post(sa, a.key, 9, 'tools/call', { name: 'shell', arguments: {} });
+    // SDK1.32.2 McpServer catches unknown-tool McpError and returns a
+    // CallToolResult with isError:true, not a top-level JSON-RPC error.
+    // The earlier R2 comment's protocol-error wording is not this wire behavior.
+    // Descriptor projects shape only. Never emits content/text/error messages.
+    const deniedShape = { schema: 1, rpcError: Object.hasOwn(denied, 'error'),
+        resultObject: !!denied.result && typeof denied.result === 'object' && !Array.isArray(denied.result),
+        isError: denied.result?.isError === true ? 'TRUE' : denied.result?.isError === false ? 'FALSE' : 'ABSENT_OR_OTHER',
+        contentArray: Array.isArray(denied.result?.content),
+        contentSize: !Array.isArray(denied.result?.content) ? 'ABSENT_OR_OTHER' : denied.result.content.length === 0 ? 'ZERO' : denied.result.content.length === 1 ? 'ONE' : 'MANY',
+        firstType: denied.result?.content?.[0]?.type === 'text' ? 'TEXT' : 'ABSENT_OR_OTHER' };
+    process.stdout.write('MCP_TOOL_DENIAL_SHAPE ' + JSON.stringify(deniedShape) + '\n');
+    assert.equal(Object.hasOwn(denied, 'error'), false, 'SDK CallToolResult, not protocol error');
+    assert.ok(denied.result && typeof denied.result === 'object' && !Array.isArray(denied.result));
+    assert.equal(denied.result.isError, true, 'unknown tool explicitly rejected, never successful');
+    assert.ok(Array.isArray(denied.result.content));
+    assert.equal(denied.result.content.length, 1);
+    assert.equal(denied.result.content[0].type, 'text');
+    assert.equal(typeof denied.result.content[0].text, 'string');
+    assert.ok(denied.result.content[0].text.length > 0);
     process.stdout.write('MCP_CHECKPOINT {"id":22}\n');
     assert.equal((await request(sa.endpoint.replace('/mcp/', '/MCP/'), a.key, JSON.stringify({ padding: 'x'.repeat(MCP_LIMITS.bodyBytes) }))).status, 413);
     process.stdout.write('MCP_CHECKPOINT {"id":23}\n');
