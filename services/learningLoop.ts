@@ -363,14 +363,14 @@ Auto-applicable: ${insight.autoApplicable}
                 })) {
                     return { stage: 'REJECTED', applied: false, detail: 'Original incident evidence unavailable or mismatched' };
                 }
-                const cycles = (await import('./selfdev/cycleService')).selfDevCycleService.list();
+                const cycles = (await import('./selfdev/cycleService')).selfDevCycleService.listLearningProposals();
                 const originals = evidence.map(e => incidentRegistry.getIncident(e!.incident!.id)!);
                 const replayEpisode = originals.find(i => cycles.some(c => c.learningProposal?.incidentId === i.id && c.learningProposal?.source === i.source));
                 const incident = originals.filter(i => i.status === 'open' && i.source === insight.context)
                     .sort((a, b) => a.firstSeen - b.firstSeen || a.id.localeCompare(b.id))[0] || replayEpisode;
                 if (!incident) return { stage: 'UNHANDLED', applied: false, detail: 'No original open incident remains' };
                 const { selfDevCycleService } = await import('./selfdev/cycleService');
-                const prior = selfDevCycleService.list().find(c => c.learningProposal?.source === incident.source
+                const prior = selfDevCycleService.listLearningProposals().find(c => c.learningProposal?.source === incident.source
                     && c.learningProposal?.incidentId === incident.id);
                 if (prior) {
                     const linked = prior.learningProposal!;

@@ -392,6 +392,11 @@
       "sha256": "c9bcfce6c8d2e00bfa595861fcfbf6741aca116f711b65f8e334a2a0df78200c"
     },
     {
+      "path": "components/chat/FeedbackButtons.css",
+      "bytes": 1100,
+      "sha256": "756c89b28312b37cf4d771a77322f70498c145da8aa5b28596d8267ed50f673f"
+    },
+    {
       "path": "components/chat/FeedbackButtons.tsx",
       "bytes": 2301,
       "sha256": "d8374ae910e4d13f41b944c40587bcc2dcd88ed281b1e9cf3df1bc2c3e1865c6"
@@ -487,6 +492,11 @@
       "sha256": "e610e377bea7f4d1a65e9643c5e0dc99813e4cf996dfb5979d072ec2acfeb46c"
     },
     {
+      "path": "components/memory/EternalMemoryPanel.css",
+      "bytes": 5690,
+      "sha256": "d66c5fb27b233737556837523554117f657fde7cebc0a3b4b360aec9ac2aebfe"
+    },
+    {
       "path": "components/memory/EternalMemoryPanel.tsx",
       "bytes": 9686,
       "sha256": "e2520178ad9ccb1f10c47745e66b78061e12bf240c18d2c8a2f13144107eb3c2"
@@ -495,6 +505,21 @@
       "path": "constants.ts",
       "bytes": 8157,
       "sha256": "e1f8b3c01ead73b610c5a51ecc48f175dd42fc2a536b2350559a6a5c76676dbf"
+    },
+    {
+      "path": "constants/buildVersion.ts",
+      "bytes": 734,
+      "sha256": "ce17a083885b4e60c03ea9218e66cd19d585357b6fa0f4094c4e1108ea44f918"
+    },
+    {
+      "path": "constants/personalities.ts",
+      "bytes": 2854,
+      "sha256": "16bcfc74abf25a79ccc59be73708c1c70405f871f952393c610386532827cfd2"
+    },
+    {
+      "path": "constants/silhouetteIdentity.ts",
+      "bytes": 3075,
+      "sha256": "0d4359081d80d77d958466116b2bb25fb2070db85bdfdce2f6d19be141fc05e3"
     },
     {
       "path": "db/migrations/sqlite/001_baseline_indexes.down.sql",
@@ -1668,8 +1693,8 @@
     },
     {
       "path": "services/learningLoop.ts",
-      "bytes": 27554,
-      "sha256": "a95cfbfde81e16e33d0984ad105eea2bb679b8b6a06e1204ae8dce0bfbdca202"
+      "bytes": 27588,
+      "sha256": "e0d44925e802c920047c82f9c11c0d803966741c3bbe32865f084ef181349a47"
     },
     {
       "path": "services/leidenService.ts",
@@ -2433,8 +2458,8 @@
     },
     {
       "path": "services/selfdev/cycleService.ts",
-      "bytes": 37677,
-      "sha256": "667e60d193fea8223d3a30cd6b7c5dddd7f268730569399759b3ba08a5ff926d"
+      "bytes": 38269,
+      "sha256": "8c5cd989f8f7702dd1c4ce5b4e82f2b62dbbde31afd52c999dd2f8e455d78697"
     },
     {
       "path": "services/selfdev/gates.ts",
@@ -2868,8 +2893,8 @@
     },
     {
       "path": "tests/real-process/learning-proposal-child.ts",
-      "bytes": 8017,
-      "sha256": "6aa0c1b731eea03a842fffe01a2e5ebdcdb831c223e698f0ca15a83b7b8aef4f"
+      "bytes": 9387,
+      "sha256": "fb207f0ce7a9150a4c46ee8b1eeeeee681a3e951985cda7047e269f9f23ef0ec"
     },
     {
       "path": "tests/real-process/standalone-fixture-bootstrap.ts",
@@ -2940,6 +2965,11 @@
       "path": "tests/setup/sqlite-per-worker.ts",
       "bytes": 2428,
       "sha256": "dab8886e355920fca88093222602523f108de3b93facae2c7e7cf1d16c0f4d7c"
+    },
+    {
+      "path": "tools/webBrowserTool.ts",
+      "bytes": 5993,
+      "sha256": "9a1c3889626213c3989192cce9a22688b6a8533c34f28547b014e6f80025eb4a"
     },
     {
       "path": "tsconfig.json",

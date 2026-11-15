@@ -65,6 +65,21 @@ if(phase==='empty'){
  const receipt=await learningLoop.routeInsight(insight);assert.equal(receipt.applied,false);assert.equal(receipt.stage,'PROPOSAL_RECORDED');assert.ok(receipt.cycleId);assert.ok(receipt.proposalMemoryId);
  const memory=await continuum.getLatestObservation('MEMORY_REPAIR');assert.equal(memory?.id,receipt.proposalMemoryId);
  const cycle=selfDevCycleService.list().find(c=>c.id===receipt.cycleId);assert.equal(cycle?.state,'PROPOSAL_PENDING');
+ const linkedCycle=selfDevCycleService.listLearningProposals().find(c=>c.id===receipt.cycleId);
+ assert.equal(linkedCycle?.learningProposal.memoryId,receipt.proposalMemoryId);
+ assert.deepEqual(linkedCycle?.learningProposal.failureExperienceIds,[...insight.failureExperienceIds].sort());
+ if(!linkedCycle?.learningProposal.failureExperienceIds)throw new Error('Fixture requires original failure IDs');
+ linkedCycle.learningProposal.memoryId='authored detached copy mutation';
+ linkedCycle.learningProposal.failureExperienceIds.push('incident:authored-detached-copy');
+ const preserved=selfDevCycleService.listLearningProposals().find(c=>c.id===receipt.cycleId);
+ assert.equal(preserved?.learningProposal.memoryId,receipt.proposalMemoryId);
+ assert.deepEqual(preserved?.learningProposal.failureExperienceIds,[...insight.failureExperienceIds].sort());
+ assert.equal('learningProposal' in cycle!,false,'Public list summary must not widen');
+ const openReplay=await learningLoop.routeInsight(insight);
+ assert.equal(openReplay.stage,'PROPOSAL_RECORDED');assert.equal(openReplay.applied,false);
+ assert.equal(openReplay.cycleId,receipt.cycleId);assert.equal(openReplay.proposalMemoryId,receipt.proposalMemoryId);
+ assert.equal(openReplay.detail,'Original proposal replayed; no planner or patch executed');
+ assert.equal(selfDevCycleService.listLearningProposals().length,1);
  assert.equal(learningLoop.getStats().autoApplied,0);assert.equal(fs.readdirSync('data/selfdev/pr-requests').length,0);
  fs.writeFileSync('learning-receipt.json',JSON.stringify(receipt));
 }else{

@@ -187,6 +187,19 @@ export class SelfDevCycleService {
         return this.store.cycles.map(c => ({ id: c.id, issue: c.issue, state: c.state, updatedAt: c.updatedAt, pr: c.pr }));
     }
 
+    /** Internal learning linkage view. Keep list()/HTTP summaries unchanged and
+     * return detached proposal objects/IDs so callers cannot mutate stored linkage. */
+    public listLearningProposals() {
+        return this.store.cycles.flatMap(c => {
+            const proposal = c.learningProposal;
+            if (!proposal) return [];
+            return [{ id: c.id, issue: c.issue, learningProposal: {
+                ...proposal,
+                failureExperienceIds: proposal.failureExperienceIds ? [...proposal.failureExperienceIds] : undefined
+            } }];
+        });
+    }
+
     /** [AUTONOMOUS-SCHEDULER] Count cycles created since an ISO instant,
      *  optionally filtered by issue prefix (the scheduler marks its own
      *  issues so its daily budget never counts operator-driven cycles). */
