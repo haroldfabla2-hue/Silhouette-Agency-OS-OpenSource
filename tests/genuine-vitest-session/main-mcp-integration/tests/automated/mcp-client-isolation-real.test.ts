@@ -30,8 +30,38 @@ it('runs actual composed identity/key/parser/two-client SDK behavior in a fresh 
                 SILHOUETTE_PROVIDERS: 'off', SILHOUETTE_BOOT_MODE: 'acceptance',
                 SILHOUETTE_HOST: '127.0.0.1', SILHOUETTE_DB_PATH: path.join(root, 'authored.sqlite') }
         });
-        expect(result.error, result.stderr).toBeUndefined();
-        expect(result.signal).toBeNull(); expect(result.status, result.stderr).toBe(0);
+        // Fixed-schema diagnostics only. Never forward stdout/stderr, Error
+        // messages/stacks, paths, spawnargs, environment or credential prefixes.
+        const allowed = ['MCP_CHECKPOINT {"id":1}', 'MCP_CHECKPOINT {"id":2}', 'MCP_CHECKPOINT {"id":3}', 'MCP_CHECKPOINT {"id":4}', 'MCP_CHECKPOINT {"id":5}', 'MCP_CHECKPOINT {"id":6}', 'MCP_CHECKPOINT {"id":7}', 'MCP_CHECKPOINT {"id":8}', 'MCP_CHECKPOINT {"id":9}', 'MCP_CHECKPOINT {"id":10}', 'MCP_CHECKPOINT {"id":11}', 'MCP_CHECKPOINT {"id":12}', 'MCP_CHECKPOINT {"id":13}', 'MCP_CHECKPOINT {"id":14}', 'MCP_CHECKPOINT {"id":15}', 'MCP_CHECKPOINT {"id":16}', 'MCP_CHECKPOINT {"id":17}', 'MCP_CHECKPOINT {"id":18}', 'MCP_CHECKPOINT {"id":19}', 'MCP_CHECKPOINT {"id":20}', 'MCP_CHECKPOINT {"id":21}', 'MCP_CHECKPOINT {"id":22}', 'MCP_CHECKPOINT {"id":23}', 'MCP_CHECKPOINT {"id":24}', 'MCP_CHECKPOINT {"id":25}', 'MCP_CHECKPOINT {"id":26}', 'MCP_CHECKPOINT {"id":27}', 'MCP_CHECKPOINT {"id":28}', 'MCP_CHECKPOINT {"id":29}', 'MCP_CHECKPOINT {"id":30}', 'MCP_CHECKPOINT {"id":31}', 'MCP_CHECKPOINT {"id":32}', 'MCP_CHECKPOINT {"id":33}', 'MCP_CHECKPOINT {"id":34}', 'MCP_CHECKPOINT {"id":35}'] as const;
+        const checkpointIds: number[] = [];
+        let checkpointOverflow = false;
+        for (const line of result.stdout.split('\n')) {
+            const index = (allowed as readonly string[]).indexOf(line);
+            if (index < 0) continue; // Arbitrary product logs are not evidence fields.
+            if (checkpointIds.length < 128) checkpointIds.push(index + 1);
+            else checkpointOverflow = true;
+        }
+        const enumField = (value: unknown, values: readonly string[]) =>
+            typeof value === 'string' && values.includes(value) ? value : 'UNKNOWN';
+        const e = result.error;
+        const errno = e && 'errno' in e ? e.errno : undefined;
+        const code = e && 'code' in e ? e.code : undefined;
+        const syscall = e && 'syscall' in e ? e.syscall : undefined;
+        const diagnostic = JSON.stringify({ schema: 1, label: 'MCP_NESTED_SPAWN_FIXED_SCHEMA',
+            errorPresent: e !== undefined,
+            errorName: e ? enumField(e.name, ['Error', 'TypeError', 'RangeError', 'AbortError']) : 'NONE',
+            errorCode: e ? enumField(code, ['ETIMEDOUT', 'ENOBUFS', 'ENOENT', 'EACCES', 'EPERM', 'EAGAIN', 'ENOMEM', 'E2BIG', 'ENOTDIR', 'EINVAL', 'EIO']) : 'NONE',
+            errno: e ? (typeof errno === 'number' && Number.isInteger(errno) && errno >= -4096 && errno <= 4096 ? errno : 'UNKNOWN') : 'NONE',
+            syscall: e ? (syscall === `spawnSync ${process.execPath}` ? 'spawnSync-execPath' : 'UNKNOWN') : 'NONE',
+            signal: result.signal === null ? 'NONE' : enumField(result.signal, ['SIGTERM', 'SIGKILL', 'SIGABRT', 'SIGSEGV', 'SIGBUS', 'SIGILL', 'SIGINT', 'SIGQUIT', 'SIGPIPE', 'SIGXCPU', 'SIGXFSZ']),
+            status: result.status === null ? 'NONE' : (Number.isInteger(result.status) && result.status >= 0 && result.status <= 255 ? result.status : 'UNKNOWN'),
+            checkpoints: checkpointIds, checkpointOverflow });
+        // The diagnostic contains only constants and bounded numbers, <= 1536
+        // bytes by construction (128 two-digit IDs plus fixed-schema enums).
+        expect(Buffer.byteLength(diagnostic)).toBeLessThanOrEqual(1536);
+        expect(result.error === undefined, diagnostic).toBe(true);
+        expect(result.signal === null, diagnostic).toBe(true);
+        expect(result.status === 0, diagnostic).toBe(true);
         const rows = result.stdout.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line));
         expect(rows.at(-1)).toMatchObject({ actualAuth: true, actualKeyStore: true,
             actualSdk: true, keyStoreKind: 'fresh-exclusive-ephemeral-sqlite', productionCredentialPersistenceVerified: false, composedBoundary: true, fullApplicationBoot: false,
