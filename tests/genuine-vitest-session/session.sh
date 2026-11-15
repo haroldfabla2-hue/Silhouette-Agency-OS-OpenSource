@@ -34,7 +34,7 @@ for q in(p,p.parent):
 PY
 [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
 test "$(git -C "$repo" rev-parse HEAD)" = "$expected"
-test "$(git -C "$repo" rev-parse HEAD^)" = 770df9cfb1da640d58ef306129bbbb7e2f721e32
+test "$(git -C "$repo" rev-parse HEAD^)" = 769c9f2a2c7585c09ced6239a69c41b7d952dad4
 # Fail before allocating, never resize a previous attempt or use an existing account/root.
 test ! -e "$root"
 ! id silhouette-acquire >/dev/null 2>&1
@@ -186,6 +186,10 @@ for validation in typecheck regressions mechanisms; do
  code=$?
  set -e
  mv "$root/private/candidate.child.json" "$root/private/$validation.child.json"
+ # Root emits only bounded selected-report projection before any classifier/cleanup.
+ if test "$validation" != typecheck; then
+  python3 -I "$repo/tests/genuine-vitest-session/classify.py" --failure-diagnostic "$validation" "$data/$validation.report.json" "$data/$validation.blob.json" "$root/private/$validation.child.json" "$code"
+ fi
  python3 -I "$repo/tests/genuine-vitest-session/classify.py" "$validation" "$data/$validation.report.json" "$data/$validation.blob.json" "$root/private/$validation.child.json" "$code" > "$root/private/$validation.summary.json"
 done
 summary=$(python3 - "$root/private" <<'PYCODE'
