@@ -197,7 +197,12 @@ export class ApiKeyService {
     // ==================== HELPERS ====================
 
     private getAllKeys(): ApiKey[] {
-        return this.registry.read() || [];
+        const value = this.registry.read();
+        if (value === null) return [];
+        if (!Array.isArray(value) || !value.every(isApiKeyRecord)) {
+            throw new Error('Invalid MCP key store');
+        }
+        return value;
     }
 
     private updateKey(key: ApiKey): void {
@@ -234,4 +239,22 @@ export class ApiKeyService {
             expired: keys.filter(k => k.expiresAt && k.expiresAt <= now).length
         };
     }
+}
+
+/** Decode the untrusted persistence boundary before any method reads or writes
+ * a record. No defaults, repairs, silently omitted rows or raw secret imports. */
+function isApiKeyRecord(value: unknown): value is ApiKey {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const k = value as Record<string, unknown>;
+    const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+    return typeof k.id === 'string' && k.id.length > 0 &&
+        typeof k.name === 'string' && typeof k.createdBy === 'string' &&
+        typeof k.keyHash === 'string' && /^[0-9a-f]{64}$/i.test(k.keyHash) &&
+        typeof k.keyPrefix === 'string' && finite(k.createdAt) &&
+        finite(k.usageCount) && Number.isSafeInteger(k.usageCount) && k.usageCount >= 0 &&
+        (k.expiresAt === undefined || finite(k.expiresAt)) &&
+        (k.lastUsedAt === undefined || finite(k.lastUsedAt)) &&
+        typeof k.active === 'boolean' && Array.isArray(k.permissions) &&
+        k.permissions.every(p => typeof p === 'string' &&
+            ['tools:read', 'tools:execute', 'resources:read', 'admin:full'].includes(p));
 }

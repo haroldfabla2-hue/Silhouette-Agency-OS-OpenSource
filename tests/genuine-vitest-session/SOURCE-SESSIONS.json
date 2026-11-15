@@ -2077,8 +2077,8 @@
       "path": "services/mcpKeyService.ts",
       "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
       "fixturePath": "tests/genuine-vitest-session/main-mcp-integration/services/mcpKeyService.ts",
-      "bytes": 8043,
-      "sha256": "b9754be69889e5d5cf6efb68a7b1d456bdcc10ffd23748643eddec0175bffaa6"
+      "bytes": 9400,
+      "sha256": "6bbb43a10bee6969ab6492cb07ac6f415d9dd4ef0cadfdf700c45959b9e44097"
     },
     {
       "path": "services/media/canvasService.ts",
