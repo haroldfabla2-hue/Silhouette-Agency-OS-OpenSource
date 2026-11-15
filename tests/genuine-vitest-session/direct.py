@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Trusted direct-child boundary. No product imports/replacement test logic."""
-import os,sys,json,signal,subprocess,time,resource,struct,socket,errno,stat,selectors
+import os,sys,json,signal,subprocess,time,resource,struct,socket,errno,stat,selectors,hashlib,base64
 from pathlib import Path
 ROOT=Path('/mnt/silhouette-genuine-vitest')
 def cg():
@@ -211,6 +211,10 @@ def run():
  p=cg();before=events(p);start=time.monotonic();process=None;forced=False;receipt=ROOT/'private'/(phase+'.child.json')
  env={'PATH':str(ROOT/'fixtures/toolchain/bin')+':/usr/sbin:/usr/bin:/sbin:/bin'}
  fd=None;code=None;stream=None;diagnostic=bytearray();observed=0;wrapper_error='NONE'
+ # Exact reviewed compiler invocation only. No general output-export switch.
+ compiler_diagnostic=(phase=='candidate' and executable==str(ROOT/'fixtures/toolchain/bin/node')
+  and argv==[str(ROOT/'sources/candidate/node_modules/typescript/bin/tsc'),'--noEmit','--incremental','false','--pretty','false'])
+ compiler_head=bytearray();compiler_tail=bytearray();compiler_hash=hashlib.sha256();compiler_eof=False
  def stop(*unused):
   nonlocal forced
   forced=True
@@ -247,7 +251,7 @@ def run():
   def limits():
    resource.setrlimit(resource.RLIMIT_FSIZE,(134217728 if phase=='acquire'else(67108864 if phase=='transport'else 8388608),)*2)
    resource.setrlimit(resource.RLIMIT_NOFILE,(4096,4096));resource.setrlimit(resource.RLIMIT_CORE,(0,0))
-  process=subprocess.Popen(cmd,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,env=env,start_new_session=True,pass_fds=(()if fd is None else(fd,)),preexec_fn=limits)
+  process=subprocess.Popen(cmd,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=(subprocess.STDOUT if compiler_diagnostic else subprocess.DEVNULL),env=env,start_new_session=True,pass_fds=(()if fd is None else(fd,)),preexec_fn=limits)
   stream=selectors.DefaultSelector();os.set_blocking(process.stdout.fileno(),False);stream.register(process.stdout,selectors.EVENT_READ)
   deadline=time.monotonic()+seconds
   while stream.get_map()or process.poll()is None:
@@ -255,7 +259,13 @@ def run():
    if forced or remaining<=0:stop();break
    for key,_ in stream.select(min(.05,remaining)):
     b=os.read(key.fileobj.fileno(),4096)
-    if not b:stream.unregister(key.fileobj);continue
+    if not b:
+     compiler_eof=True;stream.unregister(key.fileobj);continue
+    if compiler_diagnostic:
+     compiler_hash.update(b)
+     if len(compiler_head)<16384:compiler_head.extend(b[:16384-len(compiler_head)])
+     compiler_tail.extend(b)
+     if len(compiler_tail)>16384:del compiler_tail[:-16384]
     observed=min(2**63-1,observed+len(b))
     if len(diagnostic)<1024:diagnostic.extend(b[:1024-len(diagnostic)])
   code=process.wait(timeout=2)
@@ -276,6 +286,11 @@ def run():
   row['wrapperError']=wrapper_error
   row['prefix']=prefix_evidence(bytes(diagnostic),observed>1024)
   if phase=='acquire':row['acquisition']=acquisition_evidence(not residual)
+  if compiler_diagnostic:
+   # Encode arbitrary child bytes so log command/control text cannot execute.
+   # At most32768raw bytes / ~44KiBencoded, existing root log channel only.
+   captured=bytes(compiler_head) if observed<=16384 else (bytes(compiler_head)+bytes(compiler_tail)[max(0,32768-observed):] if observed<32768 else bytes(compiler_head)+bytes(compiler_tail))
+   print('COMPILER_DIAGNOSTIC '+json.dumps({'schema':1,'origin':'EXACT_COMPILER_INVOCATION_MERGED_PIPE_UNTRUSTED_TEXT_NOT_AUTHORITY','observedBytes':observed,'observedSha256':compiler_hash.hexdigest(),'pipeEOF':compiler_eof,'truncated':observed>32768,'headLimit':16384,'tailLimit':16384,'capturedBytes':len(captured),'capturedSha256':hashlib.sha256(captured).hexdigest(),'encoding':'base64','data':base64.b64encode(captured).decode('ascii'),'exitCode':code},separators=(',',':')),flush=True)
   # Root-created finite fields only; emit before private receipt write and cleanup.
   print('DIRECT_CHILD_RECEIPT '+json.dumps(row,separators=(',',':')),flush=True)
   receipt.write_text(json.dumps(row)+'\n');receipt.chmod(0o600)
