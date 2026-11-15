@@ -62,24 +62,26 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
-          test "$(git rev-parse HEAD^)" = e87218a16ebe6aa8141f372669589452e265beeb
+          test "$(git rev-parse HEAD^)" = edca2102da7686bc03013530443444c298f36dc4
           test "$(git rev-list --parents -n 1 HEAD | wc -w)" -eq 2
           python3 - <<'PY'
           import subprocess
-          expected={'.github/workflows/integrated-silhouette-ui.yml','tests/genuine-vitest-session/session.sh'}
+          expected={'.github/workflows/integrated-silhouette-ui.yml','tests/genuine-vitest-session/session.sh','tests/genuine-vitest-session/cleanup.sh','tests/genuine-vitest-session/classify.py','tests/genuine-vitest-session/direct.py','tests/genuine-vitest-session/setup-bwrap.sh'}
           actual=set(subprocess.check_output(['git','diff','--name-only','HEAD^','HEAD'],text=True).splitlines())
-          assert actual==expected,'EXACT_REVIEWED_FIXED_CANDIDATE_SNAPSHOT_REQUIRED'
+          assert actual==expected,'EXACT_REVIEWED_DIRECT_BWRAP_CONSOLIDATION_REQUIRED'
           PY
+          timeout --signal=TERM --kill-after=5s 75s sudo /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin SILHOUETTE_FRESH_PUBLIC_GITHUB_VM=yes /bin/bash "$GITHUB_WORKSPACE/tests/genuine-vitest-session/setup-bwrap.sh" setup "$EXPECTED_HEAD" "$GITHUB_RUN_ID"
           elapsed=$(( $(date +%s) - $(cat "$RUNNER_TEMP/silhouette-session-job-start") ))
           test "$elapsed" -ge 0
-          test "$elapsed" -le 90
+          test "$elapsed" -le 150
           nodebin=$(readlink -f "$(command -v node)")
           safepath="$(dirname "$nodebin"):/usr/sbin:/usr/bin:/sbin:/bin"
-          # 15min work + 2min cleanup, after <=90s setup, fits within 20min.
-          timeout --signal=TERM --kill-after=5s 910s sudo /usr/bin/env -i PATH="$safepath" \
+          # 850s coordinator +120s cleanup +<=150s setup leaves margin inside20min.
+          sudo systemctl set-property --runtime silhouette-vitest.slice MemoryMax=10G MemorySwapMax=0 CPUQuota=200% TasksMax=384
+          timeout --signal=TERM --kill-after=5s 860s sudo /usr/bin/env -i PATH="$safepath" \
             /usr/bin/systemd-run --quiet --pipe --wait --unit=silhouette-vitest-coordinator --slice=silhouette-vitest.slice --service-type=exec \
-            -p MemoryMax=512M -p MemorySwapMax=0 -p CPUQuota=50% -p TasksMax=64 \
-            -p RuntimeMaxSec=900 -p TimeoutStopSec=5 -p KillMode=control-group \
+            -p MemoryMax=10G -p MemorySwapMax=0 -p CPUQuota=200% -p TasksMax=384 \
+            -p RuntimeMaxSec=850 -p TimeoutStopSec=5 -p KillMode=control-group \
             -p StandardError=null \
             /usr/bin/env -i PATH="$safepath" /bin/bash "$GITHUB_WORKSPACE/tests/genuine-vitest-session/session.sh" "$GITHUB_WORKSPACE" "$EXPECTED_HEAD" "$GITHUB_RUN_ID"
       - name: Final cleanup and finite public-fixture summary only
@@ -94,4 +96,10 @@ jobs:
             -p RuntimeMaxSec=110 -p TimeoutStopSec=5 -p KillMode=control-group \
             -p StandardError=null \
             /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin /bin/bash "$GITHUB_WORKSPACE/tests/genuine-vitest-session/cleanup.sh" "$EXPECTED_HEAD" "$GITHUB_RUN_ID"
+      - name: Restore only owned bwrap setup
+        if: always()
+        env:
+          EXPECTED_HEAD: ${{ inputs.expected_head }}
+        run: |
+          timeout --signal=TERM --kill-after=5s 30s sudo /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin /bin/bash "$GITHUB_WORKSPACE/tests/genuine-vitest-session/setup-bwrap.sh" cleanup "$EXPECTED_HEAD" "$GITHUB_RUN_ID"
 # No artifact/cache upload, browser/model/provider acquisition, matrix or rerun.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read genuine Vitest JSON and service evidence only. Never imports product or runs tests."""
+"""Read genuine Vitest JSON and root-owned actual direct-child evidence only. Never imports product or runs tests."""
 from pathlib import Path
 import json,sys,re,hashlib
 name,report,blob,service,code=sys.argv[1:]
@@ -13,12 +13,13 @@ def reference(value):
  return pool[int(value)]
 assert reference(top[0])=='4.1.12','WRONG_GENUINE_VITEST_VERSION'
 assert reference(top[2])==[],'GENUINE_VITEST_UNHANDLED_ERRORS'
-r=json.loads(Path(report).read_text());s=dict(line.split('=',1)for line in Path(service).read_text().splitlines()if '='in line)
-assert s['Result']in ('success','exit-code'),'NATURAL_SERVICE_EXIT_REQUIRED'
-assert s['ExecMainCode']=='1','NON_EXIT_SIGNAL_OR_TIMEOUT'
-assert int(s['ExecMainStatus'])==int(code),'EXIT_STATUS_MISMATCH'
-assert s['MemoryMax']=='6442450944'and s['TasksMax']=='256','RESOURCE_POLICY_NOT_EFFECTIVE'
-assert s['RestrictAddressFamilies'].split()==['AF_UNIX'],'RUNTIME_ADDRESS_FAMILY_POLICY_MISMATCH'
+r=json.loads(Path(report).read_text());s=json.loads(Path(service).read_text())
+assert s['schema']==1 and s['phase']==name and s['natural'] is True,'NATURAL_WHOLE_CHILD_REQUIRED'
+assert s['forced'] is False and s['residualUidProcesses']==0,'FORCED_OR_RESIDUAL_CHILD'
+assert s['rawReturnCode']==int(code),'ACTUAL_EXIT_MISMATCH'
+assert s['aggregateMemoryMax']==10737418240 and s['swapMax']==0 and s['aggregateTasksMax']==384 and s['cpuCount']==2,'AGGREGATE_BOUNDS_NOT_VERIFIED'
+assert s['boundary']=='DIRECT_CHILD_BWRAP_AF_UNIX_VERIFIED','ACTUAL_NAMESPACE_ADMISSION_REQUIRED'
+assert all(s['oomAfter'].get(k,0)==s['oomBefore'].get(k,0)for k in ('oom','oom_kill','oom_group_kill')),'OOM_INVALIDATES_ACCEPTANCE'
 assert r.get('numRuntimeErrorTestSuites',0)==0 and not r.get('unhandledErrors')and not r.get('errors'),'RUNTIME_OR_UNHANDLED_ERROR'
 assert len(r['testResults'])==1 and all(f.get('message')==''for f in r['testResults']),'FILE_SETUP_TEARDOWN_ERROR'
 a=[a for f in r['testResults']for a in f['assertionResults']if a['status']not in ('skipped','pending','todo')]
@@ -47,4 +48,4 @@ else:
   message='\n'.join(assertion['failureMessages'])
   assert re.search(r'memory-transitions-p0\.test\.ts:'+str(line)+r'(?::|\b)',message),'WRONG_ASSERTION_LOCATION'
   assert re.search(pattern,message,re.I|re.S),'WRONG_DISCRIMINATING_FAILURE_SHAPE' 
-print(json.dumps({'session':name,'selectedAssertions':len(a),'passed':sum(x['status']=='passed'for x in a),'failed':sum(x['status']=='failed'for x in a),'status':'ASSERTIONS_COMPLETED_NOT_PRODUCT_ACCEPTANCE'if name=='candidate'else'DISCRIMINATING_OLD_SOURCE_ASSERTION_FAILURES','naturalServiceExit':True,'builtinBlobUnhandledErrors':0,'blobSha256':hashlib.sha256(Path(blob).read_bytes()).hexdigest(),'reportSha256':hashlib.sha256(Path(report).read_bytes()).hexdigest(),'memoryPeakSampleBytes':int(s['MemoryPeak'])if s.get('MemoryPeak','').isdigit()else None,'wholeProductAccepted':False}))
+print(json.dumps({'session':name,'selectedAssertions':len(a),'passed':sum(x['status']=='passed'for x in a),'failed':sum(x['status']=='failed'for x in a),'status':'ASSERTIONS_COMPLETED_NOT_PRODUCT_ACCEPTANCE'if name=='candidate'else'DISCRIMINATING_OLD_SOURCE_ASSERTION_FAILURES','naturalWholeChildExit':True,'builtinBlobUnhandledErrors':0,'blobSha256':hashlib.sha256(Path(blob).read_bytes()).hexdigest(),'reportSha256':hashlib.sha256(Path(report).read_bytes()).hexdigest(),'memoryPeakSampleBytes':None,'wholeProductAccepted':False}))

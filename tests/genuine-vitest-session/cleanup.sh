@@ -14,16 +14,19 @@ fi
 test "$(stat -c %u "$marker")" = 0
 test "$(cat "$marker")" = "$expected:$runid"
 failed=0
-for unit in silhouette-vitest-transport silhouette-vitest-acquire silhouette-vitest-baseline-admission silhouette-vitest-baseline-state silhouette-vitest-candidate; do
-  if systemctl show "$unit" --property=LoadState --value | grep -qv '^not-found$'; then
-    systemctl stop "$unit" || failed=1
-    main=$(systemctl show "$unit" --property=MainPID --value)
-    test "${main:-0}" = 0 || failed=1
-    group=$(systemctl show "$unit" --property=ControlGroup --value)
-    if test -n "$group" && test -e "/sys/fs/cgroup$group/cgroup.events"; then
-      grep -q '^populated 0$' "/sys/fs/cgroup$group/cgroup.events" || failed=1
-    fi
+# No phase units exist. Any process for the two exclusively owned UIDs invalidates acceptance.
+# Remove them before unmount/account cleanup; an emergency cleanup never becomes a PASS.
+forced=0
+for account in silhouette-acquire silhouette-runtime; do
+ if id "$account" >/dev/null 2>&1; then
+  uid=$(id -u "$account")
+  if pgrep -u "$uid" >/dev/null; then
+   forced=1
+   pkill -KILL -u "$uid" || failed=1
+   for i in {1..20}; do pgrep -u "$uid" >/dev/null || break;sleep .05;done
+   if pgrep -u "$uid" >/dev/null;then failed=1;fi
   fi
+ fi
 done
 if id silhouette-runtime >/dev/null 2>&1; then
   uid=$(id -u silhouette-runtime)
@@ -51,4 +54,5 @@ for user in silhouette-acquire silhouette-runtime; do
   fi
 done
 rm "$marker"
+if test "$forced" != 0; then echo FORCED_UID_CLEANUP_NO_ACCEPTANCE;exit 1;fi
 echo CLEANUP_CONFIRMED_NO_PRODUCT_ACCEPTANCE
