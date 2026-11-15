@@ -6,7 +6,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
 import crypto from 'node:crypto';
-import { once } from 'node:events';
+import { once, errorMonitor } from 'node:events';
+import { channel } from 'node:diagnostics_channel';
+import type { Socket } from 'node:net';
 import express from 'express';
 
 assert.equal(process.env.SILHOUETTE_PROVIDERS, 'off');
@@ -48,6 +50,32 @@ app.use((_req, res) => { res.status(404).json({ error: 'terminal fallback' }); }
 const socketPath = path.resolve('m.sock');
 const server = app.listen(socketPath); await once(server, 'listening');
     process.stdout.write('MCP_CHECKPOINT {"id":5}\n');
+let observedOrdinal = 0;
+let nodeObservationCount = 0;
+const nodeObservation = (kind: 'REQUEST_START' | 'SOCKET_ERROR', host: 'PRESENT' | 'ABSENT' | 'UNKNOWN', code: string) => {
+    // Constant enums only; rawPacket/reason/message/socket/header values excluded.
+    if (++nodeObservationCount <= 128) process.stdout.write('MCP_NODE_OBSERVATION ' + JSON.stringify({
+        schema: 1, ordinal: observedOrdinal, kind, host, code }) + '\n');
+};
+const starts = channel('http.server.request.start');
+const onStart = (value: unknown) => {
+    if (!value || typeof value !== 'object') return;
+    const v = value as { server?: unknown; request?: http.IncomingMessage };
+    if (v.server !== server || !v.request) return;
+    nodeObservation('REQUEST_START', v.request.headers.host === undefined ? 'ABSENT' : 'PRESENT', 'NONE');
+};
+const monitors = new Map<Socket, (error: Error) => void>();
+const onConnection = (socket: Socket) => {
+    const monitor = (error: Error) => {
+        const k = error as Error & { code?: unknown };
+        const code = typeof k.code === 'string' && ['HPE_INVALID_METHOD','HPE_INVALID_URL','HPE_INVALID_VERSION','HPE_INVALID_HEADER_TOKEN','HPE_INVALID_CONTENT_LENGTH','HPE_UNEXPECTED_CONTENT_LENGTH','HPE_INVALID_CHUNK_SIZE','HPE_INVALID_EOF_STATE','HPE_CLOSED_CONNECTION','HPE_HEADER_OVERFLOW','HPE_CHUNK_EXTENSIONS_OVERFLOW','ERR_HTTP_REQUEST_TIMEOUT','ECONNRESET','EPIPE'].includes(k.code) ? k.code : 'UNKNOWN';
+        nodeObservation('SOCKET_ERROR', 'UNKNOWN', code);
+    };
+    monitors.set(socket, monitor); socket.on(errorMonitor, monitor);
+    socket.once('close', () => { socket.removeListener(errorMonitor, monitor); monitors.delete(socket); });
+};
+starts.subscribe(onStart); server.on('connection', onConnection);
+
 const streams: Array<{ endpoint: string; messages: any[]; response: http.IncomingMessage; request: http.ClientRequest }> = [];
 const headers = (key: string) => ({ Authorization: `Bearer ${master}`, 'x-mcp-api-key': key, Connection: 'close' });
 function request(url: string, key: string | null, body?: string, extra: Record<string, string> = {}, useMaster = true): Promise<{ status: number; text: string }> {
@@ -86,6 +114,7 @@ async function until(predicate: () => boolean, ms = 3000) {
 async function post(stream: (typeof streams)[number], key: string, id: number, method = 'ping', params?: object) {
     // Content-free phase evidence, never a request retry or alternate path.
     const ordinal = [1,2,3,4,6,7,9,8].indexOf(id) + 1;
+    observedOrdinal = ordinal >= 1 && ordinal <= 8 ? ordinal : 0;
     let phase = 'REQUEST_START';
     let status = 0;
     let origin = 'NOT_RECEIVED';
@@ -269,4 +298,7 @@ try {
     // Parent removes authored DB/WAL/SHM/socket directory AFTER natural exit.
     assert.equal(fs.existsSync(process.env.SILHOUETTE_DB_PATH!), true);
     process.stdout.write('MCP_CHECKPOINT {"id":35}\n');
+    starts.unsubscribe(onStart); server.removeListener('connection', onConnection);
+    for (const [socket, monitor] of monitors) socket.removeListener(errorMonitor, monitor);
+    monitors.clear();
 }

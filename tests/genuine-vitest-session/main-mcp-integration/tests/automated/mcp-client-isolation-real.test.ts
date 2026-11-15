@@ -93,6 +93,29 @@ it('runs actual composed identity/key/parser/two-client SDK behavior in a fresh 
                     errorName: k.errorName, errorCode: k.errorCode, origin: k.origin, ingress: k.ingress, fidelity: k.fidelity }; postState = 'VALID';
             } catch { postState = 'INVALID_OR_OVERFLOW'; postPhase = null; }
         }
+        let nodeState: 'ABSENT' | 'VALID' | 'INVALID_OR_OVERFLOW' = 'ABSENT';
+        let nodeCount = 0;
+        let nodeStart: { ordinal: number; host: string } | null = null;
+        let nodeError: { ordinal: number; code: string } | null = null;
+        for (const line of result.stdout.split('\n')) {
+            if (!line.startsWith('MCP_NODE_OBSERVATION ')) continue;
+            if (++nodeCount > 128 || line.length > 256 || nodeState === 'INVALID_OR_OVERFLOW') { nodeState = 'INVALID_OR_OVERFLOW'; nodeStart = null; nodeError = null; continue; }
+            try {
+                const v: unknown = JSON.parse(line.slice('MCP_NODE_OBSERVATION '.length));
+                if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error();
+                const k = v as Record<string, unknown>;
+                if (Object.keys(k).sort().join(',') !== 'code,host,kind,ordinal,schema' || k.schema !== 1 ||
+                    typeof k.ordinal !== 'number' || !Number.isInteger(k.ordinal) || k.ordinal < 0 || k.ordinal > 8 ||
+                    typeof k.kind !== 'string' || !['REQUEST_START','SOCKET_ERROR'].includes(k.kind) ||
+                    typeof k.host !== 'string' || !['PRESENT','ABSENT','UNKNOWN'].includes(k.host) ||
+                    typeof k.code !== 'string' || !['NONE','UNKNOWN','HPE_INVALID_METHOD','HPE_INVALID_URL','HPE_INVALID_VERSION','HPE_INVALID_HEADER_TOKEN','HPE_INVALID_CONTENT_LENGTH','HPE_UNEXPECTED_CONTENT_LENGTH','HPE_INVALID_CHUNK_SIZE','HPE_INVALID_EOF_STATE','HPE_CLOSED_CONNECTION','HPE_HEADER_OVERFLOW','HPE_CHUNK_EXTENSIONS_OVERFLOW','ERR_HTTP_REQUEST_TIMEOUT','ECONNRESET','EPIPE'].includes(k.code)) throw new Error();
+                if (k.kind === 'REQUEST_START') nodeStart = { ordinal: k.ordinal, host: k.host };
+                // Retain first error in current ordinal rather than overwrite a
+                // parser error with a later cleanup ECONNRESET.
+                if (k.kind === 'SOCKET_ERROR' && (!nodeError || nodeError.ordinal !== k.ordinal)) nodeError = { ordinal: k.ordinal, code: k.code };
+                nodeState = 'VALID';
+            } catch { nodeState = 'INVALID_OR_OVERFLOW'; nodeStart = null; nodeError = null; }
+        }
         const enumField = (value: unknown, values: readonly string[]) =>
             typeof value === 'string' && values.includes(value) ? value : 'UNKNOWN';
         const e = result.error;
@@ -107,13 +130,14 @@ it('runs actual composed identity/key/parser/two-client SDK behavior in a fresh 
             syscall: e ? (syscall === `spawnSync ${process.execPath}` ? 'spawnSync-execPath' : 'UNKNOWN') : 'NONE',
             signal: result.signal === null ? 'NONE' : enumField(result.signal, ['SIGTERM', 'SIGKILL', 'SIGABRT', 'SIGSEGV', 'SIGBUS', 'SIGILL', 'SIGINT', 'SIGQUIT', 'SIGPIPE', 'SIGXCPU', 'SIGXFSZ']),
             status: result.status === null ? 'NONE' : (Number.isInteger(result.status) && result.status >= 0 && result.status <= 255 ? result.status : 'UNKNOWN'),
-            checkpoints: checkpointIds, checkpointOverflow, shapeState, toolDenialShape, postState, postPhase, outerFailure });
+            checkpoints: checkpointIds, checkpointOverflow, shapeState, toolDenialShape, postState, postPhase, outerFailure, nodeState, nodeStart, nodeError });
         // The diagnostic contains only constants and bounded numbers, <= 1536
         // bytes by construction (128 two-digit IDs plus fixed-schema enums).
         expect(Buffer.byteLength(diagnostic)).toBeLessThanOrEqual(1536);
         expect(result.error === undefined, diagnostic).toBe(true);
         expect(result.signal === null, diagnostic).toBe(true);
         expect(result.status === 0, diagnostic).toBe(true);
+        expect(nodeState === 'VALID', diagnostic).toBe(true);
         expect(postState === 'VALID' && postPhase?.phase === 'SSE_REPLY' && postPhase.origin === 'SDK_ACCEPTED' && postPhase.ingress && postPhase.fidelity && outerFailure === 'NONE', diagnostic).toBe(true);
         expect(shapeState === 'VALID', diagnostic).toBe(true);
         expect(toolDenialShape, diagnostic).toEqual({ schema: 1, rpcError: false,
