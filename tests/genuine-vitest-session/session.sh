@@ -34,7 +34,7 @@ for q in(p,p.parent):
 PY
 [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
 test "$(git -C "$repo" rev-parse HEAD)" = "$expected"
-test "$(git -C "$repo" rev-parse HEAD^)" = d99b3b39a7a73b919cae890ffcd3354c3a575d40
+test "$(git -C "$repo" rev-parse HEAD^)" = 134c2d6a4b878238d86ef7dbffda03c6487c9d34
 # Fail before allocating, never resize a previous attempt or use an existing account/root.
 test ! -e "$root"
 ! id silhouette-acquire >/dev/null 2>&1
@@ -128,11 +128,11 @@ for name,session in spec['sessions'].items():
  overrides={r['path']:r for r in session['overrides']}
  for candidateRow in spec['files']:
   row=overrides.get(candidateRow['path'],candidateRow)
-  assert session['productCommit']=='MAIN_PLUS_FOURTEEN_MCP_BLOBS_MATRIX_EPHEMERAL_CUSTODY'
+  assert session['productCommit']=='MAIN_PLUS_FIFTEEN_MCP_FIXTURES_PASSIVE_MIXED_PAIRING'
   assert spec['mainCommit']=='1f0d967abf81b86e666d26eeb20f6dc97662a525'
   commit=row['sourceCommit']
   if commit=='WORKFLOW_FIXTURE_EXACT':
-   assert row['path']in {'server/app.ts', 'server/mcp/mcpServer.ts', 'services/apiKeyService.ts', 'package.json', 'tests/real-process/mcp-boundary-child.ts', 'services/ephemeralMcpKeyRegistry.ts', 'tests/automated/mcp-client-isolation-real.test.ts', 'package-lock.json', 'services/mcpKeyService.ts', 'server/index.ts', 'tests/automated/mcp-pooled-coherent-real.test.ts', 'tests/automated/mcp-pooled-original-mixed-real.test.ts', 'tests/real-process/mcp-pooled-coherent-child.ts', 'tests/real-process/mcp-pooled-original-mixed-child.ts'}
+   assert row['path']in {'server/app.ts', 'server/mcp/mcpServer.ts', 'services/apiKeyService.ts', 'package.json', 'tests/real-process/mcp-boundary-child.ts', 'services/ephemeralMcpKeyRegistry.ts', 'tests/automated/mcp-client-isolation-real.test.ts', 'package-lock.json', 'services/mcpKeyService.ts', 'server/index.ts', 'tests/real-process/mcp-passive-pairs.ts', 'tests/automated/mcp-pooled-coherent-real.test.ts', 'tests/automated/mcp-pooled-original-mixed-real.test.ts', 'tests/real-process/mcp-pooled-coherent-child.ts', 'tests/real-process/mcp-pooled-original-mixed-child.ts'}
    assert row['fixturePath']=='tests/genuine-vitest-session/main-mcp-integration/'+row['path']
    commit=sys.argv[3];sourcePath=row['fixturePath']
   else:

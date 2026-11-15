@@ -9,7 +9,7 @@ def selected_failure_diagnostic(name,report,blob,service,code):
  if name not in ('mcp',)or Path(report)!=expected/(name+'.report.json')or Path(blob)!=expected/(name+'.blob.json')or Path(service)!=Path('/mnt/silhouette-genuine-vitest/private')/(name+'.child.json'):
   raise ValueError('EXACT_SELECTED_REPORT_PATHS_REQUIRED')
  out={'schema':1,'selection':name,'origin':'SELECTED_VITEST_REPORTS_UNTRUSTED_NOT_AUTHORITY','status':'UNKNOWN','exitCode':int(code),'textBudgetBytes':12288,'records':[],'truncated':False}
- remaining=12288
+ remaining=4096
  def text(value,limit=2048):
   nonlocal remaining
   if not isinstance(value,str):return None
@@ -40,6 +40,38 @@ def selected_failure_diagnostic(name,report,blob,service,code):
   # Do not read product-owned files if writer quiescence cannot be established.
   print('VITEST_FAILURE_DIAGNOSTIC '+json.dumps({'schema':1,'status':'ROOT_RECEIPT_UNVERIFIED_NO_REPORT_READ_NO_ACCEPTANCE'},separators=(',',':')),flush=True)
   return False
+ try:
+  passive_path=expected/'mcp-original-mixed.passive.json'
+  fd=os.open(passive_path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK|os.O_CLOEXEC)
+  try:
+   st=os.fstat(fd)
+   if not stat.S_ISREG(st.st_mode) or st.st_nlink!=1 or stat.S_IMODE(st.st_mode)!=0o600 or st.st_uid!=__import__('pwd').getpwnam('silhouette-runtime').pw_uid or st.st_size>8192:raise ValueError('PASSIVE_KIND_SIZE')
+   raw=os.read(fd,8193);end=os.fstat(fd)
+   if (st.st_dev,st.st_ino,st.st_size,st.st_mtime_ns,st.st_ctime_ns)!=(end.st_dev,end.st_ino,end.st_size,end.st_mtime_ns,end.st_ctime_ns) or len(raw)!=st.st_size:raise ValueError('PASSIVE_UNSTABLE')
+   v=json.loads(raw)
+  finally:os.close(fd)
+  def integer(x,lo,hi):return type(x)is int and lo<=x<=hi
+  if not isinstance(v,dict)or v.get('schema')!=1 or v.get('state')not in ('UNKNOWN','CAPTURED_NOT_CAUSAL_VERDICT'):raise ValueError('PASSIVE_SCHEMA')
+  if set(v)=={'schema','state'} and v['state']=='UNKNOWN':clean={'schema':1,'state':'UNKNOWN'}
+  else:
+   if set(v)!={'schema','state','snapshot','closeout'}:raise ValueError('PASSIVE_KEYS')
+   a=v['snapshot'];z=v['closeout']
+   if not isinstance(a,dict)or set(a)!={'schema','overflow','unavailable','cCount','sCount','post8','states','pairs','events'}or a['schema']!=1 or type(a['overflow'])is not bool or type(a['unavailable'])is not bool or not integer(a['cCount'],0,128)or not integer(a['sCount'],0,128)or not integer(a['post8'],0,a['cCount']):raise ValueError('PASSIVE_SNAPSHOT')
+   def tuples(x,length,cap,ranges):
+    if not isinstance(x,list)or len(x)>cap:raise ValueError('PASSIVE_TUPLES')
+    if any(not isinstance(row,list)or len(row)!=length or any(not integer(n,*ranges[i])for i,n in enumerate(row))for row in x):raise ValueError('PASSIVE_RANGES')
+    return [[n for n in row]for row in x]
+   states=tuples(a['states'],3,256,[(1,2),(1,128),(1,127)])
+   pairs=tuples(a['pairs'],3,64,[(1,a['cCount']),(1,a['sCount']),(0,8)])
+   events=tuples(a['events'],4,128,[(1,10),(1,2),(1,128),(0,127)])
+   ids={(r[0],r[1])for r in states}
+   if len(states)!=a['cCount']+a['sCount']or len(ids)!=len(states)or any(r[1]>(a['cCount']if r[0]==1 else a['sCount'])for r in states)or any((1,r[0])not in ids or(2,r[1])not in ids for r in pairs)or any((r[1],r[2])not in ids or r[0]==2 and not 1<=r[3]<=len(pairs)or r[0]==7 and not 1<=r[3]<=11 for r in events):raise ValueError('PASSIVE_REFERENCES')
+   if not isinstance(z,dict)or set(z)!={'schema','phase','overflow','unavailable','cCount','sCount','eventsAfterSnapshot'}or z['schema']!=1 or z['phase']!='AFTER_ORIGINAL_FINALLY'or type(z['overflow'])is not bool or type(z['unavailable'])is not bool or not integer(z['cCount'],a['cCount'],128)or not integer(z['sCount'],a['sCount'],128)or not integer(z['eventsAfterSnapshot'],0,128):raise ValueError('PASSIVE_CLOSEOUT')
+   state='UNKNOWN'if a['overflow']or a['unavailable']or z['overflow']or z['unavailable']else'CAPTURED_NOT_CAUSAL_VERDICT'
+   if v['state']!=state:raise ValueError('PASSIVE_STATE')
+   clean={'schema':1,'state':state,'snapshot':dict(schema=1,overflow=a['overflow'],unavailable=a['unavailable'],cCount=a['cCount'],sCount=a['sCount'],post8=a['post8'],states=states,pairs=pairs,events=events),'closeout':{k:z[k]for k in ('schema','phase','overflow','unavailable','cCount','sCount','eventsAfterSnapshot')}}
+  out['passive']={'sha256':hashlib.sha256(raw).hexdigest(),'bytes':len(raw),'data':clean}
+ except (OSError,ValueError,TypeError,KeyError,IndexError,RecursionError,UnicodeError):out['passive']={'state':'UNKNOWN_MISSING_OR_INVALID'}
  try:
   r=read(report,'report')
   if not isinstance(r,dict)or not isinstance(r.get('testResults'),list):raise ValueError('REPORT_SCHEMA')

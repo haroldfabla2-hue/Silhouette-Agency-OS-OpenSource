@@ -10,6 +10,7 @@ import { once, errorMonitor } from 'node:events';
 import { channel } from 'node:diagnostics_channel';
 import type { Socket } from 'node:net';
 import express from 'express';
+import { passivePairs } from './mcp-passive-pairs';
 
 assert.equal(process.env.SILHOUETTE_PROVIDERS, 'off');
 assert.equal(process.env.SILHOUETTE_BOOT_MODE, 'acceptance');
@@ -50,6 +51,9 @@ app.use((_req, res) => { res.status(404).json({ error: 'terminal fallback' }); }
 const socketPath = path.resolve('m.sock');
 const server = app.listen(socketPath); await once(server, 'listening');
     process.stdout.write('MCP_CHECKPOINT {"id":5}\n');
+const passive = passivePairs();
+let extraARole = 0;
+let initialASeen = false, initialBSeen = false;
 let clientASocket: object | null = null;
 let clientPost8UsesA: boolean | null = null;
 let serverParserErrorUsesA: boolean | null = null;
@@ -74,12 +78,14 @@ const onStart = (value: unknown) => {
 };
 const monitors = new Map<Socket, (error: Error) => void>();
 const onConnection = (socket: Socket) => {
+    passive.connection(socket);
     const monitor = (error: Error) => {
         const k = error as Error & { code?: unknown };
         const code = typeof k.code === 'string' && ['HPE_INVALID_METHOD','HPE_INVALID_URL','HPE_INVALID_VERSION','HPE_INVALID_HEADER_TOKEN','HPE_INVALID_CONTENT_LENGTH','HPE_UNEXPECTED_CONTENT_LENGTH','HPE_INVALID_CHUNK_SIZE','HPE_INVALID_EOF_STATE','HPE_CLOSED_CONNECTION','HPE_HEADER_OVERFLOW','HPE_CHUNK_EXTENSIONS_OVERFLOW','ERR_HTTP_REQUEST_TIMEOUT','ECONNRESET','EPIPE'].includes(k.code) ? k.code : 'UNKNOWN';
         if (observedOrdinal === 8 && code.startsWith('HPE_') && serverParserErrorUsesA === null) {
             serverParserErrorUsesA = serverASocket === null ? null : socket === serverASocket;
         }
+        passive.hpe(socket, code);
         nodeObservation('SOCKET_ERROR', 'UNKNOWN', code);
     };
     monitors.set(socket, monitor); socket.on(errorMonitor, monitor);
@@ -92,24 +98,30 @@ const streams: Array<{ endpoint: string; messages: any[]; response: http.Incomin
 // Mixed case intentionally retains contradictory headers as a REAL failing gate.
 // Connections remain real AF_UNIX; no request replay, mock or response rewrite.
 const clientAgent = new http.Agent({ keepAlive: true });
+clientAgent.on('free', passive.free);
 const headers = (key: string) => ({ Authorization: `Bearer ${master}`, 'x-mcp-api-key': key, Connection: 'close' });
-function request(url: string, key: string | null, body?: string, extra: Record<string, string> = {}, useMaster = true): Promise<{ status: number; text: string }> {
+function request(url: string, key: string | null, body?: string, extra: Record<string, string> = {}, useMaster = true, operationPost8 = false): Promise<{ status: number; text: string }> {
     return new Promise((resolve, reject) => {
         const requestOrdinal = observedOrdinal;
         const req = http.request({ agent: clientAgent, socketPath, path: url, method: body === undefined ? 'GET' : 'POST', headers: {
             ...(key ? headers(key) : {}), ...(!useMaster ? { Authorization: `Bearer ${key}` } : {}),
             ...(body !== undefined ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } : {}), ...extra
         } }, res => {
+            if (operationPost8) passive.postResult(res.statusCode ?? 0, false);
             let text = ''; res.setEncoding('utf8'); res.on('data', c => { text += c; });
             res.on('end', () => resolve({ status: res.statusCode!, text })); res.on('error', reject);
         });
         req.once('socket', socket => {
+            passive.assigned(socket, operationPost8);
             if (requestOrdinal === 8 && clientPost8UsesA === null) clientPost8UsesA = clientASocket === null ? null : socket === clientASocket;
         });
-        req.on('error', reject); req.end(body);
+        req.on('error', error => { if (operationPost8) passive.postResult(0, true); reject(error); }); req.end(body);
     });
 }
 async function open(key: string, extra: Record<string, string> = {}) {
+    // Classification only; never changes the existing request or branch order.
+    const role = key === a.key ? (Object.hasOwn(extra, 'x-session-id') ? 3 : !initialASeen ? (initialASeen = true, 1) : extraARole < 3 ? 4 + extraARole++ : 7)
+        : key === b.key && !initialBSeen ? (initialBSeen = true, 2) : 8;
     return new Promise<(typeof streams)[number]>((resolve, reject) => {
         const request = http.get({ agent: clientAgent, socketPath, path: '/mcp/sse', headers: { ...headers(key), ...extra } }, response => {
             if (response.statusCode !== 200) { response.resume(); reject(new Error(`SSE ${response.statusCode}`)); return; }
@@ -120,11 +132,11 @@ async function open(key: string, extra: Record<string, string> = {}) {
                 while (buffer.includes('\n\n')) {
                     const pos = buffer.indexOf('\n\n'); const frame = buffer.slice(0, pos); buffer = buffer.slice(pos + 2);
                     const data = frame.split('\n').find(l => l.startsWith('data: '))?.slice(6);
-                    if (frame.startsWith('event: endpoint') && data) { item.endpoint = data; resolve(item); }
+                    if (frame.startsWith('event: endpoint') && data) { item.endpoint = data; passive.pair(wrapper, data, request, response, role); resolve(item); }
                     else if (frame.startsWith('event: message') && data) item.messages.push(JSON.parse(data));
                 }
             }); response.on('error', reject);
-        }); request.on('error', reject);
+        }); request.once('socket', socket => passive.assigned(socket, false)); request.on('error', reject);
     });
 }
 async function until(predicate: () => boolean, ms = 3000) {
@@ -163,7 +175,7 @@ async function post(stream: (typeof streams)[number], key: string, id: number, m
         endpoint.pathname === '/mcp/messages' && endpoint.searchParams.getAll('sessionId').length === 1 &&
         /^[0-9a-f-]{36}$/i.test(endpoint.searchParams.get('sessionId') ?? '') &&
         Buffer.byteLength(payload) < MCP_LIMITS.bodyBytes;
-    try { reply = await request(stream.endpoint, key, payload); }
+    try { reply = await request(stream.endpoint, key, payload, {}, true, ordinal === 8); }
     catch (error) { emit('REQUEST_ERROR', error); throw error; }
     ingress = ingressCount > beforeIngress;
     // Match only exact constant bodies from the reviewed wrapper/SDK/Node.
@@ -306,6 +318,7 @@ try {
     process.stdout.write('MCP_OUTER_FAILURE ' + kind + '\n');
     throw error;
 } finally {
+    process.stdout.write('MCP_PASSIVE_PAIRS ' + passive.before() + '\n');
     // Equality booleans only, no identities/keys/URLs/packet data.
     process.stdout.write('MCP_SOCKET_LINEAGE ' + JSON.stringify({ schema: 1,
         clientPost8UsesA, serverParserErrorUsesA }) + '\n');
@@ -326,4 +339,6 @@ try {
     starts.unsubscribe(onStart); server.removeListener('connection', onConnection);
     for (const [socket, monitor] of monitors) socket.removeListener(errorMonitor, monitor);
     monitors.clear();
+    clientAgent.removeListener('free', passive.free);
+    process.stdout.write('MCP_PASSIVE_CLOSEOUT ' + passive.after() + '\n');
 }

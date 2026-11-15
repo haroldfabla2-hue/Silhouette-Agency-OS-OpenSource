@@ -16,6 +16,39 @@ it('real pooled-original-mixed MCP client must preserve isolation and revocation
                 SILHOUETTE_PROVIDERS: 'off', SILHOUETTE_BOOT_MODE: 'acceptance',
                 SILHOUETTE_HOST: '127.0.0.1', SILHOUETTE_DB_PATH: path.join(root, 'authored.sqlite') }
         });
+        // Preserve only exact bounded local topology, before original assertions.
+        const evidenceRoot = path.dirname(os.tmpdir());
+        const allowedRoot = '/mnt/silhouette-genuine-vitest/runtime/candidate';
+        const integer = (x: unknown, lo: number, hi: number): x is number => typeof x === 'number' && Number.isInteger(x) && x >= lo && x <= hi;
+        let passiveEvidence: Record<string, unknown> = { schema: 1, state: 'UNKNOWN' };
+        try {
+            const first = result.stdout.split('\n').filter(x => x.startsWith('MCP_PASSIVE_PAIRS '));
+            const last = result.stdout.split('\n').filter(x => x.startsWith('MCP_PASSIVE_CLOSEOUT '));
+            if (first.length !== 1 || last.length !== 1 || Buffer.byteLength(first[0]) + Buffer.byteLength(last[0]) > 8100) throw new Error();
+            const v = JSON.parse(first[0].slice('MCP_PASSIVE_PAIRS '.length)) as Record<string, unknown>;
+            const z = JSON.parse(last[0].slice('MCP_PASSIVE_CLOSEOUT '.length)) as Record<string, unknown>;
+            if (Object.keys(v).sort().join(',') !== 'cCount,events,overflow,pairs,post8,sCount,schema,states,unavailable' || v.schema !== 1 ||
+                typeof v.overflow !== 'boolean' || typeof v.unavailable !== 'boolean' || !integer(v.cCount,0,128) || !integer(v.sCount,0,128) || !integer(v.post8,0,v.cCount)) throw new Error();
+            const tuples = (x: unknown, length: number, cap: number, ranges: number[][]): number[][] => {
+                if (!Array.isArray(x) || x.length > cap) throw new Error();
+                return x.map(row => { if (!Array.isArray(row) || row.length !== length || !row.every((n,i) => integer(n,ranges[i][0],ranges[i][1]))) throw new Error(); return row.map(n => n as number); });
+            };
+            const states = tuples(v.states,3,256,[[1,2],[1,128],[1,127]]);
+            const pairs = tuples(v.pairs,3,64,[[1,v.cCount],[1,v.sCount],[0,8]]);
+            const events = tuples(v.events,4,128,[[1,10],[1,2],[1,128],[0,127]]);
+            if (states.length !== v.cCount + v.sCount || new Set(states.map(x => x[0]+':'+x[1])).size !== states.length ||
+                states.some(x => x[1] > (x[0] === 1 ? v.cCount as number : v.sCount as number))) throw new Error();
+            const exists = (side: number,id: number) => states.some(x => x[0] === side && x[1] === id);
+            if (pairs.some(x => !exists(1,x[0]) || !exists(2,x[1])) || events.some(x => !exists(x[1],x[2]) || x[0] === 2 && (x[3]<1 || x[3]>pairs.length) || x[0] === 7 && (x[3]<1 || x[3]>11))) throw new Error();
+            if (Object.keys(z).sort().join(',') !== 'cCount,eventsAfterSnapshot,overflow,phase,sCount,schema,unavailable' || z.schema !== 1 || z.phase !== 'AFTER_ORIGINAL_FINALLY' ||
+                typeof z.overflow !== 'boolean' || typeof z.unavailable !== 'boolean' || !integer(z.cCount,0,128) || !integer(z.sCount,0,128) || !integer(z.eventsAfterSnapshot,0,128) || z.cCount < v.cCount || z.sCount < v.sCount) throw new Error();
+            passiveEvidence = { schema: 1, state: v.overflow || v.unavailable || z.overflow || z.unavailable ? 'UNKNOWN' : 'CAPTURED_NOT_CAUSAL_VERDICT',
+                snapshot: { schema: 1, overflow: v.overflow, unavailable: v.unavailable, cCount: v.cCount, sCount: v.sCount, post8: v.post8, states, pairs, events },
+                closeout: { schema: 1, phase: 'AFTER_ORIGINAL_FINALLY', overflow: z.overflow, unavailable: z.unavailable, cCount: z.cCount, sCount: z.sCount, eventsAfterSnapshot: z.eventsAfterSnapshot } };
+        } catch { /* Missing, malformed or overflow evidence remains UNKNOWN, no changed scenario. */ }
+        const encodedPassive = JSON.stringify(passiveEvidence);
+        if (evidenceRoot !== allowedRoot || Buffer.byteLength(encodedPassive) > 8192) throw new Error('PASSIVE_EVIDENCE_CUSTODY_OR_SIZE');
+        fs.writeFileSync(path.join(allowedRoot, 'mcp-original-mixed.passive.json'), encodedPassive, { flag: 'wx', mode: 0o600 });
         // Fixed-schema diagnostics only. Never forward stdout/stderr, Error
         // messages/stacks, paths, spawnargs, environment or credential prefixes.
         const allowed = ['MCP_CHECKPOINT {"id":1}', 'MCP_CHECKPOINT {"id":2}', 'MCP_CHECKPOINT {"id":3}', 'MCP_CHECKPOINT {"id":4}', 'MCP_CHECKPOINT {"id":5}', 'MCP_CHECKPOINT {"id":6}', 'MCP_CHECKPOINT {"id":7}', 'MCP_CHECKPOINT {"id":8}', 'MCP_CHECKPOINT {"id":9}', 'MCP_CHECKPOINT {"id":10}', 'MCP_CHECKPOINT {"id":11}', 'MCP_CHECKPOINT {"id":12}', 'MCP_CHECKPOINT {"id":13}', 'MCP_CHECKPOINT {"id":14}', 'MCP_CHECKPOINT {"id":15}', 'MCP_CHECKPOINT {"id":16}', 'MCP_CHECKPOINT {"id":17}', 'MCP_CHECKPOINT {"id":18}', 'MCP_CHECKPOINT {"id":19}', 'MCP_CHECKPOINT {"id":20}', 'MCP_CHECKPOINT {"id":21}', 'MCP_CHECKPOINT {"id":22}', 'MCP_CHECKPOINT {"id":23}', 'MCP_CHECKPOINT {"id":24}', 'MCP_CHECKPOINT {"id":25}', 'MCP_CHECKPOINT {"id":26}', 'MCP_CHECKPOINT {"id":27}', 'MCP_CHECKPOINT {"id":28}', 'MCP_CHECKPOINT {"id":29}', 'MCP_CHECKPOINT {"id":30}', 'MCP_CHECKPOINT {"id":31}', 'MCP_CHECKPOINT {"id":32}', 'MCP_CHECKPOINT {"id":33}', 'MCP_CHECKPOINT {"id":34}', 'MCP_CHECKPOINT {"id":35}'] as const;
