@@ -75,3 +75,66 @@ describe('P0 durable tier transitions', () => {
         await expect(transitions.begin(original, { ...original, tier: MemoryTier.MEDIUM, content: 'changed' })).rejects.toThrow('Conflicting transition');
     });
 });
+
+
+describe('transition admission payload ownership (real journal files)', () => {
+    async function ownedJournal() {
+        const dir = await mkdtemp(join(tmpdir(), 'memory-admission-'));
+        directories.push(dir);
+        return new MemoryTransitions(dir);
+    }
+
+    it('captures typed payload and key before the first begin await without changing legacy JSON', async () => {
+        const transitions = await ownedJournal();
+        const original = source('capture-key');
+        original.embeddingVector = new Float32Array([0.25, 0.5]);
+        original.parentIds = ['parent-before'];
+        original.embeddingIdentity = { model: 'fixture', version: 'v1', dimension: 2 };
+        original.affect = { valence: 0.25, activation: 0.5, at: 1000 };
+        original.originalContent = undefined;
+        const destination = { ...original, tier: MemoryTier.MEDIUM };
+        const expectedSourceJson = JSON.stringify(original);
+        const expectedDestinationJson = JSON.stringify(destination);
+        const pending = transitions.begin(original, destination);
+        original.timestamp = 9000;
+        original.tags.push('after-admission');
+        original.parentIds.push('parent-after');
+        original.embeddingVector[0] = 0.75;
+        const entry = await pending;
+        expect(entry.source).not.toBe(original);
+        expect(entry.source.embeddingVector).toBeInstanceOf(Float32Array);
+        expect(entry.destination.embeddingVector).toBeInstanceOf(Float32Array);
+        expect(JSON.stringify(entry.source)).toBe(expectedSourceJson);
+        expect(JSON.stringify(entry.destination)).toBe(expectedDestinationJson);
+        const persisted = (await transitions.pending())[0];
+        expect(JSON.stringify(persisted.source)).toBe(expectedSourceJson);
+        expect(JSON.stringify(persisted.destination)).toBe(expectedDestinationJson);
+        expect(persisted.key).toBe(entry.key);
+        expect(persisted.state).toBe('PENDING');
+    });
+
+    it('owns Float32Array values even when the declared vector is backed by shared memory', async () => {
+        const transitions = await ownedJournal();
+        const original = source('capture-shared-vector');
+        original.embeddingVector = new Float32Array(new SharedArrayBuffer(8));
+        original.embeddingVector.set([0.25, 0.5]);
+        const pending = transitions.begin(original, { ...original, tier: MemoryTier.MEDIUM });
+        original.embeddingVector[0] = 0.75;
+        const entry = await pending;
+        expect(entry.source.embeddingVector).toBeInstanceOf(Float32Array);
+        expect(entry.source.embeddingVector!.buffer).toBeInstanceOf(ArrayBuffer);
+        expect(entry.source.embeddingVector![0]).toBe(0.25);
+        expect(entry.destination.embeddingVector![0]).toBe(0.25);
+    });
+
+    it('rejects mutation of an admitted public payload before native store and preserves its journal', async () => {
+        const transitions = await ownedJournal();
+        const original = source('capture-public-entry');
+        const entry = await transitions.begin(original, { ...original, tier: MemoryTier.MEDIUM });
+        const expected = JSON.stringify((await transitions.pending())[0]);
+        entry.source.timestamp = 9000;
+        await expect(transitions.run(entry)).rejects.toThrow('Transition payload changed after admission');
+        expect(JSON.stringify((await transitions.pending())[0])).toBe(expected);
+        expect(entry.state).toBe('PENDING');
+    });
+});
