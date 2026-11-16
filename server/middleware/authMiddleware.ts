@@ -1,3 +1,4 @@
+import { privateDesktopToken } from '../desktop/privateSession';
 import {withAuthenticatedPrincipal} from '../../services/security/principalContext';
 // =============================================================================
 // AUTHENTICATION MIDDLEWARE
@@ -57,6 +58,7 @@ let _cachedToken: string | null = null;
  * This avoids issues with env not being loaded at import time.
  */
 function getToken(): string | null {
+    if (privateDesktopToken()) return privateDesktopToken()!;
     if (_cachedToken !== null) return _cachedToken;
     _cachedToken = process.env.SILHOUETTE_API_KEY || process.env.SILHOUETTE_API_TOKEN || '';
 

@@ -1,3 +1,4 @@
+import { privateDesktopToken } from '../desktop/privateSession';
 // =============================================================================
 // SILHOUETTE WEBSOCKET GATEWAY
 // Central WebSocket control plane.
@@ -136,7 +137,7 @@ class SilhouetteGateway {
         const { clientId, clientType, auth, capabilities, version } = frame.params;
 
         // Auth Check
-        const expectedToken = process.env.SILHOUETTE_API_KEY || process.env.SILHOUETTE_API_TOKEN;
+        const expectedToken = privateDesktopToken() || process.env.SILHOUETTE_API_KEY || process.env.SILHOUETTE_API_TOKEN;
         let authenticated = false;
 
         if (expectedToken) {

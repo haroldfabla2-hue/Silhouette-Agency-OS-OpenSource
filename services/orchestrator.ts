@@ -1,3 +1,4 @@
+import { ownedWork } from '../server/desktop/producerScope.js';
 import { subscribeHelpProtocol } from './communication/helpProtocol';
 import { loadOrganization, defaultOrganizationPath, teamsForDomain, teamOfAgent } from './org/organization';
 import { ReputationLedger, defaultReputationLedgerPath } from './org/reputationLedger';
@@ -458,7 +459,7 @@ export class AgentSwarmOrchestrator {
         this.pruneAgents();
 
         // 2. Run Continuum Memory Maintenance (Decay & Promotion)
-        continuum.runMaintenance();
+        ownedWork(() => continuum.runMaintenance());
 
         // 3. Persist State (Throttled)
         // Only save if significant changes or every N ticks?
@@ -475,9 +476,9 @@ export class AgentSwarmOrchestrator {
         // [PA-011] Creative Director is a Service-Skill, so we poll its inbox manually here
         // In a pure actor model, the agentStreamer would handle this, but CD is 'Headless' TS logic for now.
         if (now % 5000 < 1000) { // Every 5s
-            import('./skills/creativeDirectorSkill').then(({ creativeDirector }) => {
-                creativeDirector.checkInbox();
-            }).catch(e => console.error("Failed to poll CreativeDirector:", e));
+            ownedWork(() => import('./skills/creativeDirectorSkill').then(({ creativeDirector }) => {
+                return creativeDirector.checkInbox();
+            }).catch(e => console.error("Failed to poll CreativeDirector:", e)));
         }
 
         // 5. Circadian Rhythm (Auto-Sleep Protocol)

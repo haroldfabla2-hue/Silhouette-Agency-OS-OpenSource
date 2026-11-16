@@ -214,7 +214,7 @@ app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
 
 // ─── INITIALIZATION ──────────────────────────────────────────────────────────
 // Trigger system loaders (async) but don't block export
-initServer().then(async () => {
+export const appInitialization = initServer().then(async () => {
     // [SKILLS] Load dynamic skills from universalprompts + managed + workspace
     try {
         const { skillRegistry } = await import('../services/skills/skillRegistry');

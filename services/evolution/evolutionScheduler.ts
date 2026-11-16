@@ -1,3 +1,4 @@
+import { ownedInterval, ownedTimeout, ownedWork, producerAdmissionOpen } from '../../server/desktop/producerScope.js';
 /**
  * EVOLUTION SCHEDULER
  * ═══════════════════════════════════════════════════════════════
@@ -49,9 +50,10 @@ class EvolutionScheduler {
         this.config = { ...DEFAULT_CONFIG, ...config };
 
         // Subscribe to PowerManager mode changes to reactivate when mode upgrades
-        import('../systemBus').then(({ systemBus }) => {
-            import('../../types').then(({ SystemProtocol }) => {
+        ownedWork(() => import('../systemBus').then(({ systemBus }) => {
+            return import('../../types').then(({ SystemProtocol }) => {
                 systemBus.subscribe(SystemProtocol.CONFIG_MUTATION, (event: any) => {
+                    if (!producerAdmissionOpen()) return;
                     if (event.type === 'POWER_MODE_CHANGE') {
                         const newMode = event.mode;
                         if ((newMode === 'PERFORMANCE' || newMode === 'BALANCED') && !this.isRunning) {
@@ -64,7 +66,7 @@ class EvolutionScheduler {
                     }
                 });
             }).catch(() => {});
-        }).catch(() => {});
+        }).catch(() => {}));
     }
 
     public static getInstance(): EvolutionScheduler {
@@ -85,16 +87,16 @@ class EvolutionScheduler {
         }
 
         // [OPTIMIZATION] Check PowerManager before starting
-        import('../powerManager').then(({ powerManager }) => {
+        ownedWork(() => import('../powerManager').then(({ powerManager }) => {
             if (!powerManager.isEvolutionEnabled) {
                 console.log('[EVOLUTION] 💤 Disabled by PowerManager (ECO mode). Will auto-activate on mode change.');
                 return;
             }
-            this.activateScheduler();
-        });
+            return this.activateScheduler();
+        }));
     }
 
-    private activateScheduler(): void {
+    private activateScheduler() {
         if (this.isRunning) return;
 
         // [SECURITY] Authority ceiling before scheduling anything. These loops
@@ -105,11 +107,11 @@ class EvolutionScheduler {
         // scheduled only when the operator config allows its task. Fail-closed:
         // unreadable config schedules nothing and leaves isRunning=false so a
         // later mode change can retry.
-        Promise.all([
+        return ownedWork(() => Promise.all([
             import('../../server/config/configLoader'),
             import('../daemon/autonomyPolicy')
         ]).then(([{ configLoader }, { isTaskAllowedByAutonomy }]) => {
-            if (this.isRunning) return;
+            if (this.isRunning || !producerAdmissionOpen()) return;
             let flags: any;
             try {
                 flags = configLoader.getConfig().autonomy;
@@ -129,14 +131,14 @@ class EvolutionScheduler {
 
             // Schedule periodic tool analysis
             if (allowToolEvolution) {
-                this.toolEvolutionInterval = setInterval(
+                this.toolEvolutionInterval = ownedInterval(
                     () => this.runToolEvolutionCycle(),
                     this.config.toolEvolutionIntervalMs
                 );
 
                 // Run initial analysis after a short delay (let system stabilize)
-                setTimeout(() => {
-                    this.runToolEvolutionCycle();
+                ownedTimeout(() => {
+                    return this.runToolEvolutionCycle();
                 }, 30000); // 30 seconds after start
             } else {
                 console.log('[EVOLUTION] ⛔ Tool evolution loop skipped: autonomy ceiling (allowEvolution).');
@@ -144,7 +146,7 @@ class EvolutionScheduler {
 
             // Schedule periodic goal execution
             if (allowGoals) {
-                this.goalExecutionInterval = setInterval(
+                this.goalExecutionInterval = ownedInterval(
                     () => this.executeActiveGoals(),
                     this.config.goalExecutionIntervalMs
                 );
@@ -163,7 +165,7 @@ class EvolutionScheduler {
             console.log('[EVOLUTION] ✅ Scheduler active. Tool analysis every 6h, goal check every 30min (only loops allowed by the autonomy ceiling).');
         }).catch((e) => {
             console.warn('[EVOLUTION] ⛔ Autonomy policy import failed; evolution loops NOT scheduled (fail-closed):', e?.message || e);
-        });
+        }));
     }
 
     /**

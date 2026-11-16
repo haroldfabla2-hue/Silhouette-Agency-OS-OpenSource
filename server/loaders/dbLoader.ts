@@ -1,3 +1,4 @@
+import { registerStarted } from '../desktop/startedResources.js';
 
 import fs from 'fs';
 import { PATHS } from '../config/paths';
@@ -28,6 +29,7 @@ export const initDatabases = async () => {
     try {
         const { redisClient } = await import('../../services/redisClient');
         await redisClient.connect();
+        registerStarted('redis', {close: () => redisClient.disconnect()});
         if (redisClient.isMockMode()) {
             console.warn('[LOADER] Redis running in MOCK mode - data will not persist across restarts');
         } else {
@@ -50,7 +52,7 @@ export const initDatabases = async () => {
     const initPromises = [
         // Neo4j with 5s timeout to not block startup
         Promise.race([
-            import('../../services/graphService').then(({ graph }) => graph.connect()),
+            import('../../services/graphService').then(async ({ graph }) => { await graph.connect(); registerStarted('graph', {close: () => graph.close()}); }),
             new Promise((_, reject) => setTimeout(() => reject(new Error('Neo4j timeout (5s)')), 5000))
         ]).catch(e => console.warn("[LOADER] Graph DB optional:", (e as Error).message)),
     ];
@@ -71,6 +73,7 @@ export const initDatabases = async () => {
     try {
         const { continuousMemory } = await import('../../services/memory/continuousMemory');
         continuousMemory.initialize();
+        registerStarted('continuous-memory', {flush: () => continuousMemory.shutdown()});
         console.log('[LOADER] ContinuousMemory WAL Ready.');
     } catch (e: any) {
         console.warn('[LOADER] ContinuousMemory initialization failed:', e.message);

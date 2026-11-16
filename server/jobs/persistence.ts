@@ -1,3 +1,5 @@
+import { orderedFanout } from '../desktop/orderedFanout.js';
+import { ownedInterval, producerScopeBound } from '../desktop/producerScope.js';
 
 import fs from 'fs';
 import { PATHS } from '../config/paths';
@@ -11,7 +13,7 @@ export const startPersistenceJobs = () => {
     console.log('[JOB] 💾 Persistence & Cleanup Jobs Started.');
 
     // 1. Cost Metrics Saver (Every 10s)
-    setInterval(() => {
+    ownedInterval(() => {
         try {
             const metrics = costEstimator.getMetrics();
             // Dual write for migration safety:
@@ -25,7 +27,12 @@ export const startPersistenceJobs = () => {
     }, 10000);
 
     // 2. High-Frequency System Tick (Every 1s)
-    setInterval(() => {
+    ownedInterval(() => {
+        if (producerScopeBound()) {
+            // Same invocation order/concurrent work, stop on synchronous throw. Return started promises to
+            // the desktop timer owner. Unbound native CLI path stays unchanged.
+            return orderedFanout([() => workflowEngine.tick(), () => orchestrator.tick(), () => continuum.runMaintenance()]);
+        }
         workflowEngine.tick();
         orchestrator.tick();
         continuum.runMaintenance();

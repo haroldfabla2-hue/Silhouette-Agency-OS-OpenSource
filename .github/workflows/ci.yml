@@ -70,6 +70,9 @@ jobs:
             --bind "$fixture" /tmp/work \
             /bin/bash -c 'ip link set lo up; env -i PATH="$PATH" HOME=/tmp python3 /tmp/work/tests/real-process/production-off-auth.py'
 
+      - name: Desktop ownership boundary contracts (not full product validation)
+        run: node --test tests/desktop-session/*.node.cjs
+
       - name: Unit tests
         run: npm test
 

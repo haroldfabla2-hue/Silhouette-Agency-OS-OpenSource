@@ -1,3 +1,4 @@
+import { privateDesktopToken, privateDesktopBearer } from '../desktop/privateSession';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Server } from 'http';
 import { TerminalService } from '../../services/system/terminalService';
@@ -18,10 +19,10 @@ export class TerminalGateway {
         this.wss.on('connection', (ws, req) => {
             // [SECURITY] Message Token Auth
             const url = new URL(req.url || '', 'http://localhost');
-            const token = url.searchParams.get('token');
-            const expectedToken = process.env.SILHOUETTE_API_KEY;
+            const token = privateDesktopToken() ? undefined : url.searchParams.get('token');
+            const expectedToken = privateDesktopToken() || process.env.SILHOUETTE_API_KEY;
 
-            if (expectedToken && token !== expectedToken) {
+            if (privateDesktopToken() ? !privateDesktopBearer(req.headers.authorization) : expectedToken && token !== expectedToken) {
                 console.warn(`[Terminal] 🛑 Auth failed: Invalid token from ${req.socket.remoteAddress}`);
                 ws.close(3000, 'Unauthorized');
                 return;
