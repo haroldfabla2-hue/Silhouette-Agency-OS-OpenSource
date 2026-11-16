@@ -7,8 +7,9 @@ import {execFileSync,spawn} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
 import {createServer} from 'node:net';
 const loader=pathToFileURL(resolve('node_modules/tsx/dist/loader.mjs')).href;
+const migrationAssets=resolve('db/migrations/sqlite');
 const script=resolve('tests/real-process/curiosity-drain-child.ts');
-const environment=(directory:string)=>({PATH:process.env.PATH,HOME:directory,NODE_ENV:'test',SILHOUETTE_PROVIDERS:'off',SILHOUETTE_BOOT_MODE:'acceptance'});
+const environment=(directory:string)=>({PATH:process.env.PATH,HOME:directory,NODE_ENV:'test',SILHOUETTE_PROVIDERS:'off',SILHOUETTE_MIGRATIONS_DIR:migrationAssets,SILHOUETTE_BOOT_MODE:'acceptance'});
 async function availablePort():Promise<number>{
  const server=createServer();await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
  const port=(server.address() as {port:number}).port;await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));return port;

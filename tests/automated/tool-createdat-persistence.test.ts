@@ -3,6 +3,9 @@ import { mkdtempSync } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+process.env.SILHOUETTE_MIGRATIONS_DIR = fileURLToPath(new URL('../../db/migrations/sqlite', import.meta.url));
 
 // Isolate persistence (tools.db lands in cwd/data) before importing the modules.
 process.chdir(mkdtempSync(join(tmpdir(), 'tool-createdat-')));
