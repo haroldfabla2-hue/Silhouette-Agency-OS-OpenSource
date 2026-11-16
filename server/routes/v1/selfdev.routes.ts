@@ -30,7 +30,11 @@ router.post('/cycles', (req: Request, res: Response) => handle(res, () =>
     selfDevCycleService.create(req.body ?? {})));
 
 router.get('/cycles', (_req: Request, res: Response) => {
-    res.json({ success: true, cycles: selfDevCycleService.list() });
+    try { res.json({ success: true, cycles: selfDevCycleService.list() }); }
+    catch (error: unknown) {
+        const failure = error as Error & { statusCode?: number };
+        res.status(failure.statusCode ?? 500).json({ success: false, error: failure.message });
+    }
 });
 
 router.get('/cycles/:id', (req: Request, res: Response) => handle(res, () =>

@@ -102,12 +102,14 @@ describe('P0 self-dev cycle service (real git worktree, no mocks)', () => {
         s2.abandon(c.id);
     });
 
-    it('quarantines a corrupt state file instead of deleting it', () => {
-        fs.writeFileSync(path.join(selfdevDir, 'cycles.json'), 'not json at all', 'utf8');
-        const s = fresh();
-        expect(s.list()).toEqual([]);
-        const quarantined = fs.readdirSync(selfdevDir).filter(f => f.startsWith('cycles.json.corrupt-'));
-        expect(quarantined.length).toBe(1);
-        expect(fs.readFileSync(path.join(selfdevDir, quarantined[0]), 'utf8')).toBe('not json at all');
+    it('preserves corrupt state and blocks successive service instances instead of forgetting active work', () => {
+        const file = path.join(selfdevDir, 'cycles.json');
+        fs.writeFileSync(file, 'not json at all', 'utf8');
+        for (let restart = 0; restart < 2; restart++) {
+            const s = fresh();
+            expect(() => s.list()).toThrowError(/SELFDEV_CONTINUITY_UNKNOWN/);
+            expect(fs.readFileSync(file, 'utf8')).toBe('not json at all');
+        }
+        expect(fs.readdirSync(selfdevDir).filter(f => f.startsWith('cycles.json.corrupt-'))).toEqual([]);
     });
 });

@@ -29,6 +29,7 @@
 
 import { applyCycleEdits, checkScope, checkShrink, CycleEdit, GateOp } from './gates';
 import fs from 'fs';
+import { readCycleStateOrPristine, parseCycleStore } from './cycleStoreContinuity';
 import path from 'path';
 import crypto from 'crypto';
 import { selfCodeService } from '../selfCodeService';
@@ -87,7 +88,16 @@ export class SelfDevCycleService {
     private maxCyclesPerDay: number;
     private maxOps: number;
     private maxPatchBytes: number;
-    private store: CycleStore;
+    private loadedStore?: CycleStore;
+    private continuityFailure?: Error;
+
+    /** Unavailability is not an empty store. Keep unrelated service startup
+     * alive, but block every cycle read/mutation requiring authoritative state. */
+    private get store(): CycleStore {
+        if (this.continuityFailure) throw this.continuityFailure;
+        if (!this.loadedStore) throw new Error('Self-dev cycle state unavailable');
+        return this.loadedStore;
+    }
 
     constructor(opts?: { dir?: string }) {
         const env = process.env;
@@ -97,7 +107,12 @@ export class SelfDevCycleService {
         this.maxPatchBytes = Number(env.SELFDEV_MAX_PATCH_BYTES ?? 65536);
         fs.mkdirSync(this.requestsDir(), { recursive: true });
         fs.mkdirSync(this.resultsDir(), { recursive: true });
-        this.store = this.load();
+        try { this.loadedStore = this.load(); }
+        catch (cause: unknown) {
+            this.continuityFailure = Object.assign(new Error(
+                'SELFDEV_CONTINUITY_UNKNOWN: cycle state unavailable; original evidence preserved; operator recovery required', { cause }
+            ), { statusCode: 503 });
+        }
     }
 
     // ---------- persistence ----------
@@ -108,19 +123,8 @@ export class SelfDevCycleService {
     private resultsDir() { return path.join(this.dir, 'pr-results'); }
 
     private load(): CycleStore {
-        const p = this.statePath();
-        if (!fs.existsSync(p)) return { cycles: [] };
-        try {
-            const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
-            if (!parsed || !Array.isArray(parsed.cycles)) throw new Error('bad shape');
-            return parsed as CycleStore;
-        } catch (err) {
-            // Eternal-memory invariant: quarantine, never delete.
-            const q = `${p}.corrupt-${Date.now()}`;
-            fs.renameSync(p, q);
-            this.journal({ ts: new Date().toISOString(), event: 'STATE_QUARANTINED', detail: `corrupt cycles.json moved to ${path.basename(q)}` });
-            return { cycles: [] };
-        }
+        const raw = readCycleStateOrPristine(this.dir);
+        return raw === null ? { cycles: [] } : parseCycleStore<CycleStore>(raw);
     }
 
     private save() {
