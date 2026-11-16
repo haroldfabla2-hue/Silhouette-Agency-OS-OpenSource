@@ -1,7 +1,8 @@
-const { test } = require('node:test');
+const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path'); const fs = require('node:fs'); const os = require('node:os');
-const { runOwnedJsonChild, runnerPath, configureCodeResourceRoot } = require('../../services/tools/ownedCodeRunner.js');
+let runOwnedJsonChild, runnerPath, configureCodeResourceRoot;
+before(async()=>{ ({runOwnedJsonChild,runnerPath,configureCodeResourceRoot}=await import('../../services/tools/ownedCodeRunner.js')); });
 const entry = path.join(__dirname, 'fixture.cjs');
 function run(mode, extra={}) {
  process.env.OWNED_TEST_MODE=mode;
@@ -19,12 +20,29 @@ async function rejected(promise,code,cleanup='closed') {
 test('actual code/args JSON payload valid child returns unchanged result shape',async()=>assert.equal(await run('valid'),'fixture-result'));
 test('missing entry/executable reject',async()=>{await rejected(run('valid',{entry:'/no-owned-fixture'}),'EXIT_STATUS');await rejected(run('valid',{executable:'/no-owned-node'}),'SPAWN_ERROR');});
 test('invalidJSON and nonzero successJSON fail',async()=>{await rejected(run('invalid'),'INVALID_JSON');await rejected(run('nonzero'),'EXIT_STATUS');await rejected(run('signal'),'EXIT_STATUS');});
-test('code cap and bounded JSON args reject cycles/accessors/toJSON/depth before spawn',async()=>{
+test('existing CODE native JSON wire conversions preserved for COMPOSED and internal callers',async()=>{
+ const shared={value:7}; const symbol=Symbol('ignored');
+ const args={missing:undefined,date:new Date('2026-11-16T12:00:00Z'),buffer:Buffer.from('authored fixture'),custom:{toJSON(){return {converted:true};}},nan:NaN,infinity:Infinity,fn(){},arr:[undefined,()=>{},,NaN],shared1:shared,shared2:shared,get value(){return 9;},[symbol]:'ignored'};
+ Object.defineProperty(args,'hidden',{value:'ignored',enumerable:false});
+ const expected=JSON.parse(JSON.stringify({code:'return args;',args}));
+ assert.deepEqual(await run('echo-payload',{payload:{code:'return args;',args}}),expected);
+ assert.deepEqual(await run('echo-payload',{payload:{code:'return args;',args:undefined}}),{code:'return args;'});
+});
+test('previously uncapped legitimate code/string/depth not silently rejected',async()=>{
+ let deep={leaf:true};for(let i=0;i<22;i++)deep={deep};
+ const payload={code:'x'.repeat(128*1024+1),args:{large:'x'.repeat(512*1024+1),deep}};
+ assert.deepEqual(await run('echo-payload',{payload}),JSON.parse(JSON.stringify(payload)));
+});
+test('serialization failures occur before spawn and explicit trusted input limit remains opt-in',async()=>{
  const cyclic={};cyclic.self=cyclic;
- for(const args of [cyclic,{get x(){throw Error('must not run')}},{toJSON(){throw Error('must not run')}},new Date()])await rejected(run('valid',{payload:{code:'return 1;',args}}),'INPUT_ARGS_JSON','not-started');
- await rejected(run('valid',{payload:{code:'x'.repeat(128*1024+1),args:{}}}),'INPUT_CODE_LIMIT','not-started');
- await rejected(run('valid',{payload:{code:'x',args:{big:'x'.repeat(512*1024+1)}}}),'INPUT_ARGS_STRING_LIMIT','not-started');
- let deep={};for(let i=0;i<22;i++)deep={deep};await rejected(run('valid',{payload:{code:'x',args:deep}}),'INPUT_ARGS_STRUCTURE','not-started');
+ for(const args of [cyclic,{big:1n},{get value(){throw Error('private fixture');}}])await rejected(run('echo-payload',{payload:{code:'x',args}}),'INPUT_SERIALIZATION','not-started');
+ await rejected(run('echo-payload',{payload:{code:'x',args:{large:'authored fixture'}},maxInputBytes:8}),'INPUT_LIMIT','not-started');
+});
+test('arbitrary caller serialization throws never select diagnostics or escape fixed rejection',async()=>{
+ const hostile={get code(){throw Error('must not read thrown properties');}};
+ for(const thrown of [null,undefined,'caller text',{code:'INPUT_LIMIT'},hostile]){
+  await rejected(run('echo-payload',{payload:{code:'x',args:{toJSON(){throw thrown;}}}}),'INPUT_SERIALIZATION','not-started');
+ }
 });
 test('actual closed stdin rejects handled EPIPE and PID absent',async()=>{
  await assert.rejects(run('close-stdin',{payload:{code:'return args.big;',args:{big:'x'.repeat(500000)}}}),e=>{assert.ok(['STDIN_ERROR','STDIN_WRITE'].includes(e.code));assert.equal(e.cleanup,'closed');assert.throws(()=>process.kill(e.details.pid,0),{code:'ESRCH'});assert.ok(!e.message.includes('xxx'));return true;});

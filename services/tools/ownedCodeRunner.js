@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 let trustedResourceRoot;
+const ownedFaults = new WeakSet();
 function configureCodeResourceRoot(root) {
     // Bootstrap-only injection. Never call with tool arguments/model output.
     if (trustedResourceRoot !== undefined) throw new Error('Code resource root already configured');
@@ -21,6 +22,7 @@ function runnerPath(cwd = process.cwd()) {
 }
 function fault(code, cleanup = 'not-started') {
     const error = new Error('Code runner failed: ' + code);
+    ownedFaults.add(error);
     error.code = code;
     error.cleanup = cleanup;
     return error;
@@ -31,43 +33,14 @@ function boundedText(value, maxBytes) {
     return bytes.subarray(0, Math.max(0, maxBytes - 32)).toString('utf8') + '[truncated]';
 }
 function preparePayload(payload, maxInputBytes) {
-    // Expected contract: code string + JSON-only args, not arbitrary JS objects.
-    // Proxies may still run traps; this is not an OS/CPU/RSS security boundary.
+    // Preserve the existing CODE wire conversion, including toJSON/getters,
+    // omitted undefined object fields, array nulls and nonfinite number nulls.
+    // Serialization can execute caller JS and allocate without a bound, as before.
+    // This is process ownership, not an OS/CPU/RSS security boundary.
     if (!payload || typeof payload.code !== 'string') throw fault('INPUT_CODE_TYPE');
-    if (Buffer.byteLength(payload.code) > 128 * 1024) throw fault('INPUT_CODE_LIMIT');
-    let nodes = 0, stringBytes = 0;
-    const ancestors = new Set();
-    const copy = (value, depth) => {
-        if (++nodes > 10000 || depth > 20) throw fault('INPUT_ARGS_STRUCTURE');
-        if (value === null || typeof value === 'boolean') return value;
-        if (typeof value === 'number' && Number.isFinite(value)) return value;
-        if (typeof value === 'string') {
-            stringBytes += Buffer.byteLength(value);
-            if (stringBytes > 512 * 1024) throw fault('INPUT_ARGS_STRING_LIMIT');
-            return value;
-        }
-        if (!value || typeof value !== 'object' || ancestors.has(value)) throw fault('INPUT_ARGS_JSON');
-        const array = Array.isArray(value);
-        if ((!array && Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) || (array && value.length > 10000)) throw fault('INPUT_ARGS_JSON');
-        ancestors.add(value);
-        const target = array ? [] : Object.create(null);
-        let count = 0;
-        for (const key of Reflect.ownKeys(value)) {
-            if (array && key === 'length') continue;
-            if (++count > 10000 || typeof key !== 'string' || key === 'toJSON') throw fault('INPUT_ARGS_JSON');
-            const descriptor = Object.getOwnPropertyDescriptor(value, key);
-            if (!descriptor || !('value' in descriptor) || !descriptor.enumerable) throw fault('INPUT_ARGS_JSON');
-            if (array && !/^(0|[1-9][0-9]*)$/.test(key)) throw fault('INPUT_ARGS_JSON');
-            stringBytes += Buffer.byteLength(key);
-            if (stringBytes > 512 * 1024) throw fault('INPUT_ARGS_STRING_LIMIT');
-            Object.defineProperty(target, key, { value: copy(descriptor.value, depth + 1), enumerable: true, writable: true, configurable: true });
-        }
-        ancestors.delete(value);
-        return target;
-    };
-    const safe = { code: payload.code, args: copy(payload.args === undefined ? {} : payload.args, 0) };
-    const serialized = JSON.stringify(safe);
-    if (Buffer.byteLength(serialized) > maxInputBytes) throw fault('INPUT_LIMIT');
+    const serialized = JSON.stringify({ code: payload.code, args: payload.args });
+    // Optional trusted-owner limit only. No ungrounded new production input cap.
+    if (maxInputBytes !== undefined && Buffer.byteLength(serialized) > maxInputBytes) throw fault('INPUT_LIMIT');
     return serialized;
 }
 function deliverRunnerData(parsed, onLog) {
@@ -92,10 +65,10 @@ function deliverRunnerData(parsed, onLog) {
     }
     return parsed.result;
 }
-function runOwnedJsonChild({ executable, entry, cwd, payload, timeoutMs = 5000, termGraceMs = 100, closeWaitMs = 1000, maxInputBytes = 1024 * 1024, maxOutputBytes = 1024 * 1024, onLog = message => console.log('[Sandbox Log]', message) }) {
+function runOwnedJsonChild({ executable, entry, cwd, payload, timeoutMs = 5000, termGraceMs = 100, closeWaitMs = 1000, maxInputBytes = undefined, maxOutputBytes = 1024 * 1024, onLog = message => console.log('[Sandbox Log]', message) }) {
     // This lower-level executor accepts trusted owner parameters only, not tool input.
     let serialized;
-    try { serialized = preparePayload(payload, maxInputBytes); } catch (error) { return Promise.reject(error.code ? error : fault('INPUT_SERIALIZATION')); }
+    try { serialized = preparePayload(payload, maxInputBytes); } catch (error) { return Promise.reject(ownedFaults.has(error) ? error : fault('INPUT_SERIALIZATION'));  }
     return new Promise((resolve, reject) => {
         let child, firstFailure, timer, forceTimer, closeTimer, settled = false, totalBytes = 0, retainedBytes = 0, exitCode = null, exitSignal = null;
         const chunks = [];
