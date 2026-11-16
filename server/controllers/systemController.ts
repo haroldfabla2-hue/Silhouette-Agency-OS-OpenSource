@@ -1,3 +1,4 @@
+import { ResourceScope } from '../runtime/resourceScope';
 
 import { computeTokensToday } from './tokensToday';
 import { Request, Response } from 'express';
@@ -24,6 +25,9 @@ function maskSecretValue(value: any): any {
 }
 
 export class SystemController {
+    private readonly operations=new ResourceScope('system-controller');
+    public getLifecycleStatus(){return {pollingFailures:this.getLifecycleFailures(),diagnostics:this.operations.getDiagnostics(),failures:this.operations.getFailures()};}
+
 
     // ═══════════════════════════════════════════════════════════
     // SECRETS VAULT — Server-side credential storage
@@ -35,6 +39,8 @@ export class SystemController {
      * Body: { credentials: { apiKey: "...", orgId: "..." } }
      */
     public async saveSecret(req: Request, res: Response) {
+        return this.operations.run('saveSecret',async()=>{
+
         try {
             const { serviceId } = req.params;
             const { credentials } = req.body;
@@ -56,15 +62,21 @@ export class SystemController {
                     const { mediaService } = await import('../../services/mediaService');
                     mediaService.updateConfig(credentials);
                     sqliteService.setConfig('mediaConfig', credentials);
-                } catch (e) { /* mediaService may not be loaded yet */ }
+                } catch (e) {
+            this.operations.recordDiagnostic('saveSecret',e,'UNCLASSIFIED','UNVERIFIED');
+ /* mediaService may not be loaded yet */ }
             }
 
             console.log(`[SECRETS] Saved credentials for service: ${serviceId}`);
             res.json({ success: true, serviceId });
         } catch (e: any) {
+            this.operations.recordDiagnostic('saveSecret',e,'UNCLASSIFIED','UNVERIFIED');
+
             console.error('[SECRETS] Save failed:', e.message);
             res.status(500).json({ error: 'Failed to save secret', details: e.message });
         }
+    
+        });
     }
 
     /**
@@ -73,6 +85,8 @@ export class SystemController {
      * Returns: { services: [{ id: "gemini", hasCredentials: true, keys: ["apiKey"] }] }
      */
     public async listSecrets(req: Request, res: Response) {
+        return this.operations.run('listSecrets',async()=>{
+
         try {
             const allConfig = sqliteService.getAllConfig();
             const services = Object.entries(allConfig)
@@ -95,9 +109,13 @@ export class SystemController {
 
             res.json({ services });
         } catch (e: any) {
+            this.operations.recordDiagnostic('listSecrets',e,'UNCLASSIFIED','UNVERIFIED');
+
             console.error('[SECRETS] List failed:', e.message);
             res.status(500).json({ error: 'Failed to list secrets', details: e.message });
         }
+    
+        });
     }
 
     /**
@@ -106,6 +124,8 @@ export class SystemController {
      * Returns raw credentials — should be behind auth middleware.
      */
     public async getSecret(req: Request, res: Response) {
+        return this.operations.run('getSecret',async()=>{
+
         try {
             const { serviceId } = req.params;
             const key = `${SECRETS_PREFIX}${serviceId}`;
@@ -128,9 +148,13 @@ export class SystemController {
 
             return res.json({ serviceId, credentials: maskSecretValue(value), masked: true });
         } catch (e: any) {
+            this.operations.recordDiagnostic('getSecret',e,'UNCLASSIFIED','UNVERIFIED');
+
             console.error('[SECRETS] Get failed:', e.message);
             res.status(500).json({ error: 'Failed to get secret', details: e.message });
         }
+    
+        });
     }
 
     /**
@@ -146,6 +170,8 @@ export class SystemController {
     // ═══════════════════════════════════════════════════════════
 
     public async getConfig(req: Request, res: Response) {
+        return this.operations.run('getConfig',async()=>{
+
         // Fetch fresh config from SQLite + Env merger logic if needed
         const config = sqliteService.getAllConfig();
 
@@ -156,9 +182,13 @@ export class SystemController {
         };
 
         res.json({ ...config, driveConfig });
+    
+        });
     }
 
     public async updateConfig(req: Request, res: Response) {
+        return this.operations.run('updateConfig',async()=>{
+
         try {
             const { apiKey, mediaConfig, dreamerConfig, systemUpdates } = req.body;
             let updatedCount = 0;
@@ -202,6 +232,8 @@ export class SystemController {
                         }
                     });
                 } catch (configErr: any) {
+            this.operations.recordDiagnostic('updateConfig',configErr,'UNCLASSIFIED','UNVERIFIED');
+
                     console.error("[CONFIG] Failed to write systemUpdates to JSON config:", configErr.message);
                 }
                 
@@ -211,9 +243,13 @@ export class SystemController {
             res.json({ success: true, message: `Configuration updated (${updatedCount} sections) and persisted.` });
 
         } catch (e: any) {
+            this.operations.recordDiagnostic('updateConfig',e,'UNCLASSIFIED','UNVERIFIED');
+
             console.error("[CONFIG] Error updating system config:", e);
             res.status(500).json({ error: "Internal Server Error", details: e.message });
         }
+    
+        });
     }
 
     /**
@@ -221,13 +257,19 @@ export class SystemController {
      * schema via server/lib/installScanner. Never returns a hardcoded map.
      */
     public async scanSystem(req: Request, res: Response) {
+        return this.operations.run('scanSystem',async()=>{
+
         try {
             const { buildSystemMap } = await import('../lib/installScanner');
             const map = await buildSystemMap({ rootDir: process.cwd(), db: sqliteService.db });
             res.json(map);
         } catch (e: any) {
+            this.operations.recordDiagnostic('scanSystem',e,'UNCLASSIFIED','UNVERIFIED');
+
             res.status(500).json({ error: `Real scan failed: ${e.message}` });
         }
+    
+        });
     }
 
     /**
@@ -235,6 +277,8 @@ export class SystemController {
      * orchestrator/UI can read what the installer actually found.
      */
     public async installHandover(req: Request, res: Response) {
+        return this.operations.run('installHandover',async()=>{
+
         try {
             const map = req.body?.map;
             if (!map || !Array.isArray(map.frontendComponents)) {
@@ -243,11 +287,17 @@ export class SystemController {
             sqliteService.setConfig('installSystemMap', map);
             res.json({ success: true });
         } catch (e: any) {
+            this.operations.recordDiagnostic('installHandover',e,'UNCLASSIFIED','UNVERIFIED');
+
             res.status(500).json({ error: `Handover failed: ${e.message}` });
         }
+    
+        });
     }
 
     public async readFile(req: Request, res: Response) {
+        return this.operations.run('readFile',async()=>{
+
         const { filePath } = req.body;
         // ... logic to read file safely ...
         // Replicating original simplified logic for now:
@@ -259,7 +309,11 @@ export class SystemController {
             if (!fs.existsSync(fullPath)) return res.status(404).json({ error: "File not found" });
             const content = fs.readFileSync(fullPath, 'utf-8');
             res.json({ success: true, content });
-        } catch (e) { res.status(500).json({ error: "Read failed" }); }
+        } catch (e) {
+            this.operations.recordDiagnostic('readFile',e,'UNCLASSIFIED','UNVERIFIED');
+ res.status(500).json({ error: "Read failed" }); }
+    
+        });
     }
     /**
      * GET /v1/system/status
@@ -269,6 +323,8 @@ export class SystemController {
      * the SQLite entry reflects a real read against the real database file.
      */
     public async getStatus(req: Request, res: Response) {
+        return this.operations.run('getStatus',async()=>{
+
         const services: Array<{ id: string; name: string; status: string; port?: number; path?: string; details?: string }> = [];
 
         // Core API gateway: this handler only runs if the HTTP process is alive.
@@ -277,6 +333,8 @@ export class SystemController {
             const { config } = await import('../config/configLoader');
             if (config?.system?.port) port = config.system.port;
         } catch {
+            this.operations.recordDiagnostic('getStatus',new Error('System operation unavailable without original catch binding'),'UNCLASSIFIED','UNVERIFIED');
+
             // Keep the default; it matches the server's own fallback.
         }
         services.push({ id: 'core', name: 'Orchestrator Core', status: 'ONLINE', port });
@@ -286,6 +344,8 @@ export class SystemController {
             sqliteService.getLogs(1); // throws if the database is unreadable
             services.push({ id: 'db', name: 'SQLite Persistence', status: 'ONLINE', path: sqliteService.getDbPath() });
         } catch (e: any) {
+            this.operations.recordDiagnostic('getStatus',e,'UNCLASSIFIED','UNVERIFIED');
+
             services.push({ id: 'db', name: 'SQLite Persistence', status: 'ERROR', details: e?.message || 'SQLite read probe failed' });
         }
 
@@ -296,11 +356,17 @@ export class SystemController {
             timestamp: Date.now(),
             services
         });
+    
+        });
     }
 
     public async getCosts(req: Request, res: Response) {
+        return this.operations.run('getCosts',async()=>{
+
         const costs = sqliteService.getCostMetrics() || { totalCost: 0, dailyCost: 0, projectedMonthly: 0, costPerToken: 0, tokenCount: 0, modelBreakdown: {} };
         res.json(costs);
+    
+        });
     }
 
     // CACHE FOR TELEMETRY
@@ -309,43 +375,60 @@ export class SystemController {
     private readonly CACHE_TTL = 5000;
     private isPolling: boolean = false;
 
-    constructor() {
-        // Start background polling immediately to warm up cache
-        this.startBackgroundPolling();
-    }
-
-    private startBackgroundPolling() {
-        if (this.isPolling) return;
-        this.isPolling = true;
-
-        const poll = async () => {
-            try {
-                // Background fetch
-                await this.refreshTelemetryCache();
-            } catch (e) {
-                console.error("[TELEMETRY] Background poll failed", e);
-            } finally {
-                // Schedule next poll (5s)
-                setTimeout(poll, 5000);
-            }
+    constructor(){this.operations.own({name:'system-telemetry-poller',stopIntake:()=>{
+        this.closing=true;if(this.pollTimer)clearTimeout(this.pollTimer);
+    },close:async()=>{await this.pollTask;return {state:'UNVERIFIED',detail:'Actual controller operations/polling drained; systeminformation/provider internal child/pool release remains separate'};}});}
+    private pollTimer?: ReturnType<typeof setTimeout>;
+    private closing = false;
+    private pollTask?: Promise<void>;
+    private starting?:Promise<void>;
+    private readonly pollingFailures: unknown[] = [];
+    public getLifecycleFailures(): readonly unknown[] { return [...this.pollingFailures]; }
+    public start():Promise<void>{
+        if(this.closing)return Promise.reject(new Error('SystemController closed'));
+        if(this.starting)return this.starting;
+        this.operations.assertAccepting();this.isPolling=true;
+        const poll=(first=false):Promise<void>=>{
+            if(this.closing)return Promise.resolve();
+            this.pollTask=this.operations.run('telemetry-poll',async()=>{
+                try{await this.refreshTelemetryCache();}
+                catch(error){
+                    this.pollingFailures.push(error);
+                    if(first){this.operations.recordFailure('telemetry-first-readiness',error);throw error;}
+                    this.operations.recordDiagnostic('telemetry-poll',error,'DEGRADED_FALLBACK','UNAVAILABLE');
+                }finally{
+                    if(!this.closing)this.pollTimer=setTimeout(()=>{void poll().catch(error=>this.pollingFailures.push(error));},5000);
+                }
+            });
+            return this.pollTask;
         };
-
-        // Initial kick
-        poll();
+        this.starting=poll(true);
+        void this.starting.catch(()=>{/* original first readiness rejection retained, not erased by later polls */});
+        return this.starting;
+    }
+    public shutdown(){
+        this.closing=true;if(this.pollTimer)clearTimeout(this.pollTimer);
+        return this.operations.close();
     }
 
     public async getTelemetry(req: Request, res: Response) {
+        return this.operations.run('getTelemetry',async()=>{
+
         // Return whatever is in cache immediately (Stale-While-Revalidate style)
         // If cache is null (startup), we wait for one fetch
         if (!this.lastTelemetry) {
             await this.refreshTelemetryCache();
         }
         res.json(this.lastTelemetry);
+    
+        });
     }
 
     // ... introspection endpoints ...
 
     public async getFullState(req: Request, res: Response) {
+        return this.operations.run('getFullState',async()=>{
+
         try {
             const telemetry = await this.getTelemetryData();
             const { orchestrator } = await import('../../services/orchestrator');
@@ -366,6 +449,8 @@ export class SystemController {
                     latestNarrativeAt: narrative ? narrative.timestamp : null
                 };
             } catch (e) {
+            this.operations.recordDiagnostic('getFullState',e,'UNCLASSIFIED','UNVERIFIED');
+
                 console.warn("[SYSTEM] Failed to fetch brain telemetry", e);
             }
 
@@ -375,6 +460,8 @@ export class SystemController {
                 const { localVideoService } = await import('../../services/media/localVideoService');
                 mediaQueue = localVideoService.getQueueStatus();
             } catch (e) {
+            this.operations.recordDiagnostic('getFullState',e,'UNCLASSIFIED','UNVERIFIED');
+
                 console.warn("[SYSTEM] Media queue fetch failed", e);
             }
 
@@ -383,6 +470,8 @@ export class SystemController {
             try {
                 projects = sqliteService.getConfig('genesisProjects') || [];
             } catch (e) {
+            this.operations.recordDiagnostic('getFullState',e,'UNCLASSIFIED','UNVERIFIED');
+
                 console.warn("[SYSTEM] Projects fetch failed", e);
             }
 
@@ -412,6 +501,8 @@ export class SystemController {
 
             res.json(state);
         } catch (e: any) {
+            this.operations.recordDiagnostic('getFullState',e,'UNCLASSIFIED','UNVERIFIED');
+
             console.error("[SYSTEM] getFullState failed", e);
             // Fallback to avoid 500 loop
             res.json({
@@ -422,16 +513,24 @@ export class SystemController {
                 activeAgents: 0
             });
         }
+    
+        });
     }
 
     // Helper methods for getFullState
     private async getTelemetryData() {
+        return this.operations.run('getTelemetryData',async()=>{
+
         // Instant return from cache
         if (this.lastTelemetry) return this.lastTelemetry;
         return await this.refreshTelemetryCache();
+    
+        });
     }
 
     private async refreshTelemetryCache() {
+        return this.operations.run('refreshTelemetryCache',async()=>{
+
         const now = Date.now();
         const si = await import('systeminformation');
 
@@ -440,6 +539,8 @@ export class SystemController {
         try {
             cpu = await si.currentLoad();
         } catch (e) {
+            this.operations.recordDiagnostic('refreshTelemetryCache',e,'UNCLASSIFIED','UNVERIFIED');
+
             console.warn("[TELEMETRY] CPU fetch failed", e);
             cpu = { currentLoad: 0 };
         }
@@ -447,14 +548,21 @@ export class SystemController {
         try {
             mem = await si.mem();
         } catch (e) {
+            this.operations.recordDiagnostic('refreshTelemetryCache',e,'UNCLASSIFIED','UNVERIFIED');
+
             console.warn("[TELEMETRY] Mem fetch failed", e);
             mem = null; // [R9] unmeasured is declared, never an invented 16GB
         }
 
         try {
             // Graphics often hangs/fails on some Windows envs
-            gpu = await si.graphics().catch(() => ({ controllers: [] }));
+            gpu = await si.graphics().catch(error=>{
+                this.operations.recordDiagnostic('telemetry-graphics',error,'DEGRADED_FALLBACK','UNAVAILABLE');
+                return {controllers:[]};
+            });
         } catch (e) {
+            this.operations.recordDiagnostic('refreshTelemetryCache',e,'UNCLASSIFIED','UNVERIFIED');
+
             console.warn("[TELEMETRY] GPU fetch failed", e);
             gpu = { controllers: [] };
         }
@@ -476,6 +584,8 @@ export class SystemController {
             const { providerHealth } = await import('../../services/providerHealthManager');
             providerStats = await providerHealth.getEnrichedHealthStats();
         } catch (e) {
+            this.operations.recordDiagnostic('refreshTelemetryCache',e,'UNCLASSIFIED','UNVERIFIED');
+
             console.warn("[TELEMETRY] Provider health fetch failed", e);
         }
 
@@ -503,6 +613,9 @@ export class SystemController {
             (telemetry as any).tokensToday = computeTokensToday(
                 sqliteService.getTelemetrySamples(dayStart.getTime()), dayStart.getTime());
         } catch (e: any) {
+            this.operations.recordDiagnostic('refreshTelemetryCache',e,'UNCLASSIFIED','UNVERIFIED');
+
+            this.operations.recordFailure('telemetry-sample-or-readback',e);
             console.warn('[TELEMETRY] token history sampling failed', e);
             (telemetry as any).tokenHistory = [];
         }
@@ -510,6 +623,8 @@ export class SystemController {
         this.lastTelemetry = telemetry;
         this.lastTelemetryTime = now;
         return telemetry;
+    
+        });
     }
 
     /**
@@ -522,6 +637,8 @@ export class SystemController {
      * different, visible states.
      */
     private async getIntrospectionData() {
+        return this.operations.run('getIntrospectionData',async()=>{
+
         const snapshot: any = {
             version: BUILD_VERSION,
             timestamp: Date.now(),
@@ -547,6 +664,8 @@ export class SystemController {
             snapshot.isDreaming = introspection.getDreaming();
             snapshot.available.introspection = true;
         } catch (e: any) {
+            this.operations.recordDiagnostic('getIntrospectionData',e,'UNCLASSIFIED','UNVERIFIED');
+
             console.warn('[SYSTEM] introspection source unavailable:', e?.message);
         }
 
@@ -555,6 +674,8 @@ export class SystemController {
             snapshot.consciousnessMetrics = consciousness.getMetrics();
             snapshot.available.consciousness = true;
         } catch (e: any) {
+            this.operations.recordDiagnostic('getIntrospectionData',e,'UNCLASSIFIED','UNVERIFIED');
+
             console.warn('[SYSTEM] consciousness metrics source unavailable:', e?.message);
         }
 
@@ -564,15 +685,21 @@ export class SystemController {
             snapshot.narrativeState = await thoughtNarrator.getLatestNarrative();
             snapshot.available.narrative = true;
         } catch (e: any) {
+            this.operations.recordDiagnostic('getIntrospectionData',e,'UNCLASSIFIED','UNVERIFIED');
+
             console.warn('[SYSTEM] narrative source unavailable:', e?.message);
         }
 
         // Legacy aliases for older consumers (same values, kept in sync)
         snapshot.thoughts = snapshot.recentThoughts;
         return snapshot;
+    
+        });
     }
 
     private async getOrchestratorData() {
+        return this.operations.run('getOrchestratorData',async()=>{
+
         try {
             const { orchestrator } = await import('../../services/orchestrator');
             const agents = orchestrator.getAgents();
@@ -581,19 +708,29 @@ export class SystemController {
                 agentCount: agents.length
             };
         } catch {
+            this.operations.recordDiagnostic('getOrchestratorData',new Error('System operation unavailable without original catch binding'),'UNCLASSIFIED','UNVERIFIED');
+
             return { agents: [], agentCount: 0 };
         }
+    
+        });
     }
 
     // Public endpoint for introspection state (used by introspection.routes.ts)
     async getIntrospectionState(req: Request, res: Response) {
+        return this.operations.run('getIntrospectionState',async()=>{
+
         try {
             const state = await this.getIntrospectionData();
             res.json(state);
         } catch (e: any) {
+            this.operations.recordDiagnostic('getIntrospectionState',e,'UNCLASSIFIED','UNVERIFIED');
+
             console.error('[SYSTEM] getIntrospectionState failed:', e.message);
             res.status(500).json({ error: 'Failed to get introspection state', available: { introspection: false, consciousness: false, narrative: false } });
         }
+    
+        });
     }
 
     /**
@@ -601,11 +738,15 @@ export class SystemController {
      * Uses resourceArbiter for accurate nvidia-smi based VRAM readings
      */
     async getResources(req: Request, res: Response) {
+        return this.operations.run('getResources',async()=>{
+
         try {
             const { resourceArbiter } = await import('../../services/resourceArbiter');
             const metrics = await resourceArbiter.getRealMetrics();
             res.json(metrics);
         } catch (e: any) {
+            this.operations.recordDiagnostic('getResources',e,'UNCLASSIFIED','UNVERIFIED');
+
             console.error('[SYSTEM] getResources failed:', e.message);
             // [R9] measured or unavailable - simulated metrics presented as real were the lie
             res.status(503).json({
@@ -614,12 +755,16 @@ export class SystemController {
                 details: e.message
             });
         }
+    
+        });
     }
 
     /**
      * Diagnostics for hardware evaluation during setup
      */
     async getDiagnostics(req: Request, res: Response) {
+        return this.operations.run('getDiagnostics',async()=>{
+
         try {
             const os = await import('os');
             const totalMemory = os.totalmem();
@@ -640,6 +785,8 @@ export class SystemController {
                     };
                 }
             } catch (e) {
+            this.operations.recordDiagnostic('getDiagnostics',e,'UNCLASSIFIED','UNVERIFIED');
+
                 console.warn("[SYSTEM] GPU diagnostics failed:", e);
             }
 
@@ -661,15 +808,21 @@ export class SystemController {
                 }
             });
         } catch (error: any) {
+            this.operations.recordDiagnostic('getDiagnostics',error,'UNCLASSIFIED','UNVERIFIED');
+
             console.error('[SYSTEM] getDiagnostics failed:', error.message);
             res.status(500).json({ error: error.message });
         }
+    
+        });
     }
 
     /**
      * Submit a support ticket, sanitizing raw logs for PII before cloud sync
      */
     async submitSupportTicket(req: Request, res: Response) {
+        return this.operations.run('submitSupportTicket',async()=>{
+
         try {
             const { description } = req.body;
             if (!description || typeof description !== 'string') {
@@ -685,9 +838,13 @@ export class SystemController {
                 message: result.message
             });
         } catch (error: any) {
+            this.operations.recordDiagnostic('submitSupportTicket',error,'UNCLASSIFIED','UNVERIFIED');
+
             console.error('[SYSTEM] Support ticket submission failed:', error.message);
             res.status(500).json({ error: error.message });
         }
+    
+        });
     }
 }
 

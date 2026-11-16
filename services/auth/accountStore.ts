@@ -24,9 +24,24 @@ export interface ProviderAccount {
 }
 
 export class AccountStore {
-    private db: Database.Database;
-    constructor(dbPath: string) {
-        this.db = new Database(dbPath);
+    private readonly failures: unknown[] = [];
+    public getLifecycleFailures(): readonly unknown[] { return [...this.failures]; }
+    private retainStorage<T>(operation: () => T): T {
+        try { return operation(); } catch (error) { this.failures.push(error); throw error; }
+    }
+    private handle?: Database.Database;
+    private closed = false;
+    private initializationError?: unknown;
+    private get db(): Database.Database { this.open(); return this.handle!; }
+    constructor(private readonly dbPath: string) {}
+    public open(): void {
+        if (this.closed) throw new Error('AccountStore closed');
+        if (this.initializationError) throw this.initializationError;
+        if (this.handle) return;
+        try { this.openHandle(); } catch (error) { this.initializationError = error; this.failures.push(error); throw error; }
+    }
+    private openHandle(): void {
+        this.handle = new Database(this.dbPath);
         this.db.pragma('journal_mode = WAL');
         this.db.exec(`CREATE TABLE IF NOT EXISTS provider_accounts (
             provider_id TEXT NOT NULL,
@@ -51,11 +66,11 @@ export class AccountStore {
         }
         const now = new Date().toISOString();
         const account: ProviderAccount = { ...input, status: input.status ?? 'pending', createdAt: now, updatedAt: now };
-        this.db.prepare(`INSERT INTO provider_accounts
+        this.retainStorage(() => this.db.prepare(`INSERT INTO provider_accounts
             (provider_id, account_id, label, method, status, secret_ref, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
             .run(account.providerId, account.accountId, account.label, account.method,
-                account.status, account.secretRef, account.createdAt, account.updatedAt);
+                account.status, account.secretRef, account.createdAt, account.updatedAt));
         return account;
     }
 
@@ -65,9 +80,9 @@ export class AccountStore {
             const found = this.db.prepare('SELECT 1 FROM provider_accounts WHERE provider_id=? AND account_id=?')
                 .get(providerId, accountId);
             if (!found) throw new Error(`No account ${accountId} for ${providerId}`);
-            this.db.prepare('UPDATE provider_accounts SET active=0 WHERE provider_id=?').run(providerId);
-            this.db.prepare(`UPDATE provider_accounts SET active=1, status='active', updated_at=? WHERE provider_id=? AND account_id=?`)
-                .run(new Date().toISOString(), providerId, accountId);
+            this.retainStorage(() => this.db.prepare('UPDATE provider_accounts SET active=0 WHERE provider_id=?').run(providerId));
+            this.retainStorage(() => this.db.prepare(`UPDATE provider_accounts SET active=1, status='active', updated_at=? WHERE provider_id=? AND account_id=?`)
+                .run(new Date().toISOString(), providerId, accountId));
         });
         tx();
     }
@@ -85,16 +100,16 @@ export class AccountStore {
     }
 
     setStatus(providerId: string, accountId: string, status: AccountStatus, lastError?: string): void {
-        this.db.prepare('UPDATE provider_accounts SET status=?, last_error=?, updated_at=? WHERE provider_id=? AND account_id=?')
-            .run(status, lastError ?? null, new Date().toISOString(), providerId, accountId);
+        this.retainStorage(() => this.db.prepare('UPDATE provider_accounts SET status=?, last_error=?, updated_at=? WHERE provider_id=? AND account_id=?')
+            .run(status, lastError ?? null, new Date().toISOString(), providerId, accountId));
     }
 
     remove(providerId: string, accountId: string): boolean {
-        return this.db.prepare('DELETE FROM provider_accounts WHERE provider_id=? AND account_id=?')
-            .run(providerId, accountId).changes > 0;
+        return this.retainStorage(() => this.db.prepare('DELETE FROM provider_accounts WHERE provider_id=? AND account_id=?')
+            .run(providerId, accountId)).changes > 0;
     }
 
-    close(): void { this.db.close(); }
+    close(): void { this.closed = true; if (this.handle?.open) this.handle.close(); }
 
     private toAccount(row: any): ProviderAccount {
         return {

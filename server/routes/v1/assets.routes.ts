@@ -1,3 +1,4 @@
+import { ownedHttpHandler, awaitHttpMiddleware } from '../../runtime/ownedHttpIngress';
 import { Router } from 'express';
 import multer from 'multer';
 import path from 'path';
@@ -23,7 +24,9 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 // POST /v1/assets/upload
-router.post('/upload', upload.single('file'), async (req: any, res) => {
+router.post('/upload', ownedHttpHandler('assets:POST:/upload',async (req: any, res) => {
+    // Same actual multer callback completion, now inside the accepted handler.
+    await awaitHttpMiddleware(req,res,'asset-upload',upload.single('file'));
     try {
         if (!req.file) {
             return res.status(400).json({ error: 'No file uploaded' });
@@ -47,6 +50,6 @@ router.post('/upload', upload.single('file'), async (req: any, res) => {
         console.error('[ASSETS] File upload failed:', error.message);
         res.status(500).json({ error: 'Failed to upload asset' });
     }
-});
+}));
 
 export default router;

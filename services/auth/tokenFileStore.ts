@@ -36,8 +36,7 @@ export class TokenFileStore {
     private key: Buffer;
     constructor(baseDir: string, env: NodeJS.ProcessEnv = process.env) {
         this.dir = join(baseDir, TOKEN_STORE_DIR_NAME);
-        mkdirSync(this.dir, { recursive: true, mode: 0o700 });
-        chmodSync(this.dir, 0o700);
+
         const hex = (env[TOKEN_KEY_ENV] || '').trim();
         if (!/^[0-9a-f]{64}$/i.test(hex)) throw new TokenKeyMissing();
         this.key = Buffer.from(hex, 'hex');
@@ -83,6 +82,8 @@ export class TokenFileStore {
     write(name: string, token: StoredToken, held?: HeldRefreshLock): void {
         if (held) assertFence(held);
         if (!token.accessToken) throw new Error('accessToken required');
+        mkdirSync(this.dir, { recursive: true, mode: 0o700 });
+        chmodSync(this.dir, 0o700);
         const target = this.path(name);
         const tmp = `${target}.tmp`;
         writeFileSync(tmp, this.encrypt(JSON.stringify(token)), { mode: 0o600 });

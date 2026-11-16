@@ -1,3 +1,4 @@
+import { ResourceScope } from '../../server/runtime/resourceScope';
 /**
  * AssetLibraryService - Persistent storage for visual assets
  * Supports characters, environments, and props with embedding-based search
@@ -30,15 +31,33 @@ interface AssetLibraryConfig {
 }
 
 export class AssetLibraryService {
+    private retainDurability<T>(name: string, operation: () => T): T {
+        try { return operation(); } catch (error) { this.operations.recordFailure(name, error); throw error; }
+    }
+
     private assetsPath: string;
     private cache: Map<string, AssetReference> = new Map();
 
     constructor(config?: AssetLibraryConfig) {
         this.assetsPath = config?.dataPath || path.resolve(process.cwd(), 'data/assets/library');
-        this.ensureDirectories();
-        this.loadAssets();
-        console.log(`[AssetLibrary] Initialized with ${this.cache.size} assets`);
+
     }
+
+    private readonly operations = new ResourceScope('assetLibrary');
+    private started = false;
+    private closing = false;
+    private readonly recoveryFailures: unknown[] = [];
+    public start(): void {
+        this.operations.assertWorkAccepted();
+        if (this.started) return;
+        this.operations.assertAccepting();
+        if (this.recoveryFailures.length) throw new AggregateError(this.recoveryFailures, 'Asset recovery unavailable');
+        try { this.ensureDirectories(); this.loadAssets(); } catch (error) { this.recoveryFailures.push(error); this.operations.recordFailure('asset-recovery-startup', error); throw error; }
+        if (this.recoveryFailures.length) throw new AggregateError(this.recoveryFailures, 'Asset library incomplete recovery; originals retained');
+        this.started = true;
+    }
+    public getLifecycleFailures(): readonly unknown[] { return [...this.recoveryFailures]; }
+    public shutdown() { this.closing = true; return this.operations.close(); }
 
     private ensureDirectories(): void {
         const dirs = [
@@ -51,7 +70,7 @@ export class AssetLibraryService {
 
         for (const dir of dirs) {
             if (!fs.existsSync(dir)) {
-                fs.mkdirSync(dir, { recursive: true });
+                this.retainDurability('assetLibrary.ts:storage', () => fs.mkdirSync(dir, { recursive: true }));
             }
         }
     }
@@ -74,6 +93,8 @@ export class AssetLibraryService {
                     const asset: AssetReference = JSON.parse(content);
                     this.cache.set(asset.id, asset);
                 } catch (e) {
+                    this.recoveryFailures.push(e);
+                    this.operations.recordFailure('asset-recovery-startup', e);
                     console.error(`[AssetLibrary] Failed to load asset: ${file}`, e);
                 }
             }
@@ -92,6 +113,10 @@ export class AssetLibraryService {
         style?: string;
         defaultPromptPrefix?: string;
     }): Promise<AssetReference> {
+        return this.operations.run('createAsset', async () => {
+
+        this.start();
+
         const asset: AssetReference = {
             id: uuidv4(),
             name: input.name,
@@ -107,27 +132,37 @@ export class AssetLibraryService {
 
         await this.saveAsset(asset);
         return asset;
+    
+        });
     }
 
     /**
      * Save asset to disk and cache
      */
     public async saveAsset(asset: AssetReference): Promise<void> {
+        return this.operations.run('saveAsset', async () => {
+
+        this.start();
+
         const rolePath = path.join(this.assetsPath, `${asset.role}s`);
         const filePath = path.join(rolePath, `${asset.id}.json`);
 
         asset.updatedAt = new Date().toISOString();
 
-        fs.writeFileSync(filePath, JSON.stringify(asset, null, 2));
+        this.retainDurability('assetLibrary.ts:storage', () => fs.writeFileSync(filePath, JSON.stringify(asset, null, 2)));
         this.cache.set(asset.id, asset);
 
         console.log(`[AssetLibrary] Saved ${asset.role}: ${asset.name} (${asset.id})`);
+    
+        });
     }
 
     /**
      * Get asset by ID
      */
     public getAsset(id: string): AssetReference | undefined {
+        this.start();
+
         return this.cache.get(id);
     }
 
@@ -135,6 +170,8 @@ export class AssetLibraryService {
      * Get asset by name (case-insensitive)
      */
     public getAssetByName(name: string): AssetReference | undefined {
+        this.start();
+
         const normalizedName = name.toLowerCase().replace('@', '');
 
         for (const asset of this.cache.values()) {
@@ -149,6 +186,8 @@ export class AssetLibraryService {
      * Get all assets of a specific role
      */
     public getAssetsByRole(role: AssetRole): AssetReference[] {
+        this.start();
+
         return Array.from(this.cache.values()).filter(a => a.role === role);
     }
 
@@ -156,6 +195,8 @@ export class AssetLibraryService {
      * Get all assets
      */
     public getAllAssets(): AssetReference[] {
+        this.start();
+
         return Array.from(this.cache.values());
     }
 
@@ -163,6 +204,8 @@ export class AssetLibraryService {
      * Search assets by tag
      */
     public searchByTag(tag: string): AssetReference[] {
+        this.start();
+
         const normalizedTag = tag.toLowerCase();
         return Array.from(this.cache.values()).filter(
             a => a.tags.some(t => t.toLowerCase().includes(normalizedTag))
@@ -173,6 +216,10 @@ export class AssetLibraryService {
      * Add reference image to an asset (max 7 per Kling research)
      */
     public async addReferenceImage(assetId: string, imageUrl: string): Promise<boolean> {
+        return this.operations.run('addReferenceImage', async () => {
+
+        this.start();
+
         const asset = this.cache.get(assetId);
         if (!asset) return false;
 
@@ -184,6 +231,8 @@ export class AssetLibraryService {
         asset.referenceImages.push(imageUrl);
         await this.saveAsset(asset);
         return true;
+    
+        });
     }
 
     /**
@@ -195,6 +244,8 @@ export class AssetLibraryService {
         enhancedPrompt: string;
         resolvedAssets: AssetReference[];
     } {
+        this.start();
+
         const mentionRegex = /@(\w+)/g;
         const resolvedAssets: AssetReference[] = [];
 
@@ -227,6 +278,10 @@ export class AssetLibraryService {
      * Delete an asset
      */
     public async deleteAsset(id: string): Promise<boolean> {
+        return this.operations.run('deleteAsset', async () => {
+
+        this.start();
+
         const asset = this.cache.get(id);
         if (!asset) return false;
 
@@ -234,7 +289,7 @@ export class AssetLibraryService {
 
         try {
             if (fs.existsSync(filePath)) {
-                fs.unlinkSync(filePath);
+                this.retainDurability('assetLibrary.ts:storage', () => fs.unlinkSync(filePath));
             }
             this.cache.delete(id);
             console.log(`[AssetLibrary] Deleted ${asset.role}: ${asset.name}`);
@@ -243,12 +298,16 @@ export class AssetLibraryService {
             console.error(`[AssetLibrary] Failed to delete asset:`, e);
             return false;
         }
+    
+        });
     }
 
     /**
      * Get statistics about the library
      */
     public getStats(): { total: number; characters: number; environments: number; props: number } {
+        this.start();
+
         const all = Array.from(this.cache.values());
         return {
             total: all.length,

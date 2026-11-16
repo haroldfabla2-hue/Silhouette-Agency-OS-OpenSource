@@ -1,3 +1,5 @@
+import { ResourceScope, ScopeClosingError, ScopeReport } from '../server/runtime/resourceScope';
+import { subscribeScoped } from './runtime/scopedSubscription';
 import { subscribeHelpProtocol } from './communication/helpProtocol';
 import { loadOrganization, defaultOrganizationPath, teamsForDomain, teamOfAgent } from './org/organization';
 import { ReputationLedger, defaultReputationLedgerPath } from './org/reputationLedger';
@@ -140,11 +142,105 @@ export class AgentSwarmOrchestrator {
     ];
 
 
-    private orgChart: OrgChart;
-    private reputationLedger: ReputationLedger;
+    private readonly operations = new ResourceScope('orchestrator');
+    private startup?: Promise<void>;
+    private orgChart!: OrgChart;
+    private reputationLedger!: ReputationLedger;
+    public getLifecycleStatus() { return { started: Boolean(this.startup), diagnostics: this.operations.getDiagnostics(), failures: this.operations.getFailures(), actors:this.actorReports, pendingActorDurability:this.pendingActorDurability, actorSnapshotReceipts:this.actorSnapshotReceipts, suppressedActorSnapshots:this.suppressedActorSnapshots, debateReceipts:this.debateReceipts, retainedActorClosures:this.actorClosures.size }; }
+    public shutdown() { return this.operations.close(); }
 
+    private readonly debateReceipts:Array<{debateId:string,phase:string,wait:'WAITING'|'CANCELLED_LOCAL'|'SETTLED',provider:'NOT_STARTED'|'PENDING'|'COMPLETED'|'REJECTED',publication:'NOT_PUBLISHED'|'PUBLISHED'}>=[];
+    private async debateProvider<T>(debateId:string,phase:string,operation:()=>Promise<T>):Promise<T> {
+        const receipt={debateId,phase,wait:'WAITING' as 'WAITING'|'CANCELLED_LOCAL'|'SETTLED',provider:'PENDING' as 'NOT_STARTED'|'PENDING'|'COMPLETED'|'REJECTED',publication:'NOT_PUBLISHED' as 'NOT_PUBLISHED'|'PUBLISHED'};
+        this.debateReceipts.push(receipt);
+        try { const value=await operation(); receipt.provider='COMPLETED'; return value; }
+        catch(error) { receipt.provider='REJECTED'; throw error; }
+        finally { if(receipt.wait==='WAITING') receipt.wait='SETTLED'; }
+    }
+    private markDebatePublished(debateId:string) {
+        const receipt=[...this.debateReceipts].reverse().find(r=>r.debateId===debateId);
+        if(receipt) receipt.publication='PUBLISHED';
+    }
+    private readonly actorClosures = new Map<StandardAgent,Promise<ScopeReport>>();
+    private readonly actorGeneration=new Map<string,number>();
+    private invalidateActorHydration(id:string):void {
+        this.actorGeneration.set(id,(this.actorGeneration.get(id)??0)+1);
+        this.hydration.delete(id); // the obsolete task stays owned by operations.run
+    }
+    private readonly hydration = new Map<string,Promise<void>>();
+    private readonly actorRetirements=new Map<StandardAgent,{reason:'DEHYDRATED'|'RESET'|'PURGED'|'FAILED'|'SUPERSEDED',generation:number,expected:Agent|null}>();
+    private readonly actorReports:Array<{id:string,report:ScopeReport}>=[];
+    private readonly pendingActorDurability:Array<{id:string,snapshot:Agent,reason:string,receipt?:import('./agentPersistence').AgentMetadataReceipt}>=[];
+    private readonly suppressedActorSnapshots:Array<{id:string,reason:string,generation:number}>=[];
+    private readonly actorSnapshotReceipts:Array<import('./agentPersistence').AgentMetadataReceipt>=[];
+    private closeActor(actor:StandardAgent):Promise<ScopeReport> {
+        let closing=this.actorClosures.get(actor);
+        if(!closing) { closing=actor.shutdown(); this.actorClosures.set(actor,closing); }
+        return closing;
+    }
+    private retireActor(id:string,reason:'DEHYDRATED'|'RESET'|'PURGED'|'FAILED'):void {
+        this.invalidateActorHydration(id);
+        const actor=this.activeActors.get(id);
+        if(actor) {
+            this.actorRetirements.set(actor,{reason,generation:this.actorGeneration.get(id)??0,expected:agentPersistence.loadAgent(id)});
+            this.closeActor(actor);
+            this.activeActors.delete(id);
+        }
+    }
+    private createActor(metadata:Agent):StandardAgent {
+        this.operations.assertAccepting();
+        const previous=this.activeActors.get(metadata.id);
+        if(previous) { this.actorRetirements.set(previous,{reason:'SUPERSEDED',generation:this.actorGeneration.get(metadata.id)??0,expected:null}); this.closeActor(previous); }
+        const actor=new StandardAgent(metadata);
+        const expectedAtCreation=agentPersistence.loadAgent(metadata.id);
+        this.operations.own({name:'actor:'+metadata.id,
+            stopIntake:() => { this.closeActor(actor); },
+            close:async () => {
+                const report=await this.closeActor(actor);
+                this.actorReports.push({id:actor.id,report});
+                for(const d of report.diagnostics) this.operations.recordDiagnostic('actor:'+actor.id+':'+d.resource,d.error,d.disposition,d.originalCapability);
+                const current=this.activeActors.get(actor.id)===actor;
+                const retired=this.actorRetirements.get(actor);
+                const eligibleRetired=retired?.reason==='DEHYDRATED' && !this.activeActors.has(actor.id) && retired.generation===(this.actorGeneration.get(actor.id)??0);
+                if(current || eligibleRetired) {
+                    const snapshot={...actor.toMetadata(),status:AgentStatus.OFFLINE,memoryLocation:'DISK' as const,cpuUsage:0,ramUsage:0};
+                    // Live actors require the row captured at creation. Retirement uses its
+                    // captured row. A changed row conservatively parks this snapshot,
+                    // including legitimate later writes not yet reconciled by an owner.
+                    const expected=current?expectedAtCreation:retired!.expected;
+                    const receipt=expected?agentPersistence.commitFinalSnapshot(snapshot,expected):undefined;
+                    if(receipt) this.actorSnapshotReceipts.push(receipt);
+                    if(!receipt || receipt.application!=='APPLIED' || receipt.verification!=='READBACK_MATCH') {
+                        this.pendingActorDurability.push({id:actor.id,snapshot,receipt,reason:'Strict metadata commit not verified; do not replay automatically'});
+                        this.operations.recordFailure('actor-final-snapshot:'+actor.id,new AggregateError(receipt?.errors??[],'Final actor snapshot remains pending'));
+                    }
+                    // Even a readback/commit acknowledgement is not a power-loss proof.
+                    if(current) {
+                        actor.status=AgentStatus.OFFLINE;
+                        actor.memoryLocation='DISK';
+                        agentConversation.unregisterAgent(actor.id);
+                        this.activeActors.delete(actor.id);
+                    }
+                }
+                if(!current && !eligibleRetired) this.suppressedActorSnapshots.push({id:actor.id,reason:retired?.reason??'NO_LONGER_CURRENT',generation:retired?.generation??-1});
+                if(report.state==='FAILED') throw new AggregateError(report.failures.map(f=>f.error),'Actor close failed: '+actor.id);
+                return {state:report.fullyReleased && !this.pendingActorDurability.some(p=>p.id===actor.id)?'RELEASED' as const:'UNVERIFIED' as const,detail:'Actor application drain is separate from final snapshot durability and downstream SDK/native ownership'};
+            }
+        });
+        return actor;
+    }
     constructor() {
-        this.initializeSwarm();
+        this.operations.own({name:'active-debates',stopIntake:() => {
+            const reason=new ScopeClosingError('orchestrator-debate');
+            for(const receipt of this.debateReceipts) if(receipt.provider==='PENDING') receipt.wait='CANCELLED_LOCAL';
+            for(const debate of this.activeDebates.values()) debate.reject(reason);
+            this.activeDebates.clear();
+        },close:() => { if(this.activeDebates.size) throw new Error('Unsettled debates remain'); }});
+    }
+    public start(): Promise<void> {
+        if (this.startup) return this.startup;
+        this.startup = this.operations.run('orchestrator-start', async () => {
+        await this.initializeSwarm();
         this.applyMode(SystemMode.ECO);
         // Organization-as-data + evidence ledger: loaded before the help bus
         // subscribes so collaboration facts are recorded from the first request.
@@ -158,7 +254,7 @@ export class AgentSwarmOrchestrator {
         // requests) is rejected with a log instead of birthing an
         // "Unknown Squad Lead" husk — the D3 collision that produced 52+
         // phantom agents in the 2026-10-15 acceptance run.
-        systemBus.subscribe(SystemProtocol.SQUAD_EXPANSION, (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.SQUAD_EXPANSION, (event) => {
             const raw = event?.payload ?? {};
             const inner = raw?.payload ?? raw;
             const hasName = typeof inner.name === 'string' && inner.name.trim().length > 0;
@@ -172,7 +268,7 @@ export class AgentSwarmOrchestrator {
 
         // [PR-2] Hydration command: wake ONE existing agent. Unknown ids are
         // rejected — hydration must never become a backdoor birth channel.
-        systemBus.subscribe(SystemProtocol.AGENT_HYDRATION_REQUEST, (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.AGENT_HYDRATION_REQUEST, (event) => {
             const agentId = event?.payload?.agentId;
             if (typeof agentId !== 'string' || !agentId.trim()) {
                 console.warn('[ORCHESTRATOR] ⛔ AGENT_HYDRATION_REQUEST rejected: missing agentId.');
@@ -186,34 +282,34 @@ export class AgentSwarmOrchestrator {
         });
 
         // Listen for Async Task Assignments (e.g., Research Requests from Dreamer)
-        systemBus.subscribe(SystemProtocol.TASK_ASSIGNMENT, (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.TASK_ASSIGNMENT, (event) => {
             this.handleTaskAssignment(event.payload);
         });
 
         // --- CURIOSITY ENGINE LOGIC (V3: CLOSED LOOP) ---
-        systemBus.subscribe(SystemProtocol.EPISTEMIC_GAP_DETECTED, (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.EPISTEMIC_GAP_DETECTED, (event) => {
             this.handleEpistemicGap(event.payload);
         });
 
         // Use TASK_COMPLETION to close the loop
-        systemBus.subscribe(SystemProtocol.TASK_COMPLETION, (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.TASK_COMPLETION, (event) => {
             this.handleTaskCompletion(event.payload);
         });
 
         // --- INTERFACE OF COMMAND (PHASE 11) ---
-        systemBus.subscribe(SystemProtocol.SQUAD_REASSIGNMENT, (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.SQUAD_REASSIGNMENT, (event) => {
             this.handleSquadReassignment(event.payload);
         });
 
         // SENSORY
-        systemBus.subscribe(SystemProtocol.SENSORY_SNAPSHOT, (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.SENSORY_SNAPSHOT, (event) => {
             // Forward visual info to agents if relevant
             console.log("[ORCHESTRATOR] 👁️ Visual Context Updated");
         });
 
         // --- INTER-AGENT HELP PROTOCOL ---
         // Allows team leaders to request help from other specialists
-        subscribeHelpProtocol({
+        const unsubscribeHelp = subscribeHelpProtocol({
             findHelper: (role, request) => {
                 // Escalation path: an executor can ask for its team head directly.
                 if (role === '@team-head' && request) {
@@ -234,40 +330,42 @@ export class AgentSwarmOrchestrator {
             }
         });
 
+        this.operations.own({ name: 'orchestrator-help-subscriptions', stopIntake: unsubscribeHelp, close: unsubscribeHelp });
+
         // --- TEAM LEARNING: janitor truth revisions become team evidence ---
-        systemBus.subscribe(SystemProtocol.TRUTH_REVISION_APPLIED, (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.TRUTH_REVISION_APPLIED, (event) => {
             this.handleTruthRevisionApplied(event.payload);
         });
 
         // --- EMERGENCY BRAKE (CFO INTERVENTION) ---
-        systemBus.subscribe(SystemProtocol.COST_ANOMALY, (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.COST_ANOMALY, (event) => {
             if (event.payload.agentId && event.payload.cost) {
                 this.handleCostAnomaly(event.payload.agentId, event.payload.cost);
             }
         });
 
         // --- DATA INTEGRITY (JANITOR INTERVENTION) ---
-        systemBus.subscribe(SystemProtocol.DATA_CORRUPTION, (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.DATA_CORRUPTION, (event) => {
             this.handleDataCorruption(event.payload);
         });
 
         // --- RESEARCH REQUEST HANDLER (DISCOVERY LEARNING LOOP) ---
-        systemBus.subscribe(SystemProtocol.RESEARCH_REQUEST, (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.RESEARCH_REQUEST, (event) => {
             this.handleResearchRequest(event.payload);
         });
 
         // --- SYNTHESIS PIPELINE (RESEARCH SYNTHESIZER AGENT) ---
-        systemBus.subscribe(SystemProtocol.SYNTHESIS_REQUEST, (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.SYNTHESIS_REQUEST, (event) => {
             this.handleSynthesisRequest(event.payload);
         });
 
-        systemBus.subscribe(SystemProtocol.PAPER_GENERATION_REQUEST, (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.PAPER_GENERATION_REQUEST, (event) => {
             this.handlePaperGenerationRequest(event.payload);
         });
 
         // --- UNIFIED MESSAGING HANDLER (CHANNELS) ---
         // Handles messages from Telegram, WhatsApp, Discord via ChannelRouter
-        systemBus.subscribe(SystemProtocol.USER_MESSAGE, (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.USER_MESSAGE, (event) => {
             console.log('[ORCHESTRATOR] 🔔 USER_MESSAGE event received from systemBus');
             this.handleUserMessage(event.payload).catch((err: any) => {
                 console.error('[ORCHESTRATOR] ❌ handleUserMessage FAILED:', err?.message || err);
@@ -275,24 +373,30 @@ export class AgentSwarmOrchestrator {
         });
 
         // --- SWARM MATRIX V2 (DEBATE SQUADS) ---
-        systemBus.subscribe(SystemProtocol.SQUAD_DEBATE_START, (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.SQUAD_DEBATE_START, (event) => {
             this.handleSquadDebateStart(event.payload);
         });
 
-        systemBus.subscribe(SystemProtocol.AGENT_DEBATE_MESSAGE, (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.AGENT_DEBATE_MESSAGE, (event) => {
             this.handleAgentDebateMessage(event.payload);
         });
+        }).catch(error => { this.operations.recordFailure('orchestrator-startup', error); throw error; });
+        return this.startup;
     }
 
     // ...
 
     private async handleTaskCompletion(payload: any) {
+        return this.operations.run('handleTaskCompletion', async () => {
+
         // Check if this was a Curiosity Mission
         if (payload.originalContext && payload.originalContext.source === 'DreamerService' && payload.originalContext.question) {
             console.log(`[ORCHESTRATOR] 🧩 Curiosity Missing Piece Found by ${payload.agentId}`);
             this.resolveCuriosity(payload);
         }
         this.recordTaskFact(payload);
+    
+        });
     }
 
     /**
@@ -355,6 +459,8 @@ export class AgentSwarmOrchestrator {
     }
 
     private async resolveCuriosity(payload: any) {
+        return this.operations.run('resolveCuriosity', async () => {
+
         const { result, originalContext } = payload;
         const question = originalContext.question;
 
@@ -374,6 +480,8 @@ export class AgentSwarmOrchestrator {
         } catch (e) {
             console.error("[ORCHESTRATOR] Failed to resolve curiosity in graph:", e);
         }
+    
+        });
     }
 
     // [ROBUSTNESS] Service-to-Agent Liveness Binding
@@ -437,12 +545,14 @@ export class AgentSwarmOrchestrator {
                 console.error("[ORCHESTRATOR] Tick Error:", e);
             }
             // Schedule next tick dynamically
-            setTimeout(loop, this.heartbeatInterval);
+            if (this.operations.accepting) this.operations.timeout('orchestrator-private-loop', this.heartbeatInterval, loop);
         };
         loop();
     }
 
     public async tick() {
+        return this.operations.run('tick', async () => {
+
         // 0. Monitor Services (Every 30s)
         const now = Date.now();
         if (now - this.lastMonitorTime > 30000) {
@@ -482,6 +592,8 @@ export class AgentSwarmOrchestrator {
 
         // 5. Circadian Rhythm (Auto-Sleep Protocol)
         await this.assessSystemState(now);
+    
+        });
     }
 
     private lastActivityTime = Date.now();
@@ -490,6 +602,8 @@ export class AgentSwarmOrchestrator {
 
     // [NEW] Circadian Rhythm
     private async assessSystemState(now: number) {
+        return this.operations.run('assessSystemState', async () => {
+
         // If system is BUSY or already Sleeping, do nothing
         if (this.currentMode === SystemMode.ULTRA) return; // Never sleep in ULTRA
 
@@ -526,9 +640,13 @@ export class AgentSwarmOrchestrator {
                 this.lastSystemInteraction = now;
             }
         }
+    
+        });
     }
 
     private async processGlobalMail() {
+        return this.operations.run('processGlobalMail', async () => {
+
         // [SMART SCHEDULER]
         // Prevent system saturation by limiting concurrent active agents.
         // If we are at capacity, we leave messages in the inbox (Queue) for later.
@@ -580,9 +698,13 @@ export class AgentSwarmOrchestrator {
                 }
             }
         }
+    
+        });
     }
 
     private async handleCostAnomaly(agentId: string, cost: number) {
+        return this.operations.run('handleCostAnomaly', async () => {
+
         console.log(`[ORCHESTRATOR] 🚨 EMERGENCY BRAKE: Freezing Agent ${agentId} (Cost Spike: $${cost})`);
 
         // 1. Freeze Agent
@@ -599,9 +721,13 @@ export class AgentSwarmOrchestrator {
             `Possible Infinite Loop`,
             `Resource Exhaustion`
         ]);
+    
+        });
     }
 
     private async handleDataCorruption(payload: any) {
+        return this.operations.run('handleDataCorruption', async () => {
+
         console.log(`[ORCHESTRATOR] 🦠 DATA CORRUPTION DETECTED: ${payload.details}`);
 
         // Trigger Remediation Squad (Data Integrity Crisis)
@@ -612,9 +738,13 @@ export class AgentSwarmOrchestrator {
             `Node ID: ${payload.nodeId}`,
             `Severity: HIGH - Potential Data Loss`
         ]);
+    
+        });
     }
     // --- PHASE 13: AUTONOMOUS ACTION HANDLER ---
     private async handleAutonomousAction(action: any) {
+        return this.operations.run('handleAutonomousAction', async () => {
+
         // Dynamic Import to avoid circular dependency
         const { actionExecutor } = await import('./actionExecutor');
 
@@ -645,10 +775,14 @@ export class AgentSwarmOrchestrator {
             thoughts: [observationText],
             source: 'ACTION_EXECUTOR' // New source type
         });
+    
+        });
     }
 
     // --- RESEARCH REQUEST HANDLER (DISCOVERY LEARNING LOOP) ---
     private async handleResearchRequest(payload: any) {
+        return this.operations.run('handleResearchRequest', async () => {
+
         console.log(`[ORCHESTRATOR] 🔬 Research Request received (Type: ${payload.type || 'VALIDATION'})`);
 
         // [BIOMIMETIC] Route Uncertainty Scans to the Librarian
@@ -753,6 +887,8 @@ VERDICT: [VALID/INVALID/INSUFFICIENT_EVIDENCE]
         } catch (error) {
             console.error('[ORCHESTRATOR] Research request failed:', error);
         }
+    
+        });
     }
 
     /**
@@ -760,6 +896,8 @@ VERDICT: [VALID/INVALID/INSUFFICIENT_EVIDENCE]
      * Routes to 'The_Librarian' (ctx-01) for deep memory analysis.
      */
     private async conductEpistemicScan(payload: any) {
+        return this.operations.run('conductEpistemicScan', async () => {
+
         console.log("[ORCHESTRATOR] 🧠 Starting Epistemic Scan (Curiosity Protocol)...");
 
         try {
@@ -805,6 +943,8 @@ Format each gap as:
         } catch (e) {
             console.error("[ORCHESTRATOR] Epistemic scan failed:", e);
         }
+    
+        });
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -815,6 +955,8 @@ Format each gap as:
      * Handle synthesis request - routes to Research_Synthesizer agent
      */
     private async handleSynthesisRequest(payload: any) {
+        return this.operations.run('handleSynthesisRequest', async () => {
+
         console.log(`[ORCHESTRATOR] 🧬 Synthesis Request received`);
 
         try {
@@ -856,6 +998,8 @@ Format each gap as:
         } catch (error) {
             console.error('[ORCHESTRATOR] Synthesis request failed:', error);
         }
+    
+        });
     }
 
     /**
@@ -863,6 +1007,8 @@ Format each gap as:
      */
     // --- PAPER GENERATION ---
     private async handlePaperGenerationRequest(payload: any) {
+        return this.operations.run('handlePaperGenerationRequest', async () => {
+
         console.log(`[ORCHESTRATOR] 📝 Paper Generation Request for insight: ${payload.insightId}`);
         // ... implementation (kept same) ...
         try {
@@ -903,6 +1049,8 @@ Format each gap as:
         } catch (error) {
             console.error('[ORCHESTRATOR] Paper generation failed:', error);
         }
+    
+        });
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -913,6 +1061,8 @@ Format each gap as:
      * Handles incoming user messages from ChannelRouter
      */
     public async handleUserMessage(payload: any) {
+        return this.operations.run('handleUserMessage', async () => {
+
         // payload: { sessionId, message, channel, chatId, senderId, senderName ... }
         console.log(`[ORCHESTRATOR] 📩 Processing User Message from ${payload.channel} (${payload.senderName || payload.senderId})`);
 
@@ -1140,9 +1290,13 @@ ${payload.message}
             }
 
         }
+    
+        });
     }
 
     private async analyzeComplexity(message: string): Promise<{ score: number; suggestedAgentId: string }> {
+        return this.operations.run('analyzeComplexity', async () => {
+
         console.log(`[ORCHESTRATOR] 🧠 Analyzing complexity of intent...`);
 
         const prompt = `
@@ -1176,6 +1330,8 @@ JSON ONLY:
             console.warn("[ORCHESTRATOR] Complexity analysis failed. Fallback to base kernel.");
         }
         return { score: 0.3, suggestedAgentId: 'core-01' };
+    
+        });
     }
 
     // --- DYNAMIC EXPANSION PROTOCOL ---
@@ -1278,7 +1434,9 @@ JSON ONLY:
         this.smartPagingEnabled = enabled;
     }
 
-    private initializeSwarm() {
+    private async initializeSwarm(): Promise<void> {
+        return this.operations.run('initializeSwarm', async () => {
+
         // 0. Load Configuration from Persistence (DB)
         const config = sqliteService.getConfig('activeCategories');
         if (config && Array.isArray(config)) {
@@ -1290,6 +1448,7 @@ JSON ONLY:
         try {
             continuousMemory.initialize();
         } catch (err) {
+            this.operations.recordFailure('orchestrator-wal-startup', err);
             console.error('[ORCHESTRATOR] Continuous Memory init failed (non-fatal):', err);
         }
 
@@ -1299,19 +1458,22 @@ JSON ONLY:
         if (existingIds.length === 0) {
             console.log("[ORCHESTRATOR] First Run: Executing Genesis V2 Protocol...");
             // Genesis V2 is async but we fire-and-forget here since it doesn't block
-            genesisV2.execute().then(report => {
+            try {
+                const report = await genesisV2.execute();
                 if (report.success) {
                     console.log(`[ORCHESTRATOR] Genesis V2 complete: ${report.agentsCreated.length} agents born.`);
                     this.knownAgentIds = agentPersistence.getAllAgentIds();
                     this.generateSquadsStructureOnly();
                 } else {
+                    this.operations.recordDiagnostic('genesis-partial-fallback', report, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
                     console.error('[ORCHESTRATOR] Genesis V2 had failures, falling back to legacy...');
                     this.generateInitialAgents();
                 }
-            }).catch(() => {
+            } catch (error) {
+                this.operations.recordDiagnostic('genesis-fallback', error, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
                 console.error('[ORCHESTRATOR] Genesis V2 crashed, falling back to legacy...');
                 this.generateInitialAgents();
-            });
+            }
         } else {
             console.log(`[ORCHESTRATOR] Loaded ${existingIds.length} persistent agents from disk.`);
             this.knownAgentIds = existingIds;
@@ -1335,6 +1497,8 @@ JSON ONLY:
                 capabilityRegistry.registerAgent(agent);
                 agentConversation.registerAgent(agent);
             }
+        });
+    
         });
     }
 
@@ -1442,7 +1606,9 @@ JSON ONLY:
      * Used when creating new agents to prevent race conditions.
      */
     public registerAgent(agent: Agent): void {
-        this.activeActors.set(agent.id, new StandardAgent(agent));
+        this.operations.assertAccepting();
+        this.invalidateActorHydration(agent.id);
+        this.activeActors.set(agent.id, this.createActor(agent));
 
         // Also add to cache for persistence
         if (!this.agentCache.has(agent.id)) {
@@ -1481,6 +1647,8 @@ JSON ONLY:
         args: Record<string, any>,
         context: CapabilityContext = {}
     ): Promise<CapabilityResult> {
+        return this.operations.run('executeCapability', async () => {
+
         const startTime = Date.now();
         const { requesterId = 'unknown', priority = 'NORMAL', sessionId } = context;
 
@@ -1789,6 +1957,8 @@ JSON ONLY:
             this.emitCapabilityResult(capabilityName, result, requesterId);
             return result;
         }
+    
+        });
     }
 
     /**
@@ -1815,6 +1985,8 @@ JSON ONLY:
      * This uses the universalprompts knowledge base to improve the agent's definition.
      */
     public async requestEvolution(agentId: string): Promise<{ success: boolean; previousScore?: number; newScore?: number }> {
+        return this.operations.run('requestEvolution', async () => {
+
         const agent = this.getAgent(agentId);
         if (!agent) {
             console.warn(`[ORCHESTRATOR] ⚠️ Evolution requested for unknown agent: ${agentId} `);
@@ -1883,17 +2055,27 @@ JSON ONLY:
             console.error(`[ORCHESTRATOR] ❌ Evolution failed for ${agentId}: `, error.message);
             return { success: false };
         }
+    
+        });
     }
 
 
     public async hydrateAgent(agentId: string) {
+        const generation=this.actorGeneration.get(agentId)??0;
+        const pending=this.hydration.get(agentId);
+        if(pending) return pending;
+        const task=this.operations.run('hydrateAgent', async () => {
+
         if (this.activeActors.has(agentId)) return; // Already awake
 
         const agent = agentPersistence.loadAgent(agentId);
         if (agent) {
             // --- GOD MODE: RESOURCE ARBITER CHECK ---
             const priority = agent.tier === AgentTier.CORE ? 'CRITICAL' : 'NORMAL';
-            const allowed = await resourceArbiter.requestAdmission(agent, priority);
+            const allowed = await resourceArbiter.requestAdmission(agent, priority, this.operations.signal);
+            this.operations.assertAccepting();
+            if((this.actorGeneration.get(agentId)??0)!==generation) throw new ScopeClosingError('obsolete-hydration:'+agentId);
+            if(this.activeActors.has(agentId)) return;
             if (!allowed) {
                 // console.warn(`[ORCHESTRATOR] 🛑 Wake - up denied for ${ agent.name }(Resource Limit)`);
                 return;
@@ -1937,7 +2119,7 @@ JSON ONLY:
                 }
             }
 
-            const standardAgent = new StandardAgent(agent);
+            const standardAgent = this.createActor(agent);
             standardAgent.status = AgentStatus.IDLE;
             standardAgent.lastActive = Date.now();
             standardAgent.memoryLocation = agent.tier === AgentTier.CORE ? 'VRAM' : 'RAM';
@@ -1946,6 +2128,10 @@ JSON ONLY:
             // [EVOLUTION] Register with conversation system on hydration
             agentConversation.registerAgent(standardAgent.toMetadata());
         }
+    
+        });
+        this.hydration.set(agentId,task);
+        try { await task; } finally { if(this.hydration.get(agentId)===task) this.hydration.delete(agentId); }
     }
 
     /**
@@ -1993,7 +2179,7 @@ JSON ONLY:
             agent.cpuUsage = 0;
             agent.ramUsage = 0;
             agentPersistence.saveAgent(agent.toMetadata());
-            this.activeActors.delete(agentId);
+            this.retireActor(agentId,'DEHYDRATED');
 
             // [EVOLUTION] Unregister from conversation system on dehydration
             agentConversation.unregisterAgent(agentId);
@@ -2158,6 +2344,8 @@ JSON ONLY:
 
     // --- CURIOSITY ENGINE LOGIC (V2: SWARM INTELLIGENCE) ---
     private async handleEpistemicGap(payload: any) {
+        return this.operations.run('handleEpistemicGap', async () => {
+
         // Payload: { question, source, confidence, context }
         console.log(`[ORCHESTRATOR] 🕵️ Epistemic Gap Received: "${payload.question}"`);
 
@@ -2337,6 +2525,8 @@ OBJECTIVES:
             console.log(`[ORCHESTRATOR] ✅ All ${councilMembers.length} agents dispatched sequentially.`);
         }
 
+    
+        });
     }
 
     /**
@@ -2345,6 +2535,8 @@ OBJECTIVES:
      * for any agent executing a task, not just the user-facing chat.
      */
     private async buildCognitiveContextForTask(taskQuery: string, agentId?: string): Promise<string> {
+        return this.operations.run('buildCognitiveContextForTask', async () => {
+
         try {
             const { contextAssembler } = await import('./contextAssembler');
             // 'DEEP' mode allocates massive Budget to Vector Memory and Codebase logic
@@ -2357,9 +2549,13 @@ OBJECTIVES:
             console.warn("[ORCHESTRATOR] Cognitive Context injection failed (non-fatal):", e);
         }
         return '';
+    
+        });
     }
 
     private async handleTaskAssignment(payload: any) {
+        return this.operations.run('handleTaskAssignment', async () => {
+
         // Payload: { targetRole: string, taskType: string, context: any, priority: string }
         const { targetRole, taskType, context, priority } = payload;
         console.log(`[ORCHESTRATOR] 📨 Received Async Task for ${targetRole}: ${taskType} `);
@@ -2395,6 +2591,8 @@ OBJECTIVES:
                 priority: priorityLevel
             }
         );
+    
+        });
     }
 
     // --- INTER-AGENT HELP PROTOCOL ---
@@ -2440,6 +2638,8 @@ OBJECTIVES:
     // --- DISTRIBUTED ORCHESTRATION (PHASE 3) ---
 
     public async activateSquadsForStage(stage: WorkflowStage, context: any) {
+        return this.operations.run('activateSquadsForStage', async () => {
+
         console.log(`[ORCHESTRATOR] 📣 ACTIVATE SQUADS FOR STAGE: ${stage} `);
 
         // 1. Identify Target Squads based on Stage
@@ -2463,11 +2663,15 @@ OBJECTIVES:
                 await this.mobilizeSquad(squad);
             }
         }
+    
+        });
     }
 
     // --- LEADER-LED ACTIVATION PROTOCOL ---
     // --- LEADER-LED ACTIVATION PROTOCOL ---
     public async mobilizeSquad(squad: Squad) {
+        return this.operations.run('mobilizeSquad', async () => {
+
         // Step 1: Wake the Leader
         console.log(`[ORCHESTRATOR] 📞 Paging Leader of ${squad.name}...`);
         await this.hydrateAgent(squad.leaderId);
@@ -2490,6 +2694,8 @@ OBJECTIVES:
             source: leader.name,
             squadId: squad.id,
             message: `${squad.name} active (topology). ${specialists} specialists hydrate on demand.`
+        });
+    
         });
     }
 
@@ -2590,6 +2796,8 @@ OBJECTIVES:
     // --- ROBUSTNESS: HEARTBEAT & RESET ---
 
     public async updateHeartbeat(agentId: string) {
+        return this.operations.run('updateHeartbeat', async () => {
+
         // 1. Update In-Memory
         const agent = this.activeActors.get(agentId);
         if (agent) {
@@ -2609,14 +2817,19 @@ OBJECTIVES:
                 agentPersistence.saveAgent(diskAgent);
             }
         }
+    
+        });
     }
 
     public async resetAgent(agentId: string) {
+        return this.operations.run('resetAgent', async () => {
+        this.invalidateActorHydration(agentId);
+
         console.log(`[ORCHESTRATOR] 🔄 RESETTING AGENT: ${agentId} `);
 
         // 1. Force Dehydrate (Kill Process/Clear Memory)
         if (this.activeActors.has(agentId)) {
-            this.activeActors.delete(agentId);
+            this.retireActor(agentId,'RESET');
         }
 
         // 2. Clear from cache
@@ -2648,6 +2861,8 @@ OBJECTIVES:
                 console.error(`[ORCHESTRATOR] ❌ Failed to reset ${agentId}: Agent not found.`);
             }
         }
+    
+        });
     }
 
     /**
@@ -2655,6 +2870,9 @@ OBJECTIVES:
      * This is a permanent deletion - use with caution.
      */
     public async purgeAgent(agentId: string) {
+        return this.operations.run('purgeAgent', async () => {
+        this.invalidateActorHydration(agentId);
+
         console.log(`[ORCHESTRATOR] 🗑️ PURGING AGENT: ${agentId} `);
 
         // 0. [PR-4c] Quarantine the on-disk directory BEFORE any roster/DB
@@ -2680,7 +2898,7 @@ OBJECTIVES:
         }
 
         // 1. Remove from active actors
-        this.activeActors.delete(agentId);
+        this.retireActor(agentId,'PURGED');
 
         // 2. Remove from cache
         this.agentCache.delete(agentId);
@@ -2720,6 +2938,8 @@ OBJECTIVES:
         }
 
         console.log(`[ORCHESTRATOR] ✅ Agent ${agentId} permanently purged from system.`);
+    
+        });
     }
 
     /**
@@ -2738,6 +2958,9 @@ OBJECTIVES:
      * soul/identity/history is untouched; a human decides what happens next.
      */
     public async markAgentFailed(agentId: string, reason: string): Promise<void> {
+        return this.operations.run('markAgentFailed', async () => {
+        this.invalidateActorHydration(agentId);
+
         const agent: Agent | undefined = this.activeActors.get(agentId) ?? this.agentCache.get(agentId) ?? agentPersistence.loadAgent(agentId) ?? undefined;
         if (agent) {
             agent.status = AgentStatus.OFFLINE;
@@ -2745,9 +2968,11 @@ OBJECTIVES:
             agent.enabled = false;
             agentPersistence.saveAgent(agent);
         }
-        this.activeActors.delete(agentId);
+        this.retireActor(agentId,'FAILED');
         this.agentCache.delete(agentId);
         console.error(`[ORCHESTRATOR] ⛔ Agent ${agentId} marked FAILED: ${reason}`);
+    
+        });
     }
 
     // ==========================================
@@ -2942,7 +3167,7 @@ OBJECTIVES:
             task.status = status;
             if (status === 'COMPLETED' || status === 'FAILED') {
                 // Keep for audit but mark as done
-                setTimeout(() => this.activeTasks.delete(taskId), 60000); // Cleanup after 1 minute
+                this.operations.timeout(`completed-task-cleanup:${taskId}`, 60000, () => { this.activeTasks.delete(taskId); }); // Cleanup after 1 minute
             }
         }
     }
@@ -3025,13 +3250,16 @@ OBJECTIVES:
      * Forms a temporary Debate Squad, triggers the debate, and awaits consensus.
      */
     private async formSquadAndDebate(query: string, sessionId: string): Promise<string> {
+        return this.operations.run('formSquadAndDebate', async () => {
+
         return new Promise((resolve, reject) => {
+            this.operations.assertAccepting();
             const debateId = `debate-${crypto.randomUUID()}`;
             
             // Standard participants for a complex task
             const participants = ['creator-01', 'critic-01'];
             
-            this.hydrateAgent('core-01'); // Ensure core is alive as Judge
+            void this.hydrateAgent('core-01').catch(error => { const d=this.activeDebates.get(debateId); if(d) { d.reject(error); this.activeDebates.delete(debateId); } }); // Tracked actual hydration
             
             this.activeDebates.set(debateId, {
                 subject: query,
@@ -3053,24 +3281,31 @@ OBJECTIVES:
                 sessionId
             });
         });
+    
+        });
     }
 
     private async handleSquadDebateStart(payload: { debateId: string, subject: string, participants: string[], sessionId: string }) {
+        return this.operations.run('handleSquadDebateStart', async () => {
+
         const { debateId, subject, participants } = payload;
+        if(!this.operations.accepting || !this.activeDebates.has(debateId)) return;
         
         // Agent 1 (Creator) will take the first turn
         const firstAgent = participants[0];
         
         try {
-            const draftResult = await generateAgentResponse(
+            const draftResult = await this.debateProvider(debateId,'draft',() => generateAgentResponse(
                 firstAgent,
                 'Debate Participant',
                 'GENERAL',
                 `Eres un experto creativo. Debes proponer una solución inicial a esto: ${subject}. Sé conciso y directo.`,
                 null,
                 IntrospectionLayer.SHALLOW
-            );
+            ));
             
+            if(!this.operations.accepting || !this.activeDebates.has(debateId)) return;
+            this.markDebatePublished(debateId);
             systemBus.emit(SystemProtocol.AGENT_DEBATE_MESSAGE, {
                 debateId,
                 agentId: firstAgent,
@@ -3078,11 +3313,18 @@ OBJECTIVES:
                 turnNumber: 1
             });
         } catch (err: any) {
+            this.operations.recordDiagnostic('debate-start',err,'OPERATION_REJECTED','UNAVAILABLE');
+            const debate=this.activeDebates.get(debateId);
+            if(debate) { debate.reject(err); this.activeDebates.delete(debateId); }
             console.error(`[ORCHESTRATOR] ❌ Debate ${debateId} failed at start:`, err);
         }
+    
+        });
     }
 
     private async handleAgentDebateMessage(payload: { debateId: string, agentId: string, message: string, turnNumber: number }) {
+        return this.operations.run('handleAgentDebateMessage', async () => {
+
         const debate = this.activeDebates.get(payload.debateId);
         if (!debate || debate.status !== 'DEBATING') return;
 
@@ -3097,19 +3339,26 @@ OBJECTIVES:
             const history = debate.turns.map(t => `${t.agentId}: ${t.message}`).join('\n\n');
             const judgePrompt = `Eres el Juez Orquestador. Basado en el debate de los expertos sobre "${debate.subject}", redacta la respuesta final y perfecta para el usuario humano, unificando las mejores ideas.\n\nDebate:\n${history}`;
             
-            const judgeResult = await generateAgentResponse(
+            try {
+            const judgeResult = await this.debateProvider(payload.debateId,'judge',() => generateAgentResponse(
                 'core-01',
                 'Orchestrator Judge',
                 'GENERAL',
                 judgePrompt,
                 null,
                 IntrospectionLayer.MEDIUM
-            );
+            ));
+            if(!this.operations.accepting || !this.activeDebates.has(payload.debateId)) return;
             const finalAnswer = judgeResult.output;
             
+            this.markDebatePublished(payload.debateId);
             systemBus.emit(SystemProtocol.SQUAD_CONSENSUS, { debateId: payload.debateId, consensus: finalAnswer });
             debate.resolve(finalAnswer);
             this.activeDebates.delete(payload.debateId);
+            } catch(error) {
+                this.operations.recordDiagnostic('debate-judge',error,'OPERATION_REJECTED','UNAVAILABLE');
+                debate.reject(error); this.activeDebates.delete(payload.debateId);
+            }
             return;
         }
 
@@ -3123,16 +3372,18 @@ OBJECTIVES:
             const roleContext = nextAgent.includes('critic') ? 'Eres un crítico estricto. Revisa la propuesta anterior, señala fallas y mejórala.' : 'Eres el creador original. Adapta tu propuesta según las críticas.';
             const prompt = `${roleContext}\n\nTema original: ${debate.subject}\n\nPropuesta anterior por ${payload.agentId}:\n"${previousMessage}"\n\nResponde mejorándola:`;
             
-            const nextResult = await generateAgentResponse(
+            const nextResult = await this.debateProvider(payload.debateId,'turn:'+nextTurnNumber,() => generateAgentResponse(
                 nextAgent,
                 nextAgent.includes('critic') ? 'Debate Critic' : 'Debate Creator',
                 'GENERAL',
                 prompt,
                 null,
                 IntrospectionLayer.SHALLOW
-            );
+            ));
+            if(!this.operations.accepting || !this.activeDebates.has(payload.debateId)) return;
             const nextResponse = nextResult.output;
             
+            this.markDebatePublished(payload.debateId);
             systemBus.emit(SystemProtocol.AGENT_DEBATE_MESSAGE, {
                 debateId: payload.debateId,
                 agentId: nextAgent,
@@ -3141,11 +3392,43 @@ OBJECTIVES:
             });
         } catch (err) {
             console.error(`[ORCHESTRATOR] Debate Turn ${nextTurnNumber} failed:`, err);
+            this.operations.recordDiagnostic('debate-turn',err,'DEGRADED_FALLBACK','UNAVAILABLE');
             debate.resolve(`(Debate interrupido) Última conclusión: ${payload.message}`);
             this.activeDebates.delete(payload.debateId);
         }
+    
+        });
     }
 
 }
 
 export const orchestrator = new AgentSwarmOrchestrator();
+
+// Existing shared arbiter already used by actual agent admission. Root must
+// adopt before prepare and initiate its queue fence before awaiting actor drain.
+export function prepareOrchestratorArbiter(){return resourceArbiter.start();}
+export function shutdownOrchestratorArbiter(){return resourceArbiter.shutdown();}
+export function getOrchestratorArbiterLifecycleStatus(){return {
+    failures:resourceArbiter.getLifecycleFailures(),
+    readiness:'UNVERIFIED' as const,release:'UNVERIFIED' as const,
+    workOutcome:'UNVERIFIED' as const,pendingDurable:false
+};}
+
+// Same statically imported adaptive power producer; no second instance.
+export function prepareOrchestratorPower(){powerManager.start();}
+export function shutdownOrchestratorPower(){return powerManager.shutdown();}
+export function getOrchestratorPowerLifecycleStatus(){return {
+    diagnostics:powerManager.getLifecycleDiagnostics(),
+    observed:powerManager.getStatus(),
+    readiness:'UNVERIFIED' as const,release:'UNVERIFIED' as const,
+    workOutcome:'UNVERIFIED' as const,pendingDurable:false
+};}
+
+// Same statically imported discovery producer. This adds no node/RPC/Genesis.
+export function prepareOrchestratorNeuroLink(){neuroLink.start();}
+export function shutdownOrchestratorNeuroLink(){return neuroLink.shutdown();}
+export function getOrchestratorNeuroLinkLifecycleStatus(){return {
+    diagnostics:neuroLink.getLifecycleDiagnostics(),
+    readiness:'UNVERIFIED' as const,release:'UNVERIFIED' as const,
+    workOutcome:'UNVERIFIED' as const,pendingDurable:false
+};}

@@ -1,3 +1,4 @@
+import { ResourceScope } from '../server/runtime/resourceScope';
 import neo4j, { Driver, Session } from 'neo4j-driver';
 import crypto from 'crypto';
 import { lancedbService } from './lancedbService';
@@ -12,6 +13,54 @@ import { incidentRegistry } from './incidentRegistry';
 // Connects to Neo4j to store Nodes (Entities) and Edges (Relationships)
 
 class GraphService {
+    private readonly operations = new ResourceScope('graph');
+    private readonly leases = new Map<Driver, { users: number; retired: boolean; release: () => Promise<void> }>();
+    private durableOperation<T>(name: string, work: () => Promise<T>): Promise<T> {
+        return this.operations.run(name, async () => {
+            try { return await work(); }
+            catch (error) { this.operations.recordFailure(`graph-durability:${name}`, error); throw error; }
+        });
+    }
+    private releaseIdleTimer?: () => Promise<void>;
+    private async verifyDriver(driver: Driver): Promise<void> {
+        const lease = this.leases.get(driver);
+        if (!lease) throw new Error('Verification requires owned Neo4j driver');
+        lease.users++;
+        try { await driver.verifyConnectivity(); }
+        finally {
+            lease.users--;
+            if (lease.retired && lease.users === 0) { await lease.release(); this.leases.delete(driver); }
+        }
+    }
+    private connectionTask?: Promise<boolean>;
+    public getLifecycleDiagnostics() { return this.operations.getDiagnostics(); }
+    public getLifecycleFailures() { return this.operations.getFailures(); }
+    private ownDriver(driver: Driver): void {
+        const release = this.operations.own({ name: 'neo4j-driver', closeRank: -100, close: () => driver.close() });
+        this.leases.set(driver, { users: 0, retired: false, release });
+    }
+    private async retireDriver(driver: Driver | null): Promise<void> {
+        if (!driver) return;
+        const lease = this.leases.get(driver);
+        if (!lease) throw new Error('Unowned Neo4j driver');
+        lease.retired = true;
+        if (lease.users === 0) { await lease.release(); this.leases.delete(driver); }
+    }
+    private ownSession(driver: Driver): { session: Session; release: () => Promise<void> } {
+        this.operations.assertAccepting();
+        const lease = this.leases.get(driver);
+        if (!lease) throw new Error('Neo4j session requires owned driver');
+        const session = driver.session();
+        lease.users++;
+        const release = this.operations.own({ name: 'neo4j-session', closeRank: 100, close: () => session.close() });
+        let done = false;
+        return { session, release: async () => {
+            if (done) return; done = true;
+            await release();
+            lease.users--;
+            if (lease.retired && lease.users === 0) { await lease.release(); this.leases.delete(driver); }
+        } };
+    }
     private driver: Driver | null = null;
     private _isConnected: boolean = false; // Renamed to avoid conflict with method
     private isRegistered: boolean = false;
@@ -34,20 +83,30 @@ class GraphService {
 
     /** Check if Neo4j is connected. Used by health check endpoint. */
     public async isConnected(): Promise<boolean> {
+        return this.operations.run('isConnected', async () => {
+
         if (!this.driver) return false;
         try {
-            await this.driver.verifyConnectivity();
+            await this.verifyDriver(this.driver);
             return true;
-        } catch {
+        } catch (error) {
+            this.operations.recordDiagnostic('graph-health', error, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
             return false;
         }
+    
+        });
     }
 
     /**
      * Connects to Neo4j with Exponential Backoff Retry.
      * Fires a SYSTEM_ALERT if all retries fail so the Swarm can self-heal.
      */
-    public async connect(retries = 3, delayMs = 2000, force = false): Promise<boolean> {
+    public connect(retries = 3, delayMs = 2000, force = false): Promise<boolean> {
+        if (this.connectionTask) return this.connectionTask;
+        this.connectionTask = this.operations.run('graph-connect', () => this.connectOnce(retries, delayMs, force)).finally(() => { this.connectionTask = undefined; });
+        return this.connectionTask;
+    }
+    private async connectOnce(retries: number, delayMs: number, force: boolean): Promise<boolean> {
         if (this._isConnected && this.driver) {
             this.resetConnectionTimeout(); // Keep alive on manual connect
             return true;
@@ -62,6 +121,7 @@ class GraphService {
             return false;
         }
 
+        const attempts: ReturnType<ResourceScope['recordDiagnostic']>[] = [];
         let attempt = 0;
         while (attempt < retries) {
             try {
@@ -72,7 +132,8 @@ class GraphService {
                     console.log("[GRAPH] 🔗 Connecting to Neo4j...");
                 }
 
-                this.driver = neo4j.driver(
+                this.operations.assertAccepting();
+                const candidate = neo4j.driver(
                     process.env.NEO4J_URI || 'bolt://127.0.0.1:7787',
                     neo4j.auth.basic(
                         process.env.NEO4J_USER || 'neo4j',
@@ -84,8 +145,12 @@ class GraphService {
                         connectionAcquisitionTimeout: 5000
                     }
                 );
-
-                await this.driver.verifyConnectivity();
+                this.ownDriver(candidate);
+                const previous = this.driver;
+                this.driver = candidate;
+                await this.retireDriver(previous);
+                await this.verifyDriver(candidate);
+                for (const receipt of attempts) { receipt.disposition = 'RECOVERED_RETRY'; receipt.originalCapability = 'RESTORED'; }
                 this._isConnected = true;
                 this.idleClosed = false;
                 this.connectCooldownUntil = 0;
@@ -99,14 +164,16 @@ class GraphService {
                 this.registerWithNervousSystem();
 
                 // Initialize schema in background
-                setImmediate(() => this.initializeSchema().catch(() => { }));
+                if (this.operations.accepting) this.operations.timeout('graph-schema', 0, () => this.initializeSchema());
 
                 return true;
 
             } catch (error: any) {
                 console.error(`[GRAPH] ❌ Connection failed (Attempt ${attempt + 1}/${retries}):`, error.message);
+                attempts.push(this.operations.recordDiagnostic('graph-connect-attempt', error, 'DEGRADED_FALLBACK', 'UNAVAILABLE'));
                 this._isConnected = false;
-                this.driver = null;
+                const failed = this.driver; this.driver = null;
+                await this.retireDriver(failed);
                 attempt++;
             }
         }
@@ -138,11 +205,15 @@ class GraphService {
 
     private resetConnectionTimeout() {
         if (this.connectionTimeout) clearTimeout(this.connectionTimeout);
+        if (this.releaseIdleTimer) { void this.releaseIdleTimer(); this.releaseIdleTimer = undefined; }
+        if (!this.operations.accepting) return;
         this.connectionTimeout = setTimeout(() => {
             console.log("[GRAPH] 💤 Idle timeout reached. Closing Neo4j connection.");
             this.idleClosed = true;
-            this.disconnect();
+            void this.operations.run('graph-idle-disconnect', () => this.disconnect()).catch(() => undefined);
         }, this.TIMEOUT_MS);
+        const timer = this.connectionTimeout;
+        this.releaseIdleTimer = this.operations.own({ name: 'graph-idle-timeout', stopIntake: () => clearTimeout(timer), close: () => clearTimeout(timer) });
     }
 
     /**
@@ -173,25 +244,30 @@ class GraphService {
      *  - otherwise (Neo4j unreachable, SQLite fallback serving) => unhealthy so the nervous system reconnects
      */
     public async probeHealth(): Promise<boolean> {
+        return this.operations.run('probeHealth', async () => {
+
         if (configLoader.getConfig().modules.graph === false) return true;
         if (this.driver) return this.isConnected();
         return this.idleClosed;
+    
+        });
     }
 
     /**
      * Force disconnect (for reconnection attempts)
      */
     public async disconnect(): Promise<void> {
-        if (this.connectionTimeout) clearTimeout(this.connectionTimeout);
+        return this.operations.run('disconnect', async () => {
 
-        if (this.driver) {
-            try {
-                await this.driver.close();
-                console.log("[GRAPH] 🔌 Disconnected from Neo4j.");
-            } catch { }
-        }
+        if (this.connectionTimeout) clearTimeout(this.connectionTimeout);
+        if (this.releaseIdleTimer) { void this.releaseIdleTimer(); this.releaseIdleTimer = undefined; }
+        this.connectionTimeout = null;
+        const driver = this.driver;
         this.driver = null;
         this._isConnected = false;
+        await this.retireDriver(driver);
+    
+        });
     }
 
     private registerWithNervousSystem() {
@@ -220,7 +296,7 @@ class GraphService {
 
     private async initializeSchema() {
         if (!this.driver) return;
-        const session = this.driver.session();
+        const { session, release: releaseSession } = this.ownSession(this.driver);
         try {
             // Ensure uniqueness for critical entities
             await session.run(`CREATE CONSTRAINT IF NOT EXISTS FOR (u:User) REQUIRE u.id IS UNIQUE`);
@@ -228,13 +304,25 @@ class GraphService {
             await session.run(`CREATE CONSTRAINT IF NOT EXISTS FOR (e:Entity) REQUIRE e.id IS UNIQUE`);
             console.log("[GRAPH] 🛡️ Schema Constraints Verified.");
         } catch (e) {
+            this.operations.recordDiagnostic('graph-schema', e, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
             console.warn("[GRAPH] Schema Init Warning:", e);
         } finally {
-            await session.close();
+            await releaseSession();
         }
     }
 
-    public async runQuery(cypher: string, params: any = {}) {
+    public runQuery(cypher: string, params: any = {}) {
+        return this.operations.run('runQuery', async () => {
+            try { return await this.runQueryCore(cypher, params); }
+            catch (error) {
+                if (this.isWriteQuery(cypher)) this.operations.recordFailure('graph-query-durability', error);
+                throw error;
+            }
+        });
+    }
+    private async runQueryCore(cypher: string, params: any = {}) {
+        return this.operations.run('runQuery', async () => {
+
         if (!this._isConnected || !this.driver) {
             const connected = await this.connect();
             if (!connected || !this.driver) {
@@ -245,27 +333,29 @@ class GraphService {
 
         this.resetConnectionTimeout(); // Keep alive
 
-        const session = this.driver.session();
+        const { session, release: releaseSession } = this.ownSession(this.driver);
         try {
             const result = await session.run(cypher, params);
             return result.records.map(record => record.toObject());
         } catch (error: any) {
+            const diagnostic = this.operations.recordDiagnostic('graph-query-attempt', error, 'OPERATION_REJECTED', 'UNAVAILABLE');
             // Auto-recovery for stale connections
             if (error.code === 'ServiceUnavailable' || error.code === 'SessionExpired') {
                 console.warn("[GRAPH] ⚠️ Connection stale, reconnecting...");
                 this._isConnected = false;
-                if (this.driver) await this.driver.close();
-                this.driver = null;
+                const stale = this.driver; this.driver = null;
+                await this.retireDriver(stale);
 
                 // Retry once
                 await this.connect();
                 if (this.driver) {
-                    const newSession = this.driver.session();
+                    const { session: newSession, release: releaseNewSession } = this.ownSession(this.driver);
                     try {
                         const result = await newSession.run(cypher, params);
+                        diagnostic.disposition = 'RECOVERED_RETRY'; diagnostic.originalCapability = 'RESTORED';
                         return result.records.map(record => record.toObject());
                     } finally {
-                        await newSession.close();
+                        await releaseNewSession();
                     }
                 }
             }
@@ -273,8 +363,10 @@ class GraphService {
             console.error(`[GRAPH] Query Failed: ${cypher.substring(0, 50)}...`, error);
             throw error;
         } finally {
-            await session.close();
+            await releaseSession();
         }
+    
+        });
     }
 
     /**
@@ -904,17 +996,20 @@ class GraphService {
         }
     }
 
-    public async close() {
-        if (this.driver) {
-            await this.driver.close();
-            this._isConnected = false;
-            console.log("[GRAPH] 🔌 Disconnected.");
-        }
+    public close() {
+        if (this.connectionTimeout) clearTimeout(this.connectionTimeout);
+        if (this.releaseIdleTimer) { void this.releaseIdleTimer(); this.releaseIdleTimer = undefined; }
+        this.connectionTimeout = null;
+        const task = this.operations.close();
+        void task.then(() => { this.driver = null; this._isConnected = false; });
+        return task;
     }
 
     // --- HELPER METHODS ---
 
     public async createNode(label: string, properties: any, mergeKey: string = 'id') {
+        return this.durableOperation('createNode', async () => {
+
         if (!properties.id) properties.id = crypto.randomUUID();
 
         if (!this._isConnected || !this.driver) {
@@ -982,9 +1077,13 @@ class GraphService {
             console.error(`[GRAPH] Node creation failed for ${label}:`, error);
             throw error;
         }
+    
+        });
     }
 
     public async createRelationship(fromId: string, toId: string, type: string, properties: any = {}) {
+        return this.durableOperation('createRelationship', async () => {
+
         if (!this._isConnected || !this.driver) {
             // Fallback to SQLite
             const { sqliteService } = await import('./sqliteService');
@@ -1022,9 +1121,13 @@ class GraphService {
             RETURN r
         `;
         return this.runQuery(query, { fromId, toId, props: properties });
+    
+        });
     }
 
     public async createDiscoveryRelationship(fromId: string, toId: string, type: 'CAUSES' | 'INHIBITS' | 'IMPLIES', confidence: number, source: string) {
+        return this.operations.run('createDiscoveryRelationship', async () => {
+
         // [SCALE-FREE NETWORK] Preferential Attachment Mechanism
         // When a new connection is formed, there's a chance to also reinforce a connection to a Hub
         // mimicking "Rich get Richer" (Matthew Effect) in neural networks.
@@ -1040,6 +1143,8 @@ class GraphService {
             isHypothesis: true,
             verified: false
         });
+    
+        });
     }
 
     // --- SCALE-FREE NETWORK MECHANISMS (BIOMIMETIC) ---
@@ -1049,6 +1154,8 @@ class GraphService {
      * These act as master concepts or functional centers.
      */
     public async getHubs(limit: number = 5): Promise<any[]> {
+        return this.operations.run('getHubs', async () => {
+
         const query = `
             MATCH (n)
             OPTIONAL MATCH (n)-[r]-()
@@ -1059,6 +1166,8 @@ class GraphService {
             LIMIT $limit
         `;
         return this.runQuery(query, { limit: neo4j.int(limit) });
+    
+        });
     }
 
     /**
@@ -1066,6 +1175,8 @@ class GraphService {
      * Connects the target node to a random Hub with probability proportional to the Hub's degree.
      */
     public async applyPreferentialAttachment(nodeId: string) {
+        return this.operations.run('applyPreferentialAttachment', async () => {
+
         try {
             const hubs = await this.getHubs(5);
             if (hubs.length === 0) return;
@@ -1097,12 +1208,16 @@ class GraphService {
         } catch (e) {
             console.warn("[GRAPH] Scale-free growth error:", e);
         }
+    
+        });
     }
 
     // --- GRAPHRAG CAPABILITIES (NEW) ---
 
     // Given a list of Node IDs (from Vector Search), find their neighbors
     public async getRelatedConcepts(nodeIds: string[], depth: number = 1): Promise<any[]> {
+        return this.operations.run('getRelatedConcepts', async () => {
+
         // runQuery decides the backend (Neo4j or the SQLite fallback); no early return here.
         if (nodeIds.length === 0) return [];
 
@@ -1122,12 +1237,10 @@ class GraphService {
             // [HEBBIAN LEARNING] Reinforce accessed connections
             // Import dynamically to avoid circular dependency
             if (results.length > 0) {
-                import('./hubStrengtheningService').then(({ hubStrengthening }) => {
-                    for (const result of results.slice(0, 5)) { // Limit reinforcement to top 5
-                        hubStrengthening.reinforceConnection(result.sourceId, result.relatedId)
-                            .catch(() => { }); // Non-blocking
-                    }
-                }).catch(() => { }); // Ignore if service unavailable
+                void this.operations.run('graph-hebbian-dispatch', async () => {
+                    const { hubStrengthening } = await import('./hubStrengtheningService');
+                    await Promise.all(results.slice(0, 5).map(result => hubStrengthening.reinforceConnection(result.sourceId, result.relatedId)));
+                }).catch(error => this.operations.recordDiagnostic('graph-hebbian-dispatch', error, 'DEGRADED_FALLBACK', 'UNAVAILABLE'));
             }
 
             return results;
@@ -1135,12 +1248,16 @@ class GraphService {
             console.warn("[GRAPH] GraphRAG Traversal Failed:", e.message);
             return [];
         }
+    
+        });
     }
     // --- DISCOVERY ALGORITHMS ---
 
     // Find "Open Triangles" (A connected to C, B connected to C, but A not connected to B)
     // This suggests A and B might be related via C.
     public async findOpenTriangles(limit: number = 5): Promise<{ nodeA: any, nodeB: any, bridge: any }[]> {
+        return this.operations.run('findOpenTriangles', async () => {
+
         // runQuery decides the backend (Neo4j or the SQLite fallback); no early return here.
 
         const query = `
@@ -1161,6 +1278,8 @@ class GraphService {
             console.warn("[GRAPH] Failed to find open triangles:", e);
             return [];
         }
+    
+        });
     }
 
     /**
@@ -1168,6 +1287,8 @@ class GraphService {
      * Used by UI to display eternal memory
      */
     public async getUserFacts(userId?: string): Promise<{ category: string; content: string; confidence: number; timestamp: number; source?: string }[]> {
+        return this.operations.run('getUserFacts', async () => {
+
         try {
             // If userId is provided, filter by that user. Otherwise, fallback to global (admin only)
             // Writers store `type`/`createdAt`; legacy readers expected
@@ -1201,6 +1322,8 @@ class GraphService {
             console.warn("[GRAPH] Failed to get user facts:", e);
             return [];
         }
+    
+        });
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -1217,6 +1340,8 @@ class GraphService {
         description?: string;
         tags?: string[];
     }): Promise<boolean> {
+        return this.operations.run('syncConceptToVectorStore', async () => {
+
         try {
             const content = `${concept.name}: ${concept.description || 'No description'}`;
 
@@ -1248,9 +1373,12 @@ class GraphService {
             return true;
 
         } catch (e) {
+            this.operations.recordDiagnostic('graph-vector-projection', e, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
             console.error(`[GRAPH] syncConceptToVectorStore failed:`, e);
             return false;
         }
+    
+        });
     }
 }
 

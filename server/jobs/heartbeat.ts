@@ -1,3 +1,4 @@
+import { ResourceScope } from '../runtime/resourceScope';
 import { introspection } from '../../services/introspectionEngine';
 
 const HEARTBEAT_INTERVAL = 120000; // 120s (0.5 RPM - optimized for z.ai limits)
@@ -5,9 +6,12 @@ const DISCOVERY_INTERVAL = 10; // Every 10 cycles (~5 min), trigger autonomous d
 
 let cycleCount = 0;
 
-export const startHeartbeat = () => {
+let heartbeatOwner: ResourceScope | undefined;
+export const startHeartbeat = (): ResourceScope => {
+    if (heartbeatOwner) return heartbeatOwner;
+    const owner = heartbeatOwner = new ResourceScope('heartbeat-job');
     console.log('[JOB] ❤️ Autonomous Heartbeat Started.');
-    setInterval(async () => {
+    owner.interval('heartbeat-cycle', HEARTBEAT_INTERVAL, async () => {
         try {
             // Check congestion before running cycle
             const { congestionManager } = await import('../../services/congestionManager');
@@ -51,7 +55,9 @@ export const startHeartbeat = () => {
                 }
             }
         } catch (e) {
+            owner.recordDiagnostic('heartbeat-cycle', e, 'OPERATION_REJECTED', 'UNAVAILABLE');
             console.error("[HEARTBEAT] ❤️‍🔥 Arrhythmia:", e);
         }
-    }, HEARTBEAT_INTERVAL);
+    });
+    return owner;
 };

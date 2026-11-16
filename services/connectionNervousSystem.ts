@@ -1,3 +1,4 @@
+import { ResourceScope } from '../server/runtime/resourceScope';
 /**
  * CONNECTION NERVOUS SYSTEM
  * 
@@ -40,6 +41,9 @@ interface ConnectionState {
 // ==================== NERVOUS SYSTEM ====================
 
 class ConnectionNervousSystem {
+    public readonly lifecycle = new ResourceScope('connection-nervous-system');
+    public getLifecycleDiagnostics() { return this.lifecycle.getDiagnostics(); }
+    public shutdown() { return this.lifecycle.close(); }
     private connections: Map<string, ConnectionTarget> = new Map();
     private states: Map<string, ConnectionState> = new Map();
     private heartbeatInterval: NodeJS.Timeout | null = null;
@@ -54,6 +58,7 @@ class ConnectionNervousSystem {
      * Register a connection to be monitored
      */
     public register(target: ConnectionTarget): void {
+        this.lifecycle.assertAccepting();
         if (this.connections.has(target.id)) {
             console.log(`[NERVOUS] 🔄 Re-registering: ${target.name} (${target.type})`);
         }
@@ -68,7 +73,7 @@ class ConnectionNervousSystem {
         console.log(`[NERVOUS] 📡 Registered: ${target.name} (${target.type})`);
 
         // Immediately check health of the new connection
-        this.checkConnection(target.id, target).catch(() => { });
+        void this.lifecycle.run(`initial-check:${target.id}`, () => this.checkConnection(target.id, target)).catch(() => undefined);
     }
 
     /**
@@ -95,17 +100,20 @@ class ConnectionNervousSystem {
      * Start the nervous system heartbeat
      */
     public start(): void {
+        this.lifecycle.assertAccepting();
         if (this.heartbeatInterval) return;
 
         console.log("[NERVOUS] 💓 Starting heartbeat monitor...");
 
         // Initial health check
-        this.checkAllConnections();
+        void this.lifecycle.run('health-checks', () => this.checkAllConnections()).catch(() => undefined);
 
         // Periodic heartbeat
         this.heartbeatInterval = setInterval(() => {
-            this.checkAllConnections();
+            void this.lifecycle.run('health-checks', () => this.checkAllConnections()).catch(() => undefined);
         }, this.HEARTBEAT_INTERVAL);
+        const interval = this.heartbeatInterval;
+        this.lifecycle.own({ name: 'nervous-heartbeat', stopIntake: () => clearInterval(interval), close: () => clearInterval(interval) });
     }
 
     /**
@@ -124,11 +132,12 @@ class ConnectionNervousSystem {
      */
     private async checkAllConnections(): Promise<void> {
         const checks = Array.from(this.connections.entries()).map(async ([id, target]) => {
-            await this.checkConnection(id, target);
+            await this.lifecycle.run(`forced-check:${id}`, () => this.checkConnection(id, target));
         });
 
         await Promise.allSettled(checks);
 
+        if (!this.lifecycle.accepting) return;
         // Emit heartbeat summary
         const summary = this.getHealthSummary();
         systemBus.emit(SystemProtocol.CONNECTION_HEARTBEAT, summary, 'NERVOUS_SYSTEM');
@@ -139,13 +148,14 @@ class ConnectionNervousSystem {
      */
     private async checkConnection(id: string, target: ConnectionTarget): Promise<void> {
         const state = this.states.get(id);
-        if (!state || state.isRecovering) return;
+        if (!this.lifecycle.accepting || !state || state.isRecovering) return;
 
         const now = Date.now();
         state.lastCheck = now;
 
         try {
             const isHealthy = await target.checkHealth();
+            if (!this.lifecycle.accepting || this.states.get(id) !== state) return;
 
             if (isHealthy) {
                 // Connection is healthy
@@ -166,12 +176,13 @@ class ConnectionNervousSystem {
 
             } else {
                 // Health check returned false
-                this.handleFailure(id, target, state, 'Health check returned false');
+                await this.handleFailure(id, target, state, 'Health check returned false');
             }
 
         } catch (error: any) {
             // Health check threw an error
-            this.handleFailure(id, target, state, error.message);
+            this.lifecycle.recordDiagnostic(`health:${id}`, error, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
+            if (this.lifecycle.accepting) await this.handleFailure(id, target, state, error.message);
         }
     }
 
@@ -217,7 +228,7 @@ class ConnectionNervousSystem {
         target: ConnectionTarget,
         state: ConnectionState
     ): Promise<void> {
-        if (state.isRecovering) return;
+        if (!this.lifecycle.accepting || state.isRecovering) return;
 
         state.isRecovering = true;
         state.status = 'CONNECTING';
@@ -226,10 +237,15 @@ class ConnectionNervousSystem {
 
         // Exponential backoff
         const delay = 2000 * Math.pow(2, state.consecutiveFailures - 1);
-        await new Promise(resolve => setTimeout(resolve, delay));
+        await new Promise<void>(resolve => {
+            const timer = setTimeout(resolve, delay);
+            this.lifecycle.own({ name: `recovery-delay:${id}`, stopIntake: () => { clearTimeout(timer); resolve(); }, close: () => clearTimeout(timer) });
+        });
+        if (!this.lifecycle.accepting || this.states.get(id) !== state) { state.isRecovering = false; return; }
 
         try {
             const success = await target.reconnect();
+            if (!this.lifecycle.accepting || this.states.get(id) !== state) return;
 
             if (success) {
                 state.status = 'CONNECTED';
@@ -250,6 +266,8 @@ class ConnectionNervousSystem {
             }
 
         } catch (error: any) {
+            this.lifecycle.recordDiagnostic(`recovery:${id}`, error, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
+            if (!this.lifecycle.accepting) return;
             console.error(`[NERVOUS] ❌ Recovery failed for ${target.name}: ${error.message}`);
             state.status = 'DISCONNECTED';
         } finally {
@@ -300,7 +318,7 @@ class ConnectionNervousSystem {
         const target = this.connections.get(id);
         if (!target) return false;
 
-        await this.checkConnection(id, target);
+        await this.lifecycle.run(`forced-check:${id}`, () => this.checkConnection(id, target));
         return this.states.get(id)?.status === 'CONNECTED';
     }
 
@@ -320,7 +338,10 @@ export const nervousSystem = new ConnectionNervousSystem();
  * Register default connections
  * Called during server initialization
  */
-export async function initializeNervousSystem(): Promise<void> {
+let initialization: Promise<void> | undefined;
+export function initializeNervousSystem(): Promise<void> {
+    if (initialization) return initialization;
+    initialization = nervousSystem.lifecycle.run('initialize-nervous-system', async () => {
     console.log("[NERVOUS] 🔌 Registering default connections...");
 
     // 1. Neo4j Graph Database - register for health monitoring
@@ -507,7 +528,8 @@ export async function initializeNervousSystem(): Promise<void> {
     }
 
     // 7. Listen for dynamic integration events from Settings UI
-    systemBus.subscribe(SystemProtocol.INTEGRATION_EVENT, (event: any) => {
+    const unsubscribe = systemBus.subscribe(SystemProtocol.INTEGRATION_EVENT, (event: any) => {
+        if (!nervousSystem.lifecycle.accepting) return;
         const { action, integrationId, name, type } = event.payload || {};
         if (action === 'connected' && integrationId) {
             // Integration was enabled in Settings — register if not already
@@ -526,8 +548,12 @@ export async function initializeNervousSystem(): Promise<void> {
         }
     });
 
+    nervousSystem.lifecycle.own({ name: 'nervous-integration-subscription', stopIntake: unsubscribe, close: unsubscribe });
+
     // Start monitoring
     nervousSystem.start();
 
     console.log("[NERVOUS] ✅ Nervous System online. Monitoring", nervousSystem.getHealthSummary().total, "connections.");
+    });
+    return initialization;
 }

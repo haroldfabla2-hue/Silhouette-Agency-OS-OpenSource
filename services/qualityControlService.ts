@@ -1,3 +1,5 @@
+import { ResourceScope } from '../server/runtime/resourceScope';
+import { subscribeScoped } from './runtime/scopedSubscription';
 import { geminiService } from './geminiService';
 import { BrandDigitalTwin, SystemProtocol } from '../types';
 import { sqliteService } from './sqliteService';
@@ -117,10 +119,15 @@ class QualityControlService {
 
 export const qualityControl = new QualityControlService();
 
+const voiceSubscriptions = new ResourceScope('quality-control-events');
+let voiceSubscriptionsStarted = false;
+export function startQualityControlEvents(): void {
+    voiceSubscriptions.assertAccepting();
+    if (voiceSubscriptionsStarted) return; voiceSubscriptionsStarted = true;
 // --- PA-008: VOICE SYSTEM EVENT SUBSCRIPTIONS ---
 // Integrates voice engine monitoring with quality control logging
 
-systemBus.subscribe(SystemProtocol.VOICE_ENGINE_OFFLINE, (event) => {
+subscribeScoped(voiceSubscriptions, systemBus, SystemProtocol.VOICE_ENGINE_OFFLINE, (event) => {
     console.warn(`[QualityControl] 🔇 Voice Engine went OFFLINE`);
     sqliteService.log('WARN',
         `Voice Engine offline: ${event.payload?.error || 'Unknown error'}`,
@@ -128,7 +135,7 @@ systemBus.subscribe(SystemProtocol.VOICE_ENGINE_OFFLINE, (event) => {
     );
 });
 
-systemBus.subscribe(SystemProtocol.VOICE_ENGINE_ONLINE, (event) => {
+subscribeScoped(voiceSubscriptions, systemBus, SystemProtocol.VOICE_ENGINE_ONLINE, (event) => {
     console.log(`[QualityControl] 🎤 Voice Engine came ONLINE`);
     sqliteService.log('INFO',
         `Voice Engine online (Device: ${event.payload?.device || 'unknown'})`,
@@ -136,7 +143,7 @@ systemBus.subscribe(SystemProtocol.VOICE_ENGINE_ONLINE, (event) => {
     );
 });
 
-systemBus.subscribe(SystemProtocol.VOICE_TTS_ERROR, (event) => {
+subscribeScoped(voiceSubscriptions, systemBus, SystemProtocol.VOICE_TTS_ERROR, (event) => {
     console.error(`[QualityControl] Voice TTS Error:`, event.payload);
     sqliteService.log('ERROR',
         `TTS Error: ${event.payload?.error || 'Unknown'}`,
@@ -144,7 +151,7 @@ systemBus.subscribe(SystemProtocol.VOICE_TTS_ERROR, (event) => {
     );
 });
 
-systemBus.subscribe(SystemProtocol.VOICE_QUALITY_LOW, (event) => {
+subscribeScoped(voiceSubscriptions, systemBus, SystemProtocol.VOICE_QUALITY_LOW, (event) => {
     console.warn(`[QualityControl] Voice quality low: ${event.payload?.voiceId} = ${event.payload?.qualityScore}/100`);
     sqliteService.log('WARN',
         `Voice ${event.payload?.voiceId} has low quality score: ${event.payload?.qualityScore}/100`,
@@ -152,7 +159,7 @@ systemBus.subscribe(SystemProtocol.VOICE_QUALITY_LOW, (event) => {
     );
 });
 
-systemBus.subscribe(SystemProtocol.VOICE_CLONE_COMPLETE, (event) => {
+subscribeScoped(voiceSubscriptions, systemBus, SystemProtocol.VOICE_CLONE_COMPLETE, (event) => {
     console.log(`[QualityControl] Voice clone completed: ${event.payload?.voiceId}`);
     sqliteService.log('INFO',
         `Voice cloned successfully: ${event.payload?.voiceId} (quality: ${event.payload?.qualityScore})`,
@@ -160,7 +167,7 @@ systemBus.subscribe(SystemProtocol.VOICE_CLONE_COMPLETE, (event) => {
     );
 });
 
-systemBus.subscribe(SystemProtocol.VOICE_CLONE_FAILED, (event) => {
+subscribeScoped(voiceSubscriptions, systemBus, SystemProtocol.VOICE_CLONE_FAILED, (event) => {
     console.error(`[QualityControl] Voice clone failed: ${event.payload?.voiceId}`);
     sqliteService.log('ERROR',
         `Voice clone failed: ${event.payload?.voiceId} - ${event.payload?.error}`,
@@ -168,3 +175,6 @@ systemBus.subscribe(SystemProtocol.VOICE_CLONE_FAILED, (event) => {
     );
 });
 
+
+}
+export function closeQualityControlEvents() { return voiceSubscriptions.close(); }

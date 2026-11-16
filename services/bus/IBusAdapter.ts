@@ -19,7 +19,9 @@ export interface IBusAdapter {
     /**
      * Subscribe to a system protocol
      */
-    subscribe(protocol: SystemProtocol, handler: (event: ProtocolEvent) => void): Promise<void>;
+    subscribe(protocol: SystemProtocol, handler: (event: ProtocolEvent) => void): void;
+
+    unsubscribe(protocol: SystemProtocol, handler: (event: ProtocolEvent) => void): void;
 
     /**
      * Send a direct message to an agent (Mailbox)

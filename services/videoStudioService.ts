@@ -1,3 +1,4 @@
+import { ResourceScope } from '../server/runtime/resourceScope';
 /**
  * FASE 1 VIDEO STUDIO: idea en lenguaje natural -> brief validado -> gate de aprobacion.
  *
@@ -44,10 +45,23 @@ function proStudioPath(): string {
 }
 
 export class VideoStudioService {
-    private readonly db: Database.Database;
-
-    constructor(dbPath: string = DB_PATH) {
-        this.db = new Database(dbPath);
+    private handle?: Database.Database;
+    private readonly operations = new ResourceScope('video-studio');
+    private initializationError?: unknown;
+    private get db(): Database.Database { this.open(); return this.handle!; }
+    constructor(private readonly dbPath: string = DB_PATH) {}
+    public open(): void {
+        this.operations.assertWorkAccepted();
+        if (this.initializationError) throw this.initializationError;
+        if (this.handle) return;
+        this.operations.assertAccepting();
+        try { this.openHandle(); } catch (error) { this.initializationError = error; this.operations.recordFailure('video-studio-startup', error); throw error; }
+    }
+    public shutdown() { return this.operations.close(); }
+    private openHandle(): void {
+        this.handle = new Database(this.dbPath);
+        const handle = this.handle;
+        this.operations.own({ name: 'video-studio-sqlite', close: () => handle.close() });
         this.db.pragma('journal_mode = WAL');
         this.db.pragma('busy_timeout = 5000');
         this.db.exec(`CREATE TABLE IF NOT EXISTS video_briefs (
@@ -67,6 +81,9 @@ export class VideoStudioService {
      * generateBrief; resultado honesto: ok -> AWAITING_SCRIPT_OK, no-ok -> FAILED.
      */
     async generateBriefFromIdea(idea: string): Promise<VideoBriefRow> {
+        return this.operations.run('generateBriefFromIdea', async () => {
+        this.open();
+
         if (!idea || !idea.trim()) throw new Error('idea is required');
 
         const modulePath = path.join(proStudioPath(), 'src', 'brief', 'generateBrief.ts');
@@ -93,22 +110,32 @@ export class VideoStudioService {
             (id, idea, brief_json, status, errors, attempts, created_at, updated_at)
             VALUES (@id, @idea, @brief_json, @status, @errors, @attempts, @created_at, @updated_at)`).run(row);
         return row;
+    
+        });
     }
 
     getBrief(id: string): VideoBriefRow | null {
+        this.operations.assertWorkAccepted();
+
         return (this.db.prepare('SELECT * FROM video_briefs WHERE id = ?').get(id) as VideoBriefRow) || null;
     }
 
     listBriefs(limit: number = 20): VideoBriefRow[] {
+        this.operations.assertWorkAccepted();
+
         return this.db.prepare('SELECT * FROM video_briefs ORDER BY created_at DESC LIMIT ?').all(limit) as VideoBriefRow[];
     }
 
     /** Gate: approve solo desde AWAITING_SCRIPT_OK. Otra transicion = error en voz alta. */
     approve(id: string): VideoBriefRow {
+        this.operations.assertWorkAccepted();
+
         return this.transition(id, 'APPROVED');
     }
 
     reject(id: string): VideoBriefRow {
+        this.operations.assertWorkAccepted();
+
         return this.transition(id, 'REJECTED');
     }
 

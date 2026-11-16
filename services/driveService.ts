@@ -1,3 +1,4 @@
+import { ResourceScope } from '../server/runtime/resourceScope';
 // =============================================================================
 // Google Drive Service
 // OAuth2 authentication and file operations for cloud storage integration
@@ -48,6 +49,14 @@ export interface TokenData {
 }
 
 class DriveService {
+    private retainDurability<T>(name: string, operation: () => T): T {
+        try { return operation(); } catch (error) { this.operations.recordFailure(name, error); throw error; }
+    }
+
+    private readonly operations = new ResourceScope('DriveService');
+    private initialization?: Promise<void>;
+    public getLifecycleStatus() { return { ready: this.initialized, diagnostics: this.operations.getDiagnostics(), failures: this.operations.getFailures() }; }
+    public shutdown() { return this.operations.close(); }
     private oauth2Client: InstanceType<typeof google.auth.OAuth2> | null = null;
     private drive: drive_v3.Drive | null = null;
     private db: Database.Database | null = null;
@@ -57,10 +66,16 @@ class DriveService {
     /**
      * Initialize the service
      */
-    async init(): Promise<void> {
+    init(): Promise<void> {
+        if (this.initialized) return this.operations.run('init-already-ready', async () => undefined);
+        if (!this.initialization) this.initialization = this.operations.run('init', () => this.initOnce()).catch(error => { this.operations.recordFailure('integration-startup', error); throw error; }).finally(() => { this.initialization = undefined; });
+        return this.initialization;
+    }
+    private async initOnce(): Promise<void> {
         if (this.initialized) return;
 
         if (!CLIENT_ID || !CLIENT_SECRET) {
+            this.operations.recordDiagnostic('drive-configuration', new Error('OAuth configuration unavailable'), 'DEGRADED_FALLBACK', 'UNAVAILABLE');
             console.warn('[DriveService] ⚠️ Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET');
             return;
         }
@@ -69,7 +84,11 @@ class DriveService {
         this.oauth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
 
         // Setup token refresh listener
-        this.oauth2Client.on('tokens', (tokens) => {
+        this.operations.assertAccepting();
+        const oauth = this.oauth2Client;
+        const onTokens = (tokens: import('google-auth-library').Credentials) => {
+            if (!this.operations.accepting) return;
+            try {
             console.log('[DriveService] 🔄 Token refreshed');
             if (tokens.refresh_token) {
                 this.saveTokens({
@@ -79,7 +98,10 @@ class DriveService {
                     email: this.currentEmail || undefined
                 });
             }
-        });
+            } catch (error) { this.operations.recordFailure('drive-token-refresh-durability', error); }
+        };
+        oauth.on('tokens', onTokens);
+        this.operations.own({ name: 'drive-token-refresh-listener', stopIntake: () => { oauth.off('tokens', onTokens); }, close: () => { oauth.off('tokens', onTokens); } });
 
         // Initialize database for token storage
         await this.initDb();
@@ -107,7 +129,10 @@ class DriveService {
     private async initDb(): Promise<void> {
         const DB_DIR = path.dirname(DB_PATH);
         await fs.mkdir(DB_DIR, { recursive: true });
+        this.operations.assertAccepting();
         this.db = new Database(DB_PATH, { timeout: 5000 });
+        const handle = this.db;
+        this.operations.own({ name: 'integration-sqlite', closeRank: -100, close: () => handle.close() });
 
         // Add pragmas for concurrency
         this.db.pragma('journal_mode = WAL');
@@ -134,6 +159,8 @@ class DriveService {
      * @param state Optional state parameter (e.g., device fingerprint) to be returned in callback
      */
     getAuthUrl(state?: string): string {
+        this.operations.assertWorkAccepted();
+
         if (!this.oauth2Client) {
             throw new Error('DriveService not initialized');
         }
@@ -150,6 +177,8 @@ class DriveService {
      * Exchange authorization code for tokens
      */
     async handleCallback(code: string): Promise<{ success: boolean; email?: string; error?: string }> {
+        return this.operations.run('handleCallback', async () => {
+
         if (!this.oauth2Client) {
             return { success: false, error: 'DriveService not initialized' };
         }
@@ -185,12 +214,16 @@ class DriveService {
             console.error('[DriveService] ❌ Auth failed:', error.message);
             return { success: false, error: error.message };
         }
+    
+        });
     }
 
     /**
      * Check if authenticated
      */
     isAuthenticated(): boolean {
+        this.operations.assertWorkAccepted();
+
         return this.drive !== null && this.loadTokens() !== null;
     }
 
@@ -198,6 +231,8 @@ class DriveService {
      * Get current user email
      */
     getCurrentUser(): string | null {
+        this.operations.assertWorkAccepted();
+
         return this.currentEmail;
     }
 
@@ -212,13 +247,13 @@ class DriveService {
       VALUES (1, ?, ?, ?, ?, ?)
     `);
 
-        stmt.run(
+        this.retainDurability('drive-token-storage', () => stmt.run(
             tokens.access_token,
             tokens.refresh_token,
             tokens.expiry_date,
             tokens.email || null,
             Date.now()
-        );
+        ));
     }
 
     /**
@@ -237,7 +272,8 @@ class DriveService {
                     email: row.email
                 };
             }
-        } catch {
+        } catch (error) {
+            this.operations.recordDiagnostic('drive-token-load', error, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
             // fall through to unified vault
         }
 
@@ -256,7 +292,8 @@ class DriveService {
                     };
                 }
             }
-        } catch {
+        } catch (error) {
+            this.operations.recordDiagnostic('drive-unified-token-load', error, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
             // no unified vault available
         }
 
@@ -267,6 +304,8 @@ class DriveService {
      * Revoke access and delete tokens
      */
     async revoke(): Promise<boolean> {
+        return this.operations.run('revoke', async () => {
+
         if (!this.oauth2Client) return false;
 
         try {
@@ -280,7 +319,7 @@ class DriveService {
 
         // Clear local tokens
         if (this.db) {
-            this.db.prepare('DELETE FROM google_tokens WHERE id = 1').run();
+            this.retainDurability('driveService.ts:storage', () => this.db.prepare('DELETE FROM google_tokens WHERE id = 1').run());
         }
 
         this.drive = null;
@@ -288,6 +327,8 @@ class DriveService {
 
         console.log('[DriveService] 🚪 Access revoked');
         return true;
+    
+        });
     }
 
     // ===========================================================================
@@ -307,6 +348,8 @@ class DriveService {
         pageSize?: number;
         folderId?: string;
     }): Promise<DriveFile[]> {
+        return this.operations.run('listFiles', async () => {
+
         const { CredentialGuard } = await import('./security/credentialGuard');
 
         return await CredentialGuard.protect('GoogleDrive', 'GOOGLE_CLIENT_ID', async () => {
@@ -350,6 +393,8 @@ class DriveService {
                 modifiedTime: f.modifiedTime || undefined
             }));
         }, []) || []; // Fallback to empty array
+    
+        });
     }
 
     /**
@@ -361,6 +406,8 @@ class DriveService {
         mimeType: string = 'application/json',
         folderId?: string
     ): Promise<DriveFile | null> {
+        return this.operations.run('uploadContent', async () => {
+
         const { CredentialGuard } = await import('./security/credentialGuard');
 
         return await CredentialGuard.protect('GoogleDrive', 'GOOGLE_CLIENT_ID', async () => {
@@ -398,12 +445,16 @@ class DriveService {
                 webViewLink: response.data.webViewLink || undefined
             };
         }, null) || null;
+    
+        });
     }
 
     /**
      * Create folder safely
      */
     async createFolder(name: string, parentId?: string): Promise<string | null> {
+        return this.operations.run('createFolder', async () => {
+
         const { CredentialGuard } = await import('./security/credentialGuard');
 
         return await CredentialGuard.protect('GoogleDrive', 'GOOGLE_CLIENT_ID', async () => {
@@ -421,10 +472,14 @@ class DriveService {
             console.log(`[DriveService] 📁 Created folder: ${name}`);
             return response.data.id || null;
         }, null) || null;
+    
+        });
     }
 
     // Download file to local path
     async downloadFile(fileId: string, destPath: string): Promise<boolean> {
+        return this.operations.run('downloadFile', async () => {
+
         const { CredentialGuard } = await import('./security/credentialGuard');
 
         return await CredentialGuard.protect('GoogleDrive', 'GOOGLE_CLIENT_ID', async () => {
@@ -439,18 +494,28 @@ class DriveService {
                 { responseType: 'stream' }
             );
 
-            const dest = fs.createWriteStream(destPath);
-            return new Promise<boolean>((resolve, reject) => {
-                (response.data as any)
-                    .on('end', () => resolve(true))
-                    .on('error', (err: Error) => reject(err))
-                    .pipe(dest);
-            });
+            const source = response.data as import('node:stream').Readable;
+            const releaseSource = this.operations.own({ name: 'drive-download-response', close: () => { source.destroy(); } });
+            try {
+                this.operations.assertAccepting();
+                const dest = fs.createWriteStream(destPath);
+                const releaseDest = this.operations.own({ name: 'drive-download-file', close: () => { dest.destroy(); } });
+                try {
+                    const { pipeline } = await import('node:stream/promises');
+                    await pipeline(source, dest);
+                    return true;
+                } catch (error) { this.operations.recordFailure('drive-download-file-write', error); throw error; }
+                finally { await releaseDest(); }
+            } finally { await releaseSource(); }
         }, false) || false;
+    
+        });
     }
 
     // Delete file
     async deleteFile(fileId: string): Promise<boolean> {
+        return this.operations.run('deleteFile', async () => {
+
         const { CredentialGuard } = await import('./security/credentialGuard');
 
         return await CredentialGuard.protect('GoogleDrive', 'GOOGLE_CLIENT_ID', async () => {
@@ -463,6 +528,8 @@ class DriveService {
             console.log(`[DriveService] 🗑️ Deleted file: ${fileId}`);
             return true;
         }, false) || false;
+    
+        });
     }
 }
 

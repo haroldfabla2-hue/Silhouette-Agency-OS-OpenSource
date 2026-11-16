@@ -2,7 +2,7 @@
  * an actual rejection; unavailable decisions throw with a typed reason. */
 export class ConfirmationUnavailableError extends Error {
  readonly code='CONFIRMATION_UNAVAILABLE';
- constructor(readonly reason:'NO_AUTHENTICATED_PRINCIPAL'|'EXPIRED'){
+ constructor(readonly reason:'NO_AUTHENTICATED_PRINCIPAL'|'EXPIRED'|'SHUTDOWN'){
   super(`Confirmation unavailable: ${reason}`);this.name='ConfirmationUnavailableError';
  }
 }

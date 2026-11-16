@@ -121,7 +121,7 @@ export function subscribeHelpProtocol(deps: {
         const request = event.payload as HelpRequest;
         if (!request?.requesterId || !request.targetRole || !request.problem) return;
         // Keep async failures inside the subscription: the bus does not await handlers.
-        void (async () => {
+        return (async () => {
             let helperId = 'system';
             try {
                 const found = deps.findHelper(request.targetRole, request);

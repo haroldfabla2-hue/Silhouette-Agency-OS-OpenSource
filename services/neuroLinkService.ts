@@ -10,11 +10,32 @@ export class NeuroLinkService {
     private discoveryInterval: any;
     private nodes: Map<string, NeuroLinkNode> = new Map();
 
-    constructor() {
-        this.startDiscovery();
+    constructor() {}
+    private closing = false;
+    private readonly probes = new Set<Promise<void>>();
+    private readonly controllers = new Set<AbortController>();
+    private readonly diagnostics: unknown[] = [];
+    public getLifecycleDiagnostics(): readonly unknown[] { return [...this.diagnostics]; }
+    public start(): void {
+        if (this.closing) throw new Error('NeuroLink closed');
+        if (!this.discoveryInterval) this.startDiscovery();
+    }
+    private probe(node: NeuroLinkNode): void {
+        if (this.closing) return;
+        const task = this.checkNodeHealth(node);
+        this.probes.add(task);
+        void task.then(() => this.probes.delete(task), error => { this.probes.delete(task); this.diagnostics.push(error); });
+    }
+    public async shutdown(): Promise<void> {
+        this.closing = true;
+        if (this.discoveryInterval) clearInterval(this.discoveryInterval);
+        this.discoveryInterval = undefined;
+        for (const controller of this.controllers) controller.abort();
+        await Promise.allSettled([...this.probes]);
     }
 
     public registerNode(projectId: string, url: string, category: any = 'DEV') {
+        if (this.closing) throw new Error('NeuroLink closed');
         if (this.nodes.has(projectId)) return;
 
         const node: NeuroLinkNode = {
@@ -29,7 +50,7 @@ export class NeuroLinkService {
         };
 
         this.nodes.set(projectId, node);
-        this.checkNodeHealth(node); // Immediate check
+        this.probe(node); // Immediate check
     }
 
     public getNodes(): NeuroLinkNode[] {
@@ -66,24 +87,25 @@ export class NeuroLinkService {
         // Real Service Discovery Loop
         this.discoveryInterval = setInterval(() => {
             this.nodes.forEach(node => {
-                this.checkNodeHealth(node);
+                this.probe(node);
             });
         }, 5000); // Check every 5 seconds
     }
 
     private async checkNodeHealth(node: NeuroLinkNode) {
         const start = Date.now();
+        const controller = new AbortController();
+        this.controllers.add(controller);
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
         try {
             // Real HTTP Ping
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 2000);
 
             const res = await fetch(node.url, {
                 method: 'HEAD',
                 signal: controller.signal
             });
 
-            clearTimeout(timeoutId);
+            if (this.closing) return;
 
             if (res.ok || res.status === 404) { // 404 means server is up but maybe no root route
                 node.status = NeuroLinkStatus.CONNECTED;
@@ -96,9 +118,11 @@ export class NeuroLinkService {
                 node.status = NeuroLinkStatus.DISCONNECTED;
             }
         } catch (e) {
+            this.diagnostics.push({ error: e, disposition: 'DEGRADED_FALLBACK', originalCapability: 'UNAVAILABLE' });
+            if (this.closing) return;
             node.status = NeuroLinkStatus.DISCONNECTED;
             node.latency = -1;
-        }
+        } finally { clearTimeout(timeoutId); this.controllers.delete(controller); }
     }
 }
 

@@ -92,6 +92,10 @@ export interface IChannel {
     /** Initialize the channel connection */
     connect(): Promise<void>;
 
+    /** Optional synchronous initiation only: fence callbacks/acquisitions before
+     * parent drain. disconnect() must await the same final shutdown receipt. */
+    beginShutdown?():void;
+
     /** Gracefully disconnect */
     disconnect(): Promise<void>;
 
@@ -99,7 +103,10 @@ export interface IChannel {
     send(message: OutgoingMessage): Promise<string | null>;
 
     /** Register a message handler */
-    onMessage(handler: MessageHandler): void;
+    onMessage(handler:MessageHandler):void|(()=>void);
+
+    /** Optional application ownership report, not an SDK-internal drain proof. */
+    getLifecycleStatus?():unknown;
 
     /** Get channel status */
     getStatus(): ChannelStatus;

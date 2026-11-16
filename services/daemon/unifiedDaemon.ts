@@ -1,3 +1,5 @@
+import { ResourceScope } from '../../server/runtime/resourceScope';
+import { subscribeScoped } from '../runtime/scopedSubscription';
 /**
  * 🧠 SILHOUETTE AGENCY OS - UNIFIED DAEMON (STATEFUL)
  * ==============================================================================
@@ -54,6 +56,19 @@ export class UnifiedDaemon {
 
     private tasks: DaemonTask[] = [];
 
+    private readonly operations = new ResourceScope('unified-daemon');
+    private startup?: Promise<void>;
+    private stopTask?: Promise<unknown>;
+    private restored = false;
+    private requestRestart?: () => Promise<void>;
+    public setRestartHandler(handler: () => Promise<void>): void {
+        this.operations.assertAccepting();
+        if (this.startup) throw new Error('Set executable restart handler before daemon start');
+        this.requestRestart = handler;
+    }
+    private saveQueue: Promise<void> = Promise.resolve();
+    public shutdown() { this.stop(); return this.operations.close(); }
+    public getLifecycleStatus() { return { restored: this.restored, diagnostics: this.operations.getDiagnostics(), failures: this.operations.getFailures() }; }
     constructor() {
         this.initializeTasks();
     }
@@ -112,12 +127,19 @@ export class UnifiedDaemon {
         });
     }
 
-    public async start() {
+    public start(): Promise<void> {
+        if (!this.startup) this.startup = this.operations.run('daemon-start', () => this.startOnce());
+        return this.startup;
+    }
+    private async startOnce() {
         if (this.isRunning) return;
         this.isRunning = true;
 
         console.log('[DAEMON] 🔋 Starting Unified Cognitive Daemon...');
+        this.operations.own({ name: 'daemon-final-state', flush: async () => { if (this.restored) await this.saveState(); }, close: () => undefined });
         await this.loadState();
+        this.restored = true;
+        this.operations.assertAccepting();
 
         // [SECURITY] Real readers for autonomy config: proactive tasks (the
         // ones that wake agents, evolve the system or narrate) run ONLY when
@@ -143,27 +165,28 @@ export class UnifiedDaemon {
         }
 
         // Start internal tick system
-        this.checkInterval = setInterval(() => this.tick(), this.TICK_INTERVAL_MS);
+        this.checkInterval = setInterval(() => { if (this.operations.accepting && this.isRunning) void this.tick().catch(() => undefined); }, this.TICK_INTERVAL_MS);
+        const timer = this.checkInterval;
+        this.operations.own({ name: 'daemon-tick', stopIntake: () => { clearInterval(timer); this.isRunning = false; }, close: () => clearInterval(timer) });
 
         // Run first tick immediately
-        this.tick();
+        void this.tick().catch(() => undefined);
 
         // [PA-051] OS Dynamic Reload Hook (For Enterprise Plugins)
-        import('../../services/systemBus').then(({ systemBus }) => {
-            import('../../types').then(({ SystemProtocol }) => {
-                systemBus.subscribe(SystemProtocol.SYSTEM_RESTART_REQUEST, async (event: any) => {
-                    console.warn('[DAEMON] 🚨 SYSTEM_RESTART_REQUEST RECEIVED!');
-                    console.warn(`[DAEMON] ♻️ Initiating Graceful Shutdown (Requested by: ${event.initiator})...`);
-                    this.stop();
-
-                    // Allow 1 second for immediate async writes to finish natively (like logs)
-                    setTimeout(() => {
-                        console.warn('[DAEMON] 💀 Exiting process to allow Janus Supervisor reboot...');
-                        process.exit(0);
-                    }, 1000);
-                });
-            });
-        }).catch(err => console.error('[DAEMON] Failed to bind restart hooks', err));
+        const { systemBus } = await import('../../services/systemBus');
+        const { SystemProtocol } = await import('../../types');
+        this.operations.assertAccepting();
+        subscribeScoped(this.operations, systemBus, SystemProtocol.SYSTEM_RESTART_REQUEST, () => {
+            // Executable owns restart/exit. No library process.exit or sleep-as-drain.
+            if (!this.requestRestart) {
+                this.operations.recordFailure('restart-unbound', new Error('Executable restart coordination is not bound'));
+                return;
+            }
+            // Do not await executable shutdown from inside this owner's callback:
+            // it must drain this very callback. Dispatch the request synchronously;
+            // executable owns its completion receipt, timeout, and exit outcome.
+            void this.requestRestart().catch(error => this.operations.recordFailure('executable-restart', error));
+        });
     }
 
     /** Scheduler state, not a claim of thought quality or completed cognition. */
@@ -182,13 +205,17 @@ export class UnifiedDaemon {
             clearInterval(this.checkInterval);
             this.checkInterval = null;
         }
-        this.saveState(); // Save state on shutdown
+        this.stopTask = this.operations.run('daemon-stop-save', () => this.saveState());
+        void this.stopTask.catch(() => undefined);
     }
 
     private async tick() {
+        return this.operations.run('tick', async () => {
+
         const now = Date.now();
 
         for (const task of this.tasks) {
+            if (!this.operations.accepting || !this.isRunning) break;
             if (!task.enabled) continue;
 
             const timeSinceLastRun = now - (task.lastRun || 0);
@@ -220,6 +247,10 @@ export class UnifiedDaemon {
                     continue;
                 }
 
+                if (!this.operations.accepting || !this.isRunning) {
+                    await redisClient.releaseLock(lockKey);
+                    break;
+                }
                 const t0 = Date.now();
                 daemonLog.info({ task: task.name }, '▶ inicio');
 
@@ -231,12 +262,15 @@ export class UnifiedDaemon {
                 } catch (error: any) {
                     task.lastRun = Date.now(); // Prevent immediate retry loops
                     task.errCount = (task.errCount || 0) + 1;
+                    this.operations.recordDiagnostic(`daemon-task:${task.name}`, error, 'OPERATION_REJECTED', 'UNAVAILABLE');
                     console.error(`[DAEMON: FAULT] ❌ ${task.name} failed (Attempt #${task.errCount}):`, error.message);
                 }
 
                 await this.saveState();
             }
         }
+    
+        });
     }
 
     // ─── STATE PERSISTENCE ────────────────────────────────────────────────
@@ -258,16 +292,19 @@ export class UnifiedDaemon {
         } catch (e: any) {
             if (e.code !== 'ENOENT') {
                 console.warn(`[DAEMON] Failed to load state: ${e.message}`);
-                // Quarantine, never delete: keep the unreadable file for
-                // forensics and boot fresh instead of warning on every load.
-                try {
-                    await fs.rename(this.STATE_FILE, `${this.STATE_FILE}.corrupt-${Date.now()}`);
-                } catch { /* quarantine is best-effort */ }
+                this.operations.recordFailure('daemon-state-recovery', e);
+                throw e; // Preserve corrupt source; never boot fresh then overwrite it.
+
             }
         }
     }
 
-    private async saveState() {
+    private saveState(): Promise<void> {
+        const task = this.saveQueue.then(() => this.saveStateOnce());
+        this.saveQueue = task.catch(() => undefined);
+        return task;
+    }
+    private async saveStateOnce() {
         try {
             const state: DaemonState = {
                 tasks: {},
@@ -286,24 +323,26 @@ export class UnifiedDaemon {
             // over the state file. An unclean exit mid-write then leaves the
             // previous good file intact instead of a truncated one (observed
             // in prod: repeated "Unexpected end of JSON input" load failures).
-            const tmpFile = `${this.STATE_FILE}.tmp`;
+            const tmpFile = `${this.STATE_FILE}.${process.pid}.${crypto.randomUUID()}.tmp`;
             const payload = JSON.stringify(state, null, 2);
-            const handle = await fs.open(tmpFile, 'w');
             try {
-                await handle.writeFile(payload, 'utf-8');
-                await handle.sync();
-            } finally {
-                await handle.close();
-            }
-            await fs.rename(tmpFile, this.STATE_FILE);
+                const handle = await fs.open(tmpFile, 'w');
+                try { await handle.writeFile(payload, 'utf-8'); await handle.sync(); }
+                finally { await handle.close(); }
+                await fs.rename(tmpFile, this.STATE_FILE);
+            } finally { await fs.rm(tmpFile, { force: true }); }
         } catch (e: any) {
+            this.operations.recordFailure('daemon-state-durability', e);
             console.warn(`[DAEMON] Failed to save state: ${e.message}`);
+            throw e;
         }
     }
 
     // ─── TASK IMPLEMENTATIONS ─────────────────────────────────────────────
 
     private async runHeartbeatTask() {
+        return this.operations.run('runHeartbeatTask', async () => {
+
         const { orchestrator } = await import('../orchestrator');
         const actors = orchestrator.getActiveActors();
 
@@ -344,9 +383,13 @@ export class UnifiedDaemon {
         if (awokenCount > 0) {
             console.log(`[DAEMON: HEARTBEAT] 💓 Awakened ${awokenCount}/${actors.length} agents.`);
         }
+    
+        });
     }
 
     private async runNarratorTask() {
+        return this.operations.run('runNarratorTask', async () => {
+
         const thought = await thoughtNarrator.generateNarrative();
         try {
             const { consciousness } = await import('../consciousnessEngine');
@@ -356,9 +399,13 @@ export class UnifiedDaemon {
         } catch (e: any) {
             console.warn(`[CONSCIOUSNESS] Tick failed: ${e.message}`);
         }
+    
+        });
     }
 
     private async runEvolutionGoalsTask() {
+        return this.operations.run('runEvolutionGoalsTask', async () => {
+
         try {
             const { introspection } = await import('../introspectionEngine');
             await introspection.runCognitiveCycle();
@@ -371,9 +418,13 @@ export class UnifiedDaemon {
         if (typeof evolutionScheduler['executeActiveGoals'] === 'function') {
             await (evolutionScheduler as any)['executeActiveGoals']();
         }
+    
+        });
     }
 
     private async runCuriosityTask() {
+        return this.operations.run('runCuriosityTask', async () => {
+
         console.log('[COGNITIVE: CURIOSITY] 🔍 Seeking knowledge gaps from graph...');
         const { curiosity } = await import('../curiosityService');
         const { advancedDiscovery } = await import('../cognitive/advancedDiscovery');
@@ -437,9 +488,13 @@ export class UnifiedDaemon {
         }
 
         await curiosity.triggerResearch();
+    
+        });
     }
 
     private async runToolEvolutionTask() {
+        return this.operations.run('runToolEvolutionTask', async () => {
+
         // @ts-ignore 
         if (typeof evolutionScheduler['runToolEvolutionCycle'] === 'function') {
             await (evolutionScheduler as any)['runToolEvolutionCycle']();
@@ -457,9 +512,13 @@ export class UnifiedDaemon {
         } catch (e: any) {
             console.warn(`[COGNITIVE: LEARNING] Analysis failed: ${e.message}`);
         }
+    
+        });
     }
 
     private async runJanitorTask() {
+        return this.operations.run('runJanitorTask', async () => {
+
         // Janitor Truth Evaluation Engine v2 (services/janitor/janitorService.ts).
         // Eternal-memory safe: the engine has no delete path. DRY-RUN by default
         // (JANITOR_DRY_RUN=true): it records verified proposals to the ledger
@@ -490,6 +549,8 @@ export class UnifiedDaemon {
         } catch (e: any) {
             console.warn(`[COGNITIVE: JANITOR] stale task sweep failed (non-blocking): ${e?.message}`);
         }
+    
+        });
     }
 
     // [AUTONOMOUS-SCHEDULER] Self-improvement cycles. The scheduler owns
@@ -497,6 +558,8 @@ export class UnifiedDaemon {
     // deferral, daily cap, one active cycle, human PR gate); this task is
     // only the timer. It never throws into the daemon loop.
     private async runSelfDevTask() {
+        return this.operations.run('runSelfDevTask', async () => {
+
         try {
             const { runSelfDevSchedulerOnce } = await import('../selfdev/scheduler');
             const decision = await runSelfDevSchedulerOnce();
@@ -506,9 +569,13 @@ export class UnifiedDaemon {
         } catch (e: any) {
             console.warn(`[COGNITIVE: SELFDEV] scheduler error (contained): ${e?.message}`);
         }
+    
+        });
     }
 
     private async runDreamerTask() {
+        return this.operations.run('runDreamerTask', async () => {
+
         console.log('[COGNITIVE: DREAMER] 🌙 Starting deep memory consolidation...');
 
         // 1. Sync recent concepts to vector store
@@ -584,6 +651,8 @@ export class UnifiedDaemon {
         }
 
         console.log('[COGNITIVE: DREAMER] 🌙 Deep consolidation complete.');
+    
+        });
     }
 }
 

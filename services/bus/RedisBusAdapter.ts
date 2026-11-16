@@ -6,6 +6,11 @@ export class RedisBusAdapter implements IBusAdapter {
     private pubClient: RedisClientType;
     private subClient: RedisClientType;
     private isConnected: boolean = false;
+    private closing = false;
+    private connectionTask?: Promise<void>;
+    private closingTask?: Promise<void>;
+    private readonly diagnostics: unknown[] = [];
+    public getDiagnostics(): readonly unknown[] { return [...this.diagnostics]; }
     private listeners: Record<string, ((event: ProtocolEvent) => void)[]> = {};
 
     constructor(url?: string) {
@@ -25,23 +30,32 @@ export class RedisBusAdapter implements IBusAdapter {
         this.subClient = createClient(redisOptions);
 
         this.pubClient.on('error', (err) => {
+            this.diagnostics.push({ resource: 'redis-bus-pub', error: err });
             // Uncomment to debug detailed Redis connection errors
             // console.error('[REDIS PUB ERROR]', err.message)
         });
         this.subClient.on('error', (err) => {
+            this.diagnostics.push({ resource: 'redis-bus-sub', error: err });
             // console.error('[REDIS SUB ERROR]', err.message)
         });
     }
 
-    async connect(): Promise<void> {
-        if (this.isConnected) return;
+    connect(): Promise<void> {
+        if (this.closing) return Promise.reject(new Error('RedisBusAdapter closed'));
+        if (this.isConnected) return Promise.resolve();
+        if (this.connectionTask) return this.connectionTask;
+        this.connectionTask = this.connectOnce().finally(() => { this.connectionTask = undefined; });
+        return this.connectionTask;
+    }
+    private async connectOnce(): Promise<void> {
         await this.pubClient.connect();
+        if (this.closing) throw new Error('Redis bus closed during connect');
         await this.subClient.connect();
-        this.isConnected = true;
         console.log("[BUS] Redis Adapter Connected.");
 
         // Subscribe to global channel for events
         await this.subClient.subscribe('silhouette:events', (message) => {
+            if (this.closing) return;
             try {
                 const event: ProtocolEvent = JSON.parse(message);
                 this.handleIncomingEvent(event);
@@ -49,6 +63,8 @@ export class RedisBusAdapter implements IBusAdapter {
                 console.error("[REDIS] Failed to parse event", e);
             }
         });
+        if (this.closing) throw new Error('Redis bus closed during subscribe');
+        this.isConnected = true;
     }
 
     private handleIncomingEvent(event: ProtocolEvent) {
@@ -57,10 +73,23 @@ export class RedisBusAdapter implements IBusAdapter {
         }
     }
 
-    async disconnect(): Promise<void> {
-        await this.pubClient.disconnect();
-        await this.subClient.disconnect();
-        this.isConnected = false;
+    disconnect(): Promise<void> {
+        if (this.closingTask) return this.closingTask;
+        this.closing = true;
+        this.closingTask = (async () => {
+            if (this.connectionTask) await this.connectionTask.catch(() => undefined);
+            const results = await Promise.allSettled([this.pubClient, this.subClient].map(async client => {
+                if (client.isOpen) await client.disconnect();
+            }));
+            this.isConnected = false;
+            this.listeners = {};
+            const errors = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected').map(r => r.reason);
+            if (errors.length) throw new AggregateError(errors, 'Redis bus clients failed closure');
+        })();
+        return this.closingTask;
+    }
+    unsubscribe(protocol: SystemProtocol, handler: (event: ProtocolEvent) => void): void {
+        this.listeners[protocol] = (this.listeners[protocol] || []).filter(listener => listener !== handler);
     }
 
     async publish(event: ProtocolEvent): Promise<void> {
@@ -72,7 +101,8 @@ export class RedisBusAdapter implements IBusAdapter {
         // await this.pubClient.xAdd('silhouette:stream', '*', { event: JSON.stringify(event) });
     }
 
-    async subscribe(protocol: SystemProtocol, handler: (event: ProtocolEvent) => void): Promise<void> {
+    subscribe(protocol: SystemProtocol, handler: (event: ProtocolEvent) => void): void {
+        if (this.closing) throw new Error('RedisBusAdapter closed');
         if (!this.listeners[protocol]) {
             this.listeners[protocol] = [];
         }

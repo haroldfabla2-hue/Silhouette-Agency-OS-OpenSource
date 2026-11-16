@@ -107,17 +107,32 @@ function handleError(err: unknown, res: import('express').Response): void {
  * OAuth connect routes answer 503 token-store-unavailable.
  */
 let defaultRouter: Router | undefined;
+let defaultManager: ConnectionManager | undefined;
+let defaultStore: AccountStore | undefined;
+export function prepareConnectionStore(): void {
+    connectionRoutes();
+    const dbPath = process.env.SILHOUETTE_ACCOUNTS_DB_PATH
+        ? path.resolve(process.env.SILHOUETTE_ACCOUNTS_DB_PATH)
+        : path.join(process.cwd(), 'db', 'provider-accounts.sqlite');
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+    defaultStore!.open();
+}
+export async function closeConnectionRoutes() {
+    if (defaultManager) await defaultManager.shutdown();
+}
 
 export function connectionRoutes(): Router {
     if (!defaultRouter) {
         const dbPath = process.env.SILHOUETTE_ACCOUNTS_DB_PATH
             ? path.resolve(process.env.SILHOUETTE_ACCOUNTS_DB_PATH)
             : path.join(process.cwd(), 'db', 'provider-accounts.sqlite'); // matches services/database DB_DIR convention
-        fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+
         const tokens = TokenFileStore.isAvailable()
             ? new TokenFileStore(path.join(process.cwd(), 'db'))
             : undefined;
-        defaultRouter = createConnectionRouter(new ConnectionManager(new AccountStore(dbPath), tokens));
+        defaultStore = new AccountStore(dbPath);
+        defaultManager = new ConnectionManager(defaultStore, tokens);
+        defaultRouter = createConnectionRouter(defaultManager);
     }
     return defaultRouter;
 }

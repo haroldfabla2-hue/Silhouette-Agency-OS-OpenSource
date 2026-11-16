@@ -1,3 +1,5 @@
+import { ResourceScope } from '../server/runtime/resourceScope';
+import { subscribeScoped } from './runtime/scopedSubscription';
 import {ConfirmationUnavailableError} from './security/confirmationOutcome';
 import {currentPrincipal} from './security/principalContext';
 
@@ -31,9 +33,15 @@ interface PendingConfirmation {
     expiresAt: number;
     autoApprove?: boolean;
     resolve?: (approved: boolean) => void;
+    reject?: (error: unknown) => void;
 }
 
 export class ActionExecutor {
+    private readonly operations = new ResourceScope('ActionExecutor');
+    private started = false;
+    public shutdown() { return this.operations.close(); }
+    public getLifecycleDiagnostics() { return this.operations.getDiagnostics(); }
+    public getLifecycleFailures() { return this.operations.getFailures(); }
     private sandboxRoot: string;
     private sandboxMode: boolean = true; // Default: Only allow sandbox
     private gitSafetyEnabled: boolean = true;
@@ -45,16 +53,29 @@ export class ActionExecutor {
     constructor() {
         this.sandboxRoot = path.join(process.cwd(), 'sandbox');
 
-        // [USER REQUEST] Allow disabling sandbox for testing
+        // Existing environment switch retained, not an authenticated approval.
         if (process.env.NO_SANDBOX === 'true') {
             console.warn("[ACTION EXECUTOR] ⚠️ SANDBOX DISABLED BY ENVIRONMENT VARIABLE");
             this.sandboxMode = false;
         }
 
-        this.ensureSandbox();
+    }
+    private startup?: Promise<void>;
+    public start(): Promise<void> {
+        if (this.startup) return this.startup;
+        this.startup = this.operations.run('action-executor-start', async () => {
+        await this.ensureSandbox();
+        this.operations.assertAccepting();
+        this.operations.own({ name: 'pending-confirmations', stopIntake: () => {
+            for (const confirmation of this.pendingConfirmations.values()) {
+                if (confirmation.timer) clearTimeout(confirmation.timer);
+                confirmation.reject?.(new ConfirmationUnavailableError('SHUTDOWN'));
+            }
+            this.pendingConfirmations.clear();
+        }, close: () => undefined });
 
         // [B5] Wire Webhooks into ActionExecutor
-        systemBus.subscribe(SystemProtocol.WEBHOOK_RECEIVED, (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.WEBHOOK_RECEIVED, (event) => {
             console.log(`[ACTION EXECUTOR] 🔔 Triggered by External Webhook: ${event.payload?.source}`);
             // By catching this globally on the bus, we can dispatch specific workflows automatically
             this.execute({
@@ -67,9 +88,12 @@ export class ActionExecutor {
                 timestamp: Date.now()
             }).catch(e => console.error("[ACTION EXECUTOR] Webhook dispatch failed", e));
         });
+        });
+        return this.startup;
     }
 
     public disableSandbox(enableGodMode: boolean = false) {
+        this.operations.assertWorkAccepted();
         if (enableGodMode) {
             console.warn("[ACTION EXECUTOR] ⚠️ GOD MODE ENABLED. SANDBOX DISABLED.");
             this.sandboxMode = false;
@@ -80,7 +104,9 @@ export class ActionExecutor {
         try {
             await fs.mkdir(this.sandboxRoot, { recursive: true });
         } catch (e) {
+            this.operations.recordFailure('action-sandbox-startup', e);
             console.error("[ACTION EXECUTOR] Failed to create sandbox:", e);
+            throw e;
         }
     }
 
@@ -88,6 +114,9 @@ export class ActionExecutor {
      * Main entry point for executing autonomous actions.
      */
     public async execute(action: AgentAction): Promise<ActionResult> {
+        return this.operations.run('execute', async () => {
+        await this.start();
+
         console.log(`[ACTION EXECUTOR] 🦾 Executing ${action.type} for ${action.agentId}`);
 
         try {
@@ -392,6 +421,8 @@ export class ActionExecutor {
                 timestamp: Date.now()
             };
         }
+    
+        });
     }
 
     // --- HANDLERS ---
@@ -537,6 +568,9 @@ export class ActionExecutor {
      * principal and expiry throw ConfirmationUnavailableError.
      */
     public async requestConfirmation(action: AgentAction, reason?: string): Promise<boolean> {
+        return this.operations.run('requestConfirmation', async () => {
+        await this.start();
+
         const riskLevel = this.assessRiskLevel(action);
 
         // Auto-approve low risk actions
@@ -560,6 +594,7 @@ export class ActionExecutor {
             expiresAt: Date.now() + this.confirmationTimeoutMs
         };
 
+        this.operations.assertAccepting();
         this.pendingConfirmations.set(confirmation.id, confirmation);
 
         // This bus is broadcast to all gateway clients. Never place action
@@ -573,6 +608,7 @@ export class ActionExecutor {
         // Wait for user response or timeout
         return new Promise((resolve,reject) => {
             confirmation.resolve = resolve;
+            confirmation.reject = reject;
 
             // Set timeout
             confirmation.timer=setTimeout(() => {
@@ -583,6 +619,8 @@ export class ActionExecutor {
                 }
             }, this.confirmationTimeoutMs);
         });
+    
+        });
     }
 
     /**
@@ -592,8 +630,13 @@ export class ActionExecutor {
      * Returns null on explicit rejection; unavailable/expired confirmation throws.
      */
     public async requestApproval(action: AgentAction, binding: ApprovalBinding, reason?: string): Promise<ApprovalGrant | null> {
+        return this.operations.run('requestApproval', async () => {
+        await this.start();
+
         const approved = await this.requestConfirmation(action, reason);
         return approved ? approvalGrants.issue(binding) : null;
+    
+        });
     }
 
     /** Verify and consume a grant. Fail-closed: anything but ok:true means DO NOT execute. */

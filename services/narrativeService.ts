@@ -1,3 +1,4 @@
+import { ResourceScope } from '../server/runtime/resourceScope';
 import { NarrativeState } from '../types';
 import { generateAgentResponse } from './geminiService';
 import { CommunicationLevel } from '../types';
@@ -35,6 +36,8 @@ class NarrativeService {
     }
 
     public async updateNarrative(lastUserMessage: string, lastAgentResponse: string) {
+        return this.operations.run('updateNarrative', async () => {
+
         // 1. FSM: Transition to PROCESSING immediately
         this.transition('PROCESSING', `Processing: ${lastUserMessage.substring(0, 40)}...`);
 
@@ -43,6 +46,8 @@ class NarrativeService {
         this.runSemanticUpdate(lastUserMessage, lastAgentResponse).finally(() => {
             // 3. FSM: Return to IDLE when done (or if failed)
             this.transition('IDLE', "System Ready");
+        });
+    
         });
     }
 
@@ -148,6 +153,8 @@ class NarrativeService {
 
     // --- COHERENCE ANALYSIS (New Capability) ---
     public async analyzeCoherence(thoughts: string[]): Promise<number> {
+        return this.operations.run('analyzeCoherence', async () => {
+
         if (!thoughts || thoughts.length === 0) return 0.5;
 
         // Debounce: If thoughts are short, don't waste API calls
@@ -197,6 +204,8 @@ class NarrativeService {
             console.warn("[NARRATIVE] All Coherence Checks Failed:", e);
             return 0.7; // Fallback neutral
         }
+    
+        });
     }
 
     // --- UNIFIED THOUGHT STREAM V2.0 (Hybrid Intelligent Narration) ---
@@ -223,14 +232,36 @@ class NarrativeService {
     private sourceStats: Map<string, number> = new Map();
     private totalEmissions = 0;
 
-    constructor() {
-        this.initializeStreamAggregator();
-        this.startBatchProcessor();
+    private readonly operations = new ResourceScope('narrative');
+    private startTask?: Promise<void>;
+    constructor() {}
+    public start(): Promise<void> {
+        if (this.startTask) return this.startTask;
+        this.startTask = this.operations.run('narrative-start', async () => {
+            await this.initializeStreamAggregator();
+            this.operations.assertAccepting();
+            this.startBatchProcessor();
+        }).catch(error => { this.operations.recordFailure('narrative-startup', error); throw error; });
+        return this.startTask;
+    }
+    public async shutdown() {
+        const report = await this.operations.close();
+        // Raw events were stored before presentation enqueue. Retain the queue
+        // and identify undelivered presentation, never silently erase or spend
+        // provider work during teardown to manufacture a green empty queue.
+        return { resources: report, queuedPresentation: [...this.narrationQueue], presentationComplete: this.narrationQueue.length === 0 };
+    }
+    private subscribeOwned(bus: typeof import('./systemBus').systemBus, protocol: import('../types').SystemProtocol, handler: (event: import('../types').ProtocolEvent) => unknown): void {
+        this.operations.assertAccepting();
+        const unsubscribe = bus.subscribe(protocol, event => {
+            if (this.operations.accepting) void this.operations.run(String(protocol), () => handler(event)).catch(() => undefined);
+        });
+        this.operations.own({ name: `narrative-subscription:${protocol}`, stopIntake: unsubscribe, close: unsubscribe });
     }
 
     private startBatchProcessor() {
         // Process queue every BATCH_INTERVAL
-        this.batchTimer = setInterval(async () => {
+        this.operations.interval('narration-batch', this.BATCH_INTERVAL, async () => {
             // [THROTTLE] PowerManager resource modes can pause narration
             // (isNarrativeEnabled). Resource hint, not authority: unreadable
             // -> full capability. Queued items are processed on a later tick.
@@ -238,10 +269,8 @@ class NarrativeService {
                 const { powerManager } = await import('./powerManager');
                 if (!powerManager.isNarrativeEnabled) return;
             } catch { /* throttle unavailable -> full capability */ }
-            this.processNarrationBatch().catch(e =>
-                console.error("[NARRATIVE] Batch processing error:", e)
-            );
-        }, this.BATCH_INTERVAL);
+            await this.processNarrationBatch();
+        });
     }
 
     private async initializeStreamAggregator() {
@@ -257,7 +286,7 @@ class NarrativeService {
         // ==========================================
 
         // 1. CONSCIOUS STREAM (Introspection + Thoughts)
-        systemBus.subscribe(SystemProtocol.THOUGHT_EMISSION, (event) => {
+        this.subscribeOwned(systemBus, SystemProtocol.THOUGHT_EMISSION, (event) => {
             // Extract MessageTag from metadata if present (from enhanced orchestrator)
             const messageTag = event.payload?._meta?.tag || MessageTag.SYSTEM;
 
@@ -280,13 +309,13 @@ class NarrativeService {
         });
 
         // 2. SUBCONSCIOUS STREAM (Intuitions & Gaps)
-        systemBus.subscribe(SystemProtocol.INTUITION_CONSOLIDATED, (event) => {
+        this.subscribeOwned(systemBus, SystemProtocol.INTUITION_CONSOLIDATED, (event) => {
             const content = `Consolidated Intuition: ${event.payload}`;
             const importance = this.classifyImportance('SUBCONSCIOUS', content);
             this.queueOrEmitThought('SUBCONSCIOUS', content, importance, { messageTag: MessageTag.TRIGGER });
         });
 
-        systemBus.subscribe(SystemProtocol.EPISTEMIC_GAP_DETECTED, (event) => {
+        this.subscribeOwned(systemBus, SystemProtocol.EPISTEMIC_GAP_DETECTED, (event) => {
             const payload = event.payload as any;
             const content = `Gap Detected: ${payload.question} (Confidence: ${payload.confidence})`;
             this.queueOrEmitThought('SUBCONSCIOUS', content, 0.85, {
@@ -296,7 +325,7 @@ class NarrativeService {
         });
 
         // 3. AGENCY STREAM (Task Assignments & Delegations)
-        systemBus.subscribe(SystemProtocol.TASK_ASSIGNMENT, (event) => {
+        this.subscribeOwned(systemBus, SystemProtocol.TASK_ASSIGNMENT, (event) => {
             const payload = event.payload as any;
             const taskDesc = payload.task || payload.taskType || 'unknown task';
             const content = `Delegating to Agent ${payload.agentId || payload.targetRole}: ${String(taskDesc).substring(0, 50)}...`;
@@ -307,7 +336,7 @@ class NarrativeService {
         });
 
         // 4. DISCOVERY STREAM (Completions & Breakthroughs) - NEW!
-        systemBus.subscribe(SystemProtocol.SYNTHESIS_COMPLETE, (event) => {
+        this.subscribeOwned(systemBus, SystemProtocol.SYNTHESIS_COMPLETE, (event) => {
             const payload = event.payload as any;
             const content = `Synthesis Complete: ${payload.summary || payload.title || 'Research synthesized'}`;
             this.queueOrEmitThought('CONSCIOUS', content, 0.95, {
@@ -316,7 +345,7 @@ class NarrativeService {
             });
         });
 
-        systemBus.subscribe(SystemProtocol.PAPER_GENERATION_COMPLETE, (event) => {
+        this.subscribeOwned(systemBus, SystemProtocol.PAPER_GENERATION_COMPLETE, (event) => {
             const payload = event.payload as any;
             const content = `Paper Generated: ${payload.title || 'Research paper completed'}`;
             this.queueOrEmitThought('CONSCIOUS', content, 1.0, {
@@ -326,7 +355,7 @@ class NarrativeService {
         });
 
         // 5. EVOLUTION STREAM (Agent Growth) - NEW!
-        systemBus.subscribe(SystemProtocol.AGENT_EVOLVED, (event) => {
+        this.subscribeOwned(systemBus, SystemProtocol.AGENT_EVOLVED, (event) => {
             const payload = event.payload as any;
             const content = `Agent Evolution: ${payload.agentId || 'An agent'} has evolved - ${payload.reason || 'capabilities improved'}`;
             this.queueOrEmitThought('AGENCY', content, 0.9, {
@@ -336,7 +365,7 @@ class NarrativeService {
         });
 
         // 6. RESEARCH STREAM (Research Requests) - NEW!
-        systemBus.subscribe(SystemProtocol.RESEARCH_REQUEST, (event) => {
+        this.subscribeOwned(systemBus, SystemProtocol.RESEARCH_REQUEST, (event) => {
             const payload = event.payload as any;
             const query = payload.query || payload.topic || payload.question || 'unknown topic';
             const content = `Research Initiated: Investigating "${String(query).substring(0, 60)}"`;
@@ -347,7 +376,7 @@ class NarrativeService {
         });
 
         // 7. MEMORY STREAM (Memory Events) - NEW!
-        systemBus.subscribe(SystemProtocol.MEMORY_FLUSH, (event) => {
+        this.subscribeOwned(systemBus, SystemProtocol.MEMORY_FLUSH, (event) => {
             const payload = event.payload as any;
             const content = `Memory Archive: ${payload.message || 'Archiving context to long-term memory'}`;
             this.queueOrEmitThought('UNCONSCIOUS', content, 0.5, {
@@ -366,7 +395,7 @@ class NarrativeService {
         // ═══════════════════════════════════════════════════════════════
 
         // 9. TOOL EXECUTION (What tools am I using?)
-        systemBus.subscribe(SystemProtocol.TOOL_EXECUTION, (event) => {
+        this.subscribeOwned(systemBus, SystemProtocol.TOOL_EXECUTION, (event) => {
             const payload = event.payload as any;
             const toolName = payload.toolName || payload.tool || 'unknown tool';
             const result = payload.success ? '✅ succeeded' : '❌ failed';
@@ -379,7 +408,7 @@ class NarrativeService {
         });
 
         // 10. USER MESSAGE (Direct creator communication)
-        systemBus.subscribe(SystemProtocol.USER_MESSAGE, (event) => {
+        this.subscribeOwned(systemBus, SystemProtocol.USER_MESSAGE, (event) => {
             const payload = event.payload as any;
             const message = payload.message || payload.content || 'received message';
             const content = `My creator says: "${String(message).substring(0, 100)}"`;
@@ -391,7 +420,7 @@ class NarrativeService {
         });
 
         // 11. MOOD CHANGE (Emotional transitions)
-        systemBus.subscribe(SystemProtocol.MOOD_CHANGE, (event) => {
+        this.subscribeOwned(systemBus, SystemProtocol.MOOD_CHANGE, (event) => {
             const payload = event.payload as any;
             const from = payload.from || 'neutral';
             const to = payload.to || payload.mood || 'unknown';
@@ -404,7 +433,7 @@ class NarrativeService {
         });
 
         // 12. IMPROVEMENT LOGGED (Self-improvement)
-        systemBus.subscribe(SystemProtocol.IMPROVEMENT_LOGGED, (event) => {
+        this.subscribeOwned(systemBus, SystemProtocol.IMPROVEMENT_LOGGED, (event) => {
             const payload = event.payload as any;
             const improvement = payload.description || payload.improvement || 'self-optimized';
             const content = `Self-Improvement: ${improvement}`;
@@ -416,7 +445,7 @@ class NarrativeService {
         });
 
         // 13. SKILL LEARNED (New capability)
-        systemBus.subscribe(SystemProtocol.SKILL_LEARNED, (event) => {
+        this.subscribeOwned(systemBus, SystemProtocol.SKILL_LEARNED, (event) => {
             const payload = event.payload as any;
             const skill = payload.skill || payload.capability || 'new capability';
             const content = `New Skill Acquired: I can now ${skill}`;
@@ -428,7 +457,7 @@ class NarrativeService {
         });
 
         // 14. ERROR RECOVERED (Self-healing)
-        systemBus.subscribe(SystemProtocol.ERROR_RECOVERED, (event) => {
+        this.subscribeOwned(systemBus, SystemProtocol.ERROR_RECOVERED, (event) => {
             const payload = event.payload as any;
             const error = payload.error || 'an issue';
             const solution = payload.solution || 'self-corrected';
@@ -441,7 +470,7 @@ class NarrativeService {
         });
 
         // 15. WORKFLOW UPDATE (Scheduler activity)
-        systemBus.subscribe(SystemProtocol.WORKFLOW_UPDATE, (event) => {
+        this.subscribeOwned(systemBus, SystemProtocol.WORKFLOW_UPDATE, (event) => {
             const payload = event.payload as any;
             const workflow = payload.name || payload.workflow || 'task';
             const status = payload.status || 'updated';
@@ -453,7 +482,7 @@ class NarrativeService {
         });
 
         // 16. GOAL UPDATED (Goal progress)
-        systemBus.subscribe(SystemProtocol.GOAL_UPDATED, (event) => {
+        this.subscribeOwned(systemBus, SystemProtocol.GOAL_UPDATED, (event) => {
             const payload = event.payload as any;
             const goal = payload.description || payload.goal || 'a goal';
             const progress = payload.progress || 0;
@@ -466,7 +495,7 @@ class NarrativeService {
         });
 
         // 17. CONNECTION EVENTS (System health)
-        systemBus.subscribe(SystemProtocol.CONNECTION_LOST, (event) => {
+        this.subscribeOwned(systemBus, SystemProtocol.CONNECTION_LOST, (event) => {
             const payload = event.payload as any;
             const service = payload.service || 'a service';
             const content = `Connection Issue: Lost contact with ${service}`;
@@ -476,7 +505,7 @@ class NarrativeService {
             });
         });
 
-        systemBus.subscribe(SystemProtocol.CONNECTION_RESTORED, (event) => {
+        this.subscribeOwned(systemBus, SystemProtocol.CONNECTION_RESTORED, (event) => {
             const payload = event.payload as any;
             const service = payload.service || 'a service';
             const content = `Connection Restored: Back online with ${service}`;
@@ -526,6 +555,8 @@ class NarrativeService {
         importance: number,
         metadata?: any
     ) {
+        return this.operations.run('queueOrEmitThought', async () => {
+
         // Record the original event before presentation dedupe, throttle or
         // provider work. Provider failure must not erase the source event.
         const { routeThought, shouldRecord } = await import('./narrativeFillerPolicy');
@@ -578,12 +609,16 @@ class NarrativeService {
             this.narrationQueue.push({ source, content, importance, metadata });
             console.log(`[NARRATIVE] 📥 Queued high-importance thought (${importance.toFixed(2)}): ${content.substring(0, 40)}...`);
         }
+    
+        });
     }
 
     /**
      * Processes the narration queue in batches
      */
     private async processNarrationBatch() {
+        return this.operations.run('processNarrationBatch', async () => {
+
         if (this.narrationQueue.length === 0) return;
 
         // Check congestion - accumulate thoughts instead of processing
@@ -601,7 +636,10 @@ class NarrativeService {
 
         // Always try cloud LLM first (ZhipuAI doesn't use local VRAM)
         // VRAM check only applies to Ollama fallback inside narrateWithLLM
-        await this.narrateWithLLM(batch);
+        try { await this.narrateWithLLM(batch); }
+        catch (error) { this.narrationQueue.unshift(...batch); throw error; }
+    
+        });
     }
 
     /**
@@ -958,6 +996,8 @@ Respuesta JSON:`;
         importance: number,
         metadata?: any
     ): Promise<void> {
+        return this.operations.run('persistNarrativeEvent', async () => {
+
         try {
             // 1. Store in ContinuumMemory for semantic search
             const { continuum } = await import('./continuumMemory');
@@ -1027,9 +1067,12 @@ Respuesta JSON:`;
                 console.log(`[NARRATIVE] 💾 Persisted: "${content.substring(0, 40)}..." (${source})`);
             }
         } catch (error) {
-            // Non-fatal - log but don't throw
+            this.operations.recordFailure('narrative-persistence', error);
+            // Public compatibility retains void, but owner must report durable failure.
             console.warn("[NARRATIVE] ⚠️ Persistence error (non-fatal):", error);
         }
+    
+        });
     }
 
     /**

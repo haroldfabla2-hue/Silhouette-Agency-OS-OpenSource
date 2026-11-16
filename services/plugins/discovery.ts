@@ -1,3 +1,7 @@
+/** This follow-up changes computed evaluation policy, NOT the accepted inventory
+ * or cooperative lifecycle contracts. Earlier R12 import/activation commentary
+ * below is historical; discovery now returns PENDING_EVALUATION without import. */
+import { inventoryPluginSources, type PluginSourceInventory } from './pluginInventory';
 /**
  * CUSTOM PLUGIN DISCOVERY (R12)
  *
@@ -19,10 +23,9 @@
 
 import fs from 'fs/promises';
 import path from 'path';
-import { pathToFileURL } from 'url';
 import { IPlugin } from './pluginInterface';
 
-export type PluginDiscoveryStatus = 'ACTIVATED' | 'DEACTIVATED';
+export type PluginDiscoveryStatus='ACTIVATED'|'DEACTIVATED'|'PENDING_EVALUATION';
 
 export interface PluginDiscoveryResult {
     file: string;
@@ -30,7 +33,10 @@ export interface PluginDiscoveryResult {
     status: PluginDiscoveryStatus;
     /** Why a plugin was deactivated (contract violation, import failure, ...) */
     reason?: string;
-    plugin?: IPlugin;
+    plugin?:IPlugin;
+    source?:PluginSourceInventory['entries'][number];
+    evaluation?:'NOT_STARTED';
+    activation?:'NOT_STARTED';
 }
 
 /**
@@ -91,35 +97,31 @@ export function validatePlugin(candidate: any): string | null {
 
 /**
  * Discover custom plugins on disk: import each candidate for real and
- * validate its contract. Nothing is registered or executed here - use
+ * validate its contract. Top-level module code IS executed by ESM import; use
  * loadCustomPlugins() for activation through the PluginRegistry.
  */
-export async function discoverCustomPlugins(dir: string = DEFAULT_CUSTOM_PLUGINS_DIR): Promise<PluginDiscoveryResult[]> {
+const discoveries = new Map<string, Promise<PluginDiscoveryResult[]>>();
+const inventories = new Map<string, PluginSourceInventory>();
+export function getPluginSourceInventories(): PluginSourceInventory[] { return [...inventories.values()]; }
+export function discoverCustomPlugins(dir: string = DEFAULT_CUSTOM_PLUGINS_DIR): Promise<PluginDiscoveryResult[]> {
+    const key = path.resolve(dir);
+    let pending = discoveries.get(key);
+    if (!pending) {
+        pending = discoverOnce(key);
+        discoveries.set(key, pending);
+    }
+    return pending;
+}
+async function discoverOnce(dir: string): Promise<PluginDiscoveryResult[]> {
     const results: PluginDiscoveryResult[] = [];
 
-    let files: string[] = [];
-    try {
-        files = await fs.readdir(dir);
-    } catch (e: any) {
-        if (e?.code === 'ENOENT') return results; // no custom dir: nothing to discover
-        throw e;
-    }
-
-    for (const file of files.filter(isCandidateFile).sort()) {
-        const fullPath = path.join(dir, file);
-        try {
-            const mod = await import(pathToFileURL(fullPath).href);
-            const candidate = mod.default ?? mod.plugin;
-            const rejection = validatePlugin(candidate);
-            if (rejection) {
-                results.push({ file, status: 'DEACTIVATED', reason: rejection });
-            } else {
-                const plugin = candidate as IPlugin;
-                results.push({ file, pluginId: plugin.id, status: 'ACTIVATED', plugin });
-            }
-        } catch (e: any) {
-            results.push({ file, status: 'DEACTIVATED', reason: `import failed: ${e?.message || String(e)}` });
-        }
+    const inventory = await inventoryPluginSources(dir);
+    inventories.set(dir, inventory);
+    // Keep the accepted complete deterministic inventory and provenance.
+    // Do not execute unknown module code just to validate its exported shape.
+    // Hashes/source flags are NOT approval, passivity or containment evidence.
+    for(const entry of inventory.entries) {
+        results.push({file:entry.file,status:'PENDING_EVALUATION',source:entry,evaluation:'NOT_STARTED',activation:'NOT_STARTED',reason:'Source inventoried only; computed module evaluation/top-level ownership and authenticated activation scope are not established'});
     }
 
     return results;
@@ -131,18 +133,10 @@ export async function discoverCustomPlugins(dir: string = DEFAULT_CUSTOM_PLUGINS
  * outcome so callers (integration hub, boot) can surface deactivated plugins
  * with their reason instead of hiding them.
  */
-export async function loadCustomPlugins(dir: string = DEFAULT_CUSTOM_PLUGINS_DIR): Promise<PluginDiscoveryResult[]> {
-    const { pluginRegistry } = await import('./pluginRegistry');
-    const results = await discoverCustomPlugins(dir);
-
-    for (const result of results) {
-        if (result.status === 'ACTIVATED' && result.plugin) {
-            pluginRegistry.register(result.plugin);
-            console.log(`[PluginDiscovery] 🔌 Custom plugin loaded: ${result.plugin.id} v${result.plugin.version} (from ${result.file})`);
-        } else {
-            console.warn(`[PluginDiscovery] ⛔ Custom plugin DEACTIVATED: ${result.file} - ${result.reason}`);
-        }
-    }
-
+export async function loadCustomPlugins(dir:string=DEFAULT_CUSTOM_PLUGINS_DIR):Promise<PluginDiscoveryResult[]> {
+    // Compatibility entry point preserves discovery requests. It does NOT
+    // import Registry or candidate modules to manufacture an activation receipt.
+    const results=await discoverCustomPlugins(dir);
+    for(const result of results)console.info('[PluginDiscovery] '+result.file+': '+result.status+' ('+result.reason+')');
     return results;
 }

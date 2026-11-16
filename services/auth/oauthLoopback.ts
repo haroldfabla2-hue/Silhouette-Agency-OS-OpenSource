@@ -48,6 +48,8 @@ export class OAuthCallbackError extends Error {}
 export interface AuthorizationCodeWaiter {
     port: number;
     waitForCode: Promise<{ code: string; port: number }>;
+    closed: Promise<void>;
+    close(): Promise<void>;
 }
 
 /**
@@ -61,46 +63,67 @@ export async function startAuthorizationCodeWaiter(options: {
     timeoutMs?: number;
     signal?: AbortSignal;
 }): Promise<AuthorizationCodeWaiter> {
+    if (options.signal?.aborted) throw new OAuthCallbackError('login cancelled');
     const path = options.path ?? '/callback';
     const timeoutMs = options.timeoutMs ?? 5 * 60 * 1000;
-    let server!: Server;
-    let boundPort = 0;
-    const waitForCode = new Promise<{ code: string; port: number }>((resolve, reject) => {
-        let settled = false;
-        const done = (fn: () => void) => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            options.signal?.removeEventListener('abort', onAbort);
-            server.close();
-            fn();
-        };
-        server = createServer((req, res) => {
-            try {
-                const url = new URL(req.url || '/', 'http://127.0.0.1');
-                if (url.pathname !== path) { res.writeHead(404).end('not found'); return; }
-                const state = url.searchParams.get('state');
-                const code = url.searchParams.get('code');
-                const error = url.searchParams.get('error');
-                if (error) { res.writeHead(200).end('Authorization failed; you can close this tab.'); done(() => reject(new OAuthCallbackError(`provider returned error: ${error}`))); return; }
-                if (!state || state !== options.state) { res.writeHead(400).end('Invalid state.'); done(() => reject(new OAuthCallbackError('state mismatch'))); return; }
-                if (!code) { res.writeHead(400).end('Missing code.'); return; }
-                res.writeHead(200).end('Authorization received; you can close this tab.');
-                done(() => resolve({ code, port: boundPort }));
-            } catch (err) { done(() => reject(err)); }
-        });
-        const timer = setTimeout(() => done(() => reject(new OAuthCallbackError('callback timeout'))), timeoutMs);
-        const onAbort = () => done(() => reject(new OAuthCallbackError('login cancelled')));
-        options.signal?.addEventListener('abort', onAbort, { once: true });
-        server.on('error', (err) => done(() => reject(err)));
+    let port = 0;
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let resolveCode!: (value: { code: string; port: number }) => void;
+    let rejectCode!: (error: unknown) => void;
+    const waitForCode = new Promise<{ code: string; port: number }>((resolve, reject) => { resolveCode = resolve; rejectCode = reject; });
+    // Attach immediately: cancellation can precede the caller receiving the waiter.
+    void waitForCode.catch(() => undefined);
+    let resolveClosed!: () => void;
+    let rejectClosed!: (error: unknown) => void;
+    const closed = new Promise<void>((resolve, reject) => { resolveClosed = resolve; rejectClosed = reject; });
+    void closed.catch(() => undefined);
+    let closeStarted = false;
+    let bound!: Promise<void>;
+    const closeServer = () => {
+        if (closeStarted) return closed;
+        closeStarted = true;
+        void bound.then(() => {
+            server.close(error => { if (error) rejectClosed(error); else resolveClosed(); });
+            server.closeIdleConnections();
+        }, () => resolveClosed());
+        return closed;
+    };
+    const finish = (error?: unknown, code?: string) => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        options.signal?.removeEventListener('abort', onAbort);
+        if (error) rejectCode(error); else resolveCode({ code: code!, port });
+        void closeServer();
+    };
+    const onAbort = () => finish(new OAuthCallbackError('login cancelled'));
+    const server = createServer((req, res) => {
+        try {
+            const url = new URL(req.url || '/', 'http://127.0.0.1');
+            if (url.pathname !== path) { res.writeHead(404).end('not found'); return; }
+            const state = url.searchParams.get('state');
+            const code = url.searchParams.get('code');
+            const error = url.searchParams.get('error');
+            if (error) { res.writeHead(200).end('Authorization failed; you can close this tab.'); finish(new OAuthCallbackError(`provider returned error: ${error}`)); return; }
+            if (!state || state !== options.state) { res.writeHead(400).end('Invalid state.'); finish(new OAuthCallbackError('state mismatch')); return; }
+            if (!code) { res.writeHead(400).end('Missing code.'); return; }
+            res.writeHead(200).end('Authorization received; you can close this tab.');
+            finish(undefined, code);
+        } catch (error) { finish(error); }
     });
-    await new Promise<void>((res, rej) => {
-        server.once('error', rej);
-        server.listen(options.port ?? 0, '127.0.0.1', res);
+    bound = new Promise<void>((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(options.port ?? 0, '127.0.0.1', () => { server.removeListener('error', reject); resolve(); });
     });
-    boundPort = (server.address() as any).port;
-    if (options.signal?.aborted) { server.close(); throw new OAuthCallbackError('login cancelled'); }
-    return { port: boundPort, waitForCode };
+    server.on('error', error => finish(error));
+    options.signal?.addEventListener('abort', onAbort, { once: true });
+    try { await bound; }
+    catch (error) { finish(error); await closed; throw error; }
+    port = (server.address() as import('node:net').AddressInfo).port;
+    if (options.signal?.aborted || settled) { finish(new OAuthCallbackError('login cancelled')); await closeServer(); throw new OAuthCallbackError('login cancelled'); }
+    timer = setTimeout(() => finish(new OAuthCallbackError('callback timeout')), timeoutMs);
+    return { port, waitForCode, closed, close: () => { finish(new OAuthCallbackError('login cancelled')); return closeServer(); } };
 }
 
 /** Convenience: start the waiter and await the callback in one call. */
@@ -112,7 +135,7 @@ export async function waitForAuthorizationCode(options: {
     signal?: AbortSignal;
 }): Promise<{ code: string; port: number }> {
     const waiter = await startAuthorizationCodeWaiter(options);
-    return waiter.waitForCode;
+    try { return await waiter.waitForCode; } finally { await waiter.closed; }
 }
 
 /** https everywhere; http only toward a loopback host (local test/dev authorization servers). */

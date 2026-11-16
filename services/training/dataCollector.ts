@@ -1,3 +1,5 @@
+import { ResourceScope } from '../../server/runtime/resourceScope';
+import { subscribeScoped } from '../runtime/scopedSubscription';
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -18,11 +20,24 @@ const DATA_DIR = path.join(process.cwd(), 'data', 'training');
 const DATA_FILE = path.join(DATA_DIR, 'dataset.jsonl');
 
 class DataCollectorService {
+    private readonly operations = new ResourceScope('DataCollectorService');
+    private started = false;
+    public async shutdown() {
+        const resources = await this.operations.close();
+        return { resources, buffered: [...this.buffer], persisted: this.buffer.length === 0 };
+    }
+    public getLifecycleDiagnostics() { return this.operations.getDiagnostics(); }
+    public getLifecycleFailures() { return this.operations.getFailures(); }
     private buffer: TrainingExample[] = [];
     private flushThreshold = 1; // [ROBUST] Persist immediately to avoid data loss on crash
 
-    constructor() {
+    constructor() {}
+    public start(): void {
+        this.operations.assertAccepting();
+        if (this.started) return;
+        this.operations.own({ name: 'training-buffer', flush: () => this.saveToDisk(), close: () => undefined });
         this.init();
+        this.started = true;
     }
 
     private init() {
@@ -32,7 +47,7 @@ class DataCollectorService {
         }
 
         // Subscribe to High Value Events
-        systemBus.subscribe(SystemProtocol.TRAINING_EXAMPLE_FOUND, (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.TRAINING_EXAMPLE_FOUND, (event) => {
             const { input, output, score, tags, source } = event.payload;
             this.collect(input, output, score, tags, source);
         });
@@ -41,6 +56,7 @@ class DataCollectorService {
     }
 
     public collect(input: string, output: string, score: number, tags: string[], source: string = 'User') {
+        this.operations.assertWorkAccepted();
         const example: TrainingExample = {
             id: `train_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             timestamp: Date.now(),
@@ -69,6 +85,7 @@ class DataCollectorService {
             console.log(`[DATA_COLLECTOR] 💾 Flushed ${this.buffer.length} examples to disk.`);
             this.buffer = []; // Clear buffer
         } catch (err) {
+            this.operations.recordFailure('training-dataset-durability', err);
             console.error("[DATA_COLLECTOR] ❌ Failed to save training data:", err);
         }
     }

@@ -1,3 +1,4 @@
+import { ownedHttpHandler } from '../../runtime/ownedHttpIngress';
 
 import { Router } from 'express';
 import { orchestratorController } from '../../controllers/orchestratorController';
@@ -7,19 +8,19 @@ import { orchestratorController } from '../../controllers/orchestratorController
 const router = Router();
 
 // Route: /v1/orchestrator/state
-router.get('/state', (req, res) => orchestratorController.getState(req, res));
+router.get('/state', ownedHttpHandler('orchestrator:GET:/state',(req, res) => orchestratorController.getState(req, res)));
 
 // Route: /v1/orchestrator/category
-router.post('/category', (req, res) => orchestratorController.toggleCategory(req, res));
+router.post('/category', ownedHttpHandler('orchestrator:POST:/category',(req, res) => orchestratorController.toggleCategory(req, res)));
 
 // Route: /v1/orchestrator/reassign
-router.post('/reassign', (req, res) => orchestratorController.reassignAgent(req, res));
+router.post('/reassign', ownedHttpHandler('orchestrator:POST:/reassign',(req, res) => orchestratorController.reassignAgent(req, res)));
 
 // Route: /v1/squads (Technically orchestrator related, keeping cohesive)
-router.get('/squads', (req, res) => orchestratorController.getSquads(req, res));
+router.get('/squads', ownedHttpHandler('orchestrator:GET:/squads',(req, res) => orchestratorController.getSquads(req, res)));
 
 // Route: /v1/agents
-router.get('/agents', (req, res) => orchestratorController.getAgents(req, res));
+router.get('/agents', ownedHttpHandler('orchestrator:GET:/agents',(req, res) => orchestratorController.getAgents(req, res)));
 
 // [LEDGER-INTEGRITY] Explicit, attributed reconciliation for durable
 // abandoned-step uncertainty (writer gone, partial effects uncertain).
@@ -27,7 +28,7 @@ router.get('/agents', (req, res) => orchestratorController.getAgents(req, res));
 // AuthN/Z is inherited from the existing authMiddleware (all /v1 routes);
 // attribution comes from the authenticated principal (session user or the
 // master-token identity), role CREATOR - never from the request body.
-router.post('/tasks/reconcile-abandoned', async (req, res) => {
+router.post('/tasks/reconcile-abandoned', ownedHttpHandler('orchestrator:POST:/tasks/reconcile-abandoned',async (req, res) => {
     try {
         const { reconcileAbandonedStepEffects, reconcileAttributionFor } = await import('../../../services/execution/taskLedger');
         const attributedTo = reconcileAttributionFor((req as any).user);
@@ -37,13 +38,13 @@ router.post('/tasks/reconcile-abandoned', async (req, res) => {
     } catch (e: any) {
         res.status(e?.statusCode ?? 500).json({ ok: false, error: e?.message });
     }
-});
+}));
 
 // PA-038: Route: /v1/orchestrator/evolve/:agentId
-router.post('/evolve/:agentId', (req, res) => orchestratorController.evolveAgent(req, res));
+router.post('/evolve/:agentId', ownedHttpHandler('orchestrator:POST:/evolve/:agentId',(req, res) => orchestratorController.evolveAgent(req, res)));
 
 // PA-039: Route: /v1/orchestrator/evolution-history
-router.get('/evolution-history', (req, res) => orchestratorController.getEvolutionHistory(req, res));
-router.get('/evolution-history/:agentId', (req, res) => orchestratorController.getEvolutionHistory(req, res));
+router.get('/evolution-history', ownedHttpHandler('orchestrator:GET:/evolution-history',(req, res) => orchestratorController.getEvolutionHistory(req, res)));
+router.get('/evolution-history/:agentId', ownedHttpHandler('orchestrator:GET:/evolution-history/:agentId',(req, res) => orchestratorController.getEvolutionHistory(req, res)));
 
 export default router;

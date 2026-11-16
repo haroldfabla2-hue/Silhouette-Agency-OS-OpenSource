@@ -1,3 +1,4 @@
+import { ResourceScope, ScopeClosingError } from '../../server/runtime/resourceScope';
 import { Agent, AgentStatus, AgentRoleType, AgentTier, AgentCategory, SystemMode, SystemProtocol, AgentCapability } from '../../types';
 import { llmGateway } from '../llmGateway';
 import { continuum } from '../continuumMemory';
@@ -20,6 +21,19 @@ export interface AgentContext {
  * and skill integration via Markdown files from the SkillRegistry.
  */
 export abstract class BaseAgent implements UniversalAgent {
+    private readonly operations = new ResourceScope('actor');
+    public shutdown() { return this.operations.close(); }
+    public getLifecycleStatus() { return { accepting:this.operations.accepting, diagnostics:this.operations.getDiagnostics(), failures:this.operations.getFailures() }; }
+    private pause(milliseconds:number):Promise<void> {
+        this.operations.signal.throwIfAborted();
+        return new Promise<void>((resolve,reject) => {
+            const done=() => { clearTimeout(timer); this.operations.signal.removeEventListener('abort',abort); };
+            const abort=() => { done(); reject(this.operations.signal.reason ?? new ScopeClosingError('actor')); };
+            const timer=setTimeout(() => { done(); resolve(); },milliseconds);
+            this.operations.signal.addEventListener('abort',abort,{once:true});
+            if(this.operations.signal.aborted) abort();
+        });
+    }
     // --- Persistence Metadata ---
     public readonly id: string;
     public name: string;
@@ -100,6 +114,8 @@ export abstract class BaseAgent implements UniversalAgent {
      * Internal monologue generation (<think> protocol)
      */
     public async think(missionContext?: string): Promise<string> {
+        return this.operations.run('think',async () => {
+
         this.status = AgentStatus.THINKING;
         this.lastActive = Date.now();
         this.emitState();
@@ -168,12 +184,16 @@ Format your response ENTIRELY inside <think>...</think> tags. Do not produce any
             this.emitState();
             throw error;
         }
+    
+        });
     }
 
     /**
      * Post-action reflection and adaptation
      */
     public async reflect(outcome: any): Promise<void> {
+        return this.operations.run('reflect',async () => {
+
         this.status = AgentStatus.THINKING;
         this.emitState();
 
@@ -200,6 +220,8 @@ If it was routine, just acknowledge it.
             this.status = AgentStatus.IDLE;
             this.emitState();
         }
+    
+        });
     }
 
     // ========================================================================
@@ -207,17 +229,25 @@ If it was routine, just acknowledge it.
     // ========================================================================
 
     public async readMemory(query: string, limit: number = 5): Promise<any> {
+        return this.operations.run('readMemory',async () => {
+
         // Query Continuum specifically (filter out other agents if needed, but for now global)
         const results = await continuum.retrieve(query, undefined, this.id);
         return results.slice(0, limit).map(m => m.content);
+    
+        });
     }
 
     public async writeMemory(fact: string): Promise<void> {
+        return this.operations.run('writeMemory',async () => {
+
         await continuum.store(
             fact,
             undefined, // no specific visual layout
             ['proactive_memory', this.id, this.roleType]
         );
+    
+        });
     }
 
     // ========================================================================
@@ -225,6 +255,8 @@ If it was routine, just acknowledge it.
     // ========================================================================
 
     public async checkEnvironment(): Promise<EnvironmentHealth> {
+        return this.operations.run('checkEnvironment',async () => {
+
         // Placeholder for real health checks. Devin-style environmental sweeps.
         const health: EnvironmentHealth = {
             docker: true,
@@ -236,9 +268,13 @@ If it was routine, just acknowledge it.
             }
         };
         return health;
+    
+        });
     }
 
     public reportBlocker(issue: string): void {
+        this.operations.assertWorkAccepted();
+
         systemBus.emit(SystemProtocol.SYSTEM_ALERT, {
             agentId: this.id,
             agentName: this.name,
@@ -258,6 +294,8 @@ If it was routine, just acknowledge it.
      * using its own tools before escalating to RemediationService.
      */
     public async executeTask(mission: string): Promise<string> {
+        return this.operations.run('executeTask',async () => {
+
         const MAX_HEAL_ATTEMPTS = 3;
         let healAttempt = 0;
         let lastError: Error | null = null;
@@ -268,6 +306,7 @@ If it was routine, just acknowledge it.
 
         try {
             while (healAttempt <= MAX_HEAL_ATTEMPTS) {
+                this.operations.signal.throwIfAborted();
                 try {
                     // ─── STEP 1: THINK ───────────────────────────────────
                     const missionContext = healAttempt === 0
@@ -340,12 +379,14 @@ If it was routine, just acknowledge it.
                             undefined,
                             ['self_heal', 'success', 'learning'],
                             true
-                        ).catch(() => { });
+                        ).catch(error => { this.operations.recordDiagnostic('memory-learning-write',error,'DEGRADED_FALLBACK','UNAVAILABLE'); });
                     }
 
                     return finalResult.trim();
 
                 } catch (innerError: any) {
+                    if (this.operations.signal.aborted) throw innerError;
+                    this.operations.recordDiagnostic('executeTask-attempt',innerError,'UNCLASSIFIED','UNVERIFIED');
                     lastError = innerError;
                     healAttempt++;
 
@@ -357,7 +398,7 @@ If it was routine, just acknowledge it.
                         undefined,
                         ['CRITICAL', 'SELF_HEAL_CANDIDATE', 'system_error', this.id],
                         true
-                    ).catch(() => { });
+                    ).catch(error => { this.operations.recordDiagnostic('memory-learning-write',error,'DEGRADED_FALLBACK','UNAVAILABLE'); });
 
                     if (healAttempt > MAX_HEAL_ATTEMPTS) {
                         // All self-heal attempts exhausted → escalate to RemediationService
@@ -366,7 +407,7 @@ If it was routine, just acknowledge it.
                         try {
                             const { RemediationService } = await import('../remediationService');
                             const remediation = RemediationService.getInstance();
-                            remediation.mobilizeSquad(this.id, [
+                            await remediation.mobilizeSquad(this.id, [
                                 `Mission: ${mission}`,
                                 `Error: ${innerError.message}`,
                                 `Self-heal attempts: ${MAX_HEAL_ATTEMPTS}`,
@@ -389,7 +430,7 @@ If it was routine, just acknowledge it.
                     }
 
                     // Brief pause before retry to avoid API hammering
-                    await new Promise(r => setTimeout(r, 2000));
+                    await this.pause(2000);
                 }
             }
 
@@ -400,6 +441,8 @@ If it was routine, just acknowledge it.
             this.status = AgentStatus.IDLE;
             this.emitState();
         }
+    
+        });
     }
 
     // ========================================================================

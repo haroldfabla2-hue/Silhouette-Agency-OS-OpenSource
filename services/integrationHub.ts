@@ -1,3 +1,5 @@
+import { ResourceScope } from '../server/runtime/resourceScope';
+import type { PluginDiscoveryResult } from './plugins/discovery';
 /**
  * INTEGRATION HUB (MCP-Style Server)
  * 
@@ -44,6 +46,24 @@ export interface IntegrationEvent {
 // ═══════════════════════════════════════════════════════════════════════════
 
 class IntegrationHub {
+    private readonly operations=new ResourceScope('integration-hub');
+    private initializing?:Promise<void>;
+    private initializationState:'NOT_STARTED'|'INITIALIZING'|'READY'|'DEGRADED'|'FAILED'='NOT_STARTED';
+    private readonly responseReceipts:Array<{name:string,state:'PENDING'|'FINISHED'|'CLOSED_BEFORE_FINISH'}>=[];
+    private pendingPlugins:PluginDiscoveryResult[]=[];
+    public getLifecycleStatus(){return {initializationState:this.initializationState,responseReceipts:this.responseReceipts,pendingPlugins:this.pendingPlugins,diagnostics:this.operations.getDiagnostics(),failures:this.operations.getFailures()};}
+    public shutdownLifecycle(){return this.operations.close();}
+    public initialize():Promise<void>{
+        if(!this.initializing){
+            this.initializationState='INITIALIZING';
+            this.initializing=this.operations.run('integration-hub-initialize',async()=>{
+                try {await this.loadProvidersFromSettings();this.initializationState=this.pendingPlugins.length||this.operations.getDiagnostics().length?'DEGRADED':'READY';}
+                catch(error){this.initializationState='FAILED';throw error;}
+            });
+        }
+        return this.initializing;
+    }
+
     private providers: Map<string, IntegrationProvider> = new Map();
     private recentEvents: IntegrationEvent[] = [];
     private router: Router;
@@ -51,13 +71,15 @@ class IntegrationHub {
     constructor() {
         this.router = Router();
         this.setupWebhookRoutes();
-        this.loadProvidersFromSettings();
+        // No async settings read/custom scan or provider work at construction.
     }
 
     /**
      * Get the Express router for webhook endpoints
      */
     public getRouter(): Router {
+        this.operations.assertWorkAccepted();
+
         return this.router;
     }
 
@@ -65,6 +87,8 @@ class IntegrationHub {
      * Register a new integration provider
      */
     public registerProvider(provider: Omit<IntegrationProvider, 'eventCount' | 'lastEvent'>): void {
+        this.operations.assertWorkAccepted();
+
         const fullProvider: IntegrationProvider = {
             ...provider,
             eventCount: 0
@@ -80,6 +104,8 @@ class IntegrationHub {
      * Enable/disable a provider
      */
     public toggleProvider(providerId: string, enabled: boolean): boolean {
+        this.operations.assertWorkAccepted();
+
         const provider = this.providers.get(providerId);
         if (provider) {
             provider.enabled = enabled;
@@ -94,6 +120,8 @@ class IntegrationHub {
      * Get all registered providers
      */
     public getProviders(): IntegrationProvider[] {
+        this.operations.assertWorkAccepted();
+
         return Array.from(this.providers.values());
     }
 
@@ -101,6 +129,8 @@ class IntegrationHub {
      * Get recent events
      */
     public getRecentEvents(limit: number = 20): IntegrationEvent[] {
+        this.operations.assertWorkAccepted();
+
         return this.recentEvents.slice(-limit);
     }
 
@@ -108,6 +138,8 @@ class IntegrationHub {
      * Process an incoming event
      */
     public processEvent(providerId: string, eventType: string, payload: any): void {
+        this.operations.assertWorkAccepted();
+
         const provider = this.providers.get(providerId);
 
         if (!provider) {
@@ -149,45 +181,87 @@ class IntegrationHub {
         console.log(`[INTEGRATION_HUB] 📥 Event received: ${provider.name} → ${eventType}`);
 
         // Handle specific event types
-        this.routeEvent(event);
+        void this.routeEvent(event).catch(()=>{/* actual task retained by operations */});
     }
 
     // ═══════════════════════════════════════════════════════════════════════
     // PRIVATE METHODS
     // ═══════════════════════════════════════════════════════════════════════
 
+    private endpoint(name:string,handler:(req:Request,res:Response)=>Promise<void>) {
+        return (req:Request,res:Response):void=>{
+            // The HTTP server owner must stop new sockets/requests globally.
+            // This application owner accepts no new handler work after quiesce.
+            if(!this.operations.accepting){res.destroy();return;}
+            const receipt:{name:string,state:'PENDING'|'FINISHED'|'CLOSED_BEFORE_FINISH'}={name,state:'PENDING'};
+            this.responseReceipts.push(receipt);
+            let resolveDone!:()=>void,ended=false;
+            const done=new Promise<void>(resolve=>{resolveDone=resolve;});
+            let release:()=>Promise<void>=async()=>{};
+            const finish=()=>{
+                if(ended)return;ended=true;
+                receipt.state=res.writableFinished?'FINISHED':'CLOSED_BEFORE_FINISH';
+                if(receipt.state==='CLOSED_BEFORE_FINISH')this.operations.recordDiagnostic('integration-response:'+name,new Error('HTTP response closed before finish; client receipt is unverified'),'OPERATION_REJECTED','UNAVAILABLE');
+                res.off('finish',finish);res.off('close',finish);
+                resolveDone();void release();
+            };
+            res.once('finish',finish);res.once('close',finish);
+            release=this.operations.own({name:'integration-response:'+name,
+                stopIntake:()=>{if(!req.complete)req.destroy();},
+                close:async()=>{await done;}});
+            if(res.writableFinished||res.destroyed)finish();
+            void this.operations.run('integration-request:'+name,async()=>{
+                try {await handler.call(this,req,res);}
+                catch(error){
+                    this.operations.recordDiagnostic('integration-request:'+name,error,'OPERATION_REJECTED','UNAVAILABLE');
+                    if(!res.headersSent&&!res.destroyed)res.status(500).json({error:'Integration request failed'});
+                    else if(!res.destroyed)res.destroy();
+                }
+            }).catch(error=>{
+                this.operations.recordFailure('integration-request-admission:'+name,error);
+                if(!res.destroyed)res.destroy();
+            });
+        };
+    }
     private setupWebhookRoutes(): void {
         // Generic webhook endpoint
-        this.router.post('/webhook/:providerId', this.handleWebhook.bind(this));
+        this.router.post('/webhook/:providerId', this.endpoint('generic-webhook',this.handleWebhook));
 
         // GitHub-specific endpoint
-        this.router.post('/github', this.handleGitHubWebhook.bind(this));
+        this.router.post('/github', this.endpoint('github-webhook',this.handleGitHubWebhook));
 
         // Gmail push notification endpoint
-        this.router.post('/gmail/push', this.handleGmailPush.bind(this));
+        this.router.post('/gmail/push', this.endpoint('gmail-webhook',this.handleGmailPush));
 
         // Slack events endpoint
-        this.router.post('/slack/events', this.handleSlackEvent.bind(this));
+        this.router.post('/slack/events', this.endpoint('slack-webhook',this.handleSlackEvent));
 
         // Health check
-        this.router.get('/health', (req, res) => {
+        this.router.get('/health', this.endpoint('integration-health',async(req,res)=>{
             res.json({
-                status: 'online',
+                status:this.initializationState,
+                pendingCustomPlugins:this.pendingPlugins.length,
                 providers: this.providers.size,
                 recentEvents: this.recentEvents.length
             });
-        });
+        }));
     }
 
     private async handleWebhook(req: Request, res: Response): Promise<void> {
+        return this.operations.run('handleWebhook',async()=>{
+
         const { providerId } = req.params;
         const eventType = req.headers['x-event-type'] as string || 'GENERIC';
 
         this.processEvent(providerId, eventType, req.body);
         res.json({ received: true });
+    
+        });
     }
 
     private async handleGitHubWebhook(req: Request, res: Response): Promise<void> {
+        return this.operations.run('handleGitHubWebhook',async()=>{
+
         const eventType = req.headers['x-github-event'] as string || 'unknown';
         const signature = req.headers['x-hub-signature-256'] as string;
 
@@ -213,6 +287,8 @@ class IntegrationHub {
                     return;
                 }
             } catch (e) {
+            this.operations.recordDiagnostic('handleGitHubWebhook',e,'DEGRADED_FALLBACK','UNVERIFIED');
+
                 console.warn('[INTEGRATION_HUB] ⛔ Signature verification failed');
                 res.status(401).send('Signature verification failed');
                 return;
@@ -225,9 +301,13 @@ class IntegrationHub {
 
         this.processEvent('github', eventType, req.body);
         res.status(200).send('OK');
+    
+        });
     }
 
     private async handleGmailPush(req: Request, res: Response): Promise<void> {
+        return this.operations.run('handleGmailPush',async()=>{
+
         // Gmail push notifications use Pub/Sub format
         const message = req.body.message;
 
@@ -237,14 +317,20 @@ class IntegrationHub {
                 const data = JSON.parse(decoded);
                 this.processEvent('gmail', 'HISTORY_UPDATE', data);
             } catch (e) {
+            this.operations.recordDiagnostic('handleGmailPush',e,'DEGRADED_FALLBACK','UNVERIFIED');
+
                 this.processEvent('gmail', 'RAW_NOTIFICATION', { raw: decoded });
             }
         }
 
         res.status(200).send('OK');
+    
+        });
     }
 
     private async handleSlackEvent(req: Request, res: Response): Promise<void> {
+        return this.operations.run('handleSlackEvent',async()=>{
+
         const body = req.body;
 
         // Slack URL verification challenge
@@ -258,9 +344,13 @@ class IntegrationHub {
         }
 
         res.status(200).send('OK');
+    
+        });
     }
 
     private async routeEvent(event: IntegrationEvent): Promise<void> {
+        return this.operations.run('routeEvent',async()=>{
+
         try {
             switch (event.providerType) {
                 case 'GITHUB':
@@ -284,11 +374,17 @@ class IntegrationHub {
 
             event.processed = true;
         } catch (e) {
+            this.operations.recordDiagnostic('routeEvent',e,'DEGRADED_FALLBACK','UNVERIFIED');
+
             console.error(`[INTEGRATION_HUB] ❌ Failed to route event:`, e);
         }
+    
+        });
     }
 
     private async handleGitHubEvent(event: IntegrationEvent): Promise<void> {
+        return this.operations.run('handleGitHubEvent',async()=>{
+
         const { introspection } = await import('./introspectionEngine');
 
         switch (event.eventType) {
@@ -322,14 +418,22 @@ class IntegrationHub {
                 );
                 break;
         }
+    
+        });
     }
 
     private async handleGmailEvent(event: IntegrationEvent): Promise<void> {
+        return this.operations.run('handleGmailEvent',async()=>{
+
         // Trigger Gmail sync when history update is received
         systemBus.emit(SystemProtocol.PROTOCOL_EMAIL_RECEIVED, event.payload, 'INTEGRATION_HUB');
+    
+        });
     }
 
     private async handleSlackEventInternal(event: IntegrationEvent): Promise<void> {
+        return this.operations.run('handleSlackEventInternal',async()=>{
+
         const { introspection } = await import('./introspectionEngine');
 
         if (event.eventType === 'app_mention') {
@@ -344,9 +448,13 @@ class IntegrationHub {
 
             // Could trigger a response workflow here
         }
+    
+        });
     }
 
     private async loadProvidersFromSettings(): Promise<void> {
+        return this.operations.run('loadProvidersFromSettings',async()=>{
+
         try {
             const { settingsManager } = await import('./settingsManager');
 
@@ -365,6 +473,8 @@ class IntegrationHub {
                 });
             }
         } catch (e) {
+            this.operations.recordDiagnostic('loadProvidersFromSettings',e,'DEGRADED_FALLBACK','UNVERIFIED');
+
             console.warn('[INTEGRATION_HUB] Failed to load providers from settings');
         }
 
@@ -395,48 +505,22 @@ class IntegrationHub {
         // explicit opt-in via config/plugins.json.
         try {
             const { discoverCustomPlugins } = await import('./plugins/discovery');
-            const { pluginRegistry } = await import('./plugins/pluginRegistry');
             const results = await discoverCustomPlugins();
+            this.pendingPlugins=results.filter(r=>r.status==='PENDING_EVALUATION');
 
-            let pluginConfig: any = {};
-            try {
-                const fsP = await import('fs/promises');
-                const pathM = await import('path');
-                const raw = await fsP.readFile(pathM.join(process.cwd(), 'config', 'plugins.json'), 'utf-8');
-                pluginConfig = JSON.parse(raw);
-            } catch { /* no config: everything discovered stays disabled */ }
-
-            for (const result of results) {
-                if (result.status === 'ACTIVATED' && result.plugin) {
-                    const plugin = result.plugin;
-                    pluginRegistry.register(plugin);
-                    if (!this.providers.has(plugin.id)) {
-                        this.registerProvider({
-                            id: plugin.id,
-                            name: `${plugin.name} (Dynamic)`,
-                            type: 'WEBHOOK',
-                            enabled: pluginConfig.plugins?.[plugin.id]?.enabled === true,
-                            config: { source: 'custom-plugin', file: result.file, version: plugin.version, author: plugin.author }
-                        });
-                        console.log(`[INTEGRATION_HUB] 🔌 Dynamically loaded Custom Plugin: ${plugin.id}`);
-                    }
-                } else {
-                    const failedId = result.file.replace(/\.(ts|js)$/, '').toLowerCase();
-                    if (!this.providers.has(failedId)) {
-                        this.registerProvider({
-                            id: failedId,
-                            name: `${failedId} (Dynamic, deactivated)`,
-                            type: 'WEBHOOK',
-                            enabled: false,
-                            config: { source: 'custom-plugin', file: result.file, deactivatedReason: result.reason }
-                        });
-                    }
-                    console.warn(`[INTEGRATION_HUB] ⛔ Custom plugin deactivated: ${result.file} - ${result.reason}`);
-                }
+            for(const result of results) {
+                const id=result.file.replace(/\.(ts|js)$/,'').toLowerCase();
+                if(!this.providers.has(id))this.registerProvider({id,name:`${id} (Dynamic, ${result.status==='PENDING_EVALUATION'?'pending evaluation':'deactivated'})`,type:'WEBHOOK',enabled:false,
+                    config:{source:'custom-plugin',file:result.file,sourceIdentity:result.source,status:result.status,reason:result.reason,evaluation:result.evaluation,activation:result.activation}});
+                this.operations.recordDiagnostic('custom-plugin:'+result.file,new Error(result.reason),'UNCLASSIFIED','UNVERIFIED');
             }
         } catch (scanErr: any) {
+            this.operations.recordDiagnostic('loadProvidersFromSettings',scanErr,'DEGRADED_FALLBACK','UNVERIFIED');
+
             console.warn('[INTEGRATION_HUB] Dynamic custom plugin scan failed:', scanErr.message);
         }
+    
+        });
     }
 
     private mapKeyToType(key: string): IntegrationProvider['type'] {
@@ -450,8 +534,12 @@ class IntegrationHub {
     }
 
     private async persistProviders(): Promise<void> {
+        return this.operations.run('persistProviders',async()=>{
+
         // Providers are persisted via settingsManager
         // This is mostly for tracking state changes
+    
+        });
     }
 }
 

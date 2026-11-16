@@ -1,3 +1,4 @@
+import { ResourceScope } from '../../server/runtime/resourceScope';
 /**
  * [auth-connections] Operator-facing connection lifecycle.
  *
@@ -98,16 +99,27 @@ function assertEndpointScheme(endpoint: string, field: string): void {
 
 export class ConnectionManager {
     private pending = new Map<string, PendingConnect>();
+    private readonly attempts = new Set<PendingConnect>();
+    private readonly operations = new ResourceScope('account-connections');
+    public getLifecycleStatus() { return { pendingOAuth: this.pending.size, metadataFailures: this.store.getLifecycleFailures(), diagnostics: this.operations.getDiagnostics(), failures: this.operations.getFailures() }; }
+    public async shutdown() { const resources = await this.operations.close(); return { resources, metadataFailures: this.store.getLifecycleFailures() }; }
 
     constructor(
         private readonly store: AccountStore,
         private readonly tokens?: TokenFileStore,
         private readonly options: { allowPrivateEndpoints?: boolean } = {},
-    ) {}
+    ) {
+        this.operations.own({ name: 'account-metadata-store', closeRank: -100, close: () => this.store.close() });
+        this.operations.own({ name: 'pending-oauth', stopIntake: () => {
+            for (const entry of this.attempts) entry.abort.abort();
+        }, close: () => { this.pending.clear(); } });
+    }
 
     // ── 1) Account management (pointers to pre-configured credentials) ──────
 
     startConnection(input: StartConnectionInput): ProviderAccount {
+        this.operations.assertWorkAccepted();
+
         if (!input.providerId?.trim()) throw new ConnectionError('invalid-provider', 'providerId is required');
         if (!ACCOUNT_ID.test(input.accountId || '')) {
             throw new ConnectionError('invalid-account-id', 'accountId must be 1-64 chars of [a-z0-9._-], starting alphanumeric');
@@ -129,11 +141,15 @@ export class ConnectionManager {
     }
 
     listConnections(providerId?: string): ProviderAccount[] {
+        this.operations.assertWorkAccepted();
+
         const all = this.store.list();
         return providerId ? all.filter(a => a.providerId === providerId) : all;
     }
 
     switchConnection(providerId: string, accountId: string): ProviderAccount {
+        this.operations.assertWorkAccepted();
+
         const account = this.store.list().find(a => a.providerId === providerId && a.accountId === accountId);
         if (!account) throw new ConnectionError('not-found', `no account ${accountId} for ${providerId}`);
         this.store.activate(providerId, accountId);
@@ -146,6 +162,8 @@ export class ConnectionManager {
      * revocation; the vendor grant/session stays valid at the provider.
      */
     closeConnection(providerId: string, accountId: string): { account: ProviderAccount; localTokenPurged: boolean } {
+        this.operations.assertWorkAccepted();
+
         const account = this.store.list().find(a => a.providerId === providerId && a.accountId === accountId);
         if (!account) throw new ConnectionError('not-found', `no account ${accountId} for ${providerId}`);
         let localTokenPurged = false;
@@ -162,6 +180,8 @@ export class ConnectionManager {
         providerId: string; accountId: string; label: string;
         method: 'oauth-loopback' | 'device-code'; config: OAuthClientConfig;
     }, principalId: string): Promise<PendingConnectInfo> {
+        return this.operations.run('startOAuthConnect', async () => {
+
         if (!principalId?.trim()) throw new ConnectionError('invalid-principal', 'initiating principal is required');
         if (!this.tokens) {
             throw new ConnectionError('token-store-unavailable', 'SILHOUETTE_TOKEN_KEY not configured: OAuth token custody unavailable; refusing to start a login whose tokens have nowhere safe to land');
@@ -177,6 +197,9 @@ export class ConnectionManager {
         const abort = new AbortController();
         const base: PendingConnectInfo = { pendingId, providerId: input.providerId, accountId: input.accountId, method: input.method };
         const entry: PendingConnect = { principalId, info: base, label: input.label || input.accountId, config: input.config, abort };
+        this.operations.assertAccepting();
+        this.attempts.add(entry);
+        try {
 
         if (input.method === 'oauth-loopback') {
             if (!input.config.authorizeUrl) throw new ConnectionError('invalid-config', 'config.authorizeUrl required for oauth-loopback');
@@ -185,6 +208,8 @@ export class ConnectionManager {
             const state = generateState();
             const pkce = generatePkce();
             const waiter = await startAuthorizationCodeWaiter({ state, signal: abort.signal });
+            this.operations.own({ name: 'oauth-loopback-listener', close: () => waiter.close() });
+            this.operations.assertAccepting();
             const redirectUri = loopbackRedirectUri(waiter.port);
             entry.waiter = waiter;
             entry.verifier = pkce.verifier;
@@ -200,9 +225,11 @@ export class ConnectionManager {
             assertEndpointScheme(input.config.deviceCodeUrl, 'config.deviceCodeUrl');
             const pinned = await createPinnedFetcher(input.config.deviceCodeUrl, 'config.deviceCodeUrl', this.options.allowPrivateEndpoints === true)
                 .catch(e => { throw new ConnectionError(e.code || 'invalid-endpoint', e.message); });
+            const releasePinned = this.operations.own({ name: 'oauth-pinned-request', close: () => pinned.close() });
+            this.operations.assertAccepting();
             let dc;
-            try { dc = await requestDeviceCode(input.config.deviceCodeUrl, input.config.clientId, input.config.scope, pinned.fetcher); }
-            finally { await pinned.close(); }
+            try { dc = await requestDeviceCode(input.config.deviceCodeUrl, input.config.clientId, input.config.scope, ((input, init) => pinned.fetcher(input, { ...init, signal: entry.abort.signal })) as typeof fetch); }
+            finally { await releasePinned(); }
             entry.deviceCode = dc.deviceCode;
             entry.intervalMs = dc.intervalMs;
             base.userCode = dc.userCode;
@@ -210,8 +237,12 @@ export class ConnectionManager {
             base.expiresInMs = dc.expiresInMs;
         }
 
+        this.operations.assertAccepting();
         this.pending.set(pendingId, entry);
         return base;
+        } catch (error) { entry.abort.abort(); this.attempts.delete(entry); throw error; }
+    
+        });
     }
 
     /**
@@ -220,6 +251,8 @@ export class ConnectionManager {
      * and registers the account with its vault: pointer.
      */
     async completeOAuthConnect(pendingId: string, principalId: string): Promise<ProviderAccount> {
+        return this.operations.run('completeOAuthConnect', async () => {
+
         const entry = this.pending.get(pendingId);
         if (!entry) throw new ConnectionError('not-found', `no pending connection ${pendingId}`);
         if (entry.principalId !== principalId) {
@@ -229,20 +262,22 @@ export class ConnectionManager {
             let token: { accessToken: string; refreshToken?: string; expiresInSec?: number; scope?: string };
             const pinned = await createPinnedFetcher(entry.config.tokenUrl, 'config.tokenUrl', this.options.allowPrivateEndpoints === true)
                 .catch(e => { throw new ConnectionError(e.code || 'invalid-endpoint', e.message); });
+            const releasePinned = this.operations.own({ name: 'oauth-pinned-token', close: () => pinned.close() });
+            this.operations.assertAccepting();
             if (entry.info.method === 'oauth-loopback') {
-                const { code } = await entry.codePromise!;
                 try {
+                    const { code } = await entry.codePromise!;
                     token = await exchangeAuthorizationCode(entry.config.tokenUrl, {
                         clientId: entry.config.clientId, code, redirectUri: entry.redirectUri!, codeVerifier: entry.verifier!,
-                    }, pinned.fetcher);
-                } finally { await pinned.close(); }
+                    }, ((input, init) => pinned.fetcher(input, { ...init, signal: entry.abort.signal })) as typeof fetch);
+                } finally { await releasePinned(); }
             } else {
                 let result;
                 try {
                     result = await pollDeviceToken(entry.config.tokenUrl, entry.config.clientId, entry.deviceCode!, {
                         intervalMs: entry.intervalMs ?? 5000, timeoutMs: entry.info.expiresInMs ?? 900_000, signal: entry.abort.signal,
-                    }, pinned.fetcher);
-                } finally { await pinned.close(); }
+                    }, ((input, init) => pinned.fetcher(input, { ...init, signal: entry.abort.signal })) as typeof fetch);
+                } finally { await releasePinned(); }
                 token = {
                     accessToken: result.accessToken,
                     ...(result.refreshToken ? { refreshToken: result.refreshToken } : {}),
@@ -266,11 +301,16 @@ export class ConnectionManager {
         } finally {
             entry.abort.abort();
             this.pending.delete(pendingId);
+            this.attempts.delete(entry);
         }
+    
+        });
     }
 
     /** Cancel a pending connect: aborts the waiter/poll. Vendor side was never touched beyond the initial code request. */
     cancelOAuthConnect(pendingId: string, principalId: string): void {
+        this.operations.assertWorkAccepted();
+
         const entry = this.pending.get(pendingId);
         if (!entry) throw new ConnectionError('not-found', `no pending connection ${pendingId}`);
         if (entry.principalId !== principalId) {
@@ -278,5 +318,6 @@ export class ConnectionManager {
         }
         entry.abort.abort();
         this.pending.delete(pendingId);
+        this.attempts.delete(entry);
     }
 }

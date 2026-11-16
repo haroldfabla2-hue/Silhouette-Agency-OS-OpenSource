@@ -36,11 +36,7 @@ export class SqliteAdapter implements IDatabaseAdapter {
     }
 
     async close(): Promise<void> {
-        const { sqliteService } = await import('../sqliteService');
-        sqliteService.close();
-        if (this.identityDb) {
-            try { this.identityDb.close(); } catch { /* ignore */ }
-        }
+        if (this.identityDb?.open) this.identityDb.close();
     }
 
     // ─── Agent Operations (delegates to sqliteService) ─────────────────

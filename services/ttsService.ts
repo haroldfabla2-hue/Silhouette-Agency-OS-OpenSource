@@ -1,3 +1,4 @@
+import { ResourceScope } from '../server/runtime/resourceScope';
 
 import axios from 'axios';
 import fs from 'fs';
@@ -28,16 +29,23 @@ export class TTSService {
         provider: 'minimax' // Set Minimax as default provider to save VRAM
     };
 
-    private constructor() {
-        console.log('[TTS] Service Initialized. Connecting to Voice Engine...');
-        this.loadConfig(); // Load from DB
-        this.checkEngineHealth();
-
-        // Periodic Health Check
-        setInterval(() => this.checkEngineHealth(), 30000);
+    private readonly operations = new ResourceScope('tts');
+    private startup?: Promise<void>;
+    private constructor() {}
+    public start(): Promise<void> {
+        if (!this.startup) this.startup = this.operations.run('tts-start', async () => {
+            await this.loadConfig();
+            await this.checkEngineHealth();
+            this.operations.interval('tts-health', 30000, () => this.checkEngineHealth());
+        });
+        return this.startup;
     }
+    public shutdown() { return this.operations.close(); }
+    public getLifecycleDiagnostics() { return this.operations.getDiagnostics(); }
 
     private async loadConfig() {
+        return this.operations.run('loadConfig', async () => {
+
         try {
             // 1. Load baseline from CLI Setup (.env.local)
             if (process.env.VOICE_PROVIDER) {
@@ -57,17 +65,25 @@ export class TTSService {
                 this.config = { ...this.config, ...savedConfig };
             }
         } catch (e) {
+            this.operations.recordDiagnostic('tts-config-load', e, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
             console.warn('[TTS] Failed to load config', e);
         }
+    
+        });
     }
 
     private async saveConfig() {
+        return this.operations.run('saveConfig', async () => {
+
         try {
             const { sqliteService } = await import('./sqliteService');
             sqliteService.setConfig('voice_settings', this.config);
         } catch (e) {
+            this.operations.recordFailure('tts-config-durability', e);
             console.warn('[TTS] Failed to save config', e);
         }
+    
+        });
     }
 
     public static getInstance(): TTSService {
@@ -106,6 +122,8 @@ export class TTSService {
      * Generate speech from text
      */
     public async speak(text: string, options?: { voiceId?: string }): Promise<string | null> {
+        return this.operations.run('speak', async () => {
+
         // Per-call voice override (e.g. a phone call's chosen voice); the global config voice is only the default.
         const voiceId = options?.voiceId || this.config.voiceId;
         if (!this.config.enabled) return null;
@@ -204,19 +222,28 @@ export class TTSService {
         }
 
         return null; // Fallback completely failed
+    
+        });
     }
 
     public async getVoices(): Promise<{ default_models: string[], cloned_voices: string[] }> {
+        return this.operations.run('getVoices', async () => {
+
         try {
             const res = await axios.get(`${this.pythonEngineUrl}/voices`);
             return res.data;
         } catch (e) {
+            this.operations.recordDiagnostic('tts-voices', e, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
             console.warn('[TTS] Failed to list voices');
             return { default_models: [], cloned_voices: [] };
         }
+    
+        });
     }
 
     public async cloneVoice(file: any, name: string): Promise<any> {
+        return this.operations.run('cloneVoice', async () => {
+
         try {
             const FormDataModule = await import('form-data');
             const FormDataClass = (FormDataModule.default || FormDataModule) as any;
@@ -232,35 +259,52 @@ export class TTSService {
             console.error('[TTS] Clone failed', e);
             throw e;
         }
+    
+        });
     }
 
     public async sleep() {
+        return this.operations.run('sleep', async () => {
+
         try {
             await axios.post(`${this.pythonEngineUrl}/sleep`);
             this.isEngineAwake = false;
             console.log('[TTS] 💤 Engine put to sleep (VRAM freed)');
         } catch (e) {
+            this.operations.recordDiagnostic('tts-sleep', e, 'OPERATION_REJECTED', 'UNAVAILABLE');
             console.warn('[TTS] Failed to sleep engine');
         }
+    
+        });
     }
 
     public async wake() {
+        return this.operations.run('wake', async () => {
+
         try {
             await axios.post(`${this.pythonEngineUrl}/wake`);
             this.isEngineAwake = true;
             console.log('[TTS] ☀️ Engine woke up');
         } catch (e) {
+            this.operations.recordDiagnostic('tts-wake', e, 'OPERATION_REJECTED', 'UNAVAILABLE');
             console.warn('[TTS] Failed to wake engine');
         }
+    
+        });
     }
 
     private async checkEngineHealth() {
+        return this.operations.run('checkEngineHealth', async () => {
+
         try {
             await axios.get(`${this.pythonEngineUrl}/`);
             this.isEngineAwake = true;
         } catch (e) {
+            this.operations.recordDiagnostic('tts-health', e, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
             this.isEngineAwake = false;
         }
+    
+        });
     }
 
     public getHealth() {

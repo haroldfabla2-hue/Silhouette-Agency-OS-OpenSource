@@ -1,3 +1,5 @@
+import { ResourceScope } from '../server/runtime/resourceScope';
+import { subscribeScoped } from './runtime/scopedSubscription';
 
 import { systemBus } from './systemBus';
 import { SystemProtocol } from '../types';
@@ -7,16 +9,23 @@ import { SystemProtocol } from '../types';
 // It converts abstract INTUITION events into concrete TASK ASSIGNMENTS.
 
 class NeuroSynapseService {
+    private readonly operations = new ResourceScope('NeuroSynapseService');
+    private started = false;
+    public shutdown() { return this.operations.close(); }
+    public getLifecycleDiagnostics() { return this.operations.getDiagnostics(); }
+    public getLifecycleFailures() { return this.operations.getFailures(); }
     private isConnected: boolean = false;
 
-    constructor() {
-        console.log("[NEURO-LINK] 🧠 Initializing Synaptic Bridge...");
+    constructor() {}
+    public start(): void {
+        this.operations.assertAccepting();
+        if (this.started) return; this.started = true;
         this.initializeListeners();
     }
 
     private initializeListeners() {
         // Listen for new intuitions from the Dreamer
-        systemBus.subscribe(SystemProtocol.INTUITION_CONSOLIDATED, async (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.INTUITION_CONSOLIDATED, async (event) => {
             await this.handleIntuition(event.payload);
         });
 
@@ -25,6 +34,8 @@ class NeuroSynapseService {
     }
 
     private async handleIntuition(payload: { idea: string, source: string, confidence: number }) {
+        return this.operations.run('handleIntuition', async () => {
+
         console.log(`[NEURO-LINK] ⚡ Analyzing Dream Signal: "${payload.idea.substring(0, 50)}..."`);
 
         if (payload.confidence < 0.8) {
@@ -49,6 +60,8 @@ class NeuroSynapseService {
         // Dispatch to Orchestrator via Bus
         console.log(`[NEURO-LINK] 🚀 Routing to Researcher_Pro.`);
         systemBus.emit(SystemProtocol.TASK_ASSIGNMENT, researchTask);
+    
+        });
     }
 }
 

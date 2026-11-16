@@ -130,7 +130,7 @@ export class CognitiveScheduler {
                     console.log('[COGNITIVE: JANITOR] No contradictions found. Memories are narratively stable.');
                 }
             } catch (e: any) {
-                console.warn('[COGNITIVE: JANITOR] Failed to parse LLM synthesis result:', e.message);
+                console.warn('[COGNITIVE: JANITOR] Synthesis parsing or durable update failed; no write success claimed:', e.message);
             }
 
         } catch (e: any) {

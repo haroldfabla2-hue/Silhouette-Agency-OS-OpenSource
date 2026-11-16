@@ -1,0 +1,115 @@
+--- a/node_modules/@qdrant/js-client-rest/dist/esm/api-client.js
++++ b/node_modules/@qdrant/js-client-rest/dist/esm/api-client.js
+@@ -6,7 +6,7 @@
+     const client = createClient(baseUrl, args);
+     return createClientApi(client);
+ }
+-export function createClient(baseUrl, { headers, timeout, connections }) {
++export function createClient(baseUrl, { headers, timeout, connections, transportDispatcher }) {
+     const use = [];
+     if (Number.isFinite(timeout)) {
+         use.push(async (url, init, next) => {
+@@ -55,7 +55,7 @@
+             dispatcher: typeof process !== 'undefined' &&
+                 // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+                 process.versions?.node
+-                ? createDispatcher(connections)
++                ? (transportDispatcher ?? createDispatcher(connections))
+                 : undefined,
+         },
+         use,
+--- a/node_modules/@qdrant/js-client-rest/dist/esm/qdrant-client.js
++++ b/node_modules/@qdrant/js-client-rest/dist/esm/qdrant-client.js
+@@ -5,6 +5,7 @@
+     throw new Error('Result came uninitialized');
+ };
+ export class QdrantClient {
++    static supportsExternalDispatcher = true;
+     constructor({ url, host, apiKey, https, prefix, port = 6333, timeout = 300000, checkCompatibility = true, ...args } = {}) {
+         this._https = https ?? typeof apiKey === 'string';
+         this._scheme = this._https ? 'https' : 'http';
+@@ -52,7 +53,7 @@
+         const address = this._port ? `${this._host}:${this._port}` : this._host;
+         this._restUri = `${this._scheme}://${address}${this._prefix}`;
+         const connections = args.maxConnections;
+-        const restArgs = { headers, timeout, connections };
++        const restArgs = { headers, timeout, connections, transportDispatcher: args.transportDispatcher };
+         this._openApiClient = createApis(this._restUri, restArgs);
+         if (checkCompatibility) {
+             this._openApiClient
+--- a/node_modules/@qdrant/js-client-rest/dist/cjs/api-client.js
++++ b/node_modules/@qdrant/js-client-rest/dist/cjs/api-client.js
+@@ -10,7 +10,7 @@
+     return (0, generated_api_client_js_1.createClientApi)(client);
+ }
+ exports.createApis = createApis;
+-function createClient(baseUrl, { headers, timeout, connections }) {
++function createClient(baseUrl, { headers, timeout, connections, transportDispatcher }) {
+     const use = [];
+     if (Number.isFinite(timeout)) {
+         use.push(async (url, init, next) => {
+@@ -59,7 +59,7 @@
+             dispatcher: typeof process !== 'undefined' &&
+                 // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+                 process.versions?.node
+-                ? (0, dispatcher_js_1.createDispatcher)(connections)
++                ? (transportDispatcher ?? (0, dispatcher_js_1.createDispatcher)(connections))
+                 : undefined,
+         },
+         use,
+--- a/node_modules/@qdrant/js-client-rest/dist/cjs/qdrant-client.js
++++ b/node_modules/@qdrant/js-client-rest/dist/cjs/qdrant-client.js
+@@ -8,6 +8,7 @@
+     throw new Error('Result came uninitialized');
+ };
+ class QdrantClient {
++    static supportsExternalDispatcher = true;
+     constructor({ url, host, apiKey, https, prefix, port = 6333, timeout = 300000, checkCompatibility = true, ...args } = {}) {
+         this._https = https ?? typeof apiKey === 'string';
+         this._scheme = this._https ? 'https' : 'http';
+@@ -55,7 +56,7 @@
+         const address = this._port ? `${this._host}:${this._port}` : this._host;
+         this._restUri = `${this._scheme}://${address}${this._prefix}`;
+         const connections = args.maxConnections;
+-        const restArgs = { headers, timeout, connections };
++        const restArgs = { headers, timeout, connections, transportDispatcher: args.transportDispatcher };
+         this._openApiClient = (0, api_client_js_1.createApis)(this._restUri, restArgs);
+         if (checkCompatibility) {
+             this._openApiClient
+--- a/node_modules/@qdrant/js-client-rest/dist/types/qdrant-client.d.ts
++++ b/node_modules/@qdrant/js-client-rest/dist/types/qdrant-client.d.ts
+@@ -1,6 +1,9 @@
+ import { Schemas } from './types.js';
+ import { ClientApi } from './openapi/generated_client_type.js';
+ export type QdrantClientParams = {
++    /** Node-only caller-owned transport. Caller must close it after accepted requests drain.
++     * No SDK default dispatcher is allocated when supplied. Browser builds do not support this parameter. */
++    transportDispatcher?: import('undici').Dispatcher;
+     port?: number | null;
+     apiKey?: string;
+     https?: boolean;
+@@ -27,6 +30,7 @@
+     checkCompatibility?: boolean;
+ };
+ export declare class QdrantClient {
++    static readonly supportsExternalDispatcher: true;
+     private _https;
+     private _scheme;
+     private _port;
+--- a/node_modules/@qdrant/js-client-rest/dist/types/types.d.ts
++++ b/node_modules/@qdrant/js-client-rest/dist/types/types.d.ts
+@@ -3,5 +3,6 @@
+     headers: Headers;
+     timeout: number;
+     connections?: number;
++    transportDispatcher?: import('undici').Dispatcher;
+ }
+ export type Schemas = components['schemas'];
+--- a/node_modules/@qdrant/js-client-rest/dist/types/api-client.d.ts
++++ b/node_modules/@qdrant/js-client-rest/dist/types/api-client.d.ts
+@@ -5,4 +5,4 @@
+ export type Client = ReturnType<typeof Fetcher.for<paths>>;
+ export declare function createApis(baseUrl: string, args: RestArgs): ClientApi;
+ export type OpenApiClient = ReturnType<typeof createApis>;
+-export declare function createClient(baseUrl: string, { headers, timeout, connections }: RestArgs): Client;
++export declare function createClient(baseUrl: string, { headers, timeout, connections, transportDispatcher }: RestArgs): Client;

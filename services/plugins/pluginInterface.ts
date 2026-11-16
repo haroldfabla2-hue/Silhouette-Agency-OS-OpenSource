@@ -1,3 +1,4 @@
+import type { PluginLifecycleContext, PluginLifecycleDeclaration } from './pluginLifecycle';
 import { FunctionDeclarationSchema, ToolCategory } from '../tools/toolRegistry';
 import { SkillDefinition } from '../skills/skillRegistry';
 import { IMonitorable } from './monitorable';
@@ -27,6 +28,8 @@ export interface PluginToolDefinition {
  * A Plugin is a self-contained module that adds capabilities (Tools and Skills) to the agent.
  */
 export interface IPlugin {
+    /** Cooperative source declaration only; legacy remains loaded but lifecycle-unverified. */
+    lifecycle?: PluginLifecycleDeclaration;
     /** Unique identifier for the plugin (e.g., 'core-filesystem') */
     id: string;
 
@@ -66,13 +69,13 @@ export interface IPlugin {
      * Called when the plugin is loaded, before tools are registered.
      * Use this to validation config, connect to databases, etc.
      */
-    onInit?(): Promise<void>;
+    onInit?(context?: PluginLifecycleContext): Promise<void>;
 
     /**
      * Start hook.
      * Called after all plugins are loaded and tools registered.
      */
-    onStart?(): Promise<void>;
+    onStart?(context?: PluginLifecycleContext): Promise<void>;
 
     /**
      * Stop hook.

@@ -606,6 +606,20 @@ class ToolRegistry {
     /**
      * Register a new tool (can be called at runtime)
      */
+    /** Runtime-only plugin overlay. Cleanup never deletes a newer registration
+     * or mutates durable tool records/dependency graph. Caller owns returned disposer. */
+    public registerOwnedTool(tool: DynamicTool): () => void {
+        const previous = this.tools.get(tool.name);
+        this.registerTool(tool);
+        return () => {
+            if (this.tools.get(tool.name) !== tool) throw new Error(`Tool ownership changed before rollback: ${tool.name}`);
+            if (previous) this.registerTool(previous);
+            else {
+                this.tools.delete(tool.name);
+                systemBus.emit(SystemProtocol.TOOL_DELETED, { toolName: tool.name, name: tool.name }, 'PLUGIN_LIFECYCLE');
+            }
+        };
+    }
     public registerTool(tool: DynamicTool): void {
         const isNew = !this.tools.has(tool.name);
 

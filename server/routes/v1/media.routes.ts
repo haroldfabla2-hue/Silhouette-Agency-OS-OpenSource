@@ -1,3 +1,4 @@
+import { ownedHttpHandler, awaitHttpMiddleware } from '../../runtime/ownedHttpIngress';
 import { Router, Request, Response } from 'express';
 import { mediaController } from '../../controllers/mediaController';
 
@@ -5,43 +6,43 @@ const router = Router();
 
 // ==================== VIDEO QUEUE ====================
 // POST /v1/media/queue - Queue video generation
-router.post('/queue', (req, res) => mediaController.queueVideo(req, res));
+router.post('/queue', ownedHttpHandler('media:POST:/queue',(req, res) => mediaController.queueVideo(req, res)));
 // GET /v1/media/queue - Get all queued jobs
-router.get('/queue', (req, res) => mediaController.getQueue(req, res));
+router.get('/queue', ownedHttpHandler('media:GET:/queue',(req, res) => mediaController.getQueue(req, res)));
 // POST /v1/media/queue/quarantine - Quarantine legacy jobs with backup (never delete)
-router.post('/queue/quarantine', (req, res) => mediaController.quarantineQueue(req, res));
+router.post('/queue/quarantine', ownedHttpHandler('media:POST:/queue/quarantine',(req, res) => mediaController.quarantineQueue(req, res)));
 // [R10] test-cleanup path - removes TEST-origin jobs only (see controller)
-router.delete('/queue/:id', (req, res) => mediaController.removeQueueJob(req, res));
+router.delete('/queue/:id', ownedHttpHandler('media:DELETE:/queue/:id',(req, res) => mediaController.removeQueueJob(req, res)));
 // GET /v1/media/queue/:id - Get specific job status
-router.get('/queue/:id', (req, res) => mediaController.getJobStatus(req, res));
+router.get('/queue/:id', ownedHttpHandler('media:GET:/queue/:id',(req, res) => mediaController.getJobStatus(req, res)));
 
 // ==================== CAMPAIGNS ====================
 // POST /v1/media/campaign/create - Director: objective + brand -> shotlist blueprint
-router.post('/campaign/create', (req, res) => mediaController.createCampaign(req, res));
+router.post('/campaign/create', ownedHttpHandler('media:POST:/campaign/create',(req, res) => mediaController.createCampaign(req, res)));
 
 // ==================== IMAGE GENERATION ====================
 // POST /v1/media/generate/image - Generate image from prompt
-router.post('/generate/image', (req, res) => mediaController.generateImage(req, res));
+router.post('/generate/image', ownedHttpHandler('media:POST:/generate/image',(req, res) => mediaController.generateImage(req, res)));
 // POST /v1/media/enhance - Enhance existing image
-router.post('/enhance', (req, res) => mediaController.enhanceImage(req, res));
+router.post('/enhance', ownedHttpHandler('media:POST:/enhance',(req, res) => mediaController.enhanceImage(req, res)));
 // POST /v1/media/upscale - Upscale to 4K
-router.post('/upscale', (req, res) => mediaController.upscale(req, res));
+router.post('/upscale', ownedHttpHandler('media:POST:/upscale',(req, res) => mediaController.upscale(req, res)));
 
 // ==================== COMPOSITING ====================
 // POST /v1/media/composite - Real-Hybrid pipeline
-router.post('/composite', (req, res) => mediaController.composite(req, res));
+router.post('/composite', ownedHttpHandler('media:POST:/composite',(req, res) => mediaController.composite(req, res)));
 // POST /v1/media/critique - QA analysis
-router.post('/critique', (req, res) => mediaController.critique(req, res));
+router.post('/critique', ownedHttpHandler('media:POST:/critique',(req, res) => mediaController.critique(req, res)));
 
 // ==================== ASSET MANAGEMENT ====================
 // GET /v1/media/assets - List local assets
-router.get('/assets', (req, res) => mediaController.listAssets(req, res));
+router.get('/assets', ownedHttpHandler('media:GET:/assets',(req, res) => mediaController.listAssets(req, res)));
 // GET /v1/media/search - Search stock photos
-router.get('/search', (req, res) => mediaController.searchAssets(req, res));
+router.get('/search', ownedHttpHandler('media:GET:/search',(req, res) => mediaController.searchAssets(req, res)));
 
 // ==================== ASSET LIBRARY (Characters/Environments/Props) ====================
 // GET /v1/media/assets/library - List all library assets
-router.get('/assets/library', async (req: Request, res: Response) => {
+router.get('/assets/library', ownedHttpHandler('media:GET:/assets/library',async (req: Request, res: Response) => {
     try {
         const { assetLibrary } = await import('../../../services/assets/assetLibrary');
         const role = req.query.role as string | undefined;
@@ -57,10 +58,10 @@ router.get('/assets/library', async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // POST /v1/media/assets/library - Create new asset
-router.post('/assets/library', async (req: Request, res: Response) => {
+router.post('/assets/library', ownedHttpHandler('media:POST:/assets/library',async (req: Request, res: Response) => {
     try {
         const { assetLibrary } = await import('../../../services/assets/assetLibrary');
         const { name, role, description, referenceImages, tags, style, defaultPromptPrefix } = req.body;
@@ -77,10 +78,10 @@ router.post('/assets/library', async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // PUT /v1/media/assets/library/:id - Update asset
-router.put('/assets/library/:id', async (req: Request, res: Response) => {
+router.put('/assets/library/:id', ownedHttpHandler('media:PUT:/assets/library/:id',async (req: Request, res: Response) => {
     try {
         const { assetLibrary } = await import('../../../services/assets/assetLibrary');
         const { id } = req.params;
@@ -97,10 +98,10 @@ router.put('/assets/library/:id', async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // DELETE /v1/media/assets/library/:id - Delete asset
-router.delete('/assets/library/:id', async (req: Request, res: Response) => {
+router.delete('/assets/library/:id', ownedHttpHandler('media:DELETE:/assets/library/:id',async (req: Request, res: Response) => {
     try {
         const { assetLibrary } = await import('../../../services/assets/assetLibrary');
         const { id } = req.params;
@@ -114,11 +115,11 @@ router.delete('/assets/library/:id', async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // ==================== VOICE & LIP SYNC ====================
 // POST /v1/media/generate/voice - Generate speech from text (ElevenLabs)
-router.post('/generate/voice', async (req: Request, res: Response) => {
+router.post('/generate/voice', ownedHttpHandler('media:POST:/generate/voice',async (req: Request, res: Response) => {
     try {
         const { lipSyncService } = await import('../../../services/media/lipSyncService');
         const { text, voiceId } = req.body;
@@ -135,11 +136,11 @@ router.post('/generate/voice', async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // ==================== LOCAL TTS (Coqui GPU) ====================
 // POST /v1/media/tts/speak - Generate speech using local engine
-router.post('/tts/speak', async (req: Request, res: Response) => {
+router.post('/tts/speak', ownedHttpHandler('media:POST:/tts/speak',async (req: Request, res: Response) => {
     try {
         const { ttsService } = await import('../../../services/ttsService');
         const { text } = req.body;
@@ -154,20 +155,20 @@ router.post('/tts/speak', async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // GET /v1/media/tts/config
-router.get('/tts/config', async (_req: Request, res: Response) => {
+router.get('/tts/config', ownedHttpHandler('media:GET:/tts/config',async (_req: Request, res: Response) => {
     try {
         const { ttsService } = await import('../../../services/ttsService');
         return res.json(ttsService.getConfig());
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // POST /v1/media/tts/config
-router.post('/tts/config', async (req: Request, res: Response) => {
+router.post('/tts/config', ownedHttpHandler('media:POST:/tts/config',async (req: Request, res: Response) => {
     try {
         const { ttsService } = await import('../../../services/ttsService');
         ttsService.updateConfig(req.body);
@@ -175,10 +176,10 @@ router.post('/tts/config', async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // POST /v1/media/tts/sleep
-router.post('/tts/sleep', async (_req: Request, res: Response) => {
+router.post('/tts/sleep', ownedHttpHandler('media:POST:/tts/sleep',async (_req: Request, res: Response) => {
     try {
         const { ttsService } = await import('../../../services/ttsService');
         await ttsService.sleep();
@@ -186,10 +187,10 @@ router.post('/tts/sleep', async (_req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // POST /v1/media/tts/wake
-router.post('/tts/wake', async (_req: Request, res: Response) => {
+router.post('/tts/wake', ownedHttpHandler('media:POST:/tts/wake',async (_req: Request, res: Response) => {
     try {
         const { ttsService } = await import('../../../services/ttsService');
         await ttsService.wake();
@@ -197,10 +198,10 @@ router.post('/tts/wake', async (_req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // GET /v1/media/tts/voices - List all voices (default + cloned)
-router.get('/tts/voices', async (_req: Request, res: Response) => {
+router.get('/tts/voices', ownedHttpHandler('media:GET:/tts/voices',async (_req: Request, res: Response) => {
     try {
         const { ttsService } = await import('../../../services/ttsService');
         const voices = await ttsService.getVoices();
@@ -208,43 +209,39 @@ router.get('/tts/voices', async (_req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // POST /v1/media/tts/voices/clone - Clone voice from upload
-router.post('/tts/voices/clone', async (req: Request, res: Response) => {
+router.post('/tts/voices/clone', ownedHttpHandler('media:POST:/tts/voices/clone',async (req: Request, res: Response) => {
     try {
         const { ttsService } = await import('../../../services/ttsService');
         const multer = (await import('multer')).default;
         const upload = multer({ dest: 'uploads/temp/' }).single('file');
 
-        upload(req, res, async (err: any) => {
-            if (err) return res.status(500).json({ error: err.message });
-            if (!(req as any).file) return res.status(400).json({ error: 'No file uploaded' });
-
-            try {
-                const result = await ttsService.cloneVoice((req as any).file, req.body.name);
-                return res.json(result);
-            } catch (e: any) {
-                return res.status(500).json({ error: e.message });
-            }
-        });
+        try{await awaitHttpMiddleware(req,res,'media-tts-clone-upload',upload);}
+        catch(error:any){return res.status(500).json({error:error.message});}
+        if(!(req as any).file)return res.status(400).json({error:'No file uploaded'});
+        try{
+            const result=await ttsService.cloneVoice((req as any).file,req.body.name);
+            return res.json(result);
+        }catch(error:any){return res.status(500).json({error:error.message});}
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // GET /v1/media/tts/health - Get engine status
-router.get('/tts/health', async (_req: Request, res: Response) => {
+router.get('/tts/health', ownedHttpHandler('media:GET:/tts/health',async (_req: Request, res: Response) => {
     try {
         const { ttsService } = await import('../../../services/ttsService');
         return res.json(ttsService.getHealth());
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // POST /v1/media/lipsync - Apply lip sync to video
-router.post('/lipsync', async (req: Request, res: Response) => {
+router.post('/lipsync', ownedHttpHandler('media:POST:/lipsync',async (req: Request, res: Response) => {
     try {
         const { lipSyncService } = await import('../../../services/media/lipSyncService');
         const { videoUrl, audioUrl, text, voiceId } = req.body;
@@ -275,10 +272,10 @@ router.post('/lipsync', async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // GET /v1/media/voices - List available ElevenLabs voices
-router.get('/voices', async (_req: Request, res: Response) => {
+router.get('/voices', ownedHttpHandler('media:GET:/voices',async (_req: Request, res: Response) => {
     try {
         const { lipSyncService } = await import('../../../services/media/lipSyncService');
         const voices = await lipSyncService.getVoices();
@@ -286,24 +283,24 @@ router.get('/voices', async (_req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // ==================== BRAND MANAGEMENT ====================
 // GET /v1/media/brand/:id - Load brand
-router.get('/brand/:id', (req, res) => mediaController.getBrand(req, res));
+router.get('/brand/:id', ownedHttpHandler('media:GET:/brand/:id',(req, res) => mediaController.getBrand(req, res)));
 // GET /v1/media/brand/:id/rules - Get brand rules
-router.get('/brand/:id/rules', (req, res) => mediaController.getBrandRules(req, res));
+router.get('/brand/:id/rules', ownedHttpHandler('media:GET:/brand/:id/rules',(req, res) => mediaController.getBrandRules(req, res)));
 
 // ==================== SYSTEM STATUS ====================
 // GET /v1/media/vram-status - VRAM allocation status
-router.get('/vram-status', (req, res) => mediaController.getVramStatus(req, res));
+router.get('/vram-status', ownedHttpHandler('media:GET:/vram-status',(req, res) => mediaController.getVramStatus(req, res)));
 // GET /v1/media/engines - Available video engines
-router.get('/engines', (req, res) => mediaController.getEngines(req, res));
+router.get('/engines', ownedHttpHandler('media:GET:/engines',(req, res) => mediaController.getEngines(req, res)));
 
 // ==================== ASSET CATALOG (Unified) ====================
 
 // GET /v1/media/catalog - List all assets with filters
-router.get('/catalog', async (req: Request, res: Response) => {
+router.get('/catalog', ownedHttpHandler('media:GET:/catalog',async (req: Request, res: Response) => {
     try {
         const { assetCatalog } = await import('../../../services/assetCatalog');
 
@@ -330,10 +327,10 @@ router.get('/catalog', async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // GET /v1/media/catalog/:id - Get single asset
-router.get('/catalog/:id', async (req: Request, res: Response) => {
+router.get('/catalog/:id', ownedHttpHandler('media:GET:/catalog/:id',async (req: Request, res: Response) => {
     try {
         const { assetCatalog } = await import('../../../services/assetCatalog');
         const asset = assetCatalog.getById(req.params.id);
@@ -342,10 +339,10 @@ router.get('/catalog/:id', async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // PUT /v1/media/catalog/:id - Update asset
-router.put('/catalog/:id', async (req: Request, res: Response) => {
+router.put('/catalog/:id', ownedHttpHandler('media:PUT:/catalog/:id',async (req: Request, res: Response) => {
     try {
         const { assetCatalog } = await import('../../../services/assetCatalog');
         const updated = assetCatalog.update(req.params.id, req.body);
@@ -354,10 +351,10 @@ router.put('/catalog/:id', async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // DELETE /v1/media/catalog/:id - Delete asset
-router.delete('/catalog/:id', async (req: Request, res: Response) => {
+router.delete('/catalog/:id', ownedHttpHandler('media:DELETE:/catalog/:id',async (req: Request, res: Response) => {
     try {
         const { assetCatalog } = await import('../../../services/assetCatalog');
         const deleteFile = req.query.deleteFile === 'true';
@@ -367,10 +364,10 @@ router.delete('/catalog/:id', async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // POST /v1/media/catalog/:id/favorite - Toggle favorite
-router.post('/catalog/:id/favorite', async (req: Request, res: Response) => {
+router.post('/catalog/:id/favorite', ownedHttpHandler('media:POST:/catalog/:id/favorite',async (req: Request, res: Response) => {
     try {
         const { assetCatalog } = await import('../../../services/assetCatalog');
         const updated = assetCatalog.toggleFavorite(req.params.id);
@@ -379,10 +376,10 @@ router.post('/catalog/:id/favorite', async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // POST /v1/media/catalog/:id/archive - Archive asset
-router.post('/catalog/:id/archive', async (req: Request, res: Response) => {
+router.post('/catalog/:id/archive', ownedHttpHandler('media:POST:/catalog/:id/archive',async (req: Request, res: Response) => {
     try {
         const { assetCatalog } = await import('../../../services/assetCatalog');
         const updated = assetCatalog.archive(req.params.id);
@@ -391,10 +388,10 @@ router.post('/catalog/:id/archive', async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // POST /v1/media/catalog/:id/tags - Add tags
-router.post('/catalog/:id/tags', async (req: Request, res: Response) => {
+router.post('/catalog/:id/tags', ownedHttpHandler('media:POST:/catalog/:id/tags',async (req: Request, res: Response) => {
     try {
         const { assetCatalog } = await import('../../../services/assetCatalog');
         const { tags } = req.body;
@@ -404,10 +401,10 @@ router.post('/catalog/:id/tags', async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // DELETE /v1/media/catalog/:id/tags - Remove tags
-router.delete('/catalog/:id/tags', async (req: Request, res: Response) => {
+router.delete('/catalog/:id/tags', ownedHttpHandler('media:DELETE:/catalog/:id/tags',async (req: Request, res: Response) => {
     try {
         const { assetCatalog } = await import('../../../services/assetCatalog');
         const { tags } = req.body;
@@ -417,10 +414,10 @@ router.delete('/catalog/:id/tags', async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // PUT /v1/media/catalog/:id/folder - Move to folder
-router.put('/catalog/:id/folder', async (req: Request, res: Response) => {
+router.put('/catalog/:id/folder', ownedHttpHandler('media:PUT:/catalog/:id/folder',async (req: Request, res: Response) => {
     try {
         const { assetCatalog } = await import('../../../services/assetCatalog');
         const { folder } = req.body;
@@ -430,10 +427,10 @@ router.put('/catalog/:id/folder', async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // GET /v1/media/catalog-folders - Get all folders
-router.get('/catalog-folders', async (_req: Request, res: Response) => {
+router.get('/catalog-folders', ownedHttpHandler('media:GET:/catalog-folders',async (_req: Request, res: Response) => {
     try {
         const { assetCatalog } = await import('../../../services/assetCatalog');
         const folders = assetCatalog.getFolders();
@@ -441,10 +438,10 @@ router.get('/catalog-folders', async (_req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // GET /v1/media/catalog-tags - Get all tags
-router.get('/catalog-tags', async (_req: Request, res: Response) => {
+router.get('/catalog-tags', ownedHttpHandler('media:GET:/catalog-tags',async (_req: Request, res: Response) => {
     try {
         const { assetCatalog } = await import('../../../services/assetCatalog');
         const tags = assetCatalog.getAllTags();
@@ -452,10 +449,10 @@ router.get('/catalog-tags', async (_req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // POST /v1/media/catalog-sync - Sync existing files
-router.post('/catalog-sync', async (_req: Request, res: Response) => {
+router.post('/catalog-sync', ownedHttpHandler('media:POST:/catalog-sync',async (_req: Request, res: Response) => {
     try {
         const { assetCatalog } = await import('../../../services/assetCatalog');
 
@@ -474,12 +471,12 @@ router.post('/catalog-sync', async (_req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // ==================== NEXUS CANVAS ====================
 
 // GET /v1/media/canvas/documents - List all canvas documents
-router.get('/canvas/documents', async (_req: Request, res: Response) => {
+router.get('/canvas/documents', ownedHttpHandler('media:GET:/canvas/documents',async (_req: Request, res: Response) => {
     try {
         const { canvasService } = await import('../../../services/media/canvasService');
         const documents = await canvasService.listDocuments();
@@ -487,10 +484,10 @@ router.get('/canvas/documents', async (_req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // GET /v1/media/canvas/documents/:id - Load a canvas document
-router.get('/canvas/documents/:id', async (req: Request, res: Response) => {
+router.get('/canvas/documents/:id', ownedHttpHandler('media:GET:/canvas/documents/:id',async (req: Request, res: Response) => {
     try {
         const { canvasService } = await import('../../../services/media/canvasService');
         const document = await canvasService.loadDocument(req.params.id);
@@ -507,10 +504,10 @@ router.get('/canvas/documents/:id', async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // POST /v1/media/canvas/documents - Save a new or existing canvas document
-router.post('/canvas/documents', async (req: Request, res: Response) => {
+router.post('/canvas/documents', ownedHttpHandler('media:POST:/canvas/documents',async (req: Request, res: Response) => {
     try {
         const { canvasService } = await import('../../../services/media/canvasService');
         const { id, name, documentJson, thumbnail } = req.body;
@@ -530,10 +527,10 @@ router.post('/canvas/documents', async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // DELETE /v1/media/canvas/documents/:id - Delete a canvas document
-router.delete('/canvas/documents/:id', async (req: Request, res: Response) => {
+router.delete('/canvas/documents/:id', ownedHttpHandler('media:DELETE:/canvas/documents/:id',async (req: Request, res: Response) => {
     try {
         const { canvasService } = await import('../../../services/media/canvasService');
         const success = await canvasService.deleteDocument(req.params.id);
@@ -544,10 +541,10 @@ router.delete('/canvas/documents/:id', async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // POST /v1/media/canvas/inpaint - Generative Fill (AI Inpainting)
-router.post('/canvas/inpaint', async (req: Request, res: Response) => {
+router.post('/canvas/inpaint', ownedHttpHandler('media:POST:/canvas/inpaint',async (req: Request, res: Response) => {
     try {
         const { canvasService } = await import('../../../services/media/canvasService');
         const { imageBase64, maskBase64, prompt, negativePrompt, preferLocal } = req.body;
@@ -572,10 +569,10 @@ router.post('/canvas/inpaint', async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // POST /v1/media/canvas/export - Export canvas to Asset Catalog
-router.post('/canvas/export', async (req: Request, res: Response) => {
+router.post('/canvas/export', ownedHttpHandler('media:POST:/canvas/export',async (req: Request, res: Response) => {
     try {
         const { canvasService } = await import('../../../services/media/canvasService');
         const { imageBase64, name, prompt, tags, folder } = req.body;
@@ -594,6 +591,6 @@ router.post('/canvas/export', async (req: Request, res: Response) => {
     } catch (error: any) {
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 export default router;

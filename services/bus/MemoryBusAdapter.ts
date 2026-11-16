@@ -26,7 +26,7 @@ export class MemoryBusAdapter implements IBusAdapter {
         }
     }
 
-    async subscribe(protocol: SystemProtocol, handler: (event: ProtocolEvent) => void): Promise<void> {
+    subscribe(protocol: SystemProtocol, handler: (event: ProtocolEvent) => void): void {
         if (!this.listeners[protocol]) {
             this.listeners[protocol] = [];
         }

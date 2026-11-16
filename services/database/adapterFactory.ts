@@ -12,21 +12,47 @@ let _adapter: IDatabaseAdapter | null = null;
  * Creates and returns the singleton database adapter.
  * Call this at application startup. Subsequent calls return the same instance.
  */
-export async function getDatabaseAdapter(): Promise<IDatabaseAdapter> {
-    if (_adapter) return _adapter;
-
-    if (process.env.DATABASE_URL) {
-        // Postgres mode — dynamic import to avoid loading pg when not needed
-        const { PostgresAdapter } = await import('./postgresAdapter');
-        _adapter = new PostgresAdapter(process.env.DATABASE_URL);
-    } else {
-        // Embedded mode — SQLite + LanceDB (default, zero-config)
-        const { SqliteAdapter } = await import('./sqliteAdapter');
-        _adapter = new SqliteAdapter();
-    }
-
-    await _adapter.initialize();
-    return _adapter;
+let initializing: Promise<IDatabaseAdapter> | null = null;
+let closing = false;
+let closingTask: Promise<void> | null = null;
+const retainedCandidates = new Set<IDatabaseAdapter>();
+const cleanupFailures: unknown[] = [];
+export function getDatabaseAdapter(): Promise<IDatabaseAdapter> {
+    if (closing) return Promise.reject(new Error('Database adapter factory closed'));
+    if (_adapter) return Promise.resolve(_adapter);
+    if (initializing) return initializing;
+    initializing = (async () => {
+        const candidate: IDatabaseAdapter = process.env.DATABASE_URL
+            ? new (await import('./postgresAdapter')).PostgresAdapter(process.env.DATABASE_URL)
+            : new (await import('./sqliteAdapter')).SqliteAdapter();
+        retainedCandidates.add(candidate);
+        try {
+            await candidate.initialize();
+            if (closing) throw new Error('Database adapter factory closed during initialization');
+            _adapter = candidate;
+            return candidate;
+        } catch (error) {
+            try { await candidate.close(); retainedCandidates.delete(candidate); }
+            catch (cleanup) { cleanupFailures.push(cleanup); }
+            // Preserve original work rejection; cleanup never asks callers to retry work.
+            throw error;
+        }
+    })().finally(() => { initializing = null; });
+    return initializing;
+}
+export function getAdapterCleanupFailures(): readonly unknown[] { return [...cleanupFailures]; }
+export function closeDatabaseAdapter(): Promise<void> {
+    if (closingTask) return closingTask;
+    closing = true;
+    closingTask = (async () => {
+        if (initializing) await initializing.catch(() => undefined);
+        for (const target of retainedCandidates) {
+            try { await target.close(); retainedCandidates.delete(target); }
+            catch (error) { cleanupFailures.push(error); }
+        }
+        if (cleanupFailures.length) throw new AggregateError(cleanupFailures, 'Database adapter cleanup failed');
+    })();
+    return closingTask;
 }
 
 /**
@@ -34,7 +60,7 @@ export async function getDatabaseAdapter(): Promise<IDatabaseAdapter> {
  * Throws if called before getDatabaseAdapter().
  */
 export function getAdapter(): IDatabaseAdapter {
-    if (!_adapter) {
+    if (closing || !_adapter) {
         throw new Error('[AdapterFactory] Database adapter not initialized. Call getDatabaseAdapter() first.');
     }
     return _adapter;

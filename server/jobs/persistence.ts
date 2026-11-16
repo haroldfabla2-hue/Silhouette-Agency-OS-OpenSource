@@ -1,3 +1,4 @@
+import { ResourceScope } from '../runtime/resourceScope';
 
 import fs from 'fs';
 import { PATHS } from '../config/paths';
@@ -7,11 +8,14 @@ import { orchestrator } from '../../services/orchestrator';
 import { continuum } from '../../services/continuumMemory';
 import { sqliteService } from '../../services/sqliteService';
 
-export const startPersistenceJobs = () => {
+let persistenceOwner: ResourceScope | undefined;
+export const startPersistenceJobs = (): ResourceScope => {
+    if (persistenceOwner) return persistenceOwner;
+    const owner = persistenceOwner = new ResourceScope('persistence-jobs');
     console.log('[JOB] 💾 Persistence & Cleanup Jobs Started.');
 
     // 1. Cost Metrics Saver (Every 10s)
-    setInterval(() => {
+    owner.interval('cost-metrics', 10000, () => {
         try {
             const metrics = costEstimator.getMetrics();
             // Dual write for migration safety:
@@ -20,15 +24,20 @@ export const startPersistenceJobs = () => {
             // 2. SQLite (New)
             sqliteService.saveCostMetrics(metrics);
         } catch (e) {
+            owner.recordFailure('cost-metrics-durability', e);
             console.error("[JOB] Failed to save cost metrics", e);
         }
-    }, 10000);
+    });
 
     // 2. High-Frequency System Tick (Every 1s)
-    setInterval(() => {
-        workflowEngine.tick();
-        orchestrator.tick();
-        continuum.runMaintenance();
+    owner.interval('system-tick', 1000, async () => {
+        // Keep original overlapping cadence. Every submitted task retains its own
+        // rejection receipt and all settle before this callback receipt completes.
+        await Promise.allSettled([
+            owner.run('workflow-tick', () => workflowEngine.tick()),
+            owner.run('orchestrator-tick', () => orchestrator.tick()),
+            owner.run('continuum-maintenance', () => continuum.runMaintenance()),
+        ]);
 
         // Auto-save State every 5s
         if (Date.now() % 5000 < 1000) {
@@ -36,5 +45,6 @@ export const startPersistenceJobs = () => {
             // currently relies on the monolithic function in index.ts
             // We can emit an event here if we want to decouple
         }
-    }, 1000);
+    });
+    return owner;
 };

@@ -83,7 +83,7 @@ export class OrchestratorController {
         const limit = parseInt(req.query.limit as string) || 50;
 
         // Dynamic import to avoid circular dependency
-        import('../../services/sqliteService').then(({ sqliteService }) => {
+        return import('../../services/sqliteService').then(({ sqliteService }) => {
             const history = sqliteService.getEvolutionHistory(agentId, limit);
             res.json(history);
         }).catch(err => {

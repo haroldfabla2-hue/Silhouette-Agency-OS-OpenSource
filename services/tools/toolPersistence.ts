@@ -1,3 +1,4 @@
+import { ResourceScope } from '../../server/runtime/resourceScope';
 /**
  * TOOL PERSISTENCE - SQLite Storage for Dynamic Tools
  * 
@@ -18,22 +19,32 @@ const DB_PATH = process.env.SILHOUETTE_TOOLS_DB_PATH
     : path.join(DATA_DIR, 'tools.db');
 
 class ToolPersistence {
+    private readonly operations = new ResourceScope('ToolPersistence');
+    public getLifecycleStatus() { return { ready: this.initialized, diagnostics: this.operations.getDiagnostics(), failures: this.operations.getFailures() }; }
+    public shutdownLifecycle() { return this.operations.close(); }
     private db: Database.Database | null = null;
     private initialized: boolean = false;
 
     /**
      * Initialize database connection and schema
      */
-    public async initialize(): Promise<void> {
+    private startup?: Promise<void>;
+    public initialize(): Promise<void> {
+        this.operations.assertWorkAccepted();
+        if (!this.startup) this.startup = this.operations.run('initialize', () => this.initializeOnce());
+        return this.startup;
+    }
+    private async initializeOnce(): Promise<void> {
+        return this.operations.run('initializeOnce', async () => {
+
         if (this.initialized) return;
 
-        // Ensure data directory exists
-        if (!fs.existsSync(DATA_DIR)) {
-            fs.mkdirSync(DATA_DIR, { recursive: true });
-        }
-
         try {
+            this.operations.assertAccepting();
+            fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
             this.db = new Database(DB_PATH);
+            const handle = this.db;
+            this.operations.own({ name: 'tools-sqlite', closeRank: -100, close: () => { if (handle.open) handle.close(); this.initialized = false; if (this.db === handle) this.db = null; } });
             this.db.pragma('journal_mode = WAL');
             this.db.pragma('synchronous = NORMAL');
             this.db.pragma('busy_timeout = 5000');
@@ -41,8 +52,11 @@ class ToolPersistence {
             this.initialized = true;
             console.log('[ToolPersistence] ✅ Database initialized');
         } catch (error) {
-            console.error('[ToolPersistence] ❌ Failed to initialize database:', error);
+            this.operations.recordFailure('tools-sqlite-startup', error);
+            throw error;
         }
+    
+        });
     }
 
     /**
@@ -79,6 +93,8 @@ class ToolPersistence {
      * Save a dynamic tool to database
      */
     public async save(tool: DynamicTool): Promise<boolean> {
+        return this.operations.run('save', async () => {
+
         await this.initialize();
         if (!this.db) return false;
 
@@ -110,15 +126,21 @@ class ToolPersistence {
             console.log(`[ToolPersistence] 💾 Saved tool: ${tool.name}`);
             return true;
         } catch (error) {
+            this.operations.recordFailure('save-durability', error);
+
             console.error(`[ToolPersistence] ❌ Failed to save tool ${tool.name}:`, error);
             return false;
         }
+    
+        });
     }
 
     /**
      * Load all persisted dynamic tools
      */
     public async loadAll(): Promise<DynamicTool[]> {
+        return this.operations.run('loadAll', async () => {
+
         await this.initialize();
         if (!this.db) return [];
 
@@ -130,15 +152,21 @@ class ToolPersistence {
             const rows = stmt.all() as any[];
             return rows.map(row => this.rowToTool(row));
         } catch (error) {
+            this.operations.recordDiagnostic('loadAll', error, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
+
             console.error('[ToolPersistence] ❌ Failed to load tools:', error);
             return [];
         }
+    
+        });
     }
 
     /**
      * Load a single tool by name
      */
     public async loadByName(name: string): Promise<DynamicTool | null> {
+        return this.operations.run('loadByName', async () => {
+
         await this.initialize();
         if (!this.db) return null;
 
@@ -150,15 +178,21 @@ class ToolPersistence {
             const row = stmt.get(name) as any;
             return row ? this.rowToTool(row) : null;
         } catch (error) {
+            this.operations.recordDiagnostic('loadByName', error, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
+
             console.error(`[ToolPersistence] ❌ Failed to load tool ${name}:`, error);
             return null;
         }
+    
+        });
     }
 
     /**
      * Delete a tool from database
      */
     public async delete(name: string): Promise<boolean> {
+        return this.operations.run('delete', async () => {
+
         await this.initialize();
         if (!this.db) return false;
 
@@ -174,15 +208,21 @@ class ToolPersistence {
             }
             return false;
         } catch (error) {
+            this.operations.recordFailure('delete-durability', error);
+
             console.error(`[ToolPersistence] ❌ Failed to delete tool ${name}:`, error);
             return false;
         }
+    
+        });
     }
 
     /**
      * Update tool usage statistics
      */
     public async updateUsage(name: string, success: boolean): Promise<void> {
+        return this.operations.run('updateUsage', async () => {
+
         await this.initialize();
         if (!this.db) return;
 
@@ -197,8 +237,12 @@ class ToolPersistence {
 
             stmt.run(success ? 1 : 0, Date.now(), name);
         } catch (error) {
+            this.operations.recordFailure('updateUsage-durability', error);
+
             console.error(`[ToolPersistence] ❌ Failed to update usage for ${name}:`, error);
         }
+    
+        });
     }
 
     /**
@@ -208,6 +252,8 @@ class ToolPersistence {
      * every restart and the evolution cycle never had data to analyze.
      */
     public async recordUsageStats(tool: DynamicTool, success: boolean): Promise<void> {
+        return this.operations.run('recordUsageStats', async () => {
+
         await this.initialize();
         if (!this.db) return;
 
@@ -242,8 +288,12 @@ class ToolPersistence {
                 now
             );
         } catch (error) {
+            this.operations.recordFailure('recordUsageStats-durability', error);
+
             console.error(`[ToolPersistence] ❌ Failed to record usage stats for ${tool.name}:`, error);
         }
+    
+        });
     }
 
     /**
@@ -254,6 +304,8 @@ class ToolPersistence {
      * per tool at boot gives every tool a durable creation time.
      */
     public async touchIfAbsent(tool: DynamicTool): Promise<void> {
+        return this.operations.run('touchIfAbsent', async () => {
+
         await this.initialize();
         if (!this.db) return;
 
@@ -279,8 +331,12 @@ class ToolPersistence {
                 tool.tags ? JSON.stringify(tool.tags) : null
             );
         } catch (error: any) {
+            this.operations.recordFailure('touchIfAbsent-durability', error);
+
             console.warn(`[ToolPersistence] ⚠️ touchIfAbsent failed for ${tool.name}:`, error?.message || error);
         }
+    
+        });
     }
 
     /**
@@ -314,6 +370,8 @@ class ToolPersistence {
         byCreator: Record<string, number>;
         totalUsage: number;
     }> {
+        return this.operations.run('getStats', async () => {
+
         await this.initialize();
         if (!this.db) {
             return { total: 0, byCategory: {}, byCreator: {}, totalUsage: 0 };
@@ -344,21 +402,19 @@ class ToolPersistence {
 
             return { total, byCategory, byCreator, totalUsage };
         } catch (error) {
+            this.operations.recordDiagnostic('getStats', error, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
+
             console.error('[ToolPersistence] ❌ Failed to get stats:', error);
             return { total: 0, byCategory: {}, byCreator: {}, totalUsage: 0 };
         }
+    
+        });
     }
 
     /**
      * Close database connection
      */
-    public close(): void {
-        if (this.db) {
-            this.db.close();
-            this.db = null;
-            this.initialized = false;
-        }
-    }
+    public close() { return this.operations.close(); }
 }
 
 export const toolPersistence = new ToolPersistence();

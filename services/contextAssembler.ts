@@ -1,3 +1,4 @@
+import {ResourceScope} from '../server/runtime/resourceScope';
 
 import { orchestrator } from "./orchestrator";
 import { resourceArbiter } from "./resourceArbiter";
@@ -100,7 +101,17 @@ export interface GlobalContext {
     totalTokensUsed: number;                    // Total tokens consumed
 }
 
+interface ContextWorkReceipt {
+    id:number;name:string;actual:'PENDING'|'FULFILLED'|'REJECTED';
+    display:'PENDING'|'ACTUAL'|'TIMEOUT_FALLBACK'|'REJECTED_FALLBACK'|'QUIESCE_FALLBACK';
+}
 class ContextAssembler {
+    private readonly operations=new ResourceScope('context-assembler');
+    private readonly contextWork:ContextWorkReceipt[]=[];
+    public getLifecycleStatus(){return {work:this.contextWork.map(r=>({...r})),failures:this.operations.getFailures(),
+        diagnostics:this.operations.getDiagnostics(),pendingDurable:false,internalRelease:'UNVERIFIED'};}
+    public shutdown(){return this.operations.close();}
+
     // [PA-041] Token budget configuration - configurable at runtime
     private tokenBudget: TokenBudgetConfig = DEFAULT_TOKEN_BUDGET;
 
@@ -110,7 +121,7 @@ class ContextAssembler {
     private lastQuery: string | undefined = undefined;
 
     constructor() {
-        console.log("[CONTEXT ASSEMBLER] 🧠 Initializing Omniscient Cortex...");
+        this.operations.own({name:'context-assembler-application',close:()=>({state:'UNVERIFIED',detail:'Actual accepted assembly/source promises drained; shared provider/cache/native/compaction internals and restart pending remain separate owners'})});
         // [LIFECYCLE] No network at import: Redis connects lazily on first
         // cache operation (redisClient.ensureConnected); server boot connects
         // it earlier via dbLoader.
@@ -122,6 +133,7 @@ class ContextAssembler {
      * @param config - Partial configuration to merge with defaults
      */
     public setTokenBudget(config: Partial<TokenBudgetConfig>): void {
+        this.operations.assertWorkAccepted();
         this.tokenBudget = {
             ...this.tokenBudget,
             ...config,
@@ -208,23 +220,33 @@ class ContextAssembler {
     /**
      * Helper to wrap promises with a timeout
      */
-    private async timeoutPromise<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
-        return new Promise((resolve) => {
-            const timer = setTimeout(() => {
-                // console.warn(`[CONTEXT] ⏱️ Timeout (${ms}ms) exceeded`);
-                resolve(fallback);
-            }, ms);
-
-            promise
-                .then((res) => {
-                    clearTimeout(timer);
-                    resolve(res);
-                })
-                .catch((err) => {
-                    clearTimeout(timer);
-                    console.warn(`[CONTEXT] ⚠️ Promise failed:`, err.message);
-                    resolve(fallback);
-                });
+    private timeoutPromise<T>(name:string,operation:()=>Promise<T>,ms:number,fallback:T):Promise<T>{
+        this.operations.assertWorkAccepted();
+        const receipt:ContextWorkReceipt={id:this.contextWork.length+1,name,actual:'PENDING',display:'PENDING'};
+        this.contextWork.push(receipt);
+        // Admit before the actual source invocation. Its real promise remains in
+        // the scope even after the display timeout returns the existing fallback.
+        const actual=this.operations.run('context-source:'+name,operation);
+        return new Promise<T>(resolve=>{
+            let settled=false;
+            let timer:ReturnType<typeof setTimeout>|undefined;
+            const detach=()=>{if(timer)clearTimeout(timer);this.operations.signal.removeEventListener('abort',quiesce);};
+            const finish=(value:T,display:ContextWorkReceipt['display'])=>{
+                if(settled)return;settled=true;receipt.display=display;detach();resolve(value);
+            };
+            const quiesce=()=>finish(fallback,'QUIESCE_FALLBACK');
+            actual.then(value=>{receipt.actual='FULFILLED';finish(value,'ACTUAL');},error=>{
+                receipt.actual='REJECTED';
+                this.operations.recordDiagnostic('context-source:'+name,error,'DEGRADED_FALLBACK','UNAVAILABLE');
+                console.warn(`[CONTEXT] ⚠️ Promise failed:`,(error as any)?.message);
+                finish(fallback,'REJECTED_FALLBACK');
+            });
+            this.operations.signal.addEventListener('abort',quiesce,{once:true});
+            if(this.operations.signal.aborted){quiesce();return;}
+            timer=setTimeout(()=>{
+                this.operations.recordDiagnostic('context-source-timeout:'+name,new Error('Display deadline elapsed; actual source still owned, not canceled'),'DEGRADED_FALLBACK','UNVERIFIED');
+                finish(fallback,'TIMEOUT_FALLBACK');
+            },ms);
         });
     }
 
@@ -235,6 +257,8 @@ class ContextAssembler {
      * @param query - Optional query to fetch relevant memory/graph data.
      */
     public async getGlobalContext(query?: string, options?: { mode?: 'FAST' | 'DEEP' }): Promise<GlobalContext> {
+        return this.operations.run('getGlobalContext',async()=>{
+
         const start = Date.now();
 
         // [OPTIMIZATION] TTL Cache (2s) to prevent hardware thrashing
@@ -265,7 +289,8 @@ class ContextAssembler {
             // VRAM - We skip this on hot path or use cached value from previous slower runs if we had a background poller
             // For now, 0 or cached is fine.
         } catch (e) {
-            // ignore
+            this.operations.recordDiagnostic('context-os-metrics',e,'DEGRADED_FALLBACK','UNAVAILABLE');
+            // Original display fallback remains, failure does not disappear.
         }
 
         // 2-6. PARALLEL EXECUTION with TIMEOUTS
@@ -309,22 +334,22 @@ class ContextAssembler {
 
         // C. Heavy IO Operations (Parallel)
         const memoryPromise = query
-            ? this.timeoutPromise(continuum.getCombinedContext(query), TIMEOUT_MS, { semantic: [], recent: [] })
+            ? this.timeoutPromise('memory',()=>continuum.getCombinedContext(query), TIMEOUT_MS, { semantic: [], recent: [] })
             : Promise.resolve({ semantic: [], recent: [] });
 
         const graphPromise = query
-            ? this.timeoutPromise(this.fetchGraphContext(query), TIMEOUT_MS, "")
+            ? this.timeoutPromise('graph',()=>this.fetchGraphContext(query), TIMEOUT_MS, "")
             : Promise.resolve("");
 
         const ragPromise = query
-            ? this.timeoutPromise(codebaseAwareness.query(query), TIMEOUT_MS + 200, "") // Give RAG a bit more time
+            ? this.timeoutPromise('rag',()=>codebaseAwareness.query(query), TIMEOUT_MS + 200, "") // Give RAG a bit more time
             : Promise.resolve("");
 
         // [BRAIN] External 4-Tier memory recall (optional, never blocks the loop).
         // Synthesis is only requested in DEEP mode to keep the chat hot-path fast.
         const brainPromise = (query && brainBridge.isEnabled())
-            ? this.timeoutPromise(
-                brainBridge.getContextBlock(query, { synthesize: fetchMode === 'DEEP' }).then(b => b.text),
+            ? this.timeoutPromise('brain',
+                ()=>brainBridge.getContextBlock(query, { synthesize: fetchMode === 'DEEP' }).then(b => b.text),
                 TIMEOUT_MS,
                 ""
               )
@@ -442,7 +467,9 @@ class ContextAssembler {
 
         // console.log(`[CONTEXT] ⚡ Assembled in ${Date.now() - start}ms`);
         return result;
-    }
+    
+        });
+}
 
     /**
      * Dedicated fetcher for Graph to handle its own caching logic/errors
@@ -467,6 +494,7 @@ class ContextAssembler {
             return "";
 
         } catch (e) {
+            this.operations.recordDiagnostic('context-graph-cache',e,'DEGRADED_FALLBACK','UNAVAILABLE');
             return "";
         }
     }

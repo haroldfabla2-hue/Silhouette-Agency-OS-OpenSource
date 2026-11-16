@@ -1,3 +1,4 @@
+import { BrowserWorkScope } from './runtime/browserWorkScope';
 import { api } from "../utils/api";
 import { SettingsState, IntegrationSchema, PermissionMatrix, UserRole } from "../types";
 
@@ -51,27 +52,47 @@ class SettingsManager {
         }
     ];
 
-    constructor() {
-        this.state = this.loadSettings();
-        // Initialize default integrations if missing
-        this.ensureDefaultIntegrations();
-        // Migrate any existing localStorage secrets to server-side vault
-        this.migrateLocalStorageSecrets();
-        // Load server-side secret status (which services are configured)
-        this.loadServerSecrets();
+    private readonly lifecycle = new BrowserWorkScope();
+    private localReady = false;
+    private startup?: Promise<void>;
+    constructor() { this.state = this.getDefaultSettings(); }
+    private startLocal(): void {
+        if (this.localReady) return;
+        this.lifecycle.assertOpen();
+        try { this.state = this.loadSettings(); this.ensureDefaultIntegrations(); this.localReady = true; }
+        catch (error) { this.lifecycle.record('settings-local-recovery', true); throw error; }
     }
+    public start(): Promise<void> {
+        this.lifecycle.assertOpen();
+        this.startLocal();
+        if (!this.startup) this.startup = this.lifecycle.run('settings-startup', async () => {
+            // Preserve existing migration behavior, but only under explicit browser startup.
+            // Ordering prevents status hydration from overwriting legacy values before migration.
+            await this.migrateLocalStorageSecrets();
+            await this.loadServerSecrets();
+        });
+        return this.startup;
+    }
+    public shutdown() { return this.lifecycle.close(); }
+    public getLifecycleDiagnostics() { return this.lifecycle.getDiagnostics(); }
 
     public getSettings(): SettingsState {
+        this.lifecycle.assertOpen(); this.startLocal();
+
         // Return a copy to ensure React detects state changes
         return JSON.parse(JSON.stringify(this.state));
     }
 
     public updateTheme(themeUpdates: Partial<SettingsState['theme']>) {
+        this.lifecycle.assertOpen(); this.startLocal();
+
         this.state.theme = { ...this.state.theme, ...themeUpdates };
         this.saveSettings();
     }
 
     public updatePermissions(role: string, updates: Partial<PermissionMatrix[string]>) {
+        this.lifecycle.assertOpen(); this.startLocal();
+
         if (this.state.permissions[role]) {
             this.state.permissions[role] = { ...this.state.permissions[role], ...updates };
             this.saveSettings();
@@ -79,6 +100,9 @@ class SettingsManager {
     }
 
     public async updateNotifications(updates: Partial<SettingsState['notifications']>) {
+        this.lifecycle.assertOpen(); this.startLocal();
+        return this.lifecycle.run('updateNotifications', async () => {
+
         // REAL LOGIC: Request Browser Permission
         if (updates.browser === true) {
             if (typeof Notification !== 'undefined') {
@@ -93,9 +117,13 @@ class SettingsManager {
         this.state.notifications = { ...this.state.notifications, ...updates };
         this.saveSettings();
         return this.state.notifications; // Return actual state after logic
+    
+        });
     }
 
     public updateSystemUpdates(updates: Partial<SettingsState['systemUpdates']>) {
+        this.lifecycle.assertOpen(); this.startLocal();
+
         if (!this.state.systemUpdates) {
             this.state.systemUpdates = { autoCheck: true, autoLaunch: false };
         }
@@ -107,6 +135,8 @@ class SettingsManager {
 
     // Register a new tool capability (called by Installation Service or manually)
     public registerIntegrationSchema(schema: IntegrationSchema) {
+        this.lifecycle.assertOpen(); this.startLocal();
+
         const exists = this.state.registeredIntegrations.find(i => i.id === schema.id);
         if (!exists) {
             this.state.registeredIntegrations.push(schema);
@@ -116,19 +146,24 @@ class SettingsManager {
 
     // Real Discovery Logic: Find next available extension from repo
     public discoverNextExtension(): IntegrationSchema | null {
+        this.lifecycle.assertOpen(); this.startLocal();
+
         const installedIds = this.state.registeredIntegrations.map(i => i.id);
         const available = this.extensionRepository.find(ext => !installedIds.includes(ext.id));
         return available || null;
     }
 
     public async saveCredential(serviceId: string, data: Record<string, string>) {
+        this.lifecycle.assertOpen(); this.startLocal();
+        return this.lifecycle.run('saveCredential', async () => {
+
         // ── Server-side storage via Secrets Vault API ──
         try {
             await api.post(`/v1/system/secrets/${serviceId}`, { credentials: data });
             console.log(`[SETTINGS] Credentials for ${serviceId} saved to server vault`);
         } catch (e) {
-            console.error(`[SETTINGS] Failed to save credentials for ${serviceId} to server:`, e);
-            // Fall through — still update local UI state below
+            this.lifecycle.record('settings-credential-durability', true);
+            return false;
         }
 
         // Update local connected status (for fast UI rendering)
@@ -149,6 +184,8 @@ class SettingsManager {
 
         this.saveSettings();
         return true;
+    
+        });
     }
 
     /**
@@ -172,6 +209,7 @@ class SettingsManager {
             }
         } catch (e) {
             // Server may not be available yet during cold start — this is OK
+            this.lifecycle.record('settings-server-secret-status');
             console.warn('[SETTINGS] Could not load server secrets status (server may be starting)');
         }
 
@@ -188,7 +226,8 @@ class SettingsManager {
                 this.saveSettings();
             }
         } catch {
-            // status endpoint unavailable — leave cards as-is
+            this.lifecycle.record('settings-google-status');
+            // status endpoint unavailable - leave cards as-is
         }
     }
 
@@ -218,7 +257,8 @@ class SettingsManager {
                     });
                     migratedCount++;
                 } catch (e) {
-                    // If server isn't ready, we'll try again next time
+                    this.lifecycle.record('settings-legacy-migration', true);
+                    // Originals retained, no connected/durability success.
                 }
             }
         }
@@ -230,10 +270,14 @@ class SettingsManager {
     }
 
     public getCredential(serviceId: string, key: string): string | undefined {
+        this.lifecycle.assertOpen(); this.startLocal();
+
         return this.state.integrations[serviceId]?.[key];
     }
 
     public disconnectIntegration(serviceId: string) {
+        this.lifecycle.assertOpen(); this.startLocal();
+
         if (this.state.integrations[serviceId]) {
             delete this.state.integrations[serviceId];
             const schema = this.state.registeredIntegrations.find(i => i.id === serviceId);
@@ -243,6 +287,8 @@ class SettingsManager {
     }
 
     public factoryReset() {
+        this.lifecycle.assertOpen(); this.startLocal();
+
         localStorage.removeItem(this.STORAGE_KEY);
         this.state = this.getDefaultSettings();
         this.ensureDefaultIntegrations();

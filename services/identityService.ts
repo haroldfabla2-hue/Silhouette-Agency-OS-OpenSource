@@ -1,3 +1,4 @@
+import { ResourceScope } from '../server/runtime/resourceScope';
 // =============================================================================
 // Identity Service
 // User authentication, device recognition, and session management
@@ -66,6 +67,9 @@ export interface Session {
 class IdentityService {
     private db: Database.Database | null = null;
     private initialized = false;
+    private readonly operations = new ResourceScope('identity');
+    private initializationError?: unknown;
+    public shutdown() { return this.operations.close(); }
     private currentUser: User | null = null;
     private currentDevice: Device | null = null;
     private currentSession: Session | null = null;
@@ -81,8 +85,13 @@ class IdentityService {
     }
 
     async init(): Promise<void> {
+        return this.operations.run('init', async () => {
+
+        this.operations.assertWorkAccepted();
+        if (this.initializationError) throw this.initializationError;
         if (this.initialized) return;
 
+        this.operations.assertAccepting();
         // Ensure directory exists
         const dbDir = path.dirname(DB_PATH);
         if (!fs.existsSync(dbDir)) {
@@ -90,11 +99,15 @@ class IdentityService {
         }
 
         this.db = new Database(DB_PATH, { timeout: 5000 });
-        this.createTables();
-        this.migrateSchema();
+        const handle = this.db;
+        this.operations.own({ name: 'identity-sqlite', close: () => handle.close() });
+        try { this.createTables(); this.migrateSchema(); }
+        catch (error) { this.initializationError = error; this.operations.recordFailure('identity-startup', error); throw error; }
         this.initialized = true;
 
         console.log('[IdentityService] Initialized');
+    
+        });
     }
 
     /**
@@ -197,6 +210,8 @@ class IdentityService {
      * Check if any users exist (determines if setup is needed)
      */
     hasAnyUsers(): boolean {
+        this.operations.assertWorkAccepted();
+
         if (!this.db) return false;
         const row = this.db.prepare('SELECT COUNT(*) as count FROM users').get() as any;
         return row.count > 0;
@@ -211,6 +226,8 @@ class IdentityService {
         fingerprint: string,
         deviceName: string
     ): { user: User; device: Device; session: Session } {
+        this.operations.assertWorkAccepted();
+
         if (!this.db) throw new Error('IdentityService not initialized');
 
         if (this.hasAnyUsers()) {
@@ -254,6 +271,8 @@ class IdentityService {
      * Unlocks: Drive, Gmail, Calendar, cross-device login
      */
     linkGoogleAccount(userId: string, googleEmail: string, googleName?: string, avatarUrl?: string): User {
+        this.operations.assertWorkAccepted();
+
         if (!this.db) throw new Error('IdentityService not initialized');
 
         const now = Date.now();
@@ -283,6 +302,8 @@ class IdentityService {
      * Check if current user has Google linked
      */
     isGoogleLinked(): boolean {
+        this.operations.assertWorkAccepted();
+
         return this.currentUser?.googleLinked === true;
     }
 
@@ -290,6 +311,8 @@ class IdentityService {
      * Get Google link status for any user by ID
      */
     getUserGoogleStatus(userId: string): { linked: boolean; email: string | null } {
+        this.operations.assertWorkAccepted();
+
         if (!this.db) return { linked: false, email: null };
         const row = this.db.prepare('SELECT google_email FROM users WHERE id = ?').get(userId) as any;
         return {
@@ -308,6 +331,8 @@ class IdentityService {
         name: string;
         avatarUrl?: string;
     }): Promise<User> {
+        return this.operations.run('upsertUser', async () => {
+
         if (!this.db) throw new Error('IdentityService not initialized');
 
         const now = Date.now();
@@ -385,12 +410,16 @@ class IdentityService {
 
         console.log(`[IdentityService] Created user: ${googleUser.email} (${role})`);
         return user;
+    
+        });
     }
 
     /**
      * Get user by email
      */
     getUserByEmail(email: string): User | null {
+        this.operations.assertWorkAccepted();
+
         if (!this.db) return null;
 
         const row = this.db.prepare('SELECT * FROM users WHERE email = ?').get(email) as any;
@@ -403,6 +432,8 @@ class IdentityService {
      * Get user by Google email
      */
     getUserByGoogleEmail(googleEmail: string): User | null {
+        this.operations.assertWorkAccepted();
+
         if (!this.db) return null;
 
         const row = this.db.prepare('SELECT * FROM users WHERE google_email = ?').get(googleEmail) as any;
@@ -415,6 +446,8 @@ class IdentityService {
      * Get user by ID
      */
     getUserById(userId: string): User | null {
+        this.operations.assertWorkAccepted();
+
         if (!this.db) return null;
 
         const row = this.db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as any;
@@ -427,6 +460,8 @@ class IdentityService {
      * Get a user by their external channel ID (telegram, discord, whatsapp)
      */
     getUserByChannelId(channel: string, channelId: string): User | null {
+        this.operations.assertWorkAccepted();
+
         if (!this.db) return null;
 
         let query = '';
@@ -445,6 +480,8 @@ class IdentityService {
      * Link an external channel ID to an existing user
      */
     linkChannelId(userId: string, channel: string, channelId: string): User {
+        this.operations.assertWorkAccepted();
+
         if (!this.db) throw new Error('IdentityService not initialized');
 
         // Check if ID is already claimed by someone else
@@ -496,6 +533,8 @@ class IdentityService {
      * Get creator's display name (for dynamic prompts)
      */
     getCreatorName(): string | null {
+        this.operations.assertWorkAccepted();
+
         if (!this.db) return null;
 
         const row = this.db.prepare(
@@ -511,6 +550,8 @@ class IdentityService {
      * Check if ANY user exists in the database
      */
     hasAnyUser(): boolean {
+        this.operations.assertWorkAccepted();
+
         if (!this.db) return false;
         const row = this.db.prepare('SELECT COUNT(*) as count FROM users').get() as any;
         return row && row.count > 0;
@@ -520,6 +561,8 @@ class IdentityService {
      * Register the initial admin user (Local Auth)
      */
     async registerInitialAdmin(email: string, passwordHash: string, name: string): Promise<User> {
+        return this.operations.run('registerInitialAdmin', async () => {
+
         if (!this.db) throw new Error('IdentityService not initialized');
 
         if (this.hasAnyUser()) {
@@ -549,12 +592,16 @@ class IdentityService {
         this.currentUser = user;
         console.log(`[IdentityService] 👑 Initial Admin Created: ${email}`);
         return user;
+    
+        });
     }
 
     /**
      * Update a user's stored password hash (used for transparent legacy upgrades).
      */
     setPasswordHash(userId: string, passwordHash: string): void {
+        this.operations.assertWorkAccepted();
+
         if (!this.db) return;
         this.db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(passwordHash, userId);
     }
@@ -564,6 +611,8 @@ class IdentityService {
      * verification (with backward-compatible legacy SHA-256 support + upgrade).
      */
     async loginLocalVerify(email: string, plainPassword: string): Promise<User | null> {
+        return this.operations.run('loginLocalVerify', async () => {
+
         if (!this.db) return null;
 
         const user = this.getUserByEmail(email);
@@ -591,6 +640,8 @@ class IdentityService {
         this.currentUser = user;
         console.log(`[IdentityService] 🔓 Local login: ${email}`);
         return user;
+    
+        });
     }
 
     /**
@@ -598,6 +649,8 @@ class IdentityService {
      * compatibility; prefer loginLocalVerify(email, plainPassword).
      */
     async loginLocal(email: string, passwordHash: string): Promise<User | null> {
+        return this.operations.run('loginLocal', async () => {
+
         if (!this.db) return null;
 
         const user = this.getUserByEmail(email);
@@ -613,6 +666,8 @@ class IdentityService {
 
         console.log(`[IdentityService] 🔓 Local login: ${email}`);
         return user;
+    
+        });
     }
 
     // ─── Devices ────────────────────────────────────────────────
@@ -621,6 +676,8 @@ class IdentityService {
      * Register a device for a user
      */
     registerDevice(userId: string, fingerprint: string, deviceName: string, trusted = true): Device {
+        this.operations.assertWorkAccepted();
+
         if (!this.db) throw new Error('IdentityService not initialized');
 
         const now = Date.now();
@@ -664,6 +721,8 @@ class IdentityService {
      * Get device by fingerprint
      */
     getDeviceByFingerprint(fingerprint: string, userId?: string): Device | null {
+        this.operations.assertWorkAccepted();
+
         if (!this.db) return null;
 
         let query = 'SELECT * FROM devices WHERE fingerprint = ?';
@@ -694,6 +753,8 @@ class IdentityService {
      * Try auto-login using device fingerprint
      */
     async tryAutoLogin(fingerprint: string): Promise<User | null> {
+        return this.operations.run('tryAutoLogin', async () => {
+
         if (!this.db) return null;
 
         // Find trusted device with this fingerprint
@@ -726,12 +787,16 @@ class IdentityService {
 
         console.log(`[IdentityService] Auto-login: ${user.name} on ${row.device_name}`);
         return user;
+    
+        });
     }
 
     /**
      * Create a new session
      */
     createSession(userId: string, deviceId: string, durationMs = 30 * 24 * 60 * 60 * 1000): Session {
+        this.operations.assertWorkAccepted();
+
         if (!this.db) throw new Error('IdentityService not initialized');
 
         const now = Date.now();
@@ -764,6 +829,8 @@ class IdentityService {
      * Get current user
      */
     getCurrentUser(): User | null {
+        this.operations.assertWorkAccepted();
+
         return this.currentUser;
     }
 
@@ -771,6 +838,8 @@ class IdentityService {
      * Get current device
      */
     getCurrentDevice(): Device | null {
+        this.operations.assertWorkAccepted();
+
         return this.currentDevice;
     }
 
@@ -778,6 +847,8 @@ class IdentityService {
      * Check if current user is creator
      */
     isCreator(): boolean {
+        this.operations.assertWorkAccepted();
+
         return this.currentUser?.role === UserRole.CREATOR;
     }
 
@@ -785,6 +856,8 @@ class IdentityService {
      * Check if current user has at least admin role
      */
     isAdmin(): boolean {
+        this.operations.assertWorkAccepted();
+
         return this.currentUser?.role === UserRole.CREATOR ||
             this.currentUser?.role === UserRole.ADMIN;
     }
@@ -793,6 +866,8 @@ class IdentityService {
      * Validate an existing session ID and return the User (Stateless / Request-Scoped)
      */
     validateSessionAndGetUser(sessionId: string): User | null {
+        this.operations.assertWorkAccepted();
+
         if (!this.db) return null;
 
         const now = Date.now();
@@ -810,6 +885,8 @@ class IdentityService {
      * Validate an existing session ID (DEPRECATED: Use validateSessionAndGetUser instead)
      */
     validateSession(sessionId: string): boolean {
+        this.operations.assertWorkAccepted();
+
         return this.validateSessionAndGetUser(sessionId) !== null;
     }
 
@@ -817,6 +894,8 @@ class IdentityService {
      * Logout - clear a specific session
      */
     logoutSession(sessionId: string): void {
+        this.operations.assertWorkAccepted();
+
         if (this.db) {
             this.db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
         }
@@ -831,6 +910,8 @@ class IdentityService {
      * Logout - clear current session (Legacy stateful method)
      */
     logout(): void {
+        this.operations.assertWorkAccepted();
+
         if (this.currentSession && this.db) {
             this.db.prepare('DELETE FROM sessions WHERE id = ?').run(this.currentSession.id);
         }
@@ -862,6 +943,8 @@ class IdentityService {
      * system_config table of the same SQLite DB). Never includes env values.
      */
     getConfiguredCreatorEmails(): string[] {
+        this.operations.assertWorkAccepted();
+
         if (!this.db) return [];
         this.ensureSystemConfigTable();
         const row = this.db.prepare('SELECT value FROM system_config WHERE key = ?')
@@ -881,6 +964,8 @@ class IdentityService {
      * These can only be changed by editing the env config, not from the UI.
      */
     getEnvCreatorEmails(): string[] {
+        this.operations.assertWorkAccepted();
+
         return [...ENV_CREATOR_EMAILS];
     }
 
@@ -889,6 +974,8 @@ class IdentityService {
      * lowercase). Used everywhere a creator check by email is needed.
      */
     getCreatorEmails(): string[] {
+        this.operations.assertWorkAccepted();
+
         const all = [...ENV_CREATOR_EMAILS, ...this.getConfiguredCreatorEmails()];
         return [...new Set(all.map(e => e.toLowerCase()))];
     }
@@ -898,6 +985,8 @@ class IdentityService {
      * Returns the updated configured list.
      */
     addCreatorEmail(email: string): string[] {
+        this.operations.assertWorkAccepted();
+
         if (!this.db) throw new Error('IdentityService not initialized');
         const clean = email.trim().toLowerCase();
         if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(clean)) {
@@ -916,6 +1005,8 @@ class IdentityService {
      * removed here (edit CREATOR_EMAILS instead); returns false in that case.
      */
     removeCreatorEmail(email: string): boolean {
+        this.operations.assertWorkAccepted();
+
         if (!this.db) throw new Error('IdentityService not initialized');
         const clean = email.trim().toLowerCase();
         const current = this.getConfiguredCreatorEmails();
@@ -945,6 +1036,8 @@ class IdentityService {
         isCreator: boolean;
         googleLinked: boolean;
     } {
+        this.operations.assertWorkAccepted();
+
         return {
             authenticated: this.currentUser !== null,
             user: this.currentUser,

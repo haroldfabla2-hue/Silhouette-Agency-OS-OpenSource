@@ -1,3 +1,5 @@
+import { subscribeScoped } from './runtime/scopedSubscription';
+import { ResourceScope } from '../server/runtime/resourceScope';
 /**
  * CAPABILITY AWARENESS SERVICE
  * ═══════════════════════════════════════════════════════════════
@@ -53,6 +55,9 @@ interface CapabilitySnapshot {
 // ==================== SERVICE ====================
 
 class CapabilityAwarenessService {
+    private readonly operations = new ResourceScope('CapabilityAwarenessService');
+    public getLifecycleStatus() { return { initialized: this.initialized, snapshotReadCompleted: this.snapshotRecovered, diagnostics: this.operations.getDiagnostics(), failures: this.operations.getFailures() }; }
+    public shutdownLifecycle() { return this.operations.close(); }
     private static instance: CapabilityAwarenessService;
 
     // In-memory caches
@@ -81,7 +86,16 @@ class CapabilityAwarenessService {
     /**
      * Initialize the service - load all capabilities and subscribe to events
      */
-    public async initialize(): Promise<void> {
+    private startup?: Promise<void>;
+    private snapshotRecovered = false;
+    public initialize(): Promise<void> {
+        this.operations.assertWorkAccepted();
+        if (!this.startup) this.startup = this.operations.run('initialize', () => this.initializeOnce());
+        return this.startup;
+    }
+    private async initializeOnce(): Promise<void> {
+        return this.operations.run('initializeOnce', async () => {
+
         if (this.initialized) return;
 
         console.log('[CapabilityAwareness] 🧠 Initializing capability awareness...');
@@ -92,19 +106,21 @@ class CapabilityAwarenessService {
         // 2. Load agents from orchestrator (lazy - will be populated as they register)
         // Agents register themselves via AGENT_SPAWNED events
 
-        // 3. Subscribe to lifecycle events
-        this.subscribeToEvents();
-
-        // 4. Load persisted snapshot from LanceDB if available
+        // Read persisted state before callbacks can schedule snapshot writes.
         await this.loadPersistedSnapshot();
+        this.subscribeToEvents();
 
         this.initialized = true;
         this.lastUpdated = Date.now();
 
         console.log(`[CapabilityAwareness] ✅ Initialized with ${this.tools.size} tools, ${this.agents.size} agents, ${this.squads.size} squads`);
+    
+        });
     }
 
     private async loadToolsFromRegistry(): Promise<void> {
+        return this.operations.run('loadToolsFromRegistry', async () => {
+
         const allTools = toolRegistry.getAllTools();
 
         for (const tool of allTools) {
@@ -112,6 +128,8 @@ class CapabilityAwarenessService {
         }
 
         this.summaryDirty = true;
+    
+        });
     }
 
     private toolToSummary(tool: DynamicTool): ToolSummary {
@@ -129,43 +147,43 @@ class CapabilityAwarenessService {
 
     private subscribeToEvents(): void {
         // Tool Events
-        systemBus.subscribe(SystemProtocol.TOOL_CREATED, (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.TOOL_CREATED, (event) => {
             this.onToolCreated(event.payload);
         });
 
-        systemBus.subscribe(SystemProtocol.TOOL_EVOLVED, (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.TOOL_EVOLVED, (event) => {
             this.onToolEvolved(event.payload);
         });
 
-        systemBus.subscribe(SystemProtocol.TOOL_DELETED, (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.TOOL_DELETED, (event) => {
             this.onToolDeleted(event.payload);
         });
 
         // Agent Events
-        systemBus.subscribe(SystemProtocol.AGENT_SPAWNED, (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.AGENT_SPAWNED, (event) => {
             this.onAgentSpawned(event.payload);
         });
 
-        systemBus.subscribe(SystemProtocol.AGENT_EVOLVED, (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.AGENT_EVOLVED, (event) => {
             this.onAgentEvolved(event.payload);
         });
 
-        systemBus.subscribe(SystemProtocol.AGENT_DISMISSED, (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.AGENT_DISMISSED, (event) => {
             this.onAgentDismissed(event.payload);
         });
 
         // Squad Events
-        systemBus.subscribe(SystemProtocol.SQUAD_FORMED, (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.SQUAD_FORMED, (event) => {
             this.onSquadFormed(event.payload);
         });
 
-        systemBus.subscribe(SystemProtocol.SQUAD_DISSOLVED, (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.SQUAD_DISSOLVED, (event) => {
             this.onSquadDissolved(event.payload);
         });
 
         // Force sync
-        systemBus.subscribe(SystemProtocol.CAPABILITY_SYNC, () => {
-            this.forceSync();
+        subscribeScoped(this.operations, systemBus, SystemProtocol.CAPABILITY_SYNC, () => {
+            return this.forceSync();
         });
 
         console.log('[CapabilityAwareness] 📡 Subscribed to capability lifecycle events');
@@ -253,9 +271,14 @@ class CapabilityAwarenessService {
     // ==================== FORCE SYNC ====================
 
     public async forceSync(): Promise<void> {
+        return this.operations.run('forceSync', async () => {
+
+        await this.initialize();
         console.log('[CapabilityAwareness] 🔄 Force syncing capabilities...');
         await this.loadToolsFromRegistry();
         this.markDirty();
+    
+        });
     }
 
     // ==================== PROMPT INTEGRATION ====================
@@ -265,6 +288,8 @@ class CapabilityAwarenessService {
      * This is injected into Silhouette's system prompt
      */
     public getCapabilitySummary(): string {
+        this.operations.assertWorkAccepted();
+
         if (!this.summaryDirty && this.cachedSummary) {
             return this.cachedSummary;
         }
@@ -301,6 +326,13 @@ class CapabilityAwarenessService {
     // ==================== PERSISTENCE ====================
 
     private async persistSnapshot(): Promise<void> {
+        return this.operations.run('persistSnapshot', async () => {
+
+        if (!this.snapshotRecovered) {
+            const error = new Error('Capability snapshot write blocked: prior state unverified');
+            this.operations.recordFailure('capability-snapshot-write-blocked', error);
+            throw error;
+        }
         const snapshot: CapabilitySnapshot = {
             tools: Array.from(this.tools.values()),
             agents: Array.from(this.agents.values()),
@@ -317,57 +349,66 @@ class CapabilityAwarenessService {
             const { sqliteService } = await import('./sqliteService');
             sqliteService.setConfig('capabilitySnapshot', snapshot);
         } catch (err) {
-            console.error('[CapabilityAwareness] Could not persist snapshot:', err);
+            this.operations.recordFailure('capability-snapshot-durability', err);
+            throw err;
         }
+    
+        });
     }
 
     private async loadPersistedSnapshot(): Promise<void> {
+        return this.operations.run('loadPersistedSnapshot', async () => {
+
         try {
-            // [Ticket W7] Read back from the sqlite KV (see persistSnapshot).
             const { sqliteService } = await import('./sqliteService');
-            const persisted = sqliteService.getConfig('capabilitySnapshot');
-            const results = persisted ? [{ content: JSON.stringify(persisted) }] : [];
-            if (results.length > 0 && results[0].content) {
-                try {
-                    const snapshot: CapabilitySnapshot = JSON.parse(results[0].content);
-                    // Only load if newer than our current state
-                    if (snapshot.lastUpdated > this.lastUpdated) {
-                        for (const tool of snapshot.tools) {
-                            this.tools.set(tool.name, tool);
-                        }
-                        for (const agent of snapshot.agents) {
-                            this.agents.set(agent.id, agent);
-                        }
-                        for (const squad of snapshot.squads) {
-                            this.squads.set(squad.id, squad);
-                        }
-                        this.lastUpdated = snapshot.lastUpdated;
-                        console.log('[CapabilityAwareness] 📂 Loaded persisted snapshot');
-                    }
-                } catch {
-                    // Invalid JSON in snapshot
+            const snapshot = sqliteService.getConfig('capabilitySnapshot') as CapabilitySnapshot | null;
+            if (snapshot !== null && snapshot !== undefined) {
+                if (!snapshot || !Array.isArray(snapshot.tools) || !Array.isArray(snapshot.agents) || !Array.isArray(snapshot.squads) || !Number.isFinite(snapshot.lastUpdated)) {
+                    throw new Error('Malformed capability snapshot; original retained');
+                }
+                // Validate the whole record before changing the live maps.
+                if (snapshot.tools.some(t => !t || typeof t.name !== 'string') || snapshot.agents.some(a => !a || typeof a.id !== 'string') || snapshot.squads.some(s => !s || typeof s.id !== 'string')) {
+                    throw new Error('Malformed capability snapshot entries; original retained');
+                }
+                if (snapshot.lastUpdated > this.lastUpdated) {
+                    for (const tool of snapshot.tools) this.tools.set(tool.name, tool);
+                    for (const agent of snapshot.agents) this.agents.set(agent.id, agent);
+                    for (const squad of snapshot.squads) this.squads.set(squad.id, squad);
+                    this.lastUpdated = snapshot.lastUpdated;
                 }
             }
-        } catch (err) {
-            // No persisted state - that's fine
+            this.snapshotRecovered = true;
+        } catch (error) {
+            this.snapshotRecovered = false;
+            this.operations.recordDiagnostic('capability-snapshot-read', error, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
         }
+    
+        });
     }
 
     // ==================== GETTERS ====================
 
     public getToolCount(): number {
+        this.operations.assertWorkAccepted();
+
         return this.tools.size;
     }
 
     public getAgentCount(): number {
+        this.operations.assertWorkAccepted();
+
         return this.agents.size;
     }
 
     public getSquadCount(): number {
+        this.operations.assertWorkAccepted();
+
         return this.squads.size;
     }
 
     public getStats(): { tools: number; agents: number; squads: number; lastUpdated: number } {
+        this.operations.assertWorkAccepted();
+
         return {
             tools: this.tools.size,
             agents: this.agents.size,

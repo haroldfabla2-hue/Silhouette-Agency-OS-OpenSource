@@ -1,3 +1,4 @@
+import { ResourceScope } from '../server/runtime/resourceScope';
 // =============================================================================
 // Gmail Service
 // Email operations: read inbox, send emails, notifications
@@ -39,6 +40,14 @@ export interface SendEmailOptions {
 }
 
 class GmailService {
+    private retainDurability<T>(name: string, operation: () => T): T {
+        try { return operation(); } catch (error) { this.operations.recordFailure(name, error); throw error; }
+    }
+
+    private readonly operations = new ResourceScope('GmailService');
+    private initialization?: Promise<void>;
+    public getLifecycleStatus() { return { ready: this.initialized, diagnostics: this.operations.getDiagnostics(), failures: this.operations.getFailures() }; }
+    public shutdown() { this.stopPolling(); return this.operations.close(); }
     private gmail: gmail_v1.Gmail | null = null;
     private db: Database.Database | null = null;
     private initialized = false;
@@ -49,7 +58,12 @@ class GmailService {
     /**
      * Initialize Gmail service (requires driveService to be authenticated first)
      */
-    async init(): Promise<void> {
+    init(): Promise<void> {
+        if (this.initialized) return this.operations.run('init-already-ready', async () => undefined);
+        if (!this.initialization) this.initialization = this.operations.run('init', () => this.initOnce()).catch(error => { this.operations.recordFailure('integration-startup', error); throw error; }).finally(() => { this.initialization = undefined; });
+        return this.initialization;
+    }
+    private async initOnce(): Promise<void> {
         if (this.initialized) return;
 
         // Import driveService to share OAuth client
@@ -57,6 +71,7 @@ class GmailService {
         await driveService.init();
 
         if (!driveService.isAuthenticated()) {
+            this.operations.recordDiagnostic('gmail-authentication', new Error('OAuth unavailable'), 'DEGRADED_FALLBACK', 'UNAVAILABLE');
             console.warn('[GmailService] ⚠️ Not authenticated - waiting for OAuth');
             return;
         }
@@ -71,7 +86,10 @@ class GmailService {
         this.gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
         // Initialize DB for storing last history ID
+        this.operations.assertAccepting();
         this.db = new Database(DB_PATH, { timeout: 5000 });
+        const handle = this.db;
+        this.operations.own({ name: 'integration-sqlite', closeRank: -100, close: () => handle.close() });
         this.db.pragma('journal_mode = WAL');
         this.db.pragma('synchronous = NORMAL');
         this.db.pragma('busy_timeout = 5000');
@@ -101,15 +119,20 @@ class GmailService {
      * Start polling for new emails every 60 seconds
      */
     startPolling(): void {
+        this.operations.assertWorkAccepted();
+
+        this.operations.assertAccepting();
         if (this.pollingInterval) return;
 
         // Initial check
-        this.checkNewEmails();
+        void this.checkNewEmails().catch(() => undefined);
 
         // Poll every 60 seconds
         this.pollingInterval = setInterval(() => {
-            this.checkNewEmails();
+            void this.checkNewEmails().catch(() => undefined);
         }, 60000);
+        const timer = this.pollingInterval;
+        this.operations.own({ name: 'gmail-poll', stopIntake: () => clearInterval(timer), close: () => clearInterval(timer) });
 
         console.log('[GmailService] 🔄 Started email polling (60s interval)');
     }
@@ -130,6 +153,8 @@ class GmailService {
      * Stores IMPORTANT emails in ContinuumMemory for Silhouette to learn from
      */
     async checkNewEmails(): Promise<void> {
+        return this.operations.run('checkNewEmails', async () => {
+
         if (!this.gmail || !this.db) return;
 
         try {
@@ -172,9 +197,9 @@ class GmailService {
                     console.log(`[GmailService] 📧 New email: ${email.subject}${isImportant ? ' ⭐' : ''}`);
 
                     // Mark as notified in database
-                    this.db.prepare(
+                    this.retainDurability('gmailService.ts:storage', () => this.db.prepare(
                         'INSERT OR IGNORE INTO gmail_notified (email_id, notified_at, is_important) VALUES (?, ?, ?)'
-                    ).run(email.id, Date.now(), isImportant ? 1 : 0);
+                    ).run(email.id, Date.now(), isImportant ? 1 : 0));
 
                     // Store IMPORTANT emails in ContinuumMemory for learning
                     if (isImportant) {
@@ -195,11 +220,14 @@ class GmailService {
 
             // Cleanup: Remove old notified entries (older than 7 days)
             const weekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
-            this.db.prepare('DELETE FROM gmail_notified WHERE notified_at < ?').run(weekAgo);
+            this.retainDurability('gmailService.ts:storage', () => this.db.prepare('DELETE FROM gmail_notified WHERE notified_at < ?').run(weekAgo));
 
         } catch (error: any) {
+            this.operations.recordDiagnostic('gmail-operation', error, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
             console.error('[GmailService] Check failed:', error.message);
         }
+    
+        });
     }
 
     /**
@@ -273,6 +301,7 @@ class GmailService {
 
             console.log(`[GmailService] 🧠 Stored important email in memory: ${email.subject.substring(0, 50)}`);
         } catch (e: any) {
+            this.operations.recordDiagnostic('gmail-operation', e, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
             console.warn('[GmailService] Failed to store email in memory:', e.message);
         }
     }
@@ -281,6 +310,8 @@ class GmailService {
      * Get inbox emails
      */
     async getInbox(limit = 20, query?: string): Promise<EmailMessage[]> {
+        return this.operations.run('getInbox', async () => {
+
         if (!this.gmail) throw new Error('Gmail not initialized');
 
         const response = await this.gmail.users.messages.list({
@@ -304,12 +335,16 @@ class GmailService {
         }
 
         return emails;
+    
+        });
     }
 
     /**
      * Get single email message with full details
      */
     async getMessage(messageId: string): Promise<EmailMessage | null> {
+        return this.operations.run('getMessage', async () => {
+
         if (!this.gmail) throw new Error('Gmail not initialized');
 
         const response = await this.gmail.users.messages.get({
@@ -362,12 +397,16 @@ class GmailService {
             labels: msg.labelIds || [],
             attachments: attachments.length > 0 ? attachments : undefined
         };
+    
+        });
     }
 
     /**
      * Send an email
      */
     async sendEmail(options: SendEmailOptions): Promise<{ success: boolean; messageId?: string; error?: string }> {
+        return this.operations.run('sendEmail', async () => {
+
         // [SECURITY] EFFECT GATE (provider boundary): sending email is an
         // external effect. Callers that bypass executeCapability (e.g. the
         // MCP server via toolExecutor, or any future direct caller) carry no
@@ -433,15 +472,20 @@ class GmailService {
             return { success: true, messageId: response.data.id || undefined };
 
         } catch (error: any) {
+            this.operations.recordDiagnostic('gmail-operation', error, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
             console.error('[GmailService] Send failed:', error.message);
             return { success: false, error: error.message };
         }
+    
+        });
     }
 
     /**
      * Mark email as read
      */
     async markAsRead(messageId: string): Promise<boolean> {
+        return this.operations.run('markAsRead', async () => {
+
         if (!this.gmail) return false;
 
         try {
@@ -457,15 +501,20 @@ class GmailService {
             return true;
 
         } catch (error: any) {
+            this.operations.recordDiagnostic('gmail-operation', error, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
             console.error('[GmailService] Mark read failed:', error.message);
             return false;
         }
+    
+        });
     }
 
     /**
      * Get unread email count
      */
     async getUnreadCount(): Promise<number> {
+        return this.operations.run('getUnreadCount', async () => {
+
         if (!this.gmail) return 0;
 
         try {
@@ -476,15 +525,20 @@ class GmailService {
 
             return response.data.messagesUnread || 0;
 
-        } catch {
+        } catch (error) {
+            this.operations.recordDiagnostic('gmail-unread-count', error, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
             return 0;
         }
+    
+        });
     }
 
     /**
      * Get cached unread count (sync, for UI)
      */
     getCachedUnreadCount(): number {
+        this.operations.assertWorkAccepted();
+
         return this.cachedUnreadCount;
     }
 
@@ -492,13 +546,19 @@ class GmailService {
      * Search emails
      */
     async searchEmails(query: string, limit = 20): Promise<EmailMessage[]> {
+        return this.operations.run('searchEmails', async () => {
+
         return this.getInbox(limit, query);
+    
+        });
     }
 
     /**
      * Check if initialized
      */
     isReady(): boolean {
+        this.operations.assertWorkAccepted();
+
         return this.initialized && this.gmail !== null;
     }
 }

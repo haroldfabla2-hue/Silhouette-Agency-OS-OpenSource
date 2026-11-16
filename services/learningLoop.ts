@@ -1,3 +1,4 @@
+import { ResourceScope } from '../server/runtime/resourceScope';
 /**
  * LEARNING LOOP
  * ═══════════════════════════════════════════════════════════════
@@ -57,6 +58,10 @@ interface LearningStats {
 }
 
 class LearningLoop {
+    private readonly operations = new ResourceScope('learning-analysis');
+    private periodicStarted = false;
+    public shutdown() { return this.operations.close(); }
+    public getLifecycleDiagnostics() { return this.operations.getDiagnostics(); }
     private static instance: LearningLoop;
     private stats: LearningStats = {
         insightsGenerated: 0,
@@ -84,6 +89,8 @@ class LearningLoop {
      * Analyze recent failures and generate insights
      */
     public async analyzeFailures(timeWindowMs: number = 24 * 60 * 60 * 1000): Promise<LearningInsight[]> {
+        return this.operations.run('analyzeFailures', async () => {
+
         console.log('[LEARNING_LOOP] 🔍 Analyzing failures from last 24h...');
 
         try {
@@ -136,6 +143,8 @@ class LearningLoop {
             console.error('[LEARNING_LOOP] ❌ Analysis failed:', error.message);
             return [];
         }
+    
+        });
     }
 
     /**
@@ -260,12 +269,18 @@ Auto-applicable: ${insight.autoApplicable}
      * Apply a learning insight (if safe)
      */
     public async applyInsight(insight: LearningInsight): Promise<boolean> {
+        return this.operations.run('applyInsight', async () => {
+
         return (await this.routeInsight(insight)).applied;
+    
+        });
     }
 
     /** Reports the actual boundary reached. No participant currently supplies
      * verified application evidence, so none of these outcomes is APPLIED. */
     public async routeInsight(insight: LearningInsight): Promise<LearningOutcome> {
+        return this.operations.run('routeInsight', async () => {
+
         // Safety checks
         if (!insight.autoApplicable) {
             console.log('[LEARNING_LOOP] ⚠️ Insight not marked as auto-applicable');
@@ -390,15 +405,20 @@ Auto-applicable: ${insight.autoApplicable}
             console.error(`[LEARNING_LOOP] ❌ Failed to apply insight:`, applyError.message);
             return { stage: 'FAILED', applied: false, detail: applyError.message };
         }
+    
+        });
     }
 
     /**
      * Schedule periodic analysis
      */
     public schedulePeriodicAnalysis(intervalMs: number = 6 * 60 * 60 * 1000): void {
+        this.operations.assertAccepting();
+        if (this.periodicStarted) return;
+        this.periodicStarted = true;
         console.log(`[LEARNING_LOOP] ⏰ Scheduled analysis every ${intervalMs / 3600000}h`);
 
-        setInterval(async () => {
+        this.operations.interval('learning-analysis', intervalMs, async () => {
             // [THROTTLE] PowerManager resource modes can pause the periodic
             // learning loop (isLearningLoopEnabled). The throttle is a
             // resource hint, not an authority: unreadable -> full capability.
@@ -413,7 +433,7 @@ Auto-applicable: ${insight.autoApplicable}
             } catch { /* throttle unavailable -> full capability */ }
             console.log('[LEARNING_LOOP] ⏰ Running scheduled analysis...');
             await this.analyzeFailures();
-        }, intervalMs);
+        });
     }
 
     /**

@@ -1,9 +1,15 @@
+import { ResourceScope } from '../server/runtime/resourceScope';
 import { REDIS_CONFIG } from '../constants';
 import { incidentRegistry } from './incidentRegistry';
 
 const MOCK_STORE_MAX_SIZE = 10000; // Eviction threshold for in-memory fallback
 
 class RedisService {
+    private readonly operations = new ResourceScope('redis-cache');
+    private connectionTask?: Promise<void>;
+    private releaseClient?: () => Promise<void>;
+    public getLifecycleDiagnostics() { return this.operations.getDiagnostics(); }
+    public getLifecycleFailures() { return this.operations.getFailures(); }
     private client: any;
     private isConnected: boolean = false;
     private isMock: boolean = false;
@@ -18,7 +24,12 @@ class RedisService {
         return this.isMock;
     }
 
-    public async connect() {
+    public connect(): Promise<void> {
+        if (this.connectionTask) return this.connectionTask;
+        this.connectionTask = this.operations.run('connect', () => this.connectOnce()).finally(() => { this.connectionTask = undefined; });
+        return this.connectionTask;
+    }
+    private async connectOnce() {
         // 1. Browser Safety Check: Never run in browser
         if (typeof window !== 'undefined') return;
 
@@ -32,6 +43,7 @@ class RedisService {
                 const redisUrl = `redis://${REDIS_CONFIG.host}:${REDIS_CONFIG.port}`;
                 console.log(`[REDIS] Connecting to ${REDIS_CONFIG.host}:${REDIS_CONFIG.port}...`);
 
+                this.operations.assertAccepting();
                 this.client = createClient({
                     url: redisUrl,
                     password: REDIS_CONFIG.password || undefined,
@@ -47,6 +59,11 @@ class RedisService {
                     }
                 });
 
+                const ownedClient = this.client;
+                this.releaseClient = this.operations.own({ name: 'redis-client', close: async () => {
+                    if (ownedClient.isOpen) await ownedClient.disconnect();
+                } });
+
                 this.client.on('error', (err: any) => {
                     // Only log if not already in mock mode to avoid spam
                     if (!this.isMock) console.error('[REDIS] Client Error:', err.message);
@@ -60,14 +77,12 @@ class RedisService {
                 });
 
                 await this.client.connect();
+                this.operations.assertWorkAccepted();
             } catch (e: any) {
                 console.warn(`[REDIS] Connection Failed: ${e.message || e}. Using In-Memory Fallback (data lost on restart).`);
-                if (this.client) {
-                    try { await this.client.disconnect(); } catch (err) {
-                        console.error("[REDIS] Failed to disconnect during fallback:", err);
-                    }
-                    this.client = null;
-                }
+                this.operations.recordDiagnostic('redis-connect-fallback', e, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
+                await this.releaseClient?.();
+                this.client = null;
                 this.isMock = true;
                 this.isConnected = true;
                 // [R6] durable incident: in-memory fallback loses data on restart
@@ -79,16 +94,11 @@ class RedisService {
     }
 
     public async disconnect() {
-        if (this.client) {
-            try {
-                await this.client.disconnect();
-                console.log('[REDIS] Disconnected.');
-            } catch (err) {
-                console.error("[REDIS] Failed to disconnect:", err);
-            }
-            this.client = null;
-        }
+        const report = await this.operations.close();
+        this.client = null;
         this.isConnected = false;
+        if (report.failures.length) throw new AggregateError(report.failures.map(f => f.error), 'Redis cleanup failed');
+        return report;
     }
 
     /** Evict oldest entries when mock store exceeds max size */
@@ -109,6 +119,8 @@ class RedisService {
     }
 
     public async set(key: string, value: string, ttl?: number) {
+        return this.operations.run('set', async () => {
+
         await this.ensureConnected();
         if (!this.isConnected) return;
 
@@ -125,9 +137,13 @@ class RedisService {
                 await this.client.set(key, value);
             }
         }
+    
+        });
     }
 
     public async get(key: string): Promise<string | null> {
+        return this.operations.run('get', async () => {
+
         await this.ensureConnected();
         if (!this.isConnected) return null;
 
@@ -136,9 +152,13 @@ class RedisService {
         }
 
         return this.client ? await this.client.get(key) : null;
+    
+        });
     }
 
     public async del(key: string) {
+        return this.operations.run('del', async () => {
+
         await this.ensureConnected();
         if (!this.isConnected) return;
 
@@ -148,9 +168,13 @@ class RedisService {
         }
 
         if (this.client) await this.client.del(key);
+    
+        });
     }
 
     public async keys(pattern: string): Promise<string[]> {
+        return this.operations.run('keys', async () => {
+
         await this.ensureConnected();
         if (!this.isConnected) return [];
 
@@ -162,6 +186,8 @@ class RedisService {
         }
 
         return this.client ? await this.client.keys(pattern) : [];
+    
+        });
     }
 
     // ── Distributed Locks ──
@@ -172,6 +198,8 @@ class RedisService {
      * @returns boolean True if lock acquired, false if already locked
      */
     public async acquireLock(lockKey: string, ttlMs: number): Promise<boolean> {
+        return this.operations.run('acquireLock', async () => {
+
         await this.ensureConnected();
         if (!this.isConnected) return true; // Fallback to allowing execution if no redis
 
@@ -179,7 +207,7 @@ class RedisService {
             // Mock implementation of SET NX EX
             if (this.mockStore.has(lockKey)) return false;
             this.mockStore.set(lockKey, 'locked');
-            setTimeout(() => this.mockStore.delete(lockKey), ttlMs);
+            this.operations.timeout(`redis-lock-expiry:${lockKey}`, ttlMs, () => { this.mockStore.delete(lockKey); });
             return true;
         }
 
@@ -191,15 +219,20 @@ class RedisService {
             });
             return result === 'OK';
         } catch (e) {
+            this.operations.recordDiagnostic('redis-lock-acquire', e, 'OPERATION_REJECTED', 'UNAVAILABLE');
             console.error('[REDIS] Error acquiring lock:', e);
             return false;
         }
+    
+        });
     }
 
     /**
      * Releases a distributed lock.
      */
     public async releaseLock(lockKey: string): Promise<void> {
+        return this.operations.run('releaseLock', async () => {
+
         await this.ensureConnected();
         if (!this.isConnected) return;
 
@@ -211,8 +244,11 @@ class RedisService {
         try {
             await this.client.del(lockKey);
         } catch (e) {
+            this.operations.recordFailure('redis-lock-release', e);
             console.error('[REDIS] Error releasing lock:', e);
         }
+    
+        });
     }
 }
 

@@ -1,3 +1,4 @@
+import { ResourceScope } from '../server/runtime/resourceScope';
 /**
  * Silhouette Agency OS — Anonymous Opt-In Telemetry SDK
  * 
@@ -53,6 +54,9 @@ const ALLOWED_EVENTS = new Set([
 // ─── SDK Implementation ────────────────────────────────
 
 class AnonymousTelemetry {
+    private readonly operations = new ResourceScope('anonymous-telemetry');
+    private startup?: Promise<void>;
+    public getLifecycleStatus() { return { ready: this.initialized, diagnostics: this.operations.getDiagnostics(), failures: this.operations.getFailures() }; }
     private anonymousId: string = '';
     private optedIn: boolean = false;
     private appVersion: string = '2.2.0';
@@ -63,7 +67,9 @@ class AnonymousTelemetry {
      * Initialize the telemetry SDK. Reads consent state from SQLite.
      * Creates the analytics_events table if it doesn't exist.
      */
-    async initialize(): Promise<void> {
+    initialize(): Promise<void> {
+        if (this.startup) return this.startup;
+        this.startup = this.operations.run('telemetry-initialize', async () => {
         if (this.initialized) return;
 
         try {
@@ -76,13 +82,18 @@ class AnonymousTelemetry {
             this.anonymousId = consent.anonymousId;
 
             // Start periodic flush (every 5 minutes)
-            this.flushInterval = setInterval(() => this.flush(), 5 * 60 * 1000);
+            this.operations.interval('telemetry-local-flush', 5 * 60 * 1000, () => this.flush());
+            this.operations.own({ name: 'telemetry-final-local-flush', flush: () => this.flushLocal(), close: () => undefined });
 
             this.initialized = true;
             console.log(`[Telemetry] Initialized. Opted-in: ${this.optedIn}`);
         } catch (err) {
+            this.operations.recordFailure('telemetry-startup', err);
             console.error('[Telemetry] Failed to initialize:', (err as Error).message);
+            throw err;
         }
+        });
+        return this.startup;
     }
 
     /**
@@ -150,6 +161,8 @@ class AnonymousTelemetry {
      * Only whitelisted event names are accepted.
      */
     track(event: string, properties: Record<string, string | number | boolean> = {}): void {
+        this.operations.assertWorkAccepted();
+
         if (!this.optedIn || !this.initialized) return;
         if (!ALLOWED_EVENTS.has(event)) {
             console.warn(`[Telemetry] Rejected unknown event: ${event}`);
@@ -178,6 +191,7 @@ class AnonymousTelemetry {
                 new Date().toISOString()
             );
         } catch (err) {
+            this.operations.recordFailure('telemetry-local-buffer-write', err);
             console.error('[Telemetry] Failed to track event:', (err as Error).message);
         }
     }
@@ -216,6 +230,8 @@ class AnonymousTelemetry {
      * Update user consent. When opting out, all local data is purged.
      */
     async setConsent(optedIn: boolean): Promise<void> {
+        return this.operations.run('setConsent', async () => {
+
         const db = sqliteService.db;
         if (!db) return;
 
@@ -231,12 +247,16 @@ class AnonymousTelemetry {
         }
 
         console.log(`[Telemetry] Consent updated: ${optedIn ? 'opted-in' : 'opted-out'}`);
+    
+        });
     }
 
     /**
      * Get current consent state.
      */
     getConsent(): ConsentState {
+        this.operations.assertWorkAccepted();
+
         return {
             optedIn: this.optedIn,
             consentDate: this.loadConsent().consentDate,
@@ -248,6 +268,8 @@ class AnonymousTelemetry {
      * Get all locally buffered events (for the privacy dashboard).
      */
     getBufferedEvents(limit: number = 100): AnalyticsEvent[] {
+        this.operations.assertWorkAccepted();
+
         const db = sqliteService.db;
         if (!db) return [];
 
@@ -276,6 +298,8 @@ class AnonymousTelemetry {
      * Get event count summary by event name.
      */
     getEventSummary(): Record<string, number> {
+        this.operations.assertWorkAccepted();
+
         const db = sqliteService.db;
         if (!db) return {};
 
@@ -298,7 +322,8 @@ class AnonymousTelemetry {
      * Flush buffered events to the telemetry endpoint.
      * Currently stores locally — ready for future remote transmission.
      */
-    async flush(): Promise<number> {
+    async flush(): Promise<number> { return this.operations.run('telemetry-flush', () => this.flushLocal()); }
+    private async flushLocal(): Promise<number> {
         if (!this.optedIn) return 0;
 
         const db = sqliteService.db;
@@ -318,6 +343,7 @@ class AnonymousTelemetry {
             console.log(`[Telemetry] Flushed ${unflushed.count} events locally.`);
             return unflushed.count;
         } catch (err) {
+            this.operations.recordFailure('telemetry-local-flush-durability', err);
             console.error('[Telemetry] Flush failed:', (err as Error).message);
             return 0;
         }
@@ -327,6 +353,8 @@ class AnonymousTelemetry {
      * Permanently delete all collected analytics data.
      */
     purgeAllData(): void {
+        this.operations.assertWorkAccepted();
+
         const db = sqliteService.db;
         if (!db) return;
 
@@ -342,6 +370,8 @@ class AnonymousTelemetry {
      * Track a convenience hardware profile event.
      */
     trackHardwareProfile(): void {
+        this.operations.assertWorkAccepted();
+
         const totalMemGB = Math.round(os.totalmem() / (1024 ** 3));
         let ramTier: string;
         if (totalMemGB <= 8) ramTier = '4-8GB';
@@ -360,14 +390,8 @@ class AnonymousTelemetry {
     /**
      * Graceful shutdown — flush remaining events.
      */
-    async shutdown(): Promise<void> {
-        if (this.flushInterval) {
-            clearInterval(this.flushInterval);
-            this.flushInterval = null;
-        }
-        await this.flush();
-        console.log('[Telemetry] Shutdown complete.');
-    }
+    shutdown() { return this.operations.close(); }
+
 }
 
 export const telemetryAnalytics = new AnonymousTelemetry();

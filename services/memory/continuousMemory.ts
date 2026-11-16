@@ -107,7 +107,12 @@ export class ContinuousMemoryService {
      */
     public shutdown(): void {
         if (this.closed) return;
-        try { this.ensureReady(); } catch (error) {
+        if (!this.initialized) {
+            this.closed = true;
+            if (this.storageError) throw this.storageError;
+            return; // Never create/restore/persist a WAL just because shutdown ran.
+        }
+        try { this.assertStorageUsable(); } catch (error) {
             if (this.consolidationInterval) clearInterval(this.consolidationInterval);
             this.consolidationInterval = null;
             throw error;

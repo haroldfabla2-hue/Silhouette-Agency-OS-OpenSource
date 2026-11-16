@@ -1,3 +1,4 @@
+import { ownedHttpHandler } from '../../runtime/ownedHttpIngress';
 
 import { Router } from 'express';
 import { systemController } from '../../controllers/systemController';
@@ -5,24 +6,24 @@ import { systemController } from '../../controllers/systemController';
 const router = Router();
 
 // Route: /v1/system/config
-router.get('/config', (req, res) => systemController.getConfig(req, res));
-router.post('/config', (req, res) => systemController.updateConfig(req, res));
+router.get('/config', ownedHttpHandler('system:GET:/config',(req, res) => systemController.getConfig(req, res)));
+router.post('/config', ownedHttpHandler('system:POST:/config',(req, res) => systemController.updateConfig(req, res)));
 
 // Route: /v1/system/secrets — Server-side credential vault
-router.get('/secrets', (req, res) => systemController.listSecrets(req, res));
-router.get('/secrets/:serviceId', (req, res) => systemController.getSecret(req, res));
-router.post('/secrets/:serviceId', (req, res) => systemController.saveSecret(req, res));
+router.get('/secrets', ownedHttpHandler('system:GET:/secrets',(req, res) => systemController.listSecrets(req, res)));
+router.get('/secrets/:serviceId', ownedHttpHandler('system:GET:/secrets/:serviceId',(req, res) => systemController.getSecret(req, res)));
+router.post('/secrets/:serviceId', ownedHttpHandler('system:POST:/secrets/:serviceId',(req, res) => systemController.saveSecret(req, res)));
 
 // Route: /v1/system/scan - REAL installation scan (filesystem + DB traversal)
-router.post('/scan', (req, res) => systemController.scanSystem(req, res));
-router.get('/install/scan', (req, res) => systemController.scanSystem(req, res));
-router.post('/install/handover', (req, res) => systemController.installHandover(req, res));
+router.post('/scan', ownedHttpHandler('system:POST:/scan',(req, res) => systemController.scanSystem(req, res)));
+router.get('/install/scan', ownedHttpHandler('system:GET:/install/scan',(req, res) => systemController.scanSystem(req, res)));
+router.post('/install/handover', ownedHttpHandler('system:POST:/install/handover',(req, res) => systemController.installHandover(req, res)));
 
 // Route: /v1/system/read
-router.post('/read', (req, res) => systemController.readFile(req, res));
+router.post('/read', ownedHttpHandler('system:POST:/read',(req, res) => systemController.readFile(req, res)));
 
 // Route: /v1/system/environment - F1 Environment Awareness (read-only, no secrets)
-router.get('/environment', async (req, res) => {
+router.get('/environment', ownedHttpHandler('system:GET:/environment',async (req, res) => {
     try {
         const { environmentService } = await import('../../../services/environmentService');
         res.json(await environmentService.getReport());
@@ -30,19 +31,19 @@ router.get('/environment', async (req, res) => {
         console.error('[SYSTEM] Error building environment report:', error);
         res.status(500).json({ error: 'Failed to build environment report' });
     }
-});
+}));
 
 // Route: /v1/system/status
-router.get('/status', (req, res) => systemController.getStatus(req, res));
+router.get('/status', ownedHttpHandler('system:GET:/status',(req, res) => systemController.getStatus(req, res)));
 
 // Route: /v1/system/costs
-router.get('/costs', (req, res) => systemController.getCosts(req, res));
+router.get('/costs', ownedHttpHandler('system:GET:/costs',(req, res) => systemController.getCosts(req, res)));
 
 // Route: /v1/system/telemetry
-router.get('/telemetry', (req, res) => systemController.getTelemetry(req, res));
+router.get('/telemetry', ownedHttpHandler('system:GET:/telemetry',(req, res) => systemController.getTelemetry(req, res)));
 
 // Route: /v1/system/skills - List dynamic markdown agent skills
-router.get('/skills', async (req, res) => {
+router.get('/skills', ownedHttpHandler('system:GET:/skills',async (req, res) => {
     try {
         const { skillRegistry } = await import('../../../services/skills/skillRegistry');
 
@@ -61,15 +62,15 @@ router.get('/skills', async (req, res) => {
             error: error.message
         });
     }
-});
+}));
 
 // Route: /v1/system/full-state (UNIFIED - combines telemetry, agents, introspection)
 // READ-ONLY snapshot: this GET never generates thought (Fase 0: observing != acting).
-router.get('/full-state', (req, res) => systemController.getFullState(req, res));
+router.get('/full-state', ownedHttpHandler('system:GET:/full-state',(req, res) => systemController.getFullState(req, res)));
 
 // Route: /v1/system/narrative/trigger - EXPLICIT manual consciousness cycle.
 // The only HTTP entry point that may generate thought; GET endpoints stay pure.
-router.post('/narrative/trigger', async (req, res) => {
+router.post('/narrative/trigger', ownedHttpHandler('system:POST:/narrative/trigger',async (req, res) => {
     try {
         const { thoughtNarrator } = await import('../../../services/cognitive/thoughtNarrator');
         const narrative = await thoughtNarrator.generateNarrative('manual');
@@ -82,7 +83,7 @@ router.post('/narrative/trigger', async (req, res) => {
     } catch (error: any) {
         res.status(500).json({ status: 'error', error: error.message });
     }
-});
+}));
 
 // [NEURO-UPDATE] Introspection Routes (Mapped under /system or moved to own router?)
 // For now, let's keep it here but the Frontend expects /v1/introspection/state which might be its own router
@@ -90,15 +91,15 @@ router.post('/narrative/trigger', async (req, res) => {
 // OR we can map it here and update App? No, stick to API.
 
 // Route: /v1/system/resources - Resource metrics for Canvas VRAM optimization
-router.get('/resources', (req, res) => systemController.getResources(req, res));
+router.get('/resources', ownedHttpHandler('system:GET:/resources',(req, res) => systemController.getResources(req, res)));
 
 // Route: /v1/system/diagnostics - Hardware evaluation for setup wizard
-router.get('/diagnostics', (req, res) => systemController.getDiagnostics(req, res));
+router.get('/diagnostics', ownedHttpHandler('system:GET:/diagnostics',(req, res) => systemController.getDiagnostics(req, res)));
 
 // [R6] Durable incident registry: same truth the narrator and self-healing read.
 // ?open=true filters to currently open incidents.
 // Route: /v1/system/logs - Real server log tail (read-only, byte-capped)
-router.get('/logs', async (req, res) => {
+router.get('/logs', ownedHttpHandler('system:GET:/logs',async (req, res) => {
     try {
         const fs = await import('fs');
         const logPath = process.env.SERVER_LOG_PATH || '/opt/deploy-logs/server.log';
@@ -122,9 +123,9 @@ router.get('/logs', async (req, res) => {
     } catch (e: any) {
         res.status(500).json({ error: e.message });
     }
-});
+}));
 
-router.get('/incidents', async (req, res) => {
+router.get('/incidents', ownedHttpHandler('system:GET:/incidents',async (req, res) => {
     try {
         const { incidentRegistry } = await import('../../../services/incidentRegistry');
         const incidents = req.query.open === 'true'
@@ -135,13 +136,13 @@ router.get('/incidents', async (req, res) => {
         console.error('[SYSTEM] Error fetching incidents:', error);
         res.status(500).json({ error: 'Failed to fetch incidents', details: error.message });
     }
-});
+}));
 
 // Route: /v1/system/support-ticket - Escalate unresolved issues to cloud support agent
-router.post('/support-ticket', (req, res) => systemController.submitSupportTicket(req, res));
+router.post('/support-ticket', ownedHttpHandler('system:POST:/support-ticket',(req, res) => systemController.submitSupportTicket(req, res)));
 
 // Route: /v1/system/llm-health - LLM Gateway provider health
-router.get('/llm-health', async (req, res) => {
+router.get('/llm-health', ownedHttpHandler('system:GET:/llm-health',async (req, res) => {
     try {
         const { llmGateway } = await import('../../../services/llmGateway');
         const health = llmGateway.getProviderHealth();
@@ -157,10 +158,10 @@ router.get('/llm-health', async (req, res) => {
             error: error.message
         });
     }
-});
+}));
 
 // Route: /v1/system/power-mode - Get/Set power mode for optimization
-router.get('/power-mode', async (req, res) => {
+router.get('/power-mode', ownedHttpHandler('system:GET:/power-mode',async (req, res) => {
     try {
         const { powerManager } = await import('../../../services/powerManager');
         res.json({
@@ -171,9 +172,9 @@ router.get('/power-mode', async (req, res) => {
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }
-});
+}));
 
-router.post('/power-mode', async (req, res) => {
+router.post('/power-mode', ownedHttpHandler('system:POST:/power-mode',async (req, res) => {
     try {
         const { mode } = req.body;
         const { powerManager, PowerMode } = await import('../../../services/powerManager');
@@ -194,10 +195,10 @@ router.post('/power-mode', async (req, res) => {
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }
-});
+}));
 
 // [PHASE 8] Route: /v1/system/auto-evolution - Manage Cloud Git Configuration
-router.get('/auto-evolution', async (req, res) => {
+router.get('/auto-evolution', ownedHttpHandler('system:GET:/auto-evolution',async (req, res) => {
     try {
         const fs = await import('fs');
         const path = await import('path');
@@ -233,122 +234,37 @@ router.get('/auto-evolution', async (req, res) => {
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }
-});
+}));
 
-router.post('/auto-evolution', async (req, res) => {
-    try {
-        const { gitToken, gitOwner, gitRepo } = req.body;
+interface PendingSystemSyncRequest {
+    id:number;gitOwner:string;gitRepo:string;principalId:string|null;
+    state:'PENDING_EXACT_PLAN_AND_AUTHENTICATED_APPROVAL';
+    credentialsRetained:false;configurationChanged:false;effectsStarted:false;durable:false;
+}
+const pendingSystemSyncRequests:PendingSystemSyncRequest[]=[];
+export function getPendingSystemSyncRequests(){return pendingSystemSyncRequests.map(record=>({...record}));}
 
-        // Ensure values are provided
-        if (!gitToken || !gitOwner || !gitRepo) {
-            return res.status(400).json({ error: 'Missing GitHub configuration fields.' });
-        }
-
-        const fs = await import('fs');
-        const path = await import('path');
-        const envPath = path.join(process.cwd(), '.env.local');
-
-        let envContent = '';
-        if (fs.existsSync(envPath)) {
-            envContent = fs.readFileSync(envPath, 'utf8');
-        }
-
-        // Clean existing git keys if present
-        envContent = envContent.replace(/^GITHUB_TOKEN=.*$/gm, '')
-            .replace(/^GITHUB_REPO_OWNER=.*$/gm, '')
-            .replace(/^GITHUB_REPO_NAME=.*$/gm, '');
-
-        if (envContent && !envContent.endsWith('\n')) envContent += '\n';
-
-        let actualTokenToSave = gitToken;
-
-        // If the user submitted the masked placeholder string (e.g. didn't touch the password box),
-        // we must NOT overwrite the real token. We need to extract the raw token from the file again.
-        if (gitToken === '••••••••' || gitToken.startsWith('ghp_...')) {
-            const rawContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : '';
-            const match = rawContent.match(/^GITHUB_TOKEN=(.*)$/m);
-            if (match && match[1]) {
-                actualTokenToSave = match[1];
-            } else {
-                return res.status(400).json({ error: 'Cannot update with masked token. Enter full token.' });
-            }
-        }
-
-        envContent += `GITHUB_TOKEN=${actualTokenToSave}\n`;
-        envContent += `GITHUB_REPO_OWNER=${gitOwner}\n`;
-        envContent += `GITHUB_REPO_NAME=${gitRepo}\n`;
-
-        fs.writeFileSync(envPath, envContent.trim() + '\n', 'utf8');
-
-        console.log(`[SYSTEM_ROUTER] 💾 Auto-Evolution config manually updated for ${gitOwner}/${gitRepo}`);
-
-        // Trigger Repo Creation / Remote Link Sequence (same as Phase 7 setup)
-        setImmediate(async () => {
-            try {
-                const repoUrl = `https://api.github.com/repos/${gitOwner}/${gitRepo}`;
-                let repoCreated = false;
-
-                const checkRes = await fetch(repoUrl, {
-                    headers: { 'Authorization': `Bearer ${actualTokenToSave}` }
-                });
-
-                if (checkRes.status === 404) {
-                    console.log(`[SYSTEM_ROUTER] ☁️ Repository ${gitRepo} not found. Creating Private OS Clone...`);
-                    const createRes = await fetch('https://api.github.com/user/repos', {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${actualTokenToSave}`,
-                            'Content-Type': 'application/json',
-                            'Accept': 'application/vnd.github.v3+json'
-                        },
-                        body: JSON.stringify({
-                            name: gitRepo,
-                            private: true,
-                            description: 'Silhouette Agency OS Auto-Evolution Clone'
-                        })
-                    });
-
-                    if (!createRes.ok) throw new Error(`GitHub API Error: ${createRes.statusText}`);
-                    repoCreated = true;
-                    console.log(`[SYSTEM_ROUTER] ✅ Successfully created private GitHub repository: ${gitRepo}`);
-                } else {
-                    console.log(`[SYSTEM_ROUTER] ☁️ Repository ${gitRepo} already exists. Swapping remotes.`);
-                    repoCreated = true;
-                }
-
-                if (repoCreated) {
-                    const { exec } = await import('child_process');
-                    const gitOrigin = `https://${actualTokenToSave}@github.com/${gitOwner}/${gitRepo}.git`;
-
-                    const gitScript = `
-                    git init &&
-                    git remote remove origin || echo "No origin to remove" &&
-                    git remote add origin ${gitOrigin} &&
-                    git branch -M main &&
-                    git add . &&
-                    git commit -m "chore(settings): user-triggered OS cloud sync" || echo "No changes to commit" &&
-                    git push -u origin main --force
-                `.trim().replace(/\n/g, ' ');
-
-                    exec(gitScript, { cwd: process.cwd() }, (error) => {
-                        if (error) console.error(`[SYSTEM_ROUTER] ❌ OS Cloud Sync Error:`, error.message);
-                        else console.log(`[SYSTEM_ROUTER] 🎉 SUCCESS: OS Brain synchronized with GitHub cloud settings!`);
-                    });
-                }
-            } catch (asyncErr) {
-                console.error('[SYSTEM_ROUTER] ❌ Fatal error during UI-Triggered Cloud Sync:', asyncErr);
-            }
-        });
-
-        res.json({ success: true, message: 'Auto-Evolution configured and background sync initiated.' });
-
-    } catch (error: any) {
-        res.status(500).json({ error: error.message });
+router.post('/auto-evolution',ownedHttpHandler('system:POST:/auto-evolution',async(req,res)=>{
+    // A UI POST/config field is not exact authorization for repository creation,
+    // origin replacement, commit, force push, or credential-bearing shell args.
+    // No secret is retained, hashed, logged, returned or embedded in a command.
+    const owner=req.body?.gitOwner,repo=req.body?.gitRepo;
+    if(typeof owner!=='string'||typeof repo!=='string'||
+        !/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(owner)||
+        !/^[A-Za-z0-9._-]{1,100}$/.test(repo)||repo==='.'||repo==='..'){
+        res.status(400).json({error:'A valid repository owner and name are required for passive planning'});return;
     }
-});
+    const principalId=typeof (req as any).user?.id==='string'?(req as any).user.id:null;
+    const record:PendingSystemSyncRequest={id:pendingSystemSyncRequests.length+1,gitOwner:owner,gitRepo:repo,principalId,
+        state:'PENDING_EXACT_PLAN_AND_AUTHENTICATED_APPROVAL',credentialsRetained:false,configurationChanged:false,effectsStarted:false,durable:false};
+    pendingSystemSyncRequests.push(record);
+    res.status(202).json({status:record.state,pendingId:record.id,configurationChanged:false,effectsStarted:false,
+        credentialsRetained:false,pendingDurable:false,
+        reason:'Exact repository/worktree/ref/change plan, authenticated owner approval, safe credential transport and owned execution are not bound; configuration and repository were not changed'});
+}));
 
 // Route: /v1/system/health - Unified health check for all subsystems
-router.get('/health', async (req, res) => {
+router.get('/health', ownedHttpHandler('system:GET:/health',async (req, res) => {
 
     const health: Record<string, { status: string; details?: string }> = {};
 
@@ -406,10 +322,10 @@ router.get('/health', async (req, res) => {
         subsystems: health,
         timestamp: new Date().toISOString()
     });
-});
+}));
 
 // Route: /v1/system/webhooks/:source - External Event Injection
-router.post('/webhooks/:source', async (req, res) => {
+router.post('/webhooks/:source', ownedHttpHandler('system:POST:/webhooks/:source',async (req, res) => {
     try {
         const { source } = req.params;
         const payload = req.body;
@@ -433,6 +349,6 @@ router.post('/webhooks/:source', async (req, res) => {
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }
-});
+}));
 
 export default router;

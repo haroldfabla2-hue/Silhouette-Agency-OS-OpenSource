@@ -1,3 +1,4 @@
+import {ownedHttpHandler} from '../../runtime/ownedHttpIngress';
 /**
  * Context Routes - PA-041
  * ========================
@@ -18,12 +19,9 @@ import {
     DEFAULT_TOKEN_BUDGET,
     TokenBudgetConfig
 } from '../../../services/contextAssembler';
-import { redisClient } from '../../../services/redisClient';
+import {contextBudgetPersistence} from '../../../services/contextBudgetPersistence';
 
 const router = Router();
-
-// Redis key for persisted configuration
-const CONTEXT_CONFIG_KEY = 'silhouette:context:budget';
 
 /**
  * Preset configurations for common use cases
@@ -80,7 +78,7 @@ const PRESETS: Record<string, Partial<TokenBudgetConfig>> = {
  * GET /v1/context/budget
  * Returns current token budget configuration
  */
-router.get('/budget', async (_req: Request, res: Response) => {
+router.get('/budget', ownedHttpHandler('context:GET:/budget',async (_req: Request, res: Response) => {
     try {
         const budget = contextAssembler.getTokenBudget();
 
@@ -105,13 +103,13 @@ router.get('/budget', async (_req: Request, res: Response) => {
         console.error('[CONTEXT_ROUTES] Error getting budget:', error);
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 /**
  * PUT /v1/context/budget
  * Update token budget configuration with persistence
  */
-router.put('/budget', async (req: Request, res: Response) => {
+router.put('/budget', ownedHttpHandler('context:PUT:/budget',async (req: Request, res: Response) => {
     try {
         const config: Partial<TokenBudgetConfig> = req.body;
 
@@ -128,31 +126,24 @@ router.put('/budget', async (req: Request, res: Response) => {
             });
         }
 
-        // Apply configuration
-        contextAssembler.setTokenBudget(config);
-
-        // Persist to Redis for cross-session persistence
-        const currentBudget = contextAssembler.getTokenBudget();
-        await redisClient.set(CONTEXT_CONFIG_KEY, JSON.stringify(currentBudget), 0); // 0 = permanent (no expiration)
-
-        console.log(`[CONTEXT_ROUTES] 💾 Budget persisted to Redis`);
-
-        return res.json({
-            success: true,
-            message: 'Token budget updated and persisted',
-            budget: currentBudget
+        const {receipt,budget}=await contextBudgetPersistence.update(config);
+        const verified=receipt.state==='REMOTE_READBACK';
+        return res.status(verified?200:202).json({
+            success:verified,
+            message:verified?'Token budget updated; Redis value read back (restart durability unverified)':'Token budget outcome pending; no automatic replay',
+            budget,receipt
         });
     } catch (error: any) {
         console.error('[CONTEXT_ROUTES] Error updating budget:', error);
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 /**
  * POST /v1/context/presets/:preset
  * Apply a preset configuration (eco, balanced, high, ultra)
  */
-router.post('/presets/:preset', async (req: Request, res: Response) => {
+router.post('/presets/:preset', ownedHttpHandler('context:POST:/presets/:preset',async (req: Request, res: Response) => {
     try {
         const { preset } = req.params;
 
@@ -163,31 +154,24 @@ router.post('/presets/:preset', async (req: Request, res: Response) => {
             });
         }
 
-        // Apply preset
-        contextAssembler.setTokenBudget(PRESETS[preset]);
-
-        // Persist
-        const currentBudget = contextAssembler.getTokenBudget();
-        await redisClient.set(CONTEXT_CONFIG_KEY, JSON.stringify(currentBudget), 0); // Permanent
-
-        console.log(`[CONTEXT_ROUTES] 🎯 Applied preset: ${preset}`);
-
-        return res.json({
-            success: true,
-            message: `Applied preset: ${preset}`,
-            budget: currentBudget
+        const {receipt,budget}=await contextBudgetPersistence.update(PRESETS[preset]);
+        const verified=receipt.state==='REMOTE_READBACK';
+        return res.status(verified?200:202).json({
+            success:verified,
+            message:verified?`Applied preset: ${preset}; Redis value read back (restart durability unverified)`:`Preset ${preset} outcome pending; no automatic replay`,
+            budget,receipt
         });
     } catch (error: any) {
         console.error('[CONTEXT_ROUTES] Error applying preset:', error);
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 /**
  * GET /v1/context/metrics
  * Get detailed context usage metrics from the last context assembly
  */
-router.get('/metrics', async (req: Request, res: Response) => {
+router.get('/metrics', ownedHttpHandler('context:GET:/metrics',async (req: Request, res: Response) => {
     try {
         const query = req.query.q as string | undefined;
 
@@ -234,24 +218,23 @@ router.get('/metrics', async (req: Request, res: Response) => {
         console.error('[CONTEXT_ROUTES] Error getting metrics:', error);
         return res.status(500).json({ error: error.message });
     }
-});
+}));
 
 /**
  * Initialize: Load persisted configuration on startup
  */
-export async function initializeContextConfig(): Promise<void> {
-    try {
-        const cached = await redisClient.get(CONTEXT_CONFIG_KEY);
-        if (cached) {
-            const config = JSON.parse(cached) as TokenBudgetConfig;
-            contextAssembler.setTokenBudget(config);
-            console.log('[CONTEXT_ROUTES] 📥 Loaded persisted token budget from Redis');
-        } else {
-            console.log('[CONTEXT_ROUTES] 📌 Using default token budget');
-        }
-    } catch (error) {
-        console.warn('[CONTEXT_ROUTES] Could not load persisted config, using defaults:', error);
-    }
+export async function initializeContextConfig():Promise<void>{
+    await contextBudgetPersistence.initialize();
 }
 
 export default router;
+
+/** Same shared budget owner already imported by these real routes. No new
+ * connection/load/write from teardown. Root calls only after actual HTTP drain. */
+export function shutdownContextBudgetAfterHttpDrain(){return contextBudgetPersistence.shutdown();}
+export function getContextBudgetLifecycleStatus(){return contextBudgetPersistence.status();}
+
+/** The actual four context sources may outlive display fallback and HTTP.
+ * Keep shared stores alive until this owner's REAL source tasks settle. */
+export function shutdownContextAssemblerAfterHttpDrain(){return contextAssembler.shutdown();}
+export function getContextAssemblerLifecycleStatus(){return contextAssembler.getLifecycleStatus();}

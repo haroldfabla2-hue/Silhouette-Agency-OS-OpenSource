@@ -1,3 +1,4 @@
+import {ownedHttpHandler} from '../../runtime/ownedHttpIngress';
 import { Router } from 'express';
 import { continuum } from '../../../services/continuumMemory';
 import { MemoryTier } from '../../../types';
@@ -17,7 +18,7 @@ const router = Router();
  */
 
 // GET /v1/memory/state - Returns current memory state for the ContinuumMemoryExplorer
-router.get('/state', async (req, res) => {
+router.get('/state', ownedHttpHandler('memory:GET:/state',async (req, res) => {
     try {
         // Get all nodes from the 5-tier memory system
         const nodes = await continuum.getAllNodes();
@@ -62,10 +63,10 @@ router.get('/state', async (req, res) => {
         console.error('[MEMORY] Error fetching memory state:', error);
         res.status(500).json({ error: 'Failed to fetch memory state', details: error.message });
     }
-});
+}));
 
 // GET /v1/memory/search - Search across memory tiers
-router.get('/search', async (req, res) => {
+router.get('/search', ownedHttpHandler('memory:GET:/search',async (req, res) => {
     try {
         const query = req.query.q as string;
         const tag = req.query.tag as string | undefined;
@@ -86,10 +87,10 @@ router.get('/search', async (req, res) => {
         console.error('[MEMORY] Error searching memory:', error);
         res.status(500).json({ error: 'Failed to search memory', details: error.message });
     }
-});
+}));
 
 // POST /v1/memory/consolidate - Force memory consolidation
-router.post('/consolidate', async (req, res) => {
+router.post('/consolidate', ownedHttpHandler('memory:POST:/consolidate',async (req, res) => {
     try {
         // Force consolidation from RAM to LanceDB
         const result = await continuum.consolidateRamImmediate();
@@ -106,10 +107,10 @@ router.post('/consolidate', async (req, res) => {
         console.error('[MEMORY] Error during consolidation:', error);
         res.status(500).json({ error: 'Failed to consolidate memory', details: error.message });
     }
-});
+}));
 
 // POST /v1/memory/store - Manually store a memory
-router.post('/store', async (req, res) => {
+router.post('/store', ownedHttpHandler('memory:POST:/store',async (req, res) => {
     try {
         const { content, tier, tags } = req.body;
 
@@ -133,10 +134,10 @@ router.post('/store', async (req, res) => {
         console.error('[MEMORY] Error storing memory:', error);
         res.status(500).json({ error: 'Failed to store memory', details: error.message });
     }
-});
+}));
 
 // DELETE /v1/memory/:nodeId - Delete a specific memory node
-router.delete('/:nodeId', async (req, res) => {
+router.delete('/:nodeId', ownedHttpHandler('memory:DELETE:/:nodeId',async (req, res) => {
     try {
         const { nodeId } = req.params;
 
@@ -154,10 +155,10 @@ router.delete('/:nodeId', async (req, res) => {
         console.error('[MEMORY] Error deleting memory node:', error);
         res.status(500).json({ error: 'Failed to delete memory node', details: error.message });
     }
-});
+}));
 
 // GET /v1/memory/stats - Get memory system statistics
-router.get('/stats', async (req, res) => {
+router.get('/stats', ownedHttpHandler('memory:GET:/stats',async (req, res) => {
     try {
         const stats = await continuum.getStats();
         res.json({ stats });
@@ -165,10 +166,10 @@ router.get('/stats', async (req, res) => {
         console.error('[MEMORY] Error fetching stats:', error);
         res.status(500).json({ error: 'Failed to fetch memory stats' });
     }
-});
+}));
 
 // POST /v1/memory/save - Note: Consolidation handles persistence automatically
-router.post('/save', async (req, res) => {
+router.post('/save', ownedHttpHandler('memory:POST:/save',async (req, res) => {
     try {
         // Trigger consolidation which persists to LanceDB
         await continuum.consolidateRamImmediate();
@@ -177,10 +178,10 @@ router.post('/save', async (req, res) => {
         console.error('[MEMORY] Error saving:', error);
         res.status(500).json({ error: 'Failed to persist memory' });
     }
-});
+}));
 
 // GET /v1/memory/hippocampus - Get hippocampus working memory
-router.get('/hippocampus', async (req, res) => {
+router.get('/hippocampus', ownedHttpHandler('memory:GET:/hippocampus',async (req, res) => {
     try {
         const hippocampus = continuum.getHippocampus();
         res.json({ hippocampus, count: hippocampus.length });
@@ -188,10 +189,10 @@ router.get('/hippocampus', async (req, res) => {
         console.error('[MEMORY] Error fetching hippocampus:', error);
         res.status(500).json({ error: 'Failed to fetch hippocampus' });
     }
-});
+}));
 
 // GET /v1/memory/session-history - Get session chat history from memory
-router.get('/session-history', async (req, res) => {
+router.get('/session-history', ownedHttpHandler('memory:GET:/session-history',async (req, res) => {
     try {
         const limit = parseInt(req.query.limit as string) || 100;
         const history = continuum.getSessionHistory(limit);
@@ -200,14 +201,14 @@ router.get('/session-history', async (req, res) => {
         console.error('[MEMORY] Error fetching session history:', error);
         res.status(500).json({ error: 'Failed to fetch session history' });
     }
-});
+}));
 
 // ════════════════════════════════════════════════════════════════
 // ETERNAL MEMORY ENDPOINTS (Self-Improvement System)
 // ════════════════════════════════════════════════════════════════
 
 // GET /v1/memory/facts - Get user facts from the durable fact repository (R5)
-router.get('/facts', async (req, res) => {
+router.get('/facts', ownedHttpHandler('memory:GET:/facts',async (req, res) => {
     try {
         const { factRepository } = await import('../../../services/memory/factRepository');
         const ownerId = (req.query.ownerId as string) || 'owner';
@@ -217,10 +218,10 @@ router.get('/facts', async (req, res) => {
         console.error('[MEMORY] Error fetching facts:', error);
         res.status(500).json({ error: 'Failed to fetch facts', details: error.message });
     }
-});
+}));
 
 // GET /v1/memory/experiences - Get recent experiences from buffer
-router.get('/experiences', async (req, res) => {
+router.get('/experiences', ownedHttpHandler('memory:GET:/experiences',async (req, res) => {
     try {
         const { experienceBuffer } = await import('../../../services/experienceBuffer');
         const limit = parseInt(req.query.limit as string) || 10;
@@ -234,10 +235,10 @@ router.get('/experiences', async (req, res) => {
         console.error('[MEMORY] Error fetching experiences:', error);
         res.status(500).json({ error: 'Failed to fetch experiences' });
     }
-});
+}));
 
 // POST /v1/memory/feedback - Record user feedback
-router.post('/feedback', async (req, res) => {
+router.post('/feedback', ownedHttpHandler('memory:POST:/feedback',async (req, res) => {
     try {
         const { feedbackService } = await import('../../../services/feedbackService');
         const { messageId, sessionId, query, response, rating, comment } = req.body;
@@ -260,10 +261,10 @@ router.post('/feedback', async (req, res) => {
         console.error('[MEMORY] Error recording feedback:', error);
         res.status(500).json({ error: 'Failed to record feedback' });
     }
-});
+}));
 
 // GET /v1/memory/feedback/stats - Get feedback statistics
-router.get('/feedback/stats', async (req, res) => {
+router.get('/feedback/stats', ownedHttpHandler('memory:GET:/feedback/stats',async (req, res) => {
     try {
         const { feedbackService } = await import('../../../services/feedbackService');
         const stats = await feedbackService.getStats();
@@ -274,6 +275,12 @@ router.get('/feedback/stats', async (req, res) => {
         console.error('[MEMORY] Error fetching feedback stats:', error);
         res.status(500).json({ error: 'Failed to fetch feedback stats' });
     }
-});
+}));
 
 export default router;
+
+/** Actual shared continuum already imported by these routes. Called only after
+ * HTTP and dependent fact/context/producer work have drained, before stores. */
+export function shutdownContinuumAfterConsumers(){return continuum.shutdown();}
+export function getContinuumRouteLifecycleStatus(){return {resources:continuum.getLifecycleStatus(),
+    workOutcome:'UNVERIFIED',transitionDurability:'UNVERIFIED',release:'UNVERIFIED'};}

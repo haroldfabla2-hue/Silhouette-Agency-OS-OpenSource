@@ -1,3 +1,5 @@
+import { ResourceScope } from '../server/runtime/resourceScope';
+import { subscribeScoped } from './runtime/scopedSubscription';
 
 import { SystemProtocol, FileNode, CodeChunk, IntrospectionCapability } from "../types";
 import { systemBus } from "./systemBus";
@@ -11,18 +13,26 @@ import * as crypto from 'crypto';
 // Listens for VFS changes, chunks code, and updates Vector Memory.
 
 export class CodebaseAwarenessService {
+    private readonly operations = new ResourceScope('CodebaseAwarenessService');
+    private started = false;
+    public shutdown() { return this.operations.close(); }
+    public getLifecycleDiagnostics() { return this.operations.getDiagnostics(); }
+    public getLifecycleFailures() { return this.operations.getFailures(); }
     private isIndexing: boolean = false;
     private fileHashes: Map<string, string> = new Map(); // Cache for change detection
     private readonly COLLECTION_PREFIX = "code_";
 
     constructor(private readonly embed: (text: string) => Promise<number[] | null> = async text =>
-        (await import('./geminiService')).generateEmbedding(text), subscribe = true) {
-        if (subscribe) this.initialize();
+        (await import('./geminiService')).generateEmbedding(text), private readonly subscribe = true) {}
+    public start(): void {
+        this.operations.assertAccepting();
+        if (this.started) return; this.started = true;
+        if (this.subscribe) this.initialize();
     }
 
     private initialize() {
         // Subscribe to File System Updates
-        systemBus.subscribe(SystemProtocol.FILESYSTEM_UPDATE, async (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.FILESYSTEM_UPDATE, async (event) => {
             if (event.payload.action === 'UPDATE' || event.payload.action === 'CREATE') {
                 // We need the file ID or path. The event payload might need adjustment if it only sends ID.
                 // Assuming payload has { projectId, fileId, action }
@@ -44,6 +54,8 @@ export class CodebaseAwarenessService {
      * Expensive! Use sparingly (e.g., on first boot or explicit request).
      */
     public async indexProject(projectId: string) {
+        return this.operations.run('indexProject', async () => {
+
         if (this.isIndexing) return;
         this.isIndexing = true;
         console.log(`[CODEBASE AWARENESS] Starting full index for project: ${projectId}`);
@@ -66,6 +78,8 @@ export class CodebaseAwarenessService {
             if (project) await processNode(project.rootFolderId);
             console.log(`[CODEBASE AWARENESS] Full index complete.`);
         } finally { this.isIndexing = false; }
+    
+        });
     }
 
     /**
@@ -75,6 +89,8 @@ export class CodebaseAwarenessService {
      * 3. Embeds and stores in Vector DB.
      */
     public async indexFile(node: FileNode) {
+        return this.operations.run('indexFile', async () => {
+
         if (!node.content) return;
 
         // Filter for code files only
@@ -137,12 +153,16 @@ export class CodebaseAwarenessService {
             }
         }
         this.fileHashes.set(node.id, hash);
+    
+        });
     }
 
     /**
      * Queries the codebase for relevant snippets.
      */
     public async query(userQuery: string, limit: number = 3): Promise<string> {
+        return this.operations.run('query', async () => {
+
         const vector = await this.embed(userQuery);
         if (!vector) throw new Error('Code RAG query embedding unavailable');
 
@@ -157,6 +177,8 @@ export class CodebaseAwarenessService {
 The following code snippets were retrieved from the project to answer the query:
 ${snippets}
         `.trim();
+    
+        });
     }
 }
 

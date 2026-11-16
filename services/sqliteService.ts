@@ -11,26 +11,39 @@ const DB_PATH = process.env.SILHOUETTE_DB_PATH
     : path.resolve(process.cwd(), 'db', 'silhouette.sqlite');
 const DB_DIR = path.dirname(DB_PATH);
 
-if (!fs.existsSync(DB_DIR)) {
-    fs.mkdirSync(DB_DIR, { recursive: true });
-}
 
 /** Absolute path of the SQLite database file this service persists to. */
 export const SQLITE_DB_PATH = DB_PATH;
 
 export class SqliteService {
-    public db: Database.Database;
+    private handle?: Database.Database;
+    private closed = false;
+    private initializationError?: unknown;
+    public get db(): Database.Database {
+        if (this.closed) throw new Error('SqliteService closed');
+        this.open();
+        return this.handle!;
+    }
+    public getLifecycleStatus() { return { ready: Boolean(this.handle && !this.initializationError && !this.closed), initializationError: this.initializationError, closed: this.closed }; }
+    constructor() {}
+    public open(): void {
+        if (this.closed) throw new Error('SqliteService closed');
+        if (this.initializationError) throw this.initializationError;
+        if (this.handle) return;
+        if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
+        try { this.openHandle(); } catch (error) { this.initializationError = error; throw error; }
+    }
 
     /** Real on-disk location of the database (for honest status reporting). */
     public getDbPath(): string {
         return DB_PATH;
     }
 
-    constructor() {
+    private openHandle(): void {
         // busy_timeout at open: without it the WAL pragma below can fail
         // instantly with SQLITE_BUSY when another process holds a write lock
         // (the pragma runs before any busy timeout is in effect).
-        this.db = new Database(DB_PATH, { timeout: 5000 });
+        this.handle = new Database(DB_PATH, { timeout: 5000 });
 
         // Enable WAL mode for high concurrency (non-blocking readers)
         this.db.pragma('journal_mode = WAL');
@@ -1024,9 +1037,8 @@ export class SqliteService {
     }
 
     public close(): void {
-        try {
-            this.db.close();
-        } catch { /* ignore if already closed */ }
+        this.closed = true;
+        if (this.handle?.open) this.handle.close();
     }
 }
 

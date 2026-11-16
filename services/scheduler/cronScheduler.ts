@@ -1,3 +1,4 @@
+import { ResourceScope } from '../../server/runtime/resourceScope';
 // =============================================================================
 // ENHANCED SCHEDULER SERVICE
 // Extends the existing SchedulerService with cron expression parsing,
@@ -97,14 +98,22 @@ export interface WebhookJob {
 // ─── Enhanced Scheduler ──────────────────────────────────────────────────────
 
 export class CronScheduler {
+    private readonly operations = new ResourceScope('CronScheduler');
+    public getLifecycleStatus() { return { diagnostics: this.operations.getDiagnostics(), failures: this.operations.getFailures() }; }
+    public shutdownLifecycle() { return this.operations.close(); }
     private webhookJobs: Map<string, WebhookJob> = new Map();
     private interval: NodeJS.Timeout | null = null;
     private readonly CHECK_INTERVAL_MS = 60_000; // Check every minute
 
     initialize(): void {
+        this.operations.assertWorkAccepted();
+
         if (!this.executionAllowed()) { this.shutdown(); return; }
         if (this.interval) return;
-        this.interval = setInterval(() => this.tick(), this.CHECK_INTERVAL_MS);
+        this.operations.assertAccepting();
+        this.interval = setInterval(() => { void this.tick().catch(() => undefined); }, this.CHECK_INTERVAL_MS);
+        const timer = this.interval;
+        this.operations.own({ name: 'cron-interval', stopIntake: () => this.shutdown(), close: () => clearInterval(timer) });
         console.log('[CronScheduler] ⏰ Started');
     }
 
@@ -112,6 +121,8 @@ export class CronScheduler {
      * Register a new webhook job.
      */
     addWebhookJob(job: Omit<WebhookJob, 'id' | 'fireCount' | 'nextFireAt'>): string {
+        this.operations.assertWorkAccepted();
+
         const id = `cron_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
         const newJob: WebhookJob = {
             ...job,
@@ -133,6 +144,8 @@ export class CronScheduler {
      * Remove a webhook job.
      */
     removeWebhookJob(id: string): boolean {
+        this.operations.assertWorkAccepted();
+
         return this.webhookJobs.delete(id);
     }
 
@@ -140,6 +153,8 @@ export class CronScheduler {
      * List all webhook jobs.
      */
     listWebhookJobs(): WebhookJob[] {
+        this.operations.assertWorkAccepted();
+
         return Array.from(this.webhookJobs.values());
     }
 
@@ -154,6 +169,8 @@ export class CronScheduler {
     }
 
     private async tick(): Promise<void> {
+        return this.operations.run('tick', async () => {
+
         if (!this.executionAllowed()) { this.shutdown(); return; }
         const now = new Date();
 
@@ -167,12 +184,16 @@ export class CronScheduler {
                 console.error(`[CronScheduler] Webhook ${job.name} failed:`, err.message);
             });
         }
+    
+        });
     }
 
     /**
      * Fire a webhook job.
      */
     private async fireWebhook(job: WebhookJob): Promise<void> {
+        return this.operations.run('fireWebhook', async () => {
+
         if (!this.executionAllowed()) return;
         const start = Date.now();
 
@@ -190,7 +211,16 @@ export class CronScheduler {
                 options.body = JSON.stringify(job.body);
             }
 
-            const response = await fetch(job.webhookUrl, options);
+            this.operations.assertAccepting();
+            const controller = new AbortController();
+            const release = this.operations.own({ name: 'cron-webhook', stopIntake: () => controller.abort(), close: () => controller.abort() });
+            let response: Response;
+            try {
+                response = await fetch(job.webhookUrl, { ...options, signal: controller.signal });
+                const body = response.body;
+                const releaseBody = this.operations.own({ name: 'cron-response-body', close: async () => { await body?.cancel(); } });
+                await releaseBody(); // Cleanup receipt cannot turn an applied webhook into retry-shaped failure.
+            } finally { await release(); }
             const responseTime = Date.now() - start;
 
             job.lastFireAt = Date.now();
@@ -212,6 +242,7 @@ export class CronScheduler {
             }, 'CronScheduler');
 
         } catch (err: any) {
+            this.operations.recordDiagnostic('cron-webhook', err, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
             job.lastFireAt = Date.now();
             job.fireCount++;
             job.lastResult = {
@@ -222,6 +253,8 @@ export class CronScheduler {
 
             console.error(`[CronScheduler] ❌ ${job.name}: ${err.message}`);
         }
+    
+        });
     }
 
     /**
@@ -238,6 +271,8 @@ export class CronScheduler {
      * Stats.
      */
     getStats() {
+        this.operations.assertWorkAccepted();
+
         const jobs = Array.from(this.webhookJobs.values());
         return {
             totalJobs: jobs.length,

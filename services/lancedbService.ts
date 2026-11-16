@@ -1,3 +1,6 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { ResourceScope, ScopeClosingError } from '../server/runtime/resourceScope';
+import { ownLanceConnection } from './runtime/lanceOwnership';
 import type * as lancedb from '@lancedb/lancedb';
 const loadLanceRuntime = () => import('@lancedb/lancedb');
 import path from 'path';
@@ -62,6 +65,41 @@ export class LanceDbService {
     private knowledgeTable: lancedb.Table | null = null; // Universal Knowledge Table
     private initialized = false;
     private writeQueue: Promise<void> = Promise.resolve();
+    private readonly operations = new ResourceScope('lance-memory');
+    private handleSequence = 0;
+    private readonly tableUse = new AsyncLocalStorage<Array<() => Promise<void>>>();
+    private operation<T>(name: string, work: () => Promise<T>): Promise<T> {
+        return this.operations.run(name, async () => {
+            if (this.tableUse.getStore()) return work();
+            const releases: Array<() => Promise<void>> = [];
+            return this.tableUse.run(releases, async () => {
+                try { return await work(); }
+                finally { for (const release of releases.reverse()) await release(); }
+            });
+        });
+    }
+    public shutdown() { return this.operations.close(); }
+    public getLifecycleDiagnostics() { return this.operations.getDiagnostics(); }
+    private async acquireTable<T extends lancedb.Table>(factory: () => Promise<T>, persistent = false): Promise<T> {
+        this.operations.assertAccepting();
+        const table = await factory();
+        const release = this.operations.own({ name: `lance-table:${++this.handleSequence}`, closeRank: 0, close: () => table.close() });
+        if (!persistent) {
+            const uses = this.tableUse.getStore();
+            if (!uses) throw new Error('Temporary Lance table acquired without an owned operation');
+            uses.push(release);
+        }
+        if (!this.operations.accepting) throw new ScopeClosingError('lance-table-acquisition');
+        return table;
+    }
+    private async acquireConnection(): Promise<lancedb.Connection> {
+        this.operations.assertAccepting();
+        const connection = await (await loadLanceRuntime()).connect(this.databasePath);
+        ownLanceConnection(this.operations, String(++this.handleSequence), connection);
+        if (!this.operations.accepting) throw new ScopeClosingError('lance-connection-acquisition');
+        return connection;
+    }
+
     private initPromise: Promise<void> | null = null;
 
     constructor(private readonly databasePath = DB_PATH) {
@@ -80,6 +118,7 @@ export class LanceDbService {
      * nothing if the table already exists.
      */
     public async ensureKnowledgeTable(): Promise<void> {
+        return this.operation('ensureKnowledgeTable', async () => {
         if (this.knowledgeTableEnsured) return;
         if (!this.db) await this.init();
         if (!this.db) {
@@ -89,20 +128,26 @@ export class LanceDbService {
         try {
             const names = await this.db.tableNames();
             if (names.includes('universal_knowledge')) {
-                this.knowledgeTable = await this.db.openTable('universal_knowledge');
+                this.knowledgeTable = await this.acquireTable(() => this.db.openTable('universal_knowledge'), true);
             } else {
-                this.knowledgeTable = await this.db.createEmptyTable('universal_knowledge', knowledgeSchema());
+                this.knowledgeTable = await this.acquireTable(() => this.db.createEmptyTable('universal_knowledge', knowledgeSchema()), true);
                 console.log(`[LANCEDB] Created EMPTY 'universal_knowledge' table with explicit schema (vector dim ${KNOWLEDGE_VECTOR_DIM}).`);
             }
             this.knowledgeTableEnsured = true;
         } catch (e) {
+            this.operations.recordDiagnostic('lance-knowledge-table-unavailable', e, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
             console.error('[LANCEDB] ensureKnowledgeTable failed:', e);
         }
+    
+        });
     }
 
     public async ensureInitialized(): Promise<void> {
+        return this.operation('ensureInitialized', async () => {
         if (this.initialized) return;
         await this.init();
+    
+        });
     }
 
     private init(retries = 3, delayMs = 1000): Promise<void> {
@@ -116,6 +161,7 @@ export class LanceDbService {
     private async initOnce(retries = 3, delayMs = 1000) {
         if (this.initialized) return;
 
+        const attempts: ReturnType<ResourceScope['recordDiagnostic']>[] = [];
         let attempt = 0;
         while (attempt < retries) {
             try {
@@ -127,35 +173,38 @@ export class LanceDbService {
                 }
 
                 fs.mkdirSync(path.dirname(this.databasePath), { recursive: true });
-                this.db = await (await loadLanceRuntime()).connect(this.databasePath);
+                this.db = await this.acquireConnection();
                 const tableNames = await this.db.tableNames();
 
                 // 1. Memory Table
                 if (tableNames.includes('memory')) {
-                    this.legacyTable = await this.db.openTable('memory');
+                    this.legacyTable = await this.acquireTable(() => this.db.openTable('memory'), true);
                 } else {
                     console.log("[LANCEDB] Table 'memory' not found. It will be created on first insert.");
                 }
 
                 // 2. Universal Knowledge Table
                 if (tableNames.includes('universal_knowledge')) {
-                    this.knowledgeTable = await this.db.openTable('universal_knowledge');
+                    this.knowledgeTable = await this.acquireTable(() => this.db.openTable('universal_knowledge'), true);
                 } else {
                     console.log("[LANCEDB] Table 'universal_knowledge' not found. Will be created on ingest.");
                 }
 
-                if (tableNames.includes('memory_records_v2')) this.table = await this.db.openTable('memory_records_v2');
+                if (tableNames.includes('memory_records_v2')) this.table = await this.acquireTable(() => this.db.openTable('memory_records_v2'), true);
+                for (const receipt of attempts) { receipt.disposition = 'RECOVERED_RETRY'; receipt.originalCapability = 'RESTORED'; }
                 this.initialized = true;
                 this.startOptimizeLoop();
                 console.log("[LANCEDB] Connected.");
                 return;
 
             } catch (e: any) {
+            attempts.push(this.operations.recordDiagnostic('lance-initialize-attempt', e));
                 console.error(`[LANCEDB] Initialization Failed (Attempt ${attempt + 1}/${retries}):`, e.message);
                 attempt++;
             }
         }
 
+        for (const receipt of attempts) { receipt.disposition = 'DEGRADED_FALLBACK'; receipt.originalCapability = 'UNAVAILABLE'; }
         // Exhausted retries
         console.error("[LANCEDB] 🚨 FATAL: LanceDB connection completely failed after retries.");
         try {
@@ -168,11 +217,13 @@ export class LanceDbService {
                 timestamp: Date.now()
             }, 'system-kernel');
         } catch (e) {
+            this.operations.recordDiagnostic('lance-alert-unavailable', e, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
             console.error("[LANCEDB] Could not emit SYSTEM_ALERT:", e);
         }
     }
 
     public async deleteNode(id: string): Promise<boolean> {
+        return this.operation('deleteNode', async () => {
         if (!this.table) await this.init();
         if (!this.table && !this.legacyTable) return false;
         try {
@@ -180,24 +231,33 @@ export class LanceDbService {
             const safeId = id.replace(/'/g, "''");
             for (const table of [this.table, this.legacyTable]) { if (table) await table.delete(`id = '${safeId}'`); }
             for (const ann of this.annIndexes.values()) {
-                try { ann.queueRemove(id); } catch (e) { console.error(`[VECTOR] ANN remove failed for ${id}`, e); ann.markStale(`queueRemove failed: ${(e as Error).message}`); }
+                try { ann.queueRemove(id); } catch (e) {
+            this.operations.recordDiagnostic('ann-remove-projection-unavailable', e, 'DEGRADED_FALLBACK', 'UNAVAILABLE'); console.error(`[VECTOR] ANN remove failed for ${id}`, e); ann.markStale(`queueRemove failed: ${(e as Error).message}`); }
             }
             return true;
         } catch (e) {
+            this.operations.recordFailure('lance-delete-failed', e);
             console.error(`[LANCEDB] Failed to delete node ${id}`, e);
             return false;
         }
+    
+        });
     }
 
     /** A successful write is confirmed by a read of the same ID and payload. */
     public async store(node: MemoryNode, vector?: number[]): Promise<{ ok: true; id: string; checksum: string; version: number }> {
+        return this.operation('store', async () => {
         if (!node?.id || !node.content?.trim() || node.content === 'undefined') {
             throw new Error('Invalid memory node: refusing persistent write');
         }
         // Serialize writes through first-table creation and upserts in this process.
-        const operation = this.writeQueue.then(() => this.writeAndVerify(node, vector));
+        const operation = this.writeQueue.then(() => this.writeAndVerify(node, vector)).catch(error => {
+            this.operations.recordFailure('lance-store-durability', error); throw error;
+        });
         this.writeQueue = operation.then(() => undefined, () => undefined);
         return operation;
+    
+        });
     }
 
     private toRecord(node: MemoryNode, json?: string) {
@@ -228,14 +288,19 @@ export class LanceDbService {
      * refusal rules and writeQueue serialization as store().
      */
     public async storeMany(nodes: MemoryNode[]): Promise<{ ok: true; count: number }> {
+        return this.operation('storeMany', async () => {
         for (const node of nodes) {
             if (!node?.id || !node.content?.trim() || node.content === 'undefined') {
                 throw new Error('Invalid memory node: refusing persistent write');
             }
         }
-        const operation = this.writeQueue.then(() => this.writeManyAndVerify(nodes));
+        const operation = this.writeQueue.then(() => this.writeManyAndVerify(nodes)).catch(error => {
+            this.operations.recordFailure('lance-storeMany-durability', error); throw error;
+        });
         this.writeQueue = operation.then(() => undefined, () => undefined);
         return operation;
+    
+        });
     }
 
     /**
@@ -258,7 +323,7 @@ export class LanceDbService {
     }
 
     private async reopenTable(tableName: 'memory_records_v2' | 'memory'): Promise<void> {
-        const fresh = await this.db!.openTable(tableName);
+        const fresh = await this.acquireTable(() => this.db!.openTable(tableName), true);
         if (tableName === 'memory_records_v2') { this.table = fresh; this.ftsReady.delete('v2'); }
         else { this.legacyTable = fresh; this.ftsReady.delete('legacy'); }
     }
@@ -272,10 +337,14 @@ export class LanceDbService {
         try {
             return await operation();
         } catch (error) {
+            const diagnostic = this.operations.recordDiagnostic('lance-stale-table', error, 'OPERATION_REJECTED', 'UNAVAILABLE');
             if (!this.db || !LanceDbService.isStaleHandleError(error)) throw error;
             console.warn(`[LANCEDB] Cached handle for '${tableName}' references pruned fragments; reopening and retrying once.`);
             await this.reopenTable(tableName);
-            return await operation();
+            const result = await operation();
+            diagnostic.disposition = 'RECOVERED_RETRY';
+            diagnostic.originalCapability = 'RESTORED';
+            return result;
         }
     }
 
@@ -287,8 +356,8 @@ export class LanceDbService {
         if (!this.table) {
             const names = await this.db.tableNames();
             this.table = names.includes('memory_records_v2')
-                ? await this.db.openTable('memory_records_v2')
-                : await this.db.createTable('memory_records_v2', records);
+                ? await this.acquireTable(() => this.db.openTable('memory_records_v2'), true)
+                : await this.acquireTable(() => this.db.createTable('memory_records_v2', records), true);
         } else {
             // Same atomic merge as store(): update on id match, insert otherwise.
             await this.withCurrentTable('memory_records_v2', () => this.table!.mergeInsert('id')
@@ -316,8 +385,8 @@ export class LanceDbService {
         if (!this.table) {
             const names = await this.db.tableNames();
             this.table = names.includes('memory_records_v2')
-                ? await this.db.openTable('memory_records_v2')
-                : await this.db.createTable('memory_records_v2', [record]);
+                ? await this.acquireTable(() => this.db.openTable('memory_records_v2'), true)
+                : await this.acquireTable(() => this.db.createTable('memory_records_v2', [record]), true);
         } else {
             // Atomic merge rather than delete + add, which loses the old row on add failure.
             await this.withCurrentTable('memory_records_v2', () => this.table!.mergeInsert('id')
@@ -329,7 +398,8 @@ export class LanceDbService {
         // Unknown legacy vectors are never guessed into a model collection.
         if (vector && node.embeddingIdentity && validEmbedding(vector, node.embeddingIdentity)) {
             try { await this.projectEmbedding(node, vector, node.embeddingIdentity); }
-            catch (error) { console.warn('[LANCEDB] Vector projection pending; canonical memory preserved', error); }
+            catch (error) {
+            this.operations.recordDiagnostic('ann-projection-pending', error, 'DEGRADED_FALLBACK', 'UNAVAILABLE'); console.warn('[LANCEDB] Vector projection pending; canonical memory preserved', error); }
         }
         const stored = await this.getNodeById(node.id);
         if (!stored || createHash('sha256').update(JSON.stringify(stored)).digest('hex') !== checksum) {
@@ -339,6 +409,7 @@ export class LanceDbService {
     }
 
     public async getNodeById(id: string): Promise<MemoryNode | null> {
+        return this.operation('getNodeById', async () => {
         await this.ensureInitialized();
         const safeId = id.replace(/'/g, "''");
         for (const tableName of ['memory_records_v2', 'memory'] as const) {
@@ -351,6 +422,8 @@ export class LanceDbService {
             if (rows.length) return JSON.parse(rows[0].json_data) as MemoryNode;
         }
         return null;
+    
+        });
     }
 
     /**
@@ -390,7 +463,7 @@ export class LanceDbService {
      * (Alberto's rule: backup and ask before deleting anything).
      * Set LANCEDB_OPTIMIZE_INTERVAL_MINUTES=0 to disable; default 360 (6h).
      */
-    private optimizeTimer: ReturnType<typeof setInterval> | null = null;
+    private optimizeStarted = false;
     private optimizeRunning = false;
     /**
      * Compaction WITHOUT version pruning (Alberto's approved design for this
@@ -408,46 +481,51 @@ export class LanceDbService {
     private static readonly OPTIMIZE_NEVER_PRUNE_BEFORE = new Date(0);
 
     private startOptimizeLoop(): void {
-        if (this.optimizeTimer) return;
+        if (this.optimizeStarted) return;
         const raw = process.env.LANCEDB_OPTIMIZE_INTERVAL_MINUTES;
         const minutes = raw === undefined ? 360 : Number(raw);
         if (!Number.isFinite(minutes) || minutes <= 0) {
             console.log('[LANCEDB] Periodic optimize disabled (LANCEDB_OPTIMIZE_INTERVAL_MINUTES).');
             return;
         }
-        this.optimizeTimer = setInterval(() => { void this.runOptimizeOnce(); }, minutes * 60_000);
-        this.optimizeTimer.unref?.();
+        this.operations.interval('lance-optimize', minutes * 60_000, () => this.runOptimizeOnce());
+        this.optimizeStarted = true;
         console.log(`[LANCEDB] Periodic optimize every ${minutes} minutes (compact only, no version prune).`);
     }
 
     public async runOptimizeOnce(): Promise<void> {
+        return this.operation('runOptimizeOnce', async () => {
         if (this.optimizeRunning || !this.db) return;
         this.optimizeRunning = true;
         try {
             const names = await this.db.tableNames();
             for (const n of names.filter(x => x === 'memory_records_v2' || x.startsWith('memory_vectors_'))) {
-                const t = await this.db.openTable(n);
+                const t = await this.acquireTable(() => this.db.openTable(n));
                 await t.optimize({ cleanupOlderThan: LanceDbService.OPTIMIZE_NEVER_PRUNE_BEFORE, deleteUnverified: false });
                 console.log(`[LANCEDB] Optimize completed for ${n} (compact only, no version prune).`);
             }
         } catch (e) {
+            this.operations.recordDiagnostic('lance-optimize-unavailable', e, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
             console.warn('[LANCEDB] Optimize failed; will retry on next interval.', e);
         } finally {
             this.optimizeRunning = false;
         }
+    
+        });
     }
 
     private vectorTableName(identity: EmbeddingIdentity): string {
         return 'memory_vectors_' + createHash('sha256').update(JSON.stringify(identity)).digest('hex').slice(0, 24);
     }
     public async projectEmbedding(node: MemoryNode, vector: number[], identity: EmbeddingIdentity): Promise<void> {
+        return this.operation('projectEmbedding', async () => {
         if (!validEmbedding(vector, identity)) throw new Error('Invalid or incompatible embedding');
         await this.ensureInitialized();
         if (!this.db) throw new Error('LanceDB is unavailable');
         const name = this.vectorTableName(identity);
         const record = { id: node.id, vector, ownerId: node.ownerId || 'system', json_data: JSON.stringify(node) };
         const names = await this.db.tableNames();
-        const table = names.includes(name) ? await this.db.openTable(name) : await this.db.createTable(name, [record]);
+        const table = names.includes(name) ? await this.acquireTable(() => this.db.openTable(name)) : await this.acquireTable(() => this.db.createTable(name, [record]));
         // Intent-first: the durable ANN pending row is written BEFORE the
         // canonical projection, so a crash between the two is replayed on the
         // next open (pending flush) instead of silently desyncing the index.
@@ -457,18 +535,24 @@ export class LanceDbService {
                 ann = await this.annIndexFor(name, identity.dimension, () => this.projectionRows(table), await table.countRows(), table);
                 ann.queueUpsert(node.id, node.ownerId || 'system', vector);
             } catch (e) {
+            this.operations.recordDiagnostic('ann-projection-queue-unavailable', e, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
                 console.error(`[VECTOR] ANN queue failed for ${node.id} (${(e as Error).message}); exact scan covers this memory until rebuild`);
                 ann?.markStale(`queueUpsert failed: ${(e as Error).message}`);
             }
         }
         await table.mergeInsert('id').whenMatchedUpdateAll().whenNotMatchedInsertAll().execute([record]);
         if (this.table) await this.withCurrentTable('memory_records_v2', () => this.table!.update({ where: `id = '${node.id.replace(/'/g, "''")}'`, values: { embedding_state: 'READY' } }));
+    
+        });
     }
     public async pendingEmbeddings(limit = 100): Promise<MemoryNode[]> {
+        return this.operation('pendingEmbeddings', async () => {
         await this.ensureInitialized();
         if (!this.table) return [];
         const rows = await this.withCurrentTable('memory_records_v2', () => this.table!.query().where("embedding_state = 'EMBEDDING_PENDING'").limit(limit).toArray());
         return rows.map(r => JSON.parse(r.json_data));
+    
+        });
     }
     /** Engine selection happens once and is logged loudly: which engine, why, and what this machine offers. */
     private ensureAnnEngine(): boolean {
@@ -481,6 +565,8 @@ export class LanceDbService {
             const annDir = path.join(DB_PATH, 'ann');
             fs.mkdirSync(annDir, { recursive: true });
             this.annSqlite = new Database(path.join(annDir, 'ann-keys.sqlite'));
+            const ownedSqlite = this.annSqlite;
+            this.operations.own({ name: 'ann-key-sqlite', closeRank: -50, close: () => ownedSqlite.close() });
             this.annSqlite.pragma('journal_mode = WAL');
         }
         return this.annStatus.kind === 'usearch-native';
@@ -498,6 +584,11 @@ export class LanceDbService {
         let idx = this.annIndexes.get(name);
         if (!idx) {
             idx = new AnnIndex({ dir: path.join(DB_PATH, 'ann'), name, dimensions, Index: this.annModule!.Index, sqlite: this.annSqlite, probe: this.annStatus?.probe });
+            const ownedIndex = idx;
+            this.operations.own({ name: `ann-index:${name}`, closeRank: 100, close: async () => {
+                const receipt = await ownedIndex.shutdown();
+                return { state: receipt.nativeRelease };
+            } });
             this.annIndexes.set(name, idx);
             const idsProvider = async () => (await table.query().select(['id']).toArray()).map((r: any) => r.id as string);
             await idx.open(projectedCount, rowProvider, idsProvider);
@@ -524,12 +615,13 @@ export class LanceDbService {
     }
 
     public async search(queryVector: number[], limit = 10, filter?: string, identity?: EmbeddingIdentity): Promise<MemoryNode[]> {
+        return this.operation('search', async () => {
         if (!identity || !validEmbedding(queryVector, identity)) return [];
         await this.ensureInitialized();
         if (!this.db) return [];
         const name = this.vectorTableName(identity);
         if (!(await this.db.tableNames()).includes(name)) return [];
-        const table = await this.db.openTable(name);
+        const table = await this.acquireTable(() => this.db.openTable(name));
         const rowCount = await table.countRows();
         const ownerScope = LanceDbService.ownerScopeFromFilter(filter);
         // Unknown (non-scope) filters go to the exact path BEFORE the ANN:
@@ -545,6 +637,7 @@ export class LanceDbService {
                     return hits.map(h => byId.get(h.id)).filter((n): n is MemoryNode => n !== null);
                 }
             } catch (e) {
+            this.operations.recordDiagnostic('ann-search-unavailable-exact-fallback', e, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
                 console.error(`[VECTOR] ANN search failed for ${name} (${(e as Error).message}); falling back to exact partitioned scan`);
             }
         }
@@ -576,19 +669,25 @@ export class LanceDbService {
         // Batched hydration (#193): one IN query, never N full scans.
         const byId = await this.getNodesByIds(top.map(r => r.id));
         return top.map(r => byId.get(r.id)).filter((n): n is MemoryNode => n !== null);
+    
+        });
     }
 
     /**
      * Finds semantically similar nodes to the given existing node ID.
      */
     public async findSimilarNodes(nodeId: string, limit: number = 5): Promise<(MemoryNode & { similarity?: number })[]> {
+        return this.operation('findSimilarNodes', async () => {
         const node = await this.getNodeById(nodeId);
         if (!node?.embeddingIdentity || !node.embeddingVector) return [];
         const neighbors = await this.search(Array.from(node.embeddingVector), limit + 1, undefined, node.embeddingIdentity);
         return neighbors.filter(n => n.id !== nodeId).slice(0, limit);
+    
+        });
     }
 
     public async searchByContent(textQuery: string, limit = 20, scope: MemoryScope = {}): Promise<MemoryNode[]> {
+        return this.operation('searchByContent', async () => {
         if (!textQuery.trim()) return [];
         await this.ensureInitialized();
         const nodes = new Map<string, MemoryNode>();
@@ -604,15 +703,18 @@ export class LanceDbService {
                     // one conflict left the index unbuilt and EVERY content
                     // search retried - and failed - forever (prod 2026-10-23).
                     const maxAttempts = 3;
+                    const ftsAttempts: ReturnType<ResourceScope['recordDiagnostic']>[] = [];
                     for (let attempt = 1; ; attempt++) {
                         try {
                             // Re-read the handle each attempt: a conflict
                             // rebase replaces this.table/legacyTable.
                             current = (name === 'v2' ? this.table : this.legacyTable)!;
                             await current.createIndex('content', { config: (await loadLanceRuntime()).Index.fts(), replace: true });
+                            for (const receipt of ftsAttempts) { receipt.disposition = 'RECOVERED_RETRY'; receipt.originalCapability = 'RESTORED'; }
                             this.ftsReady.add(name);
                             break;
                         } catch (e) {
+            ftsAttempts.push(this.operations.recordDiagnostic('lance-fts-create-attempt', e, 'OPERATION_REJECTED', 'UNAVAILABLE'));
                             if (!LanceDbService.isRetryableCommitConflict(e) || attempt >= maxAttempts) throw e;
                             console.warn(`[LANCEDB] FTS createIndex conflict on '${tableName}' (attempt ${attempt}/${maxAttempts}); rebasing on fresh handle.`);
                             await this.reopenTable(tableName);
@@ -627,12 +729,15 @@ export class LanceDbService {
             }
         }
         return [...nodes.values()].slice(0, limit);
+    
+        });
     }
 
     /** Observation-only path: no initialization, optimization, FTS creation,
      * embedding, provider call, access update or corpus truncation. Caller-bounded results. Reads
      * existing canonical tables; legacy then v2, with v2 winning duplicate IDs. */
     public async getRecentObservations(tag:string|string[],limit:number,excludedIds:string[]=[]):Promise<MemoryNode[]>{
+        return this.operation('getRecentObservations', async () => {
         const tags=Array.isArray(tag)?tag:[tag];
         if(!tags.length || !tags.every(t=>typeof t==='string' && t.length>0) || !Number.isInteger(limit) || limit < 1 || limit > 1000) throw new Error('Observation tags and bounded limit required');
         // Absence is an empty corpus; an unreadable or non-directory storage
@@ -641,14 +746,15 @@ export class LanceDbService {
         try { storage = fs.statSync(this.databasePath); }
         catch (error) {
             if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+            this.operations.recordDiagnostic('lance-observation-path-unreadable', error, 'OPERATION_REJECTED', 'UNAVAILABLE');
             throw error;
         }
         if (!storage.isDirectory()) throw new Error('Observation storage path must be a directory');
-        const db=this.db??await (this.observationConnection??=loadLanceRuntime().then(runtime=>runtime.connect(this.databasePath)).catch(error=>{this.observationConnection=null;throw error;}));
+        const db=this.db??await (this.observationConnection??=this.acquireConnection().catch(error=>{this.observationConnection=null;throw error;}));
         const names=await db.tableNames();
         const tables=[];
         for(const name of ['memory','memory_records_v2']){
-            if(names.includes(name)){const table=await db.openTable(name);tables.push({name,table,version:await table.version()});}
+            if(names.includes(name)){const table=await this.acquireTable(() => db.openTable(name));tables.push({name,table,version:await table.version()});}
         }
         const version=JSON.stringify(tables.map(t=>[t.name,t.version]));
         const key=JSON.stringify([tag,[...excludedIds].sort()]);
@@ -675,13 +781,19 @@ export class LanceDbService {
         this.observationCache.clear(); // cache only latest query, never grow with requests
         if(limit===1)this.observationCache.set(key,{version,node:selected[0]??null});
         return selected;
+    
+        });
     }
 
     public async getLatestObservation(tag:string,excludedIds:string[]=[]):Promise<MemoryNode|null>{
+        return this.operation('getLatestObservation', async () => {
         return (await this.getRecentObservations(tag,1,excludedIds))[0]??null;
+    
+        });
     }
 
     public async getAllNodes(): Promise<MemoryNode[]> {
+        return this.operation('getAllNodes', async () => {
         if (!this.table) await this.init();
         if (!this.table && !this.legacyTable) {
             console.warn("[LANCEDB] getAllNodes: Table not initialized.");
@@ -699,30 +811,42 @@ export class LanceDbService {
             }
             return [...unique.values()];
         } catch (e) {
+            this.operations.recordDiagnostic('lance-read-unavailable', e, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
             console.error("[LANCEDB] getAllNodes Failed", e);
             return [];
         }
+    
+        });
     }
 
     public async getNodesByTier(tier: MemoryTier, limit: number = 1000): Promise<MemoryNode[]> {
+        return this.operation('getNodesByTier', async () => {
         await this.ensureInitialized();
         return (await this.getAllNodes()).filter(n => n.tier === tier)
             .sort((a, b) => b.timestamp - a.timestamp).slice(0, limit);
+    
+        });
     }
 
     // Helper to delete/cleanup if needed
     public async drop() {
+        return this.operation('drop', async () => {
         if (this.db) {
-            await this.db.dropTable('memory');
+            try { await this.db.dropTable('memory'); }
+            catch (error) { this.operations.recordFailure('lance-drop-durability', error); throw error; }
             this.table = null;
         }
+    
+        });
     }
 
     // --- UNIVERSAL KNOWLEDGE METHODS ---
 
     public async storeKnowledge(item: any): Promise<void> {
+        return this.operation('storeKnowledge', async () => {
         if (!this.db) await this.init();
         if (!this.db) {
+            this.operations.recordFailure('lance-knowledge-write-unavailable', new Error('Knowledge write not applied: database unavailable'));
             console.error(`[LANCEDB] storeKnowledge REFUSED (db unavailable) for item ${item?.id ?? '?'} — explicit, not silent`);
             return;
         }
@@ -732,6 +856,7 @@ export class LanceDbService {
         // would still violate the FixedSizeList(768) column on insert.
         const vec = item?.vector;
         if (!Array.isArray(vec) || vec.length !== KNOWLEDGE_VECTOR_DIM || !vec.every((n: any) => Number.isFinite(n))) {
+            this.operations.recordDiagnostic('lance-knowledge-write-refused', new Error('Invalid knowledge vector; no write attempted'), 'OPERATION_REJECTED', 'UNVERIFIED');
             console.error(`[LANCEDB] storeKnowledge REFUSED for item ${item?.id ?? '?'}: vector must be ${KNOWLEDGE_VECTOR_DIM} finite numbers (got ${Array.isArray(vec) ? vec.length : 'non-array'})`);
             return;
         }
@@ -741,10 +866,10 @@ export class LanceDbService {
             if (!this.knowledgeTable) {
                 const tableNames = await this.db.tableNames();
                 if (tableNames.includes('universal_knowledge')) {
-                    this.knowledgeTable = await this.db.openTable('universal_knowledge');
+                    this.knowledgeTable = await this.acquireTable(() => this.db.openTable('universal_knowledge'), true);
                 } else {
                     // Create Table
-                    this.knowledgeTable = await this.db.createTable('universal_knowledge', [item]);
+                    this.knowledgeTable = await this.acquireTable(() => this.db.createTable('universal_knowledge', [item]), true);
                     console.log("[LANCEDB] Created 'universal_knowledge' table.");
                     return;
                 }
@@ -755,6 +880,7 @@ export class LanceDbService {
                 const safeId = String(item.id).replace(/'/g, "''");
                 await this.knowledgeTable.delete(`id = '${safeId}'`);
             } catch (e) {
+            this.operations.recordFailure('lance-knowledge-delete-before-add', e);
                 console.error("[LANCEDB] Knowledge Upsert deletion ignored:", e);
             }
 
@@ -762,17 +888,21 @@ export class LanceDbService {
             // console.log(`[LANCEDB] Stored Knowledge: ${item.path}`);
 
         } catch (error) {
+            this.operations.recordFailure('lance-knowledge-write', error);
             console.error(`[LANCEDB] Failed to store knowledge: ${item.path}`, error);
         }
+    
+        });
     }
 
     public async searchKnowledge(queryVector: number[], limit: number = 5): Promise<any[]> {
+        return this.operation('searchKnowledge', async () => {
         if (!this.knowledgeTable) {
             // Try to init if missing
             if (this.db) {
                 const tableNames = await this.db.tableNames();
                 if (tableNames.includes('universal_knowledge')) {
-                    this.knowledgeTable = await this.db.openTable('universal_knowledge');
+                    this.knowledgeTable = await this.acquireTable(() => this.db.openTable('universal_knowledge'), true);
                 }
             }
             if (!this.knowledgeTable) {
@@ -793,9 +923,12 @@ export class LanceDbService {
             }
             return top.map(({ _score, ...row }: any) => ({ ...row, _distance: 1 - _score }));
         } catch (e) {
+            this.operations.recordDiagnostic('lance-knowledge-search-unavailable', e, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
             console.error("[LANCEDB] Knowledge Search Failed", e);
             return [];
         }
+    
+        });
     }
 }
 

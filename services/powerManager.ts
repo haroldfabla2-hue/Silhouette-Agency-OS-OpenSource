@@ -109,16 +109,33 @@ class PowerManager {
 
     private constructor() {
         console.log(`[POWER_MANAGER] ⚡ Initialized with mode: ${this.currentMode}`);
-        this.startAdaptiveThrottling();
+
     }
 
     /**
      * ADAPTIVE THROTTLING
      * Monitors CPU and adjusts intervals automatically
      */
+    private readonly diagnostics: unknown[] = [];
+    public getLifecycleDiagnostics(): readonly unknown[] { return [...this.diagnostics]; }
+    private closing = false;
+    private readonly activeChecks = new Set<Promise<void>>();
+    public start(): void {
+        if (this.closing) throw new Error('PowerManager closed');
+        if (!this.throttleCheckInterval) this.startAdaptiveThrottling();
+    }
+    public async shutdown(): Promise<void> {
+        this.closing = true;
+        if (this.throttleCheckInterval) clearInterval(this.throttleCheckInterval);
+        this.throttleCheckInterval = null;
+        await Promise.allSettled([...this.activeChecks]);
+        this.listeners.clear();
+    }
     private startAdaptiveThrottling() {
         // Check CPU every 30 seconds and adjust throttle
-        this.throttleCheckInterval = setInterval(async () => {
+        this.throttleCheckInterval = setInterval(() => {
+            if (this.closing) return;
+            const task = (async () => {
             try {
                 const si = await import('systeminformation');
                 const load = await si.currentLoad();
@@ -136,9 +153,13 @@ class PowerManager {
                     this.throttleMultiplier = 1;  // Normal speed when CPU < 40%
                 }
             } catch (e) {
+                this.diagnostics.push({ error: e, disposition: 'DEGRADED_FALLBACK', originalCapability: 'UNAVAILABLE' });
                 // systeminformation not available, use default
                 this.throttleMultiplier = 1;
             }
+            })();
+            this.activeChecks.add(task);
+            void task.finally(() => this.activeChecks.delete(task));
         }, 30000);
 
         // Staggered startup - delay service initialization

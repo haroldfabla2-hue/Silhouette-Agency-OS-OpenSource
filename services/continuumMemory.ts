@@ -1,3 +1,4 @@
+import { ResourceScope } from '../server/runtime/resourceScope';
 import { lexicalMatches, lexicalScore } from './lexicalMatch';
 import { atomicWriteFile } from './utils/atomicWrite';
 import { MemoryNode, MemoryTier } from "../types";
@@ -140,24 +141,34 @@ class ContinuumMemorySystem {
     private lastEmbeddingBackfill = 0;
     private consecutivePromoteFailures = 0;
 
-    constructor() {
-        // No hydration needed for LanceDB, it's always on disk.
-        // RAM tiers start empty on reboot (Tabula Rasa for short term) UNLESS hydrated explicitly.
-
-        // [LIFECYCLE] Import must be side-effect free: Redis connects lazily
-        // on first operation (redisClient.ensureConnected), and the Dreaming
-        // loop starts explicitly at server boot (server/loaders/index.ts) -
-        // a fire-and-forget connect here raced test-worker teardown and
-        // crashed CI intermittently. Disk/journal recovery never depended on
-        // Redis availability.
-        this.loadSnapshot().then(() => this.reconcileTransitions())
-            .catch(err => console.error('[CONTINUUM] Failed to recover memory:', err));
+    private readonly operations = new ResourceScope('continuum');
+    private startTask?: Promise<void>;
+    private recovered = false;
+    constructor() {}
+    public start(): Promise<void> {
+        if (this.startTask) return this.startTask;
+        this.startTask = this.operations.run('continuum-recovery', async () => {
+            this.operations.own({ name: 'continuum-final-snapshot', flush: async () => {
+                if (this.recovered) await this.saveSnapshot();
+            }, close: () => undefined });
+            await this.loadSnapshot();
+            await this.reconcileTransitionsCore();
+            this.recovered = true;
+        }).catch(error => { this.operations.recordFailure('continuum-startup', error); throw error; });
+        return this.startTask;
     }
+    public getLifecycleStatus() { return { recovered: this.recovered, diagnostics: this.operations.getDiagnostics(), failures: this.operations.getFailures() }; }
+    public shutdown() { return this.operations.close(); }
 
     // --- PUBLIC API ---
     public async forceConsolidation() {
+        return this.operations.run('forceConsolidation', async () => {
+        await this.start();
+
         console.log("[CONTINUUM] 🧠 Forcing Memory Consolidation...");
         return await this.consolidateRamImmediate();
+    
+        });
     }
 
     // --- PERSISTENCE SNAPSHOTS ---
@@ -175,7 +186,7 @@ class ContinuumMemorySystem {
 
             // 1. Primary: Redis (Fast, Distributed)
             try { await redisClient.set('continuum:volatile', payload, 3600); }
-            catch (error) { console.warn('[CONTINUUM] Redis snapshot unavailable:', error); }
+            catch (error) { this.operations.recordDiagnostic('redis-snapshot', error, 'DEGRADED_FALLBACK', 'UNAVAILABLE'); console.warn('[CONTINUUM] Redis snapshot unavailable:', error); }
 
             // 2. Secondary: Disk (Permanent, Local)
             await fs.mkdir(path.dirname(SNAPSHOT_PATH), { recursive: true });
@@ -183,6 +194,7 @@ class ContinuumMemorySystem {
 
             // console.log("[CONTINUUM] Volatile memory snapshot saved (V5.0 format).");
         } catch (error) {
+            this.operations.recordFailure('continuum-snapshot-durability', error);
             console.error("[CONTINUUM] Failed to save snapshot:", error);
             throw error;
         }
@@ -230,6 +242,7 @@ class ContinuumMemorySystem {
         } catch (error: any) {
             if (error.code !== 'ENOENT') {
                 console.error("[CONTINUUM] Error loading snapshot:", error);
+                throw error;
             }
         }
     }
@@ -241,6 +254,9 @@ class ContinuumMemorySystem {
      * grow without bound - outstanding entries are the only work remaining.
      */
     public async reconcileTransitions(scope: 'full' | 'pending' = 'full'): Promise<void> {
+        return this.operations.run('reconcileTransitions', async () => { await this.start(); await this.reconcileTransitionsCore(scope); });
+    }
+    private async reconcileTransitionsCore(scope: 'full' | 'pending' = 'full'): Promise<void> {
         for (const entry of await memoryTransitions.pending()) {
             if (scope === 'pending' && !isOutstandingTransition(entry)) continue;
             try {
@@ -264,6 +280,7 @@ class ContinuumMemorySystem {
                 this.markDirty();
                 await this.saveSnapshot();
             } catch (error) {
+                this.operations.recordDiagnostic(`transition-recovery:${entry.key}`, error, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
                 console.error(`[CONTINUUM] Recovery deferred for ${entry.key}:`, error);
             }
         }
@@ -276,6 +293,7 @@ class ContinuumMemorySystem {
     }
 
     public hydrateVolatile(nodes: MemoryNode[]) {
+        this.operations.assertWorkAccepted();
         // [REFACTOR 2026-01-07] All nodes go to unified working memory
         // Accept nodes from any tier (WORKING, ULTRA_SHORT, SHORT) for backward compatibility
         this.working = nodes.filter(n => {
@@ -312,6 +330,9 @@ class ContinuumMemorySystem {
     }
 
     public async getAllNodes(): Promise<Record<MemoryTier, MemoryNode[]>> {
+        return this.operations.run('getAllNodes', async () => {
+        await this.start();
+
         // 1. RAM Tier (Unified WORKING memory)
         const nodes: Record<MemoryTier, MemoryNode[]> = {
             [MemoryTier.WORKING]: [...this.working],
@@ -359,6 +380,8 @@ class ContinuumMemorySystem {
         }
 
         return nodes;
+    
+        });
     }
 
     public clearHippocampus(nodeIds: string[]) {
@@ -366,6 +389,9 @@ class ContinuumMemorySystem {
     }
 
     public async deleteNode(nodeId: string) {
+        return this.operations.run('deleteNode', async () => {
+        await this.start();
+
         // [FIX 2026-02] Use working directly (ultraShort/short are aliases)
         const originalLen = this.working.length;
         this.working = this.working.filter(n => n.id !== nodeId);
@@ -384,9 +410,14 @@ class ContinuumMemorySystem {
         } catch (e) {
             console.error(`[CONTINUUM] Failed to delete node ${nodeId} from LanceDB`, e);
         }
+    
+        });
     }
 
     public async store(content: string, tier: MemoryTier = MemoryTier.ULTRA_SHORT, tags: string[] = [], skipIngestion: boolean = false, extra?: { parentIds?: string[]; affect?: { valence: number; activation: number; at: number } }): Promise<void> {
+        return this.operations.run('store', async () => {
+        await this.start();
+
         // [PR-4c] Boundary coercion: an invalid tier (e.g. an LLM emitting the
         // number 28) must not reach the gatekeeper as a "corruption" event that
         // mobilizes remediation squads in a loop. Coerce loudly to WORKING;
@@ -498,15 +529,18 @@ class ContinuumMemorySystem {
                 timestamp: node.timestamp || Date.now()
             } as MemoryNode;
 
-            try {
                 // [FIX 2026-10-17] TRUE per-vector identity. Before: writes
                 // embedded with Minimax while queries embedded with Gemini (the
                 // identities never crossed, so semantic search never matched),
                 // and identity was labeled from an env var instead of the actual
                 // provider. Now one resolver returns vector + the identity that
                 // truly produced it; lancedbService.store projects per identity.
-                const { generateEmbeddingWithIdentity } = await import('./geminiService');
-                const embedded = await generateEmbeddingWithIdentity(content);
+                let embedded: Awaited<ReturnType<typeof import('./geminiService').generateEmbeddingWithIdentity>> = null;
+                try {
+                    const { generateEmbeddingWithIdentity } = await import('./geminiService');
+                    embedded = await generateEmbeddingWithIdentity(content);
+                }
+                catch (error) { console.warn('[CONTINUUM] Embedding unavailable; attempting canonical write once:', error); }
                 if (embedded) nodeToStore.embeddingIdentity = embedded.identity;
                 await lancedbService.store(nodeToStore, embedded?.vector); // Canonical copy + automatic per-identity projection.
                 if (!embedded) {
@@ -530,10 +564,7 @@ class ContinuumMemorySystem {
                         console.warn('[CONTINUUM] Canonical deep memory retained; optional Qdrant projection unavailable.');
                     }
                 }
-            } catch (err) {
-                console.error("[CONTINUUM] Deep storage failed:", err);
-                await lancedbService.store(nodeToStore);
-            }
+
         }
         // L3/L4: LanceDB Persistence
         else {
@@ -564,23 +595,32 @@ class ContinuumMemorySystem {
             introspection.setRecentThoughts([`Storing memory: ${content.substring(0, 30)}...`]);
 
             // 4. Notify Dreamer (Event-Driven) - with null check
-            import('./dreamerService').then(({ dreamer }) => {
-                if (dreamer?.notifyNewMemory) dreamer.notifyNewMemory();
-            }).catch(() => { /* Dreamer not available */ });
+            void this.operations.run('dreamer-notify', async () => {
+                const { dreamer } = await import('./dreamerService');
+                if (dreamer?.notifyNewMemory) await dreamer.notifyNewMemory();
+            }).catch(error => this.operations.recordDiagnostic('dreamer-notify', error, 'DEGRADED_FALLBACK', 'UNAVAILABLE'));
 
             // 5. [BRAIN] Mirror to the external silhouette-brain 4-Tier memory
             //    (fire-and-forget, no-op when the integration is disabled).
-            import('./brain').then(({ brainBridge }) => {
-                brainBridge.mirrorMemory(content, {
+            void this.operations.run('brain-mirror-dispatch', async () => {
+                const { brainBridge } = await import('./brain');
+                // Dispatch completion is NOT external mirror durability. The bridge
+                // exposes its own pending mirror boundary for the composition review.
+                await brainBridge.mirrorMemory(content, {
                     importance: node.importance,
                     tags: node.tags,
                     tier: (tierStr === 'DEEP' ? 'DEEP' : tierStr === 'MEDIUM' ? 'MEDIUM' : 'WORKING'),
                 });
-            }).catch(() => { /* Brain integration not available */ });
+            }).catch(error => this.operations.recordDiagnostic('brain-mirror-dispatch', error, 'DEGRADED_FALLBACK', 'UNAVAILABLE'));
         }
+    
+        });
     }
 
     public async recordMeaningfulRecall(id: string, now = Date.now()): Promise<void> {
+        return this.operations.run('recordMeaningfulRecall', async () => {
+        await this.start();
+
         const source = this.working.find(n => n.id === id) || await lancedbService.getNodeById(id);
         if (!source) throw new Error(`Missing memory ${id}`);
         const { recordSignificantAccess } = await import('./memoryCognition');
@@ -589,24 +629,39 @@ class ContinuumMemorySystem {
         await lancedbService.store(updated);
         const index = this.working.findIndex(n => n.id === id);
         if (index >= 0) { this.working[index] = updated; this.markDirty(); await this.saveSnapshot(); }
+    
+        });
     }
 
     /** Recent exact-tag stored observations, without semantic search, ranking
      * budget, access writes or provider use. Ordinary retrieval is unchanged. */
     public async getRecentObservations(tag:string|string[],limit:number):Promise<MemoryNode[]>{
+        return this.operations.run('getRecentObservations', async () => {
+        await this.start();
+
         const tags=Array.isArray(tag)?tag:[tag];
         if(!tags.length || !tags.every(t=>typeof t==='string' && t.length>0) || !Number.isInteger(limit) || limit < 1 || limit > 1000) throw new Error('Observation tags and bounded limit required');
         const persisted=await lancedbService.getRecentObservations(tag,limit,this.working.map(n=>n.id));
         const byId=new Map<string,MemoryNode>(persisted.map(n=>[n.id,n]));
         for(const node of this.working)if(tags.every(t=>node.tags.includes(t)))byId.set(node.id,node);
         return [...byId.values()].sort((a,b)=>b.timestamp-a.timestamp||a.id.localeCompare(b.id)).slice(0,limit);
+    
+        });
     }
 
     public async getLatestObservation(tag:string):Promise<MemoryNode|null>{
+        return this.operations.run('getLatestObservation', async () => {
+        await this.start();
+
         return (await this.getRecentObservations(tag,1))[0]??null;
+    
+        });
     }
 
     public async retrieve(query: string, filterTag?: string, agentId?: string): Promise<MemoryNode[]> {
+        return this.operations.run('retrieve', async () => {
+        await this.start();
+
         // Use the new Universal Search to get candidates from all tiers (RAM + LanceDB + Qdrant)
         let candidates = await this.search(query, { ownerId: agentId, tag: filterTag });
 
@@ -629,6 +684,8 @@ class ContinuumMemorySystem {
         // candidate is returned; superseded nodes are demoted, never removed.
         const { rankByValue } = await import('./memory/valueRanking');
         return rankByValue(candidates, Date.now());
+    
+        });
     }
 
     /**
@@ -642,6 +699,9 @@ class ContinuumMemorySystem {
         recentLimit: number = 5,
         hours: number = 2
     ): Promise<{ semantic: MemoryNode[], recent: MemoryNode[] }> {
+        return this.operations.run('getCombinedContext', async () => {
+        await this.start();
+
         // 1. Semantic Search (DEEP memory via VectorStore)
         let semantic: MemoryNode[] = [];
         try {
@@ -697,9 +757,14 @@ class ContinuumMemorySystem {
             .slice(0, recentLimit);
 
         return { semantic, recent: allRecent };
+    
+        });
     }
 
     public async getIdentityNodes(): Promise<MemoryNode[]> {
+        return this.operations.run('getIdentityNodes', async () => {
+        await this.start();
+
         // Fetch from LanceDB where tags include IDENTITY
         const allDb = await lancedbService.getAllNodes();
         return allDb.filter(n =>
@@ -707,6 +772,8 @@ class ContinuumMemorySystem {
             n.tags.includes('CORE_BELIEF') ||
             n.tags.includes('SACRED')
         );
+    
+        });
     }
 
     // --- MAINTENANCE TICKERS ---
@@ -714,6 +781,9 @@ class ContinuumMemorySystem {
     private isMaintenanceRunning = false;
 
     public async runMaintenance() {
+        return this.operations.run('runMaintenance', async () => {
+        await this.start();
+
         if (this.isMaintenanceRunning) return;
         this.isMaintenanceRunning = true;
 
@@ -764,6 +834,8 @@ class ContinuumMemorySystem {
         } finally {
             this.isMaintenanceRunning = false;
         }
+    
+        });
     }
 
     private tickFast(now: number) {
@@ -965,6 +1037,9 @@ class ContinuumMemorySystem {
     }
 
     public async getStats() {
+        return this.operations.run('getStats', async () => {
+        await this.start();
+
         const now = Date.now();
         // [R11] cache is valid only while NO write happened (revision match);
         // the 30s TTL alone served stale counts after writes.
@@ -1042,18 +1117,28 @@ class ContinuumMemorySystem {
         this.lastStatsCacheTime = now;
 
         return this.cachedStats;
+    
+        });
     }
 
 
 
     // --- DEBUG / ADMIN METHODS ---
     public async forceSave() {
+        return this.operations.run('forceSave', async () => {
+        await this.start();
+
         // Persist volatile memory to Redis/Disk immediately
         await this.saveSnapshot();
         console.log("[CONTINUUM] forceSave completed.");
+    
+        });
     }
 
     public async debug_forceTick(tier?: string) {
+        return this.operations.run('debug_forceTick', async () => {
+        await this.start();
+
         const now = Date.now();
         if (tier === 'DEEP') {
             await this.tickDeep(now);
@@ -1061,9 +1146,12 @@ class ContinuumMemorySystem {
             this.tickFast(now);
             await this.tickMedium(now);
         }
+    
+        });
     }
 
     public debug_ageNode(nodeId: string, ageMs: number = 3600000) {
+        this.operations.assertWorkAccepted();
         const node = this.working.find(n => n.id === nodeId);
         if (node) {
             node.timestamp -= ageMs;
@@ -1071,6 +1159,7 @@ class ContinuumMemorySystem {
     }
 
     public debug_boostNode(nodeId: string, importance: number = 1.0, accessCount: number = 10, addTag: boolean = false) {
+        this.operations.assertWorkAccepted();
         const node = this.working.find(n => n.id === nodeId);
         if (node) {
             node.importance = importance;
@@ -1079,6 +1168,9 @@ class ContinuumMemorySystem {
         }
     }
     public async search(query: string, scope: MemoryScope = {}): Promise<MemoryNode[]> {
+        return this.operations.run('search', async () => {
+        await this.start();
+
         const lists: MemoryNode[][] = [];
 
         // [ROOT CAUSE FIX] Defensive Guard
@@ -1140,6 +1232,8 @@ class ContinuumMemorySystem {
 
         // Deduplicate by ID
         return fuseMemories(lists.map(list => list.sort((a, b) => activation(b).score - activation(a).score)), query);
+    
+        });
     }
     /**
      * [NATIVE-RECOVERY] Native embedding-backfill scheduler, gated on the
@@ -1152,6 +1246,9 @@ class ContinuumMemorySystem {
         ledger: QuotaLedger = quotaLedger,
         runBackfill: (limit: number) => Promise<{ projected: number; failed: number }> = (l) => this.backfillMemoryEmbeddings(l),
     ): Promise<{ ran: boolean; reason?: string; projected?: number; failed?: number }> {
+        return this.operations.run('maybeRunEmbeddingBackfill', async () => {
+        await this.start();
+
         // [QUOTA-COOLDOWN] Real provider 429 (RetryInfo) outranks the local
         // ledger: skip the pass without burning calls or spamming incidents.
         const cooldown = ledger.cooldownUntil('gemini', DEFAULT_GEMINI_EMBEDDING_MODEL);
@@ -1195,6 +1292,8 @@ class ContinuumMemorySystem {
                 'provider rejected every attempt this pass; pending rows retained for the next pass');
         }
         return { ran: true, ...result };
+    
+        });
     }
 
     /**
@@ -1205,6 +1304,9 @@ class ContinuumMemorySystem {
      * EMBEDDING_PENDING and are retried on the next pass.
      */
     public async backfillMemoryEmbeddings(limit = 50): Promise<{ projected: number; failed: number }> {
+        return this.operations.run('backfillMemoryEmbeddings', async () => {
+        await this.start();
+
         if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new Error('Invalid backfill limit');
         const { generateEmbeddingWithIdentity } = await import('./geminiService');
         const pending = await lancedbService.pendingEmbeddings(limit);
@@ -1224,10 +1326,15 @@ class ContinuumMemorySystem {
         }
         if (projected || failed) console.log(`[CONTINUUM] Embedding backfill: ${projected} projected, ${failed} failed.`);
         return { projected, failed };
+    
+        });
     }
 
     // --- MANUAL CONSOLIDATION VOID ---
     public async consolidateRamImmediate(): Promise<{ promoted: number }> {
+        return this.operations.run('consolidateRamImmediate', async () => {
+        await this.start();
+
         console.log("[CONTINUUM] 🌪️ FORCE CONSOLIDATION INITIATED");
         let count = 0;
 
@@ -1241,6 +1348,8 @@ class ContinuumMemorySystem {
 
         console.log(`[CONTINUUM] 🌪️ Consolidated ${count} memories to L3 (LanceDB). ${failed > 0 ? `⚠️ ${failed} failed (sources kept in RAM).` : 'RAM is empty.'}`);
         return { promoted: count };
+    
+        });
     }
 }
 

@@ -40,35 +40,72 @@ class ResourceArbiter {
         console.log(`[ARBITER] Initialized. Environment: ${this.isServer ? 'SERVER (Real Metrics)' : 'CLIENT (Simulated)'}`);
 
         // Start Queue Processor Loop with dynamic interval
-        this.startProcessing();
+
     }
 
-    private startProcessing() {
-        // Import dynamically to avoid circular dependency
-        import('./powerManager').then(({ powerManager }) => {
+    private readonly failures: unknown[] = [];
+    public getLifecycleFailures(): readonly unknown[] { return [...this.failures]; }
+    private closing = false;
+    private startTask?: Promise<void>;
+    private readonly active = new Set<Promise<unknown>>();
+    public start(): Promise<void> {
+        if (this.closing) return Promise.reject(new Error('ResourceArbiter closed'));
+        if (this.startTask) return this.startTask;
+        this.startTask = (async () => {
+            const { powerManager } = await import('./powerManager');
+            if (this.closing) return;
             const intervalMs = powerManager.getConfig().resourceArbiterMs;
-            this.intervalId = setInterval(() => this.processQueue(), intervalMs);
+            this.intervalId = setInterval(() => { if (!this.closing) void this.track(this.processQueue()).catch(() => undefined); }, intervalMs);
             console.log(`[ARBITER] Queue processor started (${intervalMs}ms interval)`);
-        });
+        })();
+        return this.startTask;
+    }
+    private track<T>(task: Promise<T>): Promise<T> {
+        this.active.add(task);
+        void task.then(() => this.active.delete(task), (error) => { this.active.delete(task); this.failures.push(error); });
+        return task;
+    }
+    public async shutdown(): Promise<void> {
+        this.closing = true;
+        if (this.intervalId) clearInterval(this.intervalId);
+        this.intervalId = null;
+        for (const item of this.queue.splice(0)) item.resolve(false);
+        const results = await Promise.allSettled([...(this.startTask ? [this.startTask] : []), ...this.active]);
+        for (const result of results) if (result.status === 'rejected' && !this.failures.includes(result.reason)) this.failures.push(result.reason);
+        if (this.failures.length) throw new AggregateError(this.failures, 'ResourceArbiter failed work during lifecycle');
     }
 
     /**
      * Checks if the system can handle waking up a new agent.
      * Returns a Promise that resolves when resources are available.
      */
-    public async requestAdmission(agent: Agent, priority: 'CRITICAL' | 'HIGH' | 'NORMAL' | 'LOW' = 'NORMAL'): Promise<boolean> {
-        return new Promise(async (resolve) => {
-            const metrics = await this.getRealMetrics();
+    public async requestAdmission(agent: Agent, priority: 'CRITICAL' | 'HIGH' | 'NORMAL' | 'LOW' = 'NORMAL', signal?: AbortSignal): Promise<boolean> {
+        if (this.closing || signal?.aborted) return false;
+        const metrics = await this.track(this.getRealMetrics());
+        if (this.closing || signal?.aborted) return false;
+        return new Promise((resolve) => {
+            let settled = false;
+            let queued: QueueItem | undefined;
+            const finish = (admitted: boolean) => {
+                if (settled) return;
+                settled = true;
+                signal?.removeEventListener('abort', onAbort);
+                if (queued) this.queue = this.queue.filter(item => item !== queued);
+                resolve(admitted);
+            };
+            const onAbort = () => finish(false);
+            signal?.addEventListener('abort', onAbort, { once: true });
+            if (signal?.aborted) { finish(false); return; }
 
             // 1. CRITICAL ALWAYS PASSES
             if (priority === 'CRITICAL' && metrics.ramUsed / metrics.ramTotal < 0.98) {
-                resolve(true);
+                finish(true);
                 return;
             }
 
             // 2. STARTUP GRACE PERIOD
             if (process.uptime() < 60) {
-                resolve(true);
+                finish(true);
                 return;
             }
 
@@ -77,29 +114,26 @@ class ResourceArbiter {
             if (ramUsagePercent > this.maxRamThreshold || metrics.cpuLoad > this.maxCpuThreshold) {
                 // QUEUE THE REQUEST
                 console.log(`[ARBITER] ⏳ Queuing ${agent.name} (Priority: ${priority}). RAM: ${(ramUsagePercent * 100).toFixed(1)}%`);
-                this.queue.push({
-                    agentId: agent.id,
-                    priority,
-                    timestamp: Date.now(),
-                    resolve
-                });
+                queued = { agentId: agent.id, priority, timestamp: Date.now(), resolve: finish };
+                this.queue.push(queued);
                 this.sortQueue();
             } else {
                 // ADMIT IMMEDIATELY
-                resolve(true);
+                finish(true);
             }
         });
     }
 
     public release() {
         // Trigger immediate check when resources are freed
-        this.processQueue();
+        if (!this.closing) void this.track(this.processQueue()).catch(() => undefined);
     }
 
     private async processQueue() {
-        if (this.queue.length === 0) return;
+        if (this.closing || this.queue.length === 0) return;
 
         const metrics = await this.getRealMetrics();
+        if (this.closing) return;
         const ramUsagePercent = metrics.ramUsed / metrics.ramTotal;
 
         // If we have headroom

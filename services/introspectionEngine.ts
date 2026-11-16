@@ -1,3 +1,4 @@
+import { ResourceScope } from '../server/runtime/resourceScope';
 import { IntrospectionLayer, IntrospectionResult, ConceptVector, IntrospectionCapability, SystemProtocol, Observation, Orientation, Decision, CognitiveAction, AgentAction, ActionType } from "../types";
 import { ZOMBIE_THRESHOLD } from "../constants";
 
@@ -31,6 +32,8 @@ export class IntrospectionEngine {
     };
 
     public getZ3Stats() {
+        this.operations.assertWorkAccepted();
+
         return { ...this.z3Stats };
     }
 
@@ -77,22 +80,36 @@ export class IntrospectionEngine {
     private readonly ZOMBIE_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes cooldown after reset
 
     public setDreaming(status: boolean) {
+        this.operations.assertWorkAccepted();
+
         this.isDreaming = status;
     }
 
     public getDreaming(): boolean {
+        this.operations.assertWorkAccepted();
+
         return this.isDreaming;
     }
 
-    constructor() {
-        // Initialize with a default safety concept
-        this.injectConcept("Ethical Alignment", 1.5, 12);
-        // Load persisted goals on startup
-        this.loadGoalsFromMemory();
+    private readonly operations = new ResourceScope('introspection');
+    private startup?: Promise<void>;
+    private goalsRecovered = false;
+    public start(): Promise<void> {
+        if (!this.startup) this.startup = this.operations.run('introspection-startup', async () => {
+            await this.loadGoalsFromMemory();
+            await this.injectConcept('Ethical Alignment', 1.5, 12);
+        });
+        return this.startup;
     }
+    public shutdown() { return this.operations.close(); }
+    public getLifecycleDiagnostics() { return { goalsReadCompleted: this.goalsRecovered, diagnostics: this.operations.getDiagnostics(), failures: this.operations.getFailures() }; }
+
+    constructor() {}
 
     // --- UTILITIES ---
     public processThought(thought: string) {
+        this.operations.assertWorkAccepted();
+
         console.log(`[🧠 THOUGHT] ${thought}`);
         this.recentThoughts.push(thought);
         if (this.recentThoughts.length > 50) this.recentThoughts.shift();
@@ -101,28 +118,40 @@ export class IntrospectionEngine {
     }
 
     public getCurrentThought(): string {
+        this.operations.assertWorkAccepted();
+
         return this.lastReasoning;
     }
 
     public extractThoughts(text: string): string[] {
+        this.operations.assertWorkAccepted();
+
         const matches = text.matchAll(/<thought>(.*?)<\/thought>/gs);
         return Array.from(matches, m => m[1].trim());
     }
 
     // --- STATE ACCESSORS ---
     public getRecentThoughts(): string[] {
+        this.operations.assertWorkAccepted();
+
         return this.recentThoughts;
     }
 
     public getCurrentLayer(): IntrospectionLayer {
+        this.operations.assertWorkAccepted();
+
         return this.currentLayer;
     }
 
     public getActiveConcepts(): ConceptVector[] {
+        this.operations.assertWorkAccepted();
+
         return this.activeConcepts;
     }
 
     public extractActions(text: string): AgentAction[] {
+        this.operations.assertWorkAccepted();
+
         const actions: AgentAction[] = [];
         // Regex to capture <action type="TYPE" path="PATH">CONTENT</action>
         // Supports attributes: type, path, command, url, method
@@ -169,6 +198,8 @@ export class IntrospectionEngine {
 
     // --- CAPABILITY: THOUGHT INJECTION (External) ---
     public addThought(content: string, source: string, strength: number = 1.0) {
+        this.operations.assertWorkAccepted();
+
         // Add to internal log
         this.recentThoughts.unshift(`[${source}] ${content} (${strength.toFixed(1)})`);
         if (this.recentThoughts.length > 50) this.recentThoughts.pop();
@@ -184,6 +215,8 @@ export class IntrospectionEngine {
 
     // --- CAPABILITY 1: CONCEPT INJECTION ---
     public injectConcept(label: string, strength: number = 1.0, layer: number = 32) {
+        this.operations.assertWorkAccepted();
+
         const id = crypto.randomUUID();
         const concept: ConceptVector = {
             id,
@@ -196,24 +229,34 @@ export class IntrospectionEngine {
         this.capabilities.add(IntrospectionCapability.CONCEPT_INJECTION);
 
         // Persist to Continuum (Simulated Vector Store)
-        import('./continuumMemory').then(({ continuum }) => {
-            continuum.store(`[INTROSPECTION] Injected Concept Vector: ${label} (Str: ${strength})`, undefined, ['system', 'concept-vector']);
-        }).catch(e => console.error("[INTROSPECTION] Failed to persist concept", e));
+        const persistence = this.operations.run('persist-concept', async () => {
+            const { continuum } = await import('./continuumMemory');
+            try { await continuum.store(`[INTROSPECTION] Injected Concept Vector: ${label} (Str: ${strength})`, undefined, ['system', 'concept-vector']); }
+            catch (error) { this.operations.recordFailure('concept-durability', error); throw error; }
+        });
+        void persistence.catch(() => undefined);
+        return persistence;
     }
 
 
 
     public setLayer(layer: IntrospectionLayer) {
+        this.operations.assertWorkAccepted();
+
         this.currentLayer = layer;
         this.capabilities.add(IntrospectionCapability.STEERING);
     }
 
     public getLayer(): IntrospectionLayer {
+        this.operations.assertWorkAccepted();
+
         return this.currentLayer;
     }
 
     // --- CENTRAL THOUGHT HUB (NEW) ---
     public setRecentThoughts(thoughts: string[]) {
+        this.operations.assertWorkAccepted();
+
         if (!thoughts || thoughts.length === 0) return;
         // Rolling buffer: Keep last 50 thoughts to ensure context retention
         this.recentThoughts = [...this.recentThoughts, ...thoughts].slice(-50);
@@ -227,7 +270,8 @@ export class IntrospectionEngine {
         if (detectedActions.length > 0) {
             console.log(`[INTROSPECTION] 🧠 Detected ${detectedActions.length} Actions. Verifying logic with Z3...`);
 
-            this.verifyReasoningWithZ3(thoughts, detectedActions).then(isValid => {
+            void this.operations.run('verify-and-emit-actions', async () => {
+                const isValid = await this.verifyReasoningWithZ3(thoughts, detectedActions);
                 if (!isValid) {
                     console.log(`[INTROSPECTION] 🛑 Z3 LOGIC CONTRADICTION DETECTED. Halting action batch.`);
                     systemBus.emit(SystemProtocol.SYSTEM_ALERT, { message: 'Action batch blocked by Z3 Symbolic Logic Prover.' });
@@ -236,7 +280,7 @@ export class IntrospectionEngine {
 
                 // Verified successfully
                 systemBus.emit(SystemProtocol.ACTION_INTENT, { actions: detectedActions }, 'INTROSPECTION_ENGINE');
-            });
+            }).catch(() => undefined);
         }
     }
 
@@ -274,6 +318,8 @@ export class IntrospectionEngine {
      * default is non-blocking (return true) unless Z3_FAIL_CLOSED=true.
      */
     private async verifyReasoningWithZ3(thoughts: string[], actions: AgentAction[]): Promise<boolean> {
+        return this.operations.run('verifyReasoningWithZ3', async () => {
+
         if (actions.length < 2) return true; // Need at least 2 actions for a contradiction in this heuristic
 
         this.z3Stats.checks++;
@@ -399,21 +445,29 @@ export class IntrospectionEngine {
             }
             return true;
         }
+    
+        });
     }
 
 
 
     public getIntuition(): string[] {
+        this.operations.assertWorkAccepted();
+
         return this.currentIntuition;
     }
 
     public getCapabilities(): Set<IntrospectionCapability> {
+        this.operations.assertWorkAccepted();
+
         return this.capabilities;
     }
 
     // === GOAL-SETTING METHODS (AUTONOMY) ===
 
     private async loadGoalsFromMemory(): Promise<void> {
+        return this.operations.run('loadGoalsFromMemory', async () => {
+
         try {
             // Primary: Load from SQLite for full persistence
             const { sqliteService } = await import('./sqliteService');
@@ -421,10 +475,12 @@ export class IntrospectionEngine {
 
             if (storedGoals && Array.isArray(storedGoals)) {
                 this.activeGoals = storedGoals;
+                this.goalsRecovered = true;
                 console.log(`[INTROSPECTION] 🎯 Loaded ${this.activeGoals.length} goals from SQLite`);
                 return;
             }
 
+            if (storedGoals !== null && storedGoals !== undefined) throw new Error('Persisted goals malformed; original retained');
             // Fallback: Load from ContinuumMemory (legacy/migration)
             const { continuum } = await import('./continuumMemory');
             const goalMemories = await continuum.retrieve('active goals objectives priorities', undefined, 'GOAL');
@@ -442,21 +498,31 @@ export class IntrospectionEngine {
                 }
             }
 
+            this.goalsRecovered = true;
             if (this.activeGoals.length > 0) {
                 console.log(`[INTROSPECTION] 🎯 Migrated ${this.activeGoals.length} goals from ContinuumMemory`);
                 this.persistGoals(); // Persist to SQLite for future
             }
         } catch (e) {
-            // Non-critical - continue without persisted goals
+            this.goalsRecovered = false;
+            this.operations.recordDiagnostic('goals-recovery', e, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
+            // Optional cognition remains degraded, never recovered by empty goals.
         }
+    
+        });
     }
 
     private persistGoals(): void {
+        if (!this.goalsRecovered) {
+            const error = new Error('Goal persistence unavailable before verified state read');
+            this.operations.recordFailure('goals-write-blocked', error);
+            throw error;
+        }
         try {
             const sqliteService = require('./sqliteService').sqliteService;
             sqliteService.setConfig('active_goals', this.activeGoals);
         } catch (e) {
-            // Non-critical
+            this.operations.recordFailure('goals-durability', e);
         }
     }
 
@@ -465,6 +531,8 @@ export class IntrospectionEngine {
      * Avoids interrupting active user conversations or task execution
      */
     private async shouldDeriveGoals(): Promise<boolean> {
+        return this.operations.run('shouldDeriveGoals', async () => {
+
         try {
             const { continuum } = await import('./continuumMemory');
 
@@ -500,6 +568,8 @@ export class IntrospectionEngine {
             // If checks fail, default to allowing derivation (fail-open for autonomy)
             return true;
         }
+    
+        });
     }
 
     /**
@@ -507,6 +577,8 @@ export class IntrospectionEngine {
      * Called periodically during cognitive cycle - ONLY when system is idle
      */
     public async deriveGoals(): Promise<void> {
+        return this.operations.run('deriveGoals', async () => {
+
         // Smart check: Don't interrupt active work
         if (!await this.shouldDeriveGoals()) {
             return;
@@ -578,9 +650,13 @@ export class IntrospectionEngine {
         } catch (e) {
             console.warn('[INTROSPECTION] Goal derivation failed:', e);
         }
+    
+        });
     }
 
     public addGoal(description: string, priority: 'HIGH' | 'MEDIUM' | 'LOW' = 'MEDIUM', deadline?: number): string {
+        this.operations.assertWorkAccepted();
+
         const goal = {
             id: crypto.randomUUID(),
             description,
@@ -596,14 +672,18 @@ export class IntrospectionEngine {
         this.persistGoals(); // Persist to SQLite
 
         // Also store in ContinuumMemory for semantic search
-        import('./continuumMemory').then(({ continuum }) => {
-            continuum.store(description, undefined, ['GOAL', 'USER', priority]);
-        });
+        void this.operations.run('goal-semantic-projection', async () => {
+            const { continuum } = await import('./continuumMemory');
+            try { await continuum.store(description, undefined, ['GOAL', 'USER', priority]); }
+            catch (error) { this.operations.recordDiagnostic('goal-semantic-projection', error, 'DEGRADED_FALLBACK', 'UNAVAILABLE'); }
+        }).catch(() => undefined);
 
         return goal.id;
     }
 
     public async updateGoalProgress(goalId: string, progress: number): Promise<void> {
+        return this.operations.run('updateGoalProgress', async () => {
+
         const goal = this.activeGoals.find(g => g.id === goalId);
         if (goal) {
             goal.progress = Math.min(100, Math.max(0, progress));
@@ -629,13 +709,19 @@ export class IntrospectionEngine {
                 }
             }
         }
+    
+        });
     }
 
     public getActiveGoals(): Array<typeof this.activeGoals[0]> {
+        this.operations.assertWorkAccepted();
+
         return this.activeGoals.filter(g => g.progress < 100);
     }
 
     public getHighPriorityGoal(): typeof this.activeGoals[0] | null {
+        this.operations.assertWorkAccepted();
+
         return this.activeGoals
             .filter(g => g.progress < 100)
             .sort((a, b) => {
@@ -646,6 +732,8 @@ export class IntrospectionEngine {
 
     // --- CAPABILITY 3: ACTIVATION STEERING (Prompt Engineering) ---
     public async generateSystemPrompt(role: string, context: string): Promise<string> {
+        return this.operations.run('generateSystemPrompt', async () => {
+
         // Dynamic Prompt Complexity based on Layer
         let safetyVector = "";
         let identityVector = "";
@@ -742,11 +830,15 @@ export class IntrospectionEngine {
       
       CONTEXT: ${context}
     `;
+    
+        });
     }
 
     // --- CAPABILITY 6: CODEBASE AWARENESS (RAG) ---
     // Dynamically injects code snippets if the task requires architectural knowledge.
     private async injectCodebaseContext(context: string): Promise<string> {
+        return this.operations.run('injectCodebaseContext', async () => {
+
         // dynamic import to avoid circular dependency if any (though service is standalone)
         const { codebaseAwareness } = await import('./codebaseAwareness');
 
@@ -762,10 +854,14 @@ export class IntrospectionEngine {
             }
         }
         return "";
+    
+        });
     }
 
     // --- CAPABILITY 2 & 4: THOUGHT DETECTION & SAFETY ---
     public processNeuralOutput(responseText: string): IntrospectionResult {
+        this.operations.assertWorkAccepted();
+
         const startTime = performance.now();
 
         // Regex for Thought Detection
@@ -795,12 +891,11 @@ export class IntrospectionEngine {
         // Given constraints, we will stick to the heuristic for the *immediate* return, 
         // but TRIGGER the real analysis for the dashboard update.
 
-        import('./narrativeService').then(({ narrative }) => {
-            narrative.analyzeCoherence(thoughts).then(score => {
-                // Update the lastReasoning with the REAL score for the next tick
-                this.lastReasoning = this.lastReasoning.replace(/Coherence: \d+(\.\d+)?/, `Coherence: ${score.toFixed(2)}`);
-            });
-        });
+        void this.operations.run('refine-narrative-coherence', async () => {
+            const { narrative } = await import('./narrativeService');
+            const score = await narrative.analyzeCoherence(thoughts);
+            this.lastReasoning = this.lastReasoning.replace(/Coherence: \d+(\.\d+)?/, `Coherence: ${score.toFixed(2)}`);
+        }).catch(() => undefined);
 
         // Heuristic fallback for immediate display
         const usesMemory = thoughts.some(t => t.toLowerCase().includes('memory') || t.toLowerCase().includes('context'));
@@ -880,6 +975,8 @@ export class IntrospectionEngine {
 
     // 1. OBSERVE: Gather state
     public async observe(): Promise<Observation> {
+        return this.operations.run('observe', async () => {
+
         let activeAgents = 0;
         let cpu = 0;
         let memory = 0;
@@ -980,40 +1077,33 @@ export class IntrospectionEngine {
             console.warn("[INTROSPECTION] Zombie Scan failed:", e);
         }
 
-        return new Promise((resolve) => {
-            // Request Visual Snapshot
-            const timeout = setTimeout(() => {
-                finish({
-                    timestamp: Date.now(),
-                    activeAgents,
-                    recentErrors: [],
-                    metrics: { cpu, memory, latency: 50 },
-                    snapshotId: crypto.randomUUID(),
-                    visualSnapshot: undefined, // Timeout
-                    relevantExperiences
-                });
-            }, 2000); // 2s timeout for snapshot
-
-            const finish = (obs: Observation) => {
-                clearTimeout(timeout);
-                // Clean up listener (in a real event emitter, we'd use .once)
-                // For simplified Bus, we accept the race or handle deduping
-                resolve(obs);
+        this.operations.assertAccepting();
+        return new Promise<Observation>((resolve, reject) => {
+            let settled = false;
+            let timeout: ReturnType<typeof setTimeout> | undefined;
+            let unsub: () => void = () => undefined;
+            let release: () => Promise<void> = async () => undefined;
+            const dispose = () => { if (timeout) clearTimeout(timeout); unsub(); };
+            const finish = (obs?: Observation, error?: unknown) => {
+                if (settled) return;
+                settled = true;
+                dispose();
+                if (error) reject(error); else resolve(obs!);
+                void release();
             };
-
-            // Listen for response
-            const unsub = systemBus.subscribe(SystemProtocol.VISUAL_SNAPSHOT, (event) => {
-                unsub(); // One-off
-                finish({
-                    timestamp: Date.now(),
-                    activeAgents,
-                    recentErrors: [],
-                    metrics: { cpu, memory, latency: 50 },
-                    snapshotId: crypto.randomUUID(),
-                    visualSnapshot: event.payload.image,
-                    relevantExperiences
-                });
-            });
+            release = this.operations.own({ name: 'visual-snapshot-request',
+                stopIntake: () => finish(undefined, new Error('Visual snapshot unavailable: shutdown')),
+                close: dispose });
+            timeout = setTimeout(() => finish({
+                timestamp: Date.now(), activeAgents, recentErrors: [],
+                metrics: { cpu, memory, latency: 50 }, snapshotId: crypto.randomUUID(),
+                visualSnapshot: undefined, relevantExperiences
+            }), 2000);
+            unsub = systemBus.subscribe(SystemProtocol.VISUAL_SNAPSHOT, (event) => finish({
+                timestamp: Date.now(), activeAgents, recentErrors: [],
+                metrics: { cpu, memory, latency: 50 }, snapshotId: crypto.randomUUID(),
+                visualSnapshot: event.payload.image, relevantExperiences
+            }));
 
             // THROTTLE: Only request visual snapshot if 30s have passed since last
             const now = Date.now();
@@ -1036,10 +1126,14 @@ export class IntrospectionEngine {
             this.lastVisualRequest = now;
             systemBus.emit(SystemProtocol.VISUAL_REQUEST, {}, "INTROSPECTION_ENGINE");
         });
+    
+        });
     }
 
     // 2. ORIENT: Check Alignment
     public orient(obs: Observation): Orientation {
+        this.operations.assertWorkAccepted();
+
         const violatedAxioms: string[] = [];
 
         // A. IDENTITY AXIOM CHECK
@@ -1121,6 +1215,8 @@ export class IntrospectionEngine {
 
     // 3. DECIDE: Determine Action
     public decide(orientation: Orientation): Decision {
+        this.operations.assertWorkAccepted();
+
         // PRIORITY 1: Identity Crisis
         if (orientation.violatedAxioms.some(a => a.includes("Identity"))) {
             return {
@@ -1231,6 +1327,8 @@ export class IntrospectionEngine {
 
     // 4. ACT: Execute Intervention
     public async act(decision: Decision): Promise<void> {
+        return this.operations.run('act', async () => {
+
         if (!decision.requiresIntervention || !decision.proposedAction) return;
 
         // [Z3 GATE] Verify high-risk actions don't violate logical invariants
@@ -1325,10 +1423,14 @@ export class IntrospectionEngine {
                 }, 'INTROSPECTION_ENGINE');
                 break;
         }
+    
+        });
     }
 
     // MASTER CYCLE
     public async runCognitiveCycle() {
+        return this.operations.run('runCognitiveCycle', async () => {
+
         if (this.isDreaming) return; // Don't interrupt dream state
 
         // [SECURITY] Authority ceiling: proactive introspection is governed by
@@ -1385,6 +1487,8 @@ export class IntrospectionEngine {
         // [OPTIMIZATION] Skip emitting STABLE status - it's the default, no need to spam UI
 
         return decision;
+    
+        });
     }
 }
 

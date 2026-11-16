@@ -1,0 +1,105 @@
+# REVIEW PROPOSAL ONLY. Enabling bytes, not published. One final reviewed push starts one run.
+name: Inert unchanged compiler comparison
+on:
+  push:
+    branches:
+      - validation/lifecycle-owned-loader-status-2e4036b6-20261116
+permissions:
+  contents: read
+concurrency:
+  group: inert-compiler-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  compare:
+    if: ${{ github.run_attempt == 1 && github.event.repository.private == false && github.ref == 'refs/heads/validation/lifecycle-owned-loader-status-2e4036b6-20261116' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          path: candidate
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 6b49bc2a7fadcd87759cd0c1d534c832194b1572
+          path: baseline
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Verify exact commit and public standard runner
+        env:
+          ACTUAL: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          test "$REPOSITORY" = haroldfabla2-hue/Silhouette-Agency-OS-OpenSource
+          [[ "$ACTUAL" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git -C candidate rev-parse HEAD)" = "$ACTUAL"
+          test "$(git -C baseline rev-parse HEAD)" = 6b49bc2a7fadcd87759cd0c1d534c832194b1572
+          test -z "$(git -C candidate status --porcelain)"
+          command -v bwrap
+          command -v systemd-run
+          test -d /sys/fs/cgroup
+          test "$(stat -fc %T /sys/fs/cgroup)" = cgroup2fs
+      - name: Prepare inert exact dependencies, no package manager
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$RUNNER_TEMP/inert-result"
+          # Only scanned source diagnostics are uploaded later. No cache actions.
+          env -i PATH=/usr/bin:/bin HOME=/nonexistent \
+            python3 candidate/.github/inert-compiler/prepare.py "$PWD" "$RUNNER_TEMP/inert-result" \
+            >"$RUNNER_TEMP/inert-result/preparation.stdout" 2>"$RUNNER_TEMP/inert-result/preparation.stderr"
+      - name: Exact comparison in hard-limited transient service
+        run: |
+          set -euo pipefail
+          # Python and bwrap must validate actual limits before the compiler starts.
+          sudo systemd-run --quiet --wait --collect --service-type=exec \
+            --unit="inert-ts-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --uid="$(id -u)" --gid="$(id -g)" \
+            --property=MemoryMax=6G --property=MemorySwapMax=0 \
+            --property=TasksMax=32 --property=CPUQuota=100% \
+            --property=RuntimeMaxSec=700 --property=KillMode=control-group \
+            --property=LimitCORE=0 --property=LimitNOFILE=128 \
+            --property=LimitFSIZE=16777216 --property=LimitCPU=650 \
+            /usr/bin/env -i PATH=/usr/bin:/bin HOME=/nonexistent \
+            /usr/bin/python3 "$PWD/candidate/.github/inert-compiler/compare.py" \
+            "$PWD" "$RUNNER_TEMP/inert-result" \
+            >"$RUNNER_TEMP/inert-result/service.stdout" 2>"$RUNNER_TEMP/inert-result/service.stderr"
+      - name: Confirm service stopped and classify cleanup
+        if: always()
+        env:
+          UNIT: inert-ts-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          if state=$(sudo systemctl show "$UNIT" --property=ActiveState --value 2>"$RUNNER_TEMP/inert-result/cleanup.stderr"); then :; else state=not-found; fi
+          case "$state" in
+            inactive|failed|not-found|'') ;;
+            *) sudo systemctl kill --kill-whom=all "$UNIT"; sudo systemctl stop "$UNIT"; exit 1;;
+          esac
+          if sudo systemctl is-active --quiet "$UNIT"; then exit 1; fi
+          printf '%s\n' "$state" > "$RUNNER_TEMP/inert-result/service-state.txt"
+      - name: Emit only guarded source compiler diagnostics
+        if: always()
+        run: |
+          env -i PATH=/usr/bin:/bin HOME=/nonexistent \
+            python3 candidate/.github/inert-compiler/emit.py "$RUNNER_TEMP/inert-result"
+      - name: Upload scanned public-source diagnostics only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: inert-compiler-diagnostics-${{ github.run_id }}
+          path: ${{ runner.temp }}/inert-result/safe-diagnostics/
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 9
+          include-hidden-files: false
+      - name: Remove disposable source, dependencies and raw receipts
+        if: always()
+        run: |
+          set -euo pipefail
+          test -n "$RUNNER_TEMP"
+          rm -rf -- "$RUNNER_TEMP/inert-result"

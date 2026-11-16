@@ -1,3 +1,4 @@
+import { ownedHttpHandler } from '../../runtime/ownedHttpIngress';
 import { Router } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -26,7 +27,7 @@ function jail(relPath: any): string | null {
 }
 
 // GET /tree — recursive real tree (folders + files with size/mtime, no contents)
-router.get('/tree', (_req, res) => {
+router.get('/tree', ownedHttpHandler('workspace:GET:/tree',(_req, res) => {
     try {
         const nodes: any[] = [];
         let truncated = false;
@@ -56,10 +57,10 @@ router.get('/tree', (_req, res) => {
     } catch (e: any) {
         res.status(500).json({ error: e.message });
     }
-});
+}));
 
 // GET /file?path=<rel> — real file content (512KB cap)
-router.get('/file', (req, res) => {
+router.get('/file', ownedHttpHandler('workspace:GET:/file',(req, res) => {
     const abs = jail(req.query.path);
     if (!abs) return res.status(400).json({ error: 'Invalid path' });
     try {
@@ -71,10 +72,10 @@ router.get('/file', (req, res) => {
     } catch {
         res.status(404).json({ error: 'File not found' });
     }
-});
+}));
 
 // POST /file { path, content } — write (creates parent dirs)
-router.post('/file', (req, res) => {
+router.post('/file', ownedHttpHandler('workspace:POST:/file',(req, res) => {
     const abs = jail(req.body?.path);
     const content = req.body?.content;
     if (!abs) return res.status(400).json({ error: 'Invalid path' });
@@ -88,10 +89,10 @@ router.post('/file', (req, res) => {
     } catch (e: any) {
         res.status(500).json({ error: e.message });
     }
-});
+}));
 
 // POST /folder { path } — mkdir -p
-router.post('/folder', (req, res) => {
+router.post('/folder', ownedHttpHandler('workspace:POST:/folder',(req, res) => {
     const abs = jail(req.body?.path);
     if (!abs) return res.status(400).json({ error: 'Invalid path' });
     try {
@@ -100,10 +101,10 @@ router.post('/folder', (req, res) => {
     } catch (e: any) {
         res.status(500).json({ error: e.message });
     }
-});
+}));
 
 // POST /project { name } — create a real top-level project folder
-router.post('/project', (req, res) => {
+router.post('/project', ownedHttpHandler('workspace:POST:/project',(req, res) => {
     const name = req.body?.name;
     if (typeof name !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(name) || name.includes('..')) {
         return res.status(400).json({ error: 'Invalid project name' });
@@ -117,10 +118,10 @@ router.post('/project', (req, res) => {
     } catch (e: any) {
         res.status(500).json({ error: e.message });
     }
-});
+}));
 
 // POST /quarantine { path } — move into .quarantine/ (eternal-memory invariant: nothing is deleted)
-router.post('/quarantine', (req, res) => {
+router.post('/quarantine', ownedHttpHandler('workspace:POST:/quarantine',(req, res) => {
     const abs = jail(req.body?.path);
     if (!abs) return res.status(400).json({ error: 'Invalid path' });
     if (abs === WORKSPACE_ROOT) return res.status(400).json({ error: 'Refusing to quarantine the workspace root' });
@@ -135,6 +136,6 @@ router.post('/quarantine', (req, res) => {
     } catch (e: any) {
         res.status(500).json({ error: e.message });
     }
-});
+}));
 
 export default router;

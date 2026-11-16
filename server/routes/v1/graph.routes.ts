@@ -1,3 +1,4 @@
+import {ownedHttpHandler} from '../../runtime/ownedHttpIngress';
 import { Router } from 'express';
 import { GraphController } from '../../controllers/graphController';
 import neo4j from 'neo4j-driver';
@@ -18,10 +19,10 @@ const controller = new GraphController();
  */
 
 // GET /v1/graph/visualize - Full graph for visualization
-router.get('/visualize', controller.getGraphVisualization.bind(controller));
+router.get('/visualize', ownedHttpHandler('graph:GET:/visualize',controller.getGraphVisualization.bind(controller)));
 
 // GET /v1/graph/nodes - List nodes with pagination
-router.get('/nodes', async (req, res) => {
+router.get('/nodes', ownedHttpHandler('graph:GET:/nodes',async (req, res) => {
     try {
         const limit = Math.max(1, Math.min(parseInt(req.query.limit as string) || 100, 1000));
         const offset = Math.max(0, parseInt(req.query.offset as string) || 0);
@@ -53,10 +54,10 @@ router.get('/nodes', async (req, res) => {
         console.error('[GRAPH] Error fetching nodes:', error);
         res.status(500).json({ error: 'Failed to fetch nodes', details: error.message });
     }
-});
+}));
 
 // GET /v1/graph/stats - Graph statistics
-router.get('/stats', async (req, res) => {
+router.get('/stats', ownedHttpHandler('graph:GET:/stats',async (req, res) => {
     try {
         const nodeCountQuery = 'MATCH (n) RETURN count(n) as nodeCount';
         const relCountQuery = 'MATCH ()-[r]->() RETURN count(r) as relCount';
@@ -80,10 +81,10 @@ router.get('/stats', async (req, res) => {
         console.error('[GRAPH] Error fetching stats:', error);
         res.status(500).json({ error: 'Failed to fetch graph stats', details: error.message });
     }
-});
+}));
 
 // POST /v1/graph/query - Execute custom Cypher query (read-only for safety)
-router.post('/query', async (req, res) => {
+router.post('/query', ownedHttpHandler('graph:POST:/query',async (req, res) => {
     try {
         const { query } = req.body;
 
@@ -110,10 +111,10 @@ router.post('/query', async (req, res) => {
         console.error('[GRAPH] Query execution error:', error);
         res.status(500).json({ error: 'Query execution failed', details: error.message });
     }
-});
+}));
 
 // GET /v1/graph/communities - Get detected communities
-router.get('/communities', async (req, res) => {
+router.get('/communities', ownedHttpHandler('graph:GET:/communities',async (req, res) => {
     try {
         // Query for nodes grouped by their community if available
         const query = `
@@ -136,10 +137,10 @@ router.get('/communities', async (req, res) => {
         console.error('[GRAPH] Error fetching communities:', error);
         res.status(500).json({ error: 'Failed to fetch communities' });
     }
-});
+}));
 
 // GET /v1/graph/neighbors/:nodeId - Get neighbors of a specific node
-router.get('/neighbors/:nodeId', async (req, res) => {
+router.get('/neighbors/:nodeId', ownedHttpHandler('graph:GET:/neighbors/:nodeId',async (req, res) => {
     try {
         const { nodeId } = req.params;
         const depth = Math.max(1, Math.min(parseInt(req.query.depth as string) || 1, 5));
@@ -162,10 +163,10 @@ router.get('/neighbors/:nodeId', async (req, res) => {
         console.error('[GRAPH] Error fetching neighbors:', error);
         res.status(500).json({ error: 'Failed to fetch neighbors' });
     }
-});
+}));
 
 // GET /v1/graph/health - Hub network health metrics
-router.get('/health', async (req, res) => {
+router.get('/health', ownedHttpHandler('graph:GET:/health',async (req, res) => {
     try {
         const { hubStrengthening } = await import('../../../services/hubStrengtheningService');
         const health = await hubStrengthening.getNetworkHealth();
@@ -214,10 +215,10 @@ router.get('/health', async (req, res) => {
             details: error.message
         });
     }
-});
+}));
 
 // GET /v1/graph/hubs - Get top hub nodes
-router.get('/hubs', async (req, res) => {
+router.get('/hubs', ownedHttpHandler('graph:GET:/hubs',async (req, res) => {
     try {
         const limit = Math.max(1, Math.min(parseInt(req.query.limit as string) || 20, 100));
         const hubs = await graph.getHubs(limit);
@@ -235,10 +236,10 @@ router.get('/hubs', async (req, res) => {
         console.error('[GRAPH] Error fetching hubs:', error);
         res.status(500).json({ error: 'Failed to fetch hubs', details: error.message });
     }
-});
+}));
 
 // GET /v1/graph/topology - Full Small-World Topology Report (σ index)
-router.get('/topology', async (req, res) => {
+router.get('/topology', ownedHttpHandler('graph:GET:/topology',async (req, res) => {
     try {
         const { advancedDiscovery } = await import('../../../services/cognitive/advancedDiscovery');
         const forceRefresh = req.query.refresh === 'true';
@@ -248,7 +249,7 @@ router.get('/topology', async (req, res) => {
         console.error('[GRAPH] Error fetching topology:', error);
         res.status(500).json({ error: 'Failed to fetch topology', details: error.message });
     }
-});
+}));
 
 export default router;
 

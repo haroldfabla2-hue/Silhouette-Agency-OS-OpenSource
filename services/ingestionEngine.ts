@@ -1,3 +1,5 @@
+import {ResourceScope} from '../server/runtime/resourceScope';
+import {subscribeScoped} from './runtime/scopedSubscription';
 import { systemBus } from './systemBus';
 import { SystemProtocol } from '../types';
 
@@ -7,17 +9,23 @@ import { SystemProtocol } from '../types';
  * Parses their proprietary payloads and converts them into cognitive tasks.
  */
 export class IngestionEngine {
-    constructor() {
-        this.initialize();
-    }
-
-    private initialize() {
-        systemBus.subscribe(SystemProtocol.WEBHOOK_RECEIVED, async (event: any) => {
-            const { source, data } = event.payload;
-            await this.processWebhook(source, data);
+    private readonly operations=new ResourceScope('ingestion-engine');
+    private startup?:Promise<void>;
+    constructor() {}
+    public start():Promise<void>{
+        if(this.startup)return this.startup;
+        this.startup=this.operations.run('ingestion-start',()=>{
+            this.operations.assertAccepting();
+            subscribeScoped(this.operations,systemBus,SystemProtocol.WEBHOOK_RECEIVED,async(event:any)=>{
+                const {source,data}=event.payload;
+                await this.processWebhook(source,data);
+            });
         });
-        console.log(`[INGESTION_ENGINE] 📡 Listening for external webhooks on SystemBus...`);
+        void this.startup.catch(error=>this.operations.recordFailure('ingestion-start',error));
+        return this.startup;
     }
+    public shutdown(){return this.operations.close();}
+    public getLifecycleStatus(){return {failures:this.operations.getFailures(),diagnostics:this.operations.getDiagnostics(),authority:'EXTERNAL_ROLE_ADVISORY_ONLY',downstreamEffects:'UNVERIFIED'};}
 
     private async processWebhook(source: string, data: any) {
         console.log(`[INGESTION_ENGINE] 📥 Received webhook from ${source}`);

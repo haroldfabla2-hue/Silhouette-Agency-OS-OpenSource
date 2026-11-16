@@ -1,3 +1,4 @@
+import { ResourceScope } from '../../server/runtime/resourceScope';
 /**
  * EVOLUTION SCHEDULER
  * ═══════════════════════════════════════════════════════════════
@@ -45,26 +46,28 @@ class EvolutionScheduler {
     private toolEvolutionInterval: NodeJS.Timeout | null = null;
     private goalExecutionInterval: NodeJS.Timeout | null = null;
 
-    private constructor(config: Partial<EvolutionConfig> = {}) {
-        this.config = { ...DEFAULT_CONFIG, ...config };
-
-        // Subscribe to PowerManager mode changes to reactivate when mode upgrades
-        import('../systemBus').then(({ systemBus }) => {
-            import('../../types').then(({ SystemProtocol }) => {
-                systemBus.subscribe(SystemProtocol.CONFIG_MUTATION, (event: any) => {
-                    if (event.type === 'POWER_MODE_CHANGE') {
-                        const newMode = event.mode;
-                        if ((newMode === 'PERFORMANCE' || newMode === 'BALANCED') && !this.isRunning) {
-                            console.log(`[EVOLUTION] ⚡ PowerManager switched to ${newMode} — activating Evolution Scheduler!`);
-                            this.activateScheduler();
-                        } else if (newMode === 'ECO' && this.isRunning) {
-                            console.log(`[EVOLUTION] 💤 PowerManager switched to ECO — pausing Evolution Scheduler.`);
-                            this.stop();
-                        }
-                    }
-                });
-            }).catch(() => {});
-        }).catch(() => {});
+    private readonly operations = new ResourceScope('evolution-scheduler');
+    private startup?: Promise<void>;
+    private activation?: Promise<void>;
+    private initialCycle?: ReturnType<typeof setTimeout>;
+    private stoppedGeneration = 0;
+    private constructor(config: Partial<EvolutionConfig> = {}) { this.config = { ...DEFAULT_CONFIG, ...config }; }
+    public shutdown() { this.stop(); return this.operations.close(); }
+    public getLifecycleDiagnostics() { return this.operations.getDiagnostics(); }
+    private async subscribeModeChanges(): Promise<void> {
+        const { systemBus } = await import('../systemBus');
+        const { SystemProtocol } = await import('../../types');
+        this.operations.assertAccepting();
+        const unsubscribe = systemBus.subscribe(SystemProtocol.CONFIG_MUTATION, (event: any) => {
+            if (!this.operations.accepting) return;
+            if (event.type === 'POWER_MODE_CHANGE') {
+                const newMode = event.mode;
+                if ((newMode === 'PERFORMANCE' || newMode === 'BALANCED') && !this.isRunning) {
+                    return this.activateScheduler();
+                } else if (newMode === 'ECO' && this.isRunning) { this.stop(); }
+            }
+        });
+        this.operations.own({ name: 'evolution-mode-subscription', stopIntake: unsubscribe, close: unsubscribe });
     }
 
     public static getInstance(): EvolutionScheduler {
@@ -78,24 +81,26 @@ class EvolutionScheduler {
      * Start the evolution scheduler
      * Called during server startup
      */
-    public start(): void {
-        if (this.isRunning) {
-            console.log('[EVOLUTION] ⚠️ Scheduler already running');
-            return;
-        }
-
-        // [OPTIMIZATION] Check PowerManager before starting
-        import('../powerManager').then(({ powerManager }) => {
+    public start(): Promise<void> {
+        if (this.startup) return this.startup;
+        this.startup = this.operations.run('evolution-start', async () => {
+            await this.subscribeModeChanges();
+            const { powerManager } = await import('../powerManager');
+            this.operations.assertAccepting();
             if (!powerManager.isEvolutionEnabled) {
-                console.log('[EVOLUTION] 💤 Disabled by PowerManager (ECO mode). Will auto-activate on mode change.');
+                console.log('[EVOLUTION] Disabled by PowerManager; mode subscription retained.');
                 return;
             }
-            this.activateScheduler();
+            await this.activateScheduler();
         });
+        return this.startup;
     }
 
-    private activateScheduler(): void {
-        if (this.isRunning) return;
+    private activateScheduler(): Promise<void> {
+        if (this.activation) return this.activation;
+        if (!this.operations.accepting || this.isRunning) return Promise.resolve();
+        const generation = this.stoppedGeneration;
+        this.activation = this.operations.run('evolution-activation', async () => {
 
         // [SECURITY] Authority ceiling before scheduling anything. These loops
         // are the SAME capabilities the daemon runs as its gated
@@ -105,15 +110,16 @@ class EvolutionScheduler {
         // scheduled only when the operator config allows its task. Fail-closed:
         // unreadable config schedules nothing and leaves isRunning=false so a
         // later mode change can retry.
-        Promise.all([
+        const [{ configLoader }, { isTaskAllowedByAutonomy }] = await Promise.all([
             import('../../server/config/configLoader'),
             import('../daemon/autonomyPolicy')
-        ]).then(([{ configLoader }, { isTaskAllowedByAutonomy }]) => {
-            if (this.isRunning) return;
+        ]);
+            if (!this.operations.accepting || this.isRunning || generation !== this.stoppedGeneration) return;
             let flags: any;
             try {
                 flags = configLoader.getConfig().autonomy;
             } catch (cfgErr: any) {
+                this.operations.recordDiagnostic('evolution-autonomy-flags', cfgErr, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
                 console.warn('[EVOLUTION] ⛔ Autonomy config unreadable; evolution loops NOT scheduled (fail-closed):', cfgErr?.message || cfgErr);
                 return;
             }
@@ -130,13 +136,13 @@ class EvolutionScheduler {
             // Schedule periodic tool analysis
             if (allowToolEvolution) {
                 this.toolEvolutionInterval = setInterval(
-                    () => this.runToolEvolutionCycle(),
+                    () => { if (this.operations.accepting) void this.runToolEvolutionCycle().catch(() => undefined); },
                     this.config.toolEvolutionIntervalMs
                 );
 
                 // Run initial analysis after a short delay (let system stabilize)
-                setTimeout(() => {
-                    this.runToolEvolutionCycle();
+                this.initialCycle = setTimeout(() => {
+                    if (this.operations.accepting) void this.runToolEvolutionCycle().catch(() => undefined);
                 }, 30000); // 30 seconds after start
             } else {
                 console.log('[EVOLUTION] ⛔ Tool evolution loop skipped: autonomy ceiling (allowEvolution).');
@@ -145,7 +151,7 @@ class EvolutionScheduler {
             // Schedule periodic goal execution
             if (allowGoals) {
                 this.goalExecutionInterval = setInterval(
-                    () => this.executeActiveGoals(),
+                    () => { if (this.operations.accepting) void this.executeActiveGoals().catch(() => undefined); },
                     this.config.goalExecutionIntervalMs
                 );
             } else {
@@ -162,14 +168,19 @@ class EvolutionScheduler {
 
             console.log('[EVOLUTION] ✅ Scheduler active. Tool analysis every 6h, goal check every 30min (only loops allowed by the autonomy ceiling).');
         }).catch((e) => {
-            console.warn('[EVOLUTION] ⛔ Autonomy policy import failed; evolution loops NOT scheduled (fail-closed):', e?.message || e);
-        });
+            this.operations.recordDiagnostic('evolution-autonomy-config', e, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
+            console.warn('[EVOLUTION] Autonomy config unavailable; loops not scheduled (fail-closed):', e?.message || e);
+        }).finally(() => { this.activation = undefined; });
+        return this.activation;
     }
 
     /**
      * Stop the evolution scheduler
      */
     public stop(): void {
+        this.stoppedGeneration++;
+        if (this.initialCycle) clearTimeout(this.initialCycle);
+        this.initialCycle = undefined;
         if (!this.isRunning) return;
 
         console.log('[EVOLUTION] 🛑 Stopping scheduler...');
@@ -197,6 +208,8 @@ class EvolutionScheduler {
      * Analyzes all tools and generates improvement suggestions
      */
     private async runToolEvolutionCycle(): Promise<void> {
+        return this.operations.run('runToolEvolutionCycle', async () => {
+
         console.log('[EVOLUTION] 🔬 Running tool evolution cycle...');
 
         try {
@@ -223,12 +236,16 @@ class EvolutionScheduler {
         } catch (error) {
             console.error('[EVOLUTION] Tool evolution cycle failed:', error);
         }
+    
+        });
     }
 
     /**
      * Execute an evolution suggestion by spawning a squad
      */
     private async executeEvolutionSuggestion(suggestion: any): Promise<void> {
+        return this.operations.run('executeEvolutionSuggestion', async () => {
+
         this.activeEvolutions++;
 
         try {
@@ -255,12 +272,16 @@ class EvolutionScheduler {
         } finally {
             this.activeEvolutions--;
         }
+    
+        });
     }
 
     /**
      * Check for and execute active goals from IntrospectionEngine
      */
     private async executeActiveGoals(): Promise<void> {
+        return this.operations.run('executeActiveGoals', async () => {
+
         if (!this.config.autoExecuteApprovedGoals) return;
         if (this.activeEvolutions >= this.config.maxConcurrentEvolutions) return;
 
@@ -302,15 +323,21 @@ class EvolutionScheduler {
         } catch (error) {
             console.error('[EVOLUTION] Goal execution check failed:', error);
         }
+    
+        });
     }
 
     /**
      * Manually trigger an evolution cycle (for testing or admin override)
      */
     public async triggerEvolutionNow(): Promise<void> {
+        return this.operations.run('triggerEvolutionNow', async () => {
+
         console.log('[EVOLUTION] 🔧 Manual evolution triggered');
         await this.runToolEvolutionCycle();
         await this.executeActiveGoals();
+    
+        });
     }
 
     /**

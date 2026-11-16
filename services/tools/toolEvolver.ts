@@ -1,3 +1,4 @@
+import { ResourceScope } from '../../server/runtime/resourceScope';
 /**
  * TOOL EVOLVER
  * ═══════════════════════════════════════════════════════════════
@@ -46,6 +47,10 @@ interface EvolutionCycleResult {
 }
 
 class ToolEvolver {
+    private readonly operations = new ResourceScope('tool-evolution');
+    private periodicStarted = false;
+    public shutdown() { return this.operations.close(); }
+    public getLifecycleDiagnostics() { return this.operations.getDiagnostics(); }
     private static instance: ToolEvolver;
 
     private readonly LOW_SUCCESS_THRESHOLD = 0.7; // 70% success rate
@@ -66,6 +71,8 @@ class ToolEvolver {
      * Analyze all tools and generate performance reports
      */
     public async analyzeAllTools(): Promise<ToolPerformanceReport[]> {
+        return this.operations.run('analyzeAllTools', async () => {
+
         const tools = toolRegistry.getAllTools();
         const reports: ToolPerformanceReport[] = [];
 
@@ -80,12 +87,16 @@ class ToolEvolver {
         reports.sort((a, b) => a.successRate - b.successRate);
 
         return reports;
+    
+        });
     }
 
     /**
      * Analyze a single tool's performance
      */
     public async analyzeTool(toolName: string): Promise<ToolPerformanceReport | null> {
+        return this.operations.run('analyzeTool', async () => {
+
         const tool = toolRegistry.getTool(toolName);
         if (!tool) {
             console.warn(`[TOOL_EVOLVER] Tool not found: ${toolName}`);
@@ -119,12 +130,16 @@ class ToolEvolver {
             needsOptimization,
             issues
         };
+    
+        });
     }
 
     /**
      * Generate evolution suggestions for underperforming tools
      */
     public async suggestEvolution(toolName: string): Promise<EvolutionSuggestion | null> {
+        return this.operations.run('suggestEvolution', async () => {
+
         const tool = toolRegistry.getTool(toolName);
         if (!tool) return null;
 
@@ -195,12 +210,16 @@ Respond with JSON:
             console.error(`[TOOL_EVOLVER] Failed to generate suggestion:`, error.message);
             return null;
         }
+    
+        });
     }
 
     /**
      * Run a full evolution cycle
      */
     public async runEvolutionCycle(maxSuggestions: number = 3): Promise<EvolutionCycleResult> {
+        return this.operations.run('runEvolutionCycle', async () => {
+
         console.log('[TOOL_EVOLVER] 🔄 Starting evolution cycle...');
 
         const reports = await this.analyzeAllTools();
@@ -230,18 +249,23 @@ Respond with JSON:
         console.log(`[TOOL_EVOLVER] ✅ Cycle complete: ${suggestions.length} suggestions generated`);
 
         return result;
+    
+        });
     }
 
     /**
      * Schedule periodic evolution cycles
      */
     public scheduleEvolutionCycles(intervalMs: number = 6 * 60 * 60 * 1000): void {
+        this.operations.assertAccepting();
+        if (this.periodicStarted) return;
+        this.periodicStarted = true;
         console.log(`[TOOL_EVOLVER] ⏰ Scheduled evolution every ${intervalMs / 3600000}h`);
 
-        setInterval(async () => {
+        this.operations.interval('tool-evolution', intervalMs, async () => {
             console.log('[TOOL_EVOLVER] ⏰ Running scheduled evolution cycle...');
             await this.runEvolutionCycle();
-        }, intervalMs);
+        });
     }
 
     /**
@@ -253,6 +277,8 @@ Respond with JSON:
         needsAttention: number;
         avgSuccessRate: number;
     }> {
+        return this.operations.run('getPerformanceSummary', async () => {
+
         const reports = await this.analyzeAllTools();
 
         const healthyTools = reports.filter(r => !r.needsOptimization).length;
@@ -268,6 +294,8 @@ Respond with JSON:
             needsAttention,
             avgSuccessRate
         };
+    
+        });
     }
 }
 

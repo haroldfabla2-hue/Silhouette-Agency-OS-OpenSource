@@ -1,3 +1,5 @@
+import { ResourceScope } from '../server/runtime/resourceScope';
+import { subscribeScoped } from './runtime/scopedSubscription';
 import { redisClient } from "./redisClient";
 import { systemBus } from "./systemBus";
 import { SystemProtocol, AgentStatus, IntrospectionLayer, WorkflowStage, CommunicationLevel } from "../types";
@@ -11,10 +13,18 @@ import { MemoryTier } from "../types";
 // Analyzes why things broke and ensures they don't break again.
 
 export class ArchitecturalReviewService {
+    private readonly operations = new ResourceScope('ArchitecturalReviewService');
+    private started = false;
+    public shutdown() { return this.operations.close(); }
+    public getLifecycleDiagnostics() { return this.operations.getDiagnostics(); }
+    public getLifecycleFailures() { return this.operations.getFailures(); }
     private static instance: ArchitecturalReviewService;
     // Removed In-Memory Map in favor of Redis
 
-    private constructor() {
+    private constructor() {}
+    public start(): void {
+        this.operations.assertAccepting();
+        if (this.started) return; this.started = true;
         this.initialize();
     }
 
@@ -29,12 +39,14 @@ export class ArchitecturalReviewService {
         console.log("[ARB] 🏛️ Architectural Review Board initialized.");
 
         // Listen for Incident Reports from Remediation/Hospital
-        systemBus.subscribe(SystemProtocol.INCIDENT_REPORT, (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.INCIDENT_REPORT, (event) => {
             this.handleIncident(event.payload);
         });
     }
 
     private async handleIncident(payload: any) {
+        return this.operations.run('handleIncident', async () => {
+
         // Payload: { remediationType, component, error, patchDetails }
         try {
             console.log(`[ARB] 🕵️ Analyzing Incident in: ${payload.component}`);
@@ -63,9 +75,13 @@ export class ArchitecturalReviewService {
         } catch (e) {
             console.error("[ARB] Analysis Failed:", e);
         }
+    
+        });
     }
 
     private async performPostMortem(payload: any) {
+        return this.operations.run('performPostMortem', async () => {
+
         // Lightweight Analysis: Was this a trivial error or a logic flaw?
         const prompt = `
         POST-MORTEM ANALYSIS
@@ -104,9 +120,13 @@ export class ArchitecturalReviewService {
         } catch (e) {
             console.warn("[ARB] Post-Mortem LLM Failure:", e);
         }
+    
+        });
     }
 
     private async triggerDeepInvestigation(payload: any, count: number) {
+        return this.operations.run('triggerDeepInvestigation', async () => {
+
         console.warn(`[ARB] 🚨 RECURRING FAILURE DETECTED (${count}x): ${payload.component}`);
 
         // Convert to Epistemic Gap for the Curiosity Engine
@@ -118,6 +138,8 @@ export class ArchitecturalReviewService {
             confidence: 0.1, // Low confidence in current understanding
             context: [`Recurrence: ${count}`, `Last Patch: ${payload.patchDetails}`]
         }, "ARB");
+    
+        });
     }
 }
 

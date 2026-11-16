@@ -1,3 +1,5 @@
+import {retainAcquiredIdentity} from '../../services/runtime/identityLifecycle';
+import { ownedHttpHandler } from '../runtime/ownedHttpIngress';
 import {withAuthenticatedPrincipal} from '../../services/security/principalContext';
 // =============================================================================
 // AUTHENTICATION MIDDLEWARE
@@ -56,18 +58,24 @@ let _cachedToken: string | null = null;
  * Lazily resolve the API token from environment.
  * This avoids issues with env not being loaded at import time.
  */
+export class AuthenticationConfigurationError extends Error {
+    readonly code='AUTH_PRODUCTION_TOKEN_MISSING';
+    constructor(){super('SILHOUETTE_API_KEY or SILHOUETTE_API_TOKEN required in production');}
+}
 function getToken(): string | null {
-    if (_cachedToken !== null) return _cachedToken;
-    _cachedToken = process.env.SILHOUETTE_API_KEY || process.env.SILHOUETTE_API_TOKEN || '';
-
-    // [SECURITY HARDENING] Fail fast in production if token is missing
-    if (!_cachedToken && process.env.NODE_ENV === 'production') {
-        console.error('[FATAL SECURITY EXCEPTION] SILHOUETTE_API_KEY is NOT set in production environment.');
-        console.error('Refusing to start in open mode. Please set an API key.');
-        process.exit(1);
-    }
-
+    if (_cachedToken === null) _cachedToken = process.env.SILHOUETTE_API_KEY || process.env.SILHOUETTE_API_TOKEN || '';
+    // Throw through actual bootstrap/request owner, never terminate a process
+    // while its accepted work and stores have not drained. Recheck even when
+    // cached empty: an earlier failed prepare cannot turn a retry into bypass.
+    if (!_cachedToken && process.env.NODE_ENV === 'production') throw new AuthenticationConfigurationError();
     return _cachedToken;
+}
+/** Explicit startup validation. Token material is never returned in receipts.
+ * Validates original production requirement only; no credential generation,
+ * rotation, host-policy relaxation, identity/schema initialization or request. */
+export function prepareAuthentication(): {state:'CONFIGURATION_CHECK_RETURNED';identityReadiness:'UNVERIFIED'} {
+    getToken();
+    return {state:'CONFIGURATION_CHECK_RETURNED',identityReadiness:'UNVERIFIED'};
 }
 
 /**
@@ -122,7 +130,7 @@ function isTokenlessBypassAllowed(): boolean {
  * 2. x-session-id Header (Local login session)
  * 3. Empty database (Allows setup)
  */
-export async function authMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
+async function handleauthMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
     // 1. Skip auth for public endpoints
     if (isPublicPath(req.path)) {
         withAuthenticatedPrincipal((req as any).user?.id??null,()=>next());
@@ -135,6 +143,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
     // against a null database and permit anonymous access.
     try {
         const { identityService } = await import('../../services/identityService');
+        retainAcquiredIdentity(identityService);
         if (typeof identityService.isInitialized === 'function' && !identityService.isInitialized()) {
             await identityService.init();
         }
@@ -162,6 +171,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
             if (sessionId) {
                 try {
                     const { identityService } = await import('../../services/identityService');
+        retainAcquiredIdentity(identityService);
                     const sessionUser = identityService.validateSessionAndGetUser(sessionId);
                     if (sessionUser) {
                         (req as any).user = sessionUser;
@@ -193,6 +203,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
         // Validate local session securely & per request
         try {
             const { identityService } = await import('../../services/identityService');
+        retainAcquiredIdentity(identityService);
             const sessionUser = identityService.validateSessionAndGetUser(sessionId);
 
             if (sessionUser) {
@@ -211,6 +222,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
         // Check if database is completely empty (first time setup allowed)
         try {
             const { identityService } = await import('../../services/identityService');
+        retainAcquiredIdentity(identityService);
             if (!identityService.hasAnyUser()) {
                 console.log('[AUTH] 🚦 Database empty. Permitting access for First-Time Setup.');
                 withAuthenticatedPrincipal((req as any).user?.id??null,()=>next());
@@ -267,3 +279,8 @@ function timingSafeEqual(a: string, b: string): boolean {
     }
     return result === 0;
 }
+
+// Same normal-middleware arity and actual returned callback receipt.
+export const authMiddleware=ownedHttpHandler('middleware:authMiddleware',handleauthMiddleware);
+
+export {getAcquiredIdentityLifecycleStatus,shutdownAcquiredIdentityAfterHttpDrain} from '../../services/runtime/identityLifecycle';

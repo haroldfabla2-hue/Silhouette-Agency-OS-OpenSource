@@ -42,7 +42,7 @@ export interface EnhancedInterAgentMessage extends InterAgentMessage {
     requiresAck?: boolean;  // Requires acknowledgment from recipient
 }
 
-type EventHandler = (event: ProtocolEvent) => void;
+type EventHandler = (event: ProtocolEvent) => unknown;
 
 class SystemBus {
     private adapter: IBusAdapter;
@@ -54,8 +54,50 @@ class SystemBus {
         console.log("[SYSTEM BUS] Initializing Memory Adapter (Default)...");
         this.adapter = new MemoryBusAdapter();
 
-        // Attempt to upgrade to Redis if on Server
-        this.upgradeToRedis();
+
+    }
+
+    private closing = false;
+    private startTask?: Promise<void>;
+    private closeTask?: Promise<{ workFailures: unknown[]; cleanupFailures: unknown[]; degraded: unknown[] }>;
+    private readonly active = new Set<Promise<unknown>>();
+    private readonly workFailures: unknown[] = [];
+    private readonly cleanupFailures: unknown[] = [];
+    private readonly degraded: unknown[] = [];
+    private readonly adapters = new Set<IBusAdapter>();
+    private readonly wrapped = new Map<EventHandler, EventHandler>();
+    private readonly backoffs = new Map<ReturnType<typeof setTimeout>, () => void>();
+    public start(): Promise<void> {
+        this.assertOpen();
+        if (!this.startTask) this.startTask = this.track(this.upgradeToRedis());
+        return this.startTask;
+    }
+    private assertOpen(): void { if (this.closing) throw new Error('SystemBus closed'); }
+    private track<T>(task: Promise<T>): Promise<T> {
+        this.active.add(task);
+        void task.then(() => this.active.delete(task), error => { this.active.delete(task); this.workFailures.push(error); });
+        return task;
+    }
+    public shutdown() {
+        if (this.closeTask) return this.closeTask;
+        this.closing = true;
+        this.adapters.add(this.adapter);
+        for (const { timer, reject } of this.pendingRequests.values()) { clearTimeout(timer); reject(new Error('SystemBus request stopped at shutdown')); }
+        this.pendingRequests.clear();
+        for (const [timer, resolve] of this.backoffs) { clearTimeout(timer); resolve(); }
+        this.backoffs.clear();
+        for (const [protocol, handlers] of this.handlers) for (const handler of handlers) {
+            for (const adapter of this.adapters) adapter.unsubscribe(protocol, this.wrapped.get(handler)!);
+        }
+        this.closeTask = (async () => {
+            while (this.active.size) await Promise.allSettled([...this.active]);
+            for (const adapter of this.adapters) {
+                try { await adapter.disconnect(); } catch (error) { this.cleanupFailures.push(error); }
+            }
+            this.handlers.clear(); this.wrapped.clear();
+            return { workFailures: [...this.workFailures], cleanupFailures: [...this.cleanupFailures], degraded: [...this.degraded] };
+        })();
+        return this.closeTask;
     }
 
     private async upgradeToRedis() {
@@ -70,18 +112,33 @@ class SystemBus {
                 console.log("[SYSTEM BUS] Detected Redis Config. Upgrading adapter...");
                 // Dynamic Import to avoid bundling 'redis' in browser
                 const { RedisBusAdapter } = await import("./bus/RedisBusAdapter");
+                this.assertOpen();
                 const redisAdapter = new RedisBusAdapter();
-                await redisAdapter.connect();
-                this.adapter = redisAdapter;
-                console.log("[SYSTEM BUS] ✅ Upgraded to Redis Adapter.");
-
-                // Re-apply existing subscriptions to the new adapter
-                for (const [protocol, handlers] of this.handlers.entries()) {
-                    for (const handler of handlers) {
-                        this.adapter.subscribe(protocol, handler);
+                this.adapters.add(redisAdapter);
+                try { await redisAdapter.connect(); this.assertOpen(); }
+                catch (error) {
+                    try { await redisAdapter.disconnect(); this.adapters.delete(redisAdapter); } catch (cleanup) { this.cleanupFailures.push(cleanup); }
+                    throw error;
+                }
+                try {
+                    // Subscription registration is synchronous for both actual adapters;
+                    // move the complete set without an await/interleaving publication gap.
+                    for (const [protocol, handlers] of this.handlers) for (const handler of handlers) {
+                        redisAdapter.subscribe(protocol, this.wrapped.get(handler)!);
                     }
+                    const previous = this.adapter;
+                    this.adapters.add(previous);
+                    this.adapter = redisAdapter;
+                    for (const [protocol, handlers] of this.handlers) for (const handler of handlers) {
+                        previous.unsubscribe(protocol, this.wrapped.get(handler)!);
+                    }
+                    console.log('[SYSTEM BUS] Upgraded to Redis Adapter.');
+                } catch (error) {
+                    try { await redisAdapter.disconnect(); this.adapters.delete(redisAdapter); } catch (cleanup) { this.cleanupFailures.push(cleanup); }
+                    throw error;
                 }
             } catch (err) {
+                this.degraded.push({ error: err, originalCapability: 'UNAVAILABLE', disposition: 'DEGRADED_FALLBACK' });
                 console.error("[SYSTEM BUS] Failed to upgrade to Redis, staying on Memory", err);
             }
         }
@@ -90,28 +147,32 @@ class SystemBus {
     private handlers: Map<SystemProtocol, Set<EventHandler>> = new Map();
 
     public subscribe(protocol: SystemProtocol, handler: EventHandler) {
-        this.adapter.subscribe(protocol, handler);
-
-        // Track handlers for unsubscribe capability
-        if (!this.handlers.has(protocol)) {
-            this.handlers.set(protocol, new Set());
-        }
-        this.handlers.get(protocol)!.add(handler);
-
-        // Return unsubscribe function
-        return () => {
-            const protocolHandlers = this.handlers.get(protocol);
-            if (protocolHandlers) {
-                protocolHandlers.delete(handler);
-                // Call adapter unsubscribe if available
-                if (typeof (this.adapter as any).unsubscribe === 'function') {
-                    (this.adapter as any).unsubscribe(protocol, handler);
-                }
+        this.assertOpen();
+        if (!this.handlers.has(protocol)) this.handlers.set(protocol, new Set());
+        const set = this.handlers.get(protocol)!;
+        if (!set.has(handler)) {
+            set.add(handler);
+            let wrapper = this.wrapped.get(handler);
+            if (!wrapper) {
+                wrapper = event => {
+                    if (this.closing) return;
+                    // Invoke synchronously as before; retain any returned async work.
+                    try { this.track(Promise.resolve(handler(event))); }
+                    catch (error) { this.workFailures.push(error); }
+                };
+                this.wrapped.set(handler, wrapper);
             }
+            this.adapter.subscribe(protocol, wrapper);
+        }
+        return () => {
+            if (!set.delete(handler)) return;
+            for (const adapter of this.adapters) adapter.unsubscribe(protocol, this.wrapped.get(handler)!);
+            this.adapter.unsubscribe(protocol, this.wrapped.get(handler)!);
         };
     }
 
     public emit(protocol: SystemProtocol, payload: any, initiator: string = 'SYSTEM') {
+        this.assertOpen();
         const event: ProtocolEvent = {
             type: protocol,
             payload,
@@ -125,7 +186,7 @@ class SystemBus {
 
         console.log(`[BUS] Emitting ${protocol} from ${initiator}`, payload);
 
-        this.adapter.publish(event);
+        void this.track(this.adapter.publish(event));
     }
 
     public getRecentEvents(): ProtocolEvent[] {
@@ -140,6 +201,7 @@ class SystemBus {
      * Now supports priority-based delivery and message tagging.
      */
     public send(message: InterAgentMessage | EnhancedInterAgentMessage) {
+        this.assertOpen();
         const enhanced = message as EnhancedInterAgentMessage;
         const tag = enhanced.tag || MessageTag.SYSTEM;
         const priority = enhanced.priority || MessagePriority.NORMAL;
@@ -154,7 +216,7 @@ class SystemBus {
 
         console.log(`[BUS] ${priorityEmoji} [${tag}] Msg ${message.id.substring(0, 4)} (${message.type}) -> ${message.targetId} [Trace: ${message.traceId.substring(0, 4)}]`);
 
-        this.adapter.send(message);
+        void this.track(this.adapter.send(message));
 
         // If it's a RESPONSE, check if we have a pending promise to resolve
         if (message.type === 'RESPONSE' && this.pendingRequests.has(message.traceId)) {
@@ -186,15 +248,20 @@ class SystemBus {
         timeoutMs?: number,
         maxRetries: number = 2
     ): Promise<InterAgentMessage> {
+        return this.track((async () => {
+
+        this.assertOpen();
         // Adaptive timeout based on protocol complexity
         const effectiveTimeout = timeoutMs || this.getProtocolTimeout(protocol);
 
         let lastError: Error | null = null;
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            this.assertOpen();
             try {
                 return await this._singleRequest(targetId, protocol, payload, traceId, effectiveTimeout, attempt);
             } catch (err: any) {
                 lastError = err;
+                if (this.closing) throw err;
                 if (attempt < maxRetries) {
                     const backoffMs = Math.min(1000 * Math.pow(2, attempt), 10000);
                     console.warn(`[BUS] ⏳ Request to ${targetId} timed out (attempt ${attempt + 1}/${maxRetries + 1}). Retrying in ${backoffMs}ms...`);
@@ -209,12 +276,17 @@ class SystemBus {
                         timeoutMs: effectiveTimeout
                     }, 'SYSTEM_BUS');
 
-                    await new Promise(resolve => setTimeout(resolve, backoffMs));
+                    await new Promise<void>(resolve => {
+                        const timer = setTimeout(() => { this.backoffs.delete(timer); resolve(); }, backoffMs);
+                        this.backoffs.set(timer, resolve);
+                    });
                 }
             }
         }
 
         throw lastError || new Error(`Request to ${targetId} exhausted all retries.`);
+    
+        })());
     }
 
     private getProtocolTimeout(protocol: SystemProtocol): number {
@@ -264,11 +336,13 @@ class SystemBus {
     }
 
     public async checkMailbox(agentId: string): Promise<InterAgentMessage[]> {
-        return this.adapter.checkMailbox(agentId);
+        this.assertOpen();
+        return this.track(this.adapter.checkMailbox(agentId));
     }
 
     public async hasMail(agentId: string): Promise<boolean> {
-        return this.adapter.hasMail(agentId);
+        this.assertOpen();
+        return this.track(this.adapter.hasMail(agentId));
     }
 
     /**

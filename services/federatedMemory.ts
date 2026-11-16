@@ -1,3 +1,5 @@
+import { subscribeScoped } from './runtime/scopedSubscription';
+import { ResourceScope } from '../server/runtime/resourceScope';
 import { systemBus } from './systemBus';
 import { SystemProtocol, MemoryTier } from '../types';
 import { continuum } from './continuumMemory';
@@ -50,31 +52,50 @@ const MAX_ASSIMILATE = 50;
  * verifiable, and an optional shared token (FEDERATED_SYNC_TOKEN) is required.
  */
 export class FederatedMemoryService {
+    private readonly operations = new ResourceScope('FederatedMemoryService');
+    public getLifecycleStatus() { return { diagnostics: this.operations.getDiagnostics(), failures: this.operations.getFailures() }; }
+    public shutdownLifecycle() { return this.operations.close(); }
     private instanceId: string = crypto.randomUUID();
     private peers: Map<string, SyncPeer> = new Map();
     private isSyncing: boolean = false;
     private assimilatedRoots: Set<string> = new Set(); // dedup of already-seen payloads
     private stats = { outboundSyncs: 0, inboundSyncs: 0, assimilated: 0, rejected: 0, failures: 0 };
 
+    private initialized = false;
     public async initialize(): Promise<void> {
+        return this.operations.run('initialize', async () => {
+
+        if (this.initialized) return;
+        this.operations.assertAccepting();
+        this.initialized = true;
         log.info({ instanceId: this.instanceId }, 'Initializing P2P sync protocol');
         // In-process bus path (for co-located instances / tests).
-        systemBus.subscribe(SystemProtocol.HIVE_MIND_SYNC, this.handleBusSync.bind(this));
+        subscribeScoped(this.operations, systemBus, SystemProtocol.HIVE_MIND_SYNC, this.handleBusSync.bind(this));
+    
+        });
     }
 
     public getInstanceId(): string {
+        this.operations.assertWorkAccepted();
+
         return this.instanceId;
     }
 
     public getStats() {
+        this.operations.assertWorkAccepted();
+
         return { ...this.stats };
     }
 
     public getPeers(): SyncPeer[] {
+        this.operations.assertWorkAccepted();
+
         return Array.from(this.peers.values());
     }
 
     public authorizePeer(peerUrl: string, trustLevel: number = 0.5): SyncPeer {
+        this.operations.assertWorkAccepted();
+
         const peerId = crypto.randomUUID();
         const peer: SyncPeer = {
             id: peerId,
@@ -89,6 +110,8 @@ export class FederatedMemoryService {
     }
 
     public revokePeer(peerId: string): boolean {
+        this.operations.assertWorkAccepted();
+
         return this.peers.delete(peerId);
     }
 
@@ -99,6 +122,8 @@ export class FederatedMemoryService {
      * independent (leaves are sorted) so two peers with the same set agree.
      */
     public computeMerkleRoot(memories: FederatedMemoryItem[]): string {
+        this.operations.assertWorkAccepted();
+
         if (!memories.length) return crypto.createHash('sha256').update('').digest('hex');
         const leaves = memories
             .map(m => crypto.createHash('sha256').update(m.content || '').digest('hex'))
@@ -128,6 +153,8 @@ export class FederatedMemoryService {
     // ─── Outbound ────────────────────────────────────────────────────────────
 
     public async initiateSwarmSync(): Promise<void> {
+        return this.operations.run('initiateSwarmSync', async () => {
+
         if (this.isSyncing || this.peers.size === 0) return;
         this.isSyncing = true;
 
@@ -159,12 +186,18 @@ export class FederatedMemoryService {
         } finally {
             this.isSyncing = false;
         }
+    
+        });
     }
 
     /** Real HTTP dispatch to a single peer (POST {endpoint}/v1/federated/sync). */
     public async dispatchToPeer(peer: SyncPeer, payload: SyncPayload): Promise<SyncResult | null> {
+        return this.operations.run('dispatchToPeer', async () => {
+
         const url = `${peer.endpointUrl}${SYNC_PATH}`;
+        this.operations.assertAccepting();
         const controller = new AbortController();
+        const release = this.operations.own({ name: 'federated-http', stopIntake: () => controller.abort(), close: () => controller.abort() });
         const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
         try {
             const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -178,21 +211,32 @@ export class FederatedMemoryService {
                 signal: controller.signal,
             });
             if (!res.ok) {
+                const body = res.body;
+                const releaseBody = this.operations.own({ name: 'federated-response-body', close: async () => { await body?.cancel(); } });
+                await releaseBody();
+                this.operations.recordDiagnostic('federated-http-status', new Error(`HTTP ${res.status}`), 'DEGRADED_FALLBACK', 'UNAVAILABLE');
                 this.stats.failures++;
                 log.warn({ url, status: res.status }, 'Peer rejected sync');
                 return null;
             }
             peer.lastSeen = Date.now();
-            const result = await res.json().catch(() => null) as SyncResult | null;
+            const result = await res.json().catch(error => {
+                this.operations.recordDiagnostic('federated-response-body', error, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
+                return null;
+            }) as SyncResult | null;
             log.info({ url, assimilated: result?.assimilated }, 'Peer acknowledged sync');
             return result;
         } catch (e: any) {
             this.stats.failures++;
+            this.operations.recordDiagnostic('federated-peer-request', e, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
             log.warn({ url, error: e?.message }, 'Failed to reach peer');
             return null;
         } finally {
             clearTimeout(timer);
+            await release();
         }
+    
+        });
     }
 
     // ─── Inbound ─────────────────────────────────────────────────────────────
@@ -203,6 +247,8 @@ export class FederatedMemoryService {
      * memories. Returns an ack with counts.
      */
     public async receiveSync(payload: SyncPayload): Promise<SyncResult> {
+        return this.operations.run('receiveSync', async () => {
+
         this.stats.inboundSyncs++;
 
         if (!payload || !Array.isArray(payload.memories)) {
@@ -244,11 +290,17 @@ export class FederatedMemoryService {
         this.stats.assimilated += assimilated;
         log.info({ origin: payload.originId, assimilated }, 'Assimilated federated memories');
         return { ok: true, assimilated, rejected: payload.memories.length - assimilated };
+    
+        });
     }
 
     private async handleBusSync(event: any): Promise<void> {
+        return this.operations.run('handleBusSync', async () => {
+
         const payload = event?.data as SyncPayload;
         if (payload) await this.receiveSync(payload);
+    
+        });
     }
 }
 

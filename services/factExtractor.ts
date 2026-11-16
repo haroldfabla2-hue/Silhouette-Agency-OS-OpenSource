@@ -1,3 +1,4 @@
+import { ResourceScope } from '../server/runtime/resourceScope';
 /**
  * FACT EXTRACTION SERVICE (Mem0-style)
  * ═══════════════════════════════════════════════════════════════
@@ -35,46 +36,67 @@ interface MemoryAction {
     reason: string;
 }
 
+interface DeferredFactExtraction {
+    id:number;userMessage:string;assistantResponse:string;userId:string;attempt:number;
+    state:'SCHEDULED'|'RUNNING'|'RETURNED'|'PENDING_QUIESCE'|'EXHAUSTED'|'CAPACITY_PENDING'|'UNKNOWN_STORAGE';
+}
 export class FactExtractionService {
-    // [R2] Deferred extraction: a failed attempt is retried later, never silently lost.
+    private readonly operations=new ResourceScope('fact-extraction');
+    private readonly deferred:DeferredFactExtraction[]=[];
+    private readonly deferredTimers=new Map<number,ReturnType<typeof setTimeout>>();
+    public getLifecycleStatus(){return {pendingDurable:false,receipts:this.deferred.map(({userMessage,assistantResponse,userId,...receipt})=>({...receipt})),diagnostics:this.operations.getDiagnostics(),failures:this.operations.getFailures()};}
+    public getPendingExtractions(){return this.deferred.filter(r=>!['RETURNED'].includes(r.state)).map(r=>({...r}));}
+    public shutdownLifecycle(){return this.operations.close();}
+    constructor(){this.operations.own({name:'fact-deferred-timers',stopIntake:()=>{
+        for(const [id,timer] of this.deferredTimers){clearTimeout(timer);const record=this.deferred.find(r=>r.id===id);if(record)record.state='PENDING_QUIESCE';}
+        this.deferredTimers.clear();this.pendingDeferred=0;
+    },close:()=>({state:'UNVERIFIED',detail:'Actual fact operations drained; deferred and uncertain storage intents remain volatile, repository/provider internals separately owned'})});}
+
+    // Deferred scheduling limits preserved. Records are volatile, not crash durable.
     private pendingDeferred = 0;
     private readonly MAX_DEFERRED = 25;
     private readonly DEFER_DELAY_MS = 60000;
     private readonly MAX_EXTRACT_ATTEMPTS = 2;
 
-    /**
-     * Extraction + storage as one deferred-capable unit (R2: "diferir extracción
-     * sin perderla"). On failure the turn's extraction is retried once after
-     * DEFER_DELAY_MS; it is only dropped after MAX_EXTRACT_ATTEMPTS, with a loud log.
-     */
-    async extractAndStore(userMessage: string, assistantResponse: string, userId: string, attempt = 1): Promise<void> {
-        try {
-            const facts = await this.extractFromConversation(userMessage, assistantResponse);
-            if (facts.length > 0) {
-                await this.processAndStore(facts, userId, userMessage);
+    /** Extraction-only retries preserve the original delay/attempt/capacity.
+     * Storage uncertainty is retained separately, never replayed as extraction. */
+    async extractAndStore(userMessage:string,assistantResponse:string,userId:string,attempt=1):Promise<void>{
+        return this.operations.run('extract-and-store',async()=>{
+            let facts:ExtractedFact[];
+            try{facts=await this.extractFromConversation(userMessage,assistantResponse);}
+            catch(error){
+                this.operations.recordDiagnostic('fact-extraction',error,'DEGRADED_FALLBACK','UNAVAILABLE');
+                this.deferExtraction(userMessage,assistantResponse,userId,attempt+1);return;
             }
-        } catch (e) {
-            console.warn(`[FACT_EXTRACT] ⚠️ extractAndStore failed (attempt ${attempt}/${this.MAX_EXTRACT_ATTEMPTS}):`, e);
-            this.deferExtraction(userMessage, assistantResponse, userId, attempt + 1);
-        }
+            if(facts.length){
+                try{await this.processAndStore(facts,userId,userMessage);}
+                catch(error){
+                    // A repository/projection failure can follow an applied write.
+                    // Keep the uncertainty rather than retry the whole conversation.
+                    this.deferred.push({id:this.deferred.length+1,userMessage,assistantResponse,userId,attempt,state:'UNKNOWN_STORAGE'});
+                    this.operations.recordFailure('fact-storage-outcome-unknown',error);throw error;
+                }
+            }
+        });
     }
-
-    private deferExtraction(userMessage: string, assistantResponse: string, userId: string, attempt: number): void {
-        if (attempt > this.MAX_EXTRACT_ATTEMPTS) {
-            console.warn('[FACT_EXTRACT] 🛑 Extraction dropped after retries; facts for this turn are lost (explicit).');
-            return;
-        }
-        if (this.pendingDeferred >= this.MAX_DEFERRED) {
-            console.warn('[FACT_EXTRACT] 🛑 Deferred queue full; dropping oldest-capable retry (explicit).');
-            return;
-        }
+    private deferExtraction(userMessage:string,assistantResponse:string,userId:string,attempt:number):void{
+        const record:DeferredFactExtraction={id:this.deferred.length+1,userMessage,assistantResponse,userId,attempt,state:'SCHEDULED'};
+        this.deferred.push(record);
+        if(!this.operations.accepting){record.state='PENDING_QUIESCE';return;}
+        if(attempt>this.MAX_EXTRACT_ATTEMPTS){record.state='EXHAUSTED';this.operations.recordDiagnostic('fact-retry-exhausted',new Error('Fact extraction exhausted; pending intent retained'),'OPERATION_REJECTED','UNAVAILABLE');return;}
+        if(this.pendingDeferred>=this.MAX_DEFERRED){record.state='CAPACITY_PENDING';this.operations.recordDiagnostic('fact-retry-capacity',new Error('Fact deferred scheduling capacity reached; pending intent retained'),'OPERATION_REJECTED','UNAVAILABLE');return;}
         this.pendingDeferred++;
-        const timer = setTimeout(() => {
-            this.pendingDeferred--;
-            void this.extractAndStore(userMessage, assistantResponse, userId, attempt);
-        }, this.DEFER_DELAY_MS);
-        timer.unref?.();
-        console.log(`[FACT_EXTRACT] ⏳ Extraction deferred (attempt ${attempt} in ${this.DEFER_DELAY_MS / 1000}s, pending: ${this.pendingDeferred})`);
+        const timer=setTimeout(()=>{
+            this.deferredTimers.delete(record.id);this.pendingDeferred--;
+            if(!this.operations.accepting){record.state='PENDING_QUIESCE';return;}
+            record.state='RUNNING';
+            void this.extractAndStore(userMessage,assistantResponse,userId,attempt).then(()=>{
+                // RETURNED is only this attempt's return. A failed extraction may
+                // have created another pending/deferred record, not success.
+                record.state='RETURNED';record.userMessage='';record.assistantResponse='';
+            },()=>{record.state='UNKNOWN_STORAGE';});
+        },this.DEFER_DELAY_MS);
+        this.deferredTimers.set(record.id,timer);timer.unref?.();
     }
 
     private getExtractionPrompt(): string {
@@ -143,6 +165,8 @@ CONVERSATION:
         userMessage: string,
         assistantResponse: string
     ): Promise<ExtractedFact[]> {
+        return this.operations.run('extractFromConversation',async()=>{
+
         try {
             console.log('[FACT_EXTRACT] 🔍 Analyzing conversation for memorable facts...');
 
@@ -172,9 +196,13 @@ FACTS (JSON only):`;
 
             return facts;
         } catch (e) {
+            this.operations.recordDiagnostic('extractFromConversation',e,'UNCLASSIFIED','UNVERIFIED');
+
             console.warn('[FACT_EXTRACT] ⚠️ Extraction failed:', e);
             throw e; // [R2] the caller (extractAndStore) defers the retry; a silent [] used to lose the turn's facts
         }
+    
+        });
     }
 
     /**
@@ -214,6 +242,8 @@ FACTS (JSON only):`;
      * Uses LLM to fix typos, grammar, and perspective issues
      */
     private async validateAndCorrect(fact: ExtractedFact): Promise<ExtractedFact | null> {
+        return this.operations.run('validateAndCorrect',async()=>{
+
         const validationPrompt = `You are a grammar and spelling corrector. Fix any errors in this fact.
 
 RULES:
@@ -250,15 +280,21 @@ CORRECTED (or REJECT):`;
 
             return { ...fact, content: corrected };
         } catch (e) {
+            this.operations.recordDiagnostic('validateAndCorrect',e,'UNCLASSIFIED','UNVERIFIED');
+
             // On error, return original (fail-open)
             return fact;
         }
+    
+        });
     }
 
     /**
      * Process extracted facts: validate, compare with existing, and decide action
      */
     async processAndStore(facts: ExtractedFact[], userId: string, userMessage?: string): Promise<MemoryAction[]> {
+        return this.operations.run('processAndStore',async()=>{
+
         const actions: MemoryAction[] = [];
 
         for (const fact of facts) {
@@ -286,6 +322,8 @@ CORRECTED (or REJECT):`;
         }
 
         return actions;
+    
+        });
     }
 
     /**
@@ -308,6 +346,8 @@ CORRECTED (or REJECT):`;
      * Decide what to do with a fact (ADD/UPDATE/DELETE/NOOP)
      */
     private async decideAction(fact: ExtractedFact, userId: string): Promise<MemoryAction> {
+        return this.operations.run('decideAction',async()=>{
+
         try {
             // 1. Search for similar existing facts (owner-scoped: R5)
             const similar = await this.findSimilarFacts(fact, userId);
@@ -339,21 +379,31 @@ CORRECTED (or REJECT):`;
             return { action: 'ADD', fact, reason: 'Additional info' };
 
         } catch (e) {
+            this.operations.recordDiagnostic('decideAction',e,'UNCLASSIFIED','UNVERIFIED');
+
             console.warn('[FACT_EXTRACT] Decision error:', e);
             return { action: 'ADD', fact, reason: 'Fallback to add' };
         }
+    
+        });
     }
 
     /**
      * Find similar facts in storage
      */
     private async findSimilarFacts(fact: ExtractedFact, userId: string): Promise<any[]> {
+        return this.operations.run('findSimilarFacts',async()=>{
+
         try {
             // [R5] SQLite repository, owner-scoped (was: graph query across ALL owners)
             return factRepository.findSimilar(fact, userId);
         } catch {
+            this.operations.recordDiagnostic('findSimilarFacts',new Error('Fact operation failed without original error binding'),'UNCLASSIFIED','UNVERIFIED');
+
             return [];
         }
+    
+        });
     }
 
     /**
@@ -375,6 +425,9 @@ CORRECTED (or REJECT):`;
      * Store a new fact permanently
      */
     private async storeFact(fact: ExtractedFact, userId: string): Promise<void> {
+        return this.operations.run('storeFact',async()=>{
+        try{
+
         // [R5] Repository: SQLite durable source + graph/continuum projections
         // under one shared id, with an honest receipt per backend.
         const receipt = await factRepository.addFact({
@@ -390,26 +443,41 @@ CORRECTED (or REJECT):`;
         }, userId);
         const proj = receipt.projections.map(p => `${p.backend}:${p.ok ? 'ok' : 'FAILED'}`).join(' ');
         console.log(`[FACT_EXTRACT] 💾 Fact stored (id=${receipt.id}, sqlite=${receipt.sqliteRows} row, ${proj}): "${fact.content}"`);
+    
+        }catch(error){this.operations.recordFailure('storeFact-outcome-unknown',error);throw error;}
+        });
     }
 
     /**
      * Update an existing fact
      */
     private async updateFact(id: string, fact: ExtractedFact, userId: string): Promise<void> {
+        return this.operations.run('updateFact',async()=>{
+        try{
+
         const receipt = await factRepository.updateFact(id, {
             content: fact.content,
             value: fact.value,
             confidence: fact.confidence
         }, userId);
         console.log(`[FACT_EXTRACT] 🔄 Updated fact (id=${id}, sqlite=${receipt.sqliteRows} row): "${fact.content}"`);
+    
+        }catch(error){this.operations.recordFailure('updateFact-outcome-unknown',error);throw error;}
+        });
     }
 
     /**
      * Delete a fact
      */
     private async deleteFact(id: string, userId: string): Promise<void> {
+        return this.operations.run('deleteFact',async()=>{
+        try{
+
         const receipt = await factRepository.retractFact(id, userId);
         console.log(`[FACT_EXTRACT] 🗑️ Retracted fact (id=${id}, sqlite=${receipt.sqliteRows} row)`);
+    
+        }catch(error){this.operations.recordFailure('deleteFact-outcome-unknown',error);throw error;}
+        });
     }
 
     /**
@@ -417,6 +485,8 @@ CORRECTED (or REJECT):`;
      * Call this when assembling context
      */
     async getUserFacts(userId: string): Promise<string> {
+        return this.operations.run('getUserFacts',async()=>{
+
         try {
             // [R5] read the durable source (SQLite repository), not one projection
             const results = factRepository.getFacts(userId).slice(0, 20);
@@ -425,8 +495,12 @@ CORRECTED (or REJECT):`;
             const facts = results.map((r) => `- ${r.content}`).join('\n');
             return `[USER FACTS]\n${facts}`;
         } catch {
+            this.operations.recordDiagnostic('getUserFacts',new Error('Fact operation failed without original error binding'),'UNCLASSIFIED','UNVERIFIED');
+
             return '';
         }
+    
+        });
     }
 }
 

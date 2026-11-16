@@ -1,3 +1,5 @@
+import { ResourceScope } from '../server/runtime/resourceScope';
+import { subscribeScoped } from './runtime/scopedSubscription';
 import { contextAssembler } from "./contextAssembler";
 import { generateAgentResponse } from "./geminiService";
 import { systemBus } from "./systemBus";
@@ -151,13 +153,20 @@ export class DockerSandbox implements SandboxEnvironment {
 }
 
 export class RemediationService {
+    private readonly operations = new ResourceScope('RemediationService');
+    private started = false;
+    public shutdown() { return this.operations.close(); }
+    public getLifecycleDiagnostics() { return this.operations.getDiagnostics(); }
+    public getLifecycleFailures() { return this.operations.getFailures(); }
     private static instance: RemediationService;
 
     // PA-038: Track repeated failures per agent for evolution escalation
     private failureCounts: Map<string, number> = new Map();
 
-    private constructor() {
-        // PA-008: Subscribe to voice engine incidents for auto-repair
+    private constructor() {}
+    public start(): void {
+        this.operations.assertAccepting();
+        if (this.started) return; this.started = true;
         this.subscribeToVoiceIncidents();
     }
 
@@ -172,7 +181,7 @@ export class RemediationService {
      * PA-008: Subscribe to voice engine incident reports
      */
     private subscribeToVoiceIncidents(): void {
-        systemBus.subscribe(SystemProtocol.INCIDENT_REPORT, async (event) => {
+        subscribeScoped(this.operations, systemBus, SystemProtocol.INCIDENT_REPORT, async (event) => {
             if (event.payload?.source === 'voice_engine') {
                 await this.handleVoiceEngineIncident(event.payload);
             }
@@ -189,6 +198,8 @@ export class RemediationService {
      * Tier 4: Human Escalation (last resort)
      */
     private async handleVoiceEngineIncident(payload: any): Promise<void> {
+        return this.operations.run('handleVoiceEngineIncident', async () => {
+
         console.log('[REMEDIATION] 🎤 Voice Engine incident detected - initiating 4-tier repair protocol...');
         sqliteService.log('INFO', 'Voice engine 4-tier repair protocol initiated', 'remediation');
 
@@ -211,6 +222,11 @@ export class RemediationService {
                 return;
             }
 
+            if(voiceMonitor.getPendingVoiceActions().length) {
+                repairLog.push('Tier 1: PENDING authorization/attribution; not repaired');
+                this.reportPendingVoiceActions(voiceMonitor.getPendingVoiceActions(),repairLog);
+                return;
+            }
             repairLog.push('Tier 1: FAILED - Escalating to Tier 2');
             console.log('[REMEDIATION] ⚠️ Tier 1 failed - escalating to deep diagnosis...');
 
@@ -240,6 +256,11 @@ export class RemediationService {
                 return;
             }
 
+            if(voiceMonitor.getPendingVoiceActions().length) {
+                repairLog.push('Tier 3: PENDING authorization/attribution; not repaired');
+                this.reportPendingVoiceActions(voiceMonitor.getPendingVoiceActions(),repairLog);
+                return;
+            }
             repairLog.push('Tier 3: FAILED - All automatic repairs exhausted');
             console.log('[REMEDIATION] ❌ Tier 3 failed - all automatic repairs exhausted');
 
@@ -259,12 +280,16 @@ export class RemediationService {
             // Still escalate on error
             this.escalateVoiceFailure('PROTOCOL_ERROR', { error: error.message }, repairLog);
         }
+    
+        });
     }
 
     /**
      * Analyze voice failure using research team
      */
     private async analyzeVoiceFailure(diagnostics: any): Promise<string> {
+        return this.operations.run('analyzeVoiceFailure', async () => {
+
         // Quick heuristic analysis first
         if (diagnostics.portConflict) {
             return 'PORT_CONFLICT';
@@ -314,30 +339,29 @@ export class RemediationService {
         }
 
         return 'UNKNOWN';
+    
+        });
     }
 
     /**
      * Apply fix based on diagnosed root cause
      */
     private async applyVoiceFix(voiceMonitor: any, rootCause: string, diagnostics: any): Promise<boolean> {
+        return this.operations.run('applyVoiceFix', async () => {
+
         console.log(`[REMEDIATION] 🛠️ Applying fix for: ${rootCause}`);
 
         switch (rootCause) {
             case 'PORT_CONFLICT':
-                // Kill process on port and retry
-                console.log('[REMEDIATION] → Killing conflicting process on port 8100...');
+                // Capability preserved as a pending owned-target request. Port
+                // occupancy is never identity and authorizes no arbitrary kill.
                 await voiceMonitor.killPortProcess();
-                await this.wait(2000);
-                return await voiceMonitor.restartVoiceEngine();
+                return false;
 
             case 'MISSING_DEPENDENCIES':
-                // Install dependencies and retry
-                console.log('[REMEDIATION] → Installing missing Python dependencies...');
-                const installed = await voiceMonitor.installDependencies();
-                if (installed) {
-                    await this.wait(2000);
-                    return await voiceMonitor.restartVoiceEngine();
-                }
+                // Queue exact install plan. No incident/model classification or
+                // broad engineering task can supply specific install approval.
+                await voiceMonitor.installDependencies();
                 return false;
 
             case 'CUDA_ERROR':
@@ -364,11 +388,17 @@ export class RemediationService {
                 console.log('[REMEDIATION] → Unknown cause, attempting final restart...');
                 return await voiceMonitor.restartVoiceEngine();
         }
+    
+        });
     }
 
     /**
      * Escalate to human with full context
      */
+    private reportPendingVoiceActions(actions:unknown[],repairLog:string[]):void {
+        this.operations.recordDiagnostic('voice-repair-pending',new Error('Voice action awaits specific authority/identity/containment'),'UNCLASSIFIED','UNVERIFIED');
+        systemBus.emit(SystemProtocol.ARCHITECTURAL_RFC,{title:'Voice repair pending authorization or attribution',severity:'MEDIUM',description:'No automatic port kill/dependency installation or duplicate restart was authorized; not repaired.',pendingActions:actions,repairLog},'remediation');
+    }
     private escalateVoiceFailure(rootCause: string, diagnostics: any, repairLog: string[]): void {
         console.log('[REMEDIATION] 📢 Escalating voice failure to human intervention...');
 
@@ -440,6 +470,8 @@ ${this.getSuggestedActions(rootCause)}
      * Wakes up the necessary specialists to handle the crisis.
      */
     public async mobilizeSquad(agentId: string, errorLog: string[]) {
+        return this.operations.run('mobilizeSquad', async () => {
+
         // [PR-4c] Breaker BEFORE any work: same-signature loops die here.
         const signature = this.mobilizationSignature(agentId, errorLog);
         const throttle = this.mobilizationThrottle(signature);
@@ -501,10 +533,14 @@ ${this.getSuggestedActions(rootCause)}
 
         // 6. EXECUTION PHASE (FIX)
         await this.runFixProtocol(agentId, diagnosis.rootCause, initialPlan);
+    
+        });
     }
 
     // --- PHASE 1: RESEARCH CONSULTATION ---
     private async consultResearchTeam(errorContext: string): Promise<string> {
+        return this.operations.run('consultResearchTeam', async () => {
+
         console.log("[REMEDIATION] 🔬 Consulting Research Squad for deep analysis...");
 
         const prompt = `
@@ -530,10 +566,14 @@ ${this.getSuggestedActions(rootCause)}
         );
 
         return response.output;
+    
+        });
     }
 
     // --- PHASE 2: COLLABORATIVE PLANNING ---
     private async planSolution(diagnosis: any, research: string): Promise<string> {
+        return this.operations.run('planSolution', async () => {
+
         console.log("[REMEDIATION] 🏗️ Dev Squad Planning Phase...");
 
         const prompt = `
@@ -561,9 +601,13 @@ ${this.getSuggestedActions(rootCause)}
         );
 
         return response.output;
+    
+        });
     }
 
     private async runDiagnosis(agentId: string, logs: string[]): Promise<{ rootCause: string, fixProposal: string, isCriticalApiMissing: boolean, missingApi?: string }> {
+        return this.operations.run('runDiagnosis', async () => {
+
         // [OCA] Gather System Context for accurate diagnosis (e.g., is it OOM?)
         const globalContext = await contextAssembler.getGlobalContext(`Critical Failure in ${agentId} with logs: ${logs.join(' ')}`, { mode: 'DEEP' });
 
@@ -604,9 +648,13 @@ ${this.getSuggestedActions(rootCause)}
         } catch (e) {
             return { rootCause: "Unknown", fixProposal: "Restart Agent", isCriticalApiMissing: false };
         }
+    
+        });
     }
 
     private async runFixProtocol(agentId: string, cause: string, proposal: string) {
+        return this.operations.run('runFixProtocol', async () => {
+
         console.log(`[REMEDIATION] 🛠️ FIX SQUAD DEPLOYED: ${proposal}`);
 
         // PA-038: Track failure count for evolution escalation
@@ -642,10 +690,14 @@ ${this.getSuggestedActions(rootCause)}
         // In V3: This would actually write code to the agent's file.
         // For now, we reset the agent state.
         // orchestrator.resetAgent(agentId);
+    
+        });
     }
 
     // --- PHASE 3: CRITICAL HANDLER ---
     private async handleCriticalBlock(agentId: string, apiName: string = "Unknown") {
+        return this.operations.run('handleCriticalBlock', async () => {
+
         console.warn(`[REMEDIATION] 🛑 CRITICAL BLOCK: Missing API ${apiName}`);
 
         // 1. Pause the Task
@@ -656,24 +708,36 @@ ${this.getSuggestedActions(rootCause)}
             source: 'SYSTEM_ALERT',
             message: `WORKFLOW PAUSED: Missing ${apiName} API Key. Please add it in Settings to continue.`
         });
+    
+        });
     }
 
     /**
      * LEGACY DIAGNOSE (Kept for compatibility if needed, but redirects to Mobilize)
      */
     public async diagnose(agentId: string, errorLog: string[]): Promise<string> {
+        return this.operations.run('diagnose', async () => {
+
         await this.mobilizeSquad(agentId, errorLog);
         return "Squad Mobilized";
+    
+        });
     }
 
     public async autoPatch(agentId: string, diagnosis: string) {
+        return this.operations.run('autoPatch', async () => {
+
         // No-op, handled by mobilizeSquad
+    
+        });
     }
     // --- REAL CODE FIXING (V2.5) ---
     /**
      * Executes code in a safe, isolated Docker sandbox before applying it.
      */
     public async runSafeSimulation(scriptContent: string, runtime: 'python' | 'node' = 'node'): Promise<{ success: boolean; output: string }> {
+        return this.operations.run('runSafeSimulation', async () => {
+
         console.log(`[REMEDIATION] 🛡️ Initiating Safety Sandbox Simulation (${runtime})...`);
         const sandbox = new DockerSandbox();
 
@@ -689,9 +753,13 @@ ${this.getSuggestedActions(rootCause)}
             await sandbox.destroy();
             return { success: false, output: error.message };
         }
+    
+        });
     }
 
     public async applyCodeFix(filePath: string, fileContent: string, remediation: string): Promise<boolean> {
+        return this.operations.run('applyCodeFix', async () => {
+
         console.log(`[REMEDIATION] 🚑 APPLYING FIX TO: ${filePath}`);
         try {
             // In a real scenario, we'd use an AST transform or strict replace.
@@ -749,6 +817,8 @@ ${this.getSuggestedActions(rootCause)}
 
             return false;
         }
+    
+        });
     }
     // [FIX] Track zombie reset attempts to prevent infinite loops
     private zombieResetAttempts: Map<string, number> = new Map();
@@ -789,6 +859,8 @@ ${this.getSuggestedActions(rootCause)}
 
     // --- PHASE 4: FAST TRACK REMEDIATION (IMMUNE RESPONSE) ---
     public async fastTrackRemediation(agentId: string, actionType: string) {
+        return this.operations.run('fastTrackRemediation', async () => {
+
         console.log(`[REMEDIATION] ⚡ FAST TRACK INTERVENTION for ${agentId}: ${actionType}`);
 
         if (actionType === 'ZOMBIE_RESET') {
@@ -834,6 +906,8 @@ ${this.getSuggestedActions(rootCause)}
             // Clear attempts after successful period (handled by time-based cleanup)
             // In production: add a job to clear attempts after 10 minutes of no issues
         }
+    
+        });
     }
 
     /**

@@ -44,6 +44,7 @@
     "desktop:build:dir": "npm run build && npx vite build --config vite.server.config.ts && electron-builder build --win --dir"
   },
   "dependencies": {
+    "undici": "6.23.0",
     "@browserbasehq/stagehand": "^4.2.0",
     "@clack/prompts": "^1.0.1",
     "@ffmpeg-installer/ffmpeg": "^1.1.0",

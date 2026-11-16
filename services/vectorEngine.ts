@@ -151,6 +151,42 @@ export class AnnIndex {
     private flushTimer: NodeJS.Timeout | null = null;
     private flushing: Promise<void> | null = null;
     private stale = false;
+    private intakeStopped = false;
+    private referencesReleased = false;
+    private shutdownTask: Promise<{ nativeRelease: 'PROCESS_OWNED_UNVERIFIED_UNTIL_NATURAL_EXIT'; pendingIntents: number }> | null = null;
+
+    private assertOpen(): void {
+        if (this.referencesReleased) throw new Error('ANN owner closed; native release remains process-owned');
+    }
+    private assertAccepting(): void {
+        this.assertOpen();
+        if (this.intakeStopped) throw new Error('ANN owner is quiescing; operation not accepted');
+    }
+    public stopIntake(): void {
+        this.intakeStopped = true;
+        if (this.flushTimer) clearTimeout(this.flushTimer);
+        this.flushTimer = null;
+    }
+    public releaseReferences(): void {
+        if (!this.intakeStopped || this.flushing || this.pendingCount() !== 0) throw new Error('ANN references cannot be released before successful durable drain');
+        this.readable = null;
+        this.writable = null;
+        this.referencesReleased = true;
+    }
+    /** Caller must drain accepted open/rebuild/query operations BEFORE this call.
+     * Binding2.26.4 exposes no native close: this receipt never claims mmap release. */
+    public shutdown(): Promise<{ nativeRelease: 'PROCESS_OWNED_UNVERIFIED_UNTIL_NATURAL_EXIT'; pendingIntents: number }> {
+        if (this.shutdownTask) return this.shutdownTask;
+        this.stopIntake();
+        this.shutdownTask = (async () => {
+            await this.flushPending();
+            const pendingIntents = this.pendingCount();
+            if (pendingIntents !== 0) throw new Error('ANN durable intents remain pending; original log preserved');
+            this.releaseReferences();
+            return { nativeRelease: 'PROCESS_OWNED_UNVERIFIED_UNTIL_NATURAL_EXIT', pendingIntents };
+        })();
+        return this.shutdownTask;
+    }
     public readonly file: string;
 
     constructor(
@@ -203,6 +239,7 @@ export class AnnIndex {
 
     /** Open: mmap the persisted index when it provably matches the projection (count + ids digest); otherwise rebuild from the projection. Pending intents are always flushed after opening. */
     async open(projectedCount: number, rows: AnnRowProvider, ids: AnnIdsProvider): Promise<AnnOpenReport> {
+        this.assertAccepting();
         fs.mkdirSync(this.opts.dir, { recursive: true });
         const mapped = this.mapCount();
         if (fs.existsSync(this.file)) {
@@ -267,6 +304,7 @@ export class AnnIndex {
     }
 
     size(): number {
+        this.assertOpen();
         return (this.readable ? this.readable.size() : 0) + this.pendingCount();
     }
 
@@ -276,6 +314,7 @@ export class AnnIndex {
      * index by the debounced flusher; searchable immediately via merge.
      */
     queueUpsert(id: string, ownerId: string, vector: ArrayLike<number>): void {
+        this.assertAccepting();
         const key = memoryIdToU64(id);
         const existing = this.opts.sqlite.prepare(`SELECT id FROM "${this.opts.name}" WHERE u64 = ?`).get(key.toString()) as { id: string } | undefined;
         if (existing && existing.id !== id) {
@@ -287,6 +326,7 @@ export class AnnIndex {
     }
 
     queueRemove(id: string): void {
+        this.assertAccepting();
         const key = memoryIdToU64(id);
         this.opts.sqlite.prepare(`INSERT OR REPLACE INTO "${this.opts.name}__pending" (u64, id, owner_id, op, vector, ts) VALUES (?, ?, ?, 'del', NULL, ?)`)
             .run(key.toString(), id, 'system', Date.now());
@@ -301,6 +341,7 @@ export class AnnIndex {
      * keep it resident (headroom rule: index fits in a quarter of total RAM).
      */
     async flushPending(): Promise<void> {
+        this.assertOpen();
         if (this.flushing) return this.flushing;
         this.flushing = this.doFlush().finally(() => { this.flushing = null; });
         return this.flushing;
@@ -395,6 +436,7 @@ export class AnnIndex {
      * always appear. Returns {id, score} best-first.
      */
     search(vector: ArrayLike<number>, limit: number, ownerScope?: string): { id: string; score: number }[] {
+        this.assertAccepting();
         const vec = new Float32Array(this.dimensions);
         for (let i = 0; i < this.dimensions; i++) vec[i] = Number(vector[i]);
         const byId = new Map<string, number>();

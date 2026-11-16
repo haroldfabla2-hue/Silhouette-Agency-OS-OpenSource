@@ -1,3 +1,4 @@
+import { ResourceScope, ScopeClosingError, type ScopeReport } from '../../runtime/resourceScope';
 // =============================================================================
 // TELEGRAM CHANNEL V2
 // Telegram bot integration using grammY framework.
@@ -6,7 +7,7 @@
 // =============================================================================
 
 import { IChannel, IncomingMessage, OutgoingMessage, ChannelStatus, MessageHandler } from '../channelInterface';
-import { Bot, Context } from 'grammy';
+import type { Bot, Context } from 'grammy';
 import { geminiService } from '../../../services/geminiService';
 import fs from 'fs';
 import path from 'path';
@@ -24,23 +25,18 @@ const logger = {
 // ═══════════════════════════════════════════════════════════════
 
 class TypingIndicator {
-    private interval: NodeJS.Timeout | null = null;
-
-    start(bot: Bot, chatId: string) {
-        // Send immediately
-        bot.api.sendChatAction(chatId, 'typing').catch(() => { });
-        // Renew every 4s
-        this.interval = setInterval(() => {
-            bot.api.sendChatAction(chatId, 'typing').catch(() => { });
-        }, 4000);
+    private interval:NodeJS.Timeout|null=null;
+    private release?:()=>Promise<void>;
+    constructor(private readonly owner:ResourceScope){}
+    start(bot:Bot,chatId:string) {
+        this.owner.assertAccepting();
+        if(this.interval)return;
+        const send=()=>{if(this.owner.accepting)void this.owner.run('telegram-typing',()=>bot.api.sendChatAction(chatId,'typing')).catch(()=>{/* retained */});};
+        send();this.interval=setInterval(send,4000);
+        const timer=this.interval;
+        this.release=this.owner.own({name:'telegram-typing-timer',stopIntake:()=>clearInterval(timer),close:()=>clearInterval(timer)});
     }
-
-    stop() {
-        if (this.interval) {
-            clearInterval(this.interval);
-            this.interval = null;
-        }
-    }
+    stop(){if(this.interval){clearInterval(this.interval);this.interval=null;}if(this.release){void this.release();this.release=undefined;}}
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -157,6 +153,43 @@ async function safeSendMessage(bot: Bot, chatId: string | number, text: string):
 // ═══════════════════════════════════════════════════════════════
 
 export class TelegramChannel implements IChannel {
+    private readonly pendingPairings=new Map<string,{senderId:string,state:'PENDING_AUTHENTICATED_OWNER_APPROVAL',reason:string}>();
+    public getPendingPairings(){return [...this.pendingPairings.values()].map(p=>({...p}));}
+    private pendPairing(senderId:string):void {
+        if(!this.pendingPairings.has(senderId))this.pendingPairings.set(senderId,{senderId,state:'PENDING_AUTHENTICATED_OWNER_APPROVAL',reason:'An empty allowlist and first contact are not approval; verify owner identity and exact channel sender binding before an allowlist/configuration change'});
+    }
+
+    private closeReport?:ScopeReport;
+    private readonly operations=new ResourceScope('telegram-channel');
+    private connecting?:Promise<void>;
+    private polling?:Promise<void>;
+    private stopping?:Promise<void>;
+    public getLifecycleStatus(){return {closeReport:this.closeReport,pendingPairings:this.getPendingPairings(),diagnostics:this.operations.getDiagnostics(),failures:this.operations.getFailures()};}
+    private stopPolling(bot:Bot):Promise<void>{
+        if(!this.stopping)this.stopping=bot.stop();
+        return this.stopping;
+    }
+    private async voiceBytes(url:string):Promise<ArrayBuffer>{
+        this.operations.assertAccepting();
+        const controller=new AbortController();
+        const release=this.operations.own({name:'telegram-voice-http',stopIntake:()=>controller.abort(),close:()=>controller.abort()});
+        let response:Response|undefined;
+        try { response=await fetch(url,{signal:controller.signal});return await response.arrayBuffer(); }
+        finally {
+            if(response?.body&&!response.bodyUsed)try {await response.body.cancel();}catch(error){this.operations.recordFailure('telegram-voice-body-cleanup',error);}
+            await release();
+        }
+    }
+    private pause(ms:number):Promise<void>{
+        this.operations.signal.throwIfAborted();
+        return new Promise<void>((resolve,reject)=>{
+            const done=()=>{clearTimeout(timer);this.operations.signal.removeEventListener('abort',abort);};
+            const abort=()=>{done();reject(this.operations.signal.reason??new ScopeClosingError('telegram-channel'));};
+            const timer=setTimeout(()=>{done();resolve();},ms);
+            this.operations.signal.addEventListener('abort',abort,{once:true});
+            if(this.operations.signal.aborted)abort();
+        });
+    }
     readonly name = 'telegram';
 
     private handlers: MessageHandler[] = [];
@@ -177,10 +210,28 @@ export class TelegramChannel implements IChannel {
         this.config = config;
     }
 
-    async connect(): Promise<void> {
+    connect():Promise<void>{
+        if(this.connecting)return this.connecting;
+        this.connecting=this.connectOnce();return this.connecting;
+    }
+    private async connectOnce():Promise<void>{
+        return this.operations.run('connectOnce',async()=>{
+
         try {
             logger.info('[Telegram] Connecting...');
-            this.bot = new Bot(this.config.botToken);
+            const {Bot}=await import('grammy');
+            this.operations.assertAccepting();
+            const bot=new Bot(this.config.botToken);this.bot=bot;
+            this.operations.own({name:'telegram-bot',stopIntake:()=>this.stopPolling(bot),close:async()=>{
+                await this.stopPolling(bot);await this.polling;
+                this.connected=false;if(this.bot===bot)this.bot=null;
+                return {state:'UNVERIFIED',detail:'Actual polling/middleware completed; underlying API HTTP agent/socket pool release not established'};
+            }});
+            // Every SDK middleware continuation belongs to the actual generation.
+            bot.use((ctx,next)=>{
+                if(!this.operations.accepting)return Promise.resolve();
+                return this.operations.run('telegram-middleware',()=>next());
+            });
 
             // AUTH MIDDLEWARE
             this.bot.use(async (ctx, next) => {
@@ -199,29 +250,11 @@ export class TelegramChannel implements IChannel {
                     return;
                 }
 
-                // 2.5 FIRST-CONTACT AUTO-TRUST
-                if (!this.config.allowedChatIds || this.config.allowedChatIds.length === 0) {
-                    logger.info(`🛡️ First-contact secured! Trusting user ${userId} (@${ctx.from.username || 'unknown'}) as Primary Admin.`);
-                    this.config.allowedChatIds = [userId];
-
-                    // Persist to .env.local to survive reboots
-                    try {
-                        const envPath = path.join(process.cwd(), '.env.local');
-                        if (fs.existsSync(envPath)) {
-                            let envContent = fs.readFileSync(envPath, 'utf8');
-                            if (envContent.includes('TELEGRAM_ALLOWED_IDS=')) {
-                                envContent = envContent.replace(/TELEGRAM_ALLOWED_IDS=.*/g, `TELEGRAM_ALLOWED_IDS=${userId}`);
-                            } else {
-                                envContent += `\nTELEGRAM_ALLOWED_IDS=${userId}\n`;
-                            }
-                            fs.writeFileSync(envPath, envContent, 'utf8');
-                            logger.info(`🔒 Allowed ID ${userId} permanently saved to .env.local`);
-                        }
-                    } catch (e) {
-                        logger.warn(`Failed to persist ID to .env.local:`, e);
-                    }
-
-                    await next();
+                // Empty configured allowlist is closed, not first-contact trust.
+                // Preserve pairing as a pending owner decision, without replying
+                // to the sender or writing allowlist/configuration automatically.
+                if(!this.config.allowedChatIds || this.config.allowedChatIds.length===0) {
+                    this.pendPairing(String(userId));
                     return;
                 }
 
@@ -250,41 +283,51 @@ export class TelegramChannel implements IChannel {
                 await this.handleVoiceMessage(ctx);
             });
 
-            // START POLLING
-            this.bot.start({
-                onStart: (botInfo) => {
-                    this.connected = true;
-                    this.connectTime = Date.now();
-                    logger.info(`[Telegram] ✅ Bot @${botInfo.username} is connected and polling.`);
-
-                    // Notify admin of startup (only once per instance lifetime)
-                    if (!this.hasSentBootMessage && this.config.allowedChatIds && this.config.allowedChatIds.length > 0) {
-                        this.hasSentBootMessage = true;
-                        this.bot?.api.sendMessage(this.config.allowedChatIds[0], "🤖 Silhouette OS: Telegram Uplink Online").catch(() => { });
-                    }
-                },
-            }).catch((err) => {
-                logger.error('[Telegram] Polling error:', err);
-                this.connected = false;
-            });
-
-            this.connected = true;
+            // start() is the REAL polling/middleware completion receipt, not
+            // the readiness promise. stop() alone does not wait middleware.
+            let readyResolve!:()=>void,readyReject!:(error:unknown)=>void;
+            const ready=new Promise<void>((resolve,reject)=>{readyResolve=resolve;readyReject=reject;});
+            const onAbort=()=>readyReject(this.operations.signal.reason??new ScopeClosingError('telegram-channel'));
+            this.operations.signal.addEventListener('abort',onAbort,{once:true});
+            this.polling=this.operations.run('telegram-polling',()=>{this.operations.assertAccepting();return bot.start({onStart:async botInfo=>{
+                if(!this.operations.accepting)throw new ScopeClosingError('telegram-channel');
+                this.connected=true;this.connectTime=Date.now();
+                logger.info(`[Telegram] Bot @${botInfo.username} is polling.`);
+                readyResolve();
+                // Existing configured boot-message capability, not authority to
+                // send during this source-only task. Actual promise is owned.
+                if(!this.hasSentBootMessage&&this.config.allowedChatIds?.length){
+                    this.hasSentBootMessage=true;
+                    await this.operations.run('telegram-boot-message',()=>bot.api.sendMessage(this.config.allowedChatIds![0],'🤖 Silhouette OS: Telegram Uplink Online'));
+                }
+            }});});
+            void this.polling.then(()=>{
+                this.connected=false;readyReject(new Error('Polling ended before or after readiness'));
+            },error=>{this.connected=false;readyReject(error);});
+            try {await ready;} finally {this.operations.signal.removeEventListener('abort',onAbort);}
 
         } catch (err: any) {
+            if(this.operations.signal.aborted)throw err;
+            this.operations.recordDiagnostic('connectOnce',err,'DEGRADED_FALLBACK','UNVERIFIED');
+
             logger.error('[Telegram] Failed to connect:', err);
             throw err;
         }
+    
+        });
     }
 
     // ─── INCOMING MESSAGE HANDLER ────────────────────────────────────────────
 
     private async handleIncoming(ctx: Context) {
+        return this.operations.run('handleIncoming',async()=>{
+
         if (!ctx.message || !ctx.from) return;
 
         const chatId = ctx.chat?.id.toString() || String(ctx.from.id);
 
         // START typing immediately — user sees "typing..." right away
-        const typing = new TypingIndicator();
+        const typing = new TypingIndicator(this.operations);
         if (this.bot) {
             typing.start(this.bot, chatId);
             this.activeTyping.set(chatId, typing);
@@ -309,10 +352,15 @@ export class TelegramChannel implements IChannel {
             // Dispatch to Orchestrator via Router
             for (const handler of this.handlers) {
                 try { await handler(incoming); } catch (err) {
+            this.operations.recordDiagnostic('handleIncoming',err,'DEGRADED_FALLBACK','UNVERIFIED');
+
                     logger.error('[Telegram] Handler error:', err);
                 }
             }
         } catch (err: any) {
+            if(this.operations.signal.aborted)throw err;
+            this.operations.recordDiagnostic('handleIncoming',err,'DEGRADED_FALLBACK','UNVERIFIED');
+
             // ERROR FEEDBACK: User gets a clear error message
             logger.error(`[Telegram] Processing failed for ${chatId}:`, err.message);
             try {
@@ -323,26 +371,23 @@ export class TelegramChannel implements IChannel {
             typing.stop();
             this.activeTyping.delete(chatId);
         }
+    
+        });
     }
 
-    async disconnect(): Promise<void> {
-        // Stop all active typing indicators
-        for (const [, typing] of this.activeTyping) {
-            typing.stop();
-        }
+    beginShutdown():void {void this.operations.close().then(report=>{this.closeReport=report;}).catch(error=>this.operations.recordFailure('channel-shutdown-initiation',error));}
+    async disconnect():Promise<void>{
+        for(const typing of this.activeTyping.values())typing.stop();
         this.activeTyping.clear();
-
-        if (this.bot) {
-            await this.bot.stop();
-            this.bot = null;
-        }
-        this.connected = false;
-        logger.info('[Telegram] Disconnected.');
+        const report=await this.operations.close();this.closeReport=report;
+        if(report.state==='FAILED')throw new AggregateError(report.failures.map(f=>f.error),'Telegram close failed');
     }
 
     // ─── SEND MESSAGE (Production Quality) ───────────────────────────────────
 
     async send(message: OutgoingMessage): Promise<string | null> {
+        return this.operations.run('send',async()=>{
+
         if (!this.bot || !this.connected) {
             logger.warn('[Telegram] Cannot send: Bot not connected.');
             return null;
@@ -361,7 +406,7 @@ export class TelegramChannel implements IChannel {
             logger.info(`[Telegram] 📤 Preparing to send message to ${chatId}. Length: ${message.text?.length || 0}`);
             // 2. SEND TYPING if requested or message is long
             if (message.showTyping || message.text.length > 50) {
-                await this.bot.api.sendChatAction(chatId, 'typing').catch(() => { });
+                await this.bot.api.sendChatAction(chatId, 'typing').catch(error=>{this.operations.recordDiagnostic('telegram-send-typing',error,'DEGRADED_FALLBACK','UNAVAILABLE');});
             }
 
             // Return only a real provider message ID after every requested
@@ -392,16 +437,21 @@ export class TelegramChannel implements IChannel {
                     const msgId = await safeSendMessage(this.bot, chatId, chunk);
                     if (!msgId || !Number.isInteger(msgId) || msgId <= 0) return null;
                     lastMessageId = msgId;
-                    if (chunks.length > 1) await new Promise(resolve => setTimeout(resolve, 300));
+                    if (chunks.length > 1) await this.pause(300);
                 }
             }
             return lastMessageId === null ? null : String(lastMessageId);
         } catch (err: any) {
+            if(this.operations.signal.aborted)throw err;
+            this.operations.recordDiagnostic('send',err,'DEGRADED_FALLBACK','UNVERIFIED');
+
             // The request may have reached Telegram before its response was
             // lost. Another send here risks duplicate user-facing delivery.
             logger.error(`[Telegram] Delivery unverified for ${chatId}; do not resend:`, err.message);
             return null;
         }
+    
+        });
     }
 
     // ─── PUBLIC TYPING CONTROL ───────────────────────────────────────────────
@@ -409,11 +459,13 @@ export class TelegramChannel implements IChannel {
     // (useful when Orchestrator is processing and wants to signal activity)
 
     startTypingFor(chatId: string) {
+        this.operations.assertAccepting();
+
         if (!this.bot) return;
         const existing = this.activeTyping.get(chatId);
         if (existing) return; // Already typing
 
-        const typing = new TypingIndicator();
+        const typing = new TypingIndicator(this.operations);
         typing.start(this.bot, chatId);
         this.activeTyping.set(chatId, typing);
     }
@@ -426,8 +478,9 @@ export class TelegramChannel implements IChannel {
         }
     }
 
-    onMessage(handler: MessageHandler): void {
-        this.handlers.push(handler);
+    onMessage(handler:MessageHandler):()=>void{
+        this.operations.assertAccepting();this.handlers.push(handler);
+        return ()=>{const i=this.handlers.indexOf(handler);if(i>=0)this.handlers.splice(i,1);};
     }
 
     getStatus(): ChannelStatus {
@@ -437,6 +490,7 @@ export class TelegramChannel implements IChannel {
             uptime: this.connected ? Date.now() - this.connectTime : 0,
             lastMessage: this.lastMessageTime || undefined,
             metadata: {
+                pendingPairingCount:this.pendingPairings.size,
                 activeTypingChats: this.activeTyping.size,
             }
         };
@@ -449,10 +503,12 @@ export class TelegramChannel implements IChannel {
     // ─── VOICE MESSAGE HANDLER ───────────────────────────────────────────────
 
     private async handleVoiceMessage(ctx: Context) {
+        return this.operations.run('handleVoiceMessage',async()=>{
+
         if (!ctx.message?.voice) return;
 
         const chatId = ctx.chat?.id.toString() || String(ctx.from?.id);
-        const typing = new TypingIndicator();
+        const typing = new TypingIndicator(this.operations);
 
         try {
             if (this.bot) typing.start(this.bot, chatId);
@@ -462,8 +518,7 @@ export class TelegramChannel implements IChannel {
             const fileUrl = `https://api.telegram.org/file/bot${this.config.botToken}/${file.file_path}`;
 
             // 2. Download and convert to Base64
-            const response = await fetch(fileUrl);
-            const buffer = await response.arrayBuffer();
+            const buffer = await this.voiceBytes(fileUrl);
             const base64 = Buffer.from(buffer).toString('base64');
 
             // 3. Transcribe via Gemini
@@ -483,10 +538,15 @@ export class TelegramChannel implements IChannel {
             return this.handleIncoming(ctx);
 
         } catch (err: any) {
+            if(this.operations.signal.aborted)throw err;
+            this.operations.recordDiagnostic('handleVoiceMessage',err,'DEGRADED_FALLBACK','UNVERIFIED');
+
             logger.error('[Telegram] Voice processing failed:', err.message);
             await ctx.reply("⚠️ No pude procesar tu mensaje de voz. Intenta enviarlo de nuevo.");
         } finally {
             typing.stop();
         }
+    
+        });
     }
 }

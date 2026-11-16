@@ -1,3 +1,4 @@
+import { ownedHttpHandler } from '../runtime/ownedHttpIngress';
 /**
  * HEALTH CHECK ENDPOINT
  * 
@@ -44,7 +45,7 @@ export async function checkGraphHealth(
     }
 }
 
-healthRouter.get('/', async (_req: Request, res: Response) => {
+healthRouter.get('/', ownedHttpHandler('health:GET:/',async (_req: Request, res: Response) => {
     const checks: Record<string, ServiceCheck> = {};
     let overallHealthy = true;
 
@@ -110,40 +111,30 @@ healthRouter.get('/', async (_req: Request, res: Response) => {
         uptime: Math.floor(process.uptime()),
         services: checks
     });
-});
+}));
 
 // Helper function to perform lightweight TCP socket checks
 import net from 'net';
 
-function checkPort(port: number, host: string = '127.0.0.1', timeout = 1000): Promise<boolean> {
-    return new Promise((resolve) => {
-        const socket = new net.Socket();
-        let status = false;
-
-        socket.setTimeout(timeout);
-
-        socket.once('connect', () => {
-            status = true;
-            socket.destroy();
-        });
-
-        socket.once('timeout', () => {
-            socket.destroy();
-        });
-
-        socket.once('error', () => {
-            socket.destroy();
-        });
-
-        socket.once('close', () => {
+function checkPort(port:number,host:string='127.0.0.1',timeout=1000):Promise<boolean>{
+    return new Promise(resolve=>{
+        const socket=new net.Socket();let status=false;
+        const connected=()=>{status=true;socket.destroy();};
+        const failed=()=>{status=false;socket.destroy();};
+        const timedOut=()=>socket.destroy();
+        const closed=()=>{
+            socket.setTimeout(0);socket.off('connect',connected);socket.off('error',failed);socket.off('timeout',timedOut);socket.off('close',closed);
             resolve(status);
-        });
-
-        socket.connect(port, host);
+        };
+        // Retain listeners before connect; even a synchronous connect argument
+        // error must initiate destruction and wait the actual close event.
+        socket.once('connect',connected);socket.on('error',failed);socket.once('timeout',timedOut);socket.once('close',closed);
+        socket.setTimeout(timeout);
+        try{socket.connect(port,host);}catch{status=false;socket.destroy();}
     });
 }
 
-healthRouter.get('/diagnostics', async (_req: Request, res: Response) => {
+healthRouter.get('/diagnostics', ownedHttpHandler('health:GET:/diagnostics',async (_req: Request, res: Response) => {
     // Parse Redis details from env
     let redisHost = '127.0.0.1';
     let redisPort = 6379;
@@ -190,5 +181,5 @@ healthRouter.get('/diagnostics', async (_req: Request, res: Response) => {
             brain: { status: brainOpen ? 'up' : 'down', host: brainHost, port: brainPort }
         }
     });
-});
+}));
 

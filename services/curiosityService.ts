@@ -42,6 +42,8 @@ const logger = {
 };
 
 class CuriosityService {
+    private readonly failures: unknown[] = [];
+    public getLifecycleFailures(): readonly unknown[] { return [...this.failures]; }
     private readonly CONFIG = {
         GAP_DETECTION_INTERVAL_MS: 15 * 60 * 1000,  // Check every 15 minutes
         MIN_TOPIC_COUNT_FOR_GAP: 3,                  // Topic must be mentioned 3+ times
@@ -58,7 +60,16 @@ class CuriosityService {
     private explorationInterval: NodeJS.Timeout | null = null;
     private lastResearchTime: number = 0;
     private isExploring: boolean = false;
-    private readonly loaded: Promise<void>;
+    private loadTask?: Promise<void>;
+    private startup?: Promise<void>;
+    private get loaded(): Promise<void> {
+        if (!this.loadTask) {
+            if (this.closing) return Promise.reject(new Error('Curiosity closed before recovery'));
+            this.loadTask = this.loadGaps();
+            void this.loadTask.catch(e => logger.warn('Snapshot unavailable; mutations blocked:', e));
+        }
+        return this.loadTask;
+    }
     private persistence: Promise<void> = Promise.resolve();
     private events: Promise<void> = Promise.resolve();
     private storageState: 'loading' | 'ready' | 'ready-legacy' | 'blocked' = 'loading';
@@ -71,10 +82,12 @@ class CuriosityService {
     private topicSubscriptions: Array<() => void> = [];
 
 
-    constructor() {
-        this.loaded = this.loadGaps();
-        // Keep failure observable to every awaited entry point without an unhandled rejection.
-        void this.loaded.catch(e => logger.warn('Snapshot unavailable; mutations blocked:', e));
+    constructor() {}
+    public start(): Promise<void> {
+        if (this.startup) return this.startup;
+        this.startup = this.trackOperation(async () => {
+        await this.loaded;
+        if (this.closing) return;
         // Listen for topic mentions
         this.topicSubscriptions.push(systemBus.subscribe(SystemProtocol.MEMORY_CREATED, (payload: any) => {
             this.queueTopicEvent(() => this.trackTopicFromMemory(payload.payload));
@@ -87,19 +100,21 @@ class CuriosityService {
         // Mutating entry points await this.loaded before editing restored state.
 
         logger.info('Initialized. Curiosity is the engine of discovery.');
+        });
+        return this.startup;
     }
 
     private queueTopicEvent(update: () => Promise<void>): void {
         if (this.closing) return;
         this.events = this.events.catch(() => {}).then(update);
-        void this.events.catch(e => logger.warn('Topic persistence failed:', e));
+        void this.events.catch(e => { this.failures.push(e); logger.warn('Topic persistence failed:', e); });
     }
 
     private trackOperation(operation: () => Promise<void>): Promise<void> {
         if (this.closing) return Promise.reject(new Error('Curiosity is shutting down; new mutations refused'));
         const task = Promise.resolve().then(operation);
         this.activeOperations.add(task);
-        void task.then(() => this.activeOperations.delete(task), () => this.activeOperations.delete(task));
+        void task.then(() => this.activeOperations.delete(task), (error) => { this.activeOperations.delete(task); this.failures.push(error); });
         return task;
     }
 
@@ -112,8 +127,10 @@ class CuriosityService {
         for (const unsubscribe of this.topicSubscriptions) unsubscribe();
         this.topicSubscriptions = [];
         this.shutdownTask = (async () => {
+            if (!this.loadTask && this.activeOperations.size === 0) return;
             const results = await Promise.allSettled([...this.activeOperations]);
             await this.waitForPersistence();
+            if (this.failures.length) throw new AggregateError(this.failures, 'Curiosity prior accepted work failed');
             const failure = results.find(result => result.status === 'rejected');
             if (failure?.status === 'rejected') throw failure.reason;
         })();

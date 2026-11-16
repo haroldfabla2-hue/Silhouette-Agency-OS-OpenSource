@@ -1,3 +1,5 @@
+import { ResourceScope, ScopeClosingError } from '../../server/runtime/resourceScope';
+import { ownChild, execOwned, type ChildReceipt } from '../../server/runtime/childOwnership';
 /**
  * Voice Monitor Service
  * 
@@ -29,7 +31,57 @@ interface VoiceStats {
     lastError?: string;
 }
 
+export interface PendingVoiceAction {
+    id:number;
+    action:'STOP_OWNED_ENGINE'|'INSTALL_DEPENDENCIES'|'RESTART_ENGINE'|'VERIFY_ENGINE_ATTRIBUTION';
+    state:'PENDING_AUTHORIZATION'|'PENDING_ATTRIBUTION_AND_CONTAINMENT';
+    reason:string;
+    parameters:Record<string,unknown>;
+}
 class VoiceMonitorService {
+    private readonly pendingVoiceActions:PendingVoiceAction[]=[];
+    public getPendingVoiceActions():PendingVoiceAction[] {return this.pendingVoiceActions.map(x=>({...x,parameters:{...x.parameters}}));}
+    private pendVoiceAction(action:PendingVoiceAction['action'],state:PendingVoiceAction['state'],reason:string,parameters:Record<string,unknown>={}):void {
+        if(!this.pendingVoiceActions.some(p=>p.action===action&&p.state===state&&p.reason===reason&&JSON.stringify(p.parameters)===JSON.stringify(parameters))) this.pendingVoiceActions.push({id:this.pendingVoiceActions.length+1,action,state,reason,parameters});
+        this.operations.recordDiagnostic('voice-action-pending:'+action,new Error(reason),'UNCLASSIFIED','UNVERIFIED');
+    }
+
+    private readonly operations=new ResourceScope('voice-monitor');
+    private readonly children:ChildReceipt[]=[];
+    private engine?:ReturnType<typeof ownChild>;
+    private restartTask?:Promise<boolean>;
+    public getLifecycleStatus(){return {pendingVoiceActions:this.getPendingVoiceActions(),children:this.children,diagnostics:this.operations.getDiagnostics(),failures:this.operations.getFailures()};}
+    public shutdown(){this.stopMonitoring();return this.operations.close();}
+    private execute(command:string,options:import('child_process').ExecOptions={}) {
+        return execOwned(this.operations,'voice-command',command,this.children,options);
+    }
+    private wait(milliseconds:number):Promise<void> {
+        this.operations.signal.throwIfAborted();
+        return new Promise<void>((resolve,reject)=>{
+            const done=()=>{clearTimeout(timer);this.operations.signal.removeEventListener('abort',abort);};
+            const abort=()=>{done();reject(this.operations.signal.reason??new ScopeClosingError('voice-monitor'));};
+            const timer=setTimeout(()=>{done();resolve();},milliseconds);
+            this.operations.signal.addEventListener('abort',abort,{once:true});
+            if(this.operations.signal.aborted)abort();
+        });
+    }
+    private async http<T>(url:string,method:string,read:(response:Response)=>Promise<T>):Promise<T> {
+        this.operations.assertAccepting();
+        const controller=new AbortController();
+        const release=this.operations.own({name:'voice-http',stopIntake:()=>controller.abort(),close:()=>controller.abort()});
+        const timer=setTimeout(()=>controller.abort(),5000);
+        let response:Response|undefined;
+        try {
+            response=await fetch(url,{method,signal:controller.signal});
+            return await read(response);
+        } finally {
+            clearTimeout(timer);
+            if(response?.body&&!response.bodyUsed) {
+                try {await response.body.cancel();}catch(error){this.operations.recordFailure('voice-http-body-cleanup',error);}
+            }
+            await release();
+        }
+    }
     private healthCheckInterval: NodeJS.Timeout | null = null;
     private consecutiveFailures = 0;
     private lastHealthStatus: 'ONLINE' | 'SLEEPING' | 'OFFLINE' = 'OFFLINE';
@@ -48,16 +100,23 @@ class VoiceMonitorService {
      * Start the monitoring loop
      */
     startMonitoring(): void {
+        this.operations.assertWorkAccepted();
+
         if (this.healthCheckInterval) {
             console.log('[VoiceMonitor] Already running');
             return;
         }
 
         console.log('[VoiceMonitor] Starting health monitoring...');
-        this.healthCheckInterval = setInterval(() => this.checkHealth(), this.checkIntervalMs);
+        this.operations.assertAccepting();
+        this.healthCheckInterval = setInterval(() => {
+            if(this.operations.accepting) void this.checkHealth().catch(()=>{/* scope retains */});
+        }, this.checkIntervalMs);
+        const timer=this.healthCheckInterval;
+        this.operations.own({name:'voice-monitor-timer',stopIntake:()=>clearInterval(timer),close:()=>clearInterval(timer)});
 
         // Initial check
-        this.checkHealth();
+        void this.checkHealth().catch(()=>{/* scope retains */});
     }
 
     /**
@@ -75,6 +134,8 @@ class VoiceMonitorService {
      * Check voice engine health
      */
     async checkHealth(): Promise<VoiceEngineHealth> {
+        return this.operations.run('checkHealth',async()=>{
+
         if (process.env.ENABLE_VOICE_ENGINE !== 'true') {
             this.lastHealthStatus = 'OFFLINE';
             return { status: 'OFFLINE', lastCheck: Date.now() };
@@ -82,13 +143,9 @@ class VoiceMonitorService {
 
         try {
             const startTime = Date.now();
-            const response = await fetch(`${this.voiceEngineUrl}/health`, {
-                method: 'GET',
-                signal: AbortSignal.timeout(5000) // 5 second timeout
-            });
-
+            const data = await this.http<VoiceEngineHealth>(`${this.voiceEngineUrl}/health`,'GET',async response => await response.json() as VoiceEngineHealth);
             const latency = Date.now() - startTime;
-            const data = await response.json() as VoiceEngineHealth;
+            this.operations.signal.throwIfAborted();
             data.lastCheck = Date.now();
 
             // Update stats
@@ -120,6 +177,12 @@ class VoiceMonitorService {
             return data;
 
         } catch (error: any) {
+            if(this.operations.signal.aborted)throw error;
+
+            this.operations.recordDiagnostic('checkHealth',error,'DEGRADED_FALLBACK','UNVERIFIED');
+
+            if(this.operations.signal.aborted) throw error;
+            this.operations.recordDiagnostic('voice-health',error,'DEGRADED_FALLBACK','UNAVAILABLE');
             this.consecutiveFailures++;
             this.stats.failedRequests++;
             this.stats.lastError = error.message;
@@ -147,12 +210,17 @@ class VoiceMonitorService {
                 lastCheck: Date.now()
             };
         }
+    
+        });
     }
 
     /**
      * Request self-repair via systemBus
      */
     private async requestSelfRepair(): Promise<void> {
+        return this.operations.run('requestSelfRepair',async()=>{
+        this.operations.assertAccepting();
+
         console.warn(`[VoiceMonitor] 🔧 Requesting self-repair (${this.consecutiveFailures} consecutive failures)`);
 
         // Emit incident for remediation
@@ -172,12 +240,16 @@ class VoiceMonitorService {
 
         // Reset counter to avoid spamming
         this.consecutiveFailures = 0;
+    
+        });
     }
 
     /**
      * Record a TTS request for statistics
      */
     recordTTSRequest(success: boolean, latencyMs: number, error?: string): void {
+        this.operations.assertWorkAccepted();
+
         this.stats.totalRequests++;
 
         if (success) {
@@ -202,6 +274,8 @@ class VoiceMonitorService {
      * Record voice quality score for monitoring
      */
     recordVoiceQuality(voiceId: string, qualityScore: number): void {
+        this.operations.assertWorkAccepted();
+
         if (qualityScore < 60) {
             console.warn(`[VoiceMonitor] Voice ${voiceId} has low quality: ${qualityScore}/100`);
 
@@ -222,6 +296,8 @@ class VoiceMonitorService {
      * Emit clone start event
      */
     emitCloneStart(voiceId: string, inputDuration: number): void {
+        this.operations.assertWorkAccepted();
+
         systemBus.emit(SystemProtocol.VOICE_CLONE_START, {
             voiceId,
             inputDuration,
@@ -233,6 +309,8 @@ class VoiceMonitorService {
      * Emit clone complete event
      */
     emitCloneComplete(voiceId: string, qualityScore: number): void {
+        this.operations.assertWorkAccepted();
+
         systemBus.emit(SystemProtocol.VOICE_CLONE_COMPLETE, {
             voiceId,
             qualityScore,
@@ -246,6 +324,8 @@ class VoiceMonitorService {
      * Emit clone failed event
      */
     emitCloneFailed(voiceId: string, error: string): void {
+        this.operations.assertWorkAccepted();
+
         systemBus.emit(SystemProtocol.VOICE_CLONE_FAILED, {
             voiceId,
             error,
@@ -263,6 +343,8 @@ class VoiceMonitorService {
         successRate: number;
         isMonitoring: boolean;
     } {
+        this.operations.assertWorkAccepted();
+
         return {
             ...this.stats,
             currentStatus: this.lastHealthStatus,
@@ -275,6 +357,8 @@ class VoiceMonitorService {
      * Get current health status without making a request
      */
     getCurrentStatus(): 'ONLINE' | 'SLEEPING' | 'OFFLINE' {
+        this.operations.assertWorkAccepted();
+
         return this.lastHealthStatus;
     }
 
@@ -294,33 +378,48 @@ class VoiceMonitorService {
      * Attempt to restart the voice engine
      * First tries /wake endpoint, then spawns new Python process
      */
-    async restartVoiceEngine(): Promise<boolean> {
+    restartVoiceEngine():Promise<boolean> {
+        if(this.restartTask)return this.restartTask;
+        const task=this.restartVoiceEngineOnce();this.restartTask=task;
+        void task.then(()=>{if(this.restartTask===task)this.restartTask=undefined;},()=>{if(this.restartTask===task)this.restartTask=undefined;});
+        return task;
+    }
+    private async restartVoiceEngineOnce(): Promise<boolean> {
+        return this.operations.run('restartVoiceEngineOnce',async()=>{
+
+        // A direct shell close is NOT proof its workers are gone. No wake,
+        // spawn or other restart effect may run after an unresolved prior child.
+        if(this.engine || this.pendingVoiceActions.some(p=>p.action==='VERIFY_ENGINE_ATTRIBUTION'||p.action==='RESTART_ENGINE')) {
+            this.pendVoiceAction('RESTART_ENGINE','PENDING_ATTRIBUTION_AND_CONTAINMENT','Prior acquired child exists; direct close does not prove descendant release or endpoint attribution',{pid:this.engine?.receipt.pid,direct:this.engine?.receipt.direct??'NOT_ATTRIBUTED',descendants:this.engine?.receipt.descendants??'UNVERIFIED'});
+            return false;
+        }
         console.log('[VoiceMonitor] 🔄 Attempting to restart voice engine...');
         sqliteService.log('INFO', 'Voice engine restart initiated', 'voice_monitor');
 
         // Step 1: Try wake endpoint (if engine is sleeping)
         try {
-            const wakeResponse = await fetch(`${this.voiceEngineUrl}/wake`, {
-                method: 'POST',
-                signal: AbortSignal.timeout(5000)
-            });
-            if (wakeResponse.ok) {
-                console.log('[VoiceMonitor] ✅ Voice engine woke up via /wake endpoint');
-                this.lastHealthStatus = 'ONLINE';
-                systemBus.emit(SystemProtocol.VOICE_ENGINE_ONLINE, {
-                    timestamp: Date.now(),
-                    restartedAutomatically: true,
-                    method: 'wake'
-                }, 'voice_monitor');
-                return true;
+            const woke=await this.http(`${this.voiceEngineUrl}/wake`,'POST',async response=>response.ok);
+            this.operations.signal.throwIfAborted();
+            if (woke) {
+                this.pendVoiceAction('VERIFY_ENGINE_ATTRIBUTION','PENDING_ATTRIBUTION_AND_CONTAINMENT','Wake endpoint acknowledged; owned engine identity and actual repair are not verified',{url:this.voiceEngineUrl,method:'wake'});
+                console.log('[VoiceMonitor] Wake endpoint acknowledged; repair remains pending attribution');
+                return false;
             }
         } catch (e) {
+            if(this.operations.signal.aborted)throw e;
+
+            this.operations.recordDiagnostic('restartVoiceEngineOnce',e,'DEGRADED_FALLBACK','UNVERIFIED');
+
+            if(this.operations.signal.aborted)throw e;
+            this.operations.recordDiagnostic('voice-wake',e,'UNCLASSIFIED','UNVERIFIED');
             // Wake failed, try spawning new process
             console.log('[VoiceMonitor] Wake endpoint failed, attempting process spawn...');
         }
 
         // Step 2: Try spawning new Python process
+
         try {
+            this.operations.assertAccepting();
             const { spawn } = await import('child_process');
             const path = await import('path');
 
@@ -376,39 +475,42 @@ class VoiceMonitorService {
 
             console.log(`[VoiceMonitor] Spawning voice engine: ${cmd} ${args.join(' ')}`);
 
+            this.operations.assertAccepting();
             const child = spawn(cmd, args, {
                 cwd: voiceEnginePath,
-                detached: true,
+                detached: false,
                 stdio: 'ignore',
                 shell: isWindows
             });
 
-            child.unref();
+            this.engine=ownChild(this.operations,child,'voice-engine-process',this.children);
 
             // Wait 8 seconds for engine to start
-            await new Promise(r => setTimeout(r, 8000));
+            await this.wait(8000);
 
             // Verify it's running
             const health = await this.checkHealth();
             if (health.status === 'ONLINE') {
-                console.log('[VoiceMonitor] ✅ Voice engine restarted successfully via process spawn!');
-                sqliteService.log('INFO', 'Voice engine auto-restart SUCCESS', 'voice_monitor');
-                systemBus.emit(SystemProtocol.VOICE_ENGINE_ONLINE, {
-                    timestamp: Date.now(),
-                    restartedAutomatically: true,
-                    method: 'spawn'
-                }, 'voice_monitor');
-                return true;
+                console.log('[VoiceMonitor] Voice endpoint ONLINE after spawn; child-to-endpoint attribution is unverified');
+                this.operations.recordDiagnostic('voice-engine-attribution',new Error('Health endpoint is ONLINE; direct child identity/descendants unverified'),'UNCLASSIFIED','UNVERIFIED');
+                this.pendVoiceAction('VERIFY_ENGINE_ATTRIBUTION','PENDING_ATTRIBUTION_AND_CONTAINMENT','Endpoint ONLINE after spawn is not evidence of owned child identity or successful repair',{pid:this.engine?.receipt.pid,url:this.voiceEngineUrl,method:'spawn'});
+                return false;
             } else {
                 console.warn('[VoiceMonitor] Process spawned but health check failed');
             }
 
         } catch (e: any) {
+            if(this.operations.signal.aborted)throw e;
+
+            this.operations.recordDiagnostic('restartVoiceEngineOnce',e,'DEGRADED_FALLBACK','UNVERIFIED');
+
             console.error('[VoiceMonitor] ❌ Process spawn failed:', e.message);
             sqliteService.log('ERROR', `Voice engine restart failed: ${e.message}`, 'voice_monitor');
         }
 
         return false;
+    
+        });
     }
 
     // ==================================================
@@ -419,6 +521,8 @@ class VoiceMonitorService {
      * Gather comprehensive diagnostics for deep analysis
      */
     async gatherDiagnostics(): Promise<VoiceDiagnostics> {
+        return this.operations.run('gatherDiagnostics',async()=>{
+
         console.log('[VoiceMonitor] 🔍 Gathering diagnostics...');
 
         const [logs, portConflict, pythonEnv, cudaStatus] = await Promise.all([
@@ -448,12 +552,16 @@ class VoiceMonitorService {
         });
 
         return diagnostics;
+    
+        });
     }
 
     /**
      * Read recent voice engine logs
      */
     private async readVoiceEngineLogs(): Promise<string> {
+        return this.operations.run('readVoiceEngineLogs',async()=>{
+
         try {
             const fs = await import('fs/promises');
             const path = await import('path');
@@ -466,84 +574,104 @@ class VoiceMonitorService {
                 // Return last 50 lines
                 const lines = content.split('\n');
                 return lines.slice(-50).join('\n');
-            } catch {
+            } catch(caughtError) {
+            this.operations.recordDiagnostic('readVoiceEngineLogs',caughtError,'DEGRADED_FALLBACK','UNVERIFIED');
+            if(this.operations.signal.aborted)throw caughtError;
+
                 // Log file doesn't exist, check system logs
                 return 'No log file found at voice_engine/voice_engine.log';
             }
         } catch (e: any) {
+            if(this.operations.signal.aborted)throw e;
+
+            this.operations.recordDiagnostic('readVoiceEngineLogs',e,'DEGRADED_FALLBACK','UNVERIFIED');
+
             return `Error reading logs: ${e.message}`;
         }
+    
+        });
     }
 
     /**
      * Check if port 8100 is in use by another process
      */
     private async checkPortConflict(): Promise<boolean> {
+        return this.operations.run('checkPortConflict',async()=>{
+
         try {
-            const { exec } = await import('child_process');
-            const { promisify } = await import('util');
-            const execAsync = promisify(exec);
+
 
             const isWindows = process.platform === 'win32';
             const cmd = isWindows
                 ? 'netstat -ano | findstr :8100'
                 : 'lsof -i :8100';
 
-            const { stdout } = await execAsync(cmd);
+            const { stdout } = await this.execute(cmd);
 
             // If we get output, port is in use
             return stdout.trim().length > 0;
-        } catch {
+        } catch(caughtError) {
+            this.operations.recordDiagnostic('checkPortConflict',caughtError,'DEGRADED_FALLBACK','UNVERIFIED');
+            if(this.operations.signal.aborted)throw caughtError;
+
             // Command failed = port not in use (or command not available)
             return false;
         }
+    
+        });
     }
 
     /**
      * Check Python environment availability
      */
     private async checkPythonEnvironment(): Promise<{ available: boolean; version?: string }> {
+        return this.operations.run('checkPythonEnvironment',async()=>{
+
         try {
-            const { exec } = await import('child_process');
-            const { promisify } = await import('util');
-            const execAsync = promisify(exec);
+
 
             // Use conda environment Python, not system Python
             const condaPython = 'C:\\Users\\usuario\\miniconda3\\envs\\silhouette-tts\\python.exe';
-            const { stdout } = await execAsync(`"${condaPython}" --version`);
+            const { stdout } = await this.execute(`"${condaPython}" --version`);
             return {
                 available: true,
                 version: stdout.trim()
             };
-        } catch {
+        } catch(caughtError) {
+            this.operations.recordDiagnostic('checkPythonEnvironment',caughtError,'DEGRADED_FALLBACK','UNVERIFIED');
+            if(this.operations.signal.aborted)throw caughtError;
+
             try {
                 // Fallback to system python
-                const { exec } = await import('child_process');
-                const { promisify } = await import('util');
-                const execAsync = promisify(exec);
 
-                const { stdout } = await execAsync('python --version');
+
+                const { stdout } = await this.execute('python --version');
                 return {
                     available: true,
                     version: stdout.trim() + ' (system - not conda)'
                 };
-            } catch {
+            } catch(caughtError) {
+            this.operations.recordDiagnostic('checkPythonEnvironment',caughtError,'DEGRADED_FALLBACK','UNVERIFIED');
+            if(this.operations.signal.aborted)throw caughtError;
+
                 return { available: false };
             }
         }
+    
+        });
     }
 
     /**
      * Check CUDA/GPU availability
      */
     private async checkCudaStatus(): Promise<{ available: boolean; error?: string }> {
+        return this.operations.run('checkCudaStatus',async()=>{
+
         try {
-            const { exec } = await import('child_process');
-            const { promisify } = await import('util');
-            const execAsync = promisify(exec);
+
 
             // Use nvidia-smi to check GPU
-            const { stdout, stderr } = await execAsync('nvidia-smi --query-gpu=name,memory.used,memory.total --format=csv,noheader');
+            const { stdout, stderr } = await this.execute('nvidia-smi --query-gpu=name,memory.used,memory.total --format=csv,noheader');
 
             if (stderr && stderr.includes('NVIDIA-SMI has failed')) {
                 return { available: false, error: stderr };
@@ -553,89 +681,56 @@ class VoiceMonitorService {
                 available: true
             };
         } catch (e: any) {
+            if(this.operations.signal.aborted)throw e;
+
+            this.operations.recordDiagnostic('checkCudaStatus',e,'DEGRADED_FALLBACK','UNVERIFIED');
+
             return {
                 available: false,
                 error: e.message
             };
         }
+    
+        });
     }
 
     /**
      * Kill process occupying port 8100
      */
-    async killPortProcess(): Promise<boolean> {
-        try {
-            const { exec } = await import('child_process');
-            const { promisify } = await import('util');
-            const execAsync = promisify(exec);
-
-            const isWindows = process.platform === 'win32';
-
-            if (isWindows) {
-                // Find PID using port
-                const { stdout } = await execAsync('netstat -ano | findstr :8100 | findstr LISTENING');
-                const lines = stdout.trim().split('\n');
-
-                for (const line of lines) {
-                    const parts = line.trim().split(/\s+/);
-                    const pid = parts[parts.length - 1];
-                    if (pid && pid !== '0') {
-                        await execAsync(`taskkill /F /PID ${pid}`);
-                        console.log(`[VoiceMonitor] Killed process ${pid} on port 8100`);
-                    }
-                }
-            } else {
-                await execAsync('kill $(lsof -t -i:8100)');
-            }
-
-            sqliteService.log('INFO', 'Killed conflicting process on port 8100', 'voice_monitor');
-            return true;
-        } catch (e: any) {
-            console.warn('[VoiceMonitor] Failed to kill port process:', e.message);
+    async killPortProcess():Promise<boolean> {
+        return this.operations.run('killPortProcess',async()=>{
+            this.pendVoiceAction('STOP_OWNED_ENGINE','PENDING_ATTRIBUTION_AND_CONTAINMENT','Port occupancy is not process identity; stop requires an unequivocally owned child and scoped authority',{requestedPort:8100,ownedChildPid:this.engine?.receipt.pid,policy:'No lsof/netstat-selected PID or arbitrary port kill'});
             return false;
-        }
+        });
     }
 
     /**
      * Install missing Python dependencies
      */
-    async installDependencies(): Promise<boolean> {
-        try {
-            const { exec } = await import('child_process');
-            const { promisify } = await import('util');
-            const execAsync = promisify(exec);
-            const path = await import('path');
-
-            const voiceEnginePath = path.join(process.cwd(), 'voice_engine');
-            const reqPath = path.join(voiceEnginePath, 'requirements.txt');
-
-            // Use conda environment pip, not system pip
-            const condaEnvPath = 'C:\\Users\\usuario\\miniconda3\\envs\\silhouette-tts';
-            const condaPip = path.join(condaEnvPath, 'Scripts', 'pip.exe');
-
-            console.log('[VoiceMonitor] 📦 Installing Python dependencies in conda env...');
-
-            await execAsync(`"${condaPip}" install -r "${reqPath}"`, {
-                cwd: voiceEnginePath,
-                timeout: 300000 // 5 minutes
+    async installDependencies():Promise<boolean> {
+        return this.operations.run('installDependencies',async()=>{
+            const path=await import('path');
+            const voiceEnginePath=path.join(process.cwd(),'voice_engine');
+            const condaEnvPath='C:\\Users\\usuario\\miniconda3\\envs\\silhouette-tts';
+            this.pendVoiceAction('INSTALL_DEPENDENCIES','PENDING_AUTHORIZATION','Dependency installation requires specific authenticated authorization; technical task or incident is not approval',{
+                executable:path.join(condaEnvPath,'Scripts','pip.exe'),args:['install','-r',path.join(voiceEnginePath,'requirements.txt')],cwd:voiceEnginePath,timeout:300000,
+                execution:'NOT_STARTED',authorization:'NOT_ESTABLISHED'
             });
-
-            sqliteService.log('INFO', 'Python dependencies installed successfully', 'voice_monitor');
-            return true;
-        } catch (e: any) {
-            console.error('[VoiceMonitor] Failed to install dependencies:', e.message);
-            sqliteService.log('ERROR', `Dependency install failed: ${e.message}`, 'voice_monitor');
             return false;
-        }
+        });
     }
 
     /**
      * Set CPU-only mode for voice engine (disable CUDA)
      */
     async setCpuOnlyMode(): Promise<void> {
+        return this.operations.run('setCpuOnlyMode',async()=>{
+
         process.env.CUDA_VISIBLE_DEVICES = '';
         console.log('[VoiceMonitor] 🔧 Set CUDA_VISIBLE_DEVICES="" for CPU-only mode');
         sqliteService.log('INFO', 'Voice engine set to CPU-only mode', 'voice_monitor');
+    
+        });
     }
 }
 

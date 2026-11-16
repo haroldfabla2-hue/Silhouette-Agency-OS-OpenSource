@@ -202,6 +202,21 @@ class SkillRegistry {
     /**
      * Register or update a skill.
      */
+    /** Runtime-only reversible overlay, retaining precedence and prior source. */
+    registerOwned(skill: SkillDefinition): () => void {
+        const previous = this.skills.get(skill.name);
+        this.register(skill);
+        if (this.skills.get(skill.name) !== skill) return () => {};
+        return () => {
+            if (this.skills.get(skill.name) !== skill) throw new Error(`Skill ownership changed before rollback: ${skill.name}`);
+            if (previous) this.skills.set(skill.name, previous); else this.skills.delete(skill.name);
+            this.searchIndex.clear();
+            for (const value of this.skills.values()) for (const tag of value.metadata.tags ?? []) {
+                if (!this.searchIndex.has(tag)) this.searchIndex.set(tag, new Set());
+                this.searchIndex.get(tag)!.add(value.name);
+            }
+        };
+    }
     register(skill: SkillDefinition): void {
         const existing = this.skills.get(skill.name);
 

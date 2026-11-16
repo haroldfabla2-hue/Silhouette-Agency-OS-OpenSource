@@ -1,3 +1,24 @@
+import { runHttpWork } from '../runtime/ownedHttpIngress';
+// Retain only the ACTUAL lazy singleton acquired by the admitted request.
+// Never import/initialize an unused extractor during teardown.
+let acquiredFactExtractor:typeof import('../../services/factExtractor').factExtractor|undefined;
+let factCloseTask:Promise<unknown>|undefined;
+export function getChatFactLifecycleStatus(){
+    const pending=acquiredFactExtractor?.getPendingExtractions()||[];
+    return {acquired:!!acquiredFactExtractor,closing:!!factCloseTask,pendingDurable:false,
+        // Inspect the actual pending accessor, not just ScopeReport.CLOSED.
+        pending:pending.map(({id,attempt,state})=>({id,attempt,state})),
+        resources:acquiredFactExtractor?.getLifecycleStatus(),release:'UNVERIFIED'};
+}
+/** Only after actual accepted HTTP/returned fact imports have drained. */
+export function shutdownChatFactsAfterHttpDrain():Promise<unknown>{
+    if(factCloseTask)return factCloseTask;
+    factCloseTask=(async()=>{
+        const resources=await acquiredFactExtractor?.shutdownLifecycle();
+        return {resources,pending:getChatFactLifecycleStatus(),release:'UNVERIFIED'};
+    })();
+    return factCloseTask;
+}
 import { Request, Response } from 'express';
 import { sqliteService } from '../../services/sqliteService';
 import { agentInferenceRouter } from '../../services/llm/agentInferenceRouter';
@@ -483,15 +504,21 @@ ${gateAck}` : userMessage;
 
             // 8. EXTRACT FACTS FOR ETERNAL MEMORY (async, non-blocking)
             // This is the Mem0-style intelligent memory extraction
-            setImmediate(async () => {
-                try {
-                    // [R2] extraction runs in the background lane and is deferred
-                    // (retried once) instead of lost when providers are busy
-                    const { factExtractor } = await import('../../services/factExtractor');
-                    void factExtractor.extractAndStore(userMessage, fullResponse, userId);
-                } catch (e) {
-                    console.warn('[CHAT] Fact extraction failed (non-critical):', e);
-                }
+            // Accept the real scheduled descendant NOW, while this request is
+            // still owned. Completion includes extractAndStore's returned promise
+            // even after the response finishes, not merely setImmediate dispatch.
+            void runHttpWork(req,'chat-fact-extraction',()=>new Promise<void>((resolve,reject)=>{
+                setImmediate(()=>{
+                    Promise.resolve().then(async()=>{
+                        const { factExtractor }=await import('../../services/factExtractor');
+                        acquiredFactExtractor=factExtractor;
+                        await factExtractor.extractAndStore(userMessage,fullResponse,userId);
+                    }).then(resolve,reject);
+                });
+            })).catch(error=>{
+                // Request owner retains rejected background work separately.
+                // Do not turn an already saved/sent message into a retry request.
+                console.warn('[CHAT] Fact extraction failed (non-critical):',error);
             });
 
             // 9. Signal completion
@@ -907,3 +934,14 @@ Silhouette:`;
 }
 
 export const chatController = new ChatController();
+
+// Same already-imported shared code RAG owner. Explicit start restores its
+// removed constructor subscription, not embedding/vector/provider readiness.
+export function prepareChatCodebaseAwareness(){codebaseAwareness.start();}
+export function shutdownChatCodebaseAfterConsumers(){return codebaseAwareness.shutdown();}
+export function getChatCodebaseLifecycleStatus(){return {
+    diagnostics:codebaseAwareness.getLifecycleDiagnostics(),
+    failures:codebaseAwareness.getLifecycleFailures(),
+    workOutcome:'UNVERIFIED' as const,release:'UNVERIFIED' as const,
+    readiness:'UNVERIFIED' as const,pendingDurable:false
+};}

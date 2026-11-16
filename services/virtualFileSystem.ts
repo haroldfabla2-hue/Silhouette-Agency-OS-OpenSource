@@ -18,33 +18,122 @@ interface TreeEntry {
     mtime?: number;
 }
 
+type VFSIntentState = 'DEBOUNCED'|'QUEUED'|'RUNNING'|'HTTP_ACK'|'UNKNOWN'|'BLOCKED'|'SUPERSEDED';
+interface VFSIntent {
+    readonly sequence:number;
+    readonly endpoint:string;
+    readonly target:string;
+    payload:Readonly<{path?:string;name?:string;content?:string}>;
+    state:VFSIntentState;
+    diagnostic?:string;
+}
+
 class VirtualFileSystem {
     private projects: VFSProject[] = [];
     private fileNodes: Map<string, FileNode> = new Map();
     private ready = false;
     private initPromise: Promise<void> | null = null;
-    private writeTimers: Map<string, any> = new Map();
+    private writeTimers = new Map<string,{timer:ReturnType<typeof setTimeout>;intent:VFSIntent}>();
+    private lifecycle:'OPEN'|'CLOSING'|'CLOSED'='OPEN';
+    private revision=0;
+    private readonly reads=new Set<Promise<unknown>>();
+    private readonly intents:VFSIntent[]=[];
+    private serial:Promise<void>=Promise.resolve();
+    private uncertainty=false;
+    private closing?:Promise<ReturnType<VirtualFileSystem['getLifecycleStatus']>>;
+
+    private assertOpen(){if(this.lifecycle!=='OPEN')throw new Error('VFS closing; new work refused');}
+    // Receipts intentionally exclude source content. Recovery payloads are only
+    // returned by the explicit local accessor below, never logged or emitted.
+    public getLifecycleStatus(){return {state:this.lifecycle,activeReads:this.reads.size,
+        debounceTimers:this.writeTimers.size,uncertainty:this.uncertainty,
+        durability:'UNVERIFIED' as const,pendingDurable:false,
+        receipts:this.intents.map(({sequence,endpoint,target,state,diagnostic})=>({sequence,endpoint,target,state,diagnostic}))};}
+    public getPendingIntents(){return this.intents.filter(i=>i.state!=='HTTP_ACK'&&i.state!=='SUPERSEDED')
+        .map(i=>({...i,payload:{...i.payload}}));}
+    private ownRead<T>(operation:()=>Promise<T>):Promise<T>{
+        this.assertOpen();
+        const actual=Promise.resolve().then(operation);this.reads.add(actual);
+        void actual.then(()=>this.reads.delete(actual),()=>this.reads.delete(actual));return actual;
+    }
+    public shutdownLifecycle(){
+        if(this.closing)return this.closing;
+        this.lifecycle='CLOSING';
+        // Accepted dirty bytes become writes, not canceled-and-forgotten timers.
+        this.flushScheduled();
+        this.closing=(async()=>{
+            await Promise.allSettled([...this.reads]);
+            await this.serial;
+            this.lifecycle='CLOSED';
+            return this.getLifecycleStatus();
+        })();
+        return this.closing;
+    }
+    private newIntent(endpoint:string,payload:VFSIntent['payload'],state:VFSIntentState):VFSIntent{
+        const intent:VFSIntent={sequence:this.intents.length+1,endpoint,target:payload.path??payload.name??'',payload:Object.freeze({...payload}),state};
+        this.intents.push(intent);return intent;
+    }
+    private enqueue(intent:VFSIntent){
+        intent.state='QUEUED';
+        this.serial=this.serial.then(async()=>{
+            if(this.uncertainty){intent.state='BLOCKED';intent.diagnostic='Prior mutation outcome unknown; no automatic replay or dependent effect';return;}
+            intent.state='RUNNING';
+            try{
+                const ack=await api.post<any>(intent.endpoint,intent.payload);
+                const expected=intent.payload.path??intent.payload.name;
+                const valid=ack?.success===true&&(intent.endpoint.endsWith('/quarantine')?
+                    typeof ack.quarantinedTo==='string'&&ack.quarantinedTo.startsWith('.quarantine/')&&ack.quarantinedTo.endsWith('/'+expected):ack.path===expected);
+                if(!valid)throw new Error('Workspace acknowledgement did not match mutation');
+                // Route JSON ACK does not prove fsync, durable storage or replica receipt.
+                intent.state='HTTP_ACK';intent.payload=Object.freeze({});
+            }catch{
+                intent.state='UNKNOWN';intent.diagnostic='Mutation outcome uncertain; inspect server before any retry';
+                this.uncertainty=true;
+            }
+        });
+    }
+    private mutate(endpoint:string,payload:VFSIntent['payload']){
+        this.flushScheduled();this.enqueue(this.newIntent(endpoint,payload,'QUEUED'));
+    }
+    private flushScheduled(){
+        const scheduled=[...this.writeTimers.values()].sort((a,b)=>a.intent.sequence-b.intent.sequence);
+        this.writeTimers.clear();
+        for(const item of scheduled){clearTimeout(item.timer);this.enqueue(item.intent);}
+    }
+
 
     public isReady(): boolean { return this.ready; }
 
-    public async init(): Promise<void> {
-        if (this.ready) return;
-        if (!this.initPromise) {
-            this.initPromise = (async () => {
-                const res = await api.get('/v1/workspace/tree') as any;
-                this.hydrate((res.nodes || []) as TreeEntry[]);
-                this.ready = true;
-            })().catch(err => {
-                this.initPromise = null;
-                throw err;
+    public async init():Promise<void>{
+        this.assertOpen();
+        if(this.ready)return;
+        if(!this.initPromise){
+            this.flushScheduled();
+            const barrier=this.serial;
+            const revision=this.revision;
+            const actual=this.ownRead(async()=>{
+                await barrier;
+                if(this.uncertainty)throw new Error('VFS hydration refused: uncertain mutation retained');
+                const res=await api.get<any>('/v1/workspace/tree');
+                if(this.revision!==revision||this.lifecycle!=='OPEN')throw new Error('VFS hydration superseded; local state retained');
+                this.hydrate((res.nodes||[]) as TreeEntry[]);this.ready=true;
             });
+            this.initPromise=actual;
+            void actual.catch(()=>{if(this.initPromise===actual)this.initPromise=null;});
         }
         return this.initPromise;
     }
 
-    public async refresh(): Promise<void> {
-        this.ready = false;
-        this.initPromise = null;
+    public async refresh():Promise<void>{
+        this.assertOpen();this.flushScheduled();
+        const revision=this.revision;
+        await this.serial;
+        this.assertOpen();
+        if(this.uncertainty||this.revision!==revision)throw new Error('VFS refresh refused: unresolved or changed local mutations');
+        if(this.initPromise&&!this.ready)await this.initPromise;
+        this.assertOpen();
+        if(this.revision!==revision)throw new Error('VFS refresh superseded; local state retained');
+        this.ready=false;this.initPromise=null;
         return this.init();
     }
 
@@ -92,6 +181,7 @@ class VirtualFileSystem {
     }
 
     public createProject(name: string, type: VFSProject['type']): VFSProject {
+        this.assertOpen();this.revision++;
         const clean = name.trim().replace(/\s+/g, '-');
         const project: VFSProject = {
             id: clean,
@@ -114,25 +204,25 @@ class VirtualFileSystem {
             this.projects.push(project);
             this.fileNodes.set(clean, rootNode);
         }
-        api.post('/v1/workspace/project', { name: clean })
-            .catch(e => console.error('[VFS] project create failed on server', e));
+        this.mutate('/v1/workspace/project', { name: clean });
         systemBus.emit(SystemProtocol.FILESYSTEM_UPDATE, { projectId: project.id, action: 'CREATE' }, 'VFS');
         return project;
     }
 
     public deleteProject(projectId: string) {
+        this.assertOpen();this.revision++;
         const project = this.projects.find(p => p.id === projectId);
         if (project) {
             this.removeSubtree(project.rootFolderId);
             this.projects = this.projects.filter(p => p.id !== projectId);
-            api.post('/v1/workspace/quarantine', { path: project.rootFolderId })
-                .catch(e => console.error('[VFS] project quarantine failed on server', e));
+            this.mutate('/v1/workspace/quarantine', { path: project.rootFolderId });
             systemBus.emit(SystemProtocol.FILESYSTEM_UPDATE, { projectId, action: 'DELETE' }, 'VFS');
         }
     }
 
     // --- AI INGESTION ---
     public ingestProjectStructure(projectName: string, structure: any): string {
+        this.assertOpen();this.revision++;
         const project = this.createProject(projectName, 'REACT');
         const processNode = (parentId: string, node: any) => {
             if (node.type === 'FOLDER') {
@@ -229,6 +319,7 @@ class VirtualFileSystem {
     }
 
     public createFile(parentId: string, name: string, content: string = ''): FileNode {
+        this.assertOpen();this.revision++;
         const id = parentId ? `${parentId}/${name}` : name;
         const existing = this.fileNodes.get(id);
         if (existing && existing.type === 'FILE') {
@@ -248,13 +339,13 @@ class VirtualFileSystem {
         };
         this.fileNodes.set(id, newNode);
         this.attachToParent(parentId, id);
-        api.post('/v1/workspace/file', { path: id, content })
-            .catch(e => console.error('[VFS] file create failed on server', e));
+        this.mutate('/v1/workspace/file', { path: id, content });
         systemBus.emit(SystemProtocol.FILESYSTEM_UPDATE, { projectId: this.getProjectIdForNode(id), fileId: id, action: 'CREATE' }, 'VFS');
         return newNode;
     }
 
     public createFolder(parentId: string, name: string): FileNode {
+        this.assertOpen();this.revision++;
         const id = parentId ? `${parentId}/${name}` : name;
         const existing = this.fileNodes.get(id);
         if (existing) return existing;
@@ -269,12 +360,12 @@ class VirtualFileSystem {
         };
         this.fileNodes.set(id, newNode);
         this.attachToParent(parentId, id);
-        api.post('/v1/workspace/folder', { path: id })
-            .catch(e => console.error('[VFS] folder create failed on server', e));
+        this.mutate('/v1/workspace/folder', { path: id });
         return newNode;
     }
 
     public updateFile(fileId: string, content: string) {
+        this.assertOpen();this.revision++;
         const node = this.fileNodes.get(fileId);
         if (node && node.type === 'FILE') {
             node.content = content;
@@ -285,10 +376,10 @@ class VirtualFileSystem {
     }
 
     public deleteNode(nodeId: string) {
+        this.assertOpen();this.revision++;
         const projectId = this.getProjectIdForNode(nodeId);
         this.removeSubtree(nodeId);
-        api.post('/v1/workspace/quarantine', { path: nodeId })
-            .catch(e => console.error('[VFS] quarantine failed on server', e));
+        this.mutate('/v1/workspace/quarantine', { path: nodeId });
         systemBus.emit(SystemProtocol.FILESYSTEM_UPDATE, { projectId, fileId: nodeId, action: 'DELETE' }, 'VFS');
     }
 
@@ -297,29 +388,32 @@ class VirtualFileSystem {
     }
 
     // Load a file's real content from the server on first access.
-    public async loadContent(fileId: string): Promise<FileNode | undefined> {
-        const node = this.fileNodes.get(fileId);
-        if (!node || node.type !== 'FILE') return node;
-        if (node.content !== undefined) return node;
-        const res = await api.get(`/v1/workspace/file?path=${encodeURIComponent(fileId)}`) as any;
-        node.content = res.content;
-        node.updatedAt = res.mtime || node.updatedAt;
-        return node;
+    public async loadContent(fileId:string):Promise<FileNode|undefined>{
+        this.assertOpen();
+        const node=this.fileNodes.get(fileId);
+        if(!node||node.type!=='FILE'||node.content!==undefined)return node;
+        const revision=this.revision;
+        return this.ownRead(async()=>{
+            const res=await api.get<any>(`/v1/workspace/file?path=${encodeURIComponent(fileId)}`);
+            if(this.lifecycle==='OPEN'&&this.revision===revision&&this.fileNodes.get(fileId)===node&&node.content===undefined){
+                node.content=res.content;node.updatedAt=res.mtime||node.updatedAt;
+            }
+            return this.fileNodes.get(fileId);
+        });
     }
 
-    // --- INTERNALS ---
-
-    // Debounced write-through: the editor calls updateFile per keystroke.
-    private scheduleWrite(fileId: string) {
-        const prev = this.writeTimers.get(fileId);
-        if (prev) clearTimeout(prev);
-        this.writeTimers.set(fileId, setTimeout(() => {
-            this.writeTimers.delete(fileId);
-            const node = this.fileNodes.get(fileId);
-            if (!node || node.type !== 'FILE') return;
-            api.post('/v1/workspace/file', { path: fileId, content: node.content || '' })
-                .catch(e => console.error('[VFS] write failed on server', e));
-        }, 800));
+    // Timers own immutable bytes, never re-read a deleted/replaced node later.
+    private scheduleWrite(fileId:string){
+        const node=this.fileNodes.get(fileId);if(!node||node.type!=='FILE')return;
+        const previous=this.writeTimers.get(fileId);
+        if(previous){clearTimeout(previous.timer);previous.intent.state='SUPERSEDED';previous.intent.payload=Object.freeze({});}
+        const intent=this.newIntent('/v1/workspace/file',{path:fileId,content:node.content??''},'DEBOUNCED');
+        const timer=setTimeout(()=>{
+            const current=this.writeTimers.get(fileId);
+            if(current?.intent!==intent)return;
+            this.writeTimers.delete(fileId);this.enqueue(intent);
+        },800);
+        this.writeTimers.set(fileId,{timer,intent});
     }
 
     private attachToParent(parentId: string | null, childId: string) {

@@ -1,3 +1,4 @@
+import { ResourceScope } from '../server/runtime/resourceScope';
 /**
  * USER PROFILE SERVICE
  * =====================
@@ -41,12 +42,15 @@ export class UserProfileService {
     private profiles = new Map<string, UserProfile>();
     private readonly PROFILE_ID = 'user_primary';
 
-    constructor() {
-        // Warm the legacy primary profile on startup (best-effort)
-        this.loadProfile().catch(e =>
-            console.warn('[USER_PROFILE] Failed to load initial profile:', e)
-        );
+    private readonly operations = new ResourceScope('user-profile');
+    private startup?: Promise<unknown>;
+    constructor() {}
+    public start(): Promise<unknown> {
+        if (!this.startup) this.startup = this.operations.run('profile-initial-load', () => this.loadProfile());
+        return this.startup;
     }
+    public shutdown() { return this.operations.close(); }
+    public getLifecycleDiagnostics() { return { diagnostics: this.operations.getDiagnostics(), failures: this.operations.getFailures() }; }
 
     private resolveId(userId?: string): string {
         return userId && userId !== 'anonymous' ? userId : this.PROFILE_ID;
@@ -57,6 +61,8 @@ export class UserProfileService {
      * Order: RAM -> SQLite (durable) -> Redis -> Neo4j (legacy singleton only)
      */
     async loadProfile(userId?: string): Promise<UserProfile | null> {
+        return this.operations.run('loadProfile', async () => {
+
         const id = this.resolveId(userId);
         const cached = this.profiles.get(id);
         if (cached) return cached;
@@ -80,6 +86,7 @@ export class UserProfileService {
                 return profile;
             }
         } catch (e) {
+            this.operations.recordDiagnostic('profile-sqlite-load', e, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
             console.warn('[USER_PROFILE] SQLite load failed, trying cache/graph:', e);
         }
 
@@ -97,6 +104,7 @@ export class UserProfileService {
                 return profile;
             }
         } catch (e) {
+            this.operations.recordDiagnostic('profile-redis-load', e, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
             console.warn('[USER_PROFILE] Redis cache miss, trying Neo4j...');
         }
 
@@ -106,12 +114,16 @@ export class UserProfileService {
             return this.loadFromGraph();
         }
         return null;
+    
+        });
     }
 
     /**
      * Load the legacy singleton profile from Neo4j (cold storage)
      */
     async loadFromGraph(): Promise<UserProfile | null> {
+        return this.operations.run('loadFromGraph', async () => {
+
         try {
             const result = await graph.runQuery(`
                 MATCH (u:User {id: $id})
@@ -141,26 +153,37 @@ export class UserProfileService {
                 return profile;
             }
         } catch (e) {
+            this.operations.recordDiagnostic('profile-graph-load', e, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
             console.warn('[USER_PROFILE] Failed to load from graph:', e);
         }
         return null;
+    
+        });
     }
 
     /**
      * Cache profile to Redis for fast access (best-effort; SQLite is durable)
      */
     private async cacheToRedis(profile: UserProfile): Promise<void> {
+        return this.operations.run('cacheToRedis', async () => {
+
         try {
             await redisClient.set(REDIS_PROFILE_PREFIX + profile.id, JSON.stringify(profile), REDIS_TTL);
         } catch (e) {
+            this.operations.recordDiagnostic('profile-redis-cache', e, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
             console.warn('[USER_PROFILE] Failed to cache to Redis:', e);
         }
+    
+        });
     }
 
     /**
      * Durable write: SQLite upsert. This is the write that must never be lost.
      */
     private async persistToSqlite(profile: UserProfile): Promise<void> {
+        return this.operations.run('persistToSqlite', async () => {
+
+        try {
         sqliteService.db.prepare(`
             INSERT INTO user_profiles (user_id, name, preferred_language, preferences, facts, extracted_at, last_interaction)
             VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -174,6 +197,9 @@ export class UserProfileService {
         `).run(profile.id, profile.name ?? null, profile.preferredLanguage,
             JSON.stringify(profile.preferences), JSON.stringify(profile.facts),
             profile.extractedAt, profile.lastInteraction);
+        } catch (error) { this.operations.recordFailure('profile-sqlite-durability', error); throw error; }
+    
+        });
     }
 
     /**
@@ -181,6 +207,8 @@ export class UserProfileService {
      * Called on every user message to detect name, preferences, etc.
      */
     async extractFromMessage(message: string, userId?: string): Promise<boolean> {
+        return this.operations.run('extractFromMessage', async () => {
+
         let updated = false;
 
         // Name extraction patterns
@@ -229,47 +257,63 @@ export class UserProfileService {
         }
 
         return updated;
+    
+        });
     }
 
     /**
      * Get an existing profile or create an empty one (RAM + durable on persist)
      */
     private async getOrCreate(userId?: string): Promise<UserProfile> {
+        return this.operations.run('getOrCreate', async () => {
+
         const id = this.resolveId(userId);
         const existing = await this.loadProfile(userId);
         if (existing) return existing;
         const profile = this.createEmptyProfile(id);
         this.profiles.set(id, profile);
         return profile;
+    
+        });
     }
 
     /**
      * Set user name
      */
     async setName(name: string, userId?: string): Promise<void> {
+        return this.operations.run('setName', async () => {
+
         console.log(`[USER_PROFILE] 👤 Setting user name: ${name} (${this.resolveId(userId)})`);
 
         const profile = await this.getOrCreate(userId);
         profile.name = name;
         profile.extractedAt = Date.now();
         await this.persist(profile);
+    
+        });
     }
 
     /**
      * Set a user preference
      */
     async setPreference(key: string, value: any, userId?: string): Promise<void> {
+        return this.operations.run('setPreference', async () => {
+
         console.log(`[USER_PROFILE] ⚙️ Setting preference: ${key} = ${value} (${this.resolveId(userId)})`);
 
         const profile = await this.getOrCreate(userId);
         profile.preferences[key] = value;
         await this.persist(profile);
+    
+        });
     }
 
     /**
      * Add a user-stated fact
      */
     async addFact(fact: string, userId?: string): Promise<void> {
+        return this.operations.run('addFact', async () => {
+
         console.log(`[USER_PROFILE] 📝 Adding fact: ${fact} (${this.resolveId(userId)})`);
 
         const profile = await this.getOrCreate(userId);
@@ -283,6 +327,8 @@ export class UserProfileService {
             }
             await this.persist(profile);
         }
+    
+        });
     }
 
     /**
@@ -290,6 +336,8 @@ export class UserProfileService {
      * This is called on EVERY chat request (cheap operation)
      */
     getProfileContext(userId?: string): string {
+        this.operations.assertWorkAccepted();
+
         const profile = this.profiles.get(this.resolveId(userId));
         if (!profile) return '';
 
@@ -321,6 +369,8 @@ export class UserProfileService {
      * Get just the user name (for quick checks)
      */
     getName(userId?: string): string | undefined {
+        this.operations.assertWorkAccepted();
+
         return this.profiles.get(this.resolveId(userId))?.name;
     }
 
@@ -328,6 +378,8 @@ export class UserProfileService {
      * Persist profile: SQLite (durable) -> Redis (hot cache) -> Neo4j (projection)
      */
     private async persist(profile: UserProfile): Promise<void> {
+        return this.operations.run('persist', async () => {
+
         profile.lastInteraction = Date.now();
 
         // 1. SQLite first: the durable write. If this fails, say so loudly.
@@ -362,6 +414,8 @@ export class UserProfileService {
         } catch (e) {
             console.error('[USER_PROFILE] ❌ Failed to persist to Neo4j:', e);
         }
+    
+        });
     }
 
     /**

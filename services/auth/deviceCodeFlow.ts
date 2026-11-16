@@ -52,14 +52,22 @@ export async function pollDeviceToken(
     },
     fetcher: typeof fetch = fetch,
 ): Promise<DeviceTokenResult> {
-    const sleep = options.sleep ?? ((ms: number) => new Promise<void>(r => setTimeout(r, ms)));
+    const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve, reject) => {
+        const signal = options.signal;
+        if (signal?.aborted) { reject(new DeviceFlowError('login cancelled')); return; }
+        const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); }, ms);
+        const abort = () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); reject(new DeviceFlowError('login cancelled')); };
+        signal?.addEventListener('abort', abort, { once: true });
+    }));
     const deadline = Date.now() + options.timeoutMs;
     let interval = options.intervalMs;
     for (;;) {
         if (options.signal?.aborted) throw new DeviceFlowError('login cancelled');
         if (Date.now() + interval > deadline) throw new DeviceFlowError('device code expired', 'expired_token');
         await sleep(interval);
+        if (options.signal?.aborted) throw new DeviceFlowError('login cancelled');
         const res = await fetcher(endpoint, {
+            signal: options.signal,
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: new URLSearchParams({

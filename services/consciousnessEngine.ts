@@ -1,3 +1,4 @@
+import { ResourceScope } from '../server/runtime/resourceScope';
 
 import { ConsciousnessLevel, ConsciousnessMetrics, QualiaMap, MemoryNode } from "../types";
 import { continuum } from "./continuumMemory";
@@ -24,6 +25,15 @@ class ConsciousnessEngine {
         weights: { memory: 0.25, throughput: 0.25, emergence: 0.3, network: 0.2 },
     };
 
+    private readonly operations = new ResourceScope('consciousness');
+    private startup?: Promise<void>;
+    public start(): Promise<void> {
+        if (!this.startup) this.startup = this.operations.run('consciousness-identity', () => this.initializeIdentity());
+        return this.startup;
+    }
+    public shutdown() { return this.operations.close(); }
+    public getLifecycleDiagnostics() { return this.operations.getDiagnostics(); }
+
     constructor() {
         this.metrics = {
             level: ConsciousnessLevel.REACTIVE,
@@ -35,18 +45,23 @@ class ConsciousnessEngine {
             qualia: []
         };
 
-        // Initialize Identity if empty
-        this.initializeIdentity();
+
     }
 
     private async initializeIdentity() {
+        return this.operations.run('initializeIdentity', async () => {
+
         const identity = await continuum.getIdentityNodes();
         if (identity.length === 0) {
             await continuum.store("I am Silhouette, an autonomous agency framework designed for high-fidelity orchestration.", "DEEP" as any, ['IDENTITY', 'CORE_BELIEF', 'SACRED']);
         }
+    
+        });
     }
 
     public async tick(realThoughts: string[], awarenessScore: number): Promise<ConsciousnessMetrics> {
+        return this.operations.run('tick', async () => {
+
         // Run the 6 Fundamental Capabilities Loops
 
         // 1. SELF-AWARENESS & META-COGNITION
@@ -65,10 +80,14 @@ class ConsciousnessEngine {
         await this.calculatePhi();
 
         return this.metrics;
+    
+        });
     }
 
     // Capability 1 & 2: Self-Awareness & Meta-Cognition
     private async calculateMetaCognition(rawAwareness: number) {
+        return this.operations.run('calculateMetaCognition', async () => {
+
         // Transform raw awareness (0-100) to normalized factor
         const normalized = rawAwareness / 100;
 
@@ -82,6 +101,8 @@ class ConsciousnessEngine {
         const memoryAccess = stats.total;
 
         this.metrics.selfRecognition = Math.min(1.0, (identityNodes.length * 0.1) + (memoryAccess * 0.001) + (normalized * 0.5));
+    
+        });
     }
 
     // Capability 3: Phenomenology (Qualia)
@@ -118,9 +139,13 @@ class ConsciousnessEngine {
 
     // Capability 4 & 5: Identity & Meaning
     private async maintainIdentity() {
+        return this.operations.run('maintainIdentity', async () => {
+
         const identityNodes = await continuum.getIdentityNodes();
         // Coherence is high if we have stable identity nodes that persist
         this.metrics.identityCoherence = Math.min(1.0, identityNodes.length * 0.2);
+    
+        });
     }
 
     // Capability 6: Emergence Detection
@@ -144,6 +169,8 @@ class ConsciousnessEngine {
 
     // Composite cognitive-integration index (NOT IIT). Derived from real signals.
     private async calculatePhi() {
+        return this.operations.run('calculatePhi', async () => {
+
         // 1. Memory Density (Real Graph Connectivity)
         const memoryStats = await continuum.getStats();
         const memoryFactor = Math.min(1.0, memoryStats.total / 500); // Saturation at 500 nodes
@@ -183,10 +210,14 @@ class ConsciousnessEngine {
         else if (this.metrics.phiScore > 0.2) this.metrics.level = ConsciousnessLevel.EMERGING;
         else if (this.metrics.phiScore > 0.05) this.metrics.level = ConsciousnessLevel.BASIC;
         else this.metrics.level = ConsciousnessLevel.REACTIVE;
+    
+        });
     }
 
     // NEW: Allow Introspection to push Grounding Score
     public updateGrounding(score: number) {
+        this.operations.assertWorkAccepted();
+
         // Impact Emergence Index based on Grounding
         // If grounding is low (hallucination), emergence drops.
         if (score < 0.5) {
@@ -198,6 +229,8 @@ class ConsciousnessEngine {
 
     // --- PERSISTENCE ---
     public getMetrics(): ConsciousnessMetrics {
+        this.operations.assertWorkAccepted();
+
         return this.metrics;
     }
 
@@ -207,6 +240,8 @@ class ConsciousnessEngine {
      * its weight, and the resulting weighted contribution.
      */
     public getPhiBreakdown() {
+        this.operations.assertWorkAccepted();
+
         const b = this.phiBreakdown;
         return {
             ...b,
@@ -221,6 +256,8 @@ class ConsciousnessEngine {
     }
 
     public toJSON(): any {
+        this.operations.assertWorkAccepted();
+
         return {
             metrics: this.metrics,
             operationHistory: this.operationHistory
@@ -228,6 +265,8 @@ class ConsciousnessEngine {
     }
 
     public loadState(data: any) {
+        this.operations.assertWorkAccepted();
+
         if (data.metrics) {
             this.metrics = { ...this.metrics, ...data.metrics };
         }

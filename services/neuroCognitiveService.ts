@@ -1,3 +1,4 @@
+import { ResourceScope } from '../server/runtime/resourceScope';
 import { graph } from './graphService';
 import { introspection } from './introspectionEngine';
 import { generateText } from './geminiService'; // Uses fallback chain: Gemini → OpenRouter → Groq → Ollama
@@ -54,23 +55,34 @@ class NeuroCognitiveService {
     // Deferred candidates for retry (Circuit Breaker pattern)
     private deferredCandidates: Map<string, { candidate: any, retryAt: number }> = new Map();
 
-    constructor() {
-        // [AUTO-START] Start the heartbeat if not already running
-        // Wait a bit for other services to initialize
-        setTimeout(() => this.startHeartbeat(), 30000);
+    private readonly operations = new ResourceScope('neuro-cognitive');
+    private initialDelay?: () => Promise<void>;
+    private started = false;
+    constructor() {}
+    public start(): void {
+        this.operations.assertAccepting();
+        if (this.started) return;
+        this.started = true;
+        const timer = setTimeout(() => { if (this.operations.accepting) this.startHeartbeat(); }, 30000);
+        this.initialDelay = this.operations.own({ name: 'neuro-cognitive-warmup', stopIntake: () => clearTimeout(timer), close: () => clearTimeout(timer) });
     }
+    public shutdown() { this.stopHeartbeat(); return this.operations.close(); }
+    public getLifecycleDiagnostics() { return this.operations.getDiagnostics(); }
 
     /**
      * Starts the automatic discovery heartbeat (Proactive Curiosity)
      * Checks for new connections every 5 minutes if system is idle
      */
     public startHeartbeat() {
+        this.operations.assertAccepting();
         if (this.heartbeatInterval) return;
 
         console.log("[NEURO] 💓 Starting Proactive Discovery Heartbeat (Every 5m)");
-        this.heartbeatInterval = setInterval(async () => {
-            // [SECURITY] This heartbeat self-starts from the constructor 30s
-            // after import - a route into proactive discovery that bypasses
+        this.heartbeatInterval = setInterval(() => {
+            if (!this.operations.accepting) return;
+            void this.operations.run('neuro-cognitive-heartbeat', async () => {
+            // The explicit start preserves the30s warmup. Every heartbeat remains
+            // a route into proactive discovery independent of
             // both the daemon and the boot loader. The autonomy ceiling must
             // hold on every route: re-read the operator config each tick.
             // Fail-closed (authority). PowerManager throttle is fail-open
@@ -87,15 +99,19 @@ class NeuroCognitiveService {
             // Only trigger if not already busy and random chance (stochasticity)
             if (!this.isDiscovering && Math.random() > 0.3) {
                 console.log("[NEURO] 💓 Heartbeat triggering spontaneous discovery...");
-                this.triggerDiscoveryCycle().catch(e => console.error("[NEURO] Heartbeat Error:", e));
+                await this.triggerDiscoveryCycle();
             }
+            }).catch(error => console.error('[NEURO] Heartbeat Error:', error));
         }, 5 * 60 * 1000); // 5 minutes
+        const interval = this.heartbeatInterval;
+        this.operations.own({ name: 'neuro-cognitive-heartbeat', stopIntake: () => clearInterval(interval), close: () => clearInterval(interval) });
     }
 
     /**
      * Stop the heartbeat (e.g. for testing)
      */
     public stopHeartbeat() {
+        if (this.initialDelay) { void this.initialDelay(); this.initialDelay = undefined; }
         if (this.heartbeatInterval) {
             clearInterval(this.heartbeatInterval);
             this.heartbeatInterval = null;
@@ -107,6 +123,8 @@ class NeuroCognitiveService {
      * Can be called by DreamerService or manually.
      */
     public async triggerDiscoveryCycle(focusNodeId?: string) {
+        return this.operations.run('triggerDiscoveryCycle', async () => {
+
         if (this.isDiscovering) {
             console.log("[NEURO] 🧠 Discovery already in progress. Skipping.");
             return;
@@ -287,12 +305,16 @@ class NeuroCognitiveService {
         } finally {
             this.isDiscovering = false;
         }
+    
+        });
     }
 
     /**
      * Process deferred candidates (Circuit Breaker HALF-OPEN state)
      */
     private async processDeferred() {
+        return this.operations.run('processDeferred', async () => {
+
         const now = Date.now();
         const readyForRetry: string[] = [];
 
@@ -313,6 +335,8 @@ class NeuroCognitiveService {
                 }
             }
         }
+    
+        });
     }
 
     /**
@@ -320,6 +344,8 @@ class NeuroCognitiveService {
      * Updates node's curiosityWeight in the graph
      */
     private async applyRewardSignal(nodeId: string, delta: number) {
+        return this.operations.run('applyRewardSignal', async () => {
+
         try {
             await graph.runQuery(`
                 MATCH (n {id: $nodeId})
@@ -330,9 +356,13 @@ class NeuroCognitiveService {
         } catch (e) {
             console.warn(`[NEURO] Failed to apply reward signal to ${nodeId}:`, e);
         }
+    
+        });
     }
 
     private async triggerActiveResearch(sourceId: string, candidates: any[], researchHint?: string) {
+        return this.operations.run('triggerActiveResearch', async () => {
+
         console.log(`[NEURO] 📡 Dispatching RESEARCH_REQUEST for ${sourceId} to TEAM_SCIENCE`);
 
         const payload = {
@@ -347,9 +377,13 @@ class NeuroCognitiveService {
             ...payload,
             targetSquad: 'TEAM_SCIENCE'
         });
+    
+        });
     }
 
     private async selectRandomConcept(): Promise<string | null> {
+        return this.operations.run('selectRandomConcept', async () => {
+
         // Prefer nodes with higher curiosityWeight (RPE-driven exploration)
         const result = await graph.runQuery(`
             MATCH (c:Concept) 
@@ -358,9 +392,13 @@ class NeuroCognitiveService {
             LIMIT 1
         `);
         return result[0]?.id || null;
+    
+        });
     }
 
     private async fetchIntuition(nodeId: string, topK: number = 3): Promise<LinkPredictionResponse['predictions']> {
+        return this.operations.run('fetchIntuition', async () => {
+
         try {
             const response = await fetch(`${this.REASONING_ENGINE_URL}/predict_links`, {
                 method: 'POST',
@@ -376,6 +414,8 @@ class NeuroCognitiveService {
             console.warn("[NEURO] ⚠️ Reasoning Engine Unavailable (Is Docker running?). Returning empty intuition.");
             return [];
         }
+    
+        });
     }
 
     /**
@@ -386,6 +426,8 @@ class NeuroCognitiveService {
         sourceId: string,
         candidates: { target_node: string, relation_type: string, confidence: number }[]
     ): Promise<ValidationResult[]> {
+        return this.operations.run('validateBatchHypotheses', async () => {
+
 
         const targetIds = candidates.map(c => c.target_node);
         const query = `
@@ -497,6 +539,8 @@ RESPOND WITH ONLY THIS JSON FORMAT (no other text):
                 rewardDelta: 0
             }));
         }
+    
+        });
     }
 }
 

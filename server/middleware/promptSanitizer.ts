@@ -1,3 +1,4 @@
+import { ownedHttpHandler } from '../runtime/ownedHttpIngress';
 // =============================================================================
 // PROMPT SANITIZER MIDDLEWARE
 // Protects the LLM from prompt injection attacks by stripping/escaping
@@ -85,7 +86,7 @@ export function sanitizePrompt(input: string): SanitizationResult {
  * - { prompt: "..." }
  * - { text: "..." }
  */
-export function promptSanitizerMiddleware(req: Request, res: Response, next: NextFunction) {
+function handlepromptSanitizerMiddleware(req: Request, res: Response, next: NextFunction) {
     if (!req.body || typeof req.body !== 'object') {
         return next();
     }
@@ -131,3 +132,6 @@ export function promptSanitizerMiddleware(req: Request, res: Response, next: Nex
 
     next();
 }
+
+// Same normal-middleware arity and actual returned callback receipt.
+export const promptSanitizerMiddleware=ownedHttpHandler('middleware:promptSanitizerMiddleware',handlepromptSanitizerMiddleware);

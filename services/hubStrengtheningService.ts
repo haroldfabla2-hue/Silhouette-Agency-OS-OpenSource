@@ -1,3 +1,4 @@
+import { ResourceScope } from '../server/runtime/resourceScope';
 import { graph } from './graphService';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -48,39 +49,53 @@ class HubStrengtheningService {
     private batchInterval: NodeJS.Timeout | null = null;
 
     // Batched reinforcement queue
+    private abandonedReinforcement: ReinforcementRequest[] = [];
     private reinforcementQueue: ReinforcementRequest[] = [];
     private isProcessingBatch = false;
 
-    constructor() {
-        // Auto-start after 1 minute
-        setTimeout(() => {
-            this.startPruningCycle();
-            this.startBatchProcessor();
-        }, 60000);
+    private readonly operations = new ResourceScope('hub-strengthening');
+    private started = false;
+    constructor() {}
+    public start(): void {
+        this.operations.assertAccepting();
+        if (this.started) return;
+        this.started = true;
+        this.operations.timeout('hub-warmup', 60000, () => { this.startPruningCycle(); this.startBatchProcessor(); });
+    }
+    public async shutdown() {
+        this.stop();
+        const resources = await this.operations.close();
+        return { resources, pendingReinforcement: [...this.reinforcementQueue], abandonedReinforcement: [...this.abandonedReinforcement], reinforcementComplete: this.reinforcementQueue.length === 0 && this.abandonedReinforcement.length === 0 };
     }
 
     /**
      * Starts the periodic pruning cycle
      */
     public startPruningCycle() {
+        this.operations.assertAccepting();
         if (this.pruningInterval) return;
 
         logger.info(`Starting Synaptic Pruning Cycle (Every ${this.CONFIG.PRUNING_INTERVAL_MS / 60000}m)`);
         this.pruningInterval = setInterval(() => {
-            this.runPruningCycle().catch(e => logger.error('Pruning error:', e));
+            if (this.operations.accepting) void this.runPruningCycle().catch(e => logger.error('Pruning error:', e));
         }, this.CONFIG.PRUNING_INTERVAL_MS);
+        const timer = this.pruningInterval;
+        this.operations.own({ name: 'hub-pruning', stopIntake: () => clearInterval(timer), close: () => clearInterval(timer) });
     }
 
     /**
      * Starts the batch processor for Hebbian reinforcement
      */
     private startBatchProcessor() {
+        this.operations.assertAccepting();
         if (this.batchInterval) return;
 
         logger.info(`Starting Batch Reinforcement Processor (Every ${this.CONFIG.BATCH_INTERVAL_MS / 1000}s)`);
         this.batchInterval = setInterval(() => {
-            this.flushReinforcementBatch().catch(e => logger.error('Batch flush error:', e));
+            if (this.operations.accepting) void this.flushReinforcementBatch().catch(e => logger.error('Batch flush error:', e));
         }, this.CONFIG.BATCH_INTERVAL_MS);
+        const timer = this.batchInterval;
+        this.operations.own({ name: 'hub-reinforcement', stopIntake: () => clearInterval(timer), close: () => clearInterval(timer) });
     }
 
     /**
@@ -108,6 +123,8 @@ class HubStrengtheningService {
      * Adds reinforcement request to batch queue for efficient processing.
      */
     public async reinforceConnection(fromId: string, toId: string) {
+        return this.operations.run('reinforceConnection', async () => {
+
         // Deduplicate: Don't add if already in queue
         const exists = this.reinforcementQueue.some(
             r => (r.fromId === fromId && r.toId === toId) ||
@@ -123,12 +140,16 @@ class HubStrengtheningService {
         if (this.reinforcementQueue.length >= this.CONFIG.BATCH_SIZE) {
             await this.flushReinforcementBatch();
         }
+    
+        });
     }
 
     /**
      * Flush the reinforcement queue (batch update)
      */
     private async flushReinforcementBatch() {
+        return this.operations.run('flushReinforcementBatch', async () => {
+
         if (this.isProcessingBatch || this.reinforcementQueue.length === 0) return;
 
         this.isProcessingBatch = true;
@@ -156,20 +177,28 @@ class HubStrengtheningService {
             }
 
         } catch (e) {
+            this.operations.recordFailure('hub-reinforcement-write', e);
             logger.error('Batch reinforcement failed:', e);
             // Re-queue failed items (with limit to prevent infinite loop)
             const now = Date.now();
             const retryable = batch.filter(b => now - b.timestamp < 60000);
+            // Preserve the historical retry deadline, but never lose the expired
+            // requests from the owner receipt just because they will not be retried.
+            this.abandonedReinforcement.push(...batch.filter(b => now - b.timestamp >= 60000));
             this.reinforcementQueue.unshift(...retryable);
         } finally {
             this.isProcessingBatch = false;
         }
+    
+        });
     }
 
     /**
      * SYNAPTIC PRUNING CYCLE (Optimized with batching)
      */
     public async runPruningCycle() {
+        return this.operations.run('runPruningCycle', async () => {
+
         logger.info('Running Synaptic Pruning...');
         const startTime = Date.now();
 
@@ -238,6 +267,8 @@ class HubStrengtheningService {
         } catch (e) {
             logger.error('Pruning cycle failed:', e);
         }
+    
+        });
     }
 
     /**
@@ -251,6 +282,8 @@ class HubStrengtheningService {
         weakConnectionsCount: number;
         queueSize: number;
     }> {
+        return this.operations.run('getNetworkHealth', async () => {
+
         try {
             // Combined query for efficiency
             const query = `
@@ -287,13 +320,19 @@ class HubStrengtheningService {
                 queueSize: this.reinforcementQueue.length
             };
         }
+    
+        });
     }
 
     /**
      * Force flush any pending reinforcements (for testing/shutdown)
      */
     public async forceFlush() {
+        return this.operations.run('forceFlush', async () => {
+
         await this.flushReinforcementBatch();
+    
+        });
     }
 }
 

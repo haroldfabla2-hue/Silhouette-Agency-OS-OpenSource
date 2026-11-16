@@ -1,3 +1,4 @@
+import { ResourceScope } from '../../server/runtime/resourceScope';
 /**
  * SELF-DEV CYCLE SERVICE — Wave 2, P0
  * ═══════════════════════════════════════════════════════════════
@@ -84,6 +85,10 @@ interface CycleStore { cycles: SelfDevCycle[]; }
 const ACTIVE_STATES: CycleState[] = ['PLANNED', 'ATTEMPTED', 'EXECUTED', 'VERIFIED', 'PR_SUBMITTED'];
 
 export class SelfDevCycleService {
+    private retainDurability<T>(name: string, operation: () => T): T {
+        try { return operation(); } catch (error) { this.operations.recordFailure(name, error); throw error; }
+    }
+
     private dir: string;
     private maxCyclesPerDay: number;
     private maxOps: number;
@@ -94,6 +99,7 @@ export class SelfDevCycleService {
     /** Unavailability is not an empty store. Keep unrelated service startup
      * alive, but block every cycle read/mutation requiring authoritative state. */
     private get store(): CycleStore {
+        this.start();
         if (this.continuityFailure) throw this.continuityFailure;
         if (!this.loadedStore) throw new Error('Self-dev cycle state unavailable');
         return this.loadedStore;
@@ -105,15 +111,31 @@ export class SelfDevCycleService {
         this.maxCyclesPerDay = Number(env.SELFDEV_MAX_CYCLES_PER_DAY ?? 5);
         this.maxOps = Number(env.SELFDEV_MAX_OPS ?? 20);
         this.maxPatchBytes = Number(env.SELFDEV_MAX_PATCH_BYTES ?? 65536);
-        fs.mkdirSync(this.requestsDir(), { recursive: true });
-        fs.mkdirSync(this.resultsDir(), { recursive: true });
-        try { this.loadedStore = this.load(); }
+    }
+    private readonly operations = new ResourceScope('selfdev-cycles');
+    public getLifecycleStatus() { return { ready: this.started && !this.continuityFailure, failures: this.operations.getFailures(), diagnostics: this.operations.getDiagnostics() }; }
+    private started = false;
+    private closing = false;
+    public start(): void {
+        this.operations.assertWorkAccepted();
+        if (this.started) { if (this.continuityFailure) throw this.continuityFailure; return; }
+        this.operations.assertAccepting();
+        this.started = true;
+        try {
+            this.retainDurability('cycleService.ts:storage', () => fs.mkdirSync(this.requestsDir(), { recursive: true }));
+            this.retainDurability('cycleService.ts:storage', () => fs.mkdirSync(this.resultsDir(), { recursive: true }));
+            this.loadedStore = this.load();
+        }
         catch (cause: unknown) {
             this.continuityFailure = Object.assign(new Error(
                 'SELFDEV_CONTINUITY_UNKNOWN: cycle state unavailable; original evidence preserved; operator recovery required', { cause }
             ), { statusCode: 503 });
+            this.operations.recordFailure('cycle-continuity-startup', this.continuityFailure);
+            throw this.continuityFailure;
         }
     }
+    public shutdown() { this.closing = true; return this.operations.close(); }
+
 
     // ---------- persistence ----------
 
@@ -129,14 +151,16 @@ export class SelfDevCycleService {
 
     private save() {
         const payload = JSON.stringify(this.store, null, 2);
-        atomicWriteFile(this.statePath(), payload);
-        if (fs.readFileSync(this.statePath(), 'utf8') !== payload) throw new Error('selfdev state readback mismatch');
+        this.retainDurability('cycleService.ts:storage', () => atomicWriteFile(this.statePath(), payload));
+        this.retainDurability('cycle-state-readback', () => { if (fs.readFileSync(this.statePath(), 'utf8') !== payload) throw new Error('selfdev state readback mismatch'); });
     }
 
     private journal(entry: Record<string, unknown>) {
         const line = JSON.stringify(entry) + '\n';
         const fd = fs.openSync(this.journalPath(), 'a');
-        fs.writeSync(fd, line); fs.fsyncSync(fd); fs.closeSync(fd);
+        try { fs.writeSync(fd, line); this.retainDurability('cycleService.ts:storage', () => fs.fsyncSync(fd)); }
+        catch (error) { this.operations.recordFailure('cycle-journal-durability', error); throw error; }
+        finally { fs.closeSync(fd); }
     }
 
     private transition(c: SelfDevCycle, to: CycleState, note?: string) {
@@ -188,6 +212,8 @@ export class SelfDevCycleService {
     // ---------- API ----------
 
     public list() {
+        this.operations.assertWorkAccepted();
+
         return this.store.cycles.map(c => ({ id: c.id, issue: c.issue, state: c.state, updatedAt: c.updatedAt, pr: c.pr }));
     }
 
@@ -195,10 +221,14 @@ export class SelfDevCycleService {
      *  optionally filtered by issue prefix (the scheduler marks its own
      *  issues so its daily budget never counts operator-driven cycles). */
     public countCreatedSince(sinceIso: string, issuePrefix?: string): number {
+        this.operations.assertWorkAccepted();
+
         return this.store.cycles.filter(c => !c.learningProposal && c.createdAt >= sinceIso && (!issuePrefix || c.issue.startsWith(issuePrefix))).length;
     }
 
     public create(input: { issue?: string; scope?: string[]; acceptance?: { kind?: string; target?: string } }, learningProposal?: SelfDevCycle['learningProposal']): SelfDevCycle {
+        this.operations.assertWorkAccepted();
+
         const issue = (input.issue ?? '').trim();
         if (!issue) throw Object.assign(new Error('issue is required'), { statusCode: 400 });
         const scope = input.scope ?? [];
@@ -234,6 +264,8 @@ export class SelfDevCycleService {
     /** A proposal links to an existing product domain, never a scope chosen by the LLM.
      * It does not run a planner, tests, publish a PR, or count as applied learning. */
     public createLearningProposal(input: { memoryId: string; source: string; incidentId: string; issue: string }): SelfDevCycle {
+        this.operations.assertWorkAccepted();
+
         const mapping = memoryRepairMapping(input.source);
         if (!mapping) throw new Error('learning source has no declared repair mapping');
         if (!input.memoryId.trim() || !input.incidentId.trim()) throw new Error('durable proposal and incident IDs required');
@@ -261,6 +293,8 @@ export class SelfDevCycleService {
     }
 
     public async attempt(id: string, ops?: CycleOp[]): Promise<SelfDevCycle> {
+        return this.operations.run('attempt', async () => {
+
         const linked = this.get(id);
         if (linked.learningProposal) {
             linked.lastError = 'BASELINE_ORACLE_REQUIRED: proposal pending; no planner called or patch accepted';
@@ -310,9 +344,13 @@ export class SelfDevCycleService {
         this.journal({ ts: new Date().toISOString(), cycleId: c.id, event: 'PATCH_PROPOSED', source, paths: finalOps.map(o => o.path) });
         this.transition(c, 'ATTEMPTED', `patch proposed by ${source} (${finalOps.length} ops)`);
         return c;
+    
+        });
     }
 
     private async planWithLLM(c: SelfDevCycle): Promise<CycleOp[]> {
+        return this.operations.run('planWithLLM', async () => {
+
         // Ground the planner in the CURRENT files (worktree is synced before
         // attempt). A planner that never sees the code hallucinates both the
         // old and the new version; that blindness plus a full-file-write
@@ -369,6 +407,8 @@ export class SelfDevCycleService {
             }
         }
         throw lastErr ?? new Error('planner failed without detail');
+    
+        });
     }
 
     /**
@@ -401,6 +441,8 @@ export class SelfDevCycleService {
     }
 
     public async execute(id: string): Promise<SelfDevCycle> {
+        return this.operations.run('execute', async () => {
+
         const c = this.get(id);
         if (c.state !== 'ATTEMPTED' || !c.patch) throw Object.assign(new Error(`execute requires ATTEMPTED (current: ${c.state})`), { statusCode: 409 });
 
@@ -551,9 +593,13 @@ export class SelfDevCycleService {
         delete c.lastError;
         this.transition(c, 'VERIFIED', 'acceptance passed twice (flake guard); CI on the PR remains the full gate');
         return c;
+    
+        });
     }
 
     public requestPR(id: string, approvedBy?: string): SelfDevCycle {
+        this.operations.assertWorkAccepted();
+
         const c = this.get(id);
         if (c.learningProposal) throw new Error('learning proposal requires independent baseline/oracle verification before PR approval');
         const by = (approvedBy ?? '').trim();
@@ -576,8 +622,8 @@ export class SelfDevCycleService {
             requestedBy: by, requestedAt: at
         };
         const tmp = path.join(this.requestsDir(), `.${c.id}.tmp`);
-        fs.writeFileSync(tmp, JSON.stringify(handoff, null, 2), 'utf-8');
-        fs.renameSync(tmp, path.join(this.requestsDir(), `${c.id}.json`));
+        this.retainDurability('cycleService.ts:storage', () => fs.writeFileSync(tmp, JSON.stringify(handoff, null, 2), 'utf-8'));
+        this.retainDurability('cycleService.ts:storage', () => fs.renameSync(tmp, path.join(this.requestsDir(), `${c.id}.json`)));
         this.journal({ ts: at, cycleId: c.id, event: 'PR_REQUESTED', approvedBy: by, branch });
         this.transition(c, 'PR_SUBMITTED', `approved by ${by}; handoff written for root publisher (push-via-root, decision (b))`);
         return c;
@@ -585,6 +631,8 @@ export class SelfDevCycleService {
 
     /** Opportunistically pick up the root publisher's result. */
     public refresh(id: string): SelfDevCycle {
+        this.operations.assertWorkAccepted();
+
         const c = this.get(id);
         if (c.state !== 'PR_SUBMITTED') return c;
         const rp = path.join(this.resultsDir(), `${c.id}.json`);
@@ -612,6 +660,8 @@ export class SelfDevCycleService {
      * from the agent's own claim (DGM reward-hacking lesson).
      */
     public async syncOutcome(id: string): Promise<SelfDevCycle> {
+        return this.operations.run('syncOutcome', async () => {
+
         const c = this.get(id);
         if (c.state !== 'PR_OPEN' || !c.pr?.number) {
             throw Object.assign(new Error(`sync-outcome requires PR_OPEN with a PR number (current: ${c.state})`), { statusCode: 409 });
@@ -633,6 +683,8 @@ export class SelfDevCycleService {
         this.journal({ ts: at, cycleId: c.id, event: 'OUTCOME_SYNCED', outcome: state, pr: c.pr.number });
         this.save();
         return c;
+    
+        });
     }
 
     /**
@@ -641,6 +693,8 @@ export class SelfDevCycleService {
      * the persisted store, nothing is ever deleted.
      */
     public metrics() {
+        this.operations.assertWorkAccepted();
+
         const cycles = this.store.cycles;
         const byState: Record<string, number> = {};
         const bySource: Record<string, number> = {};
@@ -672,6 +726,8 @@ export class SelfDevCycleService {
     }
 
     public abandon(id: string, reason?: string): SelfDevCycle {
+        this.operations.assertWorkAccepted();
+
         const c = this.get(id);
         if (!ACTIVE_STATES.includes(c.state) && c.state !== 'PROPOSAL_PENDING') throw Object.assign(new Error(`cannot abandon from ${c.state}`), { statusCode: 409 });
         this.transition(c, 'ABANDONED', reason ?? 'abandoned by operator');
@@ -679,6 +735,8 @@ export class SelfDevCycleService {
     }
 
     public journalEntries(cycleId: string, limit = 100): unknown[] {
+        this.operations.assertWorkAccepted();
+
         const p = this.journalPath();
         if (!fs.existsSync(p)) return [];
         return fs.readFileSync(p, 'utf8').trim().split('\n').filter(Boolean)

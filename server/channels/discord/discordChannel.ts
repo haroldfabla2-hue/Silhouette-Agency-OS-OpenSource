@@ -1,3 +1,4 @@
+import { ResourceScope, ScopeClosingError, type ScopeReport } from '../../runtime/resourceScope';
 // =============================================================================
 // DISCORD CHANNEL V2
 // Discord bot integration using discord.js.
@@ -10,19 +11,18 @@ import { IChannel, IncomingMessage, OutgoingMessage, ChannelStatus, MessageHandl
 // ═══════ UTILITIES ═══════
 
 class TypingIndicator {
-    private interval: NodeJS.Timeout | null = null;
-    start(channel: any) {
-        // Discord typing lasts ~10s, renew every 9s
-        if (channel && 'sendTyping' in channel) {
-            channel.sendTyping().catch(() => { });
-            this.interval = setInterval(() => {
-                channel.sendTyping().catch(() => { });
-            }, 9000);
+    private interval:NodeJS.Timeout|null=null;
+    private release?:()=>Promise<void>;
+    constructor(private readonly owner:ResourceScope){}
+    start(channel:any){
+        this.owner.assertAccepting();if(this.interval)return;
+        if(channel&&'sendTyping' in channel){
+            const send=()=>{if(this.owner.accepting)void this.owner.run('discord-typing',()=>channel.sendTyping()).catch(()=>{/* retained */});};
+            send();this.interval=setInterval(send,9000);const timer=this.interval;
+            this.release=this.owner.own({name:'discord-typing-timer',stopIntake:()=>clearInterval(timer),close:()=>clearInterval(timer)});
         }
     }
-    stop() {
-        if (this.interval) { clearInterval(this.interval); this.interval = null; }
-    }
+    stop(){if(this.interval){clearInterval(this.interval);this.interval=null;}if(this.release){void this.release();this.release=undefined;}}
 }
 
 const DISCORD_MAX_LEN = 1950; // Discord limit is 2000, leave margin
@@ -74,7 +74,22 @@ function stripInternalThoughts(text: string): string {
 // ═══════ DISCORD CHANNEL ═══════
 
 class DiscordChannel implements IChannel {
-    readonly name = 'discord';
+    readonly name='discord';
+    private closeReport?:ScopeReport;
+    private readonly operations=new ResourceScope('discord-channel');
+    private connecting?:Promise<void>;
+    private destroying?:Promise<void>;
+    public getLifecycleStatus(){return {closeReport:this.closeReport,diagnostics:this.operations.getDiagnostics(),failures:this.operations.getFailures()};}
+    private destroy(client:any):Promise<void>{if(!this.destroying)this.destroying=Promise.resolve().then(()=>client.destroy());return this.destroying;}
+    private pause(ms:number):Promise<void>{
+        this.operations.signal.throwIfAborted();
+        return new Promise<void>((resolve,reject)=>{
+            const done=()=>{clearTimeout(timer);this.operations.signal.removeEventListener('abort',abort);};
+            const abort=()=>{done();reject(this.operations.signal.reason??new ScopeClosingError('discord-channel'));};
+            const timer=setTimeout(()=>{done();resolve();},ms);
+            this.operations.signal.addEventListener('abort',abort,{once:true});if(this.operations.signal.aborted)abort();
+        });
+    }
 
     private handlers: MessageHandler[] = [];
     private connected = false;
@@ -93,11 +108,15 @@ class DiscordChannel implements IChannel {
         this.config = config;
     }
 
-    async connect(): Promise<void> {
+    connect():Promise<void>{if(!this.connecting)this.connecting=this.connectOnce();return this.connecting;}
+    private async connectOnce():Promise<void>{
+        return this.operations.run('connectOnce',async()=>{
+
         try {
             const { Client, GatewayIntentBits } = await import('discord.js');
 
-            this.client = new Client({
+            this.operations.assertAccepting();
+            const client = new Client({
                 intents: [
                     GatewayIntentBits.Guilds,
                     GatewayIntentBits.GuildMessages,
@@ -106,13 +125,30 @@ class DiscordChannel implements IChannel {
                 ],
             });
 
-            this.client.on('ready', () => {
+            this.client=client;
+            const listeners:Array<{event:string,handler:(...args:any[])=>void}>=[];
+            const on=(event:string,handler:(...args:any[])=>void)=>{
+                listeners.push({event,handler});client.on(event,handler);
+            };
+            this.operations.own({name:'discord-sdk',stopIntake:()=>{
+                this.connected=false;for(const l of listeners)if(l.event!=='error')client.off(l.event,l.handler);
+                // destroy initiates transport closure; do not wait for all SDK
+                // work here before the application drain can progress.
+                void this.destroy(client).catch(error=>this.operations.recordFailure('discord-destroy-initiation',error));
+            },close:async()=>{
+                await this.destroy(client);for(const l of listeners)if(l.event==='error')client.off(l.event,l.handler);if(this.client===client)this.client=null;
+                return {state:'UNVERIFIED',detail:'Client.destroy awaited; active SDK REST/retry work and HTTP pool release not exposed by this receipt'};
+            }});
+            on('ready', () => {
+                if(!this.operations.accepting)return;
                 this.connected = true;
                 this.connectTime = Date.now();
                 console.log(`[Discord] ✅ Bot is online as ${this.client.user?.tag}`);
             });
 
-            this.client.on('messageCreate', async (msg: any) => {
+            on('messageCreate', (msg:any) => {
+                if(!this.operations.accepting)return;
+                void this.operations.run('discord-incoming',async()=>{
                 if (msg.author.bot) return;
 
                 // Access control
@@ -130,7 +166,7 @@ class DiscordChannel implements IChannel {
                 }
 
                 // Start continuous typing
-                const typing = new TypingIndicator();
+                const typing = new TypingIndicator(this.operations);
                 typing.start(msg.channel);
 
                 try {
@@ -167,10 +203,15 @@ class DiscordChannel implements IChannel {
                     this.lastMessageTime = Date.now();
                     for (const handler of this.handlers) {
                         try { await handler(incoming); } catch (err) {
+            this.operations.recordDiagnostic('connectOnce',err,'DEGRADED_FALLBACK','UNVERIFIED');
+
                             console.error('[Discord] Handler error:', err);
                         }
                     }
                 } catch (err: any) {
+            if(this.operations.signal.aborted)throw err;
+            this.operations.recordDiagnostic('connectOnce',err,'DEGRADED_FALLBACK','UNVERIFIED');
+
                     console.error(`[Discord] Processing failed:`, err.message);
                     try {
                         await msg.channel.send('❌ Error procesando tu mensaje.');
@@ -178,28 +219,39 @@ class DiscordChannel implements IChannel {
                 } finally {
                     typing.stop();
                 }
+                }).catch(()=>{/* retained */});
             });
 
-            this.client.on('error', (err: Error) => {
+            on('error', (err: Error) => {
+                this.operations.recordDiagnostic('discord-sdk-error',err,'UNCLASSIFIED','UNVERIFIED');
                 console.error('[Discord] Client error:', err.message);
             });
 
-            await this.client.login(this.config.botToken);
+            await client.login(this.config.botToken);
+            if(!this.operations.accepting)throw new ScopeClosingError('discord-channel');
 
         } catch (err: any) {
+            if(this.operations.signal.aborted)throw err;
+            this.operations.recordDiagnostic('connectOnce',err,'DEGRADED_FALLBACK','UNVERIFIED');
+
             if (err.code === 'MODULE_NOT_FOUND') {
                 console.warn('[Discord] ⚠️ discord.js not installed. Run: npm install discord.js');
             }
             throw err;
         }
+    
+        });
     }
 
-    async disconnect(): Promise<void> {
-        if (this.client) { await this.client.destroy(); this.client = null; }
-        this.connected = false;
+    beginShutdown():void {void this.operations.close().then(report=>{this.closeReport=report;}).catch(error=>this.operations.recordFailure('channel-shutdown-initiation',error));}
+    async disconnect():Promise<void>{
+        const report=await this.operations.close();this.closeReport=report;
+        if(report.state==='FAILED')throw new AggregateError(report.failures.map(f=>f.error),'Discord close failed');
     }
 
     async send(message: OutgoingMessage): Promise<string | null> {
+        return this.operations.run('send',async()=>{
+
         if (!this.client || !this.connected) return null;
 
         message.text = stripInternalThoughts(message.text || '');
@@ -212,7 +264,7 @@ class DiscordChannel implements IChannel {
             // Continuous typing while sending
             if (message.showTyping && 'sendTyping' in channel) {
                 await (channel as any).sendTyping();
-                await new Promise(resolve => setTimeout(resolve, 500));
+                await this.pause(500);
             }
 
             // Media attachments
@@ -223,6 +275,8 @@ class DiscordChannel implements IChannel {
                             await (channel as any).send({ files: [{ attachment: media.url, name: media.filename }] });
                         }
                     } catch (mediaErr: any) {
+            this.operations.recordDiagnostic('send',mediaErr,'DEGRADED_FALLBACK','UNVERIFIED');
+
                         console.error(`[Discord] Media send failed: ${mediaErr.message}`);
                     }
                 }
@@ -240,19 +294,27 @@ class DiscordChannel implements IChannel {
                     }
                     const sent = await (channel as any).send(options);
                     lastId = sent.id;
-                    if (chunks.length > 1) await new Promise(r => setTimeout(r, 300));
+                    if (chunks.length > 1) await this.pause(300);
                 }
                 return lastId;
             }
 
             return 'media-sent';
         } catch (err: any) {
+            if(this.operations.signal.aborted)throw err;
+            this.operations.recordDiagnostic('send',err,'DEGRADED_FALLBACK','UNVERIFIED');
+
             console.error('[Discord] Send error:', err.message);
             return null;
         }
+    
+        });
     }
 
-    onMessage(handler: MessageHandler): void { this.handlers.push(handler); }
+    onMessage(handler:MessageHandler):()=>void{
+        this.operations.assertAccepting();this.handlers.push(handler);
+        return ()=>{const i=this.handlers.indexOf(handler);if(i>=0)this.handlers.splice(i,1);};
+    }
 
     getStatus(): ChannelStatus {
         return {

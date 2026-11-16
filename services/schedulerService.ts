@@ -1,3 +1,4 @@
+import { ResourceScope } from '../server/runtime/resourceScope';
 /**
  * SCHEDULER SERVICE
  * 
@@ -43,32 +44,43 @@ export class SchedulerService {
     private tasks: Map<string, ScheduledTask> = new Map();
     private checkInterval: NodeJS.Timeout | null = null;
     private initialCheck: NodeJS.Timeout | null = null;
-    private readonly storageReady: Promise<void>;
+    private readonly operations = new ResourceScope('autonomous-scheduler');
+    private storageTask?: Promise<void>;
+    private get storageReady(): Promise<void> { return this.initialize(); }
+    public initialize(): Promise<void> {
+        if (!this.storageTask) this.storageTask = this.operations.run('scheduler-storage-recovery', () => this.loadTasksFromStorage());
+        return this.storageTask;
+    }
+    public getLifecycleDiagnostics() { return this.operations.getDiagnostics(); }
+    public getLifecycleFailures() { return this.operations.getFailures(); }
+    public shutdown() { this.stop(); return this.operations.close(); }
     private checking = false;
     private readonly CHECK_INTERVAL_MS = 60000; // Check every minute
 
-    constructor() {
-        this.storageReady = this.loadTasksFromStorage();
-    }
+    constructor() {}
 
     /**
      * Start the scheduler daemon
      */
     public start(): boolean {
+        this.operations.assertAccepting();
         if (!this.executionAllowed()) { this.stop(); return false; }
         if (this.checkInterval) return true;
 
         console.log('[SCHEDULER] ⏰ Autonomous Scheduler Started');
 
         this.checkInterval = setInterval(() => {
-            this.checkAndExecuteDueTasks();
+            void this.operations.run('scheduler-tick', () => this.checkAndExecuteDueTasks()).catch(() => undefined);
         }, this.CHECK_INTERVAL_MS);
 
         // Initial check on startup
         this.initialCheck = setTimeout(() => {
             this.initialCheck = null;
-            void this.checkAndExecuteDueTasks();
+            void this.operations.run('scheduler-initial-check', () => this.checkAndExecuteDueTasks()).catch(() => undefined);
         }, 5000);
+        const interval = this.checkInterval;
+        const initial = this.initialCheck;
+        this.operations.own({ name: 'scheduler-cadence', stopIntake: () => { clearInterval(interval); if (initial) clearTimeout(initial); }, close: () => { clearInterval(interval); if (initial) clearTimeout(initial); } });
         return true;
     }
 
@@ -91,6 +103,7 @@ export class SchedulerService {
      * Schedule a new task
      */
     public scheduleTask(task: Omit<ScheduledTask, 'id' | 'nextRun'>): string {
+        this.operations.assertWorkAccepted();
         const id = crypto.randomUUID();
         const nextRun = this.calculateNextRun(task);
 
@@ -101,7 +114,7 @@ export class SchedulerService {
         };
 
         this.tasks.set(id, fullTask);
-        this.persistTasks();
+        void this.operations.run('scheduler-persist', () => this.persistTasks()).catch(() => undefined);
 
         console.log(`[SCHEDULER] ➕ Scheduled: "${task.name}" - Next run: ${new Date(nextRun).toLocaleString()}`);
 
@@ -113,6 +126,7 @@ export class SchedulerService {
      * Examples: "tomorrow at 9am", "in 2 hours", "every day at 9am"
      */
     public scheduleNaturalLanguage(description: string, action: ScheduledTask['action']): string | null {
+        this.operations.assertWorkAccepted();
         const now = Date.now();
         let executeAt: number | undefined;
         let recurrence: ScheduledTask['recurrence'] | undefined;
@@ -177,9 +191,10 @@ export class SchedulerService {
      * Cancel a scheduled task
      */
     public cancelTask(taskId: string): boolean {
+        this.operations.assertWorkAccepted();
         const deleted = this.tasks.delete(taskId);
         if (deleted) {
-            this.persistTasks();
+            void this.operations.run('scheduler-persist', () => this.persistTasks()).catch(() => undefined);
             console.log(`[SCHEDULER] ❌ Cancelled task: ${taskId}`);
         }
         return deleted;
@@ -217,7 +232,7 @@ export class SchedulerService {
     }
 
     private async checkAndExecuteDueTasks(): Promise<void> {
-        if (this.checking) return;
+        if (!this.operations.accepting || this.checking) return;
         if (!this.executionAllowed()) { this.stop(); return; }
         this.checking = true;
         try {
@@ -225,7 +240,7 @@ export class SchedulerService {
             const now = Date.now();
 
             for (const [id, task] of this.tasks) {
-                if (!this.executionAllowed()) break;
+                if (!this.operations.accepting || !this.executionAllowed()) break;
                 if (!task.enabled || !task.nextRun || !this.executionAllowed(task)) continue;
 
                 if (task.nextRun <= now) {
@@ -330,6 +345,7 @@ export class SchedulerService {
 
             console.log(`[SCHEDULER] 📦 Loaded ${this.tasks.size} tasks from storage`);
         } catch (e) {
+            this.operations.recordDiagnostic('scheduler-storage-unavailable', e, 'DEGRADED_FALLBACK', 'UNAVAILABLE');
             console.warn('[SCHEDULER] Storage unavailable, using in-memory only');
         }
     }
@@ -343,7 +359,8 @@ export class SchedulerService {
             const tasksArray = Array.from(this.tasks.values());
             sqliteService.setConfig('scheduled_tasks', tasksArray);
         } catch (e) {
-            // Non-critical - tasks still in memory
+            this.operations.recordFailure('scheduler-task-durability', e);
+            // Public compatibility keeps tasks in RAM, not a persistence success.
         }
     }
 }

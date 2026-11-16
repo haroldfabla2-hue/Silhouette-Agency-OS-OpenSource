@@ -15,10 +15,7 @@ import { telemetryAnalytics } from '../../../services/telemetryAnalytics.js';
 
 const router = Router();
 
-// Initialize telemetry on first route load
-telemetryAnalytics.initialize().catch(err => {
-    console.error('[Analytics Routes] Failed to initialize telemetry:', err);
-});
+// Telemetry initialization is an explicit application participant before listen.
 
 /**
  * POST /events — Ingest analytics events

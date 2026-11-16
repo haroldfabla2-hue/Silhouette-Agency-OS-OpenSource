@@ -89,8 +89,37 @@ export class CostEstimator {
         modelBreakdown: {}
     };
 
-    private constructor() {
-        this.loadPersistedMetrics();
+    private constructor() {}
+    private closing = false;
+    private startup?: Promise<void>;
+    private ready = false;
+    private shutdownTask?: Promise<{ workFailures: unknown[]; cleanupFailures: unknown[] }>;
+    private readonly active = new Set<Promise<void>>();
+    private readonly workFailures: unknown[] = [];
+    private readonly cleanupFailures: unknown[] = [];
+    public start(): Promise<void> {
+        if (this.closing) return Promise.reject(new Error('CostEstimator closed'));
+        if (!this.startup) this.startup = this.loadPersistedMetrics().then(() => { this.ready = true; });
+        return this.startup;
+    }
+    private persistTracked(): Promise<void> {
+        const task = this.persistMetrics();
+        this.active.add(task);
+        void task.then(() => this.active.delete(task), error => { this.active.delete(task); this.workFailures.push(error); });
+        return task;
+    }
+    public shutdown() {
+        if (this.shutdownTask) return this.shutdownTask;
+        this.closing = true;
+        if (this.saveTimeout) clearTimeout(this.saveTimeout);
+        this.saveTimeout = null;
+        this.shutdownTask = (async () => {
+            if (this.startup) { try { await this.startup; } catch (error) { this.workFailures.push(error); } }
+            while (this.active.size) await Promise.allSettled([...this.active]);
+            if (this.ready) { try { await this.persistMetrics(); } catch (error) { this.cleanupFailures.push(error); } }
+            return { workFailures: [...this.workFailures], cleanupFailures: [...this.cleanupFailures] };
+        })();
+        return this.shutdownTask;
     }
 
     public static getInstance(): CostEstimator {
@@ -102,6 +131,8 @@ export class CostEstimator {
 
     // Track LLM Transactions
     public trackTransaction(input: number, output: number, modelId: string = 'default') {
+        if (!this.ready) throw new Error('CostEstimator.start must finish before metrics mutation');
+        if (this.closing) throw new Error('CostEstimator closed');
         const pricing = this.PRICING_TABLE[modelId] || this.PRICING_TABLE['default'];
 
         const inputCost = pricing.input ? (input / 1000000) * pricing.input : 0;
@@ -113,6 +144,8 @@ export class CostEstimator {
 
     // Track Event Transactions (Images, Video Seconds, API Requests)
     public trackEvent(modelId: string, quantity: number = 1) {
+        if (!this.ready) throw new Error('CostEstimator.start must finish before metrics mutation');
+        if (this.closing) throw new Error('CostEstimator closed');
         const pricing = this.PRICING_TABLE[modelId] || { perImage: 0, perSecond: 0, perRequest: 0 };
         let total = 0;
         let images = 0;
@@ -159,16 +192,20 @@ export class CostEstimator {
     }
 
     private schedulePersistence() {
+        if (!this.ready) throw new Error('CostEstimator.start must finish before metrics mutation');
+        if (this.closing) throw new Error('CostEstimator closed');
         if (this.saveTimeout) return; // Already scheduled
 
         // Debounce: Wait 5 seconds before writing to disk to avoid IO thrashing
         this.saveTimeout = setTimeout(() => {
-            this.persistMetrics();
             this.saveTimeout = null;
+            if (!this.closing) void this.persistTracked().catch(() => undefined);
         }, 5000);
     }
 
     public reset() {
+        if (!this.ready) throw new Error('CostEstimator.start must finish before metrics mutation');
+        if (this.closing) throw new Error('CostEstimator closed');
         this.metrics = {
             totalTokens: 0,
             inputTokens: 0,
@@ -190,6 +227,7 @@ export class CostEstimator {
     }
 
     public hydrate(metrics: CostMetrics) {
+        if (this.closing) throw new Error('CostEstimator closed');
         this.metrics = { ...metrics };
     }
 
@@ -217,6 +255,7 @@ export class CostEstimator {
             }
         } catch (e) {
             console.error("[COST] Failed to load metrics:", e);
+            throw e;
         }
     }
 
@@ -232,6 +271,7 @@ export class CostEstimator {
             }
         } catch (e) {
             console.error("[COST] Failed to save metrics:", e);
+            throw e;
         }
     }
 }

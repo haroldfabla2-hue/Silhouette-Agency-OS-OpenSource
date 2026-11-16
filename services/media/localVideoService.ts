@@ -1,3 +1,4 @@
+import { ResourceScope } from '../../server/runtime/resourceScope';
 import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
@@ -5,6 +6,10 @@ import { VideoJob } from '../../types';
 import { VideoAdvancedParams } from './videoFactory';
 
 export class LocalVideoService {
+    private retainDurability<T>(name: string, operation: () => T): T {
+        try { return operation(); } catch (error) { this.operations.recordFailure(name, error); throw error; }
+    }
+
     private queuePath: string;
 
     constructor() {
@@ -12,17 +17,29 @@ export class LocalVideoService {
         // a verification run can never pollute the user's render queue.
         const queueDir = process.env.SILHOUETTE_QUEUE_DIR || 'data/queues';
         this.queuePath = path.resolve(process.cwd(), queueDir, 'video_render_queue.json');
-        this.ensureQueueFile();
         console.log("[LocalVideoService] Service Initialized (Async Queue with Advanced Params).");
     }
+
+    private readonly operations = new ResourceScope('localVideoService');
+    private started = false;
+    private closing = false;
+    public getLifecycleFailures() { return this.operations.getFailures(); }
+    public start(): void {
+        this.operations.assertWorkAccepted();
+        if (this.started) return;
+        this.operations.assertAccepting();
+        this.ensureQueueFile();
+        this.started = true;
+    }
+    public shutdown() { this.closing = true; return this.operations.close(); }
 
     private ensureQueueFile() {
         const dir = path.dirname(this.queuePath);
         if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
+            this.retainDurability('localVideoService.ts:storage', () => fs.mkdirSync(dir, { recursive: true }));
         }
         if (!fs.existsSync(this.queuePath)) {
-            fs.writeFileSync(this.queuePath, '[]');
+            this.retainDurability('localVideoService.ts:storage', () => fs.writeFileSync(this.queuePath, '[]'));
         }
     }
 
@@ -34,6 +51,10 @@ export class LocalVideoService {
         advancedParams?: VideoAdvancedParams,
         origin: 'USER' | 'TEST' = 'USER'
     ): Promise<VideoJob | null> {
+        return this.operations.run('queueVideoGeneration', async () => {
+
+        this.start();
+
         console.log(`[LocalVideoService] 📥 Queuing Job: "${prompt}" (Engine: ${engine}, Duration: ${duration}s)`);
 
         if (advancedParams?.camera) {
@@ -72,14 +93,17 @@ export class LocalVideoService {
             const queueData = fs.readFileSync(this.queuePath, 'utf-8');
             const queue: VideoJob[] = JSON.parse(queueData);
             queue.push(job);
-            fs.writeFileSync(this.queuePath, JSON.stringify(queue, null, 2));
+            this.retainDurability('localVideoService.ts:storage', () => fs.writeFileSync(this.queuePath, JSON.stringify(queue, null, 2)));
 
             console.log(`[LocalVideoService] ✅ Job Queued: ${job.id}`);
             return job;
         } catch (error) {
+            this.operations.recordFailure('video-queue-io', error);
             console.error("[LocalVideoService] Queue Write Failed:", error);
             return null;
         }
+    
+        });
     }
 
     /**
@@ -87,15 +111,18 @@ export class LocalVideoService {
      * the user's production queue can never be deleted through this path.
      */
     public removeTestJob(jobId: string): { removed: boolean; reason?: string } {
+        this.start();
+
         try {
             const queueData = fs.readFileSync(this.queuePath, 'utf-8');
             const queue: VideoJob[] = JSON.parse(queueData);
             const job = queue.find(j => j.id === jobId);
             if (!job) return { removed: false, reason: 'not_found' };
             if (job.origin !== 'TEST') return { removed: false, reason: 'not_test_origin' };
-            fs.writeFileSync(this.queuePath, JSON.stringify(queue.filter(j => j.id !== jobId), null, 2));
+            this.retainDurability('localVideoService.ts:storage', () => fs.writeFileSync(this.queuePath, JSON.stringify(queue.filter(j => j.id !== jobId), null, 2)));
             return { removed: true };
         } catch (error) {
+            this.operations.recordFailure('video-queue-io', error);
             console.error("[LocalVideoService] Test-job removal failed:", error);
             return { removed: false, reason: 'io_error' };
         }
@@ -110,10 +137,13 @@ export class LocalVideoService {
      * explicit ids. Returns the backup dir as evidence.
      */
     public quarantineJobs(criteria: { olderThan?: string; ids?: string[] }): { quarantined: number; backupDir: string } {
+        this.start();
+
         let queue: VideoJob[] = [];
         try {
             queue = JSON.parse(fs.readFileSync(this.queuePath, 'utf-8'));
         } catch (e) {
+            this.operations.recordFailure('video-queue-read', e);
             console.error("[LocalVideoService] Failed to read queue for quarantine:", e);
             return { quarantined: 0, backupDir: '' };
         }
@@ -130,28 +160,31 @@ export class LocalVideoService {
         const ts = new Date().toISOString().replace(/[:.]/g, '-');
         const quarantineBase = process.env.SILHOUETTE_QUARANTINE_DIR || 'data/quarantine';
         const backupDir = path.resolve(process.cwd(), quarantineBase, `media-queue-${ts}`);
-        fs.mkdirSync(backupDir, { recursive: true });
-        fs.writeFileSync(path.join(backupDir, 'video_render_queue.backup.json'), JSON.stringify(queue, null, 2));
-        fs.writeFileSync(path.join(backupDir, 'MANIFEST.json'), JSON.stringify({
+        this.retainDurability('localVideoService.ts:storage', () => fs.mkdirSync(backupDir, { recursive: true }));
+        this.retainDurability('localVideoService.ts:storage', () => fs.writeFileSync(path.join(backupDir, 'video_render_queue.backup.json'), JSON.stringify(queue, null, 2)));
+        this.retainDurability('localVideoService.ts:storage', () => fs.writeFileSync(path.join(backupDir, 'MANIFEST.json'), JSON.stringify({
             quarantinedAt: new Date().toISOString(),
             criteria,
             quarantinedIds: victims.map(v => v.id),
             totalJobsBefore: queue.length,
-        }, null, 2));
+        }, null, 2)));
 
         const remaining = queue.filter(j => !matches(j));
-        fs.writeFileSync(this.queuePath, JSON.stringify(remaining, null, 2));
+        this.retainDurability('localVideoService.ts:storage', () => fs.writeFileSync(this.queuePath, JSON.stringify(remaining, null, 2)));
         console.log(`[LocalVideoService] Quarantined ${victims.length} jobs -> ${backupDir}`);
         return { quarantined: victims.length, backupDir };
     }
 
     public getQueueStatus(): VideoJob[] {
+        this.start();
+
         try {
             if (fs.existsSync(this.queuePath)) {
                 const data = fs.readFileSync(this.queuePath, 'utf-8');
                 return JSON.parse(data);
             }
         } catch (e) {
+            this.operations.recordFailure('video-queue-read', e);
             console.error("[LocalVideoService] Failed to read queue:", e);
         }
         return [];

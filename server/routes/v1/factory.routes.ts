@@ -1,3 +1,4 @@
+import { ownedHttpHandler } from '../../runtime/ownedHttpIngress';
 /**
  * FACTORY ROUTES V2.0
  * ═══════════════════════════════════════════════════════════════
@@ -33,7 +34,7 @@ const router = Router();
  * GET /v1/factory/stream
  * SSE endpoint for real-time factory and system events
  */
-router.get('/stream', (req, res) => factoryController.streamEvents(req, res));
+router.get('/stream', ownedHttpHandler('factory:GET:/stream',(req, res) => factoryController.streamEvents(req, res)));
 
 // ==================== PROJECT MANAGEMENT ====================
 
@@ -41,19 +42,19 @@ router.get('/stream', (req, res) => factoryController.streamEvents(req, res));
  * POST /v1/factory/spawn
  * Spawn a new Genesis project
  */
-router.post('/spawn', (req, res) => factoryController.legacySpawnProject(req, res));
+router.post('/spawn', ownedHttpHandler('factory:POST:/spawn',(req, res) => factoryController.legacySpawnProject(req, res)));
 
 /**
  * GET /v1/factory/list
  * List all Genesis projects
  */
-router.get('/list', (req, res) => factoryController.listProjects(req, res));
+router.get('/list', ownedHttpHandler('factory:GET:/list',(req, res) => factoryController.listProjects(req, res)));
 
 /**
  * GET /v1/factory/project/:id
  * Get details of a specific project
  */
-router.get('/project/:id', async (req: Request, res: Response) => {
+router.get('/project/:id', ownedHttpHandler('factory:GET:/project/:id',async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
         const { sqliteService } = await import('../../../services/sqliteService');
@@ -70,13 +71,13 @@ router.get('/project/:id', async (req: Request, res: Response) => {
         console.error('[FACTORY] Error getting project:', error);
         res.status(500).json({ error: 'Failed to get project', details: error.message });
     }
-});
+}));
 
 /**
  * DELETE /v1/factory/project/:id
  * Delete a Genesis project
  */
-router.delete('/project/:id', async (req: Request, res: Response) => {
+router.delete('/project/:id', ownedHttpHandler('factory:DELETE:/project/:id',async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
         const { sqliteService } = await import('../../../services/sqliteService');
@@ -100,7 +101,7 @@ router.delete('/project/:id', async (req: Request, res: Response) => {
         console.error('[FACTORY] Error deleting project:', error);
         res.status(500).json({ error: 'Failed to delete project', details: error.message });
     }
-});
+}));
 
 // ==================== CONFIGURATION ====================
 
@@ -108,13 +109,13 @@ router.delete('/project/:id', async (req: Request, res: Response) => {
  * GET /v1/factory/config
  * Get factory configuration
  */
-router.get('/config', (req, res) => factoryController.getConfig(req, res));
+router.get('/config', ownedHttpHandler('factory:GET:/config',(req, res) => factoryController.getConfig(req, res)));
 
 /**
  * POST /v1/factory/config
  * Update factory configuration
  */
-router.post('/config', (req, res) => factoryController.updateConfig(req, res));
+router.post('/config', ownedHttpHandler('factory:POST:/config',(req, res) => factoryController.updateConfig(req, res)));
 
 // ==================== AGENT CREATION ====================
 
@@ -122,7 +123,7 @@ router.post('/config', (req, res) => factoryController.updateConfig(req, res));
  * POST /v1/factory/agent
  * Create a new agent dynamically
  */
-router.post('/agent', async (req: Request, res: Response) => {
+router.post('/agent', ownedHttpHandler('factory:POST:/agent',async (req: Request, res: Response) => {
     try {
         const { agentFactory } = await import('../../../services/factory/AgentFactory');
         const {
@@ -161,13 +162,13 @@ router.post('/agent', async (req: Request, res: Response) => {
         console.error('[FACTORY] Error creating agent:', error);
         res.status(500).json({ error: 'Failed to create agent', details: error.message });
     }
-});
+}));
 
 /**
  * GET /v1/factory/agents
  * List all agent templates/definitions
  */
-router.get('/agents', async (_req: Request, res: Response) => {
+router.get('/agents', ownedHttpHandler('factory:GET:/agents',async (_req: Request, res: Response) => {
     try {
         const { INITIAL_AGENTS } = await import('../../../constants');
 
@@ -189,13 +190,13 @@ router.get('/agents', async (_req: Request, res: Response) => {
         console.error('[FACTORY] Error listing agent templates:', error);
         res.status(500).json({ error: 'Failed to list agent templates', details: error.message });
     }
-});
+}));
 
 /**
  * POST /v1/factory/agent/:id/clone
  * Clone an existing agent
  */
-router.post('/agent/:id/clone', async (req: Request, res: Response) => {
+router.post('/agent/:id/clone', ownedHttpHandler('factory:POST:/agent/:id/clone',async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
         const { newName } = req.body;
@@ -231,13 +232,13 @@ router.post('/agent/:id/clone', async (req: Request, res: Response) => {
         console.error('[FACTORY] Error cloning agent:', error);
         res.status(500).json({ error: 'Failed to clone agent', details: error.message });
     }
-});
+}));
 
 /**
  * DELETE /v1/factory/agent/:id
  * Delete/decommission an agent
  */
-router.delete('/agent/:id', async (req: Request, res: Response) => {
+router.delete('/agent/:id', ownedHttpHandler('factory:DELETE:/agent/:id',async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
         const { orchestrator } = await import('../../../services/orchestrator');
@@ -260,7 +261,7 @@ router.delete('/agent/:id', async (req: Request, res: Response) => {
         console.error('[FACTORY] Error dehydrating agent:', error);
         res.status(500).json({ error: 'Failed to dehydrate agent', details: error.message });
     }
-});
+}));
 
 // ==================== TEMPLATES ====================
 
@@ -268,7 +269,7 @@ router.delete('/agent/:id', async (req: Request, res: Response) => {
  * GET /v1/factory/templates
  * Get available project templates
  */
-router.get('/templates', async (_req: Request, res: Response) => {
+router.get('/templates', ownedHttpHandler('factory:GET:/templates',async (_req: Request, res: Response) => {
     try {
         const templates = [
             {
@@ -312,13 +313,13 @@ router.get('/templates', async (_req: Request, res: Response) => {
         console.error('[FACTORY] Error getting templates:', error);
         res.status(500).json({ error: 'Failed to get templates', details: error.message });
     }
-});
+}));
 
 /**
  * GET /v1/factory/stats
  * Get factory statistics
  */
-router.get('/stats', async (_req: Request, res: Response) => {
+router.get('/stats', ownedHttpHandler('factory:GET:/stats',async (_req: Request, res: Response) => {
     try {
         const { sqliteService } = await import('../../../services/sqliteService');
         const { orchestrator } = await import('../../../services/orchestrator');
@@ -340,6 +341,6 @@ router.get('/stats', async (_req: Request, res: Response) => {
         console.error('[FACTORY] Error getting stats:', error);
         res.status(500).json({ error: 'Failed to get stats', details: error.message });
     }
-});
+}));
 
 export default router;

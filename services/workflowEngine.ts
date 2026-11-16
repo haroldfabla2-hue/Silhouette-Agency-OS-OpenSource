@@ -1,3 +1,5 @@
+import { ResourceScope } from '../server/runtime/resourceScope';
+import { subscribeScoped } from './runtime/scopedSubscription';
 import { WorkflowStage, AutonomousConfig, IntrospectionLayer, WorkflowMutation, SystemMode, SystemProtocol, MorphPayload } from "../types";
 import { orchestrator } from "./orchestrator";
 import { continuum } from "./continuumMemory";
@@ -15,6 +17,11 @@ import { remediation } from "./remediationService";
 import { architect } from "./architectService"; // [PHASE 8]
 
 class WorkflowEngine {
+    private readonly operations = new ResourceScope('WorkflowEngine');
+    private started = false;
+    public shutdown() { return this.operations.close(); }
+    public getLifecycleDiagnostics() { return this.operations.getDiagnostics(); }
+    public getLifecycleFailures() { return this.operations.getFailures(); }
   // ... (properties)
   private currentStage: WorkflowStage = WorkflowStage.IDLE;
   private config: AutonomousConfig;
@@ -47,9 +54,13 @@ class WorkflowEngine {
       safeCleanup: true
     };
 
+  }
+  public start(): void {
+    this.operations.assertAccepting();
+    if (this.started) return; this.started = true;
     // [INTEGRITY FIX] Listen for Distributed Agent Results
     // This allows sub-agents to trigger protocols (Create File, Run Test, etc.)
-    systemBus.subscribe(SystemProtocol.TASK_COMPLETION, async (event) => {
+    subscribeScoped(this.operations, systemBus, SystemProtocol.TASK_COMPLETION, async (event) => {
       if (event.payload.result) {
         console.log(`[WORKFLOW] 🔗 Integrating Result from ${event.payload.agentId}`);
         // Use the Robust Neural Feedback Loop
@@ -58,9 +69,10 @@ class WorkflowEngine {
     });
 
     // Handle standard research requests too
-    systemBus.subscribe(SystemProtocol.RESEARCH_REQUEST, async (event) => {
+    subscribeScoped(this.operations, systemBus, SystemProtocol.RESEARCH_REQUEST, async (event) => {
       // Logic for research protocols if needed
     });
+  
   }
 
   public updateConfig(newConfig: AutonomousConfig) {
@@ -84,6 +96,8 @@ class WorkflowEngine {
   }
 
   public async tick() {
+        return this.operations.run('tick', async () => {
+
     if (!this.config.enabled) {
       this.currentStage = WorkflowStage.IDLE;
       return;
@@ -206,9 +220,13 @@ class WorkflowEngine {
         this.transitionTo(WorkflowStage.IDLE);
         break;
     }
-  }
+  
+        });
+    }
 
   private async executeGenesisSpawn() {
+        return this.operations.run('executeGenesisSpawn', async () => {
+
     this.isProcessing = true;
     try {
       console.log("[WORKFLOW] Entering GENESIS phase. Spawning child application...");
@@ -268,9 +286,13 @@ class WorkflowEngine {
     } finally {
       this.isProcessing = false;
     }
-  }
+  
+        });
+    }
 
   private async monitorLongRunningContext() {
+        return this.operations.run('monitorLongRunningContext', async () => {
+
     const stats = await continuum.getStats();
     if (stats.total > 200 && !this.isProcessing) {
       this.isProcessing = true;
@@ -292,7 +314,9 @@ class WorkflowEngine {
         systemBus.emit(SystemProtocol.MEMORY_FLUSH, { message: `Archived Context` });
       } catch (e) { console.error(e); } finally { this.isProcessing = false; }
     }
-  }
+  
+        });
+    }
 
   private startNewCycle() {
     this.pipelineData = {};
@@ -368,6 +392,8 @@ class WorkflowEngine {
    * the LLM content audit.
    */
   private async executeMissionBuild(remediationContext?: string) {
+        return this.operations.run('executeMissionBuild', async () => {
+
     this.isProcessing = true;
     try {
       const baseMission = this.pipelineData.intent || this.pipelineData.input || '';
@@ -399,9 +425,13 @@ class WorkflowEngine {
     } finally {
       this.isProcessing = false;
     }
-  }
+  
+        });
+    }
 
   private async executeQARound() {
+        return this.operations.run('executeQARound', async () => {
+
     this.isProcessing = true;
     try {
       // [PR-1] Deterministic gate BEFORE any LLM audit (tripwire semantics):
@@ -456,9 +486,13 @@ class WorkflowEngine {
         this.transitionTo(WorkflowStage.REMEDIATION);
       }
     } catch (e) { this.recordFailure(); } finally { this.isProcessing = false; }
-  }
+  
+        });
+    }
 
   private async executeRemediationRound() {
+        return this.operations.run('executeRemediationRound', async () => {
+
     // [PR-1] A gate HALT is not fixed by rewriting prose: re-run the build
     // with the structured failure report as remediation context.
     if (this.pipelineData.gateReport?.verdict === 'HALT') {
@@ -494,9 +528,13 @@ class WorkflowEngine {
       await this.checkAndApplyProtocols(response.output);
       this.transitionTo(WorkflowStage.QA_AUDIT);
     } catch (e) { this.recordFailure(); } finally { this.isProcessing = false; }
-  }
+  
+        });
+    }
 
   private async executeStageTask(task: string, category: string, role: string, next: WorkflowStage) {
+        return this.operations.run('executeStageTask', async () => {
+
     this.isProcessing = true;
     try {
       const prev = this.currentStage === WorkflowStage.OPTIMIZATION ? this.pipelineData.draftResult : this.pipelineData.intent;
@@ -525,7 +563,9 @@ class WorkflowEngine {
       if (this.currentStage === WorkflowStage.EXECUTION) this.pipelineData.draftResult = response.output;
       this.transitionTo(next);
     } catch (e) { this.recordFailure(); } finally { this.isProcessing = false; }
-  }
+  
+        });
+    }
 
   /**
    * [NEURAL FEEDBACK LOOP]
@@ -536,6 +576,8 @@ class WorkflowEngine {
    * 4. Executes Protocols (Action)
    */
   private async handleDistributedResult(agentId: string, result: string) {
+        return this.operations.run('handleDistributedResult', async () => {
+
     // 1. QA Gate
     const qa = await qualityControl.evaluateText(result);
 
@@ -556,9 +598,13 @@ class WorkflowEngine {
 
     // 4. Protocol Execution (The Action)
     await this.checkAndApplyProtocols(result);
-  }
+  
+        });
+    }
 
   private async checkAndApplyProtocols(output: string) {
+        return this.operations.run('checkAndApplyProtocols', async () => {
+
     // [PHASE 8] Tool Protocol Detection
 
     // 1. RFC Request: [REQUEST_RFC: Title | Findings | Recommendation]
@@ -601,9 +647,13 @@ class WorkflowEngine {
       const { creativeDirector } = await import('./skills/creativeDirectorSkill');
       await creativeDirector.generateMotion(videoMatch[1].trim());
     }
-  }
+  
+        });
+    }
 
   private async executeMetaAnalysis() {
+        return this.operations.run('executeMetaAnalysis', async () => {
+
     this.isProcessing = true;
     try {
       const response = await generateAgentResponse(
@@ -622,7 +672,9 @@ class WorkflowEngine {
       this.tokenUsage += response.usage;
       this.transitionTo(WorkflowStage.ADAPTATION_QA);
     } catch (e) { this.transitionTo(WorkflowStage.IDLE); } finally { this.isProcessing = false; }
-  }
+  
+        });
+    }
 
   /**
    * [PR-1] Resume the latest interrupted mission from its checkpoint.
@@ -630,6 +682,8 @@ class WorkflowEngine {
    * stays IDLE and the foreign state is preserved for inspection.
    */
   private async tryResumeMission() {
+        return this.operations.run('tryResumeMission', async () => {
+
     try {
       const checkpoint = loadLatestMissionCheckpoint();
       if (!checkpoint) return;
@@ -649,13 +703,17 @@ class WorkflowEngine {
     } catch (e) {
       console.error('[WORKFLOW] Mission resume failed; staying IDLE.', e);
     }
-  }
+  
+        });
+    }
 
   private performArchival() {
     continuum.store("Cycle Done.", undefined, ['archival']);
   }
 
   private async analyzeIntentAndResearchNeeds(): Promise<{ needsResearch: boolean, query?: string, refinedIntent?: string, originalIntent: string }> {
+        return this.operations.run('analyzeIntentAndResearchNeeds', async () => {
+
     // Ask Gemini to classify the user's request
     // We assume the 'intent' is stored in pipelineData or we fetch the last user message from Continuum/Chat
     // For this simulation, we'll assume we have a way to get the latest input. 
@@ -705,7 +763,9 @@ class WorkflowEngine {
       // Fallback
       return { needsResearch: false, originalIntent: input };
     }
-  }
+  
+        });
+    }
 
   private checkLimits(): boolean {
     if (this.tokenUsage >= this.config.maxDailyTokens) {
