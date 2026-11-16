@@ -34,7 +34,7 @@ for q in(p,p.parent):
 PY
 [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
 test "$(git -C "$repo" rev-parse HEAD)" = "$expected"
-test "$(git -C "$repo" rev-parse HEAD^)" = 3c562e402f883717a90cb544afa299fe8d3628fc
+test "$(git -C "$repo" rev-parse HEAD^)" = 559afe6310666019f25b99effd461202bdd9b190
 # Fail before allocating, never resize a previous attempt or use an existing account/root.
 test ! -e "$root"
 ! id silhouette-acquire >/dev/null 2>&1
@@ -121,12 +121,12 @@ for name,session in spec['sessions'].items():
  overrides={r['path']:r for r in session['overrides']}
  for candidateRow in spec['files']:
   row=overrides.get(candidateRow['path'],candidateRow)
-  assert session['productCommit']=='MAIN_PLUS_SEVEN_CONTINUITY_BLOBS'
-  assert spec['mainCommit']=='1f0d967abf81b86e666d26eeb20f6dc97662a525'
+  assert session['productCommit']=='MAIN_6B49_PLUS_THREE_INGRESS_BLOBS_COMPILER_ONLY'
+  assert spec['mainCommit']=='6b49bc2a7fadcd87759cd0c1d534c832194b1572'
   commit=row['sourceCommit']
   if commit=='WORKFLOW_FIXTURE_EXACT':
-   assert row['path']in {'tests/automated/cycle-store-continuity.test.ts', 'services/selfdev/cycleStoreContinuity.ts', 'tests/automated/selfdev-cycle.test.ts', 'tests/real-process/cycle-continuity-child.ts', 'tests/automated/cycle-service-continuity-real.test.ts', 'server/routes/v1/selfdev.routes.ts', 'services/selfdev/cycleService.ts'}
-   assert row['fixturePath']=='tests/genuine-vitest-session/main-continuity-integration/'+row['path']
+   assert row['path']in {'server/mcp/mcpServer.ts', 'server/index.ts', 'server/app.ts'}
+   assert row['fixturePath']=='tests/genuine-vitest-session/main-mcp-ingress-typecheck/'+row['path']
    commit=sys.argv[3];sourcePath=row['fixturePath']
   else:
    assert commit==spec['mainCommit'];sourcePath=row['path']
@@ -145,6 +145,8 @@ for name,session in spec['sessions'].items():
  (dest/'node_modules').mkdir();(dest/'db').mkdir(exist_ok=True);(dest/'data').mkdir()
 assert hashlib.sha256((root/'sources/candidate/package-lock.json').read_bytes()).hexdigest()=='5545703d69f821bc68765948f91a91cd14ec782835dd7839f0099f0bebbf63f3'
 PY
+# Trusted source-only shape inspection. Never evaluates product code.
+python3 -I "$repo/tests/genuine-vitest-session/ingress-source-shape.py" source "$root/sources/candidate"
 # Trusted exact byte helper only, no installer/package/product code on host network.
 phase=transport
 python3 -I "$root/fixtures/direct.py" run transport "$auid" "$agid" 180 "$hostnet" "$hostpid" "$root/fixtures/toolchain/bin/node" "$root/fixtures/public-transport.cjs"
@@ -180,34 +182,21 @@ mkdir "$data" "$data/tmp" "$data/home" "$data/db" "$data/data"
 # Reviewed public migration fixtures only. They are disposable input, never a real DB.
 cp -a "$src/db/migrations" "$data/db/migrations"
 chown -R "$ruid:$rgid" "$data"
-for validation in typecheck continuity; do
- test "$((SECONDS-start))" -lt 800
- phase=$validation
- case "$validation" in
-  typecheck) args=("$src/node_modules/typescript/bin/tsc" --noEmit --incremental false --pretty false) ;;
-  continuity) args=("$src/node_modules/vitest/vitest.mjs" run tests/automated/cycle-store-continuity.test.ts tests/automated/cycle-service-continuity-real.test.ts tests/automated/selfdev-cycle.test.ts tests/automated/selfdev-preservation.test.ts) ;;
-  regressions) args=("$src/node_modules/vitest/vitest.mjs" run tests/automated/memory-transitions-p0.test.ts -t 'captures typed payload|owns Float32Array|rejects mutation of an admitted|keeps PENDING when destination|keeps VERIFIED when COMMITTED') ;;
-  mechanisms) args=("$src/node_modules/vitest/vitest.mjs" run tests/automated/product-learning-proposal-real.test.ts tests/automated/selfdev-preservation.test.ts tests/automated/independent-verifier-receipt-contract.test.ts tests/automated/learning-analysis-input.test.ts tests/automated/learning-status-copy.test.ts) ;;
- esac
- if test "$validation" != typecheck; then
-  args+=(--maxWorkers=1 --retry=0 --configLoader=runner --config="$src/offline-vitest.config.mjs" --no-cache --reporter=json --reporter=blob --outputFile.json="$data/$validation.report.json" --outputFile.blob="$data/$validation.blob.json")
- fi
- set +e
- python3 -I "$root/fixtures/direct.py" run candidate "$ruid" "$rgid" 85 "$hostnet" "$hostpid" "$root/fixtures/toolchain/bin/node" "${args[@]}"
- code=$?
- set -e
- mv "$root/private/candidate.child.json" "$root/private/$validation.child.json"
- # Root emits only bounded selected-report projection before any classifier/cleanup.
- if test "$validation" != typecheck; then
-  python3 -I "$repo/tests/genuine-vitest-session/classify.py" --failure-diagnostic "$validation" "$data/$validation.report.json" "$data/$validation.blob.json" "$root/private/$validation.child.json" "$code"
- fi
- python3 -I "$repo/tests/genuine-vitest-session/classify.py" "$validation" "$data/$validation.report.json" "$data/$validation.blob.json" "$root/private/$validation.child.json" "$code" > "$root/private/$validation.summary.json"
-done
+# Verify the actual acquired SDK identity before the sole compiler child.
+python3 -I "$repo/tests/genuine-vitest-session/ingress-source-shape.py" dependencies "$root/work/acquisition/node_modules" "$src/package-lock.json"
+test "$((SECONDS-start))" -lt 800
+phase=typecheck
+set +e
+python3 -I "$root/fixtures/direct.py" run candidate "$ruid" "$rgid" 85 "$hostnet" "$hostpid" "$root/fixtures/toolchain/bin/node" "$src/node_modules/typescript/bin/tsc" --noEmit --incremental false --pretty false
+code=$?
+set -e
+mv "$root/private/candidate.child.json" "$root/private/typecheck.child.json"
+python3 -I "$repo/tests/genuine-vitest-session/classify.py" typecheck "$data/typecheck.report.json" "$data/typecheck.blob.json" "$root/private/typecheck.child.json" "$code" > "$root/private/typecheck.summary.json"
 summary=$(python3 - "$root/private" <<'PYCODE'
 from pathlib import Path
 import sys,json
-p=Path(sys.argv[1]);rows=[json.loads((p/(n+'.summary.json')).read_text())for n in ['typecheck','continuity']]
-print(json.dumps({'scope':'ACTUAL_MAIN_SEVEN_PATH_CONTINUITY_TYPECHECK_AND_REAL_SERVICE_RESTARTS','sessions':rows,'usefulLearningAccepted':False,'fullProductAccepted':False}))
+p=Path(sys.argv[1]);rows=[json.loads((p/(n+'.summary.json')).read_text())for n in ['typecheck']]
+print(json.dumps({'scope':'ACTUAL_MAIN_6B49_THREE_INGRESS_BLOBS_COMPILER_ONLY_NOT_RUNTIME','sessions':rows,'usefulLearningAccepted':False,'fullProductAccepted':False}))
 PYCODE
 )
 cleanup

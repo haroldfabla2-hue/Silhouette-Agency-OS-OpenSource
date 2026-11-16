@@ -28,7 +28,7 @@ jobs:
           test "$PRIVATE" = false
           test "$RUNNER_KIND" = github-hosted
           test "$GITHUB_REPOSITORY" = haroldfabla2-hue/Silhouette-Agency-OS-OpenSource
-          test "$GITHUB_REF" = refs/heads/preparation/learning-provenance-80e2176-20261115
+          test "$GITHUB_REF" = refs/heads/validation/mcp-ingress-types-6b49-20261115
           test "$EXPECTED_HEAD" = "$GITHUB_SHA"
           [[ "$EXPECTED_HEAD" =~ ^[0-9a-f]{40}$ ]]
           # Read this job's actual controller start, not a later step's clock.
@@ -62,11 +62,11 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
-          test "$(git rev-parse HEAD^)" = 3c562e402f883717a90cb544afa299fe8d3628fc
+          test "$(git rev-parse HEAD^)" = 559afe6310666019f25b99effd461202bdd9b190
           test "$(git rev-list --parents -n 1 HEAD | wc -w)" -eq 2
           python3 - <<'PY'
           import subprocess
-          expected={'tests/genuine-vitest-session/session.sh', 'tests/genuine-vitest-session/main-continuity-integration/tests/real-process/cycle-continuity-child.ts', 'tests/genuine-vitest-session/classify.py', 'tests/genuine-vitest-session/main-continuity-integration/services/selfdev/cycleService.ts', 'tests/genuine-vitest-session/main-continuity-integration/tests/automated/selfdev-cycle.test.ts', 'tests/genuine-vitest-session/main-continuity-integration/server/routes/v1/selfdev.routes.ts', '.github/workflows/integrated-silhouette-ui.yml', 'tests/genuine-vitest-session/main-continuity-integration/tests/automated/cycle-service-continuity-real.test.ts', 'tests/genuine-vitest-session/SOURCE-SESSIONS.json', 'tests/genuine-vitest-session/main-continuity-integration/services/selfdev/cycleStoreContinuity.ts', 'tests/genuine-vitest-session/main-continuity-integration/tests/automated/cycle-store-continuity.test.ts'}
+          expected={'tests/genuine-vitest-session/main-mcp-ingress-typecheck/server/app.ts', 'tests/genuine-vitest-session/SOURCE-SESSIONS.json', 'tests/genuine-vitest-session/main-mcp-ingress-typecheck/server/index.ts', 'tests/genuine-vitest-session/main-mcp-ingress-typecheck/server/mcp/mcpServer.ts', 'tests/genuine-vitest-session/session.sh', '.github/workflows/integrated-silhouette-ui.yml', 'tests/genuine-vitest-session/ingress-source-shape.py'}
           actual=set(subprocess.check_output(['git','diff','--name-only','HEAD^','HEAD'],text=True).splitlines())
           assert actual==expected,'EXACT_REVIEWED_LEARNING_VALIDATION_INTEGRATION_REQUIRED'
           PY

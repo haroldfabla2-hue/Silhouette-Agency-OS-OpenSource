@@ -1,3426 +1,3422 @@
 {
-  "selection": "EXACT_ACTUAL_MAIN_PLUS_SEVEN_CONTINUITY_BLOBS",
-  "mainCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+  "selection": "EXACT_MAIN_6B49_PLUS_THREE_INGRESS_SOURCE_PROPOSALS_COMPILER_ONLY",
+  "mainCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
   "files": [
     {
       "path": "App.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 17648,
       "sha256": "1adf3f416c9d7f32687eacabef0987c9a85159eb43fabd5d625d6521f711ba6a"
     },
     {
       "path": "components/AgentOrchestrator.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 26267,
       "sha256": "89ce4cc32a7c881e20f151b746fb66fd764d1f3ef03978df3a3b80dd30947c37"
     },
     {
       "path": "components/AssetManagerTab.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 18349,
       "sha256": "aed9127b5ceccc8703b15c0237262c7170c2fd6ef2ea93c12f7e2e29ec7f2c18"
     },
     {
       "path": "components/AssetPreviewModal.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 17200,
       "sha256": "d47023ee342e77da24805b77e63d93331abcd7288a56e8265b42131fec971456"
     },
     {
       "path": "components/ChatWidget.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 44292,
       "sha256": "949fce98243b728ea2b5da26f4aa574412f937051c9dcf94e37d022f46caa4f6"
     },
     {
       "path": "components/CommandPalette.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 7779,
       "sha256": "d9a134e3019d0ee0bd4e710265950034d4f2aa96b7bf3ea6e3e59ba1ac90ec5e"
     },
     {
       "path": "components/ConfirmationModal.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 10664,
       "sha256": "af92f9b0062abd9e80f68902a2fcdbfc749ec05f0bdba46902276260b2a6f549"
     },
     {
       "path": "components/ContextBudgetPanel.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 13838,
       "sha256": "90bf72933a57ccdb9b33b8a614fee821ecb6445dffb4ff498e4603058ac8c771"
     },
     {
       "path": "components/ContinuumMemoryExplorer.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 19998,
       "sha256": "92e6c744851e6ef3b963d7189a366cbc349684ab12a23d8a8a7b3ab251ad1905"
     },
     {
       "path": "components/CostSimulator.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 11904,
       "sha256": "d8ea4a08f003924fa11e4c17675f5b6d4fc8f82fbdd5569f15f3d16d10207d4a"
     },
     {
       "path": "components/Dashboard.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 18126,
       "sha256": "398321fbdaebf53bba1bbb3062625dc87f196676d7bed29fffdf6824d2e126e3"
     },
     {
       "path": "components/DiscoveriesFeed.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 29016,
       "sha256": "8d6e0b52dc86de024848837cf51adde945b8ff48c331c5883ac6a96d654ec7e9"
     },
     {
       "path": "components/DreamExplorer.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3752,
       "sha256": "fb8d76b88ddfd88030d8111e411788fb1e1f65066a1e672e672c680ca35d345a"
     },
     {
       "path": "components/DrivePanel.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 9905,
       "sha256": "4c4353930462d01deae6e7e31c177420aa6fb660ec415035ab144144e6819cd7"
     },
     {
       "path": "components/DynamicWorkspace.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 47280,
       "sha256": "9a05fae109e895a33cbe00dfb28eb8a4c89c7579484e92ccc07befd4a663fc4b"
     },
     {
       "path": "components/EmailPanel.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 8921,
       "sha256": "5ae6eb64eb2ab2aa799fe7e0e710b975bdc5145aaac8901e4c8568ee61daf068"
     },
     {
       "path": "components/EvolutionLab.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 8970,
       "sha256": "65f7b4e48994933b24e34787427032f13fb0bca42aed9f3bef7ed11a200dd835"
     },
     {
       "path": "components/GenesisCore.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4981,
       "sha256": "60a7448fd508618af95e336feea4271efc2888656cbf3ea65c72eb3026070fbc"
     },
     {
       "path": "components/HealthMonitor.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 6382,
       "sha256": "45bc725647c355de3987dbd885cec0271b83c2323e721c1bb1001f7098f07685"
     },
     {
       "path": "components/InstallationWizard.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 9674,
       "sha256": "a0fe0cf01464a0d200868adcc84223dfaff00062ff24276c977d543665233e82"
     },
     {
       "path": "components/IntrospectionHub.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 36833,
       "sha256": "20c14fd42138fc71050295e145fc976bbdfaa231040e36d9eb6acaeab0661069"
     },
     {
       "path": "components/KnowledgeGraph.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 29209,
       "sha256": "167298943ba64b4f4a777491c36af8c44c8ad903abea49230e536e81525748e8"
     },
     {
       "path": "components/LocalLogin.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 7807,
       "sha256": "1e1099d0f8555db4a02494c285505e23ed65ec8192bb13a1f3242e75300c90e5"
     },
     {
       "path": "components/LoginGate.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 7733,
       "sha256": "921c97f9e7675b13a00556efb8be84d801e2882df03d0d1378b0566341bc6b13"
     },
     {
       "path": "components/MediaStudio.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 60381,
       "sha256": "e5c1c6dcc088264a4dc7de2eee8227a300871c311a51bde3eb8033d6b0c4f510"
     },
     {
       "path": "components/MonacoBridge.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3242,
       "sha256": "cb023da24d8552abe0ffbfa31fa92ed0a154b9393c4bdfe796c8f04150eee46b"
     },
     {
       "path": "components/NeuralLearningDisplay.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 7479,
       "sha256": "b641f361eb1be58e7062272459f9e44c868e9879042286c2a2093044b23a2145"
     },
     {
       "path": "components/NeuroPlasticityVis.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 10022,
       "sha256": "272cbce3e02ef9ed9a5985957d34dd5ec5e3a222be933344381603b5f3c7ba24"
     },
     {
       "path": "components/NotificationCenter.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 11001,
       "sha256": "6cf4b8f6e46fdef2c6a0315d5204f3282cdbb8fd23b07bda3285fd98b68dfd14"
     },
     {
       "path": "components/OnboardingTour.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 8405,
       "sha256": "75ecb2d8d46376f9d4eae8a099970de8b10e3f112953538996d4097b1097ceb8"
     },
     {
       "path": "components/PRNotification.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 7147,
       "sha256": "11af73c5e6ae68142c5c4e66e91049154cfd50ecea06c7ee2a771632a7273808"
     },
     {
       "path": "components/PRToolbar.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 9734,
       "sha256": "256a493336f8fb9bd1a8d8d33a5655125ea83fae209a93effbdec413ad12cb9c"
     },
     {
       "path": "components/PowerSelector.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3061,
       "sha256": "7d0e0a370f9b3d6bdb403ea4023112dc9ae7e50b1d312617400971bef16a900c"
     },
     {
       "path": "components/PresentationViewer.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 18172,
       "sha256": "c86005b67a4611514da996d3afcbf3e2733babc66e3e29d151f92d23ae09a403"
     },
     {
       "path": "components/ProtocolOverlay.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5884,
       "sha256": "bc0db02ec764de194250cec228b378e613a3b6406e5fee017c217b72d692a9b6"
     },
     {
       "path": "components/Settings.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 99211,
       "sha256": "8f28704ba980bb8810a243cd4918124ee46faf359bef351655342fbfe7982770"
     },
     {
       "path": "components/SetupWizard.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 22833,
       "sha256": "421305af2373ee4d32244c0d131b2de6d98cac82d278d1eff9e452b55e4997e6"
     },
     {
       "path": "components/Sidebar.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4940,
       "sha256": "8c5b73b8752947616933d1565814303648460f64a17b7be85f2906532e240c59"
     },
     {
       "path": "components/SquadEditor.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5198,
       "sha256": "a9f0bcee0b474f42bea1ddab5bfbc304cd13abf7ba8bc298949c3cf819c60ccc"
     },
     {
       "path": "components/SystemControl.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 37663,
       "sha256": "1f25dc861fc7ae91bf090633e3614626c8d9e47dffc4cae4567781ea9d187e2f"
     },
     {
       "path": "components/Terminal/InteractiveTerminal.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3449,
       "sha256": "502f24986c53214117d373c03efda7a9f7d7d5fbe6f210d405fb5280de7d70da"
     },
     {
       "path": "components/TerminalLog.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4783,
       "sha256": "d817f21533c0f85eba47154a568fa95bf93aa9830a95635abeb6e1fd484ade76"
     },
     {
       "path": "components/TerminalView.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1680,
       "sha256": "26640acae03f398f406bdc7b314c1a24043e8a8080b146b5379755e789241e38"
     },
     {
       "path": "components/ThemeToggle.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1382,
       "sha256": "47bce9796b97860ad89d8db30a3fc7d08bd2a807bca8bc2394d8a22d0066e896"
     },
     {
       "path": "components/TopologyVisualizer.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4358,
       "sha256": "89ba0547029b00f5c8f11a605669f650739c602e5af8afe6b235e66b286d489c"
     },
     {
       "path": "components/TrainingGraph.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 24671,
       "sha256": "fb305fb2ddaab9ee7c098dd1bbd48ec28237273b165a2ee42ca2ff0418e00a32"
     },
     {
       "path": "components/VisualCortex.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5953,
       "sha256": "28a6aa4b66bef085638ad56a7d7887c8cb68b328e77e35f89436b880897c11f3"
     },
     {
       "path": "components/canvas/NexusCanvas.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 17383,
       "sha256": "8e4df759151aa37601a530780c15546cd178935ebacdd5369f870e803828d9be"
     },
     {
       "path": "components/canvas/api/canvasApi.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3474,
       "sha256": "8787932bc0c539f898cfae439f02aa0853663d78c03df74a93790ce16c7908e5"
     },
     {
       "path": "components/canvas/api/index.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 358,
       "sha256": "2282a699f851ebefaa187237335f8047b5a1fbe6f8e844548ee97577f119824a"
     },
     {
       "path": "components/canvas/engine/CanvasEngine.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 19653,
       "sha256": "1d70a684ba376e4c0455f0f18d0612ddab47461709d568af38d0b1df0be365ab"
     },
     {
       "path": "components/canvas/hooks/driveSyncResult.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1158,
       "sha256": "bc01fe83b2a4486e7e91e8bf989f50434466584e82b4ae70b46cf37d0de5baf0"
     },
     {
       "path": "components/canvas/hooks/useAutosave.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2509,
       "sha256": "f5b324ae47488b8493e5967aaaaf2247eb132ab8e644575ed717764951322d43"
     },
     {
       "path": "components/canvas/hooks/useDriveSync.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 6110,
       "sha256": "94f255fe355b7abb5b1a7979a41972e4d089f76e07d42420dab309ebe9e0a16c"
     },
     {
       "path": "components/canvas/hooks/useResourceAwareCanvas.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3406,
       "sha256": "caea80188438f4ce102bfeda98f5a81432c0b23f81bad02ee5fd08c9d271bfc4"
     },
     {
       "path": "components/canvas/index.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1547,
       "sha256": "93927007361f891ddbee9b3ffb75575eef1607e4975d3cf9b760c4fa2d1c7fb6"
     },
     {
       "path": "components/canvas/panels/AIToolsPanel.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 11139,
       "sha256": "746df8c46ff1715618b5816a9495760f7ad8695609ffd14b7642fc7903487fc1"
     },
     {
       "path": "components/canvas/panels/AdjustmentsPanel.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4244,
       "sha256": "ee439f160de8514b2a103f7fe5f50968179fc542149e86c3a599cea5742620cc"
     },
     {
       "path": "components/canvas/panels/AssetBrowserPanel.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 9738,
       "sha256": "f8db8c27f769c2563595a505b1609ca18d42f3b684e8bf26ea37c0cb2104d75d"
     },
     {
       "path": "components/canvas/panels/FontSelector.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 9789,
       "sha256": "652eca675b4a4212b99c49cecedc1e2214ca83a37da4812624c7673dcaa812e4"
     },
     {
       "path": "components/canvas/panels/GenerativeFillPanel.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 6008,
       "sha256": "ce560c6402ff5eb04dbd175c291badbfdc85c0e07579ac0216a99c0f7c51e1b9"
     },
     {
       "path": "components/canvas/panels/LayerPanel.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 16109,
       "sha256": "afaf2de6a5411e0824de6f3881d1d9ebba5bf47655d674fb08258eae54dcf5f1"
     },
     {
       "path": "components/canvas/panels/LayerStylesPanel.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5922,
       "sha256": "b992ff5afc98a7204bff0f37f463eb003bbcf56034aca5d94224bc0333d05733"
     },
     {
       "path": "components/canvas/panels/TextPropertiesPanel.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 6314,
       "sha256": "4296986b80a4a97a9edbdb521995658c837f017ee07262786abc8070fec49bfd"
     },
     {
       "path": "components/canvas/panels/ToolContextBar.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 7126,
       "sha256": "8b857506487aacaed1f38c4c7a9f0559d029590a8b470b4477a92bff2f5f6155"
     },
     {
       "path": "components/canvas/panels/ToolbarPanel.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 11110,
       "sha256": "9e46cedaf396dd255198abe5f12834da74a7dd1f90ade7f8da91d629808d6b3c"
     },
     {
       "path": "components/canvas/store/useCanvasAgentLink.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1183,
       "sha256": "2a69858d5b7e2dd08c4a1de2b4afb3102052df9007b32c95f6877789ece6c110"
     },
     {
       "path": "components/canvas/store/useCanvasStore.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 18319,
       "sha256": "20a57acc4cd9e63545f0f0e79d207967c5af8aca80dcaa90f88f8a69ff351d66"
     },
     {
       "path": "components/canvas/tools/BrushTool.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3794,
       "sha256": "15fc20c836cee3311e579ab4fe777b44e083ff38953961fe6d6fc892bf12efd3"
     },
     {
       "path": "components/canvas/tools/SelectionTool.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 8615,
       "sha256": "1103228f8ab7f6d2e0ff11f42598e05dc315806364ec4bfdf7242b9f782a90da"
     },
     {
       "path": "components/canvas/tools/TextTool.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3732,
       "sha256": "e0217821afd911589784a04e1ad0d0bbbbae94bf604454c71a8deaabc46c207b"
     },
     {
       "path": "components/canvas/tools/index.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 356,
       "sha256": "9b62261009f472625d27dfb8b6bdf40913e4769f047acd1ecee142baca9ddf9a"
     },
     {
       "path": "components/chat/AssetCarousel.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 7432,
       "sha256": "9ec65bb423f50be872b19b46944b5ed2a4fcb685df64c9e7f07591fa61f4b2a7"
     },
     {
       "path": "components/chat/AssetGrid.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1706,
       "sha256": "d9214d0659a639ec307e9f0c9e0343a75e282a5e23735305a0c4faf368158d98"
     },
     {
       "path": "components/chat/AssetLightbox.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 13533,
       "sha256": "e007a2fb786fda202c0ce8bb4fe779047c7a11c9eafb0bf979170d2709b40c13"
     },
     {
       "path": "components/chat/AssetRenderer.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 9276,
       "sha256": "fe0db079e5f0cbaa1b3a258f454c314a1db0426e786b9b0be6a3487c78a2f7a8"
     },
     {
       "path": "components/chat/AudioCard.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 8266,
       "sha256": "71522e020777c32f195c2b571a611da92d15d7582d79d258d4b69a05c680d897"
     },
     {
       "path": "components/chat/ConceptCarousel.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2241,
       "sha256": "c9bcfce6c8d2e00bfa595861fcfbf6741aca116f711b65f8e334a2a0df78200c"
     },
     {
       "path": "components/chat/FeedbackButtons.css",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1100,
       "sha256": "756c89b28312b37cf4d771a77322f70498c145da8aa5b28596d8267ed50f673f"
     },
     {
       "path": "components/chat/FeedbackButtons.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2301,
       "sha256": "d8374ae910e4d13f41b944c40587bcc2dcd88ed281b1e9cf3df1bc2c3e1865c6"
     },
     {
       "path": "components/chat/FileCard.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5453,
       "sha256": "1b4dd305e98bae09094ec505685c7581c7f01f7257da57669326e75aaa9cfc6b"
     },
     {
       "path": "components/chat/ImageCard.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 8613,
       "sha256": "b5df76568a303e5ec7e7c7e5e105210f9b32dad7bda2e67f85aa79e9cb221740"
     },
     {
       "path": "components/chat/SessionList.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 11349,
       "sha256": "1de86577cec78e20f7ac04508311dc0be7f3280f3d208a3ec7433d24d55b715b"
     },
     {
       "path": "components/chat/TerminalBlock.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1693,
       "sha256": "115dd14e55283e4f3878e0694f5fdedc37dcec71af6e6f623599618b05139ef6"
     },
     {
       "path": "components/chat/VideoCard.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 10902,
       "sha256": "f2fa96e75985368f3928ec96fa08f405f73578ccc54a1ca82fe16d1d0034c310"
     },
     {
       "path": "components/chat/VoiceCloningWizard.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 48331,
       "sha256": "ff90303b93b9b7f96b059caf29ca10bd631a75b7cef66225f6c65b9cd71b1f2c"
     },
     {
       "path": "components/chat/VoiceControls.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5179,
       "sha256": "e48e404a47e10c71527d34d97bb0029eccce2ec7413adaa0febd8bf413e08d1d"
     },
     {
       "path": "components/chat/VoiceLibraryModal.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 25273,
       "sha256": "370a2cd22c5319d45e25d6d8e1f6220b8346ee4c216ae2cc898c91e9687b2a32"
     },
     {
       "path": "components/chat/VoiceSettingsModal.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 17114,
       "sha256": "a801f85511e9f143cddcda023d6230f8da6d403455b2bf4507637532894fdf1f"
     },
     {
       "path": "components/chat/assetActions.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2180,
       "sha256": "c70ed6adc3148594090433e8cd394f76305413a39b9d2493332e14370d6957fe"
     },
     {
       "path": "components/chat/index.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 660,
       "sha256": "1f5a3df1a7b5fe517326257d0e7c828acac9c267149fa18d83d4f35d88137745"
     },
     {
       "path": "components/email/EmailLayout.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 12798,
       "sha256": "42652abe73a21418568f213c69ec57e92362b369ee554c70fff4bf0baff0d8ea"
     },
     {
       "path": "components/media/AssetLibraryBrowser.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 13331,
       "sha256": "f3892732f63e211bc62cc4c841019e666725f210c5cd49483d1e8ee76d12120e"
     },
     {
       "path": "components/media/MediaControlPanel.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 35864,
       "sha256": "0528d31c0b19eb5e4570d8f5de5d01063a14dcece11c88a9fc2fe5a94d6c9246"
     },
     {
       "path": "components/media/MotionBrushEditor.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 17396,
       "sha256": "758c5d7e38169304ff41a5450fc7316a5277c447c1fd43619f20d2406cabe5df"
     },
     {
       "path": "components/media/VisualComposePanel.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 20063,
       "sha256": "f0c982b2b8445b3a8738e42ec9c9ae1f58c66028611337c87b2062d355cac720"
     },
     {
       "path": "components/media/VisualEditorStage.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4667,
       "sha256": "ad95b8c2788535e4a1422e991b0a0e98ddabd2d38114a6aec1ba8ed6831cdef0"
     },
     {
       "path": "components/media/VoiceLipSyncPanel.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 12713,
       "sha256": "e610e377bea7f4d1a65e9643c5e0dc99813e4cf996dfb5979d072ec2acfeb46c"
     },
     {
       "path": "components/memory/EternalMemoryPanel.css",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5690,
       "sha256": "d66c5fb27b233737556837523554117f657fde7cebc0a3b4b360aec9ac2aebfe"
     },
     {
       "path": "components/memory/EternalMemoryPanel.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 9686,
       "sha256": "e2520178ad9ccb1f10c47745e66b78061e12bf240c18d2c8a2f13144107eb3c2"
     },
     {
       "path": "constants.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 8157,
       "sha256": "e1f8b3c01ead73b610c5a51ecc48f175dd42fc2a536b2350559a6a5c76676dbf"
     },
     {
       "path": "constants/buildVersion.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 734,
       "sha256": "ce17a083885b4e60c03ea9218e66cd19d585357b6fa0f4094c4e1108ea44f918"
     },
     {
       "path": "constants/personalities.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2854,
       "sha256": "16bcfc74abf25a79ccc59be73708c1c70405f871f952393c610386532827cfd2"
     },
     {
       "path": "constants/silhouetteIdentity.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3075,
       "sha256": "0d4359081d80d77d958466116b2bb25fb2070db85bdfdce2f6d19be141fc05e3"
     },
     {
       "path": "db/migrations/sqlite/001_baseline_indexes.down.sql",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 94,
       "sha256": "88669be76ff558d35f548afd1fdbcf3ef30502319d04651d83c9a53548fc02d1"
     },
     {
       "path": "db/migrations/sqlite/001_baseline_indexes.up.sql",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 182,
       "sha256": "5fd2b4f9cde9d6f3379a9cb5088afb7e1cd9b6837736638e3eba9762903e1f51"
     },
     {
       "path": "db/migrations/sqlite/002_facts_table.down.sql",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 28,
       "sha256": "8819268fa2550972478fa5c0ab77c9b7d75070dbf4db6c7ea20a10ff398043af"
     },
     {
       "path": "db/migrations/sqlite/002_facts_table.up.sql",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 939,
       "sha256": "dfaa2acbf809e9f6ff9ae48041fad92f0c319666fcee949c089e9ae903b34ae6"
     },
     {
       "path": "db/migrations/sqlite/003_user_profiles.down.sql",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 36,
       "sha256": "4d4ee35139f14a8dfeb20403092d7df032ee1f4383bbc62789e42cf40ead5231"
     },
     {
       "path": "db/migrations/sqlite/003_user_profiles.up.sql",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 727,
       "sha256": "f35a12904a00254affd1c8d3078530d959a13ff25e9ea5853fe5cb88dcdcaf8f"
     },
     {
       "path": "db/migrations/sqlite/004_incidents.down.sql",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 32,
       "sha256": "c20c496deb750c55dda332d6cb592fa7ec0950a4a35139fb3705925a24e6c747"
     },
     {
       "path": "db/migrations/sqlite/004_incidents.up.sql",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1065,
       "sha256": "9dbdd0e8505c937caf829f4fa24823740d27a599fbf52331eb4b2aecd821c24a"
     },
     {
       "path": "hooks/useHardwareSafety.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1115,
       "sha256": "4070f243d26e386db1b88d2cddd84da1ce44ef1dc757084de3d45e3b6d278207"
     },
     {
       "path": "index.tsx",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 432,
       "sha256": "6fb0c7d958ee42f4d99a6f90f922a3c2b0611207734645ef5444eae972970427"
     },
     {
       "path": "package-lock.json",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 659660,
       "sha256": "5545703d69f821bc68765948f91a91cd14ec782835dd7839f0099f0bebbf63f3"
     },
     {
       "path": "package.json",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 6780,
       "sha256": "d1a568e3551e929c0f1e4b304b7f50eaf40dbfb88aa199f70a213e9bd1e82846"
     },
     {
       "path": "remotion.config.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 190,
       "sha256": "42bbeaa6e98bbf289cb826b72a6c6aae8aa9e5ade78d602624db562fba0bb5c4"
     },
     {
       "path": "seed_memory.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1841,
       "sha256": "7b088d28edeea4114fb2cf5edd413a84e301b1b4afa6df64e77ddd78d728d429"
     },
     {
       "path": "server/app.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
-      "bytes": 14201,
-      "sha256": "e66c5f0753d113c231e74c894a4dce8323790d00fcaa6675e9056df7515469d1"
+      "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
+      "fixturePath": "tests/genuine-vitest-session/main-mcp-ingress-typecheck/server/app.ts",
+      "bytes": 14950,
+      "sha256": "dde8201c255d5f6c7b21c85d34d6a95159a543e1110b81bef6b0342ac56720ba"
     },
     {
       "path": "server/channels/channelInterface.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2879,
       "sha256": "30144eb86cc0bce34c811c160f80fd41495d4495c66095c5149664bb071f0468"
     },
     {
       "path": "server/channels/channelRouter.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 12038,
       "sha256": "4267ee942b03f9e9d655ca34136388dee61618c5ad28ef5b6f4f4b07f6554fd9"
     },
     {
       "path": "server/channels/discord/discordChannel.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 11121,
       "sha256": "ea4983fd35f1c4b223a171303768456fe09da83c566dbe6181f7ae8366b3f1b5"
     },
     {
       "path": "server/channels/index.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2834,
       "sha256": "0b291dcea371970a962423fc0dec4538fb201a0c304de073f72a388e9a3aed93"
     },
     {
       "path": "server/channels/telegram/telegramChannel.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 21260,
       "sha256": "5c54c426c52e960c96a2d85df60ef6e3a849b93261dc80af51ee6e10faed5b60"
     },
     {
       "path": "server/channels/terminalWebSocket.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2591,
       "sha256": "73a1b3338f65524fa0ebffc5647a085df82e3cdd8c06bdd484c34eab4a269ed5"
     },
     {
       "path": "server/channels/whatsapp/whatsappChannel.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 13060,
       "sha256": "bb33f8f167ae85967a936951224452d44dc189a22d95fd7a26760a512eadef59"
     },
     {
       "path": "server/config/configLoader.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5610,
       "sha256": "a74bd3701e5836c92d8130264b4a876e0461af7f9206aa1247a007dd392fc4e7"
     },
     {
       "path": "server/config/configSchema.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 18778,
       "sha256": "edfc3f5c9379eb7efb61448f7db97b6d08b8a5de111a6915693476e28c09caba"
     },
     {
       "path": "server/config/paths.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 948,
       "sha256": "3e27592fbb6d161844fb161ec084c0330ef722bb69e61a7ee09341e9830a9273"
     },
     {
       "path": "server/config/runtimeCredentials.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4553,
       "sha256": "4c7b63327fb0e733a3fe4f0caa8627c2713f7cad57884c4b84d8344007226a95"
     },
     {
       "path": "server/config/staticServing.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 667,
       "sha256": "61508f1663e38b171a275c3320a1b3050336e221a94e83c63d8ce115711b19ef"
     },
     {
       "path": "server/controllers/chatController.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 40985,
       "sha256": "f9ed89889b7dd78d1cea36bf1719fefdf94d1addc8e143a43cc37538977a63bd"
     },
     {
       "path": "server/controllers/factoryController.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3800,
       "sha256": "8ce14720cdd50ead640f8878724d4eb575e6456cb1cfcc422756037906a5235b"
     },
     {
       "path": "server/controllers/graphController.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2300,
       "sha256": "139d01f057e0cdc7f3bd9c7a74cc463252a0d27d9e04139be39a630368bd044a"
     },
     {
       "path": "server/controllers/mediaController.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 20542,
       "sha256": "3ebb21d4d9821fba707c198d8d76c9cbad748494286393708de27cf0fd7f4a16"
     },
     {
       "path": "server/controllers/orchestratorController.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 7430,
       "sha256": "9fee06cdbb356c24c62f77ae30eb60dd3975df0e780cf5196ab841490bb7a173"
     },
     {
       "path": "server/controllers/systemController.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 29716,
       "sha256": "d242d0bc3e570d6b6ea7d2b9384b91584285336fe6d24ad516ab26b4742c1c88"
     },
     {
       "path": "server/controllers/tokensToday.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 677,
       "sha256": "fb0cff39e0c72547be0ce28aab9c3ae3edd7de1e8242fb4d4153f2064086e3eb"
     },
     {
       "path": "server/controllers/trainingController.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4255,
       "sha256": "0351686592784aa7f15f679144d5dcf6717c84f85f65e59c838a0c954823c2e0"
     },
     {
       "path": "server/gateway/index.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 709,
       "sha256": "1e0112f14b8b1ed3e8314bee176fccd67952214ea9a18b4fa66c9139681f85c3"
     },
     {
       "path": "server/gateway/protocol.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 10345,
       "sha256": "7f3b51c61004509ef2a4590863ddb230039a9d26df4f140d392b0781bba79ad3"
     },
     {
       "path": "server/gateway/sessionManager.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 14253,
       "sha256": "544698c706054f90ae6e20139c615f304151b3e0ba2f29634cf2aa379809b370"
     },
     {
       "path": "server/gateway/wsGateway.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 32995,
       "sha256": "36a640ea6e52d4f01d4bd089b21546db5890befc61afe6333cbf3859a85d29e8"
     },
     {
       "path": "server/index.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
-      "bytes": 11799,
-      "sha256": "a38e4d6b4762bb4fe2c6bb05a975b1532980d3854e77134ad1c256ecfd50bf6b"
+      "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
+      "fixturePath": "tests/genuine-vitest-session/main-mcp-ingress-typecheck/server/index.ts",
+      "bytes": 11485,
+      "sha256": "965cbbda13bd2e9df409774d6ad649b9be6efaaec009d9f6cd4eadcfd381e84e"
     },
     {
       "path": "server/jobs/heartbeat.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2885,
       "sha256": "9c4e426f05363a807a3a89b783c9f31d290f7f9963bfda8c24b053f6142f6c5a"
     },
     {
       "path": "server/jobs/persistence.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1472,
       "sha256": "77a8854905ac0e4cc2fd7ad413fbf5fabaa7e80b799fa06d39ed212358a00103"
     },
     {
       "path": "server/lib/installScanner.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3601,
       "sha256": "5a070216ff96e7b1b50c33a14258e2e103939d681221585d31826dc7fb2683f9"
     },
     {
       "path": "server/loaders/aiLoader.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4266,
       "sha256": "6d9030b60551ff3412e7f9c1c4e89f277f92a92405ddf1cbccd5cf8950169823"
     },
     {
       "path": "server/loaders/dbLoader.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4044,
       "sha256": "284d070fea4a8c45ec52f63015503a62b3e3e7b576ca6abb7d03ad68b3aa4fbc"
     },
     {
       "path": "server/loaders/index.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 6207,
       "sha256": "0442011b5e59583acdfd41d96dfb23aacc8252ad667db8745bc9fe466d65b20f"
     },
     {
       "path": "server/mcp/mcpServer.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
-      "bytes": 6903,
-      "sha256": "de7c45b515194378d4ea691fac336af867c20d37f81f968daa758ad2f3e07bb2"
+      "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
+      "fixturePath": "tests/genuine-vitest-session/main-mcp-ingress-typecheck/server/mcp/mcpServer.ts",
+      "bytes": 6995,
+      "sha256": "42c519ddd52e0882a612f06309e059b141999d88590aae0f67640b8339f25f4f"
     },
     {
       "path": "server/middleware/authMiddleware.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 11453,
       "sha256": "32ba6514e689ee8bad0726d92bc7989a3aee0168326c74b016554b616a2c83aa"
     },
     {
       "path": "server/middleware/promptSanitizer.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5753,
       "sha256": "5d8ca26be4481d5aa31163bab0e4df08c65ee8850e4db98639fe86ce5000d461"
     },
     {
       "path": "server/middleware/rateLimiter.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2206,
       "sha256": "d485240212c77df6c8011ec1308345e58f8ef470de95addcb90a44f6427d589d"
     },
     {
       "path": "server/routes/connections.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5936,
       "sha256": "0ac7bb823edbd4fa7f4a91018cca6becc2e23c675b923cd3da6704ab39c25c8a"
     },
     {
       "path": "server/routes/doctorRoute.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 7272,
       "sha256": "27234d641da6881ea8f63c1b69d737ba65c347cefaaf6950024eb954cce3d5c5"
     },
     {
       "path": "server/routes/health.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 7034,
       "sha256": "1aa977985a6dee9a16a0b499864f28da5c4196fb18b0822cc6628d47311abef5"
     },
     {
       "path": "server/routes/oauth.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 7732,
       "sha256": "5db0006e626c96f9f375908b2e620117b643c5dee5015ab87413fafac8b14c5f"
     },
     {
       "path": "server/routes/telemetry.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1650,
       "sha256": "eebc540874f7b99d3fb7354a9defffd7f0ff40fd7e5d5f27e88326a1481e3483"
     },
     {
       "path": "server/routes/v1/analytics.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4235,
       "sha256": "81b9a317410c255a9e41de27dd0caed730a518723dee745d8742df9e89265615"
     },
     {
       "path": "server/routes/v1/apikeys.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5155,
       "sha256": "07f0321c0ddb74a1b886cc8b8741d981b427ddafe0698b0110b87c7f5167e859"
     },
     {
       "path": "server/routes/v1/assets.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1785,
       "sha256": "e60d51f07e06ff8c21ec4c3ea79677c9fa5c1139702d807a3dd5284c9d4fae13"
     },
     {
       "path": "server/routes/v1/autonomy.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 15567,
       "sha256": "e4e8b8d3301f102360ff9740e7a85a91af0b269b67b5624c81677dfea6080c40"
     },
     {
       "path": "server/routes/v1/brain.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5387,
       "sha256": "477f30af1597907dc8833234fe64d44a63d7e5e4a8e70aa25e98617efa2aeea8"
     },
     {
       "path": "server/routes/v1/chat.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 973,
       "sha256": "242107f1461d81ae8caf7b388786b4f0ac4f48efb7d1dd3615932e6333b8a9a4"
     },
     {
       "path": "server/routes/v1/context.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 9106,
       "sha256": "b0270c82ea13f432933f64b89a8f581f645d754c9ef1a9bf0ed5cd525613adc2"
     },
     {
       "path": "server/routes/v1/drive.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 12779,
       "sha256": "a71c8f0aad734a840045ecd1512ed1521b675cca9273abca37e7b39443c28b2b"
     },
     {
       "path": "server/routes/v1/exec.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3800,
       "sha256": "12d8b217e5c21b9e12ba78a9b633566a5332a39258a67f285a7a7e6d29f8271f"
     },
     {
       "path": "server/routes/v1/factory.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 11528,
       "sha256": "7d6812c7dea017cb30a3c9875d6bc7345ab38ba3ad139dff72345b6c3bce4e77"
     },
     {
       "path": "server/routes/v1/federated.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2176,
       "sha256": "7b148607c6fbdea11c8505a6186c527116d218c8c015c38b1b12a09804f3c818"
     },
     {
       "path": "server/routes/v1/gmail.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4788,
       "sha256": "8aef023c0c156139a6dfe82da557cca1c98ab5941c5fdfbeafa04df5e78d2c83"
     },
     {
       "path": "server/routes/v1/google-auth.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 6612,
       "sha256": "ccbb24d803292e1a9dbbbc6643b7e37339d3af241c3c886a858e898a47714b97"
     },
     {
       "path": "server/routes/v1/graph.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 9556,
       "sha256": "af1c3b591f9720323db3157be86fd249fe1e96f7ca56eb4c152734a379377535"
     },
     {
       "path": "server/routes/v1/identity.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 19271,
       "sha256": "da578a47263de105053f53d1e5d70681c27e6ea3dfa94c01f9824356f8cacbda"
     },
     {
       "path": "server/routes/v1/identityEvolution.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3018,
       "sha256": "948755ec4f9c574c88191ab7e9f3e96571359799f0ad378027d668450603418c"
     },
     {
       "path": "server/routes/v1/inbox.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 8721,
       "sha256": "f4bef36a9764cfc02ce567a08d0287e8e002fbd7c617366ef2b76733f3d7226b"
     },
     {
       "path": "server/routes/v1/introspection.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 6152,
       "sha256": "fed1a29aaebcb1a0d878c084d15134628f5b00fa88e94854d193026493fcc4e6"
     },
     {
       "path": "server/routes/v1/legacy.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2359,
       "sha256": "5c6121e9493a776dfee2e2ebb97d61c1df2b20310e443aed88a381d3f5fa4fa4"
     },
     {
       "path": "server/routes/v1/media.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 23477,
       "sha256": "c66657ca9264a60638999814361773310ed4e608317c8603148573f1f62b18e0"
     },
     {
       "path": "server/routes/v1/memory.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 11076,
       "sha256": "27277360da6b574124e607a566e776044e2e715c265347ba606cf903cea2b7e7"
     },
     {
       "path": "server/routes/v1/orchestrator.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2409,
       "sha256": "3b08f44e9bcc3930fd5cfd79d49da95b3f2db84d04676355b38809953d7818f3"
     },
     {
       "path": "server/routes/v1/production.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 7705,
       "sha256": "65a8e0b58e61f2582a8f98d373dd533728f86b00d28117eb65a354c1a3e96896"
     },
     {
       "path": "server/routes/v1/self-evolution.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 8909,
       "sha256": "4f42878120ab9b164f604d716b7360bf4ea44e68201d9afbf548fd9c5fd8490d"
     },
     {
       "path": "server/routes/v1/selfcode.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2152,
       "sha256": "12c813b2383d7936a68cd583c8f82ee0e4606c19727cb35f5179eee054f39c07"
     },
     {
       "path": "server/routes/v1/selfdev.routes.ts",
-      "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3023,
-      "sha256": "71866d21940217d8f0468ac61c86632b33455540afdeead2acff80659987052c",
-      "fixturePath": "tests/genuine-vitest-session/main-continuity-integration/server/routes/v1/selfdev.routes.ts"
+      "sha256": "71866d21940217d8f0468ac61c86632b33455540afdeead2acff80659987052c"
     },
     {
       "path": "server/routes/v1/squads.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2783,
       "sha256": "25507eedd4e820db13c82b0af0b26bd7bb775fc074a0fc4b125cc318f26f16e3"
     },
     {
       "path": "server/routes/v1/system.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 17570,
       "sha256": "6621feaf14d264aa14e0cb5e88e2eabf93bdc2970d32bc8f73182c625575c788"
     },
     {
       "path": "server/routes/v1/training.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 9374,
       "sha256": "689d9a3adc462d06d60d621956cfe1dd67e01e6404b3267a41530e7d5c065147"
     },
     {
       "path": "server/routes/v1/video.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1610,
       "sha256": "b876fb065aa3effb0eb94ebe3886c17bf117a5ea6da23fa39a071129d091817e"
     },
     {
       "path": "server/routes/v1/visual.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 7863,
       "sha256": "13f54375e8c4bf39cd90eb0fcb13ab2950b6457113e5f14e4bc527d6add7b15b"
     },
     {
       "path": "server/routes/v1/voice.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 21151,
       "sha256": "d5d6c656be07356acf9a720649a092ee924ca5923cebd658c9f33f2012036a32"
     },
     {
       "path": "server/routes/v1/workflow.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 6254,
       "sha256": "73185888e8fccea314a50e40da3773054f15400caa1d03960a386024968cdb21"
     },
     {
       "path": "server/routes/v1/workspace.routes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 6346,
       "sha256": "89edfbd10589abc8c4f8fae78f5d1e1a0f33dbad17e11df9061c6ba8144e1a9a"
     },
     {
       "path": "server/security/corsPolicy.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 624,
       "sha256": "e159cdb9b1ad3e71aeef6739ba1241e0ea8a066cd5df8e61d4c4c79a7e3e7a4a"
     },
     {
       "path": "server/services/prReviewService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 14634,
       "sha256": "b856a7ad7e5217233b425f4c512f2331c9b510a894cd543d0308051ccec67a19"
     },
     {
       "path": "server/utils/password.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2730,
       "sha256": "e8258007707bb1bb8959cd3ad2e9a37b54877b09ecc467ba5ad5618755f4a876"
     },
     {
       "path": "services/actionExecutor.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 32294,
       "sha256": "4fa4603af26173939921f1cd2e9bf23e52efdc14fdb4a15078557d793eb65d9f"
     },
     {
       "path": "services/affective/affectiveState.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 9477,
       "sha256": "25588afa1407b8a23ef696d0a350f084b3a3220ac952282af8ad5291f2420c2e"
     },
     {
       "path": "services/agentPersistence.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3052,
       "sha256": "7c09aa16dbee0339b6c4a15b2aa813c129c2edf1ea05085f292e0e1ae2064651"
     },
     {
       "path": "services/agentStream.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 8573,
       "sha256": "1ea1475421bbd8cdff4be8a2f2079a5c54c6d74374e30f10ac01c6033539d967"
     },
     {
       "path": "services/agents/AutonomousEngineer.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1374,
       "sha256": "2717f3777693e2ff996b078dae0f7f1d5787b6e9b62c109ba7b73e4c04e1c2fd"
     },
     {
       "path": "services/agents/BaseAgent.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 19873,
       "sha256": "3606672693b3a21c3eb57f63e5aafda816003e86132a373480121d49ea6ee2cc"
     },
     {
       "path": "services/agents/StandardAgent.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1043,
       "sha256": "d46ca1cfe2b716232121ac787a9bf228fcb85bb4217e65c78b05563613861e54"
     },
     {
       "path": "services/agents/ToolArchitect.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 12361,
       "sha256": "a5555ca69e35a3a52203aff20b9a3b75e47149b54230cf6535e6ce8bad8f8864"
     },
     {
       "path": "services/agents/UniversalAgentCapabilities.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1211,
       "sha256": "4615e73df7aa32df242fc3adaebb006b3a854ae0de44fcd668bd0a201fa51476"
     },
     {
       "path": "services/agents/agentFileSystem.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 27537,
       "sha256": "c9e5bc2fc8789cb3bb0d4aa64bb2f3f96e472832480ca77173dc17a47988f9a4"
     },
     {
       "path": "services/analysis/linkPredictionBaseline.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5732,
       "sha256": "889eece53214cd2d19f18a71816224f2577e96be2e3d00650fcc67d6deaa0947"
     },
     {
       "path": "services/apiKeyService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 8345,
       "sha256": "6eb9cf20fa05d525d5544a8fda20989287ee68a95dcb20095052e41b118a1aea"
     },
     {
       "path": "services/architectService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2961,
       "sha256": "bbf5f5b5be38ebd64adfc6998ba0792e9ad49e72c1b4ea113dae09f8e024b5fa"
     },
     {
       "path": "services/architecturalReview.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4901,
       "sha256": "30f2f406669af9c40fa6d81f055176724ff461bcf4ef8abcb0c04425e9f93f05"
     },
     {
       "path": "services/assetCatalog.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 19637,
       "sha256": "28b559569c6ed67cf2def3e8158c40b3062c3de0bd235be0d81439a30bd4e687"
     },
     {
       "path": "services/assets/assetLibrary.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 8210,
       "sha256": "c981fdd91b03079dbafbc169c01136f690e4b971c51f544bbed429df2f6878e8"
     },
     {
       "path": "services/auth/accountStore.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5139,
       "sha256": "62c7fb44fe87eb73a82a8fa66938523cf566995fefb79f5206481e6c268af634"
     },
     {
       "path": "services/auth/cliTransport.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 8100,
       "sha256": "624d01c3c36541a298bd3ece2699ef95d656c0dbc7eeb6aa9409d6979ad46ce2"
     },
     {
       "path": "services/auth/connectionManager.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 15176,
       "sha256": "2757823e32e0df013a12e825efcfd3efd2f510d33e6997c7706ee023d2801f02"
     },
     {
       "path": "services/auth/credentialResolver.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2291,
       "sha256": "09c46080bff1a1e9b2991f85fb3ff9d78089d612c53f022a79d7c3d187df8d9d"
     },
     {
       "path": "services/auth/deviceCodeFlow.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4148,
       "sha256": "16a72b3b7e33c05ccae44555cc92fd15c554caca952f73b651590205e44bfd43"
     },
     {
       "path": "services/auth/oauthLoopback.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 7430,
       "sha256": "96b028e83ae2562fee36cbd787689b66c94a8acc855b3362d868eee014977812"
     },
     {
       "path": "services/auth/officialRoutes.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3204,
       "sha256": "7c951d4434243859c14baaaebe4d5595138274bdbf03161a2b8e422c31f8f05e"
     },
     {
       "path": "services/auth/pinnedFetch.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3946,
       "sha256": "7fd51539a7a9789f06d6cf00338e8d957dec7e10a1a26762c7e6465442b94d19"
     },
     {
       "path": "services/auth/refreshLock.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4525,
       "sha256": "cb734c015836dd27d74b3836580b18b157e2ba9d1bc1ce1b57a7f21c527b0edb"
     },
     {
       "path": "services/auth/refreshOrchestrator.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3949,
       "sha256": "d164fea1a1ec11ff6d5a62959807e775f8a29fb7c51cfb6dd5836612dedd0be2"
     },
     {
       "path": "services/auth/tokenFileStore.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5471,
       "sha256": "d03ac6906b0326a138fc89715aa0650ecfc2f44ffe372e1408b75161464e574b"
     },
     {
       "path": "services/auth/tokenVault.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3161,
       "sha256": "174433305f656911646d26357d0fec350a909dde2b9cb4ed24cdd35d27c2152c"
     },
     {
       "path": "services/autoCorrection.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 10874,
       "sha256": "a5ad52abfa0c9b2b0d4c52a4a310b73ddd734a10b9d377530861e46bf977f21c"
     },
     {
       "path": "services/backgroundLLMService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 11890,
       "sha256": "76655c067156273b46fcf4d35197497a114d72fbf340be3088430b5fa89d426e"
     },
     {
       "path": "services/brain/brainClient.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 14652,
       "sha256": "800ce52eff49b2b51393922b9195ef4ffba3a53e094d56b0ef9a60da1eb2c64c"
     },
     {
       "path": "services/brain/brainMemoryBridge.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5143,
       "sha256": "3a7c050210f058b0c3f5338e156b1baa76bcee4ca149aaab61602d9394acc68d"
     },
     {
       "path": "services/brain/index.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 287,
       "sha256": "0d8c83e510279653f06c5644be65d212aa735a111b9f9f88dd96c6b385ff5175"
     },
     {
       "path": "services/browser/browserAuditLedger.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 12226,
       "sha256": "0262634c6561cc78f85a0ca978f9d6433b81ce0055814f4209278b1a32eddb77"
     },
     {
       "path": "services/browser/browserController.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 14092,
       "sha256": "b6904c726bddaeb20f81ecb3008a34dd0cdc2c6496851a22ec179804f94b916e"
     },
     {
       "path": "services/browser/elementMatcher.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2380,
       "sha256": "d4076d36c7dbd0b23e4a2afa5f312d3ab562ea825254d67e0a774f377dc10d9f"
     },
     {
       "path": "services/browser/paymentApproval.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1245,
       "sha256": "0b65211bcff0fc0994753b9873c3606b540de0739b93e935c751bf4f8361b487"
     },
     {
       "path": "services/browser/paymentGate.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2326,
       "sha256": "3e5bb15765eee68473c8d088e780eeec91b70fb9be5cc7fc497b5a92be41dc17"
     },
     {
       "path": "services/browser/perceptionRouter.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2940,
       "sha256": "b256c9df53b39b8c12a007147321ac2fbb176fb3f6fb0085de7b52b1bf84a5ba"
     },
     {
       "path": "services/browser/stagehandPerception.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 11804,
       "sha256": "f27db1267b84f62b22eef7fb04d16c2038efdadccc2b67490a80c1346b32780a"
     },
     {
       "path": "services/browser/visualBrowserEngine.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 30455,
       "sha256": "befd29fd866914cc78425b090ee46f7e3e2d2875d69846535f634e99bb602e1e"
     },
     {
       "path": "services/browserService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5201,
       "sha256": "f0b264b1214c0e87b42f802fc58ab96bff82726528cd1a8ef6ceb0a033f7fe73"
     },
     {
       "path": "services/bus/IBusAdapter.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 918,
       "sha256": "6f157012144ce10c7bb478458a5875d0134802141bad67df143faf36273ff32b"
     },
     {
       "path": "services/bus/MemoryBusAdapter.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2140,
       "sha256": "9c6d6af8de472b66a02f206bde9ccc390af802235f2f5eae2cd5967e601563ed"
     },
     {
       "path": "services/bus/RedisBusAdapter.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4728,
       "sha256": "44ab8adcc69f66cac1a9a189d5c865ca94c4d13e3f1fcdeef4869a3ce8f66c72"
     },
     {
       "path": "services/campaignService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3913,
       "sha256": "5e32949a136ca7ae6dd1dcac4edb6aa47387896eef46bc89b83240b9db74953c"
     },
     {
       "path": "services/campaignVideoService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5568,
       "sha256": "43a0ba5211dff93982e1517eb867f4f64e053b17294ac0bbb3d90e1e3ff55ebd"
     },
     {
       "path": "services/capabilityAwareness.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 13350,
       "sha256": "4e62264afaf8eb61f4f5f80f1739b341097131e762ad3cbfffddb78f4342f704"
     },
     {
       "path": "services/capabilityRegistry.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5264,
       "sha256": "3a2a6397e34cc5e0f105a06005b7a41151fe971bf11755e5070a50dc99f0c83a"
     },
     {
       "path": "services/cfoService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 9409,
       "sha256": "c5fbcd41066ec5e6e4cf2550e37e87e07708452464d862df1d0432be478f23bf"
     },
     {
       "path": "services/chatToolIntegration.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 26931,
       "sha256": "ebae887874f5df87c160911de9f9b30e3c0847b05a6be8e588e1d033adf93411"
     },
     {
       "path": "services/chronosService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2951,
       "sha256": "db9f815cd12a0e9dd3fd09d08f7405a57930e73d7db23d3fdb48b74bc7dd6d82"
     },
     {
       "path": "services/codebaseAwareness.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 6320,
       "sha256": "698f2d2e7bf9250807f5150c11c1dffc8cde202478aa1285f45cd3801bad97ae"
     },
     {
       "path": "services/cognitive/advancedDiscovery.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 12978,
       "sha256": "48ea47b115a29794b6292254e0f0d8e4b2965af5ffd33a8460f6849b7f109566"
     },
     {
       "path": "services/cognitive/cognitiveScheduler.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 10411,
       "sha256": "c564d1f5929a0be527e2ff43d9094cdf31550c0e87d4aa5e5b2026248afc74fa"
     },
     {
       "path": "services/cognitive/thoughtNarrator.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 60684,
       "sha256": "75cbfdc7c451b95d5d2c00e2801e80d101febae559a712b738de9c0e39127094"
     },
     {
       "path": "services/comfyService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 14769,
       "sha256": "1e2947451123fb4659132d51a1bcbdef9212d82683eca3c1f920ff70a5142ceb"
     },
     {
       "path": "services/commandExecService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 15995,
       "sha256": "437d3864fece04c775f0c4063f32b4fd26c9e05c34dd4b85703e2ecb06f1e515"
     },
     {
       "path": "services/communication/agentConversation.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 14481,
       "sha256": "9e587b8ef6fa2a949d87852438a29b998d7e86a8613626e716434333e942ce78"
     },
     {
       "path": "services/communication/conversationRouter.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 10485,
       "sha256": "536af2454759a4d4efec74eac2eaa904d4c22fa886867d95694badef5e4217c1"
     },
     {
       "path": "services/communication/helpProtocol.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 9352,
       "sha256": "510bead46b816d01ed26cd19e2780b021f450d511ce4675b0fc7b895e169c84b"
     },
     {
       "path": "services/communication/sessionManager.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 11979,
       "sha256": "24a12a1a616ac7db513e6bf61016bac1a6601d124284310fdc2f38ddf2dbd607"
     },
     {
       "path": "services/congestionManager.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2779,
       "sha256": "c102c8a69957ebc2a4abaf59d9deb5670b83df1c1ace5369dcc63e1484aacd31"
     },
     {
       "path": "services/connectionNervousSystem.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 18509,
       "sha256": "e6e4765dc18e4bb078d4e65a8d9613fc8d1ab4ecfaf16ad66df984b4e9404f35"
     },
     {
       "path": "services/consciousnessEngine.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 9519,
       "sha256": "b4ee268d4422e36b806be40c3e3b7046d0f1a3cf68c34e9ae1fc173075f913b4"
     },
     {
       "path": "services/context/contextCompactionService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 11539,
       "sha256": "0df958e79eb461bcfedffebb51f9bf4e5dbd536324e1ba0c707617b5fc0bea49"
     },
     {
       "path": "services/contextAssembler.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 21438,
       "sha256": "f32026c64e6f7a296666a02d3ca75e9fea52b49c43341e13a4a7ccab5ef2ef37"
     },
     {
       "path": "services/contextJanitor.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 22962,
       "sha256": "800d0f2f11e1cfc1e46910d8c5438e1f8757df8f643ec4febcc39058a7f9d28d"
     },
     {
       "path": "services/contextPurifier.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 11013,
       "sha256": "5147a1b1c4719af3fda9817ee12be75311724ccaf5f848a67b2086732943fa62"
     },
     {
       "path": "services/contextResolver.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3745,
       "sha256": "038eda8b57fbc4ca63e7693a807c5d5edd8d95e3d5768808b5c5b308785ab1f3"
     },
     {
       "path": "services/continuumMemory.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 60629,
       "sha256": "d0e59370f99021a03ee3f0a45d8e693da62634bd43b7b49881cada7e64d3dbe5"
     },
     {
       "path": "services/costEstimator.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 9292,
       "sha256": "b9a9420538558dbf95c77ce769dc021d668c8effc3f485cf1267518dd105878e"
     },
     {
       "path": "services/curiosityService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 25908,
       "sha256": "daef066223bd2f7e674540cd71e4314da175ba16109dc0c8c4837bdb03dff7b3"
     },
     {
       "path": "services/daemon/autonomyPolicy.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2809,
       "sha256": "8896fff5d0c1df4f14fe3710466bd472e01fe8fc84e127661602e47da399a10b"
     },
     {
       "path": "services/daemon/selfHealingTask.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 6508,
       "sha256": "81c0110c7e082e1faed424256f0e9108d3f01b86b206da7880b916ae175b19da"
     },
     {
       "path": "services/daemon/unifiedDaemon.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 27117,
       "sha256": "e4683da3ae735e5e8fcb4b2e9ee38314d4dea2e6b0fa2916e8e5406f6f824ea8"
     },
     {
       "path": "services/database/adapterFactory.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1543,
       "sha256": "af4938ed9d3baff4fb238df6a5ebf7c63e2371b4873bfc5027a3d2f15899c02c"
     },
     {
       "path": "services/database/databaseAdapter.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 7707,
       "sha256": "479e4b5d4f0d58aed8a13bca1dadcfbd44eb9ebfdc86ddd3cd38367a6d6b5eff"
     },
     {
       "path": "services/database/index.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 437,
       "sha256": "7f9d98bdd4ef539b9bc48e58a317de68e9e280ac9e581caf840507fc210efc69"
     },
     {
       "path": "services/database/postgresAdapter.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 46241,
       "sha256": "45e7f631ef039955e627890d898344a6fe0f20e148b04eecbfcf1abcca3ccf11"
     },
     {
       "path": "services/database/sqliteAdapter.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 23320,
       "sha256": "51f571f9767ec6a0ecd5ea53c8f2844156c326e44470b35aae197919a73c52cd"
     },
     {
       "path": "services/dbIntrospector.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 7092,
       "sha256": "d13f797970c8f09b5c2c2e29a04262488ddbe7cd03404ece72d970e9a2dbe476"
     },
     {
       "path": "services/deepSeekService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 6521,
       "sha256": "1eebc50f891fba05379b110524b1ce3a59907454c0f13029eedf82af7eeafb10"
     },
     {
       "path": "services/discoveryJournal.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 7721,
       "sha256": "b0c82a930c6d71b134c1af054008b23c820405a8c334ab4f964160fb072ff009"
     },
     {
       "path": "services/documentationSyncService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2487,
       "sha256": "e38b33a72d5e4ec73239913fc2b1f268e03ae0c00bcd77a0a923fc561a2d06cc"
     },
     {
       "path": "services/dream/dreamTriggers.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 13238,
       "sha256": "a7c3508789701e1a8e7f3f1db09126019f06353fdefa55204deef08d54de9fae"
     },
     {
       "path": "services/dreamerService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 50254,
       "sha256": "403f0b758ece86991904eae97f91a119732a50faafc1c5f45f312c83854faeff"
     },
     {
       "path": "services/driveService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 16260,
       "sha256": "c7a7ff7e99081dee11d7b2acc31ed4082848380f37c9e117d7a309259e60ba49"
     },
     {
       "path": "services/dynamicUiService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3235,
       "sha256": "b223f22153d3125073ee7d4403f88c3f72a68b96be1ae4202d8aa8f9d297c8f2"
     },
     {
       "path": "services/embeddingIdentity.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1094,
       "sha256": "5c0ea8abed8a75dba2bb01b157143638f875ed1212811294a36890f36c15072c"
     },
     {
       "path": "services/enhancedCapabilityRegistry.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 6270,
       "sha256": "db78277108d9f186279d7d4013e8d491cec9046dcbeb5f35ee6a49ea7a383879"
     },
     {
       "path": "services/environmentService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 6935,
       "sha256": "94cf0bb04f575494f6614f3571ce2ca8ad562ea269392abf8dce191996b2bbb3"
     },
     {
       "path": "services/eurekaService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 12256,
       "sha256": "c4c44d29d5bcc20fc0f4e2242d5e676ba8d2b5becda790ea7dfff3001a979f76"
     },
     {
       "path": "services/evolution/evolutionScheduler.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 13659,
       "sha256": "8987e5f0c0ff4817358272bc8e8a74bd5b6288f8e9a4a132623feaf105bee47a"
     },
     {
       "path": "services/execution/artifactLedger.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2163,
       "sha256": "1a46d141e83dab350f28dabe18aa21765191a4cf28deef9ae0757de4d88df56f"
     },
     {
       "path": "services/execution/missionGate.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3839,
       "sha256": "51efa98a964a8c63e1c18ab3f2722e8deb233a683b7daa6aa24319a1d4a88f33"
     },
     {
       "path": "services/execution/stepHonesty.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1444,
       "sha256": "3d838ada5cd591cf331da5917c543d82ee339e4f2ebeb017e8135977b02213e8"
     },
     {
       "path": "services/execution/taskLedger.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 15190,
       "sha256": "fefcdf837395ab8a400b9175ae56362935eaa9fdbb2cba65b36a4890afb4ccc4"
     },
     {
       "path": "services/experienceBuffer.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 8694,
       "sha256": "2c09cf754dad3220a7b2453b935191736d5d085f26d98b7618ab46a945ecd778"
     },
     {
       "path": "services/factExtractor.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 17963,
       "sha256": "e3ad1939c22f42ba1b72837c66af391d5091a3317ce71276fff203ab6b00d632"
     },
     {
       "path": "services/factory/AgentFactory.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 19985,
       "sha256": "a2bade96e9db07c489884f78ea2b3daf23b22eec8321f1d76ccad8af74c6d158"
     },
     {
       "path": "services/factory/squadFactory.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 10572,
       "sha256": "6eb82371441db5391987f6e47cee07c4af50953a150ae951cb4afcc36feea2c9"
     },
     {
       "path": "services/federatedMemory.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 10342,
       "sha256": "a7d32edc14a21dd9779088be0f93d31edc0b79f28cab34c44ad8ba0d4fdcab4e"
     },
     {
       "path": "services/feedbackService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4606,
       "sha256": "d98ae6d66958ec45b765c7b4a54e755727b926cdc816a6dedcfad797329d768a"
     },
     {
       "path": "services/figureGenerator.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 13866,
       "sha256": "ff0b330f341485d910533626ad2408974976aa842faa0509208f6bc041143793"
     },
     {
       "path": "services/geminiService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 85285,
       "sha256": "7ea73e8c8237a014042072e85796dd65dd6d116395dd0c6f9061b9b7f03fe966"
     },
     {
       "path": "services/genesis/genesisV2.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 16450,
       "sha256": "53ad799ec1da2fcbc19e45080105907a58481eb0273fa2c12778bd7b93f04a0c"
     },
     {
       "path": "services/genesisService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 7423,
       "sha256": "75e721bfd55e6b132f650c9cd904e627daa35168be2fb9ef4b36d99decdfed5e"
     },
     {
       "path": "services/gitIntegration.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 23754,
       "sha256": "5e6bd308e3c8f9e72d1c86358cde3b8677f3ef4a2da232bc49f79489e66f545d"
     },
     {
       "path": "services/gitService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2626,
       "sha256": "751622515e3b9b35b27143530d897b0b2f4d4e8db6475d94c2f23df59badf880"
     },
     {
       "path": "services/gmailService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 17350,
       "sha256": "0040d2ac1fb0c4e278d3e41aa1320b5b7542a72cd0747b40d98b31d4a5a7b055"
     },
     {
       "path": "services/graphExtractionService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 7516,
       "sha256": "39bf9891c042731fae9157ac523f9bdac4d547f1e17d5d8b02f4150c808b3d16"
     },
     {
       "path": "services/graphService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 56343,
       "sha256": "2e63f2cbb6fa27c79691b8ca44b30c972637fd31608154bd57dd3b12d4ffd877"
     },
     {
       "path": "services/health/memoryAudit.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 13430,
       "sha256": "647366f37383b594f6bec1f221e016d9a47ee3d5d8ff642098a0691efde55155"
     },
     {
       "path": "services/health/redisHealth.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 906,
       "sha256": "46aef828335c4ad1bf6718ec69c55cfd38c2c26774d750ebc6e06a946f0ed339"
     },
     {
       "path": "services/hubStrengtheningService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 10851,
       "sha256": "cdcd972142a3929d9d7e75d321818f146c7fdcceb3d2fa844f2a3c9ea7979625"
     },
     {
       "path": "services/identity/identityEvolution.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 22815,
       "sha256": "6640ae18fca59acf29e595c325d5b7d1bf8217fe863654789f2ffea833553d35"
     },
     {
       "path": "services/identityService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 32417,
       "sha256": "1e5c731af2b1a63dfe728b87e18834b203bc423dfd8e7c60f5740fde21a65c5d"
     },
     {
       "path": "services/incidentRegistry.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4678,
       "sha256": "edd9b3acdee9ab04ca2c3399167dab0bb1c76464f24349309411224e40b33b0a"
     },
     {
       "path": "services/ingestionEngine.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3627,
       "sha256": "4cefcb06729cc67b549e85512382195d8c3396ed8f886a5c52b3276cef39cbc7"
     },
     {
       "path": "services/ingestionService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4349,
       "sha256": "52e6bd8960029141fdfc63569ad38c6935271dc94b27dcf89062a29d5cbb03bd"
     },
     {
       "path": "services/installationService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5061,
       "sha256": "4202b8a4ac48cbedb71f282559180b11d98230cff0f5fea27f59b0a6a54a8223"
     },
     {
       "path": "services/integrationArchitect.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 27112,
       "sha256": "8f22c2618675d8a1f7ea8c4547acc450a2e724908f163509c8d1b12af3816bac"
     },
     {
       "path": "services/integrationHub.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 17304,
       "sha256": "d99923c92a2494b03b588623e51555c243fd1e3ba44acea63cb571a7bd3de166"
     },
     {
       "path": "services/introspectionEngine.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 61643,
       "sha256": "c04d5df900c4e6080a4f5e71802bec512461ec24ea5ae1e332e0fa443bb380e8"
     },
     {
       "path": "services/janitor/exactDuplicateSweep.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5923,
       "sha256": "949b61bee001b707f387ac545c792bd4d67a276469f88620a9047668d1af09c1"
     },
     {
       "path": "services/janitor/janitorService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 25081,
       "sha256": "8d4f149d102a4d7daadd76d6587bca2589c50ee2243d9130cbff14ed24b1f32b"
     },
     {
       "path": "services/janitor/revisionLedger.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3909,
       "sha256": "abbaa0e5d2fbf98f85dc62a1b224c353162d1544e2b603cb07b58fd53ea66127"
     },
     {
       "path": "services/knowledge/universalIndexer.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4469,
       "sha256": "bb26e9d9bb1d575d339491e1f2fee7f65a6c6773ebe02ab7678baf43910394e2"
     },
     {
       "path": "services/lancedbService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 41947,
       "sha256": "372fa3c67fd447f7b46c05f6cdadff76ab950915037f3912d49452a1e64d4983"
     },
     {
       "path": "services/learningLoop.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 18376,
       "sha256": "8b710c32c4b9761f0fdb2dd125f0020cc4a5a44a160c85a9ffa134b469135ebf"
     },
     {
       "path": "services/leidenService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5264,
       "sha256": "7fb6d7d09be879052a83a7d3c9e30da7007a1efca2127bac0c9856dc9daee155"
     },
     {
       "path": "services/lexicalMatch.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1650,
       "sha256": "5c239839272d4a22a929cf3bbb4468ea355c37b11ff992624f45750088adbcff"
     },
     {
       "path": "services/llm/admissionQueue.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3949,
       "sha256": "28424d8f468f904a3fa282b3b1d5bad39e8c3b35bd959ff364e40213fc3eb296"
     },
     {
       "path": "services/llm/agentInferenceRouter.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 8176,
       "sha256": "e423f485c3e2eaba3f25b3cb7fb873f858f8237520a79fb5a88bc2fae5e4dae4"
     },
     {
       "path": "services/llm/agentPrompt.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4787,
       "sha256": "947107b04559d25ff8a4647482c01684ddb386d1bde23caccecb63876dabd15d"
     },
     {
       "path": "services/llm/cliRouteAdapter.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3390,
       "sha256": "9e078730f3e15043611d05e2792c1081bc26b9b87dce7476d402a6e47296c53d"
     },
     {
       "path": "services/llm/defaultModels.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2432,
       "sha256": "12d35327633d8adb63f9d2da7ea89814924cad934cfc925631f2711d93f4862c"
     },
     {
       "path": "services/llm/inference.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5022,
       "sha256": "76aed19627fefd7644a8bd2717928d24a96971aadbe7e84dc62f0ea6da77324b"
     },
     {
       "path": "services/llm/openAICompatible.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 11342,
       "sha256": "04f6f31c780c89921a3a36175732abcd2baa0b8d4bdee4154ab231f1decc7f86"
     },
     {
       "path": "services/llm/providerRegistry.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5004,
       "sha256": "b5fdedb4b29b2eed22daa882619be87a492c730c5a83062a81b6034e23642fc1"
     },
     {
       "path": "services/llm/rateLimitWindows.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2891,
       "sha256": "45ef2c3f19c1c61140ed8bbaa65ce7546c29d06e63f4d6687fe5f88a3a7f997c"
     },
     {
       "path": "services/llm/streamAdapters.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 15443,
       "sha256": "55204947698f81b28e756257df9e8701c6e9a97db8ee2a9657be35b0bba91495"
     },
     {
       "path": "services/llmGateway.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 16427,
       "sha256": "306c58c0d906d180991306fe84e79c972f1e73c442f61eac195ec46359a23d98"
     },
     {
       "path": "services/localEmbeddingService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2102,
       "sha256": "72be5f514e0e4d5529dcf69baa7d2ae0ac6e94f3b73ed2fea44b84d299c8ca98"
     },
     {
       "path": "services/logger.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 8481,
       "sha256": "3066f0f5823f5490fdc935800bfe52313c5eea172f642f9a5e58a561ac1a33f5"
     },
     {
       "path": "services/mcp/mcpClient.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 12139,
       "sha256": "a51cd046c0385d6508c2835bc7938c98391f5b309bd09f197bf2afb57409237f"
     },
     {
       "path": "services/media/canvasService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 9812,
       "sha256": "8ed8079611c669cfd99022821f2364e2b755075ab95103e509fa38bc27d3a199"
     },
     {
       "path": "services/media/elevenLabsService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3978,
       "sha256": "a330820210eebbc0d873c1f78996a2f2d34e6281205294549992b51e700fd88a"
     },
     {
       "path": "services/media/imageFactory.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 18156,
       "sha256": "b911a1761aa5112e9986c9fbe5a22ccc5eade850ac91f237db30df0b4aa8ca05"
     },
     {
       "path": "services/media/imagineArtVideoService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2455,
       "sha256": "cc773c8c889ab9efb59bff0b5c65943a0ad7b451074fbc9ca9d5132d15f547de"
     },
     {
       "path": "services/media/lipSyncService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 9764,
       "sha256": "106076fe80473fc753feaf9c9d1796f934306fd63ee7a6b0bb7169f6cc442e77"
     },
     {
       "path": "services/media/localVideoService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 7102,
       "sha256": "0f7d20dc322a37c3446b0b5732cb0a6ef9990ca8fe1145429b3a880dae8d5b40"
     },
     {
       "path": "services/media/nanoBananaService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 21478,
       "sha256": "7fd5a6df8ce6ee31cde3e818bb78ce7899f3c0c3cb7b27de42947848fa8ede0d"
     },
     {
       "path": "services/media/sceneConsistencyManager.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 15175,
       "sha256": "245ac1c212b7e69ae3d99fad9f9c6536164b0e12f33b3b06154a07a2bdf2ee0f"
     },
     {
       "path": "services/media/stockService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1887,
       "sha256": "661efda151fc25df6459693f9413d1d476dcfd9865c0ee118bfb1757e02f67a5"
     },
     {
       "path": "services/media/storyboardGenerator.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 25251,
       "sha256": "aa4d96896aa37aa0913105ca2ad86a96d15a09b2de89a8361ffddc54792bf073"
     },
     {
       "path": "services/media/veoService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 7087,
       "sha256": "8fd3c3b3d045f0549e5fd18bae30ba9b211de1fd6ee173fb1b9b287147cbdaac"
     },
     {
       "path": "services/media/videoCompositor.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 19273,
       "sha256": "d0246281087a44fb1abf2818eb5d5e68f46c6b6840ff7cca795bdf103760b0f2"
     },
     {
       "path": "services/media/videoFactory.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4609,
       "sha256": "90b9f228ef6350517db19396d79802fb9af77cd477917327f8d202a3058771b7"
     },
     {
       "path": "services/media/voiceLibraryService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 15661,
       "sha256": "6e36a2539304b320b3ed4267df56fe7a4efea57b1850881b79b62ad872c50d7d"
     },
     {
       "path": "services/media/voiceMonitorService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 23219,
       "sha256": "94369344d49fc2805c243f85ed77bcebeda7d97cc05d8da032b442bcf2dcce6d"
     },
     {
       "path": "services/mediaManager.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4079,
       "sha256": "0639d8f0ab3515ae689bb8e7b5b61801744a8fa5f3f3469f8e882e5fcc40fd4a"
     },
     {
       "path": "services/mediaService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 36729,
       "sha256": "a990a1ee564ab9fbc59dc0e5c227352fb527d857a5e7836c9376d0b238faccff"
     },
     {
       "path": "services/memory/coldArchive.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4126,
       "sha256": "245ca79d7912b6c13f5bf91be81eac5366a4bd1ef97a1d5b23d3438b42059b2d"
     },
     {
       "path": "services/memory/continuousMemory.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 17627,
       "sha256": "162b85c90a6d66270fa47972869b5bfe9d82745e10f68276ef8a0190e907831f"
     },
     {
       "path": "services/memory/factRepository.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 13174,
       "sha256": "f758f0d8eb19b1ecf6e9904fa42d0da56fcb8186cc0c760664ef00df66182606"
     },
     {
       "path": "services/memory/provenance.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3822,
       "sha256": "a761b4ebc52c5adc95115ea7edb01facbb9c2510c8cf4d6e4722d3b1c904991e"
     },
     {
       "path": "services/memory/valueRanking.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3728,
       "sha256": "88b607a84ac7f9d68861b9c0ec7a97ddcf0e01d121ef4bb22bea475cdf06938f"
     },
     {
       "path": "services/memoryCognition.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2576,
       "sha256": "5967d6937d09c4fe3febc5855947287845e97ae8a983a85bce31730852126137"
     },
     {
       "path": "services/memoryEvidence.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 6283,
       "sha256": "f03da3f167cccf3271202e13a2039b4a668b3607222400444869de36dcd648cc"
     },
     {
       "path": "services/memoryPagination.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1830,
       "sha256": "a38d1b5768d50019dcdfd9d418a403b320e7b996f385b0178dc83b3518c94192"
     },
     {
       "path": "services/memoryProjectionRollout.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 9224,
       "sha256": "d0a186a6d1a0361cee34e906668203511b6e846084b7502ae803e4c1b2d1dd4f"
     },
     {
       "path": "services/memoryRetrieval.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2536,
       "sha256": "23aeeb6d5bf589bcb3f1c41eaa66a698413dea801f4b0541dbc0c5e0925839b2"
     },
     {
       "path": "services/memorySchema.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1671,
       "sha256": "f7bf20958ff90d935afd1d38b6e0f9b241e207257fcfdb645c436c85fa8da4e2"
     },
     {
       "path": "services/memoryTransitions.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 10464,
       "sha256": "11aafd199dae6c015410af34d3f4a1b6d938408bce431a7d93235ee6eeed3444"
     },
     {
       "path": "services/minimaxService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 17347,
       "sha256": "a98f76951b5647e4f72b3f29038eb0a756cfde5d1a80463a88a13fb713b630f9"
     },
     {
       "path": "services/missionCheckpoint.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4062,
       "sha256": "a0f8dfd745a57ee47cbc8a9854217c90a8af0db956a8c00f84ac84120abc33ce"
     },
     {
       "path": "services/modelCatalog.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4227,
       "sha256": "edaaeb4a7f75a1c2d0403b26b1ac3a4ba9ef198f6b17223abbe4077c4dfb8aa4"
     },
     {
       "path": "services/monitoringService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2869,
       "sha256": "d69bc977568f72c49f27b6dd327de21e7601a1c9244ec75832f27d7167573e1d"
     },
     {
       "path": "services/narrativeFillerPolicy.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3178,
       "sha256": "66ebd97cd5bfe646825315ea22d0b93062957b4ca429157e320ed06b8f6dc008"
     },
     {
       "path": "services/narrativeService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 49926,
       "sha256": "fe23b5813856d89343c0595dd21b2346407e9fe4de202e7ffcca9ab02a128e0a"
     },
     {
       "path": "services/neuroCognitiveService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 23190,
       "sha256": "28422aef58079b81836a52666dff8464632d58e0cf2d9eced13cd18b015df3dd"
     },
     {
       "path": "services/neuroLinkService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3384,
       "sha256": "f1608d46b5d9252413e6d0d4045456cd26367176006317277660ff42a58910f9"
     },
     {
       "path": "services/neuroSynapseService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2073,
       "sha256": "40617d67cf1d3e563b948c210a242d0ac221e2923932934133c097f0e05d8d29"
     },
     {
       "path": "services/ollamaService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 12159,
       "sha256": "8d93436debfa769945fcc70b3a7b34ea9415035d1cfc69c1e45efe9e27a238a6"
     },
     {
       "path": "services/orchestrator.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 145378,
       "sha256": "89d30cf1019bd00bc69a92372b54f474f728bf3bfcd743b97fda7dea90de9797"
     },
     {
       "path": "services/org/agentLocator.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1643,
       "sha256": "f34fc8e76c01675a14fc69f63732ac2b628659eb5203e1b172dac5852ba76ec6"
     },
     {
       "path": "services/org/organization.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5068,
       "sha256": "78b7f0c38d407899983e044ec0e623dd28dc152b3d138548a31318165e8decbe"
     },
     {
       "path": "services/org/reputation.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5965,
       "sha256": "a487fc31268a4afba4a1eda3bebcfba10a8db3c972dc42c66b568198d0f6ca9c"
     },
     {
       "path": "services/org/reputationLedger.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3512,
       "sha256": "8175101d30e3c218105523589b1bd7c1d3be920be2da1a722e378a77dd701ecd"
     },
     {
       "path": "services/org/teamLearning.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2585,
       "sha256": "31324c87805cf43d95bb8d7d23f3ac8d11c9f3a6aa8fa08d70ba1d3e8aa804f2"
     },
     {
       "path": "services/org/teamRouting.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1699,
       "sha256": "05d11dadac78e371c12573cb1a40421452e9d3ce84a7f77635f2e3022bb8ff5e"
     },
     {
       "path": "services/org/types.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1451,
       "sha256": "d95c7ad7f21ab9079dbac2ba92126c2463b36fc4e909bd1636668f14a398b3ef"
     },
     {
       "path": "services/paperAssembler.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 6534,
       "sha256": "0766c18501c3e82b5db13c8c5c0b7990261e9ccaca1a33c0b27d697153ff35a8"
     },
     {
       "path": "services/paperGenerator.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 23985,
       "sha256": "2b2f39e655c8e91951f5d3d9c9e9fee825133714373fda697c34f624e5ea9b5e"
     },
     {
       "path": "services/paperPipeline.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 25046,
       "sha256": "9282fcfc6ec56c9a7757c12accddcda89423f428acf2cf8bd2316f204da851a0"
     },
     {
       "path": "services/payments/cardIssuerStub.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2006,
       "sha256": "3b172747c8bf8b90acedc61cb1e7ddd2fa9dfc8a3b21a4692b306913a8a7ae2a"
     },
     {
       "path": "services/payments/paymentGateway.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 7886,
       "sha256": "37cdf20a30a338ac909099684ad15aa0285d26d916f6dc21c2c3a8616cc6ed7b"
     },
     {
       "path": "services/payments/paypalProvider.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 11943,
       "sha256": "f8a7a3e8bd56f3028eb58df45fbb303a8b583e23eb204669fc78ff31ce58b2f2"
     },
     {
       "path": "services/payments/types.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3087,
       "sha256": "36a24e7d09fdbe198ae50bb1540d4cbbcd998c4f233e4c5908409a7cbdc25997"
     },
     {
       "path": "services/pdfExporter.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 16607,
       "sha256": "c36a3d9acc1be54a030a6763643ea87bb69c092910e30b80ce6b95e0f74009f1"
     },
     {
       "path": "services/peerReviewService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 11679,
       "sha256": "f0a28f42acea7134fa37493a5481b208db10027545281a36d67149f28e81bd04"
     },
     {
       "path": "services/planExecutor.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 41873,
       "sha256": "20717eefcb07cc2325b67563656caea6e5b0b3453acecebeffe84706b04ffe44"
     },
     {
       "path": "services/planGenerator.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 13660,
       "sha256": "e650485f71c46b82485f2cf2fc09ed56f06425085bb9c932c6b90a5da1ad4aee"
     },
     {
       "path": "services/pluginManager.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2125,
       "sha256": "777c49d20461522afee33dddcd886366578ad3457b6cda7fd23f60ecdd54c6ec"
     },
     {
       "path": "services/plugins/core/filesystem/index.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2294,
       "sha256": "248d76421b88f20b2b5fc3bf013c839528a8c77a02806b3ff9c2794dcd097e76"
     },
     {
       "path": "services/plugins/core/filesystem/tools.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1398,
       "sha256": "686e08971a1a4e843b2a0c037672fa4ce03be9e76c5c42bab3f5829d76f13f6f"
     },
     {
       "path": "services/plugins/discovery.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 6284,
       "sha256": "04b155ccd4e06fe8e4954c144d4d4819e5af373b1d23d67e67d07a27ea484260"
     },
     {
       "path": "services/plugins/integrations/googleWorkspacePlugin/index.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 23837,
       "sha256": "8c53d3704e6e27dbad2ba3d6c0f58c8c58b612e30f62e16cdf563e9e71c7d55c"
     },
     {
       "path": "services/plugins/integrations/notionPlugin/index.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4597,
       "sha256": "d027ead6a10adc5b68c65992134346157014126d3c3206ec2a32da3edb4a3b98"
     },
     {
       "path": "services/plugins/integrations/trelloPlugin/index.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4392,
       "sha256": "93be10a4f97052333ab401b8024ca2a1904590fc38158953a280e27b9957336d"
     },
     {
       "path": "services/plugins/loader.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 909,
       "sha256": "0dd1b1f74a504ef3ad76531e7d57b16cb4b98d91b7996fa4af4787581138fec8"
     },
     {
       "path": "services/plugins/monitorable.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1457,
       "sha256": "e0315b65e50d168b58cdfdd78edfea221263570102272ce308aa72ea9550bb22"
     },
     {
       "path": "services/plugins/pluginFactory.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4824,
       "sha256": "c605048effbd09be9a2e448fe419e72ff1b820c703626ea80ff4e2253e6c1b0c"
     },
     {
       "path": "services/plugins/pluginInterface.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2449,
       "sha256": "3cbdd9333e64087aeb09391d1703465950b522b963c48fdeaf5f05296ecc0467"
     },
     {
       "path": "services/plugins/pluginRegistry.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 8800,
       "sha256": "151245a66e292de23fd87049294a80e172849ff966c3d2f81265dd912ef1fb5e"
     },
     {
       "path": "services/powerManager.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 9259,
       "sha256": "22b944f83540e8635baae1859978f234b0e6e442700923d8104ccd2adf24bba0"
     },
     {
       "path": "services/presentationEngine.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 34586,
       "sha256": "22f7b58a622fcb0281c2fb4bf0fc5a31406b867ba0d3cf3863e5dba48ae500fc"
     },
     {
       "path": "services/procedureApprovalLedger.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 22591,
       "sha256": "b33190b072c4ecc60c63be6c43fc5e9893782e07214467d7a21f5f211fd37620"
     },
     {
       "path": "services/procedureFileSandbox.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3834,
       "sha256": "47a246878e2b464583b5fa897c6b7fd92d43560a82ca4a041cfc069f3b44b2ef"
     },
     {
       "path": "services/procedureLeaseRunner.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1825,
       "sha256": "b3f54246d012f2de9f25d9ea562ed1a4552f4dbeab839d728dda60c44642f3f1"
     },
     {
       "path": "services/procedureOsSandbox.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5376,
       "sha256": "ce5a313789159ae749485c5c21cca3427a8c4585799c05a77e1a0b8d469d48c1"
     },
     {
       "path": "services/procedureOsSandboxWorker.cjs",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1630,
       "sha256": "d63b3b940a3baea26d2fd341af837111e6be6153e10ee77ad38521f08179c306"
     },
     {
       "path": "services/procedureOwnerIdentity.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 6539,
       "sha256": "4e0b65d368be5b834178dd181ddb9d79a18d52f24fd9a19b472db097533bf8cf"
     },
     {
       "path": "services/procedureReceiptAnchor.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4425,
       "sha256": "7bd1e235ad9c942ade4a170cdcbc5e5d803e1e399ef127b89ea47c107f7e4d32"
     },
     {
       "path": "services/procedureReceiptSigner.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4065,
       "sha256": "dff373b934834e82b89886e34112754b7ba39240d3fad562e1b3d93755edce49"
     },
     {
       "path": "services/promptCompiler.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 24936,
       "sha256": "ab46e8e06b8d652f408ebc472a6b3cc8031bbee4533186087d3003497ffcbabf"
     },
     {
       "path": "services/providerHealthManager.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 8872,
       "sha256": "1fc043dae3182ea1cb08d0a882e2c43d0bc826bad6c50998444ba26a73e0447a"
     },
     {
       "path": "services/qualityControlService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 6470,
       "sha256": "b550ed99bcc33ad9b22759874b044c8213a222de09c5ef268bb4e68b0d450aed"
     },
     {
       "path": "services/quotaLedger.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 8571,
       "sha256": "21fd718a7cb79f13a2bcc63891e558019f390f88c0391c6d0b1dc4d7117af7ed"
     },
     {
       "path": "services/redisClient.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 7857,
       "sha256": "0b059cb3b7e23d41bbde76609c56379b60fa18d43d061b8885ed496db41e19e1"
     },
     {
       "path": "services/referenceCollector.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 9249,
       "sha256": "d52cab64e3daef34f62f8c78dd8b10a1c119b3a46cb1348907411c964df0888f"
     },
     {
       "path": "services/registry/AgentRegistry.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2657,
       "sha256": "f24f62775fa7bc4fadbed3fb53b96bb2ffe1a2c9bf279d28f01187e5835e222e"
     },
     {
       "path": "services/remediationService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 37741,
       "sha256": "250ce9bf001391f0059a8b3087b72b3c772839648f366ac234984c5c2c034875"
     },
     {
       "path": "services/researchTools.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 11773,
       "sha256": "e9a5f34c991888bbffc9ead4aba3d2251a94a58f991443455c8a4c3ba6148caa"
     },
     {
       "path": "services/resilience/operationCircuit.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 7782,
       "sha256": "e23518e3e90b9d6e40611072181c7c85d4e30f2da6f66309c506fe1cba6a2e99"
     },
     {
       "path": "services/resilience/retryHelper.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5927,
       "sha256": "07abf6f4e3096e3b357785efc0a7accea727b7a794af5f2cf994300aba9b11c1"
     },
     {
       "path": "services/resilience/toolValidator.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 10441,
       "sha256": "ad5ae2c4a114ec462d767b99cfc3b49ded0e89fabf0d038d373c8da264b3690b"
     },
     {
       "path": "services/resourceArbiter.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 11027,
       "sha256": "c5a8bf8f6a2e8788c476f48538118e6d6c2e668f382438a8e082087fc51c0bbb"
     },
     {
       "path": "services/resourceManager.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5850,
       "sha256": "bacddcf97902648b562e4d5fa573c06a50ad1dd4a2ef4d698e348c2c6c4d740a"
     },
     {
       "path": "services/scheduler/cronScheduler.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 8155,
       "sha256": "8064936de1589ae85d9bac187933bdd6f776a0c199b91cd584c6b24d78ffd555"
     },
     {
       "path": "services/schedulerService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 12676,
       "sha256": "9978f8e40c08bc38dafb91e08920f1f746ccb40dcbbad599a5fc80cb38f1d6ca"
     },
     {
       "path": "services/search/tavilyService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1334,
       "sha256": "de0682454dae931da3df5aaa8694652a2ecc7531e129cc0c4debca863151a1cf"
     },
     {
       "path": "services/security/actionRiskRegistry.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3542,
       "sha256": "49902b81b82b73205d9c32fdfd05b132d3d26cd97931206b496d85e71b06c32f"
     },
     {
       "path": "services/security/appendLogReader.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4185,
       "sha256": "9b2db52bc833ba5cbf27f80e2bc20567ffbe42d3347c44ad8e39840f630e88eb"
     },
     {
       "path": "services/security/approvalGrants.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3709,
       "sha256": "229f1f09b6098f84c38485b5e3b6c41d738f46194c680c5097e9f90f4af890eb"
     },
     {
       "path": "services/security/bootMode.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1249,
       "sha256": "d11453504634d16c42dae5fcd85af67124e217673984e4697beeba5d336cf5f4"
     },
     {
       "path": "services/security/capabilityState.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1264,
       "sha256": "c9942dea815b879d9d3d6a034877db23fb68e56f3d02dde995b95b08b898ab5d"
     },
     {
       "path": "services/security/channelAuthority.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3238,
       "sha256": "5b2fc687291edcd8e5016fbb6dfd97e16c3f0cb50844517eec14142d14e03074"
     },
     {
       "path": "services/security/confirmationOutcome.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 417,
       "sha256": "278c18ac420815dcf24230671d56baa7119e7e587ef3920e440e85baebf98245"
     },
     {
       "path": "services/security/consentLedger.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 30241,
       "sha256": "f1c3ccce0af596e609334357909c3b1e3eca4a4b9eb6a0e4a9581a3be33dc0f2"
     },
     {
       "path": "services/security/credentialGuard.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2615,
       "sha256": "6dc94250bee12c56a2166464b7711b725a5c95264cb1f73e8f8cb91042325614"
     },
     {
       "path": "services/security/effectContext.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2052,
       "sha256": "8e0464ba336f1613ae972fc5ba3980e7f753ae21fd3e48b5105b32c887e1932f"
     },
     {
       "path": "services/security/effectGate.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 17681,
       "sha256": "cd272e66f4333f7a0aced1df4cbea4b8db9e5bf137c469500b7bdca578736192"
     },
     {
       "path": "services/security/externalGenerationPolicy.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1800,
       "sha256": "10633a57e01b3b4e68316e4d822d49d36720edefb5582e6a98fb6b8fe16b2c33"
     },
     {
       "path": "services/security/gatedExecution.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2313,
       "sha256": "226df3168361cc6cb00229b607a9f2aca754af3eadac4f6470fa20770ee30524"
     },
     {
       "path": "services/security/ingressEnvelope.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 19857,
       "sha256": "eef91a7ed4cc258723c420df939ef01e99dab73c8c1aaadaa7b1ebe798b9d37e"
     },
     {
       "path": "services/security/localInferencePolicy.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 676,
       "sha256": "0fc95dd805809deeef546cee388954a9ffc821d01293631fad28b07e1966fd04"
     },
     {
       "path": "services/security/principalContext.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 529,
       "sha256": "65ad040a925c4e88173769c414c17ced95f77f76bd850bece00b01d24ffb9cf5"
     },
     {
       "path": "services/security/promptGuard.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2390,
       "sha256": "d183fc8b718030296510eee3f440a0e4d7a32fedf3369c93a5f7646997f5393b"
     },
     {
       "path": "services/security/proposalOwner.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 10737,
       "sha256": "d7d00acdc559dc24317e68e8308030008624b197751a0bc3b206f0d0baae0c85"
     },
     {
       "path": "services/security/securityManager.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 11638,
       "sha256": "e029bf5ba0e1ceaa763dae1f221566d632f7bfb0a74809d60e99fad3913f8633"
     },
     {
       "path": "services/security/securitySquad.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 16336,
       "sha256": "acc94c8881bd345dc9bed538c11be8979cfaca0b1ab652d3a9ae36f98cf1da3c"
     },
     {
       "path": "services/security/toolEffects.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 10882,
       "sha256": "2e4447c37e24bf3b78dfd2e7e9098de51d5ae890c09fdce97aa00c3eaabe4201"
     },
     {
       "path": "services/selfCodeService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 19103,
       "sha256": "64d8c8724e447834c675640eee7bf9c3c47b2956f5b92e3cfb83ea15061fd9e5"
     },
     {
       "path": "services/selfdev/atomicWrite.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4211,
       "sha256": "ca1aaa09406aee4ca9fde25d3fdb8cdbf1f96d2f72a1dde30a1816e2dd883a8c"
     },
     {
       "path": "services/selfdev/cycleService.ts",
-      "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 37110,
-      "sha256": "f0b0008f114cda8d73fff4b37de9bae33e095ea92eeca070aea4186104fc873e",
-      "fixturePath": "tests/genuine-vitest-session/main-continuity-integration/services/selfdev/cycleService.ts"
+      "sha256": "f0b0008f114cda8d73fff4b37de9bae33e095ea92eeca070aea4186104fc873e"
     },
     {
       "path": "services/selfdev/cycleStoreContinuity.ts",
-      "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3181,
-      "sha256": "49b59d82254323ef3ccd4cca7004321e8b2746267f17b86c26f8ff65ce495e8d",
-      "fixturePath": "tests/genuine-vitest-session/main-continuity-integration/services/selfdev/cycleStoreContinuity.ts"
+      "sha256": "49b59d82254323ef3ccd4cca7004321e8b2746267f17b86c26f8ff65ce495e8d"
     },
     {
       "path": "services/selfdev/gates.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3044,
       "sha256": "d5fba25508cc7a637fff2ff09af78d6f0f4904ec5f9cf8921f56b49537e39c98"
     },
     {
       "path": "services/selfdev/incidentMappings.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 864,
       "sha256": "15bea926228f8e286500f82aa00ccb5b5218d384fdf360ded67d8189f2becd70"
     },
     {
       "path": "services/selfdev/scheduler.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 9900,
       "sha256": "e2bd6434283a5a22b2d592ca81db9b44b4c262bd9eb81c148529b8750bdd28c1"
     },
     {
       "path": "services/semanticAgentSearch.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 10541,
       "sha256": "07208355e93c7d978f8217da3b5f20d703af48197aa8e8c7ea6604837617926d"
     },
     {
       "path": "services/semanticMemory.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 8166,
       "sha256": "dd46c3cd580b56931d653840b7b42ed4cdf98f00cf9f5588780ee86aec4afe09"
     },
     {
       "path": "services/sensory/hapticsDriver.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3838,
       "sha256": "a925be2b8e99a6e5c2437fef9cedc22a71d431f18c41388c82816ed6e02ceb59"
     },
     {
       "path": "services/sensory/index.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 68,
       "sha256": "6d3a81635e494b260b5299e04f2789163c0643315d5d25574ed9d74a4c07facb"
     },
     {
       "path": "services/sensory/olfactoryDriver.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3330,
       "sha256": "5d224358782a548f362a8ac1af5f1151c6739060aed6e28a87278ea8af3c1bdb"
     },
     {
       "path": "services/sensoryService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5527,
       "sha256": "4b8e03aff3c7ba722c9a9ccc0a77e532adc95864a3360034e9dff286f236ec5f"
     },
     {
       "path": "services/settingsManager.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 15907,
       "sha256": "fcaf1fcd90dce70ab1d47b348d0782ed605353134715d7adffaae5c3b06c5e31"
     },
     {
       "path": "services/silhouetteService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4054,
       "sha256": "4d4116efb734d4b1f7c34c23981bccfd0317e4612cae713c6c1cc0bc224730c1"
     },
     {
       "path": "services/skills/creativeDirectorSkill.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 9065,
       "sha256": "328d71f61f823a0bf5bbb6709c417cc0aec0438946e1fce79412eea3f486b509"
     },
     {
       "path": "services/skills/skillFactory.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4019,
       "sha256": "941d5253ac84e9849d88cb1afcb871a06437f5b016e1f1295416c7e5ba40e9db"
     },
     {
       "path": "services/skills/skillRegistry.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 12186,
       "sha256": "aee9d82fc934577b7ed101e01f31a489270e92cb33090c28ed0fd18e3082711c"
     },
     {
       "path": "services/sqliteService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 40328,
       "sha256": "36df3f733a6d6a596143cdd2180d1c03d1054492221ca0f5c4a7f51c5a4b6500"
     },
     {
       "path": "services/squads/dynamicBirth.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 9969,
       "sha256": "7d50ae9a96ae10badbcf10131cc4edd4e2867f0dfb41011065ba7a8fa682bf94"
     },
     {
       "path": "services/squads/librarianSquad.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1774,
       "sha256": "86b82a4b0dddf1acad14b98272aa09e0e1369516efeb72eb5d515c2077cec9f1"
     },
     {
       "path": "services/squads/productionSquad.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 24079,
       "sha256": "4cba1c5b4bccc1bd5f01d4464c5089d2b2eb6b76d8148fd5afbdef72be6f6621"
     },
     {
       "path": "services/squads/squadConfig.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3393,
       "sha256": "961b29225539c495dc8670a48b71c1bce8a62b5155258c0ba435a295276e38b2"
     },
     {
       "path": "services/standards/agentStandard.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4277,
       "sha256": "dac57052a7439c8940367aa1407530ff74cade81a864062d25d4a75d5382374b"
     },
     {
       "path": "services/standards/pluginStandard.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4183,
       "sha256": "0e2fb5ac6af1d193f8f07e26831809edbd098993f3e921e69e43762b435a2684"
     },
     {
       "path": "services/standards/toolStandard.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4697,
       "sha256": "616f9d59a477e4d735220d660ddfbacde132e38a8349d3bc30b7dca391477823"
     },
     {
       "path": "services/stockService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5439,
       "sha256": "5b0033d43a654035dfe29237f79ec0d775e7acd51f5ae8ab48d8973a1063c74f"
     },
     {
       "path": "services/supportAgent.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4180,
       "sha256": "ae2c622f1a6b8cbc945551578a77c3ddca925f90038659da861d61b02f482f33"
     },
     {
       "path": "services/syncManager.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5376,
       "sha256": "94f253c139dd79d288377be733e2d8f145d8f647ad84d90af63bab97025d57d5"
     },
     {
       "path": "services/synthesisService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 16175,
       "sha256": "6fb9ffca28f570666834dbf44f57ef08cd455d88eb603ae002c44906fb978010"
     },
     {
       "path": "services/system/systemControlService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 8382,
       "sha256": "682e77fadce742c35408128626d54dc70f1c0291856eecc123e29bb2f102ff15"
     },
     {
       "path": "services/system/terminalService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4375,
       "sha256": "d6eb4ca2ba8997bf3562a4a4cd5418aafed610cf3a7e002497e1a755234299fc"
     },
     {
       "path": "services/systemBus.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 11787,
       "sha256": "11ddddbc554f31558e9bd4e1fdac7f1068a47283aa92f66f7c59f4d53edc22f9"
     },
     {
       "path": "services/technicalDebt.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2055,
       "sha256": "615841df746cda2b428c8f103eec7f5cd5e98df0b6fdeea236b5072700f08173"
     },
     {
       "path": "services/telegram/telegramService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 7743,
       "sha256": "bd643a6c1dc8320d53574a2fe77e5c5035370c2a9cd193a170701e19fd063259"
     },
     {
       "path": "services/telemetryAnalytics.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 11917,
       "sha256": "b6645de5514b947945dc650ea76ce721221fad2a7471d725a5e4e70fc081968e"
     },
     {
       "path": "services/telemetryHistory.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2239,
       "sha256": "9f53847caf15336d6420bef417d3f4d8f32dbf2e14483e8a8277f22084431cca"
     },
     {
       "path": "services/telephony/telephonyService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 31319,
       "sha256": "538b28c4d52da8827a2e3b07e4e30b7c2309643c2dbd451684af50eaec9044cd"
     },
     {
       "path": "services/telephony/twilioSignature.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1178,
       "sha256": "be754fe3f81156c602af000806af18ae2c0f6118cf89991386f1eba6694d84cf"
     },
     {
       "path": "services/temporalClaimExtraction.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3024,
       "sha256": "4496edcc93e76070eedb8c8244a83fdfdd76a8dbdec0f1636e1e1bef59320019"
     },
     {
       "path": "services/temporalContext.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1245,
       "sha256": "d2dcdc0b680fe3b1840626f8fbc78573891667cf32af8e34d922f3402e23fd60"
     },
     {
       "path": "services/tools/architectAuditTool.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2075,
       "sha256": "59aeb696cca1431425164ec71427f85d957bb29ff19a97349b2e912a2d917b9c"
     },
     {
       "path": "services/tools/confirmationGate.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 19583,
       "sha256": "6e5b4abbbd2d465efdeada9924d6eb5e10ea03692b464d880982e78a20e0c53f"
     },
     {
       "path": "services/tools/definitions.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 74818,
       "sha256": "e99edf6877509a736c3f4f6b2b7b53b5f8f9732103f0e78c9edc339404d1ab59"
     },
     {
       "path": "services/tools/dependencyGraph.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 11969,
       "sha256": "bf0898c2e890514a9b8e7ae6fa803f3c9379474cf4efbbfb0c03498b79bd7efa"
     },
     {
       "path": "services/tools/execMarker.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2078,
       "sha256": "e643d12034f7d1df1b700607ef47de31657688203026e2493ddc42d1892eb10f"
     },
     {
       "path": "services/tools/fileJail.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 7702,
       "sha256": "2dcda5ce605fe5caa7c18033a2670cbcba711c621feafd2949bc009f7a8efe20"
     },
     {
       "path": "services/tools/reaTool.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 11598,
       "sha256": "e16d3b042b03a17774dcf3c6043f7de08b95098584de46c4ef9f54020e89a610"
     },
     {
       "path": "services/tools/toolEvolver.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 8818,
       "sha256": "68da3d6f417ebbaa3c2431dd6657db0fa054bef1415617a3bd06303e98d75227"
     },
     {
       "path": "services/tools/toolExecutor.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 10135,
       "sha256": "f5cabc6806790859ca6603f6fd61d5da0e0b1bc1fb0097573332ae16c740c518"
     },
     {
       "path": "services/tools/toolFactory.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 14236,
       "sha256": "ece5c025889038233bfe51405e16af23ccb74d30ff00dd96e7647a4e60596842"
     },
     {
       "path": "services/tools/toolHandler.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 102466,
       "sha256": "6fa7d6ff0c9efdc80c5231246934a1c8ceb7237e538e0f0db4c09c379882e12f"
     },
     {
       "path": "services/tools/toolPersistence.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 12539,
       "sha256": "6f2d44909f962da63820d11c34a508754011bd3ac755040c82bb6da20e610da5"
     },
     {
       "path": "services/tools/toolRegistry.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 35774,
       "sha256": "aaf7eb6ae68b32747c3e48f50e68c166ccda205d0479eccfaf1a9d7b2c671964"
     },
     {
       "path": "services/tools/toolSelection.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 6189,
       "sha256": "737988690d6c25e6dbdbfc789fa4873ac3f600c6b78b852f947bcbb3a8d251a2"
     },
     {
       "path": "services/training/curriculaExportService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 7896,
       "sha256": "3b6b6928e427b4cc74db61e6ce651798a705c9e4a58fb801a106c588015b248b"
     },
     {
       "path": "services/training/dataCollector.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4182,
       "sha256": "2242707819fdda3f748347534b1fd89628b15b7038d16d88868d2d6aba33821c"
     },
     {
       "path": "services/training/trainingService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1405,
       "sha256": "accf10e8d054cd5f6d83255afa234067a1a827f32a43b978dae45cda37ba9da3"
     },
     {
       "path": "services/ttsService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 10934,
       "sha256": "af1c83f965467e118e5de7c29a5b2f549292f4d391586038e94022fedcc1c080"
     },
     {
       "path": "services/uiContext.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2615,
       "sha256": "ad769bcbf20ad7f6e68c5c892c13cdd890e85baa2386a93bfdf0147d0031f6bd"
     },
     {
       "path": "services/uiController.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4152,
       "sha256": "ddfeaaed6d61ead1ce11f2882bee285ebb5dcdfa848be633d180c2e64c03cbfa"
     },
     {
       "path": "services/userProfileService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 14213,
       "sha256": "392574481051a131a6bf50318050cf7a95162bab7bda7675ac706c80e91e7a0d"
     },
     {
       "path": "services/utils/atomicWrite.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1808,
       "sha256": "d70b08a1152333af830c8fa528420aef0aa66b1d0f4fc90391d8d05c20647e7a"
     },
     {
       "path": "services/vault/financialVault.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 22672,
       "sha256": "f8709816191f5f3f0de298f4b73f18ac80db03ce434eb7d8b84f45cb5493c2df"
     },
     {
       "path": "services/vectorEngine.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 21471,
       "sha256": "35e54c849b07fe3c5230c7cb212960aba5222ad8576353ade684682226a37237"
     },
     {
       "path": "services/vectorMemoryService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 16351,
       "sha256": "068cebb8f5fee999b1a78c0e15238ac4c9969a92e208b84dad44417ce312bec4"
     },
     {
       "path": "services/vectorScan.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5037,
       "sha256": "44f148582ae556b41b6da9103469f850414ac48e2465ba9bd40992af8f3f6a24"
     },
     {
       "path": "services/verificationService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1614,
       "sha256": "794eaa6209fe559e8d8b4e74b993a031da3fcbeec5ca8192fab6355133bf0ebc"
     },
     {
       "path": "services/videoStudioService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5202,
       "sha256": "cc84744dec2508f9ec78341ce21ff5fced123ba9b0f3e09023c76eda3dde2f27"
     },
     {
       "path": "services/virtualFileSystem.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 14291,
       "sha256": "026c08c7f842bb3db3ebd3178f57bafe63af222299edaf120ee15643f2dc3b25"
     },
     {
       "path": "services/visualAnalysisService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 9151,
       "sha256": "c494e0f860c46601a0996e0ac138e9826a6c0bf038052834fa5950f92d6431b5"
     },
     {
       "path": "services/visualCortex.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2936,
       "sha256": "1d55733cf4155e8214231d0dcfd8f7fec69db35cad57fe4b1f019b327599a6d3"
     },
     {
       "path": "services/visualService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 18399,
       "sha256": "5e72a978b74368bc8696448884acc0c51c09b3f8ba6db8b5e79aae0f6243d845"
     },
     {
       "path": "services/webhookManager.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3477,
       "sha256": "06ffdbddfc28fd1e7e4a2245bb91d7aa246cf5aae0ed2d26dabf2cc9520e0ece"
     },
     {
       "path": "services/workers/videoWorker.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5423,
       "sha256": "51c09d320aa05dd6f7fbe40d7f5ade23371fd1d054f5b5fcd8fae4341b211bd7"
     },
     {
       "path": "services/workflowEngine.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 27381,
       "sha256": "33ad80e7f578bdafab01461116580541a2e150351806ce08120e0979fd1e1614"
     },
     {
       "path": "services/workflows/animateDiffLightning.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3455,
       "sha256": "67a240b604fe72787f39eec7aa0df0eb277cebcd028d199a55eb970156d97460"
     },
     {
       "path": "services/workflows/animateDiffVid2Video.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3842,
       "sha256": "d24513195c7a914277e47590a1f9aca5ba44596094c857c40ca8339d8bc69ad7"
     },
     {
       "path": "services/workflows/dreamShaperWorkflow.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3036,
       "sha256": "7f829eff47fa87cbcd5f164f7c46b962f9d8e5c356b1558842f4899c47e11609"
     },
     {
       "path": "services/workflows/svdWorkflow.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2477,
       "sha256": "e678db89d090f9c01258133c2e0d7a2ca9be92cc1aa820033e7691f8109e5991"
     },
     {
       "path": "services/zhipuService.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 28664,
       "sha256": "0353b4b421c0263108dbbb0c8097846d21726179e84ea76ee404bd188247d982"
     },
     {
       "path": "tests/automated/cycle-service-continuity-real.test.ts",
-      "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4718,
-      "sha256": "be6938d16b22817d2bd9481ad952f2b641ca1ee669896e2086e8593176f3b0c6",
-      "fixturePath": "tests/genuine-vitest-session/main-continuity-integration/tests/automated/cycle-service-continuity-real.test.ts"
+      "sha256": "be6938d16b22817d2bd9481ad952f2b641ca1ee669896e2086e8593176f3b0c6"
     },
     {
       "path": "tests/automated/cycle-store-continuity.test.ts",
-      "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3797,
-      "sha256": "03563b192e2ced1cc098ae735e5f562d154bbcd579188a612f345117b15bc552",
-      "fixturePath": "tests/genuine-vitest-session/main-continuity-integration/tests/automated/cycle-store-continuity.test.ts"
+      "sha256": "03563b192e2ced1cc098ae735e5f562d154bbcd579188a612f345117b15bc552"
     },
     {
       "path": "tests/automated/memory-transitions-p0.test.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 10626,
       "sha256": "5aa438027fee507f228402b32d1d7a0dfe50e80f88554d9f57832d8083af7088"
     },
     {
       "path": "tests/automated/selfdev-cycle.test.ts",
-      "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5780,
-      "sha256": "f82ee7a073c808319ca7cb21f50a521c391cc6f0b73fb8fa705f467750c569e5",
-      "fixturePath": "tests/genuine-vitest-session/main-continuity-integration/tests/automated/selfdev-cycle.test.ts"
+      "sha256": "f82ee7a073c808319ca7cb21f50a521c391cc6f0b73fb8fa705f467750c569e5"
     },
     {
       "path": "tests/automated/selfdev-preservation.test.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5635,
       "sha256": "b7e4dd9f8f34ecf3a0e2496d327d31a7b10b4f054b2d6f554a52e7beb5349aa4"
     },
     {
       "path": "tests/real-process/cycle-continuity-child.ts",
-      "sourceCommit": "WORKFLOW_FIXTURE_EXACT",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5059,
-      "sha256": "f2c4563b68036fb55762c499ecfc721c9c6493fa51b8fde8a47fd42b6c047dcd",
-      "fixturePath": "tests/genuine-vitest-session/main-continuity-integration/tests/real-process/cycle-continuity-child.ts"
+      "sha256": "f2c4563b68036fb55762c499ecfc721c9c6493fa51b8fde8a47fd42b6c047dcd"
     },
     {
       "path": "tests/setup/fetch-teardown.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1214,
       "sha256": "54d807dbf7134a0318800e0bc0fb6f73380baa78318d70b1cf1fe9c717de9609"
     },
     {
       "path": "tests/setup/sqlite-per-worker.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 2086,
       "sha256": "e2f7fafc0b14ff6326494f7579f575399859a515d8b3e9dec6419b06eaf0f24b"
     },
     {
       "path": "tools/webBrowserTool.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5993,
       "sha256": "9a1c3889626213c3989192cce9a22688b6a8533c34f28547b014e6f80025eb4a"
     },
     {
       "path": "tsconfig.json",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 969,
       "sha256": "3705c6f22432b3a01149328ba268cc739e44382c2ecd65a877456f71c54348af"
     },
     {
       "path": "types.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 39262,
       "sha256": "e67f357e90ea6f5cfcf13415aff223805da0f18ba3176d2384dda441ab156598"
     },
     {
       "path": "types/canvas.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 6555,
       "sha256": "d1d7e7e6e514bd3381b01f07b4e72fb8f36ab06017275f4054a1e6124d4865aa"
     },
     {
       "path": "types/capabilities.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1880,
       "sha256": "8c9f3cf3b8622ee7526ea38307210af3a5fb89bdf98809e295aa9b6371152633"
     },
     {
       "path": "types/imageStyles.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 6119,
       "sha256": "5bd7b803729440dce984a4d23cf25b8fd1c6211cf224fbbde344343511c763b2"
     },
     {
       "path": "types/optional-modules.d.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1114,
       "sha256": "b5d16a416ebbc10e1c5d93281937cd8b9d8fbdec5257b4937882586b4c4b2321"
     },
     {
       "path": "types/presentation.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 10720,
       "sha256": "470f00268fddf72721d20550200c60ab791c86e02ddc719a2717d327f6da07f8"
     },
     {
       "path": "types/react-force-graph-3d.d.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 762,
       "sha256": "f80d0951cbfb1c7f4ed62a699a81b74ce57d44a27f3a344a2143b821c511b548"
     },
     {
       "path": "types/screenshot-desktop.d.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 368,
       "sha256": "6bc51bfd9cc628371ebd99cac1a7c65caf5e96ff8e90d1365922b7d745850fff"
     },
     {
       "path": "utils/api.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4611,
       "sha256": "a8a799d0c050b722c2b37c0abc8aab3b6d3038cb2fda74b61e5670d0fc11b262"
     },
     {
       "path": "utils/appVersion.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 340,
       "sha256": "2f2bcbe8eba38781a3a88bbc6b9403a01653b0429fb31d953a542b303333f733"
     },
     {
       "path": "utils/audioConverter.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5213,
       "sha256": "0d0d02d28b020c5f230ce0c332ec69050e42e14710ba6118085b8d546c7c8b7d"
     },
     {
       "path": "utils/fingerprint.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 5941,
       "sha256": "1e79f12fa89e659d54d3aa68c052562fb773712824446725d85dfad9bfc3bf44"
     },
     {
       "path": "utils/sseClient.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 4599,
       "sha256": "d4b4fbb1edf58dea5a07aeb7c197c752ff0a272ee04afa2dd02c37c158fc8b96"
     },
     {
       "path": "vite.config.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 3844,
       "sha256": "9800682b709118315918d67dedfa74a657c478d6947917e9ab431c624985f568"
     },
     {
       "path": "vite.server.config.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 612,
       "sha256": "e38e679eaead0b7e0d600389445a8dffd816852fbc3b8d9b5f252aad61ce0f60"
     },
     {
       "path": "vitest.config.ts",
-      "sourceCommit": "1f0d967abf81b86e666d26eeb20f6dc97662a525",
+      "sourceCommit": "6b49bc2a7fadcd87759cd0c1d534c832194b1572",
       "bytes": 1112,
       "sha256": "783714b473dc183222f5b62eca89ea8b184b885682d9ff73e665a121e371f8a9"
     }
   ],
   "sessions": {
     "candidate": {
-      "productCommit": "MAIN_PLUS_SEVEN_CONTINUITY_BLOBS",
+      "productCommit": "MAIN_6B49_PLUS_THREE_INGRESS_BLOBS_COMPILER_ONLY",
       "overrides": []
     }
   }
