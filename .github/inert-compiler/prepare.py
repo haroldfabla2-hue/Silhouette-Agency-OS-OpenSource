@@ -61,21 +61,11 @@ for row in inputs:
  if rel=='compiler' and hashlib.sha256((target/'lib/_tsc.js').read_bytes()).hexdigest()!='1f62c69e832fbbbd05a6dac950f152937f594a4d0b88087be5406ace348efcb5':raise RuntimeError('Compiler bytes')
 (out/'preparation.json').write_text(json.dumps({'artifacts':len(inputs),'compressedBytes':downloaded,'retainedBytes':retained,'libsignal':'Observed exact public commit archive, NOT SRI/git-object identity'}))
 
-# Official Node runtime acquisition: no install scripts, only pinned archive bin/node.
-url='https://nodejs.org/dist/v22.23.4/node-v22.23.4-linux-x64.tar.xz'
-archive=out/'node.tar.xz';n=0;h=hashlib.sha256()
-with opener.open(url,timeout=30) as response,archive.open('wb') as f:
- while True:
-  data=response.read(1024*1024)
-  if not data:break
-  n+=len(data)
-  if n>128*1024**2 or downloaded+n>1024**3:raise RuntimeError('Runtime download cap')
-  h.update(data);f.write(data)
-if h.hexdigest()!='1805bcd35e6815559bd2eb97db438d3fdb0eb3a5e6a977b7c1badca76337e9ce':raise RuntimeError('Runtime checksum mismatch')
-with tarfile.open(archive,'r:xz') as tar:
- members=[m for m in tar if m.name=='node-v22.23.4-linux-x64/bin/node']
- if len(members)!=1 or not members[0].isfile() or members[0].size>128*1024**2:raise RuntimeError('Runtime member')
- runtime=out/'runtime/node';runtime.parent.mkdir();runtime.write_bytes(tar.extractfile(members[0]).read());runtime.chmod(0o555)
 
-verified={p.relative_to(out).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for folder in ['deps','compiler','runtime'] for p in (out/folder).rglob('*') if p.is_file()}
+# Empty nested mount targets, no source bytes or compiler config changes.
+for side in ['baseline','candidate']:(out/'snapshots'/side/'node_modules').mkdir(exist_ok=True)
+# Container uid65534 can traverse ONLY these disposable source/dependency/control inputs.
+for folder in ['snapshots','deps','compiler']:
+ for d in [out/folder]+[p for p in (out/folder).rglob('*') if p.is_dir()]:d.chmod(0o755)
+verified={p.relative_to(out).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for folder in ['snapshots','deps','compiler'] for p in (out/folder).rglob('*') if p.is_file()}
 (out/'verified-inputs.json').write_text(json.dumps(verified,sort_keys=True))
