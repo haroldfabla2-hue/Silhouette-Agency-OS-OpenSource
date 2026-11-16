@@ -1,0 +1,69 @@
+{
+  "status": "CAPSULE_PARAMETERS_NO_EXECUTION_JOB",
+  "productSourcePaths": [
+    "services/daemon/unifiedDaemon.ts"
+  ],
+  "compileCurrentSourceWith": "actual setup-node process.execPath and existing TypeScript transpileModule ESNext/ES2022; deterministic AST-based relative import extension mapping; syntaxcheck every emission without product evaluation",
+  "fixedSourceGraph": [
+    "services/daemon/unifiedDaemon.ts",
+    "services/daemon/autonomyPolicy.ts",
+    "services/daemon/selfHealingTask.ts",
+    "services/redisClient.ts",
+    "services/incidentRegistry.ts",
+    "services/sqliteService.ts",
+    "services/migrationAssets.ts",
+    "server/config/runtimeCredentials.ts",
+    "server/config/configLoader.ts",
+    "server/config/configSchema.ts",
+    "constants.ts",
+    "types.ts",
+    "services/logger.ts",
+    "services/systemBus.ts",
+    "services/bus/MemoryBusAdapter.ts",
+    "server/desktop/producerScope.js",
+    "services/security/bootMode.ts"
+  ],
+  "heavyDynamicImports": "not mounted or evaluated, actual disabled task implementations retain exact real module names",
+  "npmRuntimeRoots": [
+    "redis",
+    "better-sqlite3",
+    "bindings",
+    "file-uri-to-path",
+    "dotenv"
+  ],
+  "optionalLogger": "preserve actual configured ESM module semantics: logger require(pino) is its original require expression, not shimmed; record no ESM require injection, no dependency deletion. Include installed pino graph for provenance even if actual native ESM fallback is taken.",
+  "environment": {
+    "PATH": "/usr/bin",
+    "LANG": "C",
+    "LC_ALL": "C",
+    "NODE_ENV": "production",
+    "SILHOUETTE_BOOT_MODE": "normal",
+    "SILHOUETTE_PROVIDERS": "off",
+    "SILHOUETTE_DB_PATH": "/work/db/silhouette.sqlite",
+    "SILHOUETTE_MIGRATIONS_DIR": "/app/db/migrations/sqlite",
+    "REDIS_HOST": "127.0.0.1",
+    "REDIS_PORT": "16379"
+  },
+  "noRedisURLReason": "actual SystemBus upgradeToRedis uses REDIS_URL to launch RedisBusAdapter; host/port maps actual RedisService without silently broadening bus scope",
+  "network": "one private net namespace for Redis and both explicitly sequential Node phases, lo up only during trusted setup, irreversible caps/uid/gid/nnp drop before products, external TESTNET unreachable",
+  "writeBudget": "known4SQLitefiles+state/state.tmp+optional1logger+1FIFO+Redisdir(no save/AOF); hard FSIZE1MiB per file, intended finite set, no adversarial aggregate cap",
+  "processes": "one real Redis plus one Node at a time (phase first then held-lock freshNode), authored control/supervisor, no provider/tasks/subprocess graph",
+  "limits": {
+    "RedisASMiB": 256,
+    "RedisMaxMemoryMiB": 32,
+    "NodeASGiB": 4,
+    "NodeHeapMiB": 128,
+    "rootCPUSeconds": 10,
+    "outerWallSeconds": 30,
+    "outputBytesCombined": 65536,
+    "nofile": 64,
+    "nprocUID": 32,
+    "fsizeBytes": 1048576,
+    "coreBytes": 0
+  },
+  "readiness": "Redis RESP PING plus CONFIG server persistence settings via actual inspector before actualdaemon import; healthyRedisClient.isMockModefalse/incidentcount0/configOFF before FIFO created",
+  "phase1": "ordinary state all9tasks, JanitorlastRunNow, proactive realOFFconfig, selfHealingdue; realFIFO blocks actualtask after SETNXPX; scopeactive+heldkeyPTTL+drainpending+noearlystate; closeownedFIFOwriterEOF then drain+flush+metadata",
+  "phase2": "freshNode/sameRedis heldkey, ordinarypersistedstate taskmetadata seeds selfHealinglastRun0 with preservedrunCount1, Janitornotdue; actualSETNXrejects, noFIFOreader/taskexecution, metadataunchanged; no retry",
+  "cleanup": "disconnect actual redisClient+inspector per phase, sqlite actualopenfalse, outer naturalRedis SHUTDOWN no save; rootsreaped/EOF/groupabsence/namespacegone/fixture removed, forceorunknownFAIL",
+  "publicArtifact": "exact audited daemon-capsule-review directory only, public existing repo downloadable artifact retained2days; no conversations/permission/operationalnotes/auth/env source files"
+}

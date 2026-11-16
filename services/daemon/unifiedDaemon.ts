@@ -11,10 +11,6 @@ import { ownedInterval, ownedTimeout, ownedWork, producerAdmissionOpen, producer
 
 import fs from 'fs/promises';
 import path from 'path';
-import { continuum } from '../continuumMemory';
-import { graph } from '../graphService';
-import { thoughtNarrator } from '../cognitive/thoughtNarrator';
-import { evolutionScheduler } from '../evolution/evolutionScheduler';
 import { redisClient } from '../redisClient';
 import { daemonLog } from '../logger';
 import { selfHealingTask } from './selfHealingTask';
@@ -327,6 +323,7 @@ export class UnifiedDaemon {
     // ─── TASK IMPLEMENTATIONS ─────────────────────────────────────────────
 
     private async runHeartbeatTask() {
+        const { continuum } = await import('../continuumMemory');
         const { orchestrator } = await import('../orchestrator');
         const actors = orchestrator.getActiveActors();
 
@@ -370,6 +367,7 @@ export class UnifiedDaemon {
     }
 
     private async runNarratorTask() {
+        const { thoughtNarrator } = await import('../cognitive/thoughtNarrator');
         const thought = await thoughtNarrator.generateNarrative();
         try {
             const { consciousness } = await import('../consciousnessEngine');
@@ -382,6 +380,7 @@ export class UnifiedDaemon {
     }
 
     private async runEvolutionGoalsTask() {
+        const { evolutionScheduler } = await import('../evolution/evolutionScheduler');
         try {
             const { introspection } = await import('../introspectionEngine');
             await introspection.runCognitiveCycle();
@@ -397,6 +396,7 @@ export class UnifiedDaemon {
     }
 
     private async runCuriosityTask() {
+        const { graph } = await import('../graphService');
         console.log('[COGNITIVE: CURIOSITY] 🔍 Seeking knowledge gaps from graph...');
         const { curiosity } = await import('../curiosityService');
         const { advancedDiscovery } = await import('../cognitive/advancedDiscovery');
@@ -463,6 +463,7 @@ export class UnifiedDaemon {
     }
 
     private async runToolEvolutionTask() {
+        const { evolutionScheduler } = await import('../evolution/evolutionScheduler');
         // @ts-ignore 
         if (typeof evolutionScheduler['runToolEvolutionCycle'] === 'function') {
             await (evolutionScheduler as any)['runToolEvolutionCycle']();
@@ -532,6 +533,8 @@ export class UnifiedDaemon {
     }
 
     private async runDreamerTask() {
+        const { graph } = await import('../graphService');
+        const { continuum } = await import('../continuumMemory');
         console.log('[COGNITIVE: DREAMER] 🌙 Starting deep memory consolidation...');
 
         // 1. Sync recent concepts to vector store

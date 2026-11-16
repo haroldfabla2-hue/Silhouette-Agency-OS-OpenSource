@@ -169,3 +169,57 @@ jobs:
             }
           }
           Write-Host '✅ All required packaged files present'
+
+# Exact proposed additional job under existing CI jobs, no launch step.
+  daemon-capsule-preparation:
+    name: Prepare genuine Redis daemon capsule (no product execution)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+          cache: npm
+      - name: Existing locked dependencies on disposable runner
+        run: npm ci
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 'true'
+      - name: Install test runtime without starting host services
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo bash <<'ROOT'
+          set -euo pipefail
+          saved=$(mktemp -d)
+          had_policy=0
+          if test -e /usr/sbin/policy-rc.d; then
+            cp -a /usr/sbin/policy-rc.d "$saved/policy-rc.d"
+            had_policy=1
+          fi
+          cleanup() {
+            rm -f /usr/sbin/policy-rc.d
+            if test "$had_policy" = 1; then cp -a "$saved/policy-rc.d" /usr/sbin/policy-rc.d; fi
+            rm -rf "$saved"
+          }
+          trap cleanup EXIT
+          rm -f /usr/sbin/policy-rc.d
+          printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d
+          chmod 755 /usr/sbin/policy-rc.d
+          systemctl mask --runtime redis.service redis-server.service
+          if pgrep -x redis-server; then echo 'Unexpected preexisting Redis' >&2; exit 1; fi
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends redis-server redis-tools bubblewrap iproute2 util-linux libseccomp2
+          if pgrep -x redis-server; then echo 'Unexpected Redis autostart' >&2; exit 1; fi
+          ROOT
+      - name: Compile and audit exact finite capsule, no product evaluation
+        run: python3 tests/daemon-real-redis/prepare_capsule.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: actual-daemon-redis-capsule-review
+          path: daemon-capsule-review/
+          retention-days: 2
+          if-no-files-found: error
