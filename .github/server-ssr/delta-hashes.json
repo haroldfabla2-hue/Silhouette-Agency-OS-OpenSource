@@ -1,0 +1,18 @@
+{
+  "Dockerfile": {
+    "before": "14c4c81171e4975b52737cbadfd8d4a23904ae6492e864e384c6e90b734bef50",
+    "after": "26341649f1568bce0e37a5303298fd778f9fd64307e92f9f67db9cff62c593c2"
+  },
+  "package.json": {
+    "before": "8910268809bad518f055ab0ef0550f7f8220241cf15a7a1229065a64f1178557",
+    "after": "35b72e254d66ff7ce1bb795acf135169fd7c1dde78209a00f979addc737f7820"
+  },
+  "server/main.ts": {
+    "before": null,
+    "after": "cb2ec0e605db6dcdf3610b8ba04743fe1b2308452ead3b99cb5f41eab7a3b807"
+  },
+  "vite.server.config.ts": {
+    "before": "e38e679eaead0b7e0d600389445a8dffd816852fbc3b8d9b5f252aad61ce0f60",
+    "after": "01f1c22440ea053d978943be57808909c14ae9416cd4ccac368453fb43801735"
+  }
+}
