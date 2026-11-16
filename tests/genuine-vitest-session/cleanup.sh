@@ -20,12 +20,16 @@ forced=0
 for account in silhouette-acquire silhouette-runtime; do
  if id "$account" >/dev/null 2>&1; then
   uid=$(id -u "$account")
+  # Observation uses the direct gate's st_uid predicate, but MUST NOT select
+  # or enlarge kill targets. Existing pgrep/pkill and every wait stay unchanged.
+  python3 -I "$(dirname "$0")/direct.py" observe-cleanup "$uid" CLEANUP_PRE_KILL_CHECK || echo OWNED_UID_OBSERVATION_UNKNOWN
   if pgrep -u "$uid" >/dev/null; then
    forced=1
    pkill -KILL -u "$uid" || failed=1
    for i in {1..20}; do pgrep -u "$uid" >/dev/null || break;sleep .05;done
    if pgrep -u "$uid" >/dev/null;then failed=1;fi
   fi
+  python3 -I "$(dirname "$0")/direct.py" observe-cleanup "$uid" CLEANUP_POST_KILL_CHECK || echo OWNED_UID_OBSERVATION_UNKNOWN
  fi
 done
 if id silhouette-runtime >/dev/null 2>&1; then

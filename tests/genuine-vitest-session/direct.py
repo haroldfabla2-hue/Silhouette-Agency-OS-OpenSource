@@ -15,13 +15,62 @@ def cg():
  q,t=map(int,(p/'cpu.max').read_text().split());assert q==2*t
  return p
 def events(p):return dict((k,int(v))for k,v in(line.split()for line in(p/'memory.events').read_text().splitlines()))
-def owned_pids(uid):
- out=[]
+# Diagnostic metadata only. Never selects kill targets or changes natural gates.
+# st_uid is the SAME predicate as the existing owned_pids gate, not pgrep -u.
+def process_metadata(pid,uid=None):
+ p=Path('/proc')/str(pid)
+ def bounded_read(path):
+  with path.open('rb')as f:raw=f.read(8193)
+  if len(raw)>8192:raise ValueError('METADATA_OVERFLOW')
+  return raw
+ def stat_fields():
+  raw=bounded_read(p/'stat').decode(errors='replace');tail=raw.rsplit(') ',1)[1].split()
+  return {'state':tail[0]if tail[0]in {'R','S','D','Z','T','t','X','x','K','W','P','I'}else'UNKNOWN',
+   'ppid':int(tail[1]),'session':int(tail[3]),'startTicks':int(tail[19])}
+ try:
+  st=p.stat()
+  if uid is not None and st.st_uid!=uid:return {'pid':pid,'status':'UNKNOWN_OWNERSHIP_CHANGED'}
+  first=stat_fields();status={}
+  for line in bounded_read(p/'status').decode('ascii',errors='replace').splitlines():
+   if line.startswith(('Uid:','NSpid:')):
+    key,values=line.split(':',1);status[key]=[int(x)for x in values.split()]
+  second=stat_fields();end=p.stat()
+  if first['startTicks']!=second['startTicks']or st.st_uid!=end.st_uid or uid is not None and end.st_uid!=uid:
+   return {'pid':pid,'status':'UNKNOWN_IDENTITY_CHANGED'}
+  ns=status.get('NSpid',[]);uids=status.get('Uid',[])
+  if not 1<=len(ns)<=8 or len(uids)!=4 or second['state']=='UNKNOWN':return {'pid':pid,'status':'UNKNOWN_METADATA_SHAPE'}
+  # Compare the complete cgroup record privately. Never export cgroup paths.
+  cgroup=bounded_read(p/'cgroup');same=cgroup==bounded_read(Path('/proc/self/cgroup'))
+  return {'pid':pid,'status':'OBSERVED_NOT_CAUSE','statUid':st.st_uid,'realUid':uids[0],
+   'effectiveUid':uids[1],'ppid':second['ppid'],'session':second['session'],
+   'state':second['state'],'startTicks':second['startTicks'],'nspid':ns,
+   'sameObserverCgroup':same,'cgroupRecordSha256':hashlib.sha256(cgroup).hexdigest(),'identityStableAcrossReads':True}
+ except (OSError,ValueError,IndexError,KeyError,UnicodeError):return {'pid':pid,'status':'UNKNOWN_GONE_OR_UNREADABLE'}
+def owned_pids(uid,observation=None,direct_child=None):
+ out=[];rows=[];loss=False;began=time.monotonic_ns()
  for p in Path('/proc').iterdir():
   if p.name.isdigit():
    try:
-    if p.stat().st_uid==uid:out.append(int(p.name))
-   except FileNotFoundError:pass
+    if p.stat().st_uid==uid:
+     pid=int(p.name);out.append(pid)
+     if observation is not None and len(rows)<4:
+      row=process_metadata(pid,uid);rows.append(row)
+      if row['status']!='OBSERVED_NOT_CAUSE':loss=True
+   except FileNotFoundError:
+    if observation is not None:loss=True
+ if observation is not None:
+  overflow=len(out)>4
+  if direct_child is not None and (direct_child.get('identityAfterSpawn')or{}).get('status')!='OBSERVED_NOT_CAUSE':loss=True
+  payload={'schema':1,'origin':'OWNED_UID_METADATA_OBSERVATION_NOT_CAUSAL_OR_KILL_AUTHORITY',
+   'phase':observation,'ownership':'PROC_DIRECTORY_STAT_UID_EQUALS_OWNED_UID',
+   'uid':uid,'matchedCount':len(out),'capturedLimit':4,'overflow':overflow,'loss':loss,
+   'state':'UNKNOWN'if loss or overflow else'OBSERVED_NOT_CAUSE',
+   'beganMonotonicNs':began,'endedMonotonicNs':time.monotonic_ns(),'rows':rows,
+   'directChild':direct_child}
+  # Fixed schema/numbers/enums only. Never argv/env/comm/exe/paths or raw errors.
+  encoded=json.dumps(payload,separators=(',',':'))
+  if len(encoded.encode())>8192:encoded=json.dumps({'schema':1,'state':'UNKNOWN','reason':'OUTPUT_OVERFLOW','matchedCount':len(out),'uid':uid,'phase':observation},separators=(',',':'))
+  print('OWNED_UID_OBSERVATION '+encoded,flush=True)
  return out
 def policy(target,transport=False):
  assert os.uname().machine=='x86_64'
@@ -215,7 +264,7 @@ def run():
  assert uid>0 and gid>0 and not owned_pids(uid)
  p=cg();before=events(p);start=time.monotonic();process=None;forced=False;receipt=ROOT/'private'/(phase+'.child.json')
  env={'PATH':str(ROOT/'fixtures/toolchain/bin')+':/usr/sbin:/usr/bin:/sbin:/bin'}
- fd=None;code=None;stream=None;diagnostic=bytearray();observed=0;wrapper_error='NONE'
+ fd=None;code=None;stream=None;diagnostic=bytearray();observed=0;wrapper_error='NONE';direct_identity=None
  # Exact reviewed compiler invocation only. No general output-export switch.
  compiler_diagnostic=exact_compiler(phase,executable,argv)
  compiler_head=bytearray();compiler_tail=bytearray();compiler_hash=hashlib.sha256();compiler_eof=False
@@ -260,6 +309,8 @@ def run():
   process=subprocess.Popen(cmd,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=(subprocess.STDOUT if compiler_diagnostic else subprocess.DEVNULL),env=env,start_new_session=True,pass_fds=(()if fd is None else(fd,)),preexec_fn=limits)
   stream=selectors.DefaultSelector();os.set_blocking(process.stdout.fileno(),False);stream.register(process.stdout,selectors.EVENT_READ)
   deadline=time.monotonic()+seconds
+  # This is our own Popen child only. Metadata time consumes the same deadline.
+  direct_identity=process_metadata(process.pid)
   while stream.get_map()or process.poll()is None:
    remaining=deadline-time.monotonic()
    if forced or remaining<=0:stop();break
@@ -285,7 +336,8 @@ def run():
   if stream is not None:stream.close()
   if process is not None and process.stdout is not None:process.stdout.close()
   if fd is not None:os.close(fd)
-  residual=owned_pids(uid);after=events(p)
+  child={'identityAfterSpawn':direct_identity,'pid':process.pid if process is not None else None,'returnCodeAfterWait':code}
+  residual=owned_pids(uid,'POST_WAIT_'+phase.upper(),child);after=events(p)
   # Any UID residual is a failure, not a completed child. Cleanup owns removing it.
   natural=type(code)is int and code>=0 and wrapper_error=='NONE'and not forced and not residual and all(after.get(k,0)==before.get(k,0)for k in('oom','oom_kill','oom_group_kill'))
   row={'schema':1,'phase':phase,'rawReturnCode':code,'natural':natural,'forced':forced,'residualUidProcesses':len(residual),'oomBefore':before,'oomAfter':after,'aggregateMemoryMax':10737418240,'aggregateTasksMax':384,'swapMax':0,'cpuCount':2,'elapsedSeconds':round(time.monotonic()-start,3),'boundary':'DIRECT_CHILD_BWRAP_OFFLINE_CONFIGURED_NOT_EXECUTION_PROOF'if phase!='transport'else'DIRECT_BWRAP_TRANSPORT_CONFIGURED_NOT_EXECUTION_PROOF'}
@@ -305,7 +357,16 @@ def run():
  if not natural:sys.exit(124 if forced else 125)
  sys.exit(code)
 if __name__=='__main__':
- if sys.argv[1]=='policy':policy(Path(sys.argv[2]),len(sys.argv)>3 and sys.argv[3]=='transport')
+ if sys.argv[1]=='observe-cleanup':
+  uid=int(sys.argv[2]);stage=sys.argv[3]
+  import pwd
+  owned_uids=set()
+  for account in ('silhouette-acquire','silhouette-runtime'):
+   try:owned_uids.add(pwd.getpwnam(account).pw_uid)
+   except KeyError:pass
+  assert uid>0 and uid in owned_uids and stage in {'CLEANUP_PRE_KILL_CHECK','CLEANUP_POST_KILL_CHECK'}
+  owned_pids(uid,stage)
+ elif sys.argv[1]=='policy':policy(Path(sys.argv[2]),len(sys.argv)>3 and sys.argv[3]=='transport')
  elif sys.argv[1]=='admit':
   try:admit()
   except BaseException as error:
