@@ -140,7 +140,7 @@
   "build": {
     "appId": "com.silhouetteagency.os",
     "productName": "Silhouette Agency OS",
-    "copyright": "Copyright © 2026 Silhouette Agency",
+    "copyright": "Copyright \u00a9 2026 Silhouette Agency",
     "directories": {
       "output": "dist-desktop"
     },
@@ -163,6 +163,20 @@
       {
         "from": "public/splash.html",
         "to": "splash.html"
+      },
+      {
+        "from": "db/migrations/sqlite",
+        "to": "migrations/sqlite",
+        "filter": [
+          "001_baseline_indexes.down.sql",
+          "001_baseline_indexes.up.sql",
+          "002_facts_table.down.sql",
+          "002_facts_table.up.sql",
+          "003_user_profiles.down.sql",
+          "003_user_profiles.up.sql",
+          "004_incidents.down.sql",
+          "004_incidents.up.sql"
+        ]
       }
     ],
     "asar": true,

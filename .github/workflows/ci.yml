@@ -151,4 +151,18 @@ jobs:
               exit 1
             }
           }
+          # Compare the actual unpacked Windows resources to the owning SQL.
+          $sourceSql = Get-ChildItem 'db/migrations/sqlite' -File | Sort-Object Name
+          $packagedSql = Get-ChildItem 'dist-desktop/win-unpacked/resources/migrations/sqlite' | Sort-Object Name
+          if ($sourceSql.Count -ne 8 -or $packagedSql.Count -ne 8) {
+            throw 'Expected exactly eight packaged SQLite migration assets'
+          }
+          for ($i = 0; $i -lt $sourceSql.Count; $i++) {
+            if ($sourceSql[$i].Name -ne $packagedSql[$i].Name -or $packagedSql[$i].PSIsContainer) {
+              throw 'Packaged SQLite migration asset names differ'
+            }
+            if ((Get-FileHash $sourceSql[$i].FullName -Algorithm SHA256).Hash -ne (Get-FileHash $packagedSql[$i].FullName -Algorithm SHA256).Hash) {
+              throw 'Packaged SQLite migration asset bytes differ'
+            }
+          }
           Write-Host '✅ All required packaged files present'

@@ -46,7 +46,8 @@ function startServer() {
         // Packaged Production Mode: Run compiled bundle
         const serverPath = path.join(__dirname, 'dist', 'server', 'index.js');
         serverProcess = spawn('node', [serverPath], {
-            env: { ...process.env, PORT: '3005', NODE_ENV: 'production' }
+            env: { ...process.env, PORT: '3005', NODE_ENV: 'production',
+                SILHOUETTE_MIGRATIONS_DIR: path.join(process.resourcesPath, 'migrations', 'sqlite') }
         });
     }
 
