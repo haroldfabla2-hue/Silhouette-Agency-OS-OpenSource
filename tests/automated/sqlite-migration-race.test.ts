@@ -16,7 +16,7 @@ describe('SqliteService migrations under concurrent startup', () => {
         fs.cpSync(path.join(root, 'db', 'migrations', 'sqlite'), path.join(tmp, 'db', 'migrations', 'sqlite'), { recursive: true });
         const tsxCli = path.join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs');
         const serviceUrl = pathToFileURL(path.join(root, 'services', 'sqliteService.ts')).href;
-        const script = `const t=Number(process.env.RACE_START);while(Date.now()<t){}\nimport('${serviceUrl}').then(()=>process.exit(0)).catch(e=>{console.error(String(e&&e.message||e));process.exit(1)})`;
+        const script = `const t=Number(process.env.RACE_START);while(Date.now()<t){}\nimport('${serviceUrl}').then(({sqliteService})=>{sqliteService.close();}).catch(e=>{console.error(String(e&&e.message||e));process.exitCode=1})`;
 
         const startAt = Date.now() + 2500; // all processes release together
         const run = () => new Promise<{ code: number | null; err: string }>((resolve) => {
@@ -25,7 +25,7 @@ describe('SqliteService migrations under concurrent startup', () => {
                 // Deliberately race on the DEFAULT cwd-based path: drop the
                 // per-worker override the vitest setup injects, or the children
                 // would open the worker's temp DB instead of tmp/db/.
-                env: { ...process.env, RACE_START: String(startAt), VITEST_WORKER_ID: undefined, SILHOUETTE_DB_PATH: undefined } as any
+                env: { ...process.env, RACE_START: String(startAt), VITEST_WORKER_ID: undefined, SILHOUETTE_DB_PATH: undefined, SILHOUETTE_MIGRATIONS_DIR: undefined } as any
             });
             let err = '';
             p.stderr.on('data', d => { err += d.toString(); });
@@ -42,7 +42,7 @@ describe('SqliteService migrations under concurrent startup', () => {
         const db = new Database(path.join(tmp, 'db', 'silhouette.sqlite'), { readonly: true });
         const rows = db.prepare('SELECT version, count(*) c FROM system_migrations GROUP BY version').all() as any[];
         db.close();
-        expect(rows.length).toBeGreaterThan(0);
+        expect(rows.map(r => r.version).sort()).toEqual(['001', '002', '003', '004']);
         for (const r of rows) expect(r.c).toBe(1);
         fs.rmSync(tmp, { recursive: true, force: true });
     }, 90000);

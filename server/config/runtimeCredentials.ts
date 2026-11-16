@@ -15,7 +15,7 @@ export { acceptanceBoot, externalProvidersDisabled } from '../../services/securi
 const ACCEPTANCE_ENV = new Set([
     'PATH', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'HOME', 'TMPDIR', 'TEMP', 'TMP',
     'NODE_ENV', 'SILHOUETTE_INFERENCE_MODE', 'SILHOUETTE_CORS_ORIGIN', 'SILHOUETTE_BOOT_MODE', 'SILHOUETTE_PROVIDERS', 'SILHOUETTE_API_TOKEN', 'SILHOUETTE_API_KEY',
-    'SILHOUETTE_DB_PATH', 'SILHOUETTE_LANCEDB_PATH', 'PORT', 'SILHOUETTE_HOST',
+    'SILHOUETTE_DB_PATH', 'SILHOUETTE_LANCEDB_PATH', 'SILHOUETTE_MIGRATIONS_DIR', 'PORT', 'SILHOUETTE_HOST',
 ]);
 
 // Only storage/runtime settings may enter an OFF process. Provider/channel keys,

@@ -3,6 +3,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { Agent } from '../types';
+import { verifiedMigrationAssets } from './migrationAssets';
 
 // Tests set SILHOUETTE_DB_PATH (per-worker temp file) so parallel vitest
 // workers never share one database file; production keeps the default path.
@@ -11,9 +12,9 @@ const DB_PATH = process.env.SILHOUETTE_DB_PATH
     : path.resolve(process.cwd(), 'db', 'silhouette.sqlite');
 const DB_DIR = path.dirname(DB_PATH);
 
-if (!fs.existsSync(DB_DIR)) {
-    fs.mkdirSync(DB_DIR, { recursive: true });
-}
+const MIGRATIONS_DIR = process.env.SILHOUETTE_MIGRATIONS_DIR
+    ? path.resolve(process.env.SILHOUETTE_MIGRATIONS_DIR)
+    : path.resolve(process.cwd(), 'db', 'migrations', 'sqlite');
 
 /** Absolute path of the SQLite database file this service persists to. */
 export const SQLITE_DB_PATH = DB_PATH;
@@ -27,6 +28,9 @@ export class SqliteService {
     }
 
     constructor() {
+        // Fail before creating a DB directory or opening a handle.
+        verifiedMigrationAssets(MIGRATIONS_DIR);
+        if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
         // busy_timeout at open: without it the WAL pragma below can fail
         // instantly with SQLITE_BUSY when another process holds a write lock
         // (the pragma runs before any busy timeout is in effect).
@@ -347,15 +351,8 @@ export class SqliteService {
             )
         `);
 
-        const migrationsDir = path.resolve(process.cwd(), 'db', 'migrations', 'sqlite');
-        if (!fs.existsSync(migrationsDir)) {
-            fs.mkdirSync(migrationsDir, { recursive: true });
-            return;
-        }
-
-        const files = fs.readdirSync(migrationsDir)
-            .filter(f => f.endsWith('.up.sql'))
-            .sort(); // guarantees chronological order 001_, 002_, etc
+        const migrationsDir = MIGRATIONS_DIR;
+        const files = verifiedMigrationAssets(migrationsDir);
 
         for (const file of files) {
             const version = file.split('_')[0];

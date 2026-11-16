@@ -98,6 +98,8 @@ services:
       # PERSISTENCE BIND MOUNTS
       # 1. Agent Identity & Memory (The Soul)
       - ./data:/app/data
+      # SQLite + LanceDB defaults resolve under <cwd>/db, separately from data.
+      - ./db:/app/db
       # 2. Local Models (Large files)
       - ./models:/app/models
       # 3. Sandbox (Code Execution Output)
