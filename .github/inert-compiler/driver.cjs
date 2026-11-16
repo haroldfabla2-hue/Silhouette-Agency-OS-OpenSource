@@ -26,17 +26,27 @@ async function canaries(){
  for(const path of ['/var/run/docker.sock','/run/docker.sock','/source/.git','/home/runner','/github','/host','/source/.env','/source/.env.local'])assert(!fs.existsSync(path),'host/credential path absent');
  guestGuard='G039';const pids=fs.readdirSync('/proc').filter(x=>/^\d+$/.test(x));assert(pids.length===1&&pids[0]==='1'&&process.pid===1,'private PID namespace');
  const mounts=read('/proc/mounts','G040').trim().split('\n').map(l=>l.split(' '));
- for(const target of ['/','/source','/source/node_modules','/compiler','/control/driver.cjs'])assert(mounts.some(m=>m[1]===target&&m[3].split(',').includes('ro')),'readonly mount '+target);
+ for(const target of ['/','/source','/source/node_modules','/compiler','/control/driver.cjs','/control/compiler-check.cjs','/control/check.json','/control/tsconfig.node.json'])assert(mounts.some(m=>m[1]===target&&m[3].split(',').includes('ro')),'readonly mount '+target);
  const namespaces={};for(const name of ['pid','mnt','net','ipc','uts','cgroup']){guestGuard={pid:'G041',mnt:'G042',net:'G043',ipc:'G044',uts:'G045',cgroup:'G046'}[name];namespaces[name]=fs.readlinkSync('/proc/self/ns/'+name)};
  return {namespaces,cgroup:cg,uid:process.getuid(),runtime:process.version,checks:'ALL_CANARIES_PASSED'};
 }
 async function main(){
  const result=await canaries();frame({kind:'ready',canary:result});
  guestGuard='G047';await new Promise((resolve,reject)=>{let data='';const t=setTimeout(()=>reject(fail('controller acknowledgment missing')),10000);process.stdin.setEncoding('utf8');process.stdin.on('data',chunk=>{data+=chunk;if(data.length>64){clearTimeout(t);reject(fail('control input oversized'));}if(data.includes('\n')){clearTimeout(t);data==='GO\n'?resolve():reject(fail('control input invalid'));}});process.stdin.on('end',()=>reject(fail('controller disconnected')));});
- const args=['--max-old-space-size=2560','/compiler/lib/_tsc.js','--project','/source/tsconfig.node.json','--noEmit','--incremental','false','--pretty','false'];
+ const args=['--max-old-space-size=2560','/control/compiler-check.cjs'];
  guestGuard='G048';const child=cp.spawn('/usr/local/bin/node',args,{env:process.env,stdio:['ignore','pipe','pipe'],cwd:'/source'});const sizes={stdout:0,stderr:0};let overflow=false;
  for(const key of ['stdout','stderr'])child[key].on('data',chunk=>{sizes[key]+=chunk.length;if(sizes[key]>16777216){overflow=true;child.kill('SIGKILL');return;}frame({kind:key,data:chunk.toString('base64')});});
  child.on('error',e=>{frame({kind:'failure',message:'compiler spawn failure',guestGuard:'G048',errorClass:'G_OS'});process.exitCode=125;});
- child.on('close',(code,signal)=>{const events=fs.readFileSync('/sys/fs/cgroup/memory.events','utf8').trim();process.stdin.destroy();const status=overflow||signal||![0,2].includes(code)?125:code;process.stdout.write(JSON.stringify({kind:'exit',code,signal,overflow,sizes,memoryEvents:events})+'\n',()=>process.exit(status));});
+ child.on('close',(code,signal)=>{
+  if(fs.existsSync('/tmp/compiler-evidence-failure.json')){
+   const failure=fs.readFileSync('/tmp/compiler-evidence-failure.json');
+   if(failure.length<=2048)frame({kind:'evidenceFailure',receipt:JSON.parse(failure)});
+  }
+  if(fs.existsSync('/tmp/compiler-manifest.json')){
+   const graph=fs.readFileSync('/tmp/compiler-manifest.json');
+   if(graph.length>8388608 || graph.length+sizes.stdout+sizes.stderr>16777216){overflow=true;}
+   else for(let offset=0;offset<graph.length;offset+=32768)frame({kind:'manifest',data:graph.subarray(offset,offset+32768).toString('base64')});
+  }
+  const events=fs.readFileSync('/sys/fs/cgroup/memory.events','utf8').trim();process.stdin.destroy();const status=overflow||signal||![0,2].includes(code)?125:code;process.stdout.write(JSON.stringify({kind:'exit',code,signal,overflow,sizes,memoryEvents:events})+'\n',()=>process.exit(status));});
 }
 main().catch(error=>{frame({kind:'failure',message:'runtime/control canary failure',guestGuard,errorClass:error instanceof TypeError?'G_SCHEMA_TYPE':error instanceof SyntaxError?'G_PARSE':error.code?'G_OS':'G_ASSERT_OR_OS'});process.exitCode=125;});

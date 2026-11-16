@@ -145,7 +145,7 @@ export class MCPWrapper {
             this.mountedApp = app;
             this.mountTask = this.operations.run('mcp-mount', async () => {
                 await this.initialize();
-                const { apiKeyService } = await import('../../services/apiKeyService.ts');
+                const { apiKeyService } = await import('../../services/apiKeyService.js');
                 const authenticateMcp = (req: Request, res: Response, next: () => void) => {
                     if (!this.operations.accepting) { res.status(503).json({ error: 'MCP shutting down' }); return; }
                     const header = req.headers.authorization;

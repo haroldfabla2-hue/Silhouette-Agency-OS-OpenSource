@@ -1,5 +1,5 @@
 # LOCAL REVIEW PROPOSAL. Not authorized to publish or execute.
-name: Inert unchanged compiler comparison
+name: Inert three-contract compiler comparison
 on:
   push:
     branches:
@@ -58,7 +58,7 @@ jobs:
           timeout --signal=TERM --kill-after=2s 270s env -i PATH=/usr/bin:/bin HOME=/nonexistent \
             python3 candidate/.github/inert-compiler/prepare.py "$PWD" "$RUNNER_TEMP/inert-result" \
             >"$RUNNER_TEMP/inert-result/preparation.stdout" 2>"$RUNNER_TEMP/inert-result/preparation.stderr"
-      - name: One Docker canary-gated unchanged comparison
+      - name: Three sequential Docker canary-gated checker contracts
         run: |
           set -euo pipefail
           env -i PATH=/usr/bin:/bin HOME=/nonexistent GITHUB_RUN_ID="$GITHUB_RUN_ID" \
@@ -70,7 +70,7 @@ jobs:
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/inert-result/safe-diagnostics"
           found=0
-          for side in baseline candidate; do
+          for side in baseline candidate candidate-aligned; do
             name="inert-ts-${GITHUB_RUN_ID}-${side}"
             if ! remaining=$(/usr/bin/docker --host unix:///var/run/docker.sock ps -a --filter "name=^/${name}$" --format '{{.ID}}' 2>"$RUNNER_TEMP/inert-result/remaining-$side.stderr"); then
               printf 'outer_cleanup_unverifiable\n' > "$RUNNER_TEMP/inert-result/safe-diagnostics/cleanup.txt"

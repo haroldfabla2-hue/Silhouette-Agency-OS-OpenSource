@@ -105,10 +105,25 @@ except BaseException as error:
  raise
 (qsafe/'dependency-views.json').write_text(json.dumps({'classification':'MATERIALIZED_SOURCE_ONLY_NOT_EXECUTED','baseline':'PRISTINE_SHARED_ARTIFACT','candidate':'EXACT_ACCEPTED_7_FILE_QDRANT_EXTENSION','sharedQdrantBytesEquivalent':False,'manifestSha256':'4efbde6937472da4ef8ab4bf17a0e5b3b1e635f151b380b19de24c1422ab664d','preimagesAndPayloadsVerified':True,'browserUnchangedVerified':True,'onlyAccepted7FilesChanged':True},sort_keys=True)+'\n')
 
+# Three explicit check contracts. Baseline/config unchanged; both candidate runs share source/deps.
+legacyBytes=(root/'baseline/tsconfig.node.json').read_bytes()
+if hashlib.sha256(legacyBytes).hexdigest()!='1f3bc6493087beffba4a6604da4772e367f917fb077b7e9894700f4b962c024f':raise RuntimeError('Historical config identity')
+alignedBytes=(root/'candidate/tsconfig.node.json').read_bytes()
+legacy=json.loads(legacyBytes);aligned=json.loads(alignedBytes);expectedAligned=json.loads(legacyBytes)
+expectedAligned['compilerOptions']['moduleResolution']='bundler';expectedAligned['compilerOptions']['customConditions']=['node']
+if aligned!=expectedAligned:raise RuntimeError('Exact resolver-only configuration delta')
+if hashlib.sha256((out/'compiler/lib/typescript.js').read_bytes()).hexdigest()!='dd17428736a07e1db1a138d8a14295ddb2699ba780ee15038acdd2c6da5373a0':raise RuntimeError('Compiler API bytes identity')
+checks=out/'checks';checks.mkdir()
+for side,contract,configBytes in [('baseline','BASELINE_HISTORICAL',legacyBytes),('candidate','CANDIDATE_LEGACY',legacyBytes),('candidate-aligned','CANDIDATE_ALIGNED',alignedBytes)]:
+ folder=checks/side;folder.mkdir();(folder/'tsconfig.node.json').write_bytes(configBytes)
+ (folder/'check.json').write_text(json.dumps({'contract':contract,'configSha256':hashlib.sha256(configBytes).hexdigest()},sort_keys=True)+'\n')
+ for p in folder.iterdir():p.chmod(0o444)
+(qsafe/'checker-contracts.json').write_text(json.dumps({'schema':1,'baseline':'HISTORICAL_SOURCE_PRISTINE_DEPS_LEGACY_CONFIG','candidate':'SAME_NEW_SOURCE_ACCEPTED_QDRANT_LEGACY_CONFIG','candidate-aligned':'SAME_NEW_SOURCE_ACCEPTED_QDRANT_BUNDLER_NODE_CONFIG','baselineConfigSha256':hashlib.sha256(legacyBytes).hexdigest(),'alignedConfigSha256':hashlib.sha256(alignedBytes).hexdigest(),'sameCandidateSourceAndDependencyBytes':True,'checkerContractsEquivalent':False,'runtimeResolverFixturesExecuted':False},sort_keys=True)+'\n')
+
 # Empty nested mount targets, no source bytes or compiler config changes.
 for side in ['baseline','candidate']:(out/'snapshots'/side/'node_modules').mkdir(exist_ok=True)
 # Container uid65534 can traverse ONLY these disposable source/dependency/control inputs.
-for folder in ['snapshots','deps','compiler','candidate-qdrant']:
+for folder in ['snapshots','deps','compiler','candidate-qdrant','checks']:
  for d in [out/folder]+[p for p in (out/folder).rglob('*') if p.is_dir()]:d.chmod(0o755)
-verified={p.relative_to(out).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for folder in ['snapshots','deps','compiler','candidate-qdrant'] for p in (out/folder).rglob('*') if p.is_file()}
+verified={p.relative_to(out).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for folder in ['snapshots','deps','compiler','candidate-qdrant','checks'] for p in (out/folder).rglob('*') if p.is_file()}
 (out/'verified-inputs.json').write_text(json.dumps(verified,sort_keys=True))

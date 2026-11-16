@@ -14,6 +14,12 @@ STAGES={'S00_INIT','S01_DAEMON','S02_PULL','S03_IMAGE_INSPECT','S04_INPUT_MANIFE
 PREDICATES={'subprocess deadline': 'P001', 'subprocess output cap': 'P002', 'docker command failed (raw diagnostics retained privately only)': 'P003', 'network/root/privilege': 'P004', 'hard resource config': 'P005', 'private namespaces': 'P006', 'user/capabilities': 'P007', 'security profiles': 'P008', 'AppArmor profile': 'P009', 'host exposure': 'P010', 'restart/logging': 'P011', 'entrypoint override': 'P012', 'bind mount count': 'P013', 'unexpected mount type': 'P014', 'bounded private tmpfs': 'P015', 'exact readonly rprivate bind': 'P016', 'no recursive submounts': 'P017', 'container name': 'P018', 'mount input path': 'P019', 'guardian startup': 'P020', 'guardian not armed': 'P021', 'container wall deadline': 'P022', 'guardian died': 'P023', 'guardian failure': 'P024', 'docker CLI output cap': 'P025', 'protocol frame cap': 'P026', 'duplicate ready': 'P027', 'guest canary': 'P028', 'guest PID': 'P029', 'namespace key': 'P030', 'unexpected diagnostic frame': 'P031', 'compiler output cap': 'P032', 'unexpected exit frame': 'P033', 'truncated protocol or unexpected Docker stderr': 'P034', 'attached container command exit': 'P035', 'container exit state': 'P036', 'compiler completion': 'P037', 'cgroup pressure/OOM': 'P038', 'container still exists': 'P039', 'incomplete container/result/cleanup': 'P040', 'local Docker socket absent': 'P041', 'daemon Linux/cgroupv2': 'P042', 'daemon security options': 'P043', 'unexpected rootless mode': 'P044', 'daemon memory envelope': 'P045', 'image digest/platform': 'P046', 'image volumes': 'P047', 'unexpected image healthcheck': 'P048', 'image expanded size': 'P049', 'incomplete result': 'P050', 'namespace separation ': 'P051', 'guest failure or unknown protocol': 'P052', 'controller interrupted': 'P053'}
 PREDICATES['guest failure enum']='P054'
 PREDICATES['explicit requested AppArmor policy']='P055'
+PREDICATES['compiler graph required']='P056'
+PREDICATES['aggregate evidence cap']='P057'
+PREDICATES['compiler evidence failure']='P058'
+PREDICATES['aggregate admission budget']='P059'
+COMPILER_PREDICATES=['C_COMPILER_HASH', 'C_COMPILER_VERSION', 'C_CONFIG_HASH', 'C_CONFIG_PARSE', 'C_CONTRACT', 'C_DIAGNOSTIC_CAP', 'C_EDGE_CAP', 'C_EMIT_FORBIDDEN', 'C_EXPORT_TARGET_CAP', 'C_FILE_CAP', 'C_MANIFEST_CAP', 'C_MODULE_INVARIANT', 'C_OPTION_INVARIANTS', 'C_PACKAGE_BYTES', 'C_PACKAGE_CAP', 'C_PACKAGE_METADATA_CAP', 'C_PATH_OUTSIDE_INPUTS', 'C_PINNED_CACHE_ENUMERATION', 'C_RESOLVER_CONTRACT', 'C_SPECIFIER_CAP', 'C_UNEXPECTED']
+COMPILER_STAGES=['C00_INIT', 'C01_PLAN', 'C02_PARSE', 'C03_PROGRAM', 'C04_DIAGNOSTICS', 'C05_GRAPH', 'C06_SERIALIZE']
 GUEST_GUARDS=['G000_UNCLASSIFIED', 'G001', 'G002', 'G003', 'G004', 'G005', 'G006', 'G007', 'G008', 'G009', 'G010', 'G011', 'G012', 'G013', 'G014', 'G015', 'G016', 'G017', 'G018', 'G019', 'G020', 'G030', 'G031', 'G032', 'G033', 'G034', 'G035', 'G036', 'G037', 'G038', 'G039', 'G040', 'G041', 'G042', 'G043', 'G044', 'G045', 'G046', 'G047', 'G048']
 def stage(value):
  global STAGE
@@ -118,15 +124,19 @@ def run_side(side,root,out):
  COMPILER_ADMITTED=False
  name='inert-ts-'+os.environ['GITHUB_RUN_ID']+'-'+side
  require(name.replace('-','').isalnum(),'container name')
- mounts={'/source':str(out/'snapshots'/side),'/source/node_modules':str(out/'deps/node_modules'),'/compiler':str(out/'compiler'),'/control/driver.cjs':str(root/'candidate/.github/inert-compiler/driver.cjs')}
- if side=='candidate':mounts['/source/node_modules/@qdrant/js-client-rest']=str(out/'candidate-qdrant')
+ sourceSide='baseline' if side=='baseline' else 'candidate'
+ mounts={'/source':str(out/'snapshots'/sourceSide),'/source/node_modules':str(out/'deps/node_modules'),'/compiler':str(out/'compiler'),'/control/driver.cjs':str(root/'candidate/.github/inert-compiler/driver.cjs')}
+ if side!='baseline':mounts['/source/node_modules/@qdrant/js-client-rest']=str(out/'candidate-qdrant')
+ mounts['/control/compiler-check.cjs']=str(root/'candidate/.github/inert-compiler/compiler-check.cjs')
+ mounts['/control/check.json']=str(out/'checks'/side/'check.json')
+ mounts['/control/tsconfig.node.json']=str(out/'checks'/side/'tsconfig.node.json')
  args=['create','--pull=never','--platform=linux/amd64','--name',name,'--restart=no','--network=none','--ipc=private','--cgroupns=private','--user=65534:65534','--cap-drop=ALL','--security-opt=no-new-privileges=true','--security-opt=apparmor=docker-default','--read-only','--tmpfs','/tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777','--shm-size=16m','--memory=6g','--memory-swap=6g','--pids-limit=32','--cpus=1','--ulimit','core=0:0','--ulimit','nofile=128:128','--ulimit','fsize=16777216:16777216','--ulimit','cpu=280:280','--log-driver=none','--no-healthcheck','--entrypoint=/usr/bin/env','--workdir=/source','-i']
  for target,source in mounts.items():
   require(pathlib.Path(source).exists() and not pathlib.Path(source).is_symlink(),'mount input path')
   args+=['--mount','type=bind,src='+source+',dst='+target+',readonly,bind-propagation=rprivate,bind-recursive=disabled']
  args += [IMAGE,'-i','PATH=/usr/local/bin','HOME=/nonexistent','TMPDIR=/tmp','LANG=C.UTF-8','NODE_DISABLE_COMPILE_CACHE=1','/usr/local/bin/node','/control/driver.cjs']
  p=None;guard=None;created=False;forced=False;success=False;started=time.monotonic();record={'side':side,'classification':'INCOMPLETE','canaryPassed':False,'compilerStarted':False,'controllerComplete':False}
- streams={key:(out/(side+'.'+key)).open('wb') for key in ['stdout','stderr']};sizes={'stdout':0,'stderr':0};result=None
+ streams={key:(out/(side+'.'+key)).open('wb') for key in ['stdout','stderr','manifest']};sizes={'stdout':0,'stderr':0,'manifest':0};result=None
  try:
   stage('S05_CREATE');docker(args,out);created=True
   stage('S06_CONFIG_INSPECT');row=json.loads(docker(['inspect',name],out))[0];inspect_config(row,mounts)
@@ -163,8 +173,13 @@ def run_side(side,root,out):
        stage('S13_GO');record['canaryPassed']=True;ready=True;p.stdin.write(b'GO\n');p.stdin.flush();record['compilerStarted']=True;COMPILER_ADMITTED=True
       elif kind in streams:
        stage('S14_DIAGNOSTICS')
-       require(ready and not exited,'unexpected diagnostic frame');data=base64.b64decode(message['data'],validate=True);sizes[kind]+=len(data);require(sizes[kind]<=CAP,'compiler output cap');streams[kind].write(data)
+       require(ready and not exited,'unexpected diagnostic frame');data=base64.b64decode(message['data'],validate=True);sizes[kind]+=len(data);require(sizes[kind]<=CAP,'compiler output cap');require(sum(sizes.values())<=CAP,'aggregate evidence cap');require(kind!='manifest' or sizes[kind]<=8*1024*1024,'compiler graph required');streams[kind].write(data)
       elif kind=='exit':require(ready and not exited,'unexpected exit frame');result=message;exited=True
+      elif kind=='evidenceFailure':
+       evidence=message.get('receipt',{})
+       require(evidence.get('stage') in COMPILER_STAGES and evidence.get('predicate') in COMPILER_PREDICATES and evidence.get('errorClass') in ['E_PARSE','E_TYPE','E_ABSENT','E_OS','E_EVIDENCE'] and evidence.get('classification')=='INCOMPLETE' and evidence.get('graphComplete') is False,'compiler evidence failure')
+       (out/(side+'.evidence-failure.json')).write_text(json.dumps({key:evidence[key] for key in ['stage','predicate','errorClass','classification','graphComplete']},sort_keys=True)+'\n')
+       require(False,'compiler evidence failure')
       elif kind=='failure':
        require(message.get('guestGuard') in GUEST_GUARDS,'guest failure enum')
        record['guestFailure']={'guestGuard':message['guestGuard'],'errorClass':message.get('errorClass') if message.get('errorClass') in ['G_SCHEMA_TYPE','G_PARSE','G_ASSERT_OR_OS','G_OS'] else 'G_UNKNOWN'}
@@ -174,6 +189,7 @@ def run_side(side,root,out):
    stage('S15_EXIT_INSPECT');row=json.loads(docker(['inspect',name],out))[0];state=row['State'];require(not state['Running'] and not state['OOMKilled'] and not state['Error'],'container exit state')
    require(result is not None and result['code'] in [0,2] and result['signal'] is None and not result['overflow'] and state['ExitCode']==result['code'],'compiler completion')
    before={k:int(v) for k,v in (line.split() for line in canary['cgroup']['memory.events'].splitlines())};after={k:int(v) for k,v in (line.split() for line in result['memoryEvents'].splitlines())};delta={k:after[k]-before.get(k,0) for k in after};require(not any(delta.get(k,0) for k in ['max','oom','oom_kill','oom_group_kill']),'cgroup pressure/OOM')
+   require(sizes['manifest']>0,'compiler graph required')
    record.update({'exit':result['code'],'memoryEventDelta':delta,'diagnosticBytes':sizes,'classification':'COMPILER_COMPLETED','controllerComplete':True});success=True
   finally:sel.close()
  except BaseException as error:
@@ -204,6 +220,8 @@ def run_side(side,root,out):
  require(success and not forced,'incomplete container/result/cleanup');return record
 
 def main(root,out):
+ # Keep three contracts inside existing20min job; do not start a side without cleanup reserve.
+ admissionDeadline=time.monotonic()+780
  root=pathlib.Path(root).resolve();out=pathlib.Path(out).resolve();out.mkdir(parents=True,exist_ok=True)
  stage('S01_DAEMON')
  require(os.path.exists('/var/run/docker.sock'),'local Docker socket absent')
@@ -218,11 +236,13 @@ def main(root,out):
  stage('S04_INPUT_MANIFEST')
  expected=json.loads((out/'verified-inputs.json').read_text());reports=[]
  try:
-  for side in ['baseline','candidate']:reports.append(run_side(side,root,out))
+  for side in ['baseline','candidate','candidate-aligned']:
+   require(time.monotonic()+480<=admissionDeadline,'aggregate admission budget')
+   reports.append(run_side(side,root,out))
  finally:
   stage('S16_POSTHASH')
   unchanged=all((out/rel).is_file() and hashlib.sha256((out/rel).read_bytes()).hexdigest()==digest for rel,digest in expected.items())
-  result={'runs':reports,'inputsUnchanged':unchanged,'productReadiness':False,'classification':'COMPILER_COMPARISON_COMPLETED' if len(reports)==2 and unchanged else 'INCOMPLETE'}
+  result={'runs':reports,'inputsUnchanged':unchanged,'productReadiness':False,'classification':'COMPILER_COMPARISON_COMPLETED' if len(reports)==3 and unchanged else 'INCOMPLETE'}
   (out/'docker-result.json').write_text(json.dumps(result,indent=2))
  require(result['classification']=='COMPILER_COMPARISON_COMPLETED','incomplete result')
  if any(x['exit']!=0 for x in reports):raise CompletedCompilerErrors('completed compiler errors; not semantic PASS')
