@@ -1,3 +1,4 @@
+import { ownedTimeout, ownedWork, producerScopeBound } from '../server/desktop/producerScope.js';
 import { CostMetrics, ModelUsage } from '../types';
 
 export class CostEstimator {
@@ -89,8 +90,11 @@ export class CostEstimator {
         modelBreakdown: {}
     };
 
+    /** Same actual eager hydration, now observable without changing when it starts. */
+    public readonly initialLoad: Promise<void>;
+
     private constructor() {
-        this.loadPersistedMetrics();
+        this.initialLoad = this.loadPersistedMetrics();
     }
 
     public static getInstance(): CostEstimator {
@@ -162,9 +166,10 @@ export class CostEstimator {
         if (this.saveTimeout) return; // Already scheduled
 
         // Debounce: Wait 5 seconds before writing to disk to avoid IO thrashing
-        this.saveTimeout = setTimeout(() => {
-            this.persistMetrics();
+        this.saveTimeout = ownedTimeout(() => {
+            const pending = this.persistMetrics();
             this.saveTimeout = null;
+            if (producerScopeBound()) return pending;
         }, 5000);
     }
 
@@ -182,6 +187,8 @@ export class CostEstimator {
             tokenCount: 0,
             modelBreakdown: {}
         };
+        // Native path retains its original fire-and-forget behavior.
+        if (producerScopeBound()) return ownedWork(() => this.persistMetrics());
         this.persistMetrics();
     }
 
