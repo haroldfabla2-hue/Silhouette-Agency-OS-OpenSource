@@ -12,6 +12,7 @@ COMPILER_ADMITTED=False
 STAGES={'S00_INIT','S01_DAEMON','S02_PULL','S03_IMAGE_INSPECT','S04_INPUT_MANIFEST','S05_CREATE','S06_CONFIG_INSPECT','S07_GUARDIAN','S08_START_ATTACH','S09_READY_READ','S10_CANARY_MESSAGE','S11_RUNNING_INSPECT','S12_NAMESPACE_CHECK','S13_GO','S14_DIAGNOSTICS','S15_EXIT_INSPECT','S16_POSTHASH','S17_CLEANUP','S18_DONE'}
 PREDICATES={'subprocess deadline': 'P001', 'subprocess output cap': 'P002', 'docker command failed (raw diagnostics retained privately only)': 'P003', 'network/root/privilege': 'P004', 'hard resource config': 'P005', 'private namespaces': 'P006', 'user/capabilities': 'P007', 'security profiles': 'P008', 'AppArmor profile': 'P009', 'host exposure': 'P010', 'restart/logging': 'P011', 'entrypoint override': 'P012', 'bind mount count': 'P013', 'unexpected mount type': 'P014', 'bounded private tmpfs': 'P015', 'exact readonly rprivate bind': 'P016', 'no recursive submounts': 'P017', 'container name': 'P018', 'mount input path': 'P019', 'guardian startup': 'P020', 'guardian not armed': 'P021', 'container wall deadline': 'P022', 'guardian died': 'P023', 'guardian failure': 'P024', 'docker CLI output cap': 'P025', 'protocol frame cap': 'P026', 'duplicate ready': 'P027', 'guest canary': 'P028', 'guest PID': 'P029', 'namespace key': 'P030', 'unexpected diagnostic frame': 'P031', 'compiler output cap': 'P032', 'unexpected exit frame': 'P033', 'truncated protocol or unexpected Docker stderr': 'P034', 'attached container command exit': 'P035', 'container exit state': 'P036', 'compiler completion': 'P037', 'cgroup pressure/OOM': 'P038', 'container still exists': 'P039', 'incomplete container/result/cleanup': 'P040', 'local Docker socket absent': 'P041', 'daemon Linux/cgroupv2': 'P042', 'daemon security options': 'P043', 'unexpected rootless mode': 'P044', 'daemon memory envelope': 'P045', 'image digest/platform': 'P046', 'image volumes': 'P047', 'unexpected image healthcheck': 'P048', 'image expanded size': 'P049', 'incomplete result': 'P050', 'namespace separation ': 'P051', 'guest failure or unknown protocol': 'P052', 'controller interrupted': 'P053'}
 PREDICATES['guest failure enum']='P054'
+PREDICATES['explicit requested AppArmor policy']='P055'
 GUEST_GUARDS=['G000_UNCLASSIFIED', 'G001', 'G002', 'G003', 'G004', 'G005', 'G006', 'G007', 'G008', 'G009', 'G010', 'G011', 'G012', 'G013', 'G014', 'G015', 'G016', 'G017', 'G018', 'G019', 'G020', 'G030', 'G031', 'G032', 'G033', 'G034', 'G035', 'G036', 'G037', 'G038', 'G039', 'G040', 'G041', 'G042', 'G043', 'G044', 'G045', 'G046', 'G047', 'G048']
 def stage(value):
  global STAGE
@@ -78,7 +79,7 @@ def inspect_config(row,mounts):
  require(h['PidMode']=='' and h['IpcMode']=='private' and h['CgroupnsMode']=='private' and h['UTSMode']=='','private namespaces')
  require(c['User']=='65534:65534' and h['CapDrop']==['ALL'] and not h['CapAdd'],'user/capabilities')
  require('no-new-privileges=true' in h['SecurityOpt'] and not any('unconfined' in s for s in h['SecurityOpt']),'security profiles')
- require(row.get('AppArmorProfile')=='docker-default','AppArmor profile')
+ require('apparmor=docker-default' in h['SecurityOpt'],'explicit requested AppArmor policy')
  require(not h['Devices'] and not h.get('DeviceRequests') and not h['PortBindings'] and not h['VolumesFrom'],'host exposure')
  require(h['RestartPolicy']['Name']=='no' and h['LogConfig']['Type']=='none','restart/logging')
  require(c['Entrypoint']==['/usr/bin/env'] and c['Cmd']==['-i','PATH=/usr/local/bin','HOME=/nonexistent','TMPDIR=/tmp','LANG=C.UTF-8','NODE_DISABLE_COMPILE_CACHE=1','/usr/local/bin/node','/control/driver.cjs'],'entrypoint override')
@@ -88,6 +89,10 @@ def inspect_config(row,mounts):
  for x in actual:
   require(x['Type']=='bind' and not x['RW'] and x['Propagation']=='rprivate' and mounts.get(x['Destination'])==x['Source'],'exact readonly rprivate bind')
  require(all(x.get('BindOptions',{}).get('NonRecursive') is True and x.get('ReadOnly') is True for x in h['Mounts']),'no recursive submounts')
+
+def inspect_running_profile(row):
+ # Applied profile is resolved by Docker at start, not implicit-policy create.
+ require(row.get('AppArmorProfile')=='docker-default','AppArmor profile')
 
 def guardian_reason(parent,start,deadline):
  if not same_process(parent,start):return 'CONTROLLER_DIED'
@@ -113,7 +118,7 @@ def run_side(side,root,out):
  name='inert-ts-'+os.environ['GITHUB_RUN_ID']+'-'+side
  require(name.replace('-','').isalnum(),'container name')
  mounts={'/source':str(out/'snapshots'/side),'/source/node_modules':str(out/'deps/node_modules'),'/compiler':str(out/'compiler'),'/control/driver.cjs':str(root/'candidate/.github/inert-compiler/driver.cjs')}
- args=['create','--pull=never','--platform=linux/amd64','--name',name,'--restart=no','--network=none','--ipc=private','--cgroupns=private','--user=65534:65534','--cap-drop=ALL','--security-opt=no-new-privileges=true','--read-only','--tmpfs','/tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777','--shm-size=16m','--memory=6g','--memory-swap=6g','--pids-limit=32','--cpus=1','--ulimit','core=0:0','--ulimit','nofile=128:128','--ulimit','fsize=16777216:16777216','--ulimit','cpu=280:280','--log-driver=none','--no-healthcheck','--entrypoint=/usr/bin/env','--workdir=/source','-i']
+ args=['create','--pull=never','--platform=linux/amd64','--name',name,'--restart=no','--network=none','--ipc=private','--cgroupns=private','--user=65534:65534','--cap-drop=ALL','--security-opt=no-new-privileges=true','--security-opt=apparmor=docker-default','--read-only','--tmpfs','/tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777','--shm-size=16m','--memory=6g','--memory-swap=6g','--pids-limit=32','--cpus=1','--ulimit','core=0:0','--ulimit','nofile=128:128','--ulimit','fsize=16777216:16777216','--ulimit','cpu=280:280','--log-driver=none','--no-healthcheck','--entrypoint=/usr/bin/env','--workdir=/source','-i']
  for target,source in mounts.items():
   require(pathlib.Path(source).exists() and not pathlib.Path(source).is_symlink(),'mount input path')
   args+=['--mount','type=bind,src='+source+',dst='+target+',readonly,bind-propagation=rprivate,bind-recursive=disabled']
@@ -147,7 +152,7 @@ def run_side(side,root,out):
       if kind=='ready':
        stage('S10_CANARY_MESSAGE')
        require(not ready and not exited,'duplicate ready');canary=message['canary'];require(canary['checks']=='ALL_CANARIES_PASSED','guest canary')
-       stage('S11_RUNNING_INSPECT');row=json.loads(docker(['inspect',name],out))[0];inspect_config(row,mounts);pid=row['State']['Pid'];require(pid>0,'guest PID')
+       stage('S11_RUNNING_INSPECT');row=json.loads(docker(['inspect',name],out))[0];inspect_config(row,mounts);inspect_running_profile(row);pid=row['State']['Pid'];require(pid>0,'guest PID')
        stage('S12_NAMESPACE_CHECK')
        for ns,value in canary['namespaces'].items():
         require(ns in ['pid','mnt','net','ipc','uts','cgroup'],'namespace key')
