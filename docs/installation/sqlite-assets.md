@@ -28,3 +28,16 @@ The Docker build runs the frontend build and the existing server Vite config;
 the runtime still needs all production dependencies and a supported native
 SQLite binary. A successful bundle is not an image startup or health check.
 This patch does not enable Docker socket or whole-host filesystem access.
+
+## Desktop resource scope
+
+Electron packages ship the eight owning SQL files in
+`resources/migrations/sqlite`, outside `app.asar`. The packaged server launch
+sets the asset directory to that resource path rather than the caller's cwd.
+This does not move user stores or change development launches.
+
+Resource inclusion does not prove desktop startup: the current desktop launcher
+still calls an external `node` executable with its inherited working directory.
+Node availability/version, native module ABI compatibility, reading the server
+entry from `app.asar`, and a writable persistent working directory still need
+installed-app validation. Do not treat a successful installer build as that test.
