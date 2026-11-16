@@ -1,0 +1,20 @@
+{
+  "files": {
+    "approved-tooling.json": "5ab3b764a9dbe57e6e6738a68a5281f54dc1e1a8a4315fb0eea7362097c73cb6",
+    "boundary.cjs": "d58bfad01738b2dfc25423a1644343b9919df5b1a49b4532a6957723794a096e",
+    "build.mjs": "6bdfffa4245f204a4c5f28d00124dbfcfa75233b79889abdb22588fa9a688264",
+    "controller.py": "0e70a1ef228e1a73550088dfe6d2f77e510e5d49f012ba977985262fe4c3857f",
+    "delta-hashes.json": "188915866950b6da04b78ea01d88320ed8260daa79fe9d7a8de88f675593b51f",
+    "delta/Dockerfile": "26341649f1568bce0e37a5303298fd778f9fd64307e92f9f67db9cff62c593c2",
+    "delta/package.json": "35b72e254d66ff7ce1bb795acf135169fd7c1dde78209a00f979addc737f7820",
+    "delta/server/main.ts": "cb2ec0e605db6dcdf3610b8ba04743fe1b2308452ead3b99cb5f41eab7a3b807",
+    "delta/vite.server.config.ts": "01f1c22440ea053d978943be57808909c14ae9416cd4ccac368453fb43801735",
+    "driver.cjs": "72d31fc2b93e8f96d8c7ce2cf596cfebd07952a61e9da18e0573850dc7acc876",
+    "emit.py": "7b23745afcfe1e2a9a7436ad53acc7f3ae2d003d5ffb251fdfae74d5d00a0849",
+    "prepare.py": "0c5d6e1dfce0c3ca06bdf797949e7e8f85622084afee534e1261a3e40d38b287",
+    "projection-schema.py": "4e52d0a53097cee3dc809809a1fbc34277dbf1a74b03c3a9d49a9740ea63a4c3",
+    "receipt-schema.json": "2ac49156a12d20fbb71e64958c1610874ea3261df5c4d6420aa6052bc3d6b45a",
+    "stage-runner.cjs": "fb93f45d5e3033d671444c7fc399eeb8b10fa66284e9b2b122dbc3b143f0b1ae",
+    "tooling-artifacts.json": "f1b770db34846a2f95c06b2adc93255b5ec6d47ed04d6d6d951701ce09801384"
+  }
+}
