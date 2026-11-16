@@ -1,38 +1,42 @@
 'use strict';
 // Trusted builtins only. No application imports, package hooks or generated declarations.
 const fs=require('fs'),os=require('os'),net=require('net'),cp=require('child_process');
-function assert(x,m){if(!x)throw Error(m);}
+const GUARDS={"runtime version": "G001", "nonroot uid/gid": "G002", "environment allowlist": "G003", "capabilities ": "G004", "no new privileges": "G005", "seccomp filter": "G006", "AppArmor default": "G007", "kernel hard limits": "G008", "kernel CPU quota": "G009", "loopback only": "G010", "readonly denial": "G011", "host/credential path absent": "G012", "private PID namespace": "G013", "readonly mount ": "G014", "network timeout not proof": "G015", "outbound connected": "G016", "controller acknowledgment missing": "G017", "control input oversized": "G018", "control input invalid": "G019", "controller disconnected": "G020"};
+let guestGuard='G000_UNCLASSIFIED';
+function assert(x,m){guestGuard=GUARDS[m]||GUARDS[Object.keys(GUARDS).find(k=>m.startsWith(k))]||'G000_UNCLASSIFIED';if(!x)throw Error('fixed guest assertion');}
+function fail(m){guestGuard=GUARDS[m]||'G000_UNCLASSIFIED';return Error('fixed guest failure');}
+function read(path,code){guestGuard=code;return fs.readFileSync(path,'utf8');}
 function frame(x){process.stdout.write(JSON.stringify(x)+'\n');}
 async function canaries(){
  assert(process.version==='v22.23.4','runtime version');
  assert(process.getuid()===65534&&process.getgid()===65534,'nonroot uid/gid');
  const expected={PATH:'/usr/local/bin',HOME:'/nonexistent',TMPDIR:'/tmp',LANG:'C.UTF-8',NODE_DISABLE_COMPILE_CACHE:'1'};
  assert(JSON.stringify(Object.fromEntries(Object.entries(process.env).sort()))===JSON.stringify(Object.fromEntries(Object.entries(expected).sort())),'environment allowlist');
- const status=fs.readFileSync('/proc/self/status','utf8');
+ const status=read('/proc/self/status','G030');
  for(const name of ['CapEff','CapPrm','CapBnd'])assert(new RegExp('^'+name+':\\s+0+$','m').test(status),'capabilities '+name);
  assert(/^NoNewPrivs:\s+1$/m.test(status),'no new privileges');assert(/^Seccomp:\s+2$/m.test(status),'seccomp filter');
- assert(fs.readFileSync('/proc/self/attr/current','utf8').startsWith('docker-default'),'AppArmor default');
- const cg={};for(const name of ['memory.max','memory.swap.max','pids.max','cpu.max','memory.events'])cg[name]=fs.readFileSync('/sys/fs/cgroup/'+name,'utf8').trim();
+ assert(read('/proc/self/attr/current','G031').startsWith('docker-default'),'AppArmor default');
+ const cg={};for(const name of ['memory.max','memory.swap.max','pids.max','cpu.max','memory.events'])cg[name]=read('/sys/fs/cgroup/'+name,{'memory.max':'G032','memory.swap.max':'G033','pids.max':'G034','cpu.max':'G035','memory.events':'G036'}[name]).trim();
  assert(cg['memory.max']==='6442450944'&&cg['memory.swap.max']==='0'&&cg['pids.max']==='32','kernel hard limits');
  const cpu=cg['cpu.max'].split(/\s+/).map(Number);assert(cpu[0]>0&&cpu[0]===cpu[1],'kernel CPU quota');
  assert(Object.keys(os.networkInterfaces()).every(n=>n==='lo'),'loopback only');
- await new Promise((resolve,reject)=>{const s=net.connect({host:'198.51.100.1',port:9});s.on('connect',()=>{s.destroy();reject(Error('outbound connected'));});s.on('error',e=>['ENETUNREACH','EACCES','EPERM'].includes(e.code)?resolve():reject(e));s.setTimeout(1000,()=>{s.destroy();reject(Error('network timeout not proof'));});});
+ guestGuard='G037';await new Promise((resolve,reject)=>{const s=net.connect({host:'198.51.100.1',port:9});s.on('connect',()=>{s.destroy();reject(fail('outbound connected'));});s.on('error',e=>['ENETUNREACH','EACCES','EPERM'].includes(e.code)?resolve():reject(e));s.setTimeout(1000,()=>{s.destroy();reject(fail('network timeout not proof'));});});
  for(const path of ['/source/package.json','/root-write-probe']){let denied=false;try{fs.writeFileSync(path,'readonly-denial-probe');}catch(e){denied=['EROFS','EACCES','EPERM'].includes(e.code);}assert(denied,'readonly denial');}
- fs.writeFileSync('/tmp/private-probe','private');fs.unlinkSync('/tmp/private-probe');
+ guestGuard='G038';fs.writeFileSync('/tmp/private-probe','private');fs.unlinkSync('/tmp/private-probe');
  for(const path of ['/var/run/docker.sock','/run/docker.sock','/source/.git','/home/runner','/github','/host','/source/.env','/source/.env.local'])assert(!fs.existsSync(path),'host/credential path absent');
- const pids=fs.readdirSync('/proc').filter(x=>/^\d+$/.test(x));assert(pids.length===1&&pids[0]==='1'&&process.pid===1,'private PID namespace');
- const mounts=fs.readFileSync('/proc/mounts','utf8').trim().split('\n').map(l=>l.split(' '));
+ guestGuard='G039';const pids=fs.readdirSync('/proc').filter(x=>/^\d+$/.test(x));assert(pids.length===1&&pids[0]==='1'&&process.pid===1,'private PID namespace');
+ const mounts=read('/proc/mounts','G040').trim().split('\n').map(l=>l.split(' '));
  for(const target of ['/','/source','/source/node_modules','/compiler','/control/driver.cjs'])assert(mounts.some(m=>m[1]===target&&m[3].split(',').includes('ro')),'readonly mount '+target);
- const namespaces={};for(const name of ['pid','mnt','net','ipc','uts','cgroup'])namespaces[name]=fs.readlinkSync('/proc/self/ns/'+name);
+ const namespaces={};for(const name of ['pid','mnt','net','ipc','uts','cgroup']){guestGuard={pid:'G041',mnt:'G042',net:'G043',ipc:'G044',uts:'G045',cgroup:'G046'}[name];namespaces[name]=fs.readlinkSync('/proc/self/ns/'+name)};
  return {namespaces,cgroup:cg,uid:process.getuid(),runtime:process.version,checks:'ALL_CANARIES_PASSED'};
 }
 async function main(){
  const result=await canaries();frame({kind:'ready',canary:result});
- await new Promise((resolve,reject)=>{let data='';const t=setTimeout(()=>reject(Error('controller acknowledgment missing')),10000);process.stdin.setEncoding('utf8');process.stdin.on('data',chunk=>{data+=chunk;if(data.length>64){clearTimeout(t);reject(Error('control input oversized'));}if(data.includes('\n')){clearTimeout(t);data==='GO\n'?resolve():reject(Error('control input invalid'));}});process.stdin.on('end',()=>reject(Error('controller disconnected')));});
+ guestGuard='G047';await new Promise((resolve,reject)=>{let data='';const t=setTimeout(()=>reject(fail('controller acknowledgment missing')),10000);process.stdin.setEncoding('utf8');process.stdin.on('data',chunk=>{data+=chunk;if(data.length>64){clearTimeout(t);reject(fail('control input oversized'));}if(data.includes('\n')){clearTimeout(t);data==='GO\n'?resolve():reject(fail('control input invalid'));}});process.stdin.on('end',()=>reject(fail('controller disconnected')));});
  const args=['--max-old-space-size=2560','/compiler/lib/_tsc.js','--project','/source/tsconfig.node.json','--noEmit','--incremental','false','--pretty','false'];
- const child=cp.spawn('/usr/local/bin/node',args,{env:process.env,stdio:['ignore','pipe','pipe'],cwd:'/source'});const sizes={stdout:0,stderr:0};let overflow=false;
+ guestGuard='G048';const child=cp.spawn('/usr/local/bin/node',args,{env:process.env,stdio:['ignore','pipe','pipe'],cwd:'/source'});const sizes={stdout:0,stderr:0};let overflow=false;
  for(const key of ['stdout','stderr'])child[key].on('data',chunk=>{sizes[key]+=chunk.length;if(sizes[key]>16777216){overflow=true;child.kill('SIGKILL');return;}frame({kind:key,data:chunk.toString('base64')});});
- child.on('error',e=>{frame({kind:'failure',message:'compiler spawn failure'});process.exitCode=125;});
+ child.on('error',e=>{frame({kind:'failure',message:'compiler spawn failure',guestGuard:'G048',errorClass:'G_OS'});process.exitCode=125;});
  child.on('close',(code,signal)=>{const events=fs.readFileSync('/sys/fs/cgroup/memory.events','utf8').trim();process.stdin.destroy();const status=overflow||signal||![0,2].includes(code)?125:code;process.stdout.write(JSON.stringify({kind:'exit',code,signal,overflow,sizes,memoryEvents:events})+'\n',()=>process.exit(status));});
 }
-main().catch(()=>{frame({kind:'failure',message:'runtime/control canary failure'});process.exitCode=125;});
+main().catch(error=>{frame({kind:'failure',message:'runtime/control canary failure',guestGuard,errorClass:error instanceof TypeError?'G_SCHEMA_TYPE':error instanceof SyntaxError?'G_PARSE':error.code?'G_OS':'G_ASSERT_OR_OS'});process.exitCode=125;});
