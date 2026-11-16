@@ -1,0 +1,127 @@
+# LOCAL REVIEW PROPOSAL ONLY. Publishing/execution requires a separate explicit gate.
+name: Isolated real server SSR artifact
+on:
+  push:
+    branches:
+      - validation/server-ssr-evidence-v2-825e905-20261116
+permissions:
+  contents: read
+concurrency:
+  group: server-ssr-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  ssr:
+    if: ${{ github.run_attempt == 1 && github.event.repository.private == false && github.ref == 'refs/heads/validation/server-ssr-evidence-v2-825e905-20261116' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        stage: [SSR]
+    env:
+      SSR_STAGE: ${{ matrix.stage }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          path: transport
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 825e9050407fe0cd7ce4bcafccccb03e7e0dbd53
+          path: candidate
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 6b49bc2a7fadcd87759cd0c1d534c832194b1572
+          path: baseline
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Verify exact public source and reviewed transport
+        env:
+          ACTUAL: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test "$REPOSITORY" = haroldfabla2-hue/Silhouette-Agency-OS-OpenSource
+          test "$(git -C transport rev-parse HEAD)" = "$ACTUAL"
+          test -z "$(git -C transport status --porcelain)"
+          test "$(git -C candidate rev-parse HEAD)" = 825e9050407fe0cd7ce4bcafccccb03e7e0dbd53
+          test "$(git -C baseline rev-parse HEAD)" = 6b49bc2a7fadcd87759cd0c1d534c832194b1572
+          test -x /usr/bin/docker
+          test -S /var/run/docker.sock
+          test "$(stat -fc %T /sys/fs/cgroup)" = cgroup2fs
+          python3 - <<'PY'
+          import json,pathlib,hashlib
+          root=pathlib.Path('transport/.github/server-ssr')
+          assert hashlib.sha256((root/'host-pins.json').read_bytes()).hexdigest()=='f3e607fbcb69c9c8919b5503012d0a5890d6d95aeff2edd618092f4444af11e5'
+          pins=json.loads((root/'host-pins.json').read_text())
+          for path,digest in pins['files'].items():
+              assert hashlib.sha256((root/path).read_bytes()).hexdigest()==digest
+          PY
+      - name: Prepare inert source and stage-specific tooling without imports
+        run: |
+          set -euo pipefail
+          umask 077
+          timeout --signal=TERM --kill-after=2s 270s env -i PATH=/usr/bin:/bin HOME=/nonexistent \
+            python3 transport/.github/server-ssr/prepare.py "$PWD" "$RUNNER_TEMP/ssr-result" "$SSR_STAGE" \
+            >"$RUNNER_TEMP/ssr-prepare.stdout" 2>"$RUNNER_TEMP/ssr-prepare.stderr"
+      - name: One fresh canary-gated real SSR artifact stage
+        run: |
+          set -euo pipefail
+          env -i PATH=/usr/bin:/bin HOME=/nonexistent GITHUB_RUN_ID="$GITHUB_RUN_ID" \
+            python3 transport/.github/server-ssr/controller.py "$PWD/transport" "$RUNNER_TEMP/ssr-result" "$SSR_STAGE" \
+            >"$RUNNER_TEMP/ssr-controller.stdout" 2>"$RUNNER_TEMP/ssr-controller.stderr"
+      - name: Natural outer cleanup verification
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/ssr-result"
+          suffix=$(printf '%s' "$SSR_STAGE" | tr '[:upper:]_' '[:lower:]-')
+          name="ssr-${GITHUB_RUN_ID}-${suffix}"
+          if ! remaining=$(/usr/bin/docker --host unix:///var/run/docker.sock ps -a --filter "name=^/${name}$" --format '{{.ID}}' 2>"$RUNNER_TEMP/ssr-remaining.stderr"); then
+            printf 'outer_cleanup_unverifiable\n' > "$RUNNER_TEMP/ssr-result/outer-cleanup.txt"
+            exit 1
+          fi
+          found=0
+          if test -n "$remaining"; then
+            found=1
+            /usr/bin/docker --host unix:///var/run/docker.sock kill "$name" >"$RUNNER_TEMP/ssr-kill.stdout" 2>&1 || true
+            /usr/bin/docker --host unix:///var/run/docker.sock wait "$name" >"$RUNNER_TEMP/ssr-wait.stdout" 2>&1 || true
+            /usr/bin/docker --host unix:///var/run/docker.sock rm -f "$name" >"$RUNNER_TEMP/ssr-remove.stdout" 2>&1 || true
+          fi
+          printf 'outer_cleanup_forced=%s\n' "$found" > "$RUNNER_TEMP/ssr-result/outer-cleanup.txt"
+          test "$found" = 0
+      - name: Project and scan bounded safe SSR receipts
+        if: always()
+        run: |
+          env -i PATH=/usr/bin:/bin HOME=/nonexistent \
+            python3 transport/.github/server-ssr/emit.py "$PWD/transport" "$RUNNER_TEMP/ssr-result" "$SSR_STAGE"
+      - name: Independent fixed-enum controller failure evidence
+        if: always()
+        run: |
+          env -i PATH=/usr/bin:/bin HOME=/nonexistent \
+            python3 transport/.github/server-ssr/failure-evidence.py "$PWD/transport" "$RUNNER_TEMP/ssr-result"
+      - name: Upload only projected ssr evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ssr-${{ matrix.stage }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/ssr-result/safe-ssr/
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 9
+          include-hidden-files: false
+      - name: Remove disposable source/tooling and raw receipts
+        if: always()
+        run: |
+          set -euo pipefail
+          test -n "$RUNNER_TEMP"
+          rm -rf -- "$RUNNER_TEMP/ssr-result"
+          rm -f -- "$RUNNER_TEMP"/ssr-*.stdout "$RUNNER_TEMP"/ssr-*.stderr
