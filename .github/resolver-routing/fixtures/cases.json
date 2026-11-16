@@ -1,0 +1,14 @@
+[
+ {"id":"MCP_RELATIVE_JS","parent":"server/mcp/mcpServer.ts","specifier":"../../services/apiKeyService.js","importTarget":"services/apiKeyService.js","tsxTarget":"services/apiKeyService.ts","nativeMissing":true,"local":true},
+ {"id":"STAGEHAND_PUBLIC_IMPORT","parent":"services/browser/stagehandPerception.ts","specifier":"@browserbasehq/stagehand","importTarget":"node_modules/@browserbasehq/stagehand/dist/index.mjs","requireError":"ERR_PACKAGE_PATH_NOT_EXPORTED"},
+ {"id":"GENAI_NODE_PUBLIC","parent":"services/geminiService.ts","specifier":"@google/genai","importTarget":"node_modules/@google/genai/dist/node/index.mjs","requireTarget":"node_modules/@google/genai/dist/node/index.cjs"},
+ {"id":"UUID_NODE_PUBLIC","parent":"server/channels/terminalWebSocket.ts","specifier":"uuid","importTarget":"node_modules/uuid/wrapper.mjs","requireTarget":"node_modules/uuid/dist/index.js"},
+ {"id":"GAXIOS_GOOGLE_CJS_PARENT","parent":"node_modules/google-auth-library/build/src/auth/authclient.js","specifier":"gaxios","importTarget":"node_modules/gaxios/build/esm/src/index.js","requireTarget":"node_modules/gaxios/build/cjs/src/index.js"},
+ {"id":"GTOKEN_GOOGLE_CJS_PARENT","parent":"node_modules/google-auth-library/build/src/auth/jwtclient.js","specifier":"gtoken","importTarget":"node_modules/gtoken/build/esm/src/index.js","requireTarget":"node_modules/gtoken/build/cjs/src/index.cjs"},
+ {"id":"STAGEHAND_PRIVATE_PATH_DENIED","parent":"services/browser/stagehandPerception.ts","specifier":"@browserbasehq/stagehand/dist/index.mjs","error":"ERR_PACKAGE_PATH_NOT_EXPORTED"},
+ {"id":"GENAI_PRIVATE_PATH_DENIED","parent":"services/geminiService.ts","specifier":"@google/genai/dist/node/index.mjs","error":"ERR_PACKAGE_PATH_NOT_EXPORTED"},
+ {"id":"UUID_PRIVATE_PATH_DENIED","parent":"server/channels/terminalWebSocket.ts","specifier":"uuid/dist/index.js","error":"ERR_PACKAGE_PATH_NOT_EXPORTED"},
+ {"id":"GAXIOS_PRIVATE_PATH_DENIED","parent":"node_modules/google-auth-library/build/src/auth/authclient.js","specifier":"gaxios/build/cjs/src/index.js","error":"ERR_PACKAGE_PATH_NOT_EXPORTED"},
+ {"id":"GTOKEN_PRIVATE_PATH_DENIED","parent":"node_modules/google-auth-library/build/src/auth/jwtclient.js","specifier":"gtoken/build/cjs/src/index.cjs","error":"ERR_PACKAGE_PATH_NOT_EXPORTED"},
+ {"id":"MCP_MISSING_RELATIVE_DENIED","parent":"server/mcp/mcpServer.ts","specifier":"../../services/does-not-exist-resolver-probe.js","missing":true,"local":true}
+]
