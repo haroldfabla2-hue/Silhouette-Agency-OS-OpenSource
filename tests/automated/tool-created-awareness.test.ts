@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // Isolate persistence (tools.db lands in cwd/data) before importing the modules.
+process.env.SILHOUETTE_MIGRATIONS_DIR = fileURLToPath(new URL('../../db/migrations/sqlite', import.meta.url));
 process.chdir(mkdtempSync(join(tmpdir(), 'awareness-test-')));
 
 const { toolRegistry } = await import('../../services/tools/toolRegistry');

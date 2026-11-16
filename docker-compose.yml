@@ -102,8 +102,7 @@ services:
       BRAIN_API_URL: ${BRAIN_API_URL:-http://silhouette-brain:9876}
       BRAIN_API_ENABLED: ${BRAIN_API_ENABLED:-false}
     volumes:
-      - .:/app
-      - /app/node_modules
+      # Image-based installation: do not hide built dist/dependencies with a source bind.
       - silhouette_data:/app/data
       - silhouette_db:/app/db
       # ⚠️ SECURITY: Host Docker socket + full filesystem mounts have been removed

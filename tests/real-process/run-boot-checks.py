@@ -10,7 +10,8 @@ base={'modules':{'graph':True,'vectorDB':True,'redis':True,'browser':True},'memo
 
 def run(script,scenario,p,extra=None):
  env={k:v for k,v in os.environ.items() if k in ['PATH','HOME','LANG']}
- env.update(SILHOUETTE_DB_PATH=str(p/'real.db'),NODE_ENV='test')
+ # These children intentionally use temporary cwd stores, not a source checkout.
+ env.update(SILHOUETTE_DB_PATH=str(p/'real.db'),SILHOUETTE_MIGRATIONS_DIR=str(ROOT/'db/migrations/sqlite'),NODE_ENV='test')
  if extra:env.update(extra)
  result=subprocess.run([TSX,str(ROOT/'tests/real-process'/script),scenario],cwd=p,env=env,capture_output=True,text=True,timeout=20)
  if result.returncode:

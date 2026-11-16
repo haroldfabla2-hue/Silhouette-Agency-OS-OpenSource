@@ -6,11 +6,12 @@ import {resolve,join} from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
 const loader=pathToFileURL(resolve('node_modules/tsx/dist/loader.mjs')).href;
+const migrationAssets=resolve('db/migrations/sqlite');
 function run(script:string,mode:string){
  const directory=mkdtempSync(join(tmpdir(),'product-boundary-real-'));
  try{
   const stdout=execFileSync(process.execPath,['--import',loader,resolve('tests/real-process/'+script),mode],{cwd:directory,encoding:'utf8',timeout:25000,
-   env:{PATH:process.env.PATH,HOME:directory,NODE_ENV:'test',SILHOUETTE_PROVIDERS:'off'}});
+   env:{PATH:process.env.PATH,HOME:directory,NODE_ENV:'test',SILHOUETTE_PROVIDERS:'off',SILHOUETTE_MIGRATIONS_DIR:migrationAssets}});
   return stdout.split('\n').filter(line=>line.startsWith('{')).map(line=>JSON.parse(line)).at(-1);
  }finally{rmSync(directory,{recursive:true,force:true});}
 }

@@ -6,7 +6,7 @@
 # Stage 1: Build
 FROM node:22-alpine AS builder
 
-WORKDIR /usr/src/app
+WORKDIR /app
 
 # Only copy package files first for optimized layer caching
 COPY package*.json ./
@@ -15,15 +15,17 @@ RUN npm ci
 # Copy full source and tsconfig
 COPY . .
 
-# Build TypeScript to Javascript (assuming there is a build script)
-RUN npm run build
+# Build frontend and explicit executable server entry; neither is a runtime health check.
+RUN npm run build && npx vite build --config vite.server.config.ts
 
 # Stage 2: Production Runtime
 FROM node:22-alpine AS runner
 
-WORKDIR /usr/src/app
+WORKDIR /app
 
 ENV NODE_ENV=production
+# Immutable SQL assets must not live below the writable /app/db volume.
+ENV SILHOUETTE_MIGRATIONS_DIR=/app/migrations/sqlite
 
 # [ESCAPE HATCH] Install Docker CLI to allow container to control the Host's Docker Daemon
 RUN apk add --no-cache docker-cli
@@ -33,8 +35,9 @@ COPY package*.json ./
 RUN npm ci --only=production
 
 # Copy built outputs from the builder stage
-COPY --from=builder /usr/src/app/dist ./dist
-COPY --from=builder /usr/src/app/package.json ./package.json
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/db/migrations/sqlite ./migrations/sqlite
 
 # Expose API & WS port
 EXPOSE 3005
