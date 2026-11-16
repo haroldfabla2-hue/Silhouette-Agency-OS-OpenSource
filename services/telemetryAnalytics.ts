@@ -83,7 +83,7 @@ class AnonymousTelemetry {
 
             // Start periodic flush (every 5 minutes)
             this.operations.interval('telemetry-local-flush', 5 * 60 * 1000, () => this.flush());
-            this.operations.own({ name: 'telemetry-final-local-flush', flush: () => this.flushLocal(), close: () => undefined });
+            this.operations.own({ name: 'telemetry-final-local-flush', flush: async () => { await this.flushLocal(); }, close: () => undefined });
 
             this.initialized = true;
             console.log(`[Telemetry] Initialized. Opted-in: ${this.optedIn}`);

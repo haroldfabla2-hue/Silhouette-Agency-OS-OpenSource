@@ -3,6 +3,7 @@ import pathlib,subprocess,os,json,sys,time,selectors,signal,base64,hashlib,re
 IMAGE='docker.io/library/node@sha256:aaa4b5baf1ecff3b283486bb1f90405cdda225a3e6f79660d2c559fa510a7292'
 DIGEST=IMAGE.split('@')[1];CAP=16777216
 class ControlFailure(RuntimeError):pass
+class CompletedCompilerErrors(RuntimeError):pass
 # Public receipts contain only fixed stage/predicate/error-class enums and integer codes.
 STAGE='S00_INIT'
 LAST_PREDICATE='P000_UNCLASSIFIED'
@@ -118,6 +119,7 @@ def run_side(side,root,out):
  name='inert-ts-'+os.environ['GITHUB_RUN_ID']+'-'+side
  require(name.replace('-','').isalnum(),'container name')
  mounts={'/source':str(out/'snapshots'/side),'/source/node_modules':str(out/'deps/node_modules'),'/compiler':str(out/'compiler'),'/control/driver.cjs':str(root/'candidate/.github/inert-compiler/driver.cjs')}
+ if side=='candidate':mounts['/source/node_modules/@qdrant/js-client-rest']=str(out/'candidate-qdrant')
  args=['create','--pull=never','--platform=linux/amd64','--name',name,'--restart=no','--network=none','--ipc=private','--cgroupns=private','--user=65534:65534','--cap-drop=ALL','--security-opt=no-new-privileges=true','--security-opt=apparmor=docker-default','--read-only','--tmpfs','/tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777','--shm-size=16m','--memory=6g','--memory-swap=6g','--pids-limit=32','--cpus=1','--ulimit','core=0:0','--ulimit','nofile=128:128','--ulimit','fsize=16777216:16777216','--ulimit','cpu=280:280','--log-driver=none','--no-healthcheck','--entrypoint=/usr/bin/env','--workdir=/source','-i']
  for target,source in mounts.items():
   require(pathlib.Path(source).exists() and not pathlib.Path(source).is_symlink(),'mount input path')
@@ -223,12 +225,14 @@ def main(root,out):
   result={'runs':reports,'inputsUnchanged':unchanged,'productReadiness':False,'classification':'COMPILER_COMPARISON_COMPLETED' if len(reports)==2 and unchanged else 'INCOMPLETE'}
   (out/'docker-result.json').write_text(json.dumps(result,indent=2))
  require(result['classification']=='COMPILER_COMPARISON_COMPLETED','incomplete result')
- if any(x['exit']!=0 for x in reports):raise ControlFailure('completed compiler errors; not semantic PASS')
+ if any(x['exit']!=0 for x in reports):raise CompletedCompilerErrors('completed compiler errors; not semantic PASS')
 def interrupted(signum,frame):require(False,'controller interrupted')
 if __name__=='__main__':
  if len(sys.argv)>1 and sys.argv[1]=='--guardian':sys.exit(guardian(sys.argv[2],int(sys.argv[3]),sys.argv[4],sys.argv[5]))
  signal.signal(signal.SIGTERM,interrupted);signal.signal(signal.SIGINT,interrupted)
  try:main(sys.argv[1],sys.argv[2])
+ except CompletedCompilerErrors:
+  print('Compiler comparison completed with compiler errors; not semantic PASS; no automatic retry',file=sys.stderr);sys.exit(2)
  except BaseException as error:
   try:failure_receipt(pathlib.Path(sys.argv[2]),error)
   except Exception:pass

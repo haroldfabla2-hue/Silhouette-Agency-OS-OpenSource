@@ -46,9 +46,9 @@ function observeSyncParticipant<T>(name:string,disposition:ObservedDisposition,a
     try{const value=actual();recordParticipantReturn(receipt,value);return value;}
     catch(error){receipt.state='THREW';receipt.error=error;throw error;}
 }
-async function observeAsyncParticipant<T>(name:string,disposition:ObservedDisposition,actual:()=>Promise<T>):Promise<T>{
+async function observeAsyncParticipant<T>(name:string,disposition:ObservedDisposition,actual:()=>T|Promise<T>):Promise<T>{
     const receipt=beginParticipantAttempt(name,disposition);
-    let returned:Promise<T>;
+    let returned:T|Promise<T>;
     try{returned=actual();}catch(error){receipt.state='THREW';receipt.error=error;throw error;}
     try{const value=await returned;recordParticipantReturn(receipt,value);return value;}
     catch(error){receipt.state='REJECTED';receipt.error=error;throw error;}

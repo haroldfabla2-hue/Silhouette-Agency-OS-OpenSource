@@ -1,6 +1,6 @@
 import { ResourceScope } from '../server/runtime/resourceScope';
 import { localInferenceAllowed, assertLocalInferenceAllowed } from './security/localInferencePolicy';
-import { Queue, Worker, Job, QueueEvents } from 'bullmq';
+import { Queue, Worker, Job, QueueEvents, type QueueEventsListener } from 'bullmq';
 import { Ollama } from 'ollama';
 import { REDIS_CONFIG } from '../constants';
 import Redis from 'ioredis';
@@ -15,6 +15,16 @@ interface OllamaJobResult {
     success: boolean;
     data?: any;
     error?: string;
+}
+
+// BullMQ 5.66.0 consumeEvents emits job-scoped channels after JSON parsing;
+// its generic listener API allows this actual SDK extension without a cast.
+interface OwnedQueueJobEvents extends QueueEventsListener {
+    [event: `completed:${string}`]: (args?: { returnvalue: unknown }) => void;
+    [event: `failed:${string}`]: (args?: { failedReason?: string }) => void;
+}
+function isOllamaJobResult(value: unknown): value is OllamaJobResult {
+    return typeof value === 'object' && value !== null && 'success' in value && typeof value.success === 'boolean';
 }
 
 // --- CIRCUIT BREAKER CONFIG ---
@@ -202,16 +212,20 @@ export class OllamaService {
         let settled=false,resolve!: (value:OllamaJobResult)=>void,reject!:(error:unknown)=>void;
         const result=new Promise<OllamaJobResult>((yes,no)=>{resolve=yes;reject=no;});
         const events=this.queueEvents!;
-        const completedEvent=`completed:${job.id}`,failedEvent=`failed:${job.id}`;
-        const cleanup=()=>{events.off(completedEvent,completed);events.off(failedEvent,failed);this.cancelWaiters.delete(cancel);};
+        const completedEvent: `completed:${string}`=`completed:${job.id}`;
+        const failedEvent: `failed:${string}`=`failed:${job.id}`;
+        const cleanup=()=>{events.off<OwnedQueueJobEvents>(completedEvent,completed);events.off<OwnedQueueJobEvents>(failedEvent,failed);this.cancelWaiters.delete(cancel);};
         const complete=(value:OllamaJobResult,state:string)=>{if(settled)return;
             if(!value||value.success!==true){receipt.work='UNKNOWN_RESULT';fail(new Error('Job returned an invalid success receipt; no replay'),'RESULT_UNKNOWN');return;}
             settled=true;cleanup();receipt.work=state;receipt.localWait='COMPLETED';receipt.payload=undefined;resolve(value);};
         const fail=(error:unknown,state:string)=>{if(settled)return;settled=true;cleanup();receipt.localWait=state;reject(error);};
-        const completed=(args?:{returnvalue:OllamaJobResult})=>complete(args?.returnvalue as OllamaJobResult,'COMPLETED_EVENT');
+        const completed=(args?:{returnvalue:unknown})=>{
+            if(!args||!isOllamaJobResult(args.returnvalue)){receipt.work='UNKNOWN_RESULT';fail(new Error('Job returned an invalid success receipt; no replay'),'RESULT_UNKNOWN');return;}
+            complete(args.returnvalue,'COMPLETED_EVENT');
+        };
         const failed=(args?:{failedReason?:string})=>{receipt.work='FAILED_EVENT';fail(new Error(args?.failedReason??'Queued job failed'),'FAILED_EVENT');};
         const cancel=(reason?:Error)=>fail(reason??new Error('Ollama local waiter canceled; job/provider outcome remains separate'),reason?'READBACK_UNKNOWN':'CANCELLED_LOCAL');
-        events.on(completedEvent,completed);events.on(failedEvent,failed);this.cancelWaiters.add(cancel);
+        events.on<OwnedQueueJobEvents>(completedEvent,completed);events.on<OwnedQueueJobEvents>(failedEvent,failed);this.cancelWaiters.add(cancel);
         if(this.quiescing){cancel();return result;}
         void this.operations.run('ollama-job-wait-readback',async()=>{
             await events.waitUntilReady();if(settled)return;
