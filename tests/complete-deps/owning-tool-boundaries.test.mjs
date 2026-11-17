@@ -12,6 +12,14 @@ test('actual ToolHandler and COMPOSED ToolExecutor carry real file-read lineage 
  try{
   process.chdir(root);
   ({sqliteService:sqlite}=await import('../../services/sqliteService.ts'));
+  // OFF initialization has now scrubbed non-allowlisted variables. Restore only
+  // trusted disposable fixture settings before import-time queue/path capture.
+  const fixtureSettings={SILHOUETTE_FS_READ_ROOTS:root,SILHOUETTE_FS_WRITE_ROOTS:root,SILHOUETTE_FS_AUDIT_LOG:path.join(root,'audit.jsonl'),SILHOUETTE_QUEUE_DIR:path.join(root,'queues')};
+  Object.assign(process.env,fixtureSettings);
+  assert.equal(process.env.SILHOUETTE_PROVIDERS,'off');
+  assert.equal(process.env.SILHOUETTE_INFERENCE_MODE,'cloud-only');
+  for(const [key,value] of Object.entries(fixtureSettings))assert.equal(process.env[key],value);
+
   ({toolPersistence:persistence}=await import('../../services/tools/toolPersistence.ts'));
   ({nervousSystem:nervous}=await import('../../services/connectionNervousSystem.ts'));
   const {createTaskEvidence,currentDataLabels}=await import('../../services/execution/taskEvidence.ts');
@@ -19,6 +27,7 @@ test('actual ToolHandler and COMPOSED ToolExecutor carry real file-read lineage 
   const {toolExecutor}=await import('../../services/tools/toolExecutor.ts');
   const {toolRegistry}=await import('../../services/tools/toolRegistry.ts');
   const {pluginRegistry}=await import('../../services/plugins/pluginRegistry.ts');
+  for(const [key,value] of Object.entries(fixtureSettings))assert.equal(process.env[key],value);
   const note=path.join(root,'authored-note.txt');fs.writeFileSync(note,'authored private source fixture');
   let calls=0;const plugin={id:'authored-boundary-plugin',name:'Authored Fixture',version:'1',author:'fixture',description:'local fixture',tools:[{name:'authored_sink',effects:'external_comms',description:'must not execute after private source',parameters:{type:'object',properties:{}},handler:async()=>{calls++;return {authored:true};}}]};
   pluginRegistry.register(plugin);
