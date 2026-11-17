@@ -80,12 +80,16 @@ const snapshotCache = (): CacheSnapshot => {
     const entries = new Map<string, string>();
     let incomplete = false;
     if (!existsSync(transformerCacheRoot)) return { entries, incomplete };
+    // ONE shared visited-entry count (files AND directories), checked per
+    // iteration: no shape of tree (deep, flat, empty-dir-heavy) stalls the walk.
+    let visited = 0;
     const walk = (dir: string, depth: number) => {
-        if (depth > 6 || entries.size > 500) { incomplete = true; return; }
+        if (depth > 6) { incomplete = true; return; }
         let names: string[];
         try { names = readdirSync(dir); } catch { incomplete = true; return; }
         for (const name of names) {
-            if (entries.size > 500) { incomplete = true; return; } // per-FILE cap: a huge flat directory cannot stall the walk
+            visited++;
+            if (visited > 500) { incomplete = true; return; }
             const p = join(dir, name);
             try {
                 const st = statSync(p);
@@ -110,18 +114,24 @@ const cacheBreach = (before: CacheSnapshot): { changed: string[]; incomplete: bo
     return { changed, incomplete: before.incomplete || after.incomplete };
 };
 
-const inventory = (root: string, max = 200): string[] => {
-    const out: string[] = [];
+const inventory = (root: string, max = 200): { entries: string[]; incomplete: boolean } => {
+    const entries: string[] = [];
+    let incomplete = false;
+    let visited = 0; // files AND directories, checked per iteration
     const walk = (dir: string, depth: number) => {
-        if (out.length >= max || depth > 5) return;
-        for (const name of readdirSync(dir)) {
+        if (depth > 5) { incomplete = true; return; }
+        let names: string[];
+        try { names = readdirSync(dir); } catch { incomplete = true; return; }
+        for (const name of names) {
+            visited++;
+            if (visited > max) { incomplete = true; return; }
             const p = join(dir, name);
-            out.push(relative(root, p));
+            entries.push(relative(root, p));
             try { if (statSync(p).isDirectory()) walk(p, depth + 1); } catch { /* skip */ }
         }
     };
-    try { walk(root, 0); } catch { /* dir may already be gone */ }
-    return out;
+    walk(root, 0);
+    return { entries, incomplete };
 };
 
 type ChildOutcome =
@@ -332,7 +342,8 @@ const runMode = async (mode: string, childTimeoutMs: number) => {
         let changed: string[] = [], incomplete = true;
         try {
             ({ changed, incomplete } = cacheBreach(cacheBefore));
-            console.log(`[fixture inventory ${mode}]`, inventory(directory));
+            const inv = inventory(directory);
+            console.log(`[fixture inventory ${mode}] ${inv.incomplete ? 'INCOMPLETE ' : ''}`, inv.entries);
             console.log(`[transformers receipt ${mode}] verifiedLayout=${VERIFIED_CACHE_LAYOUT_VERSION} installed=${installedTransformersVersion} cacheRootPreexisting=${cacheBefore.entries.size > 0} snapshotIncomplete=${incomplete} changed=${changed.length}${changed.length ? ' :: ' + changed.join(', ') : ''}`);
             if (result?.survivorsAfterCleanup) {
                 // Runtime state unknown: RETAIN the cwd for forensics instead of
@@ -354,10 +365,12 @@ const runMode = async (mode: string, childTimeoutMs: number) => {
 
 describe('real shutdown contracts (narrow)', () => {
     // child timeout + CLEANUP_BUDGET_MS stays below each vitest allowance.
+    // Outer allowance = inner natural-exit bound (unchanged) + 4s shared
+    // cleanup + 11s for the capped snapshot/inventory/rm evidence work.
     for (const mode of ['memory-never-started-fresh', 'memory-never-started-prior-wal', 'memory-blocked-store']) it(mode, async () => {
         await runMode(mode, 30000);
-    }, 35000);
+    }, 45000);
     for (const mode of ['redis-fallback-quiet', 'drain-receipts-ok']) it(mode, async () => {
         await runMode(mode, 90000);
-    }, 95000);
+    }, 105000);
 });
