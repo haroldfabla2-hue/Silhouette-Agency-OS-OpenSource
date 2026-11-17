@@ -209,8 +209,16 @@ OLD-LINE-3</textarea>
         // does not weaken). A hermetic successful-readUrl proof is not provided here.
         // A network failure fails this test honestly; there is no skip or fallback.
         // Target: https://example.com (IANA-reserved documentation domain, no account, no spend).
+        // Oracle: EXACT equality of the first BODY paragraph. The owner contract is visible
+        // BODY text (junk tags stripped, \n{3,} collapsed to \n\n, trimmed); it does not
+        // promise <title> content. Normalization: split the product output on '\n\n' (the
+        // owner's own collapse); block[0] must EQUAL the full first paragraph verbatim.
+        // No contains/length/nonempty fallback: any change to that paragraph fails this test.
+        const EXPECTED_FIRST_PARAGRAPH =
+            'This domain is for use in documentation examples without needing permission. ' +
+            'This is not a service; avoid relying on it for testing and monitoring purposes.';
         const text = await readUrl('https://example.com');
-        expect(text).toContain('Example Domain');
+        expect(text.split('\n\n')[0]).toBe(EXPECTED_FIRST_PARAGRAPH);
     }, 60000);
 
     it('F4b: readUrl SSRF guard really blocks loopback (hermetic product-behavior check)', async () => {
