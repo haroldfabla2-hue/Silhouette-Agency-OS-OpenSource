@@ -47,6 +47,11 @@ jobs:
       - name: Install Chromium for browser tests
         run: npx playwright install --with-deps chromium
 
+      - name: Install pinned Chrome for Testing (puppeteer real-path tests)
+        # Pinned to PUPPETEER_REVISIONS.chrome of the locked puppeteer version (25.18.0 -> 157.0.8103.78);
+        # npx --no-install forces the repo-local pinned puppeteer CLI (no implicit unpinned fetch).
+        run: npx --no-install puppeteer browsers install chrome@157.0.8103.78
+
       - name: F0 verification coverage and hermetic legacy checks
         run: npx vitest run tests/automated/help-protocol.test.ts tests/automated/legacy-hermetic.test.ts tests/automated/verification-inventory.test.ts
 

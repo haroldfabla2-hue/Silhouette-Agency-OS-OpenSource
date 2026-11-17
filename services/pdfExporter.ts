@@ -28,9 +28,11 @@ class PDFExporter {
     /**
      * Export markdown file to PDF with proper formatting
      */
-    async exportToPDF(markdownPath: string): Promise<string | null> {
+    async exportToPDF(markdownPath: string, outputDir?: string): Promise<string | null> {
+        const effectiveOutputDir = outputDir ?? this.outputDir;
+        let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
         try {
-            await fs.mkdir(this.outputDir, { recursive: true });
+            await fs.mkdir(effectiveOutputDir, { recursive: true });
 
             // Dynamic import puppeteer
             if (!puppeteer) {
@@ -61,13 +63,13 @@ class PDFExporter {
 
             // Launch browser and generate PDF
             console.log(`[PDF] 🖨️ Generating PDF...`);
-            const browser = await puppeteer.launch({ headless: 'new' });
+            browser = await puppeteer.launch({ headless: 'new' });
             const page = await browser.newPage();
 
             await page.setContent(fullHtml, { waitUntil: 'networkidle0' });
 
             // Generate PDF
-            const pdfPath = path.join(this.outputDir, path.basename(markdownPath).replace('.md', '.pdf'));
+            const pdfPath = path.join(effectiveOutputDir, path.basename(markdownPath).replace('.md', '.pdf'));
             await page.pdf({
                 path: pdfPath,
                 format: 'A4',
@@ -79,12 +81,22 @@ class PDFExporter {
             });
 
             await browser.close();
+            browser = null;
 
             console.log(`[PDF] ✅ PDF created: ${pdfPath}`);
             return pdfPath;
         } catch (error) {
             console.error('[PDF] ❌ Export failed:', error);
             return null;
+        } finally {
+            // Never leak the browser process on failure paths
+            if (browser) {
+                try {
+                    await browser.close();
+                } catch (closeError) {
+                    console.warn('[PDF] ⚠️ Failed to close browser after error:', closeError);
+                }
+            }
         }
     }
 

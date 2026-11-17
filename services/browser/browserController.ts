@@ -219,7 +219,21 @@ class BrowserController {
         }
 
         await page.waitForSelector(action.selector, { visible: true, timeout: 5000 });
-        await page.click(action.selector, { clickCount: 3 }); // Select all existing text
+        await page.click(action.selector); // Focus the field
+        // Select all existing text with the platform-correct chord, then type.
+        // Platform basis: this controller ONLY launches a local browser (puppeteer.launch;
+        // no puppeteer.connect / browserWSEndpoint path exists in this codebase), so the
+        // browser OS is always the host OS and process.platform is the correct mapping.
+        // (puppeteer 25 removed clickCount, so the old triple-click is not migratable.)
+        const selectAllModifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+        await page.keyboard.down(selectAllModifier);
+        try {
+            await page.keyboard.press('KeyA');
+        } finally {
+            // Always release the modifier, even if the press fails, so a reused
+            // page is never left with a stuck key.
+            await page.keyboard.up(selectAllModifier);
+        }
         await page.type(action.selector, action.text, { delay: 50 });
         return {
             success: true,
