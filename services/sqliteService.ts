@@ -1032,9 +1032,17 @@ export class SqliteService {
     }
 
     public close(): void {
-        try {
-            this.db.close();
-        } catch { /* ignore if already closed */ }
+        // better-sqlite3 12.5.0 (exact lockfile pin): close() on a non-open
+        // database is a native no-op (JS_close checks db->open), so no shadow
+        // open-state is needed and double close is already safe. Genuine
+        // failures - a busy query or live statement iterators - throw
+        // TypeError and must PROPAGATE (redis disconnect precedent in the
+        // drain): the handle stays owned and open, so a later close can
+        // retry once the work settles. A resolved call means only 'JS driver
+        // close completed': the native sqlite3_close status is checked only
+        // by a C/C++ assert (which release builds may compile out) and is
+        // not exposed as a JS durability receipt - never a persistence claim.
+        this.db.close();
     }
 }
 

@@ -53,15 +53,24 @@ export async function drainCurrentBackend(): Promise<boolean> {
         console.log('[SHUTDOWN] Neo4j disconnected');
     } catch { /* ignore if not initialized */ }
 
-    // 5. Close SQLite.
-    // KNOWN UNCLOSED: sqliteService.close() swallows all errors internally,
-    // so a genuine SQLite close failure cannot be counted here until that
-    // component contract is fixed.
+    // 5. Close SQLite. sqliteService.close() PROPAGATES genuine close
+    // failures (busy query or live statement iterators), so a throw here -
+    // import, initialization or close - is real and counts; it is NOT
+    // classified as 'never initialized'. The handle stays owned after a
+    // failed close, so a later drain can retry once the work settles.
+    // KNOWN GAP (preexisting, deferred): importing the singleton during the
+    // drain ACQUIRES and migrates a DB that may never have been opened
+    // before shutdown; that acquisition is not proof of prior ownership.
     try {
         const { sqliteService } = await import('../services/sqliteService');
         sqliteService.close();
-        console.log('[SHUTDOWN] SQLite closed');
-    } catch { /* ignore if not initialized */ }
+        // JS driver close completed; native close status is unobservable,
+        // so this is not a persistence/durability receipt.
+        console.log('[SHUTDOWN] SQLite closed (driver close completed; not a persistence receipt)');
+    } catch (error) {
+        shutdownFailed = true;
+        console.error('[SHUTDOWN] SQLite close failed:', error);
+    }
 
     // 6. Stop Unified Daemon.
     // KNOWN UNCLOSED: in the unbound (native CLI) path stop() fires

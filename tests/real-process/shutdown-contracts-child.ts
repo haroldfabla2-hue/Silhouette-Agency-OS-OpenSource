@@ -127,6 +127,111 @@ if (mode === 'redis-fallback-quiet') {
         await endpoint.cleanup();
     }
     // natural exit: module completion drains the loop.
+} else if (mode === 'sqlite-close-causality') {
+    // Step-5 causality of the REAL drain: a genuinely busy SQLite (live
+    // multi-row iterator) must fail the drain with the step-5 error and NO
+    // SQLite-success receipt, repeatedly (failure is not consumed), while no
+    // other component fails; releasing the iterator must let a later drain
+    // really close the handle. Fresh child = fresh singleton (retry-safe);
+    // the child (not the drain) imports sqliteService, so no acquisition
+    // happens inside the drain during this proof.
+    const endpoint = await resettingEndpoint();
+    process.env.REDIS_HOST = '127.0.0.1';
+    process.env.REDIS_PORT = String(endpoint.port);
+    process.env.NEO4J_URI = `bolt://127.0.0.1:${endpoint.port}`;
+    const errors: string[] = [];
+    const originalError = console.error;
+    console.error = (...args: any[]) => { errors.push(args.map(String).join(' ')); originalError(...args); };
+    const logs: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: any[]) => { logs.push(args.map(String).join(' ')); originalLog(...args); };
+    // Tracked acquisitions: released independently in the finally, so one
+    // cleanup failure never skips the rest nor replaces the primary error.
+    let iterator: IterableIterator<unknown> | null = null;
+    let acquiredCore: { close: () => void; db: { open: boolean } } | null = null;
+    const cleanupErrors: unknown[] = [];
+    try {
+        // Established quiet Redis fallback (real connect attempt against the
+        // fixture's own resetting endpoint) and healthy never-started memory:
+        // continuousMemory is loaded but never initialized.
+        const { redisClient } = await import('../../services/redisClient');
+        await redisClient.set('probe:key', 'v', 60);
+        const { continuousMemory } = await import('../../services/memory/continuousMemory');
+        assert.ok(redisClient.isMockMode() && continuousMemory);
+
+        const { sqliteService } = await import('../../services/sqliteService');
+        acquiredCore = sqliteService;
+        const db = sqliteService.db;
+        assert.equal(db.open, true);
+        db.exec('CREATE TABLE IF NOT EXISTS close_causality_probe (id INTEGER PRIMARY KEY, v TEXT)');
+        db.prepare('INSERT INTO close_causality_probe (v) VALUES (?)').run('a');
+        db.prepare('INSERT INTO close_causality_probe (v) VALUES (?)').run('b');
+        iterator = db.prepare('SELECT v FROM close_causality_probe ORDER BY id').iterate();
+        assert.equal(iterator.next().done, false, 'probe must be multi-row so the iterator is genuinely live');
+
+        const { drainCurrentBackend } = await import('../../server/currentBackendDrain');
+        // Per-invocation slices: each drain call is judged on ITS OWN new
+        // error/log lines, never on a first-call snapshot.
+        const drainOnce = async () => {
+            const errorsBefore = errors.length;
+            const logsBefore = logs.length;
+            const result = await drainCurrentBackend();
+            return { result, newErrors: errors.slice(errorsBefore), newLogs: logs.slice(logsBefore) };
+        };
+        const sqliteFailures = (lines: string[]) => lines.filter(line => line.includes('[SHUTDOWN] SQLite close failed'));
+        const otherFailures = (lines: string[]) => lines.filter(line => line.startsWith('[SHUTDOWN]') && (line.includes('failed') || line.includes('unverified')) && !line.includes('SQLite close failed'));
+        const sqliteSuccess = (lines: string[]) => lines.filter(line => line.includes('[SHUTDOWN] SQLite closed'));
+
+        const first = await drainOnce();
+        assert.equal(first.result, false, 'busy SQLite must fail the drain');
+        assert.equal(sqliteFailures(first.newErrors).length, 1, 'first busy drain must log its own step-5 failure');
+        assert.deepEqual(sqliteSuccess(first.newLogs), [], 'no false SQLite success receipt (first busy drain)');
+        assert.deepEqual(otherFailures(first.newErrors), [], `no other counted component failure (first busy drain): ${otherFailures(first.newErrors).join(' | ')}`);
+        const openBusyFirst = db.open;
+        assert.equal(openBusyFirst, true, 'failed close leaves the handle owned and open (first)');
+
+        const repeat = await drainOnce();
+        assert.equal(repeat.result, false, 'repeated drain while busy must fail again: the failure is not consumed');
+        assert.equal(sqliteFailures(repeat.newErrors).length, 1, 'repeat busy drain must log its OWN step-5 failure');
+        assert.deepEqual(sqliteSuccess(repeat.newLogs), [], 'no false SQLite success receipt (repeat busy drain)');
+        assert.deepEqual(otherFailures(repeat.newErrors), [], `no other counted component failure (repeat busy drain): ${otherFailures(repeat.newErrors).join(' | ')}`);
+        const openBusyRepeat = db.open;
+        assert.equal(openBusyRepeat, true, 'failed close leaves the handle owned and open (repeat)');
+
+        iterator.return?.(); // release the real iterator, then the retry must really close
+        iterator = null;
+        const after = await drainOnce();
+        assert.equal(after.result, true, 'drain must succeed once the iterator settles');
+        assert.equal(sqliteSuccess(after.newLogs).length, 1, 'qualified SQLite success receipt after release');
+        assert.ok(sqliteSuccess(after.newLogs)[0].includes('(driver close completed'), 'success receipt must carry the no-persistence qualifier');
+        assert.deepEqual(otherFailures(after.newErrors), [], `no other counted component failure (post-release drain): ${otherFailures(after.newErrors).join(' | ')}`);
+        assert.equal(db.open, false, 'retry really closed the driver handle');
+
+        console.log(JSON.stringify({
+            mode,
+            drain_busy_first: first.result,
+            drain_busy_repeat: repeat.result,
+            drain_after_release: after.result,
+            step5_errors_first: sqliteFailures(first.newErrors).length,
+            step5_errors_repeat: sqliteFailures(repeat.newErrors).length,
+            other_failures_first: otherFailures(first.newErrors).length,
+            other_failures_repeat: otherFailures(repeat.newErrors).length,
+            other_failures_after_release: otherFailures(after.newErrors).length,
+            open_while_busy_first: openBusyFirst,
+            open_while_busy_repeat: openBusyRepeat,
+            open_after_release: db.open,
+            memory_step1_uninvolved: otherFailures(first.newErrors).length + otherFailures(repeat.newErrors).length + otherFailures(after.newErrors).length === 0
+        }));
+    } finally {
+        // Independent cleanup attempts, primary error always preserved.
+        try { iterator?.return?.(); iterator = null; } catch (e) { cleanupErrors.push(e); }
+        try { console.error = originalError; console.log = originalLog; } catch (e) { cleanupErrors.push(e); }
+        try { if (acquiredCore && acquiredCore.db.open) acquiredCore.close(); } catch (e) { cleanupErrors.push(e); }
+        try { await endpoint.cleanup(); } catch (e) { cleanupErrors.push(e); }
+        if (cleanupErrors.length > 0) originalError('[sqlite-close-causality cleanup errors]', cleanupErrors);
+    }
+    if (cleanupErrors.length > 0) throw new AggregateError(cleanupErrors, 'sqlite-close-causality cleanup failed');
+    // natural exit: module completion drains the loop.
 } else {
     throw new Error(`unknown mode: ${mode}`);
 }

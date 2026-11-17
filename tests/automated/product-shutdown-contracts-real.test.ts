@@ -1,8 +1,9 @@
 /** Actual subprocesses, real sockets and filesystem, providers OFF.
  * Narrow shutdown contracts: redis fallback quiet-but-visible with a
  * shared disconnect receipt, continuous-memory never-started vs
- * blocked-store distinction with a STICKY failure, and honest drain
- * outcomes. The fixture holds its own controlled endpoint on an
+ * blocked-store distinction with a STICKY failure, honest drain
+ * outcomes, and drain step-5 SQLite busy causality (fail while busy,
+ * repeat not consumed, release, retry closes for real). The fixture holds its own controlled endpoint on an
  * ephemeral port (host-default Redis/Neo4j are never contacted).
  * Children get NO process.exit on the success path: termination must be
  * natural; the supervisor bounds it externally.
@@ -367,7 +368,7 @@ describe('real shutdown contracts (narrow)', () => {
     for (const mode of ['memory-never-started-fresh', 'memory-never-started-prior-wal', 'memory-blocked-store']) it(mode, async () => {
         await runMode(mode, 30000);
     }, 45000);
-    for (const mode of ['redis-fallback-quiet', 'drain-receipts-ok']) it(mode, async () => {
+    for (const mode of ['redis-fallback-quiet', 'drain-receipts-ok', 'sqlite-close-causality']) it(mode, async () => {
         await runMode(mode, 90000);
     }, 105000);
 });
