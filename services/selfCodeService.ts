@@ -347,7 +347,9 @@ class SelfCodeService {
         const add = (absolute: string, name: string) => {
             const stat = fs.lstatSync(absolute);
             if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('oracle requires regular complete files');
-            bytes += stat.size; if (++files > 40000 || bytes > 512 * 1024 * 1024) throw new Error(`oracle closure exceeds inspection budget: files=${files}, bytes=${bytes}`);
+            // Bound one allocation independently of the aggregate closure budget.
+            if (stat.size > 256 * 1024 * 1024) throw new Error(`oracle file exceeds inspection budget: ${name}, bytes=${stat.size}`);
+            bytes += stat.size; if (++files > 120000 || bytes > 4 * 1024 * 1024 * 1024) throw new Error(`oracle closure exceeds inspection budget: files=${files}, bytes=${bytes}`);
             const content = fs.readFileSync(absolute);
             if (content.length !== stat.size) throw new Error('oracle read incomplete');
             hash.update(name + '\0' + content.length + '\0'); hash.update(content);
@@ -381,6 +383,7 @@ class SelfCodeService {
             }
         };
         walk(realDependencies, 'node_modules'); add(process.execPath, '$runtime-node');
+        console.info(`[ORACLE_CLOSURE] complete files=${files} bytes=${bytes}`);
         return hash.digest('hex');
     }
 

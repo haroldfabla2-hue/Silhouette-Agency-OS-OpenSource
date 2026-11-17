@@ -36,6 +36,10 @@ test('actual isolated git worktree closure detects helper/dependency changes, ig
   fs.unlinkSync(path.join(bin,'fixture'));fs.symlinkSync('./fixture',path.join(bin,'fixture'));
   await assert.rejects(selfCodeService.evaluationClosure(['services/feature.ts'],'tests/oracle.test.ts'),/ELOOP/);
   fs.unlinkSync(path.join(bin,'fixture'));
+  const oversized=path.join(repo,'node_modules/fixture/oversized');const fd=fs.openSync(oversized,'w');
+  try{fs.ftruncateSync(fd,256*1024*1024+1);}finally{fs.closeSync(fd);}
+  await assert.rejects(selfCodeService.evaluationClosure(['services/feature.ts'],'tests/oracle.test.ts'),/file exceeds inspection budget/);
+  fs.unlinkSync(oversized);
   fs.symlinkSync(path.join(repo,'node_modules/fixture/data.txt'),path.join(repo,'node_modules/fixture/linked'));
   await assert.rejects(selfCodeService.evaluationClosure(['services/feature.ts'],'tests/oracle.test.ts'),/symlink unsupported/);
  }finally{if(oldRepo===undefined)delete process.env.SELF_REPO_PATH;else process.env.SELF_REPO_PATH=oldRepo;if(oldWt===undefined)delete process.env.SELF_WORKTREE_PATH;else process.env.SELF_WORKTREE_PATH=oldWt;fs.rmSync(root,{recursive:true,force:true});}
