@@ -398,7 +398,7 @@ class SelfCodeService {
         const report = path.join(temp, 'result.json');
         try {
             const result = await new Promise<{code: number; output: string; infrastructureFailure: boolean}>(resolve => {
-                execFile(process.execPath, [runner, 'run', target, '--reporter=json', '--outputFile='+report],
+                execFile(process.execPath, [runner, 'run', target, '--no-cache', '--reporter=json', '--outputFile='+report],
                     { cwd: wt, timeout: 180000, maxBuffer: 1024 * 1024, env: { ...process.env, SILHOUETTE_PROVIDERS: 'off' } },
                     (error, stdout, stderr) => resolve({ code: error ? typeof error.code === 'number' ? error.code : 1 : 0,
                         output: `${stdout}${stderr}`, infrastructureFailure: !!error && (typeof error.code !== 'number' || !!error.killed || !!error.signal) }));
