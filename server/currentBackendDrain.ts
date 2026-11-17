@@ -22,34 +22,52 @@ export async function drainCurrentBackend(): Promise<boolean> {
     }
 
     // 2. Shutdown WS Gateway (notify clients)
+    // KNOWN UNCLOSED: gateway.shutdown() is fire-and-forget (wss.close()
+    // callback unobserved), so a genuine gateway close failure cannot be
+    // counted here until that component contract is fixed.
     try {
         const { gateway } = await import('./gateway');
         gateway.shutdown();
         console.log('[SHUTDOWN] WebSocket Gateway closed');
     } catch { /* ignore if not initialized */ }
 
-    // 3. Disconnect Redis
+    // 3. Disconnect Redis. redisClient.disconnect() is a verified no-op
+    // when never connected and now PROPAGATES a genuine close failure, so
+    // a throw here is real and counts.
     try {
         const { redisClient } = await import('../services/redisClient');
         await redisClient.disconnect();
         console.log('[SHUTDOWN] Redis disconnected');
-    } catch { /* ignore if not initialized */ }
+    } catch (error) {
+        shutdownFailed = true;
+        console.error('[SHUTDOWN] Redis close failed:', error);
+    }
 
-    // 4. Disconnect Neo4j
+    // 4. Disconnect Neo4j.
+    // KNOWN UNCLOSED: graph.close() has no failure/ownership receipt yet
+    // (the graph lifecycle contract is a rejected candidate, not in this
+    // unit), so this step keeps the original swallow.
     try {
         const { graph } = await import('../services/graphService');
         await graph.close();
         console.log('[SHUTDOWN] Neo4j disconnected');
     } catch { /* ignore if not initialized */ }
 
-    // 5. Close SQLite
+    // 5. Close SQLite.
+    // KNOWN UNCLOSED: sqliteService.close() swallows all errors internally,
+    // so a genuine SQLite close failure cannot be counted here until that
+    // component contract is fixed.
     try {
         const { sqliteService } = await import('../services/sqliteService');
         sqliteService.close();
         console.log('[SHUTDOWN] SQLite closed');
     } catch { /* ignore if not initialized */ }
 
-    // 6. Stop Unified Daemon
+    // 6. Stop Unified Daemon.
+    // KNOWN UNCLOSED: in the unbound (native CLI) path stop() fires
+    // saveState() without awaiting it, so persistence is not receipted
+    // here; the desktop path (stopAdmission/flushStoppedState) is covered
+    // by the started-resources registry when bound.
     try {
         const { unifiedDaemon } = await import('../services/daemon/unifiedDaemon');
         unifiedDaemon.stop();
