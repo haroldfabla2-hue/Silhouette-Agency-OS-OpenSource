@@ -265,12 +265,15 @@ export class OllamaService {
      * Public API: Direct Streaming for Chat Fallback (Bypasses Queue for Latency)
      */
     async * generateStream(prompt: string, model: string = process.env.OLLAMA_LOCAL_MODEL?.trim() || 'qwen3:4b'): AsyncGenerator<string, void, unknown> {
-        assertLocalInferenceAllowed();
         // [R2] Errors are thrown, never yielded as content: an error string in the
         // stream used to be persisted as an assistant response and stored as "facts".
+        // Circuit state is a pure in-memory diagnostic (no model load, Redis or
+        // HTTP), so it is reported first; the deployment policy gate stays
+        // immediately before any transport dispatch.
         if (!this.checkCircuit()) {
             throw new Error('[Ollama Circuit Open - Local Brain Offline]');
         }
+        assertLocalInferenceAllowed();
 
         try {
             const stream = await this.ollama.generate({
@@ -296,11 +299,13 @@ export class OllamaService {
      * Public API: Chat Streaming (Messages Array) - Best for Context Retention
      */
     async * generateChatStream(messages: { role: string, content: string }[], model: string = process.env.OLLAMA_LOCAL_MODEL?.trim() || 'qwen3:4b'): AsyncGenerator<string, void, unknown> {
-        assertLocalInferenceAllowed();
         // [R2] Errors are thrown, never yielded as content (see generateStream).
+        // Circuit-state diagnostic first, policy gate immediately before
+        // transport (same ordering as generateStream).
         if (!this.checkCircuit()) {
             throw new Error('[Ollama Circuit Open - Local Brain Offline]');
         }
+        assertLocalInferenceAllowed();
 
         try {
             const stream = await this.ollama.chat({

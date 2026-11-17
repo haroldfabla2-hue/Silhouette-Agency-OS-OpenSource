@@ -206,35 +206,111 @@ describe('R2: Zhipu conversational priority queue', () => {
 });
 
 describe('R2: Ollama errors are thrown, never yielded as text', () => {
-    it('generateChatStream against a dead server rejects and yields no error text', async () => {
-        const ollama = new OllamaService(); // points at default localhost: nothing listening
+    const CIRCUIT_OPEN_ERROR = '[Ollama Circuit Open - Local Brain Offline]';
+    const POLICY_ERROR = 'LOCAL_INFERENCE_DISABLED: cloud-only process policy';
+    const CB_TIMEOUT_MS = 30000; // mirrors services/ollamaService.ts circuit cooldown
+
+    // Runs fn with an explicit inference mode and restores the previous value,
+    // so these tests are deterministic regardless of the ambient environment.
+    async function withInferenceMode<T>(mode: string, fn: () => Promise<T>): Promise<T> {
+        const prev = process.env.SILHOUETTE_INFERENCE_MODE;
+        process.env.SILHOUETTE_INFERENCE_MODE = mode;
+        try {
+            return await fn();
+        } finally {
+            if (prev === undefined) delete process.env.SILHOUETTE_INFERENCE_MODE;
+            else process.env.SILHOUETTE_INFERENCE_MODE = prev;
+        }
+    }
+
+    // Fail-closed test instrumentation at the transport boundary: the SDK
+    // client is replaced by counters that throw a distinct sentinel
+    // IMMEDIATELY - the real SDK (and its default localhost) is never
+    // invoked. This is instrumentation only, not real-provider or
+    // fault-simulation proof: a passing test below means the exact guard
+    // error fired and the sentinel never ran (zero SDK dispatch).
+    const SENTINEL = 'TEST_SENTINEL: unexpected Ollama SDK dispatch';
+    function recordSdkDispatch(ollama: OllamaService) {
+        const calls = { generate: 0, chat: 0 };
+        (ollama as any).ollama = {
+            generate: () => { calls.generate++; throw new Error(SENTINEL); },
+            chat: () => { calls.chat++; throw new Error(SENTINEL); },
+        };
+        return calls;
+    }
+
+    async function collect(gen: AsyncGenerator<string, void, unknown>) {
         const chunks: string[] = [];
         let threw: Error | null = null;
         try {
-            for await (const chunk of ollama.generateChatStream([{ role: 'user', content: 'hola' }])) {
-                chunks.push(chunk);
-            }
+            for await (const chunk of gen) chunks.push(chunk);
         } catch (e: any) {
             threw = e;
         }
-        expect(threw).not.toBeNull();
-        expect(chunks).toEqual([]); // zero content chunks
-        expect(chunks.join('')).not.toContain('Local Brain');
-        expect(chunks.join('')).not.toContain('Circuit Open');
+        return { chunks, threw };
+    }
+
+    // Clear-circuit policy rejection before transport under cloud-only: the
+    // gate rejects before any server contact, and the zero-error-text
+    // guarantee (no error strings yielded as assistant content) still holds.
+    // The actual dead-server transport path is NOT executed under cloud-only,
+    // so this proves policy rejection, not dead-server transport behavior.
+    it('cloud-only policy rejects generateChatStream before any server contact: throws, yields zero error text', async () => {
+        await withInferenceMode('cloud-only', async () => {
+            const ollama = new OllamaService();
+            const calls = recordSdkDispatch(ollama);
+            const { chunks, threw } = await collect(ollama.generateChatStream([{ role: 'user', content: 'hola' }]));
+            expect(String(threw?.message)).toBe(POLICY_ERROR);
+            expect(chunks).toEqual([]); // zero content chunks
+            expect(chunks.join('')).not.toContain('Local Brain');
+            expect(chunks.join('')).not.toContain('Circuit Open');
+            expect(calls.chat).toBe(0); // no SDK dispatch
+        });
     }, 20000);
 
-    it('circuit-open failure throws instead of yielding a status string', async () => {
-        const ollama = new OllamaService();
-        (ollama as any).isCircuitOpen = true; // simulate tripped breaker
-        (ollama as any).lastFailureTime = Date.now();
-        let threw: Error | null = null;
-        try {
-            for await (const _ of ollama.generateStream('hola')) { /* must not yield */ }
-        } catch (e: any) {
-            threw = e;
-        }
-        expect(threw).not.toBeNull();
-        expect(String(threw!.message)).toContain('Circuit Open');
+    // Circuit-open is a pure in-memory diagnostic reported before the policy
+    // gate and any transport: exact Circuit Open error, zero chunks yielded,
+    // and the SDK is never dispatched, for both stream entry points.
+    it.each(['generateStream', 'generateChatStream'] as const)('open circuit breaker: %s throws Circuit Open, yields nothing, dispatches no SDK call', async (method) => {
+        await withInferenceMode('cloud-only', async () => {
+            const ollama = new OllamaService();
+            const calls = recordSdkDispatch(ollama);
+            (ollama as any).isCircuitOpen = true;
+            (ollama as any).lastFailureTime = Date.now();
+            const gen = method === 'generateStream'
+                ? ollama.generateStream('hola')
+                : ollama.generateChatStream([{ role: 'user', content: 'hola' }]);
+            const { chunks, threw } = await collect(gen);
+            expect(String(threw?.message)).toBe(CIRCUIT_OPEN_ERROR);
+            expect(chunks).toEqual([]);
+            expect(calls.generate + calls.chat).toBe(0);
+        });
+    }, 10000);
+
+    // With the circuit clear (or open but past its cooldown, i.e. half-open),
+    // the cloud-only policy gate is the next guard and rejects with its exact
+    // error: zero chunks, no SDK dispatch, both stream entry points.
+    it.each([
+        ['clear', () => { /* fresh instance: circuit closed */ }],
+        ['expired', (o: OllamaService) => {
+            (o as any).isCircuitOpen = true;
+            (o as any).lastFailureTime = Date.now() - CB_TIMEOUT_MS - 1000; // cooldown elapsed: half-open
+        }],
+    ] as const)('%s circuit under cloud-only: both stream methods throw the exact policy error, yield nothing, dispatch no SDK call', async (_label, arrange) => {
+        await withInferenceMode('cloud-only', async () => {
+            for (const method of ['generateStream', 'generateChatStream'] as const) {
+                const ollama = new OllamaService();
+                const calls = recordSdkDispatch(ollama);
+                arrange(ollama);
+                const gen = method === 'generateStream'
+                    ? ollama.generateStream('hola')
+                    : ollama.generateChatStream([{ role: 'user', content: 'hola' }]);
+                const { chunks, threw } = await collect(gen);
+                expect(String(threw?.message)).toBe(POLICY_ERROR);
+                expect(chunks).toEqual([]);
+                expect(calls.generate + calls.chat).toBe(0);
+            }
+        });
     }, 10000);
 });
 
