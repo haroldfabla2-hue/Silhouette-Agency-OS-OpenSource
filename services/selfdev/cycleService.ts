@@ -1,3 +1,4 @@
+import { oracleDigest, compareBaseline, evaluationScopeFailure, canonicalEvaluationPath, type BaselineEvaluation } from './evaluationGate';
 /**
  * SELF-DEV CYCLE SERVICE — Wave 2, P0
  * ═══════════════════════════════════════════════════════════════
@@ -72,6 +73,7 @@ export interface SelfDevCycle {
     runs: CycleRun[];
     pr?: { approvedBy: string; requestedAt: string; url?: string; number?: number };
     outcome?: { state: 'merged' | 'closed-unmerged' | 'open'; mergedAt?: string; closedAt?: string; syncedAt: string };
+    evaluation?: BaselineEvaluation;
     learningProposal?: { memoryId: string; source: string; incidentId: string; stage: 'HUMAN_APPROVAL_PENDING'; applied: false; verification: 'BASELINE_ORACLE_REQUIRED' };
     lastError?: string;
     createdAt: string;
@@ -467,6 +469,31 @@ export class SelfDevCycleService {
             return c;
         }
 
+        // Evaluation uses an existing immutable baseline oracle, never a candidate-authored test.
+        // Preserve existing learning-proposal block: this ordinary regression gate is not
+        // an independently approved learning oracle or authorization to publish/apply.
+        c.acceptance.target = canonicalEvaluationPath(c.acceptance.target);
+        const protectedChange = evaluationScopeFailure(c.patch.ops.map(op => op.path), c.acceptance.target);
+        if (protectedChange) {
+            c.lastError = protectedChange; this.save(); return c;
+        }
+        try {
+            if (stale) throw new Error('current baseline unavailable');
+            const oracle = await selfCodeService.readFile(c.acceptance.target);
+            if (oracle.truncated || oracle.sha !== oracleDigest(oracle.content)) throw new Error('oracle incomplete');
+            const closureSha256 = await selfCodeService.evaluationClosure(c.patch.ops.map(op => op.path), c.acceptance.target);
+            const baseline = await selfCodeService.runTest(c.acceptance.target);
+            if (!baseline.meaningful || !Number.isInteger(baseline.code)) throw new Error('baseline result unavailable');
+            c.evaluation = { version: 1, target: c.acceptance.target, oracleSha256: oracleDigest(oracle.content),
+                baselineExit: baseline.code, baselineTests: baseline.tests, closureSha256, verdict: 'pending' };
+            this.journal({ ts: new Date().toISOString(), cycleId: c.id, event: 'BASELINE_EVALUATION',
+                target: c.acceptance.target, oracleSha256: c.evaluation.oracleSha256, exit: baseline.code });
+            this.save();
+        } catch {
+            c.lastError = 'BASELINE_EVALUATION_UNAVAILABLE: no candidate written; existing independent test oracle and runnable current baseline required';
+            this.save(); return c;
+        }
+
         // Apply ops inside the isolated clone (F2, journaled there too).
         for (const o of c.patch.ops) {
             try {
@@ -534,7 +561,7 @@ export class SelfDevCycleService {
                 const run: CycleRun = { kind: 'vitest', target: c.acceptance.target, code: r.code, pass: r.code === 0, outputTail: r.output.slice(-2000), at: new Date().toISOString() };
                 c.runs.push(run);
                 this.journal({ ts: run.at, cycleId: c.id, event: 'VERIFY_RUN', pass: run.pass, code: run.code, run: i });
-                if (!run.pass) {
+                if (!r.meaningful || !run.pass) {
                     this.transition(c, 'FAILED', `acceptance failed (run ${i}, exit ${r.code})`);
                     return c;
                 }
@@ -548,6 +575,17 @@ export class SelfDevCycleService {
                 return c;
             }
         }
+        try {
+            if (!c.evaluation) throw new Error('missing baseline');
+            const oracle = await selfCodeService.readFile(c.acceptance.target);
+            if (oracle.truncated || oracle.sha !== oracleDigest(oracle.content)) throw new Error('oracle incomplete');
+            const closure = await selfCodeService.evaluationClosure(c.patch.ops.map(op => op.path), c.acceptance.target);
+            c.evaluation = compareBaseline(c.evaluation, oracle.content, 0, closure);
+            if (c.evaluation.verdict === 'oracle-changed') throw new Error('oracle changed');
+        } catch {
+            c.lastError = 'EVALUATION_REJECTED: baseline oracle unavailable or changed; candidate not VERIFIED';
+            this.save(); return c;
+        }
         delete c.lastError;
         this.transition(c, 'VERIFIED', 'acceptance passed twice (flake guard); CI on the PR remains the full gate');
         return c;
@@ -558,6 +596,7 @@ export class SelfDevCycleService {
         if (c.learningProposal) throw new Error('learning proposal requires independent baseline/oracle verification before PR approval');
         const by = (approvedBy ?? '').trim();
         if (!by) throw Object.assign(new Error('approvedBy is required: PR creation is operator-approved'), { statusCode: 400 });
+        if (!c.evaluation || !['preserved', 'improved'].includes(c.evaluation.verdict)) throw new Error('PR requires baseline-bound evaluation');
         if (c.state !== 'VERIFIED') throw Object.assign(new Error(`pr requires VERIFIED (current: ${c.state})`), { statusCode: 409 });
         const at = new Date().toISOString();
         c.pr = { approvedBy: by, requestedAt: at };

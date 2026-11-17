@@ -1,3 +1,4 @@
+import { safePayloadJson } from '../usageObservation';
 /**
  * MCP CLIENT - Silhouette Consumes External Services
  * ═══════════════════════════════════════════════════════════════
@@ -223,6 +224,15 @@ class MCPClient {
         toolName: string,
         args: any
     ): Promise<any> {
+        const safeArgs = JSON.parse(safePayloadJson(args));
+        return this.executeOwnedTool(serverName, toolName, safeArgs);
+    }
+
+    private async executeOwnedTool(
+        serverName: string,
+        toolName: string,
+        args: any
+    ): Promise<any> {
         const config = this.servers.get(serverName);
         if (!config) {
             return { error: `Server not found: ${serverName}` };
@@ -250,6 +260,10 @@ class MCPClient {
                 `mcp_external:${serverName}:${toolName}`, args ?? {},
                 `mcpClient:outbound:${serverName}`,
                 async () => {
+        // Generic MCP effects consume exactly once in executeWithEffectConsent.
+        // Downstream guard recognizes that same validated chain, never reconsumes.
+        const { withToolDataBoundary } = await import('../security/toolDataBoundary');
+        return withToolDataBoundary(`mcp_external:${serverName}:${toolName}`, args, false, async () => {
         try {
             const response = await fetch(`${config.url}/messages`, {
                 method: 'POST',
@@ -285,6 +299,7 @@ class MCPClient {
             console.error(`[MCPClient] Tool execution failed:`, error.message);
             return { error: error.message };
         }
+        });
                 });
         } catch (gateErr: any) {
             // Gated external effect without human consent: honest error, no execution.

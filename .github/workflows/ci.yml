@@ -73,6 +73,11 @@ jobs:
       - name: Desktop ownership boundary contracts (not full product validation)
         run: node --test tests/desktop-session/*.node.cjs
 
+      - name: Focused data evidence and oracle contracts (actual installed TS loader)
+        run: |
+          node --import tsx/esm --test tests/contracts/*.test.mjs
+          node --import tsx/esm --test tests/complete-deps/*.test.mjs
+
       - name: Unit tests
         run: npm test
 

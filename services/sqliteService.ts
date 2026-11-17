@@ -1,3 +1,4 @@
+import { minimizeExpiredEvidence } from './execution/taskEvidence';
 import { externalProvidersDisabled, credentialConfigKey } from '../server/config/runtimeCredentials';
 import Database from 'better-sqlite3';
 import path from 'path';
@@ -994,7 +995,17 @@ export class SqliteService {
 
     public getTasksByPlan(planId: string): any[] {
         const stmt = this.db.prepare('SELECT * FROM tasks WHERE id LIKE ? ORDER BY created_at ASC');
-        return stmt.all(`task_${planId}_%`) as any[];
+        return (stmt.all(`task_${planId}_%`) as any[]).map(row => {
+            try {
+                let data = JSON.parse(row.data || '{}');
+                data = minimizeExpiredEvidence(data);
+                if (data.lateSettlement && typeof data.lateSettlement === 'object') {
+                    data = { ...data, lateSettlement: minimizeExpiredEvidence(data.lateSettlement) };
+                }
+                return { ...row, data: JSON.stringify(data) };
+            } catch { /* Existing malformed evidence remains visibly malformed; never rewrite memory. */ }
+            return row;
+        });
     }
 
     /** [LEDGER-INTEGRITY] Rows whose step timed out with work possibly

@@ -1,3 +1,4 @@
+import { canonicalEvaluationPath } from './selfdev/evaluationGate';
 /**
  * SelfCodeService - F2 Self-Code Toolkit (safe)
  *
@@ -316,17 +317,91 @@ class SelfCodeService {
         });
     }
 
-    public async runTest(target: string): Promise<{ code: number; output: string }> {
-        if (!target || target.includes('..') || path.isAbsolute(target)) throw new Error('target must be a relative test path');
+    /** Freeze every tracked oracle/helper/fixture/config outside declared production edits,
+     * and the entire installed dependency byte closure. No truncated reads or symlinks. */
+    public async evaluationClosure(editPaths: string[], target: string): Promise<string> {
+        const wt = (await this.ensureWorktree()).path;
+        target = canonicalEvaluationPath(target);
+        const excluded = new Set(editPaths.map(canonicalEvaluationPath));
+        // This baseline-authored contract explicitly distinguishes code under test
+        // from assertion/expected-value helpers. Never infer trust from patch paths.
+        const manifestPath = path.join(wt, 'tests/selfdev-oracles.json');
+        if (!fs.existsSync(manifestPath)) throw new Error('trusted oracle/code-under-test contract unavailable');
+        const manifestStat = fs.lstatSync(manifestPath);
+        if (!manifestStat.isFile() || manifestStat.isSymbolicLink() || manifestStat.size > 65536) throw new Error('trusted oracle contract unsafe');
+        const manifestBytes = fs.readFileSync(manifestPath, 'utf8');
+        const trusted = await run('git', ['show', 'HEAD:tests/selfdev-oracles.json'], wt, 15000, true);
+        if (trusted.code !== 0 || trusted.out !== manifestBytes) throw new Error('trusted oracle contract not committed baseline');
+        const manifest = JSON.parse(manifestBytes);
+        const entry = manifest.version === 1 && manifest.oracles?.find((row: any) => row.target === target);
+        if (!entry || !Array.isArray(entry.codeUnderTest) || !Array.isArray(entry.oracleFiles) || !entry.oracleFiles.includes(target)) throw new Error('trusted oracle/code-under-test contract unsupported');
+        const allowed = new Set<string>(entry.codeUnderTest.map(canonicalEvaluationPath));
+        const protectedFiles = new Set<string>(entry.oracleFiles.map(canonicalEvaluationPath));
+        for (const file of excluded) if (!allowed.has(file) || protectedFiles.has(file)) throw new Error('ambiguous editable oracle helper is unsupported');
+        for (const file of allowed) if (protectedFiles.has(file)) throw new Error('oracle contract overlaps code under test');
+
+        const inventory = await run('git', ['ls-files', '-z'], wt, 15000, true);
+        if (inventory.code !== 0) throw new Error('oracle tracked inventory unavailable');
+        const paths = inventory.out.split('\0').filter(Boolean).filter(p => !excluded.has(canonicalEvaluationPath(p))).sort();
+        const hash = crypto.createHash('sha256'); let bytes = 0, files = 0;
+        const add = (absolute: string, name: string) => {
+            const stat = fs.lstatSync(absolute);
+            if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('oracle requires regular complete files');
+            bytes += stat.size; if (++files > 40000 || bytes > 512 * 1024 * 1024) throw new Error('oracle closure exceeds inspection budget');
+            const content = fs.readFileSync(absolute);
+            if (content.length !== stat.size) throw new Error('oracle read incomplete');
+            hash.update(name + '\0' + content.length + '\0'); hash.update(content);
+        };
+        for (const rel of paths) {
+            const normalized = canonicalEvaluationPath(rel), absolute = path.resolve(wt, normalized);
+            let part = wt;
+            for (const segment of normalized.split('/')) { part = path.join(part, segment); if (fs.lstatSync(part).isSymbolicLink()) throw new Error('oracle tracked symlink'); }
+            add(absolute, normalized);
+        }
+        const dependencies = path.join(wt, 'node_modules');
+        if (!fs.existsSync(dependencies)) throw new Error('oracle dependencies unavailable');
+        // Root link supplied by ensureWorktree is expected; nested links remain ambiguous.
+        const realDependencies = fs.realpathSync(dependencies);
+        const walk = (dir: string, relative: string) => {
+            for (const name of fs.readdirSync(dir).sort()) {
+                const file = path.join(dir, name), rel = relative + '/' + name, stat = fs.lstatSync(file);
+                if (relative === 'node_modules' && name === '.bin') continue; // actual runner is direct absolute node+vitest entry below
+                if (stat.isSymbolicLink()) throw new Error('oracle dependency symlink unsupported');
+                if (stat.isDirectory()) walk(file, rel); else add(file, rel);
+            }
+        };
+        walk(realDependencies, 'node_modules'); add(process.execPath, '$runtime-node');
+        return hash.digest('hex');
+    }
+
+    public async runTest(target: string): Promise<{ code: number; output: string; meaningful: boolean; tests: number }> {
+        target = canonicalEvaluationPath(target);
         const wt = (await this.ensureWorktree()).path;
         const abs = this.confine(target);
         if (!fs.existsSync(abs)) throw new Error('test target not found in worktree');
-        if (!fs.existsSync(path.join(wt, 'node_modules'))) {
-            throw new Error('tests unavailable: node_modules missing in worktree');
-        }
-        const res = await run('npx', ['vitest', 'run', target], wt, 180000);
-        this.journal({ ts: new Date().toISOString(), actor: 'api', action: 'test', path: target, detail: `exit ${res.code}` });
-        return { code: res.code, output: res.out.slice(-8000) };
+        const runner = path.join(wt, 'node_modules/vitest/vitest.mjs');
+        if (!fs.existsSync(runner)) throw new Error('tests unavailable: pinned installed runner missing');
+        const temp = fs.mkdtempSync(path.join((await import('node:os')).tmpdir(), 'silhouette-eval-'));
+        const report = path.join(temp, 'result.json');
+        try {
+            const result = await new Promise<{code: number; output: string; infrastructureFailure: boolean}>(resolve => {
+                execFile(process.execPath, [runner, 'run', target, '--reporter=json', '--outputFile='+report],
+                    { cwd: wt, timeout: 180000, maxBuffer: 1024 * 1024, env: { ...process.env, SILHOUETTE_PROVIDERS: 'off' } },
+                    (error, stdout, stderr) => resolve({ code: error ? typeof error.code === 'number' ? error.code : 1 : 0,
+                        output: `${stdout}${stderr}`, infrastructureFailure: !!error && (typeof error.code !== 'number' || !!error.killed || !!error.signal) }));
+            });
+            let meaningful = false, tests = 0;
+            try {
+                const data = JSON.parse(fs.readFileSync(report, 'utf8')); tests = data.numTotalTests;
+                meaningful = !result.infrastructureFailure && [0,1].includes(result.code) && Number.isInteger(tests) && tests > 0 &&
+                    data.numPassedTests + data.numFailedTests === tests && !data.numPendingTests && !data.numTodoTests &&
+                    Array.isArray(data.testResults) && data.testResults.length > 0 && data.testResults.every((r: any) => Array.isArray(r.assertionResults) && r.assertionResults.length > 0 &&
+                        r.assertionResults.every((a: any) => ['passed','failed'].includes(a.status))) &&
+                    (result.code === 0 ? data.numFailedTests === 0 : data.numFailedTests > 0);
+            } catch { /* No valid test report means unavailable, not a failing baseline. */ }
+            this.journal({ ts: new Date().toISOString(), actor: 'api', action: 'test', path: target, detail: `exit ${result.code}; meaningful ${meaningful}; tests ${tests}` });
+            return { code: result.code, output: result.output.slice(-8000), meaningful, tests };
+        } finally { fs.rmSync(temp, { recursive: true, force: true }); }
     }
 
     public journalEntries(limit: number = 50): JournalEntry[] {

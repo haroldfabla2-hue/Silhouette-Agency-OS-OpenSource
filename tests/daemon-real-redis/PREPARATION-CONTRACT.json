@@ -21,7 +21,9 @@
     "services/systemBus.ts",
     "services/bus/MemoryBusAdapter.ts",
     "server/desktop/producerScope.js",
-    "services/security/bootMode.ts"
+    "services/security/bootMode.ts",
+    "services/execution/taskEvidence.ts",
+    "services/usageObservation.ts"
   ],
   "heavyDynamicImports": "not mounted or evaluated, actual disabled task implementations retain exact real module names",
   "npmRuntimeRoots": [

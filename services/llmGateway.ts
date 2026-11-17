@@ -1,3 +1,4 @@
+import { emitProviderAttempt, runProviderInvocation, assertModelPayload } from './usageObservation';
 import { assertExternalProvidersEnabled } from './security/bootMode';
 /**
  * LLM GATEWAY SERVICE - Unified Multi-Provider Access
@@ -132,7 +133,11 @@ export class LLMGatewayService {
             if (!this.isProviderAvailable(providerName)) continue;
 
             try {
-                const result = await this.callProvider(providerName, prompt, options);
+                const definition = this.registry.get(providerName);
+                // Compatible client owns its real invocation. Only legacy legs wrap here.
+                const result = definition?.transport === 'openai-compatible'
+                    ? await this.callProvider(providerName, prompt, options)
+                    : await this.observeLegacyCall(providerName, prompt, options);
 
                 // Update success metrics
                 const provider = this.providers.get(providerName)!;
@@ -171,7 +176,7 @@ export class LLMGatewayService {
 
             let emitted = false;
             try {
-                for await (const chunk of this.streamFromProvider(providerName, prompt, options)) { emitted = true; yield chunk; }
+                for await (const chunk of this.observeLegacyStream(providerName, prompt, options)) { emitted = true; yield chunk; }
                 return; // Success - exit
             } catch (error: any) {
                 // Never concatenate another model's answer after a partial response.
@@ -226,6 +231,32 @@ export class LLMGatewayService {
     /**
      * Call a specific provider
      */
+    private async *observeLegacyStream(provider: string, prompt: string, options: CompletionOptions): AsyncGenerator<string> {
+        const definition = this.registry.get(provider);
+        if (definition?.transport === 'openai-compatible') { yield* this.streamFromProvider(provider, prompt, options); return; }
+        const invocationId = crypto.randomUUID(), model = options.model || this.providers.get(provider)?.currentModel || 'default';
+        assertModelPayload([prompt, options.systemPrompt]);
+        const report = (outcome: 'started'|'completed'|'failed'|'partial'|'cancelled') => emitProviderAttempt({ invocationId, provider, model, outcome, inputTokens: null, outputTokens: null });
+        let completed = false, emitted = false; const iterator = this.streamFromProvider(provider, prompt, options); report('started');
+        try {
+            while (true) { const value = await runProviderInvocation(invocationId, () => iterator.next());
+                if (value.done) { completed = true; report('completed'); return; }
+                emitted = true; yield value.value;
+            }
+        } catch (error) { completed = true; report(emitted ? 'partial' : 'failed'); throw error; }
+        finally { if (!completed) report('cancelled'); await runProviderInvocation(invocationId, () => iterator.return(undefined)); }
+    }
+    private async observeLegacyCall(provider: string, prompt: string, options: CompletionOptions): Promise<CompletionResult> {
+        const invocationId = crypto.randomUUID(), model = options.model || this.providers.get(provider)?.currentModel || 'default';
+        return runProviderInvocation(invocationId, async () => {
+            assertModelPayload([prompt, options.systemPrompt]);
+            const report = (outcome: 'started' | 'completed' | 'failed', usage?: CompletionResult['usage']) => emitProviderAttempt({ invocationId, provider, model, outcome,
+                inputTokens: usage?.promptTokens ?? null, outputTokens: usage?.completionTokens ?? null });
+            report('started');
+            try { const result = await this.callProvider(provider, prompt, options); report('completed', result.usage); return result; }
+            catch (error) { report('failed'); throw error; }
+        });
+    }
     private async callProvider(
         providerName: string,
         prompt: string,
@@ -342,7 +373,11 @@ export class LLMGatewayService {
 
             default:
                 // For providers without native streaming, simulate it
-                const result = await this.callProvider(providerName, prompt, options);
+                const definition = this.registry.get(providerName);
+                // Compatible client owns its real invocation. Only legacy legs wrap here.
+                const result = definition?.transport === 'openai-compatible'
+                    ? await this.callProvider(providerName, prompt, options)
+                    : await this.observeLegacyCall(providerName, prompt, options);
                 const words = result.text.split(' ');
                 for (const word of words) {
                     yield word + ' ';

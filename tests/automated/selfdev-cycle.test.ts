@@ -56,9 +56,9 @@ describe('P0 self-dev cycle service (real git worktree, no mocks)', () => {
         expect(() => s.create({ issue: 'x', scope: ['src'], acceptance: { kind: 'vitest', target: '/abs.ts' } })).toThrowError(/acceptance/);
     });
 
-    it('runs the guarded path: PLANNED -> ATTEMPTED -> EXECUTED with honest verification unavailability', async () => {
+    it('refuses to write candidate when no runnable committed baseline oracle exists', async () => {
         const s = fresh();
-        const c = s.create({ issue: 'add util', scope: ['src'], acceptance: { kind: 'vitest', target: 'src/util.test.ts' } });
+        const c = s.create({ issue: 'add util', scope: ['services'], acceptance: { kind: 'vitest', target: 'tests/util.test.ts' } });
         expect(c.state).toBe('PLANNED');
 
         // one active cycle at a time
@@ -69,20 +69,20 @@ describe('P0 self-dev cycle service (real git worktree, no mocks)', () => {
         expect(bad.state).toBe('PLANNED');
         expect(bad.lastError).toMatch(/outside declared cycle scope/);
 
-        const ok = await s.attempt(c.id, [{ op: 'write', path: 'src/util.ts', content: 'export const util = 42;\n', rationale: 'implement the util' }]);
+        const ok = await s.attempt(c.id, [{ op: 'write', path: 'services/util.ts', content: 'export const util = 42;\n', rationale: 'implement the util' }]);
         expect(ok.state).toBe('ATTEMPTED');
         expect(ok.patch?.source).toBe('operator');
 
         const ex = await s.execute(c.id);
-        // the op really landed inside the isolated worktree
-        expect(fs.readFileSync(path.join(worktree, 'src', 'util.ts'), 'utf8')).toContain('util = 42');
-        expect(ex.state).toBe('EXECUTED'); // NOT failed: the tmp clone has no node_modules
-        expect(ex.lastError).toMatch(/verification unavailable/);
-        expect(ex.diff).toMatch(/src/); // porcelain shows the new untracked dir
+        // New baseline requirement is pre-write: no installed runner/oracle means
+        // unavailable, not a failing baseline and not a landed candidate.
+        expect(fs.existsSync(path.join(worktree, 'services', 'util.ts'))).toBe(false);
+        expect(ex.state).toBe('ATTEMPTED');
+        expect(ex.lastError).toMatch(/BASELINE_EVALUATION_UNAVAILABLE/);
 
         // PR gate: operator approval is mandatory and state must be VERIFIED
         expect(() => s.requestPR(c.id)).toThrowError(/approvedBy is required/);
-        expect(() => s.requestPR(c.id, 'operator-x')).toThrowError(/VERIFIED/);
+        expect(() => s.requestPR(c.id, 'operator-x')).toThrowError(/requires baseline-bound evaluation/);
 
         // journal recorded the guarded path
         const j = s.journalEntries(c.id) as any[];

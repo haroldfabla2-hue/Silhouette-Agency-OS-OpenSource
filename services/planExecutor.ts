@@ -1,3 +1,4 @@
+import { createTaskEvidence, currentDataLabels, addDataLabels } from './execution/taskEvidence';
 /**
  * PLAN EXECUTOR SERVICE
  * 
@@ -101,6 +102,10 @@ class PlanExecutor {
      * Execute a plan respecting all homeostatic constraints
      */
     public async execute(plan: ExecutionPlan): Promise<PlanExecutionResult> {
+        return createTaskEvidence(plan.id).run(() => this.executeOwnedPlan(plan));
+    }
+
+    private async executeOwnedPlan(plan: ExecutionPlan): Promise<PlanExecutionResult> {
         console.log(`[PLAN_EXECUTOR] 🚀 Executing plan: ${plan.id} (${plan.steps.length} steps)`);
 
         const startTime = Date.now();
@@ -160,9 +165,14 @@ class PlanExecutor {
             }
 
             // 2. Execute the step with all homeostatic checks
+            const evidence = createTaskEvidence(`task_${plan.id}_${step.order}`, currentDataLabels());
             try {
                 markTaskRunning(plan.id, step); // [PR-1]
-                const result = await this.withStepTimeout(plan.id, step, this.executeStep(step, plan, results));
+                const work = evidence.run(() => this.executeStep(step, plan, results));
+                const result = await this.withStepTimeout(plan.id, step, work, evidence);
+                const executionEvidence = evidence.snapshot();
+                addDataLabels(executionEvidence.labels);
+                Object.assign(result, { executionEvidence });
                 markTaskDone(plan.id, step, result); // [PR-1]
                 results.set(step.order, result);
 
@@ -184,8 +194,10 @@ class PlanExecutor {
                     success: false,
                     tokensUsed: 0,
                     executionTimeMs: 0,
-                    error: e.message
+                    error: e.message,
+                    executionEvidence: evidence.snapshot()
                 };
+                addDataLabels(evidence.snapshot().labels);
                 markTaskDone(plan.id, step, failure); // [PR-1]
                 results.set(step.order, failure);
             }
@@ -264,7 +276,7 @@ class PlanExecutor {
     // honestly instead. Env-overridable; the 30min default is ~5x the
     // slowest observed legitimate step (382s). A timed-out step's
     // background promise is ignored when it eventually settles.
-    private withStepTimeout(planId: string, step: PlanStep, work: Promise<StepResult>): Promise<StepResult> {
+    private withStepTimeout(planId: string, step: PlanStep, work: Promise<StepResult>, evidence?: ReturnType<typeof createTaskEvidence>): Promise<StepResult> {
         const timeoutMs = Number(process.env.SILHOUETTE_STEP_TIMEOUT_MS ?? 30 * 60 * 1000);
         let timer: NodeJS.Timeout | undefined;
         let timedOut = false;
@@ -297,12 +309,12 @@ class PlanExecutor {
             if (!timedOut) return;
             clearAbandonedStep(planId, step.order);
             console.warn(`[PLAN_EXECUTOR] Timed-out step ${step.order} of ${planId} settled late (success=${late?.success}) - reconciling ledger row`);
-            recordLateSettlement(planId, step.order, late);
+            recordLateSettlement(planId, step.order, { ...late, executionEvidence: evidence?.snapshot() });
         }).catch((e: any) => {
             if (!timedOut) return;
             clearAbandonedStep(planId, step.order);
             console.warn(`[PLAN_EXECUTOR] Timed-out step ${step.order} of ${planId} rejected late: ${e?.message}`);
-            recordLateSettlement(planId, step.order, { stepOrder: step.order, success: false, error: `late rejection: ${e?.message}` });
+            recordLateSettlement(planId, step.order, { stepOrder: step.order, success: false, error: `late rejection: ${e?.message}`, executionEvidence: evidence?.snapshot() });
         });
         return Promise.race([work, timeout]).finally(() => { if (timer) clearTimeout(timer); });
     }

@@ -1,3 +1,4 @@
+import { emitUsage, currentProviderInvocation } from './usageObservation';
 import { ownedTimeout, ownedWork, producerScopeBound } from '../server/desktop/producerScope.js';
 import { CostMetrics, ModelUsage } from '../types';
 
@@ -112,26 +113,34 @@ export class CostEstimator {
         const outputCost = pricing.output ? (output / 1000000) * pricing.output : 0;
         const total = inputCost + outputCost;
 
+        emitUsage({ invocationId: currentProviderInvocation(), source: 'legacy-estimator', model: modelId, inputTokens: input, outputTokens: output,
+            estimatedUsd: Object.prototype.hasOwnProperty.call(this.PRICING_TABLE, modelId) && typeof pricing.input === 'number' && typeof pricing.output === 'number' ? total : null,
+            pricing: Object.prototype.hasOwnProperty.call(this.PRICING_TABLE, modelId) && typeof pricing.input === 'number' && typeof pricing.output === 'number' ? 'configured-estimate' : 'unknown' });
         this.updateMetrics(total, input, output, 0, 0, 0, modelId);
     }
 
     // Track Event Transactions (Images, Video Seconds, API Requests)
     public trackEvent(modelId: string, quantity: number = 1) {
-        const pricing = this.PRICING_TABLE[modelId] || { perImage: 0, perSecond: 0, perRequest: 0 };
+        const pricing = this.PRICING_TABLE[modelId] || {};
         let total = 0;
         let images = 0;
         let seconds = 0;
-        const requests = 0;
+        let requests = 0;
 
-        if (pricing.perImage) {
+        if (typeof pricing.perImage === 'number') {
             total = quantity * pricing.perImage;
             images = quantity;
-        } else if (pricing.perSecond) {
+        } else if (typeof pricing.perSecond === 'number') {
             total = quantity * pricing.perSecond;
             seconds = quantity;
-        } else if (pricing.perRequest) {
+        } else if (typeof pricing.perRequest === 'number') {
             total = quantity * pricing.perRequest;
+            requests = quantity;
         }
+        emitUsage({ invocationId: currentProviderInvocation(), source: 'legacy-estimator', model: modelId, inputTokens: null, outputTokens: null,
+            estimatedUsd: (['perImage', 'perSecond', 'perRequest'] as const).some(key => typeof pricing[key] === 'number') ? total : null,
+            pricing: (['perImage', 'perSecond', 'perRequest'] as const).some(key => typeof pricing[key] === 'number') ? 'configured-estimate' : 'unknown' });
+        this.updateMetrics(total, 0, 0, images, seconds, requests, modelId);
     }
 
     private saveTimeout: NodeJS.Timeout | null = null;

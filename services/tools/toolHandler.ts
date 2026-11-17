@@ -21,6 +21,13 @@ import { readUrl, searchWeb } from '../../tools/webBrowserTool';
 export class ToolHandler {
 
     public async handleFunctionCall(name: string, args: any, caller?: ToolCaller): Promise<any> {
+        const { withToolDataBoundary } = await import('../security/toolDataBoundary');
+        const definition = toolRegistry.getTool(name);
+        const plugin = definition?.handler.type === 'BUILTIN' && definition.handler.handlerName.startsWith('PLUGIN:');
+        return withToolDataBoundary(name, args, plugin, () => this.handleOwnedFunctionCall(name, args, caller));
+    }
+
+    private async handleOwnedFunctionCall(name: string, args: any, caller?: ToolCaller): Promise<any> {
         console.log(`[ToolHandler] 🛠️ Executing Tool: ${name}`);
 
         // 1. Check if this is a Plugin Tool
