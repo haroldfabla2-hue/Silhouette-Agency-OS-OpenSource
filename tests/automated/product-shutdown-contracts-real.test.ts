@@ -85,6 +85,7 @@ const snapshotCache = (): CacheSnapshot => {
         let names: string[];
         try { names = readdirSync(dir); } catch { incomplete = true; return; }
         for (const name of names) {
+            if (entries.size > 500) { incomplete = true; return; } // per-FILE cap: a huge flat directory cannot stall the walk
             const p = join(dir, name);
             try {
                 const st = statSync(p);
@@ -248,18 +249,19 @@ const runChild = (directory: string, mode: string, timeoutMs: number): Promise<C
             // still classified as a natural-exit breach.
             const hadSurvivors = pid !== undefined && groupAlive(pid) !== false;
             let survivorsAfterCleanup = false;
+            // Known survivors are killed IMMEDIATELY - before any EOF wait, so
+            // a descendant holding inherited pipes cannot consume the reap budget.
+            if (hadSurvivors) killGroup();
             if (outcome.kind === 'timeout') {
-                killGroup();
                 childReaped = await waitExit(remaining()); // await the direct child's reap, not only the group
             }
-            // Bounded EOF drain: trailing result/error bytes must not be lost
-            // by destroying pipes early; a held-open pipe (escaped descendant)
-            // hits the deadline and marks the evidence incomplete.
-            const drained = exitEvent !== null ? await waitClose(remaining()) : false;
             if (hadSurvivors && pid !== undefined) {
-                killGroup();          // survivors (or unknown) after exit/timeout: kill, then reap
                 survivorsAfterCleanup = !(await reapGroup(remaining()));
             }
+            // Bounded EOF drain AFTER cleanup: pipes EOF once their holders are
+            // gone; a still-held pipe hits the shared deadline and marks the
+            // evidence incomplete.
+            const drained = exitEvent !== null ? await waitClose(remaining()) : false;
             child.stdout?.destroy();
             child.stderr?.destroy();
             const o = out.render(), e = err.render();
@@ -316,19 +318,37 @@ const runMode = async (mode: string, childTimeoutMs: number) => {
     const directory = mkdtempSync(join(tmpdir(), 'shutdown-contracts-real-'));
     const cacheBefore = snapshotCache();
     let failure: unknown = null;
+    let result: ChildResult | null = null;
     try {
-        const result = await runChild(directory, mode, childTimeoutMs);
+        result = await runChild(directory, mode, childTimeoutMs);
         expectCleanChild(result, mode);
     } catch (e) {
         failure = e;
         throw e;
     } finally {
-        // Safety evidence runs even - ESPECIALLY - after an abnormal outcome.
-        const { changed, incomplete } = cacheBreach(cacheBefore);
-        console.log(`[fixture inventory ${mode}]`, inventory(directory));
-        console.log(`[transformers receipt ${mode}] verifiedLayout=${VERIFIED_CACHE_LAYOUT_VERSION} installed=${installedTransformersVersion} cacheRootPreexisting=${cacheBefore.entries.size > 0} snapshotIncomplete=${incomplete} changed=${changed.length}${changed.length ? ' :: ' + changed.join(', ') : ''}`);
-        rmSync(directory, { recursive: true, force: true });
-        if (failure === null) assertCacheGuard(changed, incomplete);
+        // Safety evidence runs even - ESPECIALLY - after an abnormal outcome,
+        // and an evidence/cleanup failure must never replace the primary one.
+        let cleanupError: unknown = null;
+        let changed: string[] = [], incomplete = true;
+        try {
+            ({ changed, incomplete } = cacheBreach(cacheBefore));
+            console.log(`[fixture inventory ${mode}]`, inventory(directory));
+            console.log(`[transformers receipt ${mode}] verifiedLayout=${VERIFIED_CACHE_LAYOUT_VERSION} installed=${installedTransformersVersion} cacheRootPreexisting=${cacheBefore.entries.size > 0} snapshotIncomplete=${incomplete} changed=${changed.length}${changed.length ? ' :: ' + changed.join(', ') : ''}`);
+            if (result?.survivorsAfterCleanup) {
+                // Runtime state unknown: RETAIN the cwd for forensics instead of
+                // deleting artifacts under an unreaped process group.
+                console.log(`[fixture retained ${mode}] cwd preserved at ${directory}: process group not reaped`);
+            } else {
+                rmSync(directory, { recursive: true, force: true });
+            }
+        } catch (e) {
+            cleanupError = e;
+            console.error(`[cleanup evidence error ${mode}]`, e);
+        }
+        if (failure === null) {
+            if (cleanupError !== null) throw cleanupError;
+            assertCacheGuard(changed, incomplete);
+        }
     }
 };
 
