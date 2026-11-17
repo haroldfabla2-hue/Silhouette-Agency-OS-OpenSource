@@ -35,6 +35,7 @@ if (mode === 'redis-fallback-quiet') {
     const endpoint = await resettingEndpoint();
     process.env.REDIS_HOST = '127.0.0.1';
     process.env.REDIS_PORT = String(endpoint.port);
+    process.env.NEO4J_URI = `bolt://127.0.0.1:${endpoint.port}`;
     const errors: string[] = [];
     const originalError = console.error;
     console.error = (...args: any[]) => { errors.push(args.map(String).join(' ')); originalError(...args); };
@@ -82,26 +83,38 @@ if (mode === 'redis-fallback-quiet') {
     // natural exit: had shutdown started the consolidation interval, the
     // loop would stay alive and the external timeout would fire.
 } else if (mode === 'memory-blocked-store') {
-    const walFile = 'data/wal/memory_wal.json';
-    fs.mkdirSync('data/wal', { recursive: true });
-    fs.writeFileSync(walFile, '{broken original WAL');
-    const before = fs.readFileSync(walFile);
-    const { continuousMemory } = await import('../../services/memory/continuousMemory');
-    assert.throws(() => continuousMemory.logBeforeProcessing('wal-fixture', 'TASK_STARTED', { input: 'must not be accepted' }), 'blocked store must refuse writes');
-    assert.throws(() => continuousMemory.shutdown(), 'blocked store must NOT shut down quietly');
-    assert.throws(() => continuousMemory.shutdown(), 'the failure must be STICKY, not consumed by being seen');
-    assert.deepEqual(fs.readFileSync(walFile), before, 'original WAL must be preserved');
-    // The drain calls shutdown() AGAIN: the sticky failure must still reach
-    // it, so the outcome is honestly false.
-    const { drainCurrentBackend } = await import('../../server/currentBackendDrain');
-    assert.equal(await drainCurrentBackend(), false, 'a genuinely failing component must fail the drain outcome');
-    assert.deepEqual(fs.readFileSync(walFile), before, 'original WAL must survive the drain too');
-    console.log(JSON.stringify({ mode, writes_refused: true, failure_sticky: true, original_preserved: true, drain_ok: false }));
+    // Controlled endpoint even here: nothing in this mode should ever
+    // contact Redis or Neo4j, but if any code path tries, it must hit the
+    // fixture's own dead endpoint, never a host-default port.
+    const endpoint = await resettingEndpoint();
+    process.env.REDIS_HOST = '127.0.0.1';
+    process.env.REDIS_PORT = String(endpoint.port);
+    process.env.NEO4J_URI = `bolt://127.0.0.1:${endpoint.port}`;
+    try {
+        const walFile = 'data/wal/memory_wal.json';
+        fs.mkdirSync('data/wal', { recursive: true });
+        fs.writeFileSync(walFile, '{broken original WAL');
+        const before = fs.readFileSync(walFile);
+        const { continuousMemory } = await import('../../services/memory/continuousMemory');
+        assert.throws(() => continuousMemory.logBeforeProcessing('wal-fixture', 'TASK_STARTED', { input: 'must not be accepted' }), 'blocked store must refuse writes');
+        assert.throws(() => continuousMemory.shutdown(), 'blocked store must NOT shut down quietly');
+        assert.throws(() => continuousMemory.shutdown(), 'the failure must be STICKY, not consumed by being seen');
+        assert.deepEqual(fs.readFileSync(walFile), before, 'original WAL must be preserved');
+        // The drain calls shutdown() AGAIN: the sticky failure must still reach
+        // it, so the outcome is honestly false.
+        const { drainCurrentBackend } = await import('../../server/currentBackendDrain');
+        assert.equal(await drainCurrentBackend(), false, 'a genuinely failing component must fail the drain outcome');
+        assert.deepEqual(fs.readFileSync(walFile), before, 'original WAL must survive the drain too');
+        console.log(JSON.stringify({ mode, writes_refused: true, failure_sticky: true, original_preserved: true, drain_ok: false }));
+    } finally {
+        await endpoint.cleanup();
+    }
     // natural exit: module completion drains the loop.
 } else if (mode === 'drain-receipts-ok') {
     const endpoint = await resettingEndpoint();
     process.env.REDIS_HOST = '127.0.0.1';
     process.env.REDIS_PORT = String(endpoint.port);
+    process.env.NEO4J_URI = `bolt://127.0.0.1:${endpoint.port}`;
     try {
         const { redisClient } = await import('../../services/redisClient');
         await redisClient.set('probe:key', 'v', 60); // engage the fallback really
