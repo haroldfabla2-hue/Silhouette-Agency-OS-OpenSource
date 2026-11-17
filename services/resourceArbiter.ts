@@ -34,6 +34,9 @@ class ResourceArbiter {
     private isServer: boolean;
 
     private intervalId: NodeJS.Timeout | null = null;
+    private stopped: boolean = false;
+    private activeAdmissions: number = 0;
+    private activeQueueRuns: number = 0;
 
     constructor() {
         this.isServer = typeof process !== 'undefined' && process.versions != null && process.versions.node != null;
@@ -46,10 +49,46 @@ class ResourceArbiter {
     private startProcessing() {
         // Import dynamically to avoid circular dependency
         import('./powerManager').then(({ powerManager }) => {
+            // Late-arm guard: a stop issued while this import was in flight
+            // must win; intervalMs is read only when actually arming.
+            if (this.stopped) return;
             const intervalMs = powerManager.getConfig().resourceArbiterMs;
             this.intervalId = setInterval(() => this.processQueue(), intervalMs);
             console.log(`[ARBITER] Queue processor started (${intervalMs}ms interval)`);
         });
+    }
+
+    /** NARROW timer-only stop: prevents any future arm (stop latch checked by
+     * the pending import callback above) and clears the current interval.
+     * This is NOT queue drainage: pending admission promises are never
+     * resolved by this API - the receipt reports them so the caller can fail
+     * instead of silently abandoning them. In-flight processQueue work past
+     * its early return requires a nonempty queue; callers that never enqueue
+     * (receipt pendingAdmissions === 0 and no requestAdmission in their call
+     * graph) have no callback-owned promises at stake.
+     * The receipt reports MEASURED state at stop time: whether the interval
+     * was armed, queued admission promises (never resolved by this API),
+     * in-flight requestAdmission calls, and in-flight processQueue runs. It
+     * is a snapshot of this process's counters, not a generic settled-state
+     * proof; callers must assert the values their own usage makes possible.
+     * Exists because the constructor arms a ref'd interval, so short-lived
+     * processes importing this singleton (e.g. via continuum.store's
+     * fire-and-forget dreamerService cascade) cannot exit naturally without
+     * it. The product drain does not yet own this producer - explicit
+     * lifecycle gap, kept visible. */
+    public stopProcessingTimer(): { intervalWasArmed: boolean; pendingAdmissions: number; activeAdmissions: number; activeQueueRuns: number } {
+        this.stopped = true;
+        const intervalWasArmed = this.intervalId !== null;
+        if (this.intervalId) {
+            clearInterval(this.intervalId);
+            this.intervalId = null;
+        }
+        return {
+            intervalWasArmed,
+            pendingAdmissions: this.queue.length,
+            activeAdmissions: this.activeAdmissions,
+            activeQueueRuns: this.activeQueueRuns
+        };
     }
 
     /**
@@ -58,35 +97,53 @@ class ResourceArbiter {
      */
     public async requestAdmission(agent: Agent, priority: 'CRITICAL' | 'HIGH' | 'NORMAL' | 'LOW' = 'NORMAL'): Promise<boolean> {
         return new Promise(async (resolve) => {
-            const metrics = await this.getRealMetrics();
-
-            // 1. CRITICAL ALWAYS PASSES
-            if (priority === 'CRITICAL' && metrics.ramUsed / metrics.ramTotal < 0.98) {
-                resolve(true);
+            // No-new-admission guard: after stopProcessingTimer the queue can
+            // never drain, so queueing here would abandon the promise.
+            if (this.stopped) {
+                resolve(false);
                 return;
             }
+            this.activeAdmissions++;
+            try {
+                const metrics = await this.getRealMetrics();
+                // Post-await recheck: a stop issued while metrics were in flight
+                // wins; never grant or queue an admission after the timer has
+                // been permanently stopped.
+                if (this.stopped) {
+                    resolve(false);
+                    return;
+                }
 
-            // 2. STARTUP GRACE PERIOD
-            if (process.uptime() < 60) {
-                resolve(true);
-                return;
-            }
+                // 1. CRITICAL ALWAYS PASSES
+                if (priority === 'CRITICAL' && metrics.ramUsed / metrics.ramTotal < 0.98) {
+                    resolve(true);
+                    return;
+                }
 
-            // 3. CHECK THRESHOLDS
-            const ramUsagePercent = metrics.ramUsed / metrics.ramTotal;
-            if (ramUsagePercent > this.maxRamThreshold || metrics.cpuLoad > this.maxCpuThreshold) {
-                // QUEUE THE REQUEST
-                console.log(`[ARBITER] ⏳ Queuing ${agent.name} (Priority: ${priority}). RAM: ${(ramUsagePercent * 100).toFixed(1)}%`);
-                this.queue.push({
-                    agentId: agent.id,
-                    priority,
-                    timestamp: Date.now(),
-                    resolve
-                });
-                this.sortQueue();
-            } else {
-                // ADMIT IMMEDIATELY
-                resolve(true);
+                // 2. STARTUP GRACE PERIOD
+                if (process.uptime() < 60) {
+                    resolve(true);
+                    return;
+                }
+
+                // 3. CHECK THRESHOLDS
+                const ramUsagePercent = metrics.ramUsed / metrics.ramTotal;
+                if (ramUsagePercent > this.maxRamThreshold || metrics.cpuLoad > this.maxCpuThreshold) {
+                    // QUEUE THE REQUEST
+                    console.log(`[ARBITER] ⏳ Queuing ${agent.name} (Priority: ${priority}). RAM: ${(ramUsagePercent * 100).toFixed(1)}%`);
+                    this.queue.push({
+                        agentId: agent.id,
+                        priority,
+                        timestamp: Date.now(),
+                        resolve
+                    });
+                    this.sortQueue();
+                } else {
+                    // ADMIT IMMEDIATELY
+                    resolve(true);
+                }
+            } finally {
+                this.activeAdmissions--;
             }
         });
     }
@@ -98,17 +155,25 @@ class ResourceArbiter {
 
     private async processQueue() {
         if (this.queue.length === 0) return;
+        this.activeQueueRuns++;
+        try {
+            const metrics = await this.getRealMetrics();
+            // Post-await recheck: the timer may have been stopped while the
+            // metrics await was in flight; never shift or resolve a queued
+            // admission after stop.
+            if (this.stopped) return;
+            const ramUsagePercent = metrics.ramUsed / metrics.ramTotal;
 
-        const metrics = await this.getRealMetrics();
-        const ramUsagePercent = metrics.ramUsed / metrics.ramTotal;
-
-        // If we have headroom
-        if (ramUsagePercent < this.maxRamThreshold && metrics.cpuLoad < this.maxCpuThreshold) {
-            const nextItem = this.queue.shift();
-            if (nextItem) {
-                console.log(`[ARBITER] ✅ Admitting from Queue: ${nextItem.agentId}`);
-                nextItem.resolve(true);
+            // If we have headroom
+            if (ramUsagePercent < this.maxRamThreshold && metrics.cpuLoad < this.maxCpuThreshold) {
+                const nextItem = this.queue.shift();
+                if (nextItem) {
+                    console.log(`[ARBITER] ✅ Admitting from Queue: ${nextItem.agentId}`);
+                    nextItem.resolve(true);
+                }
             }
+        } finally {
+            this.activeQueueRuns--;
         }
     }
 

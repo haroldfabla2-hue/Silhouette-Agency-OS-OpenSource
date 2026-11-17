@@ -277,6 +277,13 @@ if (mode === 'redis-fallback-quiet') {
     process.env.REDIS_PORT = String(endpoint.port);
     process.env.NEO4J_URI = `bolt://127.0.0.1:${endpoint.port}`;
     const cleanupErrors: unknown[] = [];
+    // Tracked WRITER-owned cascade producers and receipts. Both refs stay null
+    // in the READER, which never stores and must not acquire these producers.
+    let writerArbiter: { stopProcessingTimer(): { intervalWasArmed: boolean; pendingAdmissions: number; activeAdmissions: number; activeQueueRuns: number } } | null = null;
+    let writerPower: { stopThrottleTimer(): { intervalWasArmed: boolean } } | null = null;
+    let writerStops: { arbiter?: { intervalWasArmed: boolean; pendingAdmissions: number; activeAdmissions: number; activeQueueRuns: number }; power?: { intervalWasArmed: boolean } } = {};
+    let writerReceipt: Record<string, unknown> | null = null;
+    let readerReceipt: Record<string, unknown> | null = null;
     try {
         // DETERMINISTIC OWNED STARTUP PRECONDITIONS (before any memory import):
         // 1. A valid empty volatile snapshot at the owned cwd path: continuum's
@@ -354,6 +361,24 @@ if (mode === 'redis-fallback-quiet') {
         };
 
         if (mode === 'memory-restart-write') {
+            // DELIBERATE WRITER-ONLY CASCADE ACQUISITION (before any write):
+            // every addFact below fires continuum.store's fire-and-forget
+            // `import('./dreamerService')` cascade. Acquiring the chain here,
+            // up front, makes the writer the EXPLICIT owner of the cascade
+            // producers (resourceArbiter's ref'd queue timer - armed through
+            // a pending powerManager import - and powerManager's ref'd 30s
+            // throttle timer) so their stops are attempted in the finally on
+            // EVERY outcome, not only after all assertions pass. The READER
+            // never runs this and never acquires these producers.
+            // dreamerService statically imports geminiService, so this slice
+            // is NOT model-module-import-free: providers OFF prevents
+            // provider/local model WORK, not the import. Its requestAdmission
+            // calls are reachable only via attemptDream/triggerNeuralTraining
+            // (dream loop never started here; 3 notifications stay below the
+            // 30-count forced-dream cap), so the fixture invokes no admission.
+            await import('../../services/dreamerService');
+            writerArbiter = (await import('../../services/resourceArbiter')).resourceArbiter;
+            writerPower = (await import('../../services/powerManager')).powerManager;
             const receipts = [];
             for (const { fact, owner } of FIXTURE_WRITES) receipts.push(await factRepository.addFact({ ...fact }, owner));
             for (let i = 0; i < FIXTURE_WRITES.length; i++) {
@@ -385,7 +410,10 @@ if (mode === 'redis-fallback-quiet') {
             const { drainCurrentBackend } = await import('../../server/currentBackendDrain');
             const drainOk = await drainCurrentBackend();
             assert.equal(drainOk, true, 'graceful drain must succeed');
-            console.log(JSON.stringify({ mode, sqlite_ids: receipts.map(r => r.id), lance_fact_ids: [...byFactId.keys()], receipts, drain_ok: drainOk }));
+            // Receipt prints AFTER the finally teardown (see below), so a
+            // teardown defect fails the phase with the measured stop counters
+            // instead of surfacing as a supervisor timeout.
+            writerReceipt = { mode, sqlite_ids: receipts.map(r => r.id), lance_fact_ids: [...byFactId.keys()], receipts, drain_ok: drainOk };
         } else {
             // READER (fresh process): the oracle. Every assertion reads through
             // the real read paths over the shared owned stores.
@@ -413,21 +441,66 @@ if (mode === 'redis-fallback-quiet') {
             const { drainCurrentBackend } = await import('../../server/currentBackendDrain');
             const drainOk = await drainCurrentBackend();
             assert.equal(drainOk, true, 'reader graceful drain must succeed');
-            console.log(JSON.stringify({
+            readerReceipt = {
                 mode,
                 sqlite_ids_a: aFacts.map((r: any) => r.id),
                 sqlite_ids_b: bFacts.map((r: any) => r.id),
                 lance_fact_ids: [...byFactId.keys()],
                 drain_ok: drainOk
-            }));
+            };
         }
     } finally {
         // Independent cleanup attempts, primary error always preserved.
+        // WRITER-ONLY producer teardown on EVERY outcome (success or
+        // failure): without these stops the ref'd intervals hold the event
+        // loop, and a primary assertion failure would be buried under the
+        // supervisor timeout. If an early failure left a tracked ref null,
+        // the import below returns the already-evaluated module when the
+        // cascade loaded it (no re-evaluation); when the module truly never
+        // loaded it deliberately acquires-then-immediately-stops it - the
+        // stop latch prevents the pending arbiter arm and powerManager's
+        // synchronously armed interval is cleared by its stop, so this path
+        // cannot leak a timer either. The READER skips this entirely: it
+        // never stores, and its import chain (factRepository ->
+        // continuumMemory/graphService, lancedbService, sqliteService, drain)
+        // contains no resourceArbiter/powerManager/dreamerService reference
+        // (source-checked); initializeNervousSystem's heartbeat start is only
+        // invoked by the server boot loaders, and the gated powerManager
+        // imports inside introspectionEngine/curiosityService never run at
+        // module evaluation. Importing those singletons in the reader just
+        // to stop them would ACQUIRE producers that phase never started.
+        if (mode === 'memory-restart-write') {
+            try {
+                if (writerArbiter === null) writerArbiter = (await import('../../services/resourceArbiter')).resourceArbiter;
+                writerStops.arbiter = writerArbiter.stopProcessingTimer();
+            } catch (e) { cleanupErrors.push(e); }
+            try {
+                if (writerPower === null) writerPower = (await import('../../services/powerManager')).powerManager;
+                writerStops.power = writerPower.stopThrottleTimer();
+            } catch (e) { cleanupErrors.push(e); }
+        }
         // lancedbService exposes no close(): its connection teardown is process
         // exit itself, which the natural-exit supervision verifies.
         try { await endpoint.cleanup(); } catch (e) { cleanupErrors.push(e); }
     }
     if (cleanupErrors.length > 0) throw new AggregateError(cleanupErrors, `${mode} cleanup failed`);
+    // Receipts print only after teardown, only on full success.
+    if (writerReceipt !== null) {
+        const stops = writerStops;
+        // Measured active-work receipt, scoped: these counters cover only
+        // admissions and queue runs THIS process actually invoked. The
+        // writer's execution reaches no requestAdmission call (source-checked
+        // above), so zero is the expected and asserted value - this is not a
+        // generic settled-admission claim.
+        assert.ok(stops.arbiter, 'writer arbiter stop receipt must exist');
+        assert.equal(stops.arbiter.pendingAdmissions, 0, 'no queued admission promise may exist at stop');
+        assert.equal(stops.arbiter.activeAdmissions, 0, 'no in-flight admission may exist at stop');
+        assert.equal(stops.arbiter.activeQueueRuns, 0, 'no in-flight queue processing may exist at stop');
+        assert.ok(stops.power, 'writer power stop receipt must exist');
+        console.log(JSON.stringify({ ...writerReceipt, stops }));
+    } else if (readerReceipt !== null) {
+        console.log(JSON.stringify(readerReceipt));
+    }
     // natural exit: module completion drains the loop.
 } else {
     throw new Error(`unknown mode: ${mode}`);
