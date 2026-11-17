@@ -1,7 +1,6 @@
 import neo4j, { Driver, Session } from 'neo4j-driver';
 import crypto from 'crypto';
 import { lancedbService } from './lancedbService';
-import { generateEmbedding as geminiEmbed } from './geminiService';
 import { configLoader } from '../server/config/configLoader'; // [PA-058]
 import { MemoryTier, MemoryNode } from '../types';
 import { nervousSystem } from './connectionNervousSystem';
@@ -1220,8 +1219,12 @@ class GraphService {
         try {
             const content = `${concept.name}: ${concept.description || 'No description'}`;
 
-            // Generate embedding (try Gemini first, falls back to Local xenova/transformers)
-            const embedding = await geminiEmbed(content);
+            // Generate embedding (try Gemini first, falls back to Local xenova/transformers).
+            // Demand-loaded: a static edge here boots geminiService's producer chain
+            // (contextAssembler -> orchestrator) for every mere import of this module,
+            // including the shutdown drain's close-only import.
+            const { generateEmbedding } = await import('./geminiService');
+            const embedding = await generateEmbedding(content);
 
             if (!embedding) {
                 console.warn(`[GRAPH] ⚠️ No embedding generated for concept: ${concept.id}`);

@@ -10,6 +10,14 @@ jobs:
   quality:
     name: Code Quality & Tests
     runs-on: ubuntu-24.04
+    env:
+      # Deployment policy for CI: no local model inference (owner restriction:
+      # free cloud providers only). Read at call time by localInferencePolicy;
+      # with providers OFF, embedding calls degrade to null (never a model load).
+      # Census 2026-11-17 (run 44166637408 + suite source pass): no test in
+      # tests/automated requires a local model - every observed load was an
+      # incidental fallback whose assertions do not depend on vectors.
+      SILHOUETTE_INFERENCE_MODE: 'cloud-only'
     strategy:
       matrix:
         # Floor required by package.json engines (Stagehand needs >=22.18) plus latest 22.x.
