@@ -4,28 +4,41 @@
  * blocked-store distinction with a STICKY failure, and honest drain
  * outcomes. The fixture holds its own controlled endpoint on an
  * ephemeral port (host-default Redis/Neo4j are never contacted).
- * Children get NO process.exit on the success path: termination is
- * natural; the supervisor bounds it externally and cleans up the whole
- * process GROUP, so a lingering interval/socket/descendant keeps the
- * child (or its group) alive and fails the run.
+ * Children get NO process.exit on the success path: termination must be
+ * natural; the supervisor bounds it externally.
  *
- * Supervisor contract (review-derived):
+ * Supervisor contract (review-derived, fail-closed):
  * - spawn 'error' resolves the outcome (the promise can never hang);
- * - stdout/stderr are capped, and truncation is reported;
- * - completion is the direct child's 'exit', never 'close' (escaped
- *   descendants can hold pipes open and must not stall the harness);
- * - after exit OR timeout the whole process group is probed; only an
- *   ESRCH answer counts as gone (EPERM/other = still alive or unknown);
- * - a live group is SIGKILLed and then polled until gone, with a bounded
- *   budget; survivors or unknown state fail the test with evidence;
- * - kill failures other than ESRCH are recorded, never swallowed.
+ * - stdout/stderr are preserved as head+tail with exact byte counts;
+ *   any dropped middle bytes mark the evidence truncated = FAILURE;
+ * - completion is the direct child's 'exit'; streams are then drained
+ *   until EOF ('close') under a short bounded deadline - destroying the
+ *   pipes early would lose trailing result/error bytes; hitting the
+ *   deadline marks the evidence incomplete = FAILURE;
+ * - the post-exit process-group probe is decisive for natural exit: a
+ *   live group at the FIRST probe means a leaked descendant and fails
+ *   acceptance EVEN IF the subsequent cleanup succeeds (hadSurvivors is
+ *   reported separately from survivorsAfterCleanup);
+ * - on timeout the direct child's reap ('exit') is awaited as well as
+ *   group absence, both bounded;
+ * - group liveness treats ONLY ESRCH as gone (EPERM/other = alive or
+ *   unknown = not reaped); kill failures other than ESRCH are recorded;
+ * - ESRCH proves only THIS process group is gone: a detached descendant
+ *   that created its own session escapes the probe - an explicit
+ *   residual gap, not a no-escaped-descendants guarantee.
  *
  * Local-model policy: SILHOUETTE_INFERENCE_MODE=cloud-only is set in the
  * child env (source-level prevention at the getEmbedding call boundary -
  * NOT OS isolation). The transformer cache root is baselined immediately
  * BEFORE each child and diffed only after the group is fully gone:
  * pre-existing cache content from earlier tests in the job is reported,
- * never attributed to this fixture; only NEW or CHANGED entries fail. */
+ * never attributed to this fixture; only NEW or CHANGED entries fail.
+ * The snapshot walks fail closed: unreadable entries, depth/count caps
+ * hit, an unreadable installed-version receipt, or an installed version
+ * differing from the lock-pinned one all make the cache guard FAIL
+ * instead of silently passing. The expected cache root is verified for
+ * @xenova/transformers 2.17.2 only; a different installed version means
+ * the guard's path is unverified and must fail closed. */
 import { describe, it, expect } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, readdirSync, statSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -37,14 +50,23 @@ const loader = pathToFileURL(resolve('node_modules/tsx/dist/loader.mjs')).href;
 const migrationAssets = resolve('db/migrations/sqlite');
 const script = resolve('tests/real-process/shutdown-contracts-child.ts');
 const transformerCacheRoot = resolve('node_modules/@xenova/transformers/.cache');
-const OUTPUT_CAP = 256 * 1024;
-
-// Installed-tree receipt: which transformer build this run would actually use.
-const installedTransformersVersion = (() => {
+const HEAD_KEEP = 128 * 1024;
+const TAIL_KEEP = 128 * 1024;
+const EOF_DRAIN_MS = 2000;
+const REAP_BUDGET_MS = 3000;
+const EXPECTED_TRANSFORMERS_VERSION: string = (() => {
     try {
-        return JSON.parse(readFileSync(resolve('node_modules/@xenova/transformers/package.json'), 'utf8')).version ?? 'unknown';
+        const lock = JSON.parse(readFileSync(resolve('package-lock.json'), 'utf8'));
+        return lock?.packages?.['node_modules/@xenova/transformers']?.version ?? 'lock-unreadable';
     } catch {
-        return 'not-installed';
+        return 'lock-unreadable';
+    }
+})();
+const installedTransformersVersion: string = (() => {
+    try {
+        return JSON.parse(readFileSync(resolve('node_modules/@xenova/transformers/package.json'), 'utf8')).version ?? 'installed-unreadable';
+    } catch {
+        return 'installed-unreadable';
     }
 })();
 
@@ -58,34 +80,41 @@ const environment = (directory: string) => ({
     SILHOUETTE_BOOT_MODE: 'acceptance'
 });
 
-type CacheSnapshot = Map<string, string>; // relpath -> `${size}:${mtimeMs}`
-const snapshotCache = (): CacheSnapshot | null => {
-    if (!existsSync(transformerCacheRoot)) return null;
-    const out: CacheSnapshot = new Map();
+interface CacheSnapshot {
+    entries: Map<string, string>; // relpath -> `${size}:${mtimeMs}`
+    incomplete: boolean;          // unreadable/missing entries or caps hit: NOT a full inventory
+}
+const snapshotCache = (): CacheSnapshot => {
+    const entries = new Map<string, string>();
+    let incomplete = false;
+    if (!existsSync(transformerCacheRoot)) return { entries, incomplete };
     const walk = (dir: string, depth: number) => {
-        if (out.size > 500 || depth > 6) return;
-        for (const name of readdirSync(dir)) {
+        if (depth > 6 || entries.size > 500) { incomplete = true; return; }
+        let names: string[];
+        try { names = readdirSync(dir); } catch { incomplete = true; return; }
+        for (const name of names) {
             const p = join(dir, name);
             try {
                 const st = statSync(p);
                 if (st.isDirectory()) walk(p, depth + 1);
-                else out.set(relative(transformerCacheRoot, p), `${st.size}:${st.mtimeMs}`);
-            } catch { /* unreadable entry: ignore, the diff still covers the rest */ }
+                else entries.set(relative(transformerCacheRoot, p), `${st.size}:${st.mtimeMs}`);
+            } catch { incomplete = true; }
         }
     };
     walk(transformerCacheRoot, 0);
-    return out;
+    return { entries, incomplete };
 };
 
 /** Entries created or modified while the child ran. Pre-existing untouched
- * content is the job's earlier-test state, never this fixture's breach. */
-const cacheBreach = (before: CacheSnapshot | null): string[] => {
-    const after = snapshotCache() ?? new Map() as CacheSnapshot;
+ * content is the job's earlier-test state, never this fixture's breach.
+ * An incomplete snapshot on either side is not a diff - it fails closed. */
+const cacheBreach = (before: CacheSnapshot): { changed: string[]; incomplete: boolean } => {
+    const after = snapshotCache();
     const changed: string[] = [];
-    for (const [rel, sig] of after) {
-        if (!before || before.get(rel) !== sig) changed.push(rel);
+    for (const [rel, sig] of after.entries) {
+        if (before.entries.get(rel) !== sig) changed.push(rel);
     }
-    return changed;
+    return { changed, incomplete: before.incomplete || after.incomplete };
 };
 
 const inventory = (root: string, max = 200): string[] => {
@@ -111,18 +140,45 @@ interface ChildResult {
     outcome: ChildOutcome;
     stdout: string;
     stderr: string;
-    truncated: boolean;
-    survivors: boolean;      // group still alive (or state unknown) after cleanup
+    stdoutBytes: number;
+    stderrBytes: number;
+    truncated: boolean;             // output bytes were dropped: evidence NOT complete
+    evidenceComplete: boolean;      // streams reached EOF before the drain deadline
+    hadSurvivors: boolean;          // group alive at the FIRST post-exit/timeout probe: natural-exit breach
+    survivorsAfterCleanup: boolean; // still alive or unknown after kill + bounded reap
+    childReaped: boolean;           // direct child 'exit' observed (awaited on the timeout path)
     killError: string | null;
     groupGoneWaitMs: number;
 }
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-/** ESRCH is the ONLY answer that means gone. EPERM/other = alive or unknown. */
+/** ESRCH is the ONLY answer that means gone. EPERM/other = alive or unknown.
+ * Scope note: this probes ONE process group; a detached descendant that
+ * created its own session is invisible to it (residual gap, not claimed). */
 const groupAlive = (pid: number): boolean | null => {
     try { process.kill(-pid, 0); return true; }
     catch (e: any) { return e?.code === 'ESRCH' ? false : null; }
+};
+
+/** Head+tail capture with exact byte counts. Dropped middle bytes mark the
+ * evidence truncated; the result line is never silently lost without failing. */
+const makeCapture = () => {
+    let head = '', tail = '', total = 0;
+    const push = (chunk: Buffer) => {
+        const s = chunk.toString();
+        total += s.length;
+        head += s;
+        if (head.length > HEAD_KEEP) head = head.slice(0, HEAD_KEEP);
+        tail += s;
+        if (tail.length > TAIL_KEEP) tail = tail.slice(-TAIL_KEEP);
+    };
+    const render = () => {
+        const kept = head.length + (total > HEAD_KEEP + TAIL_KEEP ? tail.length : Math.max(0, total - head.length));
+        if (total <= HEAD_KEEP + TAIL_KEEP) return { text: head + tail.slice(Math.min(tail.length, Math.max(0, total - head.length))), truncated: false, bytes: total };
+        return { text: `${head}\n...[${total - kept} bytes dropped]...\n${tail}`, truncated: true, bytes: total };
+    };
+    return { push, render };
 };
 
 const runChild = (directory: string, mode: string, timeoutMs: number): Promise<ChildResult> => {
@@ -134,17 +190,25 @@ const runChild = (directory: string, mode: string, timeoutMs: number): Promise<C
             stdio: ['ignore', 'pipe', 'pipe']
         });
         const pid = child.pid;            // undefined if spawn failed synchronously
-        let stdout = '', stderr = '', truncated = false;
+        const out = makeCapture(), err = makeCapture();
         let settled = false;
         let killError: string | null = null;
+        let exitEvent: { code: number | null; signal: NodeJS.Signals | null } | null = null;
+        let closeEvent = false;
+        const exitWaiters: Array<() => void> = [];
+        const closeWaiters: Array<() => void> = [];
 
-        const append = (which: 'stdout' | 'stderr', chunk: Buffer) => {
-            if (which === 'stdout') stdout += chunk.toString(); else stderr += chunk.toString();
-            if (stdout.length > OUTPUT_CAP) { stdout = stdout.slice(0, OUTPUT_CAP); truncated = true; }
-            if (stderr.length > OUTPUT_CAP) { stderr = stderr.slice(0, OUTPUT_CAP); truncated = true; }
-        };
-        child.stdout?.on('data', (c: Buffer) => append('stdout', c));
-        child.stderr?.on('data', (c: Buffer) => append('stderr', c));
+        child.stdout?.on('data', (c: Buffer) => out.push(c));
+        child.stderr?.on('data', (c: Buffer) => err.push(c));
+        child.on('exit', (code, signal) => {
+            exitEvent = { code, signal };
+            for (const w of exitWaiters.splice(0)) w();
+        });
+        child.on('close', () => {
+            closeEvent = true;
+            for (const w of closeWaiters.splice(0)) w();
+        });
+        child.on('error', (error) => { void settle({ kind: 'spawn-error', error }); });
 
         const killGroup = () => {
             if (pid === undefined) return;
@@ -152,53 +216,100 @@ const runChild = (directory: string, mode: string, timeoutMs: number): Promise<C
             catch (e: any) { if (e?.code !== 'ESRCH') killError = String(e?.message ?? e); }
         };
 
+        const waitExit = (budgetMs: number) => new Promise<boolean>((done) => {
+            if (exitEvent) return done(true);
+            const t = setTimeout(() => done(false), budgetMs);
+            exitWaiters.push(() => { clearTimeout(t); done(true); });
+        });
+        const waitClose = (budgetMs: number) => new Promise<boolean>((done) => {
+            if (closeEvent) return done(true);
+            const t = setTimeout(() => done(false), budgetMs);
+            closeWaiters.push(() => { clearTimeout(t); done(true); });
+        });
+        const reapGroup = async (): Promise<boolean> => {
+            if (pid === undefined) return true;
+            const deadline = Date.now() + REAP_BUDGET_MS;
+            let alive = groupAlive(pid);
+            while (alive !== false && Date.now() < deadline) {
+                await sleep(50);
+                alive = groupAlive(pid);
+            }
+            return alive === false;
+        };
+
         const settle = async (outcome: ChildOutcome) => {
             if (settled) return;
             settled = true;
             clearTimeout(timer);
-            // Sweep the group: natural child exit does NOT prove descendants are gone.
             const waitStart = Date.now();
-            let survivors = false;
+            let childReaped = exitEvent !== null;
+            let hadSurvivors = false;
+            let survivorsAfterCleanup = false;
+            if (outcome.kind === 'timeout') {
+                killGroup();
+                childReaped = await waitExit(REAP_BUDGET_MS); // await the direct child's reap, not only the group
+            }
+            // Bounded EOF drain: trailing result/error bytes must not be lost
+            // by destroying pipes early; a held-open pipe (escaped descendant)
+            // hits the deadline and marks the evidence incomplete.
+            const drained = exitEvent !== null ? await waitClose(EOF_DRAIN_MS) : false;
             if (pid !== undefined) {
-                let alive = groupAlive(pid);
-                if (alive !== false) {
-                    killGroup();          // survivors (or unknown) after exit/timeout: kill, then reap
-                    const deadline = Date.now() + 3000;
-                    while (Date.now() < deadline) {
-                        alive = groupAlive(pid);
-                        if (alive === false) break;
-                        await sleep(50);
-                    }
-                    survivors = alive !== false; // true or unknown(EPERM) at budget end = not reaped
+                if (groupAlive(pid) !== false) {
+                    hadSurvivors = true;    // decisive: leaked descendant, even if cleanup below succeeds
+                    killGroup();
+                    survivorsAfterCleanup = !(await reapGroup());
                 }
             }
-            // Release pipe handles: descendants holding them must not stall us.
             child.stdout?.destroy();
             child.stderr?.destroy();
+            const o = out.render(), e = err.render();
             resolvePromise({
-                outcome, stdout, stderr, truncated, survivors, killError,
+                outcome,
+                stdout: o.text, stderr: e.text,
+                stdoutBytes: o.bytes, stderrBytes: e.bytes,
+                truncated: o.truncated || e.truncated,
+                evidenceComplete: exitEvent !== null && drained,
+                hadSurvivors,
+                survivorsAfterCleanup,
+                childReaped,
+                killError,
                 groupGoneWaitMs: Date.now() - waitStart
             });
         };
 
         const timer = setTimeout(() => { void settle({ kind: 'timeout' }); }, timeoutMs);
-        child.on('error', (error) => { void settle({ kind: 'spawn-error', error }); });
-        child.on('exit', (code, signal) => { void settle({ kind: 'exit', code, signal }); });
     });
 };
 
 const expectCleanChild = (result: ChildResult, mode: string) => {
-    const summary = `[child ${mode}] outcome=${JSON.stringify(result.outcome)} survivors=${result.survivors} killError=${result.killError} truncated=${result.truncated} groupGoneWaitMs=${result.groupGoneWaitMs}`;
-    const clean = result.outcome.kind === 'exit' && result.outcome.code === 0 && !result.survivors && result.killError === null && result.stdout.includes(`"mode":"${mode}"`);
-    // Full child evidence on ANY abnormal outcome; one summary line on success.
+    const summary = `[child ${mode}] outcome=${JSON.stringify(result.outcome)} hadSurvivors=${result.hadSurvivors} survivorsAfterCleanup=${result.survivorsAfterCleanup} childReaped=${result.childReaped} killError=${result.killError} truncated=${result.truncated} evidenceComplete=${result.evidenceComplete} stdoutBytes=${result.stdoutBytes} stderrBytes=${result.stderrBytes} groupGoneWaitMs=${result.groupGoneWaitMs}`;
+    const clean = result.outcome.kind === 'exit' && result.outcome.code === 0
+        && !result.hadSurvivors && !result.survivorsAfterCleanup && result.killError === null
+        && !result.truncated && result.evidenceComplete
+        && result.stdout.includes(`"mode":"${mode}"`);
+    // Full child evidence on ANY abnormal or incomplete outcome; summary on success.
     console.log(clean ? summary : `${summary}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
     expect(result.outcome.kind, `child ${mode} must exit by itself, not be killed or fail to spawn`).toBe('exit');
     if (result.outcome.kind === 'exit') {
         expect(result.outcome.code, `child ${mode} exit code`).toBe(0);
     }
-    expect(result.survivors, `child ${mode} left a live or unknown process group`).toBe(false);
+    expect(result.hadSurvivors, `child ${mode} exited but left a live process group: NOT natural termination`).toBe(false);
+    expect(result.survivorsAfterCleanup, `child ${mode} process group not reaped within budget`).toBe(false);
+    expect(result.childReaped, `child ${mode} direct child was not reaped`).toBe(true);
     expect(result.killError, `child ${mode} group kill failed`).toBeNull();
+    expect(result.truncated, `child ${mode} output exceeded head+tail capture: evidence incomplete`).toBe(false);
+    expect(result.evidenceComplete, `child ${mode} streams did not reach EOF: evidence incomplete`).toBe(true);
     expect(result.stdout, `child ${mode} must print its result line`).toContain(`"mode":"${mode}"`);
+};
+
+const expectCacheUntouched = (before: CacheSnapshot, mode: string) => {
+    const { changed, incomplete } = cacheBreach(before);
+    console.log(`[transformers receipt ${mode}] lock=${EXPECTED_TRANSFORMERS_VERSION} installed=${installedTransformersVersion} cacheRootPreexisting=${before.entries.size > 0} snapshotIncomplete=${incomplete} changed=${changed.length}`);
+    expect(EXPECTED_TRANSFORMERS_VERSION, 'lock-pinned transformers version unreadable: cache-root guard unverified').not.toBe('lock-unreadable');
+    expect(installedTransformersVersion, 'installed transformers version unreadable: cache-root guard unverified').not.toBe('installed-unreadable');
+    expect(installedTransformersVersion, 'installed transformers differs from the version whose cache layout is verified: guard fails closed').toBe(EXPECTED_TRANSFORMERS_VERSION);
+    expect(incomplete, `transformer cache snapshot incomplete: cannot prove no-change`).toBe(false);
+    expect(changed, `transformer cache changed under cloud-only (new/changed: ${changed.join(', ')})`).toEqual([]);
 };
 
 describe('real shutdown contracts (narrow)', () => {
@@ -208,11 +319,9 @@ describe('real shutdown contracts (narrow)', () => {
         try {
             const result = await runChild(directory, mode, 30000);
             expectCleanChild(result, mode);
-            const breach = cacheBreach(cacheBefore);
-            expect(breach, `transformer cache changed under cloud-only (new/changed: ${breach.join(', ')})`).toEqual([]);
+            expectCacheUntouched(cacheBefore, mode);
         } finally {
             console.log(`[fixture inventory ${mode}]`, inventory(directory));
-            console.log(`[transformers installed] version=${installedTransformersVersion} cacheRootPreexisting=${cacheBefore !== null}`);
             rmSync(directory, { recursive: true, force: true });
         }
     }, 35000);
@@ -222,11 +331,9 @@ describe('real shutdown contracts (narrow)', () => {
         try {
             const result = await runChild(directory, mode, 90000);
             expectCleanChild(result, mode);
-            const breach = cacheBreach(cacheBefore);
-            expect(breach, `transformer cache changed under cloud-only (new/changed: ${breach.join(', ')})`).toEqual([]);
+            expectCacheUntouched(cacheBefore, mode);
         } finally {
             console.log(`[fixture inventory ${mode}]`, inventory(directory));
-            console.log(`[transformers installed] version=${installedTransformersVersion} cacheRootPreexisting=${cacheBefore !== null}`);
             rmSync(directory, { recursive: true, force: true });
         }
     }, 95000);
