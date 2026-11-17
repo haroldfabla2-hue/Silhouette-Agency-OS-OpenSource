@@ -5,18 +5,11 @@ import { GenerateVideoArgs, ListVisualAssetsArgs, GenerateImageArgs, DelegateTas
 
 
 import { ActionType } from '../../types';
-import { actionExecutor } from '../actionExecutor';
-import { mediaManager } from '../mediaManager';
-import { videoFactory } from '../media/videoFactory';
-import { imageFactory } from '../media/imageFactory';
-import { visualService } from '../visualService';
-import { toolFactory } from './toolFactory';
 import { toolRegistry, ToolCategory } from './toolRegistry';
 
 // Core tools whose execution is enforced by fileJail - never shadowable by plugins (PR-G).
 const CORE_JAILED_TOOLS = new Set<string>(['read_file', 'write_file', 'list_files']);
 import { pluginRegistry } from '../plugins/pluginRegistry';
-import { readUrl, searchWeb } from '../../tools/webBrowserTool';
 
 export class ToolHandler {
 
@@ -306,6 +299,7 @@ export class ToolHandler {
 
             // Direct delegation to VideoFactory
             // Note: VideoFactory returns { url, provider } or null
+            const { videoFactory } = await import('../media/videoFactory');
             const result = await videoFactory.createVideo(args.prompt, duration, inputAsset, engine);
 
             if (result) {
@@ -331,6 +325,7 @@ export class ToolHandler {
             for (const key of ['background', 'texts', 'images', 'adjustments']) {
                 if (typeof spec[key] === 'string') spec[key] = JSON.parse(spec[key]);
             }
+            const { visualService } = await import('../visualService');
             const result = await visualService.compose(spec);
             if (!result.ok) return { success: false, unavailable: result.unavailable, error: result.error };
             return { success: true, output: result.data?.output, note: 'Composed locally with PhotoCraft (no cloud, no cost).' };
@@ -345,6 +340,7 @@ export class ToolHandler {
             for (const key of ['params', 'steps', 'newDoc']) {
                 if (typeof opts[key] === 'string') opts[key] = JSON.parse(opts[key]);
             }
+            const { visualService } = await import('../visualService');
             const result = await visualService.execute(opts);
             if (!result.ok) return { success: false, unavailable: result.unavailable, error: result.error };
             return { success: true, output: result.data?.output, log: result.data?.log };
@@ -359,6 +355,7 @@ export class ToolHandler {
         const style = args.style || 'PHOTOREALISTIC';
 
         try {
+            const { imageFactory } = await import('../media/imageFactory');
             const asset = await imageFactory.createAsset({
                 prompt: args.prompt,
                 style: style,
@@ -430,6 +427,7 @@ export class ToolHandler {
         const limit = args.limit || 10;
 
         try {
+            const { mediaManager } = await import('../mediaManager');
             let assets: string[] = [];
 
             if (filter === 'all' || filter === 'image') {
@@ -609,6 +607,7 @@ export class ToolHandler {
     private async handleWebSearch(args: import('./definitions').WebSearchArgs): Promise<any> {
         try {
             console.log(`[ToolHandler] 🔍 Web Search: ${args.query}`);
+            const { searchWeb } = await import('../../tools/webBrowserTool');
             const result = await searchWeb(args.query);
             return {
                 result,
@@ -650,6 +649,7 @@ export class ToolHandler {
     private async handleReadUrl(args: import('./definitions').ReadUrlArgs): Promise<any> {
         try {
             console.log(`[ToolHandler] 📖 Reading URL: ${args.url}`);
+            const { readUrl } = await import('../../tools/webBrowserTool');
             const content = await readUrl(args.url);
 
             // Extract title and text to shove to LanceDB later or return to LLM
@@ -706,6 +706,7 @@ export class ToolHandler {
             }));
 
             // Create the tool via factory
+            const { toolFactory } = await import('./toolFactory');
             const tool = await toolFactory.createTool({
                 name: args.name,
                 purpose: args.purpose,

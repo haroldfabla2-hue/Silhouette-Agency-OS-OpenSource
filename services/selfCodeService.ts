@@ -360,13 +360,23 @@ class SelfCodeService {
         }
         const dependencies = path.join(wt, 'node_modules');
         if (!fs.existsSync(dependencies)) throw new Error('oracle dependencies unavailable');
-        // Root link supplied by ensureWorktree is expected; nested links remain ambiguous.
+        // Root dependency link is supplied by ensureWorktree. npm bin links are
+        // accepted only as confined regular files; bind link mapping and bytes.
         const realDependencies = fs.realpathSync(dependencies);
         const walk = (dir: string, relative: string) => {
             for (const name of fs.readdirSync(dir).sort()) {
                 const file = path.join(dir, name), rel = relative + '/' + name, stat = fs.lstatSync(file);
-                if (relative === 'node_modules' && name === '.bin') continue; // actual runner is direct absolute node+vitest entry below
-                if (stat.isSymbolicLink()) throw new Error(`oracle dependency symlink unsupported: ${rel}`);
+                if (stat.isSymbolicLink()) {
+                    if (path.basename(dir) !== '.bin') throw new Error(`oracle dependency symlink unsupported: ${rel}`);
+                    const link = fs.readlinkSync(file), resolved = fs.realpathSync(file);
+                    const inside = path.relative(realDependencies, resolved);
+                    if (path.isAbsolute(inside) || inside === '..' || inside.startsWith('..' + path.sep) || !fs.lstatSync(resolved).isFile()) {
+                        throw new Error(`oracle bin symlink unsafe: ${rel}`);
+                    }
+                    hash.update('bin-link\0' + rel + '\0' + link + '\0' + inside + '\0');
+                    add(resolved, rel + '->' + inside);
+                    continue;
+                }
                 if (stat.isDirectory()) walk(file, rel); else add(file, rel);
             }
         };

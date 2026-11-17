@@ -709,7 +709,7 @@ class ToolRegistry {
     /**
      * Record tool usage (for analytics)
      */
-    public recordUsage(name: string, success: boolean): void {
+    public async recordUsage(name: string, success: boolean): Promise<void> {
         const tool = this.tools.get(name);
         if (!tool) return;
 
@@ -718,10 +718,11 @@ class ToolRegistry {
         tool.lastUsed = Date.now();
 
         // Persist stats for EVERY tool (builtins included) so evolution analysis
-        // and the unused-tool sweep survive restarts. Fire-and-forget: stats must
-        // never block or break tool execution. (Root fix: builtins held stats in
+        // and the unused-tool sweep survive restarts. Return the pending write so
+        // owners can finish it before closing persistence. Errors remain logged,
+        // never replace the tool result. (Root fix: builtins held stats in
         // memory only, so the evolver's MIN_USAGE_FOR_ANALYSIS was unreachable.)
-        void import('./toolPersistence')
+        await import('./toolPersistence')
             .then(({ toolPersistence }) => toolPersistence.recordUsageStats(tool, success))
             .catch(err => console.warn('[ToolRegistry] ⚠️ Failed to persist usage stats:', err));
     }

@@ -70,7 +70,7 @@ class ToolExecutor {
             }
 
             // Record successful usage
-            toolRegistry.recordUsage(toolName, true);
+            await toolRegistry.recordUsage(toolName, true);
             await toolPersistence.updateUsage(toolName, true);
 
             const duration = Date.now() - startTime;
@@ -80,7 +80,7 @@ class ToolExecutor {
 
         } catch (error: any) {
             // Record failed usage
-            toolRegistry.recordUsage(toolName, false);
+            await toolRegistry.recordUsage(toolName, false);
             await toolPersistence.updateUsage(toolName, false);
 
             console.error(`[ToolExecutor] ❌ ${toolName} failed:`, error);

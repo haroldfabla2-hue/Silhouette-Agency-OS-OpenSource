@@ -19,6 +19,23 @@ test('actual isolated git worktree closure detects helper/dependency changes, ig
   fs.writeFileSync(path.join(repo,'node_modules/fixture/data.txt'),'changed dependency');assert.notEqual(await selfCodeService.evaluationClosure(['services/feature.ts'],'tests/oracle.test.ts'),baseline);
   await assert.rejects(selfCodeService.runTest('tests/oracle.test.ts'),/pinned installed runner missing/);
   fs.writeFileSync(path.join(wt,'tests/oracle.test.ts'),'x'.repeat(524289));assert.equal((await selfCodeService.readFile('tests/oracle.test.ts')).truncated,true);
+  const bin=path.join(repo,'node_modules/fixture/node_modules/.bin');fs.mkdirSync(bin,{recursive:true});
+  fs.symlinkSync('../../data.txt',path.join(bin,'fixture'));
+  const linked=await selfCodeService.evaluationClosure(['services/feature.ts'],'tests/oracle.test.ts');assert.notEqual(linked,baseline);
+  fs.writeFileSync(path.join(repo,'node_modules/fixture/data.txt'),'changed linked bytes');assert.notEqual(await selfCodeService.evaluationClosure(['services/feature.ts'],'tests/oracle.test.ts'),linked);
+  fs.writeFileSync(path.join(repo,'node_modules/fixture/other.txt'),'changed linked bytes');
+  const beforeRetarget=await selfCodeService.evaluationClosure(['services/feature.ts'],'tests/oracle.test.ts');
+  fs.unlinkSync(path.join(bin,'fixture'));fs.symlinkSync('../../other.txt',path.join(bin,'fixture'));
+  assert.notEqual(await selfCodeService.evaluationClosure(['services/feature.ts'],'tests/oracle.test.ts'),beforeRetarget,'same bytes at a different target must change identity');
+  fs.unlinkSync(path.join(bin,'fixture'));fs.symlinkSync('/etc/hosts',path.join(bin,'fixture'));
+  await assert.rejects(selfCodeService.evaluationClosure(['services/feature.ts'],'tests/oracle.test.ts'),/bin symlink unsafe/);
+  fs.unlinkSync(path.join(bin,'fixture'));fs.symlinkSync('..',path.join(bin,'fixture'));
+  await assert.rejects(selfCodeService.evaluationClosure(['services/feature.ts'],'tests/oracle.test.ts'),/bin symlink unsafe/);
+  fs.unlinkSync(path.join(bin,'fixture'));fs.symlinkSync('./missing',path.join(bin,'fixture'));
+  await assert.rejects(selfCodeService.evaluationClosure(['services/feature.ts'],'tests/oracle.test.ts'),/ENOENT/);
+  fs.unlinkSync(path.join(bin,'fixture'));fs.symlinkSync('./fixture',path.join(bin,'fixture'));
+  await assert.rejects(selfCodeService.evaluationClosure(['services/feature.ts'],'tests/oracle.test.ts'),/ELOOP/);
+  fs.unlinkSync(path.join(bin,'fixture'));
   fs.symlinkSync(path.join(repo,'node_modules/fixture/data.txt'),path.join(repo,'node_modules/fixture/linked'));
   await assert.rejects(selfCodeService.evaluationClosure(['services/feature.ts'],'tests/oracle.test.ts'),/symlink unsupported/);
  }finally{if(oldRepo===undefined)delete process.env.SELF_REPO_PATH;else process.env.SELF_REPO_PATH=oldRepo;if(oldWt===undefined)delete process.env.SELF_WORKTREE_PATH;else process.env.SELF_WORKTREE_PATH=oldWt;fs.rmSync(root,{recursive:true,force:true});}
