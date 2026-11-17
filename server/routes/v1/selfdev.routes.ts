@@ -43,8 +43,12 @@ router.get('/cycles/:id', (req: Request, res: Response) => handle(res, () =>
 router.post('/cycles/:id/attempt', (req: Request, res: Response) => handle(res, () =>
     selfDevCycleService.attempt(req.params.id, req.body?.ops)));
 
-router.post('/cycles/:id/execute', (req: Request, res: Response) => handle(res, () =>
-    selfDevCycleService.execute(req.params.id)));
+router.post('/cycles/:id/execute', (req: Request, res: Response) => handle(res, () => {
+    // IdentityService's existing code-modification role is CREATOR, not ADMIN.
+    // req.user is set by authMiddleware; no body field grants this authority.
+    const user = (req as Request & { user?: { id?: string; role?: string } }).user;
+    return selfDevCycleService.execute(req.params.id, { authenticatedOperator: !!user?.id && user.role === 'CREATOR' });
+}));
 
 router.post('/cycles/:id/pr', (req: Request, res: Response) => handle(res, () =>
     selfDevCycleService.requestPR(req.params.id, req.body?.approvedBy)));

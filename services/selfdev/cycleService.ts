@@ -190,7 +190,7 @@ export class SelfDevCycleService {
     // ---------- API ----------
 
     public list() {
-        return this.store.cycles.map(c => ({ id: c.id, issue: c.issue, state: c.state, updatedAt: c.updatedAt, pr: c.pr }));
+        return this.store.cycles.map(c => ({ id: c.id, issue: c.issue, state: c.state, updatedAt: c.updatedAt, pr: c.pr, lastError: c.lastError }));
     }
 
     /** [AUTONOMOUS-SCHEDULER] Count cycles created since an ISO instant,
@@ -402,7 +402,7 @@ export class SelfDevCycleService {
         throw new Error('planner JSON object never closed');
     }
 
-    public async execute(id: string): Promise<SelfDevCycle> {
+    public async execute(id: string, authority?: { authenticatedOperator: boolean }): Promise<SelfDevCycle> {
         const c = this.get(id);
         if (c.state !== 'ATTEMPTED' || !c.patch) throw Object.assign(new Error(`execute requires ATTEMPTED (current: ${c.state})`), { statusCode: 409 });
 
@@ -474,10 +474,9 @@ export class SelfDevCycleService {
         // an independently approved learning oracle or authorization to publish/apply.
         c.acceptance.target = canonicalEvaluationPath(c.acceptance.target);
         const protectedChange = evaluationScopeFailure(c.patch.ops.map(op => op.path), c.acceptance.target);
-        if (protectedChange) {
-            c.lastError = protectedChange; this.save(); return c;
-        }
-        try {
+        let reviewReason = protectedChange;
+        delete c.evaluation;
+        if (!reviewReason) try {
             if (stale) throw new Error('current baseline unavailable');
             const oracle = await selfCodeService.readFile(c.acceptance.target);
             if (oracle.truncated || oracle.sha !== oracleDigest(oracle.content)) throw new Error('oracle incomplete');
@@ -490,9 +489,18 @@ export class SelfDevCycleService {
                 target: c.acceptance.target, oracleSha256: c.evaluation.oracleSha256, exit: baseline.code });
             this.save();
         } catch {
-            c.lastError = 'BASELINE_EVALUATION_UNAVAILABLE: no candidate written; existing independent test oracle and runnable current baseline required';
+            reviewReason = 'BASELINE_EVALUATION_UNAVAILABLE: existing independent test oracle and runnable current baseline required';
+        }
+
+        if (reviewReason && !(c.patch.source === 'operator' && authority?.authenticatedOperator === true)) {
+            c.lastError = reviewReason + '; no candidate written';
             this.save(); return c;
         }
+        // The owning HTTP route supplies authority after authentication, never
+        // from request body, planner metadata or the stored patch source alone.
+        // An explicit operator patch may still be prepared for human review.
+        // This is not trusted evaluation: no autonomous patch, verification,
+        // PR handoff or acceptance follows without the independent baseline.
 
         // Apply ops inside the isolated clone (F2, journaled there too).
         for (const o of c.patch.ops) {
@@ -509,6 +517,12 @@ export class SelfDevCycleService {
         }
         c.diff = (await selfCodeService.diff()).diff;
         this.transition(c, 'EXECUTED', `applied ${c.patch.ops.length} ops in selfwork clone`);
+        if (reviewReason) {
+            c.lastError = `verification unavailable; OPERATOR_REVIEW_REQUIRED: ${reviewReason}; isolated patch prepared only, not VERIFIED or approved for PR`;
+            c.updatedAt = new Date().toISOString();
+            this.journal({ ts: c.updatedAt, cycleId: c.id, event: 'OPERATOR_REVIEW_REQUIRED', detail: c.lastError });
+            this.save(); return c;
+        }
 
         if (stale) {
             c.lastError = 'verification unavailable (worktree sync): gates skipped, cycle cannot be VERIFIED against stale code';

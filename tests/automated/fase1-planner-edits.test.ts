@@ -95,7 +95,7 @@ describe('Fase-1 planner anchored edits (real git worktree, no mocks)', () => {
         const s = fresh('happy');
         const c = s.create({ issue: 'surgical fix', scope: ['src'], acceptance: { kind: 'vitest', target: 'src/x.test.ts' } });
         await s.attempt(c.id, [{ op: 'edit', path: 'src/target.ts', edits: [{ find: "export const line_50 = 'alpha-50';", replace: "export const line_50 = 'edited';" }], rationale: 'fix line 50 only' }]);
-        const ex = await s.execute(c.id);
+        const ex = await s.execute(c.id, { authenticatedOperator: true });
         const onDisk = fs.readFileSync(path.join(worktree, 'src', 'target.ts'), 'utf8');
         expect(onDisk).toContain("line_50 = 'edited'");
         expect(onDisk).toContain("line_99 = 'alpha-99'"); // the other 99 lines untouched
@@ -107,7 +107,7 @@ describe('Fase-1 planner anchored edits (real git worktree, no mocks)', () => {
         const s = fresh('missing');
         const c = s.create({ issue: 'edit a ghost', scope: ['src'], acceptance: { kind: 'vitest', target: 'src/x.test.ts' } });
         await s.attempt(c.id, [{ op: 'edit', path: 'src/ghost.ts', edits: [{ find: 'x', replace: 'y' }], rationale: 'r' }]);
-        const ex = await s.execute(c.id);
+        const ex = await s.execute(c.id, { authenticatedOperator: true });
         expect(ex.state).toBe('FAILED');
         expect(ex.history.at(-1)?.note).toMatch(/edit target missing/);
     });
@@ -116,7 +116,7 @@ describe('Fase-1 planner anchored edits (real git worktree, no mocks)', () => {
         const s = fresh('hallucinated');
         const c = s.create({ issue: 'edit', scope: ['src'], acceptance: { kind: 'vitest', target: 'src/x.test.ts' } });
         await s.attempt(c.id, [{ op: 'edit', path: 'src/target.ts', edits: [{ find: 'THIS CODE NEVER EXISTED', replace: 'x' }], rationale: 'r' }]);
-        const ex = await s.execute(c.id);
+        const ex = await s.execute(c.id, { authenticatedOperator: true });
         expect(ex.state).toBe('FAILED');
         expect(ex.history.at(-1)?.note).toMatch(/anchor not found/);
     });
@@ -127,7 +127,7 @@ describe('Fase-1 planner anchored edits (real git worktree, no mocks)', () => {
         // an edit that replaces the entire 100-line file body with 3 lines
         const original = fs.readFileSync(path.join(repo, 'src', 'victim.ts'), 'utf8');
         await s.attempt(c.id, [{ op: 'edit', path: 'src/victim.ts', edits: [{ find: original, replace: 'export const gutted = 1;\n' }], rationale: 'r' }]);
-        const ex = await s.execute(c.id);
+        const ex = await s.execute(c.id, { authenticatedOperator: true });
         expect(ex.state).toBe('FAILED');
         expect(ex.history.at(-1)?.note).toMatch(/deletes >\d+% of src\/victim\.ts/);
     });
@@ -136,7 +136,7 @@ describe('Fase-1 planner anchored edits (real git worktree, no mocks)', () => {
         const s = fresh('write-compat');
         const c = s.create({ issue: 'new file', scope: ['src'], acceptance: { kind: 'vitest', target: 'src/x.test.ts' } });
         await s.attempt(c.id, [{ op: 'write', path: 'src/newfile.ts', content: 'export const fresh = true;\n', rationale: 'add new module' }]);
-        const ex = await s.execute(c.id);
+        const ex = await s.execute(c.id, { authenticatedOperator: true });
         expect(ex.state).toBe('EXECUTED');
         expect(fs.readFileSync(path.join(worktree, 'src', 'newfile.ts'), 'utf8')).toContain('fresh = true');
     });
