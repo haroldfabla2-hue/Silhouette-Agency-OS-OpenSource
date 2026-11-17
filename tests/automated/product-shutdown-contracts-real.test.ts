@@ -35,10 +35,8 @@
  * never attributed to this fixture; only NEW or CHANGED entries fail.
  * The snapshot walks fail closed: unreadable entries, depth/count caps
  * hit, an unreadable installed-version receipt, or an installed version
- * differing from the lock-pinned one all make the cache guard FAIL
- * instead of silently passing. The expected cache root is verified for
- * @xenova/transformers 2.17.2 only; a different installed version means
- * the guard's path is unverified and must fail closed. */
+ * differing from the VERIFIED layout version (2.17.2, pinned below) all
+ * make the cache guard FAIL instead of silently passing. */
 import { describe, it, expect } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, readdirSync, statSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -52,16 +50,10 @@ const script = resolve('tests/real-process/shutdown-contracts-child.ts');
 const transformerCacheRoot = resolve('node_modules/@xenova/transformers/.cache');
 const HEAD_KEEP = 128 * 1024;
 const TAIL_KEEP = 128 * 1024;
-const EOF_DRAIN_MS = 2000;
-const REAP_BUDGET_MS = 3000;
-const EXPECTED_TRANSFORMERS_VERSION: string = (() => {
-    try {
-        const lock = JSON.parse(readFileSync(resolve('package-lock.json'), 'utf8'));
-        return lock?.packages?.['node_modules/@xenova/transformers']?.version ?? 'lock-unreadable';
-    } catch {
-        return 'lock-unreadable';
-    }
-})();
+const CLEANUP_BUDGET_MS = 4000; // shared across EOF drain + reap: child timeout + cleanup must stay under the vitest allowance
+// The transformer cache layout below is verified ONLY for this version
+// (published 2.17.2 env.js: DEFAULT_CACHE_DIR = <package-root>/.cache).
+const VERIFIED_CACHE_LAYOUT_VERSION = '2.17.2';
 const installedTransformersVersion: string = (() => {
     try {
         return JSON.parse(readFileSync(resolve('node_modules/@xenova/transformers/package.json'), 'utf8')).version ?? 'installed-unreadable';
@@ -161,22 +153,23 @@ const groupAlive = (pid: number): boolean | null => {
     catch (e: any) { return e?.code === 'ESRCH' ? false : null; }
 };
 
-/** Head+tail capture with exact byte counts. Dropped middle bytes mark the
- * evidence truncated; the result line is never silently lost without failing. */
+/** Head+tail capture in BYTES with exact counts and bounded memory.
+ * Non-truncated output is reassembled byte-exact; any dropped middle marks
+ * the evidence truncated and fails the test (no full-evidence claim). */
 const makeCapture = () => {
-    let head = '', tail = '', total = 0;
+    let head = Buffer.alloc(0), tail = Buffer.alloc(0), total = 0;
     const push = (chunk: Buffer) => {
-        const s = chunk.toString();
-        total += s.length;
-        head += s;
-        if (head.length > HEAD_KEEP) head = head.slice(0, HEAD_KEEP);
-        tail += s;
-        if (tail.length > TAIL_KEEP) tail = tail.slice(-TAIL_KEEP);
+        total += chunk.length;
+        if (head.length < HEAD_KEEP) head = Buffer.concat([head, chunk.subarray(0, HEAD_KEEP - head.length)]);
+        tail = tail.length + chunk.length <= TAIL_KEEP ? Buffer.concat([tail, chunk]) : Buffer.concat([tail, chunk]).subarray(tail.length + chunk.length - TAIL_KEEP);
     };
     const render = () => {
-        const kept = head.length + (total > HEAD_KEEP + TAIL_KEEP ? tail.length : Math.max(0, total - head.length));
-        if (total <= HEAD_KEEP + TAIL_KEEP) return { text: head + tail.slice(Math.min(tail.length, Math.max(0, total - head.length))), truncated: false, bytes: total };
-        return { text: `${head}\n...[${total - kept} bytes dropped]...\n${tail}`, truncated: true, bytes: total };
+        if (total <= HEAD_KEEP + TAIL_KEEP) {
+            const overlap = head.length + tail.length - total; // >= 0; that many tail bytes duplicate head
+            return { text: Buffer.concat([head, tail.subarray(Math.max(0, overlap))]).toString('utf8'), truncated: false, bytes: total };
+        }
+        const dropped = total - HEAD_KEEP - TAIL_KEEP;
+        return { text: `${head.toString('utf8')}\n...[${dropped} bytes dropped]...\n${tail.toString('utf8')}`, truncated: true, bytes: total };
     };
     return { push, render };
 };
@@ -203,6 +196,9 @@ const runChild = (directory: string, mode: string, timeoutMs: number): Promise<C
         child.on('exit', (code, signal) => {
             exitEvent = { code, signal };
             for (const w of exitWaiters.splice(0)) w();
+            // Normal termination settles HERE; the timeout and spawn-error
+            // paths are blocked by the settled guard inside settle().
+            void settle({ kind: 'exit', code, signal });
         });
         child.on('close', () => {
             closeEvent = true;
@@ -226,9 +222,9 @@ const runChild = (directory: string, mode: string, timeoutMs: number): Promise<C
             const t = setTimeout(() => done(false), budgetMs);
             closeWaiters.push(() => { clearTimeout(t); done(true); });
         });
-        const reapGroup = async (): Promise<boolean> => {
+        const reapGroup = async (budgetMs: number): Promise<boolean> => {
             if (pid === undefined) return true;
-            const deadline = Date.now() + REAP_BUDGET_MS;
+            const deadline = Date.now() + budgetMs;
             let alive = groupAlive(pid);
             while (alive !== false && Date.now() < deadline) {
                 await sleep(50);
@@ -242,23 +238,27 @@ const runChild = (directory: string, mode: string, timeoutMs: number): Promise<C
             settled = true;
             clearTimeout(timer);
             const waitStart = Date.now();
+            // ONE shared cleanup deadline: child timeout + this budget must stay
+            // below the outer vitest allowance, so cleanup can never be outrun.
+            const deadline = waitStart + CLEANUP_BUDGET_MS;
+            const remaining = () => Math.max(0, deadline - Date.now());
             let childReaped = exitEvent !== null;
-            let hadSurvivors = false;
+            // FIRST probe immediately at settlement - BEFORE any drain: a
+            // transient leaked descendant that exits during the EOF window is
+            // still classified as a natural-exit breach.
+            const hadSurvivors = pid !== undefined && groupAlive(pid) !== false;
             let survivorsAfterCleanup = false;
             if (outcome.kind === 'timeout') {
                 killGroup();
-                childReaped = await waitExit(REAP_BUDGET_MS); // await the direct child's reap, not only the group
+                childReaped = await waitExit(remaining()); // await the direct child's reap, not only the group
             }
             // Bounded EOF drain: trailing result/error bytes must not be lost
             // by destroying pipes early; a held-open pipe (escaped descendant)
             // hits the deadline and marks the evidence incomplete.
-            const drained = exitEvent !== null ? await waitClose(EOF_DRAIN_MS) : false;
-            if (pid !== undefined) {
-                if (groupAlive(pid) !== false) {
-                    hadSurvivors = true;    // decisive: leaked descendant, even if cleanup below succeeds
-                    killGroup();
-                    survivorsAfterCleanup = !(await reapGroup());
-                }
+            const drained = exitEvent !== null ? await waitClose(remaining()) : false;
+            if (hadSurvivors && pid !== undefined) {
+                killGroup();          // survivors (or unknown) after exit/timeout: kill, then reap
+                survivorsAfterCleanup = !(await reapGroup(remaining()));
             }
             child.stdout?.destroy();
             child.stderr?.destroy();
@@ -302,39 +302,42 @@ const expectCleanChild = (result: ChildResult, mode: string) => {
     expect(result.stdout, `child ${mode} must print its result line`).toContain(`"mode":"${mode}"`);
 };
 
-const expectCacheUntouched = (before: CacheSnapshot, mode: string) => {
-    const { changed, incomplete } = cacheBreach(before);
-    console.log(`[transformers receipt ${mode}] lock=${EXPECTED_TRANSFORMERS_VERSION} installed=${installedTransformersVersion} cacheRootPreexisting=${before.entries.size > 0} snapshotIncomplete=${incomplete} changed=${changed.length}`);
-    expect(EXPECTED_TRANSFORMERS_VERSION, 'lock-pinned transformers version unreadable: cache-root guard unverified').not.toBe('lock-unreadable');
+/** Cache guard assertions. Evidence (inventory, receipt, diff) is logged
+ * from the test's finally even when the child already failed; assertions
+ * run only when no earlier failure would be masked. */
+const assertCacheGuard = (changed: string[], incomplete: boolean) => {
     expect(installedTransformersVersion, 'installed transformers version unreadable: cache-root guard unverified').not.toBe('installed-unreadable');
-    expect(installedTransformersVersion, 'installed transformers differs from the version whose cache layout is verified: guard fails closed').toBe(EXPECTED_TRANSFORMERS_VERSION);
+    expect(installedTransformersVersion, `cache-root layout verified only for @xenova/transformers ${VERIFIED_CACHE_LAYOUT_VERSION}: guard fails closed`).toBe(VERIFIED_CACHE_LAYOUT_VERSION);
     expect(incomplete, `transformer cache snapshot incomplete: cannot prove no-change`).toBe(false);
     expect(changed, `transformer cache changed under cloud-only (new/changed: ${changed.join(', ')})`).toEqual([]);
 };
 
+const runMode = async (mode: string, childTimeoutMs: number) => {
+    const directory = mkdtempSync(join(tmpdir(), 'shutdown-contracts-real-'));
+    const cacheBefore = snapshotCache();
+    let failure: unknown = null;
+    try {
+        const result = await runChild(directory, mode, childTimeoutMs);
+        expectCleanChild(result, mode);
+    } catch (e) {
+        failure = e;
+        throw e;
+    } finally {
+        // Safety evidence runs even - ESPECIALLY - after an abnormal outcome.
+        const { changed, incomplete } = cacheBreach(cacheBefore);
+        console.log(`[fixture inventory ${mode}]`, inventory(directory));
+        console.log(`[transformers receipt ${mode}] verifiedLayout=${VERIFIED_CACHE_LAYOUT_VERSION} installed=${installedTransformersVersion} cacheRootPreexisting=${cacheBefore.entries.size > 0} snapshotIncomplete=${incomplete} changed=${changed.length}${changed.length ? ' :: ' + changed.join(', ') : ''}`);
+        rmSync(directory, { recursive: true, force: true });
+        if (failure === null) assertCacheGuard(changed, incomplete);
+    }
+};
+
 describe('real shutdown contracts (narrow)', () => {
+    // child timeout + CLEANUP_BUDGET_MS stays below each vitest allowance.
     for (const mode of ['memory-never-started-fresh', 'memory-never-started-prior-wal', 'memory-blocked-store']) it(mode, async () => {
-        const directory = mkdtempSync(join(tmpdir(), 'shutdown-contracts-real-'));
-        const cacheBefore = snapshotCache();
-        try {
-            const result = await runChild(directory, mode, 30000);
-            expectCleanChild(result, mode);
-            expectCacheUntouched(cacheBefore, mode);
-        } finally {
-            console.log(`[fixture inventory ${mode}]`, inventory(directory));
-            rmSync(directory, { recursive: true, force: true });
-        }
+        await runMode(mode, 30000);
     }, 35000);
     for (const mode of ['redis-fallback-quiet', 'drain-receipts-ok']) it(mode, async () => {
-        const directory = mkdtempSync(join(tmpdir(), 'shutdown-contracts-real-'));
-        const cacheBefore = snapshotCache();
-        try {
-            const result = await runChild(directory, mode, 90000);
-            expectCleanChild(result, mode);
-            expectCacheUntouched(cacheBefore, mode);
-        } finally {
-            console.log(`[fixture inventory ${mode}]`, inventory(directory));
-            rmSync(directory, { recursive: true, force: true });
-        }
+        await runMode(mode, 90000);
     }, 95000);
 });

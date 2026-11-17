@@ -17,7 +17,7 @@ function seed(dir: string) { fs.cpSync(assets, dir, { recursive: true }); }
 function child(script: string, dir: string, sqlDir: string) {
     return spawnSync(process.execPath, [path.join(root, 'node_modules/tsx/dist/cli.mjs'), '-e', script], {
         cwd: dir, timeout: 20000, encoding: 'utf8',
-        env: { PATH: process.env.PATH, HOME: dir, SILHOUETTE_PROVIDERS: 'off',
+        env: { PATH: process.env.PATH, HOME: dir, SILHOUETTE_PROVIDERS: 'off', SILHOUETTE_INFERENCE_MODE: 'cloud-only',
             SILHOUETTE_DB_PATH: path.join(dir, 'store/test.sqlite'), SILHOUETTE_MIGRATIONS_DIR: sqlDir }
     });
 }

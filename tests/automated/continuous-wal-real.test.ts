@@ -10,7 +10,7 @@ const child=resolve('tests/real-process/continuous-wal-child.ts');
 const loader=pathToFileURL(resolve('node_modules/tsx/dist/loader.mjs')).href;
 function run(mode:string,cwd:string){
  const stdout=execFileSync(process.execPath,['--import',loader,child,mode],{cwd,encoding:'utf8',timeout:15000,
-  env:{PATH:process.env.PATH,HOME:cwd,NODE_ENV:'test',SILHOUETTE_PROVIDERS:'off'}});
+  env:{PATH:process.env.PATH,HOME:cwd,NODE_ENV:'test',SILHOUETTE_PROVIDERS:'off',SILHOUETTE_INFERENCE_MODE:'cloud-only'}});
  return stdout.split('\n').filter(line=>line.startsWith('{')).map(line=>JSON.parse(line)).at(-1);
 }
 function inDirectory(work:(directory:string)=>void){

@@ -7,7 +7,7 @@ it('proposal memory -> mapped pending cycle survives restart without planner, pa
  const script=resolve('tests/real-process/learning-proposal-child.ts'),loader=pathToFileURL(resolve('node_modules/tsx/dist/loader.mjs')).href;
  try{
   for(const phase of ['write','read']){
-   const output=execFileSync(process.execPath,['--import',loader,script,phase],{cwd:root,timeout:25000,encoding:'utf8',env:{PATH:process.env.PATH,HOME:root,NODE_ENV:'test',VITEST:'true',SILHOUETTE_PROVIDERS:'off'}});
+   const output=execFileSync(process.execPath,['--import',loader,script,phase],{cwd:root,timeout:25000,encoding:'utf8',env:{PATH:process.env.PATH,HOME:root,NODE_ENV:'test',VITEST:'true',SILHOUETTE_PROVIDERS:'off',SILHOUETTE_INFERENCE_MODE:'cloud-only'}});
    const result=output.split('\n').filter(s=>s.startsWith('{')).map(s=>JSON.parse(s)).at(-1);expect(result).toMatchObject({phase,applied:false,planner_calls:0,patches_applied:0,learning_successes:0,fixture_only:true});
   }
   const cycles=JSON.parse(readFileSync(join(root,'data/selfdev/cycles.json'),'utf8')).cycles;expect(cycles).toHaveLength(1);expect(cycles[0].patch).toBeUndefined();expect(cycles[0].learningProposal.stage).toBe('HUMAN_APPROVAL_PENDING');

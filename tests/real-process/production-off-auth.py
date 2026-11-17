@@ -16,7 +16,7 @@ def request(token=None):
  except urllib.error.HTTPError as e:return e.code
 for cycle in [1,2]:
  with (root/('production-auth-cycle-'+str(cycle)+'.log')).open('w') as log:
-  p=subprocess.Popen(['node','--import','tsx','server/index.ts'],cwd=root,env={'PATH':os.environ['PATH'],'HOME':'/tmp/fixture-home','NODE_ENV':'production','SILHOUETTE_BOOT_MODE':'normal','SILHOUETTE_PROVIDERS':'off','SILHOUETTE_DB_PATH':str(root/'db/auth-fixture.sqlite'),'SILHOUETTE_LANCEDB_PATH':str(root/'db/auth-fixture.lancedb')},stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
+  p=subprocess.Popen(['node','--import','tsx','server/index.ts'],cwd=root,env={'PATH':os.environ['PATH'],'HOME':'/tmp/fixture-home','NODE_ENV':'production','SILHOUETTE_BOOT_MODE':'normal','SILHOUETTE_PROVIDERS':'off','SILHOUETTE_DB_PATH':str(root/'db/auth-fixture.sqlite'),'SILHOUETTE_LANCEDB_PATH':str(root/'db/auth-fixture.lancedb'),'SILHOUETTE_INFERENCE_MODE':'cloud-only'},stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
   try:
    end=time.monotonic()+40
    while p.poll() is None and time.monotonic()<end:
