@@ -327,19 +327,16 @@ const assertCacheGuard = (changed: string[], incomplete: boolean) => {
 const runMode = async (mode: string, childTimeoutMs: number) => {
     const directory = mkdtempSync(join(tmpdir(), 'shutdown-contracts-real-'));
     const cacheBefore = snapshotCache();
-    let failure: unknown = null;
     let result: ChildResult | null = null;
+    let cleanupError: unknown = null;
+    let changed: string[] = [], incomplete = true;
     try {
         result = await runChild(directory, mode, childTimeoutMs);
         expectCleanChild(result, mode);
-    } catch (e) {
-        failure = e;
-        throw e;
     } finally {
-        // Safety evidence runs even - ESPECIALLY - after an abnormal outcome,
-        // and an evidence/cleanup failure must never replace the primary one.
-        let cleanupError: unknown = null;
-        let changed: string[] = [], incomplete = true;
+        // Safety evidence runs even - ESPECIALLY - after an abnormal outcome.
+        // An evidence/cleanup failure is captured, never thrown here: the
+        // primary child failure propagates untouched out of this finally.
         try {
             ({ changed, incomplete } = cacheBreach(cacheBefore));
             const inv = inventory(directory);
@@ -356,11 +353,11 @@ const runMode = async (mode: string, childTimeoutMs: number) => {
             cleanupError = e;
             console.error(`[cleanup evidence error ${mode}]`, e);
         }
-        if (failure === null) {
-            if (cleanupError !== null) throw cleanupError;
-            assertCacheGuard(changed, incomplete);
-        }
     }
+    // Reached only when the child was accepted: a primary failure propagates
+    // from the try above and never arrives here.
+    if (cleanupError !== null) throw cleanupError;
+    assertCacheGuard(changed, incomplete);
 };
 
 describe('real shutdown contracts (narrow)', () => {
