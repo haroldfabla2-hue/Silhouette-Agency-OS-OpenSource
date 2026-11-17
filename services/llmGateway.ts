@@ -241,6 +241,7 @@ export class LLMGatewayService {
         try {
             while (true) { const value = await runProviderInvocation(invocationId, () => iterator.next());
                 if (value.done) { completed = true; report('completed'); return; }
+                if (typeof value.value !== 'string') throw new Error('Invalid legacy stream chunk');
                 emitted = true; yield value.value;
             }
         } catch (error) { completed = true; report(emitted ? 'partial' : 'failed'); throw error; }
