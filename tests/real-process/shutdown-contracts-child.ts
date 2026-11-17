@@ -15,8 +15,38 @@ import '../../server/config/runtimeCredentials';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import net from 'node:net';
+import path from 'node:path';
 const mode = process.argv[2];
 fs.mkdirSync('data', { recursive: true });
+
+// memory-restart-* fixture corpus: plain third-person public fixture text (no
+// first-person statements, so the continuum perspective transform must be an
+// identity on it; the oracle asserts exact content equality). source is
+// USER_INFERRED (no owner message exists to quote, so USER_STATED would be
+// false provenance), status hypothesis, so the continuum provenance tag is
+// deterministically source:ASSISTANT_SAID.
+type FixtureFact = {
+    type: string;
+    content: string;
+    subject?: string;
+    attribute?: string;
+    value?: string;
+    source: 'USER_INFERRED';
+    status: 'hypothesis';
+    confidence: number;
+};
+const FIXTURE_OWNER_A = 'fixture-owner-a';
+const FIXTURE_OWNER_B = 'fixture-owner-b';
+const FIXTURE_FACTS_A: FixtureFact[] = [
+    { type: 'PROJECT', content: 'Project Kestrel deploy window is Friday 18:00.', subject: 'Kestrel', attribute: 'deploy_window', value: 'Friday 18:00', source: 'USER_INFERRED', status: 'hypothesis', confidence: 0.7 },
+    { type: 'PREFERENCE', content: 'Kestrel release notes go to the ops channel first.', source: 'USER_INFERRED', status: 'hypothesis', confidence: 0.6 }
+];
+const FIXTURE_FACT_B: FixtureFact = { type: 'PROJECT', content: 'Project Albedo uses a weekly review cadence.', subject: 'Albedo', attribute: 'cadence', value: 'weekly', source: 'USER_INFERRED', status: 'hypothesis', confidence: 0.8 };
+const FIXTURE_FACTS: FixtureFact[] = [...FIXTURE_FACTS_A, FIXTURE_FACT_B];
+const FIXTURE_WRITES: Array<{ fact: FixtureFact; owner: string }> = [
+    ...FIXTURE_FACTS_A.map(fact => ({ fact, owner: FIXTURE_OWNER_A })),
+    { fact: FIXTURE_FACT_B, owner: FIXTURE_OWNER_B }
+];
 
 /** Real TCP endpoint that accepts and immediately destroys: genuine socket
  * errors for the client under test, not a protocol impersonation. */
@@ -231,6 +261,173 @@ if (mode === 'redis-fallback-quiet') {
         if (cleanupErrors.length > 0) originalError('[sqlite-close-causality cleanup errors]', cleanupErrors);
     }
     if (cleanupErrors.length > 0) throw new AggregateError(cleanupErrors, 'sqlite-close-causality cleanup failed');
+    // natural exit: module completion drains the loop.
+} else if (mode === 'memory-restart-write' || mode === 'memory-restart-read') {
+    // Cross-process canonical memory restart slice. The WRITER persists facts
+    // through the REAL factRepository.addFact (durable SQLite + honest graph/
+    // continuum projection receipts) and exits through the REAL drain; the
+    // READER is a fresh process over the same two owned stores and is the
+    // oracle: exact owner-scoped SQLite rows AND exact LONG nodes in the
+    // canonical LanceDB store. No mocks, providers OFF, every lazy connection
+    // lands on the controlled endpoint below. Both phases share ONLY the two
+    // explicit store paths from the supervisor env; cwd-relative state stays
+    // per-child.
+    const endpoint = await resettingEndpoint();
+    process.env.REDIS_HOST = '127.0.0.1';
+    process.env.REDIS_PORT = String(endpoint.port);
+    process.env.NEO4J_URI = `bolt://127.0.0.1:${endpoint.port}`;
+    const cleanupErrors: unknown[] = [];
+    try {
+        // DETERMINISTIC OWNED STARTUP PRECONDITIONS (before any memory import):
+        // 1. A valid empty volatile snapshot at the owned cwd path: continuum's
+        //    unawaited loadSnapshot settles on DISK with zero merges and never
+        //    takes the Redis fallback (continuumMemory.ts:191-229). Not a sleep,
+        //    not import-as-settlement: the file content forces the branch.
+        // 2. Fresh owned cwd => transition journal absent => pending() returns
+        //    [] (memoryTransitions.ts:196-204) => reconcileTransitions replays
+        //    zero entries and schedules no late writes.
+        // 3. active_goals=[] seeded and VERIFIED through the REAL SQLite config
+        //    API so introspectionEngine.loadGoalsFromMemory takes its SQLite
+        //    early return (introspectionEngine.ts:416-426) and never reaches
+        //    the legacy continuum.retrieve -> geminiService embedding resolver.
+        fs.writeFileSync(path.join('data', 'memory_snapshot.json'), JSON.stringify({ working: [] }));
+        assert.equal(fs.existsSync(path.join('data', 'memory-transitions')), false, 'transition journal must be absent in a fresh owned cwd');
+        const { sqliteService } = await import('../../services/sqliteService');
+        sqliteService.setConfig('active_goals', []);
+        assert.deepEqual(sqliteService.getConfig('active_goals'), [], 'active_goals seed must verify through the real config API');
+        const { factRepository } = await import('../../services/memory/factRepository');
+        const { lancedbService } = await import('../../services/lancedbService');
+        const { MemoryTier } = await import('../../types');
+
+        const expectedContinuumTags = (fact: typeof FIXTURE_FACTS[number], owner: string, id: string): string[] =>
+            ['FACT', 'USER', fact.type, fact.source, `attr:${fact.attribute ?? 'general'}`, `owner:${owner}`, `factid:${id}`, 'source:ASSISTANT_SAID'];
+        const assertSqliteRow = (row: any, fact: typeof FIXTURE_FACTS[number], owner: string) => {
+            assert.ok(row, `SQLite row for "${fact.content}" must exist`);
+            assert.equal(row.ownerId, owner);
+            assert.equal(row.type, fact.type);
+            assert.equal(row.content, fact.content);
+            assert.equal(row.subject ?? null, fact.subject ?? null);
+            assert.equal(row.attribute ?? null, fact.attribute ?? null);
+            assert.equal(row.value ?? null, fact.value ?? null);
+            assert.equal(row.source, fact.source);
+            assert.equal(row.quote ?? null, null);
+            assert.equal(row.status, fact.status);
+            assert.equal(row.confidence, fact.confidence);
+            assert.equal(row.retractedAt, null);
+            assert.equal(typeof row.createdAt, 'number');
+            assert.equal(typeof row.updatedAt, 'number');
+        };
+        const assertLongNode = (node: any, fact: typeof FIXTURE_FACTS[number], owner: string, id: string) => {
+            assert.ok(node, `LONG node for fact ${id} must exist in the canonical store`);
+            assert.equal(node.tier, MemoryTier.LONG);
+            // Third-person fixture text must survive verbatim: any perspective
+            // transform would break this equality and fail the oracle loudly.
+            assert.equal(node.content, fact.content, 'stored content must be exact');
+            assert.equal(node.originalContent, fact.content, 'originalContent must be exact');
+            assert.equal(node.ownerId, owner);
+            for (const t of expectedContinuumTags(fact, owner, id)) {
+                assert.ok(node.tags.includes(t), `LONG node ${id} missing tag ${t}`);
+            }
+            // Contradiction rejection: exactly one owner tag and exactly one
+            // provenance tag, matching expectation (inclusion alone would let a
+            // contradictory second tag pass).
+            const ownerTags = node.tags.filter((t: string) => t.startsWith('owner:'));
+            assert.deepEqual(ownerTags, [`owner:${owner}`], `LONG node ${id} owner tags contradictory`);
+            const sourceTags = node.tags.filter((t: string) => t.startsWith('source:'));
+            assert.deepEqual(sourceTags, ['source:ASSISTANT_SAID'], `LONG node ${id} provenance tags contradictory`);
+            assert.ok(node.tags.includes('FACT'), `LONG node ${id} must carry the FACT tag`);
+        };
+        // Duplicate factid projections FAIL: a Map overwrite would silently
+        // hide a contradictory second projection.
+        const longFactNodes = async (): Promise<Map<string, any>> => {
+            const nodes = await lancedbService.getNodesByTier(MemoryTier.LONG, 100);
+            const byFactId = new Map<string, any>();
+            for (const n of nodes) {
+                const factIdTags = (n.tags ?? []).filter((t: string) => t.startsWith('factid:'));
+                if (factIdTags.length === 0) continue;
+                assert.equal(factIdTags.length, 1, `LONG node ${n.id} must carry exactly one factid tag, got ${factIdTags.length}`);
+                const factId = factIdTags[0].slice('factid:'.length);
+                assert.ok(!byFactId.has(factId), `duplicate LONG projection for fact ${factId}`);
+                byFactId.set(factId, n);
+            }
+            return byFactId;
+        };
+
+        if (mode === 'memory-restart-write') {
+            const receipts = [];
+            for (const { fact, owner } of FIXTURE_WRITES) receipts.push(await factRepository.addFact({ ...fact }, owner));
+            for (let i = 0; i < FIXTURE_WRITES.length; i++) {
+                const r = receipts[i];
+                assert.equal(r.action, 'ADD');
+                assert.equal(r.sqliteRows, 1, 'durable SQLite row must be written');
+                const graph = r.projections.find(p => p.backend === 'graph');
+                const cont = r.projections.find(p => p.backend === 'continuum');
+                // Graph receipt: RECORDED and reported verbatim. Against the
+                // controlled dead endpoint the actual serving path may be the
+                // graphService SQLite fallback (graphService.runQuery ->
+                // runSqliteQuery), so ok is NOT asserted either way and never
+                // counted toward this slice's success: graph persistence is an
+                // explicitly uncovered projection here.
+                assert.ok(graph, 'graph projection receipt must be recorded');
+                assert.equal(typeof graph.ok, 'boolean');
+                assert.ok(cont, 'continuum projection receipt must be recorded');
+                assert.equal(cont.ok, true, `continuum LONG projection must genuinely succeed (receipt: ${cont?.detail})`);
+            }
+            // Void-silent guard: continuum.store resolves void even when an
+            // internal gate (loop pattern, dedup, schema gate) rejected the
+            // write, so a true receipt alone can claim a write that never
+            // landed. The nodes must actually EXIST in this same process.
+            const byFactId = await longFactNodes();
+            assert.equal(byFactId.size, FIXTURE_WRITES.length, 'exactly the written fact projections must exist');
+            for (let i = 0; i < FIXTURE_WRITES.length; i++) {
+                assertLongNode(byFactId.get(receipts[i].id), FIXTURE_WRITES[i].fact, FIXTURE_WRITES[i].owner, receipts[i].id);
+            }
+            const { drainCurrentBackend } = await import('../../server/currentBackendDrain');
+            const drainOk = await drainCurrentBackend();
+            assert.equal(drainOk, true, 'graceful drain must succeed');
+            console.log(JSON.stringify({ mode, sqlite_ids: receipts.map(r => r.id), lance_fact_ids: [...byFactId.keys()], receipts, drain_ok: drainOk }));
+        } else {
+            // READER (fresh process): the oracle. Every assertion reads through
+            // the real read paths over the shared owned stores.
+            const aFacts = factRepository.getFacts(FIXTURE_OWNER_A);
+            const bFacts = factRepository.getFacts(FIXTURE_OWNER_B);
+            assert.equal(aFacts.length, FIXTURE_FACTS_A.length, 'owner A must read back exactly its written facts');
+            assert.equal(bFacts.length, 1, 'owner B must read back exactly its written fact');
+            const aByContent = new Map(aFacts.map((r: any) => [r.content, r]));
+            for (const fact of FIXTURE_FACTS_A) assertSqliteRow(aByContent.get(fact.content), fact, FIXTURE_OWNER_A);
+            assertSqliteRow(bFacts[0], FIXTURE_FACT_B, FIXTURE_OWNER_B);
+            // Wrong-owner isolation on the real scoped read path.
+            for (const row of aFacts) assert.equal(factRepository.getFact(row.id, FIXTURE_OWNER_B), null, 'owner B must not see owner A facts');
+            assert.equal(factRepository.getFact(bFacts[0].id, FIXTURE_OWNER_A), null, 'owner A must not see owner B facts');
+            // Canonical LONG store read-back: exactly the written projections,
+            // each factid tag identical to the durable SQLite row id.
+            const byFactId = await longFactNodes();
+            assert.equal(byFactId.size, FIXTURE_WRITES.length, 'exactly the written fact projections must survive the restart');
+            const expectedLong: Array<{ row: any; fact: typeof FIXTURE_FACTS[number]; owner: string }> = [
+                ...FIXTURE_FACTS_A.map(fact => ({ row: aByContent.get(fact.content), fact, owner: FIXTURE_OWNER_A })),
+                { row: bFacts[0], fact: FIXTURE_FACT_B, owner: FIXTURE_OWNER_B }
+            ];
+            for (const { row, fact, owner } of expectedLong) {
+                assertLongNode(byFactId.get(row.id), fact, owner, row.id);
+            }
+            const { drainCurrentBackend } = await import('../../server/currentBackendDrain');
+            const drainOk = await drainCurrentBackend();
+            assert.equal(drainOk, true, 'reader graceful drain must succeed');
+            console.log(JSON.stringify({
+                mode,
+                sqlite_ids_a: aFacts.map((r: any) => r.id),
+                sqlite_ids_b: bFacts.map((r: any) => r.id),
+                lance_fact_ids: [...byFactId.keys()],
+                drain_ok: drainOk
+            }));
+        }
+    } finally {
+        // Independent cleanup attempts, primary error always preserved.
+        // lancedbService exposes no close(): its connection teardown is process
+        // exit itself, which the natural-exit supervision verifies.
+        try { await endpoint.cleanup(); } catch (e) { cleanupErrors.push(e); }
+    }
+    if (cleanupErrors.length > 0) throw new AggregateError(cleanupErrors, `${mode} cleanup failed`);
     // natural exit: module completion drains the loop.
 } else {
     throw new Error(`unknown mode: ${mode}`);

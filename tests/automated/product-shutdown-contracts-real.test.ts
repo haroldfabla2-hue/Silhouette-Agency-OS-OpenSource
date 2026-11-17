@@ -186,11 +186,17 @@ const makeCapture = () => {
     return { push, render };
 };
 
-const runChild = (directory: string, mode: string, timeoutMs: number): Promise<ChildResult> => {
+// sharedStores is a strict WHITELIST: only the two owned store paths may be
+// injected into the child env. Policy keys (SILHOUETTE_PROVIDERS=off,
+// SILHOUETTE_INFERENCE_MODE=cloud-only, NODE_ENV, ...) come exclusively from
+// environment() and can never be overridden through this path.
+const runChild = (directory: string, mode: string, timeoutMs: number, sharedStores: { sqlitePath: string; lancePath: string } | null = null): Promise<ChildResult> => {
     return new Promise((resolvePromise) => {
         const child: ChildProcess = spawn(process.execPath, ['--import', loader, script, mode], {
             cwd: directory,
-            env: environment(directory),
+            env: sharedStores
+                ? { ...environment(directory), SILHOUETTE_DB_PATH: sharedStores.sqlitePath, SILHOUETTE_LANCEDB_PATH: sharedStores.lancePath }
+                : environment(directory),
             detached: true,               // own process group: descendants are killable/reap-able
             stdio: ['ignore', 'pipe', 'pipe']
         });
@@ -361,6 +367,149 @@ const runMode = async (mode: string, childTimeoutMs: number) => {
     assertCacheGuard(changed, incomplete);
 };
 
+/** Cross-process memory-restart slice: TWO sequential children that share ONLY
+ * the two owned fixture stores (explicit SILHOUETTE_DB_PATH and
+ * SILHOUETTE_LANCEDB_PATH inside one owned shared root). Each child still gets
+ * its own disposable cwd/HOME, so every cwd-relative state (continuum snapshot,
+ * quota ledger, memory transitions) stays per-child owned and is never shared
+ * or inherited. Phase order is the oracle: the reader process only passes when
+ * the writer process genuinely persisted. */
+/** The child's own JSON receipt line, parsed from captured stdout (other
+ * module logs share the stream): exactly one parseable line carrying the
+ * mode marker is required - no receipt, no pass. */
+const parseModeReceipt = (stdout: string, phase: string): any => {
+    const lines = stdout.split('\n').filter(l => l.startsWith('{') && l.includes(`"mode":"${phase}"`));
+    expect(lines.length, `child ${phase} must print exactly one JSON receipt line`).toBe(1);
+    return JSON.parse(lines[0]);
+};
+
+/** Intentional shape assertion for receipt id arrays: an array of exactly
+ * `length` distinct nonempty strings. Malformed fields fail HERE with a clear
+ * oracle message, never downstream by coercion. */
+const expectIdArray = (value: unknown, label: string, length: number): string[] => {
+    expect(Array.isArray(value), `${label} must be an array`).toBe(true);
+    const arr = value as unknown[];
+    expect(arr.length, `${label} must contain exactly ${length} entries`).toBe(length);
+    for (const v of arr) {
+        expect(typeof v, `${label} entries must be strings`).toBe('string');
+        expect((v as string).length, `${label} entries must be nonempty`).toBeGreaterThan(0);
+    }
+    expect(new Set(arr).size, `${label} entries must be distinct`).toBe(arr.length);
+    return arr as string[];
+};
+
+const runMemoryRestart = async (childTimeoutMs: number) => {
+    const sharedRoot = mkdtempSync(join(tmpdir(), 'memory-restart-shared-'));
+    const sharedStores = {
+        sqlitePath: join(sharedRoot, 'facts.sqlite'),
+        lancePath: join(sharedRoot, 'lance')
+    };
+    // Retention latch: set from each ChildResult IMMEDIATELY on return, before
+    // any evidence work that could throw. An unresolved result is conservatively
+    // treated as possible survivors: shared stores are never deleted while an
+    // unreaped child may still hold them.
+    let anySurvivors = true;
+    let outerCleanupError: unknown = null;
+    const phaseReceipts: Record<string, any> = {};
+    try {
+        for (const phase of ['memory-restart-write', 'memory-restart-read']) {
+            const directory = mkdtempSync(join(tmpdir(), 'shutdown-contracts-real-'));
+            let result: ChildResult | null = null;
+            let cleanupError: unknown = null;
+            let changed: string[] = [], incomplete = true;
+            let cacheBefore: CacheSnapshot | null = null;
+            // safeToRemove: the ONE reaping verdict, latched from ChildResult
+            // before any evidence work. A null/unsettled result or any
+            // unresolved kill/reap signal retains BOTH this phase cwd and
+            // (via anySurvivors) the shared root.
+            let safeToRemove = false;
+            try {
+                // Conservative BEFORE the attempt: until a reaped ChildResult
+                // says otherwise, a possibly-live child may hold the stores.
+                anySurvivors = true;
+                cacheBefore = snapshotCache();
+                result = await runChild(directory, phase, childTimeoutMs, sharedStores);
+                // Latch FIRST on return: no throwing work may precede this.
+                safeToRemove = result.childReaped === true && result.survivorsAfterCleanup === false && result.killError === null;
+                if (safeToRemove) anySurvivors = false;
+                expectCleanChild(result, phase);
+                phaseReceipts[phase] = parseModeReceipt(result.stdout, phase);
+            } finally {
+                // Evidence and removal are INDEPENDENT attempts: an evidence
+                // failure never skips the removal of a safely reaped child's
+                // cwd, a removal failure never replaces the primary error, and
+                // neither masks a cache-snapshot acquisition failure above.
+                try {
+                    if (cacheBefore !== null) {
+                        ({ changed, incomplete } = cacheBreach(cacheBefore));
+                        const inv = inventory(directory);
+                        console.log(`[fixture inventory ${phase}] ${inv.incomplete ? 'INCOMPLETE ' : ''}`, inv.entries);
+                        console.log(`[transformers receipt ${phase}] verifiedLayout=${VERIFIED_CACHE_LAYOUT_VERSION} installed=${installedTransformersVersion} cacheRootPreexisting=${cacheBefore.entries.size > 0} snapshotIncomplete=${incomplete} changed=${changed.length}${changed.length ? ' :: ' + changed.join(', ') : ''}`);
+                    }
+                } catch (e) {
+                    cleanupError = e;
+                    console.error(`[cleanup evidence error ${phase}]`, e);
+                }
+                try {
+                    if (safeToRemove) {
+                        rmSync(directory, { recursive: true, force: true });
+                    } else {
+                        console.log(`[fixture retained ${phase}] cwd preserved at ${directory}: child not safely reaped`);
+                    }
+                } catch (e) {
+                    if (cleanupError === null) cleanupError = e;
+                    console.error(`[cleanup removal error ${phase}]`, e);
+                }
+            }
+            if (cleanupError !== null) throw cleanupError;
+            // cacheBefore is non-null here: its acquisition failure above is a
+            // primary error that already propagated, so the guard never skips.
+            assertCacheGuard(changed, incomplete);
+        }
+        // Receipt SHAPE validation (intentional oracle assertions, not
+        // incidental iteration): mode markers, truthful drain receipts, and
+        // exact id-array shapes for both phases.
+        const writer = phaseReceipts['memory-restart-write'];
+        expect(writer.mode, 'writer receipt mode').toBe('memory-restart-write');
+        expect(writer.drain_ok, 'writer drain must report true').toBe(true);
+        const writerSqlite = expectIdArray(writer.sqlite_ids, 'writer sqlite_ids', 3);
+        const writerLance = expectIdArray(writer.lance_fact_ids, 'writer lance_fact_ids', 3);
+        expect([...writerLance].sort(), 'writer Lance factids must match writer SQLite ids').toEqual([...writerSqlite].sort());
+        const reader = phaseReceipts['memory-restart-read'];
+        expect(reader.mode, 'reader receipt mode').toBe('memory-restart-read');
+        expect(reader.drain_ok, 'reader drain must report true').toBe(true);
+        const readerA = expectIdArray(reader.sqlite_ids_a, 'reader sqlite_ids_a', 2);
+        const readerB = expectIdArray(reader.sqlite_ids_b, 'reader sqlite_ids_b', 1);
+        const readerLance = expectIdArray(reader.lance_fact_ids, 'reader lance_fact_ids', 3);
+        // Cross-process identity comparison on validated shapes: the fresh
+        // reader's SQLite ids AND Lance factids must both equal the writer's
+        // unique id set. This is the restart outcome, not a log impression.
+        const writerSet = [...writerSqlite].sort();
+        expect([...readerA, ...readerB].sort(), 'fresh-reader SQLite ids must match writer ids exactly').toEqual(writerSet);
+        expect([...readerLance].sort(), 'fresh-reader Lance factids must match writer ids exactly').toEqual(writerSet);
+        console.log(`[memory-restart receipt write] ${JSON.stringify(writer)}`);
+        console.log(`[memory-restart receipt read] ${JSON.stringify(reader)}`);
+    } finally {
+        // Outer cleanup is INDEPENDENT: secondary errors are collected and
+        // rethrown only when no primary failure is already propagating.
+        try {
+            const sharedInv = inventory(sharedRoot);
+            console.log(`[fixture inventory memory-restart-shared] ${sharedInv.incomplete ? 'INCOMPLETE ' : ''}`, sharedInv.entries);
+            if (anySurvivors) {
+                console.log(`[fixture retained memory-restart] shared root preserved at ${sharedRoot}: process group not reaped or outcome unresolved`);
+            } else {
+                rmSync(sharedRoot, { recursive: true, force: true });
+            }
+        } catch (e) {
+            // Secondary error: collected, rethrown below ONLY when no primary
+            // failure is already propagating out of the try above.
+            outerCleanupError = e;
+            console.error('[cleanup evidence error memory-restart-shared]', e);
+        }
+    }
+    if (outerCleanupError !== null) throw outerCleanupError;
+};
+
 describe('real shutdown contracts (narrow)', () => {
     // child timeout + CLEANUP_BUDGET_MS stays below each vitest allowance.
     // Outer allowance = inner natural-exit bound (unchanged) + 4s shared
@@ -371,4 +520,8 @@ describe('real shutdown contracts (narrow)', () => {
     for (const mode of ['redis-fallback-quiet', 'drain-receipts-ok', 'sqlite-close-causality']) it(mode, async () => {
         await runMode(mode, 90000);
     }, 105000);
+    // Two sequential 90s children + per-phase evidence work, one allowance.
+    it('memory-restart-facts', async () => {
+        await runMemoryRestart(90000);
+    }, 240000);
 });
