@@ -190,6 +190,81 @@ jobs:
           }
           Write-Host '✅ All required packaged files present'
 
+      - name: Verify native modules unpacked from asar
+        shell: pwsh
+        run: |
+          # Uses the LOCKED @electron/asar API (scripts/verify-native-unpack.cjs):
+          # every native payload under the three configured asarUnpack roots must
+          # be metadata-marked unpacked in the asar header AND exist on disk
+          # outside the archive. Presence does not prove runtime load.
+          node scripts/verify-native-unpack.cjs
+          if ($LASTEXITCODE -ne 0) { throw "native unpack verification failed (exit $LASTEXITCODE)" }
+
+      - name: Upload win-unpacked inventory
+        shell: pwsh
+        run: |
+          Get-ChildItem 'dist-desktop/win-unpacked' -Recurse -File |
+            ForEach-Object { "{0}|{1}" -f $_.FullName.Substring((Get-Location).Path.Length + 1), $_.Length } |
+            Sort-Object | Out-File -Encoding utf8 win-unpacked-inventory.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: win-unpacked-inventory
+          path: win-unpacked-inventory.txt
+          retention-days: 30
+
+  nsis-installer-smoke:
+    name: NSIS installer build (no publish, no signing)
+    runs-on: windows-latest
+    needs: quality
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 'true'
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Build server
+        run: node node_modules/vite/bin/vite.js build --config vite.server.config.ts
+
+      - name: Build NSIS installer without publishing or signing
+        run: node node_modules/electron-builder/cli.js build --win nsis --publish never
+        env:
+          # Signing disabled explicitly per app-builder-lib 26.18.1 source:
+          # windowsSignToolManager skips when WIN_CSC_LINK/CSC_LINK are empty,
+          # flags.js treats CSC_IDENTITY_AUTO_DISCOVERY=false as discovery off.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          CSC_LINK: ''
+          WIN_CSC_LINK: ''
+
+      - name: Verify installer artifacts
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem 'dist-desktop/*-Setup-*.exe' -File
+          if ($setup.Count -ne 1) { throw "Expected exactly one NSIS Setup exe, found $($setup.Count)" }
+          if (-not (Test-Path 'dist-desktop/latest.yml')) { throw 'Missing latest.yml updater metadata' }
+          Write-Host "✅ NSIS installer: $($setup[0].Name) ($($setup[0].Length) bytes)"
+          Get-Content 'dist-desktop/latest.yml'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nsis-installer-smoke
+          path: |
+            dist-desktop/*-Setup-*.exe
+            dist-desktop/latest.yml
+            dist-desktop/*.blockmap
+          retention-days: 7
+
 # Exact proposed additional job under existing CI jobs, no launch step.
   daemon-capsule-preparation:
     name: Prepare genuine Redis daemon capsule (no product execution)
