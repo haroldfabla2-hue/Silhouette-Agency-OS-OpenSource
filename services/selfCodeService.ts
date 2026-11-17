@@ -347,7 +347,7 @@ class SelfCodeService {
         const add = (absolute: string, name: string) => {
             const stat = fs.lstatSync(absolute);
             if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('oracle requires regular complete files');
-            bytes += stat.size; if (++files > 40000 || bytes > 512 * 1024 * 1024) throw new Error('oracle closure exceeds inspection budget');
+            bytes += stat.size; if (++files > 40000 || bytes > 512 * 1024 * 1024) throw new Error(`oracle closure exceeds inspection budget: files=${files}, bytes=${bytes}`);
             const content = fs.readFileSync(absolute);
             if (content.length !== stat.size) throw new Error('oracle read incomplete');
             hash.update(name + '\0' + content.length + '\0'); hash.update(content);
@@ -366,7 +366,7 @@ class SelfCodeService {
             for (const name of fs.readdirSync(dir).sort()) {
                 const file = path.join(dir, name), rel = relative + '/' + name, stat = fs.lstatSync(file);
                 if (relative === 'node_modules' && name === '.bin') continue; // actual runner is direct absolute node+vitest entry below
-                if (stat.isSymbolicLink()) throw new Error('oracle dependency symlink unsupported');
+                if (stat.isSymbolicLink()) throw new Error(`oracle dependency symlink unsupported: ${rel}`);
                 if (stat.isDirectory()) walk(file, rel); else add(file, rel);
             }
         };

@@ -74,9 +74,19 @@ jobs:
         run: node --test tests/desktop-session/*.node.cjs
 
       - name: Focused data evidence and oracle contracts (actual installed TS loader)
+        timeout-minutes: 12
         run: |
-          node --import tsx/esm --test tests/contracts/*.test.mjs
-          node --import tsx/esm --test tests/complete-deps/*.test.mjs
+          set +e
+          set -uo pipefail
+          failed=0
+          for fixture in tests/contracts/*.test.mjs tests/complete-deps/*.test.mjs; do
+            echo "FIXTURE_BEGIN $fixture"
+            timeout --signal=TERM --kill-after=10s 180s node --import tsx/esm --test --test-timeout=120000 "$fixture"
+            result=$?
+            echo "FIXTURE_END $fixture exit=$result"
+            if test "$result" -ne 0; then failed=1; fi
+          done
+          exit "$failed"
 
       - name: Unit tests
         run: npm test

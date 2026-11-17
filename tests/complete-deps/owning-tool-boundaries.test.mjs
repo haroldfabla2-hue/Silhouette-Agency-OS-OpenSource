@@ -23,7 +23,9 @@ test('actual ToolHandler and COMPOSED ToolExecutor carry real file-read lineage 
   ({toolPersistence:persistence}=await import('../../services/tools/toolPersistence.ts'));
   ({nervousSystem:nervous}=await import('../../services/connectionNervousSystem.ts'));
   const {createTaskEvidence,currentDataLabels}=await import('../../services/execution/taskEvidence.ts');
+  console.info('OWNING_TOOL_IMPORT_BEGIN');
   const {toolHandler}=await import('../../services/tools/toolHandler.ts');
+  console.info('OWNING_TOOL_IMPORT_COMPLETE');
   const {toolExecutor}=await import('../../services/tools/toolExecutor.ts');
   const {toolRegistry}=await import('../../services/tools/toolRegistry.ts');
   const {pluginRegistry}=await import('../../services/plugins/pluginRegistry.ts');
@@ -44,10 +46,12 @@ test('actual ToolHandler and COMPOSED ToolExecutor carry real file-read lineage 
   await assert.rejects(composition.run(()=>toolExecutor.execute('authored_composed',{path:note})),/DATA_FLOW_DENIED/);
   assert(composition.snapshot().labels.includes('USER_PRIVATE'));assert.equal(calls,0);
  }finally{
+  console.info('OWNING_TOOL_CLEANUP_BEGIN',JSON.stringify(process.getActiveResourcesInfo()));
   const cleanup=[];
   for(const close of [()=>nervous?.stop(),()=>persistence?.close(),()=>sqlite?.close(),()=>process.chdir(previousCwd),()=>{for(const n of names){if(saved[n]===undefined)delete process.env[n];else process.env[n]=saved[n];}},()=>fs.rmSync(root,{recursive:true,force:true})]){
    try{close();}catch(error){cleanup.push(error);}
   }
+  console.info('OWNING_TOOL_CLEANUP_END',JSON.stringify(process.getActiveResourcesInfo()));
   if(cleanup.length)throw new AggregateError(cleanup,'authored tool fixture cleanup failed');
  }
 });
