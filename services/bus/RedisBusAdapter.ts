@@ -6,7 +6,7 @@ import { ProtocolEvent, SystemProtocol, InterAgentMessage } from "../../types";
 // barrier instead of ahead of it. Declared limit: this only governs THIS
 // module's own import edge; it is not a statement about what evaluating the
 // 'redis' package itself would do (no package-source proof).
-import type { RedisClientType } from 'redis';
+import type { createClient } from 'redis';
 import { acceptanceBoot } from '../security/bootMode';
 
 /**
@@ -35,8 +35,8 @@ import { acceptanceBoot } from '../security/bootMode';
  * hot-toggle contract is offered or claimed.
  */
 export class RedisBusAdapter implements IBusAdapter {
-    private pubClient: RedisClientType | null = null;
-    private subClient: RedisClientType | null = null;
+    private pubClient: ReturnType<typeof createClient> | null = null;
+    private subClient: ReturnType<typeof createClient> | null = null;
     private isConnected: boolean = false;
     private listeners: Record<string, ((event: ProtocolEvent) => void)[]> = {};
     private readonly redisUrl: string;
@@ -287,7 +287,14 @@ export class RedisBusAdapter implements IBusAdapter {
         // RPOP is standard queue behavior.
 
         // Let's fetch all current items
-        const len = await this.pubClient.lLen(key);
+        const rawLen = await this.pubClient.lLen(key);
+        // Boundary check: redis v5 types this reply as number | `${number}` under the
+        // inferred RESP 2|3 union, while the client contract (default TypeMapping,
+        // runtime RESP2) always delivers a JS number. Fail loudly if that ever breaks.
+        if (typeof rawLen !== 'number' || !Number.isInteger(rawLen) || rawLen < 0) {
+            throw new Error('REDIS_BUS_UNEXPECTED_LLEN_REPLY');
+        }
+        const len = rawLen;
         if (len === 0) return [];
 
         // Transaction to get and clear
@@ -310,7 +317,11 @@ export class RedisBusAdapter implements IBusAdapter {
         if (!this.isConnected) await this.connect();
         if (acceptanceBoot()) throw new Error('REDIS_BUS_DISABLED_BY_POLICY');
         if (!this.pubClient) throw new Error('REDIS_BUS_UNAVAILABLE');
-        const len = await this.pubClient.lLen(`mailbox:${agentId}`);
-        return len > 0;
+        const rawMailboxLen = await this.pubClient.lLen(`mailbox:${agentId}`);
+        // Same LLEN boundary check as in fetchMessages: number per client contract.
+        if (typeof rawMailboxLen !== 'number' || !Number.isInteger(rawMailboxLen) || rawMailboxLen < 0) {
+            throw new Error('REDIS_BUS_UNEXPECTED_LLEN_REPLY');
+        }
+        return rawMailboxLen > 0;
     }
 }
