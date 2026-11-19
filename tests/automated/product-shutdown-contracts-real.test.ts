@@ -471,6 +471,9 @@ const runMode = async (mode: string, childTimeoutMs: number, boot: 'acceptance' 
     try {
         result = await runChild(directory, mode, childTimeoutMs, null, null, boot);
         expectCleanChild(result, mode);
+        // Relay only the structured fixture receipt, never arbitrary stdout.
+        const receipt = parseModeReceipt(result.stdout, mode);
+        console.log(`[shutdown receipt ${mode}] ${JSON.stringify(receipt)}`);
     } finally {
         // Safety evidence runs even - ESPECIALLY - after an abnormal outcome.
         // An evidence/cleanup failure is captured, never thrown here: the
@@ -727,11 +730,37 @@ const runMemoryRestart = async (childTimeoutMs: number) => {
     if (outerCleanupError !== null) throw outerCleanupError;
 };
 
+// Two genuinely fresh processes share ONLY an owned cwd journal. No provider
+// call is requested: both finish below the unchanged 30s narrative tick.
+const runNarrativePendingRestart = async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'narrative-pending-real-'));
+    const cacheBefore = snapshotCache();
+    let retain = false;
+    try {
+        for (const mode of ['narrative-pending-write', 'narrative-pending-read']) {
+            const result = await runChild(directory, mode, 20000);
+            retain ||= result.survivorsAfterCleanup;
+            expectCleanChild(result, mode);
+            const receipt = parseModeReceipt(result.stdout, mode);
+            expect(receipt.pendingPreserved).toBe(2);
+            expect(receipt.originalWorkEqual).toBe(true);
+            expect(receipt.completedDuringDrain).toBe(0);
+            if (mode.endsWith('read')) expect(receipt.pendingRecovered).toBe(2);
+            console.log(`[shutdown receipt ${mode}] ${JSON.stringify(receipt)}`);
+        }
+    } finally {
+        const breach = cacheBreach(cacheBefore);
+        if (!retain) rmSync(directory, { recursive: true, force: true });
+        assertCacheGuard(breach.changed, breach.incomplete);
+    }
+};
+
 describe('real shutdown contracts (narrow)', () => {
+    it('narrative pending original work survives process restart without processing', runNarrativePendingRestart, 65000);
     // child timeout + CLEANUP_BUDGET_MS stays below each vitest allowance.
     // Outer allowance = inner natural-exit bound (unchanged) + 4s shared
     // cleanup + 11s for the capped snapshot/inventory/rm evidence work.
-    for (const mode of ['memory-never-started-fresh', 'memory-never-started-prior-wal', 'memory-blocked-store']) it(mode, async () => {
+    for (const mode of ['producers-never-started', 'narrative-pending-storage-failure', 'memory-never-started-fresh', 'memory-never-started-prior-wal', 'memory-blocked-store']) it(mode, async () => {
         await runMode(mode, 30000);
     }, 45000);
     // Fallback-family children run under NORMAL boot: after the corte, the

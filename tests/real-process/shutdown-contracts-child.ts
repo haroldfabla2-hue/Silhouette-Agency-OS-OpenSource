@@ -129,7 +129,103 @@ async function resettingEndpoint(): Promise<{ server: net.Server; port: number; 
     return { server, port: (server.address() as net.AddressInfo).port, cleanup };
 }
 
-if (mode === 'redis-fallback-quiet') {
+if (mode === 'producers-never-started') {
+    const endpoint = await resettingEndpoint();
+    process.env.REDIS_HOST = '127.0.0.1';
+    process.env.REDIS_PORT = String(endpoint.port);
+    process.env.NEO4J_URI = `bolt://127.0.0.1:${endpoint.port}`;
+    try {
+        const { ownedProducerNames } = await import('../../services/lifecycle/ownedProducers');
+        assert.deepEqual(ownedProducerNames(), [], 'reading ownership must not construct producers');
+        const { drainCurrentBackend, getLastDrainProducerReceipts } = await import('../../server/currentBackendDrain');
+        assert.equal(await drainCurrentBackend(), true);
+        assert.deepEqual(ownedProducerNames(), [], 'drain must not import and arm previously unused producers');
+        assert.deepEqual(getLastDrainProducerReceipts(), {});
+    } finally { await endpoint.cleanup(); }
+    console.log(JSON.stringify({ mode, noProducerAcquired: true, activeResources: activeResourceSummary() }));
+} else if (mode === 'narrative-pending-storage-failure') {
+    const { narrative } = await import('../../services/narrativeService');
+    try {
+        await narrative.enqueuePendingNarration({ source: 'CONSCIOUS', content: 'Public fixture storage failure', importance: 0.9 });
+        const before = await narrative.pendingNarrationSnapshot();
+        fs.mkdirSync('data', { recursive: true });
+        const journalPath = 'data/wal/pending-narrations.json';
+        const backupPath = journalPath + '.fixture-backup';
+        const original = fs.readFileSync(journalPath);
+        fs.renameSync(journalPath, backupPath);
+        fs.mkdirSync(journalPath); // real rename obstruction at the destination
+
+        try {
+            const failed = await narrative.preserveAndStopBatchProcessor();
+            assert.equal(failed.error, 'PRESERVATION_FAILED');
+            assert.equal(failed.remainingItems, 1);
+            assert.equal(failed.pendingPreserved, 0);
+            assert.deepEqual(await narrative.pendingNarrationSnapshot(), before);
+            const { drainCurrentBackend } = await import('../../server/currentBackendDrain');
+            assert.equal(await drainCurrentBackend(), false, 'failed preservation must fail real drain before store closure');
+            assert.equal(fs.statSync(journalPath).isDirectory(), true);
+            assert.deepEqual(fs.readFileSync(backupPath), original);
+        } finally {
+            fs.rmdirSync(journalPath);
+            fs.renameSync(backupPath, journalPath);
+        }
+        const retry = await narrative.preserveAndStopBatchProcessor();
+        assert.equal(retry.error, null);
+        assert.equal(retry.pendingPreserved, 1);
+        assert.deepEqual(JSON.parse(fs.readFileSync('data/wal/pending-narrations.json', 'utf8')).items, before);
+        const { drainOwnedProducers } = await import('../../services/lifecycle/ownedProducers');
+        await drainOwnedProducers();
+        console.log(JSON.stringify({ mode, failedWithoutLoss: true, retryPreserved: 1, activeResources: activeResourceSummary() }));
+    } finally {
+        await narrative.preserveAndStopBatchProcessor();
+        const { drainOwnedProducers } = await import('../../services/lifecycle/ownedProducers');
+        await drainOwnedProducers();
+    }
+} else if (mode === 'narrative-pending-write' || mode === 'narrative-pending-read') {
+    const endpoint = await resettingEndpoint();
+    process.env.REDIS_HOST = '127.0.0.1';
+    process.env.REDIS_PORT = String(endpoint.port);
+    process.env.NEO4J_URI = `bolt://127.0.0.1:${endpoint.port}`;
+    const fixture = [
+        { source: 'CONSCIOUS', content: 'Public fixture pending thought one', importance: 0.9, metadata: { fixture: 1 } },
+        { source: 'AGENCY', content: 'Public fixture pending thought two', importance: 0.8, metadata: { fixture: 2 } }
+    ];
+    let receipt: Record<string, unknown> = {};
+    let stopNarrative: (() => Promise<unknown>) | null = null;
+    try {
+        const { narrative } = await import('../../services/narrativeService');
+        stopNarrative = () => narrative.preserveAndStopBatchProcessor();
+        if (mode === 'narrative-pending-write') {
+            for (const item of fixture) await narrative.enqueuePendingNarration(item);
+        }
+        const pending = await narrative.pendingNarrationSnapshot();
+        assert.deepEqual(pending.map(({ id, ...item }) => item), fixture, 'original work must recover byte-for-value, not narrated filler');
+        assert.equal(new Set(pending.map(item => item.id)).size, 2);
+        const { drainCurrentBackend, getLastDrainProducerReceipts } = await import('../../server/currentBackendDrain');
+        assert.equal(await drainCurrentBackend(), true);
+        const stops = getLastDrainProducerReceipts();
+        assert.equal(stops?.narrative?.pendingPreserved, 2);
+        assert.equal(stops?.narrative?.remainingItems, 0);
+        assert.equal(stops?.narrative?.error, null);
+        const journal = JSON.parse(fs.readFileSync('data/wal/pending-narrations.json', 'utf8'));
+        assert.deepEqual(journal.items, pending);
+        assert.deepEqual(journal.completed, [], 'shutdown must not process pending work');
+        // Sequential stop cannot overwrite two durable pendings with [].
+        await narrative.preserveAndStopBatchProcessor();
+        await assert.rejects(narrative.enqueuePendingNarration({ source: 'AGENCY', content: 'Public late fixture refusal', importance: 0.8 }), 'late work must be explicitly refused, not acknowledged');
+        const afterRefusal = await narrative.preserveAndStopBatchProcessor();
+        assert.equal(afterRefusal.error, null, 'late refusal must not poison preservation');
+        assert.equal(afterRefusal.refusedLate, 1, 'rejected work must be counted, not claimed preserved');
+        assert.equal(afterRefusal.pendingPreserved, 2);
+        assert.deepEqual(JSON.parse(fs.readFileSync('data/wal/pending-narrations.json', 'utf8')).items, pending);
+        receipt = { mode, pendingRecovered: mode.endsWith('read') ? pending.length : 0,
+            pendingPreserved: stops?.narrative?.pendingPreserved, originalWorkEqual: true,
+            completedDuringDrain: journal.completed.length };
+    } finally {
+        try { await stopNarrative?.(); } finally { await endpoint.cleanup(); }
+    }
+    console.log(JSON.stringify({ ...receipt, activeResources: activeResourceSummary() }));
+} else if (mode === 'redis-fallback-quiet') {
     const endpoint = await resettingEndpoint();
     process.env.REDIS_HOST = '127.0.0.1';
     process.env.REDIS_PORT = String(endpoint.port);
@@ -141,6 +237,8 @@ if (mode === 'redis-fallback-quiet') {
         const { redisClient } = await import('../../services/redisClient');
         await redisClient.set('probe:key', 'v', 60); // first op drives the real connect attempt
         assert.equal(redisClient.isMockMode(), true, 'fallback must engage against an unreachable server');
+        const connectFailure = redisClient.getLastConnectFailure();
+        assert.ok(connectFailure, 'the rejected real connect attempt must be receipted, not inferred from logs');
         assert.equal(await redisClient.get('probe:key'), 'v', 'fallback store must keep working');
         const noise = errors.filter(line => line.includes('Failed to disconnect during fallback'));
         assert.equal(noise.length, 0, `predictable close of a never-opened client must not be error-logged: ${noise.join(' | ')}`);
@@ -152,7 +250,7 @@ if (mode === 'redis-fallback-quiet') {
         const second = redisClient.disconnect();
         assert.equal(first, second, 'concurrent disconnects must share one stored promise');
         await first;
-        console.log(JSON.stringify({ mode, fallback_visible: true, fallback_noise: false, shared_disconnect_promise: true }));
+        console.log(JSON.stringify({ mode, fallback_visible: true, fallback_noise: false, shared_disconnect_promise: true, redis_connect_failure: connectFailure, activeResources: activeResourceSummary() }));
     } finally {
         // Listener cleanup must run even when an assertion fails, so the
         // original failure is never buried under a supervision timeout.
@@ -218,9 +316,13 @@ if (mode === 'redis-fallback-quiet') {
         await redisClient.set('probe:key', 'v', 60); // engage the fallback really
         const { continuousMemory } = await import('../../services/memory/continuousMemory'); // loaded, never initialized
         assert.ok(redisClient.isMockMode() && continuousMemory);
-        const { drainCurrentBackend } = await import('../../server/currentBackendDrain');
+        const connectFailure = redisClient.getLastConnectFailure();
+        assert.ok(connectFailure, 'the rejected real connect attempt must be receipted, not inferred from logs');
+        const { drainCurrentBackend, getLastDrainProducerReceipts } = await import('../../server/currentBackendDrain');
         assert.equal(await drainCurrentBackend(), true, 'idempotent receipts must succeed');
-        console.log(JSON.stringify({ mode, drain_ok: true }));
+        const producerStops = getLastDrainProducerReceipts();
+        assert.deepEqual(producerStops, {}, 'never-used producers must remain unconstructed during drain');
+        console.log(JSON.stringify({ mode, drain_ok: true, redis_connect_failure: connectFailure, producer_stops: producerStops, activeResources: activeResourceSummary() }));
     } finally {
         await endpoint.cleanup();
     }
@@ -256,6 +358,7 @@ if (mode === 'redis-fallback-quiet') {
         await redisClient.set('probe:key', 'v', 60);
         const { continuousMemory } = await import('../../services/memory/continuousMemory');
         assert.ok(redisClient.isMockMode() && continuousMemory);
+        assert.ok(redisClient.getLastConnectFailure(), 'the rejected real connect attempt must be receipted, not inferred from logs');
 
         const { sqliteService } = await import('../../services/sqliteService');
         acquiredCore = sqliteService;
@@ -318,6 +421,8 @@ if (mode === 'redis-fallback-quiet') {
             open_while_busy_first: openBusyFirst,
             open_while_busy_repeat: openBusyRepeat,
             open_after_release: db.open,
+            redis_connect_failure: redisClient.getLastConnectFailure(),
+            activeResources: activeResourceSummary(),
             memory_step1_uninvolved: otherFailures(first.newErrors).length + otherFailures(repeat.newErrors).length + otherFailures(after.newErrors).length === 0
         }));
     } finally {
@@ -345,12 +450,16 @@ if (mode === 'redis-fallback-quiet') {
     process.env.REDIS_PORT = String(endpoint.port);
     process.env.NEO4J_URI = `bolt://127.0.0.1:${endpoint.port}`;
     const cleanupErrors: unknown[] = [];
-    // Tracked WRITER-owned cascade producers and receipts. Both refs stay null
-    // in the READER, which never stores and must not acquire these producers.
+    // Tracked cascade producer refs for the finally safety net. OWNERSHIP of
+    // the stops moved to the drain (step 1.5): these refs only let the
+    // finally stop them idempotently when an early failure prevented the
+    // drain from running; the asserted receipts are the drain's. All three
+    // refs stay null in the READER, which never stores and must not acquire
+    // these producers.
     let writerArbiter: { stopProcessingTimer(): { intervalWasArmed: boolean; pendingAdmissions: number; activeAdmissions: number; activeQueueRuns: number } } | null = null;
     let writerPower: { stopThrottleTimer(): { intervalWasArmed: boolean } } | null = null;
     let writerNarrative: { stopBatchProcessor(): { intervalWasArmed: boolean; queuedItems: number } } | null = null;
-    let writerStops: { arbiter?: { intervalWasArmed: boolean; pendingAdmissions: number; activeAdmissions: number; activeQueueRuns: number }; power?: { intervalWasArmed: boolean }; narrative?: { intervalWasArmed: boolean; queuedItems: number } } = {};
+    let writerProducerStops: import('../../server/currentBackendDrain').DrainProducerReceipts | null = null;
     let writerReceipt: Record<string, unknown> | null = null;
     let readerReceipt: Record<string, unknown> | null = null;
     // [D-CANON] Diagnostic observation STATE and helpers at BRANCH scope (the
@@ -542,8 +651,9 @@ if (mode === 'redis-fallback-quiet') {
                 if (token !== null) predrainReached = true;
                 writeCheckpoint('predrain', () => o2Checkpoint(token === null ? 'unavailable' : 'predrain', token));
             } catch (e) { evidenceNote(`predrain: checkpoint failed: ${String((e as Error)?.message ?? e)}`); }
-            const { drainCurrentBackend } = await import('../../server/currentBackendDrain');
+            const { drainCurrentBackend, getLastDrainProducerReceipts } = await import('../../server/currentBackendDrain');
             const drainOk = await drainCurrentBackend();
+            writerProducerStops = getLastDrainProducerReceipts();
             assert.equal(drainOk, true, 'graceful drain must succeed');
             // Receipt prints AFTER the finally teardown (see below), so a
             // teardown defect fails the phase with the measured stop counters
@@ -616,15 +726,15 @@ if (mode === 'redis-fallback-quiet') {
         if (mode === 'memory-restart-write') {
             try {
                 if (writerArbiter === null) writerArbiter = (await import('../../services/resourceArbiter')).resourceArbiter;
-                writerStops.arbiter = writerArbiter.stopProcessingTimer();
+                writerArbiter.stopProcessingTimer();
             } catch (e) { cleanupErrors.push(e); }
             try {
                 if (writerPower === null) writerPower = (await import('../../services/powerManager')).powerManager;
-                writerStops.power = writerPower.stopThrottleTimer();
+                writerPower.stopThrottleTimer();
             } catch (e) { cleanupErrors.push(e); }
             try {
                 if (writerNarrative === null) writerNarrative = (await import('../../services/narrativeService')).narrative;
-                writerStops.narrative = writerNarrative.stopBatchProcessor();
+                writerNarrative.stopBatchProcessor();
             } catch (e) { cleanupErrors.push(e); }
         }
         // lancedbService exposes no close(): its connection teardown is process
@@ -645,26 +755,30 @@ if (mode === 'redis-fallback-quiet') {
     if (cleanupErrors.length > 0) throw new AggregateError(cleanupErrors, `${mode} cleanup failed`);
     // Receipts print only after teardown, only on full success.
     if (writerReceipt !== null) {
-        const stops = writerStops;
-        // Measured active-work receipt, scoped: these counters cover only
-        // admissions and queue runs THIS process actually invoked. The
-        // writer's execution reaches no requestAdmission call (source-checked
-        // above), so zero is the expected and asserted value - this is not a
-        // generic settled-admission claim.
-        assert.ok(stops.arbiter, 'writer arbiter stop receipt must exist');
-        assert.equal(stops.arbiter.pendingAdmissions, 0, 'no queued admission promise may exist at stop');
-        assert.equal(stops.arbiter.activeAdmissions, 0, 'no in-flight admission may exist at stop');
-        assert.equal(stops.arbiter.activeQueueRuns, 0, 'no in-flight queue processing may exist at stop');
-        assert.ok(stops.power, 'writer power stop receipt must exist');
-        assert.ok(stops.narrative, 'writer narrative stop receipt must exist');
-        assert.equal(stops.narrative.intervalWasArmed, true, 'narrative batch timer must have been armed in this writer process');
-        console.log(JSON.stringify({ ...writerReceipt, stops }));
+        const stops = writerProducerStops;
+        // DRAIN-owned producer receipts (step 1.5): the drain, not this
+        // child, stopped narrative/arbiter/power; the finally stops above are
+        // only an early-failure safety net and are never asserted. Counters
+        // stay scoped to THIS process's own usage (source-checked: the writer
+        // reaches no requestAdmission call), so zeros are expected values,
+        // not a generic settled-state claim.
+        assert.ok(stops, 'drain producer receipts must exist: the drain owns these stops');
+        assert.equal(stops.narrative?.intervalWasArmed, true, 'narrative batch timer must have been armed in this writer process');
+        assert.equal(stops.narrative?.remainingItems, 0, 'no queued narration may be lost at drain');
+        assert.equal(stops.narrative?.error, null, 'narrative queue flush must not fail');
+        assert.equal(stops.arbiter?.intervalWasArmed, true, 'arbiter processing timer must have been armed in this writer process');
+        assert.equal(stops.arbiter?.remainingQueue, 0, 'no queued admission promise may exist at drain');
+        assert.equal(stops.arbiter?.activeAdmissions, 0, 'no in-flight admission may exist at drain');
+        assert.equal(stops.arbiter?.activeQueueRuns, 0, 'no in-flight queue processing may exist at drain');
+        assert.equal(stops.arbiter?.boundExhausted, false, 'arbiter drain must not exhaust its bound');
+        assert.equal(stops.power?.intervalWasArmed, true, 'power throttle timer must have been armed in this writer process');
+        // [DIAG] The post-teardown active-resource census rides INSIDE the
+        // parsed receipt so it is preserved on the green path too (bounded
+        // labels/counts, never user data).
+        console.log(JSON.stringify({ ...writerReceipt, stops, activeResources: activeResourceSummary() }));
     } else if (readerReceipt !== null) {
-        console.log(JSON.stringify(readerReceipt));
+        console.log(JSON.stringify({ ...readerReceipt, activeResources: activeResourceSummary() }));
     }
-    // [DIAG] Post-teardown active-resource census, printed for BOTH roles
-    // right after the receipt: bounded labels/counts, never user data.
-    console.log('[active-resources post-teardown]', JSON.stringify(activeResourceSummary()));
     // natural exit: module completion drains the loop.
 } else {
     throw new Error(`unknown mode: ${mode}`);

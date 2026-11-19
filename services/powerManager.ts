@@ -1,3 +1,4 @@
+import { registerOwnedProducer } from './lifecycle/ownedProducers';
 /**
  * POWER MANAGER SERVICE v2.0 - ADAPTIVE THROTTLING
  * All services run autonomously with CPU-based throttling
@@ -108,6 +109,7 @@ class PowerManager {
     private throttleCheckInterval: NodeJS.Timeout | null = null;
 
     private constructor() {
+        registerOwnedProducer('power', () => this.stopThrottleTimer());
         console.log(`[POWER_MANAGER] ⚡ Initialized with mode: ${this.currentMode}`);
         this.startAdaptiveThrottling();
     }

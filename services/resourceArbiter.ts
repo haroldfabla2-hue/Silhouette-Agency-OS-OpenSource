@@ -1,3 +1,4 @@
+import { registerOwnedProducer } from './lifecycle/ownedProducers';
 
 import { Agent, AgentStatus, SystemMode } from "../types";
 import * as si from 'systeminformation';
@@ -35,10 +36,15 @@ class ResourceArbiter {
 
     private intervalId: NodeJS.Timeout | null = null;
     private stopped: boolean = false;
+    // Drain-time admission gate: false only while drainAdmissionsAndStop is
+    // emptying the queue - new requests resolve false instead of queueing
+    // behind a timer that is about to stop. Production default untouched.
+    private accepting: boolean = true;
     private activeAdmissions: number = 0;
     private activeQueueRuns: number = 0;
 
     constructor() {
+        registerOwnedProducer('arbiter', () => this.drainAdmissionsAndStop());
         this.isServer = typeof process !== 'undefined' && process.versions != null && process.versions.node != null;
         console.log(`[ARBITER] Initialized. Environment: ${this.isServer ? 'SERVER (Real Metrics)' : 'CLIENT (Simulated)'}`);
 
@@ -55,6 +61,8 @@ class ResourceArbiter {
             const intervalMs = powerManager.getConfig().resourceArbiterMs;
             this.intervalId = setInterval(() => this.processQueue(), intervalMs);
             console.log(`[ARBITER] Queue processor started (${intervalMs}ms interval)`);
+        }).catch(error => {
+            if (!this.stopped) console.error('[ARBITER] Queue processor startup failed:', error);
         });
     }
 
@@ -98,18 +106,21 @@ class ResourceArbiter {
     public async requestAdmission(agent: Agent, priority: 'CRITICAL' | 'HIGH' | 'NORMAL' | 'LOW' = 'NORMAL'): Promise<boolean> {
         return new Promise(async (resolve) => {
             // No-new-admission guard: after stopProcessingTimer the queue can
-            // never drain, so queueing here would abandon the promise.
-            if (this.stopped) {
+            // never drain, so queueing here would abandon the promise. The
+            // drain-time gate (!accepting) applies the same rule while the
+            // owner is emptying the queue.
+            if (this.stopped || !this.accepting) {
                 resolve(false);
                 return;
             }
             this.activeAdmissions++;
             try {
                 const metrics = await this.getRealMetrics();
-                // Post-await recheck: a stop issued while metrics were in flight
-                // wins; never grant or queue an admission after the timer has
-                // been permanently stopped.
-                if (this.stopped) {
+                // Post-await recheck: a stop or drain issued while metrics
+                // were in flight wins; never grant or queue an admission
+                // after the timer has been permanently stopped or the owner
+                // stopped accepting.
+                if (this.stopped || !this.accepting) {
                     resolve(false);
                     return;
                 }
@@ -151,6 +162,47 @@ class ResourceArbiter {
     public release() {
         // Trigger immediate check when resources are freed
         this.processQueue();
+    }
+
+    /**
+     * Drain-time ownership stop for the product drain: stops accepting NEW
+     * admissions (they resolve false, never abandoned), empties the pending
+     * queue itself (one admission per round, headroom permitting), then
+     * latches the stop and clears the interval, then gives in-flight
+     * admissions/queue runs a bounded settle window (40 x 25ms). Work is
+     * DRAINED or honestly receipted - never discarded to exit: a queue that
+     * cannot drain within maxRounds (sustained congestion) or counters that
+     * do not settle within the window surface as boundExhausted with the
+     * measured leftovers, and the caller fails the drain. maxRounds is the
+     * shutdown patience policy (default 10 admissions); one processQueue
+     * round admits at most one queued request.
+     */
+    public async drainAdmissionsAndStop(maxRounds: number = 10): Promise<{ intervalWasArmed: boolean; drainedRounds: number; remainingQueue: number; activeAdmissions: number; activeQueueRuns: number; boundExhausted: boolean }> {
+        this.accepting = false;
+        let drainedRounds = 0;
+        while (this.queue.length > 0 && drainedRounds < maxRounds) {
+            drainedRounds++;
+            try {
+                await this.processQueue();
+            } catch {
+                break; // a metrics failure stops the drain; leftovers are receipted below
+            }
+        }
+        const base = this.stopProcessingTimer();
+        let settleWaits = 0;
+        while ((this.activeAdmissions > 0 || this.activeQueueRuns > 0) && settleWaits < 40) {
+            await new Promise(r => setTimeout(r, 25));
+            settleWaits++;
+        }
+        const remainingQueue = this.queue.length;
+        return {
+            intervalWasArmed: base.intervalWasArmed,
+            drainedRounds,
+            remainingQueue,
+            activeAdmissions: this.activeAdmissions,
+            activeQueueRuns: this.activeQueueRuns,
+            boundExhausted: remainingQueue > 0 || this.activeAdmissions > 0 || this.activeQueueRuns > 0
+        };
     }
 
     private async processQueue() {

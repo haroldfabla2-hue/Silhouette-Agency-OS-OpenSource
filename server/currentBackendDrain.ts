@@ -1,5 +1,25 @@
-// EXACT existing component drain, not complete producer/admission ownership.
-// Desktop must NOT interpret success as all background writers stopped.
+// EXACT existing component drain PLUS owned background producers: the
+// narrative batch timer + queue, the resourceArbiter processing timer +
+// admission queue, and the powerManager throttle timer are stopped HERE
+// (registered owners only), preserving queued work or receipting failure - never
+// discarding it to exit. Still NOT complete ownership: gateway close, graph
+// close, the daemon unbound path and producers started outside this module's
+// import graph (e.g. connectionNervousSystem heartbeat via server boot
+// loaders) keep their own contracts, so Desktop must NOT interpret success
+// as all background writers stopped.
+import { drainOwnedProducers } from '../services/lifecycle/ownedProducers';
+export type DrainProducerReceipts = {
+    narrative?: { intervalWasArmed: boolean; inFlightAwaited: boolean; pendingPreserved: number; remainingItems: number; error: string | null; boundExhausted?: boolean; workStillOwned?: boolean; deferredUnacknowledged?: boolean; refusedLate?: number; admissionFailures?: number; destination: string; directorySynced: boolean; stopFailed?: boolean };
+    arbiter?: { intervalWasArmed: boolean; drainedRounds: number; remainingQueue: number; activeAdmissions: number; activeQueueRuns: number; boundExhausted: boolean; stopFailed?: boolean };
+    power?: { intervalWasArmed: boolean; stopFailed?: boolean };
+};
+// Per-invocation producer receipts of the LATEST drain call (null before
+// the first). Supervised tests read them to assert ownership without
+// scraping logs; a new drain call overwrites them.
+let lastDrainProducerReceipts: DrainProducerReceipts | null = null;
+export function getLastDrainProducerReceipts(): DrainProducerReceipts | null {
+    return lastDrainProducerReceipts;
+}
 export async function drainCurrentBackend(): Promise<boolean> {
     let shutdownFailed = false;
     try {
@@ -9,6 +29,24 @@ export async function drainCurrentBackend(): Promise<boolean> {
     } catch (error) {
         shutdownFailed = true;
         console.error('[SHUTDOWN] Curiosity drainage failed; do not claim clean persistence:', error);
+    }
+
+    // Stop only owners that registered while constructing real producers.
+    // No producer imports here: reading this registry cannot start timers or
+    // subscriptions. Concurrent calls share producer-stop work; this older
+    // component drain itself still has no whole-drain concurrency contract.
+    const producerReceipts = await drainOwnedProducers() as DrainProducerReceipts;
+    lastDrainProducerReceipts = producerReceipts;
+    const n = producerReceipts.narrative;
+    const a = producerReceipts.arbiter;
+    const p = producerReceipts.power;
+    if (n?.stopFailed || (n && (n.error !== null || n.remainingItems > 0))
+        || a?.stopFailed || a?.boundExhausted || p?.stopFailed) {
+        shutdownFailed = true;
+        console.error('[SHUTDOWN] Producer preservation failed; do not claim clean persistence');
+        // Never close backing stores under unresolved producer work. The
+        // caller receives false and may retry; this is not clean shutdown.
+        return false;
     }
 
     // 1. Flush pending memory entries

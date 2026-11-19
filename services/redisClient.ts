@@ -24,6 +24,10 @@ class RedisService {
     // LIVE (acceptanceBoot()) at every access boundary and in every getter,
     // never read back from a latch, so the barrier cannot go stale.
     private disabledLogged: boolean = false;
+    // Rejected-attempt receipt: error class+code of the last real connect
+    // failure that opened the in-memory fallback (e.g. "AggregateError:ECONNREFUSED").
+    // Bounded, no message text (messages can embed endpoint configuration).
+    private lastConnectFailure: string | null = null;
 
     constructor() {
         // Client is initialized lazily in connect()
@@ -32,6 +36,14 @@ class RedisService {
     /** Returns true if running in mock (in-memory) mode */
     public isMockMode(): boolean {
         return this.isMock;
+    }
+
+    /** Error class+code of the rejected real connect attempt that opened the
+     *  in-memory fallback, or null when no real attempt has failed (never
+     *  attempted, still connected, or policy-disabled). Lets a supervisor
+     *  prove the refusal happened without scraping logs. */
+    public getLastConnectFailure(): string | null {
+        return this.lastConnectFailure;
     }
 
     /** True when acceptance policy disables Redis (voluntary, not an outage).
@@ -168,6 +180,7 @@ class RedisService {
                 await this.client.connect();
             } catch (e: any) {
                 console.warn(`[REDIS] Connection Failed: ${e.message || e}. Using In-Memory Fallback (data lost on restart).`);
+                this.lastConnectFailure = `${e?.constructor?.name ?? 'Error'}:${e?.code ?? 'no-code'}`.slice(0, 80);
                 if (this.client) {
                     if (this.client.isOpen) {
                         // An OPEN client that fails to close is a genuine
