@@ -144,8 +144,15 @@ if (mode === 'producers-never-started') {
     } finally { await endpoint.cleanup(); }
     console.log(JSON.stringify({ mode, noProducerAcquired: true, activeResources: activeResourceSummary() }));
 } else if (mode === 'narrative-pending-storage-failure') {
-    const { narrative } = await import('../../services/narrativeService');
+    const endpoint = await resettingEndpoint();
+    process.env.REDIS_HOST = '127.0.0.1';
+    process.env.REDIS_PORT = String(endpoint.port);
+    process.env.NEO4J_URI = `bolt://127.0.0.1:${endpoint.port}`;
+    let primaryError: unknown = null;
+    const cleanupErrors: unknown[] = [];
+    let retryPreserved: number | null = null;
     try {
+        const { narrative } = await import('../../services/narrativeService');
         await narrative.enqueuePendingNarration({ source: 'CONSCIOUS', content: 'Public fixture storage failure', importance: 0.9 });
         const before = await narrative.pendingNarrationSnapshot();
         fs.mkdirSync('data', { recursive: true });
@@ -169,18 +176,33 @@ if (mode === 'producers-never-started') {
             fs.rmdirSync(journalPath);
             fs.renameSync(backupPath, journalPath);
         }
-        const retry = await narrative.preserveAndStopBatchProcessor();
+        // Retry the SAME real drain after storage recovery, not just producer
+        // stops. The failed drain intentionally left backing services open.
+        const { drainCurrentBackend, getLastDrainProducerReceipts } = await import('../../server/currentBackendDrain');
+        assert.equal(await drainCurrentBackend(), true, 'restored storage must permit the full drain, including backing services');
+        const retry = getLastDrainProducerReceipts()?.narrative;
+        assert.ok(retry, 'full drain retry must receipt the registered narrative owner');
         assert.equal(retry.error, null);
         assert.equal(retry.pendingPreserved, 1);
+        retryPreserved = retry.pendingPreserved;
         assert.deepEqual(JSON.parse(fs.readFileSync('data/wal/pending-narrations.json', 'utf8')).items, before);
-        const { drainOwnedProducers } = await import('../../services/lifecycle/ownedProducers');
-        await drainOwnedProducers();
-        console.log(JSON.stringify({ mode, failedWithoutLoss: true, retryPreserved: 1, activeResources: activeResourceSummary() }));
+    } catch (error) {
+        primaryError = error;
     } finally {
-        await narrative.preserveAndStopBatchProcessor();
-        const { drainOwnedProducers } = await import('../../services/lifecycle/ownedProducers');
-        await drainOwnedProducers();
+        // Cleanup uses the product drain too, including when an assertion
+        // failed after the initial false drain. Never mask the primary error.
+        try {
+            const { drainCurrentBackend } = await import('../../server/currentBackendDrain');
+            assert.equal(await drainCurrentBackend(), true, 'fixture cleanup full drain must complete');
+        } catch (error) { cleanupErrors.push(error); }
+        try { await endpoint.cleanup(); } catch (error) { cleanupErrors.push(error); }
     }
+    if (primaryError !== null) {
+        if (cleanupErrors.length > 0) console.error('[narrative storage fixture cleanup errors]', cleanupErrors);
+        throw primaryError;
+    }
+    if (cleanupErrors.length > 0) throw new AggregateError(cleanupErrors, 'narrative storage fixture cleanup failed');
+    console.log(JSON.stringify({ mode, failedWithoutLoss: true, retryPreserved, fullDrainRetried: true, activeResources: activeResourceSummary() }));
 } else if (mode === 'narrative-pending-write' || mode === 'narrative-pending-read') {
     const endpoint = await resettingEndpoint();
     process.env.REDIS_HOST = '127.0.0.1';
