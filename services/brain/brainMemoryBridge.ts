@@ -94,19 +94,30 @@ export class BrainMemoryBridge {
     }
 
     /**
-     * Mirror a memory into the Brain. Fire-and-forget: never throws, logs at debug.
+     * Mirror a memory into the Brain. Still never throws toward the caller,
+     * but now RETURNS the real outcome so an observer can record it BEFORE
+     * the caller's historical absorbing catch:
+     * - 'disabled': client disabled by config (producer no-op, NOT a loss);
+     * - 'empty': blank text (producer no-op, NOT a loss);
+     * - 'ok': the Brain answered status ok;
+     * - 'unverified-null': the client returned null - its request layer
+     *   already erased the HTTP/timeout cause, so the original error is NOT
+     *   recovered here and is never claimed to be;
+     * - 'not-ok': the Brain answered with a non-ok status.
      */
     public mirrorMemory(
         text: string,
         opts: { importance?: number; tags?: string[]; tier?: 'WORKING' | 'MEDIUM' | 'LONG' | 'DEEP' } = {},
-    ): void {
-        if (!this.client.isEnabled() || !text?.trim()) return;
-        // Intentionally not awaited — memory mirroring must not block the loop.
-        void this.client.addMemory(text, opts).then((res) => {
+    ): Promise<'ok' | 'disabled' | 'empty' | 'not-ok' | 'unverified-null'> {
+        if (!this.client.isEnabled()) return Promise.resolve('disabled');
+        if (!text?.trim()) return Promise.resolve('empty');
+        return this.client.addMemory(text, opts).then((res) => {
             if (res?.status === 'ok') {
                 log.debug({ id: res.id }, 'Mirrored memory to Brain');
+                return 'ok' as const;
             }
-        }).catch(() => { /* swallowed by client */ });
+            return res === null ? 'unverified-null' as const : 'not-ok' as const;
+        }).catch(() => 'unverified-null' as const);
     }
 }
 

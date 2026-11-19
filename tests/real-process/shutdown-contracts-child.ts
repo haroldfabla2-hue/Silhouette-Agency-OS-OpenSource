@@ -17,6 +17,45 @@ import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 const mode = process.argv[2];
+// [D-CANON] Evidence directory passed ONLY as argv[3] by the supervisor: an
+// absolute path owned by THIS run, outside every removable cwd and the shared
+// stores root. It is never added to env or to any policy surface, so the
+// module-eval env scrub is irrelevant to it. Absence is EXPECTED for every
+// non-canonical mode (silent null); for a canonical memory-restart phase,
+// which is always requested WITH capture, absence is an explicit evidence
+// FAILURE recorded on stderr. Diagnostic evidence code NEVER alters the
+// primary flow, the oracle, the stops, or cleanup - that discipline covers
+// ALL of it, not only the file writes.
+const isCanonicalRestart = mode === 'memory-restart-write' || mode === 'memory-restart-read';
+const evidenceDir = ((): string | null => {
+    const arg = process.argv[3];
+    if (typeof arg !== 'string' || arg.length === 0) {
+        if (isCanonicalRestart) process.stderr.write('[evidence] canonical restart phase requested WITHOUT capture dir (argv[3] missing): evidence FAILURE, primary flow untouched\n');
+        return null;
+    }
+    if (!path.isAbsolute(arg)) {
+        process.stderr.write('[evidence] argv[3] is not an absolute path; checkpoint evidence disabled\n');
+        return null;
+    }
+    return arg;
+})();
+const evidenceNote = (msg: string): void => { try { process.stderr.write(`[evidence] ${msg}\n`); } catch { /* no channel left */ } };
+/** [D-CANON] Checkpoint writer: captures its OWN errors (side .err file plus
+ *  stderr note) and NEVER throws. Its writeFileSync IS synchronous inside the
+ *  child: the capture adds overhead to the phase/exit path and is NOT
+ *  temporally identical to the uninstrumented run - declared, never hidden.
+ *  A checkpoint file absent because an earlier phase failed is reachability
+ *  evidence for the supervisor - never a faked phase. Names are unique per
+ *  mode+phase: the reader never overwrites the writer. */
+const writeCheckpoint = (phase: string, build: () => Record<string, unknown>): void => {
+    if (evidenceDir === null) return;
+    try {
+        fs.writeFileSync(path.join(evidenceDir, `${mode}.${phase}.json`), JSON.stringify(build()));
+    } catch (e) {
+        try { fs.writeFileSync(path.join(evidenceDir, `${mode}.${phase}.err`), String((e as Error)?.stack ?? e)); } catch { /* nothing left to record on */ }
+        evidenceNote(`${phase}: checkpoint write failed (recorded separately; primary flow untouched)`);
+    }
+};
 fs.mkdirSync('data', { recursive: true });
 
 // memory-restart-* fixture corpus: plain third-person public fixture text (no
@@ -284,7 +323,49 @@ if (mode === 'redis-fallback-quiet') {
     let writerStops: { arbiter?: { intervalWasArmed: boolean; pendingAdmissions: number; activeAdmissions: number; activeQueueRuns: number }; power?: { intervalWasArmed: boolean } } = {};
     let writerReceipt: Record<string, unknown> | null = null;
     let readerReceipt: Record<string, unknown> | null = null;
+    // [D-CANON] Diagnostic observation STATE and helpers at BRANCH scope (the
+    // sibling finally's CP2 must see them); the RISKY imports/init live
+    // INSIDE the try below, so the endpoint cleanup always runs on failure.
+    let captureWatermark: typeof import('../../services/asyncWorkLedger').captureWatermark | null = null;
+    let getEvidenceSnapshot: typeof import('../../services/asyncWorkLedger').getEvidenceSnapshot | null = null;
+    let o1Observation: () => Record<string, unknown> = () => ({ observation: 'unavailable' });
+    let o2Token: number | null = null;
+    let predrainReached = false;
+    const o2Checkpoint = (tokenKind: string, token: number | null): Record<string, unknown> => ({
+        mode,
+        tokenKind,
+        watermarkOrdinal: token,
+        o2: token !== null && getEvidenceSnapshot !== null
+            ? { observation: 'snapshot', evidence: getEvidenceSnapshot(token) }
+            : { observation: 'unavailable' },
+        o1: o1Observation()
+    });
     try {
+        // [D-CANON] Neutral pre-imports with ZERO product dependencies
+        // (verified in source), BEFORE the first product import of this
+        // branch and AFTER the policy env above. On ANY failure the
+        // observation degrades to 'unavailable': recorded, never thrown, and
+        // the real work continues with honestly degraded checkpoints.
+        try {
+            const ownership = await import('../../services/startupOwnership');
+            const ledger = await import('../../services/asyncWorkLedger');
+            const startupHandle = ownership.getSingletonStartupHandle();
+            // The settlement Promise is NEVER inspected and no state
+            // (started/pending/prepared) is inferred from it: the receipt is
+            // captured locally IF and WHEN it arrives. Plain-data report only.
+            let startupReceipt: unknown = null;
+            startupHandle.settlement.then(
+                r => { startupReceipt = r; },
+                (e: unknown) => { startupReceipt = { settlementRejected: e instanceof Error ? e.message : String(e) }; }
+            );
+            o1Observation = () => startupReceipt !== null
+                ? { observation: 'receipt-observed', receipt: startupReceipt }
+                : { observation: 'receipt-not-yet-observed', id: startupHandle.id, claimId: startupHandle.claimId };
+            captureWatermark = ledger.captureWatermark;
+            getEvidenceSnapshot = ledger.getEvidenceSnapshot;
+        } catch (e) {
+            evidenceNote(`diagnostic observation unavailable: ${String((e as Error)?.message ?? e)}`);
+        }
         // DETERMINISTIC OWNED STARTUP PRECONDITIONS (before any memory import):
         // 1. A valid empty volatile snapshot at the owned cwd path: continuum's
         //    unawaited loadSnapshot settles on DISK with zero merges and never
@@ -299,7 +380,17 @@ if (mode === 'redis-fallback-quiet') {
         //    the legacy continuum.retrieve -> geminiService embedding resolver.
         fs.writeFileSync(path.join('data', 'memory_snapshot.json'), JSON.stringify({ working: [] }));
         assert.equal(fs.existsSync(path.join('data', 'memory-transitions')), false, 'transition journal must be absent in a fresh owned cwd');
-        const { sqliteService } = await import('../../services/sqliteService');
+        // [D-CANON] An import failure here is recorded SEPARATELY and the
+        // original error rethrown untouched. It is NEVER marked on the O1
+        // singleton ticket: this import is not the ticket owner's import, so
+        // a failure here proves nothing about the owner's module evaluation.
+        let sqliteService: typeof import('../../services/sqliteService').sqliteService;
+        try {
+            ({ sqliteService } = await import('../../services/sqliteService'));
+        } catch (e) {
+            evidenceNote(`sqliteService import failed: ${String((e as Error)?.message ?? e)}`);
+            throw e;
+        }
         sqliteService.setConfig('active_goals', []);
         assert.deepEqual(sqliteService.getConfig('active_goals'), [], 'active_goals seed must verify through the real config API');
         const { factRepository } = await import('../../services/memory/factRepository');
@@ -407,6 +498,15 @@ if (mode === 'redis-fallback-quiet') {
             for (let i = 0; i < FIXTURE_WRITES.length; i++) {
                 assertLongNode(byFactId.get(receipts[i].id), FIXTURE_WRITES[i].fact, FIXTURE_WRITES[i].owner, receipts[i].id);
             }
+            // [D-CANON] CP1 predrain: capture+token+snapshot ALL inside the
+            // no-throw evidence discipline. The ONE O2 cohort token of this
+            // child is fixed HERE and reused by CP2.
+            try {
+                if (o2Token === null && captureWatermark !== null) o2Token = captureWatermark();
+                const token = o2Token;
+                if (token !== null) predrainReached = true;
+                writeCheckpoint('predrain', () => o2Checkpoint(token === null ? 'unavailable' : 'predrain', token));
+            } catch (e) { evidenceNote(`predrain: checkpoint failed: ${String((e as Error)?.message ?? e)}`); }
             const { drainCurrentBackend } = await import('../../server/currentBackendDrain');
             const drainOk = await drainCurrentBackend();
             assert.equal(drainOk, true, 'graceful drain must succeed');
@@ -438,6 +538,15 @@ if (mode === 'redis-fallback-quiet') {
             for (const { row, fact, owner } of expectedLong) {
                 assertLongNode(byFactId.get(row.id), fact, owner, row.id);
             }
+            // [D-CANON] CP1 predrain: capture+token+snapshot ALL inside the
+            // no-throw evidence discipline. The ONE O2 cohort token of this
+            // child is fixed HERE and reused by CP2.
+            try {
+                if (o2Token === null && captureWatermark !== null) o2Token = captureWatermark();
+                const token = o2Token;
+                if (token !== null) predrainReached = true;
+                writeCheckpoint('predrain', () => o2Checkpoint(token === null ? 'unavailable' : 'predrain', token));
+            } catch (e) { evidenceNote(`predrain: checkpoint failed: ${String((e as Error)?.message ?? e)}`); }
             const { drainCurrentBackend } = await import('../../server/currentBackendDrain');
             const drainOk = await drainCurrentBackend();
             assert.equal(drainOk, true, 'reader graceful drain must succeed');
@@ -482,6 +591,17 @@ if (mode === 'redis-fallback-quiet') {
         // lancedbService exposes no close(): its connection teardown is process
         // exit itself, which the natural-exit supervision verifies.
         try { await endpoint.cleanup(); } catch (e) { cleanupErrors.push(e); }
+        // [D-CANON] CP2 post-cleanup-attempts: inside this outer finally so
+        // it runs on EVERY outcome (success, assertion failure, cleanup
+        // failure), BEFORE the aggregation throw and the receipt asserts
+        // below. Fully no-throw; primary error, stops order and aggregation
+        // untouched. Fallback token is labelled distinctly when CP1 never ran.
+        try {
+            if (o2Token === null && captureWatermark !== null) o2Token = captureWatermark();
+            const token = o2Token;
+            const tokenKind = token === null ? 'unavailable' : (predrainReached ? 'predrain' : 'fallback-no-predrain');
+            writeCheckpoint('postcleanup', () => o2Checkpoint(tokenKind, token));
+        } catch (e) { evidenceNote(`postcleanup: checkpoint failed: ${String((e as Error)?.message ?? e)}`); }
     }
     if (cleanupErrors.length > 0) throw new AggregateError(cleanupErrors, `${mode} cleanup failed`);
     // Receipts print only after teardown, only on full success.

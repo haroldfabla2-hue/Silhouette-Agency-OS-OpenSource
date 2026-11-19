@@ -29,11 +29,24 @@ export const initDatabases = async () => {
     try {
         const { redisClient } = await import('../../services/redisClient');
         await redisClient.connect();
-        registerStarted('redis', {close: () => redisClient.disconnect()});
-        if (redisClient.isMockMode()) {
-            console.warn('[LOADER] Redis running in MOCK mode - data will not persist across restarts');
+        if (redisClient.isDisabledByPolicy()) {
+            // Voluntary policy disable: NOT ready, NOT an outage, and no
+            // handle was acquired - so no ownership is registered either.
+            console.log('[LOADER] Redis disabled by policy (acceptance); not started.');
         } else {
-            console.log('[LOADER] Redis Ready.');
+            // Ownership registered in EVERY non-disabled outcome, including
+            // unavailable: a retained failed-close handle keeps its cleanup
+            // route at drain.
+            registerStarted('redis', {close: () => redisClient.disconnect()});
+            if (redisClient.isReallyConnected()) {
+                console.log('[LOADER] Redis Ready.');
+            } else if (redisClient.isMockMode()) {
+                console.warn('[LOADER] Redis running in MOCK mode - data will not persist across restarts');
+            } else {
+                // e.g. retained failed-close handle: connect() never throws,
+                // so the honest line is "not Ready", never a bare "Redis Ready."
+                console.warn('[LOADER] Redis unavailable (no real connection, no in-memory fallback); not Ready.');
+            }
         }
     } catch (e: any) {
         console.warn('[LOADER] Redis initialization failed:', e.message);

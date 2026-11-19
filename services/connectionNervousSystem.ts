@@ -15,6 +15,7 @@
 
 import { systemBus } from './systemBus';
 import { SystemProtocol } from '../types';
+import { acceptanceBoot } from './security/bootMode';
 
 // ==================== TYPES ====================
 
@@ -320,6 +321,54 @@ export const nervousSystem = new ConnectionNervousSystem();
  * Register default connections
  * Called during server initialization
  */
+/** Redis monitoring registration, extracted from initializeNervousSystem so
+ * the REAL decision path is exercisable without the global initializer
+ * (which probes other providers and starts the heartbeat). Policy is read
+ * BEFORE importing the client; a voluntary policy disable is NOT an outage:
+ * no registration, no reconnect loop, no incident. */
+export async function registerRedisMonitoring(): Promise<void> {
+    if (!process.env.REDIS_URL) return;
+    if (acceptanceBoot()) {
+        console.log('[NERVOUS] ℹ️ Redis disabled by policy; skipping monitoring registration');
+        return;
+    }
+    try {
+        const { redisClient } = await import('./redisClient');
+        nervousSystem.register({
+            id: 'redis',
+            name: 'Redis Cache',
+            type: 'DATABASE',
+            isRequired: false,
+            checkHealth: async () => {
+                // Disabled-by-policy is not a probe-able failure
+                if (redisClient.isDisabledByPolicy()) return false;
+                // If Redis fell back to mock mode, it's not truly connected
+                if (redisClient.isMockMode()) return false;
+                try {
+                    // A resolved get() alone proves nothing (an unavailable
+                    // client answers null without error): require the real,
+                    // handshake-complete state after the probe.
+                    await redisClient.get('__nervous_ping__');
+                    return redisClient.isReallyConnected();
+                } catch {
+                    return false;
+                }
+            },
+            reconnect: async () => {
+                if (redisClient.isDisabledByPolicy()) return false;
+                try {
+                    await redisClient.connect();
+                    return redisClient.isReallyConnected();
+                } catch {
+                    return false;
+                }
+            }
+        });
+    } catch (e) {
+        console.warn("[NERVOUS] Redis client not available for monitoring");
+    }
+}
+
 export async function initializeNervousSystem(): Promise<void> {
     console.log("[NERVOUS] 🔌 Registering default connections...");
 
@@ -403,38 +452,7 @@ export async function initializeNervousSystem(): Promise<void> {
     }
 
     // 4. Redis — register if REDIS_URL is configured (Docker service)
-    if (process.env.REDIS_URL) {
-        try {
-            const { redisClient } = await import('./redisClient');
-            nervousSystem.register({
-                id: 'redis',
-                name: 'Redis Cache',
-                type: 'DATABASE',
-                isRequired: false,
-                checkHealth: async () => {
-                    // If Redis fell back to mock mode, it's not truly connected
-                    if (redisClient.isMockMode()) return false;
-                    try {
-                        // Try a round-trip ping via get
-                        await redisClient.get('__nervous_ping__');
-                        return true;
-                    } catch {
-                        return false;
-                    }
-                },
-                reconnect: async () => {
-                    try {
-                        await redisClient.connect();
-                        return !redisClient.isMockMode();
-                    } catch {
-                        return false;
-                    }
-                }
-            });
-        } catch (e) {
-            console.warn("[NERVOUS] Redis client not available for monitoring");
-        }
-    }
+    await registerRedisMonitoring();
 
     // 5. Gemini API (Primary LLM) — register if API key is configured
     if (process.env.GEMINI_API_KEY || process.env.API_KEY) {

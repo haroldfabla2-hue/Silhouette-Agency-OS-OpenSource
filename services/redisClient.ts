@@ -1,5 +1,6 @@
 import { REDIS_CONFIG } from '../constants';
 import { incidentRegistry } from './incidentRegistry';
+import { acceptanceBoot } from './security/bootMode';
 
 const MOCK_STORE_MAX_SIZE = 10000; // Eviction threshold for in-memory fallback
 
@@ -19,6 +20,10 @@ class RedisService {
     // throws. The handle stays OWNED (never silently discarded); the next
     // connect() or disconnect() retries the close before anything else.
     private closeFailed: boolean = false;
+    // One-time observability receipt ONLY. The policy check itself is made
+    // LIVE (acceptanceBoot()) at every access boundary and in every getter,
+    // never read back from a latch, so the barrier cannot go stale.
+    private disabledLogged: boolean = false;
 
     constructor() {
         // Client is initialized lazily in connect()
@@ -29,7 +34,42 @@ class RedisService {
         return this.isMock;
     }
 
+    /** True when acceptance policy disables Redis (voluntary, not an outage).
+     *  Derived LIVE from the process boot mode - never from a latch - so it is
+     *  correct before the first connect and at every call site. Boot-stable:
+     *  SILHOUETTE_BOOT_MODE is process-start policy, not a runtime toggle. */
+    public isDisabledByPolicy(): boolean {
+        return acceptanceBoot();
+    }
+
+    /** Truthful serving state: a live REAL client past the protocol handshake
+     *  (driver isReady), never mock, never policy-disabled, with no failed
+     *  close latched and no connect/disconnect in flight. */
+    public isReallyConnected(): boolean {
+        if (acceptanceBoot()) return false;
+        if (this.isMock || this.closeFailed) return false;
+        if (this.connectTask || this.disconnectTask) return false;
+        return this.isConnected && !!this.client && this.client.isReady === true;
+    }
+
+    // Acceptance barrier: configForRuntime already declares modules.redis=false
+    // and dummy endpoints in this mode; this client must honor that AT the
+    // access boundary - before importing the driver, creating a client or
+    // opening a socket. Disabled is NOT mock and NOT connected: operations
+    // keep their existing unavailable semantics (set/del/releaseLock no-op,
+    // get null, keys []) and NO in-memory fallback is engaged.
+    private logPolicyDisabledOnce(): void {
+        if (!this.disabledLogged) {
+            this.disabledLogged = true;
+            console.info('[REDIS] Disabled by acceptance policy (modules.redis=false); no client will be created.');
+        }
+    }
+
     public async connect(): Promise<void> {
+        if (acceptanceBoot()) {
+            this.logPolicyDisabledOnce();
+            return;
+        }
         // 1. Browser Safety Check: Never run in browser
         if (typeof window !== 'undefined') return;
 
@@ -68,10 +108,21 @@ class RedisService {
     }
 
     private async doConnect(): Promise<void> {
+        // Defensive recheck at the real boundary: never import the driver or
+        // create a client under acceptance, whatever path led here.
+        if (acceptanceBoot()) {
+            this.logPolicyDisabledOnce();
+            return;
+        }
         if (!this.client && !this.isMock) {
             try {
                 // 3. Dynamic Import: Prevents bundler from including 'redis' package in frontend build
                 const redisModule = await import('redis');
+                // Recheck across the await: never create a client under policy.
+                if (acceptanceBoot()) {
+                    this.logPolicyDisabledOnce();
+                    return;
+                }
                 const createClient = redisModule.createClient;
 
                 const redisUrl = `redis://${REDIS_CONFIG.host}:${REDIS_CONFIG.port}`;
@@ -91,6 +142,16 @@ class RedisService {
                         }
                     }
                 });
+
+                // Recheck before opening the socket. Unreachable under the
+                // boot-stable scope; if it ever tripped, the just-created
+                // client never opened, so releasing the reference is not a
+                // close and nothing is disguised as one.
+                if (acceptanceBoot()) {
+                    this.logPolicyDisabledOnce();
+                    if (this.client && !this.client.isOpen) this.client = null;
+                    return;
+                }
 
                 this.client.on('error', (err: any) => {
                     // Only log if not already in mock mode to avoid spam
@@ -134,6 +195,9 @@ class RedisService {
     }
 
     public disconnect(): Promise<void> {
+        // Deliberately NO policy guard: cleanup of an acquired handle stays
+        // usable in every mode. The barrier blocks acquisition and commands,
+        // never close.
         // Non-async wrapper: every concurrent caller receives the SAME
         // stored promise, so one client can never be closed twice and a
         // shared failure reaches every caller.
@@ -199,6 +263,15 @@ class RedisService {
      *  socket at import time raced test-worker teardown and crashed CI
      *  intermittently. connect() is idempotent and never throws. */
     private async ensureConnected(): Promise<void> {
+        // Acceptance barrier at the operation fence itself, BEFORE the
+        // isConnected early-return below: no operation may be admitted on a
+        // pre-existing or future handle in this mode. closeFailed and pending
+        // disconnect/connect tasks are PRESERVED for their owners; returning
+        // early here neither closes nor discards anything.
+        if (acceptanceBoot()) {
+            this.logPolicyDisabledOnce();
+            return;
+        }
         // Admission fence, revalidated across EVERY await boundary - a
         // single entry check is not enough: a disconnect can begin while
         // this caller awaits connect settlement, and the TCP 'connect'
@@ -223,6 +296,13 @@ class RedisService {
         // driver's own rejection, the preexisting op semantics.
         let connectAttempted = false;
         for (;;) {
+            // Policy revalidated at every loop turn, i.e. after each await
+            // below: boot-stable in practice, but the fence never trusts a
+            // stale check from before an await.
+            if (acceptanceBoot()) {
+                this.logPolicyDisabledOnce();
+                return;
+            }
             if (this.disconnectTask) {
                 try { await this.disconnectTask; } catch { /* logged + latched at source */ }
                 continue;
@@ -240,6 +320,11 @@ class RedisService {
 
     public async set(key: string, value: string, ttl?: number) {
         await this.ensureConnected();
+        // Post-await fence: ensureConnected can also return via its early
+        // isConnected path; policy is revalidated before ANY command so no
+        // operation rides a handle in acceptance (boot-stable scope: this is
+        // not a hot-toggle contract).
+        if (acceptanceBoot()) { this.logPolicyDisabledOnce(); return; }
         if (!this.isConnected) return;
 
         if (this.isMock) {
@@ -259,6 +344,7 @@ class RedisService {
 
     public async get(key: string): Promise<string | null> {
         await this.ensureConnected();
+        if (acceptanceBoot()) { this.logPolicyDisabledOnce(); return null; }
         if (!this.isConnected) return null;
 
         if (this.isMock) {
@@ -270,6 +356,7 @@ class RedisService {
 
     public async del(key: string) {
         await this.ensureConnected();
+        if (acceptanceBoot()) { this.logPolicyDisabledOnce(); return; }
         if (!this.isConnected) return;
 
         if (this.isMock) {
@@ -282,6 +369,7 @@ class RedisService {
 
     public async keys(pattern: string): Promise<string[]> {
         await this.ensureConnected();
+        if (acceptanceBoot()) { this.logPolicyDisabledOnce(); return []; }
         if (!this.isConnected) return [];
 
         if (this.isMock) {
@@ -302,7 +390,16 @@ class RedisService {
      * @returns boolean True if lock acquired, false if already locked
      */
     public async acquireLock(lockKey: string, ttlMs: number): Promise<boolean> {
+        // Policy denial is NOT lock-busy and NOT the normal no-redis fallback:
+        // under acceptance there is NO distributed exclusion, so returning
+        // true would let the caller run as if a lock were held. Throw an
+        // identifiable error instead; callers (e.g. unifiedDaemon) already
+        // treat lock errors as retry-later with the task still due. Outside
+        // acceptance the fallback below is unchanged. The policy check is
+        // LIVE - before AND after the await - never read from a latch.
+        if (acceptanceBoot()) { this.logPolicyDisabledOnce(); throw new Error('REDIS_DISABLED_BY_POLICY'); }
         await this.ensureConnected();
+        if (acceptanceBoot()) { this.logPolicyDisabledOnce(); throw new Error('REDIS_DISABLED_BY_POLICY'); }
         if (!this.isConnected) return true; // Fallback to allowing execution if no redis
 
         if (this.isMock) {
@@ -331,6 +428,7 @@ class RedisService {
      */
     public async releaseLock(lockKey: string): Promise<void> {
         await this.ensureConnected();
+        if (acceptanceBoot()) { this.logPolicyDisabledOnce(); return; }
         if (!this.isConnected) return;
 
         if (this.isMock) {

@@ -15,6 +15,7 @@ import * as path from 'path';
 import { systemBus } from './systemBus';
 import { SystemProtocol } from '../types';
 import { MemoryNodeSchema } from './memorySchema'; // Added missing import
+import { beginStoreRootScope, beginChild, type WorkScope } from './asyncWorkLedger'; // [O2-OBSERVE] observation-only ledger (zero product imports)
 
 const SNAPSHOT_PATH = path.join(process.cwd(), 'data', 'memory_snapshot.json');
 
@@ -386,7 +387,22 @@ class ContinuumMemorySystem {
         }
     }
 
-    public async store(content: string, tier: MemoryTier = MemoryTier.ULTRA_SHORT, tags: string[] = [], skipIngestion: boolean = false, extra?: { parentIds?: string[]; affect?: { valence: number; activation: number; at: number } }): Promise<void> {
+    public store(content: string, tier: MemoryTier = MemoryTier.ULTRA_SHORT, tags: string[] = [], skipIngestion: boolean = false, extra?: { parentIds?: string[]; affect?: { valence: number; activation: number; at: number } }): Promise<void> {
+        // [O2-OBSERVE] Pure observation: nothing is suppressed, reordered
+        // or awaited differently. A non-internal store opens an
+        // observational root scope at ENTRY (before internal awaits); the
+        // scope ends when the work settles (return, throw or early return
+        // are all covered by these handlers). Internal stores
+        // (skipIngestion=true) keep no scope: they launch no cascades.
+        const scope = skipIngestion ? null : beginStoreRootScope('continuum.store');
+        const work = this.storeWithScope(scope, content, tier, tags, skipIngestion, extra);
+        if (scope !== null) {
+            work.then(() => scope.end('ok'), (err: unknown) => scope.end('failed', err));
+        }
+        return work;
+    }
+
+    private async storeWithScope(scope: WorkScope | null, content: string, tier: MemoryTier = MemoryTier.ULTRA_SHORT, tags: string[] = [], skipIngestion: boolean = false, extra?: { parentIds?: string[]; affect?: { valence: number; activation: number; at: number } }): Promise<void> {
         // [PR-4c] Boundary coercion: an invalid tier (e.g. an LLM emitting the
         // number 28) must not reach the gatekeeper as a "corruption" event that
         // mobilizes remediation squads in a loop. Coerce loudly to WORKING;
@@ -484,8 +500,10 @@ class ContinuumMemorySystem {
             if (this.working.length > this.RAM_HARD_CAP) {
                 const evicted = this.working[0];
                 if (evicted && evicted !== node) {
-                    try { await this.promoteWorking(evicted, ['EVICTED']); }
-                    catch (error) { console.error('[CONTINUUM] Eviction deferred; source remains in RAM:', error); }
+                    // [O2-OBSERVE] Eviction outcome recorded BEFORE the historical absorb.
+                    const evictionChild = scope !== null ? beginChild(scope, 'working-eviction') : null;
+                    try { await this.promoteWorking(evicted, ['EVICTED']); evictionChild?.settle('ok'); }
+                    catch (error) { evictionChild?.fail(error); console.error('[CONTINUUM] Eviction deferred; source remains in RAM:', error); }
                 }
             }
         }
@@ -564,19 +582,52 @@ class ContinuumMemorySystem {
             introspection.setRecentThoughts([`Storing memory: ${content.substring(0, 30)}...`]);
 
             // 4. Notify Dreamer (Event-Driven) - with null check
-            import('./dreamerService').then(({ dreamer }) => {
-                if (dreamer?.notifyNewMemory) dreamer.notifyNewMemory();
-            }).catch(() => { /* Dreamer not available */ });
+            // [O2-OBSERVE] Child registered BEFORE the dynamic import starts:
+            // import time is observed pending time, not an idle gap. The
+            // callback adopts the REAL returned work: a cap-hit dream promise
+            // is awaited by the ledger (with its known escapes declared
+            // sticky); a synchronous entropy increment completes immediately
+            // (state changed: 'sync-completed', not a no-op). The outcome is
+            // recorded BEFORE the historical absorbing catch, which still
+            // absorbs for the caller exactly as before.
+            const dreamerChild = scope !== null ? beginChild(scope, 'dreamer-notify') : null;
+            import('./dreamerService').then(({ dreamer, DREAM_KNOWN_INCOMPLETE_COVERAGE }) => {
+                if (!dreamer?.notifyNewMemory) { dreamerChild?.settle('producer-noop'); return; }
+                const result: Promise<void> | void = dreamer.notifyNewMemory();
+                if (result && typeof (result as Promise<void>).then === 'function') {
+                    // Fulfilled dream is NOT absence of failure: its internal
+                    // catch absorbs and its fire-and-forget subgraph is
+                    // declared, never claimed closed.
+                    DREAM_KNOWN_INCOMPLETE_COVERAGE.forEach(reason => dreamerChild?.noteIncompleteCoverage(`dreamer-notify: ${reason}`));
+                    (result as Promise<void>).then(
+                        () => dreamerChild?.settle('ok'),
+                        (err: unknown) => dreamerChild?.fail(err)
+                    );
+                } else {
+                    dreamerChild?.settle('sync-completed');
+                }
+            }).catch((err: unknown) => { dreamerChild?.fail(err); /* Dreamer not available */ });
 
             // 5. [BRAIN] Mirror to the external silhouette-brain 4-Tier memory
             //    (fire-and-forget, no-op when the integration is disabled).
+            const brainChild = scope !== null ? beginChild(scope, 'brain-mirror') : null;
             import('./brain').then(({ brainBridge }) => {
-                brainBridge.mirrorMemory(content, {
+                // [O2-OBSERVE] Child registered before the import; the real
+                // mirror outcome is returned and classified: 'disabled'/'empty'
+                // are producer no-ops (NOT losses); 'unverified-null'/'not-ok'
+                // are unverified (the client already erased the cause, and no
+                // recovery of it is claimed). Recorded BEFORE the absorbing
+                // catch, which still absorbs for the caller.
+                return brainBridge.mirrorMemory(content, {
                     importance: node.importance,
                     tags: node.tags,
                     tier: (tierStr === 'DEEP' ? 'DEEP' : tierStr === 'MEDIUM' ? 'MEDIUM' : 'WORKING'),
                 });
-            }).catch(() => { /* Brain integration not available */ });
+            }).then((mirrorOutcome) => {
+                if (mirrorOutcome === 'ok') brainChild?.settle('ok');
+                else if (mirrorOutcome === 'disabled' || mirrorOutcome === 'empty') brainChild?.settle('producer-noop');
+                else brainChild?.settle('unverified');
+            }).catch((err: unknown) => { brainChild?.fail(err); /* Brain integration not available */ });
         }
     }
 

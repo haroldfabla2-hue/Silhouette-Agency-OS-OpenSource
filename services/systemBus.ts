@@ -2,6 +2,7 @@
 import { ProtocolEvent, SystemProtocol, InterAgentMessage } from "../types";
 import { IBusAdapter } from "./bus/IBusAdapter";
 import { MemoryBusAdapter } from "./bus/MemoryBusAdapter";
+import { acceptanceBoot } from "./security/bootMode";
 // import { RedisBusAdapter } from "./bus/RedisBusAdapter"; // REMOVED: Static import causes browser crash
 
 // --- SYSTEM BUS V2.1 (ENHANCED WITH MESSAGE TAGGING) ---
@@ -62,6 +63,13 @@ class SystemBus {
         // Check if we are in a Node.js environment and have Redis config
         const isNode = typeof process !== 'undefined' && process.versions != null && process.versions.node != null;
         if (!isNode) return; // Browser: Stay on Memory
+
+        // Policy barrier (NOT scrub-dependent): acceptance never upgrades to
+        // Redis, even if USE_REDIS/REDIS_URL somehow survived the env scrub.
+        if (acceptanceBoot()) {
+            console.info('[SYSTEM BUS] Redis adapter upgrade disabled by acceptance policy; staying on memory adapter.');
+            return;
+        }
 
         const useRedis = process.env.USE_REDIS === 'true' || process.env.REDIS_URL;
 

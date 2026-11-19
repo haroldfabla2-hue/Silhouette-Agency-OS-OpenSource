@@ -44,6 +44,8 @@ import { CapabilityResult, CapabilityContext, CapabilityExecutor } from "../type
 // [EVOLUTION] New services from Silhouette Evolution
 import { continuousMemory } from "./memory/continuousMemory";
 import { genesisV2 } from "./genesis/genesisV2";
+import type { GenesisReport } from "./genesis/genesisV2";
+import { constructSingletonObserved, createDirectOwnedTicket, type StartupTicket, type SwarmStartupReceipt, type GenesisReportSnapshot } from "./startupOwnership";
 import { agentConversation } from "./communication/agentConversation";
 import { agentFileSystem } from "./agents/agentFileSystem";
 import { StandardAgent } from "./agents/StandardAgent";
@@ -74,6 +76,24 @@ interface ActiveTask {
     assignedAt: number;
     status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED';
 }
+
+/**
+ * [STARTUP-SETTLEMENT] Failure domains of this boot that this receipt
+ * CANNOT observe (absorbed or invisible by construction). Their presence
+ * here is a documented limit, not a claim of health. Outcome 'ok' means
+ * only 'no OBSERVED failure in the owned scope'.
+ */
+const SWARM_STARTUP_UNOBSERVED_FAILURE_DOMAINS: readonly string[] = [
+    'agentPersistence.saveAgent swallows per-agent write errors (console-only)',
+    'genesis bootstrap/handshake phases absorb per-agent errors; only PART of them reaches the report',
+    'genesis report.protocolsLoaded can be true without core-01 loaded',
+    'agentPersistence.getAllAgentIds() collapsing to [] reads as first run',
+    'agentPersistence.loadAgent(id) returning null is skipped silently',
+    'agentPersistence.migrateAllToFileSystem() reports only a count',
+    'help bus listener errors are absorbed by the bus',
+    'continuousMemory consolidation lifetime after init',
+    'static import/evaluation failures before construction (only observable to a caller holding the singleton handle)',
+];
 
 export class AgentSwarmOrchestrator {
     // Active Actors in RAM (The "Stage")
@@ -141,11 +161,45 @@ export class AgentSwarmOrchestrator {
     ];
 
 
+    private readonly startupTicket: StartupTicket;
+
     private orgChart: OrgChart;
     private reputationLedger: ReputationLedger;
 
-    constructor() {
-        this.initializeSwarm();
+    constructor(startupTicket?: StartupTicket) {
+        if (startupTicket !== undefined) {
+            // [STARTUP-SETTLEMENT] Factory-observed construction: the
+            // factory owns the constructor-terminal marking (return/throw);
+            // this constructor NEVER terminates a ticket it did not create.
+            this.startupTicket = startupTicket;
+            this.startupTicket.setUnobservedDomains(SWARM_STARTUP_UNOBSERVED_FAILURE_DOMAINS);
+            this.constructBody();
+            return;
+        }
+        // [STARTUP-SETTLEMENT] Direct-new: independent internal owner,
+        // claimed now and terminated here around the BODY only. Declared
+        // limit: field initializers are NOT covered; no global state and
+        // no other construction's ticket is touched.
+        this.startupTicket = createDirectOwnedTicket();
+        this.startupTicket.setUnobservedDomains(SWARM_STARTUP_UNOBSERVED_FAILURE_DOMAINS);
+        try {
+            this.constructBody();
+            this.startupTicket.markConstructionComplete();
+        } catch (err) {
+            this.startupTicket.markConstructionFailed(err);
+            throw err; // exact same value, incl. null/undefined throws
+        }
+    }
+
+    private constructBody(): void {
+        try {
+            this.initializeSwarm();
+        } catch (err) {
+            // Stage recorded, then the EXACT same value is rethrown:
+            // fail-fast is preserved and consumers still see the failure.
+            this.startupTicket.recordSyncFailure(err);
+            throw err;
+        }
         this.applyMode(SystemMode.ECO);
         // Organization-as-data + evidence ledger: loaded before the help bus
         // subscribes so collaboration facts are recorded from the first request.
@@ -1292,6 +1346,9 @@ JSON ONLY:
             continuousMemory.initialize();
         } catch (err) {
             console.error('[ORCHESTRATOR] Continuous Memory init failed (non-fatal):', err);
+            // [STARTUP-SETTLEMENT] Historically absorbed here only; now also
+            // recorded as a non-fatal startup failure (degraded signal).
+            this.startupTicket.recordNonFatalFailure('continuousMemory.initialize', err);
         }
 
         // 1. Check if DB exists, if not, use Genesis V2
@@ -1299,29 +1356,74 @@ JSON ONLY:
 
         if (existingIds.length === 0) {
             console.log("[ORCHESTRATOR] First Run: Executing Genesis V2 Protocol...");
-            // Genesis V2 is async but we fire-and-forget here since it doesn't block
-            genesisV2.execute().then(report => {
+            this.startupTicket.setBranch('genesis');
+            // Genesis V2 is async but we fire-and-forget here since it doesn't block.
+            // [STARTUP-SETTLEMENT] Exactly ONE continuation, adopted by the
+            // ticket at launch (its rejection is observed immediately by the
+            // ticket's own handler). Historical then/catch + fallback behavior
+            // is preserved exactly; the stage is captured BEFORE any
+            // transition to 'fallback'.
+            let stage: 'execute' | 'continuation' | 'fallback' = 'execute';
+            const continuation = genesisV2.execute().then(report => {
+                stage = 'continuation';
+                this.startupTicket.setGenesisReportSnapshot(this.snapshotGenesisReport(report));
                 if (report.success) {
                     console.log(`[ORCHESTRATOR] Genesis V2 complete: ${report.agentsCreated.length} agents born.`);
                     this.knownAgentIds = agentPersistence.getAllAgentIds();
+                    // [STARTUP-SETTLEMENT] Snapshot immediately after the ID
+                    // assignment, BEFORE generateSquads: if that call throws,
+                    // the replacement is still observed at this stage.
+                    this.startupTicket.setKnownAgentIdsSnapshot(this.knownAgentIds, 'genesis-success-reread');
                     this.generateSquadsStructureOnly();
                 } else {
+                    this.startupTicket.markFallbackUsed();
+                    stage = 'fallback';
                     console.error('[ORCHESTRATOR] Genesis V2 had failures, falling back to legacy...');
-                    this.generateInitialAgents();
+                    try {
+                        this.generateInitialAgents();
+                    } finally {
+                        // runGenesisMigration mutates knownAgentIds per push;
+                        // the snapshot runs even on partial mutation and the
+                        // original throw still propagates (with ordinary
+                        // internal IDs and a non-terminal ticket this
+                        // instrumentation cannot throw by design).
+                        this.startupTicket.setKnownAgentIdsSnapshot(this.knownAgentIds, 'genesis-fallback-legacy');
+                    }
                 }
-            }).catch(() => {
+                if (!report.success || report.agentsFailed.length > 0 || !report.protocolsLoaded || !report.validationPassed) {
+                    this.startupTicket.recordDegradedSignal(`genesis report: success=${report.success} agentsFailed=${report.agentsFailed.length} protocolsLoaded=${report.protocolsLoaded} validationPassed=${report.validationPassed}`);
+                }
+            }).catch(err => {
+                this.startupTicket.recordContinuationError(stage, err);
+                this.startupTicket.markFallbackUsed();
+                stage = 'fallback';
                 console.error('[ORCHESTRATOR] Genesis V2 crashed, falling back to legacy...');
-                this.generateInitialAgents();
+                try {
+                    this.generateInitialAgents();
+                } catch (fallbackErr) {
+                    // [STARTUP-SETTLEMENT] Preserved next to the primary error;
+                    // historically this became an unhandled rejection.
+                    this.startupTicket.recordFallbackError(fallbackErr);
+                } finally {
+                    // Same design note as the fallback above: partial pushes
+                    // are observed; the original error is already recorded.
+                    this.startupTicket.setKnownAgentIdsSnapshot(this.knownAgentIds, 'genesis-crash-fallback-legacy');
+                }
             });
+            this.startupTicket.adoptContinuation(continuation);
         } else {
             console.log(`[ORCHESTRATOR] Loaded ${existingIds.length} persistent agents from disk.`);
+            this.startupTicket.setBranch('existing');
             this.knownAgentIds = existingIds;
+            this.startupTicket.setKnownAgentIdsSnapshot(existingIds, 'existing-ids');
 
             // [EVOLUTION] Migrate existing agents to per-agent file system (idempotent)
             try {
                 agentPersistence.migrateAllToFileSystem();
             } catch (err) {
                 console.error('[ORCHESTRATOR] File system migration failed (non-fatal):', err);
+                // [STARTUP-SETTLEMENT] Absorbed here (non-fatal), now recorded.
+                this.startupTicket.recordNonFatalFailure('migrateAllToFileSystem', err);
             }
         }
 
@@ -1330,12 +1432,41 @@ JSON ONLY:
 
         // [DCR] Re-register capabilities from loaded agents
         // [EVOLUTION] Also register agents in conversation system
+        let orchestrationTailRegistrations = 0;
         this.knownAgentIds.forEach(id => {
             const agent = agentPersistence.loadAgent(id);
             if (agent) {
                 capabilityRegistry.registerAgent(agent);
                 agentConversation.registerAgent(agent);
+                // [STARTUP-SETTLEMENT] Per-pair increment: if pair 1 completed
+                // and pair 2 throws, the receipt says 1, not 0. Completed call
+                // pairs only: a completed call is not a persistence proof.
+                orchestrationTailRegistrations++;
+                this.startupTicket.setTailRegistrations(orchestrationTailRegistrations);
             }
+        });
+    }
+
+    /**
+     * [STARTUP-SETTLEMENT] Settlement of THIS construction's startup: init
+     * launch + its concrete genesis continuation (and a constructor failure
+     * observed as such). Never a verified-readiness claim; see
+     * unobservedFailureDomains in the receipt.
+     */
+    public startupSettlement(): Promise<SwarmStartupReceipt> {
+        return this.startupTicket.settlement;
+    }
+
+    /** [STARTUP-SETTLEMENT] Typed plain-data copy of the known report fields
+     *  (lengths and primitives): no live reference is ever exported. */
+    private snapshotGenesisReport(report: GenesisReport): GenesisReportSnapshot {
+        return Object.freeze({
+            success: report.success === true,
+            agentsCreated: Array.isArray(report.agentsCreated) ? report.agentsCreated.length : 0,
+            agentsFailed: Array.isArray(report.agentsFailed) ? report.agentsFailed.length : 0,
+            protocolsLoaded: report.protocolsLoaded === true,
+            validationPassed: report.validationPassed === true,
+            timestamp: typeof report.timestamp === 'number' ? report.timestamp : 0,
         });
     }
 
@@ -3149,4 +3280,9 @@ OBJECTIVES:
 
 }
 
-export const orchestrator = new AgentSwarmOrchestrator();
+// [STARTUP-SETTLEMENT] The singleton startup ticket is claimed BEFORE
+// `new` (so field initializers are covered) and passed explicitly; a
+// constructor throw marks the ticket and rethrows the exact same value
+// (fail-fast preserved). Observers use getSingletonStartup() from the
+// neutral leaf, which they may import before importing this module.
+export const orchestrator = constructSingletonObserved(ticket => new AgentSwarmOrchestrator(ticket));

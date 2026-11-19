@@ -39,10 +39,11 @@
  * differing from the VERIFIED layout version (2.17.2, pinned below) all
  * make the cache guard FAIL instead of silently passing. */
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, rmSync, existsSync, readdirSync, statSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readdirSync, statSync, readFileSync, openSync, closeSync, createWriteStream } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, join, relative } from 'node:path';
 import { spawn, type ChildProcess } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 
 const loader = pathToFileURL(resolve('node_modules/tsx/dist/loader.mjs')).href;
@@ -153,6 +154,12 @@ interface ChildResult {
     childReaped: boolean;           // direct child 'exit' observed (awaited on the timeout path)
     killError: string | null;
     groupGoneWaitMs: number;
+    teeOutError: string | null;     // durable full-stdout capture failure: open/write/close (sticky, separate from the bounded oracle)
+    teeErrError: string | null;     // durable full-stderr capture failure
+    teeOutBytes: number;            // bytes REALLY written (stream bytesWritten at close), never assumed
+    teeErrBytes: number;
+    fullStdoutPath: string | null;  // durable byte-0 full capture outside the removable cwd (null: not requested)
+    fullStderrPath: string | null;
 }
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -190,16 +197,93 @@ const makeCapture = () => {
 // injected into the child env. Policy keys (SILHOUETTE_PROVIDERS=off,
 // SILHOUETTE_INFERENCE_MODE=cloud-only, NODE_ENV, ...) come exclusively from
 // environment() and can never be overridden through this path.
-const runChild = (directory: string, mode: string, timeoutMs: number, sharedStores: { sqlitePath: string; lancePath: string } | null = null): Promise<ChildResult> => {
+const runChild = (directory: string, mode: string, timeoutMs: number, sharedStores: { sqlitePath: string; lancePath: string } | null = null, evidenceDir: string | null = null): Promise<ChildResult> => {
     return new Promise((resolvePromise) => {
-        const child: ChildProcess = spawn(process.execPath, ['--import', loader, script, mode], {
-            cwd: directory,
-            env: sharedStores
-                ? { ...environment(directory), SILHOUETTE_DB_PATH: sharedStores.sqlitePath, SILHOUETTE_LANCEDB_PATH: sharedStores.lancePath }
-                : environment(directory),
-            detached: true,               // own process group: descendants are killable/reap-able
-            stdio: ['ignore', 'pipe', 'pipe']
-        });
+        // [D-CANON] Durable FULL logs: fds REALLY pre-opened (openSync)
+        // BEFORE spawn, then async WriteStreams over those fds - no
+        // synchronous write/fsync in the supervisor's DATA PATH. The pre-open
+        // itself (openSync) and the later manifest readFileSync/hashing ARE
+        // synchronous: they add overhead, carry no syscall time bound, and
+        // the 4s structure is never a guaranteed real-time bound under all
+        // I/O. Open failure: non-fatal, recorded as an evidence error, oracle
+        // untouched. The bounded capture below remains the oracle,
+        // byte-for-byte unchanged.
+        const fullStdoutPath = evidenceDir === null ? null : join(evidenceDir, 'child.stdout.full.log');
+        const fullStderrPath = evidenceDir === null ? null : join(evidenceDir, 'child.stderr.full.log');
+        let teeOut: ReturnType<typeof createWriteStream> | null = null;
+        let teeErr: ReturnType<typeof createWriteStream> | null = null;
+        let teeOutError: string | null = null;
+        let teeErrError: string | null = null;
+        if (fullStdoutPath !== null) {
+            let fd: number | null = null;
+            try {
+                fd = openSync(fullStdoutPath, 'w');
+                teeOut = createWriteStream(fullStdoutPath, { fd });
+                fd = null; // ownership TRANSFERRED to the stream (autoClose): never closed twice
+                teeOut.on('error', (e: Error) => { if (teeOutError === null) teeOutError = String(e?.message ?? e); });
+            } catch (e: any) {
+                teeOutError = `open: ${String(e?.message ?? e)}`;
+                if (fd !== null) { try { closeSync(fd); } catch { /* orphan-fd close: evidence only */ } }
+            }
+        }
+        if (fullStderrPath !== null) {
+            let fd: number | null = null;
+            try {
+                fd = openSync(fullStderrPath, 'w');
+                teeErr = createWriteStream(fullStderrPath, { fd });
+                fd = null; // ownership TRANSFERRED to the stream (autoClose): never closed twice
+                teeErr.on('error', (e: Error) => { if (teeErrError === null) teeErrError = String(e?.message ?? e); });
+            } catch (e: any) {
+                teeErrError = `open: ${String(e?.message ?? e)}`;
+                if (fd !== null) { try { closeSync(fd); } catch { /* orphan-fd close: evidence only */ } }
+            }
+        }
+        // Sticky-failure writes: after any tee failure no more writes are
+        // attempted; a write error is caught INSIDE the data path, so it can
+        // never escape the listener nor impede settle/reap. The queue is
+        // EXPLICITLY BOUNDED per tee: the bounded oracle does not protect the
+        // stream's internal buffer, which could grow for 90s under slow disk.
+        // On overflow: sticky capture-overflow INCOMPLETE, no more enqueues,
+        // destroy REQUESTED (close requested, not observed). The child's
+        // stdout is NEVER paused - its scheduling/backpressure stay untouched
+        // - and the bounded oracle keeps consuming with kill/reap intact.
+        const TEE_QUEUE_LIMIT = 4 * 1024 * 1024; // diagnostic queue bound, NOT the oracle's
+        const writeTee = (tee: ReturnType<typeof createWriteStream> | null, chunk: Buffer, which: 'stdout' | 'stderr'): void => {
+            if (tee === null || tee.destroyed) return;
+            if (which === 'stdout' ? teeOutError !== null : teeErrError !== null) return;
+            if (tee.writableLength + chunk.length > TEE_QUEUE_LIMIT) {
+                if (which === 'stdout') teeOutError = 'capture-overflow: capture INCOMPLETE';
+                else teeErrError = 'capture-overflow: capture INCOMPLETE';
+                try { tee.destroy(); } catch { /* close requested, not observed */ }
+                return;
+            }
+            try { tee.write(chunk); } catch (e: any) {
+                if (which === 'stdout') teeOutError = `write: ${String(e?.message ?? e)}`;
+                else teeErrError = `write: ${String(e?.message ?? e)}`;
+            }
+        };
+        // argv[3] carries ONLY the evidence dir (absolute, owned by this
+        // run); env and policy keys stay exactly as environment() defines.
+        const args = evidenceDir === null ? ['--import', loader, script, mode] : ['--import', loader, script, mode, evidenceDir];
+        let child: ChildProcess;
+        try {
+            child = spawn(process.execPath, args, {
+                cwd: directory,
+                env: sharedStores
+                    ? { ...environment(directory), SILHOUETTE_DB_PATH: sharedStores.sqlitePath, SILHOUETTE_LANCEDB_PATH: sharedStores.lancePath }
+                    : environment(directory),
+                detached: true,               // own process group: descendants are killable/reap-able
+                stdio: ['ignore', 'pipe', 'pipe']
+            });
+        } catch (e) {
+            // [D-CANON] Synchronous spawn/setup failure: destroy() is
+            // REQUESTED on both durable streams (close REQUESTED, NOT
+            // observed before rethrow), then the PRIMARY spawn error
+            // propagates untouched - evidence never replaces it.
+            try { teeOut?.destroy(); } catch { /* evidence only */ }
+            try { teeErr?.destroy(); } catch { /* evidence only */ }
+            throw e;
+        }
         const pid = child.pid;            // undefined if spawn failed synchronously
         const out = makeCapture(), err = makeCapture();
         let settled = false;
@@ -209,8 +293,8 @@ const runChild = (directory: string, mode: string, timeoutMs: number, sharedStor
         const exitWaiters: Array<() => void> = [];
         const closeWaiters: Array<() => void> = [];
 
-        child.stdout?.on('data', (c: Buffer) => out.push(c));
-        child.stderr?.on('data', (c: Buffer) => err.push(c));
+        child.stdout?.on('data', (c: Buffer) => { out.push(c); writeTee(teeOut, c, 'stdout'); });
+        child.stderr?.on('data', (c: Buffer) => { err.push(c); writeTee(teeErr, c, 'stderr'); });
         child.on('exit', (code, signal) => {
             exitEvent = { code, signal };
             for (const w of exitWaiters.splice(0)) w();
@@ -281,6 +365,36 @@ const runChild = (directory: string, mode: string, timeoutMs: number, sharedStor
             const drained = exitEvent !== null ? await waitClose(remaining()) : false;
             child.stdout?.destroy();
             child.stderr?.destroy();
+            // [D-CANON] Close BOTH durable streams in PARALLEL under the SAME
+            // remaining budget. end() flushes; the 'close' event (autoClose)
+            // proves the fd REALLY closed - only a normal close with intact
+            // bytes and zero errors credits a complete capture. Wait timers
+            // are ALWAYS cleared. On budget exhaustion or end-throw, destroy()
+            // is REQUESTED (close requested, NOT observed: no fd-closed claim
+            // on that return) and the capture is marked INCOMPLETE via the
+            // sticky error fields. Kill/reap/EOF above already ran; this wait
+            // never delays them.
+            const closeBudget = remaining();
+            const closeTee = (tee: ReturnType<typeof createWriteStream> | null, which: 'stdout' | 'stderr'): Promise<void> => new Promise((done) => {
+                if (tee === null || tee.closed) return done();
+                const mark = (msg: string) => {
+                    if (which === 'stdout') { if (teeOutError === null) teeOutError = msg; }
+                    else { if (teeErrError === null) teeErrError = msg; }
+                };
+                const t = setTimeout(() => {
+                    mark('close-timeout: capture INCOMPLETE');
+                    try { tee.destroy(); } catch { /* evidence only */ }
+                    done();
+                }, closeBudget);
+                tee.once('close', () => { clearTimeout(t); done(); });
+                try { tee.end(); } catch (e: any) {
+                    clearTimeout(t);
+                    mark(`end: ${String(e?.message ?? e)}`);
+                    try { tee.destroy(); } catch { /* evidence only */ }
+                    done();
+                }
+            });
+            await Promise.all([closeTee(teeOut, 'stdout'), closeTee(teeErr, 'stderr')]);
             const o = out.render(), e = err.render();
             resolvePromise({
                 outcome,
@@ -292,7 +406,13 @@ const runChild = (directory: string, mode: string, timeoutMs: number, sharedStor
                 survivorsAfterCleanup,
                 childReaped,
                 killError,
-                groupGoneWaitMs: Date.now() - waitStart
+                groupGoneWaitMs: Date.now() - waitStart,
+                teeOutError,
+                teeErrError,
+                teeOutBytes: teeOut === null ? 0 : teeOut.bytesWritten,
+                teeErrBytes: teeErr === null ? 0 : teeErr.bytesWritten,
+                fullStdoutPath,
+                fullStderrPath
             });
         };
 
@@ -301,7 +421,7 @@ const runChild = (directory: string, mode: string, timeoutMs: number, sharedStor
 };
 
 const expectCleanChild = (result: ChildResult, mode: string) => {
-    const summary = `[child ${mode}] outcome=${JSON.stringify(result.outcome)} hadSurvivors=${result.hadSurvivors} survivorsAfterCleanup=${result.survivorsAfterCleanup} childReaped=${result.childReaped} killError=${result.killError} truncated=${result.truncated} evidenceComplete=${result.evidenceComplete} stdoutBytes=${result.stdoutBytes} stderrBytes=${result.stderrBytes} groupGoneWaitMs=${result.groupGoneWaitMs}`;
+    const summary = `[child ${mode}] outcome=${JSON.stringify(result.outcome)} hadSurvivors=${result.hadSurvivors} survivorsAfterCleanup=${result.survivorsAfterCleanup} childReaped=${result.childReaped} killError=${result.killError} truncated=${result.truncated} evidenceComplete=${result.evidenceComplete} stdoutBytes=${result.stdoutBytes} stderrBytes=${result.stderrBytes} groupGoneWaitMs=${result.groupGoneWaitMs} teeOutError=${result.teeOutError} teeErrError=${result.teeErrError} teeOutBytes=${result.teeOutBytes} teeErrBytes=${result.teeErrBytes} fullLogs=${result.fullStdoutPath ?? 'none'}`;
     const clean = result.outcome.kind === 'exit' && result.outcome.code === 0
         && !result.hadSurvivors && !result.survivorsAfterCleanup && result.killError === null
         && !result.truncated && result.evidenceComplete
@@ -319,6 +439,17 @@ const expectCleanChild = (result: ChildResult, mode: string) => {
     expect(result.truncated, `child ${mode} output exceeded head+tail capture: evidence incomplete`).toBe(false);
     expect(result.evidenceComplete, `child ${mode} streams did not reach EOF: evidence incomplete`).toBe(true);
     expect(result.stdout, `child ${mode} must print its result line`).toContain(`"mode":"${mode}"`);
+    // Durable-capture assertions run AFTER the primary oracle ones: an
+    // evidence failure is reported, never masked, and never masks them.
+    // Without a requested capture dir these are vacuously satisfied.
+    expect(result.teeOutError, `child ${mode} full stdout capture failed`).toBeNull();
+    expect(result.teeErrError, `child ${mode} full stderr capture failed`).toBeNull();
+    if (result.fullStdoutPath !== null) {
+        expect(result.teeOutBytes, `child ${mode} full stdout bytes must equal the oracle byte count`).toBe(result.stdoutBytes);
+    }
+    if (result.fullStderrPath !== null) {
+        expect(result.teeErrBytes, `child ${mode} full stderr bytes must equal the oracle byte count`).toBe(result.stderrBytes);
+    }
 };
 
 /** Cache guard assertions. Evidence (inventory, receipt, diff) is logged
@@ -404,6 +535,11 @@ const runMemoryRestart = async (childTimeoutMs: number) => {
         sqlitePath: join(sharedRoot, 'facts.sqlite'),
         lancePath: join(sharedRoot, 'lance')
     };
+    // [D-CANON] Durable diagnostic evidence root: OUTSIDE every removable
+    // phase cwd and the shared stores root, fresh per run, NEVER removed by
+    // this fixture. Each phase child receives its own dir ONLY as argv[3]
+    // (never via env: the module-eval policy scrub is irrelevant to it).
+    const evidenceRoot = mkdtempSync(join(tmpdir(), 'memory-restart-evidence-'));
     // Retention latch: set from each ChildResult IMMEDIATELY on return, before
     // any evidence work that could throw. An unresolved result is conservatively
     // treated as possible survivors: shared stores are never deleted while an
@@ -414,10 +550,21 @@ const runMemoryRestart = async (childTimeoutMs: number) => {
     try {
         for (const phase of ['memory-restart-write', 'memory-restart-read']) {
             const directory = mkdtempSync(join(tmpdir(), 'shutdown-contracts-real-'));
+            const evidenceDir = join(evidenceRoot, phase);
+            mkdirSync(evidenceDir, { recursive: true });
+            // [D-CANON] Path published BEFORE spawn: if everything after this
+            // fails, the artifacts are recoverable at a known location.
+            console.log(`[evidence dir ${phase}] ${evidenceDir}`);
             let result: ChildResult | null = null;
             let cleanupError: unknown = null;
             let changed: string[] = [], incomplete = true;
             let cacheBefore: CacheSnapshot | null = null;
+            // [D-CANON] Checkpoint verification state, filled by the manifest
+            // attempt in the finally below (even on timeout/oracle failure).
+            let checkpointStatus: Record<string, string> = {};
+            let checkpointTokens: Record<string, number> = {};
+            let missingCheckpoints: string[] = [];
+            let errFiles: string[] = [];
             // safeToRemove: the ONE reaping verdict, latched from ChildResult
             // before any evidence work. A null/unsettled result or any
             // unresolved kill/reap signal retains BOTH this phase cwd and
@@ -428,13 +575,67 @@ const runMemoryRestart = async (childTimeoutMs: number) => {
                 // says otherwise, a possibly-live child may hold the stores.
                 anySurvivors = true;
                 cacheBefore = snapshotCache();
-                result = await runChild(directory, phase, childTimeoutMs, sharedStores);
+                result = await runChild(directory, phase, childTimeoutMs, sharedStores, evidenceDir);
                 // Latch FIRST on return: no throwing work may precede this.
                 safeToRemove = result.childReaped === true && result.survivorsAfterCleanup === false && result.killError === null;
                 if (safeToRemove) anySurvivors = false;
                 expectCleanChild(result, phase);
                 phaseReceipts[phase] = parseModeReceipt(result.stdout, phase);
             } finally {
+                // [D-CANON] FIRST an independent evidence manifest attempt: it
+                // runs even when the oracle FAILED or the child TIMED OUT
+                // (exactly the case under diagnosis) and never replaces the
+                // primary error. kill/reap/EOF already finished inside settle;
+                // this hashing is diagnostic overhead AFTER them - the file
+                // cleanup below CAN be delayed by it, the 240s outer allowance
+                // is unchanged, and no immediate cleanup is promised.
+                try {
+                    const names = readdirSync(evidenceDir).sort();
+                    const manifest: Record<string, string> = {};
+                    for (const name of names) manifest[name] = createHash('sha256').update(readFileSync(join(evidenceDir, name))).digest('hex');
+                    // Stable ONLY with: streams EOF + untruncated + zero tee
+                    // errors + real written bytes equal to the oracle counts +
+                    // direct child reaped + no live group at any probe.
+                    const bytesOk = result !== null
+                        && (result.fullStdoutPath === null || result.teeOutBytes === result.stdoutBytes)
+                        && (result.fullStderrPath === null || result.teeErrBytes === result.stderrBytes);
+                    const stable = result?.evidenceComplete === true && result?.truncated === false
+                        && result?.teeOutError === null && result?.teeErrError === null
+                        && bytesOk && result?.childReaped === true
+                        && result?.hadSurvivors === false && result?.survivorsAfterCleanup === false;
+                    // Expected canonical checkpoints with MINIMAL SEMANTIC
+                    // validation (no schema framework): mode ligature, token
+                    // kind, integer non-negative token matching the evidence's
+                    // own watermarkOrdinal, O2 snapshot required, O1 shape.
+                    const expected = [`${phase}.predrain.json`, `${phase}.postcleanup.json`];
+                    missingCheckpoints = expected.filter(n => !names.includes(n));
+                    errFiles = names.filter(n => n.endsWith('.err'));
+                    checkpointStatus = {};
+                    checkpointTokens = {};
+                    for (const n of expected) {
+                        if (!names.includes(n)) { checkpointStatus[n] = 'not-reached'; continue; }
+                        try {
+                            const parsed = JSON.parse(readFileSync(join(evidenceDir, n), 'utf8'));
+                            if (parsed?.mode !== phase) { checkpointStatus[n] = 'mode-mismatch'; continue; }
+                            if (typeof parsed?.tokenKind !== 'string') { checkpointStatus[n] = 'no-token-kind'; continue; }
+                            if (!Number.isInteger(parsed?.watermarkOrdinal) || parsed.watermarkOrdinal < 0) { checkpointStatus[n] = 'bad-token'; continue; }
+                            if (parsed?.o2?.observation !== 'snapshot') { checkpointStatus[n] = 'o2-not-snapshot'; continue; }
+                            if (parsed?.o2?.evidence?.watermarkOrdinal !== parsed.watermarkOrdinal) { checkpointStatus[n] = 'token-evidence-mismatch'; continue; }
+                            const o1 = parsed?.o1;
+                            if (o1?.observation === 'receipt-observed') {
+                                if (o1.receipt === null || o1.receipt === undefined) { checkpointStatus[n] = 'o1-receipt-missing'; continue; }
+                            } else if (o1?.observation === 'receipt-not-yet-observed') {
+                                if (typeof o1.id !== 'number' || typeof o1.claimId !== 'string') { checkpointStatus[n] = 'o1-ids-missing'; continue; }
+                            } else { checkpointStatus[n] = 'o1-unavailable-or-unknown'; continue; } // unavailable => partial evidence => reader HOLD
+                            checkpointStatus[n] = `ok:${parsed.tokenKind}`;
+                            checkpointTokens[n] = parsed.watermarkOrdinal;
+                        } catch { checkpointStatus[n] = 'unparseable'; }
+                    }
+                    console.log(`[evidence manifest ${phase}] ${stable ? '' : 'INCOMPLETE '}root=${evidenceDir} files=${JSON.stringify(manifest)} checkpoints=${JSON.stringify(checkpointStatus)} missing=${JSON.stringify(missingCheckpoints)} errFiles=${JSON.stringify(errFiles)}`);
+                } catch (e) {
+                    if (cleanupError === null) cleanupError = e;
+                    console.error(`[evidence manifest error ${phase}]`, e);
+                }
                 // Evidence and removal are INDEPENDENT attempts: an evidence
                 // failure never skips the removal of a safely reaped child's
                 // cwd, a removal failure never replaces the primary error, and
@@ -462,6 +663,19 @@ const runMemoryRestart = async (childTimeoutMs: number) => {
                 }
             }
             if (cleanupError !== null) throw cleanupError;
+            // [D-CANON] Canonical evidence gate - reached ONLY on the
+            // accepted-child path (a primary failure is already propagating
+            // and never arrives here): both expected checkpoints must exist,
+            // pass semantic validation with tokenKind 'predrain', carry the
+            // SAME token, and have zero .err side files, BEFORE the reader
+            // phase is spawned. Incomplete evidence never enables the reader
+            // and never yields a false PASS.
+            const notOk = Object.entries(checkpointStatus).filter(([, v]) => v !== 'ok:predrain');
+            const tokens = Object.values(checkpointTokens);
+            const tokensDiffer = tokens.length === 2 && tokens[0] !== tokens[1];
+            if (missingCheckpoints.length > 0 || errFiles.length > 0 || notOk.length > 0 || tokensDiffer) {
+                throw new Error(`[evidence gate ${phase}] incomplete canonical checkpoint evidence: missing=${missingCheckpoints.join('|') || 'none'} errFiles=${errFiles.join('|') || 'none'} notOk=${notOk.map(([k, v]) => `${k}:${v}`).join('|') || 'none'} tokensDiffer=${tokensDiffer}`);
+            }
             // cacheBefore is non-null here: its acquisition failure above is a
             // primary error that already propagated, so the guard never skips.
             assertCacheGuard(changed, incomplete);
@@ -500,6 +714,9 @@ const runMemoryRestart = async (childTimeoutMs: number) => {
             } else {
                 rmSync(sharedRoot, { recursive: true, force: true });
             }
+            // [D-CANON] The evidence root is NEVER removed: full logs and
+            // checkpoints must outlive every removable directory.
+            console.log(`[evidence retained memory-restart] evidence root preserved at ${evidenceRoot}`);
         } catch (e) {
             // Secondary error: collected, rethrown below ONLY when no primary
             // failure is already propagating out of the try above.
