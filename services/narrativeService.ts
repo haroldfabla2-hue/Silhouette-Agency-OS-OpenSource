@@ -244,6 +244,26 @@ class NarrativeService {
         }, this.BATCH_INTERVAL);
     }
 
+    /**
+     * Stop the batch processor. Ownership receipt mirroring
+     * resourceArbiter.stopProcessingTimer / powerManager.stopThrottleTimer:
+     * reports whether the interval WAS armed and how many items remained
+     * queued at stop. Idempotent, never throws. Construction-time arming is
+     * unchanged: in production the timer lives for the process lifetime;
+     * an explicit owner (e.g. a supervised child that booted the cascade)
+     * stops it so a finished process can exit naturally. An in-flight batch
+     * promise is not cancelled (promises hold no event-loop handle).
+     */
+    public stopBatchProcessor(): { intervalWasArmed: boolean; queuedItems: number } {
+        const receipt = { intervalWasArmed: this.batchTimer !== null, queuedItems: this.narrationQueue.length };
+        if (this.batchTimer !== null) {
+            clearInterval(this.batchTimer);
+            this.batchTimer = null;
+            console.log("[NARRATIVE] 🛑 Batch processor stopped.");
+        }
+        return receipt;
+    }
+
     private async initializeStreamAggregator() {
         const { systemBus, MessageTag } = await import('./systemBus');
         const { SystemProtocol } = await import('../types');

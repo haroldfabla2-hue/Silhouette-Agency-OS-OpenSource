@@ -56,6 +56,35 @@ const writeCheckpoint = (phase: string, build: () => Record<string, unknown>): v
         evidenceNote(`${phase}: checkpoint write failed (recorded separately; primary flow untouched)`);
     }
 };
+
+// [DIAG] Census of what still holds the event loop, taken AFTER teardown.
+// Type names + counts only (constructor/resource names, timer period and
+// callback name as owner proxies): no payloads, paths or user data, and the
+// handle list is bounded to its first 8 entries. getActiveResourcesInfo is
+// included because Node's _getActiveHandles() can omit Timers - timer
+// evidence must be explicit. Not an oracle: if the child still fails to
+// exit after this print, the census names what kept the loop alive.
+const activeResourceSummary = (): Record<string, unknown> => {
+    try {
+        const p = process as unknown as {
+            getActiveResourcesInfo?: () => string[];
+            _getActiveHandles?: () => Array<Record<string, any>>;
+        };
+        const resourceCounts: Record<string, number> = {};
+        if (typeof p.getActiveResourcesInfo === 'function') {
+            for (const r of p.getActiveResourcesInfo()) resourceCounts[r] = (resourceCounts[r] ?? 0) + 1;
+        }
+        const handles = typeof p._getActiveHandles === 'function' ? p._getActiveHandles() : [];
+        const handleHead = handles.slice(0, 8).map((h) => {
+            const type = h?.constructor?.name ?? 'unknown';
+            if (type === 'Timeout') return { type, idleTimeoutMs: h._idleTimeout, callback: typeof h._onTimeout === 'function' ? (h._onTimeout.name || 'anonymous') : 'none' };
+            return type;
+        });
+        return { resourceCounts, handleTotal: handles.length, handleHead, truncated: handles.length > 8 };
+    } catch (e) {
+        return { censusError: String((e as Error)?.message ?? e) };
+    }
+};
 fs.mkdirSync('data', { recursive: true });
 
 // memory-restart-* fixture corpus: plain third-person public fixture text (no
@@ -320,7 +349,8 @@ if (mode === 'redis-fallback-quiet') {
     // in the READER, which never stores and must not acquire these producers.
     let writerArbiter: { stopProcessingTimer(): { intervalWasArmed: boolean; pendingAdmissions: number; activeAdmissions: number; activeQueueRuns: number } } | null = null;
     let writerPower: { stopThrottleTimer(): { intervalWasArmed: boolean } } | null = null;
-    let writerStops: { arbiter?: { intervalWasArmed: boolean; pendingAdmissions: number; activeAdmissions: number; activeQueueRuns: number }; power?: { intervalWasArmed: boolean } } = {};
+    let writerNarrative: { stopBatchProcessor(): { intervalWasArmed: boolean; queuedItems: number } } | null = null;
+    let writerStops: { arbiter?: { intervalWasArmed: boolean; pendingAdmissions: number; activeAdmissions: number; activeQueueRuns: number }; power?: { intervalWasArmed: boolean }; narrative?: { intervalWasArmed: boolean; queuedItems: number } } = {};
     let writerReceipt: Record<string, unknown> | null = null;
     let readerReceipt: Record<string, unknown> | null = null;
     // [D-CANON] Diagnostic observation STATE and helpers at BRANCH scope (the
@@ -470,6 +500,11 @@ if (mode === 'redis-fallback-quiet') {
             await import('../../services/dreamerService');
             writerArbiter = (await import('../../services/resourceArbiter')).resourceArbiter;
             writerPower = (await import('../../services/powerManager')).powerManager;
+            // narrativeService arms a REF'd 30s batch interval at construction
+            // (module singleton, imported by the genesis cascade below) with no
+            // unref and no other stop path: without this stop it holds the event
+            // loop after all work drains (memory-restart-facts timeout evidence).
+            writerNarrative = (await import('../../services/narrativeService')).narrative;
             const receipts = [];
             for (const { fact, owner } of FIXTURE_WRITES) receipts.push(await factRepository.addFact({ ...fact }, owner));
             for (let i = 0; i < FIXTURE_WRITES.length; i++) {
@@ -587,6 +622,10 @@ if (mode === 'redis-fallback-quiet') {
                 if (writerPower === null) writerPower = (await import('../../services/powerManager')).powerManager;
                 writerStops.power = writerPower.stopThrottleTimer();
             } catch (e) { cleanupErrors.push(e); }
+            try {
+                if (writerNarrative === null) writerNarrative = (await import('../../services/narrativeService')).narrative;
+                writerStops.narrative = writerNarrative.stopBatchProcessor();
+            } catch (e) { cleanupErrors.push(e); }
         }
         // lancedbService exposes no close(): its connection teardown is process
         // exit itself, which the natural-exit supervision verifies.
@@ -617,10 +656,15 @@ if (mode === 'redis-fallback-quiet') {
         assert.equal(stops.arbiter.activeAdmissions, 0, 'no in-flight admission may exist at stop');
         assert.equal(stops.arbiter.activeQueueRuns, 0, 'no in-flight queue processing may exist at stop');
         assert.ok(stops.power, 'writer power stop receipt must exist');
+        assert.ok(stops.narrative, 'writer narrative stop receipt must exist');
+        assert.equal(stops.narrative.intervalWasArmed, true, 'narrative batch timer must have been armed in this writer process');
         console.log(JSON.stringify({ ...writerReceipt, stops }));
     } else if (readerReceipt !== null) {
         console.log(JSON.stringify(readerReceipt));
     }
+    // [DIAG] Post-teardown active-resource census, printed for BOTH roles
+    // right after the receipt: bounded labels/counts, never user data.
+    console.log('[active-resources post-teardown]', JSON.stringify(activeResourceSummary()));
     // natural exit: module completion drains the loop.
 } else {
     throw new Error(`unknown mode: ${mode}`);

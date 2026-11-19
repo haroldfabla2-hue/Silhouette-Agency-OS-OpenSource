@@ -71,7 +71,7 @@ describe('PR-4c: remediation mobilization circuit breaker', () => {
 describe('PR-4c: memory tier coercion at the boundary', () => {
     it('invalid tier is coerced before the gatekeeper', () => {
         const src = read('services/continuumMemory.ts');
-        const store = windowAround(src, 'public async store', 4000);
+        const store = windowAround(src, 'public store(', 4000);
         expect(store).toContain('coerced to WORKING');
         expect(store.indexOf('coerced to WORKING')).toBeLessThan(store.indexOf('Anti-Recursion Guard 1'));
     });

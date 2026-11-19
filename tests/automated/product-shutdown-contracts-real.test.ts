@@ -64,14 +64,14 @@ const installedTransformersVersion: string = (() => {
     }
 })();
 
-const environment = (directory: string) => ({
+const environment = (directory: string, boot: 'acceptance' | 'normal' = 'acceptance') => ({
     PATH: process.env.PATH,
     HOME: directory,
     NODE_ENV: 'test',
     SILHOUETTE_PROVIDERS: 'off',
     SILHOUETTE_INFERENCE_MODE: 'cloud-only',
     SILHOUETTE_MIGRATIONS_DIR: migrationAssets,
-    SILHOUETTE_BOOT_MODE: 'acceptance'
+    SILHOUETTE_BOOT_MODE: boot
 });
 
 interface CacheSnapshot {
@@ -197,7 +197,7 @@ const makeCapture = () => {
 // injected into the child env. Policy keys (SILHOUETTE_PROVIDERS=off,
 // SILHOUETTE_INFERENCE_MODE=cloud-only, NODE_ENV, ...) come exclusively from
 // environment() and can never be overridden through this path.
-const runChild = (directory: string, mode: string, timeoutMs: number, sharedStores: { sqlitePath: string; lancePath: string } | null = null, evidenceDir: string | null = null): Promise<ChildResult> => {
+const runChild = (directory: string, mode: string, timeoutMs: number, sharedStores: { sqlitePath: string; lancePath: string } | null = null, evidenceDir: string | null = null, boot: 'acceptance' | 'normal' = 'acceptance'): Promise<ChildResult> => {
     return new Promise((resolvePromise) => {
         // [D-CANON] Durable FULL logs: fds REALLY pre-opened (openSync)
         // BEFORE spawn, then async WriteStreams over those fds - no
@@ -270,8 +270,8 @@ const runChild = (directory: string, mode: string, timeoutMs: number, sharedStor
             child = spawn(process.execPath, args, {
                 cwd: directory,
                 env: sharedStores
-                    ? { ...environment(directory), SILHOUETTE_DB_PATH: sharedStores.sqlitePath, SILHOUETTE_LANCEDB_PATH: sharedStores.lancePath }
-                    : environment(directory),
+                    ? { ...environment(directory, boot), SILHOUETTE_DB_PATH: sharedStores.sqlitePath, SILHOUETTE_LANCEDB_PATH: sharedStores.lancePath }
+                    : environment(directory, boot),
                 detached: true,               // own process group: descendants are killable/reap-able
                 stdio: ['ignore', 'pipe', 'pipe']
             });
@@ -462,14 +462,14 @@ const assertCacheGuard = (changed: string[], incomplete: boolean) => {
     expect(changed, `transformer cache changed under cloud-only (new/changed: ${changed.join(', ')})`).toEqual([]);
 };
 
-const runMode = async (mode: string, childTimeoutMs: number) => {
+const runMode = async (mode: string, childTimeoutMs: number, boot: 'acceptance' | 'normal' = 'acceptance') => {
     const directory = mkdtempSync(join(tmpdir(), 'shutdown-contracts-real-'));
     const cacheBefore = snapshotCache();
     let result: ChildResult | null = null;
     let cleanupError: unknown = null;
     let changed: string[] = [], incomplete = true;
     try {
-        result = await runChild(directory, mode, childTimeoutMs);
+        result = await runChild(directory, mode, childTimeoutMs, null, null, boot);
         expectCleanChild(result, mode);
     } finally {
         // Safety evidence runs even - ESPECIALLY - after an abnormal outcome.
@@ -734,8 +734,15 @@ describe('real shutdown contracts (narrow)', () => {
     for (const mode of ['memory-never-started-fresh', 'memory-never-started-prior-wal', 'memory-blocked-store']) it(mode, async () => {
         await runMode(mode, 30000);
     }, 45000);
+    // Fallback-family children run under NORMAL boot: after the corte, the
+    // acceptance gate in redisClient.connect() hard-disables the mock
+    // fallback these modes assert (redis-policy-barrier pins that). Under
+    // normal boot with SILHOUETTE_PROVIDERS=off the child exercises the REAL
+    // Redis-client refusal path the suite now supervises. loopback-rejected
+    // / dedicated-barrier and the memory write/read env stay acceptance
+    // (defaults untouched above).
     for (const mode of ['redis-fallback-quiet', 'drain-receipts-ok', 'sqlite-close-causality']) it(mode, async () => {
-        await runMode(mode, 90000);
+        await runMode(mode, 90000, 'normal');
     }, 105000);
     // Two sequential 90s children + per-phase evidence work, one allowance.
     it('memory-restart-facts', async () => {
