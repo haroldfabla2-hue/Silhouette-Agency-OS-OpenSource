@@ -470,28 +470,15 @@ def verify_local_daemons(result):
 
 
 def verify_dedicated_vm(attestation,result,receipt):
-    import urllib.request
     global _docker_config
-    need(isinstance(attestation,dict) and set(attestation)=={'runId','runAttempt','jobId','runnerName','runnerEnvironment','eventHead'},'HOSTED_ATTESTATION_SCHEMA')
-    need(attestation['runnerEnvironment']=='github-hosted' and attestation['runAttempt']==1,'STANDARD_HOSTED_JOB_REQUIRED')
-    for key in ('runId','jobId'):need(type(attestation[key]) is int and attestation[key]>0,'HOSTED_JOB_ID_SCHEMA')
-    need(re.fullmatch('[a-f0-9]{40}',attestation['eventHead']) is not None,'HOSTED_HEAD_SCHEMA')
+    source=Path(__file__).with_name('context-snapshot.INACTIVE.py')
+    need(hashlib.sha256(source.read_bytes()).hexdigest()=='9f2ca63ac485694eb25815be0206e4ba99ad6184a4116217b4807cbc9d2165ea','CONTEXT_SOURCE_PIN')
+    spec=importlib.util.spec_from_file_location('directed_context',source)
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+    value=module.read_for_root('/tmp/narrative-directed-hosted-job.json',attestation)
     head=subprocess.check_output(['git','rev-parse','HEAD'],env=ENV,text=True).strip()
-    need(head==attestation['eventHead'],'HOSTED_JOB_CHECKOUT_CHANGED')
-    api='https://api.github.com/repos/haroldfabla2-hue/Silhouette-Agency-OS-OpenSource'
-    def get(route):
-        request=urllib.request.Request(api+route,headers={'Accept':'application/vnd.github+json'})
-        with urllib.request.urlopen(request,timeout=5) as response:
-            raw=response.read(262145);need(len(raw)<=262144,'HOSTED_API_REPLY_BOUND')
-        return json.loads(raw)
-    run=get('/actions/runs/'+str(attestation['runId']))
-    job=get('/actions/jobs/'+str(attestation['jobId']))
-    need(run['head_sha']==head and run['run_attempt']==1 and run['status']=='in_progress' and
-         run['event']=='push' and run['head_branch']=='fix/shutdown-contracts-narrow-20261117' and
-         run['repository']['full_name']=='haroldfabla2-hue/Silhouette-Agency-OS-OpenSource','HOSTED_RUN_BINDING')
-    need(job['run_id']==run['id'] and job['run_attempt']==1 and job['status']=='in_progress' and
-         job['labels']==['ubuntu-24.04'] and job['runner_group_name']=='GitHub Actions' and
-         job['runner_name']==attestation['runnerName'] and job['runner_id']>0,'STANDARD_HOSTED_VM_BINDING')
+    need(head==value['eventHead'],'HOSTED_JOB_CHECKOUT_CHANGED')
+    run={'id':value['runId']};job={'id':value['jobId']}
     need(Path('/sys/class/dmi/id/sys_vendor').read_text().strip()=='Microsoft Corporation' and
          Path('/sys/class/dmi/id/product_name').read_text().strip()=='Virtual Machine','DEDICATED_VM_PLATFORM_UNPROVED')
     need(Path('/proc/1/comm').read_text().strip()=='systemd','HOST_SYSTEMD_REQUIRED')
@@ -500,6 +487,7 @@ def verify_dedicated_vm(attestation,result,receipt):
     context={'kind':'STANDARD_GITHUB_HOSTED_VM','runId':run['id'],'jobId':job['id'],
              'headSha256':hashlib.sha256(head.encode()).hexdigest(),
              'providerBoundary':'NEW_VM_PER_STANDARD_HOSTED_JOB_NOT_SINGLE_CPU_SLIM'}
+    context['contextValidationMode']='AUTHENTICATED_STEP_SNAPSHOT_NOT_ROOT_API_REFRESH'
     durable(str(receipt)+'.hosted-vm.json',context);result['dedicatedVm']=context
     config=Path(receipt).with_name('directed-docker-'+secrets.token_hex(8))
     config.mkdir(mode=0o700);_docker_config=str(config)

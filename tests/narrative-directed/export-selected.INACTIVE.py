@@ -42,6 +42,7 @@ def project(value,depth=0):
    result[key]=[{'name':v['name'],'version':v['version']} for v in item[:8] if isinstance(v,dict) and v.get('name') in ('Engine','containerd','runc','docker-init') and isinstance(v.get('version'),str) and re.fullmatch('[A-Za-z0-9.+_-]{1,80}',v['version'])]
   elif key in ('runc','containerd-shim-runc-v2') and isinstance(item,str) and re.fullmatch('[a-f0-9]{64}',item):result[key]=item
   elif key in ('daemonInfoIsNotRuntimeBinaryBinding','mainPidOwnsListener') and type(item) is bool:result[key]=item
+  elif key=='contextValidationMode' and item=='AUTHENTICATED_STEP_SNAPSHOT_NOT_ROOT_API_REFRESH':result[key]=item
   elif key=='driver' and item=='systemd':result[key]=item
   elif key=='providerBoundary' and item=='NEW_VM_PER_STANDARD_HOSTED_JOB_NOT_SINGLE_CPU_SLIM':result[key]=item
   elif key in OBJECT_FIELDS:result[key]=project(item,depth+1)
