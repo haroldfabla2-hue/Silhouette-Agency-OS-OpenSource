@@ -17,5 +17,11 @@
     "Lingering child/pipe and wall timeout must FAIL without pass; cleanup only owned PGID, namespace empty confirmed.",
     "Aggregate quotas require dedicated reviewed bounded probes once a nonprivileged effective mechanism is known."
   ],
-  "nonClaims": "Witness source cannot be treated as complete runner proof or behavior validation; aggregate controls and negative harness remain explicitly blocked, not silently waived."
+  "nonClaims": "Witness source cannot be treated as complete runner proof or behavior validation; aggregate controls and negative harness remain explicitly blocked, not silently waived.",
+  "finiteRouteComplement": {
+    "scope": "One selected read-only complement, no namespace/witness/product or service/scope creation. Existing systemd user manager queried only when an owned private socket exists. Read-only system manager show for the one current UID user unit. Known bwrap profile files only, no loaded-policy claim. Timeout 3 seconds each, no new packages/sudo.",
+    "stop": "If no viable existing user-manager/controller route is demonstrated, stop current runner product route. Do not start manager, enable linger, change policy/sysctl, grant delegation, use privileged scope or relax aggregate limits.",
+    "alternativeDesign": "A separate free disposable Linux CI VM whose existing runner configuration already exposes an unprivileged dedicated resource-control mechanism and supports the necessary namespace policy may be evaluated by configuration/documentation first. No personal/production host, paid infrastructure, or provider activation implied. No alternative is yet verified suitable.",
+    "requiredBeforeProduct": "A later reviewed implementation must bound aggregate tree RAM/swap/CPU/PIDs and /work tmpfs bytes/inodes and validate effective limits plus containment. This complement alone cannot establish suitability."
+  }
 }

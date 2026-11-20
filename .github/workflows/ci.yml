@@ -348,6 +348,8 @@ jobs:
         run: sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends bubblewrap iproute2 util-linux libseccomp2
       - name: Read-only host environment preflight, no namespace or product launch
         run: python3 tests/hydration-gates-capsule/environment-preflight.py
+      - name: Selected read-only user-manager and bwrap policy route metadata
+        run: python3 tests/hydration-gates-capsule/environment-route-preflight.py
       - name: Compile and audit exact finite capsule, no product evaluation
         run: python3 tests/hydration-gates-capsule/prepare_capsule.py
       - uses: actions/upload-artifact@v4
