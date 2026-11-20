@@ -47,6 +47,7 @@
 // process still ends when the loop drains. Exhaustion of the supervisor's
 // bounded deadline is FAIL.
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+require('./native-selection-guard.cjs').verify(__dirname);
 const P=`hg_${Date.now()}_`;
 const receipt=(row)=>{process.stdout.write('HGRECEIPT '+JSON.stringify(row)+'\n');};
 // --- Bounded structured journal (capture-only; ANY overflow is FAIL) ---

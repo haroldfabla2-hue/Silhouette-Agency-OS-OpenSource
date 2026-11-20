@@ -47,6 +47,8 @@ def main():
  assert sha(O/'app/hydration-gates-entry.cjs')==expected['entrySha256'],'ENTRY_DIGEST'
  assert sha(O/'app/inside-supervisor.py')==expected['supervisorSha256'],'SUPERVISOR_ARTIFACT_DIGEST'
  assert sha(O/'app/fixture-config.json')==expected['fixtureSha256'],'FIXTURE_DIGEST'
+ assert sha(O/'app/native-selection.json')==expected['nativeSelectionSha256'],'NATIVE_SELECTION_DIGEST'
+ assert sha(O/'app/native-selection-guard.cjs')==expected['nativeGuardSha256'],'NATIVE_GUARD_DIGEST'
  manifest=json.loads((O/'ALLOWLIST.json').read_text())
  emitted=json.loads((O/'EMITTED.json').read_text())
  assert emitted['productEvaluated'] is False
@@ -64,6 +66,14 @@ def main():
   src=raw.resolve()
   assert src.is_file() and not src.is_symlink(),'MANIFEST_MISSING_'+entry['source']
   assert o_root in src.parents,'MANIFEST_ESCAPE_'+entry['source']
+  # Every byte is hashed, including review-only evidence, but ONLY explicit
+  # mountable entries become bwrap binds. Review-only cannot have a target.
+  assert sha(src)==entry['sha256'],'HASH_GATE_MISMATCH_'+entry['source']
+  assert stat.S_IMODE(src.stat().st_mode)==int(entry['mode'],8),'MODE_MISMATCH_'+entry['source']
+  if entry['disposition']=='review-only':
+   assert entry['target'] is None,'REVIEW_ONLY_HAS_TARGET'
+   continue
+  assert entry['disposition']=='mountable','UNKNOWN_DISPOSITION'
   # Targets must be canonical absolute POSIX paths under an allowed prefix.
   target=entry['target']
   assert target.startswith('/'),'TARGET_NOT_ABSOLUTE_'+target

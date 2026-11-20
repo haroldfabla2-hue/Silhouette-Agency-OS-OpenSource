@@ -1,0 +1,117 @@
+{
+  "schema": 1,
+  "packages": [
+    {
+      "name": "@lancedb/lancedb",
+      "version": "0.22.3",
+      "url": "https://registry.npmjs.org/@lancedb/lancedb/-/lancedb-0.22.3.tgz",
+      "lockIntegrity": "sha512-nRC0fkg+d7dzCtudKHT+VH7znk6KUXRZyuS6HJYNnIrbvXBxaT6wAPjEbf70KTuqvP2znj48Zg+kiwRqkRnAJw==",
+      "packageJsonSha256": "e43424df15387a493b2b2856aa3ba3357662bbc7cb33fd05346cd9e98bd1c142"
+    },
+    {
+      "name": "@lancedb/lancedb-linux-x64-musl",
+      "version": "0.22.3",
+      "url": "https://registry.npmjs.org/@lancedb/lancedb-linux-x64-musl/-/lancedb-linux-x64-musl-0.22.3.tgz",
+      "lockIntegrity": "sha512-+ipFsn5PCODK7mOMq1gZ5OAZWks5YlgmjAlnYMmU8XxvaK0b6lZdA3s1hTmBaBO9+wv+31ulO55oBN4/U8Yldg==",
+      "packageJsonSha256": "8a981c96b90d3d8c54547f2ada2817894dc90d185afe6b60952537bb5cfaaaae"
+    },
+    {
+      "name": "@lancedb/lancedb-linux-x64-gnu",
+      "version": "0.22.3",
+      "url": "https://registry.npmjs.org/@lancedb/lancedb-linux-x64-gnu/-/lancedb-linux-x64-gnu-0.22.3.tgz",
+      "lockIntegrity": "sha512-co7idTwvNAtbFoFHojhHlTpKsydOm5sZfbtAsQRdoa7g6a61yIrqrMm8D7Ngh756JfzZLFQBMkDUZEW3X4vP/g==",
+      "packageJsonSha256": "0f0cf22ce746fd63911b2ed6a191fc95e1e6742cfd2b46cea5e2222a1386cd4d"
+    },
+    {
+      "name": "msgpackr-extract",
+      "version": "3.0.3",
+      "url": "https://registry.npmjs.org/msgpackr-extract/-/msgpackr-extract-3.0.3.tgz",
+      "lockIntegrity": "sha512-P0efT1C9jIdVRefqjzOQ9Xml57zpOXnIuS+csaB4MdZbTdmGDLo8XhzBG1N7aO11gKDDkJvBLULeFTo46wwreA==",
+      "packageJsonSha256": "c0b4a47c98b57706c7414d06fd26d2b885c64e0958f3915a0c72673bd054b3d6"
+    },
+    {
+      "name": "@msgpackr-extract/msgpackr-extract-linux-x64",
+      "version": "3.0.3",
+      "url": "https://registry.npmjs.org/@msgpackr-extract/msgpackr-extract-linux-x64/-/msgpackr-extract-linux-x64-3.0.3.tgz",
+      "lockIntegrity": "sha512-cvwNfbP07pKUfq1uH+S6KJ7dT9K8WOE4ZiAcsrSes+UY55E/0jLYc+vq+DO7jlmqRb5zAggExKm0H7O/CBaesg==",
+      "packageJsonSha256": "8705b75402556a9449bbcb9c95cf344e59649ca69d2780a06ab31f679269ca0f"
+    },
+    {
+      "name": "node-gyp-build-optional-packages",
+      "version": "5.2.2",
+      "url": "https://registry.npmjs.org/node-gyp-build-optional-packages/-/node-gyp-build-optional-packages-5.2.2.tgz",
+      "lockIntegrity": "sha512-s+w+rBWnpTMwSFbaE0UXsRlg7hU4FjekKU4eyAih5T8nJuNZT1nNsskXpxmeqSK9UzkBl6UgRlnKc8hz8IEqOw==",
+      "packageJsonSha256": "939e18b5652b4cd288a9ff263ddd9be1101b0503903794b9f8feb2603461e1a4"
+    },
+    {
+      "name": "detect-libc",
+      "version": "2.1.2",
+      "url": "https://registry.npmjs.org/detect-libc/-/detect-libc-2.1.2.tgz",
+      "lockIntegrity": "sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==",
+      "packageJsonSha256": "ee88e5b954fdf3a8480b1d01ef767d68d8ca2c6da269f58c5cf1c5550e9aa2a7"
+    }
+  ],
+  "files": {
+    "node_modules/@lancedb/lancedb/dist/arrow.js": "4d51227e6c04a3a28465aff487ccfdee4365c1c480d6e9f3cb00338994d89d98",
+    "node_modules/@lancedb/lancedb/dist/connection.js": "6f7f2f757051c11ddacc95aa1d83023ddc44f816ce2ab04df65ba83b6ba6a152",
+    "node_modules/@lancedb/lancedb/dist/embedding/embedding_function.js": "0ea12854fea4eb3628f9f16aab9d003e365c3b18cb3b3c98ccbf76e606327b96",
+    "node_modules/@lancedb/lancedb/dist/embedding/index.js": "f26530aca5e5c6bb5630f56c62ce348745a65828a09ecdb333ad95d1a470373a",
+    "node_modules/@lancedb/lancedb/dist/embedding/openai.js": "3f70f75bf21d5c4ace04a4ad746016ac6ad09987ae6eba4472af2322817c5761",
+    "node_modules/@lancedb/lancedb/dist/embedding/registry.js": "a76e6efbfb6209b1504bfe2f92bc157312f7e4bd03b4cad64729cc40a238b042",
+    "node_modules/@lancedb/lancedb/dist/embedding/transformers.js": "0dfe0368eb8c158d52f95b4e9546aa8f9f10de0abcafa5d65dfd8c40f4617900",
+    "node_modules/@lancedb/lancedb/dist/header.js": "91d2835038974803bc212e4eb015f9da413185f3305b9fd632f46bbc4fcd4d4f",
+    "node_modules/@lancedb/lancedb/dist/index.js": "aef329c2397edfac2fb72fff92ac3031817709fbc73b7da6495e20e95276f7b0",
+    "node_modules/@lancedb/lancedb/dist/indices.js": "65a75e326570b68cf10cd7b45f6762b9fbb2a8e677e922f774b730a5cf388df5",
+    "node_modules/@lancedb/lancedb/dist/merge.js": "32b9b2c747a6b978f008e0636c358f038a6447ad6f4e441ccd09cc52e74cff0c",
+    "node_modules/@lancedb/lancedb/dist/native.js": "bf96567567d2337c74828878c074b4bdba42243b788176580a18e2fa4933de13",
+    "node_modules/@lancedb/lancedb/dist/permutation.js": "8e032013dffa370ecb1d2f0de132b51207b2a712d1d01c6cd456d5286643c6d5",
+    "node_modules/@lancedb/lancedb/dist/query.js": "31793dab57ae3743aabe5463aa790aaf680f1a4ce10d12ba463e8591b6e8265f",
+    "node_modules/@lancedb/lancedb/dist/rerankers/index.js": "be1d727c76c1683b4da081b62f4a0bc7689ba2491dfc631782c962467b415f08",
+    "node_modules/@lancedb/lancedb/dist/rerankers/rrf.js": "7cadf9e267122c1b95292bc482b8368361998e96006a821327b329bd7ef2df95",
+    "node_modules/@lancedb/lancedb/dist/sanitize.js": "813c5b6abd518d399faab8a3b7a9d73472bb556bba7ba18b181ad4cac8335cca",
+    "node_modules/@lancedb/lancedb/dist/table.js": "70372bce9b822baa4bf774fe0eaf7060d332d91eca254c37c504789b261319d2",
+    "node_modules/@lancedb/lancedb/dist/util.js": "431d2f08ddd673a2b3659546f15187c1713a401b3c5836780dfda30ee3aaef37",
+    "node_modules/@lancedb/lancedb/package.json": "e43424df15387a493b2b2856aa3ba3357662bbc7cb33fd05346cd9e98bd1c142",
+    "node_modules/@lancedb/lancedb-linux-x64-musl/lancedb.linux-x64-musl.node": "e813d98f9eb6232790eddde37578dc2c9831fe89d05244fad72693112bb7124c",
+    "node_modules/@lancedb/lancedb-linux-x64-musl/package.json": "8a981c96b90d3d8c54547f2ada2817894dc90d185afe6b60952537bb5cfaaaae",
+    "node_modules/@lancedb/lancedb-linux-x64-gnu/lancedb.linux-x64-gnu.node": "b2413445fb6e661c6d4d53c7e69d4184d62d918c1a34db53bee84d1ea3a1232a",
+    "node_modules/@lancedb/lancedb-linux-x64-gnu/package.json": "0f0cf22ce746fd63911b2ed6a191fc95e1e6742cfd2b46cea5e2222a1386cd4d",
+    "node_modules/msgpackr-extract/bin/download-prebuilds.js": "e5d9fb733fb23a14f4a3e09f0618051b9393a419b0f77e2b15766a8cf8beb22c",
+    "node_modules/msgpackr-extract/index.js": "a2b9244e83810de461c09f0cd3629899619bf145a40bc05af44553faf40b9ff5",
+    "node_modules/msgpackr-extract/package.json": "c0b4a47c98b57706c7414d06fd26d2b885c64e0958f3915a0c72673bd054b3d6",
+    "node_modules/@msgpackr-extract/msgpackr-extract-linux-x64/index.js": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "node_modules/@msgpackr-extract/msgpackr-extract-linux-x64/node.abi115.glibc.node": "ef0ada7da6f310cc954ec27ca5914cbfd5bc6d3e573b7502e73e873e3df1011f",
+    "node_modules/@msgpackr-extract/msgpackr-extract-linux-x64/node.abi115.musl.node": "ae039d1da5bf9ac12c780957ab9257f7c20cdc606307a20b29a1e98767670e7d",
+    "node_modules/@msgpackr-extract/msgpackr-extract-linux-x64/node.napi.glibc.node": "d144534a0d0cfdeb78e5b79526ea57b0382b2e742b7675bbe5cc3b80741956cd",
+    "node_modules/@msgpackr-extract/msgpackr-extract-linux-x64/node.napi.musl.node": "be3dc828387ea131b1a52c7d04a689afc035b823ea3a8f19053f968d8cb0535a",
+    "node_modules/@msgpackr-extract/msgpackr-extract-linux-x64/package.json": "8705b75402556a9449bbcb9c95cf344e59649ca69d2780a06ab31f679269ca0f",
+    "node_modules/node-gyp-build-optional-packages/bin.js": "b6c3ee58c7199854c80d2a6a7a67292ec6c9be9b6de2125c8f8370afc3c6bff4",
+    "node_modules/node-gyp-build-optional-packages/build-test.js": "34c19ff8b6675d6d27c63a7df44d77a442805eeea8756d1c89e0264f4a3028f6",
+    "node_modules/node-gyp-build-optional-packages/index.js": "a7ed0d5ae218a19bdbdf15a590d0893790ddf536313b66a787554693cfaae078",
+    "node_modules/node-gyp-build-optional-packages/node-gyp-build.js": "21145626bbb3122baf79f196087f05d6f1eeb7b9c65c037ced6940c5c6113440",
+    "node_modules/node-gyp-build-optional-packages/optional.js": "e0b3a3a04166e6ecf1020cb31c0c4a54432c16d6d88714bd4de2214cf67dec81",
+    "node_modules/node-gyp-build-optional-packages/package.json": "939e18b5652b4cd288a9ff263ddd9be1101b0503903794b9f8feb2603461e1a4",
+    "node_modules/detect-libc/lib/detect-libc.js": "5de6a1c1abec8bba5ea1261cf819d83a73c92ebe72b879ae48c59ca12320a462",
+    "node_modules/detect-libc/lib/elf.js": "0e8820f00ee11d179d94894d4f97a6e87c34ab59e5dd4d3a571dfabcecf043af",
+    "node_modules/detect-libc/lib/filesystem.js": "5c98fb66b559d0b4fa82c7a3e39d9ab6840f022c4c73e6b1a73ac6d16ec13fd7",
+    "node_modules/detect-libc/lib/process.js": "f37dd0ead9f70b50c6f5529c600e1cdf076e3c3bc8e6b4a0a9820a8d65244628",
+    "node_modules/detect-libc/package.json": "ee88e5b954fdf3a8480b1d01ef767d68d8ca2c6da269f58c5cf1c5550e9aa2a7"
+  },
+  "reviewOnly": [
+    {
+      "path": "node_modules/@lancedb/lancedb-linux-x64-musl/lancedb.linux-x64-musl.node",
+      "sha256": "e813d98f9eb6232790eddde37578dc2c9831fe89d05244fad72693112bb7124c",
+      "reason": "Exact binding excluded by reviewed glibc loader branch; bytes retained for review, not mounted or claimed ELF-resolved."
+    },
+    {
+      "path": "node_modules/@msgpackr-extract/msgpackr-extract-linux-x64/node.abi115.musl.node",
+      "sha256": "ae039d1da5bf9ac12c780957ab9257f7c20cdc606307a20b29a1e98767670e7d",
+      "reason": "Exact binding excluded by reviewed glibc loader branch; bytes retained for review, not mounted or claimed ELF-resolved."
+    },
+    {
+      "path": "node_modules/@msgpackr-extract/msgpackr-extract-linux-x64/node.napi.musl.node",
+      "sha256": "be3dc828387ea131b1a52c7d04a689afc035b823ea3a8f19053f968d8cb0535a",
+      "reason": "Exact binding excluded by reviewed glibc loader branch; bytes retained for review, not mounted or claimed ELF-resolved."
+    }
+  ]
+}

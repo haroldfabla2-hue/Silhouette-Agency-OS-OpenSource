@@ -207,5 +207,13 @@
    "kind": "dynamic",
    "count": 2
   }
+ },
+ "nativeSelection": {
+  "scope": "Conditional static selection backed by clean core introspection of exact Node during preparation; not an observed binding load or namespace proof. Runtime core-only guards after drop and before product must recheck.",
+  "pins": "native-selection-pins.json: closed three paths and exact hashes, all 44 loader/metadata/selected/review-only files pinned; lock name/version/url/integrity checked without importing packages. Tarball integrity established independently against lock during source review.",
+  "reviewOnly": "Exactly LanceDB x64 musl and msgpackr x64 napi.musl / abi115.musl retained as evidence with target null, disposition review-only. Launcher checks bytes/modes but never mounts them. Remaining files mountable with complete selected ELF closure. Budgets include both dispositions.",
+  "node": "Node22 plain linux/x64, ABI read from process.versions.modules of the executable (no hardcoded ABI), glibcVersionRuntime nonempty, interpreter exact /lib64/ld-linux-x86-64.so.2, no require.addon; values and executable hash recorded and rechecked at future runtime.",
+  "environment": "Core inspection empty env; artifact env rejects NODE_OPTIONS/NODE_PATH/LIBC/npm_config_arch/platform/PREBUILDS_ONLY/ARM_VERSION/ELECTRON_RUN_AS_NODE and *_PREBUILD. No build Release/Debug, local prebuilds, nearby executable prebuilds or LanceDB local overrides permitted.",
+  "unresolved": "Selected ELF scan path/SONAME order stable; all missing libraries/interpreters accumulate structured path/hash/size/machine/class/NEEDED/INTERP/package evidence then FAIL before runtime copy/upload. Review-only ELF explicitly not dependency-resolved; no generic musl/name/SONAME exemptions."
  }
 }
