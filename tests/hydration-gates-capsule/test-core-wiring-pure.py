@@ -119,37 +119,12 @@ class FixedCutGate(unittest.TestCase):
   self.assertFalse(eligible('965f99c80c25c50867198f46a213a7444b0cd15e',2,'synchronize'))
   self.assertFalse(eligible('965f99c80c25c50867198f46a213a7444b0cd15e',1,'reopened'))
 
-class ActualFixedActivationStage(unittest.TestCase):
- def document(self):
+class ActualStoppedStage(unittest.TestCase):
+ def test_core_job_boolean_false_and_anchor_absent_structurally(self):
   import yaml
-  return yaml.safe_load((D.parents[1]/'.github/workflows/core-containment.yml').read_text())
- def test_exact_fixed_predicate_and_authentic_anchor_structurally(self):
-  import json,hashlib
-  document=self.document();job=document['jobs']['core-only']
-  self.assertEqual(job['if'],"github.event_name == 'pull_request' && github.event.action == 'synchronize' && github.repository == 'haroldfabla2-hue/Silhouette-Agency-OS-OpenSource' && github.event.pull_request.number == 226 && github.event.pull_request.head.repo.full_name == 'haroldfabla2-hue/Silhouette-Agency-OS-OpenSource' && github.head_ref == 'fix/shutdown-contracts-narrow-20261117' && github.event.before == '965f99c80c25c50867198f46a213a7444b0cd15e' && github.run_attempt == 1")
-  raw=(D/'CORE-EXECUTION-ANCHOR.json').read_bytes()
-  self.assertEqual(hashlib.sha256(raw).hexdigest(),'b1d2815228f18d99ada44af36986b22bdd3f2cce3cbe55aad63b9e1b7df24d8d')
-  self.assertEqual(json.loads(raw)['candidateRecord']['artifactId'],14661444674)
-  self.assertEqual(job['steps'][-1]['with']['retention-days'],2)
- def run_actual_transition_gate(self,parents,files,head='a'*40):
-  import os,subprocess
-  run=self.document()['jobs']['core-only']['steps'][1]['run']
-  source=run.split("<<'PYGATE'\n",1)[1].rsplit('PYGATE',1)[0]
-  def git(args,**kwargs):
-   command=args[1:]
-   if command==['rev-parse','HEAD']:return head+'\n'
-   if command==['show','-s','--format=%P','HEAD']:return parents+'\n'
-   if command==['diff','--name-only','HEAD^','HEAD']:return '\n'.join(files)+'\n'
-   raise AssertionError('unexpected fake git read')
-  with mock.patch.object(subprocess,'check_output',side_effect=git),mock.patch.dict(os.environ,{'EXPECTED_HEAD':'a'*40}):
-   exec(compile(source,'actual-workflow-transition-gate','exec'),{})
- def test_actual_transition_script_accepts_only_exact_parent_and_file_set(self):
-  files={'tests/hydration-gates-capsule/CORE-EXECUTION-ANCHOR.json','tests/hydration-gates-capsule/test-core-wiring-pure.py','.github/workflows/core-containment.yml'}
-  self.run_actual_transition_gate('965f99c80c25c50867198f46a213a7444b0cd15e',files)
-  for parents in ('b'*40,'965f99c80c25c50867198f46a213a7444b0cd15e bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'):
-   with self.assertRaisesRegex(AssertionError,'NOT_REVIEWED_SINGLE_PARENT'):self.run_actual_transition_gate(parents,files)
-  for changed in (files|{'unreviewed.py'},files-{'tests/hydration-gates-capsule/CORE-EXECUTION-ANCHOR.json'}):
-   with self.assertRaisesRegex(AssertionError,'UNREVIEWED_CUT_FILE_SET'):self.run_actual_transition_gate('965f99c80c25c50867198f46a213a7444b0cd15e',changed)
-  with self.assertRaisesRegex(AssertionError,'EVENT_HEAD_MISMATCH'):self.run_actual_transition_gate('965f99c80c25c50867198f46a213a7444b0cd15e',files,head='b'*40)
+  document=yaml.safe_load((D.parents[1]/'.github/workflows/core-containment.yml').read_text())
+  self.assertIs(document['jobs']['core-only']['if'],False)
+  self.assertFalse((D/'CORE-EXECUTION-ANCHOR.json').exists())
+  self.assertEqual(document['jobs']['core-only']['steps'][-1]['with']['retention-days'],2)
 
 if __name__=='__main__':unittest.main()
