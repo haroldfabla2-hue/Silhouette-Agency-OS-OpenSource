@@ -6,8 +6,24 @@ CLASSES={'Error','TypeError','RangeError','SyntaxError','ReferenceError','Assert
 CODES={'OTHER','ERR_ASSERTION','ERR_MODULE_NOT_FOUND','MODULE_NOT_FOUND','ERR_DLOPEN_FAILED','ERR_REQUIRE_ESM',
  'ERR_UNKNOWN_FILE_EXTENSION','ENOENT','EACCES','EPERM','EROFS','ENOSPC','EIO','ENOMEM','EMFILE','ENFILE',
  'SQLITE_ERROR','SQLITE_CANTOPEN','SQLITE_READONLY','SQLITE_FULL','SQLITE_IOERR','SQLITE_BUSY','SQLITE_LOCKED'}
+def journal_projection(value):
+ if value is None:return None
+ assert isinstance(value,dict) and set(value)=={'schemaVersion','state','itemsArray','count','completedArray','completedCount','completedEmpty','rows','multisetExactFixture','orderedFixtureExact','idsDistinct'}
+ assert value['schemaVersion']==1 and value['state'] in {'VALID','INVALID','OVERSIZE'}
+ for key in ('itemsArray','completedArray','completedEmpty','multisetExactFixture','orderedFixtureExact','idsDistinct'):assert type(value[key])is bool
+ for key in ('count','completedCount'):assert value[key] is None or type(value[key])is int and 0<=value[key]<=9
+ assert isinstance(value['rows'],list) and len(value['rows'])<=8
+ for row in value['rows']:
+  assert isinstance(row,dict) and set(row)=={'fixtureMatch','idString','idNonempty','unexpectedKeys','missingKeys','differences'}
+  assert row['fixtureMatch'] in {'EXACT_0','EXACT_1','OTHER'}
+  for key in ('idString','idNonempty','unexpectedKeys','missingKeys'):assert type(row[key])is bool
+  assert isinstance(row['differences'],list) and len(row['differences'])==2
+  for fields in row['differences']:assert isinstance(fields,list) and len(fields)<=4 and len(set(fields))==len(fields) and all(field in {'source','content','importance','metadata'} for field in fields)
+ return value
+
 def project(value,table,targets):
- assert isinstance(value,dict) and set(value)=={'schemaVersion','mode','checkpoint','checkpoints','errors','outcome','framesOmitted','fatalObservation','exitObservation'}
+ assert isinstance(value,dict) and set(value)=={'schemaVersion','mode','checkpoint','checkpoints','errors','outcome','framesOmitted','fatalObservation','exitObservation','journalComparison'}
+ projection=journal_projection(value['journalComparison'])
  assert value['schemaVersion']==1 and value['mode'] in {'write','read'} and value['checkpoint'] in CHECKPOINTS
  assert value['outcome'] in {'RUNNING','RETURNED','THREW'} and type(value['framesOmitted'])is bool
  assert isinstance(value['checkpoints'],list) and len(value['checkpoints'])<=24 and all(x in CHECKPOINTS for x in value['checkpoints'])
@@ -35,4 +51,4 @@ def project(value,table,targets):
    assert type(frame['column'])is int and 1<=frame['column']<=1000000
    frames.append({k:frame[k] for k in ('moduleId','line','column')})
   errors.append({**{k:error[k] for k in ('site','exceptionClass','code','framesOmitted','moduleIdentity')},'frames':frames})
- return {**{k:value[k] for k in ('schemaVersion','mode','checkpoint','checkpoints','outcome','framesOmitted','fatalObservation','exitObservation')},'errors':errors}
+ return {**{k:value[k] for k in ('schemaVersion','mode','checkpoint','checkpoints','outcome','framesOmitted','fatalObservation','exitObservation')},'errors':errors,'journalComparison':projection}

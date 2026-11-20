@@ -13,7 +13,7 @@ const markers=new Set(['IMPORT_ENTRY','RUN_PHASE','GUARD','RUNTIME_IMPORT','NARR
  'REDIS_CLOSE','SQLITE_CLOSE','RAW_MEMORY_WRITE','RAW_MEMORY_READ','COMPLETE']);
 const sites=new Set(['TOP_LEVEL','ADMISSION_0','ADMISSION_1','ORACLE_PRIMARY','OWNERS_CLOSE','MEMORY_CLOSE',
  'NERVOUS_CLOSE','GRAPH_CLOSE','REDIS_CLOSE','SQLITE_CLOSE','FATAL_MONITOR']);
-const doc={schemaVersion:1,mode,checkpoint:'IMPORT_ENTRY',checkpoints:[],errors:[],outcome:'RUNNING',framesOmitted:false,fatalObservation:{seen:false,origin:'NONE'},exitObservation:{seen:false,code:null}};
+const doc={schemaVersion:1,mode,checkpoint:'IMPORT_ENTRY',checkpoints:[],errors:[],outcome:'RUNNING',framesOmitted:false,fatalObservation:{seen:false,origin:'NONE'},exitObservation:{seen:false,code:null},journalComparison:null};
 let persistenceFailed=false;
 function persistBestEffort(){
  try{
@@ -82,7 +82,7 @@ process.on('exit',code=>{
   persistBestEffort();
  }catch{}
 });
-globalThis[Symbol.for('narrative.direct.observer')]=Object.freeze({checkpoint,errorAt});
+globalThis[Symbol.for('narrative.direct.observer')]=Object.freeze({checkpoint,errorAt,journalComparison(value){doc.journalComparison=value;persistStrict();}});
 try{
  checkpoint('IMPORT_ENTRY');
  const {runPhase}=await import('/app/entry.INACTIVE.mjs');

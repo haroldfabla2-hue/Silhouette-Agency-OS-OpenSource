@@ -3,6 +3,7 @@
  * replaced. Public fixture text is not provider output. No success process.exit.
  */
 import assert from 'node:assert/strict';
+import {isDeepStrictEqual} from 'node:util';
 import fs from 'node:fs';
 import {createRequire} from 'node:module';
 const fixture=[
@@ -13,6 +14,36 @@ const observer=globalThis[Symbol.for('narrative.direct.observer')];
 
 // Oracle-only reads. Never restore the expected file into product memory, call
 // store/saveSnapshot/loadSnapshot, change required, or replace a product method.
+
+// Closed comparison only: never publish values, arbitrary keys, IDs or text.
+function journalProjection(journal){
+ const itemsArray=Array.isArray(journal?.items),completedArray=Array.isArray(journal?.completed);
+ const items=itemsArray?journal.items:[];const completed=completedArray?journal.completed:[];
+ const count=itemsArray?Math.min(items.length,9):null;
+ const completedCount=completedArray?Math.min(completed.length,9):null;
+ const base={schemaVersion:1,state:!itemsArray?'INVALID':items.length>8?'OVERSIZE':'VALID',itemsArray,count,
+  completedArray,completedCount,completedEmpty:completedArray&&completed.length===0};
+ if(base.state!=='VALID')return {...base,rows:[],multisetExactFixture:false,orderedFixtureExact:false,idsDistinct:false};
+ const payloads=items.map(item=>{
+  if(item===null||typeof item!=='object'||Array.isArray(item))return null;
+  const {id,...payload}=item;return payload;
+ });
+ const rows=items.map((item,index)=>{
+  const payload=payloads[index];const known=payload!==null;
+  const exact=fixture.findIndex(expected=>isDeepStrictEqual(payload,expected));
+  const differs=fixture.map(expected=>['source','content','importance','metadata'].filter(field=>!known||!isDeepStrictEqual(payload[field],expected[field])));
+  return {fixtureMatch:exact===0?'EXACT_0':exact===1?'EXACT_1':'OTHER',
+   idString:typeof item?.id==='string',idNonempty:typeof item?.id==='string'&&item.id.length>0,
+   unexpectedKeys:!known||Object.keys(payload).some(key=>!['source','content','importance','metadata'].includes(key)),
+   missingKeys:!known||['source','content','importance','metadata'].some(key=>!Object.hasOwn(payload,key)),
+   differences:exact<0?differs:[[],[]]};
+ });
+ return {...base,rows,
+  multisetExactFixture:rows.length===2&&rows.filter(r=>r.fixtureMatch==='EXACT_0').length===1&&rows.filter(r=>r.fixtureMatch==='EXACT_1').length===1,
+  orderedFixtureExact:rows.length===2&&rows[0].fixtureMatch==='EXACT_0'&&rows[1].fixtureMatch==='EXACT_1',
+  idsDistinct:rows.every(r=>r.idNonempty)&&new Set(items.map(item=>item.id)).size===items.length};
+}
+
 const rawTags=['NARRATIVE','RAW_SYSTEM_EVENT','source:SYSTEM'];
 function selectRaw(nodes){
  assert.ok(Array.isArray(nodes));
@@ -109,6 +140,7 @@ export async function runPhase(mode){
   assert.equal(receipt.pendingPreserved,2);
   assert.equal(receipt.admissionFailures,0);
   const journal=JSON.parse(fs.readFileSync('/work/data/wal/pending-narrations.json','utf8'));
+  observer?.journalComparison(journalProjection(journal));
   assert.deepEqual(journal.items.map(({id,...item})=>item),fixture);
   assert.equal(new Set(journal.items.map(item=>item.id)).size,2);
   assert.deepEqual(journal.completed,[]);

@@ -1,6 +1,6 @@
 {
   "derivation": "Original pinned archive plus existing diagnostic instrumentation plus one unmodified publicly sourced ingestion module, not instrument-only",
-  "derivedRootfsManifestSha256": "6ac9fb23340463c6349d71c2de9d1043898938ff204a9efd3cf18d5311e04790",
+  "derivedRootfsManifestSha256": "f576336c1f7e2796f4d7263ee7adf80e47edee446e123ac7d994844605a62b5c",
   "instrumentationChangeOnly": false,
   "kind": "DIRECT_SYSTEMD_DERIVED_PREPARATION",
   "originalArchiveIsNotDerivedRootIdentity": true,
@@ -12,20 +12,21 @@
   "rawMemoryPlanSha256": "844bd1be4cc227b217f2df91ead05e6989424a7fed75d2b3f290a457f702b86a",
   "runtimeValidated": false,
   "sourceControls": {
-    "DIRECT-SYSTEMD-ROOTFS.json": "6ac9fb23340463c6349d71c2de9d1043898938ff204a9efd3cf18d5311e04790",
+    "DIRECT-SYSTEMD-ROOTFS.json": "f576336c1f7e2796f4d7263ee7adf80e47edee446e123ac7d994844605a62b5c",
     "INGESTION-CLOSURE.json": "a923e198d357fcfe4d6375df509c5a06c5f2cf7e33e25c287ce24f8b7f2193fb",
     "INGESTION-EMITTED.json": "7179ac5a3cfa106cae925e6c94076a0e2d98a976e7257d87366b4fa4752bd314",
+    "JOURNAL-PROJECTION-PLAN.json": "717ec8b00f0d4e30baf253282d5586afd8758a841ed71c555248aa5d81d27afb",
     "RAW-MEMORY-PLAN.json": "844bd1be4cc227b217f2df91ead05e6989424a7fed75d2b3f290a457f702b86a",
-    "diagnostic-projection.INACTIVE.py": "3eaf4989a2df0156fff9538b285b2967d1cdd04c8cdeb6b248119b687cc9843c",
-    "diagnostic-source-table.json": "87a1e7a5fb14f5fda03badf14af0e01b739b0fc2783a109dc4679f467e281af4",
+    "diagnostic-projection.INACTIVE.py": "2860cfde59d892e444c13a08ea274bf559dd17cb0700179199d64cc2d8c17864",
+    "diagnostic-source-table.json": "09bbd181e0bcdc8ce719b6e3813b7ef72d481bb99308e0dbe86fa9084ec96315",
     "diagnostic-targets.json": "85e13cb79d467b184ef16ec760a698cb30dcb29ca860b5424c90103095a1a9ff",
-    "direct-services.INACTIVE.py": "47fd83c9a98a3a25d634c49a70bc0b7240480acc900c749fa35cde104c77526a",
+    "direct-services.INACTIVE.py": "62b33c5d33529e99ced7b255de0c30786cd7f22f334549b9cfcec931eb54a36e",
     "emit-ingestion.INACTIVE.cjs": "1b35916821de01934a6b16a37c80b044dc5bf10d011ced633138db5d0c5d4f30",
-    "entry.DIAGNOSTIC.INACTIVE.mjs": "92b0d0032b572bc858258e5a6a2e92300b6ddfb22d65f7f5ece0a5c725d074a4",
+    "entry.DIAGNOSTIC.INACTIVE.mjs": "713e459ccddca9fa10ee8317bd876f43331c063fa106b5434bee25d7ae64715c",
     "export-selected.INACTIVE.py": "87879fa8b531be01087270ec510a479ee697999c7362f853899d5a121301e2b6",
     "ingestionService.EMITTED.js": "b96560a8e9869b3a1f9c46de0f9a307255042dffa4a7dc82057186bebe7180e6",
     "ingestionService.SOURCE.ts": "52e6bd8960029141fdfc63569ad38c6935271dc94b27dcf89062a29d5cbb03bd",
     "native-selection-guard.DIRECT-SYSTEMD.cjs": "50d21436e62b0ae62619b1396013298f4e1134ae2c293a207382978501e3f694",
-    "phase-observer.INACTIVE.mjs": "56c4dfbe2e5bf40a1f17493d6900814f5a7e37e82f5cbf206182109b362b9cf1"
+    "phase-observer.INACTIVE.mjs": "47e16a675cf67c6d1e03cf411924d79f8750401a31d7bb08f5374efba9d45cbc"
   }
 }
