@@ -34,11 +34,11 @@ def read_text(path):
  with pathlib.Path(path).open() as f:s=f.read(65537)
  assert len(s)<=65536,'READ_BOUND';return s.strip()
 
-def ancestors(path):
+def ancestors(path,stage='controller'):
  p=pathlib.PurePosixPath(path);out=[]
  while True:
   row={'path':str(p)}
-  for key in ('memory.max','memory.swap.max','pids.max','cpu.max'):row[key]=read_text(safe_cg(str(p))/key) if str(p)!='/' else 'root-not-applicable'
+  for key in ('memory.max','memory.swap.max','pids.max','cpu.max'):row[key]=observed_read('READ_ANCESTOR_LIMITS',lambda:read_text(safe_cg(str(p))/key),stage=stage) if str(p)!='/' else 'root-not-applicable'
   out.append(row)
   if str(p)=='/':break
   p=p.parent
@@ -47,16 +47,17 @@ def ancestors(path):
 def counters(path):
  result={}
  for file in ('memory.events','pids.events','cgroup.events'):
-  result[file]={k:int(v) for k,v in (l.split() for l in read_text(path/file).splitlines())}
+  reason={'memory.events':'READ_MEMORY_EVENTS','pids.events':'READ_PIDS_EVENTS','cgroup.events':'READ_CGROUP_EVENTS'}[file]
+  result[file]=observed_read(reason,lambda:{k:int(v) for k,v in (l.split() for l in read_text(path/file).splitlines())})
  return result
 
 def members(path):
  # Read recursively, no process-global scans and no arbitrary killing.
- assert path.is_dir(),'CGROUP_DISAPPEARED'
+ assert observed_read('READ_CGROUP_DIRECTORY',path.is_dir),'CGROUP_DISAPPEARED'
  out=set()
  for parent,dirs,files in os.walk(path,followlinks=False):
   assert not any(pathlib.Path(parent,d).is_symlink() for d in dirs),'CGROUP_LINK'
-  if 'cgroup.procs' in files:out.update(int(x) for x in read_text(pathlib.Path(parent,'cgroup.procs')).split())
+  if 'cgroup.procs' in files:out.update(int(x) for x in observed_read('READ_CGROUP_PROCS',lambda:read_text(pathlib.Path(parent,'cgroup.procs'))).split())
  return sorted(out)
 
 def manager_env():
@@ -75,7 +76,7 @@ def ctl(env,name,verb='show'):
  return rows
 
 def same_owned(env,owned):
- p=ctl(env,owned['unit']);assert p['Id']==owned['unit'] and p['InvocationID']==owned['invocationId'] and p['Description']==owned['description'],'UNIT_CHANGED'
+ p=observed_read('READ_UNIT_SHOW',lambda:ctl(env,owned['unit']));assert p['Id']==owned['unit'] and p['InvocationID']==owned['invocationId'] and p['Description']==owned['description'],'UNIT_CHANGED'
  return p
 
 def empty_receipt(cg):
@@ -84,7 +85,7 @@ def empty_receipt(cg):
 
 ERROR_TYPES=frozenset(('AssertionError','PermissionError','FileNotFoundError','OSError','TimeoutError','InterruptedError','MemoryError','ValueError','KeyError','TypeError','CalledProcessError','TimeoutExpired','CaptureSetupFatal','unknown'))
 ERROR_STAGES=frozenset(('controller','inner','probe','trusted-helper','namespace-child','unknown'))
-ERROR_REASONS=frozenset((
+ERROR_REASONS=frozenset(('DIAGNOSTIC_CONFLICT','DIAGNOSTIC_OVERFLOW','DIAGNOSTIC_TRUNCATED','DIAGNOSTIC_CONFLICT_OVERFLOW','DIAGNOSTIC_CONFLICT_TRUNCATED','DIAGNOSTIC_OVERFLOW_TRUNCATED','DIAGNOSTIC_CONFLICT_OVERFLOW_TRUNCATED','EXTERNAL_NAMESPACE_DENIED_FORMAT','EXTERNAL_NAMESPACE_ERROR_FORMAT','EXTERNAL_BIND_ERROR_FORMAT','EXTERNAL_EXEC_ERROR_FORMAT','EXTERNAL_LOADER_ERROR_FORMAT','EXTERNAL_PYTHON_OPEN_ERROR_FORMAT','READ_MEMORY_EVENTS','READ_PIDS_EVENTS','READ_CGROUP_EVENTS','READ_CGROUP_DIRECTORY','READ_CGROUP_PROCS','READ_UNIT_SHOW','READ_HELPER_RESULT','READ_PROBE_READY','READ_READY_RECORD','READ_READY_MEMBERSHIP','READ_CONTROLLER_MEMBERSHIP','READ_ANCESTOR_LIMITS',
  'ABSOLUTE_STAGED_PATH','ALLOWLIST_ANCHOR','AMBIENT_CLEAR','ANCESTORS_INCOMPLETE','ANCESTOR_CHAIN',
  'ANCESTOR_REPEAT','ANCESTOR_SCHEMA','ANCESTOR_SETTINGS_CHANGED','ANCESTOR_TYPES','ANCHOR_FIELDS',
  'ANCHOR_MUST_BE_READ_ONLY','ANCHOR_SCHEMA','ARCHIVE_ANCHOR','BSET_DROP','BWRAP_ARGV_LIMIT',
@@ -139,6 +140,10 @@ def exception_diagnostic(error,stage):
   if type(value) is str and value in ERROR_REASONS:reason=value;break
  return closed_diagnostic({'type':type(error).__name__,'stage':stage,'reason':reason})
 
+def observed_read(reason,callback,stage='controller'):
+ try:return callback()
+ except OSError as error:raise DiagnosticFailure({'type':type(error).__name__,'stage':stage,'reason':reason}) from None
+
 def diagnostic_record(value):
  d=closed_diagnostic(value)
  return {'status':'FAIL','helperErrorType':d['type'],'helperStage':d['stage'],'helperReason':d['reason']}
@@ -184,7 +189,7 @@ def quiesce(env,owned,cg,natural):
   assert cg is not None,'NO_VALIDATED_CGROUP_LOCATION'
   # Retain a pre-stop empty proof only when no live main process can repopulate.
   if p.get('MainPID')=='0' and (p.get('ActiveState') in ('inactive','failed') or p.get('SubState')=='exited'):before=empty_receipt(cg)
- except (OSError,AssertionError):evidence_error=True
+ except (OSError,AssertionError,DiagnosticFailure):evidence_error=True
  if natural:assert p['SubState']=='exited' and p['ActiveState']=='active' and int(p['MainPID'])==0,'NATURAL_NOT_EXITED'
  ctl(env,owned['unit'],'stop')
  end=time.monotonic()+3;after=None;inactive=False
@@ -197,7 +202,7 @@ def quiesce(env,owned,cg,natural):
    try:
     assert cg is not None,'NO_VALIDATED_CGROUP_LOCATION'
     after=empty_receipt(cg)
-   except (OSError,AssertionError):after=before;evidence_error=True
+   except (OSError,AssertionError,DiagnosticFailure):after=before;evidence_error=True
    break
   time.sleep(.02)
  assert inactive and after is not None,'CLEANUP_EVIDENCE_UNKNOWN_AFTER_OWNED_STOP'
@@ -261,7 +266,7 @@ def run_case(anchor,binds,case,output):
  contract=load_module('containment-control-contract.py');env=manager_env();nonce=secrets.token_hex(16);name=contract.unit_name(nonce)
  assert ctl(env,name).get('LoadState')=='not-found','UNIT_COLLISION'
  directory=output/nonce;directory.mkdir(mode=0o700)
- owncg=contract.parse_proc_cgroup(read_text('/proc/self/cgroup'));parent_ns={k:os.readlink('/proc/self/ns/'+k) for k in ('user','mnt','pid','net','ipc','uts')}
+ owncg=contract.parse_proc_cgroup(observed_read('READ_CONTROLLER_MEMBERSHIP',lambda:read_text('/proc/self/cgroup')));parent_ns={k:os.readlink('/proc/self/ns/'+k) for k in ('user','mnt','pid','net','ipc','uts')}
  devices=[r.split()[2] for r in read_text('/proc/self/mountinfo').splitlines()]
  canary=directory/'outside-canary';canary.write_bytes(b'outside-allowlist\n');canary.chmod(0o400)
  sentinel=directory/'readonly-sentinel';sentinel.write_bytes(b'core-readonly-sentinel\n');sentinel.chmod(0o600)
@@ -279,23 +284,23 @@ def run_case(anchor,binds,case,output):
   creation_attempted=True
   p=subprocess.run(plan['command'],env=env,capture_output=True,timeout=5)
   assert p.returncode==0,'SERVICE_CREATE_REJECTED'
-  ready=wait_record(directory,'ready.json',start+5)
+  ready=observed_read('READ_READY_RECORD',lambda:wait_record(directory,'ready.json',start+5))
   props=ctl(env,name);candidate_cg=safe_cg(props['ControlGroup']);rows=ancestors(props['ControlGroup'])
-  verified=contract.validate_receipt(nonce,props,ready,read_text('/proc/'+str(ready['pid'])+'/cgroup'),rows)
+  verified=contract.validate_receipt(nonce,props,ready,observed_read('READ_READY_MEMBERSHIP',lambda:read_text('/proc/'+str(ready['pid'])+'/cgroup')),rows)
   assert not str(owncg).startswith(props['ControlGroup']+'/') and str(owncg)!=props['ControlGroup'],'CONTROLLER_INSIDE_TARGET'
-  assert contract.parse_proc_cgroup(read_text('/proc/self/cgroup'))==owncg,'CONTROLLER_MEMBERSHIP_CHANGED'
+  assert contract.parse_proc_cgroup(observed_read('READ_CONTROLLER_MEMBERSHIP',lambda:read_text('/proc/self/cgroup')))==owncg,'CONTROLLER_MEMBERSHIP_CHANGED'
   assert ancestor_before==ancestors(str(owncg)),'ANCESTOR_SETTINGS_CHANGED'
   owned={**verified,'description':'Hydration core containment '+nonce}
   cg=candidate_cg # Freeze evidence location only after the complete readiness gate.
   before=counters(cg)
   gate={'nonce':nonce,'pid':ready['pid'],'invocationId':props['InvocationID']}
   atomic_record(directory,'release.json',gate)
-  result,state=observe_until_terminal(lambda:read_json(directory/'result.json') if (directory/'result.json').exists() else None,lambda:same_owned(env,owned),start+24)
+  result,state=observe_until_terminal(lambda:observed_read('READ_HELPER_RESULT',lambda:read_json(directory/'result.json')) if (directory/'result.json').exists() else None,lambda:same_owned(env,owned),start+24)
   persist_terminal(directory,state,result)
   # Revalidate for further actions, never before preserving observed state.
   state=same_owned(env,owned)
   events=counters(cg)
-  probe_ready=(directory/'probe-ready.json').exists() and read_json(directory/'probe-ready.json')=={'nonce':nonce,'case':case}
+  probe_ready=(directory/'probe-ready.json').exists() and observed_read('READ_PROBE_READY',lambda:read_json(directory/'probe-ready.json'))=={'nonce':nonce,'case':case}
   if result is not None:contract.verify_result_context(result,nonce,owned['invocationId'])
   decision=contract.evaluate_case_result(case,result,before,events,probe_ready,state)
   natural_helper=state['SubState']=='exited' and int(state['MainPID'])==0
@@ -326,17 +331,88 @@ def controller(anchorfile):
  atomic_record(output,'suite.json',{'scope':'Real core containment evidence only. No product validation or shutdown repair. Dynamic negative cases are distinct expected FAILs, never a payload PASS after forced cleanup.','cases':receipts})
  print('CORE_CONTAINMENT_EVIDENCE '+json.dumps({'caseCount':len(receipts),'outputPathSha256':hashlib.sha256(str(output).encode()).hexdigest(),'productValidated':False}))
 
+EXTERNAL_CATEGORIES=frozenset(('bwrap-namespace-denied','bwrap-namespace-error','bwrap-bind-error','bwrap-exec-error','loader-error','python-open-error','unknown'))
+
+def external_line_category(line):
+ # Source-format recognition only. Never publish path, errno text or line body.
+ # Categories report matching stderr format, not independently proven root cause.
+ if re.fullmatch(r'bwrap: Creating new namespace failed: (Operation not permitted|Permission denied)',line):return 'bwrap-namespace-denied'
+ if re.fullmatch(r'bwrap: Creating new namespace failed: [^\r\n]{1,512}',line):return 'bwrap-namespace-error'
+ if line.startswith('bwrap: No permissions to creating new namespace, likely because the kernel does not allow non-privileged user namespaces.'):return 'bwrap-namespace-denied'
+ if re.fullmatch(r"bwrap: Can't bind mount [^\r\n]{1,2048} on [^\r\n]{1,2048}: [^\r\n]{1,2048}",line):return 'bwrap-bind-error'
+ if re.fullmatch(r'bwrap: execvp [^\r\n]{1,2048}: [^\r\n]{1,512}',line):return 'bwrap-exec-error'
+ if re.fullmatch(r'[^\r\n]{1,1024}: error while loading shared libraries: [^\r\n]{1,2048}',line):return 'loader-error'
+ if re.fullmatch(r"/usr/bin/python3: can't open file [^\r\n]{1,2048}: \[Errno [0-9]{1,3}\] [^\r\n]{1,512}",line):return 'python-open-error'
+ return 'unknown'
+
+UNCERTAINTY_FLAGS={
+ 'DIAGNOSTIC_CONFLICT':(True,False,False),'DIAGNOSTIC_OVERFLOW':(False,True,False),'DIAGNOSTIC_TRUNCATED':(False,False,True),
+ 'DIAGNOSTIC_CONFLICT_OVERFLOW':(True,True,False),'DIAGNOSTIC_CONFLICT_TRUNCATED':(True,False,True),
+ 'DIAGNOSTIC_OVERFLOW_TRUNCATED':(False,True,True),'DIAGNOSTIC_CONFLICT_OVERFLOW_TRUNCATED':(True,True,True)}
+
+def stderr_diagnostics(raw):
+ # Scan every complete line within the existing4096-byte budget. Keep only4
+ # unique public markers, but never let that publication cap hide ambiguity.
+ truncated=len(raw)>4096
+ raw=raw[:4096]
+ markers=[];seen=set();categories=set();unknown=0;marker_lines=0
+ conflict=False;overflow=False;inherited_truncation=False
+ lines=raw.decode('utf8',errors='replace').splitlines()
+ if truncated and raw and not raw.endswith(b'\n'):lines=lines[:-1]
+ for line in lines:
+  if line.startswith('CORE_ERROR '):
+   try:
+    obj=json.loads(line[len('CORE_ERROR '):]);assert type(obj) is dict and set(obj)=={'type','stage','reason'}
+    closed=closed_diagnostic(obj)
+    if closed==obj and closed['stage']!='unknown':
+     marker_lines+=1
+     reason=closed['reason']
+     flags=UNCERTAINTY_FLAGS.get(reason,(False,False,False))
+     conflict=conflict or flags[0]
+     overflow=overflow or flags[1]
+     inherited_truncation=inherited_truncation or flags[2]
+     identity=json.dumps(closed,sort_keys=True)
+     seen.add(identity)
+     if len(markers)<4 and closed not in markers:markers.append(closed)
+     continue
+   except (ValueError,TypeError,AssertionError):pass
+  category=external_line_category(line);categories.add(category)
+  if category=='unknown':unknown+=1
+ conflict=conflict or len(seen)>1
+ overflow=overflow or len(seen)>4
+ truncated=truncated or inherited_truncation
+ if truncated:categories.add('unknown')
+ return {'byteCount':len(raw),'byteCountCapped':len(raw)==4096 and truncated,'markerCount':min(marker_lines,4096),'markers':markers,'markerConflict':conflict,'markerOverflow':overflow,'diagnosticTruncated':truncated,'categories':sorted(categories),'unknownLineCount':min(unknown,4096)}
+
+def diagnostic_from_summary(summary):
+ # Uncertainty itself crosses the same typed marker boundary, never a guessed
+ # external category standing in for conflicting or incomplete marker evidence.
+ flags=tuple(bool(summary.get(key)) for key in ('markerConflict','markerOverflow','diagnosticTruncated'))
+ if any(flags):
+  reason=next(key for key,value in UNCERTAINTY_FLAGS.items() if value==flags)
+  return {'type':'unknown','stage':'probe','reason':reason}
+ distinct={json.dumps(value,sort_keys=True) for value in summary['markers']}
+ return json.loads(next(iter(distinct))) if len(distinct)==1 else closed_diagnostic({})
+
 def sanitized_child_error(raw):
- try:
-  line=raw.decode('utf8').strip()
-  if not line.startswith('CORE_ERROR '):return closed_diagnostic({}) if raw else None
-  obj=json.loads(line[len('CORE_ERROR '):])
-  if type(obj) is not dict or set(obj)!={'type','stage','reason'}:return closed_diagnostic({})
-  return closed_diagnostic(obj)
- except (ValueError,UnicodeError,TypeError):return closed_diagnostic({})
+ return diagnostic_from_summary(stderr_diagnostics(raw)) if raw else None
+
+def child_error_record(captured):
+ record=diagnostic_record(captured['errorType']);summary=captured['stderrDiagnostic']
+ record.update({'exitCode':bounded_number(captured['exitCode'],-64,255),'stderrByteCount':summary['byteCount'],'stderrByteCountCapped':summary['byteCountCapped'],'markerCount':summary['markerCount'],'markers':summary['markers'],'markerConflict':summary['markerConflict'],'markerOverflow':summary['markerOverflow'],'diagnosticTruncated':summary['diagnosticTruncated'],'externalCategories':summary['categories'],'unknownLineCount':summary['unknownLineCount']})
+ return record
 
 def propagate_child_error(result):
- if result.get('errorType') is not None:raise DiagnosticFailure(result['errorType'])
+ diagnostic=result.get('errorType')
+ if diagnostic is not None:
+  summary=result.get('stderrDiagnostic',{})
+  if summary.get('diagnosticTruncated') or summary.get('markerOverflow') or summary.get('markerConflict'):
+   diagnostic=diagnostic_from_summary(summary)
+  elif closed_diagnostic(diagnostic)==closed_diagnostic({}) and not summary.get('markerCount',0):
+   mapping={'bwrap-namespace-denied':'EXTERNAL_NAMESPACE_DENIED_FORMAT','bwrap-namespace-error':'EXTERNAL_NAMESPACE_ERROR_FORMAT','bwrap-bind-error':'EXTERNAL_BIND_ERROR_FORMAT','bwrap-exec-error':'EXTERNAL_EXEC_ERROR_FORMAT','loader-error':'EXTERNAL_LOADER_ERROR_FORMAT','python-open-error':'EXTERNAL_PYTHON_OPEN_ERROR_FORMAT'}
+   categories=set(summary.get('categories',[]))-{'unknown'}
+   if len(categories)==1 and next(iter(categories)) in mapping:diagnostic={'type':'unknown','stage':'probe','reason':mapping[next(iter(categories))]}
+  raise DiagnosticFailure(diagnostic)
 
 class CaptureSetupFatal(RuntimeError):pass
 
@@ -379,7 +455,7 @@ def capture_child(argv,timeout,on_output=None):
       for stream in (child.stdin,child.stdout,child.stderr):stream.close()
     finally:
      if pidfd is not None:os.close(pidfd)
- return {'status':'OK' if child.returncode==0 and not forced and not err else 'FAIL','forced':forced,'exitCode':child.returncode,'stderr':bool(err),'stdout':out.decode('utf8'),'errorType':sanitized_child_error(bytes(err))}
+ return {'status':'OK' if child.returncode==0 and not forced and not err else 'FAIL','forced':forced,'exitCode':child.returncode,'stderr':bool(err),'stdout':out.decode('utf8'),'errorType':sanitized_child_error(bytes(err)),'stderrDiagnostic':stderr_diagnostics(bytes(err))}
 
 def helper(control,nonce):
  directory=pathlib.Path(control);cfg=read_json(directory/'config.json',limit=262144);assert cfg['nonce']==nonce and cfg['case'] in CASES,'HELPER_CONFIG'
@@ -388,7 +464,7 @@ def helper(control,nonce):
  gate=wait_record(directory,'release.json',time.monotonic()+5);assert set(gate)=={'nonce','pid','invocationId'} and gate['nonce']==nonce and type(gate['pid']) is int and gate['pid']==os.getpid() and len(gate['invocationId'])==32,'RELEASE_INVALID'
  contract=load_module('containment-control-contract.py')
  env=manager_env();props=ctl(env,contract.unit_name(nonce))
- contract.validate_receipt(nonce,props,{'nonce':nonce,'pid':os.getpid(),'state':'waiting-for-release'},read_text('/proc/self/cgroup'),ancestors(props['ControlGroup']))
+ contract.validate_receipt(nonce,props,{'nonce':nonce,'pid':os.getpid(),'state':'waiting-for-release'},read_text('/proc/self/cgroup'),ancestors(props['ControlGroup'],stage='trusted-helper'))
  assert gate['invocationId']==props['InvocationID'],'RELEASE_INVOCATION_CHANGED'
  # No manager/cgroup/control file descriptors survive exec into bwrap.
  argv=['/usr/bin/bwrap','--clearenv','--unshare-user','--unshare-pid','--unshare-net','--unshare-ipc','--unshare-uts','--uid','0','--gid','0','--cap-add','CAP_NET_ADMIN','--cap-add','CAP_SETPCAP','--cap-add','CAP_SYS_ADMIN','--die-with-parent','--new-session','--proc','/proc','--remount-ro','/proc','--size','1048576','--tmpfs','/work','--chdir','/work']
@@ -409,7 +485,7 @@ def helper(control,nonce):
  except (TimeoutError,AssertionError,subprocess.TimeoutExpired) as e:
   atomic_record(directory,'helper-error.json',diagnostic_record(exception_diagnostic(e,'trusted-helper')))
   base.update({'reason':'outer-capture-failure','forced':True});atomic_record(directory,'result.json',base);raise
- if captured['errorType'] is not None:atomic_record(directory,'helper-error.json',diagnostic_record(captured['errorType']))
+ if captured['errorType'] is not None:atomic_record(directory,'helper-error.json',child_error_record(captured))
  base.update({'exitCode':captured['exitCode'],'stderr':captured['stderr'],'forced':captured['forced']})
  if captured['status']=='OK':
   lines=captured['stdout'].splitlines();assert lines[0]=='CORE_PROBE_READY '+cfg['case'] and len(lines)==2,'INNER_LINES'

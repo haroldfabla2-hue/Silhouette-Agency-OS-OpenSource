@@ -226,7 +226,7 @@ class IntegratedFailureDiagnostics(unittest.TestCase):
    diagnostic=h.sanitized_child_error(probe_err.getvalue().encode())
    inner_err=io.StringIO()
    with contextlib.redirect_stderr(inner_err):
-    self.assertEqual(h.namespace_entry('inner',lambda:h.propagate_child_error({'errorType':diagnostic})),1)
+    self.assertEqual(h.namespace_entry('inner',lambda:h.propagate_child_error({'errorType':diagnostic,'stderrDiagnostic':h.stderr_diagnostics(('CORE_ERROR '+json.dumps(diagnostic)).encode())})),1)
    helper_diagnostic=h.sanitized_child_error(inner_err.getvalue().encode())
    receipt=h.diagnostic_record(helper_diagnostic)
    snap=h.terminal_snapshot({},receipt)
@@ -302,7 +302,7 @@ class ActualNamespaceHelperDiagnosticRoute(unittest.TestCase):
   for reason in ('ROOT_MUST_ALREADY_BE_RO','PROPAGATION_NOT_PRIVATE'):
    cfg={'case':'core','parentNS':{'user':'u','mnt':'m'},'outerDevices':[],'hostUID':1001,'hostGID':1001}
    diagnostic={'stage':'probe','reason':reason,'type':'AssertionError'}
-   captured={'status':'FAIL','forced':False,'exitCode':1,'stderr':True,'stdout':'','errorType':diagnostic}
+   captured={'status':'FAIL','forced':False,'exitCode':1,'stderr':True,'stdout':'','errorType':diagnostic,'stderrDiagnostic':h.stderr_diagnostics(('CORE_ERROR '+json.dumps(diagnostic)).encode())}
    err=io.StringIO()
    with mock.patch.object(h.pathlib.Path,'read_text',return_value=json.dumps(cfg)),mock.patch.object(h,'load_module',return_value=mock.Mock()),mock.patch.object(h.subprocess,'run'),mock.patch.object(h.pathlib.Path,'iterdir',return_value=iter([pathlib.Path(str(n)) for n in (0,1,2)])),mock.patch.object(h.os,'listdir',return_value=[]),mock.patch.object(h,'capture_child',return_value=captured),contextlib.redirect_stderr(err):
     self.assertEqual(h.namespace_entry('inner',h.inner),1)
@@ -321,5 +321,101 @@ class ActualNamespaceHelperDiagnosticRoute(unittest.TestCase):
   with mock.patch.object(h,'same_owned',return_value={'MainPID':'123','ActiveState':'active','SubState':'running'}),mock.patch.object(h,'empty_receipt',return_value={'populated':0,'members':[]}) as empty,mock.patch.object(h,'ctl',side_effect=[{}, {'LoadState':'not-found'}]):
    with self.assertRaisesRegex(AssertionError,'CLEANUP_EVIDENCE_UNKNOWN'):h.quiesce({},owned,pathlib.Path('/validated/cg'),False)
    empty.assert_not_called()
+
+
+class ExternalClosedDiagnosticTests(unittest.TestCase):
+ def test_official_format_fixtures_distinguish_external_failures(self):
+  fixtures=[(b'bwrap: Creating new namespace failed: Operation not permitted','bwrap-namespace-denied'),(b"bwrap: Can't bind mount /private/source on /private/dest: remounting /private/dest: Permission denied",'bwrap-bind-error'),(b'/usr/bin/python3: error while loading shared libraries: libsample.so: cannot open shared object file: No such file or directory','loader-error'),(b"/usr/bin/python3: can't open file '/private/script': [Errno 2] No such file or directory",'python-open-error'),(b'bwrap: execvp /private/python: No such file or directory','bwrap-exec-error')]
+  for raw,category in fixtures:
+   summary=h.stderr_diagnostics(raw)
+   self.assertEqual(summary['categories'],[category]);self.assertEqual(summary['byteCount'],len(raw))
+   self.assertEqual(summary['markers'],[]);self.assertEqual(h.sanitized_child_error(raw),h.closed_diagnostic({}))
+   self.assertNotIn('/private/',str(summary));self.assertNotIn('libsample',str(summary))
+ def test_marker_is_preserved_with_separate_external_and_unknown_lines(self):
+  import json
+  diagnostic={'stage':'probe','type':'AssertionError','reason':'PROBE_DROP'}
+  raw=b'bwrap: Creating new namespace failed: Permission denied\n'+('CORE_ERROR '+json.dumps(diagnostic)+'\nAlphanumericSecretToken123').encode()
+  summary=h.stderr_diagnostics(raw)
+  self.assertEqual(summary['markers'],[diagnostic]);self.assertEqual(summary['markerCount'],1)
+  self.assertEqual(summary['categories'],['bwrap-namespace-denied','unknown']);self.assertEqual(summary['unknownLineCount'],1)
+  self.assertEqual(h.sanitized_child_error(raw),diagnostic);self.assertNotIn('AlphanumericSecretToken123',str(summary))
+  record=h.child_error_record({'errorType':diagnostic,'stderrDiagnostic':summary,'exitCode':1})
+  self.assertEqual(record['helperReason'],'PROBE_DROP');self.assertEqual(record['exitCode'],1);self.assertEqual(record['stderrByteCount'],len(raw))
+ def test_probe_loader_category_survives_real_inner_entrypoint_as_format_only(self):
+  import io,contextlib
+  raw=b'/usr/bin/python3: error while loading shared libraries: private.so: cannot open shared object file: No such file or directory'
+  captured={'errorType':h.sanitized_child_error(raw),'stderrDiagnostic':h.stderr_diagnostics(raw)}
+  err=io.StringIO()
+  with contextlib.redirect_stderr(err):self.assertEqual(h.namespace_entry('inner',lambda:h.propagate_child_error(captured)),1)
+  self.assertEqual(h.sanitized_child_error(err.getvalue().encode()),{'type':'unknown','stage':'probe','reason':'EXTERNAL_LOADER_ERROR_FORMAT'})
+  self.assertNotIn('private.so',err.getvalue())
+ def test_distinct_markers_not_collapsed_into_one_cause(self):
+  import json
+  markers=[{'stage':'probe','type':'AssertionError','reason':reason} for reason in ('PROBE_DROP','RO_ERROR')]
+  raw='\n'.join('CORE_ERROR '+json.dumps(d) for d in markers).encode()
+  self.assertEqual(h.stderr_diagnostics(raw)['markers'],markers)
+  self.assertEqual(h.sanitized_child_error(raw)['reason'],'DIAGNOSTIC_CONFLICT')
+ def test_unknown_invalid_or_overlimit_stderr_does_not_leak(self):
+  for raw in (b'AlphanumericSecretToken123',b'CORE_ERROR {badjson}',b'\xffprivate',b'x'*4097):
+   summary=h.stderr_diagnostics(raw)
+   self.assertEqual(summary['categories'],['unknown']);self.assertLessEqual(summary['byteCount'],4096)
+   self.assertEqual(summary['markers'],[]);self.assertNotIn('AlphanumericSecretToken123',str(summary))
+  self.assertTrue(h.stderr_diagnostics(b'x'*4097)['byteCountCapped'])
+ def test_real_counters_routes_label_each_missing_file(self):
+  for missing,reason in [('memory.events','READ_MEMORY_EVENTS'),('pids.events','READ_PIDS_EVENTS'),('cgroup.events','READ_CGROUP_EVENTS')]:
+   def read(path):
+    if path.name==missing:raise FileNotFoundError('/private/token')
+    return 'populated 0'
+   with mock.patch.object(h,'read_text',side_effect=read):
+    with self.assertRaises(h.DiagnosticFailure) as caught:h.counters(pathlib.Path('/validated/cgroup'))
+   diagnostic=h.exception_diagnostic(caught.exception,'controller')
+   self.assertEqual(diagnostic,{'type':'FileNotFoundError','stage':'controller','reason':reason})
+ def test_missing_counters_typed_failure_still_allows_owned_stop_unknown(self):
+  owned={'unit':NAME,'invocationId':I,'description':'owned'}
+  initial={'MainPID':'0','ActiveState':'failed','SubState':'failed'}
+  with mock.patch.object(h,'same_owned',return_value=initial),mock.patch.object(h,'read_text',side_effect=FileNotFoundError('/private/token')),mock.patch.object(h,'ctl',side_effect=[{}, {'LoadState':'not-found'}]) as ctl:
+   with self.assertRaisesRegex(AssertionError,'CLEANUP_EVIDENCE_UNKNOWN'):h.quiesce({},owned,pathlib.Path('/validated/cgroup'),False)
+   self.assertEqual(ctl.call_args_list[0],mock.call({},NAME,'stop'))
+
+
+class DiagnosticAmbiguityBoundaries(unittest.TestCase):
+ def markers(self,reasons):
+  import json
+  return '\n'.join('CORE_ERROR '+json.dumps({'type':'AssertionError','stage':'probe','reason':reason}) for reason in reasons).encode()
+ def roundtrip(self,raw):
+  import contextlib,io
+  summary=h.stderr_diagnostics(raw)
+  result={'errorType':h.sanitized_child_error(raw),'stderrDiagnostic':summary}
+  out=io.StringIO()
+  with contextlib.redirect_stderr(out):self.assertEqual(h.namespace_entry('inner',lambda:h.propagate_child_error(result)),1)
+  return summary,h.stderr_diagnostics(out.getvalue().encode()),h.sanitized_child_error(out.getvalue().encode())
+ def test_fifth_conflicting_marker_after_four_duplicates_is_not_hidden(self):
+  first,next_summary,diagnostic=self.roundtrip(self.markers(['PROBE_DROP']*4+['RO_ERROR']))
+  self.assertTrue(first['markerConflict']);self.assertEqual(first['markerCount'],5);self.assertEqual(len(first['markers']),2)
+  self.assertTrue(next_summary['markerConflict']);self.assertEqual(diagnostic['reason'],'DIAGNOSTIC_CONFLICT')
+ def test_more_than_four_distinct_markers_stay_overflow_after_boundary(self):
+  first,next_summary,diagnostic=self.roundtrip(self.markers(['PROBE_DROP','RO_ERROR','PROBE_RESULT','PROBE_PROTOCOL','WORK_MODE']))
+  self.assertEqual(len(first['markers']),4);self.assertTrue(first['markerOverflow']);self.assertTrue(first['markerConflict'])
+  self.assertTrue(next_summary['markerOverflow']);self.assertEqual(diagnostic['reason'],'DIAGNOSTIC_CONFLICT_OVERFLOW')
+ def test_conflict_plus_loader_cannot_become_loader_cause(self):
+  raw=self.markers(['PROBE_DROP','RO_ERROR'])+b'\n/usr/bin/python3: error while loading shared libraries: secret.so: cannot open shared object file'
+  first,next_summary,diagnostic=self.roundtrip(raw)
+  self.assertIn('loader-error',first['categories']);self.assertTrue(next_summary['markerConflict'])
+  self.assertEqual(diagnostic['reason'],'DIAGNOSTIC_CONFLICT')
+ def test_truncation_preserves_uncertainty_instead_of_single_visible_marker(self):
+  raw=self.markers(['PROBE_DROP'])+b'\n'+b'x'*4096
+  first,next_summary,diagnostic=self.roundtrip(raw)
+  self.assertTrue(first['diagnosticTruncated']);self.assertTrue(first['byteCountCapped']);self.assertEqual(first['byteCount'],4096)
+  self.assertTrue(next_summary['diagnosticTruncated']);self.assertEqual(diagnostic['reason'],'DIAGNOSTIC_TRUNCATED')
+ def test_all_uncertainty_flags_survive_together(self):
+  raw=self.markers(['PROBE_DROP','RO_ERROR','PROBE_RESULT','PROBE_PROTOCOL','WORK_MODE'])+b'\n'+b'x'*4096
+  first,next_summary,diagnostic=self.roundtrip(raw)
+  for key in ('markerConflict','markerOverflow','diagnosticTruncated'):
+   self.assertTrue(first[key]);self.assertTrue(next_summary[key])
+  self.assertEqual(diagnostic['reason'],'DIAGNOSTIC_CONFLICT_OVERFLOW_TRUNCATED')
+ def test_unique_marker_extra_unknown_line_remains_visible(self):
+  first,next_summary,diagnostic=self.roundtrip(self.markers(['PROBE_DROP'])+b'\nAlphanumericSecret123')
+  self.assertFalse(first['markerConflict']);self.assertEqual(first['unknownLineCount'],1)
+  self.assertEqual(diagnostic['reason'],'PROBE_DROP');self.assertFalse(next_summary['markerConflict'])
 
 if __name__=='__main__':unittest.main()

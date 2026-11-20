@@ -1,5 +1,5 @@
 {
-  "status": "STOPPED AFTER ONE REAL CORE ATTEMPT, source fixes are INACTIVE candidates. Attempt44799507290 failed first case with memory.events ENOENT; cleanup canonical-path gate failed before stop, so cleanup UNKNOWN. No core PASS or product validation. Execution job is false and anchor removed.",
+  "status": "INACTIVE diagnostic candidate after two approved core attempts STOP. Latest44802267013 preserves helper active/exited exit0 and child exit1/stderr, no forced capture; witness not accepted. Default naturalExit/pipeEOF flags are not positive observations. Stop returned0 but no empty evidence, cleanup UNKNOWN. Earlier44799507290 unchanged. No third equivalent attempt authorized.",
   "unitChoice": {
     "type": "Unique transient user SERVICE Type=exec, not scope. systemd applies own cgroup resource properties before trusted helper exec; helper still cannot release witness before external receipt validation.",
     "identity": "128-bit random hex nonce, exact unit Id + Description nonce + InvocationID + MainPID. Confirm LoadState=not-found and no existing cgroup before creation. Never retry name collision. Every cleanup rechecks same identity and invocation. MainPID must equal fresh ready receipt, real /proc/PID/cgroup must equal exact ControlGroup and owned unit path.",
@@ -77,10 +77,39 @@
     "oldWitness": "Earlier containment-witness.py is not imported, copied or invoked. The integrated probe replaces its incomplete proc/mapping checks for this harness only.",
     "controlRecords": "Private0700 directory, records0600 exclusive temp + fsync + no-overwrite atomic link. Readiness/release/result max16KiB; fixed source/runtime bind config max256KiB. Bounded stdout8KiB/stderr4KiB, only ready/JSON protocol accepted. stderr content not printed but nonempty rejects positive cases.",
     "processCleanup": "Exact child pidfd for local kill, no host PGID kill or global process scan. Whole unit cleanup only after nonce/InvocationID recheck. Namespace-local orphan scan occurs before the bwrap reaper teardown.",
-    "testScope": "42 pure harness groups plus14 pure wiring groups. Actual run_case/finally dependency-fake tests: InvocationID A->B forbids stop; invalid readiness leaves location and identity unset; observed terminal snapshot and primary failure survive manager not-found; prehandshake UNKNOWN does not query/stop. Real inner/helper functions with replaced dependencies preserve two distinct typed probe reasons before readiness assertion. Closed enums reject alphanumeric tokens, malformed types and out-of-range ints. No dynamic retry.",
+    "testScope": "55 pure harness groups+14 wiring groups. Added official-format/synthetic fixtures distinguish namespace-denial/bind/loader/Python-open/exec categories, mixed marker+external+unknown lines, distinct marker ambiguity, invalid UTF8/alphanumeric secret/malformed JSON/capped counts, probe external-loader format propagation, actual counters missing-file reason by location, and typed read failures still reach owned stop but UNKNOWN. No actual service/namespace/process/network/product tests. Actual functions also test four duplicate markers plus fifth conflict, >4distinct, conflict+loader, truncation, all three flags together across inner entrypoint, and unique marker with extra unknown line. All stay inactive.",
     "captureSetup": "Popen creation and all subsequent pidfd/selector/register steps are inside one resource try/finally. Setup failure emits fatal capture status to the helper/controller and requires own-unit cleanup; no unsafe bare PID/PGID fallback when pidfd unavailable. Every opened stream/selector/pidfd is closed, independent of setup stage. Signal handler restoration wraps even failing owned-unit cleanup.",
     "resultOracle": "Actual controller calls evaluate_case_result with exact context/schema/case, expected resource event deltas and negative reason. Positive paths also call the tested final receipt validator with saved live active-exited/empty observations before bookkeeping stop. Unexpected pressure/OOM/PID events reject positives; expected lifecycle negatives keep payloadPassfalse."
   },
   "diagnosticCorrection": "INACTIVE correction: freeze original owned identity and cgroup location only after the complete gate; never recover identity from a later invocation. Without original identity, record failure and cleanup UNKNOWN without stop. Exact original identity can stop despite missing cgroup files; no empty evidence means UNKNOWN. Persist the already observed terminal snapshot before re-querying manager or counters; primary failure receipt before cleanup queries. Closed reason/type/stage enums and per-field numeric/boolean ranges only. Typed reasons propagate probe->actual inner->actual helper; arbitrary bwrap stderr is unknown, not inferred AppArmor. Original attempt cleanup remains UNKNOWN.",
-  "diagnosticTests": "42 pure harness groups plus14 pure wiring groups. Actual run_case/finally dependency-fake tests: InvocationID A->B forbids stop; invalid readiness leaves location and identity unset; observed terminal snapshot and primary failure survive manager not-found; prehandshake UNKNOWN does not query/stop. Real inner/helper functions with replaced dependencies preserve two distinct typed probe reasons before readiness assertion. Closed enums reject alphanumeric tokens, malformed types and out-of-range ints. No dynamic retry."
+  "diagnosticTests": "55 pure harness groups+14 wiring groups. Added official-format/synthetic fixtures distinguish namespace-denial/bind/loader/Python-open/exec categories, mixed marker+external+unknown lines, distinct marker ambiguity, invalid UTF8/alphanumeric secret/malformed JSON/capped counts, probe external-loader format propagation, actual counters missing-file reason by location, and typed read failures still reach owned stop but UNKNOWN. No actual service/namespace/process/network/product tests. Actual functions also test four duplicate markers plus fifth conflict, >4distinct, conflict+loader, truncation, all three flags together across inner entrypoint, and unique marker with extra unknown line. All stay inactive.",
+  "externalDiagnostics": {
+    "scope": "Source-format recognition only, not proof of root cause, installed libc version, or cause of past attempts. Actual stderr from attempt44802267013 was not retained and is irrecoverable from its four selected receipts/log. No retrospective attribution. No raw text, path, token, errno string, free fingerprint or stderr hash is published. Unknown remains a real category.",
+    "formats": "Closed categories distinguish bwrap namespace-create denial format, other namespace-create format, bind-mount error, execvp error, dynamic-loader error format and Python script-open error. LC_ALL=C already fixed in controller. Unknown lines remain counted separately; arbitrary content does not become a category.",
+    "markers": "Scan all complete marker lines inside4096-byte input bound; deduplicate before public cap4. Preserve total markerCount and closed markerConflict/markerOverflow/diagnosticTruncated flags. Never select a cause if conflict/overflow/truncation. All7 uncertainty flag combinations cross inner/helper boundaries as fixed DIAGNOSTIC_* codes and restore the same flags. Extra unknown lines do not erase a unique marker; unknown lines stay counted. Conflicting markers plus loader category remain uncertainty, never loader attribution.",
+    "bounds": "stderr <=4096bytes, stored byteCount integer capped4096+explicit cap flag, unknownLineCount <=4096, <=4 typed markers, fixed category set, exitCode exact int -64..255 or unknown. Counts and enums only. Existing capture limit remains fail-closed, no output quota increase.",
+    "readLocations": "Closed READ_MEMORY_EVENTS/READ_PIDS_EVENTS/READ_CGROUP_EVENTS, READ_CGROUP_DIRECTORY/PROCS, READ_UNIT_SHOW, READ_HELPER_RESULT, READ_PROBE_READY, READ_READY_RECORD/MEMBERSHIP, READ_CONTROLLER_MEMBERSHIP and READ_ANCESTOR_LIMITS map OSError to operation+exception type without filename or exception text. Typed missing counter exception must still allow exact original-owned stop while absence of empty proof remains UNKNOWN.",
+    "sources": [
+      {
+        "url": "https://raw.githubusercontent.com/containers/bubblewrap/v0.9.0/bubblewrap.c",
+        "supports": "namespace creation diagnostics around2906-2914; bind error call around1109; execvp diagnostic3394"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/containers/bubblewrap/v0.9.0/utils.c",
+        "supports": "warnv bwrap prefix and die_with_error errno suffix"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/containers/bubblewrap/v0.9.0/bind-mount.c",
+        "supports": "die_with_bind_result formatting553-600"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/bminor/glibc/glibc-2.39/elf/dl-catch.c",
+        "supports": "fatal loader format error while loading shared libraries around83-85, format only, no claim this libc version ran"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/python/cpython/v3.12.3/Modules/main.c",
+        "supports": "script-open failure format328, return2, format only"
+      }
+    ]
+  }
 }
