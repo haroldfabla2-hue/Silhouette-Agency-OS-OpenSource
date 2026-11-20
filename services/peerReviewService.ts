@@ -259,9 +259,10 @@ export class PeerReviewService {
             console.log(`[PEER REVIEW] 💾 Persisted agent ${agentDef.id} via agentPersistence`);
 
             // Hydrate to make it active
-            orchestrator.hydrateAgent(agentDef.id);
+            await orchestrator.requireHydrated(agentDef.id);
         } catch (error: any) {
             console.error(`[PEER REVIEW] ❌ Failed to register ${agentDef.id}:`, error.message);
+            throw error; // autoCreateAgent must not return a falsely active agent
         }
     }
 }

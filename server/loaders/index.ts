@@ -1,4 +1,4 @@
-import { ownedTimeout } from '../desktop/producerScope.js';
+import { ownedTimeout, producerScopeBound } from '../desktop/producerScope.js';
 
 import { initDatabases } from './dbLoader';
 import { initAIServices } from './aiLoader';
@@ -48,9 +48,10 @@ export const initServer = async () => {
 
     // Initial Cleanup - DEFERRED 5s after startup to avoid blocking
     ownedTimeout(() => {
-        contextJanitor.runMaintenance().catch((e) =>
-            console.warn("[LOADER] Janitor maintenance deferred error:", e)
-        );
+        return contextJanitor.runMaintenance().catch((e) => {
+            console.warn("[LOADER] Janitor maintenance deferred error:", e);
+            if (producerScopeBound()) throw e;
+        });
     }, 5000);
 
     // === SELF-EVOLUTION SYSTEM ===

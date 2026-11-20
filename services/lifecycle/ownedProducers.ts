@@ -40,3 +40,15 @@ export function drainOwnedProducers(): Promise<Record<string, unknown>> {
     void draining.finally(() => { draining = null; });
     return draining;
 }
+
+/** Dedicated Desktop owner consumes each real stop as a separate phase and
+ * drains its fanout FROM OUTSIDE that stop's ticket before touching dependents.
+ * Arbiter stop/power stop do not emit product events in their current source;
+ * narrative preservation is last, after final cleanup emissions are settled.
+ * No cleanup imports or name-based construction. Legacy drain is unchanged. */
+export function takeOwnedProducerPhases(): Array<{ name: OwnedProducer; stop: ProducerStop }> {
+    if (draining) throw new Error('PRODUCER_DRAIN_ALREADY_ACTIVE');
+    stopping = true;
+    const order: Record<OwnedProducer, number> = { arbiter: 0, power: 1, narrative: 2 };
+    return [...producers.entries()].sort(([a], [b]) => order[a] - order[b]).map(([name, stop]) => ({ name, stop }));
+}

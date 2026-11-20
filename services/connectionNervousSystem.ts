@@ -1,3 +1,5 @@
+import { desktopTick, desktopRootsOpen, desktopWorkBound, desktopFault } from './lifecycle/desktopWork.js';
+import { ownedInterval } from '../server/desktop/producerScope.js';
 /**
  * CONNECTION NERVOUS SYSTEM
  * 
@@ -69,7 +71,8 @@ class ConnectionNervousSystem {
         console.log(`[NERVOUS] 📡 Registered: ${target.name} (${target.type})`);
 
         // Immediately check health of the new connection
-        this.checkConnection(target.id, target).catch(() => { });
+        void Promise.resolve(desktopTick('nervous-health', () => this.checkConnection(target.id, target)))
+            .catch(() => desktopFault('nervous', 'health-work-failed'));
     }
 
     /**
@@ -96,17 +99,17 @@ class ConnectionNervousSystem {
      * Start the nervous system heartbeat
      */
     public start(): void {
-        if (this.heartbeatInterval) return;
+        if (this.heartbeatInterval || !desktopRootsOpen()) return;
 
         console.log("[NERVOUS] 💓 Starting heartbeat monitor...");
 
         // Initial health check
-        this.checkAllConnections();
+        void Promise.resolve(desktopTick('nervous-health', () => this.checkAllConnections()))
+            .catch(() => desktopFault('nervous', 'health-work-failed'));
 
-        // Periodic heartbeat
-        this.heartbeatInterval = setInterval(() => {
-            this.checkAllConnections();
-        }, this.HEARTBEAT_INTERVAL);
+        // Owned interval always starts a root, never inherits a stale timer
+        // creation context. Stop clears the timer; active checks remain owned.
+        this.heartbeatInterval = ownedInterval(() => this.checkAllConnections(), this.HEARTBEAT_INTERVAL);
     }
 
     /**
@@ -167,12 +170,12 @@ class ConnectionNervousSystem {
 
             } else {
                 // Health check returned false
-                this.handleFailure(id, target, state, 'Health check returned false');
+                await this.handleFailure(id, target, state, 'Health check returned false');
             }
 
         } catch (error: any) {
             // Health check threw an error
-            this.handleFailure(id, target, state, error.message);
+            await this.handleFailure(id, target, state, error.message);
         }
     }
 
@@ -230,6 +233,9 @@ class ConnectionNervousSystem {
         await new Promise(resolve => setTimeout(resolve, delay));
 
         try {
+            // Unregister does not erase a target already captured by a check.
+            // Re-check both registration identity and roots after backoff.
+            if (desktopWorkBound() && (!desktopRootsOpen() || this.connections.get(id) !== target)) return;
             const success = await target.reconnect();
 
             if (success) {
@@ -295,7 +301,9 @@ class ConnectionNervousSystem {
     }
 
     /**
-     * Force a health check on a specific connection
+     * Force a health check on a specific connection. This promise includes
+     * any backoff/recovery started by the check, not only its initial probe.
+     * Native callers observe that longer duration too; no detached recovery.
      */
     public async forceCheck(id: string): Promise<boolean> {
         const target = this.connections.get(id);

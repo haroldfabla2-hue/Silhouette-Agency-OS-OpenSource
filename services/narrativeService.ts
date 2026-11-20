@@ -1,3 +1,5 @@
+import { desktopRun, desktopFault, desktopWorkBound } from './lifecycle/desktopWork.js';
+import { ownedInterval } from '../server/desktop/producerScope.js';
 import { registerOwnedProducer } from './lifecycle/ownedProducers';
 import type { PendingNarration, NarrativePendingStore } from './narrativePendingStore';
 import { NarrativeState } from '../types';
@@ -42,10 +44,11 @@ class NarrativeService {
 
         // 2. SEMANTIC UPDATE (Floating Promise - Non-Blocking for System State)
         // We let the LLM take its time, but we don't block the system flow.
-        this.runSemanticUpdate(lastUserMessage, lastAgentResponse).finally(() => {
-            // 3. FSM: Return to IDLE when done (or if failed)
+        const update = desktopRun('narrative-semantic', () => this.runSemanticUpdate(lastUserMessage, lastAgentResponse)).finally(() => {
             this.transition('IDLE', "System Ready");
         });
+        if (desktopWorkBound()) return update;
+        void update;
     }
 
     private async runSemanticUpdate(lastUserMessage: string, lastAgentResponse: string) {
@@ -243,9 +246,10 @@ class NarrativeService {
 
     constructor() {
         registerOwnedProducer('narrative', () => this.preserveAndStopBatchProcessor());
-        this.pendingReady = this.recoverPendingNarrations();
+        this.pendingReady = desktopRun('narrative-recovery', () => this.recoverPendingNarrations());
         void this.pendingReady.catch(() => { this.pendingError = true; });
-        void this.initializeStreamAggregator().catch(() => { this.subscriptionFailed = true; });
+        void Promise.resolve(desktopRun('narrative-subscriptions', () => this.initializeStreamAggregator()))
+            .catch(() => { this.subscriptionFailed = true; desktopFault('narrative', 'subscriptions-failed'); });
         this.startBatchProcessor();
     }
 
@@ -259,7 +263,7 @@ class NarrativeService {
 
     private startBatchProcessor() {
         // Process queue every BATCH_INTERVAL
-        this.batchTimer = setInterval(() => {
+        this.batchTimer = ownedInterval(() => {
             if (this.narrationStopping || this.batchRetryDeferred || this.inFlightBatch !== null) return;
             // [THROTTLE] PowerManager resource modes can pause narration
             // (isNarrativeEnabled). Resource hint, not authority: unreadable
@@ -275,6 +279,7 @@ class NarrativeService {
             );
             this.inFlightBatch = task;
             void task.finally(() => { if (this.inFlightBatch === task) this.inFlightBatch = null; });
+            return task;
         }, this.BATCH_INTERVAL);
     }
 
@@ -680,12 +685,15 @@ class NarrativeService {
             void refused.catch(() => {}); // bus listeners may not await promises
             return refused;
         }
-        const task = this.admitThought(source, content, importance, metadata);
+        // Many synchronous subscribers deliberately ignore their return value.
+        // Transfer a separate live ticket before the first admission await.
+        const task = desktopRun('narrative-admission', () => this.admitThought(source, content, importance, metadata));
         this.pendingAdmissions.add(task);
         // Bus listeners are synchronous; consume rejection without hiding the
         // failure from stop's sticky receipt or explicit awaiting callers.
         void task.then(() => this.pendingAdmissions.delete(task), () => {
             this.pendingAdmissions.delete(task); this.admissionFailures++;
+            desktopFault('narrative', 'durable-admission-failed');
         });
         return task;
     }

@@ -1,3 +1,5 @@
+import { ownedInterval } from '../../server/desktop/producerScope.js';
+import { desktopTick, desktopRootsOpen, desktopFault } from '../lifecycle/desktopWork.js';
 /**
  * Voice Monitor Service
  * 
@@ -48,16 +50,18 @@ class VoiceMonitorService {
      * Start the monitoring loop
      */
     startMonitoring(): void {
+        if (!desktopRootsOpen()) return;
         if (this.healthCheckInterval) {
             console.log('[VoiceMonitor] Already running');
             return;
         }
 
         console.log('[VoiceMonitor] Starting health monitoring...');
-        this.healthCheckInterval = setInterval(() => this.checkHealth(), this.checkIntervalMs);
+        this.healthCheckInterval = ownedInterval(() => this.checkHealth(), this.checkIntervalMs);
 
         // Initial check
-        this.checkHealth();
+        void Promise.resolve(desktopTick('voice-health', () => this.checkHealth()))
+            .catch(() => desktopFault('voice-health', 'check-failed'));
     }
 
     /**

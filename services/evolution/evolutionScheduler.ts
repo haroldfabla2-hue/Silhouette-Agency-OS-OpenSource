@@ -1,3 +1,4 @@
+import { desktopRootsOpen } from '../lifecycle/desktopWork.js';
 import { ownedInterval, ownedTimeout, ownedWork, producerAdmissionOpen } from '../../server/desktop/producerScope.js';
 /**
  * EVOLUTION SCHEDULER
@@ -81,6 +82,7 @@ class EvolutionScheduler {
      * Called during server startup
      */
     public start(): void {
+        if (!desktopRootsOpen()) return;
         if (this.isRunning) {
             console.log('[EVOLUTION] ⚠️ Scheduler already running');
             return;
@@ -97,7 +99,7 @@ class EvolutionScheduler {
     }
 
     private activateScheduler() {
-        if (this.isRunning) return;
+        if (this.isRunning || !desktopRootsOpen()) return;
 
         // [SECURITY] Authority ceiling before scheduling anything. These loops
         // are the SAME capabilities the daemon runs as its gated
@@ -111,7 +113,7 @@ class EvolutionScheduler {
             import('../../server/config/configLoader'),
             import('../daemon/autonomyPolicy')
         ]).then(([{ configLoader }, { isTaskAllowedByAutonomy }]) => {
-            if (this.isRunning || !producerAdmissionOpen()) return;
+            if (this.isRunning || !producerAdmissionOpen() || !desktopRootsOpen()) return;
             let flags: any;
             try {
                 flags = configLoader.getConfig().autonomy;

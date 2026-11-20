@@ -1,3 +1,4 @@
+import { desktopRun, desktopWorkBound, desktopContinuation, desktopFault } from './lifecycle/desktopWork.js';
 import { registerOwnedProducer } from './lifecycle/ownedProducers';
 
 import { Agent, AgentStatus, SystemMode } from "../types";
@@ -26,6 +27,7 @@ interface QueueItem {
     priority: 'CRITICAL' | 'HIGH' | 'NORMAL' | 'LOW';
     timestamp: number;
     resolve: (allowed: boolean) => void;
+    resume?: (task: () => Promise<void>) => Promise<void>;
 }
 
 class ResourceArbiter {
@@ -59,7 +61,12 @@ class ResourceArbiter {
             // must win; intervalMs is read only when actually arming.
             if (this.stopped) return;
             const intervalMs = powerManager.getConfig().resourceArbiterMs;
-            this.intervalId = setInterval(() => this.processQueue(), intervalMs);
+            this.intervalId = setInterval(() => {
+                void this.processQueue().catch(error => {
+                    console.error('[ARBITER] Queue pump failed; pending admissions retained:', error);
+                    desktopFault('arbiter', 'queue-pump-failed');
+                });
+            }, intervalMs);
             console.log(`[ARBITER] Queue processor started (${intervalMs}ms interval)`);
         }).catch(error => {
             if (!this.stopped) console.error('[ARBITER] Queue processor startup failed:', error);
@@ -104,7 +111,11 @@ class ResourceArbiter {
      * Returns a Promise that resolves when resources are available.
      */
     public async requestAdmission(agent: Agent, priority: 'CRITICAL' | 'HIGH' | 'NORMAL' | 'LOW' = 'NORMAL'): Promise<boolean> {
-        return new Promise(async (resolve) => {
+        return desktopRun('arbiter-admission', () => this.requestAdmissionAccepted(agent, priority));
+    }
+
+    private async requestAdmissionAccepted(agent: Agent, priority: 'CRITICAL' | 'HIGH' | 'NORMAL' | 'LOW'): Promise<boolean> {
+        return new Promise(async (resolve, reject) => {
             // No-new-admission guard: after stopProcessingTimer the queue can
             // never drain, so queueing here would abandon the promise. The
             // drain-time gate (!accepting) applies the same rule while the
@@ -146,13 +157,16 @@ class ResourceArbiter {
                         agentId: agent.id,
                         priority,
                         timestamp: Date.now(),
-                        resolve
+                        resolve,
+                        resume: desktopWorkBound() ? desktopContinuation('arbiter-queue-pump') : undefined
                     });
                     this.sortQueue();
                 } else {
                     // ADMIT IMMEDIATELY
                     resolve(true);
                 }
+            } catch (error) {
+                reject(error);
             } finally {
                 this.activeAdmissions--;
             }
@@ -161,7 +175,10 @@ class ResourceArbiter {
 
     public release() {
         // Trigger immediate check when resources are freed
-        this.processQueue();
+        void this.processQueue().catch(error => {
+            console.error('[ARBITER] Queue pump failed; pending admissions retained:', error);
+            desktopFault('arbiter', 'queue-pump-failed');
+        });
     }
 
     /**
@@ -207,6 +224,18 @@ class ResourceArbiter {
 
     private async processQueue() {
         if (this.queue.length === 0) return;
+        const resume = this.queue[0].resume;
+        // The queue service is not a new autonomous root. It continues the
+        // pending admitted promise, including after roots close. Its own tail
+        // stays counted even if resolving that promise lets its parent finish.
+        if (desktopWorkBound()) {
+            if (!resume) { desktopFault('arbiter', 'queue-lineage-missing'); throw new Error('DESKTOP_ARBITER_QUEUE_LINEAGE_MISSING'); }
+            return resume(() => this.processQueueAccepted());
+        }
+        return this.processQueueAccepted();
+    }
+
+    private async processQueueAccepted() {
         this.activeQueueRuns++;
         try {
             const metrics = await this.getRealMetrics();

@@ -366,12 +366,13 @@ If it was routine, just acknowledge it.
                         try {
                             const { RemediationService } = await import('../remediationService');
                             const remediation = RemediationService.getInstance();
-                            remediation.mobilizeSquad(this.id, [
+                            const mobilization = await remediation.mobilizeSquad(this.id, [
                                 `Mission: ${mission}`,
                                 `Error: ${innerError.message}`,
                                 `Self-heal attempts: ${MAX_HEAL_ATTEMPTS}`,
                                 `Stack: ${innerError.stack?.substring(0, 300) || 'N/A'}`
                             ]);
+                            console.log('[AGENT] Remediation request settled, not a repair receipt:', {agentId: this.id, outcome: mobilization.kind});
                         } catch (remError) {
                             console.error(`[AGENT ${this.name}] RemediationService also failed:`, remError);
                         }

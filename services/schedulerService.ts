@@ -1,3 +1,5 @@
+import { ownedInterval, ownedTimeout } from '../server/desktop/producerScope.js';
+import { desktopRootsOpen } from './lifecycle/desktopWork.js';
 /**
  * SCHEDULER SERVICE
  * 
@@ -55,19 +57,20 @@ export class SchedulerService {
      * Start the scheduler daemon
      */
     public start(): boolean {
+        if (!desktopRootsOpen()) return false;
         if (!this.executionAllowed()) { this.stop(); return false; }
         if (this.checkInterval) return true;
 
         console.log('[SCHEDULER] ⏰ Autonomous Scheduler Started');
 
-        this.checkInterval = setInterval(() => {
-            this.checkAndExecuteDueTasks();
+        this.checkInterval = ownedInterval(() => {
+            return this.checkAndExecuteDueTasks();
         }, this.CHECK_INTERVAL_MS);
 
         // Initial check on startup
-        this.initialCheck = setTimeout(() => {
+        this.initialCheck = ownedTimeout(() => {
             this.initialCheck = null;
-            void this.checkAndExecuteDueTasks();
+            return this.checkAndExecuteDueTasks();
         }, 5000);
         return true;
     }

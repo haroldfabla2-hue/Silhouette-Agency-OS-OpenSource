@@ -1,3 +1,5 @@
+import { desktopFault, desktopWorkBound } from '../../services/lifecycle/desktopWork.js';
+import { ownedWork } from '../desktop/producerScope.js';
 import { registerStarted } from '../desktop/startedResources.js';
 
 import fs from 'fs';
@@ -37,7 +39,7 @@ export const initDatabases = async () => {
             // Ownership registered in EVERY non-disabled outcome, including
             // unavailable: a retained failed-close handle keeps its cleanup
             // route at drain.
-            registerStarted('redis', {close: () => redisClient.disconnect()});
+            registerStarted('redis', {closeAfter: ['plugins', 'messaging-channels', 'websocket-gateway', 'terminal-websocket', 'terminal-shells'], close: () => redisClient.disconnect()});
             if (redisClient.isReallyConnected()) {
                 console.log('[LOADER] Redis Ready.');
             } else if (redisClient.isMockMode()) {
@@ -65,7 +67,7 @@ export const initDatabases = async () => {
     const initPromises = [
         // Neo4j with 5s timeout to not block startup
         Promise.race([
-            import('../../services/graphService').then(async ({ graph }) => { await graph.connect(); registerStarted('graph', {close: () => graph.close()}); }),
+            import('../../services/graphService').then(async ({ graph }) => { await graph.connect(); registerStarted('graph', {closeAfter: ['plugins', 'messaging-channels', 'websocket-gateway', 'terminal-websocket', 'terminal-shells'], close: () => graph.close()}); }),
             new Promise((_, reject) => setTimeout(() => reject(new Error('Neo4j timeout (5s)')), 5000))
         ]).catch(e => console.warn("[LOADER] Graph DB optional:", (e as Error).message)),
     ];
@@ -93,7 +95,10 @@ export const initDatabases = async () => {
     }
 
     // 8. Sync Asset Catalog - DEFERRED to background after server is ready
-    setImmediate(async () => {
+    setImmediate(() => {
+        // Desktop stop before callback prevents acquisition; started work is
+        // returned to the existing producer owner. Native CLI stays unchanged.
+        const sync = ownedWork(async () => {
         try {
             const { assetCatalog } = await import('../../services/assetCatalog');
             await assetCatalog.cleanupOrphans();
@@ -103,6 +108,9 @@ export const initDatabases = async () => {
             }
         } catch (e) {
             console.warn("[LOADER] Asset Catalog background sync failed");
+            if (desktopWorkBound()) { desktopFault('asset-sync', 'sync-failed'); throw e; }
         }
+        });
+        void Promise.resolve(sync).catch(() => { /* explicit debt recorded at source */ });
     });
 };

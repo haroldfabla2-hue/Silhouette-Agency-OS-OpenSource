@@ -1,3 +1,5 @@
+import { ownedInterval, ownedDeferred } from '../server/desktop/producerScope.js';
+import { desktopRootsOpen, desktopFault, desktopWorkBound } from './lifecycle/desktopWork.js';
 import { verifyClaims, type CitedClaim } from './memoryCognition';
 import { continuum } from './continuumMemory';
 import { geminiService } from './geminiService';
@@ -67,7 +69,7 @@ export class DreamerService {
     }
 
     public startDreamingLoop() {
-        if (this.dreamInterval) return;
+        if (this.dreamInterval || !desktopRootsOpen()) return;
 
         // [OPTIMIZATION] Check PowerManager before starting
         import('./powerManager').then(({ powerManager }) => {
@@ -80,13 +82,17 @@ export class DreamerService {
     }
 
     private activateDreamLoop() {
-        if (this.dreamInterval) return;
+        if (this.dreamInterval || !desktopRootsOpen()) return;
         console.log("[DREAMER] 🌙 Dream Cycle Initiated...");
 
         // Check every 5 minutes if we should dream
-        this.dreamInterval = setInterval(async () => {
+        this.dreamInterval = ownedInterval(async () => {
             if (this.memoriesAccumulated >= this.threshold) {
-                this.attemptDream();
+                const dream = this.attemptDream();
+                if (desktopWorkBound()) await dream;
+                else void dream.catch(error => {
+                    console.error('[DREAMER] Scheduled dream admission/work failed:', error);
+                });
             }
 
             // Event-based triggers (roadmap item 8): epiphanies, milestones,
@@ -879,7 +885,8 @@ export class DreamerService {
         }
 
         // After deep dream, check for Structural Gaps (Eurekas)
-        setTimeout(() => this.generateNeuralEurekas(), 5000);
+        const followup = ownedDeferred(() => this.generateNeuralEurekas(), 5000);
+        if (followup instanceof Promise) void followup.catch(() => desktopFault('dreamer', 'neural-eureka-unreceipted'));
     }
 
     private async attemptBisociation(conceptA: string, conceptB: string): Promise<string | null> {

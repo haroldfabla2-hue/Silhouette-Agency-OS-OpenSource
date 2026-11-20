@@ -1,3 +1,6 @@
+import { registerStarted } from '../server/desktop/startedResources.js';
+import { ownedInterval, ownedTimeout } from '../server/desktop/producerScope.js';
+import { desktopRootsOpen, desktopFault, desktopRun } from './lifecycle/desktopWork.js';
 /**
  * CURIOSITY SERVICE - Proactive Knowledge Exploration
  * 
@@ -72,7 +75,8 @@ class CuriosityService {
 
 
     constructor() {
-        this.loaded = this.loadGaps();
+        registerStarted('curiosity', { stopAdmission: () => this.stopExploration(), release: () => this.shutdown() });
+        this.loaded = desktopRun('curiosity-restore', () => this.loadGaps());
         // Keep failure observable to every awaited entry point without an unhandled rejection.
         void this.loaded.catch(e => logger.warn('Snapshot unavailable; mutations blocked:', e));
         // Listen for topic mentions
@@ -91,8 +95,9 @@ class CuriosityService {
 
     private queueTopicEvent(update: () => Promise<void>): void {
         if (this.closing) return;
-        this.events = this.events.catch(() => {}).then(update);
-        void this.events.catch(e => logger.warn('Topic persistence failed:', e));
+        const prior = this.events;
+        this.events = desktopRun('curiosity-topic', () => prior.catch(() => {}).then(update));
+        void this.events.catch(e => { desktopFault('curiosity', 'topic-persistence-failed'); logger.warn('Topic persistence failed:', e); });
     }
 
     private trackOperation(operation: () => Promise<void>): Promise<void> {
@@ -192,7 +197,7 @@ class CuriosityService {
      * Start the exploration loop (runs during idle time)
      */
     public startExploration() {
-        if (this.closing || this.explorationInterval) return;
+        if (this.closing || this.explorationInterval || !desktopRootsOpen()) return;
 
         // [OPTIMIZATION] Check PowerManager before starting
         import('./powerManager').then(({ powerManager }) => {
@@ -205,14 +210,19 @@ class CuriosityService {
     }
 
     private activateExploration() {
-        if (this.closing || this.explorationInterval) return;
+        if (this.closing || this.explorationInterval || !desktopRootsOpen()) return;
         logger.info('Starting Exploration Loop (Every 15 min)');
-        this.explorationInterval = setInterval(() => {
-            void this.trackOperation(() => this.runExplorationCycle()).catch(e => logger.warn('Exploration persistence failed:', e));
+        this.explorationInterval = ownedInterval(() => {
+            return this.trackOperation(() => this.runExplorationCycle()).catch(e => {
+                desktopFault('curiosity', 'exploration-persistence-failed');
+                logger.warn('Exploration persistence failed:', e);
+            });
         }, this.CONFIG.GAP_DETECTION_INTERVAL_MS);
 
         // Initial run after 2 minutes
-        this.initialExploration = setTimeout(() => { void this.trackOperation(() => this.runExplorationCycle()).catch(e => logger.warn('Exploration persistence failed:', e)); }, 2 * 60 * 1000);
+        this.initialExploration = ownedTimeout(() => { return this.trackOperation(() => this.runExplorationCycle()).catch(e => {
+            desktopFault('curiosity', 'exploration-persistence-failed'); logger.warn('Exploration persistence failed:', e);
+        }); }, 2 * 60 * 1000);
     }
 
     /**

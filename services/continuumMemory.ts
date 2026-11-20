@@ -928,7 +928,9 @@ class ContinuumMemorySystem {
         this.hippocampus.push(node);
         if (this.hippocampus.length >= this.HIPPOCAMPUS_CAPACITY) {
             import('./dreamerService').then(({ dreamer }) => {
-                dreamer.attemptDream();
+                return dreamer.attemptDream();
+            }).catch(error => {
+                console.error('[CONTINUUM] Capacity-triggered dream failed:', error);
             });
         }
     }

@@ -1,3 +1,5 @@
+import { attemptDelivery } from './lifecycle/deliveryReceipt';
+import { desktopFault, desktopOutcome, desktopWorkBound, desktopRun } from './lifecycle/desktopWork.js';
 import { ownedWork } from '../server/desktop/producerScope.js';
 import { subscribeHelpProtocol } from './communication/helpProtocol';
 import { loadOrganization, defaultOrganizationPath, teamsForDomain, teamOfAgent } from './org/organization';
@@ -222,7 +224,11 @@ export class AgentSwarmOrchestrator {
                 console.warn(`[ORCHESTRATOR] ⛔ SQUAD_EXPANSION rejected: birth command requires name+category (got keys: ${Object.keys(inner).join(',') || 'none'}). Use SQUAD_MOBILIZED for mobilization notices and AGENT_HYDRATION_REQUEST to wake an existing agent.`);
                 return;
             }
-            this.handleDynamicExpansion(event.payload);
+            return this.handleDynamicExpansion(event.payload).catch(error => {
+                console.error('[ORCHESTRATOR] Squad expansion hydration failed; activation not confirmed:', error);
+                desktopOutcome('hydration', 'expansion-failed');
+                if (desktopWorkBound()) throw error;
+            });
         });
 
         // [PR-2] Hydration command: wake ONE existing agent. Unknown ids are
@@ -237,7 +243,11 @@ export class AgentSwarmOrchestrator {
                 console.warn(`[ORCHESTRATOR] ⛔ AGENT_HYDRATION_REQUEST rejected: unknown agent ${agentId}.`);
                 return;
             }
-            this.hydrateAgent(agentId).catch(e => console.error(`[ORCHESTRATOR] Hydration failed for ${agentId}:`, e));
+            return this.hydrateAgent(agentId).catch(error => {
+                console.error('[ORCHESTRATOR] Requested agent hydration failed:', {agentId, error});
+                desktopOutcome('hydration', 'request-failed');
+                if (desktopWorkBound()) throw error;
+            });
         });
 
         // Listen for Async Task Assignments (e.g., Research Requests from Dreamer)
@@ -324,8 +334,11 @@ export class AgentSwarmOrchestrator {
         // Handles messages from Telegram, WhatsApp, Discord via ChannelRouter
         systemBus.subscribe(SystemProtocol.USER_MESSAGE, (event) => {
             console.log('[ORCHESTRATOR] 🔔 USER_MESSAGE event received from systemBus');
-            this.handleUserMessage(event.payload).catch((err: any) => {
+            // Return the entire WAL -> tools -> delivery -> commit chain.
+            // Desktop dispatcher owns it before invoking this subscriber.
+            return this.handleUserMessage(event.payload).catch((err: any) => {
                 console.error('[ORCHESTRATOR] ❌ handleUserMessage FAILED:', err?.message || err);
+                if (desktopWorkBound()) throw err;
             });
         });
 
@@ -982,33 +995,45 @@ Format each gap as:
         let replyAttempted = false;
         const deliver = async (text: string, media?: any[]): Promise<string | null> => {
             replyAttempted = true;
-            let deliveryId: string | null;
-            if (typeof payload.replyRoute === 'string') {
-                const { gateway } = await import('../server/gateway/wsGateway');
-                deliveryId = await gateway.deliverReply(payload.replyRoute, text, media);
-            } else {
+            const attempt = await attemptDelivery(async () => {
+                if (typeof payload.replyRoute === 'string') {
+                    const { gateway } = await import('../server/gateway/wsGateway');
+                    return gateway.deliverReply(payload.replyRoute, text, media);
+                }
                 const { channelRouter } = await import('../server/channels/channelRouter');
-                deliveryId = await channelRouter.send(payload.channel, {chatId:payload.chatId,text,media});
-            }
-            if (!deliveryId) {
-                console.error('[ORCHESTRATOR] Reply delivery unverified; no transport receipt, do not resend:', {walId});
+                return channelRouter.send(payload.channel, {chatId:payload.chatId,text,media});
+            });
+            if (attempt.kind === 'unknown') {
+                // Record uncertainty BEFORE entering the outer error handler.
+                // replyAttempted stays true: no automatic second send.
+                desktopFault('orchestrator-message', attempt.reason === 'transport-threw'
+                    ? 'reply-threw-acceptance-unknown' : 'reply-unreceipted');
+                console.error('[ORCHESTRATOR] Reply delivery unverified; do not resend:', {walId, reason: attempt.reason});
+                if (attempt.reason === 'transport-threw') throw attempt.error;
                 return null;
             }
+            const deliveryId = attempt.id;
             try {
                 if (walId) continuousMemory.commitEntry(walId, text, {id:deliveryId,transport:typeof payload.replyRoute==='string'?'websocket':String(payload.channel)});
             } catch (memoryError) {
                 console.error('[ORCHESTRATOR] Reply delivered; WAL commit unverified, do not resend:', {walId,error:memoryError});
+                desktopFault('orchestrator-message', 'wal-commit-unverified');
             }
+            desktopOutcome('orchestrator-message', 'reply-delivered');
             return deliveryId;
         };
 
         try {
             // [EVOLUTION] WAL: Log BEFORE processing for crash recovery
-            walId = continuousMemory.logBeforeProcessing(
-                'core-01',
-                'MESSAGE_RECEIVED',
-                { input: payload.message, sessionId: payload.sessionId }
-            );
+            try {
+                walId = continuousMemory.logBeforeProcessing(
+                    'core-01', 'MESSAGE_RECEIVED',
+                    { input: payload.message, sessionId: payload.sessionId }
+                );
+            } catch (error) {
+                desktopFault('orchestrator-message', 'wal-admission-failed');
+                throw error;
+            }
 
             // [PHASE 16: READ-ONLY OVERRIDE]
             if (payload.isReadOnly) {
@@ -1187,11 +1212,15 @@ ${payload.message}
 
         } catch (error: any) {
             console.error(`[ORCHESTRATOR] ❌ Message handling error:`, error);
+            desktopOutcome('orchestrator-message', replyAttempted ? 'attempted-reply-chain-failed' : 'business-error-handled');
             // No second reply after an attempted send: an exception cannot
             // prove that the original transport did not accept the message.
             if (!replyAttempted) {
                 try { await deliver(`⚠️ I encountered an internal error: ${error.message}`); }
-                catch (deliveryError) { console.error('[ORCHESTRATOR] Error response delivery unverified:', deliveryError); }
+                catch (deliveryError) {
+                    desktopFault('orchestrator-message', 'error-reply-unreceipted');
+                    console.error('[ORCHESTRATOR] Error response delivery unverified:', deliveryError);
+                }
             }
 
         }
@@ -1234,7 +1263,7 @@ JSON ONLY:
     }
 
     // --- DYNAMIC EXPANSION PROTOCOL ---
-    private handleDynamicExpansion(payload: any) {
+    private async handleDynamicExpansion(payload: any) {
         // [PA-045] Robust Payload Handling (Handle potential double-wrapping)
         // [W1] Name resolution moved to resolveSquadName(): the old code
         // interpolated `payload.name` directly below, producing the literal
@@ -1256,8 +1285,9 @@ JSON ONLY:
         if (reusable) {
             console.log(`[ORCHESTRATOR] ♻️ Reusing existing agent ${reusable.id} (${reusable.name}) for squad '${name}' — NO new birth.`);
             const existingSquad = this.squads.find(s => s.name === name.toUpperCase() && s.category === (payload?.category ?? payload?.payload?.category));
+            const hydrated = await this.hydrateAgent(reusable.id);
+            if (!hydrated || !this.activeActors.has(reusable.id)) throw new Error('REUSED_AGENT_NOT_HYDRATED');
             if (existingSquad) existingSquad.active = true;
-            this.hydrateAgent(reusable.id);
             systemBus.emit(SystemProtocol.UI_REFRESH, { source: 'ORCHESTRATOR', message: `Squad '${name}' reactivated with existing agent ${reusable.id} (reuse > birth)` });
             return;
         }
@@ -1305,7 +1335,8 @@ JSON ONLY:
         agentPersistence.saveAgent(leader);
         capabilityRegistry.registerAgent(leader); // [DCR] Register new agent's capabilities
         this.knownAgentIds.push(leaderId);
-        this.hydrateAgent(leaderId); // Wake up immediately
+        const hydrated = await this.hydrateAgent(leaderId);
+        if (!hydrated || !this.activeActors.has(leaderId)) throw new Error('NEW_LEADER_NOT_HYDRATED');
 
         // [PR-4d] Squad identity is stable: an existing squad with the same
         // name+category is reactivated, never duplicated.
@@ -2018,8 +2049,41 @@ JSON ONLY:
     }
 
 
-    public async hydrateAgent(agentId: string) {
-        if (this.activeActors.has(agentId)) return; // Already awake
+    public hydrateAgent(agentId: string): Promise<boolean> {
+        const hydration = desktopRun('agent-hydration', () => this.hydrateAcceptedAgent(agentId));
+        // Observe at the public boundary even for unknown/dynamic fire-and-
+        // forget callers. Return the ORIGINAL rejecting promise, not its catch,
+        // so awaited callers cannot mistake logged failure for hydration.
+        void hydration.catch(error => {
+            console.error('[ORCHESTRATOR] Agent hydration failed:', {agentId, error});
+            desktopOutcome('hydration', 'failed');
+        });
+        return hydration;
+    }
+
+    // Strict prerequisite API. Negative admission/missing target is not a
+    // successful activation; metrics/initialization exceptions stay exceptions.
+    public async requireHydrated(agentId: string): Promise<void> {
+        const active = await this.hydrateAgent(agentId);
+        if (!active || !this.activeActors.has(agentId)) throw new Error('AGENT_REQUIRED_BUT_NOT_HYDRATED:' + agentId);
+    }
+
+    // Sync intent setters do not await hydration. Keep that API, but observe
+    // EVERY scheduled promise and do not announce successful activation on fail.
+    private requestHydration(agentId: string, source: string): void {
+        void this.hydrateAgent(agentId).then(active => {
+            if (!active) {
+                console.warn('[ORCHESTRATOR] Hydration intent not fulfilled; agent inactive:', {agentId, source});
+                desktopOutcome('hydration', 'requested-hydration-not-active');
+            }
+        }, error => {
+            console.error('[ORCHESTRATOR] Requested hydration failed; agent not confirmed active:', {agentId, source, error});
+            desktopOutcome('hydration', 'requested-hydration-failed');
+        });
+    }
+
+    private async hydrateAcceptedAgent(agentId: string): Promise<boolean> {
+        if (this.activeActors.has(agentId)) return true; // Already awake
 
         const agent = agentPersistence.loadAgent(agentId);
         if (agent) {
@@ -2027,8 +2091,9 @@ JSON ONLY:
             const priority = agent.tier === AgentTier.CORE ? 'CRITICAL' : 'NORMAL';
             const allowed = await resourceArbiter.requestAdmission(agent, priority);
             if (!allowed) {
-                // console.warn(`[ORCHESTRATOR] 🛑 Wake - up denied for ${ agent.name }(Resource Limit)`);
-                return;
+                console.warn('[ORCHESTRATOR] Agent hydration not admitted:', {agentId});
+                desktopOutcome('hydration', 'admission-denied');
+                return false;
             }
 
             // LRU EVICTION LOGIC (BIO-SAFE PROTOCOL)
@@ -2077,7 +2142,11 @@ JSON ONLY:
 
             // [EVOLUTION] Register with conversation system on hydration
             agentConversation.registerAgent(standardAgent.toMetadata());
+            return true;
         }
+        console.warn('[ORCHESTRATOR] Agent hydration target missing:', {agentId});
+        desktopOutcome('hydration', 'agent-missing');
+        return false;
     }
 
     /**
@@ -2246,7 +2315,7 @@ JSON ONLY:
             this.activeCategories.add(category);
             // Wake up agents in this category
             this.squads.filter(s => s.category === category).forEach(s => {
-                s.members.forEach(m => this.hydrateAgent(m));
+                s.members.forEach(m => this.requestHydration(m, 'category-or-mode-intent'));
             });
         } else {
             this.activeCategories.delete(category);
@@ -2273,7 +2342,7 @@ JSON ONLY:
         // Wake up agents in these categories
         categories.forEach(cat => {
             this.squads.filter(s => s.category === cat).forEach(s => {
-                s.members.forEach(m => this.hydrateAgent(m));
+                s.members.forEach(m => this.requestHydration(m, 'category-or-mode-intent'));
             });
         });
     }
@@ -2648,7 +2717,7 @@ OBJECTIVES:
                 this.setMode24_7(true); // Keep everything running
                 // Wake up core squads
                 this.squads.filter(s => s.category === 'CORE' || s.category === 'OPS').forEach(s => {
-                    s.members.forEach(m => this.hydrateAgent(m));
+                    s.members.forEach(m => this.requestHydration(m, 'category-or-mode-intent'));
                 });
                 break;
         }
@@ -3157,13 +3226,16 @@ OBJECTIVES:
      * Forms a temporary Debate Squad, triggers the debate, and awaits consensus.
      */
     private async formSquadAndDebate(query: string, sessionId: string): Promise<string> {
+        // Judge hydration is a prerequisite. Do not publish/start a debate
+        // whose required judge failed admission or never became active.
+        const judgeHydrated = await this.hydrateAgent('core-01');
+        if (!judgeHydrated || !this.activeActors.has('core-01')) throw new Error('DEBATE_JUDGE_NOT_HYDRATED');
         return new Promise((resolve, reject) => {
             const debateId = `debate-${crypto.randomUUID()}`;
             
             // Standard participants for a complex task
             const participants = ['creator-01', 'critic-01'];
             
-            this.hydrateAgent('core-01'); // Ensure core is alive as Judge
             
             this.activeDebates.set(debateId, {
                 subject: query,

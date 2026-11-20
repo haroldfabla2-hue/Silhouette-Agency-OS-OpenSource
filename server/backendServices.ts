@@ -23,7 +23,11 @@ export async function initializeBackendServices(server: Server, app: Express, PR
     try {
         const { gateway } = await import('./gateway');
         gateway.initialize(server);
-        registerStarted('websocket-gateway', {stopAdmission: () => gateway.shutdown()});
+        registerStarted('websocket-gateway', {
+            stopAdmission: () => gateway.stopDesktopAdmission(),
+            settle: () => gateway.drainDesktopWork(),
+            close: () => gateway.closeDesktop()
+        });
         console.log('[GATEWAY] ✅ WebSocket Gateway initialized');
     } catch (error) {
         console.error('[GATEWAY] Failed to initialize WebSocket Gateway:', error);
@@ -41,11 +45,15 @@ export async function initializeBackendServices(server: Server, app: Express, PR
     // [CHANNELS] Initialize Messaging Channels (WhatsApp, Telegram, Discord)
     try {
         const { initializeChannels } = await import('./channels');
-        await initializeChannels();
         if (startedResourcesBound()) {
             const { channelRouter } = await import('./channels/channelRouter');
-            registerStarted('messaging-channels', {stopAdmission: () => channelRouter.disconnectAll()});
+            registerStarted('messaging-channels', {
+                stopAdmission: () => channelRouter.stopDesktopAdmission(),
+                settle: () => channelRouter.drainDesktopWork(),
+                close: () => channelRouter.closeDesktopChannels()
+            });
         }
+        await initializeChannels();
     } catch (error) {
         console.error('[CHANNELS] Failed to initialize channels:', error);
     }
@@ -71,9 +79,14 @@ export async function initializeBackendServices(server: Server, app: Express, PR
         const { registerCustomPlugins } = await import('../services/plugins/loader');
         await registerCustomPlugins();
 
-        // Initialize Registry (starts plugins and registers tools)
+        // Capture owner BEFORE any onInit/onStart can partially acquire work.
+        if (startedResourcesBound()) registerStarted('plugins', {
+            stopAdmission: () => pluginRegistry.stopDesktopAdmission(),
+            settle: () => pluginRegistry.drainDesktopWork(),
+            release: () => pluginRegistry.releaseDesktopProducers(),
+            close: () => pluginRegistry.closeDesktopPlugins()
+        });
         await pluginRegistry.initialize();
-        registerStarted('plugins', {stopAdmission: () => pluginRegistry.shutdown()});
         console.log('[PLUGINS] ✅ Plugin System initialized with Core Plugins');
     } catch (error) {
         console.error('[PLUGINS] Failed to initialize plugin system:', error);

@@ -1,3 +1,4 @@
+import { ownedInterval } from '../server/desktop/producerScope.js';
 import { registerOwnedProducer } from './lifecycle/ownedProducers';
 /**
  * POWER MANAGER SERVICE v2.0 - ADAPTIVE THROTTLING
@@ -120,7 +121,7 @@ class PowerManager {
      */
     private startAdaptiveThrottling() {
         // Check CPU every 30 seconds and adjust throttle
-        this.throttleCheckInterval = setInterval(async () => {
+        this.throttleCheckInterval = ownedInterval(async () => {
             try {
                 const si = await import('systeminformation');
                 const load = await si.currentLoad();
