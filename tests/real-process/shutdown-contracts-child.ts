@@ -224,8 +224,24 @@ if (mode === 'producers-never-started') {
         assert.deepEqual(pending.map(({ id, ...item }) => item), fixture, 'original work must recover byte-for-value, not narrated filler');
         assert.equal(new Set(pending.map(item => item.id)).size, 2);
         const { drainCurrentBackend, getLastDrainProducerReceipts } = await import('../../server/currentBackendDrain');
-        assert.equal(await drainCurrentBackend(), true);
+        const drainOk = await drainCurrentBackend();
         const stops = getLastDrainProducerReceipts();
+        // Evidence only: never a second mode receipt, never pending payloads.
+        // Three known owners, at most 20 scalar fields each, strings <=160.
+        try {
+            const owners: Record<string, unknown> = {};
+            for (const owner of ['narrative', 'arbiter', 'power'] as const) {
+                const value = stops?.[owner];
+                owners[owner] = value ? Object.fromEntries(Object.entries(value).slice(0, 20)
+                    .filter(([, v]) => v === null || ['string', 'number', 'boolean'].includes(typeof v))
+                    .map(([k, v]) => [k.slice(0, 64), typeof v === 'string' ? v.slice(0, 160) : v])) : null;
+            }
+            const diagnostic = JSON.stringify({ phase: 'pending-drain-diagnostic', drainOk, producerReceipts: owners });
+            console.log('[drain-diagnostic] ' + (diagnostic.length <= 8192 ? diagnostic : '{"diagnosticTruncated":true}'));
+        } catch {
+            try { console.error('[drain-diagnostic] unavailable; primary assertion follows'); } catch { /* evidence only */ }
+        }
+        assert.equal(drainOk, true);
         assert.equal(stops?.narrative?.pendingPreserved, 2);
         assert.equal(stops?.narrative?.remainingItems, 0);
         assert.equal(stops?.narrative?.error, null);

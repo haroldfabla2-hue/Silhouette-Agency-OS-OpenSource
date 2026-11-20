@@ -118,7 +118,7 @@ while queue:
  if magic!=b'\x7fELF':continue
  text=subprocess.check_output(['readelf','-d',str(p)],text=True)
  for soname in re.findall(r'\(NEEDED\).*\[(.*?)\]',text):
-  assert soname in lookup,'ELF_MISSING_'+soname;q=lookup[soname]
+  assert soname in lookup,'ELF_MISSING_'+json.dumps({'soname':soname,'file':str(p),'sha256':sha(p),'needed':re.findall(r'\(NEEDED\).*\[(.*?)\]',text)},sort_keys=True);q=lookup[soname]
   if q not in runtime:runtime.add(q);queue.append(q)
  # Dynamic interpreter is not necessarily a NEEDED line.
  text=subprocess.check_output(['readelf','-l',str(p)],text=True)
