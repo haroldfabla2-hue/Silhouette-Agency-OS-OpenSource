@@ -762,10 +762,10 @@
     "sha256": "5987d4fae5a63ca3edfd59fb12cb44f7955fdd1685f58106f52a2634d5256bdf"
   },
   {
-    "lines": 77,
+    "lines": 95,
     "moduleId": "M127",
     "path": "/app/phase-observer.INACTIVE.mjs",
-    "sha256": "4e5ff51ddce454440a15e90b5739f5d918ae0c6588bf3e45e803a5519e1e87e6"
+    "sha256": "874651f333fa239012f2b2aa37903f48fa53159a5e2a0fab3f920081e40b53ed"
   },
   {
     "lines": 108,

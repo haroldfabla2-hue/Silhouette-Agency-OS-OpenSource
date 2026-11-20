@@ -1,5 +1,5 @@
 {
-  "derivedRootfsManifestSha256": "35abc59c3c90942ad2281f6f5a453df1f29255e3cbd107f2616cfc56c1e39eed",
+  "derivedRootfsManifestSha256": "76183c55d79461908c97fd1c1b5a62a2033f52cd9f2c6a4b6c95b7f101f3117b",
   "instrumentationChangeOnly": "absolute-pinned-native-identity-and-structured-failure-observer-oracle-unchanged",
   "kind": "DIRECT_SYSTEMD_DERIVED_PREPARATION",
   "originalArchiveIsNotDerivedRootIdentity": true,
@@ -9,13 +9,14 @@
   "productEvaluated": false,
   "runtimeValidated": false,
   "sourceControls": {
-    "DIRECT-SYSTEMD-ROOTFS.json": "35abc59c3c90942ad2281f6f5a453df1f29255e3cbd107f2616cfc56c1e39eed",
-    "diagnostic-projection.INACTIVE.py": "e82af4dce2c60b4f182b57c5a06e5afaf5808d6451cd8897d7c86fad980d8e58",
-    "diagnostic-source-table.json": "546e59a135cab5faf606a3cf1e6bc5c26744a11f25de5e26be42e5c44faa6ed5",
-    "direct-services.INACTIVE.py": "554a2f1cc0e87ea74dc4cf899bf3ee197898936157ccba4c78824e769e872503",
+    "DIRECT-SYSTEMD-ROOTFS.json": "76183c55d79461908c97fd1c1b5a62a2033f52cd9f2c6a4b6c95b7f101f3117b",
+    "diagnostic-projection.INACTIVE.py": "098caf2b980865b9c3daa6c88d8c60b2fba826f8bfe2d73a3acbc88354fa219b",
+    "diagnostic-source-table.json": "cc2c562d48a9df4ff88c0b39b2bacc98de5cd4b05ecb671b182b450e322f7bef",
+    "diagnostic-targets.json": "5ff1541cddb4e0e20a4f3ce33ac188468a406b040b8b4af03e3aa374688b8586",
+    "direct-services.INACTIVE.py": "dc15103112468e299a68d8d4ce2fae34071dbbb6a4d39030006ae558bca76780",
     "entry.DIAGNOSTIC.INACTIVE.mjs": "5987d4fae5a63ca3edfd59fb12cb44f7955fdd1685f58106f52a2634d5256bdf",
-    "export-selected.INACTIVE.py": "14e9747c0175124d398e1c7c60f1fa43372c6a85720f28c0090867a5c62ee4b5",
+    "export-selected.INACTIVE.py": "7ab8240f8e58d04f0382807a346d70f8a454951a90cdf09130f581e3f0224c8a",
     "native-selection-guard.DIRECT-SYSTEMD.cjs": "50d21436e62b0ae62619b1396013298f4e1134ae2c293a207382978501e3f694",
-    "phase-observer.INACTIVE.mjs": "4e5ff51ddce454440a15e90b5739f5d918ae0c6588bf3e45e803a5519e1e87e6"
+    "phase-observer.INACTIVE.mjs": "874651f333fa239012f2b2aa37903f48fa53159a5e2a0fab3f920081e40b53ed"
   }
 }

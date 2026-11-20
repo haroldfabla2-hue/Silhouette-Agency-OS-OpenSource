@@ -10,8 +10,8 @@ CONFIG_ID='sha256:9b7d1917ba3e5d20c83a01e3345bb78430b5e6c99030098a944b64f1b90053
 MANIFEST_SHA='debf0c3eb2dab9fb902e6c65e5dbcc1cb27276f21e33053ae187de2d84790041'
 ENTRY_SHA='1910f6e4cd873fe4ef1d2fabfac03331642c16fdc7c03e38fc8af0be52ccfb9f'
 GUARD_SHA='50d21436e62b0ae62619b1396013298f4e1134ae2c293a207382978501e3f694'
-DERIVED_MANIFEST_SHA='35abc59c3c90942ad2281f6f5a453df1f29255e3cbd107f2616cfc56c1e39eed'
-DIAGNOSTIC_FILES={'entry.DIAGNOSTIC.INACTIVE.mjs': '5987d4fae5a63ca3edfd59fb12cb44f7955fdd1685f58106f52a2634d5256bdf', 'phase-observer.INACTIVE.mjs': '4e5ff51ddce454440a15e90b5739f5d918ae0c6588bf3e45e803a5519e1e87e6', 'diagnostic-source-table.json': '546e59a135cab5faf606a3cf1e6bc5c26744a11f25de5e26be42e5c44faa6ed5', 'diagnostic-projection.INACTIVE.py': 'e82af4dce2c60b4f182b57c5a06e5afaf5808d6451cd8897d7c86fad980d8e58'}
+DERIVED_MANIFEST_SHA='76183c55d79461908c97fd1c1b5a62a2033f52cd9f2c6a4b6c95b7f101f3117b'
+DIAGNOSTIC_FILES={'entry.DIAGNOSTIC.INACTIVE.mjs': '5987d4fae5a63ca3edfd59fb12cb44f7955fdd1685f58106f52a2634d5256bdf', 'phase-observer.INACTIVE.mjs': '874651f333fa239012f2b2aa37903f48fa53159a5e2a0fab3f920081e40b53ed', 'diagnostic-source-table.json': 'cc2c562d48a9df4ff88c0b39b2bacc98de5cd4b05ecb671b182b450e322f7bef', 'diagnostic-projection.INACTIVE.py': '098caf2b980865b9c3daa6c88d8c60b2fba826f8bfe2d73a3acbc88354fa219b', 'diagnostic-targets.json': '5ff1541cddb4e0e20a4f3ce33ac188468a406b040b8b4af03e3aa374688b8586'}
 CONTEXT_SHA='9f2ca63ac485694eb25815be0206e4ba99ad6184a4116217b4807cbc9d2165ea'
 
 
@@ -75,13 +75,13 @@ def extract_reviewed(archive,manifest,guard,derived_manifest,destination):
     derived=json.loads(Path(derived_manifest).read_text())
     source=Path(__file__).parent
     destinations={'entry.DIAGNOSTIC.INACTIVE.mjs':'app/entry.INACTIVE.mjs',
-        'phase-observer.INACTIVE.mjs':'app/phase-observer.INACTIVE.mjs','diagnostic-source-table.json':'app/diagnostic-source-table.json'}
+        'phase-observer.INACTIVE.mjs':'app/phase-observer.INACTIVE.mjs','diagnostic-source-table.json':'app/diagnostic-source-table.json','diagnostic-targets.json':'app/diagnostic-targets.json'}
     for name,wanted in DIAGNOSTIC_FILES.items():need(digest(source/name)==wanted,'DIAGNOSTIC_SOURCE_PIN')
     for name,target in destinations.items():(root/target).write_bytes((source/name).read_bytes())
     before_by_path={r['target']:r for r in rows};after_by_path={r['target']:r for r in derived}
-    need(len(derived)==len(rows)+2 and len(after_by_path)==len(derived),'DERIVED_FILE_COUNT')
-    changed={'/app/native-selection-guard.cjs','/app/entry.INACTIVE.mjs','/app/phase-observer.INACTIVE.mjs','/app/diagnostic-source-table.json'}
-    need(set(after_by_path)==set(before_by_path)|{'/app/phase-observer.INACTIVE.mjs','/app/diagnostic-source-table.json'},'DERIVED_PATH_SET')
+    need(len(derived)==len(rows)+3 and len(after_by_path)==len(derived),'DERIVED_FILE_COUNT')
+    changed={'/app/native-selection-guard.cjs','/app/entry.INACTIVE.mjs','/app/phase-observer.INACTIVE.mjs','/app/diagnostic-source-table.json','/app/diagnostic-targets.json'}
+    need(set(after_by_path)==set(before_by_path)|{'/app/phase-observer.INACTIVE.mjs','/app/diagnostic-source-table.json','/app/diagnostic-targets.json'},'DERIVED_PATH_SET')
     for path,row in after_by_path.items():
         if path not in changed:need(row==before_by_path[path],'UNEXPECTED_PRODUCT_DELTA')
         file=root/path.lstrip('/')
@@ -136,7 +136,7 @@ def collect_diagnostic(tmp,mode,result,after_stop):
     sample={'mode':mode,'afterStopConfirmed':after_stop,'state':'MISSING'}
     try:
         source=Path(__file__).parent
-        for name in ('diagnostic-source-table.json','diagnostic-projection.INACTIVE.py'):
+        for name in ('diagnostic-source-table.json','diagnostic-projection.INACTIVE.py','diagnostic-targets.json'):
             need(digest(source/name)==DIAGNOSTIC_FILES[name],'DIAGNOSTIC_SOURCE_PIN')
         spec=importlib.util.spec_from_file_location('diagnostic_projection',source/'diagnostic-projection.INACTIVE.py')
         module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
@@ -147,7 +147,7 @@ def collect_diagnostic(tmp,mode,result,after_stop):
             need(len(raw)==before.st_size and (before.st_ino,before.st_size,before.st_mtime_ns)==
                  (after.st_ino,after.st_size,after.st_mtime_ns),'DIAGNOSTIC_FILE_CHANGED')
         finally:os.close(fd)
-        value=module.project(json.loads(raw),json.loads((source/'diagnostic-source-table.json').read_text()))
+        value=module.project(json.loads(raw),json.loads((source/'diagnostic-source-table.json').read_text()),json.loads((source/'diagnostic-targets.json').read_text())['targets'])
         need(value['mode']==mode,'DIAGNOSTIC_PHASE_BINDING')
         sample.update(state='VALIDATED',diagnostic=value)
     except FileNotFoundError:pass

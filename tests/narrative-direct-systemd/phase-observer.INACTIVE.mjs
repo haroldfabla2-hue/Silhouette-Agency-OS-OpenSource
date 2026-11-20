@@ -3,6 +3,7 @@ import fs from 'node:fs';
 const mode=process.argv[2];
 if(!['write','read'].includes(mode))throw Error('OBSERVER_MODE');
 const table=JSON.parse(fs.readFileSync('/app/diagnostic-source-table.json','utf8'));
+const targets=JSON.parse(fs.readFileSync('/app/diagnostic-targets.json','utf8')).targets;
 const classes=new Set(['Error','TypeError','RangeError','SyntaxError','ReferenceError','AssertionError','AggregateError']);
 const codes=new Set(['ERR_ASSERTION','ERR_MODULE_NOT_FOUND','MODULE_NOT_FOUND','ERR_DLOPEN_FAILED','ERR_REQUIRE_ESM',
  'ERR_UNKNOWN_FILE_EXTENSION','ENOENT','EACCES','EPERM','EROFS','ENOSPC','EIO','ENOMEM','EMFILE','ENFILE',
@@ -32,10 +33,27 @@ function checkpoint(value){
  if(!markers.has(value))return;
  doc.checkpoint=value;if(doc.checkpoints.length<24)doc.checkpoints.push(value);persistStrict();
 }
+function moduleIdentity(error){
+ const value={status:'UNMATCHED',targetId:null,importerStatus:'UNKNOWN'};
+ try{
+  if(error?.code!=='ERR_MODULE_NOT_FOUND'||typeof error.url!=='string')return value;
+  const raw=error.url;
+  // Reject encoded path segments, credentials/hosts, query/hash and traversal
+  // before URL canonicalization can erase their source spelling.
+  if(!raw.startsWith('file:///app/')||raw.includes('%')||raw.includes('?')||raw.includes('#'))return value;
+  if(raw.slice('file://'.length).split('/').some(p=>p==='.'||p==='..'))return value;
+  const url=new URL(raw);
+  if(url.protocol!=='file:'||url.hostname||url.username||url.password||url.search||url.hash)return value;
+  if(!url.pathname.startsWith('/app/')||url.href!==raw)return value;
+  const target=targets.find(row=>row.path===url.pathname);
+  if(target)return {status:'MATCHED',targetId:target.targetId,importerStatus:'UNKNOWN'};
+ }catch{}
+ return value;
+}
 function errorAt(site,error,bestEffort=false){
  if(!sites.has(site)||doc.errors.length>=8)return;
  const row={site,exceptionClass:classes.has(error?.name)?error.name:'OtherException',
-   code:codes.has(error?.code)?error.code:'OTHER',frames:[],framesOmitted:false};
+   code:codes.has(error?.code)?error.code:'OTHER',frames:[],framesOmitted:false,moduleIdentity:moduleIdentity(error)};
  // Parse location suffixes only. Never export message, arguments or raw stack.
  const stack=typeof error?.stack==='string'?error.stack:'';
  for(const line of stack.split('\n').slice(1,33)){

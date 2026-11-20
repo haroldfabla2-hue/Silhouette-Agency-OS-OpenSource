@@ -37,7 +37,7 @@ def project(value,depth=0):
     try:
      assert isinstance(sample,dict) and sample['mode'] in {'write','read'} and sample['state'] in {'MISSING','REJECTED','VALIDATED'} and type(sample['afterStopConfirmed'])is bool
      row={x:sample[x] for x in ('mode','state','afterStopConfirmed')}
-     if sample['state']=='VALIDATED':row['diagnostic']=diagnostic_schema.project(sample['diagnostic'],diagnostic_table)
+     if sample['state']=='VALIDATED':row['diagnostic']=diagnostic_schema.project(sample['diagnostic'],diagnostic_table,diagnostic_targets)
      result.append(row)
     except Exception:result.append({'state':'REJECTED'})
    out[k]=result
@@ -49,6 +49,7 @@ base=Path(__file__).parent
 spec=importlib.util.spec_from_file_location('diagnostic_schema',base/'diagnostic-projection.INACTIVE.py')
 diagnostic_schema=importlib.util.module_from_spec(spec);spec.loader.exec_module(diagnostic_schema)
 diagnostic_table=json.loads((base/'diagnostic-source-table.json').read_text())
+diagnostic_targets=json.loads((base/'diagnostic-targets.json').read_text())['targets']
 if __name__=='__main__':
  output=Path('/tmp/narrative-direct-selected');output.mkdir(mode=0o755,exist_ok=False)
  try:
