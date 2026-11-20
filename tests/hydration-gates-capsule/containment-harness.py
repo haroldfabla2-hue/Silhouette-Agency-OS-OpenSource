@@ -321,15 +321,19 @@ def run_case(anchor,binds,case,output):
    if not completed and creation_attempted:cleanup_failed_case(directory,case,env,owned,cg,error)
   cleanup_with_restored_handlers(cleanup_owned_after_failure,handlers)
 
+# This source stage measures only the first failing boundary. It never runs
+# resource/lifecycle negatives or product, even when the core observation passes.
+OBSERVATION_CASES=('core',)
+
+def observe_core_once(anchor,binds,output):
+ return [run_case(anchor,binds,case,output) for case in OBSERVATION_CASES]
+
 def controller(anchorfile):
  anchor,binds=verify_anchor(anchorfile)
  output=pathlib.Path('/tmp/hg-core-evidence');output.mkdir(mode=0o700,exist_ok=False)
- receipts=[]
- for case in CASES:
-  # Fail immediately on the first denied admission/core or resource error.
-  receipts.append(run_case(anchor,binds,case,output))
- atomic_record(output,'suite.json',{'scope':'Real core containment evidence only. No product validation or shutdown repair. Dynamic negative cases are distinct expected FAILs, never a payload PASS after forced cleanup.','cases':receipts})
- print('CORE_CONTAINMENT_EVIDENCE '+json.dumps({'caseCount':len(receipts),'outputPathSha256':hashlib.sha256(str(output).encode()).hexdigest(),'productValidated':False}))
+ receipts=observe_core_once(anchor,binds,output)
+ atomic_record(output,'suite.json',{'scope':'One first-core diagnostic observation only. No negative-case coverage, product validation or shutdown repair. Stops after this observation regardless of outcome; UNKNOWN/conflict/cap is final, never automatic retry.','cases':receipts})
+ print('CORE_DIAGNOSTIC_OBSERVATION '+json.dumps({'caseCount':len(receipts),'productValidated':False,'negativeCasesRun':False}))
 
 EXTERNAL_CATEGORIES=frozenset(('bwrap-namespace-denied','bwrap-namespace-error','bwrap-bind-error','bwrap-exec-error','loader-error','python-open-error','unknown'))
 

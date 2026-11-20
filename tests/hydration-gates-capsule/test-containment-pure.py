@@ -418,4 +418,16 @@ class DiagnosticAmbiguityBoundaries(unittest.TestCase):
   self.assertFalse(first['markerConflict']);self.assertEqual(first['unknownLineCount'],1)
   self.assertEqual(diagnostic['reason'],'PROBE_DROP');self.assertFalse(next_summary['markerConflict'])
 
+class OneObservationScope(unittest.TestCase):
+ def test_success_stops_after_first_core_without_negatives(self):
+  with mock.patch.object(h,'run_case',return_value={'case':'core','payloadPass':True}) as case:
+   result=h.observe_core_once({},[],pathlib.Path('/synthetic'))
+  case.assert_called_once_with({},[],'core',pathlib.Path('/synthetic'))
+  self.assertEqual(len(result),1);self.assertEqual(h.OBSERVATION_CASES,('core',))
+ def test_failure_unknown_conflict_or_cap_never_retries_or_advances(self):
+  for reason in ('UNKNOWN','DIAGNOSTIC_CONFLICT','DIAGNOSTIC_TRUNCATED','EXTERNAL_NAMESPACE_DENIED_FORMAT'):
+   with mock.patch.object(h,'run_case',side_effect=h.DiagnosticFailure({'type':'unknown','stage':'probe','reason':reason})) as case:
+    with self.assertRaises(h.DiagnosticFailure):h.observe_core_once({},[],pathlib.Path('/synthetic'))
+   self.assertEqual(case.call_count,1);self.assertEqual(case.call_args.args[2],'core')
+
 if __name__=='__main__':unittest.main()
