@@ -11,24 +11,24 @@ pins=json.loads((selection_dir/'native-selection-pins.json').read_text())
 core=json.loads(subprocess.check_output([str(node),str(selection_dir/'native-selection-guard.cjs'),'--inspect'],text=True,env={}))
 assert core['nodeSha256']==sha(node),'NATIVE_CORE_NODE_HASH'
 for k in C['environment']:
- assert k not in ['NODE_OPTIONS','NODE_PATH','LIBC','npm_config_arch','npm_config_platform','PREBUILDS_ONLY','ARM_VERSION','ELECTRON_RUN_AS_NODE'] and not k.endswith('_PREBUILD'),'NATIVE_ENV_OVERRIDE'
+ assert k not in ['NODE_OPTIONS','NODE_PATH','LIBC','npm_config_arch','npm_config_platform','PREBUILDS_ONLY','ARM_VERSION','ELECTRON_RUN_AS_NODE','npm_config_libc','npm_config_arm_version','LD_LIBRARY_PATH','LD_PRELOAD','LD_AUDIT','NODE_BINDINGS_ARROW','NODE_BINDINGS_COMPILED_DIR'] and not k.endswith('_PREBUILD'),'NATIVE_ENV_OVERRIDE'
 lock=json.loads((R/'package-lock.json').read_text())['packages']
 for pkg in pins['packages']:
- meta=lock['node_modules/'+pkg['name']]
+ meta=lock[pkg.get('path','node_modules/'+pkg['name'])]
  assert (meta['version'],meta['resolved'],meta['integrity'])==(pkg['version'],pkg['url'],pkg['lockIntegrity']),'NATIVE_LOCK_DRIFT'
-# Exactly these three paths, never a filename/libc/SONAME pattern exemption.
+# Exactly these five paths, never a filename/libc/SONAME pattern exemption.
 review_paths={
  'node_modules/@lancedb/lancedb-linux-x64-musl/lancedb.linux-x64-musl.node',
  'node_modules/@msgpackr-extract/msgpackr-extract-linux-x64/node.napi.musl.node',
  'node_modules/@msgpackr-extract/msgpackr-extract-linux-x64/node.abi115.musl.node',
+ 'node_modules/onnxruntime-node/bin/napi-v3/linux/arm64/onnxruntime_binding.node',
+ 'node_modules/usearch/prebuilds/linux-arm64/usearch.node',
 }
 assert {x['path'] for x in pins['reviewOnly']}==review_paths,'NATIVE_REVIEW_SET_DRIFT'
 for rel,digest in pins['files'].items():
  file=R/rel
  assert not file.is_symlink() and file.is_file() and sha(file)==digest,'NATIVE_SOURCE_PIN_'+rel
-for rel in ['node_modules/msgpackr-extract/build/Release','node_modules/msgpackr-extract/build/Debug','node_modules/msgpackr-extract/prebuilds','node_modules/@lancedb/lancedb/dist/lancedb.linux-x64-gnu.node','node_modules/@lancedb/lancedb/dist/lancedb.linux-x64-musl.node']:
- assert not (R/rel).exists(),'NATIVE_ALTERNATIVE_'+rel
-assert not (node.parent/'prebuilds').exists(),'NATIVE_NEARBY_PREBUILDS'
+subprocess.run([str(node),str(selection_dir/'native-selection-guard.cjs'),'--verify-installed',str(R),str(selection_dir/'native-selection-pins.json')],check=True,env={})
 
 recipe=r'''
 const fs=require('fs'),path=require('path'),crypto=require('crypto');const tsPath=path.resolve('node_modules/typescript/lib/typescript.js');const ts=require(tsPath);
@@ -104,6 +104,22 @@ while queue:
   if not p.is_file() or p.suffix not in ['.js','.cjs','.mjs','.json','.node','.lua']:continue
   assert not p.is_symlink() and p.name not in ['.env','.env.local'],'PACKAGE_UNSAFE_FILE'
   dst=A/p.relative_to(R);dst.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(p,dst)
+# Only these two reviewed vendor DSOs, preserving original relative paths.
+# Not a broad .so suffix expansion or SONAME search across packages/host.
+assert {v['path'] for v in pins['vendorElf']}=={
+ 'node_modules/onnxruntime-node/bin/napi-v3/linux/x64/libonnxruntime.so.1.14.0',
+ 'node_modules/@xenova/transformers/node_modules/sharp/vendor/8.14.5/linux-x64/lib/libvips-cpp.so.42'},'VENDOR_SET_DRIFT'
+for vendor in pins['vendorElf']:
+ if 'expectedIntegrity' in vendor:
+  meta=json.loads((R/'node_modules/@xenova/transformers/node_modules/sharp/package.json').read_text())
+  assert vendor['expectedIntegrity']==vendor['computedIntegrity']==meta['config']['integrity']['linux-x64'],'SHARP_RELEASE_INTEGRITY_EVIDENCE_DRIFT'
+ rel=vendor['path'];src=R/rel
+ assert src.is_file() and sha(src)==pins['files'][rel],'VENDOR_INSTALLED_DRIFT_'+rel
+ for parent in [src,*src.parents]:
+  if parent==R:break
+  assert not parent.is_symlink(),'VENDOR_SYMLINK'
+ dst=A/rel;dst.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(src,dst)
+ assert sha(dst)==pins['files'][rel],'VENDOR_COPY_DRIFT_'+rel
 copiedNames={json.loads((pkg/'package.json').read_text()).get('name') for pkg in seen}
 emitted_doc=json.loads((O/'EMITTED.json').read_text())
 # Absent-tolerated roots: the exception can never widen silently. The
@@ -125,14 +141,6 @@ missing_roots=[r for r in emitted_doc['bareRoots'] if r not in copiedNames and r
 assert not missing_roots,'BARE_ROOT_NOT_MOUNTED_'+','.join(sorted(missing_roots))
 for p in A.rglob('*'):
  if p.suffix in ['.js','.mjs','.cjs'] and 'node_modules' not in p.parts:subprocess.run([str(node),'--check',str(p)],check=True)
-# Pinned metadata must resolve its dependencies to the same exact paths as
-# reviewed, not an unreviewed nested duplicate that shadows a root loader.
-for name in ['@lancedb/lancedb','msgpackr-extract','node-gyp-build-optional-packages','detect-libc']:
- parent=R/'node_modules'/name
- meta=json.loads((parent/'package.json').read_text())
- for dep in set(meta.get('dependencies',{}))|set(meta.get('optionalDependencies',{})):
-  if dep in {p['name'] for p in pins['packages']}:
-   assert resolve(dep,parent)==R/'node_modules'/dep,'NATIVE_SHADOWED_DEPENDENCY_'+dep
 # Verify COPIED bytes, not merely installed originals. Review-only binaries
 # stay in the artifact under their original paths but get no mount target.
 for rel,digest in pins['files'].items():assert sha(A/rel)==digest,'NATIVE_COPY_PIN_'+rel
@@ -146,8 +154,9 @@ for p in stdlib.rglob('*'):
 lookup={}
 for line in subprocess.check_output(['/sbin/ldconfig','-p'],text=True).splitlines():
  m=re.search(r'^\s*(\S+) .*=> (\S+)$',line)
- if m and pathlib.Path(m[2]).is_file():lookup.setdefault(m[1],pathlib.Path(m[2]))
-queue=sorted(runtime|set(A.rglob('*.node')),key=str);scanned=set();elf_missing=[];review_elf=[]
+ if m and 'x86-64' in line and pathlib.Path(m[2]).is_file():
+  q=pathlib.Path(m[2]);assert str(q).startswith(('/lib/','/lib64/','/usr/lib/','/usr/lib64/')),'SYSTEM_CACHE_ESCAPE'
+  lookup.setdefault(m[1],set()).add(q)
 def elf_origin(p):
  if A in p.parents:
   for parent in p.parents:
@@ -157,33 +166,10 @@ def elf_origin(p):
     meta=json.loads(package.read_text())
     return {'name':meta.get('name'),'version':meta.get('version'),'packageJsonSha256':sha(package),'loaderSelection':'unknown unless explicitly pinned in native-selection.json'}
  return {'runtimePath':str(p),'loaderSelection':'system runtime ELF'}
-while queue:
- p=queue.pop(0)
- if p in scanned:continue
- scanned.add(p)
- with p.open('rb') as f:magic=f.read(4)
- if magic!=b'\x7fELF':continue
- dynamic=subprocess.check_output(['readelf','-d',str(p)],text=True)
- program=subprocess.check_output(['readelf','-l',str(p)],text=True)
- header=subprocess.check_output(['readelf','-h',str(p)],text=True)
- needed=sorted(re.findall(r'\(NEEDED\).*\[(.*?)\]',dynamic))
- interpreters=re.findall(r'Requesting program interpreter: (.*?)\]',program)
- source=str(p.relative_to(O)) if O in p.parents else 'runtime/'+str(p).lstrip('/')
- info={'file':source,'sha256':sha(p),'bytes':p.stat().st_size,'needed':needed,'interpreters':interpreters,'origin':elf_origin(p),'machine':next((l.split(':',1)[1].strip() for l in header.splitlines() if l.strip().startswith('Machine:')),None),'class':next((l.split(':',1)[1].strip() for l in header.splitlines() if l.strip().startswith('Class:')),None)}
- if source in review_sources:
-  assert sha(p)==pins['files'][str(p.relative_to(A))],'NATIVE_REVIEW_PIN'
-  review_elf.append(info);continue
- missing=[s for s in needed if s not in lookup]
- if missing:elf_missing.append({**info,'missingSonames':missing})
- for soname in needed:
-  if soname not in lookup:continue
-  q=lookup[soname]
-  if q not in runtime:runtime.add(q);queue.append(q)
- for interp in interpreters:
-  q=pathlib.Path(interp)
-  if not q.is_file():elf_missing.append({**info,'missingInterpreter':interp});continue
-  if q not in runtime:runtime.add(q);queue.append(q)
- queue.sort(key=str)
+# Load only our reviewed static resolver, never a package or native loader.
+import runpy
+resolver=runpy.run_path(str(selection_dir/'elf-closure.py'))
+elf_missing,review_elf,elf_edges=resolver['scan'](A,runtime|set(A.rglob('*.node'))|{A/v['path'] for v in pins['vendorElf']},runtime,lookup,pins,review_sources,elf_origin)
 # No runtime copy/upload on an incomplete selected ELF closure. Unknowns
 # accumulate in a deterministic order instead of one CI run per binding.
 if elf_missing:
@@ -197,7 +183,9 @@ for p in sorted(A.rglob('*')):
  if p.is_file():
   review=str(p.relative_to(O)) in review_sources
   manifest.append({'source':str(p.relative_to(O)),'target':None if review else '/app/'+str(p.relative_to(A)),'sha256':sha(p),'bytes':p.stat().st_size,'mode':format(stat.S_IMODE(p.stat().st_mode),'o'),'disposition':'review-only' if review else 'mountable'})
-assert len(manifest)<=4000 and sum(r['bytes'] for r in manifest)<=400*1024**2,'FINITE_CAPSULE_BUDGET'
+inventory={'files':len(manifest),'bytes':sum(r['bytes'] for r in manifest),'byDisposition':{d:{'files':sum(r['disposition']==d for r in manifest),'bytes':sum(r['bytes'] for r in manifest if r['disposition']==d)} for d in ['mountable','review-only']},'largest':sorted(manifest,key=lambda r:(-r['bytes'],r['source']))[:20]}
+print('FINITE_CAPSULE_INVENTORY '+json.dumps(inventory,sort_keys=True),flush=True)
+assert len(manifest)<=4000 and inventory['bytes']<=400*1024**2,'FINITE_CAPSULE_BUDGET'
 (O/'ALLOWLIST.json').write_text(json.dumps(manifest,indent=2));(O/'PREPARATION-CONTRACT.json').write_text(json.dumps(C,indent=2))
 (O/'PACKAGE-VERSIONS.txt').write_text(subprocess.check_output(['dpkg-query','-W','bubblewrap','iproute2','python3','util-linux'],text=True))
 # Public artifact audit is fail-closed and excludes operational/internal/auth material.
@@ -212,7 +200,7 @@ for p in O.rglob('*'):
   text=p.read_text(errors='strict')
   for pattern in [r'gh[pousr]_[A-Za-z0-9]{20,}',r'github_pat_[A-Za-z0-9_]{20,}',r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY',r'https?://[^\s/:]+:[^\s/@]+@']:
    assert not re.search(pattern,text),'ARTIFACT_CREDENTIAL_MARKER'
-audit={'nativeSelection':{'core':core,'reviewOnlyElf':review_elf,'bindingLoadObserved':False,'scope':'Conditional reviewed selection; review-only ELF is NOT resolved or mounted'},'copiedSuffixes':['.js','.cjs','.mjs','.json','.node','.lua'],'resourceCaveat':'package resources with other suffixes (wasm, data files, images) are NOT copied; execution may honestly fail on them. Never replace, shim or drop modules to force green; if a missing resource breaks a case, the capsule fails and the cause is reported.','absentToleratedRoots':absentTolerated,'absentToleratedUses':{n:[u for u in emitted_doc['bareUses'] if u['root']==n] for n in absentTolerated},'absentToleratedBasis':'declared in the contract; each is dynamically imported by the product behind its own try/catch and is absent from the installed tree (checked against package-lock); recorded, never shimmed','audience':'existing public repository artifact, retained2days','source':'only explicit emitted source/npm locked package runtime/dpkg runtime/Python stdlib, not checkout entire tree','heuristicOnly':True,'noProductExecution':True,'sourceCommit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'npmPackages':[{'path':str(p.relative_to(R)),'packageJsonSha256':sha(p/'package.json'),'name':json.loads((p/'package.json').read_text()).get('name'),'version':json.loads((p/'package.json').read_text()).get('version')} for p in sorted(seen)],'files':[{'path':str(p.relative_to(O)),'sha256':sha(p),'bytes':p.stat().st_size} for p in sorted(O.rglob('*')) if p.is_file()]}
+audit={'nativeSelection':{'core':core,'reviewOnlyElf':review_elf,'vendorProvenance':pins['vendorElf'],'postinstallBindingProvenance':pins['postinstallBindingProvenance'],'elfEdges':elf_edges,'resolverScope':'Explicit reviewed per-file RPATH/RUNPATH and exact vendor edges, no inherited RPATH approximation; unsupported search path/ambiguous system cache fails','bindingLoadObserved':False,'scope':'Conditional reviewed selection; review-only ELF is NOT resolved or mounted'},'copiedSuffixes':['.js','.cjs','.mjs','.json','.node','.lua'],'resourceCaveat':'package resources with other suffixes (wasm, data files, images) are NOT copied; execution may honestly fail on them. Never replace, shim or drop modules to force green; if a missing resource breaks a case, the capsule fails and the cause is reported.','absentToleratedRoots':absentTolerated,'absentToleratedUses':{n:[u for u in emitted_doc['bareUses'] if u['root']==n] for n in absentTolerated},'absentToleratedBasis':'declared in the contract; each is dynamically imported by the product behind its own try/catch and is absent from the installed tree (checked against package-lock); recorded, never shimmed','audience':'existing public repository artifact, retained2days','source':'only explicit emitted source/npm locked package runtime/dpkg runtime/Python stdlib, not checkout entire tree','heuristicOnly':True,'noProductExecution':True,'sourceCommit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'npmPackages':[{'path':str(p.relative_to(R)),'packageJsonSha256':sha(p/'package.json'),'name':json.loads((p/'package.json').read_text()).get('name'),'version':json.loads((p/'package.json').read_text()).get('version')} for p in sorted(seen)],'files':[{'path':str(p.relative_to(O)),'sha256':sha(p),'bytes':p.stat().st_size} for p in sorted(O.rglob('*')) if p.is_file()]}
 (O/'PUBLIC-ARTIFACT-AUDIT.json').write_text(json.dumps(audit,indent=2))
 digests={
  'allowlistSha256':sha(O/'ALLOWLIST.json'),
