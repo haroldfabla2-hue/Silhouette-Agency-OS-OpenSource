@@ -11,10 +11,17 @@ const markers=new Set(['IMPORT_ENTRY','RUN_PHASE','GUARD','RUNTIME_IMPORT','NARR
  'ADMISSIONS','ADMISSIONS_SETTLED','PRESERVE_RECEIPT','OWNERS_CLOSE','MEMORY_CLOSE','NERVOUS_CLOSE','GRAPH_CLOSE',
  'REDIS_CLOSE','SQLITE_CLOSE','COMPLETE']);
 const sites=new Set(['TOP_LEVEL','ADMISSION_0','ADMISSION_1','ORACLE_PRIMARY','OWNERS_CLOSE','MEMORY_CLOSE',
- 'NERVOUS_CLOSE','GRAPH_CLOSE','REDIS_CLOSE','SQLITE_CLOSE']);
-const doc={schemaVersion:1,mode,checkpoint:'IMPORT_ENTRY',checkpoints:[],errors:[],outcome:'RUNNING',framesOmitted:false};
+ 'NERVOUS_CLOSE','GRAPH_CLOSE','REDIS_CLOSE','SQLITE_CLOSE','FATAL_MONITOR']);
+const doc={schemaVersion:1,mode,checkpoint:'IMPORT_ENTRY',checkpoints:[],errors:[],outcome:'RUNNING',framesOmitted:false,fatalObservation:{seen:false,origin:'NONE'},exitObservation:{seen:false,code:null}};
 let persistenceFailed=false;
-function persist(){
+function persistBestEffort(){
+ try{
+  const raw=JSON.stringify(doc)+'\n';if(Buffer.byteLength(raw)>16384)return;
+  fs.writeFileSync('/tmp/'+mode+'-diagnostic.tmp',raw,{mode:0o600});
+  fs.renameSync('/tmp/'+mode+'-diagnostic.tmp','/tmp/'+mode+'-diagnostic.json');
+ }catch{}
+}
+function persistStrict(){
  try{
   const raw=JSON.stringify(doc)+'\n';if(Buffer.byteLength(raw)>16384)throw Error('OBSERVER_BOUND');
   fs.writeFileSync('/tmp/'+mode+'-diagnostic.tmp',raw,{mode:0o600});
@@ -23,9 +30,9 @@ function persist(){
 }
 function checkpoint(value){
  if(!markers.has(value))return;
- doc.checkpoint=value;if(doc.checkpoints.length<24)doc.checkpoints.push(value);persist();
+ doc.checkpoint=value;if(doc.checkpoints.length<24)doc.checkpoints.push(value);persistStrict();
 }
-function errorAt(site,error){
+function errorAt(site,error,bestEffort=false){
  if(!sites.has(site)||doc.errors.length>=8)return;
  const row={site,exceptionClass:classes.has(error?.name)?error.name:'OtherException',
    code:codes.has(error?.code)?error.code:'OTHER',frames:[],framesOmitted:false};
@@ -41,16 +48,30 @@ function errorAt(site,error){
   else row.framesOmitted=true;
  }
  if(!row.frames.length)row.framesOmitted=true;
- doc.framesOmitted ||= row.framesOmitted;doc.errors.push(row);persist();
+ doc.framesOmitted ||= row.framesOmitted;doc.errors.push(row);
+ if(bestEffort)persistBestEffort();else persistStrict();
 }
+// Native monitor observes, never intercepts or changes Node's fatal policy.
+process.on('uncaughtExceptionMonitor',(error,origin)=>{
+ try{
+  doc.fatalObservation={seen:true,origin:origin==='uncaughtException'||origin==='unhandledRejection'?origin:'OTHER'};
+  errorAt('FATAL_MONITOR',error,true);persistBestEffort();
+ }catch{}
+});
+process.on('exit',code=>{
+ try{
+  doc.exitObservation={seen:true,code:Number.isInteger(code)&&code>=0&&code<=255?code:null};
+  persistBestEffort();
+ }catch{}
+});
 globalThis[Symbol.for('narrative.direct.observer')]=Object.freeze({checkpoint,errorAt});
 try{
  checkpoint('IMPORT_ENTRY');
  const {runPhase}=await import('/app/entry.INACTIVE.mjs');
  checkpoint('RUN_PHASE');await runPhase(mode);
- checkpoint('COMPLETE');doc.outcome='RETURNED';persist();
+ checkpoint('COMPLETE');doc.outcome='RETURNED';persistStrict();
  if(persistenceFailed)process.exitCode=1;
 }catch(error){
- errorAt('TOP_LEVEL',error);doc.outcome='THREW';persist();
+ errorAt('TOP_LEVEL',error);doc.outcome='THREW';persistStrict();
  throw error; // Preserve failure and natural nonzero exit. Never process.exit().
 }

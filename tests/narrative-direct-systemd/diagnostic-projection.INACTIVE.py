@@ -1,17 +1,23 @@
 """Closed schema shared by collector and exporter. No messages or raw stacks."""
 CHECKPOINTS={'IMPORT_ENTRY','RUN_PHASE','GUARD','RUNTIME_IMPORT','NARRATIVE_IMPORT','OWNERS_IMPORT','ADMISSIONS',
  'ADMISSIONS_SETTLED','PRESERVE_RECEIPT','OWNERS_CLOSE','MEMORY_CLOSE','NERVOUS_CLOSE','GRAPH_CLOSE','REDIS_CLOSE','SQLITE_CLOSE','COMPLETE'}
-SITES={'TOP_LEVEL','ADMISSION_0','ADMISSION_1','ORACLE_PRIMARY','OWNERS_CLOSE','MEMORY_CLOSE','NERVOUS_CLOSE','GRAPH_CLOSE','REDIS_CLOSE','SQLITE_CLOSE'}
+SITES={'TOP_LEVEL','ADMISSION_0','ADMISSION_1','ORACLE_PRIMARY','OWNERS_CLOSE','MEMORY_CLOSE','NERVOUS_CLOSE','GRAPH_CLOSE','REDIS_CLOSE','SQLITE_CLOSE','FATAL_MONITOR'}
 CLASSES={'Error','TypeError','RangeError','SyntaxError','ReferenceError','AssertionError','AggregateError','OtherException'}
 CODES={'OTHER','ERR_ASSERTION','ERR_MODULE_NOT_FOUND','MODULE_NOT_FOUND','ERR_DLOPEN_FAILED','ERR_REQUIRE_ESM',
  'ERR_UNKNOWN_FILE_EXTENSION','ENOENT','EACCES','EPERM','EROFS','ENOSPC','EIO','ENOMEM','EMFILE','ENFILE',
  'SQLITE_ERROR','SQLITE_CANTOPEN','SQLITE_READONLY','SQLITE_FULL','SQLITE_IOERR','SQLITE_BUSY','SQLITE_LOCKED'}
 def project(value,table):
- assert isinstance(value,dict) and set(value)=={'schemaVersion','mode','checkpoint','checkpoints','errors','outcome','framesOmitted'}
+ assert isinstance(value,dict) and set(value)=={'schemaVersion','mode','checkpoint','checkpoints','errors','outcome','framesOmitted','fatalObservation','exitObservation'}
  assert value['schemaVersion']==1 and value['mode'] in {'write','read'} and value['checkpoint'] in CHECKPOINTS
  assert value['outcome'] in {'RUNNING','RETURNED','THREW'} and type(value['framesOmitted'])is bool
  assert isinstance(value['checkpoints'],list) and len(value['checkpoints'])<=24 and all(x in CHECKPOINTS for x in value['checkpoints'])
  assert isinstance(value['errors'],list) and len(value['errors'])<=8
+ fatal=value['fatalObservation'];exit_value=value['exitObservation']
+ assert isinstance(fatal,dict) and set(fatal)=={'seen','origin'} and type(fatal['seen'])is bool
+ assert fatal['origin'] in {'NONE','uncaughtException','unhandledRejection','OTHER'}
+ assert fatal['seen']==(fatal['origin']!='NONE')
+ assert isinstance(exit_value,dict) and set(exit_value)=={'seen','code'} and type(exit_value['seen'])is bool
+ assert exit_value['code'] is None or type(exit_value['code'])is int and 0<=exit_value['code']<=255
  modules={r['moduleId']:r for r in table}
  errors=[]
  for error in value['errors']:
@@ -25,4 +31,4 @@ def project(value,table):
    assert type(frame['column'])is int and 1<=frame['column']<=1000000
    frames.append({k:frame[k] for k in ('moduleId','line','column')})
   errors.append({**{k:error[k] for k in ('site','exceptionClass','code','framesOmitted')},'frames':frames})
- return {**{k:value[k] for k in ('schemaVersion','mode','checkpoint','checkpoints','outcome','framesOmitted')},'errors':errors}
+ return {**{k:value[k] for k in ('schemaVersion','mode','checkpoint','checkpoints','outcome','framesOmitted','fatalObservation','exitObservation')},'errors':errors}
