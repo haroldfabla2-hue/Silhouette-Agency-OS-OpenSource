@@ -1,0 +1,57 @@
+name: Docker runtime preparation, no application payload
+on:
+  push:
+    branches: [fix/shutdown-contracts-narrow-20261117]
+    paths: [.github/workflows/docker-p0-preparation.yml]
+permissions:
+  contents: read
+jobs:
+  preparation:
+    if: github.repository == 'haroldfabla2-hue/Silhouette-Agency-OS-OpenSource' && github.ref == 'refs/heads/fix/shutdown-contracts-narrow-20261117' && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+      - id: guard
+        name: Verify fixed source transition
+        env:
+          ACTUAL_HEAD: ${{ github.sha }}
+        run: |
+          python3 -I -B -S - <<'PYGATE'
+          import os,subprocess,hashlib,pathlib
+          def git(*args):return subprocess.check_output(['git',*args],text=True).strip()
+          assert git('rev-parse','HEAD')==os.environ['ACTUAL_HEAD']
+          assert git('show','-s','--format=%P','HEAD')=='99eeebbd05ffbe4c81c0b9519a1462cf479affd2'
+          assert set(git('diff','--name-only','HEAD^','HEAD').splitlines())=={
+              '.github/workflows/docker-p0-preparation.yml',
+              'scripts/containment/docker-p0.INACTIVE.py',
+              'scripts/containment/p0-host-observer.INACTIVE.py',
+              'scripts/containment/node-runtime-closure.INACTIVE.json'}
+          frozen={
+              'scripts/containment/docker-p0.INACTIVE.py':'179b8dbecffa38205c9d56ff90234064842cb24635a90d13627c25224e9d4316',
+              'scripts/containment/p0-host-observer.INACTIVE.py':'9d450f0fc9f03dfaee14ed614ae740d143c14644f17d80159993750b42a15c5c',
+              'scripts/containment/node-runtime-closure.INACTIVE.json':'e4e141fccb90374fdfa810c22bbc6efa474100cebf2d1c701576f26f122c6ac2',
+          }
+          for name,digest in frozen.items():
+              assert hashlib.sha256(pathlib.Path(name).read_bytes()).hexdigest()==digest
+          PYGATE
+      - name: Acquire fixed runtime and inspect isolated gate
+        run: |
+          sudo -n env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C /usr/bin/python3 -I -B -S scripts/containment/docker-p0.INACTIVE.py --preparation-only --acquire-fixed-image --receipt /tmp/p0-preparation-receipt.json
+      - id: evidence
+        name: Export bounded technical evidence
+        if: always() && steps.guard.outcome == 'success'
+        run: |
+          sudo -n env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C /usr/bin/python3 -I -B -S scripts/containment/docker-p0.INACTIVE.py --export-evidence /tmp/p0-sanitized-receipt.json
+      - name: Preserve selected technical evidence
+        if: always() && steps.guard.outcome == 'success' && steps.evidence.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-preparation-technical-evidence
+          path: /tmp/p0-sanitized-receipt.json
+          if-no-files-found: error
+          retention-days: 2
