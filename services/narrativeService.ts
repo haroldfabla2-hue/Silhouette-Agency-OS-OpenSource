@@ -327,6 +327,9 @@ class NarrativeService {
             await Promise.all([...this.pendingAdmissions]);
             if (active !== null) await active;
             if (this.pendingError) throw new Error('NARRATIVE_PENDING_BLOCKED');
+            // A rejected admission may already have left pendingAdmissions.
+            // Do not turn that earlier loss/failure into a later clean receipt.
+            if (this.admissionFailures > 0) throw new Error('NARRATIVE_ADMISSION_FAILED');
             const pending = [...this.activeBatch, ...this.narrationQueue];
             if (pending.length > 0 && this.pendingStore === null) throw new Error('NARRATIVE_PENDING_STORAGE_UNAVAILABLE');
             if (this.pendingStore && (pending.length > 0 || this.preservedCount === 0)) this.pendingStore.save(pending);
@@ -380,6 +383,14 @@ class NarrativeService {
             if (this.narrationStopping) this.refusedLate++;
             throw new Error('NARRATIVE_ADMISSION_CLOSED');
         }
+        return this.commitAcceptedNarration(item);
+    }
+
+    // Only an admission already owned by pendingAdmissions may cross stop.
+    // Direct public callers still pass the late-work gate above. The stop
+    // awaits accepted admissions before its final durable queue snapshot.
+    private commitAcceptedNarration(item: Omit<PendingNarration, 'id'>): string {
+        if (this.pendingError) throw new Error('NARRATIVE_PENDING_BLOCKED');
         const id = crypto.randomUUID();
         const entry = { ...item, id };
         if (!this.pendingStore) throw new Error('NARRATIVE_PENDING_STORAGE_UNAVAILABLE');
@@ -704,7 +715,8 @@ class NarrativeService {
     ) {
         await this.pendingReady;
         const { routeThought, shouldRecord } = await import('./narrativeFillerPolicy');
-        if (this.narrationStopping) { this.refusedLate++; throw new Error('NARRATIVE_LATE_ADMISSION_REFUSED'); }
+        // queueOrEmitThought already accepted and owns this task before its
+        // first await. Stop fences NEW inputs but must drain this original.
         const route = routeThought(importance);
         // Record the original event before presentation dedupe, throttle or
         // provider work. Provider failure must not erase the source event.
@@ -753,7 +765,7 @@ class NarrativeService {
             await this.emitNarrativeUpdate(source, content, importance, metadata, false, 'REGEX');
         } else {
             // HIGH IMPORTANCE: Queue for LLM batch
-            await this.enqueuePendingNarration({ source, content, importance, ...(metadata === undefined ? {} : { metadata }) });
+            this.commitAcceptedNarration({ source, content, importance, ...(metadata === undefined ? {} : { metadata }) });
             console.log(`[NARRATIVE] 📥 Queued high-importance thought (${importance.toFixed(2)}): ${content.substring(0, 40)}...`);
         }
     }

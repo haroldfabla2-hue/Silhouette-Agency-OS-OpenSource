@@ -19,6 +19,19 @@ import selectors
 import shutil
 import urllib.parse
 
+# Shared operation journal singleton across separately loaded inactive components.
+import importlib.util as _iu
+import sys as _sys
+from pathlib import Path as _SourcePath
+if '_p0_interface_contracts' not in _sys.modules:
+    _spec=_iu.spec_from_file_location('_p0_interface_contracts',_SourcePath(__file__).with_name('p0-interface-contracts.INACTIVE.py'))
+    _module=_iu.module_from_spec(_spec)
+    _sys.modules['_p0_interface_contracts']=_module
+    _spec.loader.exec_module(_module)
+IO=_sys.modules['_p0_interface_contracts']
+Path=IO.Path
+os=IO.os
+
 IMAGE = 'node@sha256:650d460b4e6b02411caa0e563838f07fafc9792314d5091859d837d8b070712b'
 API = '/v1.48'
 MEM = 134217728
@@ -47,7 +60,13 @@ class Engine(http.client.HTTPConnection):
         self.sock.connect('/var/run/docker.sock')
 
 
-def request(method, route, deadline, body=None):
+def request(method,route,deadline,body=None):
+    op=('ENGINE_VERSION' if route=='/version' else 'ENGINE_INFO' if route=='/info' else
+        'ENGINE_INSPECT' if route.endswith('/json') else 'ENGINE_REQUEST')
+    return IO.invoke(op,'HOST_METADATA','MANAGER_CALL',lambda:_request(method,route,deadline,body))
+
+
+def _request(method, route, deadline, body=None):
     require(time.monotonic() < deadline, 'CONTROL_DEADLINE')
     conn = Engine(deadline)
     try:
@@ -88,10 +107,12 @@ def text(path):
     return Path(path).read_text().strip()
 
 
+@IO.contract('ROOT_MOUNTINFO','HOST_PROC')
 def mounts(pid):
     records=[]
     for line in text('/proc/'+str(pid)+'/mountinfo').splitlines():
         left,right=line.split(' - ');a=left.split();b=right.split()
+        require(len(a)>=6 and len(b)>=3,'MOUNTINFO_INVALID')
 
 
         require(not any('\\' in p for p in (a[3],a[4],b[1])),'ESCAPED_MOUNT_PATH')
@@ -101,6 +122,7 @@ def mounts(pid):
     return records
 
 
+@IO.contract('SELF_CGROUP','HOST_PROC')
 def live_cgroup(pid):
     lines=text('/proc/'+str(pid)+'/cgroup').splitlines()
     require(len(lines)==1 and lines[0].startswith('0::/'),'UNIFIED_CGROUP_REQUIRED')
@@ -110,10 +132,21 @@ def live_cgroup(pid):
     return cg
 
 
+@IO.contract('PROC_STATUS','HOST_PROC')
+def process_status(pid):
+    pairs=[line.split(':',1) for line in text('/proc/'+str(pid)+'/status').splitlines()]
+    require(all(len(pair)==2 for pair in pairs),'LIVE_IDENTITY')
+    status=dict(pairs)
+    require(len(status)==len(pairs) and all(key in status for key in ('Uid','Gid')),'LIVE_IDENTITY')
+    require(status['Uid'].split()==['1000']*4 and status['Gid'].split()==['1000']*4,'LIVE_IDENTITY')
+    return status
+
+
 def check_deadline(deadline):
     require(time.monotonic()<deadline,'GATE_DEADLINE_EXCEEDED')
 
 
+@IO.contract('VERIFIER_CONTRACT','HOST_METADATA')
 def audit(cid, image_id, masks, deadline,ledger,domain):
     check_deadline(deadline)
     require(image_id.startswith('sha256:') and len(image_id)==71,'IMAGE_CONFIG_ID')
@@ -133,7 +166,7 @@ def audit(cid, image_id, masks, deadline,ledger,domain):
     require(pid==domain.occupied_anchor['pid'],'AUDIT_GATE_PID_CHANGED')
     root=load_component('p0-rooted-paths.INACTIVE.py').Root(pid,expected_start)
     try:
-        status=dict(line.split(':',1) for line in text('/proc/'+str(pid)+'/status').splitlines() if ':' in line)
+        status=process_status(pid)
         require(status['Uid'].split()==['1000']*4 and status['Gid'].split()==['1000']*4,'LIVE_IDENTITY')
         for key in ('CapInh','CapPrm','CapEff','CapBnd','CapAmb'):
             require(int(status[key],16)==0,'LIVE_CAPABILITY_'+key,int(status[key],16),0)
@@ -222,7 +255,7 @@ def audit(cid, image_id, masks, deadline,ledger,domain):
         require(st.st_uid==1000 and st.st_gid==1000 and stat.S_IMODE(st.st_mode)==0o700,'WORK_OWNERSHIP')
 
         for target,key in (('/etc/hosts','HostsPath'),('/etc/hostname','HostnamePath'),('/etc/resolv.conf','ResolvConfPath')):
-            host=Path(v[key]);a=os.stat(host);b=(root/target.lstrip('/')).stat()
+            host=Path(v[key]);a=IO.invoke('DOCKER_GENERATED_SOURCE','HOST_METADATA','STAT',lambda:os.stat(host));b=(root/target.lstrip('/')).stat()
             require((a.st_dev,a.st_ino)==(b.st_dev,b.st_ino) and stat.S_ISREG(b.st_mode),'GENERATED_FILE_IDENTITY')
         devices={'null':(1,3),'zero':(1,5),'full':(1,7),'random':(1,8),'urandom':(1,9),'tty':(5,0)}
         for p in (root/'dev').iterdir():
@@ -277,21 +310,27 @@ def operation(method,route,ledger,key,deadline,body=None):
     state={'transportDone':False,'responseObserved':False,'daemonOutcomeKnown':False,
            'httpStatus':None,'method':method,'operation':key}
     os.write(fd,json.dumps(state).encode());os.fsync(fd);os.close(fd)
+    @IO.contract('ENGINE_OPERATION','HOST_METADATA')
     def work():
         conn=Engine(deadline)
         try:
-            conn.request(method,API+route,body=json.dumps(body) if body is not None else None,
-                         headers={'Content-Type':'application/json'})
-            response=conn.getresponse();raw=response.read(262145)
-            require(len(raw)<=262144,'CONTROL_RESPONSE_LIMIT')
-            state['httpStatus']=response.status
-            state['responseObserved']=True
+            def exchange():
+                conn.request(method,API+route,body=json.dumps(body) if body is not None else None,
+                             headers={'Content-Type':'application/json'})
+                response=conn.getresponse()
+                return response,response.read(262145)
+            response,raw=IO.invoke('ENGINE_OPERATION','HOST_METADATA','MANAGER_CALL',exchange)
+            with IO.envelope('ENGINE_OPERATION','HOST_METADATA'):
+                require(len(raw)<=262144,'CONTROL_RESPONSE_LIMIT')
+                state['httpStatus']=response.status
+                state['responseObserved']=True
 
-            if 200<=response.status<300:
-                value=json.loads(raw) if raw else None
-                state['value']=value;state['daemonOutcomeKnown']=True
-            else:state['error']='HTTP_NON_SUCCESS'
-        except Exception:
+                if 200<=response.status<300:
+                    value=json.loads(raw) if raw else None
+                    state['value']=value;state['daemonOutcomeKnown']=True
+                else:state['error']='HTTP_NON_SUCCESS'
+        except Exception as error:
+            state['failureReference']=IO.failure_reference(error)
             state['daemonOutcomeKnown']=False;state['error']='TRANSPORT_OR_RESPONSE_UNCERTAIN'
         finally:
             state['transportDone']=True;conn.close();save_state(path,state)
@@ -299,9 +338,10 @@ def operation(method,route,ledger,key,deadline,body=None):
     return path,thread
 
 
+@IO.contract('EVIDENCE_JSON','EVIDENCE_LEDGER')
 def wait_operation(pair,deadline):
     path,thread=pair;thread.join(max(0,deadline-time.monotonic()))
-    return json.loads(path.read_text())
+    return IO.read_json(path)
 
 
 def known(state):
@@ -320,12 +360,14 @@ def proc_identity_module():
     return load_component('p0-rooted-paths.INACTIVE.py')
 
 
+@IO.contract('PROC_STAT','HOST_PROC')
 def identity(pid,cg):
     value=proc_identity_module();st=os.stat(cg)
     return {'pid':pid,'starttime':value.starttime(pid),'cgroup':str(cg),
             'inode':[st.st_dev,st.st_ino]}
 
 
+@IO.contract('PROC_STAT','HOST_PROC')
 def same_identity(anchor):
     try:
         st=os.stat(anchor['cgroup'])
@@ -335,6 +377,7 @@ def same_identity(anchor):
     except Exception:return False
 
 
+@IO.contract('VERIFIER_CONTRACT','HOST_METADATA')
 def cleanup(cid,domain,ledger,container_deadline,host_deadline):
     began=time.monotonic()
     empty_deadline=min(host_deadline,container_deadline+2,began+2)
@@ -400,13 +443,19 @@ def reconcile(name,ledger,deadline,domain):
                 break
         time.sleep(min(.05,max(0,deadline-time.monotonic())))
     return {'result':'UNKNOWN','reason':'CUSTODY_MARGIN_ENDED',
-            'retainedParentNotCreditedAsEmpty':True,'residualVMTeardownObserved':False}
+            'retainedParentNotCreditedAsEmpty':True,'residualVMTeardownObserved':False,'operationEvidenceIncompleteReasons':[]}
+    failure_links=[]
 
 
 def acquire(deadline):
+    return IO.invoke('ENGINE_ACQUIRE','HOST_METADATA','MANAGER_CALL',lambda:_acquire(deadline))
 
 
-    closure=json.loads(Path(__file__).with_name('node-runtime-closure.INACTIVE.json').read_text())
+@IO.contract('ENGINE_ACQUIRE','HOST_METADATA')
+def _acquire(deadline):
+
+
+    closure=IO.read_json(Path(__file__).with_name('node-runtime-closure.INACTIVE.json'))
     require(closure['manifestDigest']==IMAGE.split('@')[1] and closure['compressedLayerBytes']==79426563,'CLOSED_IMAGE_METADATA_CHANGED')
     info=request('GET','/info',min(deadline,time.monotonic()+5))
     require(not info.get('RegistryConfig',{}).get('Mirrors'),'UNREVIEWED_REGISTRY_MIRROR')
@@ -449,11 +498,14 @@ def acquire(deadline):
     finally:conn.close()
 
 
-EVIDENCE_CATEGORIES=['ACQUIRED_CONFIG_DIGEST',
+EVIDENCE_CATEGORIES=['ABI_ABSENCE',
+ 'ACCESS',
+ 'ACQUIRED_CONFIG_DIGEST',
  'ACQUIRED_PLATFORM_REFERENCE',
  'ACQUIRED_ROOTFS_CLOSURE',
  'ACQUISITION',
  'ACQUISITION_UNKNOWN',
+ 'AFTER',
  'ALL',
  'ALREADY_LOCAL',
  'ANCESTOR_TIGHTER_',
@@ -464,11 +516,14 @@ EVIDENCE_CATEGORIES=['ACQUIRED_CONFIG_DIGEST',
  'AUDIT',
  'AUDIT_GATE_PID_CHANGED',
  'AUX_FLAGS',
+ 'BEFORE',
  'BLOCKED_IMAGE_NOT_LOCAL',
+ 'CGROUP_',
  'CGROUP_ANCHOR_CHANGED',
  'CGROUP_CHANGED_AFTER_EMPTY',
  'CGROUP_DESCRIPTOR_REPLACED',
  'CGROUP_FILE_TOO_LARGE',
+ 'CGROUP_INTERFACE',
  'CGROUP_KILL_PREFLIGHT_CAPABILITY_PENDING',
  'CGROUP_MEMBERSHIP_MISMATCH',
  'CGROUP_PATH_REPLACED',
@@ -481,6 +536,7 @@ EVIDENCE_CATEGORIES=['ACQUIRED_CONFIG_DIGEST',
  'CLOSED_IMAGE_METADATA_CHANGED',
  'CONTAINER_ID_INVALID',
  'CONTAINER_REMOVAL_UNPROVED',
+ 'CONTROLLER_CGROUP',
  'CONTROLLER_INSIDE_PARENT',
  'CONTROL_DEADLINE',
  'CONTROL_OR_AUDIT_UNVERIFIED',
@@ -491,11 +547,14 @@ EVIDENCE_CATEGORIES=['ACQUIRED_CONFIG_DIGEST',
  'DAEMON_VERSION_CHANGED',
  'DEADLINE_ALREADY_FIRED',
  'DEADLINE_FIRED',
+ 'DECLARED_METADATA',
  'DEFAULT_APPARMOR_NOT_PROVED',
  'DELETE',
  'DEVICE_IDENTITY',
  'DEVICE_VALIDATION',
+ 'DIAGNOSTIC_SHORT_WRITE',
  'DISAPPEARED_BEFORE_EMPTY_PROOF',
+ 'DOCKER_GENERATED_SOURCE',
  'DOCKER_STOP_STATE_UNPROVED',
  'DOMAIN_ARCH_UNSUPPORTED',
  'DOMAIN_CENSUS_BOUND',
@@ -515,24 +574,35 @@ EVIDENCE_CATEGORIES=['ACQUIRED_CONFIG_DIGEST',
  'EMPTY_RECEIPT_INVALID',
  'EMPTY_THEN_HOST_REMOVED',
  'EMPTY_WITHIN_CLEANUP_BUDGET',
+ 'ENGINE_ACQUIRE',
  'ENGINE_HTTP_',
  'ENGINE_HTTP_404',
+ 'ENGINE_INFO',
+ 'ENGINE_INSPECT',
+ 'ENGINE_OPERATION',
+ 'ENGINE_REQUEST',
+ 'ENGINE_VERSION',
  'ESCAPED_MOUNT_PATH',
  'EVIDENCE_DIRECTORY_CHANGED',
  'EVIDENCE_DIRECTORY_IDENTITY',
  'EVIDENCE_EXPORT_LIMIT',
+ 'EVIDENCE_FILE',
  'EVIDENCE_FILE_BOUND',
  'EVIDENCE_FILE_CHANGED',
  'EVIDENCE_FILE_IDENTITY',
+ 'EVIDENCE_LEDGER',
  'EVIDENCE_LEDGER_PATH',
  'EVIDENCE_OUTPUT_PATH',
  'EXECUTOR_CHANGED',
  'EXECUTOR_PREFLIGHT',
+ 'EXISTS',
  'EXTRA_OR_MISSING_HOST_FD',
+ 'FAILED',
  'FILESYSTEM_MISMATCH',
  'FINAL_DOMAIN_NOT_EMPTY',
  'FOREIGN_DOMAIN_NO_KILL',
  'FOREIGN_TASK_NO_KILL',
+ 'FSTAT',
  'GATE_ALREADY_EXPIRED',
  'GATE_CONFIG_CHANGED',
  'GATE_DEADLINE_EXCEEDED',
@@ -545,9 +615,13 @@ EVIDENCE_CATEGORIES=['ACQUIRED_CONFIG_DIGEST',
  'GET',
  'HOST_BOOKKEEPING_DEADLINE',
  'HOST_BOOKKEEPING_WITHIN_BUDGET',
+ 'HOST_CGROUP_NAMESPACE_UNPROVED',
+ 'HOST_FILE',
  'HOST_MANAGER_NAMESPACE_UNPROVED',
+ 'HOST_METADATA',
  'HOST_NAMESPACE',
  'HOST_OPERATION_DEADLINE',
+ 'HOST_PROC',
  'HOST_UNIFIED_ROOT_MOUNT_UNPROVED',
  'HOST_UNIFIED_WRITABLE_ROOT_MOUNT_UNPROVED',
  'HTTP_NON_SUCCESS',
@@ -577,13 +651,16 @@ EVIDENCE_CATEGORIES=['ACQUIRED_CONFIG_DIGEST',
  'INSPECT_MISMATCH_SecurityOpt',
  'INSPECT_MISMATCH_Tmpfs',
  'INVALID_CONTAINER_ID',
+ 'INVALID_DIAGNOSTIC_SCHEMA',
  'INVALID_SCHEMA',
  'IN_PROGRESS',
+ 'KILL_FEATURE_METADATA',
  'KILL_OPERATION_NONTERMINAL',
  'KNOWN_GATE_ONLY_NOT_LATE_ADMISSION',
  'LC_ALL',
  'LEDGER_UNAVAILABLE',
  'LIFECYCLE_UNCERTAIN_PARENT_RETAINED',
+ 'LISTDIR',
  'LIVE_CAPABILITY_',
  'LIVE_CAPABILITY_CapAmb',
  'LIVE_CAPABILITY_CapBnd',
@@ -597,13 +674,26 @@ EVIDENCE_CATEGORIES=['ACQUIRED_CONFIG_DIGEST',
  'LIVE_PID_CHANGED',
  'LIVE_SECURITY',
  'LOCAL_CONFIG_IDENTITY',
+ 'LOCAL_FILE',
  'LOCAL_IMAGE_IDENTITY',
  'LOCAL_IMAGE_READ_FAILED',
+ 'LOCAL_SOURCE',
+ 'LSTAT',
+ 'MANAGER',
+ 'MANAGER_CALL',
  'MANAGER_CALL_FAILED',
  'MANAGER_CALL_TIMEOUT_CAPABILITY_PENDING',
  'MANAGER_CHANGED_BEFORE_CREATE',
  'MANAGER_CLI_CAPABILITY_PENDING',
+ 'MANAGER_CONTRACT',
+ 'MANAGER_GET_UNIT',
+ 'MANAGER_OPERATION_NOT_IN_CONTRACT',
+ 'MANAGER_OTHER_REJECTED',
  'MANAGER_REPLY_BOUND',
+ 'MANAGER_START_TRANSIENT',
+ 'MANAGER_STOP_UNIT',
+ 'MANAGER_UNIT_STATE',
+ 'MANAGER_VERSION',
  'MANAGER_VERSION_UNPARSEABLE',
  'MASK_DEFAULTS_MISMATCH',
  'MASK_DIRECTORY_CAPACITY',
@@ -625,8 +715,10 @@ EVIDENCE_CATEGORIES=['ACQUIRED_CONFIG_DIGEST',
  'MOUNT_ID_OUTSIDE_GATE_TABLE',
  'MOUNT_RESOLUTION',
  'MOUNT_VALIDATION',
+ 'NATIVE_INTERFACE_FAILURE',
  'NONLOOPBACK_INTERFACE',
  'NONPRIVATE_MOUNT',
+ 'NONROOT_REQUIRED',
  'NOT_ESTABLISHED',
  'NOT_ROOTED_SYMLINK',
  'NOT_STARTED',
@@ -641,11 +733,23 @@ EVIDENCE_CATEGORIES=['ACQUIRED_CONFIG_DIGEST',
  'OCCUPANCY_UNPROVED',
  'OCCUPIED_EXCLUSIVE_GATE',
  'OMITTED_HOST_SOURCE',
+ 'OPEN',
  'OPENAT2_CAPABILITY_PENDING',
+ 'OPENAT2_IN_ROOT_NO_MAGICLINKS',
+ 'OPTIONAL_MASK_ENOENT',
+ 'OP_CONTRACT_FAILURE',
+ 'OP_EACCES',
+ 'OP_ENOENT',
+ 'OP_OSERROR',
+ 'OP_TIMEOUT',
+ 'OP_UNCLASSIFIED_FAILURE',
+ 'OP_VALUE_ERROR',
  'OWNED_ACTIVE_EMPTY',
  'OWNED_CGROUP_KILL_CAPABILITY_PENDING',
  'OWNED_DOMAIN_KILL_WRITTEN',
+ 'OWNED_PARENT',
  'OWNED_PARENT_REMOVED_AFTER_RECEIPT',
+ 'OWNED_SCOPE',
  'OWNED_UNIT_ALREADY_EXISTS',
  'OWNED_UNIT_IDENTITY_UNPROVED',
  'OWNED_UNIT_IDENTITY_VERIFIED',
@@ -654,6 +758,7 @@ EVIDENCE_CATEGORIES=['ACQUIRED_CONFIG_DIGEST',
  'P0_GATE_TASK_CENSUS',
  'P0_PREPARATION_ONLY',
  'P0_TECHNICAL_EVIDENCE',
+ 'PACKAGE_VERSION',
  'PARENT_CREATE',
  'PARENT_DESCRIPTOR_CHANGED',
  'PARENT_EMPTY_UNPROVED',
@@ -667,6 +772,7 @@ EVIDENCE_CATEGORIES=['ACQUIRED_CONFIG_DIGEST',
  'PARENT_RETENTION_LOST',
  'PASS',
  'PATH',
+ 'PIDFD',
  'PIDFD_CAPABILITY_PENDING',
  'PID_START_CHANGED',
  'POST',
@@ -674,6 +780,16 @@ EVIDENCE_CATEGORIES=['ACQUIRED_CONFIG_DIGEST',
  'PREPARATION_FREE_SPACE_LOW',
  'PREPARATION_MODE_REQUIRED',
  'PROCESS_ROOT_CHANGED',
+ 'PROC_CMDLINE',
+ 'PROC_COMM',
+ 'PROC_FD',
+ 'PROC_INTERFACE',
+ 'PROC_METADATA',
+ 'PROC_NET',
+ 'PROC_ROOT_ANCHOR',
+ 'PROC_SECURITY',
+ 'PROC_STAT',
+ 'PROC_STATUS',
  'PROC_SUBMOUNT_MISMATCH',
  'PSEUDO_SOURCE_MISMATCH',
  'PULL_ATTEMPT_DEADLINE',
@@ -683,21 +799,42 @@ EVIDENCE_CATEGORIES=['ACQUIRED_CONFIG_DIGEST',
  'PULL_PROGRESS_LIMIT',
  'PULL_TERMINAL_ERROR',
  'PULL_TERMINAL_VERIFIED',
+ 'READLINK',
+ 'READ_BYTES',
+ 'READ_FD',
+ 'READ_TEXT',
  'REMOVE_OPERATION_UNCERTAIN',
  'REQUIRED_CONTROLLERS_MISSING',
+ 'ROOTED_CONTAINER',
  'ROOTED_DIRECTORY_TOO_LARGE',
  'ROOTED_ENOENT',
+ 'ROOTED_LOOKUP',
  'ROOTED_MAGICLINK_OR_SYMLINK_LOOP_BLOCKED',
  'ROOTED_OBJECT_FOUND',
+ 'ROOTED_OPENAT2',
  'ROOTED_OPEN_FAILED',
+ 'ROOTED_PATH',
  'ROOTED_PATH_INVALID',
  'ROOTED_SYSCALL_ARCH_UNSUPPORTED',
+ 'ROOT_ABI_EXEMPT',
+ 'ROOT_ABI_EXEMPT_FIELD_REJECTED',
+ 'ROOT_CONTROLLERS',
  'ROOT_DESCRIPTOR_CHANGED',
+ 'ROOT_EXEMPT',
+ 'ROOT_INODE',
+ 'ROOT_INTERFACE_ABI_INVALID',
+ 'ROOT_MOUNTINFO',
+ 'ROOT_NAMESPACE',
  'ROOT_OR_UNSAFE_CGROUP',
  'ROOT_PID_CHANGED',
  'ROOT_PID_EXITED',
+ 'ROOT_REQUIRED',
+ 'ROOT_SPECIAL',
+ 'ROOT_SPECIAL_NOT_DOMAIN',
+ 'ROOT_SUBTREE_CONTROL',
  'RUNTIME_VERSION_CHANGED',
  'SC_CLK_TCK',
+ 'SELF_CGROUP',
  'SHARED_CHANGED_AFTER_CREATE',
  'SHARED_CHANGED_AFTER_STOP',
  'SHARED_CHANGED_BEFORE_CREATE',
@@ -710,18 +847,24 @@ EVIDENCE_CATEGORIES=['ACQUIRED_CONFIG_DIGEST',
  'SHARED_NAMESPACE_pid',
  'SHARED_NAMESPACE_uts',
  'SHARED_STATE_CHANGED',
+ 'SOCKET_ENOENT',
  'SOCKET_EXPOSED',
  'SOCKET_OBJECT_PRESENT_ROOTED',
  'START',
  'START_ALREADY_ARMED',
  'START_UNCERTAIN',
+ 'STAT',
  'STATIC_ALLOWLIST_ONLY_LIVE_UNVERIFIED',
+ 'STATVFS',
  'STOP_PARENT_NOT_EMPTY',
  'STOP_WITHOUT_TERMINAL_RECEIPT',
+ 'SYSCONF',
  'SYSTEMD_EXACT_VERSION_CAPABILITY_PENDING',
  'SYSTEMD_PACKAGE_MANAGER_VERSION_MISMATCH',
  'TRANSPORT_OR_RESPONSE_UNCERTAIN',
+ 'UNAME',
  'UNCLASSIFIED',
+ 'UNCLASSIFIED_INSTRUMENT_FAILURE',
  'UNEXPECTED_HOST_EXPOSURE_',
  'UNEXPECTED_HOST_EXPOSURE_Binds',
  'UNEXPECTED_HOST_EXPOSURE_CapAdd',
@@ -743,6 +886,7 @@ EVIDENCE_CATEGORIES=['ACQUIRED_CONFIG_DIGEST',
  'UNKNOWN_DEVICE_ENTRY',
  'UNKNOWN_DEVICE_SYMLINK',
  'UNKNOWN_FS',
+ 'UNKNOWN_OPERATION',
  'UNKNOWN_SUBMOUNT',
  'UNPROVED_MOUNT_TOPOLOGY',
  'UNREADABLE_OR_INVALID',
@@ -750,6 +894,8 @@ EVIDENCE_CATEGORIES=['ACQUIRED_CONFIG_DIGEST',
  'UNREVIEWED_REGISTRY_MIRROR',
  'UNSAFE_CGROUP',
  'UNSAFE_KILL_DOMAIN',
+ 'VERIFIER_ONLY_NOT_CONTAINMENT',
+ 'VERIFIER_OPERATION_DIAGNOSTICS',
  'WATCHER',
  'WATCH_ANCHOR_CHANGED',
  'WORK_CAPACITY_OPTIONS',
@@ -758,19 +904,34 @@ EVIDENCE_CATEGORIES=['ACQUIRED_CONFIG_DIGEST',
  'WORK_STATFS_CAPACITY',
  'WORK_VALIDATION',
  'WRITABLE_AUXILIARY',
+ 'WRITE_FD',
  'create',
  'image-remove',
  'kill',
  'remove',
  'start']
 
-def export_sanitized(destination):
-    require(destination=='/tmp/p0-sanitized-receipt.json','EVIDENCE_OUTPUT_PATH')
+def export_operation_diagnostics(names,load):
+    # The synthetic verifier controls exercise this exact export attachment path.
+    return {'interfaceOperations':IO.project_operation_files(names,load)}
+
+
+def export_sanitized(destination, *, evidence_root='/tmp'):
+    # Only exporter-thread reads are suspended. Other worker threads keep their
+    # journals; exporting must not create a gap in concurrent source diagnostics.
+    with IO.suspended():return _export_sanitized(destination,evidence_root=evidence_root)
+
+
+def _export_sanitized(destination, *, evidence_root):
+    require(Path(destination)==Path(evidence_root)/'p0-sanitized-receipt.json','EVIDENCE_OUTPUT_PATH')
     output={'schemaVersion':1,'kind':'P0_TECHNICAL_EVIDENCE','payloadReleased':False,
             'image':IMAGE,'independentGateDeadlineEnforcement':'NOT_ESTABLISHED',
-            'residualVMTeardownObserved':False}
+            'residualVMTeardownObserved':False,'operationEvidenceIncompleteReasons':[]}
+    failure_links=[]
     def category(value):
-        return value if isinstance(value,str) and value in EVIDENCE_CATEGORIES else 'UNCLASSIFIED'
+        if isinstance(value,str) and value in EVIDENCE_CATEGORIES:return value
+        output['unclassifiedCategoryPresent']=True
+        return 'UNCLASSIFIED'
     def scalar(value):
         return value if isinstance(value,(bool,int,float)) or value is None else None
     def technical_path(value):
@@ -780,6 +941,9 @@ def export_sanitized(destination):
     def record(value):
         if not isinstance(value,dict):return {'state':'INVALID_SCHEMA'}
         result={}
+        link=value.get('failureReference')
+        if isinstance(link,dict) and set(link)=={'writerPid','callId'} and all(type(link[k]) is int and link[k]>0 for k in link):
+            result['failureReference']={k:link[k] for k in ('writerPid','callId')}
         for key in ('transportDone','responseObserved','daemonOutcomeKnown','daemonOperationTerminal',
                     'httpStatus','emptyObservedBeforeDisappearance','emptyCensusObserved','containerRemoved',
                     'deadlineExceeded','noMutationStarted','progressBytes','initialFreeBytes',
@@ -804,7 +968,7 @@ def export_sanitized(destination):
         for key in ('result','reason','failure','error','category','stage','operation','compatibility','independentGateDeadlineEnforcement','emptyPhaseResult','hostBookkeepingResult'):
             if key in value:result[key]=category(value[key])
         prop=value.get('property')
-        if isinstance(prop,dict):
+        if isinstance(prop,dict) and prop:
             result['property']={'checkCode':category(prop.get('checkCode'))}
             for k in ('actual','expected'):
                 v=prop.get(k)
@@ -830,7 +994,9 @@ def export_sanitized(destination):
                     result['shared'][field+'HasUnknown']=any(v not in allowed_controllers for v in source)
             result['shared']['limits']=record({'limits':shared.get('limits',{})}).get('limits',{})
             result['shared']['rootLimitAbsent']=[key for key,val in shared.get('limits',{}).items() if key in ('memory.max','memory.swap.max','pids.max','cpu.max') and val is None]
-            result['shared']['type']=shared.get('type') if shared.get('type')=='domain' else 'UNCLASSIFIED'
+            result['shared']['type']=shared.get('type') if shared.get('type')=='ROOT_SPECIAL' else 'UNCLASSIFIED'
+            result['shared']['rootExemptInterfaces']=[key for key,val in shared.get('limits',{}).items() if key in ('memory.max','memory.swap.max','pids.max','cpu.max') and val=='ROOT_EXEMPT']
+            result['shared']['namespaceMatched']=shared.get('namespaceMatched') is True
         if 'exceptionClass' in value:
             result['exceptionClass']=value['exceptionClass'] if value['exceptionClass'] in ('RuntimeError','PermissionError','FileNotFoundError','TimeoutError','KeyError','ValueError','OSError','ProcessLookupError') else 'OtherException'
         if 'target' in value:result['target']=technical_path(value['target'])
@@ -875,10 +1041,10 @@ def export_sanitized(destination):
         finally:os.close(fd)
     tmp=None;directory=None
     try:
-        tmp=os.open('/tmp',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
+        tmp=os.open(evidence_root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
         locator=read_file(tmp,'p0-ledger-location.json')
         path=Path(locator['directory'])
-        require(path.parent==Path('/tmp') and re.fullmatch('silhouette-p0-[0-9]+-[0-9]+',path.name),'EVIDENCE_LEDGER_PATH')
+        require(path.parent==Path(evidence_root) and re.fullmatch('silhouette-p0-[0-9]+-[0-9]+',path.name),'EVIDENCE_LEDGER_PATH')
         directory=os.open(path.name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC,dir_fd=tmp)
         anchor=os.fstat(directory)
         require(anchor.st_uid==0 and stat.S_IMODE(anchor.st_mode)==0o700,'EVIDENCE_DIRECTORY_IDENTITY')
@@ -891,11 +1057,14 @@ def export_sanitized(destination):
         for name in names:
             try:
                 value=read_file(directory,name+'.json')
+                if name in ('failure','observer-failure','watcher-failure') or value.get('failureReference') is not None:failure_links.append(value.get('failureReference'))
                 if name=='executor':
                     output['files'][name]={k:v for k,v in value.items() if k in ('daemonVersion','daemonCommit','apiVersion','runcVersion','containerdVersion','cgroupVersion','cgroupDriver','defaultRuntime') and isinstance(v,str) and re.fullmatch('[A-Za-z0-9_.-]{1,64}',v)}
                 else:output['files'][name]=record(value)
             except FileNotFoundError:output['files'][name]={'state':'NOT_WRITTEN'}
-            except Exception:output['files'][name]={'state':'UNREADABLE_OR_INVALID'}
+            except Exception:
+                output['files'][name]={'state':'UNREADABLE_OR_INVALID'}
+                output['operationEvidenceIncompleteReasons'].append('EVIDENCE_FILE_UNREADABLE_OR_INVALID')
         monitors=output['files'].get('monitors',{})
         for role,key in (('controller','controllerPid'),('observer','observerPid'),('watcher','watcherPid')):
             pid=monitors.get(key)
@@ -903,9 +1072,12 @@ def export_sanitized(destination):
                 try:output['files']['domain-kill-'+role]=record(read_file(directory,'domain-kill-'+str(pid)+'.json'))
                 except FileNotFoundError:output['files']['domain-kill-'+role]={'state':'NOT_WRITTEN'}
                 except Exception:output['files']['domain-kill-'+role]={'state':'UNREADABLE_OR_INVALID'}
+        output.update(export_operation_diagnostics(os.listdir(directory),lambda name:read_file(directory,name)))
         after=os.fstat(directory)
         require((anchor.st_dev,anchor.st_ino)==(after.st_dev,after.st_ino),'EVIDENCE_DIRECTORY_CHANGED')
-    except Exception:output['evidenceState']='LEDGER_UNAVAILABLE'
+    except Exception:
+        output['evidenceState']='LEDGER_UNAVAILABLE'
+        output['operationEvidenceIncompleteReasons'].append('LEDGER_UNAVAILABLE')
     finally:
         if directory is not None:os.close(directory)
         if tmp is not None:os.close(tmp)
@@ -916,9 +1088,19 @@ def export_sanitized(destination):
         files.get('deadline-fired',{}).get('state')=='NOT_WRITTEN' and
         files.get('monitors',{}).get('outside') is True):
         output['independentGateDeadlineEnforcement']='KNOWN_GATE_ONLY_NOT_LATE_ADMISSION'
+    diagnostic=output.get('interfaceOperations',{})
+    references=diagnostic.get('failureReferences',[])
+    for link in failure_links:
+        if not isinstance(link,dict) or link not in references:
+            output['operationEvidenceIncompleteReasons'].append('DECISIVE_FAILURE_UNRESOLVED')
+    if files.get('final',{}).get('failure') and files.get('failure',{}).get('state')=='NOT_WRITTEN':
+        output['operationEvidenceIncompleteReasons'].append('DECISIVE_FAILURE_FILE_MISSING')
+    if output.get('unclassifiedCategoryPresent',False):output['operationEvidenceIncompleteReasons'].append('UNCLASSIFIED_CATEGORY')
+    if not diagnostic.get('operationEvidenceComplete'):output['operationEvidenceIncompleteReasons'].append('INTERFACE_DIAGNOSTICS_INCOMPLETE')
+    output['operationEvidenceComplete']=not output['operationEvidenceIncompleteReasons']
     raw=json.dumps(output,sort_keys=True,indent=2)+'\n'
     require(len(raw.encode())<=262144,'EVIDENCE_EXPORT_LIMIT')
-    tmp=os.open('/tmp',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
+    tmp=os.open(evidence_root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
     try:
         fd=os.open('p0-sanitized-receipt.json',os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_CLOEXEC,0o644,dir_fd=tmp)
         try:
@@ -939,6 +1121,7 @@ def preparation_candidate(*, receipt, acquire_fixed_image=False):
     name='silhouette-p0-'+str(os.getpid())+'-'+str(time.monotonic_ns())
     ledger=Path('/tmp')/name;ledger.mkdir(mode=0o700)
     save_state('/tmp/p0-ledger-location.json',{'directory':str(ledger)})
+    IO.configure(ledger)
     cid=None;anchor=None;domain=None;pre=None
     try:
         save_state(ledger/'phase.json',{'stage':'EXECUTOR_PREFLIGHT'})
@@ -992,7 +1175,7 @@ def preparation_candidate(*, receipt, acquire_fixed_image=False):
         occupied=domain.await_occupied(s['Pid'],start_end)
         cg=live_cgroup(s['Pid'])
         require(cg==domain.path/('docker-'+cid+'.scope'),'GATE_OUTSIDE_OWNED_PARENT')
-        dispatch=json.loads((ledger/'start-armed.json').read_text())
+        dispatch=IO.read_json(ledger/'start-armed.json')
         gate_bound=min(occupied['gateDeadlineBoottime'],dispatch['dispatchDeadlineBoottime'])
         container_end=min(host_end,time.monotonic()+max(0,gate_bound-time.clock_gettime(time.CLOCK_BOOTTIME)))
         anchor=identity(s['Pid'],cg);save_state(ledger/'identity.json',anchor)
@@ -1018,7 +1201,9 @@ def preparation_candidate(*, receipt, acquire_fixed_image=False):
         result['result']='PASS'
     except Exception as error:
         category=str(error)
-        save_state(ledger/'failure.json',{'stage':json.loads((ledger/'phase.json').read_text()).get('stage'),'exceptionClass':type(error).__name__,'category':category,'property':FAILURE_CONTEXT})
+        if not re.fullmatch('[A-Z][A-Z0-9_]*',category):
+            category='NATIVE_INTERFACE_FAILURE' if IO.recorder and IO.recorder.state['failureCount'] else 'UNCLASSIFIED_INSTRUMENT_FAILURE'
+        save_state(ledger/'failure.json',{'stage':IO.read_json(ledger/'phase.json').get('stage'),'exceptionClass':type(error).__name__,'category':category,'property':FAILURE_CONTEXT,'failureReference':IO.failure_reference(error)})
         result['failure']=category if re.fullmatch('[A-Z][A-Z0-9_]*',category) else 'CONTROL_OR_AUDIT_UNVERIFIED'
         mutations=bool(domain and domain.create_issued) or any((ledger/(key+'.json')).exists() for key in ('create','start','image-remove','acquisition'))
         if mutations:result['custody']=reconcile(name,ledger,custody_end,domain)

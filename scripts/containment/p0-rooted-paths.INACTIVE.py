@@ -5,6 +5,19 @@ import os
 from pathlib import PurePosixPath
 import platform
 import stat
+# Shared operation journal singleton across separately loaded inactive components.
+import importlib.util as _iu
+import sys as _sys
+from pathlib import Path as _SourcePath
+if '_p0_interface_contracts' not in _sys.modules:
+    _spec=_iu.spec_from_file_location('_p0_interface_contracts',_SourcePath(__file__).with_name('p0-interface-contracts.INACTIVE.py'))
+    _module=_iu.module_from_spec(_spec)
+    _sys.modules['_p0_interface_contracts']=_module
+    _spec.loader.exec_module(_module)
+IO=_sys.modules['_p0_interface_contracts']
+Path=IO.Path
+os=IO.os
+
 
 
 def need(ok, code):
@@ -12,10 +25,10 @@ def need(ok, code):
         raise RuntimeError(code)
 
 
+@IO.contract('PROC_STAT','HOST_PROC')
 def starttime(pid):
-    with open('/proc/%d/stat' % pid) as stream:
-        raw = stream.read()
-    return int(raw[raw.rfind(')') + 2:].split()[19])
+    raw = Path('/proc/%d/stat' % pid).read_text()
+    return IO.proc_starttime(raw,pid)
 
 
 class OpenHow(ctypes.Structure):
@@ -25,7 +38,7 @@ class OpenHow(ctypes.Structure):
 
 class Root:
     def __init__(self, pid, expected_start):
-        need(platform.machine() == 'x86_64', 'ROOTED_SYSCALL_ARCH_UNSUPPORTED')
+        need(os.uname().machine == 'x86_64', 'ROOTED_SYSCALL_ARCH_UNSUPPORTED')
         self.pid, self.start = pid, expected_start
         self.pidfd = os.pidfd_open(pid)
         self.fd = None
@@ -48,6 +61,7 @@ class Root:
         value = os.fstat(fd)
         return value.st_dev, value.st_ino
 
+    @IO.contract('PROC_ROOT_ANCHOR','HOST_PROC')
     def check(self):
         import select
         need(not select.select([self.pidfd], [], [], 0)[0], 'ROOT_PID_EXITED')
@@ -64,17 +78,18 @@ class Root:
         how = OpenHow(flags | os.O_CLOEXEC, 0, 0x10 | 0x02)
         libc = ctypes.CDLL(None, use_errno=True)
         libc.syscall.restype = ctypes.c_long
-        fd = libc.syscall(ctypes.c_long(437), ctypes.c_int(self.fd),
-                          ctypes.c_char_p(os.fsencode(value)), ctypes.byref(how),
-                          ctypes.c_size_t(ctypes.sizeof(how)))
-        if fd < 0:
-            code = ctypes.get_errno()
+        def resolve():
+            result=libc.syscall(ctypes.c_long(437),ctypes.c_int(self.fd),
+                ctypes.c_char_p(os.fsencode(value)),ctypes.byref(how),
+                ctypes.c_size_t(ctypes.sizeof(how)))
+            if result<0:raise OSError(ctypes.get_errno(),'ROOTED_OPEN_FAILED')
+            return result
+        try:
+            fd=IO.invoke('ROOTED_PATH','ROOTED_CONTAINER','ROOTED_OPENAT2',resolve,{'subjectPid':getattr(self,'pid',0),'descriptor':self.fd})
+        except OSError:
             self.check()
-            if code in (errno.ENOSYS, errno.EINVAL, errno.E2BIG):
-                raise RuntimeError('OPENAT2_CAPABILITY_PENDING')
-            if code == errno.ELOOP:
-                raise RuntimeError('ROOTED_MAGICLINK_OR_SYMLINK_LOOP_BLOCKED')
-            raise OSError(code, 'ROOTED_OPEN_FAILED')
+            raise
+        IO.fd_classes[fd]=('ROOTED_PATH','ROOTED_CONTAINER')
         try:
             self.check()
             return fd

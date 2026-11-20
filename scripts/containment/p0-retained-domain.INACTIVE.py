@@ -1,5 +1,5 @@
 """Inactive retained host-owned cgroup domain, never an application release path.
-Only the exact upstream systemd version reviewed here is admitted. Other builds
+Only the exact downstream systemd package version reviewed here is admitted. Other builds
 are CAPABILITY_PENDING, not product failures. No controller enabling on shared
 ancestors or fallback runtime is implemented.
 """
@@ -13,6 +13,19 @@ import signal
 import stat
 import subprocess
 import time
+
+# Shared operation journal singleton across separately loaded inactive components.
+import importlib.util as _iu
+import sys as _sys
+from pathlib import Path as _SourcePath
+if '_p0_interface_contracts' not in _sys.modules:
+    _spec=_iu.spec_from_file_location('_p0_interface_contracts',_SourcePath(__file__).with_name('p0-interface-contracts.INACTIVE.py'))
+    _module=_iu.module_from_spec(_spec)
+    _sys.modules['_p0_interface_contracts']=_module
+    _spec.loader.exec_module(_module)
+IO=_sys.modules['_p0_interface_contracts']
+Path=IO.Path
+os=IO.os
 
 MEM = 134217728
 LIMITS = {'memory.max': str(MEM), 'memory.swap.max': '0',
@@ -54,6 +67,7 @@ MONITOR_REASON_CODES=frozenset(['CGROUP_KILL_PREFLIGHT_CAPABILITY_PENDING',
  'GATE_PID_REPLACED',
  'GATE_PLACEMENT_UNPROVED',
  'HOST_BOOKKEEPING_DEADLINE',
+ 'HOST_CGROUP_NAMESPACE_UNPROVED',
  'HOST_MANAGER_NAMESPACE_UNPROVED',
  'HOST_OPERATION_DEADLINE',
  'HOST_UNIFIED_WRITABLE_ROOT_MOUNT_UNPROVED',
@@ -61,11 +75,20 @@ MONITOR_REASON_CODES=frozenset(['CGROUP_KILL_PREFLIGHT_CAPABILITY_PENDING',
  'IN_PROGRESS',
  'LC_ALL',
  'LIFECYCLE_UNCERTAIN_PARENT_RETAINED',
+ 'MANAGER',
+ 'MANAGER_CALL',
  'MANAGER_CALL_FAILED',
  'MANAGER_CALL_TIMEOUT_CAPABILITY_PENDING',
  'MANAGER_CHANGED_BEFORE_CREATE',
  'MANAGER_CLI_CAPABILITY_PENDING',
+ 'MANAGER_GET_UNIT',
+ 'MANAGER_OPERATION_NOT_IN_CONTRACT',
+ 'MANAGER_OTHER_REJECTED',
  'MANAGER_REPLY_BOUND',
+ 'MANAGER_START_TRANSIENT',
+ 'MANAGER_STOP_UNIT',
+ 'MANAGER_UNIT_STATE',
+ 'MANAGER_VERSION',
  'MANAGER_VERSION_UNPARSEABLE',
  'MONITOR_DIED_BEFORE_START',
  'MONITOR_INSIDE_PARENT',
@@ -85,6 +108,7 @@ MONITOR_REASON_CODES=frozenset(['CGROUP_KILL_PREFLIGHT_CAPABILITY_PENDING',
  'OWNED_UNIT_IDENTITY_UNPROVED',
  'OWNED_UNIT_IDENTITY_VERIFIED',
  'OWNED_UNIT_NOT_ACTIVE',
+ 'PACKAGE_VERSION',
  'PARENT_DESCRIPTOR_CHANGED',
  'PARENT_EMPTY_UNPROVED',
  'PARENT_EVENTS_INVALID',
@@ -98,6 +122,7 @@ MONITOR_REASON_CODES=frozenset(['CGROUP_KILL_PREFLIGHT_CAPABILITY_PENDING',
  'PATH',
  'PIDFD_CAPABILITY_PENDING',
  'REQUIRED_CONTROLLERS_MISSING',
+ 'ROOT_SPECIAL',
  'SC_CLK_TCK',
  'SHARED_CHANGED_AFTER_CREATE',
  'SHARED_CHANGED_AFTER_STOP',
@@ -161,13 +186,30 @@ def readat(fd, name):
         os.close(child)
 
 
-def command(argv, allowed=(0,), deadline=None):
+def command(argv,allowed=(0,),deadline=None):
+    op=('PACKAGE_VERSION' if argv[0]=='dpkg-query' else 'MANAGER_UNIT_STATE' if argv[0]=='systemctl' else
+        'MANAGER_VERSION' if 'Version' in argv else 'MANAGER_GET_UNIT' if 'GetUnit' in argv else
+        'MANAGER_START_TRANSIENT' if 'StartTransientUnit' in argv else
+        'MANAGER_STOP_UNIT' if 'StopUnit' in argv else 'MANAGER_OTHER_REJECTED')
+    with IO.envelope(op,'MANAGER'):
+        return _command(argv,allowed,deadline)
+
+
+def _command(argv, allowed=(0,), deadline=None):
     remaining = 2 if deadline is None else deadline-time.monotonic()
     need(remaining>0, 'HOST_OPERATION_DEADLINE')
     try:
-        result = subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, timeout=min(2,remaining), check=False,
-                                env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C'})
+        op=('PACKAGE_VERSION' if argv[0]=='dpkg-query' else
+            'MANAGER_UNIT_STATE' if argv[0]=='systemctl' else
+            'MANAGER_VERSION' if 'Version' in argv else
+            'MANAGER_GET_UNIT' if 'GetUnit' in argv else
+            'MANAGER_START_TRANSIENT' if 'StartTransientUnit' in argv else
+            'MANAGER_STOP_UNIT' if 'StopUnit' in argv else 'MANAGER_OTHER_REJECTED')
+        need(op!='MANAGER_OTHER_REJECTED','MANAGER_OPERATION_NOT_IN_CONTRACT')
+        result=IO.invoke(op,'MANAGER','MANAGER_CALL',lambda:subprocess.run(
+            argv,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
+            timeout=min(2,remaining),check=False,
+            env={'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','LC_ALL':'C'}))
     except FileNotFoundError:
         raise RuntimeError('MANAGER_CLI_CAPABILITY_PENDING') from None
     except subprocess.TimeoutExpired:
@@ -186,6 +228,7 @@ def bus(method, signature=None, *args, deadline=None):
     return command(argv,deadline=deadline)
 
 
+@IO.contract('MANAGER_VERSION','MANAGER')
 def manager_version(deadline=None):
     out = command(['busctl', '--system', '--timeout=1s', 'get-property', SERVICE,
                    MANAGER_PATH, MANAGER_IFACE, 'Version'],deadline=deadline)
@@ -194,6 +237,7 @@ def manager_version(deadline=None):
     return parts[1]
 
 
+@IO.contract('MANAGER_UNIT_STATE','MANAGER')
 def unit_state(name,deadline=None):
     props = ('Id', 'LoadState', 'ActiveState', 'SubState', 'Transient', 'InvocationID',
              'ControlGroup', 'StopWhenUnneeded', 'Slice')
@@ -206,34 +250,53 @@ def unit_state(name,deadline=None):
     return result
 
 
-def shared_snapshot(require_all=True):
-    need(ROOT.is_dir() and not ROOT.is_symlink(), 'CGROUP_ROOT_UNAVAILABLE')
+@IO.contract('ROOT_MOUNTINFO','HOST_PROC')
+def validate_root_mount():
     mount_rows = []
     for line in Path('/proc/self/mountinfo').read_text().splitlines():
         left, right = line.split(' - ', 1)
         fields = left.split()
+        need(len(fields)>=6 and len(right.split())>=3,'HOST_UNIFIED_WRITABLE_ROOT_MOUNT_UNPROVED')
         if fields[4] == str(ROOT):
             mount_rows.append((fields[3], right.split()[0], fields[5]))
     need(len(mount_rows)==1 and mount_rows[0][:2] == ('/', 'cgroup2') and
          'rw' in mount_rows[0][2].split(','), 'HOST_UNIFIED_WRITABLE_ROOT_MOUNT_UNPROVED')
-    need(text(ROOT / 'cgroup.type') == 'domain', 'CGROUP_ROOT_NOT_DOMAIN')
-    controllers = set(text(ROOT / 'cgroup.controllers').split())
-    enabled = set(text(ROOT / 'cgroup.subtree_control').split())
-    if require_all:
-        need({'cpu', 'memory', 'pids'} <= controllers, 'REQUIRED_CONTROLLERS_MISSING')
-        need(controllers <= enabled, 'SHARED_CONTROLLERS_NOT_ALREADY_ENABLED')
+
+
+@IO.contract('ROOT_NAMESPACE','HOST_PROC')
+def validate_root_namespaces():
+    namespaces=[os.readlink('/proc/%s/ns/cgroup'%v) for v in ('1','self')]
+    need(namespaces[0]==namespaces[1] and re.fullmatch(r'cgroup:\[[0-9]+\]',namespaces[0]),'HOST_CGROUP_NAMESPACE_UNPROVED')
+
+
+def root_controllers(require_all):
+    with IO.envelope('ROOT_CONTROLLERS','ROOT_SPECIAL'):
+        controllers=set(text(ROOT/'cgroup.controllers').split())
+        need(all(re.fullmatch('[a-z][a-z0-9_]*',v) for v in controllers),'REQUIRED_CONTROLLERS_MISSING')
+        if require_all:need({'cpu','memory','pids'}<=controllers,'REQUIRED_CONTROLLERS_MISSING')
+    with IO.envelope('ROOT_SUBTREE_CONTROL','ROOT_SPECIAL'):
+        enabled=set(text(ROOT/'cgroup.subtree_control').split())
+        need(all(re.fullmatch('[a-z][a-z0-9_]*',v) for v in enabled),'SHARED_CONTROLLERS_NOT_ALREADY_ENABLED')
+        if require_all:need(controllers<=enabled,'SHARED_CONTROLLERS_NOT_ALREADY_ENABLED')
+    return controllers,enabled
+
+
+@IO.contract('VERIFIER_CONTRACT','ROOT_SPECIAL')
+def shared_snapshot(require_all=True):
+    need(ROOT.is_dir() and not ROOT.is_symlink(), 'CGROUP_ROOT_UNAVAILABLE')
+    validate_root_mount()
+    validate_root_namespaces()
+    controllers,enabled=root_controllers(require_all)
     rootstat = ROOT.stat()
-    limits = {}
-    for key in LIMITS:
-        try:
-            limits[key] = text(ROOT / key)
-        except FileNotFoundError:
-            limits[key] = None  # Root resource controls are kernel-special.
-    return {'controllers': sorted(controllers), 'enabled': sorted(enabled),
-            'limits': limits, 'inode': [rootstat.st_dev, rootstat.st_ino],
-            'type': text(ROOT / 'cgroup.type')}
+    limits={key:IO.absence(key) for key in LIMITS}
+    # Kernel CFTYPE_NOT_ON_ROOT: no read/probe/fabrication of root type/events/kill.
+    for field in ('cgroup.type','cgroup.events','cgroup.kill'):IO.absence(field)
+    return {'controllers':sorted(controllers),'enabled':sorted(enabled),
+            'limits':limits,'inode':[rootstat.st_dev,rootstat.st_ino],
+            'type':'ROOT_SPECIAL','namespaceMatched':True}
 
 
+@IO.contract('VERIFIER_CONTRACT','HOST_METADATA')
 def preflight(ledger,deadline):
     need(os.geteuid() == 0, 'DOMAIN_HOST_ROOT_REQUIRED')
     version = manager_version(deadline)
@@ -274,15 +337,26 @@ def preflight(ledger,deadline):
     return result
 
 
+@IO.contract('PROC_STAT','HOST_PROC')
 def starttime(pid):
     raw = text('/proc/%d/stat' % pid)
-    return int(raw[raw.rfind(')') + 2:].split()[19])
+    return IO.proc_starttime(raw,pid)
 
 
+@IO.contract('SELF_CGROUP','HOST_PROC')
 def membership(pid):
     value = text('/proc/%d/cgroup' % pid)
     need(value.startswith('0::/') and '\n' not in value, 'DOMAIN_MEMBERSHIP_INVALID')
     return value[3:]
+
+
+@IO.contract('CGROUP_CGROUP_EVENTS','OWNED_PARENT')
+def parse_events(raw):
+    pairs=[line.split() for line in raw.splitlines()]
+    need(all(len(pair)==2 for pair in pairs),'PARENT_EVENTS_INVALID')
+    values=dict(pairs)
+    need(len(values)==len(pairs) and values.get('populated') in ('0','1'),'PARENT_EVENTS_INVALID')
+    return int(values['populated'])
 
 
 def outside(pid, relative):
@@ -290,6 +364,7 @@ def outside(pid, relative):
     return value != relative and not value.startswith(relative + '/')
 
 
+@IO.contract('CGROUP_INTERFACE','OWNED_PARENT')
 def census(directory):
     """A disappearing child invalidates this sample, never becomes empty by omission."""
     processes, threads, directories = set(), set(), []
@@ -332,6 +407,7 @@ class Domain:
         self.watch = None
         self.observer = None
 
+    @IO.contract('MANAGER_START_TRANSIENT','MANAGER')
     def create(self):
         need(manager_version(self.host_deadline) == self.pre['managerVersion'], 'MANAGER_CHANGED_BEFORE_CREATE')
         need(shared_snapshot() == self.pre['shared'], 'SHARED_CHANGED_BEFORE_CREATE')
@@ -393,11 +469,13 @@ class Domain:
             'cgroupDeviceInode': self.anchor, 'limits': LIMITS,
             'initialEmptyIsFinalReceipt': False})
 
+    @IO.contract('CGROUP_INTERFACE','OWNED_PARENT')
     def check(self):
         need(self.fd is not None and ident(self.fd) == self.anchor, 'PARENT_DESCRIPTOR_CHANGED')
         st = self.path.stat()
         need([st.st_dev, st.st_ino] == self.anchor, 'PARENT_PATH_REPLACED')
 
+    @IO.contract('MANAGER_GET_UNIT','MANAGER')
     def manager_check(self,deadline=None):
         deadline=self.host_deadline if deadline is None else min(deadline,self.host_deadline)
         need(time.monotonic()<deadline,'HOST_OPERATION_DEADLINE')
@@ -410,11 +488,11 @@ class Domain:
              state.get('Id') == self.name and state.get('Transient') == 'yes' and
              state.get('StopWhenUnneeded') == 'no', 'PARENT_RETENTION_LOST')
 
+    @IO.contract('CGROUP_CGROUP_EVENTS','OWNED_PARENT')
     def populated(self):
-        values = dict(line.split() for line in readat(self.fd, 'cgroup.events').splitlines())
-        need(values.get('populated') in ('0', '1'), 'PARENT_EVENTS_INVALID')
-        return int(values['populated'])
+        return parse_events(readat(self.fd,'cgroup.events'))
 
+    @IO.contract('CGROUP_CGROUP_KILL','OWNED_PARENT')
     def kill(self):
         self.check()
         need(self.relative == '/' + self.name and self.path.parent == ROOT and
@@ -453,10 +531,12 @@ class Domain:
         need(re.fullmatch('[a-f0-9]{64}', cid), 'CONTAINER_ID_INVALID')
         self.cid = cid
         self.expected_scope = '/docker-' + cid + '.scope'
+        reservations=IO.expect_monitors()
         for role in ('observer', 'watcher'):
             r, w = os.pipe()
             child = os.fork()
             if child == 0:
+                IO.bind_writer(self.ledger,role,reservations[role]['writerNonce'])
                 os.close(r)
                 exitcode = 0
                 try:
@@ -477,6 +557,7 @@ class Domain:
                     if reason not in MONITOR_REASON_CODES:
                         reason='MONITOR_OS_ERROR' if isinstance(error,OSError) else 'MONITOR_UNCLASSIFIED_FAILURE'
                     evidence={'result':'UNKNOWN','exceptionClass':type(error).__name__,
+                              'failureReference':IO.failure_reference(error),
                               'reason':reason,'stage':role.upper(),
                               'cgroupDeviceInode':self.anchor,'ownedUnit':self.name,
                               'invocationId':self.invocation,'pid':os.getpid()}
@@ -486,6 +567,7 @@ class Domain:
                     put(self.ledger / (role + '-failure.json'),evidence)
                 finally:
                     os._exit(exitcode)
+            IO.expect_pid(role,child)
             os.close(w)
             import select
             need(select.select([r], [], [], 2)[0] and os.read(r, 1) == b'R',
@@ -498,6 +580,7 @@ class Domain:
             'watcherPid': self.watch, 'controllerPid': os.getpid(), 'outside': True,
             'independentOfDaemonAndCustodyLock': True})
 
+    @IO.contract('CGROUP_INTERFACE','OWNED_PARENT')
     def observe(self, ready, custody_end):
         self.check()
         need(self.populated() == 0 and census(self.fd)['directories'] == [''],
@@ -578,8 +661,10 @@ class Domain:
             else:
                 previous_empty = None
             time.sleep(.001)
-        put(self.ledger / 'observer-failure.json', {'result': 'UNKNOWN', 'reason': 'OBSERVER_DEADLINE'})
+        put(self.ledger / 'observer-failure.json', {'result': 'UNKNOWN', 'reason': 'OBSERVER_DEADLINE',
+            'failureReference':IO.reported_failure('MONITOR_DEADLINE','OWNED_PARENT','OBSERVER_DEADLINE')})
 
+    @IO.contract('EVIDENCE_JSON','EVIDENCE_LEDGER')
     def watch_deadline(self, ready, custody_end):
         self.check()
         os.write(ready, b'R'); os.close(ready)
@@ -588,17 +673,17 @@ class Domain:
         while time.monotonic() < custody_end:
             done = self.ledger / 'domain-terminal.json'
             if done.exists():
-                value = json.loads(done.read_text())
+                value = IO.read_json(done)
                 if value.get('knownLifecycle') and value.get('emptyReceiptDurable'):
                     return
             self.check()
             armed = self.ledger / 'start-armed.json'
             if armed.exists():
-                dispatch = json.loads(armed.read_text())['dispatchDeadlineBoottime']
+                dispatch = IO.read_json(armed)['dispatchDeadlineBoottime']
                 effective_deadline = dispatch if effective_deadline is None else min(effective_deadline, dispatch)
             occupied = self.ledger / 'occupied.json'
             if occupied.exists():
-                anchor = json.loads(occupied.read_text())
+                anchor = IO.read_json(occupied)
                 observed_deadline = anchor['gateDeadlineBoottime']
                 effective_deadline = observed_deadline if effective_deadline is None else min(effective_deadline, observed_deadline)
                 need(anchor['cgroupDeviceInode'] == self.anchor, 'WATCH_ANCHOR_CHANGED')
@@ -612,8 +697,10 @@ class Domain:
             time.sleep(.005 if not fired else .05)
         self.kill()
         put(self.ledger / 'watcher-failure.json', {'result': 'UNKNOWN',
-            'reason': 'CUSTODY_MARGIN_ENDED', 'deadlineFired': fired})
+            'reason': 'CUSTODY_MARGIN_ENDED', 'deadlineFired': fired,
+            'failureReference':IO.reported_failure('MONITOR_DEADLINE','OWNED_PARENT','CUSTODY_MARGIN_ENDED')})
 
+    @IO.contract('EVIDENCE_JSON','EVIDENCE_LEDGER')
     def arm_start(self):
         self.manager_check()
         need(not (self.ledger / 'start-armed.json').exists(), 'START_ALREADY_ARMED')
@@ -625,12 +712,13 @@ class Domain:
             'resetAfterResponseAllowed': False})
         self.start_issued = True
 
+    @IO.contract('EVIDENCE_JSON','EVIDENCE_LEDGER')
     def await_occupied(self, pid, deadline):
         while time.monotonic() < deadline:
             self.check()
             path = self.ledger / 'occupied.json'
             if path.exists():
-                value = json.loads(path.read_text())
+                value = IO.read_json(path)
                 need(value['pid'] == pid and starttime(pid) == value['starttime'], 'INSPECT_GATE_MISMATCH')
                 need(time.clock_gettime(time.CLOCK_BOOTTIME) < value['gateDeadlineBoottime'], 'GATE_ALREADY_EXPIRED')
                 self.occupied_anchor = value
@@ -639,6 +727,7 @@ class Domain:
             time.sleep(.001)
         raise RuntimeError('OCCUPANCY_UNPROVED')
 
+    @IO.contract('EVIDENCE_JSON','EVIDENCE_LEDGER')
     def cleanup(self, deadline, known_lifecycle):
         need(time.monotonic()<deadline,'CLEANUP_EMPTY_DEADLINE')
         self.kill()
@@ -646,7 +735,7 @@ class Domain:
             self.check()
             path = self.ledger / 'empty.json'
             if path.exists():
-                value = json.loads(path.read_text())
+                value = IO.read_json(path)
                 need(value.get('cgroupDeviceInode') == self.anchor and
                      value.get('occupiedObserved') and value.get('emptyCensusObserved') and
                      value.get('result') == 'OBSERVED_EMPTY_RETAINED_PARENT', 'EMPTY_RECEIPT_INVALID')
@@ -661,6 +750,7 @@ class Domain:
             time.sleep(.001)
         raise RuntimeError('PARENT_EMPTY_UNPROVED')
 
+    @IO.contract('MANAGER_STOP_UNIT','MANAGER')
     def stop(self,deadline):
         need(time.monotonic()<deadline,'HOST_BOOKKEEPING_DEADLINE')
         # Only after known lifecycle, final empty receipt and persisted terminal.
