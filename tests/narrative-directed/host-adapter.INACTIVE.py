@@ -23,6 +23,8 @@ import time
 
 _docker_config=None
 _daemon_identity=None
+_socket_observations=[]
+_socket_evidence_path=None
 ENV={'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','LC_ALL':'C'}
 MEMORY=536870912
 TASKS=64
@@ -335,6 +337,53 @@ def docker_command(*args):
     return ['/usr/bin/docker','--config',_docker_config,'--host','unix:///run/docker.sock',*args]
 
 
+def bind_local_listener(path, main_pid, evidence_path, samples):
+    """Read real local socket/fd state. Persist sanitized observation before checks."""
+    row={'socketRole':'DOCKER' if str(path)=='/run/docker.sock' else
+                      'CONTAINERD' if str(path)=='/run/containerd/containerd.sock' else 'LOCAL_CONTROL',
+         'validationResult':'NOT_EVALUATED','sampleState':'READ_ERROR'}
+    samples.append(row)
+    def save():durable(evidence_path,{'socketObservations':samples[-32:]})
+    save()
+    try:
+        wanted=Path(path).resolve()
+        matches=[]
+        for line in Path('/proc/net/unix').read_text().splitlines()[1:]:
+            fields=line.split(maxsplit=7)
+            if len(fields)!=8 or Path(fields[7]).resolve()!=wanted:continue
+            need(all(re.fullmatch('[0-9A-Fa-f]+',fields[i]) for i in (3,4,5)) and fields[6].isdigit(),
+                 'LOCAL_SOCKET_ROW_SCHEMA')
+            matches.append({'flags':int(fields[3],16),'socketType':int(fields[4],16),
+                            'socketState':int(fields[5],16),'kernelInode':int(fields[6])})
+        need(len(matches)<=256,'LOCAL_SOCKET_ROW_BOUND')
+        candidates=[v for v in matches if v['socketType']==1 and v['flags']&0x10000 and
+                    v['socketState']==1 and v['kernelInode']>0]
+        row.update(sampleState='OBSERVED',matchingRowCount=len(matches),listenerCount=len(candidates),
+                   socketRows=matches)
+        save()  # Includes zero/multiple listener cases before the assertion.
+        need(len(candidates)==1,'LOCAL_SOCKET_KERNEL_IDENTITY')
+        inode=candidates[0]['kernelInode']
+        start=proc_stat(main_pid)
+        descriptors=list((Path('/proc')/str(main_pid)/'fd').iterdir())
+        need(len(descriptors)<=4096,'LOCAL_DAEMON_FD_BOUND')
+        found=False
+        for descriptor in descriptors:
+            try:target=os.readlink(descriptor)
+            except FileNotFoundError:continue
+            if target=='socket:['+str(inode)+']':found=True
+        row['mainPidOwnsListener']=found;save()
+        need(proc_stat(main_pid)==start,'LOCAL_SERVICE_PID_CHANGED')
+        need(found,'LOCAL_SERVICE_SOCKET_BINDING')
+    except BaseException as error:
+        row['validationResult']='REJECTED'
+        row['failureCode']=str(error) if re.fullmatch('[A-Z][A-Z0-9_]{0,95}',str(error)) else 'LOCAL_SOCKET_OBSERVATION_FAILED'
+        row['exceptionClass']=type(error).__name__ if type(error).__name__ in ('RuntimeError','OSError','PermissionError','FileNotFoundError') else 'OtherException'
+        if isinstance(error,OSError) and type(error.errno) is int:row['errno']=error.errno
+        save();raise
+    row['validationResult']='ACCEPTED';save()
+    return inode
+
+
 def local_socket_identity(path, expected_process):
     path=Path(path)
     st=path.stat(follow_symlinks=False)
@@ -350,19 +399,7 @@ def local_socket_identity(path, expected_process):
         raw=subprocess.check_output(['/usr/bin/systemctl','show',service,'--property=MainPID','--value'],env=ENV,timeout=2)
         need(raw.strip().isdigit(),'LOCAL_SERVICE_PID_SCHEMA');pid=int(raw)
         need(pid>1,'LOCAL_SERVICE_NOT_RUNNING')
-        inodes=set()
-        for row in Path('/proc/net/unix').read_text().splitlines()[1:]:
-            fields=row.split()
-            if len(fields)==8 and fields[6].isdigit() and Path(fields[7]).resolve()==path.resolve():inodes.add(fields[6])
-        need(len(inodes)==1,'LOCAL_SOCKET_KERNEL_IDENTITY')
-        descriptors=list((Path('/proc')/str(pid)/'fd').iterdir())
-        need(len(descriptors)<=4096,'LOCAL_DAEMON_FD_BOUND')
-        found=False
-        for descriptor in descriptors:
-            try:target=os.readlink(descriptor)
-            except FileNotFoundError:continue
-            if target in {'socket:['+inode+']' for inode in inodes}:found=True
-        need(found,'LOCAL_SERVICE_SOCKET_BINDING')
+        bind_local_listener(path,pid,_socket_evidence_path,_socket_observations)
     proc=Path('/proc')/str(pid)
     exe=Path(os.readlink(proc/'exe'))
     need(exe.name==expected_process,'LOCAL_DAEMON_EXECUTABLE')
@@ -485,7 +522,8 @@ def verify_dedicated_vm(attestation,result,receipt):
 
 def run_candidate(*,repository,preparation,docker_archive,expected_preparation_sha256,receipt,hosted_job_attestation):
     """Not execution authority. Requires separate review and main decision."""
-    global _journal
+    global _journal,_socket_observations,_socket_evidence_path
+    _socket_observations=[];_socket_evidence_path=str(receipt)+'.socket-observations.json'
     _journal=HostJournal(str(receipt)+'.host-diagnostics.json')
     try:
         with host_step('VALIDATE_PREPARATION'):
@@ -669,6 +707,7 @@ def run_candidate(*,repository,preparation,docker_archive,expected_preparation_s
             except BaseException:result['cleanupUnknown']=True
         for fd in (killfd,directory,getattr(parent,'killfd',None),getattr(parent,'fd',None)):
             if fd is not None:os.close(fd)
+        result['socketObservations']=_socket_observations[-32:]
         result['deadlineFired']=deadline_fired.is_set();result['watchdogError']=watcher_error.is_set()
         result['deadlineScope']='CONTROLLER_LIVE_BEST_EFFORT_NOT_HARD_ADMISSION_BOUND'
         result['scratchImageRetainedUntilVMTeardown']=image_load_issued

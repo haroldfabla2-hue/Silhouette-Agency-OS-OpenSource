@@ -1,0 +1,111 @@
+# INACTIVE REVIEW COPY, intended path only after a separate publication decision:
+# .github/workflows/narrative-directed-listener-once.yml
+name: Directed Narrative listener correction, partial coverage only
+on:
+  push:
+    branches: [fix/shutdown-contracts-narrow-20261117]
+    paths: [.github/workflows/narrative-directed-listener-once.yml]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: narrative-directed-listener-pr226-once
+  cancel-in-progress: false
+jobs:
+  directed-narrative:
+    if: github.repository == 'haroldfabla2-hue/Silhouette-Agency-OS-OpenSource' && github.ref == 'refs/heads/fix/shutdown-contracts-narrow-20261117' && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+      - id: guard
+        name: Verify exact reviewed source transition before preparation
+        env:
+          EVENT_HEAD: ${{ github.sha }}
+        run: |
+          python3 -I -B -S - <<'PYGUARD'
+          import hashlib,json,os,pathlib,subprocess
+          def git(*a):return subprocess.check_output(['git',*a],text=True).strip()
+          root=pathlib.Path.cwd()
+          doc=json.loads((root/'tests/narrative-directed-activation/ACTIVATION.json').read_text())
+          assert doc['base']=='02fdc4c4dde27cd636354c3f7452cd12e9349f83'
+          assert git('rev-parse','HEAD')==os.environ['EVENT_HEAD']
+          assert git('show','-s','--format=%P','HEAD')==doc['base']
+          assert set(git('diff','--name-only','HEAD^','HEAD').splitlines())==set(doc['changedPaths'])
+          for name,wanted in doc['frozen'].items():
+              p=root/name
+              assert p.is_file() and not p.is_symlink()
+              assert hashlib.sha256(p.read_bytes()).hexdigest()==wanted
+          PYGUARD
+      - name: Preparation Node only, not product runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.5
+      - id: reconstruction
+        name: Reconstruct exact reviewed scratch archive without evaluating product
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: timeout --signal=TERM --kill-after=10s 240s python3 -I -B -S tests/narrative-directed-activation/prepare-reviewed.INACTIVE.py
+      - id: hosted-context
+        name: Bind current standard hosted job without exposing credentials
+        env:
+          EVENT_HEAD: ${{ github.sha }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+          CURRENT_RUN_ATTEMPT: ${{ github.run_attempt }}
+          CURRENT_RUNNER_NAME: ${{ runner.name }}
+          CURRENT_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          python3 -I -B -S - <<'PYCONTEXT'
+          import json,os,pathlib,urllib.request
+          root='https://api.github.com/repos/haroldfabla2-hue/Silhouette-Agency-OS-OpenSource'
+          run_id=int(os.environ['CURRENT_RUN_ID'])
+          assert os.environ['CURRENT_RUNNER_ENVIRONMENT']=='github-hosted'
+          assert int(os.environ['CURRENT_RUN_ATTEMPT'])==1
+          with urllib.request.urlopen(root+'/actions/runs/'+str(run_id)+'/jobs?per_page=100',timeout=5) as response:
+              raw=response.read(262145);assert len(raw)<=262144
+          jobs=json.loads(raw)
+          assert jobs['total_count']<=100
+          matches=[j for j in jobs['jobs'] if j['name']=='directed-narrative' and j['status']=='in_progress' and j['runner_name']==os.environ['CURRENT_RUNNER_NAME']]
+          assert len(matches)==1
+          job=matches[0]
+          assert job['labels']==['ubuntu-24.04'] and job['runner_group_name']=='GitHub Actions'
+          value={'runId':run_id,'runAttempt':1,'jobId':job['id'],
+              'runnerName':os.environ['CURRENT_RUNNER_NAME'],'runnerEnvironment':'github-hosted',
+              'eventHead':os.environ['EVENT_HEAD']}
+          p=pathlib.Path('/tmp/narrative-directed-hosted-job.json')
+          with p.open('x') as output:json.dump(value,output,sort_keys=True)
+          p.chmod(0o600)
+          PYCONTEXT
+      - id: batch
+        name: One directed product batch, no automatic retry
+        if: steps.reconstruction.outcome == 'success' && steps.hosted-context.outcome == 'success'
+        run: |
+          timeout --signal=TERM --kill-after=15s 160s sudo -n env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C /usr/bin/python3 -I -B -S - <<'PYRUN'
+          import importlib.util,pathlib,json
+          source=pathlib.Path('tests/narrative-directed/host-adapter.INACTIVE.py').resolve()
+          spec=importlib.util.spec_from_file_location('directed_host',source)
+          module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+          result=module.run_candidate(repository=pathlib.Path.cwd(),
+              preparation='/tmp/narrative-directed-preparation/assembled/PREPARATION.json',
+              docker_archive='/tmp/narrative-directed-preparation/assembled/directed-image.docker.tar',
+              expected_preparation_sha256='e6d0f352e92e08a5121c58e2538ebdf6a81b365d64b4803f82f0aeda0d465e6a',
+              receipt='/tmp/narrative-directed-result.json',
+              hosted_job_attestation=json.loads(pathlib.Path('/tmp/narrative-directed-hosted-job.json').read_text()))
+          raise SystemExit(0 if result.get('result')=='PASS_DIRECTED_NARRATIVE_ONLY' else 1)
+          PYRUN
+      - id: evidence
+        name: Export selected bounded technical evidence, never raw fixture logs
+        if: always() && steps.guard.outcome == 'success'
+        run: timeout --signal=TERM --kill-after=5s 30s sudo -n env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C /usr/bin/python3 -I -B -S tests/narrative-directed/export-selected.INACTIVE.py
+      - name: Preserve selected receipts for independent review
+        if: always() && steps.evidence.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: directed-narrative-listener-partial-selected-evidence
+          path: /tmp/narrative-directed-evidence/*.json
+          if-no-files-found: error
+          retention-days: 2

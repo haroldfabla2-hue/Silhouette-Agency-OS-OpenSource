@@ -16,7 +16,7 @@ BOOLEAN_FIELDS={'forcedCleanup','productReleased','infrastructureStarted','clean
  'occupiedBeforeRelease','supervisorNaturalExit','externalProviderNetworkDisabled','allSilhouetteValidated',
  'sameOriginalIdsAndFields','providersOff','naturalExit','pipesClosed','namespaceCensusOnlySupervisor','truncated'}
 NUMBER_FIELDS={'sequence','errno','exitCode','outputBytes','memory','swapTotal','tasks','cpuPeriod','cpuQuota',
- 'workBytes','workInodes','tmpBytes','runId','jobId','pid','starttime','socketDevice','socketInode','cgroupVersion'}
+ 'workBytes','workInodes','tmpBytes','runId','jobId','pid','starttime','socketDevice','socketInode','cgroupVersion','flags','socketType','socketState','kernelInode','matchingRowCount','listenerCount'}
 OBJECT_FIELDS={'profile','batch','decisiveFailure','decisiveOrigin','supervisorFailure','runtimeIdentity','dedicatedVm','localDaemonIdentity','daemonIdentity','dockerd','containerd','configuredLocalRuntimeBinaryHashes'}
 HASH_FIELDS={'closureSha256','preparationSha256','journalSha256','recoveredSha256','binarySha256','configSha256','headSha256'}
 
@@ -34,12 +34,14 @@ def project(value,depth=0):
   elif key in ('initialControllers','initialEnabled','controllers','enabled') and isinstance(item,list) and len(item)<=32 and all(isinstance(v,str) and re.fullmatch('[a-z][a-z0-9_]{0,31}',v) for v in item):result[key]=item
   elif key=='controllerSnapshots' and isinstance(item,list):result[key]=[project(row,depth+1) for row in item[:256]]
   elif key=='stage' and item in ('BEFORE_PARENT_CREATE','AFTER_PARENT_CREATE','ACTIVE_PARENT','AFTER_RUNTIME_BEFORE_RUN','IMMEDIATELY_BEFORE_RUN','AFTER_PARENT_STOP'):result[key]=item
+  elif key=='socketRole' and item in ('DOCKER','CONTAINERD','LOCAL_CONTROL'):result[key]=item
+  elif key in ('socketRows','socketObservations') and isinstance(item,list):result[key]=[project(v,depth+1) for v in item[:256]]
   elif key=='sampleState' and item in ('OBSERVED','READ_ERROR'):result[key]=item
   elif key=='validationResult' and item in ('NOT_EVALUATED','REJECTED','ACCEPTED'):result[key]=item
   elif key=='components' and isinstance(item,list):
    result[key]=[{'name':v['name'],'version':v['version']} for v in item[:8] if isinstance(v,dict) and v.get('name') in ('Engine','containerd','runc','docker-init') and isinstance(v.get('version'),str) and re.fullmatch('[A-Za-z0-9.+_-]{1,80}',v['version'])]
   elif key in ('runc','containerd-shim-runc-v2') and isinstance(item,str) and re.fullmatch('[a-f0-9]{64}',item):result[key]=item
-  elif key in ('daemonInfoIsNotRuntimeBinaryBinding',) and type(item) is bool:result[key]=item
+  elif key in ('daemonInfoIsNotRuntimeBinaryBinding','mainPidOwnsListener') and type(item) is bool:result[key]=item
   elif key=='driver' and item=='systemd':result[key]=item
   elif key=='providerBoundary' and item=='NEW_VM_PER_STANDARD_HOSTED_JOB_NOT_SINGLE_CPU_SLIM':result[key]=item
   elif key in OBJECT_FIELDS:result[key]=project(item,depth+1)

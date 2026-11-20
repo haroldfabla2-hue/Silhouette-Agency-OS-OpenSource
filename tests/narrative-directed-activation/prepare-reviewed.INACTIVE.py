@@ -14,7 +14,7 @@ import zipfile
 BASE=Path(__file__).resolve().parent
 WORK=Path('/tmp/narrative-directed-preparation')
 ZIP_SHA='a549abd2f6a03266566ee14df09ba93882ff94458bdc514bc015bb3e31ea13d4'
-PREP_SHA='35b612152c374a2d37c9dc21832ada0c3952540ad78acf9d517b0366bcaf42d5'
+PREP_SHA='e6d0f352e92e08a5121c58e2538ebdf6a81b365d64b4803f82f0aeda0d465e6a'
 
 
 def need(value,code):
