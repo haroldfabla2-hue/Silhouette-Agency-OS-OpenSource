@@ -188,7 +188,7 @@ diagnostic=runpy.run_path(str(selection_dir/'preparation-diagnostics.py'))['summ
 inventory.update(diagnostic)
 print('FINITE_CAPSULE_INVENTORY '+json.dumps(inventory,sort_keys=True),flush=True)
 assert not diagnostic['unclassifiedPaths'],'DIAGNOSTIC_UNCLASSIFIED'
-assert len(manifest)<=4000 and inventory['bytes']<=400*1024**2,'FINITE_CAPSULE_BUDGET'
+runpy.run_path(str(selection_dir/'preparation-budget.py'))['validate'](inventory,C['preparationBudget']['limits'])
 (O/'ALLOWLIST.json').write_text(json.dumps(manifest,indent=2));(O/'PREPARATION-CONTRACT.json').write_text(json.dumps(C,indent=2))
 (O/'PACKAGE-VERSIONS.txt').write_text(subprocess.check_output(['dpkg-query','-W','bubblewrap','iproute2','python3','util-linux'],text=True))
 # Public artifact audit is fail-closed and excludes operational/internal/auth material.

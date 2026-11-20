@@ -211,10 +211,32 @@
  "nativeSelection": {
   "scope": "Conditional static selection backed by clean core introspection of exact Node during preparation; not an observed binding load or namespace proof. Runtime core-only guards after drop and before product must recheck.",
   "pins": "native-selection-pins.json: five closed review-only paths and 91 exact loader/metadata/selected/vendor/review-only file hashes. Lock path/name/version/url/integrity checked without package import. Binary/package/release integrity comes from preparer source evidence, not reviewer revalidation.",
-  "reviewOnly": "Exactly prior LanceDB/msgpackr three musl bindings plus ONNX linux/arm64 and USearch linux-arm64 exact bindings. Retained evidence target null, never mounted. ONNX arm64 DSO is not copied, not claimed resolved. Selected ONNX x64 and nested Sharp x64 retain exact vendor DSOs in original relative locations. Both dispositions count toward unchanged 400MiB/4000-file budget; failure prints inventory.",
+  "reviewOnly": "Exactly prior LanceDB/msgpackr three musl bindings plus ONNX linux/arm64 and USearch linux-arm64 exact bindings. Retained evidence target null, never mounted. ONNX arm64 DSO is not copied, not claimed resolved. Selected ONNX x64 and nested Sharp x64 retain exact vendor DSOs in original relative locations. Both dispositions count toward explicit preparationBudget multi-dimension limits, total includes both dispositions; failure prints inventory.",
   "node": "Node22 plain linux/x64, ABI read from process.versions.modules of the executable (no hardcoded ABI), glibcVersionRuntime nonempty, interpreter exact /lib64/ld-linux-x86-64.so.2, no require.addon; values and executable hash recorded and rechecked at future runtime.",
   "environment": "Empty core introspection environment. Core-only installed/runtime guards reject prior overrides plus npm_config_libc/npm_config_arm_version/LD_LIBRARY_PATH/LD_PRELOAD/LD_AUDIT/NODE_BINDINGS_ARROW/NODE_BINDINGS_COMPILED_DIR. Pin CJS+ESM USearch, bindings/getRoot/getFileName and file-uri-to-path, prove no earlier build/prebuild nor shadowed dependencies. Effective Sharp detect-libc must be pinned root.",
-  "unresolved": "All selected ELF inspected recursively with readelf only. Explicit per-file reviewed RPATH/RUNPATH/$ORIGIN; known vendor edges cannot fall back to system homonyms. Unknown search tags/tokens/path escapes, symlinks, selected non-x64 or used ambiguous system cache fail. This limited resolver is not universal loader emulation or proof of namespace load. All missing selected SONAMEs accumulate then FAIL; no native imports. Budget 400MiB unchanged.",
+  "unresolved": "All selected ELF inspected recursively with readelf only. Explicit per-file reviewed RPATH/RUNPATH/$ORIGIN; known vendor edges cannot fall back to system homonyms. Unknown search tags/tokens/path escapes, symlinks, selected non-x64 or used ambiguous system cache fail. This limited resolver is not universal loader emulation or proof of namespace load. All missing selected SONAMEs accumulate then FAIL; no native imports. Mountable400MiB unchanged; separate review/total/file caps in preparationBudget.",
   "vendorProvenance": "ONNX DSO from exact lock tarball; Sharp binding official release matches CI SHA256, libvips release8.14.5 SHA512 matches pinned Sharp config.integrity.linux-x64; package installer sources pinned. Expected/computed release integrity and URL retained in audit, installed/copied bytes pinned separately. Sharp versions/platform JSON pinned. No install/download occurs during preparation."
+ },
+ "preparationBudget": {
+  "limits": {
+   "files": 6400,
+   "mountableBytes": 419430400,
+   "reviewOnlyBytes": 134217728,
+   "totalBytes": 536870912
+  },
+  "basis": {
+   "runId": 44781864408,
+   "associatedHead": "00a3b45ce333d70960ec5c1f3483309b3e032554",
+   "checkoutMerge": "abf13f29795bf6ac72916fdaaeb899ce6c42a20d",
+   "base": "0ff920595e5b24bd4189cd9a4c3cf762aad21ee7",
+   "measured": {
+    "files": 5988,
+    "mountableBytes": 388273046,
+    "reviewOnlyBytes": 119068776,
+    "totalBytes": 507341822
+   },
+   "explanation": "Mountable byte cap stays 400MiB, no increase in mounted data allowance. Separate 128MiB evidence cap preserves all five exact review-only bindings never mounted; 512MiB total includes both dispositions without compression or artifact splitting. File cap6400 leaves412 files (6.88%) over measured same graph, not permission to expand roots. Total headroom29529090 bytes (5.82% of observed bytes). npm5248 files from305 installed packages, Python562, runtimeELF33, emitted124, control8, SQL8, review5. Original4000/400MiB assumption failed real measured inventory. No stripping, deletion, generic exclusion or reclassification to fit. No automatic adjustment; future excess fails with full inventory."
+  },
+  "scope": "Preparation-only uncompressed manifest data, not runtime RAM or execution authority. Existing exact review-only set/hash guards and source graph remain independent. Aggregated accounting does not establish per-file membership; complete artifact review is still required."
  }
 }
