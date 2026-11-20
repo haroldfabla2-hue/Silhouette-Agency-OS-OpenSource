@@ -42,7 +42,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, existsSync, readdirSync, statSync, readFileSync, openSync, closeSync, createWriteStream } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, join, relative } from 'node:path';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 
@@ -150,6 +150,8 @@ interface ChildResult {
     truncated: boolean;             // output bytes were dropped: evidence NOT complete
     evidenceComplete: boolean;      // streams reached EOF before the drain deadline
     hadSurvivors: boolean;          // group alive at the FIRST post-exit/timeout probe: natural-exit breach
+    // Census samples follow the first probe; rootExit/pipeCloseObserved are return-time state.
+    groupDiagnostic: { before: unknown; after: unknown; rootExit: unknown; pipeCloseObserved: boolean };
     survivorsAfterCleanup: boolean; // still alive or unknown after kill + bounded reap
     childReaped: boolean;           // direct child 'exit' observed (awaited on the timeout path)
     killError: string | null;
@@ -170,6 +172,27 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 const groupAlive = (pid: number): boolean | null => {
     try { process.kill(-pid, 0); return true; }
     catch (e: any) { return e?.code === 'ESRCH' ? false : null; }
+};
+
+// Best-effort metadata only. The OS query contains no args/environment and
+// only rows from this child's exact PGID are retained or printed. Not an
+// oracle: failure/incomplete capture can never turn groupAlive into success.
+const groupCensus = (pgid: number, budgetMs: number): unknown => {
+    if (budgetMs <= 0) return { unavailable: 'cleanup-budget-exhausted' };
+    try {
+        const raw = execFileSync('ps', ['-eo', 'pid=,ppid=,pgid=,sid=,stat=,etimes=,comm='],
+            { encoding: 'utf8', timeout: Math.min(100, budgetMs), killSignal: 'SIGKILL', maxBuffer: 256 * 1024 });
+        const rows = [];
+        let total = 0;
+        for (const line of raw.split('\n')) {
+            const m = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(\d+)\s+(.+)$/);
+            if (!m || Number(m[3]) !== pgid) continue;
+            total++;
+            if (rows.length < 32) rows.push({ pid: Number(m[1]), ppid: Number(m[2]), pgid: Number(m[3]),
+                sid: Number(m[4]), state: m[5].slice(0, 16), ageSeconds: Number(m[6]), comm: m[7].slice(0, 64) });
+        }
+        return { pgid, rows, total, truncated: total > rows.length };
+    } catch { return { pgid, unavailable: 'metadata-query-failed-or-bounded-out' }; }
 };
 
 /** Head+tail capture in BYTES with exact counts and bounded memory.
@@ -349,9 +372,13 @@ const runChild = (directory: string, mode: string, timeoutMs: number, sharedStor
             // transient leaked descendant that exits during the EOF window is
             // still classified as a natural-exit breach.
             const hadSurvivors = pid !== undefined && groupAlive(pid) !== false;
+            const before = hadSurvivors && pid !== undefined ? groupCensus(pid, remaining()) : null;
             let survivorsAfterCleanup = false;
-            // Known survivors are killed IMMEDIATELY - before any EOF wait, so
-            // a descendant holding inherited pipes cannot consume the reap budget.
+            // The diagnostic snapshot above may take up to 100ms BEFORE kill,
+            // within the SAME absolute cleanup deadline. It samples AFTER the
+            // decisive probe, never cancels hadSurvivors, and is not cost-free.
+            // Kill still precedes EOF wait: inherited pipes cannot consume the
+            // reap budget before the kill request.
             if (hadSurvivors) killGroup();
             if (outcome.kind === 'timeout') {
                 childReaped = await waitExit(remaining()); // await the direct child's reap, not only the group
@@ -359,6 +386,7 @@ const runChild = (directory: string, mode: string, timeoutMs: number, sharedStor
             if (hadSurvivors && pid !== undefined) {
                 survivorsAfterCleanup = !(await reapGroup(remaining()));
             }
+            const after = hadSurvivors && pid !== undefined ? groupCensus(pid, remaining()) : null;
             // Bounded EOF drain AFTER cleanup: pipes EOF once their holders are
             // gone; a still-held pipe hits the shared deadline and marks the
             // evidence incomplete.
@@ -403,6 +431,7 @@ const runChild = (directory: string, mode: string, timeoutMs: number, sharedStor
                 truncated: o.truncated || e.truncated,
                 evidenceComplete: exitEvent !== null && drained,
                 hadSurvivors,
+                groupDiagnostic: { before, after, rootExit: exitEvent, pipeCloseObserved: closeEvent },
                 survivorsAfterCleanup,
                 childReaped,
                 killError,
@@ -426,6 +455,9 @@ const expectCleanChild = (result: ChildResult, mode: string) => {
         && !result.hadSurvivors && !result.survivorsAfterCleanup && result.killError === null
         && !result.truncated && result.evidenceComplete
         && result.stdout.includes(`"mode":"${mode}"`);
+    try {
+        if (result.hadSurvivors) console.log('[group-diagnostic] ' + JSON.stringify(result.groupDiagnostic));
+    } catch { /* best-effort only; primary assertions below are unchanged */ }
     // Full child evidence on ANY abnormal or incomplete outcome; summary on success.
     console.log(clean ? summary : `${summary}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
     expect(result.outcome.kind, `child ${mode} must exit by itself, not be killed or fail to spawn`).toBe('exit');
