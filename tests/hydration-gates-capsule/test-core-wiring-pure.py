@@ -119,4 +119,12 @@ class FixedCutGate(unittest.TestCase):
   self.assertFalse(eligible('d0a6a636fe0b0311ca2349f025075f0ce42847c6',2,'synchronize'))
   self.assertFalse(eligible('d0a6a636fe0b0311ca2349f025075f0ce42847c6',1,'reopened'))
 
+class ActualStoppedStage(unittest.TestCase):
+ def test_core_job_boolean_false_and_anchor_absent_structurally(self):
+  import yaml
+  document=yaml.safe_load((D.parents[1]/'.github/workflows/core-containment.yml').read_text())
+  self.assertIs(document['jobs']['core-only']['if'],False)
+  self.assertFalse((D/'CORE-EXECUTION-ANCHOR.json').exists())
+  self.assertEqual(document['jobs']['core-only']['steps'][-1]['with']['retention-days'],2)
+
 if __name__=='__main__':unittest.main()

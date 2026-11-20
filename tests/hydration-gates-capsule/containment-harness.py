@@ -82,25 +82,126 @@ def empty_receipt(cg):
  ev=counters(cg);assert ev['cgroup.events']['populated']==0 and not members(cg),'UNIT_POPULATED'
  return {'populated':0,'members':[],'events':ev}
 
+ERROR_TYPES=frozenset(('AssertionError','PermissionError','FileNotFoundError','OSError','TimeoutError','InterruptedError','MemoryError','ValueError','KeyError','TypeError','CalledProcessError','TimeoutExpired','CaptureSetupFatal','unknown'))
+ERROR_STAGES=frozenset(('controller','inner','probe','trusted-helper','namespace-child','unknown'))
+ERROR_REASONS=frozenset((
+ 'ABSOLUTE_STAGED_PATH','ALLOWLIST_ANCHOR','AMBIENT_CLEAR','ANCESTORS_INCOMPLETE','ANCESTOR_CHAIN',
+ 'ANCESTOR_REPEAT','ANCESTOR_SCHEMA','ANCESTOR_SETTINGS_CHANGED','ANCESTOR_TYPES','ANCHOR_FIELDS',
+ 'ANCHOR_MUST_BE_READ_ONLY','ANCHOR_SCHEMA','ARCHIVE_ANCHOR','BSET_DROP','BWRAP_ARGV_LIMIT',
+ 'BYTE_QUOTA_NOT_OBSERVED','CAPSET_ZERO','CAPTURE_SETUP_FATAL_OWN_UNIT_CLEANUP_REQUIRED','CASE',
+ 'CGROUP_CANONICAL','CGROUP_DISAPPEARED','CGROUP_LINK','CGROUP_NOT_EMPTY','CGROUP_PATH',
+ 'CHILD_OR_PIPE_DEADLINE','CLEANUP_EVIDENCE_UNKNOWN_AFTER_OWNED_STOP','CLEANUP_UNIT_CHANGED',
+ 'CONTROLLER_INSIDE_TARGET','CONTROLLER_INTERRUPTED','CONTROLLER_MEMBERSHIP_CHANGED','CONTROLLER_WALL',
+ 'CORE_FILE_IDENTITY','CORE_MOUNT_SET','CPU_PERIOD','CPU_QUOTA','CPU_RATE_BOUND',
+ 'CREATION_IDENTITY_UNAVAILABLE','CREATION_IDENTITY_UNKNOWN','CREATION_INVOCATION_UNKNOWN','DEADLINE',
+ 'DESCENDANT_EVIDENCE','DESCENDANT_NEGATIVE_NOT_OBSERVED','DROP_READBACK','EGRESS','EVENT_SCHEMA',
+ 'EXISTING_MANAGER_SOCKET','EXTERNAL_IDENTITY','EXTRA_FD','FINAL_SCHEMA','FORCED_CLEANUP_NEVER_PASS',
+ 'HANDSHAKE_TIMEOUT','HELPER_CONFIG','HELPER_SOURCE_CHANGED','HOST_BINARY_ANCHOR_OR_PRIVILEGE',
+ 'HOST_CAPS_FORBIDDEN','HOST_IDS','HOST_NAMESPACE','INNER_DESCENDANTS','INNER_LINES','INNER_PROBE_LIFECYCLE',
+ 'INNER_PROTOCOL','INNER_ROOT','INODE_QUOTA_NOT_OBSERVED','INTEGER_SCHEMA','INVOCATION_ID',
+ 'LEAF_CPU_FINITE_AND_PERIOD','LEAF_FIRST','LIFECYCLE_NEGATIVE_REASON','LIFECYCLE_NOT_NATURAL',
+ 'MANAGER_RESULT','MEMORY_CEILING_NOT_OBSERVED','MEMORY_REJECTION_NOT_OBSERVED','MEMORY_RESULT',
+ 'MISSING_RESULT_NOT_OOM','NATURAL_NOT_EXITED','NEGATIVE_STDERR','NETWORK_INTERFACES',
+ 'NETWORK_NOT_UNREACHABLE','NNP_SET','NONCE_FORMAT','NONPRIVILEGED_HOST_ID','NONZERO_OR_MANAGER_FAILURE',
+ 'NOT_ACTIVE_EXITED','NO_VALIDATED_CGROUP_LOCATION','NS_EQUAL_PARENT','OOM_TERMINATION_NOT_CORROBORATED',
+ 'OS_ERROR','OTHER_WRITABLE_SURFACE','OUTER_DEVICE_ANCHOR','OWNED_UNIT_ID','OWN_CGROUP','OWN_UNIT_OPERATION',
+ 'OWN_UNIT_VERB','PID_QUOTA_NOT_OBSERVED','PIPE_BYTES_LIMIT','POSITIVE_LIFECYCLE','POSITIVE_NOT_QUIESCENT',
+ 'POSITIVE_RESULT','POSTSTOP_INVOCATION_CHANGED','PRESTART_SOURCE_CHANGED','PRIVATE_PROC_MEMBERSHIP',
+ 'PRIVATE_PROC_MOUNT','PRIVATE_RECORD','PRIVATE_WORK_REMOUNT_FAILED','PROBE_DROP','PROBE_NOT_READY',
+ 'PROBE_PROTOCOL','PROBE_RESULT','PROC_FOREIGN_PID','PROPAGATION_NOT_PRIVATE','READY_FIELDS',
+ 'READY_PID_NONCE','READY_SCHEMA','READY_STATE','READ_BOUND','REAL_CANARY_VISIBLE','REAL_PID_MEMBERSHIP',
+ 'RECORD_LIMIT','RELEASE_INVALID','RELEASE_INVOCATION_CHANGED','REMOUNT_AFTER_DROP','RESULT_CONTEXT',
+ 'RESULT_CONTEXT_TYPES','RESULT_EXIT_SCHEMA','RESULT_SCHEMA','RESULT_TYPES','ROOT_MUST_ALREADY_BE_RO',
+ 'ROOT_NOT_LAST','RO_ERROR','RO_SENTINEL_BYTES','RO_WRITE_ALLOWED','SECUREBITS_READBACK','SECUREBITS_SET',
+ 'SERVICE_CREATE_REJECTED','SERVICE_STATE','SINGLE_INNER_MAP','SOURCE_ANCHOR','SOURCE_CONTAINMENT',
+ 'SOURCE_PATH','SOURCE_SET','STDIO_FDS','TIMEOUT_EVIDENCE','UNEXPECTED_INNER_DEADLINE',
+ 'UNEXPECTED_MEMORY_EVENTS','UNEXPECTED_PID_EVENTS','UNIT_CHANGED','UNIT_COLLISION','UNIT_MAINPID_LIVE',
+ 'UNIT_NOT_QUIESCENT','UNIT_OUTPUT_LIMIT','UNIT_POPULATED','UNIT_READ_FAILED','UNKNOWN','V2_REQUIRED',
+ 'WORK_CAPS','WORK_FLAGS','WORK_INSTANCE_CHANGED','WORK_MODE','WORK_MOUNT_SINGLE','WORK_NOT_EMPTY_DIRECTORY',
+ 'WORK_NOT_NEW_PRIVATE_TMPFS',
+))
+HELPER_REASONS=frozenset(('verified','unverified','capture-setup-fatal','outer-capture-failure','pipe-eof-deadline','wall-deadline','descendant-live','memory-oom-kill','memory-enomem','unknown'))
+
+class DiagnosticFailure(Exception):
+ def __init__(self,diagnostic):self.diagnostic=closed_diagnostic(diagnostic)
+
+def closed_diagnostic(value):
+ value=value if type(value) is dict else {}
+ return {'type':value.get('type') if type(value.get('type')) is str and value.get('type') in ERROR_TYPES else 'unknown',
+         'stage':value.get('stage') if type(value.get('stage')) is str and value.get('stage') in ERROR_STAGES else 'unknown',
+         'reason':value.get('reason') if type(value.get('reason')) is str and value.get('reason') in ERROR_REASONS else 'UNKNOWN'}
+
+def exception_diagnostic(error,stage):
+ if isinstance(error,DiagnosticFailure):return closed_diagnostic(error.diagnostic)
+ reason='UNKNOWN'
+ # Exception arguments are compared for exact membership, never copied freely.
+ for value in getattr(error,'args',()):
+  if type(value) is str and value in ERROR_REASONS:reason=value;break
+ return closed_diagnostic({'type':type(error).__name__,'stage':stage,'reason':reason})
+
+def diagnostic_record(value):
+ d=closed_diagnostic(value)
+ return {'status':'FAIL','helperErrorType':d['type'],'helperStage':d['stage'],'helperReason':d['reason']}
+
+def bounded_number(value,minimum,maximum,string=False):
+ if string and type(value) is str and value.isascii() and value.isdecimal() and len(value)<=10:value=int(value)
+ return value if type(value) is int and minimum<=value<=maximum else 'unknown'
+
+def terminal_snapshot(state,result):
+ enums={'ActiveState':{'active','inactive','failed','activating','deactivating'},'SubState':{'running','exited','dead','failed','start','stop','stop-sigterm','stop-sigkill','auto-restart'},'Result':{'success','exit-code','signal','core-dump','watchdog','timeout','oom-kill','resources','start-limit-hit','protocol'}}
+ out={k:state.get(k) if type(state.get(k)) is str and state.get(k) in values else 'unknown' for k,values in enums.items()}
+ for key,limit in (('MainPID',4194304),('ExecMainCode',6),('ExecMainStatus',255)):out[key]=bounded_number(state.get(key),0,limit,string=True)
+ value=state.get('ControlGroup');out['controlGroupAbsolute']=type(value) is str and pathlib.PurePosixPath(value).is_absolute() and '..' not in pathlib.PurePosixPath(value).parts
+ if type(result) is dict:
+  for key in ('forced','stderr','naturalExit','pipeEOF'):
+   if key in result:out['helper_'+key]=result[key] if type(result[key]) is bool else 'unknown'
+  for key,lo,hi in (('exitCode',-64,255),('descendants',-1,16)):
+   if key in result:out['helper_'+key]=None if result[key] is None and key=='exitCode' else bounded_number(result[key],lo,hi)
+  for key,values in (('status',{'OK','FAIL'}),('reason',HELPER_REASONS),('helperErrorType',ERROR_TYPES),('helperStage',ERROR_STAGES),('helperReason',ERROR_REASONS)):
+   if key in result:out['helper_'+key]=result[key] if type(result[key]) is str and result[key] in values else 'unknown'
+ return out
+
+def persist_terminal(directory,state,result):
+ # Save the exact state already observed before any new manager/file query.
+ atomic_record(directory,'terminal-snapshot.json',terminal_snapshot(state,result))
+
+def cleanup_failed_case(directory,case,env,owned,cg,error):
+ # Primary failure evidence is independent of every subsequent manager query.
+ atomic_record(directory,'controller-failure.json',{'case':case,'status':'FAIL','diagnostic':exception_diagnostic(error,'controller'),'payloadPass':False})
+ try:
+  if owned is None:raise AssertionError('CREATION_IDENTITY_UNAVAILABLE')
+  quiesce(env,owned,cg,natural=False)
+ except BaseException as cleanup_error:
+  atomic_record(directory,'cleanup-unknown.json',{'case':case,'status':'FAIL_CLEANUP_UNKNOWN','diagnostic':exception_diagnostic(cleanup_error,'controller')})
+  raise
+
 def quiesce(env,owned,cg,natural):
- # Never stop by a name alone. Even bookkeeping stop requires same invocation.
- p=same_owned(env,owned)
- before=empty_receipt(cg) if natural else None
+ # Identity rechecked before stop, but missing resource files must not prevent
+ # an exact owned-unit stop. The previously validated cg path is only evidence
+ # location, never a fresh target authority obtained from terminal properties.
+ p=same_owned(env,owned);before=None;evidence_error=False
+ try:
+  assert cg is not None,'NO_VALIDATED_CGROUP_LOCATION'
+  # Retain a pre-stop empty proof only when no live main process can repopulate.
+  if p.get('MainPID')=='0' and (p.get('ActiveState') in ('inactive','failed') or p.get('SubState')=='exited'):before=empty_receipt(cg)
+ except (OSError,AssertionError):evidence_error=True
  if natural:assert p['SubState']=='exited' and p['ActiveState']=='active' and int(p['MainPID'])==0,'NATURAL_NOT_EXITED'
  ctl(env,owned['unit'],'stop')
- end=time.monotonic()+3;after=None
+ end=time.monotonic()+3;after=None;inactive=False
  while time.monotonic()<end:
   p=ctl(env,owned['unit'])
-  if p.get('LoadState')=='not-found':
-   assert before is not None,'UNIT_UNLOADED_BEFORE_EMPTY_EVIDENCE';after=before;break
+  if p.get('LoadState')=='not-found':inactive=True;after=before;break
   assert p['InvocationID']==owned['invocationId'],'POSTSTOP_INVOCATION_CHANGED'
   if int(p['MainPID'])==0 and p['ActiveState'] in ('inactive','failed'):
-   # If the cgroup disappears after a proven empty observation, retain it.
-   after=empty_receipt(cg) if cg.exists() else before
+   inactive=True
+   try:
+    assert cg is not None,'NO_VALIDATED_CGROUP_LOCATION'
+    after=empty_receipt(cg)
+   except (OSError,AssertionError):after=before;evidence_error=True
    break
   time.sleep(.02)
- assert after is not None,'CLEANUP_EVIDENCE_UNKNOWN'
- return {'before':before,'after':after,'inactive':True,'forced':not natural}
+ assert inactive and after is not None,'CLEANUP_EVIDENCE_UNKNOWN_AFTER_OWNED_STOP'
+ return {'before':before,'after':after,'inactive':True,'forced':not natural,'evidenceReadError':evidence_error}
 
 def verify_anchor(path):
  assert os.getuid()==os.geteuid()>0 and os.getgid()==os.getegid()>0,'NONPRIVILEGED_HOST_ID'
@@ -179,17 +280,21 @@ def run_case(anchor,binds,case,output):
   p=subprocess.run(plan['command'],env=env,capture_output=True,timeout=5)
   assert p.returncode==0,'SERVICE_CREATE_REJECTED'
   ready=wait_record(directory,'ready.json',start+5)
-  props=ctl(env,name);cg=safe_cg(props['ControlGroup']);rows=ancestors(props['ControlGroup'])
+  props=ctl(env,name);candidate_cg=safe_cg(props['ControlGroup']);rows=ancestors(props['ControlGroup'])
   verified=contract.validate_receipt(nonce,props,ready,read_text('/proc/'+str(ready['pid'])+'/cgroup'),rows)
   assert not str(owncg).startswith(props['ControlGroup']+'/') and str(owncg)!=props['ControlGroup'],'CONTROLLER_INSIDE_TARGET'
   assert contract.parse_proc_cgroup(read_text('/proc/self/cgroup'))==owncg,'CONTROLLER_MEMBERSHIP_CHANGED'
   assert ancestor_before==ancestors(str(owncg)),'ANCESTOR_SETTINGS_CHANGED'
   owned={**verified,'description':'Hydration core containment '+nonce}
+  cg=candidate_cg # Freeze evidence location only after the complete readiness gate.
   before=counters(cg)
   gate={'nonce':nonce,'pid':ready['pid'],'invocationId':props['InvocationID']}
   atomic_record(directory,'release.json',gate)
   result,state=observe_until_terminal(lambda:read_json(directory/'result.json') if (directory/'result.json').exists() else None,lambda:same_owned(env,owned),start+24)
-  state=same_owned(env,owned);events=counters(cg)
+  persist_terminal(directory,state,result)
+  # Revalidate for further actions, never before preserving observed state.
+  state=same_owned(env,owned)
+  events=counters(cg)
   probe_ready=(directory/'probe-ready.json').exists() and read_json(directory/'probe-ready.json')=={'nonce':nonce,'case':case}
   if result is not None:contract.verify_result_context(result,nonce,owned['invocationId'])
   decision=contract.evaluate_case_result(case,result,before,events,probe_ready,state)
@@ -206,17 +311,9 @@ def run_case(anchor,binds,case,output):
   atomic_record(directory,'controller-receipt.json',receipt)
   return receipt
  finally:
+  error=sys.exc_info()[1]
   def cleanup_owned_after_failure():
-   if not completed and creation_attempted:
-    # Recover only the exact random identity, even if creation was interrupted.
-    state=ctl(env,name)
-    if state.get('LoadState')!='not-found':
-     assert state.get('Id')==name and state.get('Description')=='Hydration core containment '+nonce,'CREATION_IDENTITY_UNKNOWN'
-     recovered={'unit':name,'invocationId':state['InvocationID'],'description':state['Description']}
-     assert len(recovered['invocationId'])==32,'CREATION_INVOCATION_UNKNOWN'
-     atomic_record(directory,'controller-failure.json',{'case':case,'status':'FAIL','reasonType':type(sys.exc_info()[1]).__name__,'payloadPass':False})
-     try:quiesce(env,recovered,safe_cg(state['ControlGroup']),natural=False)
-     except Exception:atomic_record(directory,'cleanup-unknown.json',{'case':case,'status':'FAIL_CLEANUP_UNKNOWN'});raise
+   if not completed and creation_attempted:cleanup_failed_case(directory,case,env,owned,cg,error)
   cleanup_with_restored_handlers(cleanup_owned_after_failure,handlers)
 
 def controller(anchorfile):
@@ -228,6 +325,18 @@ def controller(anchorfile):
   receipts.append(run_case(anchor,binds,case,output))
  atomic_record(output,'suite.json',{'scope':'Real core containment evidence only. No product validation or shutdown repair. Dynamic negative cases are distinct expected FAILs, never a payload PASS after forced cleanup.','cases':receipts})
  print('CORE_CONTAINMENT_EVIDENCE '+json.dumps({'caseCount':len(receipts),'outputPathSha256':hashlib.sha256(str(output).encode()).hexdigest(),'productValidated':False}))
+
+def sanitized_child_error(raw):
+ try:
+  line=raw.decode('utf8').strip()
+  if not line.startswith('CORE_ERROR '):return closed_diagnostic({}) if raw else None
+  obj=json.loads(line[len('CORE_ERROR '):])
+  if type(obj) is not dict or set(obj)!={'type','stage','reason'}:return closed_diagnostic({})
+  return closed_diagnostic(obj)
+ except (ValueError,UnicodeError,TypeError):return closed_diagnostic({})
+
+def propagate_child_error(result):
+ if result.get('errorType') is not None:raise DiagnosticFailure(result['errorType'])
 
 class CaptureSetupFatal(RuntimeError):pass
 
@@ -270,7 +379,7 @@ def capture_child(argv,timeout,on_output=None):
       for stream in (child.stdin,child.stdout,child.stderr):stream.close()
     finally:
      if pidfd is not None:os.close(pidfd)
- return {'status':'OK' if child.returncode==0 and not forced and not err else 'FAIL','forced':forced,'exitCode':child.returncode,'stderr':bool(err),'stdout':out.decode('utf8')}
+ return {'status':'OK' if child.returncode==0 and not forced and not err else 'FAIL','forced':forced,'exitCode':child.returncode,'stderr':bool(err),'stdout':out.decode('utf8'),'errorType':sanitized_child_error(bytes(err))}
 
 def helper(control,nonce):
  directory=pathlib.Path(control);cfg=read_json(directory/'config.json',limit=262144);assert cfg['nonce']==nonce and cfg['case'] in CASES,'HELPER_CONFIG'
@@ -294,10 +403,13 @@ def helper(control,nonce):
  assert all(len(a.encode())<os.sysconf('SC_PAGE_SIZE')*32 for a in argv) and sum(len(a.encode())+1+8 for a in argv)<min(os.sysconf('SC_ARG_MAX')-65536,524288),'BWRAP_ARGV_LIMIT'
  base={'case':cfg['case'],'nonce':nonce,'invocationId':gate['invocationId'],'status':'FAIL','forced':False,'exitCode':None,'stderr':False,'reason':'unverified','naturalExit':False,'pipeEOF':False,'descendants':-1}
  try:captured=capture_child(argv,12,observed)
- except CaptureSetupFatal:
+ except CaptureSetupFatal as e:
+  atomic_record(directory,'helper-error.json',diagnostic_record(exception_diagnostic(e,'trusted-helper')))
   base.update({'reason':'capture-setup-fatal','forced':True});atomic_record(directory,'result.json',base);raise
- except (TimeoutError,AssertionError,subprocess.TimeoutExpired):
+ except (TimeoutError,AssertionError,subprocess.TimeoutExpired) as e:
+  atomic_record(directory,'helper-error.json',diagnostic_record(exception_diagnostic(e,'trusted-helper')))
   base.update({'reason':'outer-capture-failure','forced':True});atomic_record(directory,'result.json',base);raise
+ if captured['errorType'] is not None:atomic_record(directory,'helper-error.json',diagnostic_record(captured['errorType']))
  base.update({'exitCode':captured['exitCode'],'stderr':captured['stderr'],'forced':captured['forced']})
  if captured['status']=='OK':
   lines=captured['stdout'].splitlines();assert lines[0]=='CORE_PROBE_READY '+cfg['case'] and len(lines)==2,'INNER_LINES'
@@ -334,6 +446,7 @@ def inner():
  except TimeoutError:
   assert ready and case in ('pipe','timeout'),'UNEXPECTED_INNER_DEADLINE'
   print(json.dumps({'case':case,'reason':'pipe-eof-deadline' if case=='pipe' else 'wall-deadline','forced':True,'exitCode':None,'naturalExit':False,'pipeEOF':False,'descendants':0}),flush=True);return
+ propagate_child_error(result)
  assert ready,'PROBE_NOT_READY'
  remaining={int(p.name) for p in pathlib.Path('/proc').iterdir() if p.name.isdigit()}-{1,os.getpid()}
  if case=='descendant':
@@ -422,10 +535,21 @@ def probe():
  elif case=='timeout':time.sleep(8)
  print(json.dumps({'case':case,'verified':True}),flush=True)
 
+def namespace_entry(stage,callback):
+ try:callback();return 0
+ except BaseException as error:
+  print('CORE_ERROR '+json.dumps(exception_diagnostic(error,stage)),file=sys.stderr,flush=True)
+  return 1
+
 if __name__=='__main__':
  if sys.flags.optimize:raise SystemExit('OPTIMIZATION_DISABLES_REQUIRED_GATES')
- if sys.argv[1:2]==['controller'] and len(sys.argv)==3:controller(sys.argv[2])
- elif len(sys.argv)==5 and sys.argv[1]=='--control' and sys.argv[3]=='--nonce':helper(sys.argv[2],sys.argv[4])
- elif sys.argv[1:]==['inner']:inner()
- elif sys.argv[1:]==['probe']:probe()
+ if sys.argv[1:2]==['controller'] and len(sys.argv)==3:raise SystemExit(namespace_entry('controller',lambda:controller(sys.argv[2])))
+ elif len(sys.argv)==5 and sys.argv[1]=='--control' and sys.argv[3]=='--nonce':
+  try:helper(sys.argv[2],sys.argv[4])
+  except BaseException as e:
+   directory=pathlib.Path(sys.argv[2])
+   if not (directory/'helper-error.json').exists():atomic_record(directory,'helper-error.json',diagnostic_record(exception_diagnostic(e,'trusted-helper')))
+   raise SystemExit(1)
+ elif sys.argv[1:] in (['inner'],['probe']):
+  raise SystemExit(namespace_entry(sys.argv[1],inner if sys.argv[1]=='inner' else probe))
  else:raise SystemExit('UNWIRED: explicit controller with external anchor required; no default execution')

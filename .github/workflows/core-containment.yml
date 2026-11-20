@@ -59,5 +59,7 @@ jobs:
             /tmp/hg-core-evidence/*/controller-receipt.json
             /tmp/hg-core-evidence/*/controller-failure.json
             /tmp/hg-core-evidence/*/cleanup-unknown.json
+            /tmp/hg-core-evidence/*/terminal-snapshot.json
+            /tmp/hg-core-evidence/*/helper-error.json
           if-no-files-found: ignore
           retention-days: 2
