@@ -184,7 +184,10 @@ for p in sorted(A.rglob('*')):
   review=str(p.relative_to(O)) in review_sources
   manifest.append({'source':str(p.relative_to(O)),'target':None if review else '/app/'+str(p.relative_to(A)),'sha256':sha(p),'bytes':p.stat().st_size,'mode':format(stat.S_IMODE(p.stat().st_mode),'o'),'disposition':'review-only' if review else 'mountable'})
 inventory={'files':len(manifest),'bytes':sum(r['bytes'] for r in manifest),'byDisposition':{d:{'files':sum(r['disposition']==d for r in manifest),'bytes':sum(r['bytes'] for r in manifest if r['disposition']==d)} for d in ['mountable','review-only']},'largest':sorted(manifest,key=lambda r:(-r['bytes'],r['source']))[:20]}
+diagnostic=runpy.run_path(str(selection_dir/'preparation-diagnostics.py'))['summarize'](manifest,A,O,stdlib,selection_dir/'launch-capsule.py',{str(p.relative_to(R)) for p in seen},{str(pathlib.Path(r['emitted']).relative_to(O.name)) for r in emitted_doc['files']})
+inventory.update(diagnostic)
 print('FINITE_CAPSULE_INVENTORY '+json.dumps(inventory,sort_keys=True),flush=True)
+assert not diagnostic['unclassifiedPaths'],'DIAGNOSTIC_UNCLASSIFIED'
 assert len(manifest)<=4000 and inventory['bytes']<=400*1024**2,'FINITE_CAPSULE_BUDGET'
 (O/'ALLOWLIST.json').write_text(json.dumps(manifest,indent=2));(O/'PREPARATION-CONTRACT.json').write_text(json.dumps(C,indent=2))
 (O/'PACKAGE-VERSIONS.txt').write_text(subprocess.check_output(['dpkg-query','-W','bubblewrap','iproute2','python3','util-linux'],text=True))
