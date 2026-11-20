@@ -1,0 +1,73 @@
+"""Direct receipt only. Never upload raw logs, journals, environment or auth."""
+import json,re
+from pathlib import Path
+BOOL={'rawSystemMemoryVerified','productAttempted','forcedCleanup','allSilhouetteValidated','pipeEOFObserved','contextValidated','cleanupUnknown',
+ 'temporaryRootRetainedUntilVMTeardown','naturalMainExit','managerReportedWholeCgroupExited','sameOriginalIdsAndFields',
+ 'providersOff','afterStopConfirmed','partial','copyIsNaturalExitEvidence','runtimePerFileCap',
+ 'cleanupBeforeStopStateUnavailable','publicEvidenceCopyUnavailable'}
+NUM={'rawSystemEventCount','runId','jobId','exitCode','logBytes','totalBytes','copiedBytes','bytesCopied','collectionLimitBytes'}
+TEXT={'kind':{'DIRECT_REAL_NARRATIVE_SYSTEMD'},'result':{'UNKNOWN','PASS_DIRECTED_RAW_SYSTEM_MEMORY_ONLY'},
+ 'stage':{'CONTEXT','HOST_MANAGER','PAYLOAD','TEMPORARY_WORK','WRITE','READ','TERMINAL_EVIDENCE'},
+ 'mode':{'write','read'},'scope':{'Narrative-raw-system-events-only-not-full-app-or-crash-durability'},
+ 'terminalModel':{'SYSTEMD_EXITTYPE_CGROUP_REMAIN_AFTER_EXIT'},
+ 'naturalTreeExitModel':{'SYSTEMD_EXITTYPE_CGROUP_NOT_DOCKER_PID1_CENSUS'},
+ 'executableIdentity':{'ABSOLUTE_PINNED_FILE_NOT_PROC_OBSERVATION'}}
+HASH={'rawMemoryWriterSha256','rawMemoryRecoveredSha256','publicTargetAdditionSha256','journalSha256','recoveredSha256','originalArchiveSha256','originalManifestSha256','derivedManifestSha256','derivedGuardSha256','productEntrySha256','originalProductEntrySha256','diagnosticEntrySha256'}
+OBJECT={'instrumentationProvenance','terminalJournalCopy','logCollection','write','read'}
+UNIT={'LoadState','ActiveState','SubState','Result','ExecMainCode','ExecMainStatus','MainPID','ControlPID','Type','ExitType',
+ 'RemainAfterExit','User','Group','PrivateNetwork','PrivateDevices','NoNewPrivileges','MemoryMax','MemorySwapMax',
+ 'TasksMax','CPUQuotaPerSecUSec','CPUQuotaPeriodUSec','KillMode','Restart'}
+def state(value):
+ return {k:v for k,v in value.items() if k in UNIT and isinstance(v,str) and re.fullmatch('[a-zA-Z0-9_.-]{0,80}',v)}
+def project(value,depth=0):
+ assert isinstance(value,dict) and depth<=5
+ out={}
+ for k,v in value.items():
+  if k in BOOL and type(v)is bool:out[k]=v
+  elif k in NUM and type(v)is int and 0<=v<10**15:out[k]=v
+  elif k in TEXT and isinstance(v,str) and v in TEXT[k]:out[k]=v
+  elif k in HASH and isinstance(v,str) and re.fullmatch('[a-f0-9]{64}',v):out[k]=v
+  elif k in {'failureCode','cleanupFailureCode'} and isinstance(v,str) and re.fullmatch('[A-Z][A-Z0-9_]{0,95}',v):out[k]=v
+  elif k=='failureClass' and v in {'RuntimeError','ValueError','OSError','FileNotFoundError','PermissionError','TimeoutExpired','JSONDecodeError','AssertionError','TypeError','KeyError'}:out[k]=v
+  elif k in OBJECT and isinstance(v,dict):out[k]=project(v,depth+1)
+  elif k=='phases' and isinstance(v,list):out[k]=[project(x,depth+1) for x in v[:2]]
+  elif k=='diagnosticSamples' and isinstance(v,list):
+   result=[]
+   for sample in v[:4]:
+    try:
+     assert isinstance(sample,dict) and sample['mode'] in {'write','read'} and sample['state'] in {'MISSING','REJECTED','VALIDATED'} and type(sample['afterStopConfirmed'])is bool
+     row={x:sample[x] for x in ('mode','state','afterStopConfirmed')}
+     if sample['state']=='VALIDATED':row['diagnostic']=diagnostic_schema.project(sample['diagnostic'],diagnostic_table,diagnostic_targets)
+     result.append(row)
+    except Exception:result.append({'state':'REJECTED'})
+   out[k]=result
+  elif k=='rawSnapshotObservations' and isinstance(v,list):
+   rows=[]
+   for item in v[:2]:
+    assert isinstance(item,dict) and set(item)=={'mode','workingArray','rawCountBounded','countOverflow','snapshotSha256','expectedAllPresent','exactExpectedMultiset'}
+    assert item['mode'] in {'write','read'}
+    assert type(item['rawCountBounded'])is int and 0<=item['rawCountBounded']<=1001
+    assert all(type(item[x])is bool for x in ('workingArray','countOverflow','expectedAllPresent','exactExpectedMultiset'))
+    assert isinstance(item['snapshotSha256'],str) and re.fullmatch('[a-f0-9]{64}',item['snapshotSha256'])
+    rows.append(item)
+   out[k]=rows
+  elif k=='unitStates' and isinstance(v,list):out[k]=[state(x) for x in v[:4] if isinstance(x,dict)]
+  elif k in {'lastUnitState','cleanupBeforeStopState','cleanupAfterStopState'} and isinstance(v,dict):out[k]=state(v)
+ return out
+import importlib.util
+base=Path(__file__).parent
+spec=importlib.util.spec_from_file_location('diagnostic_schema',base/'diagnostic-projection.INACTIVE.py')
+diagnostic_schema=importlib.util.module_from_spec(spec);spec.loader.exec_module(diagnostic_schema)
+diagnostic_table=json.loads((base/'diagnostic-source-table.json').read_text())
+diagnostic_targets=json.loads((base/'diagnostic-targets.json').read_text())['targets']
+if __name__=='__main__':
+ output=Path('/tmp/narrative-direct-selected');output.mkdir(mode=0o755,exist_ok=False)
+ try:
+  source=Path('/tmp/narrative-direct-result.json')
+  if not source.exists():value={'evidenceState':'DIRECT_RECEIPT_NOT_WRITTEN','cleanTerminationEstablished':False}
+  else:
+   assert source.is_file() and source.stat().st_size<=262144
+   value=project(json.loads(source.read_text()))
+ except Exception:value={'evidenceState':'UNREADABLE_OR_INVALID','cleanTerminationEstablished':False}
+ raw=(json.dumps(value,sort_keys=True,indent=2)+'\n').encode();assert len(raw)<=262144
+ (output/'receipt.json').write_bytes(raw)

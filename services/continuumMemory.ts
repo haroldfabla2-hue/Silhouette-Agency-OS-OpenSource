@@ -3,6 +3,8 @@ import { atomicWriteFile } from './utils/atomicWrite';
 import { MemoryNode, MemoryTier } from "../types";
 import { lancedbService } from './lancedbService';
 import { createHash } from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { registerContinuumPersistenceClose } from './lifecycle/ownedProducers';
 import { fuseMemories, inScope, scopeSql, type MemoryScope } from './memoryRetrieval';
 import { activation, selectSleepBatch } from './memoryCognition';
 import { memoryTransitions, isOutstandingTransition } from './memoryTransitions';
@@ -15,6 +17,7 @@ import * as path from 'path';
 import { systemBus } from './systemBus';
 import { SystemProtocol } from '../types';
 import { MemoryNodeSchema } from './memorySchema'; // Added missing import
+import { beginStoreRootScope, beginChild, type WorkScope } from './asyncWorkLedger'; // [O2-OBSERVE] observation-only ledger (zero product imports)
 
 const SNAPSHOT_PATH = path.join(process.cwd(), 'data', 'memory_snapshot.json');
 
@@ -32,6 +35,98 @@ function positiveIntEnv(name: string, fallback: number): number {
 }
 
 class ContinuumMemorySystem {
+    // Hydration is separate from recovery: replay can save snapshots and must
+    // never await a promise that itself waits for replay.
+    private hydration!: Promise<void>;
+    private hydrationState: 'loading' | 'ready' | 'failed' = 'loading';
+    private hydrationError: unknown;
+    private startupRecovery!: Promise<void>;
+    private snapshotTail: Promise<void> = Promise.resolve();
+    private snapshotFailure: unknown;
+    private snapshotFailed = false;
+    private readonly mutationContext = new AsyncLocalStorage<symbol>();
+    private readonly mutationTasks = new Map<symbol, Promise<unknown>>();
+    private persistenceClosing = false;
+    private persistenceCloseTask: Promise<void> | null = null;
+
+    private assertMutationAdmission(): void {
+        const inherited = this.mutationContext.getStore();
+        if (this.persistenceClosing && !(inherited && this.mutationTasks.has(inherited))) {
+            throw new Error('CONTINUUM_MUTATION_ADMISSION_CLOSED');
+        }
+    }
+
+    private assertSynchronousMutation(): void {
+        this.assertMutationAdmission();
+        if (this.hydrationState === 'failed') throw this.hydrationError;
+        if (this.hydrationState !== 'ready') throw new Error('CONTINUUM_HYDRATION_NOT_READY');
+    }
+
+    private mutate<T>(operation: () => Promise<T>): Promise<T> {
+        try { this.assertMutationAdmission(); } catch (error) { return Promise.reject(error); }
+        const ticket = Symbol('continuum-mutation');
+        // Register ownership synchronously, before hydration or operation awaits.
+        const work = this.mutationContext.run(ticket, async () => {
+            await this.hydration;
+            return operation();
+        });
+        this.mutationTasks.set(ticket, work);
+        void work.then(() => { this.mutationTasks.delete(ticket); }, error => {
+            // Operation rejection belongs to its caller. A missing ID,
+            // invalid request or optional provider is not a failed disk write.
+            this.mutationTasks.delete(ticket);
+        });
+        return work;
+    }
+
+    /** Fence new mutations, await accepted work and flush the newest state.
+     * No timeout, cancellation, provider shutdown or full-app quiescence claim.
+     * Callers must stop outside producers first. Failures remain sticky: a
+     * second close cannot erase an earlier failed snapshot commit.
+     */
+    public closePersistence(): Promise<void> {
+        const caller = this.mutationContext.getStore();
+        if (caller && this.mutationTasks.has(caller)) return Promise.reject(new Error('CONTINUUM_CLOSE_FROM_MUTATION'));
+        this.persistenceClosing = true;
+        if (this.persistenceCloseTask) return this.persistenceCloseTask;
+        this.persistenceCloseTask = (async () => {
+            // Even a load/recovery failure must not return while other already
+            // accepted callers are still settling. Startup recovery is tracked.
+            await Promise.allSettled([this.hydration]);
+            while (this.mutationTasks.size) {
+                await Promise.allSettled([...this.mutationTasks.values()]);
+            }
+            // Already accepted mutations may have enqueued their last save.
+            await Promise.allSettled([this.queueSnapshot()]);
+            if (this.hydrationState === 'failed') throw this.hydrationError;
+            if (this.snapshotFailed) throw this.snapshotFailure;
+        })();
+        return this.persistenceCloseTask;
+    }
+
+    private queueSnapshot(): Promise<void> {
+        const work = this.snapshotTail.then(async () => {
+            await this.hydration;
+            // Capture all serializable fields only once this commit owns its
+            // turn. Older payloads cannot rename after a newer commit.
+            const revision = this.writeRevision;
+            const payload = JSON.stringify({ working: this.working, ultraShort: this.working, short: [] }, null, 2);
+            try { await redisClient.set('continuum:volatile', payload, 3600); }
+            catch (error) { console.warn('[CONTINUUM] Redis snapshot unavailable:', error); }
+            await fs.mkdir(path.dirname(SNAPSHOT_PATH), { recursive: true });
+            await atomicWriteFile(SNAPSHOT_PATH, payload);
+            if (this.writeRevision === revision && !this.snapshotFailed) this.isDirty = false;
+        });
+        // Catch keeps the queue usable, but does not fulfill this caller's
+        // promise or erase failure history from the close receipt.
+        this.snapshotTail = work.then(() => {}, error => {
+            if (!this.snapshotFailed) this.snapshotFailure = error;
+            this.snapshotFailed = true;
+            this.isDirty = true;
+        });
+        return work;
+    }
+
     // === UNIFIED WORKING MEMORY (RAM - Fast Access) ===
     // [REFACTOR 2026-01-07] Merged ultraShort + short into single working array
     // TTL: 30 mins (promoted to MEDIUM if accessed frequently or aged)
@@ -40,9 +135,9 @@ class ContinuumMemorySystem {
     // Legacy aliases for backward compatibility (both point to working)
     // These getters/setters allow existing code to continue working
     private get ultraShort(): MemoryNode[] { return this.working; }
-    private set ultraShort(value: MemoryNode[]) { this.working = value; }
+    private set ultraShort(value: MemoryNode[]) { this.assertSynchronousMutation(); this.working = structuredClone(value); this.markDirty(); }
     private get short(): MemoryNode[] { return this.working; }
-    private set short(value: MemoryNode[]) { this.working = value; }
+    private set short(value: MemoryNode[]) { this.assertSynchronousMutation(); this.working = structuredClone(value); this.markDirty(); }
 
     // Dirty Flag for Persistence Optimization
     private isDirty: boolean = false;
@@ -79,12 +174,15 @@ class ContinuumMemorySystem {
     // ...
 
     private async promoteWorking(node: MemoryNode, tags: string[] = []): Promise<void> {
+        return this.mutate(async () => {
         const promoted = { ...node, tier: MemoryTier.MEDIUM, tags: [...node.tags, ...tags] };
         await memoryTransitions.transition(node, promoted);
         // Do not remove a replacement with the same ID that arrived while writing.
         this.working = this.working.filter(n => n !== node);
         this.markDirty();
         await this.saveSnapshot();
+    
+        });
     }
 
     // [NATIVE-RECOVERY] Structured failure reporting: promote failures used to
@@ -113,6 +211,7 @@ class ContinuumMemorySystem {
     }
 
     private async tickMedium(now: number) {
+        return this.mutate(async () => {
         const toPromote = this.working.filter(node =>
             now - node.timestamp > 900000 || node.accessCount > 10 || node.importance >= 0.95
         );
@@ -120,6 +219,8 @@ class ContinuumMemorySystem {
             try { await this.promoteWorking(node); await this.notePromoteSuccess(); }
             catch (e) { await this.notePromoteFailure(node.id, e); }
         }
+    
+        });
     }
 
     // ...
@@ -150,42 +251,77 @@ class ContinuumMemorySystem {
         // a fire-and-forget connect here raced test-worker teardown and
         // crashed CI intermittently. Disk/journal recovery never depended on
         // Redis availability.
-        this.loadSnapshot().then(() => this.reconcileTransitions())
-            .catch(err => console.error('[CONTINUUM] Failed to recover memory:', err));
+        registerContinuumPersistenceClose(() => this.closePersistence());
+        this.hydration = this.loadSnapshot().then(() => { this.hydrationState = 'ready'; }, error => {
+            this.hydrationState = 'failed'; this.hydrationError = error; throw error;
+        });
+        this.startupRecovery = this.mutate(() => this.reconcileTransitions());
+        void this.startupRecovery.catch(err => console.error('[CONTINUUM] Failed to recover memory:', err));
     }
 
     // --- PUBLIC API ---
+    public ready(): Promise<void> { return this.hydration; }
+
+    /** Apply Janitor's bounded field edits under owner admission, never expose
+     * mutable RAM. Non-WORKING IDs are explicitly NOT persisted by this owner.
+     * Compare only touched fields against the original read, so concurrent
+     * store/recall updates cannot be overwritten by a stale borrowed snapshot.
+     */
+    public applyWorkingEdits(edits: Array<{
+        id: string;
+        before: Pick<MemoryNode, 'content' | 'originalContent' | 'tags' | 'importance'>;
+        after: Pick<MemoryNode, 'content' | 'originalContent' | 'tags' | 'importance'>;
+    }>, requireAllWorking = false): Promise<{ updated: string[]; outsideWorking: string[] }> {
+        // Take ownership at entry, before hydration awaits or caller edits.
+        const owned = structuredClone(edits);
+        return this.mutate(async () => {
+            const outsideWorking: string[] = [];
+            const replacements = new Map<MemoryNode, MemoryNode>();
+            const seen = new Set<string>();
+            const fields = ['content', 'originalContent', 'tags', 'importance'] as const;
+            for (const edit of owned) {
+                if (!edit.id || seen.has(edit.id)) throw new Error('CONTINUUM_EDIT_IDS_INVALID');
+                seen.add(edit.id);
+                const node = this.working.find(n => n.id === edit.id);
+                if (!node) { outsideWorking.push(edit.id); continue; }
+                const changes: Partial<MemoryNode> = {};
+                for (const key of fields) {
+                    if (JSON.stringify(edit.before[key]) === JSON.stringify(edit.after[key])) continue;
+                    if (JSON.stringify(node[key]) !== JSON.stringify(edit.before[key])) throw new Error('CONTINUUM_EDIT_CONFLICT');
+                    Object.assign(changes, { [key]: edit.after[key] });
+                }
+                const candidate = { ...node, ...changes };
+                if (typeof candidate.content !== 'string' || !Array.isArray(candidate.tags) ||
+                    !candidate.tags.every(t => typeof t === 'string') || !Number.isFinite(candidate.importance) ||
+                    candidate.importance < 0 || candidate.importance > 1 ||
+                    (candidate.originalContent !== undefined && typeof candidate.originalContent !== 'string')) throw new Error('CONTINUUM_EDIT_INVALID');
+                if (Object.keys(changes).length) replacements.set(node, candidate);
+            }
+            // Strict callers cannot partially resolve a cross-owner pair.
+            if (requireAllWorking && outsideWorking.length) throw new Error('CONTINUUM_EDIT_OWNER_UNSUPPORTED');
+            // All checks complete before a single synchronous RAM mutation.
+            if (replacements.size) {
+                this.working = this.working.map(n => replacements.get(n) || n);
+                this.markDirty();
+                try { await this.saveSnapshot(); }
+                catch (error) {
+                    // RAM was changed, disk is unverified. Callers must not
+                    // retry a relative importance/content edit as if unapplied.
+                    throw new Error('CONTINUUM_EDIT_COMMIT_FAILED', { cause: error });
+                }
+            }
+            return { updated: [...replacements.values()].map(n => n.id), outsideWorking };
+        });
+    }
+
     public async forceConsolidation() {
         console.log("[CONTINUUM] 🧠 Forcing Memory Consolidation...");
         return await this.consolidateRamImmediate();
     }
 
     // --- PERSISTENCE SNAPSHOTS ---
-    private async saveSnapshot() {
-        try {
-            // [REFACTOR 2026-01-07] Use unified 'working' key for new format
-            // Also save legacy keys for backward compatibility with older code
-            const data = {
-                working: this.working,
-                // Legacy keys (for backward compatibility if rollback needed)
-                ultraShort: this.working,
-                short: []
-            };
-            const payload = JSON.stringify(data, null, 2);
-
-            // 1. Primary: Redis (Fast, Distributed)
-            try { await redisClient.set('continuum:volatile', payload, 3600); }
-            catch (error) { console.warn('[CONTINUUM] Redis snapshot unavailable:', error); }
-
-            // 2. Secondary: Disk (Permanent, Local)
-            await fs.mkdir(path.dirname(SNAPSHOT_PATH), { recursive: true });
-            await atomicWriteFile(SNAPSHOT_PATH, payload);
-
-            // console.log("[CONTINUUM] Volatile memory snapshot saved (V5.0 format).");
-        } catch (error) {
-            console.error("[CONTINUUM] Failed to save snapshot:", error);
-            throw error;
-        }
+    private saveSnapshot(): Promise<void> {
+        return this.queueSnapshot();
     }
 
     private async loadSnapshot() {
@@ -203,8 +339,19 @@ class ContinuumMemorySystem {
                 if (redisData) { snapshot = JSON.parse(redisData); source = 'REDIS'; }
             }
 
-            if (!snapshot) return;
+            if (!source) return;
+            if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot) ||
+                !(Array.isArray(snapshot.working) || Array.isArray(snapshot.ultraShort) || Array.isArray(snapshot.short))) {
+                throw new Error('CONTINUUM_SNAPSHOT_SHAPE_INVALID');
+            }
 
+            // Validate without rebuilding, truncating or normalizing stored data.
+            const loadedNodes = Array.isArray(snapshot.working) ? snapshot.working : [...(snapshot.ultraShort || []), ...(snapshot.short || [])];
+            for (const node of loadedNodes) {
+                if (!node || typeof node.id !== 'string' || !node.id || typeof node.content !== 'string' ||
+                    !Array.isArray(node.tags) || !node.tags.every((t: unknown) => typeof t === 'string') ||
+                    !Number.isFinite(node.timestamp)) throw new Error('CONTINUUM_SNAPSHOT_NODE_INVALID');
+            }
             // [REFACTOR 2026-01-07] Handle both V5.0 and legacy formats
             // V5.0 format has 'working' key
             // Legacy format has 'ultraShort' and 'short' keys
@@ -228,9 +375,10 @@ class ContinuumMemorySystem {
                 console.log(`[CONTINUUM] 🔄 MIGRATED Legacy Snapshot from ${source}: ${legacyNodes.length} nodes merged into WORKING tier`);
             }
         } catch (error: any) {
-            if (error.code !== 'ENOENT') {
-                console.error("[CONTINUUM] Error loading snapshot:", error);
-            }
+            // The only tolerated ENOENT was the disk read handled above.
+            // Redis/parsing/validation failures are never new-store success.
+            console.error('[CONTINUUM] Error loading snapshot:', error);
+            throw error;
         }
     }
 
@@ -241,6 +389,7 @@ class ContinuumMemorySystem {
      * grow without bound - outstanding entries are the only work remaining.
      */
     public async reconcileTransitions(scope: 'full' | 'pending' = 'full'): Promise<void> {
+        return this.mutate(async () => {
         for (const entry of await memoryTransitions.pending()) {
             if (scope === 'pending' && !isOutstandingTransition(entry)) continue;
             try {
@@ -267,18 +416,23 @@ class ContinuumMemorySystem {
                 console.error(`[CONTINUUM] Recovery deferred for ${entry.key}:`, error);
             }
         }
+    
+        });
     }
 
     // --- PERSISTENCE HELPERS ---
     public getVolatileState(): MemoryNode[] {
+        if (this.hydrationState === 'failed') throw this.hydrationError;
+        if (this.hydrationState !== 'ready') throw new Error('CONTINUUM_HYDRATION_NOT_READY');
         // [REFACTOR 2026-01-07] Return unified working memory
-        return [...this.working];
+        return structuredClone(this.working);
     }
 
     public hydrateVolatile(nodes: MemoryNode[]) {
+        this.assertSynchronousMutation();
         // [REFACTOR 2026-01-07] All nodes go to unified working memory
         // Accept nodes from any tier (WORKING, ULTRA_SHORT, SHORT) for backward compatibility
-        this.working = nodes.filter(n => {
+        this.working = structuredClone(nodes).filter(n => {
             const tierStr = String(n.tier);
             return tierStr === 'WORKING' || tierStr === 'ULTRA_SHORT' || tierStr === 'SHORT';
         });
@@ -288,6 +442,8 @@ class ContinuumMemorySystem {
 
     // --- FULL SESSION CHAT HISTORY (INFINITE CONTEXT) ---
     public getSessionHistory(limit: number = 1000): { role: string; content: string }[] {
+        if (this.hydrationState === 'failed') throw this.hydrationError;
+        if (this.hydrationState !== 'ready') throw new Error('CONTINUUM_HYDRATION_NOT_READY');
         // [FIX 2026-02] Use unified working array directly (ultraShort/short are aliases to working)
         const history = this.working
             .filter(n => n.tags.includes('USER_MESSAGE') || n.tags.includes('AGENT_RESPONSE'))
@@ -301,17 +457,20 @@ class ContinuumMemorySystem {
         return history;
     }
 
-    // --- PUBLIC API ---
-
     public getShortTermMemory(): MemoryNode[] {
-        return this.working;
+        if (this.hydrationState === 'failed') throw this.hydrationError;
+        if (this.hydrationState !== 'ready') throw new Error('CONTINUUM_HYDRATION_NOT_READY');
+        return structuredClone(this.working);
     }
 
     public getHippocampus(): MemoryNode[] {
-        return this.hippocampus;
+        if (this.hydrationState === 'failed') throw this.hydrationError;
+        if (this.hydrationState !== 'ready') throw new Error('CONTINUUM_HYDRATION_NOT_READY');
+        return structuredClone(this.hippocampus);
     }
 
     public async getAllNodes(): Promise<Record<MemoryTier, MemoryNode[]>> {
+        await this.hydration;
         // 1. RAM Tier (Unified WORKING memory)
         const nodes: Record<MemoryTier, MemoryNode[]> = {
             [MemoryTier.WORKING]: [...this.working],
@@ -358,14 +517,16 @@ class ContinuumMemorySystem {
             console.error("[CONTINUUM] Failed to aggregate nodes:", e);
         }
 
-        return nodes;
+        return structuredClone(nodes);
     }
 
     public clearHippocampus(nodeIds: string[]) {
+        this.assertSynchronousMutation();
         this.hippocampus = this.hippocampus.filter(n => !nodeIds.includes(n.id));
     }
 
     public async deleteNode(nodeId: string) {
+        return this.mutate(async () => {
         // [FIX 2026-02] Use working directly (ultraShort/short are aliases)
         const originalLen = this.working.length;
         this.working = this.working.filter(n => n.id !== nodeId);
@@ -384,9 +545,27 @@ class ContinuumMemorySystem {
         } catch (e) {
             console.error(`[CONTINUUM] Failed to delete node ${nodeId} from LanceDB`, e);
         }
+    
+        });
     }
 
-    public async store(content: string, tier: MemoryTier = MemoryTier.ULTRA_SHORT, tags: string[] = [], skipIngestion: boolean = false, extra?: { parentIds?: string[]; affect?: { valence: number; activation: number; at: number } }): Promise<void> {
+    public store(content: string, tier: MemoryTier = MemoryTier.ULTRA_SHORT, tags: string[] = [], skipIngestion: boolean = false, extra?: { parentIds?: string[]; affect?: { valence: number; activation: number; at: number } }): Promise<void> {
+        // [O2-OBSERVE] Pure observation: nothing is suppressed, reordered
+        // or awaited differently. A non-internal store opens an
+        // observational root scope at ENTRY (before internal awaits); the
+        // scope ends when the work settles (return, throw or early return
+        // are all covered by these handlers). Internal stores
+        // (skipIngestion=true) keep no scope: they launch no cascades.
+        const scope = skipIngestion ? null : beginStoreRootScope('continuum.store');
+        const work = this.storeWithScope(scope, content, tier, tags, skipIngestion, extra);
+        if (scope !== null) {
+            work.then(() => scope.end('ok'), (err: unknown) => scope.end('failed', err));
+        }
+        return work;
+    }
+
+    private async storeWithScope(scope: WorkScope | null, content: string, tier: MemoryTier = MemoryTier.ULTRA_SHORT, tags: string[] = [], skipIngestion: boolean = false, extra?: { parentIds?: string[]; affect?: { valence: number; activation: number; at: number } }): Promise<void> {
+        return this.mutate(async () => {
         // [PR-4c] Boundary coercion: an invalid tier (e.g. an LLM emitting the
         // number 28) must not reach the gatekeeper as a "corruption" event that
         // mobilizes remediation squads in a loop. Coerce loudly to WORKING;
@@ -484,8 +663,10 @@ class ContinuumMemorySystem {
             if (this.working.length > this.RAM_HARD_CAP) {
                 const evicted = this.working[0];
                 if (evicted && evicted !== node) {
-                    try { await this.promoteWorking(evicted, ['EVICTED']); }
-                    catch (error) { console.error('[CONTINUUM] Eviction deferred; source remains in RAM:', error); }
+                    // [O2-OBSERVE] Eviction outcome recorded BEFORE the historical absorb.
+                    const evictionChild = scope !== null ? beginChild(scope, 'working-eviction') : null;
+                    try { await this.promoteWorking(evicted, ['EVICTED']); evictionChild?.settle('ok'); }
+                    catch (error) { evictionChild?.fail(error); console.error('[CONTINUUM] Eviction deferred; source remains in RAM:', error); }
                 }
             }
         }
@@ -564,23 +745,59 @@ class ContinuumMemorySystem {
             introspection.setRecentThoughts([`Storing memory: ${content.substring(0, 30)}...`]);
 
             // 4. Notify Dreamer (Event-Driven) - with null check
-            import('./dreamerService').then(({ dreamer }) => {
-                if (dreamer?.notifyNewMemory) dreamer.notifyNewMemory();
-            }).catch(() => { /* Dreamer not available */ });
+            // [O2-OBSERVE] Child registered BEFORE the dynamic import starts:
+            // import time is observed pending time, not an idle gap. The
+            // callback adopts the REAL returned work: a cap-hit dream promise
+            // is awaited by the ledger (with its known escapes declared
+            // sticky); a synchronous entropy increment completes immediately
+            // (state changed: 'sync-completed', not a no-op). The outcome is
+            // recorded BEFORE the historical absorbing catch, which still
+            // absorbs for the caller exactly as before.
+            const dreamerChild = scope !== null ? beginChild(scope, 'dreamer-notify') : null;
+            import('./dreamerService').then(({ dreamer, DREAM_KNOWN_INCOMPLETE_COVERAGE }) => {
+                if (!dreamer?.notifyNewMemory) { dreamerChild?.settle('producer-noop'); return; }
+                const result: Promise<void> | void = dreamer.notifyNewMemory();
+                if (result && typeof (result as Promise<void>).then === 'function') {
+                    // Fulfilled dream is NOT absence of failure: its internal
+                    // catch absorbs and its fire-and-forget subgraph is
+                    // declared, never claimed closed.
+                    DREAM_KNOWN_INCOMPLETE_COVERAGE.forEach(reason => dreamerChild?.noteIncompleteCoverage(`dreamer-notify: ${reason}`));
+                    (result as Promise<void>).then(
+                        () => dreamerChild?.settle('ok'),
+                        (err: unknown) => dreamerChild?.fail(err)
+                    );
+                } else {
+                    dreamerChild?.settle('sync-completed');
+                }
+            }).catch((err: unknown) => { dreamerChild?.fail(err); /* Dreamer not available */ });
 
             // 5. [BRAIN] Mirror to the external silhouette-brain 4-Tier memory
             //    (fire-and-forget, no-op when the integration is disabled).
+            const brainChild = scope !== null ? beginChild(scope, 'brain-mirror') : null;
             import('./brain').then(({ brainBridge }) => {
-                brainBridge.mirrorMemory(content, {
+                // [O2-OBSERVE] Child registered before the import; the real
+                // mirror outcome is returned and classified: 'disabled'/'empty'
+                // are producer no-ops (NOT losses); 'unverified-null'/'not-ok'
+                // are unverified (the client already erased the cause, and no
+                // recovery of it is claimed). Recorded BEFORE the absorbing
+                // catch, which still absorbs for the caller.
+                return brainBridge.mirrorMemory(content, {
                     importance: node.importance,
                     tags: node.tags,
                     tier: (tierStr === 'DEEP' ? 'DEEP' : tierStr === 'MEDIUM' ? 'MEDIUM' : 'WORKING'),
                 });
-            }).catch(() => { /* Brain integration not available */ });
+            }).then((mirrorOutcome) => {
+                if (mirrorOutcome === 'ok') brainChild?.settle('ok');
+                else if (mirrorOutcome === 'disabled' || mirrorOutcome === 'empty') brainChild?.settle('producer-noop');
+                else brainChild?.settle('unverified');
+            }).catch((err: unknown) => { brainChild?.fail(err); /* Brain integration not available */ });
         }
+    
+        });
     }
 
     public async recordMeaningfulRecall(id: string, now = Date.now()): Promise<void> {
+        return this.mutate(async () => {
         const source = this.working.find(n => n.id === id) || await lancedbService.getNodeById(id);
         if (!source) throw new Error(`Missing memory ${id}`);
         const { recordSignificantAccess } = await import('./memoryCognition');
@@ -589,17 +806,20 @@ class ContinuumMemorySystem {
         await lancedbService.store(updated);
         const index = this.working.findIndex(n => n.id === id);
         if (index >= 0) { this.working[index] = updated; this.markDirty(); await this.saveSnapshot(); }
+    
+        });
     }
 
     /** Recent exact-tag stored observations, without semantic search, ranking
      * budget, access writes or provider use. Ordinary retrieval is unchanged. */
     public async getRecentObservations(tag:string|string[],limit:number):Promise<MemoryNode[]>{
+        await this.hydration;
         const tags=Array.isArray(tag)?tag:[tag];
         if(!tags.length || !tags.every(t=>typeof t==='string' && t.length>0) || !Number.isInteger(limit) || limit < 1 || limit > 1000) throw new Error('Observation tags and bounded limit required');
         const persisted=await lancedbService.getRecentObservations(tag,limit,this.working.map(n=>n.id));
         const byId=new Map<string,MemoryNode>(persisted.map(n=>[n.id,n]));
         for(const node of this.working)if(tags.every(t=>node.tags.includes(t)))byId.set(node.id,node);
-        return [...byId.values()].sort((a,b)=>b.timestamp-a.timestamp||a.id.localeCompare(b.id)).slice(0,limit);
+        return structuredClone([...byId.values()].sort((a,b)=>b.timestamp-a.timestamp||a.id.localeCompare(b.id)).slice(0,limit));
     }
 
     public async getLatestObservation(tag:string):Promise<MemoryNode|null>{
@@ -642,6 +862,7 @@ class ContinuumMemorySystem {
         recentLimit: number = 5,
         hours: number = 2
     ): Promise<{ semantic: MemoryNode[], recent: MemoryNode[] }> {
+        await this.ready();
         // 1. Semantic Search (DEEP memory via VectorStore)
         let semantic: MemoryNode[] = [];
         try {
@@ -696,7 +917,7 @@ class ContinuumMemorySystem {
             .sort((a, b) => b.timestamp - a.timestamp) // Descending
             .slice(0, recentLimit);
 
-        return { semantic, recent: allRecent };
+        return structuredClone({ semantic, recent: allRecent });
     }
 
     public async getIdentityNodes(): Promise<MemoryNode[]> {
@@ -714,6 +935,7 @@ class ContinuumMemorySystem {
     private isMaintenanceRunning = false;
 
     public async runMaintenance() {
+        return this.mutate(async () => {
         if (this.isMaintenanceRunning) return;
         this.isMaintenanceRunning = true;
 
@@ -736,7 +958,7 @@ class ContinuumMemorySystem {
                 // Snapshot check (Lazy Persistence)
                 if (this.isDirty) {
                     await this.saveSnapshot();
-                    this.isDirty = false;
+                    // queueSnapshot clears dirty only if its captured revision is current;
                 }
             }
             if (now % 60000 < 1000) await this.tickMedium(now);
@@ -764,9 +986,12 @@ class ContinuumMemorySystem {
         } finally {
             this.isMaintenanceRunning = false;
         }
+    
+        });
     }
 
     private tickFast(now: number) {
+        this.assertSynchronousMutation();
         // [FIX 2026-02] Since ultraShort/short are aliases to working, "promoting" between them
         // was silently dropping nodes. Now we just update the tier in-place for frequently
         // accessed nodes and move expired nodes to hippocampus.
@@ -792,13 +1017,16 @@ class ContinuumMemorySystem {
     // ...
 
     private insertRamNode(node: MemoryNode, tier: MemoryTier) {
+        this.assertSynchronousMutation();
         // All RAM tiers now go into unified working memory
         if (tier === MemoryTier.WORKING || tier as string === 'ULTRA_SHORT' || tier as string === 'SHORT') {
-            this.working.unshift(node);
+            this.working.unshift(structuredClone(node));
+            this.markDirty();
         }
     }
 
     private promoteToRam(node: MemoryNode, tier: MemoryTier) {
+        this.assertSynchronousMutation();
         node.tier = tier;
         this.insertRamNode(node, tier);
     }
@@ -873,11 +1101,14 @@ class ContinuumMemorySystem {
 
 
     private moveToHippocampus(node: MemoryNode) {
+        this.assertSynchronousMutation();
         if (this.hippocampus.find(n => n.id === node.id)) return;
         this.hippocampus.push(node);
         if (this.hippocampus.length >= this.HIPPOCAMPUS_CAPACITY) {
             import('./dreamerService').then(({ dreamer }) => {
-                dreamer.attemptDream();
+                return dreamer.attemptDream();
+            }).catch(error => {
+                console.error('[CONTINUUM] Capacity-triggered dream failed:', error);
             });
         }
     }
@@ -965,6 +1196,7 @@ class ContinuumMemorySystem {
     }
 
     public async getStats() {
+        await this.ready();
         const now = Date.now();
         // [R11] cache is valid only while NO write happened (revision match);
         // the 30s TTL alone served stale counts after writes.
@@ -1048,12 +1280,16 @@ class ContinuumMemorySystem {
 
     // --- DEBUG / ADMIN METHODS ---
     public async forceSave() {
+        return this.mutate(async () => {
         // Persist volatile memory to Redis/Disk immediately
         await this.saveSnapshot();
         console.log("[CONTINUUM] forceSave completed.");
+    
+        });
     }
 
     public async debug_forceTick(tier?: string) {
+        return this.mutate(async () => {
         const now = Date.now();
         if (tier === 'DEEP') {
             await this.tickDeep(now);
@@ -1061,24 +1297,31 @@ class ContinuumMemorySystem {
             this.tickFast(now);
             await this.tickMedium(now);
         }
+    
+        });
     }
 
     public debug_ageNode(nodeId: string, ageMs: number = 3600000) {
+        this.assertSynchronousMutation();
         const node = this.working.find(n => n.id === nodeId);
         if (node) {
             node.timestamp -= ageMs;
+            this.markDirty();
         }
     }
 
     public debug_boostNode(nodeId: string, importance: number = 1.0, accessCount: number = 10, addTag: boolean = false) {
+        this.assertSynchronousMutation();
         const node = this.working.find(n => n.id === nodeId);
         if (node) {
             node.importance = importance;
             node.accessCount += accessCount;
             if (addTag) node.tags.push('IDENTITY');
+            this.markDirty();
         }
     }
     public async search(query: string, scope: MemoryScope = {}): Promise<MemoryNode[]> {
+        await this.hydration;
         const lists: MemoryNode[][] = [];
 
         // [ROOT CAUSE FIX] Defensive Guard
@@ -1139,7 +1382,7 @@ class ContinuumMemorySystem {
         }
 
         // Deduplicate by ID
-        return fuseMemories(lists.map(list => list.sort((a, b) => activation(b).score - activation(a).score)), query);
+        return structuredClone(fuseMemories(lists.map(list => list.sort((a, b) => activation(b).score - activation(a).score)), query));
     }
     /**
      * [NATIVE-RECOVERY] Native embedding-backfill scheduler, gated on the
@@ -1152,6 +1395,7 @@ class ContinuumMemorySystem {
         ledger: QuotaLedger = quotaLedger,
         runBackfill: (limit: number) => Promise<{ projected: number; failed: number }> = (l) => this.backfillMemoryEmbeddings(l),
     ): Promise<{ ran: boolean; reason?: string; projected?: number; failed?: number }> {
+        return this.mutate(async () => {
         // [QUOTA-COOLDOWN] Real provider 429 (RetryInfo) outranks the local
         // ledger: skip the pass without burning calls or spamming incidents.
         const cooldown = ledger.cooldownUntil('gemini', DEFAULT_GEMINI_EMBEDDING_MODEL);
@@ -1195,6 +1439,8 @@ class ContinuumMemorySystem {
                 'provider rejected every attempt this pass; pending rows retained for the next pass');
         }
         return { ran: true, ...result };
+    
+        });
     }
 
     /**
@@ -1205,6 +1451,7 @@ class ContinuumMemorySystem {
      * EMBEDDING_PENDING and are retried on the next pass.
      */
     public async backfillMemoryEmbeddings(limit = 50): Promise<{ projected: number; failed: number }> {
+        return this.mutate(async () => {
         if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new Error('Invalid backfill limit');
         const { generateEmbeddingWithIdentity } = await import('./geminiService');
         const pending = await lancedbService.pendingEmbeddings(limit);
@@ -1224,10 +1471,13 @@ class ContinuumMemorySystem {
         }
         if (projected || failed) console.log(`[CONTINUUM] Embedding backfill: ${projected} projected, ${failed} failed.`);
         return { projected, failed };
+    
+        });
     }
 
     // --- MANUAL CONSOLIDATION VOID ---
     public async consolidateRamImmediate(): Promise<{ promoted: number }> {
+        return this.mutate(async () => {
         console.log("[CONTINUUM] 🌪️ FORCE CONSOLIDATION INITIATED");
         let count = 0;
 
@@ -1241,6 +1491,8 @@ class ContinuumMemorySystem {
 
         console.log(`[CONTINUUM] 🌪️ Consolidated ${count} memories to L3 (LanceDB). ${failed > 0 ? `⚠️ ${failed} failed (sources kept in RAM).` : 'RAM is empty.'}`);
         return { promoted: count };
+    
+        });
     }
 }
 

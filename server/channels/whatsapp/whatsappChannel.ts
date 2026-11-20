@@ -1,3 +1,4 @@
+import { desktopWorkBound } from '../../../services/lifecycle/desktopWork.js';
 // =============================================================================
 // WHATSAPP CHANNEL V2
 // WhatsApp integration using Baileys (open-source, no Meta API needed).
@@ -221,6 +222,7 @@ class WhatsAppChannel implements IChannel {
     }
 
     async disconnect(): Promise<void> {
+        if (desktopWorkBound() && this.sock) throw new Error('DESKTOP_WHATSAPP_CLOSE_EVENT_UNBOUND');
         for (const [chatId, typing] of this.activeTyping) {
             typing.stop(this.sock, chatId);
         }

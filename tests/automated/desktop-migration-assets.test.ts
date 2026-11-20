@@ -41,7 +41,7 @@ describe('desktop SQLite migration resources', () => {
             const service = pathToFileURL(path.join(root, 'services/sqliteService.ts')).href;
             const child = spawnSync(process.execPath, [path.join(root, 'node_modules/tsx/dist/cli.mjs'), '-e', `import(${JSON.stringify(service)}).then(({sqliteService:s})=>{try{const versions=s.db.prepare('SELECT version FROM system_migrations ORDER BY version').all().map(x=>x.version);if(JSON.stringify(versions)!=='["001","002","003","004"]')throw Error('wrong versions');console.log('RESOURCE_SQLITE_OK')}finally{s.close()}}).catch(e=>{console.error(e);process.exitCode=1})`], {
                 cwd, encoding: 'utf8', timeout: 20000,
-                env: { PATH: process.env.PATH, HOME: cwd, SILHOUETTE_PROVIDERS: 'off', SILHOUETTE_MIGRATIONS_DIR: assets }
+                env: { PATH: process.env.PATH, HOME: cwd, SILHOUETTE_PROVIDERS: 'off', SILHOUETTE_INFERENCE_MODE: 'cloud-only', SILHOUETTE_MIGRATIONS_DIR: assets }
             });
             expect(child.status, child.stderr).toBe(0); expect(child.stdout).toContain('RESOURCE_SQLITE_OK');
         } finally { fs.rmSync(temp, { recursive: true, force: true }); }

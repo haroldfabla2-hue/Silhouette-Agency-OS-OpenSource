@@ -1,3 +1,7 @@
+import { desktopRun, desktopFault, desktopWorkBound } from './lifecycle/desktopWork.js';
+import { ownedInterval } from '../server/desktop/producerScope.js';
+import { registerOwnedProducer } from './lifecycle/ownedProducers';
+import type { PendingNarration, NarrativePendingStore } from './narrativePendingStore';
 import { NarrativeState } from '../types';
 import { generateAgentResponse } from './geminiService';
 import { CommunicationLevel } from '../types';
@@ -40,10 +44,11 @@ class NarrativeService {
 
         // 2. SEMANTIC UPDATE (Floating Promise - Non-Blocking for System State)
         // We let the LLM take its time, but we don't block the system flow.
-        this.runSemanticUpdate(lastUserMessage, lastAgentResponse).finally(() => {
-            // 3. FSM: Return to IDLE when done (or if failed)
+        const update = desktopRun('narrative-semantic', () => this.runSemanticUpdate(lastUserMessage, lastAgentResponse)).finally(() => {
             this.transition('IDLE', "System Ready");
         });
+        if (desktopWorkBound()) return update;
+        void update;
     }
 
     private async runSemanticUpdate(lastUserMessage: string, lastAgentResponse: string) {
@@ -204,11 +209,27 @@ class NarrativeService {
     // Uses LLM for high-importance thoughts, regex for low-importance.
 
     // Narration Queue for Batch Processing
-    private narrationQueue: Array<{ source: string, content: string, importance: number, metadata?: any }> = [];
+    private narrationQueue: PendingNarration[] = [];
+    private pendingStore: NarrativePendingStore | null = null;
+    private pendingReady: Promise<void>;
+    private pendingError = false; // recovery/serialization failure only
+    private subscriptionFailed = false;
+    private admissionFailures = 0;
+    private refusedLate = 0;
+    private batchRetryDeferred = false;
+    private narrationStopping = false;
+    private stopTask: Promise<Record<string, unknown>> | null = null;
+    private activeBatch: PendingNarration[] = [];
+    private preservedCount = 0;
+    private pendingAdmissions = new Set<Promise<void>>();
+    private subscriptions: Array<() => void> = [];
     private lastBatchTime = 0;
     private readonly BATCH_INTERVAL = 30000; // 30 seconds (2 RPM - optimized for z.ai limits)
     private readonly VRAM_THRESHOLD = 0.70; // 70% VRAM limit for LLM usage
     private batchTimer: NodeJS.Timeout | null = null;
+    // In-flight batch receipt: the timer callback's tracked promise, so a
+    // drain-time stop can AWAIT the running batch instead of abandoning it.
+    private inFlightBatch: Promise<void> | null = null;
 
     // [FIX] Deduplication: Prevent duplicate thoughts within time window
     private recentThoughtHashes: Set<string> = new Set();
@@ -224,29 +245,169 @@ class NarrativeService {
     private totalEmissions = 0;
 
     constructor() {
-        this.initializeStreamAggregator();
+        registerOwnedProducer('narrative', () => this.preserveAndStopBatchProcessor());
+        this.pendingReady = desktopRun('narrative-recovery', () => this.recoverPendingNarrations());
+        void this.pendingReady.catch(() => { this.pendingError = true; });
+        void Promise.resolve(desktopRun('narrative-subscriptions', () => this.initializeStreamAggregator()))
+            .catch(() => { this.subscriptionFailed = true; desktopFault('narrative', 'subscriptions-failed'); });
         this.startBatchProcessor();
+    }
+
+    private async recoverPendingNarrations(): Promise<void> {
+        if (typeof process === 'undefined' || !process.versions?.node) return;
+        const { NarrativePendingStore } = await import('./narrativePendingStore');
+        const path = await import('node:path');
+        this.pendingStore = new NarrativePendingStore(path.resolve(process.cwd(), 'data', 'wal'));
+        this.narrationQueue.push(...this.pendingStore.load());
     }
 
     private startBatchProcessor() {
         // Process queue every BATCH_INTERVAL
-        this.batchTimer = setInterval(async () => {
+        this.batchTimer = ownedInterval(() => {
+            if (this.narrationStopping || this.batchRetryDeferred || this.inFlightBatch !== null) return;
             // [THROTTLE] PowerManager resource modes can pause narration
             // (isNarrativeEnabled). Resource hint, not authority: unreadable
             // -> full capability. Queued items are processed on a later tick.
-            try {
-                const { powerManager } = await import('./powerManager');
-                if (!powerManager.isNarrativeEnabled) return;
-            } catch { /* throttle unavailable -> full capability */ }
-            this.processNarrationBatch().catch(e =>
+            const task = (async () => {
+                try {
+                    const { powerManager } = await import('./powerManager');
+                    if (!powerManager.isNarrativeEnabled) return;
+                } catch { /* throttle unavailable -> full capability */ }
+                if (!this.narrationStopping) await this.processNarrationBatch();
+            })().catch(e =>
                 console.error("[NARRATIVE] Batch processing error:", e)
             );
+            this.inFlightBatch = task;
+            void task.finally(() => { if (this.inFlightBatch === task) this.inFlightBatch = null; });
+            return task;
         }, this.BATCH_INTERVAL);
+    }
+
+    /**
+     * Stop the batch processor. Ownership receipt mirroring
+     * resourceArbiter.stopProcessingTimer / powerManager.stopThrottleTimer:
+     * reports whether the interval WAS armed and how many items remained
+     * queued at stop. Idempotent, never throws. Construction-time arming is
+     * unchanged: in production the timer lives for the process lifetime;
+     * an explicit owner (e.g. a supervised child that booted the cascade)
+     * stops it so a finished process can exit naturally. An in-flight batch
+     * promise is not cancelled (promises hold no event-loop handle).
+     */
+    public stopBatchProcessor(): { intervalWasArmed: boolean; queuedItems: number } {
+        const receipt = { intervalWasArmed: this.batchTimer !== null, queuedItems: this.narrationQueue.length };
+        if (this.batchTimer !== null) {
+            clearInterval(this.batchTimer);
+            this.batchTimer = null;
+            console.log("[NARRATIVE] 🛑 Batch processor stopped.");
+        }
+        return receipt;
+    }
+
+    /** No new narration during shutdown. Transfer pending ownership to a
+     * private durable journal, or fail without clearing memory/original file.
+     * Already-started work is awaited. Sequential retry may retry storage.
+     * Recovery is at-least-once: a crash after emission but before ack may
+     * repeat presentation; exactly-once external delivery is not claimed. */
+    public preserveAndStopBatchProcessor(): Promise<Record<string, unknown>> {
+        if (this.stopTask) return this.stopTask;
+        this.narrationStopping = true;
+        for (const unsubscribe of this.subscriptions.splice(0)) unsubscribe();
+        const intervalWasArmed = this.batchTimer !== null;
+        if (this.batchTimer !== null) { clearInterval(this.batchTimer); this.batchTimer = null; }
+        const active = this.inFlightBatch;
+        let snapshotDurable = 0;
+        const work = (async () => {
+            await this.pendingReady;
+            // Original admission is durable before its public ID resolves.
+            // Snapshot it before waiting on possibly unbounded external work.
+            if (this.pendingStore && (this.activeBatch.length + this.narrationQueue.length > 0 || this.preservedCount === 0)) {
+                this.pendingStore.save([...this.activeBatch, ...this.narrationQueue]);
+                snapshotDurable = this.activeBatch.length + this.narrationQueue.length;
+            }
+            await Promise.all([...this.pendingAdmissions]);
+            if (active !== null) await active;
+            if (this.pendingError) throw new Error('NARRATIVE_PENDING_BLOCKED');
+            // A rejected admission may already have left pendingAdmissions.
+            // Do not turn that earlier loss/failure into a later clean receipt.
+            if (this.admissionFailures > 0) throw new Error('NARRATIVE_ADMISSION_FAILED');
+            const pending = [...this.activeBatch, ...this.narrationQueue];
+            if (pending.length > 0 && this.pendingStore === null) throw new Error('NARRATIVE_PENDING_STORAGE_UNAVAILABLE');
+            if (this.pendingStore && (pending.length > 0 || this.preservedCount === 0)) this.pendingStore.save(pending);
+            this.preservedCount = pending.length || this.preservedCount;
+            this.activeBatch = [];
+            this.narrationQueue = [];
+            return this.preservedCount;
+        })();
+        let deadline: ReturnType<typeof setTimeout> | undefined;
+        this.stopTask = (async () => {
+            try {
+                const result = await Promise.race([
+                    work.then(count => ({ kind: 'settled' as const, count })),
+                    new Promise<{ kind: 'deadline' }>(resolve => {
+                        deadline = setTimeout(() => resolve({ kind: 'deadline' }), 2000);
+                    })
+                ]);
+                if (result.kind === 'deadline') {
+                    // Do not cancel work or release ownership. Keep the SAME
+                    // task reachable so a later retry joins it, not a duplicate.
+                    void work.then(() => { this.stopTask = null; }, () => { this.stopTask = null; });
+                    return { intervalWasArmed, inFlightAwaited: active !== null,
+                        pendingPreserved: snapshotDurable, remainingItems: this.activeBatch.length + this.narrationQueue.length,
+                        error: 'WORK_NOT_SETTLED', boundExhausted: true, workStillOwned: true,
+                        refusedLate: this.refusedLate, admissionFailures: this.admissionFailures,
+                        destination: 'data/wal/pending-narrations.json', directorySynced: false };
+                }
+                this.stopTask = null;
+                return { intervalWasArmed, inFlightAwaited: active !== null, pendingPreserved: result.count,
+                    remainingItems: 0, error: null, boundExhausted: false,
+                    deferredUnacknowledged: this.batchRetryDeferred, refusedLate: this.refusedLate,
+                    admissionFailures: this.admissionFailures, subscriptionFailed: this.subscriptionFailed,
+                    destination: 'data/wal/pending-narrations.json',
+                    directorySynced: typeof process !== 'undefined' && process.platform !== 'win32' };
+            } catch {
+                this.stopTask = null;
+                return { intervalWasArmed, inFlightAwaited: active !== null, pendingPreserved: 0,
+                    remainingItems: this.activeBatch.length + this.narrationQueue.length, error: 'PRESERVATION_FAILED',
+                    boundExhausted: false, refusedLate: this.refusedLate, admissionFailures: this.admissionFailures,
+                    destination: 'data/wal/pending-narrations.json', directorySynced: false };
+            } finally { if (deadline !== undefined) clearTimeout(deadline); }
+        })();
+        return this.stopTask;
+    }
+
+    /** Full original work, not narrated/filler text. Used by event admission
+     * and recovery supervision. During stop, new work is refused explicitly. */
+    public async enqueuePendingNarration(item: Omit<PendingNarration, 'id'>): Promise<string> {
+        await this.pendingReady;
+        if (this.narrationStopping || this.pendingError) {
+            if (this.narrationStopping) this.refusedLate++;
+            throw new Error('NARRATIVE_ADMISSION_CLOSED');
+        }
+        return this.commitAcceptedNarration(item);
+    }
+
+    // Only an admission already owned by pendingAdmissions may cross stop.
+    // Direct public callers still pass the late-work gate above. The stop
+    // awaits accepted admissions before its final durable queue snapshot.
+    private commitAcceptedNarration(item: Omit<PendingNarration, 'id'>): string {
+        if (this.pendingError) throw new Error('NARRATIVE_PENDING_BLOCKED');
+        const id = crypto.randomUUID();
+        const entry = { ...item, id };
+        if (!this.pendingStore) throw new Error('NARRATIVE_PENDING_STORAGE_UNAVAILABLE');
+        this.pendingStore.save([...this.activeBatch, ...this.narrationQueue, entry]);
+        this.narrationQueue.push(structuredClone(entry));
+        return id;
+    }
+
+    public async pendingNarrationSnapshot(): Promise<PendingNarration[]> {
+        await this.pendingReady;
+        return structuredClone([...this.activeBatch, ...this.narrationQueue]);
     }
 
     private async initializeStreamAggregator() {
         const { systemBus, MessageTag } = await import('./systemBus');
         const { SystemProtocol } = await import('../types');
+        if (this.narrationStopping) return;
 
         console.log("[NARRATIVE] 🧠 Initializing Metacognitive Narration Engine V3.0...");
         console.log("[NARRATIVE] 🎯 Full self-awareness enabled: thoughts, tasks, discoveries, evolution");
@@ -256,8 +417,11 @@ class NarrativeService {
         // Silhouette now knows EVERYTHING happening internally
         // ==========================================
 
+        const subscribe = (...args: Parameters<typeof systemBus.subscribe>) => {
+            this.subscriptions.push(systemBus.subscribe(...args));
+        };
         // 1. CONSCIOUS STREAM (Introspection + Thoughts)
-        systemBus.subscribe(SystemProtocol.THOUGHT_EMISSION, (event) => {
+        subscribe(SystemProtocol.THOUGHT_EMISSION, (event) => {
             // Extract MessageTag from metadata if present (from enhanced orchestrator)
             const messageTag = event.payload?._meta?.tag || MessageTag.SYSTEM;
 
@@ -280,13 +444,13 @@ class NarrativeService {
         });
 
         // 2. SUBCONSCIOUS STREAM (Intuitions & Gaps)
-        systemBus.subscribe(SystemProtocol.INTUITION_CONSOLIDATED, (event) => {
+        subscribe(SystemProtocol.INTUITION_CONSOLIDATED, (event) => {
             const content = `Consolidated Intuition: ${event.payload}`;
             const importance = this.classifyImportance('SUBCONSCIOUS', content);
             this.queueOrEmitThought('SUBCONSCIOUS', content, importance, { messageTag: MessageTag.TRIGGER });
         });
 
-        systemBus.subscribe(SystemProtocol.EPISTEMIC_GAP_DETECTED, (event) => {
+        subscribe(SystemProtocol.EPISTEMIC_GAP_DETECTED, (event) => {
             const payload = event.payload as any;
             const content = `Gap Detected: ${payload.question} (Confidence: ${payload.confidence})`;
             this.queueOrEmitThought('SUBCONSCIOUS', content, 0.85, {
@@ -296,7 +460,7 @@ class NarrativeService {
         });
 
         // 3. AGENCY STREAM (Task Assignments & Delegations)
-        systemBus.subscribe(SystemProtocol.TASK_ASSIGNMENT, (event) => {
+        subscribe(SystemProtocol.TASK_ASSIGNMENT, (event) => {
             const payload = event.payload as any;
             const taskDesc = payload.task || payload.taskType || 'unknown task';
             const content = `Delegating to Agent ${payload.agentId || payload.targetRole}: ${String(taskDesc).substring(0, 50)}...`;
@@ -307,7 +471,7 @@ class NarrativeService {
         });
 
         // 4. DISCOVERY STREAM (Completions & Breakthroughs) - NEW!
-        systemBus.subscribe(SystemProtocol.SYNTHESIS_COMPLETE, (event) => {
+        subscribe(SystemProtocol.SYNTHESIS_COMPLETE, (event) => {
             const payload = event.payload as any;
             const content = `Synthesis Complete: ${payload.summary || payload.title || 'Research synthesized'}`;
             this.queueOrEmitThought('CONSCIOUS', content, 0.95, {
@@ -316,7 +480,7 @@ class NarrativeService {
             });
         });
 
-        systemBus.subscribe(SystemProtocol.PAPER_GENERATION_COMPLETE, (event) => {
+        subscribe(SystemProtocol.PAPER_GENERATION_COMPLETE, (event) => {
             const payload = event.payload as any;
             const content = `Paper Generated: ${payload.title || 'Research paper completed'}`;
             this.queueOrEmitThought('CONSCIOUS', content, 1.0, {
@@ -326,7 +490,7 @@ class NarrativeService {
         });
 
         // 5. EVOLUTION STREAM (Agent Growth) - NEW!
-        systemBus.subscribe(SystemProtocol.AGENT_EVOLVED, (event) => {
+        subscribe(SystemProtocol.AGENT_EVOLVED, (event) => {
             const payload = event.payload as any;
             const content = `Agent Evolution: ${payload.agentId || 'An agent'} has evolved - ${payload.reason || 'capabilities improved'}`;
             this.queueOrEmitThought('AGENCY', content, 0.9, {
@@ -336,7 +500,7 @@ class NarrativeService {
         });
 
         // 6. RESEARCH STREAM (Research Requests) - NEW!
-        systemBus.subscribe(SystemProtocol.RESEARCH_REQUEST, (event) => {
+        subscribe(SystemProtocol.RESEARCH_REQUEST, (event) => {
             const payload = event.payload as any;
             const query = payload.query || payload.topic || payload.question || 'unknown topic';
             const content = `Research Initiated: Investigating "${String(query).substring(0, 60)}"`;
@@ -347,7 +511,7 @@ class NarrativeService {
         });
 
         // 7. MEMORY STREAM (Memory Events) - NEW!
-        systemBus.subscribe(SystemProtocol.MEMORY_FLUSH, (event) => {
+        subscribe(SystemProtocol.MEMORY_FLUSH, (event) => {
             const payload = event.payload as any;
             const content = `Memory Archive: ${payload.message || 'Archiving context to long-term memory'}`;
             this.queueOrEmitThought('UNCONSCIOUS', content, 0.5, {
@@ -366,7 +530,7 @@ class NarrativeService {
         // ═══════════════════════════════════════════════════════════════
 
         // 9. TOOL EXECUTION (What tools am I using?)
-        systemBus.subscribe(SystemProtocol.TOOL_EXECUTION, (event) => {
+        subscribe(SystemProtocol.TOOL_EXECUTION, (event) => {
             const payload = event.payload as any;
             const toolName = payload.toolName || payload.tool || 'unknown tool';
             const result = payload.success ? '✅ succeeded' : '❌ failed';
@@ -379,7 +543,7 @@ class NarrativeService {
         });
 
         // 10. USER MESSAGE (Direct creator communication)
-        systemBus.subscribe(SystemProtocol.USER_MESSAGE, (event) => {
+        subscribe(SystemProtocol.USER_MESSAGE, (event) => {
             const payload = event.payload as any;
             const message = payload.message || payload.content || 'received message';
             const content = `My creator says: "${String(message).substring(0, 100)}"`;
@@ -391,7 +555,7 @@ class NarrativeService {
         });
 
         // 11. MOOD CHANGE (Emotional transitions)
-        systemBus.subscribe(SystemProtocol.MOOD_CHANGE, (event) => {
+        subscribe(SystemProtocol.MOOD_CHANGE, (event) => {
             const payload = event.payload as any;
             const from = payload.from || 'neutral';
             const to = payload.to || payload.mood || 'unknown';
@@ -404,7 +568,7 @@ class NarrativeService {
         });
 
         // 12. IMPROVEMENT LOGGED (Self-improvement)
-        systemBus.subscribe(SystemProtocol.IMPROVEMENT_LOGGED, (event) => {
+        subscribe(SystemProtocol.IMPROVEMENT_LOGGED, (event) => {
             const payload = event.payload as any;
             const improvement = payload.description || payload.improvement || 'self-optimized';
             const content = `Self-Improvement: ${improvement}`;
@@ -416,7 +580,7 @@ class NarrativeService {
         });
 
         // 13. SKILL LEARNED (New capability)
-        systemBus.subscribe(SystemProtocol.SKILL_LEARNED, (event) => {
+        subscribe(SystemProtocol.SKILL_LEARNED, (event) => {
             const payload = event.payload as any;
             const skill = payload.skill || payload.capability || 'new capability';
             const content = `New Skill Acquired: I can now ${skill}`;
@@ -428,7 +592,7 @@ class NarrativeService {
         });
 
         // 14. ERROR RECOVERED (Self-healing)
-        systemBus.subscribe(SystemProtocol.ERROR_RECOVERED, (event) => {
+        subscribe(SystemProtocol.ERROR_RECOVERED, (event) => {
             const payload = event.payload as any;
             const error = payload.error || 'an issue';
             const solution = payload.solution || 'self-corrected';
@@ -441,7 +605,7 @@ class NarrativeService {
         });
 
         // 15. WORKFLOW UPDATE (Scheduler activity)
-        systemBus.subscribe(SystemProtocol.WORKFLOW_UPDATE, (event) => {
+        subscribe(SystemProtocol.WORKFLOW_UPDATE, (event) => {
             const payload = event.payload as any;
             const workflow = payload.name || payload.workflow || 'task';
             const status = payload.status || 'updated';
@@ -453,7 +617,7 @@ class NarrativeService {
         });
 
         // 16. GOAL UPDATED (Goal progress)
-        systemBus.subscribe(SystemProtocol.GOAL_UPDATED, (event) => {
+        subscribe(SystemProtocol.GOAL_UPDATED, (event) => {
             const payload = event.payload as any;
             const goal = payload.description || payload.goal || 'a goal';
             const progress = payload.progress || 0;
@@ -466,7 +630,7 @@ class NarrativeService {
         });
 
         // 17. CONNECTION EVENTS (System health)
-        systemBus.subscribe(SystemProtocol.CONNECTION_LOST, (event) => {
+        subscribe(SystemProtocol.CONNECTION_LOST, (event) => {
             const payload = event.payload as any;
             const service = payload.service || 'a service';
             const content = `Connection Issue: Lost contact with ${service}`;
@@ -476,7 +640,7 @@ class NarrativeService {
             });
         });
 
-        systemBus.subscribe(SystemProtocol.CONNECTION_RESTORED, (event) => {
+        subscribe(SystemProtocol.CONNECTION_RESTORED, (event) => {
             const payload = event.payload as any;
             const service = payload.service || 'a service';
             const content = `Connection Restored: Back online with ${service}`;
@@ -520,15 +684,42 @@ class NarrativeService {
      * - Low importance (< 0.3): Immediate regex narration (only heartbeats)
      * - Most thoughts (>= 0.3): Queue for LLM batch processing (natural narration)
      */
-    private async queueOrEmitThought(
+    private queueOrEmitThought(
         source: 'CONSCIOUS' | 'SUBCONSCIOUS' | 'UNCONSCIOUS' | 'AGENCY',
         content: string,
         importance: number,
         metadata?: any
     ) {
+        if (this.narrationStopping) {
+            this.refusedLate++;
+            const refused = Promise.reject(new Error('NARRATIVE_LATE_ADMISSION_REFUSED'));
+            void refused.catch(() => {}); // bus listeners may not await promises
+            return refused;
+        }
+        // Many synchronous subscribers deliberately ignore their return value.
+        // Transfer a separate live ticket before the first admission await.
+        const task = desktopRun('narrative-admission', () => this.admitThought(source, content, importance, metadata));
+        this.pendingAdmissions.add(task);
+        // Bus listeners are synchronous; consume rejection without hiding the
+        // failure from stop's sticky receipt or explicit awaiting callers.
+        void task.then(() => this.pendingAdmissions.delete(task), () => {
+            this.pendingAdmissions.delete(task); this.admissionFailures++;
+            desktopFault('narrative', 'durable-admission-failed');
+        });
+        return task;
+    }
+
+    private async admitThought(
+        source: 'CONSCIOUS' | 'SUBCONSCIOUS' | 'UNCONSCIOUS' | 'AGENCY',
+        content: string, importance: number, metadata?: any
+    ) {
+        await this.pendingReady;
+        const { routeThought, shouldRecord } = await import('./narrativeFillerPolicy');
+        // queueOrEmitThought already accepted and owns this task before its
+        // first await. Stop fences NEW inputs but must drain this original.
+        const route = routeThought(importance);
         // Record the original event before presentation dedupe, throttle or
         // provider work. Provider failure must not erase the source event.
-        const { routeThought, shouldRecord } = await import('./narrativeFillerPolicy');
         if (shouldRecord(importance)) {
             await this.persistNarrativeEvent(crypto.randomUUID(), source, content, importance,
                 { ...metadata, recordKind: 'RAW_SYSTEM_EVENT' });
@@ -566,7 +757,6 @@ class NarrativeService {
         // for importance >= SILHOUETTE_NARRATIVE_MIN_IMPORTANCE (0.7).
         // Dropped thoughts remain in memory — narration is presentation,
         // not record. No fabricated first-person prose, no quota burn.
-        const route = routeThought(importance);
         if (route === 'DROP') {
             return; // presentation only; original event already recorded
         }
@@ -575,7 +765,7 @@ class NarrativeService {
             await this.emitNarrativeUpdate(source, content, importance, metadata, false, 'REGEX');
         } else {
             // HIGH IMPORTANCE: Queue for LLM batch
-            this.narrationQueue.push({ source, content, importance, metadata });
+            this.commitAcceptedNarration({ source, content, importance, ...(metadata === undefined ? {} : { metadata }) });
             console.log(`[NARRATIVE] 📥 Queued high-importance thought (${importance.toFixed(2)}): ${content.substring(0, 40)}...`);
         }
     }
@@ -593,15 +783,33 @@ class NarrativeService {
             return; // Keep thoughts in queue, process when uncongested
         }
 
+        await this.pendingReady;
+        if (this.narrationStopping || this.pendingError) return;
         const batch = [...this.narrationQueue];
+        // Write-ahead BEFORE removing work from the queue or invoking a provider.
+        if (this.pendingStore) this.pendingStore.save(batch);
         this.narrationQueue = [];
+        this.activeBatch = batch;
         this.lastBatchTime = Date.now();
-
-        console.log(`[NARRATIVE] 🔄 Processing batch of ${batch.length} thoughts...`);
-
-        // Always try cloud LLM first (ZhipuAI doesn't use local VRAM)
-        // VRAM check only applies to Ollama fallback inside narrateWithLLM
-        await this.narrateWithLLM(batch);
+        try {
+            const completed = await this.narrateWithLLM(batch);
+            // Only full provider output AND awaited required persistence can ack.
+            // Existing fallback presentation remains available but cannot erase
+            // the original pending work from durable recovery.
+            if (completed && this.pendingStore) this.pendingStore.complete(batch, completed, this.narrationQueue);
+            if (!completed) {
+                this.narrationQueue.unshift(...batch);
+                // No repeated provider spending in this process after an
+                // incomplete result. Original work is durable for next boot.
+                this.batchRetryDeferred = true;
+            }
+            this.activeBatch = [];
+        } catch (error) {
+            this.batchRetryDeferred = true;
+            this.narrationQueue.unshift(...batch);
+            this.activeBatch = [];
+            throw error;
+        }
     }
 
     /**
@@ -610,7 +818,7 @@ class NarrativeService {
      * 2. Ollama GLM-4 (local - uses VRAM but free)
      * 3. Regex patterns (instant fallback)
      */
-    private async narrateWithLLM(batch: Array<{ source: string, content: string, importance: number, metadata?: any }>) {
+    private async narrateWithLLM(batch: Array<{ source: string, content: string, importance: number, metadata?: any }>): Promise<string[] | null> {
         // Import centralized identity (dynamic import for service isolation)
         const { NARRATIVE_IDENTITY } = await import('../constants/silhouetteIdentity');
 
@@ -651,6 +859,7 @@ Respuesta JSON:`;
 
             if (zhipuService.isAvailable('narration')) {
                 console.log("[NARRATIVE] ☁️ Using ZhipuAI GLM-4.5 (cloud) - NARRATION key...");
+                if (this.narrationStopping) return null;
                 response = await zhipuService.generateCompletion(prompt, {
                     maxTokens: 256,  // Reduced for rate limit stability
                     temperature: 0.7
@@ -674,12 +883,14 @@ Respuesta JSON:`;
         }
 
         // 2. FALLBACK TO OPENROUTER (free tier model from llm/defaultModels)
+        if (!response && this.narrationStopping) return null;
         if (!response) {
             try {
                 const orKey = process.env.OPENROUTER_API_KEY;
                 if (orKey) {
                     console.log(`[NARRATIVE] 🌐 Falling back to OpenRouter (${DEFAULT_OPENROUTER_MODEL})...`);
 
+                    if (this.narrationStopping) return null;
                     const orResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
                         method: "POST",
                         headers: {
@@ -719,6 +930,7 @@ Respuesta JSON:`;
         }
 
         // 3. FALLBACK TO OLLAMA (Local)
+        if (!response && this.narrationStopping) return null;
         if (!response) {
             try {
                 const { ollamaService } = await import('./ollamaService');
@@ -726,6 +938,7 @@ Respuesta JSON:`;
                 if (await ollamaService.isAvailable()) {
                     console.log("[NARRATIVE] 🦙 Falling back to Ollama GLM-4 (local)...");
                     // Use priority 100 (low) so chat takes precedence
+                    if (this.narrationStopping) return null;
                     response = await ollamaService.generateCompletion(prompt, [], 'smart', 100);
                     provider = 'OLLAMA';
                 }
@@ -736,20 +949,25 @@ Respuesta JSON:`;
 
         // 4. FINAL FALLBACK TO REGEX
         // [W5] With filler disabled (default), a failed provider round means
-        // HONEST SILENCE: drop the batch instead of fabricating a voice.
+        // HONEST SILENCE: preserve original work for retry, do not fabricate a voice.
+        if (!response && this.narrationStopping) return null;
         if (!response) {
             const { fillerEnabled } = await import('./narrativeFillerPolicy');
             if (!fillerEnabled()) {
-                console.log("[NARRATIVE] 🤫 Providers unavailable + filler disabled — dropping batch (no fabricated narration)");
-                return;
+                console.log("[NARRATIVE] 🤫 Providers unavailable + filler disabled: original work remains pending");
+                return null;
             }
             console.log("[NARRATIVE] 📝 Using regex patterns (all providers unavailable)");
             for (const item of batch) {
                 await this.emitNarrativeUpdate(item.source as any, item.content, item.importance, item.metadata, false, 'REGEX');
             }
-            return;
+            return null;
         }
 
+        // A response arriving after stop stays unacknowledged original work.
+        // No new emission/persistence/discovery work is launched by teardown.
+        // Recovery will use the normal full-capability path on a later boot.
+        if (this.narrationStopping) return null;
         // === PARSE RESPONSE (with jsonrepair for robustness) ===
         try {
             let cleanResponse = response.trim();
@@ -774,8 +992,10 @@ Respuesta JSON:`;
                 ? parsedResult
                 : [parsedResult];
 
+            const completeOutput = batch.every((_, i) => narrated.some(n => n.index === i + 1 && typeof n.narrated === 'string' && n.narrated.length > 0));
             // Emit narrated thoughts
             for (let i = 0; i < batch.length; i++) {
+                if (this.narrationStopping) return null;
                 const narratedItem = narrated.find(n => n.index === i + 1);
                 const content = narratedItem?.narrated || this.narrateAsFirstPerson(batch[i].source, batch[i].content);
 
@@ -785,13 +1005,16 @@ Respuesta JSON:`;
                     batch[i].importance,
                     batch[i].metadata,
                     true,
-                    provider
+                    provider, true
                 );
             }
 
             console.log(`[NARRATIVE] ✅ ${provider} narrated ${batch.length} thoughts`);
+            if (this.narrationStopping) return null;
+            return completeOutput ? batch.map((_, i) => narrated.find(n => n.index === i + 1)!.narrated) : null;
 
         } catch (parseError: any) {
+            if (this.narrationStopping) return null;
             // If jsonrepair + JSON.parse both fail, use response as plain text
             if (response && response.length > 20) {
                 console.log(`[NARRATIVE] ⚠️ JSON repair failed (${parseError.message?.substring(0, 50)}), using as plain text`);
@@ -807,6 +1030,7 @@ Respuesta JSON:`;
                 }
             }
         }
+        return null;
     }
 
     private async emitNarrativeUpdate(
@@ -815,10 +1039,12 @@ Respuesta JSON:`;
         coherence: number,
         metadata?: any,
         isLLMNarrated: boolean = false,
-        provider: 'ZHIPU' | 'OLLAMA' | 'REGEX' = 'REGEX'
+        provider: 'ZHIPU' | 'OLLAMA' | 'REGEX' = 'REGEX',
+        requirePersistence: boolean = false
     ) {
         const { systemBus } = await import('./systemBus');
         const { SystemProtocol } = await import('../types');
+        if (requirePersistence && this.narrationStopping) throw new Error('NARRATIVE_STOPPED_BEFORE_EMIT');
 
         // [PA-041] Transform raw content with MessageTag awareness (if not already LLM-narrated)
         const narratedContent = isLLMNarrated ? content : this.narrateAsFirstPerson(source, content, metadata);
@@ -838,13 +1064,12 @@ Respuesta JSON:`;
             }
         }, 'NarrativeService');
 
-        // [OMNISCIENT] Persist to memory and graph (async, non-blocking)
-        this.persistNarrativeEvent(eventId, source, narratedContent, coherence, metadata).catch(e =>
-            console.error("[NARRATIVE] Persistence failed:", e)
-        );
+        const persistence = this.persistNarrativeEvent(eventId, source, narratedContent, coherence, metadata, requirePersistence);
+        if (requirePersistence) await persistence;
+        else void persistence.catch(e => console.error('[NARRATIVE] Persistence failed:', e));
 
         // [OMNISCIENT] Extract discoveries from high-importance events
-        if (coherence >= 0.8) {
+        if (coherence >= 0.8 && !this.narrationStopping) {
             this.extractDiscoveries(narratedContent, coherence).catch(e =>
                 console.error("[NARRATIVE] Discovery extraction failed:", e)
             );
@@ -956,7 +1181,8 @@ Respuesta JSON:`;
         source: string,
         content: string,
         importance: number,
-        metadata?: any
+        metadata?: any,
+        required: boolean = false
     ): Promise<void> {
         try {
             // 1. Store in ContinuumMemory for semantic search
@@ -966,6 +1192,7 @@ Respuesta JSON:`;
 
             // An observed raw system event is not the user's speech, and is
             // not itself an interpreted insight or a proven epiphany.
+            if (required && this.narrationStopping) throw new Error('NARRATIVE_STOPPED_BEFORE_PERSIST');
             await continuum.store(
                 content,
                 MemoryTier.SHORT,
@@ -976,7 +1203,9 @@ Respuesta JSON:`;
             );
 
             // 2. Create NarrativeEvent node in Neo4j (for graph traversal)
+            if (required && this.narrationStopping) throw new Error('NARRATIVE_STOPPED_DURING_PERSIST');
             const { graph } = await import('./graphService');
+            if (required && this.narrationStopping) throw new Error('NARRATIVE_STOPPED_DURING_PERSIST');
 
             if (graph.isConnectedStatus()) {
                 await graph.createNode('NarrativeEvent', {
@@ -989,9 +1218,10 @@ Respuesta JSON:`;
                 }, 'id');
 
                 // [BIDIRECTIONAL LINKING] Connect high-importance thoughts to related concepts
-                if (importance >= 0.5) {
+                if (importance >= 0.5 && !this.narrationStopping) {
                     try {
                         const { geminiService } = await import('./geminiService');
+                        if (required && this.narrationStopping) throw new Error('NARRATIVE_STOPPED_BEFORE_LINKING');
                         const embedding = await geminiService.generateEmbedding(content);
 
                         if (embedding) {
@@ -1027,6 +1257,7 @@ Respuesta JSON:`;
                 console.log(`[NARRATIVE] 💾 Persisted: "${content.substring(0, 40)}..." (${source})`);
             }
         } catch (error) {
+            if (required) throw error;
             // Non-fatal - log but don't throw
             console.warn("[NARRATIVE] ⚠️ Persistence error (non-fatal):", error);
         }

@@ -8,6 +8,7 @@ import { CoreFilesystemPlugin } from './core/filesystem';
 export const registerCorePlugins = () => {
     console.log('[PluginLoader] 🔌 Registering core plugins...');
 
+    pluginRegistry.declareDesktopToolOnly(CoreFilesystemPlugin);
     pluginRegistry.register(CoreFilesystemPlugin);
 
     // Add other plugins here (e.g. CoreGitHubPlugin, etc.)

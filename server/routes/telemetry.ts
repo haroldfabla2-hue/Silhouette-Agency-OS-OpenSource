@@ -30,7 +30,12 @@ router.get('/brain', async (req, res) => {
                 latest_narrative_at: latestNarrative ? latestNarrative.timestamp : null,
             },
             memory_health: {
-                redis_connected: !redisClient.isMockMode(),
+                // Real connection state, not `!isMockMode()` (which reported
+                // true for unavailable and disabled clients alike).
+                redis_connected: redisClient.isReallyConnected(),
+                redis_state: redisClient.isDisabledByPolicy() ? 'disabled-by-policy'
+                    : redisClient.isReallyConnected() ? 'redis'
+                    : redisClient.isMockMode() ? 'in-memory-fallback' : 'unavailable',
             },
             sessions: sessionStats
         });

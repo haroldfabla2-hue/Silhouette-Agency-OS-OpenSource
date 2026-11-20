@@ -1,3 +1,4 @@
+import { emitProviderAttempt, assertModelPayload, safePayloadJson, runProviderInvocation } from '../usageObservation';
 import { externalProvidersDisabled } from '../security/bootMode';
 import type { ModelProfile, ProviderDefinition } from './providerRegistry';
 /** [auth-connections] Optional credential source: active account from services/auth, env fallback preserved. */
@@ -77,8 +78,11 @@ export class OpenAICompatibleClient {
         };
     }
     private async request(provider: ProviderDefinition, messages: ChatMessage[], options: ChatOptions, stream: boolean): Promise<Response> {
+        const body = this.body(provider, messages, options, stream);
+        assertModelPayload(body);
+        const serialized = safePayloadJson(body);
         const doFetch = () => this.fetcher(this.url(provider, '/chat/completions'), {
-            method: 'POST', headers: this.headers(provider), body: JSON.stringify(this.body(provider, messages, options, stream)), signal: this.signal(provider, options), redirect: 'error'
+            method: 'POST', headers: this.headers(provider), body: serialized, signal: this.signal(provider, options), redirect: 'error'
         });
         // [auth-connections] When admission is wired, calls queue by lane instead of firing directly.
         const response = this.admission
@@ -89,6 +93,32 @@ export class OpenAICompatibleClient {
         return response;
     }
     async complete(provider: ProviderDefinition, messages: ChatMessage[], options: ChatOptions = {}): Promise<ChatResult> {
+        const invocationId = crypto.randomUUID(), model = this.model(provider, options.model);
+        const report = (outcome: 'started' | 'completed' | 'failed', usage?: ChatResult['usage']) => emitProviderAttempt({ invocationId,
+            provider: provider.id, model, outcome, inputTokens: usage?.promptTokens ?? null, outputTokens: usage?.completionTokens ?? null });
+        return runProviderInvocation(invocationId, async () => {
+            assertModelPayload(messages); report('started');
+            try { const result = await this.completeOwned(provider, messages, options); report('completed', result.usage); return result; }
+            catch (error) { report('failed'); throw error; }
+        });
+    }
+    async *stream(provider: ProviderDefinition, messages: ChatMessage[], options: ChatOptions = {}): AsyncGenerator<ChatEvent> {
+        const invocationId = crypto.randomUUID(), model = this.model(provider, options.model);
+        assertModelPayload(messages);
+        let emitted = false, completed = false, usage: ChatResult['usage'];
+        const report = (outcome: 'started' | 'completed' | 'failed' | 'partial' | 'cancelled') => emitProviderAttempt({ invocationId,
+            provider: provider.id, model, outcome, inputTokens: usage?.promptTokens ?? null, outputTokens: usage?.completionTokens ?? null });
+        report('started'); const iterator = this.streamOwned(provider, messages, options, observed => { usage = observed; });
+        try {
+            while (true) {
+                const result = await runProviderInvocation(invocationId, () => iterator.next());
+                if (result.done) { completed = true; report('completed'); return; }
+                emitted = true; yield result.value;
+            }
+        } catch (error) { completed = true; report(emitted ? 'partial' : 'failed'); throw error; }
+        finally { if (!completed) report('cancelled'); await runProviderInvocation(invocationId, () => iterator.return(undefined)); }
+    }
+    private async completeOwned(provider: ProviderDefinition, messages: ChatMessage[], options: ChatOptions = {}): Promise<ChatResult> {
         const response = await this.request(provider, messages, options, false);
         let data: any;
         try { data = await response.json(); } catch { throw new Error(`${provider.id}: invalid JSON response`); }
@@ -104,7 +134,7 @@ export class OpenAICompatibleClient {
         return { text: text || '', toolCalls, model: data.model || this.model(provider, options.model), finishReason: choice.finish_reason,
             usage: data.usage ? { promptTokens: data.usage.prompt_tokens, completionTokens: data.usage.completion_tokens, totalTokens: data.usage.total_tokens } : undefined };
     }
-    async *stream(provider: ProviderDefinition, messages: ChatMessage[], options: ChatOptions = {}): AsyncGenerator<ChatEvent> {
+    private async *streamOwned(provider: ProviderDefinition, messages: ChatMessage[], options: ChatOptions = {}, onUsage?: (usage: ChatResult['usage']) => void): AsyncGenerator<ChatEvent> {
         const response = await this.request(provider, messages, options, true);
         if (!response.body) throw new Error(`${provider.id}: missing stream body`);
         const reader = response.body.getReader();
@@ -117,6 +147,7 @@ export class OpenAICompatibleClient {
             let data: any;
             try { data = JSON.parse(payload); } catch { throw new Error(`${provider.id}: invalid SSE JSON`); }
             if (data.error) throw new Error(`${provider.id}: stream API error`);
+            if (data.usage) onUsage?.({ promptTokens: data.usage.prompt_tokens, completionTokens: data.usage.completion_tokens, totalTokens: data.usage.total_tokens });
             const choice = data.choices?.[0];
             if (!choice) return [];
             const out: ChatEvent[] = [];

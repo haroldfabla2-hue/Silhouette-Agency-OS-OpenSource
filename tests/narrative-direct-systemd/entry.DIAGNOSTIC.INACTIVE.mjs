@@ -1,0 +1,185 @@
+/* INACTIVE product test entry. Call only inside the separately reviewed capsule.
+ * All service methods below are the real emitted modules, never extracted or
+ * replaced. Public fixture text is not provider output. No success process.exit.
+ */
+import assert from 'node:assert/strict';
+import {isDeepStrictEqual} from 'node:util';
+import fs from 'node:fs';
+import {createRequire} from 'node:module';
+const fixture=[
+ {source:'CONSCIOUS',content:'Public fixture accepted thought one',importance:0.9,metadata:{fixture:1}},
+ {source:'AGENCY',content:'Public fixture accepted thought two',importance:0.8,metadata:{fixture:2}}
+];
+const observer=globalThis[Symbol.for('narrative.direct.observer')];
+
+// Oracle-only reads. Never restore the expected file into product memory, call
+// store/saveSnapshot/loadSnapshot, change required, or replace a product method.
+
+// Closed comparison only: never publish values, arbitrary keys, IDs or text.
+function journalProjection(journal){
+ const itemsArray=Array.isArray(journal?.items),completedArray=Array.isArray(journal?.completed);
+ const items=itemsArray?journal.items:[];const completed=completedArray?journal.completed:[];
+ const count=itemsArray?Math.min(items.length,9):null;
+ const completedCount=completedArray?Math.min(completed.length,9):null;
+ const base={schemaVersion:1,state:!itemsArray?'INVALID':items.length>8?'OVERSIZE':'VALID',itemsArray,count,
+  completedArray,completedCount,completedEmpty:completedArray&&completed.length===0};
+ if(base.state!=='VALID')return {...base,rows:[],multisetExactFixture:false,orderedFixtureExact:false,idsDistinct:false};
+ const payloads=items.map(item=>{
+  if(item===null||typeof item!=='object'||Array.isArray(item))return null;
+  const {id,...payload}=item;return payload;
+ });
+ const rows=items.map((item,index)=>{
+  const payload=payloads[index];const known=payload!==null;
+  const exact=fixture.findIndex(expected=>isDeepStrictEqual(payload,expected));
+  const differs=fixture.map(expected=>['source','content','importance','metadata'].filter(field=>!known||!isDeepStrictEqual(payload[field],expected[field])));
+  return {fixtureMatch:exact===0?'EXACT_0':exact===1?'EXACT_1':'OTHER',
+   idString:typeof item?.id==='string',idNonempty:typeof item?.id==='string'&&item.id.length>0,
+   unexpectedKeys:!known||Object.keys(payload).some(key=>!['source','content','importance','metadata'].includes(key)),
+   missingKeys:!known||['source','content','importance','metadata'].some(key=>!Object.hasOwn(payload,key)),
+   differences:exact<0?differs:[[],[]]};
+ });
+ return {...base,rows,
+  multisetExactFixture:rows.length===2&&rows.filter(r=>r.fixtureMatch==='EXACT_0').length===1&&rows.filter(r=>r.fixtureMatch==='EXACT_1').length===1,
+  orderedFixtureExact:rows.length===2&&rows[0].fixtureMatch==='EXACT_0'&&rows[1].fixtureMatch==='EXACT_1',
+  idsDistinct:rows.every(r=>r.idNonempty)&&new Set(items.map(item=>item.id)).size===items.length};
+}
+
+const rawTags=['NARRATIVE','RAW_SYSTEM_EVENT','source:SYSTEM'];
+function selectRaw(nodes){
+ assert.ok(Array.isArray(nodes));
+ const selected=nodes.filter(n=>Array.isArray(n.tags)&&rawTags.every(t=>n.tags.includes(t)));
+ assert.equal(selected.length,2,'exactly two raw system events required');
+ const sorted=fixture.map(item=>{
+  const matches=selected.filter(n=>n.originalContent===item.content);
+  assert.equal(matches.length,1,'each original raw event must occur exactly once');
+  const n=matches[0];assert.equal(n.content,item.content);assert.equal(n.tier,'WORKING');
+  assert.deepEqual(n.tags,['NARRATIVE',item.source,`importance:${item.importance.toFixed(2)}`,'source:SYSTEM','RAW_SYSTEM_EVENT']);
+  assert.equal(n.importance,0.5); // Continuum's real score, not presentation importance.
+  assert.equal(typeof n.id,'string');assert.ok(n.id.length>0);
+  assert.equal(typeof n.timestamp,'number');assert.ok(Number.isFinite(n.timestamp));
+  assert.equal(n.accessCount,1);assert.equal(n.lastAccess,n.timestamp);
+  return n;
+ });
+ assert.equal(new Set(sorted.map(n=>n.id)).size,2);return sorted;
+}
+function jsonCanonical(value){
+ // Observe exactly the full JSON-serializable representation used by product
+ // disk persistence, without modifying the original object or picking fields.
+ const encoded=JSON.parse(JSON.stringify(value));
+ function ordered(v){
+  if(Array.isArray(v))return v.map(ordered);
+  if(v!==null&&typeof v==='object')return Object.fromEntries(Object.keys(v).sort().map(k=>[k,ordered(v[k])]));
+  return v;
+ }
+ return JSON.stringify(ordered(encoded));
+}
+async function assertRawMemory(mode){
+ const {continuum}=await import('/app/services/continuumMemory.js');
+ let nodes;
+ if(mode==='write'){
+  nodes=selectRaw(await continuum.getRecentObservations(rawTags,10));
+  const persisted=selectRaw(JSON.parse(fs.readFileSync('/work/data/memory_snapshot.json','utf8')).working);
+  assert.equal(jsonCanonical(persisted),jsonCanonical(nodes),'RAM events must already be on product disk snapshot');
+  fs.writeFileSync('/work/raw-system-event-oracle.json',JSON.stringify(nodes)+'\n',{flag:'wx',mode:0o600});
+ }else{
+  const expected=JSON.parse(fs.readFileSync('/work/raw-system-event-oracle.json','utf8'));
+  selectRaw(expected);
+  // Constructor starts the real async disk load with no exposed ready promise.
+  // Poll only the read-only observation API, bounded to 2s. No manual hydrate.
+  const until=performance.now()+2000;
+  let observed=[];
+  do{
+   observed=await continuum.getRecentObservations(rawTags,10);
+   if(observed.length===2)break;
+   await new Promise(resolve=>setTimeout(resolve,20));
+  }while(performance.now()<until);
+  nodes=selectRaw(observed);
+  assert.equal(jsonCanonical(nodes),jsonCanonical(expected),'new process must recover unchanged IDs and complete raw JSON nodes');
+  assert.equal(jsonCanonical(selectRaw(JSON.parse(fs.readFileSync('/work/data/memory_snapshot.json','utf8')).working)),jsonCanonical(expected));
+ }
+ observer?.checkpoint(mode==='write'?'RAW_MEMORY_WRITE':'RAW_MEMORY_READ');
+}
+
+export async function runPhase(mode){
+ assert.ok(mode==='write'||mode==='read');
+ assert.equal(process.cwd(),'/work');
+ assert.equal(process.env.SILHOUETTE_PROVIDERS,'off');
+ assert.equal(process.env.SILHOUETTE_BOOT_MODE,'normal');
+ assert.equal(process.getuid(),1000);
+ observer?.checkpoint('GUARD');
+ createRequire(import.meta.url)('/app/native-selection-guard.cjs').verify('/app');
+ observer?.checkpoint('RUNTIME_IMPORT');
+ await import('/app/server/config/runtimeCredentials.js');
+ observer?.checkpoint('NARRATIVE_IMPORT');
+ const {narrative}=await import('/app/services/narrativeService.js');
+ observer?.checkpoint('OWNERS_IMPORT');
+ const {drainOwnedProducers}=await import('/app/services/lifecycle/ownedProducers.js');
+ let originalError;let pending;let receipt;const cleanupFailures=[];
+ try{
+  if(mode==='write'){
+   // Real private-TS method at its runtime JS boundary, not a replacement.
+   // Each call owns its ticket synchronously, before admitThought's first await.
+   observer?.checkpoint('ADMISSIONS');
+   const accepted=fixture.map(item=>narrative.queueOrEmitThought(item.source,item.content,item.importance,item.metadata));
+   assert.equal(narrative.pendingAdmissions.size,2);
+   const stop=narrative.preserveAndStopBatchProcessor();
+   const settled=await Promise.allSettled(accepted);
+   observer?.checkpoint('ADMISSIONS_SETTLED');
+   settled.forEach((value,index)=>{if(value.status==='rejected')observer?.errorAt(index===0?'ADMISSION_0':'ADMISSION_1',value.reason);});
+   assert.ok(settled.every(value=>value.status==='fulfilled'),'accepted work rejected across stop');
+   receipt=await stop;
+  }else{
+   pending=await narrative.pendingNarrationSnapshot();
+   assert.deepEqual(pending.map(({id,...item})=>item),fixture);
+   receipt=await narrative.preserveAndStopBatchProcessor();
+  }
+  observer?.checkpoint('PRESERVE_RECEIPT');
+  assert.equal(receipt.error,null);
+  assert.equal(receipt.boundExhausted,false);
+  assert.equal(receipt.remainingItems,0);
+  assert.equal(receipt.pendingPreserved,2);
+  assert.equal(receipt.admissionFailures,0);
+  const journal=JSON.parse(fs.readFileSync('/work/data/wal/pending-narrations.json','utf8'));
+  observer?.journalComparison(journalProjection(journal));
+  assert.deepEqual(journal.items.map(({id,...item})=>item),fixture);
+  assert.equal(new Set(journal.items.map(item=>item.id)).size,2);
+  assert.deepEqual(journal.completed,[]);
+  if(pending)assert.deepEqual(journal.items,pending);
+  await assertRawMemory(mode);
+  await assert.rejects(narrative.enqueuePendingNarration({source:'AGENCY',content:'Public fixture too late',importance:0.9}));
+  const again=await narrative.preserveAndStopBatchProcessor();
+  assert.equal(again.error,null);assert.equal(again.pendingPreserved,2);
+  assert.deepEqual(JSON.parse(fs.readFileSync('/work/data/wal/pending-narrations.json','utf8')).items,journal.items);
+ }catch(error){observer?.errorAt('ORACLE_PRIMARY',error);originalError=error;}
+ finally{
+  // Attempt every actual lifecycle close; never replace a failure with success.
+  try{
+   observer?.checkpoint('OWNERS_CLOSE');
+   const stops=await drainOwnedProducers();
+   for(const value of Object.values(stops)){
+    assert.ok(value&&!value.stopFailed&&!value.boundExhausted);
+    if('error' in value)assert.equal(value.error,null);
+    for(const key of ['remainingItems','remainingQueue','activeAdmissions','activeQueueRuns'])
+     if(key in value)assert.equal(value[key],0);
+   }
+  }catch(error){observer?.errorAt('OWNERS_CLOSE',error);cleanupFailures.push(error);}
+  for(const [file,key,method] of [
+   ['/app/services/memory/continuousMemory.js','continuousMemory','shutdown'],
+   ['/app/services/connectionNervousSystem.js','nervousSystem','stop'],
+   ['/app/services/graphService.js','graph','close'],
+   ['/app/services/redisClient.js','redisClient','disconnect'],
+   ['/app/services/sqliteService.js','sqliteService','close']
+  ]){
+   const site={continuousMemory:'MEMORY_CLOSE',nervousSystem:'NERVOUS_CLOSE',graph:'GRAPH_CLOSE',redisClient:'REDIS_CLOSE',sqliteService:'SQLITE_CLOSE'}[key];
+   observer?.checkpoint(site);
+   try{const service=(await import(file))[key];await service[method]();}
+   catch(error){observer?.errorAt(site,error);cleanupFailures.push(error);}
+  }
+ }
+ if(originalError)throw originalError;
+ if(cleanupFailures.length)throw new AggregateError(cleanupFailures,'REAL_LIFECYCLE_CLOSE_FAILED');
+ // This receipt is an oracle checkpoint only. Parent must still observe natural
+ // process exit and EOF. It must not treat this print as termination evidence.
+ process.stdout.write('RAW_MEMORY_PHASE '+JSON.stringify({mode,rawSystemEvents:2,originalContentAndProvenance:true,completeNodeIdentity:true})+'\n');
+ process.stdout.write('NARRATIVE_PHASE '+JSON.stringify({mode,originalWorkEqual:true,preserved:2,lateRefused:true})+'\n');
+}

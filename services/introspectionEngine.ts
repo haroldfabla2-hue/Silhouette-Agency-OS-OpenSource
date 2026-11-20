@@ -2,6 +2,8 @@ import { IntrospectionLayer, IntrospectionResult, ConceptVector, IntrospectionCa
 import { ZOMBIE_THRESHOLD } from "../constants";
 
 import { systemBus } from "./systemBus";
+import { beginObservedOperation } from "./asyncWorkLedger"; // [O2-OBSERVE] observation-only ledger (zero product imports)
+import { acceptanceBoot } from "./security/bootMode";
 
 // --- ANTHROPIC INTROSPECTION ENGINE V2.0 ---
 // Implements the 5 Core Capabilities:
@@ -195,10 +197,38 @@ export class IntrospectionEngine {
         this.activeConcepts.push(concept);
         this.capabilities.add(IntrospectionCapability.CONCEPT_INJECTION);
 
-        // Persist to Continuum (Simulated Vector Store)
-        import('./continuumMemory').then(({ continuum }) => {
-            continuum.store(`[INTROSPECTION] Injected Concept Vector: ${label} (Str: ${strength})`, undefined, ['system', 'concept-vector']);
-        }).catch(e => console.error("[INTROSPECTION] Failed to persist concept", e));
+        // Persist to Continuum (Simulated Vector Store). Under an acceptance
+        // boot the automatic conceptual persistence is omitted: this store is
+        // non-internal, and its fire-and-forget cascade (dreamerService ->
+        // geminiService -> contextAssembler -> orchestrator...) evaluates the
+        // whole swarm graph at module evaluation and arms producers that the
+        // current acceptance fixture does not own. The RAM concept and
+        // capability above are created in EVERY boot mode. acceptanceBoot()
+        // is a pure read of SILHOUETTE_BOOT_MODE: 'normal' and providers-off
+        // (non-acceptance) keep the original persistence path unchanged.
+        // The guard wraps the WHOLE O2 observation envelope (operation,
+        // coverage-gap note, import and both handlers): under acceptance no
+        // persistOp is created, so omitted work is never observed as pending.
+        // [O2-OBSERVE] Observed from BEFORE the import; the callback RETURNS
+        // the real store promise, and the outcome is recorded BEFORE the
+        // historical absorbing log (which still runs for the caller). The
+        // inner store opens its OWN store-root when it runs: this operation
+        // scope is the observation envelope, not a second physical store,
+        // and no inheritance between the two is claimed.
+        if (!acceptanceBoot()) {
+            const persistOp = beginObservedOperation('concept-vector-persist');
+            // Sticky ancestry gap: the inner store opens its own store-root;
+            // if a watermark falls between the import resolving and that
+            // store, its children are OUTSIDE this envelope's cohort. No
+            // transitive coverage is claimed.
+            persistOp.noteCoverageGap('inner continuum.store opens its own store-root; children of that root are outside this operation cohort (no transitive coverage)');
+            import('./continuumMemory').then(({ continuum }) => {
+                return continuum.store(`[INTROSPECTION] Injected Concept Vector: ${label} (Str: ${strength})`, undefined, ['system', 'concept-vector']);
+            }).then(
+                () => persistOp.end('ok'),
+                (e: unknown) => { persistOp.end('failed', e); console.error("[INTROSPECTION] Failed to persist concept", e); }
+            );
+        }
     }
 
 

@@ -33,6 +33,12 @@ class ToolExecutor {
      * Execute a tool by name with given arguments
      */
     public async execute(toolName: string, args: any, caller?: ToolCaller): Promise<any> {
+        const { withToolDataBoundary } = await import('../security/toolDataBoundary');
+        const tool = toolRegistry.getTool(toolName);
+        return withToolDataBoundary(toolName, args, tool?.handler.type !== 'BUILTIN', () => this.executeOwned(toolName, args, caller));
+    }
+
+    private async executeOwned(toolName: string, args: any, caller?: ToolCaller): Promise<any> {
         const tool = toolRegistry.getTool(toolName);
 
         if (!tool) {
@@ -43,7 +49,7 @@ class ToolExecutor {
             throw new Error(`Tool is disabled: ${toolName}`);
         }
 
-        console.log(`[ToolExecutor] ⚡ Executing: ${toolName}`, args);
+        console.log(`[ToolExecutor] ⚡ Executing: ${toolName}`);
         const startTime = Date.now();
 
         try {
@@ -64,7 +70,7 @@ class ToolExecutor {
             }
 
             // Record successful usage
-            toolRegistry.recordUsage(toolName, true);
+            await toolRegistry.recordUsage(toolName, true);
             await toolPersistence.updateUsage(toolName, true);
 
             const duration = Date.now() - startTime;
@@ -74,7 +80,7 @@ class ToolExecutor {
 
         } catch (error: any) {
             // Record failed usage
-            toolRegistry.recordUsage(toolName, false);
+            await toolRegistry.recordUsage(toolName, false);
             await toolPersistence.updateUsage(toolName, false);
 
             console.error(`[ToolExecutor] ❌ ${toolName} failed:`, error);

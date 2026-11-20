@@ -182,6 +182,7 @@ router.post('/save', async (req, res) => {
 // GET /v1/memory/hippocampus - Get hippocampus working memory
 router.get('/hippocampus', async (req, res) => {
     try {
+        await continuum.ready();
         const hippocampus = continuum.getHippocampus();
         res.json({ hippocampus, count: hippocampus.length });
     } catch (error: any) {
@@ -194,6 +195,7 @@ router.get('/hippocampus', async (req, res) => {
 router.get('/session-history', async (req, res) => {
     try {
         const limit = parseInt(req.query.limit as string) || 100;
+        await continuum.ready();
         const history = continuum.getSessionHistory(limit);
         res.json({ history, count: history.length });
     } catch (error: any) {

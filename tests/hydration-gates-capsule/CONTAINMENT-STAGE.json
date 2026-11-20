@@ -1,0 +1,123 @@
+{
+  "status": "INACTIVE diagnostic candidate after two approved core attempts STOP. Latest44802267013 preserves helper active/exited exit0 and child exit1/stderr, no forced capture; witness not accepted. Default naturalExit/pipeEOF flags are not positive observations. Stop returned0 but no empty evidence, cleanup UNKNOWN. Earlier44799507290 unchanged. No third equivalent attempt authorized.",
+  "unitChoice": {
+    "type": "Unique transient user SERVICE Type=exec, not scope. systemd applies own cgroup resource properties before trusted helper exec; helper still cannot release witness before external receipt validation.",
+    "identity": "128-bit random hex nonce, exact unit Id + Description nonce + InvocationID + MainPID. Confirm LoadState=not-found and no existing cgroup before creation. Never retry name collision. Every cleanup rechecks same identity and invocation. MainPID must equal fresh ready receipt, real /proc/PID/cgroup must equal exact ControlGroup and owned unit path.",
+    "environment": "Existing owned user-manager private socket only for controller. Absolute pinned binaries and scripts, verify immutable hashes before start. Manager outside payload. systemd-run passes env -i PATH=/usr/bin:/bin LC_ALL=C to trusted helper. No shell/interpolation/credentials or manager socket/cgroup rw bind reaches inner namespace.",
+    "metadataLifetime": "RemainAfterExit=yes, no --collect. On natural success require active/exited MainPID0, cgroup populated0 and recursively empty BEFORE bookkeeping stop. If unit unloads after that proven empty receipt, preserve receipt and accept inactive/not-found. If cgroup/unit disappears before an empty observation, mark cleanup UNKNOWN/FAIL. Automatic failed-unit cgroup reclamation may make an expected resource negative unverifiable; never convert disappearance into PASS."
+  },
+  "limits": {
+    "memoryBytes": 134217728,
+    "swapBytes": 0,
+    "tasks": 16,
+    "cpuQuota": "25% single CPU, 25ms per 100ms period",
+    "runtimeSeconds": 20,
+    "stopSeconds": 2,
+    "controllerDeadlineSeconds": 25,
+    "handshakeSeconds": 5,
+    "workBytes": 1048576,
+    "workInodes": 64,
+    "rationale": "Only Python stdlib core witness and finite tiny probes, no Node/native/product/model. 128MiB is a candidate dedicated small ceiling, not measured product need. 16 tasks bound finite probes and helpers. 1MiB/64 inodes permit small explicit ENOSPC probes. If too small fail and review, never auto-increase. CPUQuota bounds rate, not separate total CPU. RuntimeMaxSec plus outside controller deadline bounds duration; controller must terminate own unit within deadline and confirm quiescence.",
+    "deadlineCaveat": "RuntimeMaxSec20s+TimeoutStopSec2s are verified before release. Controller loop deadline24s; one selected manager call may add at most4s, cleanup has separate bounded calls and3s polling. Do not describe25s as an exact end-to-end duration. Resource exposure remains under independently verified service runtime/stop bounds."
+  },
+  "handshake": [
+    "Controller creates exclusive private0700 directory, real canary and RO bind of distinct writable-on-host0600 sentinel so EROFS is meaningful. All scripts and selected Python/IP/system runtime bytes are externally anchored and byte checked; no arbitrary command/config payload accepted. No host immutable-filesystem claim.",
+    "Trusted helper executes only bounded core readiness code inside dedicated service cgroup. Atomic ready receipt0600 contains nonce, PID and waiting state only. Controller independently reads exact live /proc/PID/cgroup and manager InvocationID. Helper waits up to5s for exclusive release tied to nonce, PID and live manager InvocationID, then re-reads manager properties, membership and full effective cgroup limits before bwrap. Closed/deadline/malformed release is failure.",
+    "Controller remains outside target unit, reads live manager properties + /proc/PID/cgroup and full leaf-to-root effective cgroup chain. Require finite leaf memory.max<=128MiB, memory.swap.max=0, pids.max<=16, cpu.max rate<=25%, compare ancestors for stricter ceilings, record ancestor values without public paths. Invalid/missing or uncontrolled membership fails without release. Controllers/cgroup ownership properties are evidence not a substitute for actual limits.",
+    "Controller re-reads its actual membership and confirms it is outside target unit and unchanged; compares own leaf-to-root max settings before/after creation. Unit identity/invocation/PID/membership/limits are bound before atomic release. Helper verifies source hashes and release nonce/PID schema; manager InvocationID comes from external controller, not env-i helper environment. No product substitution.",
+    "Helpers implement waiting protocol; readiness is not SIGSTOP but trusted own core waiting before bwrap. Protocol/deadline behavior still requires later reviewed dynamic tests. No claim of actual held execution from pure tests."
+  ],
+  "writableSpace": {
+    "bwrap090": "Version0.9.0 source --size BYTES applies mode,size to following --tmpfs only. It does not expose nr_inodes. Do not invent --tmpfs options or infer FSIZE bounds directory total.",
+    "proposedButBlocked": "Proposed uninvoked namespace-setup function uses fixed libc remount only /work with size=1048576,nr_inodes=64,nosuid,nodev,noexec, mode0700. Requires temporary CAP_SYS_ADMIN only inside own private user+mount namespace, not host root. Boundary gate checks single root mapping to nonroot host IDs, different outer namespace IDs, private propagation, newly instantiated tmpfs device absent from anchored outer devices, root already RO and ALL other mounts RO. The complete candidate controller/helper now calls this fixed function only inside its bwrap inner entrypoint. One approved predecessor attempt failed before usable inner evidence. Current workflow is disabled; these properties remain dynamically unproven. No host mount, sudo or policy/security change. Denial or missing gate stays blocked, never fallback.",
+    "gate": "Before any writable probe require statvfs total blocks*frsize<=1048576 and0<f_files<=64 plus mountinfo exact /work tmpfs flags. No namespace-private capability may remain before witness: all five cap sets0, securebits locked, NoNewPrivs1. No writeable cgroupfs/socket/home/checkout/auth mounts."
+  },
+  "innerBoundary": [
+    "One legitimate bwrap admission attempt only, never disable AppArmor or install/reload profile. Denied=FAIL+STOP. Parent canary must actually exist outside allowlist before launch; inside witness must fail to find that exact path; mount a distinct pinned sentinel RO.",
+    "Fresh user/pid/net/mnt/ipc/uts; expected inner mapping0->hostuid1001 length1 and gid equivalent, from trusted configuration rather than raw outer map. Namespace identities distinct from parent. Private proc mount exact type/options/mount ID and all visible numeric PIDs must be members of inner PID namespace, not merely PID1/self present.",
+    "Read-only root with exact core-runtime/bwrap/helper allowlist, no product/Node/addon/checkout/home/cgroup or bus. Private proc and minimal devices. Set only lo up inside network namespace, verify only lo and IPv4/IPv6 unreachable. Rootmount construction and boundedwork construction must be reviewed together; no extra writable implicit tmpfs counted outside quotas.",
+    "Temporary NET_ADMIN/SETPCAP/SYS_ADMIN only inside fresh namespace for fixed core setup; none host-side. Remount exact/work and set lo up; purge all sets, securebits15 and NNP1, validate no extra descriptors. A fresh isolated -I -B -S Python probe executes only after drop, rechecks caps/NNP and compares private proc numeric PIDs/namespaces. No product/Node/addon/cgroup/bus mounts."
+  ],
+  "finiteCases": [
+    "Positive core-only namespace/maps/proc/caps/RO/canary/loopback/IPv4IPv6/work observations, natural exit/EOF/no descendants.",
+    "One memory case touches at most160MiB in4MiB chunks under128MiB unit. Require exact ready receipt before allocation and either controlled MemoryError/ENOMEM-specific probe receipt or oom_kill increment plus a corroborated SIGKILL termination. max/oom pressure counters ALONE are never rejection evidence. Full allocation completion, arbitrary FAIL, missing receipt or benign reclaim is rejected. PID case attempts at most20 direct children then reaps known children; require pids.events max increment. No exponential fork or quota increase.",
+    "Within bounded private /work write at most2MiB in4096-byte chunks, then create at most80 empty files; require ENOSPC and statvfs corroboration for bytes/inodes separately. Per-file FSIZE cannot stand in for aggregate evidence.",
+    "CPU no burn test: verify finite effective cpu.max and finite RuntimeMaxSec, annotate rate plus wall semantics. Probe arbitrary CPU/accounting claims only in later reviewed cut if required.",
+    "Three separately bounded lifecycle negatives: descendant closes inherited pipes but remains a real namespace PID; pipe descendant holds inherited pipe; timeout sleeps8s vs inner3s deadline. Inner supervisor observes exit/EOF/orphans before bwrap PID1 reaper teardown. Exact ready token and case-specific negative receipt required. These are expected FAIL observations, never payload PASS after forced cleanup.",
+    "After drop, a fixed attempt to remount the dedicated /work must fail EPERM, corroborating loss of SYS_ADMIN. Never treat failed read or unrelated mount error as proof."
+  ],
+  "cleanup": [
+    "Signal handlers installed before creation. Stop only the original fully validated owned unit Id/Description/InvocationID, never reanchor to a later query. If prehandshake failure leaves no validated identity, preserve primary failure+cleanup UNKNOWN without stop; do not invent recovery authority. Manager RuntimeMaxSec remains independent fallback. Exact child pidfds only; no global kill or reused-PGID fallback.",
+    "Confirm cgroup.events populated0 and recursive cgroup.procs empty, unit inactive/failed MainPID0. If unit/cgroup disappeared before empty receipt can be established, mark cleanup unknown, not PASS. Manager RuntimeMaxSec remains fail-safe if outside controller is killed. SIGKILL/power loss cannot guarantee a receipt; do not claim cancellation guarantees beyond that.",
+    "Successful core case requires natural witness exit0, pipeEOF, zero descendants, manager Resultsuccess, no timeout/OOM/pids-limit unexpected event, then owned unit stop only for active-exited bookkeeping. Any forced payload cleanup invalidates PASS. Remove only own private tempfiles after receipts; preserve evidence outside audited artifact."
+  ],
+  "remainingBlockers": [
+    "One approved predecessor core attempt44799507290 failed with memory.events ENOENT; fallback canonicalization failed before stop. Internal helper cause unobserved and cleanup UNKNOWN. This diagnostic revision remains inactive and unreviewed; no fresh execution anchor.",
+    "Runtime unknowns remain: bwrap/AppArmor admission, all-RO mount construction, namespace-local remount and actual enforcement/cleanup under real kernel. Missing or denied gate fails once without policy/privilege fallback.",
+    "Failed unit cgroup disappearance before populated0/empty receipt must remain UNKNOWN/FAIL, not proof of cleanup.",
+    "The filesystem is not immutable against another malicious process with the same host UID. Inner payload only sees RO pinned bytes and no host checkout/control/socket; if stronger host-adversary staging is required, this design remains blocked.",
+    "Even a later core containment result cannot establish product behavior or repair the original shutdown defect."
+  ],
+  "sources": [
+    "https://www.freedesktop.org/software/systemd/man/255/systemd-run.html",
+    "https://www.freedesktop.org/software/systemd/man/255/systemd.resource-control.html",
+    "https://www.freedesktop.org/software/systemd/man/255/systemd.service.html",
+    "https://raw.githubusercontent.com/containers/bubblewrap/v0.9.0/bubblewrap.c",
+    "https://man7.org/linux/man-pages/man5/tmpfs.5.html",
+    "https://man7.org/linux/man-pages/man2/mount.2.html"
+  ],
+  "implementation": {
+    "entry": "containment-harness.py controller /private/read-only-external-anchor.json",
+    "anchor": "External read-only record must pin exact source set, host binaries, archive SHA256, allowlist SHA256, commit/run/artifact identity. This harness never generates that anchor. Verify before any unit creation. Source/runtime checks and inner RO binds protect against payload changes; no claim of host filesystem immutable flag or resistance to another malicious process with the same host UID.",
+    "sourceSet": [
+      "containment-harness.py",
+      "containment-control-contract.py",
+      "containment-bootstrap-contract.py"
+    ],
+    "oldWitness": "Earlier containment-witness.py is not imported, copied or invoked. The integrated probe replaces its incomplete proc/mapping checks for this harness only.",
+    "controlRecords": "Private0700 directory, records0600 exclusive temp + fsync + no-overwrite atomic link. Readiness/release/result max16KiB; fixed source/runtime bind config max256KiB. Bounded stdout8KiB/stderr4KiB, only ready/JSON protocol accepted. stderr content not printed but nonempty rejects positive cases.",
+    "processCleanup": "Exact child pidfd for local kill, no host PGID kill or global process scan. Whole unit cleanup only after nonce/InvocationID recheck. Namespace-local orphan scan occurs before the bwrap reaper teardown.",
+    "testScope": "57 pure harness groups+14 wiring groups. Added official-format/synthetic fixtures distinguish namespace-denial/bind/loader/Python-open/exec categories, mixed marker+external+unknown lines, distinct marker ambiguity, invalid UTF8/alphanumeric secret/malformed JSON/capped counts, probe external-loader format propagation, actual counters missing-file reason by location, and typed read failures still reach owned stop but UNKNOWN. No actual service/namespace/process/network/product tests. Actual functions also test four duplicate markers plus fifth conflict, >4distinct, conflict+loader, truncation, all three flags together across inner entrypoint, and unique marker with extra unknown line. All stay inactive. Two pure actual observe_core_once branch tests prove success and UNKNOWN/conflict/cap/denial each call firstcore once and never negatives/retry.",
+    "captureSetup": "Popen creation and all subsequent pidfd/selector/register steps are inside one resource try/finally. Setup failure emits fatal capture status to the helper/controller and requires own-unit cleanup; no unsafe bare PID/PGID fallback when pidfd unavailable. Every opened stream/selector/pidfd is closed, independent of setup stage. Signal handler restoration wraps even failing owned-unit cleanup.",
+    "resultOracle": "Actual controller calls evaluate_case_result with exact context/schema/case, expected resource event deltas and negative reason. Positive paths also call the tested final receipt validator with saved live active-exited/empty observations before bookkeeping stop. Unexpected pressure/OOM/PID events reject positives; expected lifecycle negatives keep payloadPassfalse."
+  },
+  "diagnosticCorrection": "INACTIVE correction: freeze original owned identity and cgroup location only after the complete gate; never recover identity from a later invocation. Without original identity, record failure and cleanup UNKNOWN without stop. Exact original identity can stop despite missing cgroup files; no empty evidence means UNKNOWN. Persist the already observed terminal snapshot before re-querying manager or counters; primary failure receipt before cleanup queries. Closed reason/type/stage enums and per-field numeric/boolean ranges only. Typed reasons propagate probe->actual inner->actual helper; arbitrary bwrap stderr is unknown, not inferred AppArmor. Original attempt cleanup remains UNKNOWN.",
+  "diagnosticTests": "57 pure harness groups+14 wiring groups. Added official-format/synthetic fixtures distinguish namespace-denial/bind/loader/Python-open/exec categories, mixed marker+external+unknown lines, distinct marker ambiguity, invalid UTF8/alphanumeric secret/malformed JSON/capped counts, probe external-loader format propagation, actual counters missing-file reason by location, and typed read failures still reach owned stop but UNKNOWN. No actual service/namespace/process/network/product tests. Actual functions also test four duplicate markers plus fifth conflict, >4distinct, conflict+loader, truncation, all three flags together across inner entrypoint, and unique marker with extra unknown line. All stay inactive. Two pure actual observe_core_once branch tests prove success and UNKNOWN/conflict/cap/denial each call firstcore once and never negatives/retry.",
+  "externalDiagnostics": {
+    "scope": "Source-format recognition only, not proof of root cause, installed libc version, or cause of past attempts. Actual stderr from attempt44802267013 was not retained and is irrecoverable from its four selected receipts/log. No retrospective attribution. No raw text, path, token, errno string, free fingerprint or stderr hash is published. Unknown remains a real category.",
+    "formats": "Closed categories distinguish bwrap namespace-create denial format, other namespace-create format, bind-mount error, execvp error, dynamic-loader error format and Python script-open error. LC_ALL=C already fixed in controller. Unknown lines remain counted separately; arbitrary content does not become a category.",
+    "markers": "Scan all complete marker lines inside4096-byte input bound; deduplicate before public cap4. Preserve total markerCount and closed markerConflict/markerOverflow/diagnosticTruncated flags. Never select a cause if conflict/overflow/truncation. All7 uncertainty flag combinations cross inner/helper boundaries as fixed DIAGNOSTIC_* codes and restore the same flags. Extra unknown lines do not erase a unique marker; unknown lines stay counted. Conflicting markers plus loader category remain uncertainty, never loader attribution.",
+    "bounds": "stderr <=4096bytes, stored byteCount integer capped4096+explicit cap flag, unknownLineCount <=4096, <=4 typed markers, fixed category set, exitCode exact int -64..255 or unknown. Counts and enums only. Existing capture limit remains fail-closed, no output quota increase.",
+    "readLocations": "Closed READ_MEMORY_EVENTS/READ_PIDS_EVENTS/READ_CGROUP_EVENTS, READ_CGROUP_DIRECTORY/PROCS, READ_UNIT_SHOW, READ_HELPER_RESULT, READ_PROBE_READY, READ_READY_RECORD/MEMBERSHIP, READ_CONTROLLER_MEMBERSHIP and READ_ANCESTOR_LIMITS map OSError to operation+exception type without filename or exception text. Typed missing counter exception must still allow exact original-owned stop while absence of empty proof remains UNKNOWN.",
+    "sources": [
+      {
+        "url": "https://raw.githubusercontent.com/containers/bubblewrap/v0.9.0/bubblewrap.c",
+        "supports": "namespace creation diagnostics around2906-2914; bind error call around1109; execvp diagnostic3394"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/containers/bubblewrap/v0.9.0/utils.c",
+        "supports": "warnv bwrap prefix and die_with_error errno suffix"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/containers/bubblewrap/v0.9.0/bind-mount.c",
+        "supports": "die_with_bind_result formatting553-600"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/bminor/glibc/glibc-2.39/elf/dl-catch.c",
+        "supports": "fatal loader format error while loading shared libraries around83-85, format only, no claim this libc version ran"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/python/cpython/v3.12.3/Modules/main.c",
+        "supports": "script-open failure format328, return2, format only"
+      }
+    ]
+  },
+  "observationOnlyProposal": {
+    "status": "INACTIVE source candidate, workflow false and anchor absent. No third execution authorized.",
+    "question": "Locate first failed boundary with reviewed closed diagnostics: external namespace/bind/exec/loader/Python-open format, typed bootstrap/probe reason, or UNKNOWN/conflict/truncated. No inference about prior attempts.",
+    "scope": "Controller runs exactly core once then stops even on success. Existing8 case implementations retained for separately reviewed future use but7 negatives unreachable from this controller stage. No product or LLM. Existing limits/policy/identity/cleanup/PASS unchanged.",
+    "finiteOutcome": "A known format/code can support focused source/construction review under same limits, not automatic repair or retry. UNKNOWN/conflict/cap ends measurement. Namespace-denied does not authorize policy changes. Cleanup missing empty proof stays UNKNOWN regardless of stop return0.",
+    "nextGate": "This changes harness hash. After source review/publication only, new existing metadata job output must be matched to changed source. Any later anchor+activation is a separate exact reviewed effect, no reused old source hash or generated expected identity. No new provenance investigation or infrastructure.",
+    "functionalGoal": "After this boundary is resolved, return to real product shutdown failures drainfalse and survivortrue. Observation success is not full core validation or product repair."
+  }
+}

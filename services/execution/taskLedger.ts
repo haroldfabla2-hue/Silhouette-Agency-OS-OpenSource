@@ -18,6 +18,7 @@ import type { ExecutionPlan, PlanStep } from '../planGenerator';
 
 export interface StepOutcomeLike {
     stepOrder: number;
+    executionEvidence?: import('./taskEvidence').TaskEvidenceSnapshot;
     success: boolean;
     output?: string;
     error?: string;
@@ -145,6 +146,7 @@ export function markTaskDone(planId: string, step: PlanStep, result: StepOutcome
                 artifacts,
                 tokensUsed: result.tokensUsed ?? 0,
                 executionTimeMs: result.executionTimeMs ?? 0,
+                ...(result.executionEvidence ? { executionEvidence: result.executionEvidence } : {}),
                 ...(result.abandonedInFlight ? { abandonedInFlight: { timedOutAt: result.abandonedInFlight } } : {}),
                 ...(noEvidence ? { evidence: 'none' } : {})
             }
@@ -279,8 +281,10 @@ export function recordLateSettlement(planId: string, stepOrder: number, late: St
             output: persisted.output,
             ...persisted.extra,
             error: late.error,
-            artifacts: late.artifacts ?? []
+            artifacts: late.artifacts ?? [],
+            ...(late.executionEvidence ? { executionEvidence: late.executionEvidence } : {})
         };
+        if (late.executionEvidence) data.executionEvidence = late.executionEvidence;
         sqliteService.upsertTask({ id, description: row.description, assigned_to: row.assigned_to, status: row.status, data });
         console.log(`[TASK_LEDGER] Late settlement reconciled for step ${stepOrder} of ${planId} (success=${late.success === true})`);
     } catch (e: any) {

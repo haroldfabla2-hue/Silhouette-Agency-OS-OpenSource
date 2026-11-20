@@ -1,0 +1,27 @@
+{
+  "scope": "Preflight reads only are proposed for the existing free isolated CI preparation job. Witness is source-only, NOT called by any workflow or launcher. No product execution in this stage.",
+  "preflight": "Read selected system metadata and bwrap --version only; no Node/Python payload, no namespace creation/cgroup writes/network. Preflight does not prove runtime containment.",
+  "witnessStatus": "SOURCE ONLY incomplete invocation boundary: future trusted launcher/control must pin expected inner UID/GID mappings, parent namespace observations, sentinel, cgroup/tmpfs design and external artifact/head/merge/run/digest/extractor/source anchor. Not wired or run. Private proc checks in this draft are incomplete: presence of PID1/self alone does not exclude host PIDs or validate the proc mount. Requires a later reviewed technical cut before invocation.",
+  "beforeProductBlocked": [
+    "No aggregate process-tree RAM/CPU/PID cap demonstrated. Existing rlimits are per process and NPROC root-in-userns may not suffice.",
+    "No aggregate /work tmpfs bytes/inodes limit configured in current product launcher; FSIZE is per file.",
+    "No containment witness or negative timeout/lingering descendant/pipe/cleanup test executed.",
+    "No seccomp policy exists in current launcher; do not claim one.",
+    "Read-only root and per-file binds need direct future containment observation; preparation is not namespace proof."
+  ],
+  "futureFiniteNegativePlan": [
+    "RO sentinel write denied; actual out-of-allowlist canary absent.",
+    "IPv4 and IPv6 documentation-address connection unreachable with only lo present.",
+    "Compare user/pid/net/mnt/ipc/uts distinct from trusted parent and private proc UID/GID single map.",
+    "Caps Inh/Prm/Eff/Bnd/Amb all zero and NoNewPrivs1 before any payload.",
+    "Lingering child/pipe and wall timeout must FAIL without pass; cleanup only owned PGID, namespace empty confirmed.",
+    "Aggregate quotas require dedicated reviewed bounded probes once a nonprivileged effective mechanism is known."
+  ],
+  "nonClaims": "Witness source cannot be treated as complete runner proof or behavior validation; aggregate controls and negative harness remain explicitly blocked, not silently waived.",
+  "finiteRouteComplement": {
+    "scope": "One selected read-only complement, no namespace/witness/product or service/scope creation. Existing systemd user manager queried only when an owned private socket exists. Read-only system manager show for the one current UID user unit. Known bwrap profile files only, no loaded-policy claim. Timeout 3 seconds each, no new packages/sudo.",
+    "stop": "If no viable existing user-manager/controller route is demonstrated, stop current runner product route. Do not start manager, enable linger, change policy/sysctl, grant delegation, use privileged scope or relax aggregate limits.",
+    "alternativeDesign": "A separate free disposable Linux CI VM whose existing runner configuration already exposes an unprivileged dedicated resource-control mechanism and supports the necessary namespace policy may be evaluated by configuration/documentation first. No personal/production host, paid infrastructure, or provider activation implied. No alternative is yet verified suitable.",
+    "requiredBeforeProduct": "A later reviewed implementation must bound aggregate tree RAM/swap/CPU/PIDs and /work tmpfs bytes/inodes and validate effective limits plus containment. This complement alone cannot establish suitability."
+  }
+}

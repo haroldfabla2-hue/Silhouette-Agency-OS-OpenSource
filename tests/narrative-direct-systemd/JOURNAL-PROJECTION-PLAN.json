@@ -1,0 +1,14 @@
+{
+  "assertionsChanged": false,
+  "bounds": {
+    "counts": "0..8 exact,9 means9orMore",
+    "items": 8,
+    "schemaVersion": 1
+  },
+  "historicalEvidenceReconstructed": false,
+  "kind": "JOURNAL_COMPARISON_PROJECTION_ONLY_STATIC_PREPARATION",
+  "productChanged": false,
+  "projection": "full deepStrictEqual object without id against each complete public fixture, multiplicity/order/IDs/completed; OTHER closed differing-field enums only",
+  "purpose": "classify future ordered fixture assertion without changing it; historical cause remains unknown",
+  "runtimeExecuted": false
+}

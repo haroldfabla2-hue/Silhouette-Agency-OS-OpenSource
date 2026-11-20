@@ -1,7 +1,10 @@
+import { isDesktopRefusal } from './lifecycle/desktopRefusal.js';
+import { desktopWorkBound, desktopRun, desktopFault, desktopOutcome, desktopLineageLive } from './lifecycle/desktopWork.js';
 
 import { ProtocolEvent, SystemProtocol, InterAgentMessage } from "../types";
 import { IBusAdapter } from "./bus/IBusAdapter";
 import { MemoryBusAdapter } from "./bus/MemoryBusAdapter";
+import { acceptanceBoot } from "./security/bootMode";
 // import { RedisBusAdapter } from "./bus/RedisBusAdapter"; // REMOVED: Static import causes browser crash
 
 // --- SYSTEM BUS V2.1 (ENHANCED WITH MESSAGE TAGGING) ---
@@ -63,9 +66,19 @@ class SystemBus {
         const isNode = typeof process !== 'undefined' && process.versions != null && process.versions.node != null;
         if (!isNode) return; // Browser: Stay on Memory
 
+        // Policy barrier (NOT scrub-dependent): acceptance never upgrades to
+        // Redis, even if USE_REDIS/REDIS_URL somehow survived the env scrub.
+        if (acceptanceBoot()) {
+            console.info('[SYSTEM BUS] Redis adapter upgrade disabled by acceptance policy; staying on memory adapter.');
+            return;
+        }
+
         const useRedis = process.env.USE_REDIS === 'true' || process.env.REDIS_URL;
 
         if (useRedis) {
+            // Local lifecycle tickets never travel through Redis payloads.
+            // Do not suppress Redis to get a clean Desktop receipt.
+            if (desktopWorkBound()) desktopFault('system-bus', 'redis-lineage-and-close-unbound');
             try {
                 console.log("[SYSTEM BUS] Detected Redis Config. Upgrading adapter...");
                 // Dynamic Import to avoid bundling 'redis' in browser
@@ -90,6 +103,22 @@ class SystemBus {
     private handlers: Map<SystemProtocol, Set<EventHandler>> = new Map();
 
     public subscribe(protocol: SystemProtocol, handler: EventHandler) {
+        const original = handler;
+        if (desktopWorkBound()) handler = (event: ProtocolEvent) => {
+            // Transfer ownership BEFORE invoking, even though bus adapters do
+            // not await callbacks. Returned subscriber work keeps its own ticket
+            // after the publisher/HTTP response has completed.
+            const acceptedParent = desktopLineageLive();
+            let entered = false;
+            const task = desktopRun('bus:' + protocol, () => { entered = true; return original(event); });
+            void Promise.resolve(task).catch(error => {
+                if (isDesktopRefusal(error) && !entered) {
+                    desktopOutcome('bus:' + protocol, 'not-started-roots-closed');
+                    if (acceptedParent) desktopFault('bus:' + protocol, 'accepted-transfer-refused');
+                } else desktopFault('bus:' + protocol, 'subscriber-unreceipted-failure');
+            });
+            return task;
+        };
         this.adapter.subscribe(protocol, handler);
 
         // Track handlers for unsubscribe capability
@@ -125,6 +154,35 @@ class SystemBus {
 
         console.log(`[BUS] Emitting ${protocol} from ${initiator}`, payload);
 
+        if (desktopWorkBound() && protocol === SystemProtocol.USER_MESSAGE) {
+            // Explicit local dispatcher, not adapter publish-and-forget. The
+            // handler Set contains the same subscribers as the memory adapter.
+            // No ticket is read from event/payload/initiator.
+            const acceptedParent = desktopLineageLive();
+            let entered = false;
+            const delivery = desktopRun('dispatch:USER_MESSAGE', async () => {
+                entered = true;
+                if (!(this.adapter instanceof MemoryBusAdapter)) {
+                    desktopFault('system-bus', 'remote-user-message-dispatch-unbound');
+                    throw new Error('DESKTOP_REMOTE_DISPATCH_UNBOUND');
+                }
+                const work = [...(this.handlers.get(protocol) ?? [])].map(async handler => handler(event));
+                const results = await Promise.allSettled(work);
+                if (results.some(result => result.status === 'rejected')) {
+                    desktopFault('dispatch:USER_MESSAGE', 'delivery-failed');
+                    throw new Error('DESKTOP_USER_MESSAGE_DELIVERY_FAILED');
+                }
+            });
+            // emit keeps its void API; this task is owned independently, and
+            // errors become explicit unresolved dispatch debt, not lost catches.
+            void Promise.resolve(delivery).catch(error => {
+                if (isDesktopRefusal(error) && !entered) {
+                    desktopOutcome('dispatch:USER_MESSAGE', 'not-started-roots-closed');
+                    if (acceptedParent) desktopFault('dispatch:USER_MESSAGE', 'accepted-transfer-refused');
+                } else desktopFault('dispatch:USER_MESSAGE', 'delivery-failed');
+            });
+            return;
+        }
         this.adapter.publish(event);
     }
 

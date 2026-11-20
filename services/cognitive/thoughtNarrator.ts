@@ -574,12 +574,12 @@ export class ThoughtNarrator {
                     const { RemediationService } = await import('../remediationService');
                     const remediation = RemediationService.getInstance();
                     const errorTarget = action?.params?.agentId || 'SYSTEM';
-                    remediation.mobilizeSquad(errorTarget, [
+                    const mobilization = await remediation.mobilizeSquad(errorTarget, [
                         `Consciousness-detected issue: ${thought}`,
                         `Confidence: ${confidence}`,
                         `Action hint: ${action?.params?.hint || 'Investigate and resolve'}`
                     ]);
-                    console.log(`[NARRATOR → DIAGNOSTIC] 🔧 Remediation mobilized for: ${errorTarget}`);
+                    console.log('[NARRATOR → DIAGNOSTIC] Remediation request settled:', {agentId: errorTarget, outcome: mobilization.kind});
                     break;
                 }
 
@@ -590,7 +590,7 @@ export class ThoughtNarrator {
                     const mission = action?.params?.mission || thought;
 
                     // Try to hydrate the agent first
-                    try { orchestrator.hydrateAgent(targetAgent); } catch (_) { }
+                    await orchestrator.requireHydrated(targetAgent);
 
                     // Use orchestrator's delegation if available, otherwise store as goal
                     if (typeof (orchestrator as any).delegateToAgent === 'function') {

@@ -1,3 +1,5 @@
+import { desktopFault, desktopRootsOpen } from '../lifecycle/desktopWork.js';
+import { producerScopeBound } from '../../server/desktop/producerScope.js';
 import { IPlugin } from './pluginInterface';
 import { toolRegistry, DynamicTool } from '../tools/toolRegistry';
 import { skillRegistry } from '../skills/skillRegistry';
@@ -18,6 +20,18 @@ class PluginRegistry {
     private static instance: PluginRegistry;
     private plugins: Map<string, IPlugin> = new Map();
     private initialized: boolean = false;
+    private desktopWork: ReturnType<typeof import('../../server/desktop/writerGate.js').createWriterGate> | null = null;
+    private desktopStopping = false;
+    private desktopStarted = new Set<IPlugin>();
+    private desktopStartFailed = false;
+    private desktopReleased = false;
+    private desktopToolOnly = new Set<IPlugin>();
+
+    // Called by the source-owned core loader with the actual reviewed object,
+    // never inferred from a plugin's id/name or metadata. Not effect authority.
+    public declareDesktopToolOnly(plugin: IPlugin): void {
+        this.desktopToolOnly.add(plugin);
+    }
 
     private constructor() { }
 
@@ -33,6 +47,7 @@ class PluginRegistry {
      * This adds it to the registry but does not initialize it yet.
      */
     public register(plugin: IPlugin): void {
+        if (producerScopeBound() && this.desktopStopping) throw new Error('DESKTOP_PLUGIN_ADMISSION_STOPPED');
         if (this.plugins.has(plugin.id)) {
             console.warn(`[PluginRegistry] ⚠️ Overwriting plugin: ${plugin.id}`);
         }
@@ -46,6 +61,11 @@ class PluginRegistry {
      */
     public async initialize(): Promise<void> {
         if (this.initialized) return;
+        if (producerScopeBound()) {
+            if (this.desktopStopping) throw new Error('DESKTOP_PLUGIN_ADMISSION_STOPPED');
+            const { createWriterGate } = await import('../../server/desktop/writerGate.js');
+            this.desktopWork ??= createWriterGate('DESKTOP_PLUGIN');
+        }
 
         console.log('[PluginRegistry] 🚀 Initializing plugins...');
 
@@ -91,6 +111,12 @@ class PluginRegistry {
             }
 
             try {
+                if (producerScopeBound()) {
+                    if (this.desktopStopping) throw new Error('DESKTOP_PLUGIN_ADMISSION_STOPPED');
+                    // Retain partial initialization owners even if onInit throws.
+                    this.desktopStarted.add(plugin);
+                    if (!this.desktopToolOnly.has(plugin)) desktopFault('plugins', 'background-contract-unreviewed');
+                }
                 // 1. Lifecycle: onInit
                 if (plugin.onInit) {
                     await plugin.onInit();
@@ -164,7 +190,10 @@ class PluginRegistry {
                         type: plugin.monitoring.monitorType,
                         isRequired: plugin.monitoring.isRequired,
                         checkHealth: () => plugin.monitoring!.checkHealth(),
-                        reconnect: () => plugin.monitoring!.reconnect()
+                        reconnect: () => {
+                            if (producerScopeBound() && !desktopRootsOpen()) return Promise.resolve(false);
+                            return plugin.monitoring!.reconnect();
+                        }
                     });
                 }
 
@@ -172,6 +201,7 @@ class PluginRegistry {
 
             } catch (error) {
                 console.error(`[PluginRegistry] ❌ Failed to initialize plugin ${plugin.name}:`, error);
+                if (producerScopeBound()) { this.desktopStartFailed = true; desktopFault('plugins', 'partial-initialization-unresolved'); }
             }
         }
 
@@ -192,7 +222,60 @@ class PluginRegistry {
         if (!plugin) return undefined;
 
         const tool = plugin.tools.find(t => t.name === toolName);
-        return tool?.handler;
+        if (!tool) return undefined;
+        if (!producerScopeBound()) return tool.handler;
+        // Gate is tested at INVOCATION, including a handler cached before stop.
+        return (args: any) => {
+            if (!this.desktopWork) return Promise.reject(new Error('DESKTOP_PLUGIN_NOT_INITIALIZED'));
+            return this.desktopWork.run(async () => {
+                try { return await tool.handler(args); }
+                catch (error) {
+                    // Read/list rejection is a receipted tool result. A failed
+                    // file write can have modified bytes before rejecting.
+                    if (!this.desktopToolOnly.has(plugin) || toolName === 'write_file') desktopFault('plugins', 'tool-write-or-unknown-result');
+                    throw error;
+                }
+            });
+        };
+    }
+
+    public stopDesktopAdmission(): void {
+        this.desktopStopping = true;
+        this.desktopWork?.stopAdmission();
+        for (const plugin of this.desktopStarted) {
+            if (plugin.monitoring) nervousSystem.unregister(plugin.monitoring.monitorId);
+        }
+    }
+
+    public async drainDesktopWork(ms = 4000) {
+        if (!this.desktopStopping) throw new Error('DESKTOP_PLUGIN_ADMISSION_OPEN');
+        return this.desktopWork ? this.desktopWork.drain(ms) : { accepting: false, active: 0, failures: 0, refused: 0 };
+    }
+
+    public async releaseDesktopProducers(): Promise<void> {
+        await this.drainDesktopWork();
+        if (this.desktopStartFailed) throw new Error('DESKTOP_PLUGIN_PARTIAL_ROLLBACK_UNBOUND');
+        // IPlugin does not define partial-phase safety, descendant ownership or
+        // onStop persistence. Do not invoke unknown hooks against live stores.
+        if ([...this.desktopStarted].some(plugin => !this.desktopToolOnly.has(plugin)
+            || plugin.onInit || plugin.onStart || plugin.onStop || plugin.monitoring)) {
+            throw new Error('DESKTOP_PLUGIN_PRODUCER_RELEASE_UNBOUND');
+        }
+        this.desktopReleased = true;
+    }
+
+    public async closeDesktopPlugins(): Promise<void> {
+        if (!this.desktopReleased) throw new Error('DESKTOP_PLUGIN_PRODUCERS_NOT_RELEASED');
+        await this.drainDesktopWork();
+        this.initialized = false;
+    }
+
+    public desktopLifecycleReceipt() {
+        return { started: this.desktopStarted.size, partialStartFailed: this.desktopStartFailed,
+            ...(this.desktopWork?.snapshot() ?? { accepting: !this.desktopStopping, active: 0 }),
+            // IPlugin.onStart/onStop do not describe owned timers, nested work,
+            // or persistence. Do not equate returned tool work with ALL writers.
+            backgroundContractComplete: this.desktopStarted.size === 0 };
     }
 
     /**

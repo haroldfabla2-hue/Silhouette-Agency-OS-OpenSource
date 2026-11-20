@@ -71,7 +71,7 @@
     "dotenv": "^17.2.3",
     "driver.js": "^1.4.0",
     "electron-log": "^5.4.4",
-    "electron-updater": "^6.3.0",
+    "electron-updater": "^6.8.12",
     "elevenlabs": "^1.59.0",
     "express": "^5.1.0",
     "express-rate-limit": "^7.5.0",
@@ -92,7 +92,7 @@
     "pg": "^8.20.0",
     "pixi.js": "^8.14.3",
     "playwright": "^1.58.2",
-    "puppeteer": "^24.34.0",
+    "puppeteer": "^25.18.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-force-graph-3d": "^1.29.0",
@@ -111,7 +111,9 @@
     "xterm": "^5.3.0",
     "xterm-addon-fit": "^0.8.0",
     "z3-solver": "^4.16.0",
-    "zustand": "^5.0.9"
+    "zustand": "^5.0.9",
+    "proxy-agent": "^8.0.3",
+    "yauzl": "^3.4.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
@@ -128,7 +130,7 @@
     "autoprefixer": "^10.4.17",
     "concurrently": "^9.2.1",
     "electron": "^30.0.0",
-    "electron-builder": "^24.13.3",
+    "electron-builder": "^26.18.1",
     "eslint": "^8.57.0",
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.1",

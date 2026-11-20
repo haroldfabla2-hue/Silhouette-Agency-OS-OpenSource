@@ -20,7 +20,7 @@ function phase(root: string, dir: string, mode: string) {
     const result = spawnSync(process.execPath, ['--import', loader, script, mode], {
         cwd: root, encoding: 'utf8', timeout: 20000, maxBuffer: 2 * 1024 * 1024,
         env: { PATH: process.env.PATH, HOME: root, TMPDIR: root, NODE_OPTIONS: '--max-old-space-size=2048', NODE_ENV: 'test', VITEST: 'true',
-            SILHOUETTE_PROVIDERS: 'off', SILHOUETTE_BOOT_MODE: 'acceptance', SELFDEV_DIR: dir,
+            SILHOUETTE_PROVIDERS: 'off', SILHOUETTE_BOOT_MODE: 'acceptance', SILHOUETTE_INFERENCE_MODE: 'cloud-only', SELFDEV_DIR: dir,
             SELF_REPO_PATH: path.join(root, 'no-repository'), SELF_WORKTREE_PATH: path.join(root, 'no-worktree') }
     });
     // A timeout, signal, forced child or missing raw completion is a failure.

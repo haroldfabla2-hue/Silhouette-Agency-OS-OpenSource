@@ -1,3 +1,5 @@
+import { createWriterGate } from '../desktop/writerGate.js';
+import { producerScopeBound } from '../desktop/producerScope.js';
 // =============================================================================
 // CHANNEL ROUTER
 // Central hub that manages all messaging channels and routes messages
@@ -16,6 +18,7 @@ import { channelIngress } from '../../services/security/ingressEnvelope';
 // ─── Channel Router ──────────────────────────────────────────────────────────
 
 class ChannelRouter {
+    private readonly desktopWork = createWriterGate('DESKTOP_CHANNEL');
     private channels: Map<string, IChannel> = new Map();
     private messageHandlers: MessageHandler[] = [];
     private chatToSession: Map<string, string> = new Map(); // chatId → sessionId
@@ -26,11 +29,13 @@ class ChannelRouter {
      * Register a channel implementation.
      */
     register(channel: IChannel): void {
+        if (producerScopeBound() && !this.desktopWork.snapshot().accepting) throw new Error('DESKTOP_CHANNEL_ADMISSION_STOPPED');
         this.channels.set(channel.name, channel);
 
         // Wire up the message handler to route to Silhouette
         channel.onMessage(async (msg: IncomingMessage) => {
-            await this.handleIncoming(msg);
+            if (producerScopeBound()) await this.desktopWork.root(() => this.handleIncoming(msg));
+            else await this.handleIncoming(msg);
         });
 
         console.log(`[ChannelRouter] 📡 Registered channel: ${channel.name}`);
@@ -42,6 +47,7 @@ class ChannelRouter {
      * Connect all registered channels.
      */
     async connectAll(): Promise<void> {
+        if (producerScopeBound() && !this.desktopWork.snapshot().accepting) throw new Error('DESKTOP_CHANNEL_ADMISSION_STOPPED');
         const results = await Promise.allSettled(
             Array.from(this.channels.values()).map(async (ch) => {
                 try {
@@ -56,6 +62,7 @@ class ChannelRouter {
                         isRequired: false,
                         checkHealth: async () => ch.isConnected(),
                         reconnect: async () => {
+                            if (producerScopeBound() && !this.desktopWork.snapshot().accepting) return false;
                             try {
                                 await ch.connect();
                                 return ch.isConnected();
@@ -96,6 +103,29 @@ class ChannelRouter {
             Array.from(this.channels.values()).map(ch => ch.disconnect())
         );
         console.log(`[ChannelRouter] All channels disconnected`);
+    }
+
+    // Dedicated owner: disconnect happens AFTER accepted work settles, so
+    // replies admitted before the gate can still finish on live transports.
+    stopDesktopAdmission(): void {
+        this.desktopWork.stopAdmission();
+        for (const ch of this.channels.values()) nervousSystem.unregister(`channel:${ch.name}`);
+    }
+
+    async drainDesktopWork(ms = 4000) { return this.desktopWork.drain(ms); }
+
+    async closeDesktopChannels(): Promise<void> {
+        await this.desktopWork.drain();
+        const results = await Promise.allSettled([...this.channels.values()].map(async ch => ch.disconnect()));
+        if (results.some(result => result.status === 'rejected')) throw new Error('DESKTOP_CHANNEL_CLOSE_FAILED');
+    }
+
+    desktopLifecycleReceipt() {
+        return { ...this.desktopWork.snapshot(), configured: this.channels.size,
+            // USER_MESSAGE is a synchronous bus emission. Its orchestrator
+            // callback currently detaches handleUserMessage. Router completion
+            // alone is NOT downstream writer completion.
+            downstreamBusSettled: this.channels.size === 0 };
     }
 
     // ── Incoming Message Handling ─────────────────────────────────────────
@@ -172,12 +202,14 @@ class ChannelRouter {
                     await handler(msg);
                 } catch (err) {
                     console.error(`[ChannelRouter] Handler error:`, err);
+                    if (producerScopeBound()) throw err;
                 }
             }
 
             console.log(`[ChannelRouter] 📨 ${msg.channel}: ${msg.senderName ?? msg.senderId} → session ${sessionId.slice(0, 8)}`);
         } catch (err) {
             console.error(`[ChannelRouter] Failed to handle incoming message:`, err);
+            if (producerScopeBound()) throw err;
         }
     }
 
@@ -209,6 +241,11 @@ class ChannelRouter {
      * Send a message via a specific channel.
      */
     async send(channelName: string, message: OutgoingMessage): Promise<string | null> {
+        if (producerScopeBound()) return this.desktopWork.run(() => this.sendAccepted(channelName, message));
+        return this.sendAccepted(channelName, message);
+    }
+
+    private async sendAccepted(channelName: string, message: OutgoingMessage): Promise<string | null> {
         const channel = this.channels.get(channelName);
         if (!channel) {
             console.error(`[ChannelRouter] Channel "${channelName}" not found`);

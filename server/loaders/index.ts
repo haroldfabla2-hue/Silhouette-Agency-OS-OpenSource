@@ -1,3 +1,4 @@
+import { ownedTimeout, producerScopeBound } from '../desktop/producerScope.js';
 
 import { initDatabases } from './dbLoader';
 import { initAIServices } from './aiLoader';
@@ -46,10 +47,11 @@ export const initServer = async () => {
     startPersistenceJobs();
 
     // Initial Cleanup - DEFERRED 5s after startup to avoid blocking
-    setTimeout(() => {
-        contextJanitor.runMaintenance().catch((e) =>
-            console.warn("[LOADER] Janitor maintenance deferred error:", e)
-        );
+    ownedTimeout(() => {
+        return contextJanitor.runMaintenance().catch((e) => {
+            console.warn("[LOADER] Janitor maintenance deferred error:", e);
+            if (producerScopeBound()) throw e;
+        });
     }, 5000);
 
     // === SELF-EVOLUTION SYSTEM ===
@@ -73,7 +75,7 @@ export const initServer = async () => {
             console.log("[LOADER] 🧬 Tool Evolution scheduled (every 6h)");
 
             // Run initial analysis after 30 seconds (gives system time to warm up)
-            setTimeout(async () => {
+            ownedTimeout(async () => {
                 console.log("[LOADER] 🔍 Running initial self-evolution analysis...");
                 try {
                     const insights = await learningLoop.analyzeFailures();
@@ -100,7 +102,7 @@ export const initServer = async () => {
 
     // === CONNECTION NERVOUS SYSTEM ===
     // Auto-healing for Neo4j, Ollama, Google APIs, etc.
-    setTimeout(async () => {
+    ownedTimeout(async () => {
         try {
             await initializeNervousSystem();
             console.log("[LOADER] 🧠 Connection Nervous System online");
@@ -111,7 +113,7 @@ export const initServer = async () => {
 
     // === AUTONOMOUS SCHEDULER ===
     // Start task scheduler for autonomous operations
-    setTimeout(async () => {
+    ownedTimeout(async () => {
         try {
             const { schedulerService } = await import('../../services/schedulerService');
             if (schedulerService.start()) {

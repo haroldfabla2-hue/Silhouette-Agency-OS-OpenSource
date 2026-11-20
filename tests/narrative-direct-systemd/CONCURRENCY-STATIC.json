@@ -1,0 +1,22 @@
+{
+  "allFinalRootRowsAccountedFor": true,
+  "derivedFileCount": 5987,
+  "entryByteIdentical": true,
+  "fullRealTypecheckExecuted": false,
+  "kind": "STATIC_CONCURRENCY_INTEGRATION_CHECK_ONLY",
+  "mountedChangedSources": [
+    "services/contextAssembler.ts",
+    "services/contextJanitor.ts",
+    "services/continuumMemory.ts",
+    "services/lifecycle/ownedProducers.ts",
+    "services/lifecycle/producerReceipts.ts",
+    "services/workflowEngine.ts"
+  ],
+  "originalArchiveSha256": "119565c089bfc576ee9a96c5c785dba4eebdcdce9117c63ea3d3a41c4ab52e39",
+  "productExecuted": false,
+  "pythonAstParse": true,
+  "realDependenciesInstalled": false,
+  "runtimeStillPending": true,
+  "terminalRawSelectorAstIdentical": true,
+  "yamlParse": true
+}

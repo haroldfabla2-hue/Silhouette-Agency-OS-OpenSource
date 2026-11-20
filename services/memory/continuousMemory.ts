@@ -66,8 +66,14 @@ export class ContinuousMemoryService {
     };
     private consolidationInterval: ReturnType<typeof setInterval> | null = null;
     private initialized = false;
+    private initializationFailed = false;
     private closed = false;
     private storageError: Error | null = null;
+    // A shutdown failure is STICKY: it is not consumed by being observed.
+    // Every later shutdown() re-throws it until the process ends, so a
+    // drain calling shutdown() after an earlier caller saw the failure
+    // still gets the truthful outcome.
+    private shutdownFailure: Error | null = null;
 
     /**
      * Initialize the service. Call on system startup.
@@ -76,6 +82,25 @@ export class ContinuousMemoryService {
     public initialize(): void {
         this.assertStorageUsable();
         if (this.initialized) return;
+        try {
+            this.doInitialize();
+        } catch (error) {
+            // A failed or partial initialization is NOT "never started":
+            // retain the failure so shutdown cannot report a benign skip
+            // over a blocked store. Byte-preservation of the original WAL
+            // is guaranteed only for failures before any rewrite (a
+            // malformed WAL rejected pre-replay, or a never-started
+            // process). replayPendingEntries rewrites the WAL through
+            // persistWAL, whose rename precedes its directory fsync, so a
+            // failure there can leave the original already replaced: that
+            // is a failed-persistence state requiring recovery, not a
+            // preservation guarantee.
+            this.initializationFailed = true;
+            throw error;
+        }
+    }
+
+    private doInitialize(): void {
         // Ensure WAL directory exists
         if (!fs.existsSync(WAL_DIR)) {
             fs.mkdirSync(WAL_DIR, { recursive: true });
@@ -106,7 +131,28 @@ export class ContinuousMemoryService {
      * Shutdown cleanly — flush all pending entries.
      */
     public shutdown(): void {
+        if (this.shutdownFailure) throw this.shutdownFailure;
         if (this.closed) return;
+        if (!this.initialized) {
+            if (this.storageError || this.initializationFailed) {
+                // Blocked/failed initialization is not a benign skip and
+                // not a consumable one: latch the failure BEFORE any
+                // closed state, so every caller and the drain observe it.
+                const failure = this.storageError ?? new Error('Continuous memory initialization incomplete; WAL persistence/recovery unverified, recovery required');
+                console.error('[CONTINUOUS_MEM] Shutdown over a blocked store; WAL persistence/recovery unverified:', failure);
+                this.shutdownFailure = failure;
+                throw failure;
+            }
+            // Genuinely never started this process. All mutations are
+            // ensureReady-gated, so nothing was accepted and the in-memory
+            // WAL is empty; the previous process's on-disk WAL must remain
+            // byte-untouched for the next startup's recovery - a lazy
+            // initialize here would replay-then-rewrite it AND start an
+            // interval during teardown.
+            this.closed = true;
+            console.log('[CONTINUOUS_MEM] Never initialized in this process; on-disk WAL left untouched.');
+            return;
+        }
         try { this.ensureReady(); } catch (error) {
             if (this.consolidationInterval) clearInterval(this.consolidationInterval);
             this.consolidationInterval = null;

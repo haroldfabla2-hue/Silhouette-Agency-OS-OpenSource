@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { systemBus } from '../services/systemBus';
 import { api } from '../utils/api';
 import { INFORMATIVE_PROTOCOLS } from '../constants';
-import { InteractiveTerminal } from './Terminal/InteractiveTerminal';
+import { InteractiveTerminal, type TerminalVolatileState } from './Terminal/InteractiveTerminal';
 import { Terminal, ScrollText } from 'lucide-react';
 
 interface TerminalLogProps {
@@ -13,6 +13,9 @@ const MAX_LOGS = 200;
 
 const TerminalLog: React.FC<TerminalLogProps> = ({ logs: externalLogs = [] }) => {
   const endRef = useRef<HTMLDivElement>(null);
+  // Private, volatile owner above the SHELL/LOGS conditional. Never logs,
+  // localStorage, preferences, bus events or a cross-principal singleton.
+  const terminalOwner = useRef<TerminalVolatileState>({resume: null, unsent: '', pending: null, sequence: 0, prefix: crypto.randomUUID()});
   const [internalLogs, setInternalLogs] = useState<string[]>([]);
   const [serverLogs, setServerLogs] = useState<string[]>([]);
   const [mode, setMode] = useState<'LOGS' | 'SHELL'>('SHELL'); // Default to Shell for visibility of new feature
@@ -106,7 +109,7 @@ const TerminalLog: React.FC<TerminalLogProps> = ({ logs: externalLogs = [] }) =>
           </div>
         ) : (
           <div className="h-full w-full p-2">
-            <InteractiveTerminal />
+            <InteractiveTerminal volatileOwner={terminalOwner} />
           </div>
         )}
       </div>

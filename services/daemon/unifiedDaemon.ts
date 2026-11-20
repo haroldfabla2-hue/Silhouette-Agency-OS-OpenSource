@@ -1,3 +1,4 @@
+import { ownedInterval, ownedTimeout, ownedWork, producerAdmissionOpen, producerScopeBound } from '../../server/desktop/producerScope.js';
 /**
  * 🧠 SILHOUETTE AGENCY OS - UNIFIED DAEMON (STATEFUL)
  * ==============================================================================
@@ -10,10 +11,6 @@
 
 import fs from 'fs/promises';
 import path from 'path';
-import { continuum } from '../continuumMemory';
-import { graph } from '../graphService';
-import { thoughtNarrator } from '../cognitive/thoughtNarrator';
-import { evolutionScheduler } from '../evolution/evolutionScheduler';
 import { redisClient } from '../redisClient';
 import { daemonLog } from '../logger';
 import { selfHealingTask } from './selfHealingTask';
@@ -112,7 +109,11 @@ export class UnifiedDaemon {
         });
     }
 
-    public async start() {
+    public start() {
+        return ownedWork(() => this.startOwned());
+    }
+
+    private async startOwned() {
         if (this.isRunning) return;
         this.isRunning = true;
 
@@ -142,28 +143,31 @@ export class UnifiedDaemon {
             }
         }
 
+        if (!producerAdmissionOpen()) { this.isRunning = false; return; }
+
         // Start internal tick system
-        this.checkInterval = setInterval(() => this.tick(), this.TICK_INTERVAL_MS);
+        this.checkInterval = ownedInterval(() => this.tick(), this.TICK_INTERVAL_MS);
 
         // Run first tick immediately
-        this.tick();
+        ownedWork(() => this.tick());
 
         // [PA-051] OS Dynamic Reload Hook (For Enterprise Plugins)
-        import('../../services/systemBus').then(({ systemBus }) => {
-            import('../../types').then(({ SystemProtocol }) => {
+        ownedWork(() => import('../../services/systemBus').then(({ systemBus }) => {
+            return import('../../types').then(({ SystemProtocol }) => {
                 systemBus.subscribe(SystemProtocol.SYSTEM_RESTART_REQUEST, async (event: any) => {
+                    if (!producerAdmissionOpen()) return;
                     console.warn('[DAEMON] 🚨 SYSTEM_RESTART_REQUEST RECEIVED!');
                     console.warn(`[DAEMON] ♻️ Initiating Graceful Shutdown (Requested by: ${event.initiator})...`);
-                    this.stop();
+                    ownedWork(() => this.stop());
 
                     // Allow 1 second for immediate async writes to finish natively (like logs)
-                    setTimeout(() => {
+                    ownedTimeout(() => {
                         console.warn('[DAEMON] 💀 Exiting process to allow Janus Supervisor reboot...');
                         process.exit(0);
                     }, 1000);
                 });
             });
-        }).catch(err => console.error('[DAEMON] Failed to bind restart hooks', err));
+        }).catch(err => console.error('[DAEMON] Failed to bind restart hooks', err)));
     }
 
     /** Scheduler state, not a claim of thought quality or completed cognition. */
@@ -182,13 +186,26 @@ export class UnifiedDaemon {
             clearInterval(this.checkInterval);
             this.checkInterval = null;
         }
-        this.saveState(); // Save state on shutdown
+        if (producerScopeBound()) return this.saveState();
+        this.saveState(); // Original native CLI fire-and-forget behavior
+    }
+
+    // Dedicated owner calls admission before the aggregate work barrier, then
+    // flushes only after every tracked tick completed. No premature state save.
+    public stopAdmission(): void {
+        this.isRunning = false;
+        if (this.checkInterval) { clearInterval(this.checkInterval); this.checkInterval = null; }
+    }
+    public async flushStoppedState(): Promise<void> {
+        if (this.isRunning) throw new Error('DAEMON_ADMISSION_OPEN');
+        await this.saveState();
     }
 
     private async tick() {
         const now = Date.now();
 
         for (const task of this.tasks) {
+            if (!producerAdmissionOpen()) return;
             if (!task.enabled) continue;
 
             const timeSinceLastRun = now - (task.lastRun || 0);
@@ -220,6 +237,7 @@ export class UnifiedDaemon {
                     continue;
                 }
 
+                if (!producerAdmissionOpen()) return;
                 const t0 = Date.now();
                 daemonLog.info({ task: task.name }, '▶ inicio');
 
@@ -297,6 +315,7 @@ export class UnifiedDaemon {
             }
             await fs.rename(tmpFile, this.STATE_FILE);
         } catch (e: any) {
+            if (producerScopeBound()) throw new Error('DAEMON_STATE_PERSISTENCE_FAILED');
             console.warn(`[DAEMON] Failed to save state: ${e.message}`);
         }
     }
@@ -304,6 +323,7 @@ export class UnifiedDaemon {
     // ─── TASK IMPLEMENTATIONS ─────────────────────────────────────────────
 
     private async runHeartbeatTask() {
+        const { continuum } = await import('../continuumMemory');
         const { orchestrator } = await import('../orchestrator');
         const actors = orchestrator.getActiveActors();
 
@@ -347,6 +367,7 @@ export class UnifiedDaemon {
     }
 
     private async runNarratorTask() {
+        const { thoughtNarrator } = await import('../cognitive/thoughtNarrator');
         const thought = await thoughtNarrator.generateNarrative();
         try {
             const { consciousness } = await import('../consciousnessEngine');
@@ -359,6 +380,7 @@ export class UnifiedDaemon {
     }
 
     private async runEvolutionGoalsTask() {
+        const { evolutionScheduler } = await import('../evolution/evolutionScheduler');
         try {
             const { introspection } = await import('../introspectionEngine');
             await introspection.runCognitiveCycle();
@@ -374,6 +396,7 @@ export class UnifiedDaemon {
     }
 
     private async runCuriosityTask() {
+        const { graph } = await import('../graphService');
         console.log('[COGNITIVE: CURIOSITY] 🔍 Seeking knowledge gaps from graph...');
         const { curiosity } = await import('../curiosityService');
         const { advancedDiscovery } = await import('../cognitive/advancedDiscovery');
@@ -440,6 +463,7 @@ export class UnifiedDaemon {
     }
 
     private async runToolEvolutionTask() {
+        const { evolutionScheduler } = await import('../evolution/evolutionScheduler');
         // @ts-ignore 
         if (typeof evolutionScheduler['runToolEvolutionCycle'] === 'function') {
             await (evolutionScheduler as any)['runToolEvolutionCycle']();
@@ -509,6 +533,8 @@ export class UnifiedDaemon {
     }
 
     private async runDreamerTask() {
+        const { graph } = await import('../graphService');
+        const { continuum } = await import('../continuumMemory');
         console.log('[COGNITIVE: DREAMER] 🌙 Starting deep memory consolidation...');
 
         // 1. Sync recent concepts to vector store

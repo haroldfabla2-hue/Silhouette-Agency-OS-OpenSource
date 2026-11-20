@@ -8,8 +8,19 @@ on:
 
 jobs:
   quality:
+    # This repair branch is paused at reviewed metadata/core containment.
+    # Skipped legacy jobs are NOT passing functional coverage.
+    if: ${{ !(github.event_name == 'pull_request' && github.repository == 'haroldfabla2-hue/Silhouette-Agency-OS-OpenSource' && github.event.pull_request.number == 226 && github.event.pull_request.head.repo.full_name == 'haroldfabla2-hue/Silhouette-Agency-OS-OpenSource' && github.head_ref == 'fix/shutdown-contracts-narrow-20261117') }}
     name: Code Quality & Tests
     runs-on: ubuntu-24.04
+    env:
+      # Deployment policy for CI: no local model inference (owner restriction:
+      # free cloud providers only). Read at call time by localInferencePolicy;
+      # with providers OFF, embedding calls degrade to null (never a model load).
+      # Census 2026-11-17 (run 44166637408 + suite source pass): no test in
+      # tests/automated requires a local model - every observed load was an
+      # incidental fallback whose assertions do not depend on vectors.
+      SILHOUETTE_INFERENCE_MODE: 'cloud-only'
     strategy:
       matrix:
         # Floor required by package.json engines (Stagehand needs >=22.18) plus latest 22.x.
@@ -41,11 +52,16 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y bubblewrap libseccomp2
-          # Ubuntu AppArmor otherwise denies CI runner user namespaces.
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          # Do not relax host AppArmor/userns policy. Admission denial fails
+          # the existing tests until a separately reviewed safe route exists.
 
       - name: Install Chromium for browser tests
         run: npx playwright install --with-deps chromium
+
+      - name: Install pinned Chrome for Testing (puppeteer real-path tests)
+        # Pinned to PUPPETEER_REVISIONS.chrome of the locked puppeteer version (25.18.0 -> 157.0.8103.78);
+        # npx --no-install forces the repo-local pinned puppeteer CLI (no implicit unpinned fetch).
+        run: npx --no-install puppeteer browsers install chrome@157.0.8103.78
 
       - name: F0 verification coverage and hermetic legacy checks
         run: npx vitest run tests/automated/help-protocol.test.ts tests/automated/legacy-hermetic.test.ts tests/automated/verification-inventory.test.ts
@@ -70,6 +86,24 @@ jobs:
             --bind "$fixture" /tmp/work \
             /bin/bash -c 'ip link set lo up; env -i PATH="$PATH" HOME=/tmp python3 /tmp/work/tests/real-process/production-off-auth.py'
 
+      - name: Desktop ownership boundary contracts (not full product validation)
+        run: node --test tests/desktop-session/*.node.cjs
+
+      - name: Focused data evidence and oracle contracts (actual installed TS loader)
+        timeout-minutes: 12
+        run: |
+          set +e
+          set -uo pipefail
+          failed=0
+          for fixture in tests/contracts/*.test.mjs tests/complete-deps/*.test.mjs; do
+            echo "FIXTURE_BEGIN $fixture"
+            timeout --signal=TERM --kill-after=10s 180s node --import tsx/esm --test --test-timeout=120000 "$fixture"
+            result=$?
+            echo "FIXTURE_END $fixture exit=$result"
+            if test "$result" -ne 0; then failed=1; fi
+          done
+          exit "$failed"
+
       - name: Unit tests
         run: npm test
 
@@ -80,6 +114,9 @@ jobs:
         run: npx vite build --config vite.server.config.ts
 
   security:
+    # This repair branch is paused at reviewed metadata/core containment.
+    # Skipped legacy jobs are NOT passing functional coverage.
+    if: ${{ !(github.event_name == 'pull_request' && github.repository == 'haroldfabla2-hue/Silhouette-Agency-OS-OpenSource' && github.event.pull_request.number == 226 && github.event.pull_request.head.repo.full_name == 'haroldfabla2-hue/Silhouette-Agency-OS-OpenSource' && github.head_ref == 'fix/shutdown-contracts-narrow-20261117') }}
     name: Security Audit
     runs-on: ubuntu-24.04
     steps:
@@ -106,6 +143,9 @@ jobs:
         continue-on-error: true
 
   build-check:
+    # This repair branch is paused at reviewed metadata/core containment.
+    # Skipped legacy jobs are NOT passing functional coverage.
+    if: ${{ !(github.event_name == 'pull_request' && github.repository == 'haroldfabla2-hue/Silhouette-Agency-OS-OpenSource' && github.event.pull_request.number == 226 && github.event.pull_request.head.repo.full_name == 'haroldfabla2-hue/Silhouette-Agency-OS-OpenSource' && github.head_ref == 'fix/shutdown-contracts-narrow-20261117') }}
     name: Windows Build Verification (frontend + server)
     runs-on: windows-latest
     needs: quality
@@ -166,3 +206,210 @@ jobs:
             }
           }
           Write-Host '✅ All required packaged files present'
+
+      - name: Verify native modules unpacked from asar
+        shell: pwsh
+        run: |
+          # Uses the LOCKED @electron/asar API (scripts/verify-native-unpack.cjs):
+          # every native payload under the three configured asarUnpack roots must
+          # be metadata-marked unpacked in the asar header AND exist on disk
+          # outside the archive. Presence does not prove runtime load.
+          node scripts/verify-native-unpack.cjs
+          if ($LASTEXITCODE -ne 0) { throw "native unpack verification failed (exit $LASTEXITCODE)" }
+
+      - name: Upload win-unpacked inventory
+        shell: pwsh
+        run: |
+          Get-ChildItem 'dist-desktop/win-unpacked' -Recurse -File |
+            ForEach-Object { "{0}|{1}" -f $_.FullName.Substring((Get-Location).Path.Length + 1), $_.Length } |
+            Sort-Object | Out-File -Encoding utf8 win-unpacked-inventory.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: win-unpacked-inventory
+          path: win-unpacked-inventory.txt
+          retention-days: 30
+
+  nsis-installer-smoke:
+    # This repair branch is paused at reviewed metadata/core containment.
+    # Skipped legacy jobs are NOT passing functional coverage.
+    if: ${{ !(github.event_name == 'pull_request' && github.repository == 'haroldfabla2-hue/Silhouette-Agency-OS-OpenSource' && github.event.pull_request.number == 226 && github.event.pull_request.head.repo.full_name == 'haroldfabla2-hue/Silhouette-Agency-OS-OpenSource' && github.head_ref == 'fix/shutdown-contracts-narrow-20261117') }}
+    name: NSIS installer build (no publish, no signing)
+    runs-on: windows-latest
+    needs: quality
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 'true'
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Build server
+        run: node node_modules/vite/bin/vite.js build --config vite.server.config.ts
+
+      - name: Build NSIS installer without publishing or signing
+        run: node node_modules/electron-builder/cli.js build --win nsis --publish never
+        env:
+          # Signing disabled explicitly per app-builder-lib 26.18.1 source:
+          # windowsSignToolManager skips when WIN_CSC_LINK/CSC_LINK are empty,
+          # flags.js treats CSC_IDENTITY_AUTO_DISCOVERY=false as discovery off.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          CSC_LINK: ''
+          WIN_CSC_LINK: ''
+
+      - name: Verify installer artifacts
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem 'dist-desktop/*-Setup-*.exe' -File
+          if ($setup.Count -ne 1) { throw "Expected exactly one NSIS Setup exe, found $($setup.Count)" }
+          if (-not (Test-Path 'dist-desktop/latest.yml')) { throw 'Missing latest.yml updater metadata' }
+          Write-Host "✅ NSIS installer: $($setup[0].Name) ($($setup[0].Length) bytes)"
+          Get-Content 'dist-desktop/latest.yml'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nsis-installer-smoke
+          path: |
+            dist-desktop/*-Setup-*.exe
+            dist-desktop/latest.yml
+            dist-desktop/*.blockmap
+          retention-days: 7
+
+# Exact proposed additional job under existing CI jobs, no launch step.
+  daemon-capsule-preparation:
+    # This repair branch is paused at reviewed metadata/core containment.
+    # Skipped legacy jobs are NOT passing functional coverage.
+    if: ${{ !(github.event_name == 'pull_request' && github.repository == 'haroldfabla2-hue/Silhouette-Agency-OS-OpenSource' && github.event.pull_request.number == 226 && github.event.pull_request.head.repo.full_name == 'haroldfabla2-hue/Silhouette-Agency-OS-OpenSource' && github.head_ref == 'fix/shutdown-contracts-narrow-20261117') }}
+    name: Prepare genuine Redis daemon capsule (no product execution)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+          cache: npm
+      - name: Existing locked dependencies on disposable runner
+        run: npm ci
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 'true'
+      - name: Install test runtime without starting host services
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo bash <<'ROOT'
+          set -euo pipefail
+          saved=$(mktemp -d)
+          had_policy=0
+          if test -e /usr/sbin/policy-rc.d; then
+            cp -a /usr/sbin/policy-rc.d "$saved/policy-rc.d"
+            had_policy=1
+          fi
+          cleanup() {
+            rm -f /usr/sbin/policy-rc.d
+            if test "$had_policy" = 1; then cp -a "$saved/policy-rc.d" /usr/sbin/policy-rc.d; fi
+            rm -rf "$saved"
+          }
+          trap cleanup EXIT
+          rm -f /usr/sbin/policy-rc.d
+          printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d
+          chmod 755 /usr/sbin/policy-rc.d
+          systemctl mask --runtime redis.service redis-server.service
+          if pgrep -x redis-server; then echo 'Unexpected preexisting Redis' >&2; exit 1; fi
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends redis-server redis-tools bubblewrap iproute2 util-linux libseccomp2
+          if pgrep -x redis-server; then echo 'Unexpected Redis autostart' >&2; exit 1; fi
+          ROOT
+      - name: Compile and audit exact finite capsule, no product evaluation
+        run: python3 tests/daemon-real-redis/prepare_capsule.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: actual-daemon-redis-capsule-review
+          path: daemon-capsule-review/
+          retention-days: 2
+          if-no-files-found: error
+
+  hydration-gates-capsule-preparation:
+    # This repair branch is paused at reviewed metadata/core containment.
+    # Skipped legacy jobs are NOT passing functional coverage.
+    if: ${{ !(github.event_name == 'pull_request' && github.repository == 'haroldfabla2-hue/Silhouette-Agency-OS-OpenSource' && github.event.pull_request.number == 226 && github.event.pull_request.head.repo.full_name == 'haroldfabla2-hue/Silhouette-Agency-OS-OpenSource' && github.head_ref == 'fix/shutdown-contracts-narrow-20261117') }}
+    name: Prepare genuine hydration-gates capsule (no product execution)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+          cache: npm
+      - name: Existing locked dependencies on disposable runner
+        run: npm ci
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 'true'
+      - name: Install namespace tooling
+        run: sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends bubblewrap iproute2 util-linux libseccomp2
+      - name: Read-only host environment preflight, no namespace or product launch
+        run: python3 tests/hydration-gates-capsule/environment-preflight.py
+      - name: Selected read-only user-manager and bwrap policy route metadata
+        run: python3 tests/hydration-gates-capsule/environment-route-preflight.py
+      - name: Compile and audit exact finite capsule, no product evaluation
+        run: python3 tests/hydration-gates-capsule/prepare_capsule.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: actual-hydration-gates-capsule-review
+          include-hidden-files: true # Exact prepared/audited tree, including manifest-listed dotfiles.
+          path: |
+            hydration-gates-capsule-review/
+            tests/hydration-gates-capsule/EXPECTED-DIGESTS.json
+          retention-days: 2
+          if-no-files-found: error
+
+  core-anchor-metadata-only:
+    name: Record core anchor candidate only (legacy coverage skipped)
+    if: github.event_name == 'pull_request' && github.repository == 'haroldfabla2-hue/Silhouette-Agency-OS-OpenSource' && github.event.pull_request.number == 226 && github.event.pull_request.head.repo.full_name == 'haroldfabla2-hue/Silhouette-Agency-OS-OpenSource' && github.head_ref == 'fix/shutdown-contracts-narrow-20261117'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Existing namespace packages only, no policy changes
+        run: sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends bubblewrap iproute2 util-linux libseccomp2
+      - name: Record source and host binary hashes, no npm or payload
+        run: python3 -I -B -S tests/hydration-gates-capsule/prepare-core-anchor-candidate.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: core-containment-host-source-candidate
+          path: /tmp/hg-core-anchor-candidate.json
+          retention-days: 2
+          if-no-files-found: error
+
+  functional-coverage-pending:
+    name: BLOCKED - functional coverage not executed on this candidate
+    if: always() && github.event_name == 'pull_request' && github.repository == 'haroldfabla2-hue/Silhouette-Agency-OS-OpenSource' && github.event.pull_request.number == 226 && github.event.pull_request.head.repo.full_name == 'haroldfabla2-hue/Silhouette-Agency-OS-OpenSource' && github.head_ref == 'fix/shutdown-contracts-narrow-20261117'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    permissions: {}
+    steps:
+      - name: Fail explicitly, skipped legacy checks are not approval
+        run: |
+          echo '::error::BLOCKED: legacy functional/security/build coverage is not executed for this metadata/core-only candidate. Metadata success does not approve product behavior or repair the original shutdown defect.'
+          exit 1

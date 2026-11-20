@@ -1,3 +1,6 @@
+import { attemptDelivery } from './lifecycle/deliveryReceipt';
+import { desktopFault, desktopOutcome, desktopWorkBound, desktopRun } from './lifecycle/desktopWork.js';
+import { ownedWork } from '../server/desktop/producerScope.js';
 import { subscribeHelpProtocol } from './communication/helpProtocol';
 import { loadOrganization, defaultOrganizationPath, teamsForDomain, teamOfAgent } from './org/organization';
 import { ReputationLedger, defaultReputationLedgerPath } from './org/reputationLedger';
@@ -43,6 +46,8 @@ import { CapabilityResult, CapabilityContext, CapabilityExecutor } from "../type
 // [EVOLUTION] New services from Silhouette Evolution
 import { continuousMemory } from "./memory/continuousMemory";
 import { genesisV2 } from "./genesis/genesisV2";
+import type { GenesisReport } from "./genesis/genesisV2";
+import { constructSingletonObserved, createDirectOwnedTicket, type StartupTicket, type SwarmStartupReceipt, type GenesisReportSnapshot } from "./startupOwnership";
 import { agentConversation } from "./communication/agentConversation";
 import { agentFileSystem } from "./agents/agentFileSystem";
 import { StandardAgent } from "./agents/StandardAgent";
@@ -73,6 +78,24 @@ interface ActiveTask {
     assignedAt: number;
     status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED';
 }
+
+/**
+ * [STARTUP-SETTLEMENT] Failure domains of this boot that this receipt
+ * CANNOT observe (absorbed or invisible by construction). Their presence
+ * here is a documented limit, not a claim of health. Outcome 'ok' means
+ * only 'no OBSERVED failure in the owned scope'.
+ */
+const SWARM_STARTUP_UNOBSERVED_FAILURE_DOMAINS: readonly string[] = [
+    'agentPersistence.saveAgent swallows per-agent write errors (console-only)',
+    'genesis bootstrap/handshake phases absorb per-agent errors; only PART of them reaches the report',
+    'genesis report.protocolsLoaded can be true without core-01 loaded',
+    'agentPersistence.getAllAgentIds() collapsing to [] reads as first run',
+    'agentPersistence.loadAgent(id) returning null is skipped silently',
+    'agentPersistence.migrateAllToFileSystem() reports only a count',
+    'help bus listener errors are absorbed by the bus',
+    'continuousMemory consolidation lifetime after init',
+    'static import/evaluation failures before construction (only observable to a caller holding the singleton handle)',
+];
 
 export class AgentSwarmOrchestrator {
     // Active Actors in RAM (The "Stage")
@@ -140,11 +163,45 @@ export class AgentSwarmOrchestrator {
     ];
 
 
+    private readonly startupTicket: StartupTicket;
+
     private orgChart: OrgChart;
     private reputationLedger: ReputationLedger;
 
-    constructor() {
-        this.initializeSwarm();
+    constructor(startupTicket?: StartupTicket) {
+        if (startupTicket !== undefined) {
+            // [STARTUP-SETTLEMENT] Factory-observed construction: the
+            // factory owns the constructor-terminal marking (return/throw);
+            // this constructor NEVER terminates a ticket it did not create.
+            this.startupTicket = startupTicket;
+            this.startupTicket.setUnobservedDomains(SWARM_STARTUP_UNOBSERVED_FAILURE_DOMAINS);
+            this.constructBody();
+            return;
+        }
+        // [STARTUP-SETTLEMENT] Direct-new: independent internal owner,
+        // claimed now and terminated here around the BODY only. Declared
+        // limit: field initializers are NOT covered; no global state and
+        // no other construction's ticket is touched.
+        this.startupTicket = createDirectOwnedTicket();
+        this.startupTicket.setUnobservedDomains(SWARM_STARTUP_UNOBSERVED_FAILURE_DOMAINS);
+        try {
+            this.constructBody();
+            this.startupTicket.markConstructionComplete();
+        } catch (err) {
+            this.startupTicket.markConstructionFailed(err);
+            throw err; // exact same value, incl. null/undefined throws
+        }
+    }
+
+    private constructBody(): void {
+        try {
+            this.initializeSwarm();
+        } catch (err) {
+            // Stage recorded, then the EXACT same value is rethrown:
+            // fail-fast is preserved and consumers still see the failure.
+            this.startupTicket.recordSyncFailure(err);
+            throw err;
+        }
         this.applyMode(SystemMode.ECO);
         // Organization-as-data + evidence ledger: loaded before the help bus
         // subscribes so collaboration facts are recorded from the first request.
@@ -167,7 +224,11 @@ export class AgentSwarmOrchestrator {
                 console.warn(`[ORCHESTRATOR] ⛔ SQUAD_EXPANSION rejected: birth command requires name+category (got keys: ${Object.keys(inner).join(',') || 'none'}). Use SQUAD_MOBILIZED for mobilization notices and AGENT_HYDRATION_REQUEST to wake an existing agent.`);
                 return;
             }
-            this.handleDynamicExpansion(event.payload);
+            return this.handleDynamicExpansion(event.payload).catch(error => {
+                console.error('[ORCHESTRATOR] Squad expansion hydration failed; activation not confirmed:', error);
+                desktopOutcome('hydration', 'expansion-failed');
+                if (desktopWorkBound()) throw error;
+            });
         });
 
         // [PR-2] Hydration command: wake ONE existing agent. Unknown ids are
@@ -182,7 +243,11 @@ export class AgentSwarmOrchestrator {
                 console.warn(`[ORCHESTRATOR] ⛔ AGENT_HYDRATION_REQUEST rejected: unknown agent ${agentId}.`);
                 return;
             }
-            this.hydrateAgent(agentId).catch(e => console.error(`[ORCHESTRATOR] Hydration failed for ${agentId}:`, e));
+            return this.hydrateAgent(agentId).catch(error => {
+                console.error('[ORCHESTRATOR] Requested agent hydration failed:', {agentId, error});
+                desktopOutcome('hydration', 'request-failed');
+                if (desktopWorkBound()) throw error;
+            });
         });
 
         // Listen for Async Task Assignments (e.g., Research Requests from Dreamer)
@@ -269,8 +334,11 @@ export class AgentSwarmOrchestrator {
         // Handles messages from Telegram, WhatsApp, Discord via ChannelRouter
         systemBus.subscribe(SystemProtocol.USER_MESSAGE, (event) => {
             console.log('[ORCHESTRATOR] 🔔 USER_MESSAGE event received from systemBus');
-            this.handleUserMessage(event.payload).catch((err: any) => {
+            // Return the entire WAL -> tools -> delivery -> commit chain.
+            // Desktop dispatcher owns it before invoking this subscriber.
+            return this.handleUserMessage(event.payload).catch((err: any) => {
                 console.error('[ORCHESTRATOR] ❌ handleUserMessage FAILED:', err?.message || err);
+                if (desktopWorkBound()) throw err;
             });
         });
 
@@ -458,7 +526,7 @@ export class AgentSwarmOrchestrator {
         this.pruneAgents();
 
         // 2. Run Continuum Memory Maintenance (Decay & Promotion)
-        continuum.runMaintenance();
+        ownedWork(() => continuum.runMaintenance());
 
         // 3. Persist State (Throttled)
         // Only save if significant changes or every N ticks?
@@ -475,9 +543,9 @@ export class AgentSwarmOrchestrator {
         // [PA-011] Creative Director is a Service-Skill, so we poll its inbox manually here
         // In a pure actor model, the agentStreamer would handle this, but CD is 'Headless' TS logic for now.
         if (now % 5000 < 1000) { // Every 5s
-            import('./skills/creativeDirectorSkill').then(({ creativeDirector }) => {
-                creativeDirector.checkInbox();
-            }).catch(e => console.error("Failed to poll CreativeDirector:", e));
+            ownedWork(() => import('./skills/creativeDirectorSkill').then(({ creativeDirector }) => {
+                return creativeDirector.checkInbox();
+            }).catch(e => console.error("Failed to poll CreativeDirector:", e)));
         }
 
         // 5. Circadian Rhythm (Auto-Sleep Protocol)
@@ -927,33 +995,45 @@ Format each gap as:
         let replyAttempted = false;
         const deliver = async (text: string, media?: any[]): Promise<string | null> => {
             replyAttempted = true;
-            let deliveryId: string | null;
-            if (typeof payload.replyRoute === 'string') {
-                const { gateway } = await import('../server/gateway/wsGateway');
-                deliveryId = await gateway.deliverReply(payload.replyRoute, text, media);
-            } else {
+            const attempt = await attemptDelivery(async () => {
+                if (typeof payload.replyRoute === 'string') {
+                    const { gateway } = await import('../server/gateway/wsGateway');
+                    return gateway.deliverReply(payload.replyRoute, text, media);
+                }
                 const { channelRouter } = await import('../server/channels/channelRouter');
-                deliveryId = await channelRouter.send(payload.channel, {chatId:payload.chatId,text,media});
-            }
-            if (!deliveryId) {
-                console.error('[ORCHESTRATOR] Reply delivery unverified; no transport receipt, do not resend:', {walId});
+                return channelRouter.send(payload.channel, {chatId:payload.chatId,text,media});
+            });
+            if (attempt.kind === 'unknown') {
+                // Record uncertainty BEFORE entering the outer error handler.
+                // replyAttempted stays true: no automatic second send.
+                desktopFault('orchestrator-message', attempt.reason === 'transport-threw'
+                    ? 'reply-threw-acceptance-unknown' : 'reply-unreceipted');
+                console.error('[ORCHESTRATOR] Reply delivery unverified; do not resend:', {walId, reason: attempt.reason});
+                if (attempt.reason === 'transport-threw') throw attempt.error;
                 return null;
             }
+            const deliveryId = attempt.id;
             try {
                 if (walId) continuousMemory.commitEntry(walId, text, {id:deliveryId,transport:typeof payload.replyRoute==='string'?'websocket':String(payload.channel)});
             } catch (memoryError) {
                 console.error('[ORCHESTRATOR] Reply delivered; WAL commit unverified, do not resend:', {walId,error:memoryError});
+                desktopFault('orchestrator-message', 'wal-commit-unverified');
             }
+            desktopOutcome('orchestrator-message', 'reply-delivered');
             return deliveryId;
         };
 
         try {
             // [EVOLUTION] WAL: Log BEFORE processing for crash recovery
-            walId = continuousMemory.logBeforeProcessing(
-                'core-01',
-                'MESSAGE_RECEIVED',
-                { input: payload.message, sessionId: payload.sessionId }
-            );
+            try {
+                walId = continuousMemory.logBeforeProcessing(
+                    'core-01', 'MESSAGE_RECEIVED',
+                    { input: payload.message, sessionId: payload.sessionId }
+                );
+            } catch (error) {
+                desktopFault('orchestrator-message', 'wal-admission-failed');
+                throw error;
+            }
 
             // [PHASE 16: READ-ONLY OVERRIDE]
             if (payload.isReadOnly) {
@@ -1132,11 +1212,15 @@ ${payload.message}
 
         } catch (error: any) {
             console.error(`[ORCHESTRATOR] ❌ Message handling error:`, error);
+            desktopOutcome('orchestrator-message', replyAttempted ? 'attempted-reply-chain-failed' : 'business-error-handled');
             // No second reply after an attempted send: an exception cannot
             // prove that the original transport did not accept the message.
             if (!replyAttempted) {
                 try { await deliver(`⚠️ I encountered an internal error: ${error.message}`); }
-                catch (deliveryError) { console.error('[ORCHESTRATOR] Error response delivery unverified:', deliveryError); }
+                catch (deliveryError) {
+                    desktopFault('orchestrator-message', 'error-reply-unreceipted');
+                    console.error('[ORCHESTRATOR] Error response delivery unverified:', deliveryError);
+                }
             }
 
         }
@@ -1179,7 +1263,7 @@ JSON ONLY:
     }
 
     // --- DYNAMIC EXPANSION PROTOCOL ---
-    private handleDynamicExpansion(payload: any) {
+    private async handleDynamicExpansion(payload: any) {
         // [PA-045] Robust Payload Handling (Handle potential double-wrapping)
         // [W1] Name resolution moved to resolveSquadName(): the old code
         // interpolated `payload.name` directly below, producing the literal
@@ -1201,8 +1285,9 @@ JSON ONLY:
         if (reusable) {
             console.log(`[ORCHESTRATOR] ♻️ Reusing existing agent ${reusable.id} (${reusable.name}) for squad '${name}' — NO new birth.`);
             const existingSquad = this.squads.find(s => s.name === name.toUpperCase() && s.category === (payload?.category ?? payload?.payload?.category));
+            const hydrated = await this.hydrateAgent(reusable.id);
+            if (!hydrated || !this.activeActors.has(reusable.id)) throw new Error('REUSED_AGENT_NOT_HYDRATED');
             if (existingSquad) existingSquad.active = true;
-            this.hydrateAgent(reusable.id);
             systemBus.emit(SystemProtocol.UI_REFRESH, { source: 'ORCHESTRATOR', message: `Squad '${name}' reactivated with existing agent ${reusable.id} (reuse > birth)` });
             return;
         }
@@ -1250,7 +1335,8 @@ JSON ONLY:
         agentPersistence.saveAgent(leader);
         capabilityRegistry.registerAgent(leader); // [DCR] Register new agent's capabilities
         this.knownAgentIds.push(leaderId);
-        this.hydrateAgent(leaderId); // Wake up immediately
+        const hydrated = await this.hydrateAgent(leaderId);
+        if (!hydrated || !this.activeActors.has(leaderId)) throw new Error('NEW_LEADER_NOT_HYDRATED');
 
         // [PR-4d] Squad identity is stable: an existing squad with the same
         // name+category is reactivated, never duplicated.
@@ -1291,6 +1377,9 @@ JSON ONLY:
             continuousMemory.initialize();
         } catch (err) {
             console.error('[ORCHESTRATOR] Continuous Memory init failed (non-fatal):', err);
+            // [STARTUP-SETTLEMENT] Historically absorbed here only; now also
+            // recorded as a non-fatal startup failure (degraded signal).
+            this.startupTicket.recordNonFatalFailure('continuousMemory.initialize', err);
         }
 
         // 1. Check if DB exists, if not, use Genesis V2
@@ -1298,29 +1387,74 @@ JSON ONLY:
 
         if (existingIds.length === 0) {
             console.log("[ORCHESTRATOR] First Run: Executing Genesis V2 Protocol...");
-            // Genesis V2 is async but we fire-and-forget here since it doesn't block
-            genesisV2.execute().then(report => {
+            this.startupTicket.setBranch('genesis');
+            // Genesis V2 is async but we fire-and-forget here since it doesn't block.
+            // [STARTUP-SETTLEMENT] Exactly ONE continuation, adopted by the
+            // ticket at launch (its rejection is observed immediately by the
+            // ticket's own handler). Historical then/catch + fallback behavior
+            // is preserved exactly; the stage is captured BEFORE any
+            // transition to 'fallback'.
+            let stage: 'execute' | 'continuation' | 'fallback' = 'execute';
+            const continuation = genesisV2.execute().then(report => {
+                stage = 'continuation';
+                this.startupTicket.setGenesisReportSnapshot(this.snapshotGenesisReport(report));
                 if (report.success) {
                     console.log(`[ORCHESTRATOR] Genesis V2 complete: ${report.agentsCreated.length} agents born.`);
                     this.knownAgentIds = agentPersistence.getAllAgentIds();
+                    // [STARTUP-SETTLEMENT] Snapshot immediately after the ID
+                    // assignment, BEFORE generateSquads: if that call throws,
+                    // the replacement is still observed at this stage.
+                    this.startupTicket.setKnownAgentIdsSnapshot(this.knownAgentIds, 'genesis-success-reread');
                     this.generateSquadsStructureOnly();
                 } else {
+                    this.startupTicket.markFallbackUsed();
+                    stage = 'fallback';
                     console.error('[ORCHESTRATOR] Genesis V2 had failures, falling back to legacy...');
-                    this.generateInitialAgents();
+                    try {
+                        this.generateInitialAgents();
+                    } finally {
+                        // runGenesisMigration mutates knownAgentIds per push;
+                        // the snapshot runs even on partial mutation and the
+                        // original throw still propagates (with ordinary
+                        // internal IDs and a non-terminal ticket this
+                        // instrumentation cannot throw by design).
+                        this.startupTicket.setKnownAgentIdsSnapshot(this.knownAgentIds, 'genesis-fallback-legacy');
+                    }
                 }
-            }).catch(() => {
+                if (!report.success || report.agentsFailed.length > 0 || !report.protocolsLoaded || !report.validationPassed) {
+                    this.startupTicket.recordDegradedSignal(`genesis report: success=${report.success} agentsFailed=${report.agentsFailed.length} protocolsLoaded=${report.protocolsLoaded} validationPassed=${report.validationPassed}`);
+                }
+            }).catch(err => {
+                this.startupTicket.recordContinuationError(stage, err);
+                this.startupTicket.markFallbackUsed();
+                stage = 'fallback';
                 console.error('[ORCHESTRATOR] Genesis V2 crashed, falling back to legacy...');
-                this.generateInitialAgents();
+                try {
+                    this.generateInitialAgents();
+                } catch (fallbackErr) {
+                    // [STARTUP-SETTLEMENT] Preserved next to the primary error;
+                    // historically this became an unhandled rejection.
+                    this.startupTicket.recordFallbackError(fallbackErr);
+                } finally {
+                    // Same design note as the fallback above: partial pushes
+                    // are observed; the original error is already recorded.
+                    this.startupTicket.setKnownAgentIdsSnapshot(this.knownAgentIds, 'genesis-crash-fallback-legacy');
+                }
             });
+            this.startupTicket.adoptContinuation(continuation);
         } else {
             console.log(`[ORCHESTRATOR] Loaded ${existingIds.length} persistent agents from disk.`);
+            this.startupTicket.setBranch('existing');
             this.knownAgentIds = existingIds;
+            this.startupTicket.setKnownAgentIdsSnapshot(existingIds, 'existing-ids');
 
             // [EVOLUTION] Migrate existing agents to per-agent file system (idempotent)
             try {
                 agentPersistence.migrateAllToFileSystem();
             } catch (err) {
                 console.error('[ORCHESTRATOR] File system migration failed (non-fatal):', err);
+                // [STARTUP-SETTLEMENT] Absorbed here (non-fatal), now recorded.
+                this.startupTicket.recordNonFatalFailure('migrateAllToFileSystem', err);
             }
         }
 
@@ -1329,12 +1463,41 @@ JSON ONLY:
 
         // [DCR] Re-register capabilities from loaded agents
         // [EVOLUTION] Also register agents in conversation system
+        let orchestrationTailRegistrations = 0;
         this.knownAgentIds.forEach(id => {
             const agent = agentPersistence.loadAgent(id);
             if (agent) {
                 capabilityRegistry.registerAgent(agent);
                 agentConversation.registerAgent(agent);
+                // [STARTUP-SETTLEMENT] Per-pair increment: if pair 1 completed
+                // and pair 2 throws, the receipt says 1, not 0. Completed call
+                // pairs only: a completed call is not a persistence proof.
+                orchestrationTailRegistrations++;
+                this.startupTicket.setTailRegistrations(orchestrationTailRegistrations);
             }
+        });
+    }
+
+    /**
+     * [STARTUP-SETTLEMENT] Settlement of THIS construction's startup: init
+     * launch + its concrete genesis continuation (and a constructor failure
+     * observed as such). Never a verified-readiness claim; see
+     * unobservedFailureDomains in the receipt.
+     */
+    public startupSettlement(): Promise<SwarmStartupReceipt> {
+        return this.startupTicket.settlement;
+    }
+
+    /** [STARTUP-SETTLEMENT] Typed plain-data copy of the known report fields
+     *  (lengths and primitives): no live reference is ever exported. */
+    private snapshotGenesisReport(report: GenesisReport): GenesisReportSnapshot {
+        return Object.freeze({
+            success: report.success === true,
+            agentsCreated: Array.isArray(report.agentsCreated) ? report.agentsCreated.length : 0,
+            agentsFailed: Array.isArray(report.agentsFailed) ? report.agentsFailed.length : 0,
+            protocolsLoaded: report.protocolsLoaded === true,
+            validationPassed: report.validationPassed === true,
+            timestamp: typeof report.timestamp === 'number' ? report.timestamp : 0,
         });
     }
 
@@ -1886,8 +2049,41 @@ JSON ONLY:
     }
 
 
-    public async hydrateAgent(agentId: string) {
-        if (this.activeActors.has(agentId)) return; // Already awake
+    public hydrateAgent(agentId: string): Promise<boolean> {
+        const hydration = desktopRun('agent-hydration', () => this.hydrateAcceptedAgent(agentId));
+        // Observe at the public boundary even for unknown/dynamic fire-and-
+        // forget callers. Return the ORIGINAL rejecting promise, not its catch,
+        // so awaited callers cannot mistake logged failure for hydration.
+        void hydration.catch(error => {
+            console.error('[ORCHESTRATOR] Agent hydration failed:', {agentId, error});
+            desktopOutcome('hydration', 'failed');
+        });
+        return hydration;
+    }
+
+    // Strict prerequisite API. Negative admission/missing target is not a
+    // successful activation; metrics/initialization exceptions stay exceptions.
+    public async requireHydrated(agentId: string): Promise<void> {
+        const active = await this.hydrateAgent(agentId);
+        if (!active || !this.activeActors.has(agentId)) throw new Error('AGENT_REQUIRED_BUT_NOT_HYDRATED:' + agentId);
+    }
+
+    // Sync intent setters do not await hydration. Keep that API, but observe
+    // EVERY scheduled promise and do not announce successful activation on fail.
+    private requestHydration(agentId: string, source: string): void {
+        void this.hydrateAgent(agentId).then(active => {
+            if (!active) {
+                console.warn('[ORCHESTRATOR] Hydration intent not fulfilled; agent inactive:', {agentId, source});
+                desktopOutcome('hydration', 'requested-hydration-not-active');
+            }
+        }, error => {
+            console.error('[ORCHESTRATOR] Requested hydration failed; agent not confirmed active:', {agentId, source, error});
+            desktopOutcome('hydration', 'requested-hydration-failed');
+        });
+    }
+
+    private async hydrateAcceptedAgent(agentId: string): Promise<boolean> {
+        if (this.activeActors.has(agentId)) return true; // Already awake
 
         const agent = agentPersistence.loadAgent(agentId);
         if (agent) {
@@ -1895,8 +2091,9 @@ JSON ONLY:
             const priority = agent.tier === AgentTier.CORE ? 'CRITICAL' : 'NORMAL';
             const allowed = await resourceArbiter.requestAdmission(agent, priority);
             if (!allowed) {
-                // console.warn(`[ORCHESTRATOR] 🛑 Wake - up denied for ${ agent.name }(Resource Limit)`);
-                return;
+                console.warn('[ORCHESTRATOR] Agent hydration not admitted:', {agentId});
+                desktopOutcome('hydration', 'admission-denied');
+                return false;
             }
 
             // LRU EVICTION LOGIC (BIO-SAFE PROTOCOL)
@@ -1945,7 +2142,11 @@ JSON ONLY:
 
             // [EVOLUTION] Register with conversation system on hydration
             agentConversation.registerAgent(standardAgent.toMetadata());
+            return true;
         }
+        console.warn('[ORCHESTRATOR] Agent hydration target missing:', {agentId});
+        desktopOutcome('hydration', 'agent-missing');
+        return false;
     }
 
     /**
@@ -2114,7 +2315,7 @@ JSON ONLY:
             this.activeCategories.add(category);
             // Wake up agents in this category
             this.squads.filter(s => s.category === category).forEach(s => {
-                s.members.forEach(m => this.hydrateAgent(m));
+                s.members.forEach(m => this.requestHydration(m, 'category-or-mode-intent'));
             });
         } else {
             this.activeCategories.delete(category);
@@ -2141,7 +2342,7 @@ JSON ONLY:
         // Wake up agents in these categories
         categories.forEach(cat => {
             this.squads.filter(s => s.category === cat).forEach(s => {
-                s.members.forEach(m => this.hydrateAgent(m));
+                s.members.forEach(m => this.requestHydration(m, 'category-or-mode-intent'));
             });
         });
     }
@@ -2516,7 +2717,7 @@ OBJECTIVES:
                 this.setMode24_7(true); // Keep everything running
                 // Wake up core squads
                 this.squads.filter(s => s.category === 'CORE' || s.category === 'OPS').forEach(s => {
-                    s.members.forEach(m => this.hydrateAgent(m));
+                    s.members.forEach(m => this.requestHydration(m, 'category-or-mode-intent'));
                 });
                 break;
         }
@@ -3025,13 +3226,16 @@ OBJECTIVES:
      * Forms a temporary Debate Squad, triggers the debate, and awaits consensus.
      */
     private async formSquadAndDebate(query: string, sessionId: string): Promise<string> {
+        // Judge hydration is a prerequisite. Do not publish/start a debate
+        // whose required judge failed admission or never became active.
+        const judgeHydrated = await this.hydrateAgent('core-01');
+        if (!judgeHydrated || !this.activeActors.has('core-01')) throw new Error('DEBATE_JUDGE_NOT_HYDRATED');
         return new Promise((resolve, reject) => {
             const debateId = `debate-${crypto.randomUUID()}`;
             
             // Standard participants for a complex task
             const participants = ['creator-01', 'critic-01'];
             
-            this.hydrateAgent('core-01'); // Ensure core is alive as Judge
             
             this.activeDebates.set(debateId, {
                 subject: query,
@@ -3148,4 +3352,9 @@ OBJECTIVES:
 
 }
 
-export const orchestrator = new AgentSwarmOrchestrator();
+// [STARTUP-SETTLEMENT] The singleton startup ticket is claimed BEFORE
+// `new` (so field initializers are covered) and passed explicitly; a
+// constructor throw marks the ticket and rethrows the exact same value
+// (fail-fast preserved). Observers use getSingletonStartup() from the
+// neutral leaf, which they may import before importing this module.
+export const orchestrator = constructSingletonObserved(ticket => new AgentSwarmOrchestrator(ticket));

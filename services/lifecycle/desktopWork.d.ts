@@ -1,0 +1,31 @@
+export type OwnerSnapshot = { active: number; accepted: number; settled: number; rejected: number; notStarted: number; outcomes: Record<string, number> };
+export interface WorkSession {
+    rootsOpen(): boolean;
+    lineageLive(): boolean;
+    run<T>(owner: string, task: () => T): Promise<Awaited<T>>;
+    root<T>(owner: string, task: () => T): Promise<Awaited<T>>;
+    tick<T>(owner: string, task: () => T): Promise<Awaited<T> | { started: false; reason: string }>;
+    continuation(owner: string): <T>(task: () => T) => Promise<Awaited<T>>;
+    closeRoots(): void;
+    stopSources<T>(task: () => Promise<T>): Promise<T>;
+    fault(owner: string, reason: string): void;
+    outcome(owner: string, result: string): void;
+    drain(ms?: number): Promise<void>;
+    runFinalPhase<T>(task: () => Promise<T>, ms?: number): Promise<T>;
+    producersPreserved(): void;
+    storesClosed(): void;
+    ownerSnapshot(owner: string): OwnerSnapshot;
+    snapshot(): { stage: string; active: number; debts: Array<{ owner: string; reason: string }>; owners: string[] };
+}
+export function bindDesktopWork(value: WorkSession): void;
+export function desktopWorkBound(): boolean;
+export function desktopRootsOpen(): boolean;
+export function desktopLineageLive(): boolean;
+export function desktopRun<T>(owner: string, task: () => Promise<T>): Promise<T>;
+export function desktopRun<T>(owner: string, task: () => T): T | Promise<Awaited<T>>;
+export function desktopRoot<T>(owner: string, task: () => T): T | Promise<Awaited<T>>;
+export function desktopTick<T>(owner: string, task: () => T): T | Promise<Awaited<T> | { started: false; reason: string }>;
+export function desktopContinuation(owner: string): <T>(task: () => Promise<T>) => Promise<T>;
+export function desktopFault(owner: string, reason: string): void;
+export function desktopOutcome(owner: string, result: string): void;
+export function desktopOwnerSnapshot(owner: string): OwnerSnapshot | undefined;

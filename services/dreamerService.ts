@@ -1,3 +1,5 @@
+import { ownedInterval, ownedDeferred } from '../server/desktop/producerScope.js';
+import { desktopRootsOpen, desktopFault, desktopWorkBound } from './lifecycle/desktopWork.js';
 import { verifyClaims, type CitedClaim } from './memoryCognition';
 import { continuum } from './continuumMemory';
 import { geminiService } from './geminiService';
@@ -9,6 +11,21 @@ import { AgentStatus, AgentRoleType, AgentTier, SystemProtocol } from '../types'
 import { v4 as uuidv4 } from 'uuid';
 import { systemBus } from './systemBus';
 import * as si from 'systeminformation'; // NEW: For Resource Monitoring
+
+/**
+ * [O2-OBSERVE] Known fire-and-forget escapes of attemptDream() that
+ * adopting its returned promise does NOT cover (sticky incomplete
+ * coverage, by source). A fulfilled dream promise is NOT an absence of
+ * failure: its own catch (~:374) absorbs errors.
+ */
+export const DREAM_KNOWN_INCOMPLETE_COVERAGE: readonly string[] = [
+    'graph.createDiscoveryRelationship fire-and-forget (dreamerService.ts ~:341-347)',
+    'semanticMemory.ingestDocument fire-and-forget (dreamerService.ts ~:366-371)',
+    'introspection.setDreaming dynamic imports fire-and-forget',
+    'attemptDream catch absorbs errors (dreamerService.ts ~:374)',
+    'completed-cycle metrics finally absorbs failures',
+    'stores launched inside the dream open their own store-roots (no inheritance into this scope)',
+];
 
 export class DreamerService {
     private isDreaming: boolean = false;
@@ -28,22 +45,31 @@ export class DreamerService {
         console.log(`[DREAMER] ⚙️ Threshold updated to ${this.threshold} memories.`);
     }
 
-    public notifyNewMemory() {
+    /**
+     * [O2-OBSERVE] Returns the REAL cap-hit dream promise so the caller's
+     * ledger can adopt it (historical error logging preserved). The normal
+     * path is a synchronous entropy increment with no async work: it returns
+     * void and the caller classifies it 'sync-completed' (state changed, NOT
+     * a no-op). A fulfilled dream promise is not an absence of failure - see
+     * DREAM_KNOWN_INCOMPLETE_COVERAGE.
+     */
+    public notifyNewMemory(): Promise<void> | void {
         // [FIX] Hard cap on entropy to prevent runaway accumulation from loops
         const MAX_ENTROPY = this.threshold * 3; // 30 max (3x threshold of 10)
         if (this.memoriesAccumulated >= MAX_ENTROPY) {
             console.warn(`[DREAMER] ⚠️ Entropy hard cap reached (${MAX_ENTROPY}). Forcing consolidation.`);
             // Reset and trigger dream to prevent infinite growth
             this.memoriesAccumulated = 0;
-            this.attemptDream().catch(e => console.error('[DREAMER] Forced dream failed:', e));
-            return;
+            const dream = this.attemptDream();
+            dream.catch(e => console.error('[DREAMER] Forced dream failed:', e));
+            return dream;
         }
         this.memoriesAccumulated++;
         console.log(`[DREAMER] Entropy increased: ${this.memoriesAccumulated}/${this.threshold}`);
     }
 
     public startDreamingLoop() {
-        if (this.dreamInterval) return;
+        if (this.dreamInterval || !desktopRootsOpen()) return;
 
         // [OPTIMIZATION] Check PowerManager before starting
         import('./powerManager').then(({ powerManager }) => {
@@ -56,13 +82,17 @@ export class DreamerService {
     }
 
     private activateDreamLoop() {
-        if (this.dreamInterval) return;
+        if (this.dreamInterval || !desktopRootsOpen()) return;
         console.log("[DREAMER] 🌙 Dream Cycle Initiated...");
 
         // Check every 5 minutes if we should dream
-        this.dreamInterval = setInterval(async () => {
+        this.dreamInterval = ownedInterval(async () => {
             if (this.memoriesAccumulated >= this.threshold) {
-                this.attemptDream();
+                const dream = this.attemptDream();
+                if (desktopWorkBound()) await dream;
+                else void dream.catch(error => {
+                    console.error('[DREAMER] Scheduled dream admission/work failed:', error);
+                });
             }
 
             // Event-based triggers (roadmap item 8): epiphanies, milestones,
@@ -855,7 +885,8 @@ export class DreamerService {
         }
 
         // After deep dream, check for Structural Gaps (Eurekas)
-        setTimeout(() => this.generateNeuralEurekas(), 5000);
+        const followup = ownedDeferred(() => this.generateNeuralEurekas(), 5000);
+        if (followup instanceof Promise) void followup.catch(() => desktopFault('dreamer', 'neural-eureka-unreceipted'));
     }
 
     private async attemptBisociation(conceptA: string, conceptB: string): Promise<string | null> {

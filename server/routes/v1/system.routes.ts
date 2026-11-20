@@ -364,11 +364,23 @@ router.get('/health', async (req, res) => {
     // Redis
     try {
         const { redisClient } = await import('../../../services/redisClient');
-        if (redisClient.isMockMode()) {
+        if (redisClient.isDisabledByPolicy()) {
+            // Voluntary policy disable: NOT a redis backend, NOT an outage,
+            // and NO probe - never set/get through a barriered client.
+            health.redis = { status: 'disabled-by-policy', details: 'Redis disabled by acceptance policy; intentionally not serving.' };
+        } else if (redisClient.isMockMode()) {
             health.redis = { status: 'mock', details: 'Running in-memory fallback (data not persistent)' };
         } else {
+            // A resolved set() alone proves nothing (an unavailable or
+            // barriered client no-ops it): 'ok' requires BOTH a real,
+            // handshake-complete connection and the round-trip value.
             await redisClient.set('__health_check__', 'ok', 5);
-            health.redis = { status: 'ok' };
+            const probe = await redisClient.get('__health_check__');
+            if (redisClient.isReallyConnected() && probe === 'ok') {
+                health.redis = { status: 'ok' };
+            } else {
+                health.redis = { status: 'unavailable', details: 'No real Redis connection and no in-memory fallback engaged.' };
+            }
         }
     } catch (e: any) {
         health.redis = { status: 'error', details: e.message };

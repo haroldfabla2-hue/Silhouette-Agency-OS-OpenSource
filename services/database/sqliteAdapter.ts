@@ -36,11 +36,26 @@ export class SqliteAdapter implements IDatabaseAdapter {
     }
 
     async close(): Promise<void> {
-        const { sqliteService } = await import('../sqliteService');
-        sqliteService.close();
-        if (this.identityDb) {
-            try { this.identityDb.close(); } catch { /* ignore */ }
+        // Each owned handle is closed independently: a failure of one never
+        // skips the other, and collected failures are rethrown only AFTER
+        // both attempts. Handles are retained on failure (never nulled), so
+        // a later close can retry. A resolved call means the JS driver close
+        // completed for every owned handle - not a persistence receipt.
+        const failures: unknown[] = [];
+        try {
+            const { sqliteService } = await import('../sqliteService');
+            sqliteService.close();
+        } catch (error) {
+            // The failure is surfaced and counts. A throwing singleton
+            // constructor can PARTIALLY acquire (directory/handle before a
+            // schema/migration failure): that ownership gap is unresolved
+            // here, and the failure is never 'never initialized'.
+            failures.push(error);
         }
+        if (this.identityDb) {
+            try { this.identityDb.close(); } catch (error) { failures.push(error); }
+        }
+        if (failures.length > 0) throw new AggregateError(failures, 'SQLITE_ADAPTER_CLOSE_FAILED');
     }
 
     // ─── Agent Operations (delegates to sqliteService) ─────────────────

@@ -1,3 +1,6 @@
+import { desktopFault, desktopWorkBound } from '../../services/lifecycle/desktopWork.js';
+import { ownedWork } from '../desktop/producerScope.js';
+import { registerStarted } from '../desktop/startedResources.js';
 
 import fs from 'fs';
 import { PATHS } from '../config/paths';
@@ -28,10 +31,24 @@ export const initDatabases = async () => {
     try {
         const { redisClient } = await import('../../services/redisClient');
         await redisClient.connect();
-        if (redisClient.isMockMode()) {
-            console.warn('[LOADER] Redis running in MOCK mode - data will not persist across restarts');
+        if (redisClient.isDisabledByPolicy()) {
+            // Voluntary policy disable: NOT ready, NOT an outage, and no
+            // handle was acquired - so no ownership is registered either.
+            console.log('[LOADER] Redis disabled by policy (acceptance); not started.');
         } else {
-            console.log('[LOADER] Redis Ready.');
+            // Ownership registered in EVERY non-disabled outcome, including
+            // unavailable: a retained failed-close handle keeps its cleanup
+            // route at drain.
+            registerStarted('redis', {closeAfter: ['plugins', 'messaging-channels', 'websocket-gateway', 'terminal-websocket', 'terminal-shells'], close: () => redisClient.disconnect()});
+            if (redisClient.isReallyConnected()) {
+                console.log('[LOADER] Redis Ready.');
+            } else if (redisClient.isMockMode()) {
+                console.warn('[LOADER] Redis running in MOCK mode - data will not persist across restarts');
+            } else {
+                // e.g. retained failed-close handle: connect() never throws,
+                // so the honest line is "not Ready", never a bare "Redis Ready."
+                console.warn('[LOADER] Redis unavailable (no real connection, no in-memory fallback); not Ready.');
+            }
         }
     } catch (e: any) {
         console.warn('[LOADER] Redis initialization failed:', e.message);
@@ -50,7 +67,7 @@ export const initDatabases = async () => {
     const initPromises = [
         // Neo4j with 5s timeout to not block startup
         Promise.race([
-            import('../../services/graphService').then(({ graph }) => graph.connect()),
+            import('../../services/graphService').then(async ({ graph }) => { await graph.connect(); registerStarted('graph', {closeAfter: ['plugins', 'messaging-channels', 'websocket-gateway', 'terminal-websocket', 'terminal-shells'], close: () => graph.close()}); }),
             new Promise((_, reject) => setTimeout(() => reject(new Error('Neo4j timeout (5s)')), 5000))
         ]).catch(e => console.warn("[LOADER] Graph DB optional:", (e as Error).message)),
     ];
@@ -71,13 +88,17 @@ export const initDatabases = async () => {
     try {
         const { continuousMemory } = await import('../../services/memory/continuousMemory');
         continuousMemory.initialize();
+        registerStarted('continuous-memory', {flush: () => continuousMemory.shutdown()});
         console.log('[LOADER] ContinuousMemory WAL Ready.');
     } catch (e: any) {
         console.warn('[LOADER] ContinuousMemory initialization failed:', e.message);
     }
 
     // 8. Sync Asset Catalog - DEFERRED to background after server is ready
-    setImmediate(async () => {
+    setImmediate(() => {
+        // Desktop stop before callback prevents acquisition; started work is
+        // returned to the existing producer owner. Native CLI stays unchanged.
+        const sync = ownedWork(async () => {
         try {
             const { assetCatalog } = await import('../../services/assetCatalog');
             await assetCatalog.cleanupOrphans();
@@ -87,6 +108,9 @@ export const initDatabases = async () => {
             }
         } catch (e) {
             console.warn("[LOADER] Asset Catalog background sync failed");
+            if (desktopWorkBound()) { desktopFault('asset-sync', 'sync-failed'); throw e; }
         }
+        });
+        void Promise.resolve(sync).catch(() => { /* explicit debt recorded at source */ });
     });
 };

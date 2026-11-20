@@ -1,3 +1,7 @@
+import { desktopOutcome, desktopFault } from '../../services/lifecycle/desktopWork.js';
+import { createWriterGate } from '../desktop/writerGate.js';
+import { producerScopeBound } from '../desktop/producerScope.js';
+import { privateDesktopToken } from '../desktop/privateSession';
 // =============================================================================
 // SILHOUETTE WEBSOCKET GATEWAY
 // Central WebSocket control plane.
@@ -37,6 +41,9 @@ const CONFIG = {
 // ─── Gateway Class ───────────────────────────────────────────────────────────
 
 class SilhouetteGateway {
+    private readonly desktopWork = createWriterGate('DESKTOP_GATEWAY');
+    private desktopCloseTask: Promise<void> | null = null;
+    private desktopUnsubscribe: Array<() => void> = [];
     private wss: WebSocketServer | null = null;
     private connections: Map<string, { ws: WebSocket; conn: ClientConnection }> = new Map();
     private idempotencyCache: Map<string, { result: unknown; expiresAt: number }> = new Map();
@@ -53,6 +60,7 @@ class SilhouetteGateway {
      * This allows WS to share the same port as the Express API.
      */
     initialize(httpServer: HTTPServer): void {
+        if (producerScopeBound() && !this.desktopWork.snapshot().accepting) throw new Error('DESKTOP_GATEWAY_ADMISSION_STOPPED');
         this.wss = new WebSocketServer({
             server: httpServer,
             path: '/ws',
@@ -60,6 +68,7 @@ class SilhouetteGateway {
         });
 
         this.wss.on('connection', (ws, req) => {
+            if (producerScopeBound() && !this.desktopWork.snapshot().accepting) { ws.close(1001, 'Server stopping'); return; }
             const connectionId = uuidv4();
             const ip = req.socket.remoteAddress ?? 'unknown';
             console.log(`[Gateway] 🔌 New WS connection from ${ip} (${connectionId})`);
@@ -73,6 +82,7 @@ class SilhouetteGateway {
             let isHandshakeComplete = false;
 
             ws.on('message', (data: RawData) => {
+                if (producerScopeBound() && !this.desktopWork.snapshot().accepting) return;
                 try {
                     const raw = data.toString();
                     const frame = JSON.parse(raw);
@@ -96,7 +106,10 @@ class SilhouetteGateway {
 
                     // Route by frame type
                     if (frame.type === 'req') {
-                        this.handleRequest(connectionId, ws, frame as RequestFrame);
+                        if (producerScopeBound()) {
+                            void this.desktopWork.root(() => this.handleRequest(connectionId, ws, frame as RequestFrame))
+                                .catch(() => { /* failure remains latched in writer owner */ });
+                        } else this.handleRequest(connectionId, ws, frame as RequestFrame);
                     }
                     // Clients don't send 'res' or 'event' frames (server-only)
                 } catch (err) {
@@ -136,7 +149,7 @@ class SilhouetteGateway {
         const { clientId, clientType, auth, capabilities, version } = frame.params;
 
         // Auth Check
-        const expectedToken = process.env.SILHOUETTE_API_KEY || process.env.SILHOUETTE_API_TOKEN;
+        const expectedToken = privateDesktopToken() || process.env.SILHOUETTE_API_KEY || process.env.SILHOUETTE_API_TOKEN;
         let authenticated = false;
 
         if (expectedToken) {
@@ -226,6 +239,7 @@ class SilhouetteGateway {
 
             ws.send(JSON.stringify(createResponse(id, result)));
         } catch (err: any) {
+            desktopOutcome('DESKTOP_GATEWAY', 'request-error-responded');
             ws.send(JSON.stringify(createErrorResponse(
                 id,
                 err.code ?? 'INTERNAL_ERROR',
@@ -521,9 +535,10 @@ class SilhouetteGateway {
     private bridgeSystemBusEvents(): void {
         // Subscribe to all mapped protocols
         for (const [protocol, gatewayEvent] of Object.entries(PROTOCOL_TO_GATEWAY_EVENT)) {
-            systemBus.subscribe(protocol as SystemProtocol, (payload) => {
+            const unsubscribe = systemBus.subscribe(protocol as SystemProtocol, (payload) => {
                 this.broadcast(gatewayEvent!, payload);
             });
+            if (producerScopeBound()) this.desktopUnsubscribe.push(unsubscribe);
         }
 
         console.log(`[Gateway] 🔗 Bridged ${Object.keys(PROTOCOL_TO_GATEWAY_EVENT).length} SystemProtocol events to WebSocket`);
@@ -609,7 +624,7 @@ class SilhouetteGateway {
         });
         if(!accepted) return null;
         try{sessionManager.addMessage(route.sessionId,{role:'agent',content:text,metadata:{channel:entry.conn.clientType}});}
-        catch(error){console.error('[Gateway] Reply accepted; session history receipt unverified, do not resend:',error);}
+        catch(error){desktopFault('gateway-reply', 'history-persistence-unverified');console.error('[Gateway] Reply accepted; session history receipt unverified, do not resend:',error);}
         return message.id;
     }
 
@@ -660,6 +675,42 @@ class SilhouetteGateway {
     }
 
     // ── Shutdown ───────────────────────────────────────────────────────────
+
+    stopDesktopAdmission(): void {
+        this.desktopWork.stopAdmission();
+        if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
+        if (this.sweepInterval) clearInterval(this.sweepInterval);
+        if (this.idempotencyCleanupInterval) clearInterval(this.idempotencyCleanupInterval);
+        // Leave clients and bridges alive for accepted replies until barrier.
+    }
+
+    async drainDesktopWork(ms = 4000) { return this.desktopWork.drain(ms); }
+
+    closeDesktop(): Promise<void> {
+        if (this.desktopCloseTask) return this.desktopCloseTask;
+        this.desktopCloseTask = (async () => {
+            await this.desktopWork.drain();
+            for (const unsubscribe of this.desktopUnsubscribe.splice(0)) unsubscribe();
+            this.broadcast('shutdown', { reason: 'Server shutting down' });
+            // Include sockets still in handshake, not only authenticated map.
+            const server = this.wss;
+            if (!server) return;
+            for (const ws of server.clients) ws.close(1001, 'Server shutting down');
+            await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+            this.connections.clear();
+            this.replyRoutes.clear();
+            this.wss = null;
+        })();
+        const current = this.desktopCloseTask;
+        void current.catch(() => { if (this.desktopCloseTask === current) this.desktopCloseTask = null; });
+        return current;
+    }
+
+    desktopLifecycleReceipt() {
+        return { ...this.desktopWork.snapshot(), sockets: this.wss?.clients.size ?? 0,
+            // routeMethod/handlers may return before nested provider/bus work.
+            downstreamWorkContractComplete: false };
+    }
 
     shutdown(): void {
         console.log('[Gateway] 🛑 Shutting down WebSocket Gateway...');

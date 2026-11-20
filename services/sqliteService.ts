@@ -1,3 +1,4 @@
+import { minimizeExpiredEvidence } from './execution/taskEvidence';
 import { externalProvidersDisabled, credentialConfigKey } from '../server/config/runtimeCredentials';
 import Database from 'better-sqlite3';
 import path from 'path';
@@ -994,7 +995,17 @@ export class SqliteService {
 
     public getTasksByPlan(planId: string): any[] {
         const stmt = this.db.prepare('SELECT * FROM tasks WHERE id LIKE ? ORDER BY created_at ASC');
-        return stmt.all(`task_${planId}_%`) as any[];
+        return (stmt.all(`task_${planId}_%`) as any[]).map(row => {
+            try {
+                let data = JSON.parse(row.data || '{}');
+                data = minimizeExpiredEvidence(data);
+                if (data.lateSettlement && typeof data.lateSettlement === 'object') {
+                    data = { ...data, lateSettlement: minimizeExpiredEvidence(data.lateSettlement) };
+                }
+                return { ...row, data: JSON.stringify(data) };
+            } catch { /* Existing malformed evidence remains visibly malformed; never rewrite memory. */ }
+            return row;
+        });
     }
 
     /** [LEDGER-INTEGRITY] Rows whose step timed out with work possibly
@@ -1021,9 +1032,17 @@ export class SqliteService {
     }
 
     public close(): void {
-        try {
-            this.db.close();
-        } catch { /* ignore if already closed */ }
+        // better-sqlite3 12.5.0 (exact lockfile pin): close() on a non-open
+        // database is a native no-op (JS_close checks db->open), so no shadow
+        // open-state is needed and double close is already safe. Genuine
+        // failures - a busy query or live statement iterators - throw
+        // TypeError and must PROPAGATE (redis disconnect precedent in the
+        // drain): the handle stays owned and open, so a later close can
+        // retry once the work settles. A resolved call means only 'JS driver
+        // close completed': the native sqlite3_close status is checked only
+        // by a C/C++ assert (which release builds may compile out) and is
+        // not exposed as a JS durability receipt - never a persistence claim.
+        this.db.close();
     }
 }
 

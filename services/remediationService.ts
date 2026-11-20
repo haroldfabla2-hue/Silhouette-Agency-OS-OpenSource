@@ -439,7 +439,7 @@ ${this.getSuggestedActions(rootCause)}
      * SQUAD MOBILIZATION (The "Code Blue")
      * Wakes up the necessary specialists to handle the crisis.
      */
-    public async mobilizeSquad(agentId: string, errorLog: string[]) {
+    public async mobilizeSquad(agentId: string, errorLog: string[]): Promise<{ kind: 'circuit-open' | 'deferred' | 'critical-block' | 'protocol-returned' }> {
         // [PR-4c] Breaker BEFORE any work: same-signature loops die here.
         const signature = this.mobilizationSignature(agentId, errorLog);
         const throttle = this.mobilizationThrottle(signature);
@@ -451,11 +451,11 @@ ${this.getSuggestedActions(rootCause)}
                 message: `AUTO-REPAIR EXHAUSTED for ${agentId}: same failure ${RemediationService.MAX_MOBILIZATIONS_PER_HOUR}x in 1h. Agent marked FAILED; manual review required.`
             });
             try { await orchestrator.markAgentFailed(agentId, `auto-repair exhausted (${signature})`); } catch { /* non-blocking */ }
-            return;
+            return { kind: 'circuit-open' };
         }
         if (throttle > 0) {
             console.warn(`[REMEDIATION] ⏳ Backoff: skipping duplicate mobilization for ${agentId} (${Math.ceil(throttle / 1000)}s left for this signature).`);
-            return;
+            return { kind: 'deferred' };
         }
         this.recordMobilization(signature);
         console.log(`[REMEDIATION] 🚨 MOBILIZING SQUADS for Agent ${agentId}...`);
@@ -464,7 +464,7 @@ ${this.getSuggestedActions(rootCause)}
         // [PR-3b] Specialists hydrate ON DEMAND at their actual point of use
         // (research-01 / dev-01 in the needsResearch branch below), never
         // "for potential use" - pre-hydration was RAM theater.
-        orchestrator.hydrateAgent('qa-01');
+        await orchestrator.requireHydrated('qa-01');
 
         // 3. Diagnosis Phase (QA)
         const diagnosis = await this.runDiagnosis(agentId, errorLog);
@@ -474,7 +474,7 @@ ${this.getSuggestedActions(rootCause)}
         // 4. Critical Block Handler
         if (diagnosis.isCriticalApiMissing) {
             await this.handleCriticalBlock(agentId, diagnosis.missingApi);
-            return;
+            return { kind: 'critical-block' };
         }
 
         // 5. COMPLEXITY CHECK (Triaging)
@@ -485,11 +485,11 @@ ${this.getSuggestedActions(rootCause)}
 
         if (needsResearch) {
             // PHASE 1: RESEARCH - hydrate the specialist at its point of use
-            orchestrator.hydrateAgent('research-01');
+            await orchestrator.requireHydrated('research-01');
             const researchFindings = await this.consultResearchTeam(errorLog.join('\n'));
 
             // PHASE 2: COLLABORATIVE PLANNING - hydrate at point of use
-            orchestrator.hydrateAgent('dev-01');
+            await orchestrator.requireHydrated('dev-01');
             initialPlan = await this.planSolution(diagnosis, researchFindings);
 
             // Log the deep fix
@@ -501,6 +501,8 @@ ${this.getSuggestedActions(rootCause)}
 
         // 6. EXECUTION PHASE (FIX)
         await this.runFixProtocol(agentId, diagnosis.rootCause, initialPlan);
+        // Protocol returning is not proof that the original defect is fixed.
+        return { kind: 'protocol-returned' };
     }
 
     // --- PHASE 1: RESEARCH CONSULTATION ---

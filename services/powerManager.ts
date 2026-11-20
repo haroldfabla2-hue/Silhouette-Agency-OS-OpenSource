@@ -1,3 +1,5 @@
+import { ownedInterval } from '../server/desktop/producerScope.js';
+import { registerOwnedProducer } from './lifecycle/ownedProducers';
 /**
  * POWER MANAGER SERVICE v2.0 - ADAPTIVE THROTTLING
  * All services run autonomously with CPU-based throttling
@@ -108,6 +110,7 @@ class PowerManager {
     private throttleCheckInterval: NodeJS.Timeout | null = null;
 
     private constructor() {
+        registerOwnedProducer('power', () => this.stopThrottleTimer());
         console.log(`[POWER_MANAGER] ⚡ Initialized with mode: ${this.currentMode}`);
         this.startAdaptiveThrottling();
     }
@@ -118,7 +121,7 @@ class PowerManager {
      */
     private startAdaptiveThrottling() {
         // Check CPU every 30 seconds and adjust throttle
-        this.throttleCheckInterval = setInterval(async () => {
+        this.throttleCheckInterval = ownedInterval(async () => {
             try {
                 const si = await import('systeminformation');
                 const load = await si.currentLoad();
@@ -143,6 +146,26 @@ class PowerManager {
 
         // Staggered startup - delay service initialization
         console.log('[POWER_MANAGER] 🚀 Staggered startup enabled');
+    }
+
+    /** NARROW timer-only stop: clears the 30s adaptive-throttling interval.
+     * An in-flight callback already awaiting `systeminformation` may complete
+     * afterwards; that work is self-contained (it only mutates this object's
+     * throttleMultiplier and owes no promise to any caller), so nothing is
+     * abandoned by stopping. The interval is armed synchronously at
+     * construction, so there is no late-arm window.
+     * Exists because the constructor arms a ref'd 30s interval, so any
+     * short-lived process that loads this singleton (including via
+     * continuum.store's fire-and-forget dreamerService -> resourceArbiter
+     * cascade) can never exit naturally without this stop. The product drain
+     * does not yet own this producer - explicit lifecycle gap, kept visible. */
+    public stopThrottleTimer(): { intervalWasArmed: boolean } {
+        const intervalWasArmed = this.throttleCheckInterval !== null;
+        if (this.throttleCheckInterval) {
+            clearInterval(this.throttleCheckInterval);
+            this.throttleCheckInterval = null;
+        }
+        return { intervalWasArmed };
     }
 
     public static getInstance(): PowerManager {

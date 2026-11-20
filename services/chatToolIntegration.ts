@@ -187,7 +187,7 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
         // registry name before policy checks and execution.
         const toolName = normalizeToolName(rawToolName);
 
-        console.log(`[CHAT_TOOLS] 🔧 Executing tool: ${toolName}`, args);
+        console.log(`[CHAT_TOOLS] 🔧 Executing tool: ${toolName}`);
 
         let gatePermitToken: string | undefined;
         let gatePermitReceipt: string | undefined;
@@ -462,6 +462,16 @@ File tools (read_file, write_file, list_files) operate inside a secure workspace
      * Process all tool calls from response text
      */
     async processToolCalls(responseText: string, userRole: string = 'GUEST', gateContext?: { principalId?: string; conversationId?: string }): Promise<{
+        toolResults: ToolCallResult[];
+        enhancedResponse: string;
+    }> {
+        const { createTaskEvidence } = await import('./execution/taskEvidence');
+        // One invocation owns its lineage; a supplied conversation ID never grants access.
+        const evidence = createTaskEvidence(crypto.randomUUID());
+        return evidence.run(() => this.processOwnedToolCalls(responseText, userRole, gateContext));
+    }
+
+    private async processOwnedToolCalls(responseText: string, userRole: string = 'GUEST', gateContext?: { principalId?: string; conversationId?: string }): Promise<{
         toolResults: ToolCallResult[];
         enhancedResponse: string;
     }> {

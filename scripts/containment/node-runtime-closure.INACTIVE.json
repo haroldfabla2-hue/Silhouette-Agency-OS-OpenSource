@@ -1,0 +1,48 @@
+{
+  "manifestDigest": "sha256:650d460b4e6b02411caa0e563838f07fafc9792314d5091859d837d8b070712b",
+  "manifestSize": 1929,
+  "config": {
+    "mediaType": "application/vnd.oci.image.config.v1+json",
+    "digest": "sha256:8c3a0351e2535c75b4f15dcdd918612e419e829306291a93ddce97f4746581bd",
+    "size": 6874
+  },
+  "layers": [
+    {
+      "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "digest": "sha256:c02d17997ce3d2c82e082235ea0b5152d06ee659c4e2fabcf1e0079312f1bcde",
+      "size": 28228572
+    },
+    {
+      "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "digest": "sha256:73c2b2f30c9169a9d1d500e414a7d0345ffd35ddd2448dbaa28057c627e722d0",
+      "size": 3309
+    },
+    {
+      "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "digest": "sha256:b0e670e4d938455d5f209d46248900acafbce8956cca163290a772418e4b376a",
+      "size": 49481577
+    },
+    {
+      "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "digest": "sha256:7351856d1071511142cdaa7e193ddebe2bd1013c13d6a3a0ab1d7bb91b2943eb",
+      "size": 1712658
+    },
+    {
+      "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+      "digest": "sha256:f72aedeaeb505d5d37a36a72a1cd7226d2411316130211ab1d319730bf6931d2",
+      "size": 447
+    }
+  ],
+  "diffIds": [
+    "sha256:e0e6002570470d87b99366522e2deadfd07fd6abb0c481198c1e336f9117e5a6",
+    "sha256:b19f2405238c11c1c1614206c87838bebf0ec6348c9fc7760f413954d3503307",
+    "sha256:1c89f65bd1a29fd1c9fa943f007a447f0384c77c889e756247491269d0435508",
+    "sha256:4be1752bfb8d1799eeea59a5267d14a3961859ca3eb392c9a47cbeb22d6e2e8a",
+    "sha256:05bf1b6ec0b94c054641918e186fa1c66c92b9b70999566f29edb9f2073630e7"
+  ],
+  "compressedLayerBytes": 79426563,
+  "expandedBytes": "not established by registry descriptor; daemon performs normal extraction",
+  "platform": "linux/amd64",
+  "expectedImageConfigId": "sha256:8c3a0351e2535c75b4f15dcdd918612e419e829306291a93ddce97f4746581bd",
+  "tagNotExecutionInput": "22.21.1-bookworm-slim"
+}

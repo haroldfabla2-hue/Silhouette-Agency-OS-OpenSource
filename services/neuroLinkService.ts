@@ -8,6 +8,7 @@ import { systemBus } from "./systemBus";
 
 export class NeuroLinkService {
     private discoveryInterval: any;
+    private discoveryStopped = false;
     private nodes: Map<string, NeuroLinkNode> = new Map();
 
     constructor() {
@@ -15,6 +16,7 @@ export class NeuroLinkService {
     }
 
     public registerNode(projectId: string, url: string, category: any = 'DEV') {
+        if (this.discoveryStopped) return; // no new work after stopDiscovery
         if (this.nodes.has(projectId)) return;
 
         const node: NeuroLinkNode = {
@@ -71,6 +73,22 @@ export class NeuroLinkService {
         }, 5000); // Check every 5 seconds
     }
 
+    // TIMER-ONLY scope, not a producer drain: stops the discovery interval
+    // and refuses new node registrations. It does NOT drain in-flight health
+    // checks; each check clears its own 2s abort timeout in `finally` (they
+    // are transient). The hydration-gates capsule uses this with a provably
+    // empty node set (receipt asserts nodesRegistered === 0); on a populated
+    // instance this is not a shutdown of owned work.
+    public stopDiscovery(): { intervalWasArmed: boolean; nodesRegistered: number } {
+        this.discoveryStopped = true;
+        const intervalWasArmed = this.discoveryInterval !== undefined && this.discoveryInterval !== null;
+        if (this.discoveryInterval) {
+            clearInterval(this.discoveryInterval);
+            this.discoveryInterval = null;
+        }
+        return { intervalWasArmed, nodesRegistered: this.nodes.size };
+    }
+
     private async checkNodeHealth(node: NeuroLinkNode) {
         const start = Date.now();
         try {
@@ -78,12 +96,18 @@ export class NeuroLinkService {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 2000);
 
-            const res = await fetch(node.url, {
-                method: 'HEAD',
-                signal: controller.signal
-            });
-
-            clearTimeout(timeoutId);
+            let res;
+            try {
+                res = await fetch(node.url, {
+                    method: 'HEAD',
+                    signal: controller.signal
+                });
+            } finally {
+                // The abort timeout is cleared on EVERY path (resolution,
+                // abort, network error): a rejected fetch must not leave a
+                // live timer behind.
+                clearTimeout(timeoutId);
+            }
 
             if (res.ok || res.status === 404) { // 404 means server is up but maybe no root route
                 node.status = NeuroLinkStatus.CONNECTED;

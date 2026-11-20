@@ -9,6 +9,7 @@ import { systemBus } from "./systemBus";
 // and resolved through experience, feedback, and full cognitive pipeline.
 
 export interface QuarantineEntry {
+    persistence?: 'saved-working' | 'outside-working';
     timestamp: number;
     nodeId: string;
     reason: 'CORRUPT_DATA' | 'TOXIC_IDENTITY' | 'CONTRADICTED';
@@ -23,6 +24,11 @@ export interface ContradictionAuditEntry {
     resolution: 'FLAGGED_FOR_REVIEW' | 'LLM_ANALYZING' | 'RESOLVED' | 'NEEDS_MORE_DATA';
     overlapWords: string[];
     contradictionType: string;
+    // Snapshot commit and later experience storage are distinct outcomes.
+    memoryEditStatus?: 'saved-working';
+    experienceRecord?: { status: 'pending' | 'confirmed' | 'unverified'; error?: 'EXPERIENCE_RECORD_UNVERIFIED' };
+    workingEditsSaved?: string[];
+    persistentEditsUnresolved?: string[];
     llmVerdict?: string;       // LLM's analysis result
     resolvedBy?: string;       // 'LLM' | 'EXPERIENCE' | 'FEEDBACK' | 'HUMAN'
     resolvedAt?: number;       // Timestamp of resolution
@@ -60,6 +66,38 @@ export class ContextJanitor {
         return [...this.contradictionAuditLog];
     }
 
+    /** Detached reads are preparation only. The Continuum owner compares
+     * touched fields, admits the operation and awaits its durable RAM commit.
+     * Persistent tiers were never saved by forceSave; report them explicitly
+     * instead of silently claiming a DB correction from a borrowed object.
+     */
+    private async persistWorkingEdits(before: MemoryNode[], after: MemoryNode[], requireAll = false): Promise<{updated: string[]; outsideWorking: string[]}> {
+        const prior = new Map(before.map(node => [node.id, node]));
+        const fields = (node: MemoryNode) => ({content: node.content, originalContent: node.originalContent, tags: node.tags, importance: node.importance});
+        const edits = after.flatMap(node => {
+            const old = prior.get(node.id);
+            if (!old) throw new Error('JANITOR_EDIT_BASELINE_MISSING');
+            const beforeFields = fields(old), afterFields = fields(node);
+            return JSON.stringify(beforeFields) === JSON.stringify(afterFields) ? [] : [{id: node.id, before: beforeFields, after: afterFields}];
+        });
+        const receipt = await continuum.applyWorkingEdits(edits, requireAll);
+        if (receipt.outsideWorking.length) {
+            // A detached unsupported edit is not a new state. Restore those
+            // fields in the caller's draft before any later scan/audit uses it.
+            const outside = new Set(receipt.outsideWorking);
+            for (const node of after) if (outside.has(node.id)) {
+                const old = prior.get(node.id)!;
+                node.content = old.content;
+                node.originalContent = old.originalContent;
+                node.tags = structuredClone(old.tags);
+                node.importance = old.importance;
+            }
+            console.warn('[JANITOR] Persistent-tier correction not saved by WORKING owner:', receipt.outsideWorking);
+            if (requireAll) throw new Error('JANITOR_PERSISTENT_TIER_EDITS_UNRESOLVED');
+        }
+        return receipt;
+    }
+
     // --- QUARANTINE (NEVER DELETE) ---
 
     /**
@@ -67,7 +105,7 @@ export class ContextJanitor {
      * The node is tagged, importance reduced to near-zero,
      * and originalContent is preserved for audit/recovery.
      */
-    private async quarantineNode(nodeId: string, reason: QuarantineEntry['reason'], node?: MemoryNode): Promise<void> {
+    private async quarantineNode(nodeId: string, reason: QuarantineEntry['reason'], node?: MemoryNode): Promise<boolean> {
         const entry: QuarantineEntry = {
             timestamp: Date.now(),
             nodeId,
@@ -75,7 +113,7 @@ export class ContextJanitor {
             originalContent: node?.content?.substring(0, 200),
             preservedImportance: node?.importance ?? 0
         };
-        this.quarantineLog.push(entry);
+        const before = node ? structuredClone(node) : undefined;
 
         // If we have the node reference, tag it in-place instead of deleting
         if (node) {
@@ -87,19 +125,25 @@ export class ContextJanitor {
             node.content = `[QUARANTINED: ${reason}] ${node.content}`;
         }
 
-        // Emit event for visibility
+        const receipt = node && before ? await this.persistWorkingEdits([before], [node]) : {updated: [], outsideWorking: [nodeId]};
+        this.quarantineLog.push({...entry, persistence: receipt.updated.includes(nodeId) ? 'saved-working' : 'outside-working'});
+        if (!receipt.updated.includes(nodeId)) return false;
+        // Emit only after the owner confirms the correction was saved.
         systemBus.emit(SystemProtocol.MEMORY_QUARANTINE, {
             source: 'JANITOR',
             nodeId,
             reason,
             details: `Node quarantined: ${reason}`
         });
+        return true;
     }
 
     public async runMaintenance() {
         console.log("[JANITOR] Starting Deep Clean Cycle...");
         const allNodes = await continuum.getAllNodes();
         const allMemories = Object.values(allNodes).flat();
+        const beforeScrub = structuredClone(allMemories);
+        const scrubbedIds = new Set<string>();
         let scrubbedCount = 0;
         let quarantineCount = 0;
 
@@ -135,28 +179,32 @@ export class ContextJanitor {
                 memoryNode.importance = 0.1;
 
                 memoryNode.content = `[WARNING: LEGACY SYSTEM OUTPUT - IGNORE] ${memoryNode.content}`;
-                scrubbedCount++;
+                scrubbedIds.add(memoryNode.id);
             }
         });
+
+        const scrubReceipt = await this.persistWorkingEdits(
+            beforeScrub.filter(n => scrubbedIds.has(n.id)),
+            allMemories.filter(n => scrubbedIds.has(n.id))
+        );
+        scrubbedCount = scrubReceipt.updated.length;
 
         // Quarantine Corrupt Nodes (never destroy)
         if (corruptNodes.length > 0) {
             console.log(`[JANITOR] 🔒 Quarantining ${corruptNodes.length} corrupt nodes (preserved for audit)...`);
             for (const { id, node } of corruptNodes) {
-                await this.quarantineNode(id, 'CORRUPT_DATA', node);
+                if (await this.quarantineNode(id, 'CORRUPT_DATA', node)) quarantineCount++;
             }
-            systemBus.emit(SystemProtocol.MEMORY_FLUSH, {
+            if (quarantineCount > 0) systemBus.emit(SystemProtocol.MEMORY_FLUSH, {
                 source: 'JANITOR',
-                details: `Quarantined ${corruptNodes.length} Corrupt MemoryNodes (preserved)`,
-                count: corruptNodes.length
+                details: `Quarantined ${quarantineCount} Corrupt MemoryNodes (preserved)`,
+                count: quarantineCount
             });
-            quarantineCount = corruptNodes.length;
         }
 
         if (scrubbedCount > 0) {
             console.log(`[JANITOR] 🧹 Scrubbed ${scrubbedCount} toxic memories.`);
             systemBus.emit(SystemProtocol.UI_REFRESH, { source: 'JANITOR', message: `Sanitized ${scrubbedCount} memories` });
-            continuum.forceSave();
         }
 
         // [PHASE 2] SEMANTIC CONTRADICTION DETECTION + LLM RESOLUTION
@@ -220,18 +268,24 @@ export class ContextJanitor {
                     console.warn(`   A: "${memA.content.substring(0, 60)}..."`);
                     console.warn(`   B: "${memB.content.substring(0, 60)}..."`);
 
+                    const beforePair = structuredClone([memA, memB]);
                     // Tag both as contradiction pair for review (PRESERVED, importance floor 0.3)
                     memA.tags = [...(memA.tags || []), 'CONTRADICTION_PAIR'];
                     memB.tags = [...(memB.tags || []), 'CONTRADICTION_PAIR'];
                     memA.importance = Math.max(0.3, memA.importance);
                     memB.importance = Math.max(0.3, memB.importance);
 
+                    const pairReceipt = await this.persistWorkingEdits(beforePair, [memA, memB]);
+                    // The audit is a review queue, not a persistence receipt.
+                    // Persisted WORKING IDs and unsupported owner IDs are explicit.
                     // Create audit entry and queue for LLM resolution
                     const auditEntry: ContradictionAuditEntry = {
                         timestamp: Date.now(),
                         memoryA: { id: memA.id, content: memA.content.substring(0, 200), importance: memA.importance },
                         memoryB: { id: memB.id, content: memB.content.substring(0, 200), importance: memB.importance },
                         resolution: 'FLAGGED_FOR_REVIEW',
+                        workingEditsSaved: pairReceipt.updated,
+                        persistentEditsUnresolved: pairReceipt.outsideWorking,
                         overlapWords: contradictionInfo.overlapWords,
                         contradictionType: contradictionInfo.type
                     };
@@ -256,7 +310,6 @@ export class ContextJanitor {
 
         if (foundCount > 0) {
             console.log(`[JANITOR] 🔍 Found ${foundCount} contradictions (queued for LLM resolution)`);
-            continuum.forceSave();
         }
 
         return foundCount;
@@ -290,6 +343,10 @@ export class ContextJanitor {
             const batch = this.resolutionQueue.splice(0, 3);
 
             for (const entry of batch) {
+                // A saved relative transformation is terminal for this queue.
+                // Even an accidental duplicate must not call providers or edit
+                // again merely because its later experience is unverified.
+                if (entry.memoryEditStatus === 'saved-working') continue;
                 try {
                     entry.resolution = 'LLM_ANALYZING';
 
@@ -358,22 +415,25 @@ Respond in JSON:
                     entry.resolvedAt = Date.now();
 
                     if (verdict.verdict === 'A_WINS' && verdict.confidence >= 0.7) {
-                        entry.resolution = 'RESOLVED';
-                        entry.winnerMemoryId = entry.memoryA.id;
                         // Boost winner, reduce (but keep) loser
                         await this.applyVerdictToMemories(entry.memoryA.id, entry.memoryB.id, verdict);
+                        entry.memoryEditStatus = 'saved-working';
+                        entry.resolution = 'RESOLVED';
+                        entry.winnerMemoryId = entry.memoryA.id;
                         console.log(`[JANITOR] ✅ Resolved: Memory A wins (${verdict.reasoning?.substring(0, 50)}...)`);
 
                     } else if (verdict.verdict === 'B_WINS' && verdict.confidence >= 0.7) {
+                        await this.applyVerdictToMemories(entry.memoryB.id, entry.memoryA.id, verdict);
+                        entry.memoryEditStatus = 'saved-working';
                         entry.resolution = 'RESOLVED';
                         entry.winnerMemoryId = entry.memoryB.id;
-                        await this.applyVerdictToMemories(entry.memoryB.id, entry.memoryA.id, verdict);
                         console.log(`[JANITOR] ✅ Resolved: Memory B wins (${verdict.reasoning?.substring(0, 50)}...)`);
 
                     } else if (verdict.verdict === 'BOTH_VALID_TEMPORAL') {
-                        entry.resolution = 'RESOLVED';
                         // Both keep importance, tagged as temporal evolution
                         await this.tagTemporalEvolution(entry.memoryA.id, entry.memoryB.id);
+                        entry.memoryEditStatus = 'saved-working';
+                        entry.resolution = 'RESOLVED';
                         console.log(`[JANITOR] 📅 Both valid (temporal): memories represent preference evolution`);
 
                     } else {
@@ -391,20 +451,37 @@ Respond in JSON:
                     }
 
                     // 5. Record as EXPERIENCE so the system learns from contradiction patterns
-                    await experienceBuffer.record({
-                        type: verdict.verdict === 'NEEDS_MORE_DATA' ? 'LEARNING' : 'SUCCESS',
-                        context: `Contradiction resolution: ${entry.contradictionType}`,
-                        action: `LLM analysis of contradictory memories`,
-                        outcome: `Verdict: ${verdict.verdict} (confidence: ${verdict.confidence}). ${verdict.reasoning?.substring(0, 100)}`,
-                        lesson: verdict.suggestedAction || `Pattern: ${entry.contradictionType} contradictions can be ${verdict.verdict}`,
-                        agentId: 'JANITOR'
-                    });
+                    entry.experienceRecord = { status: 'pending' };
+                    try {
+                        await experienceBuffer.record({
+                            type: verdict.verdict === 'NEEDS_MORE_DATA' ? 'LEARNING' : 'SUCCESS',
+                            context: `Contradiction resolution: ${entry.contradictionType}`,
+                            action: `LLM analysis of contradictory memories`,
+                            outcome: `Verdict: ${verdict.verdict} (confidence: ${verdict.confidence}). ${verdict.reasoning?.substring(0, 100)}`,
+                            lesson: verdict.suggestedAction || `Pattern: ${entry.contradictionType} contradictions can be ${verdict.verdict}`,
+                            agentId: 'JANITOR'
+                        });
+                        entry.experienceRecord = { status: 'confirmed' };
+                    } catch (error) {
+                        // record() can fail after writing but before verified
+                        // readback. Neither absent nor safe-to-retry is known.
+                        entry.experienceRecord = { status: 'unverified', error: 'EXPERIENCE_RECORD_UNVERIFIED' };
+                        console.warn('[JANITOR] Experience record unverified; preserving prior resolution without replay:', error);
+                    }
 
                 } catch (e) {
                     console.warn(`[JANITOR] Resolution failed for pair ${entry.memoryA.id} / ${entry.memoryB.id}:`, e);
+                    // A later failure cannot revoke an acknowledged memory
+                    // commit or requeue a non-idempotent transformation.
+                    if (entry.memoryEditStatus === 'saved-working') continue;
                     entry.resolution = 'NEEDS_MORE_DATA';
-                    // Re-queue for next cycle if it failed
-                    this.resolutionQueue.push(entry);
+                    entry.winnerMemoryId = undefined;
+                    entry.resolvedAt = undefined;
+                    entry.resolvedBy = undefined;
+                    // Do not repeat a relative boost/prefix after a partial
+                    // RAM commit whose disk save failed. Keep the unresolved
+                    // audit for review; the persistence owner retains failure.
+                    if (!(e instanceof Error && ['CONTINUUM_EDIT_COMMIT_FAILED', 'CONTINUUM_EDIT_OWNER_UNSUPPORTED'].includes(e.message))) this.resolutionQueue.push(entry);
                 }
             }
         } catch (e) {
@@ -422,10 +499,12 @@ Respond in JSON:
         try {
             const allNodes = await continuum.getAllNodes();
             const allMemories = Object.values(allNodes).flat() as unknown as MemoryNode[];
+            const before = structuredClone(allMemories);
 
             const winner = allMemories.find(m => m.id === winnerId);
             const loser = allMemories.find(m => m.id === loserId);
 
+            if (!winner || !loser) throw new Error('JANITOR_VERDICT_MEMORY_MISSING');
             if (winner) {
                 winner.importance = Math.min(1.0, winner.importance + 0.1); // Boost
                 winner.tags = [...(winner.tags || []).filter(t => t !== 'CONTRADICTION_PAIR'), 'CONTRADICTION_RESOLVED', 'CONTRADICTION_WINNER'];
@@ -438,9 +517,10 @@ Respond in JSON:
                 loser.content = `[DISPUTED - See winner: ${winnerId}] ${loser.content}`;
             }
 
-            continuum.forceSave();
+            await this.persistWorkingEdits(before, allMemories, true);
         } catch (e) {
             console.warn('[JANITOR] Failed to apply verdict to memories:', e);
+            throw e;
         }
     }
 
@@ -452,10 +532,12 @@ Respond in JSON:
         try {
             const allNodes = await continuum.getAllNodes();
             const allMemories = Object.values(allNodes).flat() as unknown as MemoryNode[];
+            const before = structuredClone(allMemories);
 
             const memA = allMemories.find(m => m.id === memIdA);
             const memB = allMemories.find(m => m.id === memIdB);
 
+            if (!memA || !memB) throw new Error('JANITOR_TEMPORAL_MEMORY_MISSING');
             if (memA) {
                 memA.tags = [...(memA.tags || []).filter(t => t !== 'CONTRADICTION_PAIR'), 'CONTRADICTION_RESOLVED', 'TEMPORAL_EVOLUTION'];
             }
@@ -463,9 +545,10 @@ Respond in JSON:
                 memB.tags = [...(memB.tags || []).filter(t => t !== 'CONTRADICTION_PAIR'), 'CONTRADICTION_RESOLVED', 'TEMPORAL_EVOLUTION'];
             }
 
-            continuum.forceSave();
+            await this.persistWorkingEdits(before, allMemories, true);
         } catch (e) {
             console.warn('[JANITOR] Failed to tag temporal evolution:', e);
+            throw e;
         }
     }
 

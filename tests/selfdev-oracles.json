@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "oracles": [
+    {
+      "target": "tests/automated/fase1-selfdev-gates.test.ts",
+      "oracleFiles": ["tests/automated/fase1-selfdev-gates.test.ts"],
+      "codeUnderTest": ["services/selfdev/gates.ts"]
+    }
+  ]
+}

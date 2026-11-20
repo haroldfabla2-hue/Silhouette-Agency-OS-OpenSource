@@ -1,0 +1,41 @@
+{
+  "bareUses": [
+    {
+      "dynamic": false,
+      "from": "services/ingestionService.ts",
+      "root": "uuid",
+      "specifier": "uuid"
+    }
+  ],
+  "compiler": "5.8.2",
+  "compilerHostNodeSha256": "2f822d544601dfff107f57d945b649d15c5bf6302595735a6bd9cdc7ee9669bd",
+  "compilerSha256": "795e49e46d497cc16e4b02916b50cbca257b4256d62cddc4cc504103f7961027",
+  "files": [
+    {
+      "emittedSha256": "b96560a8e9869b3a1f9c46de0f9a307255042dffa4a7dc82057186bebe7180e6",
+      "source": "services/ingestionService.ts",
+      "sourceSha256": "52e6bd8960029141fdfc63569ad38c6935271dc94b27dcf89062a29d5cbb03bd",
+      "target": "/app/services/ingestionService.js"
+    },
+    {
+      "emittedSha256": "dc26764631d05b7b0470a894d98d008d89f52af3bb9859184e4e38aa8a4d7cf1",
+      "source": "types.ts",
+      "sourceSha256": "e67f357e90ea6f5cfcf13415aff223805da0f18ba3176d2384dda441ab156598",
+      "target": "/app/types.js"
+    }
+  ],
+  "kind": "STATIC_SOURCE_EMISSION_NOT_PRODUCT_EVALUATION",
+  "omittedDynamic": [
+    {
+      "from": "services/ingestionService.ts",
+      "notMounted": true,
+      "target": "services/continuumMemory.ts"
+    },
+    {
+      "from": "services/ingestionService.ts",
+      "notMounted": true,
+      "target": "services/geminiService.ts"
+    }
+  ],
+  "packageLockSha256": "f8cad2766f4c9d32310625e8951a53f17355c94409424aeb917e6ad5c01e9512"
+}

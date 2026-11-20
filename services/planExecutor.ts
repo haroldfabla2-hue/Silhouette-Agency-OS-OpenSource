@@ -1,3 +1,6 @@
+import { withStepTimeout, getAbandonedStepsInFlight } from './execution/stepTimeout';
+export { noteStepTimedOut, clearAbandonedStep, getAbandonedStepsInFlight } from './execution/stepTimeout';
+import { createTaskEvidence, currentDataLabels, addDataLabels } from './execution/taskEvidence';
 /**
  * PLAN EXECUTOR SERVICE
  * 
@@ -23,7 +26,7 @@ import { SystemProtocol, CommunicationLevel, AgentStatus, AgentRoleType, AgentTi
 import { stepDeclaresFileWork, durableFileGrant } from './tools/toolSelection'; // [W3]
 import { evaluatePlanHonesty } from './execution/stepHonesty'; // [W3]
 import { collectWrittenArtifacts } from './execution/artifactLedger'; // [W3]
-import { recordPlanTasks, markTaskRunning, markTaskDone, closeOpenTasks, recordLateSettlement, getUnresolvedAbandonedTaskRows } from './execution/taskLedger'; // [PR-1] [PR-4c: closeOpenTasks] [LEDGER-INTEGRITY]
+import { recordPlanTasks, markTaskRunning, markTaskDone, closeOpenTasks, getUnresolvedAbandonedTaskRows } from './execution/taskLedger'; // [PR-1] [PR-4c: closeOpenTasks] [LEDGER-INTEGRITY]
 import { extractExecuteMarkers, normalizeToolName } from './tools/execMarker'; // [PR-I]
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -57,26 +60,6 @@ export interface StepResult {
 //      before any re-run. Explicit verifiable recovery for a never-
 //      settling step is therefore: restart the service, inspect the
 //      flagged row, re-run.
-interface AbandonedStep { planId: string; order: number; agentId: string; taskDescription: string; timedOutAt: number; }
-const abandonedInFlight = new Map<string, AbandonedStep>();
-const abandonedKey = (planId: string, order: number) => `${planId}:${order}`;
-
-export function noteStepTimedOut(planId: string, step: PlanStep): void {
-    abandonedInFlight.set(abandonedKey(planId, step.order), {
-        planId, order: step.order, agentId: step.agentId,
-        taskDescription: step.taskDescription ?? '', timedOutAt: Date.now()
-    });
-}
-
-export function clearAbandonedStep(planId: string, order: number): void {
-    abandonedInFlight.delete(abandonedKey(planId, order));
-}
-
-/** Abandoned steps of THIS process still awaiting settlement. */
-export function getAbandonedStepsInFlight(): AbandonedStep[] {
-    return Array.from(abandonedInFlight.values());
-}
-
 export interface PlanExecutionResult {
     planId: string;
     success: boolean;
@@ -101,6 +84,10 @@ class PlanExecutor {
      * Execute a plan respecting all homeostatic constraints
      */
     public async execute(plan: ExecutionPlan): Promise<PlanExecutionResult> {
+        return createTaskEvidence(plan.id).run(() => this.executeOwnedPlan(plan));
+    }
+
+    private async executeOwnedPlan(plan: ExecutionPlan): Promise<PlanExecutionResult> {
         console.log(`[PLAN_EXECUTOR] 🚀 Executing plan: ${plan.id} (${plan.steps.length} steps)`);
 
         const startTime = Date.now();
@@ -160,9 +147,14 @@ class PlanExecutor {
             }
 
             // 2. Execute the step with all homeostatic checks
+            const evidence = createTaskEvidence(`task_${plan.id}_${step.order}`, currentDataLabels());
             try {
                 markTaskRunning(plan.id, step); // [PR-1]
-                const result = await this.withStepTimeout(plan.id, step, this.executeStep(step, plan, results));
+                const work = evidence.run(() => this.executeStep(step, plan, results));
+                const result = await this.withStepTimeout(plan.id, step, work, evidence);
+                const executionEvidence = evidence.snapshot();
+                addDataLabels(executionEvidence.labels);
+                Object.assign(result, { executionEvidence });
                 markTaskDone(plan.id, step, result); // [PR-1]
                 results.set(step.order, result);
 
@@ -184,8 +176,10 @@ class PlanExecutor {
                     success: false,
                     tokensUsed: 0,
                     executionTimeMs: 0,
-                    error: e.message
+                    error: e.message,
+                    executionEvidence: evidence.snapshot()
                 };
+                addDataLabels(evidence.snapshot().labels);
                 markTaskDone(plan.id, step, failure); // [PR-1]
                 results.set(step.order, failure);
             }
@@ -264,47 +258,8 @@ class PlanExecutor {
     // honestly instead. Env-overridable; the 30min default is ~5x the
     // slowest observed legitimate step (382s). A timed-out step's
     // background promise is ignored when it eventually settles.
-    private withStepTimeout(planId: string, step: PlanStep, work: Promise<StepResult>): Promise<StepResult> {
-        const timeoutMs = Number(process.env.SILHOUETTE_STEP_TIMEOUT_MS ?? 30 * 60 * 1000);
-        let timer: NodeJS.Timeout | undefined;
-        let timedOut = false;
-        const timeout = new Promise<StepResult>((resolve) => {
-            timer = setTimeout(() => {
-                timedOut = true;
-                noteStepTimedOut(planId, step);
-                console.error(`[PLAN_EXECUTOR] Step ${step.order} timed out after ${timeoutMs}ms - failing honestly`);
-                resolve({
-                    stepOrder: step.order,
-                    agentId: step.agentId,
-                    output: '',
-                    success: false,
-                    tokensUsed: 0,
-                    executionTimeMs: timeoutMs,
-                    error: `step timeout after ${timeoutMs}ms`,
-                    abandonedInFlight: Date.now()
-                } as StepResult);
-            }, timeoutMs);
-            if (typeof timer.unref === 'function') timer.unref();
-        });
-        // [LEDGER-INTEGRITY] Containment is reconciliation, not cancellation:
-        // the step chain holds no abort handle, so when the abandoned work
-        // eventually settles, its outcome is RECORDED on the ledger row
-        // (lateSettlement) - late artifacts/writes stay visible for audit
-        // and for de-duplicating a re-run. Step side effects are confined
-        // to the audited jailed write roots and the memory pipeline;
-        // world-exiting actions are unreachable from a step.
-        work.then(late => {
-            if (!timedOut) return;
-            clearAbandonedStep(planId, step.order);
-            console.warn(`[PLAN_EXECUTOR] Timed-out step ${step.order} of ${planId} settled late (success=${late?.success}) - reconciling ledger row`);
-            recordLateSettlement(planId, step.order, late);
-        }).catch((e: any) => {
-            if (!timedOut) return;
-            clearAbandonedStep(planId, step.order);
-            console.warn(`[PLAN_EXECUTOR] Timed-out step ${step.order} of ${planId} rejected late: ${e?.message}`);
-            recordLateSettlement(planId, step.order, { stepOrder: step.order, success: false, error: `late rejection: ${e?.message}` });
-        });
-        return Promise.race([work, timeout]).finally(() => { if (timer) clearTimeout(timer); });
+    private withStepTimeout(planId: string, step: PlanStep, work: Promise<StepResult>, evidence?: ReturnType<typeof createTaskEvidence>): Promise<StepResult> {
+        return withStepTimeout(planId, step, work, evidence);
     }
 
     private async executeStep(
