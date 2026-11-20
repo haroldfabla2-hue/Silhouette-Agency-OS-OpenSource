@@ -17,10 +17,14 @@ export function readProducerSafetyReceipts(value: unknown): ProducerSafetyReceip
         if (!record(n)) throw new Error('NARRATIVE_RECEIPT_INVALID');
         if (n.stopFailed === true) out.narrative = { stopFailed: true, error: 'stop-failed', remainingItems: 0, workStillOwned: true };
         else {
-            if (!(n.error === null || typeof n.error === 'string') || typeof n.remainingItems !== 'number'
-                || !Number.isInteger(n.remainingItems) || n.remainingItems < 0
+            // Narrow through locals: indexed access on Record<string, unknown>
+            // does not narrow across the compound guard for object literals.
+            const error = n.error;
+            const remainingItems = n.remainingItems;
+            if (!(error === null || typeof error === 'string') || typeof remainingItems !== 'number'
+                || !Number.isInteger(remainingItems) || remainingItems < 0
                 || ('workStillOwned' in n && typeof n.workStillOwned !== 'boolean')) throw new Error('NARRATIVE_RECEIPT_INVALID');
-            out.narrative = { stopFailed: false, error: n.error, remainingItems: n.remainingItems, workStillOwned: n.workStillOwned === true };
+            out.narrative = { stopFailed: false, error, remainingItems, workStillOwned: n.workStillOwned === true };
         }
     }
     if ('arbiter' in value) {
