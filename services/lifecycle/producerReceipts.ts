@@ -1,5 +1,9 @@
 // Shared safety view over actual registered-owner receipts. No producer imports.
+export type ContinuumPersistenceReceipt =
+    | { status: 'saved'; stopFailed: false; error: null }
+    | { status: 'failed'; stopFailed: true; error: string };
 export type ProducerSafetyReceipts = {
+    continuum?: ContinuumPersistenceReceipt;
     narrative?: { stopFailed: boolean; error: string | null; remainingItems: number; workStillOwned: boolean };
     arbiter?: { stopFailed: boolean; boundExhausted: boolean };
     // Discriminated union: a clean stop MUST carry the validated timer fact; a
@@ -12,7 +16,7 @@ const record = (value: unknown): value is Record<string, unknown> => typeof valu
 const nullableString = (value: unknown): value is string | null => value === null || typeof value === 'string';
 const nonNegativeInt = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0;
 export function readProducerSafetyReceipts(value: unknown): ProducerSafetyReceipts {
-    if (!record(value) || Object.keys(value).some(key => !['narrative', 'arbiter', 'power'].includes(key))) throw new Error('PRODUCER_RECEIPTS_INVALID');
+    if (!record(value) || Object.keys(value).some(key => !['narrative', 'arbiter', 'power', 'continuum'].includes(key))) throw new Error('PRODUCER_RECEIPTS_INVALID');
     const out: ProducerSafetyReceipts = {};
     if ('narrative' in value) {
         const n = value.narrative;
@@ -49,6 +53,15 @@ export function readProducerSafetyReceipts(value: unknown): ProducerSafetyReceip
             if (('stopFailed' in p && p.stopFailed !== false) || typeof p.intervalWasArmed !== 'boolean') throw new Error('POWER_RECEIPT_INVALID');
             out.power = { stopFailed: false, intervalWasArmed: p.intervalWasArmed };
         }
+    }
+    if ('continuum' in value) {
+        const c = value.continuum;
+        if (!record(c)) throw new Error('CONTINUUM_RECEIPT_INVALID');
+        if (c.status === 'saved' && c.stopFailed === false && c.error === null) {
+            out.continuum = {status: 'saved', stopFailed: false, error: null};
+        } else if (c.status === 'failed' && c.stopFailed === true && typeof c.error === 'string' && c.error.length > 0) {
+            out.continuum = {status: 'failed', stopFailed: true, error: c.error};
+        } else throw new Error('CONTINUUM_RECEIPT_INVALID');
     }
     return out;
 }

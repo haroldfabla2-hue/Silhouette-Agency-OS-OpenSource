@@ -7,8 +7,10 @@
 // import graph (e.g. connectionNervousSystem heartbeat via server boot
 // loaders) keep their own contracts, so Desktop must NOT interpret success
 // as all background writers stopped.
+import type { ContinuumPersistenceReceipt } from '../services/lifecycle/producerReceipts';
 import { drainOwnedProducers } from '../services/lifecycle/ownedProducers';
 export type DrainProducerReceipts = {
+    continuum?: ContinuumPersistenceReceipt;
     narrative?: { intervalWasArmed: boolean; inFlightAwaited: boolean; pendingPreserved: number; remainingItems: number; error: string | null; boundExhausted?: boolean; workStillOwned?: boolean; deferredUnacknowledged?: boolean; refusedLate?: number; admissionFailures?: number; destination: string; directorySynced: boolean; stopFailed?: boolean };
     arbiter?: { intervalWasArmed: boolean; drainedRounds: number; remainingQueue: number; activeAdmissions: number; activeQueueRuns: number; boundExhausted: boolean; stopFailed?: boolean };
     power?: { intervalWasArmed: boolean; stopFailed?: boolean };
@@ -40,8 +42,9 @@ export async function drainCurrentBackend(): Promise<boolean> {
     const n = producerReceipts.narrative;
     const a = producerReceipts.arbiter;
     const p = producerReceipts.power;
+    const c = producerReceipts.continuum;
     if (n?.stopFailed || (n && (n.error !== null || n.remainingItems > 0))
-        || a?.stopFailed || a?.boundExhausted || p?.stopFailed) {
+        || a?.stopFailed || a?.boundExhausted || p?.stopFailed || c?.stopFailed) {
         shutdownFailed = true;
         console.error('[SHUTDOWN] Producer preservation failed; do not claim clean persistence');
         // Never close backing stores under unresolved producer work. The

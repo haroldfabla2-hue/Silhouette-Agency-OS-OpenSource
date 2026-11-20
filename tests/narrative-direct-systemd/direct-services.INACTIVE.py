@@ -10,8 +10,9 @@ CONFIG_ID='sha256:9b7d1917ba3e5d20c83a01e3345bb78430b5e6c99030098a944b64f1b90053
 MANIFEST_SHA='debf0c3eb2dab9fb902e6c65e5dbcc1cb27276f21e33053ae187de2d84790041'
 ENTRY_SHA='1910f6e4cd873fe4ef1d2fabfac03331642c16fdc7c03e38fc8af0be52ccfb9f'
 GUARD_SHA='50d21436e62b0ae62619b1396013298f4e1134ae2c293a207382978501e3f694'
-DERIVED_MANIFEST_SHA='f576336c1f7e2796f4d7263ee7adf80e47edee446e123ac7d994844605a62b5c'
-DIAGNOSTIC_FILES={'entry.DIAGNOSTIC.INACTIVE.mjs': '713e459ccddca9fa10ee8317bd876f43331c063fa106b5434bee25d7ae64715c', 'phase-observer.INACTIVE.mjs': '47e16a675cf67c6d1e03cf411924d79f8750401a31d7bb08f5374efba9d45cbc', 'diagnostic-source-table.json': '09bbd181e0bcdc8ce719b6e3813b7ef72d481bb99308e0dbe86fa9084ec96315', 'diagnostic-projection.INACTIVE.py': '2860cfde59d892e444c13a08ea274bf559dd17cb0700179199d64cc2d8c17864', 'diagnostic-targets.json': '85e13cb79d467b184ef16ec760a698cb30dcb29ca860b5424c90103095a1a9ff'}
+DERIVED_MANIFEST_SHA='e6c541ab4563294a9bfe5228e6df2fdb80df99a0937df0ebf468160d7171d449'
+CONCURRENCY_OVERLAY_SHA='30c866f6713e88d7838bd785ba2b121cae54f5635375ace0de99f81c34a949a0'
+DIAGNOSTIC_FILES={'entry.DIAGNOSTIC.INACTIVE.mjs': '713e459ccddca9fa10ee8317bd876f43331c063fa106b5434bee25d7ae64715c', 'phase-observer.INACTIVE.mjs': '47e16a675cf67c6d1e03cf411924d79f8750401a31d7bb08f5374efba9d45cbc', 'diagnostic-source-table.json': 'b7b449a87290cf81ff59267f6fd19e57174b8a7277b96db4ac7b1a6d16660348', 'diagnostic-projection.INACTIVE.py': '2860cfde59d892e444c13a08ea274bf559dd17cb0700179199d64cc2d8c17864', 'diagnostic-targets.json': '655a59122add60d1a4f32fe3b1f6329af5eb968efc87c7e8ab11ca55dcf4d6c1'}
 CONTEXT_SHA='9f2ca63ac485694eb25815be0206e4ba99ad6184a4116217b4807cbc9d2165ea'
 
 
@@ -81,10 +82,20 @@ def extract_reviewed(archive,manifest,guard,derived_manifest,destination):
     addition=source/'ingestionService.EMITTED.js'
     need(digest(addition)=='b96560a8e9869b3a1f9c46de0f9a307255042dffa4a7dc82057186bebe7180e6','PUBLIC_TARGET_ADDITION_PIN')
     (root/'app/services/ingestionService.js').write_bytes(addition.read_bytes())
+    overlay_path=source/'CONCURRENCY-OVERLAY.json'
+    need(digest(overlay_path)==CONCURRENCY_OVERLAY_SHA,'CONCURRENCY_OVERLAY_PIN')
+    overlay=json.loads(overlay_path.read_text())
+    for item in overlay['rows']:
+        payload=source/item['file']
+        need(digest(payload)==item['sha256'] and payload.stat().st_size==item['bytes'],'CONCURRENCY_MODULE_PIN')
+        target=root/item['target'].lstrip('/')
+        target.parent.mkdir(mode=0o755,parents=True,exist_ok=True)
+        target.write_bytes(payload.read_bytes())
     before_by_path={r['target']:r for r in rows};after_by_path={r['target']:r for r in derived}
-    need(len(derived)==len(rows)+4 and len(after_by_path)==len(derived),'DERIVED_FILE_COUNT')
+    need(len(derived)==len(rows)+5 and len(after_by_path)==len(derived),'DERIVED_FILE_COUNT')
     changed={'/app/native-selection-guard.cjs','/app/entry.INACTIVE.mjs','/app/phase-observer.INACTIVE.mjs','/app/diagnostic-source-table.json','/app/diagnostic-targets.json','/app/services/ingestionService.js'}
-    need(set(after_by_path)==set(before_by_path)|{'/app/phase-observer.INACTIVE.mjs','/app/diagnostic-source-table.json','/app/diagnostic-targets.json','/app/services/ingestionService.js'},'DERIVED_PATH_SET')
+    changed.update(item['target'] for item in overlay['rows'])
+    need(set(after_by_path)==set(before_by_path)|{'/app/phase-observer.INACTIVE.mjs','/app/diagnostic-source-table.json','/app/diagnostic-targets.json','/app/services/ingestionService.js','/app/services/lifecycle/producerReceipts.js'},'DERIVED_PATH_SET')
     for path,row in after_by_path.items():
         if path not in changed:need(row==before_by_path[path],'UNEXPECTED_PRODUCT_DELTA')
         file=root/path.lstrip('/')
@@ -227,7 +238,7 @@ def real_phase(unit,root,work,tmp,log,mode,receipt,result):
 def run(*,archive,manifest,guard,derived_manifest,context_module,expected_context,receipt):
     """Review only. Context authorization and exact event remain separate."""
     result={'kind':'DIRECT_REAL_NARRATIVE_SYSTEMD','stage':'CONTEXT','result':'UNKNOWN','productAttempted':False,'forcedCleanup':False,
-            'phases':[],'diagnosticSamples':[],'logCollection':{},'unitStates':[],'ownedUnits':[],'allSilhouetteValidated':False,
+            'phases':[],'rawSnapshotObservations':[],'diagnosticSamples':[],'logCollection':{},'unitStates':[],'ownedUnits':[],'allSilhouetteValidated':False,
             'pipeEOFObserved':False,'scope':'Narrative-raw-system-events-only-not-full-app-or-crash-durability'}
     receipt=Path(receipt);base=Path('/tmp')/('narrative-direct-'+secrets.token_hex(8));mounted=[]
     try:
@@ -265,8 +276,20 @@ def run(*,archive,manifest,guard,derived_manifest,context_module,expected_contex
             # Observe the stable product snapshot only after natural unit exit.
             snapshot=(work/'data/memory_snapshot.json').read_bytes()
             need(len(snapshot)<=1048576,'RAW_MEMORY_SNAPSHOT_BOUND')
-            selected=select_raw_memory(json.loads(snapshot))
+            parsed=json.loads(snapshot)
             expected_raw=json.loads((work/'raw-system-event-oracle.json').read_text())
+            working=parsed.get('working') if isinstance(parsed,dict) else None
+            raw_nodes=[n for n in working if isinstance(n,dict) and isinstance(n.get('tags'),list) and
+                all(isinstance(t,str) for t in n['tags']) and {'NARRATIVE','RAW_SYSTEM_EVENT','source:SYSTEM'}<=set(n['tags'])] if isinstance(working,list) else []
+            # Read-only, bounded closed projection, persisted BEFORE unchanged
+            # terminal assertions can reject. No values or IDs are exported.
+            result['rawSnapshotObservations'].append({'mode':mode,'workingArray':isinstance(working,list),
+                'rawCountBounded':min(len(raw_nodes),1001),'countOverflow':len(raw_nodes)>1000,
+                'snapshotSha256':hashlib.sha256(snapshot).hexdigest(),
+                'expectedAllPresent':isinstance(expected_raw,list) and all(n in raw_nodes for n in expected_raw),
+                'exactExpectedMultiset':isinstance(expected_raw,list) and len(raw_nodes)==len(expected_raw) and all(raw_nodes.count(n)==expected_raw.count(n) for n in raw_nodes)})
+            durable(receipt,result)
+            selected=select_raw_memory(parsed)
             need(selected==expected_raw,'RAW_MEMORY_STABLE_SNAPSHOT_MISMATCH')
             raw_identity=(json.dumps(selected,sort_keys=True,separators=(',',':'))+'\n').encode()
             if mode=='write':raw_original=raw_identity

@@ -42,6 +42,7 @@ export class EurekaService {
         // 1. WORKING Memory (RAM) - Immediate context, recent conversations
         try {
             const { continuum } = await import('./continuumMemory');
+            await continuum.ready();
             const workingNodes = continuum.getVolatileState();
             // Filter to only include meaningful nodes (not system noise)
             const meaningfulWorking = workingNodes.filter(n =>

@@ -364,7 +364,8 @@ class ContextAssembler {
         // [PA-041] Build prioritized context items
         // Note: We fetch history separately? Or is it fast enough? 
         // continuum.getSessionHistory is usually DB access. Let's make it parallel too preferably, but for now linear is ok as it's key.
-        const chatHistoryData = await this.formatHistory(await continuum.getSessionHistory(1000));
+        await continuum.ready();
+        const chatHistoryData = await this.formatHistory(continuum.getSessionHistory(1000));
 
         const prioritizedItems: PrioritizedContextItem[] = this.buildPrioritizedItems(
             {

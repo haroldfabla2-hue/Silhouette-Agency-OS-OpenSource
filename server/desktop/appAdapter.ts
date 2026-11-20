@@ -127,8 +127,9 @@ export function prepareActualAppAdapter(selection: unknown, trustedSelectionDige
                         const n = receipts.narrative;
                         const a = receipts.arbiter;
                         const p = receipts.power;
+                        const c = receipts.continuum;
                         if (n?.stopFailed || (n && (n.error !== null || n.remainingItems > 0 || n.workStillOwned))
-                            || a?.stopFailed || a?.boundExhausted || p?.stopFailed) {
+                            || a?.stopFailed || a?.boundExhausted || p?.stopFailed || c?.stopFailed) {
                             work.fault('final-producers', 'preservation-failed');
                             throw new Error('DESKTOP_REGISTERED_PRODUCERS_UNRESOLVED');
                         }

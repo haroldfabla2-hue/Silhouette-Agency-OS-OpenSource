@@ -41,6 +41,16 @@ def project(value,depth=0):
      result.append(row)
     except Exception:result.append({'state':'REJECTED'})
    out[k]=result
+  elif k=='rawSnapshotObservations' and isinstance(v,list):
+   rows=[]
+   for item in v[:2]:
+    assert isinstance(item,dict) and set(item)=={'mode','workingArray','rawCountBounded','countOverflow','snapshotSha256','expectedAllPresent','exactExpectedMultiset'}
+    assert item['mode'] in {'write','read'}
+    assert type(item['rawCountBounded'])is int and 0<=item['rawCountBounded']<=1001
+    assert all(type(item[x])is bool for x in ('workingArray','countOverflow','expectedAllPresent','exactExpectedMultiset'))
+    assert isinstance(item['snapshotSha256'],str) and re.fullmatch('[a-f0-9]{64}',item['snapshotSha256'])
+    rows.append(item)
+   out[k]=rows
   elif k=='unitStates' and isinstance(v,list):out[k]=[state(x) for x in v[:4] if isinstance(x,dict)]
   elif k in {'lastUnitState','cleanupBeforeStopState','cleanupAfterStopState'} and isinstance(v,dict):out[k]=state(v)
  return out

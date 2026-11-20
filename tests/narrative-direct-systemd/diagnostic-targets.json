@@ -143,11 +143,11 @@
     },
     {
       "path": "/app/services/contextAssembler.js",
-      "sha256": "fd137ffea6509af288a80ea20692c75fea84e2245e59ad3b9b69b908a459543b"
+      "sha256": "461930cb0b249d7772ddd0978c1c06bfa43b45b3d10b4748a38f15679978aec8"
     },
     {
       "path": "/app/services/contextJanitor.js",
-      "sha256": "738ae4549dbefedda093ab64d5f5305d49725a7b266567d368fcc0c1bfdb56f2"
+      "sha256": "0c9ad37342cd187d2775cc27e4dfdbc51dac4ea3e01505f342a26e055fa4a08c"
     },
     {
       "path": "/app/services/contextResolver.js",
@@ -155,7 +155,7 @@
     },
     {
       "path": "/app/services/continuumMemory.js",
-      "sha256": "80d710f62e00dcdbabc589c4a3a560bbbdf3e263c491d52d8464ae5eb0eee2f7"
+      "sha256": "12ee56544bca148d28449f6b071000d8d2fed5664bd569b8271cbdb0ccd8cb99"
     },
     {
       "path": "/app/services/costEstimator.js",
@@ -231,7 +231,7 @@
     },
     {
       "path": "/app/services/lifecycle/ownedProducers.js",
-      "sha256": "ad69fdef5ac993bbf6dec98e59b2cd0078636877977cce88cfe610629cede944"
+      "sha256": "019f28ec2d3d38678009e0d3b2dfa96c92304cc661812d433baf000c23b89c19"
     },
     {
       "path": "/app/services/llm/agentInferenceRouter.js",
@@ -491,7 +491,7 @@
     },
     {
       "path": "/app/services/workflowEngine.js",
-      "sha256": "ec67de98caca5cf6eed71708a874bb8df46b18f55235ef87aebee904a6cba88e"
+      "sha256": "2db4adc6c26728bee7323905b711ea17e2cfcf6d5db012032b44521ea41a0829"
     },
     {
       "path": "/app/types.js",
@@ -504,6 +504,10 @@
     {
       "path": "/app/utils/api.js",
       "sha256": "acb8a5254817ad961768b87d58e39bf99b4d6de4e1ab90a3e4ab45cf225f9bc2"
+    },
+    {
+      "path": "/app/services/lifecycle/producerReceipts.js",
+      "sha256": "78f8f0db092650de039a162fce455a5108f24d57d799d3c751f87710a60d8e08"
     }
   ],
   "targets": [
@@ -936,6 +940,26 @@
       "path": "/app/types.js",
       "presentInPayload": true,
       "targetId": "T085"
+    },
+    {
+      "path": "/app/services/contextJanitor.js",
+      "targetId": "T086",
+      "presentInPayload": true
+    },
+    {
+      "path": "/app/services/lifecycle/ownedProducers.js",
+      "targetId": "T087",
+      "presentInPayload": true
+    },
+    {
+      "path": "/app/services/lifecycle/producerReceipts.js",
+      "targetId": "T088",
+      "presentInPayload": true
+    },
+    {
+      "path": "/app/services/workflowEngine.js",
+      "targetId": "T089",
+      "presentInPayload": true
     }
   ]
 }

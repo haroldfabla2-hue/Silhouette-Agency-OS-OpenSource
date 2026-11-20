@@ -1,0 +1,12 @@
+[
+  "server/currentBackendDrain.ts",
+  "server/desktop/appAdapter.ts",
+  "server/routes/v1/memory.routes.ts",
+  "services/contextAssembler.ts",
+  "services/contextJanitor.ts",
+  "services/continuumMemory.ts",
+  "services/eurekaService.ts",
+  "services/lifecycle/ownedProducers.ts",
+  "services/lifecycle/producerReceipts.ts",
+  "services/workflowEngine.ts"
+]

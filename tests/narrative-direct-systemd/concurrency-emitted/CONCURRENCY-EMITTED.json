@@ -1,0 +1,304 @@
+{
+  "kind": "STATIC_SOURCE_EMISSION_NOT_PRODUCT_EVALUATION",
+  "compiler": "5.8.2",
+  "compilerSha256": "795e49e46d497cc16e4b02916b50cbca257b4256d62cddc4cc504103f7961027",
+  "compilerHostNodeSha256": "2f822d544601dfff107f57d945b649d15c5bf6302595735a6bd9cdc7ee9669bd",
+  "packageLockSha256": "f8cad2766f4c9d32310625e8951a53f17355c94409424aeb917e6ad5c01e9512",
+  "files": [
+    {
+      "source": "server/currentBackendDrain.ts",
+      "sourceSha256": "4ac53b4ea683abe6a887466711d4d8f3cfafb11f7fbfa72a6d58cd57728df710",
+      "target": "/app/server/currentBackendDrain.js",
+      "emittedSha256": "26714a823f80065e922613e66461cec82e3589b0d21d5e7e4220f6fea97ec49f"
+    },
+    {
+      "source": "server/desktop/appAdapter.ts",
+      "sourceSha256": "0c757957ccfdb17853df678a9d428b61b23dbe7425558881146b27f6517bc462",
+      "target": "/app/server/desktop/appAdapter.js",
+      "emittedSha256": "2de36fb00c0f946efaaf81ed831efd204e2156b29ac04215d8d0b281085870f0"
+    },
+    {
+      "source": "server/routes/v1/memory.routes.ts",
+      "sourceSha256": "b5dd5f56453c08a5c92d95bd401162b49e4fbf82b1b9c2832e41ef1d07dd93a0",
+      "target": "/app/server/routes/v1/memory.routes.js",
+      "emittedSha256": "03979d3c33a7c1f62edf4af9cbad030a6a82e1362ba12d504479b160b596c392"
+    },
+    {
+      "source": "services/contextAssembler.ts",
+      "sourceSha256": "019624237f6c633175244eb5127be2aa28d1d07d7715fec7a4174750a1a30d9d",
+      "target": "/app/services/contextAssembler.js",
+      "emittedSha256": "461930cb0b249d7772ddd0978c1c06bfa43b45b3d10b4748a38f15679978aec8"
+    },
+    {
+      "source": "services/contextJanitor.ts",
+      "sourceSha256": "4d9fe4550b3e692f85ab5d3d71a02d488c879289ce82a7a409ef01a5c45acc80",
+      "target": "/app/services/contextJanitor.js",
+      "emittedSha256": "0c9ad37342cd187d2775cc27e4dfdbc51dac4ea3e01505f342a26e055fa4a08c"
+    },
+    {
+      "source": "services/continuumMemory.ts",
+      "sourceSha256": "dd2b226932dbb6ea9a76b6660cddafdcc20cede381c90ba779566a7b590d3b35",
+      "target": "/app/services/continuumMemory.js",
+      "emittedSha256": "12ee56544bca148d28449f6b071000d8d2fed5664bd569b8271cbdb0ccd8cb99"
+    },
+    {
+      "source": "services/eurekaService.ts",
+      "sourceSha256": "e216264c353f248022fdc4ebd193f75ad2abb4b8d3532e8731196f97e91d1238",
+      "target": "/app/services/eurekaService.js",
+      "emittedSha256": "a1dd7a3bf9e67170f31d399c8d5b8270f42bf38d04e450d1c00b3a854d395112"
+    },
+    {
+      "source": "services/lifecycle/ownedProducers.ts",
+      "sourceSha256": "6c2c0e60578008175d5cde990fb6b173d718809355703853a9f3530740deb2be",
+      "target": "/app/services/lifecycle/ownedProducers.js",
+      "emittedSha256": "019f28ec2d3d38678009e0d3b2dfa96c92304cc661812d433baf000c23b89c19"
+    },
+    {
+      "source": "services/lifecycle/producerReceipts.ts",
+      "sourceSha256": "74db51fb0cac33d42543da6d0105f62d833c3378e4bc689b212bba2a8cb938ba",
+      "target": "/app/services/lifecycle/producerReceipts.js",
+      "emittedSha256": "78f8f0db092650de039a162fce455a5108f24d57d799d3c751f87710a60d8e08"
+    },
+    {
+      "source": "services/workflowEngine.ts",
+      "sourceSha256": "826e90059110c6d1ded02b150fc64460b78ebd17527ebc597e61fc81dfad9f7a",
+      "target": "/app/services/workflowEngine.js",
+      "emittedSha256": "2db4adc6c26728bee7323905b711ea17e2cfcf6d5db012032b44521ea41a0829"
+    }
+  ],
+  "bareUses": [
+    {
+      "from": "server/routes/v1/memory.routes.ts",
+      "specifier": "express",
+      "root": "express",
+      "dynamic": false
+    }
+  ],
+  "omittedDynamic": [
+    {
+      "from": "server/currentBackendDrain.ts",
+      "target": "services/curiosityService.ts",
+      "notMounted": true
+    },
+    {
+      "from": "server/currentBackendDrain.ts",
+      "target": "services/memory/continuousMemory.ts",
+      "notMounted": true
+    },
+    {
+      "from": "server/currentBackendDrain.ts",
+      "target": "server/gateway/index.ts",
+      "notMounted": true
+    },
+    {
+      "from": "server/currentBackendDrain.ts",
+      "target": "services/redisClient.ts",
+      "notMounted": true
+    },
+    {
+      "from": "server/currentBackendDrain.ts",
+      "target": "services/graphService.ts",
+      "notMounted": true
+    },
+    {
+      "from": "server/currentBackendDrain.ts",
+      "target": "services/sqliteService.ts",
+      "notMounted": true
+    },
+    {
+      "from": "server/currentBackendDrain.ts",
+      "target": "services/daemon/unifiedDaemon.ts",
+      "notMounted": true
+    },
+    {
+      "from": "server/desktop/appAdapter.ts",
+      "target": "services/narrativeService.ts",
+      "notMounted": true
+    },
+    {
+      "from": "server/desktop/appAdapter.ts",
+      "target": "server/app.ts",
+      "notMounted": true
+    },
+    {
+      "from": "server/desktop/appAdapter.ts",
+      "target": "server/backendServices.ts",
+      "notMounted": true
+    },
+    {
+      "from": "server/desktop/appAdapter.ts",
+      "target": "services/identityService.ts",
+      "notMounted": true
+    },
+    {
+      "from": "server/desktop/appAdapter.ts",
+      "target": "services/sqliteService.ts",
+      "notMounted": true
+    },
+    {
+      "from": "server/routes/v1/memory.routes.ts",
+      "target": "services/minimaxService.ts",
+      "notMounted": true
+    },
+    {
+      "from": "server/routes/v1/memory.routes.ts",
+      "target": "services/geminiService.ts",
+      "notMounted": true
+    },
+    {
+      "from": "server/routes/v1/memory.routes.ts",
+      "target": "services/memory/factRepository.ts",
+      "notMounted": true
+    },
+    {
+      "from": "server/routes/v1/memory.routes.ts",
+      "target": "services/experienceBuffer.ts",
+      "notMounted": true
+    },
+    {
+      "from": "server/routes/v1/memory.routes.ts",
+      "target": "services/feedbackService.ts",
+      "notMounted": true
+    },
+    {
+      "from": "server/routes/v1/memory.routes.ts",
+      "target": "services/feedbackService.ts",
+      "notMounted": true
+    },
+    {
+      "from": "services/contextJanitor.ts",
+      "target": "services/geminiService.ts",
+      "notMounted": true
+    },
+    {
+      "from": "services/contextJanitor.ts",
+      "target": "services/experienceBuffer.ts",
+      "notMounted": true
+    },
+    {
+      "from": "services/continuumMemory.ts",
+      "target": "services/incidentRegistry.ts",
+      "notMounted": true
+    },
+    {
+      "from": "services/continuumMemory.ts",
+      "target": "services/incidentRegistry.ts",
+      "notMounted": true
+    },
+    {
+      "from": "services/continuumMemory.ts",
+      "target": "services/vectorMemoryService.ts",
+      "notMounted": true
+    },
+    {
+      "from": "services/continuumMemory.ts",
+      "target": "services/ingestionService.ts",
+      "notMounted": true
+    },
+    {
+      "from": "services/continuumMemory.ts",
+      "target": "services/geminiService.ts",
+      "notMounted": true
+    },
+    {
+      "from": "services/continuumMemory.ts",
+      "target": "services/vectorMemoryService.ts",
+      "notMounted": true
+    },
+    {
+      "from": "services/continuumMemory.ts",
+      "target": "services/dreamerService.ts",
+      "notMounted": true
+    },
+    {
+      "from": "services/continuumMemory.ts",
+      "target": "services/brain/index.ts",
+      "notMounted": true
+    },
+    {
+      "from": "services/continuumMemory.ts",
+      "target": "services/memoryCognition.ts",
+      "notMounted": true
+    },
+    {
+      "from": "services/continuumMemory.ts",
+      "target": "services/memory/valueRanking.ts",
+      "notMounted": true
+    },
+    {
+      "from": "services/continuumMemory.ts",
+      "target": "services/vectorMemoryService.ts",
+      "notMounted": true
+    },
+    {
+      "from": "services/continuumMemory.ts",
+      "target": "services/dreamerService.ts",
+      "notMounted": true
+    },
+    {
+      "from": "services/continuumMemory.ts",
+      "target": "services/dreamerService.ts",
+      "notMounted": true
+    },
+    {
+      "from": "services/continuumMemory.ts",
+      "target": "services/vectorMemoryService.ts",
+      "notMounted": true
+    },
+    {
+      "from": "services/continuumMemory.ts",
+      "target": "services/vectorMemoryService.ts",
+      "notMounted": true
+    },
+    {
+      "from": "services/continuumMemory.ts",
+      "target": "services/vectorMemoryService.ts",
+      "notMounted": true
+    },
+    {
+      "from": "services/continuumMemory.ts",
+      "target": "services/geminiService.ts",
+      "notMounted": true
+    },
+    {
+      "from": "services/continuumMemory.ts",
+      "target": "services/incidentRegistry.ts",
+      "notMounted": true
+    },
+    {
+      "from": "services/continuumMemory.ts",
+      "target": "services/geminiService.ts",
+      "notMounted": true
+    },
+    {
+      "from": "services/workflowEngine.ts",
+      "target": "services/planGenerator.ts",
+      "notMounted": true
+    },
+    {
+      "from": "services/workflowEngine.ts",
+      "target": "services/planExecutor.ts",
+      "notMounted": true
+    },
+    {
+      "from": "services/workflowEngine.ts",
+      "target": "services/execution/missionGate.ts",
+      "notMounted": true
+    },
+    {
+      "from": "services/workflowEngine.ts",
+      "target": "services/skills/creativeDirectorSkill.ts",
+      "notMounted": true
+    },
+    {
+      "from": "services/workflowEngine.ts",
+      "target": "services/skills/creativeDirectorSkill.ts",
+      "notMounted": true
+    },
+    {
+      "from": "services/workflowEngine.ts",
+      "target": "services/skills/creativeDirectorSkill.ts",
+      "notMounted": true
+    }
+  ]
+}

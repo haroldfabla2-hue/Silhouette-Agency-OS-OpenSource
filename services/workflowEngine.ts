@@ -666,6 +666,7 @@ class WorkflowEngine {
     let input = seededInput;
     if (!input) {
       // REAL DATA: Fetch latest user input from Volatile Memory (RAM)
+      await continuum.ready();
       const volatile = continuum.getVolatileState();
       // find last node with tag 'user-input'
       const lastUserNode = volatile.reverse().find(n => n.tags.includes('user-input'));
