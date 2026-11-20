@@ -1,6 +1,6 @@
 {
-  "derivedRootfsManifestSha256": "dae488fb3fceafabfd3d3a2462b923a90eaa12a0e782c5559596a4077ef7a03d",
-  "instrumentationChangeOnly": "absolute-pinned-executable-identity-not-proc-observation",
+  "derivedRootfsManifestSha256": "2dfe27c5bbf8ffaf54891d0f04af78c9cb3f209c998acafe093a7b79505a5830",
+  "instrumentationChangeOnly": "absolute-pinned-native-identity-and-structured-failure-observer-oracle-unchanged",
   "kind": "DIRECT_SYSTEMD_DERIVED_PREPARATION",
   "originalArchiveIsNotDerivedRootIdentity": true,
   "originalArchiveSha256": "119565c089bfc576ee9a96c5c785dba4eebdcdce9117c63ea3d3a41c4ab52e39",
@@ -9,9 +9,13 @@
   "productEvaluated": false,
   "runtimeValidated": false,
   "sourceControls": {
-    "DIRECT-SYSTEMD-ROOTFS.json": "dae488fb3fceafabfd3d3a2462b923a90eaa12a0e782c5559596a4077ef7a03d",
-    "direct-services.INACTIVE.py": "c260f4210338a2ac8949c0a8318a4e219e89e2b61fe7c738c1dc8f15e92e77e0",
-    "export-selected.INACTIVE.py": "600eba78b3f16a2743403754e6ee7b7e165ba7e430183742267368455d1b8d9b",
-    "native-selection-guard.DIRECT-SYSTEMD.cjs": "50d21436e62b0ae62619b1396013298f4e1134ae2c293a207382978501e3f694"
+    "DIRECT-SYSTEMD-ROOTFS.json": "2dfe27c5bbf8ffaf54891d0f04af78c9cb3f209c998acafe093a7b79505a5830",
+    "diagnostic-projection.INACTIVE.py": "40f82923c51bef25f50286cc3ece23d008ba1ee434279e7610c056d7a1cbd8bb",
+    "diagnostic-source-table.json": "36f2f0a0a07277c8e2ec36a585fc53967ccebde917cabd14149238130b9955a9",
+    "direct-services.INACTIVE.py": "fb0b7f9779eeaba5916f9eea5cad90c7802144cad55cafd5ba093b99c572e458",
+    "entry.DIAGNOSTIC.INACTIVE.mjs": "5987d4fae5a63ca3edfd59fb12cb44f7955fdd1685f58106f52a2634d5256bdf",
+    "export-selected.INACTIVE.py": "14e9747c0175124d398e1c7c60f1fa43372c6a85720f28c0090867a5c62ee4b5",
+    "native-selection-guard.DIRECT-SYSTEMD.cjs": "50d21436e62b0ae62619b1396013298f4e1134ae2c293a207382978501e3f694",
+    "phase-observer.INACTIVE.mjs": "7fa65770d11a462f8f96ed81260425e5515be29e00d9d92c569fb5eb3422871e"
   }
 }

@@ -10,7 +10,8 @@ CONFIG_ID='sha256:9b7d1917ba3e5d20c83a01e3345bb78430b5e6c99030098a944b64f1b90053
 MANIFEST_SHA='debf0c3eb2dab9fb902e6c65e5dbcc1cb27276f21e33053ae187de2d84790041'
 ENTRY_SHA='1910f6e4cd873fe4ef1d2fabfac03331642c16fdc7c03e38fc8af0be52ccfb9f'
 GUARD_SHA='50d21436e62b0ae62619b1396013298f4e1134ae2c293a207382978501e3f694'
-DERIVED_MANIFEST_SHA='dae488fb3fceafabfd3d3a2462b923a90eaa12a0e782c5559596a4077ef7a03d'
+DERIVED_MANIFEST_SHA='2dfe27c5bbf8ffaf54891d0f04af78c9cb3f209c998acafe093a7b79505a5830'
+DIAGNOSTIC_FILES={'entry.DIAGNOSTIC.INACTIVE.mjs': '5987d4fae5a63ca3edfd59fb12cb44f7955fdd1685f58106f52a2634d5256bdf', 'phase-observer.INACTIVE.mjs': '7fa65770d11a462f8f96ed81260425e5515be29e00d9d92c569fb5eb3422871e', 'diagnostic-source-table.json': '36f2f0a0a07277c8e2ec36a585fc53967ccebde917cabd14149238130b9955a9', 'diagnostic-projection.INACTIVE.py': '40f82923c51bef25f50286cc3ece23d008ba1ee434279e7610c056d7a1cbd8bb'}
 CONTEXT_SHA='9f2ca63ac485694eb25815be0206e4ba99ad6184a4116217b4807cbc9d2165ea'
 
 
@@ -72,12 +73,19 @@ def extract_reviewed(archive,manifest,guard,derived_manifest,destination):
     # Replace ONLY the instrumental verifier after all original payload pins pass.
     (root/'app/native-selection-guard.cjs').write_bytes(Path(guard).read_bytes())
     derived=json.loads(Path(derived_manifest).read_text())
-    need(len(derived)==len(rows),'DERIVED_FILE_COUNT')
-    for before,after in zip(rows,derived):
-        if before['target']=='/app/native-selection-guard.cjs':
-            need(after['target']==before['target'] and after['mode']==before['mode'] and
-                 after['sha256']==GUARD_SHA and after['bytes']==Path(guard).stat().st_size,'DERIVED_GUARD_PIN')
-        else:need(before==after,'UNEXPECTED_PRODUCT_DELTA')
+    source=Path(__file__).parent
+    destinations={'entry.DIAGNOSTIC.INACTIVE.mjs':'app/entry.INACTIVE.mjs',
+        'phase-observer.INACTIVE.mjs':'app/phase-observer.INACTIVE.mjs','diagnostic-source-table.json':'app/diagnostic-source-table.json'}
+    for name,wanted in DIAGNOSTIC_FILES.items():need(digest(source/name)==wanted,'DIAGNOSTIC_SOURCE_PIN')
+    for name,target in destinations.items():(root/target).write_bytes((source/name).read_bytes())
+    before_by_path={r['target']:r for r in rows};after_by_path={r['target']:r for r in derived}
+    need(len(derived)==len(rows)+2 and len(after_by_path)==len(derived),'DERIVED_FILE_COUNT')
+    changed={'/app/native-selection-guard.cjs','/app/entry.INACTIVE.mjs','/app/phase-observer.INACTIVE.mjs','/app/diagnostic-source-table.json'}
+    need(set(after_by_path)==set(before_by_path)|{'/app/phase-observer.INACTIVE.mjs','/app/diagnostic-source-table.json'},'DERIVED_PATH_SET')
+    for path,row in after_by_path.items():
+        if path not in changed:need(row==before_by_path[path],'UNEXPECTED_PRODUCT_DELTA')
+        file=root/path.lstrip('/')
+        need(digest(file)==row['sha256'] and file.stat().st_size==row['bytes'],'DERIVED_FILE_PIN');file.chmod(row['mode'])
     for directory,_,_ in os.walk(root):Path(directory).chmod(0o755)
     # mountpoint only, no host sources or additional product modules.
     for name in ('run','sys','proc','dev','work','tmp'): (root/name).mkdir(exist_ok=True)
@@ -90,10 +98,10 @@ def service_text(root,work,tmp,log,mode):
     childenv={'PATH':'/usr/bin:/bin','LC_ALL':'C','HOME':'/work','TMPDIR':'/tmp','NODE_ENV':'test',
               'SILHOUETTE_PROVIDERS':'off','SILHOUETTE_BOOT_MODE':'normal',
               'SILHOUETTE_DB_PATH':'/work/db/silhouette.sqlite','SILHOUETTE_MIGRATIONS_DIR':'/app/db/migrations/sqlite'}
-    js="import {runPhase} from '/app/entry.INACTIVE.mjs'; await runPhase('"+mode+"');"
+
     # Python -I -S ignores inherited Python user/site configuration and execve
     # replaces the entire environment before Node can process NODE_OPTIONS/etc.
-    bootstrap='import os;os.execve("/usr/bin/node",'+repr(['/usr/bin/node','--max-old-space-size=192','--input-type=module','-e',js])+','+repr(childenv)+')'
+    bootstrap='import os;os.execve("/usr/bin/node",'+repr(['/usr/bin/node','--max-old-space-size=192','/app/phase-observer.INACTIVE.mjs',mode])+','+repr(childenv)+')'
     # systemd token escaping: backslash/double quote and literal percent specifier.
     escaped=bootstrap.replace('\\','\\\\').replace('"','\\"').replace('%','%%')
     return '\n'.join([
@@ -123,6 +131,31 @@ def unit_state(unit):
     return dict(rows)
 
 
+def collect_diagnostic(tmp,mode,result,after_stop):
+    import importlib.util,stat
+    sample={'mode':mode,'afterStopConfirmed':after_stop,'state':'MISSING'}
+    try:
+        source=Path(__file__).parent
+        for name in ('diagnostic-source-table.json','diagnostic-projection.INACTIVE.py'):
+            need(digest(source/name)==DIAGNOSTIC_FILES[name],'DIAGNOSTIC_SOURCE_PIN')
+        spec=importlib.util.spec_from_file_location('diagnostic_projection',source/'diagnostic-projection.INACTIVE.py')
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        fd=os.open(tmp/(mode+'-diagnostic.json'),os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC)
+        try:
+            before=os.fstat(fd);need(stat.S_ISREG(before.st_mode) and before.st_size<=16384,'DIAGNOSTIC_FILE_BOUND')
+            raw=os.read(fd,16385);after=os.fstat(fd)
+            need(len(raw)==before.st_size and (before.st_ino,before.st_size,before.st_mtime_ns)==
+                 (after.st_ino,after.st_size,after.st_mtime_ns),'DIAGNOSTIC_FILE_CHANGED')
+        finally:os.close(fd)
+        value=module.project(json.loads(raw),json.loads((source/'diagnostic-source-table.json').read_text()))
+        need(value['mode']==mode,'DIAGNOSTIC_PHASE_BINDING')
+        sample.update(state='VALIDATED',diagnostic=value)
+    except FileNotFoundError:pass
+    except BaseException:sample['state']='REJECTED'
+    if len(result['diagnosticSamples'])<4:result['diagnosticSamples'].append(sample)
+    return sample
+
+
 def real_phase(unit,root,work,tmp,log,mode,receipt,result):
     file=Path('/run/systemd/system')/(unit+'.service')
     need(not file.exists(),'OWN_UNIT_EXISTS')
@@ -135,11 +168,14 @@ def real_phase(unit,root,work,tmp,log,mode,receipt,result):
     while time.monotonic()<until:
         state=unit_state(file.name)
         if state.get('ActiveState')=='failed':
+            collect_diagnostic(tmp,mode,result,False)
             result['lastUnitState']=state;result['unitStates'].append(state);durable(receipt,result)
             raise RuntimeError('REAL_PHASE_UNIT_FAILED')
         if state.get('ActiveState')=='active' and state.get('SubState')=='exited':break
         time.sleep(.2)
     else:raise RuntimeError('REAL_PHASE_NOT_NATURALLY_EXITED')
+    diagnostic=collect_diagnostic(tmp,mode,result,True)
+    need(diagnostic['state']=='VALIDATED' and diagnostic['diagnostic']['outcome']=='RETURNED','DIAGNOSTIC_SUCCESS_MISSING_OR_INVALID')
     result['lastUnitState']={k:state.get(k) for k in PROPERTIES}
     result['unitStates'].append(result['lastUnitState']);durable(receipt,result)
     wanted={'Id':file.name,'LoadState':'loaded','ActiveState':'active','SubState':'exited','Result':'success',
@@ -169,7 +205,7 @@ def real_phase(unit,root,work,tmp,log,mode,receipt,result):
 def run(*,archive,manifest,guard,derived_manifest,context_module,expected_context,receipt):
     """Review only. Context authorization and exact event remain separate."""
     result={'kind':'DIRECT_REAL_NARRATIVE_SYSTEMD','stage':'CONTEXT','result':'UNKNOWN','productAttempted':False,'forcedCleanup':False,
-            'phases':[],'logCollection':{},'unitStates':[],'ownedUnits':[],'allSilhouetteValidated':False,
+            'phases':[],'diagnosticSamples':[],'logCollection':{},'unitStates':[],'ownedUnits':[],'allSilhouetteValidated':False,
             'pipeEOFObserved':False,'scope':'Narrative-only-not-full-app-or-raw-memory-durability'}
     receipt=Path(receipt);base=Path('/tmp')/('narrative-direct-'+secrets.token_hex(8));mounted=[]
     try:
@@ -188,7 +224,7 @@ def run(*,archive,manifest,guard,derived_manifest,context_module,expected_contex
         root=extract_reviewed(archive,manifest,guard,derived_manifest,base/'root')
         result['instrumentationProvenance']={'originalArchiveSha256':ARCHIVE_SHA,'originalManifestSha256':MANIFEST_SHA,
             'derivedManifestSha256':DERIVED_MANIFEST_SHA,'derivedGuardSha256':GUARD_SHA,
-            'executableIdentity':'ABSOLUTE_PINNED_FILE_NOT_PROC_OBSERVATION','productEntrySha256':ENTRY_SHA}
+            'executableIdentity':'ABSOLUTE_PINNED_FILE_NOT_PROC_OBSERVATION','originalProductEntrySha256':ENTRY_SHA,'diagnosticEntrySha256':DIAGNOSTIC_FILES['entry.DIAGNOSTIC.INACTIVE.mjs']}
         result['stage']='TEMPORARY_WORK';durable(receipt,result)
         for target,options in ((work,'size=33554432,nr_inodes=4096'),(tmp,'size=16777216,nr_inodes=2048')):
             command('/usr/bin/mount','-t','tmpfs','-o','rw,nosuid,nodev,noexec,'+options+',uid=1000,gid=1000,mode=0700','tmpfs',str(target));mounted.append(target)
@@ -246,6 +282,7 @@ def run(*,archive,manifest,guard,derived_manifest,context_module,expected_contex
             for mode in ('write','read'):
                 path=base/'tmp'/(mode+'.log')
                 if path.is_file():
+                    collect_diagnostic(base/'tmp',mode,result,stopped)
                     with path.open('rb') as stream:raw=stream.read(65537)
                     (receipt.parent/(mode+'-log-prefix.txt')).write_bytes(raw[:65536])
                     result['logCollection'][mode]={'totalBytes':path.stat().st_size,'copiedBytes':min(len(raw),65536),
@@ -257,7 +294,7 @@ def run(*,archive,manifest,guard,derived_manifest,context_module,expected_contex
                 try:command('/usr/bin/umount',str(path))
                 except BaseException:result['cleanupUnknown']=True
         if result.get('cleanupUnknown'):
-            result['result']='UNKNOWN';result['failureCode']='CLEANUP_UNVERIFIED'
+            result['result']='UNKNOWN';result['cleanupFailureCode']='CLEANUP_UNVERIFIED'
         result['temporaryRootRetainedUntilVMTeardown']=base.exists()
         durable(receipt,result)
     return result

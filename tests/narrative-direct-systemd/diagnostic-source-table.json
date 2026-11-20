@@ -1,0 +1,776 @@
+[
+  {
+    "lines": 218,
+    "moduleId": "M000",
+    "path": "/app/constants.js",
+    "sha256": "dcbe204892a45ac1d91fde482a9e6f6801811904fb021dfed459d56a3f44fb87"
+  },
+  {
+    "lines": 19,
+    "moduleId": "M001",
+    "path": "/app/constants/buildVersion.js",
+    "sha256": "4b024d0e4d395f64aba9bc57df9791432f6823390852b7a22ffdedb8f8216efb"
+  },
+  {
+    "lines": 52,
+    "moduleId": "M002",
+    "path": "/app/constants/personalities.js",
+    "sha256": "adf005ce5c21a11b0be157bee28238e7e66d4b6585452bcaa788e5919302642e"
+  },
+  {
+    "lines": 144,
+    "moduleId": "M003",
+    "path": "/app/server/config/configLoader.js",
+    "sha256": "f9c71f535fe55cd5c1ff845b07c3232560e4659ba911ff464bb4b6990473bc3f"
+  },
+  {
+    "lines": 340,
+    "moduleId": "M004",
+    "path": "/app/server/config/configSchema.js",
+    "sha256": "bb1711f49908d33145b55a5ad3e2e8342a8e9b6316eb5b111eeeeecaa8feedfb"
+  },
+  {
+    "lines": 87,
+    "moduleId": "M005",
+    "path": "/app/server/config/runtimeCredentials.js",
+    "sha256": "46d4d3c2f3d9243d1aad8fbc20f35cf27a8baeb235835e53ace9baff2ef2b1db"
+  },
+  {
+    "lines": 74,
+    "moduleId": "M006",
+    "path": "/app/server/controllers/factoryController.js",
+    "sha256": "fb3a5ed191797e04520c6bf5e60e1106f4cf823c744f77e7931dc28698a973ee"
+  },
+  {
+    "lines": 113,
+    "moduleId": "M007",
+    "path": "/app/server/desktop/producerScope.js",
+    "sha256": "87df2e3945d607abd706271c2124260c4d1f87d3d8bfa8ce637cf3996223d313"
+  },
+  {
+    "lines": 85,
+    "moduleId": "M008",
+    "path": "/app/services/agentPersistence.js",
+    "sha256": "e0ce77091c333810a1b684e9f49f2bf4dbbb14c527ae65fba75d8419723b06c4"
+  },
+  {
+    "lines": 179,
+    "moduleId": "M009",
+    "path": "/app/services/agentStream.js",
+    "sha256": "4dc2c71aa3efa03c6030bca65a189493cb43b3e925826de310a956366ada69a6"
+  },
+  {
+    "lines": 367,
+    "moduleId": "M010",
+    "path": "/app/services/agents/BaseAgent.js",
+    "sha256": "b772357fb23a5a682b7c24ab7524fda92a83c9304b527ff99fcdd0d0134eb930"
+  },
+  {
+    "lines": 26,
+    "moduleId": "M011",
+    "path": "/app/services/agents/StandardAgent.js",
+    "sha256": "da8e76a5992846b4e3108bcc503f6d4479ba4011fd32f168794e52052f2d5ed1"
+  },
+  {
+    "lines": 12,
+    "moduleId": "M012",
+    "path": "/app/services/agents/UniversalAgentCapabilities.js",
+    "sha256": "e5e21987bfc8d89b0de20d33dd33a936bde656c843e0ab49dea0fe44fdf25b0d"
+  },
+  {
+    "lines": 580,
+    "moduleId": "M013",
+    "path": "/app/services/agents/agentFileSystem.js",
+    "sha256": "18b0caae1e484110eee620fe82eafb3c89fd3868b0c975ba92e357c398330c9b"
+  },
+  {
+    "lines": 72,
+    "moduleId": "M014",
+    "path": "/app/services/architectService.js",
+    "sha256": "7576f5d44327a2edb1b0914bf8b1432372d7b1e126b6f3f68e243b79c20a71c3"
+  },
+  {
+    "lines": 97,
+    "moduleId": "M015",
+    "path": "/app/services/architecturalReview.js",
+    "sha256": "07f15c79f37741d654814f2e229d248f7a887673d5be00756fd4f309b89afec8"
+  },
+  {
+    "lines": 301,
+    "moduleId": "M016",
+    "path": "/app/services/asyncWorkLedger.js",
+    "sha256": "210aab032370e9f89da2430c0290150881b95f5389ca7568e032aa75a71aa027"
+  },
+  {
+    "lines": 251,
+    "moduleId": "M017",
+    "path": "/app/services/backgroundLLMService.js",
+    "sha256": "773fd056e62eec97e43c6448dbd28693a3fbfc4eb95a40e06cd0421c707c4616"
+  },
+  {
+    "lines": 249,
+    "moduleId": "M018",
+    "path": "/app/services/brain/brainClient.js",
+    "sha256": "661e26a4caca69f48a44bcae609b78f36e23b4a03f26d6da3e47921f58b2881b"
+  },
+  {
+    "lines": 98,
+    "moduleId": "M019",
+    "path": "/app/services/brain/brainMemoryBridge.js",
+    "sha256": "da63cdb57e1751d0bfd3009ff1497549154ce997aaf7f8b897ea78e0f30b018d"
+  },
+  {
+    "lines": 6,
+    "moduleId": "M020",
+    "path": "/app/services/brain/index.js",
+    "sha256": "b1cd03a51d2da480e6a44513b6a707b495c900f0b214d7ffbcb3b3cb549cf924"
+  },
+  {
+    "lines": 1,
+    "moduleId": "M021",
+    "path": "/app/services/bus/IBusAdapter.js",
+    "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881"
+  },
+  {
+    "lines": 55,
+    "moduleId": "M022",
+    "path": "/app/services/bus/MemoryBusAdapter.js",
+    "sha256": "8f0d8bfc818baba47fbbd748ff255b2b88cf7f23d26c5407f68d6e6c9f2f4103"
+  },
+  {
+    "lines": 281,
+    "moduleId": "M023",
+    "path": "/app/services/capabilityAwareness.js",
+    "sha256": "12445298f4d2ac263f817c33e8fad482753d1c834c6dd91b8b07006052a67d26"
+  },
+  {
+    "lines": 114,
+    "moduleId": "M024",
+    "path": "/app/services/capabilityRegistry.js",
+    "sha256": "6d0effcd5aa045503f8018ac0fad78fbbea461d8af565e7dcee45c550880ebb2"
+  },
+  {
+    "lines": 176,
+    "moduleId": "M025",
+    "path": "/app/services/cfoService.js",
+    "sha256": "d40dace1807a67ad14b2dc2c5a627f9cb725ae8fb8d059ff81a6a48c7a1394ce"
+  },
+  {
+    "lines": 54,
+    "moduleId": "M026",
+    "path": "/app/services/chronosService.js",
+    "sha256": "2db2ec9c737d4075f467f01097f7e9d6a4d9959c425ca5fedbf1fc6767770c64"
+  },
+  {
+    "lines": 156,
+    "moduleId": "M027",
+    "path": "/app/services/codebaseAwareness.js",
+    "sha256": "79806cd69dd2e3287d5e97314069e0f7630118544448edde4e69ed42e0633bc2"
+  },
+  {
+    "lines": 251,
+    "moduleId": "M028",
+    "path": "/app/services/communication/agentConversation.js",
+    "sha256": "124dded376ccdb39869387fe226001fb55558c57f09459464eaca7b18dea0142"
+  },
+  {
+    "lines": 195,
+    "moduleId": "M029",
+    "path": "/app/services/communication/conversationRouter.js",
+    "sha256": "67dd7c62e13fc778157db0915de5313402021d3baf57823b5f8f112534ad8781"
+  },
+  {
+    "lines": 137,
+    "moduleId": "M030",
+    "path": "/app/services/communication/helpProtocol.js",
+    "sha256": "3ff28f2ba5eee1cdfbed60425b1674e7535ab488f8462ea6f4ddd84f23959128"
+  },
+  {
+    "lines": 235,
+    "moduleId": "M031",
+    "path": "/app/services/communication/sessionManager.js",
+    "sha256": "10339725c16a9c804900af8d2d74cca49386f6e4c8567c1fbe2fe7be25107a62"
+  },
+  {
+    "lines": 500,
+    "moduleId": "M032",
+    "path": "/app/services/connectionNervousSystem.js",
+    "sha256": "8a6442048272a02888aad507033b6d72758431e7a5d506cb1d0cea2fbb33f3d2"
+  },
+  {
+    "lines": 212,
+    "moduleId": "M033",
+    "path": "/app/services/consciousnessEngine.js",
+    "sha256": "1b7bbd0787c10d1d4062ff50ab8d243f3bf2a5cc7303bb691331a825685def82"
+  },
+  {
+    "lines": 218,
+    "moduleId": "M034",
+    "path": "/app/services/context/contextCompactionService.js",
+    "sha256": "d8876350938e2665a5f3c5de68cdb59ef9fa16520039740284515beddf94befd"
+  },
+  {
+    "lines": 391,
+    "moduleId": "M035",
+    "path": "/app/services/contextAssembler.js",
+    "sha256": "fd137ffea6509af288a80ea20692c75fea84e2245e59ad3b9b69b908a459543b"
+  },
+  {
+    "lines": 424,
+    "moduleId": "M036",
+    "path": "/app/services/contextJanitor.js",
+    "sha256": "738ae4549dbefedda093ab64d5f5305d49725a7b266567d368fcc0c1bfdb56f2"
+  },
+  {
+    "lines": 88,
+    "moduleId": "M037",
+    "path": "/app/services/contextResolver.js",
+    "sha256": "f3b7d2403593728a4d5b4e3488f318fab44558b926a7d0de0312bccca8d132b9"
+  },
+  {
+    "lines": 1239,
+    "moduleId": "M038",
+    "path": "/app/services/continuumMemory.js",
+    "sha256": "80d710f62e00dcdbabc589c4a3a560bbbdf3e263c491d52d8464ae5eb0eee2f7"
+  },
+  {
+    "lines": 219,
+    "moduleId": "M039",
+    "path": "/app/services/costEstimator.js",
+    "sha256": "22c2e4acbef8851abfa6db2c659df30efa7cfe32e9dd38de4e0539be24883a1b"
+  },
+  {
+    "lines": 140,
+    "moduleId": "M040",
+    "path": "/app/services/deepSeekService.js",
+    "sha256": "3760f1ef5a08e4243ce156686dd738af34f1eb4edf3b719489e43e9fbbdf81d8"
+  },
+  {
+    "lines": 13,
+    "moduleId": "M041",
+    "path": "/app/services/embeddingIdentity.js",
+    "sha256": "7b3bb43cc2cc605603b3cbbc1a54881a3b448026daa6337941ac5f9e5204e3ed"
+  },
+  {
+    "lines": 123,
+    "moduleId": "M042",
+    "path": "/app/services/enhancedCapabilityRegistry.js",
+    "sha256": "a5e10d2a72f0a33ba85a8f6eebf7cc2501950999eefd06efc6bad644e0983ec7"
+  },
+  {
+    "lines": 304,
+    "moduleId": "M043",
+    "path": "/app/services/execution/taskEvidence.js",
+    "sha256": "d72a8d1969200eb438756005cd33469de7f0805ea3593833a7d4c73a89d5e758"
+  },
+  {
+    "lines": 445,
+    "moduleId": "M044",
+    "path": "/app/services/factory/AgentFactory.js",
+    "sha256": "812e1d1769ed73b603f311820458d40ef88be403b7466e8fb9c86c9752095610"
+  },
+  {
+    "lines": 1577,
+    "moduleId": "M045",
+    "path": "/app/services/geminiService.js",
+    "sha256": "f6883f876b2b28213b4b36e7f4e2d3a0de749440e287a5c5404516fff6745c2f"
+  },
+  {
+    "lines": 302,
+    "moduleId": "M046",
+    "path": "/app/services/genesis/genesisV2.js",
+    "sha256": "4d5d1153bd147f600e9d9b55ef7f96115958abb370c9dd063e90b5e0cd1ab56e"
+  },
+  {
+    "lines": 147,
+    "moduleId": "M047",
+    "path": "/app/services/genesisService.js",
+    "sha256": "3ac0e464e5fddfdd50230f036d494f1229af491a73e38f1e77a8938b81b05f03"
+  },
+  {
+    "lines": 1169,
+    "moduleId": "M048",
+    "path": "/app/services/graphService.js",
+    "sha256": "3c2ecba04f49cc6583b1f6b39f2c8a8c0f68451c14b57f3c607e16dab7baa669"
+  },
+  {
+    "lines": 374,
+    "moduleId": "M049",
+    "path": "/app/services/identity/identityEvolution.js",
+    "sha256": "23504943566a327850642e220908d96e5e6840a43b142eb2eb85cb0d961bfc91"
+  },
+  {
+    "lines": 75,
+    "moduleId": "M050",
+    "path": "/app/services/incidentRegistry.js",
+    "sha256": "977361278a871f45e95b1d0364d30cce5bf2b2df65f292933fdf87a33291ad2c"
+  },
+  {
+    "lines": 1231,
+    "moduleId": "M051",
+    "path": "/app/services/introspectionEngine.js",
+    "sha256": "5837fa8c6fb0a41ee826c9afb89037f9b6bbf6e334cab9ac6c3dbbe63d0967aa"
+  },
+  {
+    "lines": 843,
+    "moduleId": "M052",
+    "path": "/app/services/lancedbService.js",
+    "sha256": "bc654bf925bfde4c9e760c5dc9aee553f0a5f8a2807d3e2d44262e445ba00d9e"
+  },
+  {
+    "lines": 41,
+    "moduleId": "M053",
+    "path": "/app/services/lexicalMatch.js",
+    "sha256": "f7d8d37dd269d2ae7d007195e8a056a516f9223815aa8a19bee49795da7491a2"
+  },
+  {
+    "lines": 9,
+    "moduleId": "M054",
+    "path": "/app/services/lifecycle/deliveryReceipt.js",
+    "sha256": "65c8fdd743a190780a0145d6508f0026ba4ce933c533855e399c692541390aa6"
+  },
+  {
+    "lines": 11,
+    "moduleId": "M055",
+    "path": "/app/services/lifecycle/desktopRefusal.js",
+    "sha256": "42c393694dced3d87201a7c40ada83bda622e7caba0b3fbb6c4f10dfd4b01b0e"
+  },
+  {
+    "lines": 23,
+    "moduleId": "M056",
+    "path": "/app/services/lifecycle/desktopWork.js",
+    "sha256": "dae23b043d971f9ca440429405953ca12e206a8876a1612bb426879d2d0699ef"
+  },
+  {
+    "lines": 56,
+    "moduleId": "M057",
+    "path": "/app/services/lifecycle/ownedProducers.js",
+    "sha256": "ad69fdef5ac993bbf6dec98e59b2cd0078636877977cce88cfe610629cede944"
+  },
+  {
+    "lines": 161,
+    "moduleId": "M058",
+    "path": "/app/services/llm/agentInferenceRouter.js",
+    "sha256": "4294bed0ad54c65fdfc240950c582ce5ed7a135736fbd7bbffd4ed8887eb5a4e"
+  },
+  {
+    "lines": 106,
+    "moduleId": "M059",
+    "path": "/app/services/llm/agentPrompt.js",
+    "sha256": "59f176adf4428cd89ded105a3d813bef7f12ccad18da49c859ccb10872d74609"
+  },
+  {
+    "lines": 41,
+    "moduleId": "M060",
+    "path": "/app/services/llm/defaultModels.js",
+    "sha256": "12d35327633d8adb63f9d2da7ea89814924cad934cfc925631f2711d93f4862c"
+  },
+  {
+    "lines": 28,
+    "moduleId": "M061",
+    "path": "/app/services/llm/inference.js",
+    "sha256": "1469df8a3482c6f844423ad19b9c3abfc5f154e8b15fbe73ecbef47ded496a1d"
+  },
+  {
+    "lines": 242,
+    "moduleId": "M062",
+    "path": "/app/services/llm/openAICompatible.js",
+    "sha256": "8ca4be3d710a7955e8152456a327a170402b609c592944598225e51fc0f43b7e"
+  },
+  {
+    "lines": 64,
+    "moduleId": "M063",
+    "path": "/app/services/llm/providerRegistry.js",
+    "sha256": "475d0815ddf31f11fc3c74d49c14251b51b01e4e8cb9d4d938d8b1980431dbf6"
+  },
+  {
+    "lines": 283,
+    "moduleId": "M064",
+    "path": "/app/services/llm/streamAdapters.js",
+    "sha256": "0b3e655920d6fd44f9e1ddec08290a865a1722dfbee906e4ae35b275f266833a"
+  },
+  {
+    "lines": 413,
+    "moduleId": "M065",
+    "path": "/app/services/llmGateway.js",
+    "sha256": "0be26a8f0a8ff0d947b1e6eb4fc149acce94e2ca961a51179bc7626178cb10c7"
+  },
+  {
+    "lines": 50,
+    "moduleId": "M066",
+    "path": "/app/services/localEmbeddingService.js",
+    "sha256": "d16a4e6b4172f407ae9d29ea51bf16ac29132360a55bd9b7b3e68bedacc21106"
+  },
+  {
+    "lines": 173,
+    "moduleId": "M067",
+    "path": "/app/services/logger.js",
+    "sha256": "db8ae6b2290a5ea6531c3f35ee5e87bfc8e42073017971ac5a84a7d868ea2521"
+  },
+  {
+    "lines": 403,
+    "moduleId": "M068",
+    "path": "/app/services/memory/continuousMemory.js",
+    "sha256": "73da43dfe01e040491a281351ee8eecb42bd3eb6275eecfe46f9237c3c43550e"
+  },
+  {
+    "lines": 84,
+    "moduleId": "M069",
+    "path": "/app/services/memory/provenance.js",
+    "sha256": "b90dd559dc7c258bd485b0c4ab453a26d651299cc389959a8590a4e71a2271b3"
+  },
+  {
+    "lines": 38,
+    "moduleId": "M070",
+    "path": "/app/services/memoryCognition.js",
+    "sha256": "d0f01a263f5b7f18875a35e378628101b9e92f11018716e92e42bf9322334be3"
+  },
+  {
+    "lines": 45,
+    "moduleId": "M071",
+    "path": "/app/services/memoryRetrieval.js",
+    "sha256": "a3d82f2fdc76b226ee5c931d442b809ba5542502d42528b7ab9c37f29b30323d"
+  },
+  {
+    "lines": 39,
+    "moduleId": "M072",
+    "path": "/app/services/memorySchema.js",
+    "sha256": "9574c95dc157e20230b5ccfc272115bc1be12a49b6b250c7dfb2dd1e30ce1ce5"
+  },
+  {
+    "lines": 190,
+    "moduleId": "M073",
+    "path": "/app/services/memoryTransitions.js",
+    "sha256": "18fe9cabfa1d3f36182e0838de6b157dc21cabaf9da0f10bd6d6fd1fd3c9d370"
+  },
+  {
+    "lines": 32,
+    "moduleId": "M074",
+    "path": "/app/services/migrationAssets.js",
+    "sha256": "97e374a707a6d4d517e63d08b968b96202e5bf2434831681db0111516ea2d243"
+  },
+  {
+    "lines": 97,
+    "moduleId": "M075",
+    "path": "/app/services/missionCheckpoint.js",
+    "sha256": "01371ed1174268aae2dcc62c8fcad8dece1b713880522baaec5617b63f9b3228"
+  },
+  {
+    "lines": 68,
+    "moduleId": "M076",
+    "path": "/app/services/monitoringService.js",
+    "sha256": "ad0e4d8a67236a41207d63a26e8e5b0b9e8bf4fc04a017fdca3eadd63e5dbbec"
+  },
+  {
+    "lines": 62,
+    "moduleId": "M077",
+    "path": "/app/services/narrativeFillerPolicy.js",
+    "sha256": "e90d7bbb90e9071bc1f757ba0b209601220b18f0c56f8ea40d9417d638d5132d"
+  },
+  {
+    "lines": 166,
+    "moduleId": "M078",
+    "path": "/app/services/narrativePendingStore.js",
+    "sha256": "1242ca779896af594ed029b3bf44662bd09460e0357b91280051ae1f8cd1264a"
+  },
+  {
+    "lines": 1199,
+    "moduleId": "M079",
+    "path": "/app/services/narrativeService.js",
+    "sha256": "44139c7ee99ed4a837bfe480b0bc46110eb9bbaae4691466458ad217ea6f259b"
+  },
+  {
+    "lines": 114,
+    "moduleId": "M080",
+    "path": "/app/services/neuroLinkService.js",
+    "sha256": "3cff182766d3dfd3232c981c29672db265c82c35062c8ba3099cc7f4a2d7e0bb"
+  },
+  {
+    "lines": 43,
+    "moduleId": "M081",
+    "path": "/app/services/neuroSynapseService.js",
+    "sha256": "2f768724f91a69bd20c37441699548c8b94a0774e7b6f8d1734f61f6824d1d05"
+  },
+  {
+    "lines": 294,
+    "moduleId": "M082",
+    "path": "/app/services/ollamaService.js",
+    "sha256": "038f32ea5ade4f1bb5549b16ef5000f4e78da8aadb5eea03d09e257f18bf7d71"
+  },
+  {
+    "lines": 2842,
+    "moduleId": "M083",
+    "path": "/app/services/orchestrator.js",
+    "sha256": "a83a439157db28ee4f25c8278788adbecb04c392fe6318b6a6730d01c285e2a9"
+  },
+  {
+    "lines": 110,
+    "moduleId": "M084",
+    "path": "/app/services/org/organization.js",
+    "sha256": "ceef49c3599a76a3c2dd4177ffc9cbc75dbaceb5899e1b8337418f162d866e14"
+  },
+  {
+    "lines": 96,
+    "moduleId": "M085",
+    "path": "/app/services/org/reputation.js",
+    "sha256": "366d9d4b6f32a03048332d52d4fc4d0aa2e8968d13291370475b71ba1cb05a23"
+  },
+  {
+    "lines": 54,
+    "moduleId": "M086",
+    "path": "/app/services/org/reputationLedger.js",
+    "sha256": "490abf9bcaa9a246b279b7d60be5eeaf99f590644d04d5752b2cc781f67a2e21"
+  },
+  {
+    "lines": 44,
+    "moduleId": "M087",
+    "path": "/app/services/org/teamLearning.js",
+    "sha256": "eb22d90377e6104b6df0e305c73d79d162fffe09dcbbf63e4f6c68ef6b759945"
+  },
+  {
+    "lines": 25,
+    "moduleId": "M088",
+    "path": "/app/services/org/teamRouting.js",
+    "sha256": "c92572ad8a5ec7c2cb26e0494640a9dcae8b5289d83e0f7c9e31743767330965"
+  },
+  {
+    "lines": 10,
+    "moduleId": "M089",
+    "path": "/app/services/org/types.js",
+    "sha256": "bba33351721368fba9b2894714893d8059a51b2b1ab4f620140b4cfc4d97f359"
+  },
+  {
+    "lines": 235,
+    "moduleId": "M090",
+    "path": "/app/services/powerManager.js",
+    "sha256": "27243e739b14fb33947b1c71b3107f6715fe91ee36864e4069bb4efefa430e2a"
+  },
+  {
+    "lines": 501,
+    "moduleId": "M091",
+    "path": "/app/services/promptCompiler.js",
+    "sha256": "e3f3ba82b323a045cc0762470a97be80b04801e98a6428db5d9fdd7c3ed5cdff"
+  },
+  {
+    "lines": 123,
+    "moduleId": "M092",
+    "path": "/app/services/qualityControlService.js",
+    "sha256": "f2706caecab982090f89d2f644581a963763837b7671fdec70eec7c0b1e39fff"
+  },
+  {
+    "lines": 184,
+    "moduleId": "M093",
+    "path": "/app/services/quotaLedger.js",
+    "sha256": "f08e0d3363056f76e1a15b796c1c009bd906fc63952123474156ae064e0804b0"
+  },
+  {
+    "lines": 483,
+    "moduleId": "M094",
+    "path": "/app/services/redisClient.js",
+    "sha256": "f36e77ec8f24a521cc0d4df1cfb6fba1d839988661902c7aadb740974221a167"
+  },
+  {
+    "lines": 726,
+    "moduleId": "M095",
+    "path": "/app/services/remediationService.js",
+    "sha256": "c62e0875733d2ad475d0ac1f25f601afb3d3723d23b293daf8871ceb46e66a94"
+  },
+  {
+    "lines": 403,
+    "moduleId": "M096",
+    "path": "/app/services/resourceArbiter.js",
+    "sha256": "47ea3e715dacaa577e6c6ada3e900c69f3bca7e7e9051618f1c274f819fb8705"
+  },
+  {
+    "lines": 24,
+    "moduleId": "M097",
+    "path": "/app/services/security/bootMode.js",
+    "sha256": "8d554163640e3d8e847653a09d899f286458d9ea09f5a6b8f07ad8c2058cc078"
+  },
+  {
+    "lines": 15,
+    "moduleId": "M098",
+    "path": "/app/services/security/localInferencePolicy.js",
+    "sha256": "ed725a2b34bba2ef778ff21ee31d1bda86103eff79acac6b535ae9bec910e104"
+  },
+  {
+    "lines": 209,
+    "moduleId": "M099",
+    "path": "/app/services/security/toolEffects.js",
+    "sha256": "11b93eb5541ad274f6603a4900ae70d29c1644daf30a64af142709a1dfb7b827"
+  },
+  {
+    "lines": 223,
+    "moduleId": "M100",
+    "path": "/app/services/semanticAgentSearch.js",
+    "sha256": "04fb033e35e1feaf64238da367d63fc3f1b678c07de28a88cba354f108c7d962"
+  },
+  {
+    "lines": 135,
+    "moduleId": "M101",
+    "path": "/app/services/sensoryService.js",
+    "sha256": "88a5b27cb0137e500c44035142708e9f4af6daec7d5f7fedf8b62f1478dd92b1"
+  },
+  {
+    "lines": 346,
+    "moduleId": "M102",
+    "path": "/app/services/settingsManager.js",
+    "sha256": "beeb51c06ba9d36f1e9f91044d05c1fb4194ce4a7eeb924d92a7f85c65f3d8ca"
+  },
+  {
+    "lines": 260,
+    "moduleId": "M103",
+    "path": "/app/services/skills/skillRegistry.js",
+    "sha256": "2528d43fee258fb092e031c1999b466ba38ff190da8a929be975409ca6ce5672"
+  },
+  {
+    "lines": 876,
+    "moduleId": "M104",
+    "path": "/app/services/sqliteService.js",
+    "sha256": "13a27896d1a3453bc6258009f49a6bc7e06fa90dce19cfec0e850fb58fdab017"
+  },
+  {
+    "lines": 182,
+    "moduleId": "M105",
+    "path": "/app/services/squads/dynamicBirth.js",
+    "sha256": "fd39db819084a8e1dfda0d80789fb34fb229d44be16d18227659afea5a3d53ff"
+  },
+  {
+    "lines": 63,
+    "moduleId": "M106",
+    "path": "/app/services/squads/squadConfig.js",
+    "sha256": "662bfbafe0565bbac9eff68e6c8101096389ad1e12012058d961f207e6fb4935"
+  },
+  {
+    "lines": 273,
+    "moduleId": "M107",
+    "path": "/app/services/startupOwnership.js",
+    "sha256": "840637963ae778e2161796c6ff28875b4729516c71c951bae199ddf4e2ae27e9"
+  },
+  {
+    "lines": 128,
+    "moduleId": "M108",
+    "path": "/app/services/stockService.js",
+    "sha256": "f815c6f7241b877abe2ad036890146ff31a92467b163a7cc2d7328653cbce7b0"
+  },
+  {
+    "lines": 300,
+    "moduleId": "M109",
+    "path": "/app/services/systemBus.js",
+    "sha256": "8caf38aff70f2567a63fb07a76cbec684756f60f3993343e513fb227bf2507dd"
+  },
+  {
+    "lines": 212,
+    "moduleId": "M110",
+    "path": "/app/services/tools/ownedCodeRunner.js",
+    "sha256": "3deb6c3fefdd013cdaf7db0340161172336ab40b7c8f80c4b0841ab125fdb827"
+  },
+  {
+    "lines": 205,
+    "moduleId": "M111",
+    "path": "/app/services/tools/toolExecutor.js",
+    "sha256": "87c62317914a997f5da03fa95ebc4f4ee21a77d37df0d05efef464ca92865da3"
+  },
+  {
+    "lines": 297,
+    "moduleId": "M112",
+    "path": "/app/services/tools/toolPersistence.js",
+    "sha256": "132f1977d76bbfdc3be7cfec6a07a167852cd3bf40037d7cf3414289ab933582"
+  },
+  {
+    "lines": 689,
+    "moduleId": "M113",
+    "path": "/app/services/tools/toolRegistry.js",
+    "sha256": "f60d95b206315c75223fbe30c635c6ea92ec3354ec5afa4d07e594a05e38439e"
+  },
+  {
+    "lines": 68,
+    "moduleId": "M114",
+    "path": "/app/services/uiContext.js",
+    "sha256": "7244c8117d529424239c4e2d13ffb652074d609e83f159eb3485230e62096b87"
+  },
+  {
+    "lines": 95,
+    "moduleId": "M115",
+    "path": "/app/services/usageObservation.js",
+    "sha256": "3daadb0e6fc6c1ffa3473ed0e65e4690c8f2f91e84a634354e857c3b768fdd9c"
+  },
+  {
+    "lines": 41,
+    "moduleId": "M116",
+    "path": "/app/services/utils/atomicWrite.js",
+    "sha256": "cff4340e934a2f6d1a642b5c82fb72124f430b275ecaa9b2f9ccba4ad43ccdc7"
+  },
+  {
+    "lines": 367,
+    "moduleId": "M117",
+    "path": "/app/services/vectorEngine.js",
+    "sha256": "04170f9b709275acc33475022ef4f43eaffcf27e775fe99f8b0bbe2a716ecc71"
+  },
+  {
+    "lines": 363,
+    "moduleId": "M118",
+    "path": "/app/services/vectorMemoryService.js",
+    "sha256": "7d0317eaa86b67dbd18bc373e9499c0f39589a0b37bec2793a612584ccf5b995"
+  },
+  {
+    "lines": 117,
+    "moduleId": "M119",
+    "path": "/app/services/vectorScan.js",
+    "sha256": "a690fca7a88abb11c65aa2829dcb1c202deec1dc24bb49c23b4bfcdaac2d2d1b"
+  },
+  {
+    "lines": 336,
+    "moduleId": "M120",
+    "path": "/app/services/virtualFileSystem.js",
+    "sha256": "98f8d3abb21640a16badfdc8a4177706a210588f2e3b42b3d1e7a4e3cd941d06"
+  },
+  {
+    "lines": 57,
+    "moduleId": "M121",
+    "path": "/app/services/visualCortex.js",
+    "sha256": "02d7d9d4d3ef1003fb0bb9adb07e9ffc2f0ac845613a437fd2d105523e530037"
+  },
+  {
+    "lines": 599,
+    "moduleId": "M122",
+    "path": "/app/services/workflowEngine.js",
+    "sha256": "ec67de98caca5cf6eed71708a874bb8df46b18f55235ef87aebee904a6cba88e"
+  },
+  {
+    "lines": 331,
+    "moduleId": "M123",
+    "path": "/app/types.js",
+    "sha256": "dc26764631d05b7b0470a894d98d008d89f52af3bb9859184e4e38aa8a4d7cf1"
+  },
+  {
+    "lines": 7,
+    "moduleId": "M124",
+    "path": "/app/types/capabilities.js",
+    "sha256": "c7fdda77f94f34fdf9f9d11d2056378e0da8a44d615725355d209962c7bf0090"
+  },
+  {
+    "lines": 117,
+    "moduleId": "M125",
+    "path": "/app/utils/api.js",
+    "sha256": "acb8a5254817ad961768b87d58e39bf99b4d6de4e1ab90a3e4ab45cf225f9bc2"
+  },
+  {
+    "lines": 92,
+    "moduleId": "M126",
+    "path": "/app/entry.INACTIVE.mjs",
+    "sha256": "5987d4fae5a63ca3edfd59fb12cb44f7955fdd1685f58106f52a2634d5256bdf"
+  },
+  {
+    "lines": 56,
+    "moduleId": "M127",
+    "path": "/app/phase-observer.INACTIVE.mjs",
+    "sha256": "7fa65770d11a462f8f96ed81260425e5515be29e00d9d92c569fb5eb3422871e"
+  },
+  {
+    "lines": 108,
+    "moduleId": "M128",
+    "path": "/app/native-selection-guard.cjs",
+    "sha256": "50d21436e62b0ae62619b1396013298f4e1134ae2c293a207382978501e3f694"
+  }
+]

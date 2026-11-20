@@ -12,7 +12,7 @@ TEXT={'kind':{'DIRECT_REAL_NARRATIVE_SYSTEMD'},'result':{'UNKNOWN','PASS_DIRECTE
  'terminalModel':{'SYSTEMD_EXITTYPE_CGROUP_REMAIN_AFTER_EXIT'},
  'naturalTreeExitModel':{'SYSTEMD_EXITTYPE_CGROUP_NOT_DOCKER_PID1_CENSUS'},
  'executableIdentity':{'ABSOLUTE_PINNED_FILE_NOT_PROC_OBSERVATION'}}
-HASH={'journalSha256','recoveredSha256','originalArchiveSha256','originalManifestSha256','derivedManifestSha256','derivedGuardSha256','productEntrySha256'}
+HASH={'journalSha256','recoveredSha256','originalArchiveSha256','originalManifestSha256','derivedManifestSha256','derivedGuardSha256','productEntrySha256','originalProductEntrySha256','diagnosticEntrySha256'}
 OBJECT={'instrumentationProvenance','terminalJournalCopy','logCollection','write','read'}
 UNIT={'LoadState','ActiveState','SubState','Result','ExecMainCode','ExecMainStatus','MainPID','ControlPID','Type','ExitType',
  'RemainAfterExit','User','Group','PrivateNetwork','PrivateDevices','NoNewPrivileges','MemoryMax','MemorySwapMax',
@@ -27,13 +27,28 @@ def project(value,depth=0):
   elif k in NUM and type(v)is int and 0<=v<10**15:out[k]=v
   elif k in TEXT and isinstance(v,str) and v in TEXT[k]:out[k]=v
   elif k in HASH and isinstance(v,str) and re.fullmatch('[a-f0-9]{64}',v):out[k]=v
-  elif k=='failureCode' and isinstance(v,str) and re.fullmatch('[A-Z][A-Z0-9_]{0,95}',v):out[k]=v
+  elif k in {'failureCode','cleanupFailureCode'} and isinstance(v,str) and re.fullmatch('[A-Z][A-Z0-9_]{0,95}',v):out[k]=v
   elif k=='failureClass' and v in {'RuntimeError','ValueError','OSError','FileNotFoundError','PermissionError','TimeoutExpired','JSONDecodeError','AssertionError','TypeError','KeyError'}:out[k]=v
   elif k in OBJECT and isinstance(v,dict):out[k]=project(v,depth+1)
   elif k=='phases' and isinstance(v,list):out[k]=[project(x,depth+1) for x in v[:2]]
+  elif k=='diagnosticSamples' and isinstance(v,list):
+   result=[]
+   for sample in v[:4]:
+    try:
+     assert isinstance(sample,dict) and sample['mode'] in {'write','read'} and sample['state'] in {'MISSING','REJECTED','VALIDATED'} and type(sample['afterStopConfirmed'])is bool
+     row={x:sample[x] for x in ('mode','state','afterStopConfirmed')}
+     if sample['state']=='VALIDATED':row['diagnostic']=diagnostic_schema.project(sample['diagnostic'],diagnostic_table)
+     result.append(row)
+    except Exception:result.append({'state':'REJECTED'})
+   out[k]=result
   elif k=='unitStates' and isinstance(v,list):out[k]=[state(x) for x in v[:4] if isinstance(x,dict)]
   elif k in {'lastUnitState','cleanupBeforeStopState','cleanupAfterStopState'} and isinstance(v,dict):out[k]=state(v)
  return out
+import importlib.util
+base=Path(__file__).parent
+spec=importlib.util.spec_from_file_location('diagnostic_schema',base/'diagnostic-projection.INACTIVE.py')
+diagnostic_schema=importlib.util.module_from_spec(spec);spec.loader.exec_module(diagnostic_schema)
+diagnostic_table=json.loads((base/'diagnostic-source-table.json').read_text())
 if __name__=='__main__':
  output=Path('/tmp/narrative-direct-selected');output.mkdir(mode=0o755,exist_ok=False)
  try:

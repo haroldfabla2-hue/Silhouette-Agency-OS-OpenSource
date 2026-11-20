@@ -77,10 +77,10 @@
     "target": "/app/db/migrations/sqlite/004_incidents.up.sql"
   },
   {
-    "bytes": 4389,
+    "bytes": 5224,
     "mode": 420,
-    "origin": "DIRECTED_CONTROL",
-    "sha256": "1910f6e4cd873fe4ef1d2fabfac03331642c16fdc7c03e38fc8af0be52ccfb9f",
+    "origin": "DIRECT_SYSTEMD_DIAGNOSTIC_ONLY_ORACLE_UNCHANGED",
+    "sha256": "5987d4fae5a63ca3edfd59fb12cb44f7955fdd1685f58106f52a2634d5256bdf",
     "target": "/app/entry.INACTIVE.mjs"
   },
   {
@@ -41872,5 +41872,19 @@
     "origin": "REVIEWED_BASE_CLOSURE",
     "sha256": "ea200fcc3a7bf723a8e0e2a21ceb3805324812fef36f6ba0552362a9a9e65f92",
     "target": "/usr/sbin/ip"
+  },
+  {
+    "bytes": 3379,
+    "mode": 420,
+    "origin": "DIRECT_SYSTEMD_BOUNDED_DIAGNOSTICS",
+    "sha256": "7fa65770d11a462f8f96ed81260425e5515be29e00d9d92c569fb5eb3422871e",
+    "target": "/app/phase-observer.INACTIVE.mjs"
+  },
+  {
+    "bytes": 23410,
+    "mode": 420,
+    "origin": "DIRECT_SYSTEMD_BOUNDED_DIAGNOSTICS",
+    "sha256": "36f2f0a0a07277c8e2ec36a585fc53967ccebde917cabd14149238130b9955a9",
+    "target": "/app/diagnostic-source-table.json"
   }
 ]
