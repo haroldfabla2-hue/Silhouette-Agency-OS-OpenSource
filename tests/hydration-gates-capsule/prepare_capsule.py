@@ -155,7 +155,7 @@ lookup={}
 for line in subprocess.check_output(['/sbin/ldconfig','-p'],text=True).splitlines():
  m=re.search(r'^\s*(\S+) .*=> (\S+)$',line)
  if m and 'x86-64' in line and pathlib.Path(m[2]).is_file():
-  q=pathlib.Path(m[2]);assert str(q).startswith(('/lib/','/lib64/','/usr/lib/','/usr/lib64/')),'SYSTEM_CACHE_ESCAPE'
+  q=pathlib.Path(m[2]) # Unused host cache entries are not runtime inputs.
   lookup.setdefault(m[1],set()).add(q)
 def elf_origin(p):
  if A in p.parents:

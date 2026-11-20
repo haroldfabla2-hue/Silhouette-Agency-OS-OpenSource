@@ -79,14 +79,18 @@ def scan(app,initial,runtime,lookup,pins,review_sources,origin):
     else:
      options=lookup.get(soname)
      if isinstance(options,(set,list,tuple)):
-      assert len({x.resolve() for x in options})<=1,'AMBIGUOUS_SYSTEM_CACHE_'+soname
+      detail=source+'_'+soname+'_'+','.join(str(x) for x in sorted(options,key=str))
+      assert all(str(x).startswith(('/lib/','/lib64/','/usr/lib/','/usr/lib64/')) for x in options),'SYSTEM_CACHE_ESCAPE_'+detail+'_policy=/lib/,/lib64/,/usr/lib/,/usr/lib64/'
+      assert len({x.resolve() for x in options})<=1,'AMBIGUOUS_SYSTEM_CACHE_'+detail
       q=sorted(options,key=str)[0] if options else None
      else:q=options
      precedence='x64-system-cache'
    if q is None:missing_names.append(soname);continue
    # Bind the same system path consulted, not its realpath under a different
    # mount target. Hashes prove bytes; no current host path is runtime proof.
-   if app not in q.parents:runtime.add(q)
+   if app not in q.parents:
+    assert str(q).startswith(('/lib/','/lib64/','/usr/lib/','/usr/lib64/')),'SYSTEM_CACHE_ESCAPE_'+source+'_'+soname+'_'+str(q)
+    runtime.add(q)
    edges.append({'from':source,'needed':soname,'resolved':('app/'+str(q.relative_to(app))) if app in q.parents else 'runtime/'+str(q).lstrip('/'),'sha256':digest(q),'searchTags':paths,'precedence':precedence})
    if q not in scanned:queue.append(q)
   if missing_names:missing.append({**info,'missingSonames':missing_names})
