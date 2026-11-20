@@ -56,6 +56,7 @@ def request(method, route, deadline, body=None):
         response=conn.getresponse();raw=response.read(262145)
         require(len(raw)<=262144,'CONTROL_RESPONSE_LIMIT')
         require(200<=response.status<300,'ENGINE_HTTP_'+str(response.status))
+        require(time.monotonic()<deadline,'CONTROL_DEADLINE')
         return json.loads(raw) if raw else None
     finally:
         conn.close()
@@ -68,13 +69,13 @@ def policy():
     return MASK_BASE+thermal
 
 
-def creation(masks):
+def creation(masks, parent):
 
 
     return {'Image':IMAGE,'User':'1000:1000','Entrypoint':['/bin/sh'],
             'Cmd':['-c',GATE],'WorkingDir':'/work','Env':['PATH=/usr/bin:/bin','LC_ALL=C'],
             'OpenStdin':True,'StdinOnce':False,'AttachStdin':False,'Tty':False,'StopTimeout':2,
-            'HostConfig':{'ReadonlyRootfs':True,'ReadonlyPaths':DEFAULT_RO+AUX+masks,
+            'HostConfig':{'CgroupParent':parent,'ReadonlyRootfs':True,'ReadonlyPaths':DEFAULT_RO+AUX+masks,
                 'CapDrop':['ALL'],'SecurityOpt':['no-new-privileges'],
                 'NetworkMode':'none','IpcMode':'private','CgroupnsMode':'private','Runtime':'runc',
                 'Memory':MEM,'MemorySwap':MEM,'PidsLimit':16,'CpuPeriod':100000,'CpuQuota':25000,
@@ -113,134 +114,149 @@ def check_deadline(deadline):
     require(time.monotonic()<deadline,'GATE_DEADLINE_EXCEEDED')
 
 
-def audit(cid, image_id, masks, deadline,ledger):
+def audit(cid, image_id, masks, deadline,ledger,domain):
     check_deadline(deadline)
     require(image_id.startswith('sha256:') and len(image_id)==71,'IMAGE_CONFIG_ID')
     v=request('GET','/containers/'+cid+'/json',deadline);h=v['HostConfig'];c=v['Config'];s=v['State']
     require(v['Image']==image_id and s['Running'] and s['Pid']>0,'GATE_NOT_LIVE')
     require(c['User']=='1000:1000' and c['Entrypoint']==['/bin/sh'] and c['Cmd']==['-c',GATE] and not c['Tty'],'GATE_CONFIG_CHANGED')
-    expected=creation(masks)['HostConfig']
-    for key in ('ReadonlyRootfs','ReadonlyPaths','CapDrop','SecurityOpt','NetworkMode','IpcMode','CgroupnsMode','Runtime','Memory','MemorySwap','PidsLimit','CpuPeriod','CpuQuota','Privileged','AutoRemove','Tmpfs'):
+    expected=creation(masks,domain.name)['HostConfig']
+    for key in ('CgroupParent','ReadonlyRootfs','ReadonlyPaths','CapDrop','SecurityOpt','NetworkMode','IpcMode','CgroupnsMode','Runtime','Memory','MemorySwap','PidsLimit','CpuPeriod','CpuQuota','Privileged','AutoRemove','Tmpfs'):
         require(h.get(key)==expected[key],'INSPECT_MISMATCH_'+key,h.get(key),expected[key])
 
     require(set(h.get('MaskedPaths') or [])==set(masks),'MASK_DEFAULTS_MISMATCH')
     for key in ('Binds','Devices','DeviceRequests','VolumesFrom','PortBindings','ExtraHosts','Sysctls','CapAdd'):
         require(not h.get(key),'UNEXPECTED_HOST_EXPOSURE_'+key)
     require(not h.get('PidMode') and not h.get('UTSMode'),'HOST_NAMESPACE')
-    pid=s['Pid'];root=Path('/proc')/str(pid)/'root';cg=live_cgroup(pid)
-    status=dict(line.split(':',1) for line in text('/proc/'+str(pid)+'/status').splitlines() if ':' in line)
-    require(status['Uid'].split()==['1000']*4 and status['Gid'].split()==['1000']*4,'LIVE_IDENTITY')
-    for key in ('CapInh','CapPrm','CapEff','CapBnd','CapAmb'):
-        require(int(status[key],16)==0,'LIVE_CAPABILITY_'+key,int(status[key],16),0)
-    require(status['NoNewPrivs'].strip()=='1' and status['Seccomp'].strip()=='2','LIVE_SECURITY')
-    require(text('/proc/'+str(pid)+'/attr/current').startswith('docker-default '),'DEFAULT_APPARMOR_NOT_PROVED')
-    require(Path('/proc',str(pid),'cmdline').read_bytes().split(b'\x00')[:3]==[b'/bin/sh',b'-c',GATE.encode()],'LIVE_GATE_COMMAND')
-    executable=os.stat('/proc/'+str(pid)+'/exe');shell=os.stat(root/'bin/sh')
-    require((executable.st_dev,executable.st_ino)==(shell.st_dev,shell.st_ino),'LIVE_GATE_EXECUTABLE')
-    for ns in ('mnt','net','pid','ipc','uts','cgroup'):
-        require(os.readlink('/proc/'+str(pid)+'/ns/'+ns)!=os.readlink('/proc/self/ns/'+ns),'SHARED_NAMESPACE_'+ns)
-    metrics={key:text(cg/key) for key in ('memory.max','memory.swap.max','pids.max','cpu.max')}
-    net_lines=text('/proc/'+str(pid)+'/net/dev').splitlines()[2:]
-    require({line.split(':',1)[0].strip() for line in net_lines}=={'lo'},'NONLOOPBACK_INTERFACE')
-    for name in ('tcp','tcp6','udp','udp6'):
-        require(len(text('/proc/'+str(pid)+'/net/'+name).splitlines())==1,'UNEXPECTED_NETWORK_SOCKET')
-    require(metrics=={'memory.max':str(MEM),'memory.swap.max':'0','pids.max':'16','cpu.max':'25000 100000'},'LIVE_LIMITS')
-    all_rows=mounts(pid)
-    save_state(Path(ledger)/'mount-inventory.json',{'rows':all_rows})
-    index={row['id']:row for row in all_rows};visible={}
+    pid=s['Pid'];cg=live_cgroup(pid)
+    expected_start=domain.occupied_anchor['starttime']
+    require(pid==domain.occupied_anchor['pid'],'AUDIT_GATE_PID_CHANGED')
+    root=load_component('p0-rooted-paths.INACTIVE.py').Root(pid,expected_start)
+    try:
+        status=dict(line.split(':',1) for line in text('/proc/'+str(pid)+'/status').splitlines() if ':' in line)
+        require(status['Uid'].split()==['1000']*4 and status['Gid'].split()==['1000']*4,'LIVE_IDENTITY')
+        for key in ('CapInh','CapPrm','CapEff','CapBnd','CapAmb'):
+            require(int(status[key],16)==0,'LIVE_CAPABILITY_'+key,int(status[key],16),0)
+        require(status['NoNewPrivs'].strip()=='1' and status['Seccomp'].strip()=='2','LIVE_SECURITY')
+        require(text('/proc/'+str(pid)+'/attr/current').startswith('docker-default '),'DEFAULT_APPARMOR_NOT_PROVED')
+        require(Path('/proc',str(pid),'cmdline').read_bytes().split(b'\x00')[:3]==[b'/bin/sh',b'-c',GATE.encode()],'LIVE_GATE_COMMAND')
+        executable=os.stat('/proc/'+str(pid)+'/exe');shell=(root/'bin/sh').stat()
+        require((executable.st_dev,executable.st_ino)==(shell.st_dev,shell.st_ino),'LIVE_GATE_EXECUTABLE')
+        for ns in ('mnt','net','pid','ipc','uts','cgroup'):
+            require(os.readlink('/proc/'+str(pid)+'/ns/'+ns)!=os.readlink('/proc/self/ns/'+ns),'SHARED_NAMESPACE_'+ns)
+        metrics={key:text(cg/key) for key in ('memory.max','memory.swap.max','pids.max','cpu.max')}
+        net_lines=text('/proc/'+str(pid)+'/net/dev').splitlines()[2:]
+        require({line.split(':',1)[0].strip() for line in net_lines}=={'lo'},'NONLOOPBACK_INTERFACE')
+        for name in ('tcp','tcp6','udp','udp6'):
+            require(len(text('/proc/'+str(pid)+'/net/'+name).splitlines())==1,'UNEXPECTED_NETWORK_SOCKET')
+        require(metrics=={'memory.max':str(MEM),'memory.swap.max':'0','pids.max':'16','cpu.max':'25000 100000'},'LIVE_LIMITS')
+        all_rows=mounts(pid)
+        save_state(Path(ledger)/'mount-inventory.json',{'rows':all_rows})
+        index={row['id']:row for row in all_rows};visible={}
 
 
-    for row in all_rows:
-        check_deadline(deadline)
-        save_state(Path(ledger)/'audit-progress.json',{'stage':'MOUNT_RESOLUTION','target':row['target']})
-        target=root/row['target'].lstrip('/')
-        fd=os.open(target,os.O_PATH|os.O_CLOEXEC)
+        for row in all_rows:
+            check_deadline(deadline)
+            save_state(Path(ledger)/'audit-progress.json',{'stage':'MOUNT_RESOLUTION','target':row['target']})
+            target=root/row['target'].lstrip('/')
+            fd=target.open(os.O_PATH)
+            try:
+                fields=dict(line.split(':',1) for line in Path('/proc/self/fdinfo',str(fd)).read_text().splitlines() if ':' in line)
+                resolved=fields['mnt_id'].strip()
+                require(resolved in index,'MOUNT_ID_OUTSIDE_GATE_TABLE')
+                effective=index[resolved]
+                require(effective['target']==row['target'],'UNPROVED_MOUNT_TOPOLOGY')
+                visible[resolved]=effective
+            finally:os.close(fd)
+        rows=list(visible.values())
+        save_state(Path(ledger)/'reachable-mounts.json',{'rows':rows,'hiddenMountCount':len(all_rows)-len(rows)})
+        by={}
+        for row in rows:by.setdefault(row['target'],[]).append(row)
+
+        allowed={'/','/work','/sys','/sys/fs/cgroup',*AUX,*DEFAULT_RO,*masks}
+        require(set(by)<=allowed,'UNKNOWN_SUBMOUNT')
+        require({'/','/work','/sys','/sys/fs/cgroup',*AUX}<=set(by),'MISSING_REQUIRED_MOUNT')
+        types={'/':'overlay','/work':'tmpfs','/proc':'proc','/dev':'tmpfs','/dev/pts':'devpts','/dev/shm':'tmpfs','/dev/mqueue':'mqueue','/sys':'sysfs','/sys/fs/cgroup':'cgroup2'}
+        for row in rows:
+            check_deadline(deadline)
+            save_state(Path(ledger)/'audit-progress.json',{'stage':'MOUNT_VALIDATION','target':row['target']})
+            target=row['target'];flags=set(row['flags'])
+            require(not row['propagation'],'NONPRIVATE_MOUNT')
+            require(('rw' in flags and 'ro' not in flags) if target=='/work' else ('ro' in flags and 'rw' not in flags),'WRITABLE_AUXILIARY')
+            if target in types:require(row['fs']==types[target],'FILESYSTEM_MISMATCH')
+            if target in DEFAULT_RO:require(row['fs']=='proc','PROC_SUBMOUNT_MISMATCH')
+            if target in masks:require(row['fs']=='tmpfs','MASK_FILESYSTEM_MISMATCH')
+            if target not in masks and target not in ('/','/work','/dev','/etc/hosts','/etc/hostname','/etc/resolv.conf'):
+                require('nosuid' in flags and 'noexec' in flags,'AUX_FLAGS')
+            if target=='/work':
+                require({'nosuid','nodev','noexec'}<=flags,'WORK_FLAGS')
+                require({'size=1024k','nr_inodes=64'}<=set(row['super']),'WORK_CAPACITY_OPTIONS')
+
+
+        null_stat=(root/'dev/null').stat()
+        for target in masks:
+            check_deadline(deadline)
+            save_state(Path(ledger)/'audit-progress.json',{'stage':'MASK_VALIDATION','target':target})
+            try:target_stat=(root/target.lstrip('/')).stat()
+            except FileNotFoundError:continue
+            require(target in by,'MASK_NOT_MOUNTED')
+            if stat.S_ISDIR(target_stat.st_mode):
+                require(all(row['root']=='/' and row['source']=='tmpfs' for row in by[target]),'MASK_DIRECTORY_ROOT')
+                masked_stat=(root/target.lstrip('/')).statvfs()
+                require(masked_stat.f_files in (1,2) and masked_stat.f_blocks==1,'MASK_DIRECTORY_CAPACITY')
+            else:
+
+
+                require(stat.S_ISCHR(target_stat.st_mode) and
+                        (target_stat.st_dev,target_stat.st_ino,target_stat.st_rdev)==
+                        (null_stat.st_dev,null_stat.st_ino,null_stat.st_rdev),'MASK_FILE_SOURCE_IDENTITY')
+        for row in rows:
+            if row['target'] in ('/proc','/sys','/dev/pts','/dev/mqueue','/sys/fs/cgroup'):
+                expected_source={'/proc':'proc','/sys':'sysfs','/dev/pts':'devpts','/dev/mqueue':'mqueue','/sys/fs/cgroup':'cgroup'}[row['target']]
+                require(row['source']==expected_source,'PSEUDO_SOURCE_MISMATCH')
+                st=(root/row['target'].lstrip('/')).stat()
+                require(row['device']==str(os.major(st.st_dev))+':'+str(os.minor(st.st_dev)),'MOUNT_DEVICE_MISMATCH')
+        save_state(Path(ledger)/'audit-progress.json',{'stage':'WORK_VALIDATION','target':'/work'})
+        work=root/'work';sv=work.statvfs();st=work.stat()
+        require(sv.f_blocks*sv.f_frsize==1048576 and sv.f_files==64,'WORK_STATFS_CAPACITY')
+        require(st.st_uid==1000 and st.st_gid==1000 and stat.S_IMODE(st.st_mode)==0o700,'WORK_OWNERSHIP')
+
+        for target,key in (('/etc/hosts','HostsPath'),('/etc/hostname','HostnamePath'),('/etc/resolv.conf','ResolvConfPath')):
+            host=Path(v[key]);a=os.stat(host);b=(root/target.lstrip('/')).stat()
+            require((a.st_dev,a.st_ino)==(b.st_dev,b.st_ino) and stat.S_ISREG(b.st_mode),'GENERATED_FILE_IDENTITY')
+        devices={'null':(1,3),'zero':(1,5),'full':(1,7),'random':(1,8),'urandom':(1,9),'tty':(5,0)}
+        for p in (root/'dev').iterdir():
+            check_deadline(deadline)
+            save_state(Path(ledger)/'audit-progress.json',{'stage':'DEVICE_VALIDATION','target':'/dev'})
+            if p.is_symlink():
+                links={'fd':{'/proc/self/fd'},'stdin':{'/proc/self/fd/0'},
+                       'stdout':{'/proc/self/fd/1'},'stderr':{'/proc/self/fd/2'},
+                       'ptmx':{'pts/ptmx','/dev/pts/ptmx'},'core':{'/proc/kcore'}}
+                require(p.name in links and p.readlink() in links[p.name],'UNKNOWN_DEVICE_SYMLINK')
+                continue
+            if p.name in ('pts','shm','mqueue'):continue
+            require(p.name in devices,'UNKNOWN_DEVICE_ENTRY')
+            st=p.stat();require(stat.S_ISCHR(st.st_mode) and (os.major(st.st_rdev),os.minor(st.st_rdev))==devices[p.name],'DEVICE_IDENTITY')
         try:
-            fields=dict(line.split(':',1) for line in Path('/proc/self/fdinfo',str(fd)).read_text().splitlines() if ':' in line)
-            resolved=fields['mnt_id'].strip()
-            require(resolved in index,'MOUNT_ID_OUTSIDE_GATE_TABLE')
-            effective=index[resolved]
-            require(effective['target']==row['target'],'UNPROVED_MOUNT_TOPOLOGY')
-            visible[resolved]=effective
-        finally:os.close(fd)
-    rows=list(visible.values())
-    save_state(Path(ledger)/'reachable-mounts.json',{'rows':rows,'hiddenMountCount':len(all_rows)-len(rows)})
-    by={}
-    for row in rows:by.setdefault(row['target'],[]).append(row)
-
-    allowed={'/','/work','/sys','/sys/fs/cgroup',*AUX,*DEFAULT_RO,*masks}
-    require(set(by)<=allowed,'UNKNOWN_SUBMOUNT')
-    require({'/','/work','/sys','/sys/fs/cgroup',*AUX}<=set(by),'MISSING_REQUIRED_MOUNT')
-    types={'/':'overlay','/work':'tmpfs','/proc':'proc','/dev':'tmpfs','/dev/pts':'devpts','/dev/shm':'tmpfs','/dev/mqueue':'mqueue','/sys':'sysfs','/sys/fs/cgroup':'cgroup2'}
-    for row in rows:
-        check_deadline(deadline)
-        save_state(Path(ledger)/'audit-progress.json',{'stage':'MOUNT_VALIDATION','target':row['target']})
-        target=row['target'];flags=set(row['flags'])
-        require(not row['propagation'],'NONPRIVATE_MOUNT')
-        require(('rw' in flags and 'ro' not in flags) if target=='/work' else ('ro' in flags and 'rw' not in flags),'WRITABLE_AUXILIARY')
-        if target in types:require(row['fs']==types[target],'FILESYSTEM_MISMATCH')
-        if target in DEFAULT_RO:require(row['fs']=='proc','PROC_SUBMOUNT_MISMATCH')
-        if target in masks:require(row['fs']=='tmpfs','MASK_FILESYSTEM_MISMATCH')
-        if target not in masks and target not in ('/','/work','/dev','/etc/hosts','/etc/hostname','/etc/resolv.conf'):
-            require('nosuid' in flags and 'noexec' in flags,'AUX_FLAGS')
-        if target=='/work':
-            require({'nosuid','nodev','noexec'}<=flags,'WORK_FLAGS')
-            require({'size=1024k','nr_inodes=64'}<=set(row['super']),'WORK_CAPACITY_OPTIONS')
-
-
-    null_stat=os.stat(root/'dev/null')
-    for target in masks:
-        check_deadline(deadline)
-        save_state(Path(ledger)/'audit-progress.json',{'stage':'MASK_VALIDATION','target':target})
-        try:target_stat=os.stat(root/target.lstrip('/'))
-        except FileNotFoundError:continue
-        require(target in by,'MASK_NOT_MOUNTED')
-        if stat.S_ISDIR(target_stat.st_mode):
-            require(all(row['root']=='/' and row['source']=='tmpfs' for row in by[target]),'MASK_DIRECTORY_ROOT')
-            masked_stat=os.statvfs(root/target.lstrip('/'))
-            require(masked_stat.f_files in (1,2) and masked_stat.f_blocks==1,'MASK_DIRECTORY_CAPACITY')
+            socket_object=(root/'var/run/docker.sock').stat()
+        except FileNotFoundError:
+            socket_evidence={'result':'ROOTED_ENOENT','rootIdentity':list(root.identity)}
         else:
+            socket_evidence={'result':'ROOTED_OBJECT_FOUND','inode':[socket_object.st_dev,socket_object.st_ino],
+                             'objectType':stat.S_IFMT(socket_object.st_mode)}
+            save_state(Path(ledger)/'socket.json',socket_evidence)
+            require(False,'SOCKET_OBJECT_PRESENT_ROOTED')
+        save_state(Path(ledger)/'socket.json',socket_evidence)
 
-
-            require(stat.S_ISCHR(target_stat.st_mode) and
-                    (target_stat.st_dev,target_stat.st_ino,target_stat.st_rdev)==
-                    (null_stat.st_dev,null_stat.st_ino,null_stat.st_rdev),'MASK_FILE_SOURCE_IDENTITY')
-    for row in rows:
-        if row['target'] in ('/proc','/sys','/dev/pts','/dev/mqueue','/sys/fs/cgroup'):
-            expected_source={'/proc':'proc','/sys':'sysfs','/dev/pts':'devpts','/dev/mqueue':'mqueue','/sys/fs/cgroup':'cgroup'}[row['target']]
-            require(row['source']==expected_source,'PSEUDO_SOURCE_MISMATCH')
-            st=os.stat(root/row['target'].lstrip('/'))
-            require(row['device']==str(os.major(st.st_dev))+':'+str(os.minor(st.st_dev)),'MOUNT_DEVICE_MISMATCH')
-    save_state(Path(ledger)/'audit-progress.json',{'stage':'WORK_VALIDATION','target':'/work'})
-    work=root/'work';sv=os.statvfs(work);st=os.stat(work)
-    require(sv.f_blocks*sv.f_frsize==1048576 and sv.f_files==64,'WORK_STATFS_CAPACITY')
-    require(st.st_uid==1000 and st.st_gid==1000 and stat.S_IMODE(st.st_mode)==0o700,'WORK_OWNERSHIP')
-
-    for target,key in (('/etc/hosts','HostsPath'),('/etc/hostname','HostnamePath'),('/etc/resolv.conf','ResolvConfPath')):
-        host=Path(v[key]);a=os.stat(host);b=os.stat(root/target.lstrip('/'))
-        require((a.st_dev,a.st_ino)==(b.st_dev,b.st_ino) and stat.S_ISREG(b.st_mode),'GENERATED_FILE_IDENTITY')
-    devices={'null':(1,3),'zero':(1,5),'full':(1,7),'random':(1,8),'urandom':(1,9),'tty':(5,0)}
-    for p in (root/'dev').iterdir():
+        fd_path=Path('/proc',str(pid),'fd')
+        require(set(p.name for p in fd_path.iterdir())== {'0','1','2'},'EXTRA_OR_MISSING_HOST_FD')
+        require(all(os.readlink(fd_path/str(n)).startswith('pipe:[') for n in (0,1,2)),'UNEXPECTED_STANDARD_FD_KIND')
         check_deadline(deadline)
-        save_state(Path(ledger)/'audit-progress.json',{'stage':'DEVICE_VALIDATION','target':'/dev'})
-        if p.is_symlink():
-            links={'fd':{'/proc/self/fd'},'stdin':{'/proc/self/fd/0'},
-                   'stdout':{'/proc/self/fd/1'},'stderr':{'/proc/self/fd/2'},
-                   'ptmx':{'pts/ptmx','/dev/pts/ptmx'},'core':{'/proc/kcore'}}
-            require(p.name in links and os.readlink(p) in links[p.name],'UNKNOWN_DEVICE_SYMLINK')
-            continue
-        if p.name in ('pts','shm','mqueue'):continue
-        require(p.name in devices,'UNKNOWN_DEVICE_ENTRY')
-        st=os.stat(p);require(stat.S_ISCHR(st.st_mode) and (os.major(st.st_rdev),os.minor(st.st_rdev))==devices[p.name],'DEVICE_IDENTITY')
-    require(not (root/'var/run/docker.sock').exists(),'SOCKET_EXPOSED')
-
-    fd_path=Path('/proc',str(pid),'fd')
-    require(set(p.name for p in fd_path.iterdir())== {'0','1','2'},'EXTRA_OR_MISSING_HOST_FD')
-    require(all(os.readlink(fd_path/str(n)).startswith('pipe:[') for n in (0,1,2)),'UNEXPECTED_STANDARD_FD_KIND')
-    check_deadline(deadline)
-    return {'pid':pid,'cgroup':str(cg),'limits':metrics,'reachableMounts':rows,'hiddenMountCount':len(all_rows)-len(rows),
-            'characterDeviceIO':'null/zero/full/random/urandom/tty permitted, not alternate regular-file storage',
-            'admittedForPreparationOnly':True}
+        return {'pid':pid,'cgroup':str(cg),'limits':metrics,'reachableMounts':rows,'hiddenMountCount':len(all_rows)-len(rows),
+                'characterDeviceIO':'null/zero/full/random/urandom/tty permitted, not alternate regular-file storage',
+                'admittedForPreparationOnly':True}
+    finally:
+        root.close()
 
 
 def save_state(path,value):
@@ -249,6 +265,9 @@ def save_state(path,value):
     with open(temporary,'x') as stream:
         os.fchmod(stream.fileno(),0o600);json.dump(value,stream);stream.flush();os.fsync(stream.fileno())
     os.replace(temporary,path)
+    directory=os.open(path.parent,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+    try:os.fsync(directory)
+    finally:os.close(directory)
 
 
 def operation(method,route,ledger,key,deadline,body=None):
@@ -289,126 +308,99 @@ def known(state):
     return state.get('responseObserved') and state.get('daemonOutcomeKnown')
 
 
-def observer_module():
-    source=Path(__file__).with_name('p0-host-observer.INACTIVE.py')
-    spec=importlib.util.spec_from_file_location('p0observer',source)
+def load_component(filename):
+    source=Path(__file__).with_name(filename)
+    spec=importlib.util.spec_from_file_location(filename.replace('.', '_'),source)
     value=importlib.util.module_from_spec(spec);spec.loader.exec_module(value)
     return value
 
 
+def proc_identity_module():
+    # Only the stat parser is shared here; the retired leaf observer is unused.
+    return load_component('p0-rooted-paths.INACTIVE.py')
+
+
 def identity(pid,cg):
-    value=observer_module();st=os.stat(cg)
+    value=proc_identity_module();st=os.stat(cg)
     return {'pid':pid,'starttime':value.starttime(pid),'cgroup':str(cg),
             'inode':[st.st_dev,st.st_ino]}
-
-
-def gate_remaining(pid):
-    elapsed=float(Path('/proc/uptime').read_text().split()[0])-observer_module().starttime(pid)/os.sysconf('SC_CLK_TCK')
-    require(elapsed>=0,'GATE_START_CLOCK_UNVERIFIED')
-    return max(0,20-elapsed)
 
 
 def same_identity(anchor):
     try:
         st=os.stat(anchor['cgroup'])
         return ([st.st_dev,st.st_ino]==anchor['inode'] and
-                observer_module().starttime(anchor['pid'])==anchor['starttime'] and
+                proc_identity_module().starttime(anchor['pid'])==anchor['starttime'] and
                 live_cgroup(anchor['pid'])==Path(anchor['cgroup']))
     except Exception:return False
 
 
-def cleanup(cid,anchor,ledger):
-    end=time.monotonic()+2
-    receipt={'result':'UNKNOWN','emptyObservedBeforeDisappearance':False}
-    if not same_identity(anchor):
-        receipt['reason']='IDENTITY_CHANGED_BEFORE_OBSERVER';return receipt
-
-    target=str(Path(ledger)/'empty.json')
-    output=os.open(target,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
-    ready_read,ready_write=os.pipe();child=os.fork()
-    if child==0:
-        os.close(ready_read)
-        try:
-            observer_module().observe(anchor['pid'],anchor['starttime'],anchor['cgroup'],anchor['inode'],output,ready_write,end)
-        finally:os._exit(0)
-    os.close(output);os.close(ready_write)
+def cleanup(cid,domain,ledger,container_deadline,host_deadline):
+    began=time.monotonic()
+    empty_deadline=min(host_deadline,container_deadline+2,began+2)
+    receipt={'result':'UNKNOWN','emptyPhaseDeadlineMonotonic':empty_deadline,
+             'hostBookkeepingDeadlineMonotonic':host_deadline,'emptyPhaseStartedMonotonic':began,
+             'emptyPhaseResult':'UNKNOWN','hostBookkeepingResult':'NOT_STARTED'}
     try:
-        ready,_,_=select.select([ready_read],[],[],max(0,end-time.monotonic()))
-        if not ready or os.read(ready_read,1)!=b'R' or time.monotonic()>=end:
-            receipt['reason']='OBSERVER_NOT_READY';return receipt
-        kill=operation('POST','/containers/'+cid+'/kill?signal=KILL',ledger,'kill',end)
-
-        while time.monotonic()<end:
-            done,status=os.waitpid(child,os.WNOHANG)
-            if done:
-                child=None;break
-            time.sleep(.001)
-        observed=json.loads(Path(target).read_text()) if Path(target).stat().st_size else {}
-        receipt['observer']=observed
-        receipt['killOperation']=wait_operation(kill,end)
-        receipt['emptyObservedBeforeDisappearance']=observed.get('result')=='OBSERVED_EMPTY_SAME_CGROUP'
-        if not known(receipt['killOperation']):
-            receipt['reason']='KILL_OPERATION_NONTERMINAL';return receipt
-        state=request('GET','/containers/'+cid+'/json',end)['State']
-        receipt['finalState']={k:state.get(k) for k in ('Running','Pid','ExitCode','OOMKilled')}
-        if receipt['emptyObservedBeforeDisappearance'] and not state['Running'] and state['Pid']==0 and time.monotonic()<end:
-            removed=wait_operation(operation('DELETE','/containers/'+cid,ledger,'remove',end),end)
-            receipt['removeOperation']=removed
-            if known(removed):
-                remaining=request('GET','/containers/json?all=1',end)
-                if all(v['Id']!=cid for v in remaining) and time.monotonic()<end:receipt['result']='OBSERVED_EMPTY_AND_REMOVED'
-    except Exception as error:receipt['reason']=str(error)[:160]
+        observed=domain.cleanup(empty_deadline,known_lifecycle=True)
+        require(time.monotonic()<empty_deadline,'CLEANUP_EMPTY_DEADLINE')
+        receipt.update({'observer':observed,'emptyPhaseResult':'EMPTY_WITHIN_CLEANUP_BUDGET',
+                        'emptyPhaseDurationSeconds':time.monotonic()-began,
+                        'emptyObservedBeforeDisappearance':True})
+        save_state(Path(ledger)/'cleanup.json',receipt)
+        # The retained parent is already empty. Docker metadata removal, monitor
+        # joins and own-unit removal are host bookkeeping, not a new payload window.
+        book_began=time.monotonic()
+        receipt['hostBookkeepingStartedMonotonic']=book_began
+        receipt['hostBookkeepingResult']='UNKNOWN'
+        state=request('GET','/containers/'+cid+'/json',host_deadline)['State']
+        require(not state['Running'] and state['Pid']==0,'DOCKER_STOP_STATE_UNPROVED')
+        removed=wait_operation(operation('DELETE','/containers/'+cid,ledger,'remove',host_deadline),host_deadline)
+        require(known(removed),'REMOVE_OPERATION_UNCERTAIN')
+        remaining=request('GET','/containers/json?all=1',host_deadline)
+        require(all(v['Id']!=cid for v in remaining),'CONTAINER_REMOVAL_UNPROVED')
+        for child in domain.children:
+            while True:
+                finished,status=os.waitpid(child,os.WNOHANG)
+                if finished==child:
+                    require(os.WIFEXITED(status) and os.WEXITSTATUS(status)==0,'MONITOR_EXIT_UNVERIFIED')
+                    break
+                require(time.monotonic()<host_deadline,'HOST_BOOKKEEPING_DEADLINE')
+                time.sleep(.001)
+        domain.stop(host_deadline)
+        require(time.monotonic()<host_deadline,'HOST_BOOKKEEPING_DEADLINE')
+        receipt.update({'parentRemovedAfterReceipt':True,
+                        'hostBookkeepingResult':'HOST_BOOKKEEPING_WITHIN_BUDGET',
+                        'hostBookkeepingDurationSeconds':time.monotonic()-book_began,
+                        'finalState':{k:state.get(k) for k in ('Running','Pid','ExitCode','OOMKilled')},
+                        'removeOperation':removed})
+        require(not (Path(ledger)/'deadline-fired.json').exists(),'INDEPENDENT_DEADLINE_FIRED')
+        require(not (Path(ledger)/'watcher-failure.json').exists(),'INDEPENDENT_WATCHER_FAILED')
+        require(not (Path(ledger)/'observer-failure.json').exists(),'INDEPENDENT_OBSERVER_FAILED')
+        receipt.update({'result':'EMPTY_THEN_HOST_REMOVED','deadlineFired':False,
+                        'independentGateDeadlineEnforcement':'KNOWN_GATE_ONLY_NOT_LATE_ADMISSION'})
+        return receipt
     finally:
-        os.close(ready_read)
-        if child:
-
-            os.waitpid(child,0)
-    if time.monotonic()>end:
-        receipt['result']='UNKNOWN';receipt['deadlineExceeded']=True
-    return receipt
-
-
-def reconcile(name,ledger,deadline):
+        receipt['emptyPhaseDurationSeconds']=receipt.get('emptyPhaseDurationSeconds',time.monotonic()-began)
+        receipt['emptyPhaseDeadlineExceeded']=time.monotonic()>=empty_deadline if receipt['emptyPhaseResult']!='EMPTY_WITHIN_CLEANUP_BUDGET' else False
+        if 'hostBookkeepingStartedMonotonic' in receipt:
+            receipt.setdefault('hostBookkeepingDurationSeconds',time.monotonic()-receipt['hostBookkeepingStartedMonotonic'])
+        receipt['hostBookkeepingDeadlineExceeded']=time.monotonic()>=host_deadline
+        save_state(Path(ledger)/'cleanup.json',receipt)
 
 
+def reconcile(name,ledger,deadline,domain):
+    # UNKNOWN never becomes PASS, even if later samples are empty. Preserve the
+    # retained domain while an earlier daemon operation can still admit a gate.
     while time.monotonic()<deadline:
-        try:
-            create_path=Path(ledger)/'create.json'
-            create_state=json.loads(create_path.read_text()) if create_path.exists() else {}
-            state=request('GET','/containers/'+name+'/json',min(deadline,time.monotonic()+1))
-            cid=state['Id']
-            if state['State']['Running']:
-                if not (Path(ledger)/'kill.json').exists() and not (Path(ledger)/'empty.json').exists():
-                    pid=state['State']['Pid'];cg=live_cgroup(pid)
-                    value=cleanup(cid,identity(pid,cg),ledger)
-                    save_state(Path(ledger)/'cleanup.json',value)
-
-            elif known(create_state):
-                start_path=Path(ledger)/'start.json'
-                if not start_path.exists() and state['State']['StartedAt'].startswith('0001-'):
-                    if not (Path(ledger)/'remove.json').exists():
-                        wait_operation(operation('DELETE','/containers/'+cid,ledger,'remove',deadline),deadline)
-        except Exception:pass
-        time.sleep(min(.25,max(0,deadline-time.monotonic())))
-    return {'result':'UNKNOWN','reason':'CUSTODY_MARGIN_ENDED','residualVMTeardownObserved':False}
-
-
-def watchdog(name,ledger,lock_path,deadline):
-
-
-    try:
-        with open(lock_path,'a') as lock:
-            while time.monotonic()<deadline:
-                try:fcntl.flock(lock.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB);break
-                except BlockingIOError:time.sleep(.05)
-            else:return
-            final=Path(ledger)/'final.json'
-            if final.exists():
-                finished=json.loads(final.read_text())
-                if finished.get('result')=='PASS' or finished.get('noMutationStarted'):return
-            value=reconcile(name,ledger,deadline)
-            save_state(final,value)
-    finally:os._exit(0)
+        if domain is not None and domain.killfd is not None and not domain.stop_issued:
+            try:domain.kill()
+            except Exception:
+                save_state(Path(ledger)/'custody-domain.json',{'result':'UNKNOWN','reason':'DOMAIN_CUSTODY_IDENTITY_LOST'})
+                break
+        time.sleep(min(.05,max(0,deadline-time.monotonic())))
+    return {'result':'UNKNOWN','reason':'CUSTODY_MARGIN_ENDED',
+            'retainedParentNotCreditedAsEmpty':True,'residualVMTeardownObserved':False}
 
 
 def acquire(deadline):
@@ -457,7 +449,320 @@ def acquire(deadline):
     finally:conn.close()
 
 
-EVIDENCE_CATEGORIES=['ACQUIRED_CONFIG_DIGEST', 'ACQUIRED_PLATFORM_REFERENCE', 'ACQUIRED_ROOTFS_CLOSURE', 'ACQUISITION', 'ACQUISITION_UNKNOWN', 'ALL', 'ALREADY_LOCAL', 'ANCESTOR_TIGHTER_', 'ANCESTOR_TIGHTER_CPU', 'ANCESTOR_TIGHTER_memory.max', 'ANCESTOR_TIGHTER_pids.max', 'ANCHOR_CHANGED_AFTER_AUDIT', 'AUDIT', 'AUX_FLAGS', 'BLOCKED_IMAGE_NOT_LOCAL', 'CGROUP_ANCHOR_CHANGED', 'CGROUP_CHANGED_AFTER_EMPTY', 'CGROUP_DESCRIPTOR_REPLACED', 'CGROUP_FILE_TOO_LARGE', 'CGROUP_MEMBERSHIP_MISMATCH', 'CGROUP_PATH_REPLACED', 'CLEANUP', 'CLEANUP_UNKNOWN', 'CLOSED_IMAGE_METADATA_CHANGED', 'CONTROL_DEADLINE', 'CONTROL_OR_AUDIT_UNVERIFIED', 'CONTROL_RESPONSE_LIMIT', 'CREATE', 'CREATE_UNCERTAIN', 'CUSTODY_MARGIN_ENDED', 'DAEMON_VERSION_CHANGED', 'DEFAULT_APPARMOR_NOT_PROVED', 'DELETE', 'DEVICE_IDENTITY', 'DEVICE_VALIDATION', 'DISAPPEARED_BEFORE_EMPTY_PROOF', 'EMPTY_OBSERVER', 'ENGINE_HTTP_', 'ENGINE_HTTP_404', 'ESCAPED_MOUNT_PATH', 'EVIDENCE_DIRECTORY_CHANGED', 'EVIDENCE_DIRECTORY_IDENTITY', 'EVIDENCE_EXPORT_LIMIT', 'EVIDENCE_FILE_BOUND', 'EVIDENCE_FILE_CHANGED', 'EVIDENCE_FILE_IDENTITY', 'EVIDENCE_LEDGER_PATH', 'EVIDENCE_OUTPUT_PATH', 'EXECUTOR_CHANGED', 'EXECUTOR_PREFLIGHT', 'EXTRA_OR_MISSING_HOST_FD', 'FILESYSTEM_MISMATCH', 'GATE_CONFIG_CHANGED', 'GATE_DEADLINE_EXCEEDED', 'GATE_NOT_LIVE', 'GATE_START_CLOCK_UNVERIFIED', 'GENERATED_FILE_IDENTITY', 'GET', 'HOST_NAMESPACE', 'HTTP_NON_SUCCESS', 'IDENTITY_CHANGED_BEFORE_OBSERVER', 'IMAGE_CONFIG_ID', 'IMAGE_REMOVE_UNKNOWN', 'INSPECT_MISMATCH_', 'INSPECT_MISMATCH_AutoRemove', 'INSPECT_MISMATCH_CapDrop', 'INSPECT_MISMATCH_CgroupnsMode', 'INSPECT_MISMATCH_CpuPeriod', 'INSPECT_MISMATCH_CpuQuota', 'INSPECT_MISMATCH_IpcMode', 'INSPECT_MISMATCH_Memory', 'INSPECT_MISMATCH_MemorySwap', 'INSPECT_MISMATCH_NetworkMode', 'INSPECT_MISMATCH_PidsLimit', 'INSPECT_MISMATCH_Privileged', 'INSPECT_MISMATCH_ReadonlyPaths', 'INSPECT_MISMATCH_ReadonlyRootfs', 'INSPECT_MISMATCH_Runtime', 'INSPECT_MISMATCH_SecurityOpt', 'INSPECT_MISMATCH_Tmpfs', 'INVALID_CONTAINER_ID', 'INVALID_SCHEMA', 'IN_PROGRESS', 'KILL_OPERATION_NONTERMINAL', 'LEDGER_UNAVAILABLE', 'LIVE_CAPABILITY_', 'LIVE_CAPABILITY_CapAmb', 'LIVE_CAPABILITY_CapBnd', 'LIVE_CAPABILITY_CapEff', 'LIVE_CAPABILITY_CapInh', 'LIVE_CAPABILITY_CapPrm', 'LIVE_GATE_COMMAND', 'LIVE_GATE_EXECUTABLE', 'LIVE_IDENTITY', 'LIVE_LIMITS', 'LIVE_PID_CHANGED', 'LIVE_SECURITY', 'LOCAL_CONFIG_IDENTITY', 'LOCAL_IMAGE_IDENTITY', 'LOCAL_IMAGE_READ_FAILED', 'MASK_DEFAULTS_MISMATCH', 'MASK_DIRECTORY_CAPACITY', 'MASK_DIRECTORY_ROOT', 'MASK_FILESYSTEM_MISMATCH', 'MASK_FILE_SOURCE_IDENTITY', 'MASK_NOT_MOUNTED', 'MASK_VALIDATION', 'MEMBERSHIP_CHANGED', 'MISSING_REQUIRED_MOUNT', 'MOUNT_DEVICE_MISMATCH', 'MOUNT_ID_OUTSIDE_GATE_TABLE', 'MOUNT_RESOLUTION', 'MOUNT_VALIDATION', 'NONLOOPBACK_INTERFACE', 'NONPRIVATE_MOUNT', 'NOT_ESTABLISHED', 'NOT_WRITTEN', 'OBSERVED_EMPTY_AND_REMOVED', 'OBSERVED_EMPTY_SAME_CGROUP', 'OBSERVER_DEADLINE', 'OBSERVER_NOT_READY', 'OMITTED_HOST_SOURCE', 'P0_CGROUP_NOT_EXCLUSIVELY_GATE', 'P0_GATE_TASK_CENSUS', 'P0_PREPARATION_ONLY', 'P0_TECHNICAL_EVIDENCE', 'PASS', 'PID_START_CHANGED', 'POST', 'PREPARATION_FREE_SPACE_BELOW_1GIB', 'PREPARATION_FREE_SPACE_LOW', 'PREPARATION_MODE_REQUIRED', 'PROC_SUBMOUNT_MISMATCH', 'PSEUDO_SOURCE_MISMATCH', 'PULL_ATTEMPT_DEADLINE', 'PULL_DEADLINE_NONTERMINAL', 'PULL_HTTP_FAILURE', 'PULL_LINE_LIMIT', 'PULL_PROGRESS_LIMIT', 'PULL_TERMINAL_ERROR', 'PULL_TERMINAL_VERIFIED', 'ROOT_OR_UNSAFE_CGROUP', 'RUNTIME_VERSION_CHANGED', 'SC_CLK_TCK', 'SHARED_NAMESPACE_', 'SHARED_NAMESPACE_cgroup', 'SHARED_NAMESPACE_ipc', 'SHARED_NAMESPACE_mnt', 'SHARED_NAMESPACE_net', 'SHARED_NAMESPACE_pid', 'SHARED_NAMESPACE_uts', 'SOCKET_EXPOSED', 'START', 'START_UNCERTAIN', 'TRANSPORT_OR_RESPONSE_UNCERTAIN', 'UNCLASSIFIED', 'UNEXPECTED_HOST_EXPOSURE_', 'UNEXPECTED_HOST_EXPOSURE_Binds', 'UNEXPECTED_HOST_EXPOSURE_CapAdd', 'UNEXPECTED_HOST_EXPOSURE_DeviceRequests', 'UNEXPECTED_HOST_EXPOSURE_Devices', 'UNEXPECTED_HOST_EXPOSURE_ExtraHosts', 'UNEXPECTED_HOST_EXPOSURE_PortBindings', 'UNEXPECTED_HOST_EXPOSURE_Sysctls', 'UNEXPECTED_HOST_EXPOSURE_VolumesFrom', 'UNEXPECTED_NETWORK_SOCKET', 'UNEXPECTED_STANDARD_FD_KIND', 'UNHANDLED_CONTROL_FAILURE', 'UNIFIED_CGROUP_REQUIRED', 'UNKNOWN', 'UNKNOWN_DEVICE_ENTRY', 'UNKNOWN_DEVICE_SYMLINK', 'UNKNOWN_FS', 'UNKNOWN_SUBMOUNT', 'UNPROVED_MOUNT_TOPOLOGY', 'UNREADABLE_OR_INVALID', 'UNREVIEWED_REGISTRY_MIRROR', 'UNSAFE_CGROUP', 'WORK_CAPACITY_OPTIONS', 'WORK_FLAGS', 'WORK_OWNERSHIP', 'WORK_STATFS_CAPACITY', 'WORK_VALIDATION', 'WRITABLE_AUXILIARY', 'create', 'image-remove', 'kill', 'remove', 'start']
+EVIDENCE_CATEGORIES=['ACQUIRED_CONFIG_DIGEST',
+ 'ACQUIRED_PLATFORM_REFERENCE',
+ 'ACQUIRED_ROOTFS_CLOSURE',
+ 'ACQUISITION',
+ 'ACQUISITION_UNKNOWN',
+ 'ALL',
+ 'ALREADY_LOCAL',
+ 'ANCESTOR_TIGHTER_',
+ 'ANCESTOR_TIGHTER_CPU',
+ 'ANCESTOR_TIGHTER_memory.max',
+ 'ANCESTOR_TIGHTER_pids.max',
+ 'ANCHOR_CHANGED_AFTER_AUDIT',
+ 'AUDIT',
+ 'AUDIT_GATE_PID_CHANGED',
+ 'AUX_FLAGS',
+ 'BLOCKED_IMAGE_NOT_LOCAL',
+ 'CGROUP_ANCHOR_CHANGED',
+ 'CGROUP_CHANGED_AFTER_EMPTY',
+ 'CGROUP_DESCRIPTOR_REPLACED',
+ 'CGROUP_FILE_TOO_LARGE',
+ 'CGROUP_KILL_PREFLIGHT_CAPABILITY_PENDING',
+ 'CGROUP_MEMBERSHIP_MISMATCH',
+ 'CGROUP_PATH_REPLACED',
+ 'CGROUP_ROOT_NOT_DOMAIN',
+ 'CGROUP_ROOT_UNAVAILABLE',
+ 'CHILD_CGROUP_REPLACED',
+ 'CLEANUP',
+ 'CLEANUP_EMPTY_DEADLINE',
+ 'CLEANUP_UNKNOWN',
+ 'CLOSED_IMAGE_METADATA_CHANGED',
+ 'CONTAINER_ID_INVALID',
+ 'CONTAINER_REMOVAL_UNPROVED',
+ 'CONTROLLER_INSIDE_PARENT',
+ 'CONTROL_DEADLINE',
+ 'CONTROL_OR_AUDIT_UNVERIFIED',
+ 'CONTROL_RESPONSE_LIMIT',
+ 'CREATE',
+ 'CREATE_UNCERTAIN',
+ 'CUSTODY_MARGIN_ENDED',
+ 'DAEMON_VERSION_CHANGED',
+ 'DEADLINE_ALREADY_FIRED',
+ 'DEADLINE_FIRED',
+ 'DEFAULT_APPARMOR_NOT_PROVED',
+ 'DELETE',
+ 'DEVICE_IDENTITY',
+ 'DEVICE_VALIDATION',
+ 'DISAPPEARED_BEFORE_EMPTY_PROOF',
+ 'DOCKER_STOP_STATE_UNPROVED',
+ 'DOMAIN_ARCH_UNSUPPORTED',
+ 'DOMAIN_CENSUS_BOUND',
+ 'DOMAIN_CENSUS_TASK_BOUND',
+ 'DOMAIN_CUSTODY_IDENTITY_LOST',
+ 'DOMAIN_FILE_TOO_LARGE',
+ 'DOMAIN_HOST_ROOT_REQUIRED',
+ 'DOMAIN_MEMBERSHIP_INVALID',
+ 'DOMAIN_NOT_EMPTY_AT_OBSERVER_ARM',
+ 'DOMAIN_NOT_EXCLUSIVE_GATE',
+ 'DOMAIN_PID_CHANGED',
+ 'DOMAIN_RECEIPT_SHORT_WRITE',
+ 'DOMAIN_REPOPULATED',
+ 'DOMAIN_TYPE_CHANGED',
+ 'EMPTY_AFTER_GATE_DEADLINE',
+ 'EMPTY_OBSERVER',
+ 'EMPTY_RECEIPT_INVALID',
+ 'EMPTY_THEN_HOST_REMOVED',
+ 'EMPTY_WITHIN_CLEANUP_BUDGET',
+ 'ENGINE_HTTP_',
+ 'ENGINE_HTTP_404',
+ 'ESCAPED_MOUNT_PATH',
+ 'EVIDENCE_DIRECTORY_CHANGED',
+ 'EVIDENCE_DIRECTORY_IDENTITY',
+ 'EVIDENCE_EXPORT_LIMIT',
+ 'EVIDENCE_FILE_BOUND',
+ 'EVIDENCE_FILE_CHANGED',
+ 'EVIDENCE_FILE_IDENTITY',
+ 'EVIDENCE_LEDGER_PATH',
+ 'EVIDENCE_OUTPUT_PATH',
+ 'EXECUTOR_CHANGED',
+ 'EXECUTOR_PREFLIGHT',
+ 'EXTRA_OR_MISSING_HOST_FD',
+ 'FILESYSTEM_MISMATCH',
+ 'FINAL_DOMAIN_NOT_EMPTY',
+ 'FOREIGN_DOMAIN_NO_KILL',
+ 'FOREIGN_TASK_NO_KILL',
+ 'GATE_ALREADY_EXPIRED',
+ 'GATE_CONFIG_CHANGED',
+ 'GATE_DEADLINE_EXCEEDED',
+ 'GATE_NOT_LIVE',
+ 'GATE_OUTSIDE_OWNED_PARENT',
+ 'GATE_PID_REPLACED',
+ 'GATE_PLACEMENT_UNPROVED',
+ 'GATE_START_CLOCK_UNVERIFIED',
+ 'GENERATED_FILE_IDENTITY',
+ 'GET',
+ 'HOST_BOOKKEEPING_DEADLINE',
+ 'HOST_BOOKKEEPING_WITHIN_BUDGET',
+ 'HOST_MANAGER_NAMESPACE_UNPROVED',
+ 'HOST_NAMESPACE',
+ 'HOST_OPERATION_DEADLINE',
+ 'HOST_UNIFIED_ROOT_MOUNT_UNPROVED',
+ 'HOST_UNIFIED_WRITABLE_ROOT_MOUNT_UNPROVED',
+ 'HTTP_NON_SUCCESS',
+ 'IDENTITY_CHANGED_BEFORE_OBSERVER',
+ 'IMAGE_CONFIG_ID',
+ 'IMAGE_REMOVE_UNKNOWN',
+ 'INDEPENDENT_DEADLINE_FIRED',
+ 'INDEPENDENT_OBSERVER_FAILED',
+ 'INDEPENDENT_WATCHER_FAILED',
+ 'INSPECT_GATE_MISMATCH',
+ 'INSPECT_MISMATCH_',
+ 'INSPECT_MISMATCH_AutoRemove',
+ 'INSPECT_MISMATCH_CapDrop',
+ 'INSPECT_MISMATCH_CgroupParent',
+ 'INSPECT_MISMATCH_CgroupnsMode',
+ 'INSPECT_MISMATCH_CpuPeriod',
+ 'INSPECT_MISMATCH_CpuQuota',
+ 'INSPECT_MISMATCH_IpcMode',
+ 'INSPECT_MISMATCH_Memory',
+ 'INSPECT_MISMATCH_MemorySwap',
+ 'INSPECT_MISMATCH_NetworkMode',
+ 'INSPECT_MISMATCH_PidsLimit',
+ 'INSPECT_MISMATCH_Privileged',
+ 'INSPECT_MISMATCH_ReadonlyPaths',
+ 'INSPECT_MISMATCH_ReadonlyRootfs',
+ 'INSPECT_MISMATCH_Runtime',
+ 'INSPECT_MISMATCH_SecurityOpt',
+ 'INSPECT_MISMATCH_Tmpfs',
+ 'INVALID_CONTAINER_ID',
+ 'INVALID_SCHEMA',
+ 'IN_PROGRESS',
+ 'KILL_OPERATION_NONTERMINAL',
+ 'KNOWN_GATE_ONLY_NOT_LATE_ADMISSION',
+ 'LC_ALL',
+ 'LEDGER_UNAVAILABLE',
+ 'LIFECYCLE_UNCERTAIN_PARENT_RETAINED',
+ 'LIVE_CAPABILITY_',
+ 'LIVE_CAPABILITY_CapAmb',
+ 'LIVE_CAPABILITY_CapBnd',
+ 'LIVE_CAPABILITY_CapEff',
+ 'LIVE_CAPABILITY_CapInh',
+ 'LIVE_CAPABILITY_CapPrm',
+ 'LIVE_GATE_COMMAND',
+ 'LIVE_GATE_EXECUTABLE',
+ 'LIVE_IDENTITY',
+ 'LIVE_LIMITS',
+ 'LIVE_PID_CHANGED',
+ 'LIVE_SECURITY',
+ 'LOCAL_CONFIG_IDENTITY',
+ 'LOCAL_IMAGE_IDENTITY',
+ 'LOCAL_IMAGE_READ_FAILED',
+ 'MANAGER_CALL_FAILED',
+ 'MANAGER_CALL_TIMEOUT_CAPABILITY_PENDING',
+ 'MANAGER_CHANGED_BEFORE_CREATE',
+ 'MANAGER_CLI_CAPABILITY_PENDING',
+ 'MANAGER_REPLY_BOUND',
+ 'MANAGER_VERSION_UNPARSEABLE',
+ 'MASK_DEFAULTS_MISMATCH',
+ 'MASK_DIRECTORY_CAPACITY',
+ 'MASK_DIRECTORY_ROOT',
+ 'MASK_FILESYSTEM_MISMATCH',
+ 'MASK_FILE_SOURCE_IDENTITY',
+ 'MASK_NOT_MOUNTED',
+ 'MASK_VALIDATION',
+ 'MEMBERSHIP_CHANGED',
+ 'MISSING_REQUIRED_MOUNT',
+ 'MONITOR_DIED_BEFORE_START',
+ 'MONITOR_EXIT_UNVERIFIED',
+ 'MONITOR_INSIDE_PARENT',
+ 'MONITOR_JOIN_UNPROVED',
+ 'MONITOR_NOT_READY',
+ 'MONITOR_OS_ERROR',
+ 'MONITOR_UNCLASSIFIED_FAILURE',
+ 'MOUNT_DEVICE_MISMATCH',
+ 'MOUNT_ID_OUTSIDE_GATE_TABLE',
+ 'MOUNT_RESOLUTION',
+ 'MOUNT_VALIDATION',
+ 'NONLOOPBACK_INTERFACE',
+ 'NONPRIVATE_MOUNT',
+ 'NOT_ESTABLISHED',
+ 'NOT_ROOTED_SYMLINK',
+ 'NOT_STARTED',
+ 'NOT_WRITTEN',
+ 'OBSERVED_EMPTY_AND_REMOVED',
+ 'OBSERVED_EMPTY_RETAINED_PARENT',
+ 'OBSERVED_EMPTY_SAME_CGROUP',
+ 'OBSERVER',
+ 'OBSERVER_DEADLINE',
+ 'OBSERVER_FAILED',
+ 'OBSERVER_NOT_READY',
+ 'OCCUPANCY_UNPROVED',
+ 'OCCUPIED_EXCLUSIVE_GATE',
+ 'OMITTED_HOST_SOURCE',
+ 'OPENAT2_CAPABILITY_PENDING',
+ 'OWNED_ACTIVE_EMPTY',
+ 'OWNED_CGROUP_KILL_CAPABILITY_PENDING',
+ 'OWNED_DOMAIN_KILL_WRITTEN',
+ 'OWNED_PARENT_REMOVED_AFTER_RECEIPT',
+ 'OWNED_UNIT_ALREADY_EXISTS',
+ 'OWNED_UNIT_IDENTITY_UNPROVED',
+ 'OWNED_UNIT_IDENTITY_VERIFIED',
+ 'OWNED_UNIT_NOT_ACTIVE',
+ 'P0_CGROUP_NOT_EXCLUSIVELY_GATE',
+ 'P0_GATE_TASK_CENSUS',
+ 'P0_PREPARATION_ONLY',
+ 'P0_TECHNICAL_EVIDENCE',
+ 'PARENT_CREATE',
+ 'PARENT_DESCRIPTOR_CHANGED',
+ 'PARENT_EMPTY_UNPROVED',
+ 'PARENT_EVENTS_INVALID',
+ 'PARENT_KILL_SHORT_WRITE',
+ 'PARENT_LIMITS_CHANGED',
+ 'PARENT_NOT_DOMAIN',
+ 'PARENT_NOT_INITIAL_EMPTY',
+ 'PARENT_PATH_REPLACED',
+ 'PARENT_REMOVAL_UNVERIFIED',
+ 'PARENT_RETENTION_LOST',
+ 'PASS',
+ 'PATH',
+ 'PIDFD_CAPABILITY_PENDING',
+ 'PID_START_CHANGED',
+ 'POST',
+ 'PREPARATION_FREE_SPACE_BELOW_1GIB',
+ 'PREPARATION_FREE_SPACE_LOW',
+ 'PREPARATION_MODE_REQUIRED',
+ 'PROCESS_ROOT_CHANGED',
+ 'PROC_SUBMOUNT_MISMATCH',
+ 'PSEUDO_SOURCE_MISMATCH',
+ 'PULL_ATTEMPT_DEADLINE',
+ 'PULL_DEADLINE_NONTERMINAL',
+ 'PULL_HTTP_FAILURE',
+ 'PULL_LINE_LIMIT',
+ 'PULL_PROGRESS_LIMIT',
+ 'PULL_TERMINAL_ERROR',
+ 'PULL_TERMINAL_VERIFIED',
+ 'REMOVE_OPERATION_UNCERTAIN',
+ 'REQUIRED_CONTROLLERS_MISSING',
+ 'ROOTED_DIRECTORY_TOO_LARGE',
+ 'ROOTED_ENOENT',
+ 'ROOTED_MAGICLINK_OR_SYMLINK_LOOP_BLOCKED',
+ 'ROOTED_OBJECT_FOUND',
+ 'ROOTED_OPEN_FAILED',
+ 'ROOTED_PATH_INVALID',
+ 'ROOTED_SYSCALL_ARCH_UNSUPPORTED',
+ 'ROOT_DESCRIPTOR_CHANGED',
+ 'ROOT_OR_UNSAFE_CGROUP',
+ 'ROOT_PID_CHANGED',
+ 'ROOT_PID_EXITED',
+ 'RUNTIME_VERSION_CHANGED',
+ 'SC_CLK_TCK',
+ 'SHARED_CHANGED_AFTER_CREATE',
+ 'SHARED_CHANGED_AFTER_STOP',
+ 'SHARED_CHANGED_BEFORE_CREATE',
+ 'SHARED_CONTROLLERS_NOT_ALREADY_ENABLED',
+ 'SHARED_NAMESPACE_',
+ 'SHARED_NAMESPACE_cgroup',
+ 'SHARED_NAMESPACE_ipc',
+ 'SHARED_NAMESPACE_mnt',
+ 'SHARED_NAMESPACE_net',
+ 'SHARED_NAMESPACE_pid',
+ 'SHARED_NAMESPACE_uts',
+ 'SHARED_STATE_CHANGED',
+ 'SOCKET_EXPOSED',
+ 'SOCKET_OBJECT_PRESENT_ROOTED',
+ 'START',
+ 'START_ALREADY_ARMED',
+ 'START_UNCERTAIN',
+ 'STATIC_ALLOWLIST_ONLY_LIVE_UNVERIFIED',
+ 'STOP_PARENT_NOT_EMPTY',
+ 'STOP_WITHOUT_TERMINAL_RECEIPT',
+ 'SYSTEMD_EXACT_VERSION_CAPABILITY_PENDING',
+ 'SYSTEMD_PACKAGE_MANAGER_VERSION_MISMATCH',
+ 'TRANSPORT_OR_RESPONSE_UNCERTAIN',
+ 'UNCLASSIFIED',
+ 'UNEXPECTED_HOST_EXPOSURE_',
+ 'UNEXPECTED_HOST_EXPOSURE_Binds',
+ 'UNEXPECTED_HOST_EXPOSURE_CapAdd',
+ 'UNEXPECTED_HOST_EXPOSURE_DeviceRequests',
+ 'UNEXPECTED_HOST_EXPOSURE_Devices',
+ 'UNEXPECTED_HOST_EXPOSURE_ExtraHosts',
+ 'UNEXPECTED_HOST_EXPOSURE_PortBindings',
+ 'UNEXPECTED_HOST_EXPOSURE_Sysctls',
+ 'UNEXPECTED_HOST_EXPOSURE_VolumesFrom',
+ 'UNEXPECTED_NETWORK_SOCKET',
+ 'UNEXPECTED_STANDARD_FD_KIND',
+ 'UNHANDLED_CONTROL_FAILURE',
+ 'UNIFIED_CGROUP_REQUIRED',
+ 'UNIT_NAME_INVALID',
+ 'UNIT_OBJECT_INVALID',
+ 'UNIT_STATE_DUPLICATE_PROPERTY',
+ 'UNIT_STATE_UNPARSEABLE',
+ 'UNKNOWN',
+ 'UNKNOWN_DEVICE_ENTRY',
+ 'UNKNOWN_DEVICE_SYMLINK',
+ 'UNKNOWN_FS',
+ 'UNKNOWN_SUBMOUNT',
+ 'UNPROVED_MOUNT_TOPOLOGY',
+ 'UNREADABLE_OR_INVALID',
+ 'UNRELATED_CHILD_DOMAIN',
+ 'UNREVIEWED_REGISTRY_MIRROR',
+ 'UNSAFE_CGROUP',
+ 'UNSAFE_KILL_DOMAIN',
+ 'WATCHER',
+ 'WATCH_ANCHOR_CHANGED',
+ 'WORK_CAPACITY_OPTIONS',
+ 'WORK_FLAGS',
+ 'WORK_OWNERSHIP',
+ 'WORK_STATFS_CAPACITY',
+ 'WORK_VALIDATION',
+ 'WRITABLE_AUXILIARY',
+ 'create',
+ 'image-remove',
+ 'kill',
+ 'remove',
+ 'start']
 
 def export_sanitized(destination):
     require(destination=='/tmp/p0-sanitized-receipt.json','EVIDENCE_OUTPUT_PATH')
@@ -479,9 +784,24 @@ def export_sanitized(destination):
                     'httpStatus','emptyObservedBeforeDisappearance','emptyCensusObserved','containerRemoved',
                     'deadlineExceeded','noMutationStarted','progressBytes','initialFreeBytes',
                     'manifestDeclaredCompressedLayerBytes','pid','starttime','emptyObservedMonotonicNs',
-                    'hiddenMountCount','Running','Pid','ExitCode','OOMKilled'):
+                    'hiddenMountCount','Running','Pid','ExitCode','OOMKilled',
+                    'outside','independentOfDaemonAndCustodyLock','observerPid','watcherPid','controllerPid',
+                    'occupiedObserved','initialEmptyCredited','initialEmptyIsFinalReceipt',
+                    'emptyObservedBoottime','observedBoottime','gateDeadlineBoottime',
+                    'dispatchDeadlineBoottime','resetAfterResponseAllowed','deadlineFired',
+                    'knownLifecycle','emptyReceiptDurable','parentRemovedAfterReceipt',
+                    'retainedParentNotCreditedAsEmpty','objectType','sharedPrerequisitesVerified',
+                    'systemdCallReturned','unitIdentityVerified','allControllersAlreadyEnabled','managerVersionAdmitted',
+                    'killCount','firstKillBoottime','killFeaturePresentAndAccessMetadata',
+                    'ownedKillDescriptorStillRequiresVerification','emptyPhaseDeadlineMonotonic',
+                    'hostBookkeepingDeadlineMonotonic','emptyPhaseStartedMonotonic',
+                    'emptyPhaseDurationSeconds','hostBookkeepingStartedMonotonic',
+                    'hostBookkeepingDurationSeconds','emptyPhaseDeadlineExceeded',
+                    'hostBookkeepingDeadlineExceeded','errno','processCount','threadCount','directoryCount'):
+
+
             if key in value:result[key]=scalar(value[key])
-        for key in ('result','reason','failure','error','category','stage','operation'):
+        for key in ('result','reason','failure','error','category','stage','operation','compatibility','independentGateDeadlineEnforcement','emptyPhaseResult','hostBookkeepingResult'):
             if key in value:result[key]=category(value[key])
         prop=value.get('property')
         if isinstance(prop,dict):
@@ -491,6 +811,26 @@ def export_sanitized(destination):
                 if isinstance(v,(bool,int,float)) or v is None:result['property'][k]=v
                 elif isinstance(v,str) and v in ('none','private','runc','1000:1000','ro','rw','max'):result['property'][k]=v
                 else:result['property'][k+'Type']=type(v).__name__ if type(v).__name__ in ('str','list','dict') else 'other'
+        if isinstance(value.get('ownedUnit'),str) and re.fullmatch(r'silhouettep0[a-f0-9]{32}\.slice',value['ownedUnit']):
+            result['ownedUnit']=value['ownedUnit']
+        if isinstance(value.get('invocationId'),str) and re.fullmatch('[a-f0-9]{32}',value['invocationId']):
+            result['invocationId']=value['invocationId']
+        if value.get('packageVersion')=='255.4-1ubuntu8.18':result['packageVersion']=value['packageVersion']
+        version=value.get('managerVersion')
+        if isinstance(version,str) and re.fullmatch('[A-Za-z0-9_.+~:-]{1,128}',version):result['managerVersion']=version
+        if isinstance(value.get('rootIdentity'),list) and len(value['rootIdentity'])==2 and all(isinstance(x,int) for x in value['rootIdentity']):
+            result['rootIdentity']=value['rootIdentity']
+        if isinstance(value.get('shared'),dict):
+            shared=value['shared'];result['shared']={}
+            allowed_controllers={'cpu','cpuset','io','memory','pids','hugetlb','rdma','misc','dmem'}
+            for field in ('controllers','enabled'):
+                source=shared.get(field)
+                if isinstance(source,list):
+                    result['shared'][field]=[v for v in source if v in allowed_controllers]
+                    result['shared'][field+'HasUnknown']=any(v not in allowed_controllers for v in source)
+            result['shared']['limits']=record({'limits':shared.get('limits',{})}).get('limits',{})
+            result['shared']['rootLimitAbsent']=[key for key,val in shared.get('limits',{}).items() if key in ('memory.max','memory.swap.max','pids.max','cpu.max') and val is None]
+            result['shared']['type']=shared.get('type') if shared.get('type')=='domain' else 'UNCLASSIFIED'
         if 'exceptionClass' in value:
             result['exceptionClass']=value['exceptionClass'] if value['exceptionClass'] in ('RuntimeError','PermissionError','FileNotFoundError','TimeoutError','KeyError','ValueError','OSError','ProcessLookupError') else 'OtherException'
         if 'target' in value:result['target']=technical_path(value['target'])
@@ -502,7 +842,7 @@ def export_sanitized(destination):
         for key in ('limits',):
             if isinstance(value.get(key),dict):
                 result[key]={k:v for k,v in value[key].items() if k in ('memory.max','memory.swap.max','pids.max','cpu.max') and isinstance(v,str) and re.fullmatch('[0-9max ]{1,40}',v)}
-        for key in ('observer','killOperation','removeOperation','finalState','cleanup'):
+        for key in ('observer','killOperation','removeOperation','finalState','cleanup','custody'):
             if key in value:result[key]=record(value[key])
         if isinstance(value.get('ancestors'),list):
             result['ancestorCount']=len(value['ancestors']);result['ancestorsTruncated']=len(value['ancestors'])>32
@@ -545,7 +885,9 @@ def export_sanitized(destination):
         output['files']={}
         names=('phase','executor','failure','acquisition','create','start','identity','audit-progress',
                'mount-inventory','reachable-mounts','audit','empty','kill','remove','cleanup',
-               'image-remove','main-final','final')
+               'image-remove','main-final','final','domain-preflight','parent-create','parent',
+               'monitors','occupied','start-armed','domain-terminal','deadline-fired',
+               'watcher-failure','observer-failure','parent-stop','custody-domain','socket')
         for name in names:
             try:
                 value=read_file(directory,name+'.json')
@@ -554,12 +896,26 @@ def export_sanitized(destination):
                 else:output['files'][name]=record(value)
             except FileNotFoundError:output['files'][name]={'state':'NOT_WRITTEN'}
             except Exception:output['files'][name]={'state':'UNREADABLE_OR_INVALID'}
+        monitors=output['files'].get('monitors',{})
+        for role,key in (('controller','controllerPid'),('observer','observerPid'),('watcher','watcherPid')):
+            pid=monitors.get(key)
+            if isinstance(pid,int) and 0<pid<2**31:
+                try:output['files']['domain-kill-'+role]=record(read_file(directory,'domain-kill-'+str(pid)+'.json'))
+                except FileNotFoundError:output['files']['domain-kill-'+role]={'state':'NOT_WRITTEN'}
+                except Exception:output['files']['domain-kill-'+role]={'state':'UNREADABLE_OR_INVALID'}
         after=os.fstat(directory)
         require((anchor.st_dev,anchor.st_ino)==(after.st_dev,after.st_ino),'EVIDENCE_DIRECTORY_CHANGED')
     except Exception:output['evidenceState']='LEDGER_UNAVAILABLE'
     finally:
         if directory is not None:os.close(directory)
         if tmp is not None:os.close(tmp)
+    files=output.get('files',{})
+    if (files.get('final',{}).get('result')=='PASS' and
+        files.get('empty',{}).get('result')=='OBSERVED_EMPTY_RETAINED_PARENT' and
+        files.get('parent-stop',{}).get('result')=='OWNED_PARENT_REMOVED_AFTER_RECEIPT' and
+        files.get('deadline-fired',{}).get('state')=='NOT_WRITTEN' and
+        files.get('monitors',{}).get('outside') is True):
+        output['independentGateDeadlineEnforcement']='KNOWN_GATE_ONLY_NOT_LATE_ADMISSION'
     raw=json.dumps(output,sort_keys=True,indent=2)+'\n'
     require(len(raw.encode())<=262144,'EVIDENCE_EXPORT_LIMIT')
     tmp=os.open('/tmp',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
@@ -572,108 +928,107 @@ def export_sanitized(destination):
 
 
 
-def main():
-    parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--preparation-only',action='store_true')
-    parser.add_argument('--acquire-fixed-image',action='store_true')
-    parser.add_argument('--receipt')
-    parser.add_argument('--export-evidence')
-    args=parser.parse_args()
-    if args.export_evidence:
-        export_sanitized(args.export_evidence);return 0
-    require(args.preparation_only and args.receipt,'PREPARATION_MODE_REQUIRED')
+def preparation_candidate(*, receipt, acquire_fixed_image=False):
+    """INACTIVE callable for review. No CLI/workflow activates this candidate.
+
+    A future separately approved runner wrapper would have to call this exact
+    function. There is deliberately no application or stdin release operation.
+    """
     result={'kind':'P0_PREPARATION_ONLY','payloadReleased':False,'image':IMAGE,'result':'UNKNOWN'}
     host_end=time.monotonic()+300;custody_end=host_end+60
     name='silhouette-p0-'+str(os.getpid())+'-'+str(time.monotonic_ns())
     ledger=Path('/tmp')/name;ledger.mkdir(mode=0o700)
     save_state('/tmp/p0-ledger-location.json',{'directory':str(ledger)})
-    lock_path=ledger/'custody.lock';watch_pid=None;cid=None;anchor=None
-
-
-    with open(lock_path,'a') as lock:
-        fcntl.flock(lock.fileno(),fcntl.LOCK_EX)
-        watch_pid=os.fork()
-        if watch_pid==0:
-            lock.close();watchdog(name,ledger,lock_path,custody_end)
+    cid=None;anchor=None;domain=None;pre=None
+    try:
+        save_state(ledger/'phase.json',{'stage':'EXECUTOR_PREFLIGHT'})
+        v=request('GET','/version',host_end);info=request('GET','/info',host_end)
+        require(v.get('Version')=='28.0.4' and v.get('GitCommit')=='6430e49','DAEMON_VERSION_CHANGED')
+        components={c['Name']:c['Version'] for c in v.get('Components',[])}
+        require(components.get('runc')=='1.5.3' and components.get('containerd')=='v2.4.2','RUNTIME_VERSION_CHANGED')
+        require(info.get('CgroupVersion')=='2' and info.get('CgroupDriver')=='systemd' and info.get('DefaultRuntime')=='runc','EXECUTOR_CHANGED')
+        save_state(ledger/'executor.json',{'daemonVersion':v.get('Version'),'daemonCommit':v.get('GitCommit'),'apiVersion':v.get('ApiVersion'),'runcVersion':components.get('runc'),'containerdVersion':components.get('containerd'),'cgroupVersion':info.get('CgroupVersion'),'cgroupDriver':info.get('CgroupDriver'),'defaultRuntime':info.get('DefaultRuntime')})
+        module=load_component('p0-retained-domain.INACTIVE.py')
+        # Read-only prerequisites before pull, unit creation or Docker creation.
+        pre=module.preflight(ledger,host_end)
+        save_state(ledger/'domain-preflight.json',pre)
+        # Test syscall presence/flags against controller's own root, not a mock
+        # container. Unsupported openat2 is a capability stop before mutation.
+        rooted=load_component('p0-rooted-paths.INACTIVE.py')
+        probe=rooted.Root(os.getpid(),module.starttime(os.getpid()))
+        probe.close()
+        if acquire_fixed_image:
+            save_state(ledger/'phase.json',{'stage':'ACQUISITION'})
+            save_state(ledger/'acquisition.json',{'result':'IN_PROGRESS','daemonOutcomeKnown':False})
+            def acquisition_timeout(_number,_frame):raise RuntimeError('PULL_ATTEMPT_DEADLINE')
+            old_alarm=signal.signal(signal.SIGALRM,acquisition_timeout)
+            signal.setitimer(signal.ITIMER_REAL,min(240,max(.001,host_end-time.monotonic())))
+            try:result['acquisition']=acquire(min(host_end,time.monotonic()+240))
+            finally:signal.setitimer(signal.ITIMER_REAL,0);signal.signal(signal.SIGALRM,old_alarm)
+            save_state(ledger/'acquisition.json',result['acquisition'])
+            require(result['acquisition']['result'] in ('ALREADY_LOCAL','PULL_TERMINAL_VERIFIED'),'ACQUISITION_UNKNOWN')
+        try:image=request('GET','/images/'+IMAGE+'/json',host_end)
+        except RuntimeError as error:
+            if str(error)=='ENGINE_HTTP_404':raise RuntimeError('BLOCKED_IMAGE_NOT_LOCAL') from None
+            raise
+        require(image['Id']=='sha256:8c3a0351e2535c75b4f15dcdd918612e419e829306291a93ddce97f4746581bd','LOCAL_CONFIG_IDENTITY')
+        require(image['Os']=='linux' and image['Architecture']=='amd64' and IMAGE in image.get('RepoDigests',[]),'LOCAL_IMAGE_IDENTITY')
+        domain=module.Domain(ledger,pre,host_end)
+        save_state(ledger/'phase.json',{'stage':'PARENT_CREATE'})
+        domain.create()
+        masks=policy();spec=creation(masks,domain.name)
+        save_state(ledger/'phase.json',{'stage':'CREATE'})
+        create_state=wait_operation(operation('POST','/containers/create?name='+name,ledger,'create',host_end,spec),host_end)
+        require(known(create_state),'CREATE_UNCERTAIN')
+        cid=create_state['value']['Id'];require(re.fullmatch('[a-f0-9]{64}',cid),'INVALID_CONTAINER_ID')
+        domain.monitor(cid,custody_end)
+        save_state(ledger/'phase.json',{'stage':'START'})
+        domain.arm_start()
+        # Dispatch bound is armed before HTTP work. Never reset on late response.
+        start_end=min(host_end,time.monotonic()+20)
+        start_state=wait_operation(operation('POST','/containers/'+cid+'/start',ledger,'start',start_end),start_end)
+        require(known(start_state),'START_UNCERTAIN')
+        s=request('GET','/containers/'+cid+'/json',start_end)['State']
+        occupied=domain.await_occupied(s['Pid'],start_end)
+        cg=live_cgroup(s['Pid'])
+        require(cg==domain.path/('docker-'+cid+'.scope'),'GATE_OUTSIDE_OWNED_PARENT')
+        dispatch=json.loads((ledger/'start-armed.json').read_text())
+        gate_bound=min(occupied['gateDeadlineBoottime'],dispatch['dispatchDeadlineBoottime'])
+        container_end=min(host_end,time.monotonic()+max(0,gate_bound-time.clock_gettime(time.CLOCK_BOOTTIME)))
+        anchor=identity(s['Pid'],cg);save_state(ledger/'identity.json',anchor)
+        def timed_out(_number,_frame):raise RuntimeError('GATE_DEADLINE_EXCEEDED')
+        previous=signal.signal(signal.SIGALRM,timed_out)
+        signal.setitimer(signal.ITIMER_REAL,max(.001,container_end-time.monotonic()))
         try:
-            save_state(ledger/'phase.json',{'stage':'EXECUTOR_PREFLIGHT'})
-            v=request('GET','/version',host_end);info=request('GET','/info',host_end)
-            require(v.get('Version')=='28.0.4' and v.get('GitCommit')=='6430e49','DAEMON_VERSION_CHANGED')
-            components={c['Name']:c['Version'] for c in v.get('Components',[])}
-            require(components.get('runc')=='1.5.3' and components.get('containerd')=='v2.4.2','RUNTIME_VERSION_CHANGED')
-            require(info.get('CgroupVersion')=='2' and info.get('CgroupDriver')=='systemd' and info.get('DefaultRuntime')=='runc','EXECUTOR_CHANGED')
-            save_state(ledger/'executor.json',{'daemonVersion':v.get('Version'),'daemonCommit':v.get('GitCommit'),'apiVersion':v.get('ApiVersion'),'runcVersion':components.get('runc'),'containerdVersion':components.get('containerd'),'cgroupVersion':info.get('CgroupVersion'),'cgroupDriver':info.get('CgroupDriver'),'defaultRuntime':info.get('DefaultRuntime')})
-            if args.acquire_fixed_image:
-                save_state(ledger/'phase.json',{'stage':'ACQUISITION'})
-                save_state(ledger/'acquisition.json',{'result':'IN_PROGRESS','daemonOutcomeKnown':False})
-                def acquisition_timeout(_number,_frame):raise RuntimeError('PULL_ATTEMPT_DEADLINE')
-                old_alarm=signal.signal(signal.SIGALRM,acquisition_timeout)
-                signal.setitimer(signal.ITIMER_REAL,min(240,max(.001,host_end-time.monotonic())))
-                try:result['acquisition']=acquire(min(host_end,time.monotonic()+240))
-                finally:signal.setitimer(signal.ITIMER_REAL,0);signal.signal(signal.SIGALRM,old_alarm)
-                save_state(ledger/'acquisition.json',result['acquisition'])
-                require(result['acquisition']['result'] in ('ALREADY_LOCAL','PULL_TERMINAL_VERIFIED'),'ACQUISITION_UNKNOWN')
-            try:image=request('GET','/images/'+IMAGE+'/json',host_end)
-            except RuntimeError as error:
-                if str(error)=='ENGINE_HTTP_404':raise RuntimeError('BLOCKED_IMAGE_NOT_LOCAL') from None
-                raise
-            require(image['Id']=='sha256:8c3a0351e2535c75b4f15dcdd918612e419e829306291a93ddce97f4746581bd','LOCAL_CONFIG_IDENTITY')
-            require(image['Os']=='linux' and image['Architecture']=='amd64' and IMAGE in image.get('RepoDigests',[]),'LOCAL_IMAGE_IDENTITY')
-            masks=policy();spec=creation(masks)
-            save_state(ledger/'phase.json',{'stage':'CREATE'})
-            create_state=wait_operation(operation('POST','/containers/create?name='+name,ledger,'create',host_end,spec),host_end)
-            require(known(create_state),'CREATE_UNCERTAIN')
-            cid=create_state['value']['Id'];require(re.fullmatch('[a-f0-9]{64}',cid),'INVALID_CONTAINER_ID')
-            save_state(ledger/'phase.json',{'stage':'START'})
-            start_end=min(host_end,time.monotonic()+20)
-            start_state=wait_operation(operation('POST','/containers/'+cid+'/start',ledger,'start',start_end),start_end)
-            require(known(start_state),'START_UNCERTAIN')
-            s=request('GET','/containers/'+cid+'/json',host_end)['State'];cg=live_cgroup(s['Pid'])
-            container_end=min(host_end,time.monotonic()+gate_remaining(s['Pid']))
-            anchor=identity(s['Pid'],cg);save_state(ledger/'identity.json',anchor)
-            def timed_out(_number,_frame):raise RuntimeError('GATE_DEADLINE_EXCEEDED')
-            previous=signal.signal(signal.SIGALRM,timed_out)
-            signal.setitimer(signal.ITIMER_REAL,max(.001,container_end-time.monotonic()))
-            try:
-                save_state(ledger/'phase.json',{'stage':'AUDIT'})
-                result['audit']=audit(cid,image['Id'],masks,container_end,ledger)
-                save_state(ledger/'audit.json',result['audit'])
-                require(same_identity(anchor),'ANCHOR_CHANGED_AFTER_AUDIT')
-                require(time.monotonic()<container_end,'GATE_DEADLINE_EXCEEDED')
-            finally:signal.setitimer(signal.ITIMER_REAL,0);signal.signal(signal.SIGALRM,previous)
-            save_state(ledger/'phase.json',{'stage':'CLEANUP'})
-            result['cleanup']=cleanup(cid,anchor,ledger)
-            save_state(ledger/'cleanup.json',result['cleanup'])
-            require(result['cleanup']['result']=='OBSERVED_EMPTY_AND_REMOVED','CLEANUP_UNKNOWN')
-            if result.get('acquisition',{}).get('result')=='PULL_TERMINAL_VERIFIED':
-                removed=wait_operation(operation('DELETE','/images/'+IMAGE+'?force=0&noprune=1',ledger,'image-remove',custody_end),custody_end)
-                require(known(removed),'IMAGE_REMOVE_UNKNOWN')
-            result['result']='PASS'
-        except Exception as error:
-
-
-            category=str(error)
-            save_state(ledger/'failure.json',{'stage':json.loads((ledger/'phase.json').read_text()).get('stage'),'exceptionClass':type(error).__name__,'category':category,'property':FAILURE_CONTEXT})
-            result['failure']=category if re.fullmatch('[A-Z][A-Z0-9_]*',category) else 'CONTROL_OR_AUDIT_UNVERIFIED'
-            mutations=any((ledger/(key+'.json')).exists() for key in ('create','start','kill','image-remove','acquisition'))
-            if mutations:result['custody']=reconcile(name,ledger,custody_end)
-            else:result['noMutationStarted']=True
-        finally:
-            save_state(ledger/'main-final.json',result)
-            save_state(ledger/'final.json',result)
-
-    if watch_pid:os.waitpid(watch_pid,0)
-    persisted=json.loads((ledger/'final.json').read_text())
-    Path(args.receipt).write_text(json.dumps(persisted,indent=2)+'\n')
-    print(json.dumps({'kind':'P0_PREPARATION_ONLY','result':persisted.get('result','UNKNOWN'),
-                      'payloadReleased':False,'image':IMAGE,
-                      'failure':result.get('failure'),'residualVMTeardownObserved':False},sort_keys=True))
-    return 0 if persisted.get('result')=='PASS' else 1
+            save_state(ledger/'phase.json',{'stage':'AUDIT'})
+            result['audit']=audit(cid,image['Id'],masks,container_end,ledger,domain)
+            save_state(ledger/'audit.json',result['audit'])
+            require(same_identity(anchor),'ANCHOR_CHANGED_AFTER_AUDIT')
+            domain.manager_check(container_end)
+            require(time.monotonic()<container_end,'GATE_DEADLINE_EXCEEDED')
+        finally:signal.setitimer(signal.ITIMER_REAL,0);signal.signal(signal.SIGALRM,previous)
+        save_state(ledger/'phase.json',{'stage':'CLEANUP'})
+        result['cleanup']=cleanup(cid,domain,ledger,container_end,host_end)
+        save_state(ledger/'cleanup.json',result['cleanup'])
+        require(result['cleanup']['result']=='EMPTY_THEN_HOST_REMOVED','CLEANUP_UNKNOWN')
+        if result.get('acquisition',{}).get('result')=='PULL_TERMINAL_VERIFIED':
+            removed=wait_operation(operation('DELETE','/images/'+IMAGE+'?force=0&noprune=1',ledger,'image-remove',host_end),host_end)
+            require(known(removed),'IMAGE_REMOVE_UNKNOWN')
+        require(time.monotonic()<host_end,'HOST_BOOKKEEPING_DEADLINE')
+        result['result']='PASS'
+    except Exception as error:
+        category=str(error)
+        save_state(ledger/'failure.json',{'stage':json.loads((ledger/'phase.json').read_text()).get('stage'),'exceptionClass':type(error).__name__,'category':category,'property':FAILURE_CONTEXT})
+        result['failure']=category if re.fullmatch('[A-Z][A-Z0-9_]*',category) else 'CONTROL_OR_AUDIT_UNVERIFIED'
+        mutations=bool(domain and domain.create_issued) or any((ledger/(key+'.json')).exists() for key in ('create','start','image-remove','acquisition'))
+        if mutations:result['custody']=reconcile(name,ledger,custody_end,domain)
+        else:result['noMutationStarted']=True
+    finally:
+        save_state(ledger/'main-final.json',result)
+        save_state(ledger/'final.json',result)
+    Path(receipt).write_text(json.dumps(result,indent=2)+'\n')
+    return 0 if result.get('result')=='PASS' else 1
 
 
 if __name__=='__main__':
-    try:code=main()
-    except Exception:
-        print(json.dumps({'kind':'P0_PREPARATION_ONLY','result':'UNKNOWN','payloadReleased':False,'failure':'UNHANDLED_CONTROL_FAILURE'}))
-        code=1
-    raise SystemExit(code)
+    raise SystemExit('INACTIVE: no standalone invocation, activation or payload release')
