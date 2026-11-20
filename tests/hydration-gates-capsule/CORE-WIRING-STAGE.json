@@ -1,0 +1,37 @@
+{
+  "status": "UNPUBLISHED WIRING CANDIDATE. No execution anchor file is supplied. No core workflow invocation, preparation metadata run or dynamic containment has happened for this candidate.",
+  "twoSeparateStages": [
+    "A NEW isolated metadata-only job records exact SHA256 of five existing host tools plus three harness sources and four transfer/extraction controls with actual checkout commit. No npm/dependencies/product compilation or old capsule preparation. All six legacy jobs are explicitly skipped for the exact repair PR head branch, including quality/sysctl/product tests, security, Windows/NSIS and daemon/hydration preparation. Skipped is NOT passed functional coverage. Candidate record is a separate artifact.",
+    "After independent review of the candidate artifact and source correspondence, a separate reviewed cut may add CORE-EXECUTION-ANCHOR.json containing frozen identities. The core workflow filters only that path. No anchor file is present in this source candidate, no artifact/job generates and executes its own expected hashes."
+  ],
+  "anchorRequiredExactKeys": {
+    "schema": "integer1",
+    "repository": "exact repository string",
+    "artifact": "id, runId, headSha, sourceMerge, sha256, allowlistSha256, zipBytes of the already reviewed immutable runtime artifact",
+    "candidateRecord": "runId, artifactId, SHA256 of separate preparation candidate ZIP, independently inspected before anchor cut",
+    "sourceCheckout": "actual preparation checkout commit from that separate source candidate record",
+    "sources": "exact three harness-source SHA256 map",
+    "controls": "exact extractor, budget helper, PREPARATION-CONTRACT and adapter SHA256 map",
+    "hostBinaries": "exact five host-tool SHA256 map from separate preparation runner"
+  },
+  "authenticityLimit": "This candidate has no final authentic execution anchor because the separate host-binary/source candidate artifact and its real commit/run/digest do not exist yet. Do not invent values, use placeholders as valid identities, or compute expected hashes from the execution runner. Source code validates identities but cannot authenticate its own review. The freeze must be independently inspected outside the later executing job. Source preparation is isolated from older jobs; no claim that all historical CI was metadata-only or free of host policy changes.",
+  "executionJob": "Separate fresh ubuntu24.04 job, permissions contentsread/actionsread, no persisted Git credentials, no npm/Node/product steps. Installs exactly the same existing four namespace packages as preparation, with no sysctl/profile/cgroup ownership or security policy changes. Admission denial stops. No privileged container, host capability, personal/production host, secret injection into payload or model service.",
+  "transport": "GitHub token only in transfer adapter. Exact artifact API id/run/head/digest checked, bytes capped/hashed, redirects opened without Authorization. Candidate artifact JSON exact closed ZIP member compared to frozen source/host identities. Existing separately pinned safe extractor revalidates archive for actual extraction. Token removed from environment and not passed to extractor/controller. Local anchor is only a path adaptation of independently frozen values, never new expected hashes.",
+  "pinsAndStop": "Different fresh-runner package bytes from reviewed preparation hashes are a STOP, not automatic re-pin, package downgrade, host policy change or new exploration chain. Artifact expiration is a STOP. Current known runtime artifact expires2026-11-22; any replacement requires its own reviewed provenance, not silent substitution.",
+  "receipts": "Upload only suite/controller-receipt/controller-failure/cleanup-unknown JSON patterns. Never upload config/ready/release/canary, private bus paths, signed URLs, token or entire temp directory. No credential goes into source, capsule, anchor or receipt.",
+  "remainingBeforeAnyDynamics": [
+    "Review exact full harness plus wiring source and publish only after that review.",
+    "Run only preparation candidate metadata, inspect actual artifact/run/commit/hash bytes independently and freeze a genuine external anchor in a separate reviewed cut.",
+    "Review final exact anchor file and workflow event before any publication that could trigger the core workflow. No final anchor is created by this candidate.",
+    "Actual bwrap admission, mount construction, namespace-only remount/drop, effective aggregate limits, finite negatives and cleanup remain unknown until an explicitly reviewed core attempt. Failure stops without host policy/privilege fallback.",
+    "Core containment result is not product validation and cannot explain or repair the original shutdown failure."
+  ],
+  "documentation": [
+    "https://docs.github.com/en/actions/how-tos/writing-workflows/choosing-when-your-workflow-runs/triggering-a-workflow",
+    "https://docs.github.com/en/rest/actions/artifacts"
+  ],
+  "eventScope": "Live PR226 accumulated166files/57commits athead2b1b406/base main. CI pull_request synchronize triggers all ungated jobs even if new step is only metadata; path filters inspect cumulative PR changes, so they are not adequate isolation here. Explicit job guards isolate this exact repair branch. Release workflow only tags v* or manual dispatch, neither is part of a normal PR synchronize.",
+  "hostPolicy": "Remove existing AppArmor sysctl disable command from ci.yml itself; do not execute, replace or relax another host policy. Six legacy jobs are skipped for this repair branch even after removal, because they contain other product/namespace/daemon setup outside the new metadata scope. Other branches may now fail legitimate namespace admission rather than silently disabling protection; this coverage effect is explicit and needs review.",
+  "coverageCheck": "GitHub may report skipped legacy jobs as success. A separate unconditional-for-this-PR functional-coverage-pending job intentionally exits1, with no continue-on-error, so metadata-only runs remain overall failed rather than green. No change to repository required-check or branch-protection settings is made or claimed. Existing required names may still show skipped-success; their coverage remains NOT executed. This explicit failing check cannot approve a merge or product completion.",
+  "exactPRScope": "Every legacy-skip/new-metadata/failing-coverage guard matches pull_request AND exact repository AND PRnumber226 AND same exact head repository AND exact head branch. A fork or another PR with the same branch name is not special-cased. Outside that tuple existing tests remain enabled, with no AppArmor relaxation."
+}

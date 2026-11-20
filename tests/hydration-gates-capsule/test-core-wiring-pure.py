@@ -1,0 +1,90 @@
+"""Pure adapter schema tests, fake hash/stat dependencies only. No IO mutation,
+network, artifact download, unit, mount, namespace or harness invocation.
+"""
+import pathlib,importlib.util,unittest,copy,stat
+from unittest import mock
+D=pathlib.Path(__file__).resolve().parent
+spec=importlib.util.spec_from_file_location('adapter',D/'execute-reviewed-core.py');a=importlib.util.module_from_spec(spec);spec.loader.exec_module(a)
+
+def anchor():
+ return {'schema':1,'repository':'haroldfabla2-hue/Silhouette-Agency-OS-OpenSource','artifact':{'id':1,'runId':2,'headSha':'a'*40,'sourceMerge':'b'*40,'sha256':'a'*64,'allowlistSha256':'a'*64,'zipBytes':181155369},'candidateRecord':{'runId':3,'artifactId':4,'sha256':'a'*64},'sourceCheckout':'c'*40,'sources':{n:'a'*64 for n in ('containment-harness.py','containment-control-contract.py','containment-bootstrap-contract.py')},'controls':{n:'a'*64 for n in ('extract-review-artifact.py','preparation-budget.py','PREPARATION-CONTRACT.json','execute-reviewed-core.py')},'hostBinaries':{n:'a'*64 for n in a.HOST}}
+
+def validate(value):
+ with mock.patch.object(a,'sha',return_value='a'*64),mock.patch.object(a.os,'stat',return_value=mock.Mock(st_mode=stat.S_IFREG|0o755)):
+  return a.validate(value)
+
+class SchemaTests(unittest.TestCase):
+ def test_exact_frozen_schema(self):self.assertIsNotNone(validate(anchor()))
+ def test_placeholders_or_missing_keys_rejected(self):
+  for change in ('source','candidate','extra','head','digest'):
+   value=anchor()
+   if change=='source':value['sourceCheckout']='TO_BE_FILLED'
+   if change=='candidate':value['candidateRecord']['artifactId']=None
+   if change=='extra':value['authority']='not a grant'
+   if change=='head':value['artifact']['headSha']='x'*40
+   if change=='digest':value['artifact']['sha256']='pending'
+   with self.subTest(change=change),self.assertRaises((AssertionError,TypeError)):validate(value)
+ def test_no_alternative_repository_or_expanded_source_host_set(self):
+  for change in ('repo','source','host'):
+   value=anchor()
+   if change=='repo':value['repository']='someone/else'
+   if change=='source':value['sources']['product.js']='a'*64
+   if change=='host':value['hostBinaries']['/tmp/arbitrary']='a'*64
+   with self.subTest(change=change),self.assertRaises(AssertionError):validate(value)
+ def test_host_drift_and_privileged_mode_stop(self):
+  value=anchor()
+  with mock.patch.object(a,'sha',return_value='b'*64):
+   with self.assertRaises(AssertionError):a.validate(value)
+  with mock.patch.object(a,'sha',return_value='a'*64),mock.patch.object(a.os,'stat',return_value=mock.Mock(st_mode=stat.S_IFREG|0o4755)):
+   with self.assertRaises(AssertionError):a.validate(value)
+ def test_zip_size_and_bool_ids_rejected(self):
+  for key,val in [('id',True),('runId',0),('zipBytes',201*1024**2)]:
+   value=anchor();value['artifact'][key]=val
+   with self.subTest(key=key),self.assertRaises(AssertionError):validate(value)
+ def test_source_candidate_is_not_auto_execution_anchor(self):
+  self.assertFalse((D/'CORE-EXECUTION-ANCHOR.json').exists())
+  candidate=(D/'prepare-core-anchor-candidate.py').read_text()
+  self.assertNotIn('import containment',candidate);self.assertNotIn('controller(',candidate);self.assertNotIn('bwrap --',candidate)
+  workflow=(D.parents[1]/'.github/workflows/core-containment.yml').read_text()
+  self.assertIn('paths:\n      - tests/hydration-gates-capsule/CORE-EXECUTION-ANCHOR.json',workflow)
+  self.assertNotIn('workflow_dispatch:',workflow);self.assertNotIn('sysctl',workflow);self.assertNotIn('npm ',workflow)
+
+class WorkflowIsolation(unittest.TestCase):
+ def test_all_legacy_jobs_are_preserved_and_guarded_not_deleted(self):
+  text=(D.parents[1]/'.github/workflows/ci.yml').read_text()
+  legacy=('quality','security','build-check','nsis-installer-smoke','daemon-capsule-preparation','hydration-gates-capsule-preparation')
+  guard="    if: ${{ !(github.event_name == 'pull_request' && github.repository == 'haroldfabla2-hue/Silhouette-Agency-OS-OpenSource' && github.event.pull_request.number == 226 && github.event.pull_request.head.repo.full_name == 'haroldfabla2-hue/Silhouette-Agency-OS-OpenSource' && github.head_ref == 'fix/shutdown-contracts-narrow-20261117') }}"
+  for name in legacy:
+   block=text.split('  '+name+':\n',1)[1]
+   self.assertIn(guard,block.split('    name:',1)[0])
+  for check in ('npm test','node --test tests/desktop-session/*.node.cjs','production-off-auth.py','prepare_capsule.py','--win nsis'):
+   self.assertIn(check,text)
+  self.assertNotIn('sysctl -w',text)
+ def test_guard_event_matrix_is_explicit(self):
+  # Pure truth-table of the exact expressions asserted above. No Actions run.
+  for event,branch,legacy,metadata in [('pull_request','fix/shutdown-contracts-narrow-20261117',False,True),('pull_request','other',True,False),('push','',True,False)]:
+   self.assertEqual(event!='pull_request' or branch!='fix/shutdown-contracts-narrow-20261117',legacy)
+   self.assertEqual(event=='pull_request' and branch=='fix/shutdown-contracts-narrow-20261117',metadata)
+ def test_metadata_job_has_no_product_or_npm_step(self):
+  text=(D.parents[1]/'.github/workflows/ci.yml').read_text().split('  core-anchor-metadata-only:',1)[1]
+  for forbidden in ('npm ci','npm test','prepare_capsule.py','systemctl mask','sysctl','containment-harness.py controller'):
+   self.assertNotIn(forbidden,text)
+  self.assertIn('prepare-core-anchor-candidate.py',text)
+
+class PendingCoverageCheck(unittest.TestCase):
+ def test_missing_coverage_is_an_explicit_failure_not_skipped_green(self):
+  text=(D.parents[1]/'.github/workflows/ci.yml').read_text().split('  functional-coverage-pending:',1)[1]
+  self.assertIn("if: always() && github.event_name == 'pull_request' && github.repository == 'haroldfabla2-hue/Silhouette-Agency-OS-OpenSource' && github.event.pull_request.number == 226 && github.event.pull_request.head.repo.full_name == 'haroldfabla2-hue/Silhouette-Agency-OS-OpenSource' && github.head_ref == 'fix/shutdown-contracts-narrow-20261117'",text)
+  self.assertIn('exit 1',text);self.assertNotIn('continue-on-error:',text);self.assertNotIn('needs:',text)
+  self.assertIn('BLOCKED - functional coverage not executed',text)
+
+class ExactPRIsolation(unittest.TestCase):
+ def test_same_branch_other_pr_or_fork_is_not_special_cased(self):
+  expected='haroldfabla2-hue/Silhouette-Agency-OS-OpenSource'
+  def target(repo,pr,headrepo,branch):return repo==expected and pr==226 and headrepo==expected and branch=='fix/shutdown-contracts-narrow-20261117'
+  self.assertTrue(target(expected,226,expected,'fix/shutdown-contracts-narrow-20261117'))
+  self.assertFalse(target(expected,227,expected,'fix/shutdown-contracts-narrow-20261117'))
+  self.assertFalse(target(expected,226,'other/fork','fix/shutdown-contracts-narrow-20261117'))
+  self.assertFalse(target('other/repo',226,expected,'fix/shutdown-contracts-narrow-20261117'))
+
+if __name__=='__main__':unittest.main()

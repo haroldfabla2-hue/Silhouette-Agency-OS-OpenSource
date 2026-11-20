@@ -1,0 +1,42 @@
+name: Reviewed core containment only
+
+# No dispatch/default-branch assumption, no auto-generated execution anchor.
+# The first source publication has no anchor file and cannot trigger this job.
+# A later independently reviewed cut must add the frozen anchor file explicitly.
+on:
+  pull_request:
+    branches: [main, develop, fix/memory-p0-transactional-20260929]
+    paths:
+      - tests/hydration-gates-capsule/CORE-EXECUTION-ANCHOR.json
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: core-containment-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+jobs:
+  core-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Existing namespace tools, no security policy changes
+        run: sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends bubblewrap iproute2 util-linux libseccomp2
+      - name: Verify externally frozen identities and run reviewed core only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: env -i PATH=/usr/bin:/bin LC_ALL=C GH_TOKEN="$GH_TOKEN" /usr/bin/python3 -I -B -S tests/hydration-gates-capsule/execute-reviewed-core.py
+      - name: Preserve selected bounded receipts, never control config or bus paths
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-containment-selected-receipts
+          path: |
+            /tmp/hg-core-evidence/suite.json
+            /tmp/hg-core-evidence/*/controller-receipt.json
+            /tmp/hg-core-evidence/*/controller-failure.json
+            /tmp/hg-core-evidence/*/cleanup-unknown.json
+          if-no-files-found: ignore
+          retention-days: 2
