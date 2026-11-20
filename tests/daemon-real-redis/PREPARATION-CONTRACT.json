@@ -21,6 +21,8 @@
     "services/systemBus.ts",
     "services/bus/MemoryBusAdapter.ts",
     "server/desktop/producerScope.js",
+    "services/lifecycle/desktopRefusal.js",
+    "services/lifecycle/desktopWork.js",
     "services/security/bootMode.ts",
     "services/execution/taskEvidence.ts",
     "services/usageObservation.ts"

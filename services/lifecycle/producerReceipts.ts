@@ -9,6 +9,8 @@ export type ProducerSafetyReceipts = {
         | { stopFailed: true; intervalWasArmed?: boolean };
 };
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
+const nullableString = (value: unknown): value is string | null => value === null || typeof value === 'string';
+const nonNegativeInt = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0;
 export function readProducerSafetyReceipts(value: unknown): ProducerSafetyReceipts {
     if (!record(value) || Object.keys(value).some(key => !['narrative', 'arbiter', 'power'].includes(key))) throw new Error('PRODUCER_RECEIPTS_INVALID');
     const out: ProducerSafetyReceipts = {};
@@ -17,12 +19,11 @@ export function readProducerSafetyReceipts(value: unknown): ProducerSafetyReceip
         if (!record(n)) throw new Error('NARRATIVE_RECEIPT_INVALID');
         if (n.stopFailed === true) out.narrative = { stopFailed: true, error: 'stop-failed', remainingItems: 0, workStillOwned: true };
         else {
-            // Narrow through locals: indexed access on Record<string, unknown>
-            // does not narrow across the compound guard for object literals.
+            // Type predicates narrow here; the same compound inline guard does
+            // not narrow indexed unknown access under this tsconfig (TS2322).
             const error = n.error;
             const remainingItems = n.remainingItems;
-            if (!(error === null || typeof error === 'string') || typeof remainingItems !== 'number'
-                || !Number.isInteger(remainingItems) || remainingItems < 0
+            if (!nullableString(error) || !nonNegativeInt(remainingItems)
                 || ('workStillOwned' in n && typeof n.workStillOwned !== 'boolean')) throw new Error('NARRATIVE_RECEIPT_INVALID');
             out.narrative = { stopFailed: false, error, remainingItems, workStillOwned: n.workStillOwned === true };
         }
