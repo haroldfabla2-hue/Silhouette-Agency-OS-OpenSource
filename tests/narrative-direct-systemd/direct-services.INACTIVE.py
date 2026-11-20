@@ -10,8 +10,8 @@ CONFIG_ID='sha256:9b7d1917ba3e5d20c83a01e3345bb78430b5e6c99030098a944b64f1b90053
 MANIFEST_SHA='debf0c3eb2dab9fb902e6c65e5dbcc1cb27276f21e33053ae187de2d84790041'
 ENTRY_SHA='1910f6e4cd873fe4ef1d2fabfac03331642c16fdc7c03e38fc8af0be52ccfb9f'
 GUARD_SHA='50d21436e62b0ae62619b1396013298f4e1134ae2c293a207382978501e3f694'
-DERIVED_MANIFEST_SHA='76183c55d79461908c97fd1c1b5a62a2033f52cd9f2c6a4b6c95b7f101f3117b'
-DIAGNOSTIC_FILES={'entry.DIAGNOSTIC.INACTIVE.mjs': '5987d4fae5a63ca3edfd59fb12cb44f7955fdd1685f58106f52a2634d5256bdf', 'phase-observer.INACTIVE.mjs': '874651f333fa239012f2b2aa37903f48fa53159a5e2a0fab3f920081e40b53ed', 'diagnostic-source-table.json': 'cc2c562d48a9df4ff88c0b39b2bacc98de5cd4b05ecb671b182b450e322f7bef', 'diagnostic-projection.INACTIVE.py': '098caf2b980865b9c3daa6c88d8c60b2fba826f8bfe2d73a3acbc88354fa219b', 'diagnostic-targets.json': '5ff1541cddb4e0e20a4f3ce33ac188468a406b040b8b4af03e3aa374688b8586'}
+DERIVED_MANIFEST_SHA='458bca498467df8c624a04aa3979a3cd261e8ab7a30ab9e52647485109838a6b'
+DIAGNOSTIC_FILES={'entry.DIAGNOSTIC.INACTIVE.mjs': '5987d4fae5a63ca3edfd59fb12cb44f7955fdd1685f58106f52a2634d5256bdf', 'phase-observer.INACTIVE.mjs': '874651f333fa239012f2b2aa37903f48fa53159a5e2a0fab3f920081e40b53ed', 'diagnostic-source-table.json': '5735e6457e098a8be1fedcb5c097bc9869a3f2c1d64f82a2447190a388f4dbe5', 'diagnostic-projection.INACTIVE.py': '098caf2b980865b9c3daa6c88d8c60b2fba826f8bfe2d73a3acbc88354fa219b', 'diagnostic-targets.json': '85e13cb79d467b184ef16ec760a698cb30dcb29ca860b5424c90103095a1a9ff'}
 CONTEXT_SHA='9f2ca63ac485694eb25815be0206e4ba99ad6184a4116217b4807cbc9d2165ea'
 
 
@@ -70,7 +70,7 @@ def extract_reviewed(archive,manifest,guard,derived_manifest,destination):
                 need(h.hexdigest()==wanted['sha256'],'PAYLOAD_FILE_HASH');target.chmod(row.mode)
     need(set(expected)<=seen and digest(root/'app/entry.INACTIVE.mjs')==ENTRY_SHA,'PAYLOAD_ENTRY_PIN')
     need(digest(guard)==GUARD_SHA and digest(derived_manifest)==DERIVED_MANIFEST_SHA,'INSTRUMENTATION_DELTA_PIN')
-    # Replace ONLY the instrumental verifier after all original payload pins pass.
+    # Derive instrumentation and the separately pinned public ingestion addition after all original pins pass.
     (root/'app/native-selection-guard.cjs').write_bytes(Path(guard).read_bytes())
     derived=json.loads(Path(derived_manifest).read_text())
     source=Path(__file__).parent
@@ -78,16 +78,19 @@ def extract_reviewed(archive,manifest,guard,derived_manifest,destination):
         'phase-observer.INACTIVE.mjs':'app/phase-observer.INACTIVE.mjs','diagnostic-source-table.json':'app/diagnostic-source-table.json','diagnostic-targets.json':'app/diagnostic-targets.json'}
     for name,wanted in DIAGNOSTIC_FILES.items():need(digest(source/name)==wanted,'DIAGNOSTIC_SOURCE_PIN')
     for name,target in destinations.items():(root/target).write_bytes((source/name).read_bytes())
+    addition=source/'ingestionService.EMITTED.js'
+    need(digest(addition)=='b96560a8e9869b3a1f9c46de0f9a307255042dffa4a7dc82057186bebe7180e6','PUBLIC_TARGET_ADDITION_PIN')
+    (root/'app/services/ingestionService.js').write_bytes(addition.read_bytes())
     before_by_path={r['target']:r for r in rows};after_by_path={r['target']:r for r in derived}
-    need(len(derived)==len(rows)+3 and len(after_by_path)==len(derived),'DERIVED_FILE_COUNT')
-    changed={'/app/native-selection-guard.cjs','/app/entry.INACTIVE.mjs','/app/phase-observer.INACTIVE.mjs','/app/diagnostic-source-table.json','/app/diagnostic-targets.json'}
-    need(set(after_by_path)==set(before_by_path)|{'/app/phase-observer.INACTIVE.mjs','/app/diagnostic-source-table.json','/app/diagnostic-targets.json'},'DERIVED_PATH_SET')
+    need(len(derived)==len(rows)+4 and len(after_by_path)==len(derived),'DERIVED_FILE_COUNT')
+    changed={'/app/native-selection-guard.cjs','/app/entry.INACTIVE.mjs','/app/phase-observer.INACTIVE.mjs','/app/diagnostic-source-table.json','/app/diagnostic-targets.json','/app/services/ingestionService.js'}
+    need(set(after_by_path)==set(before_by_path)|{'/app/phase-observer.INACTIVE.mjs','/app/diagnostic-source-table.json','/app/diagnostic-targets.json','/app/services/ingestionService.js'},'DERIVED_PATH_SET')
     for path,row in after_by_path.items():
         if path not in changed:need(row==before_by_path[path],'UNEXPECTED_PRODUCT_DELTA')
         file=root/path.lstrip('/')
         need(digest(file)==row['sha256'] and file.stat().st_size==row['bytes'],'DERIVED_FILE_PIN');file.chmod(row['mode'])
     for directory,_,_ in os.walk(root):Path(directory).chmod(0o755)
-    # mountpoint only, no host sources or additional product modules.
+    # Mountpoint only, no host sources or unreviewed product modules.
     for name in ('run','sys','proc','dev','work','tmp'): (root/name).mkdir(exist_ok=True)
     return root
 
@@ -223,7 +226,8 @@ def run(*,archive,manifest,guard,derived_manifest,context_module,expected_contex
         base.mkdir(mode=0o700);work=base/'work';tmp=base/'tmp';work.mkdir();tmp.mkdir()
         root=extract_reviewed(archive,manifest,guard,derived_manifest,base/'root')
         result['instrumentationProvenance']={'originalArchiveSha256':ARCHIVE_SHA,'originalManifestSha256':MANIFEST_SHA,
-            'derivedManifestSha256':DERIVED_MANIFEST_SHA,'derivedGuardSha256':GUARD_SHA,
+            'derivedManifestSha256':DERIVED_MANIFEST_SHA,
+                'publicTargetAdditionSha256':'b96560a8e9869b3a1f9c46de0f9a307255042dffa4a7dc82057186bebe7180e6','derivedGuardSha256':GUARD_SHA,
             'executableIdentity':'ABSOLUTE_PINNED_FILE_NOT_PROC_OBSERVATION','originalProductEntrySha256':ENTRY_SHA,'diagnosticEntrySha256':DIAGNOSTIC_FILES['entry.DIAGNOSTIC.INACTIVE.mjs']}
         result['stage']='TEMPORARY_WORK';durable(receipt,result)
         for target,options in ((work,'size=33554432,nr_inodes=4096'),(tmp,'size=16777216,nr_inodes=2048')):

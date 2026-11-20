@@ -1,0 +1,52 @@
+{
+  "additions": [
+    {
+      "bytes": 3871,
+      "mode": 420,
+      "origin": "PUBLIC_TARGET_CLOSURE_ADDITION",
+      "sha256": "b96560a8e9869b3a1f9c46de0f9a307255042dffa4a7dc82057186bebe7180e6",
+      "target": "/app/services/ingestionService.js"
+    }
+  ],
+  "baseCommit": "a0644d68dad215d8a978e2bed776c4487c4e5cb6",
+  "compilerHostNodeSha256": "2f822d544601dfff107f57d945b649d15c5bf6302595735a6bd9cdc7ee9669bd",
+  "compilerSha256": "795e49e46d497cc16e4b02916b50cbca257b4256d62cddc4cc504103f7961027",
+  "compilerVersion": "5.8.2",
+  "dependencies": [
+    {
+      "alreadyMounted": true,
+      "sha256": "dc26764631d05b7b0470a894d98d008d89f52af3bb9859184e4e38aa8a4d7cf1",
+      "target": "/app/types.js"
+    },
+    {
+      "alreadyMounted": true,
+      "sha256": "80d710f62e00dcdbabc589c4a3a560bbbdf3e263c491d52d8464ae5eb0eee2f7",
+      "target": "/app/services/continuumMemory.js"
+    },
+    {
+      "alreadyMounted": true,
+      "sha256": "f6883f876b2b28213b4b36e7f4e2d3a0de749440e287a5c5404516fff6745c2f",
+      "target": "/app/services/geminiService.js"
+    },
+    {
+      "alreadyMounted": true,
+      "sha256": "b7cdc05041c5e9bfe240b225e9af79d7f7fad536368d9e582e33f7afedec9abd",
+      "target": "/app/node_modules/uuid/package.json"
+    }
+  ],
+  "kind": "PUBLIC_TARGET_CLOSURE_ADDITION_STATIC_ONLY",
+  "limits": [
+    "Only target ingestion closure completed, not all pre-existing omitted dynamic branches",
+    "Large-content branch (>20000 characters) retains real summarization/provider work; no credential/provider enabled or success promised",
+    "Other existing sources still have omitted dynamic targets including dreamerService and memory/valueRanking, no complete application closure claim"
+  ],
+  "networkOrPrivilegeChanges": false,
+  "newData": [],
+  "newNpmPackages": [],
+  "packageLockSha256": "f8cad2766f4c9d32310625e8951a53f17355c94409424aeb917e6ad5c01e9512",
+  "rewrites": "Literal relative specifiers to resolved .js only, same original emitter semantics",
+  "runtimeEvaluated": false,
+  "sourceSha256": "52e6bd8960029141fdfc63569ad38c6935271dc94b27dcf89062a29d5cbb03bd",
+  "sourceUnmodified": true,
+  "sourceUrl": "https://github.com/haroldfabla2-hue/Silhouette-Agency-OS-OpenSource/blob/a0644d68dad215d8a978e2bed776c4487c4e5cb6/services/ingestionService.ts"
+}

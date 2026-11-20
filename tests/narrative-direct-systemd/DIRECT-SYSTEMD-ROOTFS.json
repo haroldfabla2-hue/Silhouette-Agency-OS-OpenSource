@@ -41881,17 +41881,24 @@
     "target": "/app/phase-observer.INACTIVE.mjs"
   },
   {
-    "bytes": 23410,
+    "bytes": 23590,
     "mode": 420,
     "origin": "DIRECT_SYSTEMD_BOUNDED_DIAGNOSTICS",
-    "sha256": "cc2c562d48a9df4ff88c0b39b2bacc98de5cd4b05ecb671b182b450e322f7bef",
+    "sha256": "5735e6457e098a8be1fedcb5c097bc9869a3f2c1d64f82a2447190a388f4dbe5",
     "target": "/app/diagnostic-source-table.json"
   },
   {
-    "bytes": 29280,
+    "bytes": 29279,
     "mode": 420,
     "origin": "DIRECT_SYSTEMD_BOUNDED_DIAGNOSTICS",
-    "sha256": "5ff1541cddb4e0e20a4f3ce33ac188468a406b040b8b4af03e3aa374688b8586",
+    "sha256": "85e13cb79d467b184ef16ec760a698cb30dcb29ca860b5424c90103095a1a9ff",
     "target": "/app/diagnostic-targets.json"
+  },
+  {
+    "bytes": 3871,
+    "mode": 420,
+    "origin": "PUBLIC_TARGET_CLOSURE_ADDITION",
+    "sha256": "b96560a8e9869b3a1f9c46de0f9a307255042dffa4a7dc82057186bebe7180e6",
+    "target": "/app/services/ingestionService.js"
   }
 ]

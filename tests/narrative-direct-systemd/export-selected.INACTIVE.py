@@ -12,7 +12,7 @@ TEXT={'kind':{'DIRECT_REAL_NARRATIVE_SYSTEMD'},'result':{'UNKNOWN','PASS_DIRECTE
  'terminalModel':{'SYSTEMD_EXITTYPE_CGROUP_REMAIN_AFTER_EXIT'},
  'naturalTreeExitModel':{'SYSTEMD_EXITTYPE_CGROUP_NOT_DOCKER_PID1_CENSUS'},
  'executableIdentity':{'ABSOLUTE_PINNED_FILE_NOT_PROC_OBSERVATION'}}
-HASH={'journalSha256','recoveredSha256','originalArchiveSha256','originalManifestSha256','derivedManifestSha256','derivedGuardSha256','productEntrySha256','originalProductEntrySha256','diagnosticEntrySha256'}
+HASH={'publicTargetAdditionSha256','journalSha256','recoveredSha256','originalArchiveSha256','originalManifestSha256','derivedManifestSha256','derivedGuardSha256','productEntrySha256','originalProductEntrySha256','diagnosticEntrySha256'}
 OBJECT={'instrumentationProvenance','terminalJournalCopy','logCollection','write','read'}
 UNIT={'LoadState','ActiveState','SubState','Result','ExecMainCode','ExecMainStatus','MainPID','ControlPID','Type','ExitType',
  'RemainAfterExit','User','Group','PrivateNetwork','PrivateDevices','NoNewPrivileges','MemoryMax','MemorySwapMax',
