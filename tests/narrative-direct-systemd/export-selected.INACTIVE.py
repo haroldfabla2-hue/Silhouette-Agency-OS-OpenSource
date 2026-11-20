@@ -1,18 +1,18 @@
 """Direct receipt only. Never upload raw logs, journals, environment or auth."""
 import json,re
 from pathlib import Path
-BOOL={'productAttempted','forcedCleanup','allSilhouetteValidated','pipeEOFObserved','contextValidated','cleanupUnknown',
+BOOL={'rawSystemMemoryVerified','productAttempted','forcedCleanup','allSilhouetteValidated','pipeEOFObserved','contextValidated','cleanupUnknown',
  'temporaryRootRetainedUntilVMTeardown','naturalMainExit','managerReportedWholeCgroupExited','sameOriginalIdsAndFields',
  'providersOff','afterStopConfirmed','partial','copyIsNaturalExitEvidence','runtimePerFileCap',
  'cleanupBeforeStopStateUnavailable','publicEvidenceCopyUnavailable'}
-NUM={'runId','jobId','exitCode','logBytes','totalBytes','copiedBytes','bytesCopied','collectionLimitBytes'}
-TEXT={'kind':{'DIRECT_REAL_NARRATIVE_SYSTEMD'},'result':{'UNKNOWN','PASS_DIRECTED_NARRATIVE_ONLY'},
+NUM={'rawSystemEventCount','runId','jobId','exitCode','logBytes','totalBytes','copiedBytes','bytesCopied','collectionLimitBytes'}
+TEXT={'kind':{'DIRECT_REAL_NARRATIVE_SYSTEMD'},'result':{'UNKNOWN','PASS_DIRECTED_RAW_SYSTEM_MEMORY_ONLY'},
  'stage':{'CONTEXT','HOST_MANAGER','PAYLOAD','TEMPORARY_WORK','WRITE','READ','TERMINAL_EVIDENCE'},
- 'mode':{'write','read'},'scope':{'Narrative-only-not-full-app-or-raw-memory-durability'},
+ 'mode':{'write','read'},'scope':{'Narrative-raw-system-events-only-not-full-app-or-crash-durability'},
  'terminalModel':{'SYSTEMD_EXITTYPE_CGROUP_REMAIN_AFTER_EXIT'},
  'naturalTreeExitModel':{'SYSTEMD_EXITTYPE_CGROUP_NOT_DOCKER_PID1_CENSUS'},
  'executableIdentity':{'ABSOLUTE_PINNED_FILE_NOT_PROC_OBSERVATION'}}
-HASH={'publicTargetAdditionSha256','journalSha256','recoveredSha256','originalArchiveSha256','originalManifestSha256','derivedManifestSha256','derivedGuardSha256','productEntrySha256','originalProductEntrySha256','diagnosticEntrySha256'}
+HASH={'rawMemoryWriterSha256','rawMemoryRecoveredSha256','publicTargetAdditionSha256','journalSha256','recoveredSha256','originalArchiveSha256','originalManifestSha256','derivedManifestSha256','derivedGuardSha256','productEntrySha256','originalProductEntrySha256','diagnosticEntrySha256'}
 OBJECT={'instrumentationProvenance','terminalJournalCopy','logCollection','write','read'}
 UNIT={'LoadState','ActiveState','SubState','Result','ExecMainCode','ExecMainStatus','MainPID','ControlPID','Type','ExitType',
  'RemainAfterExit','User','Group','PrivateNetwork','PrivateDevices','NoNewPrivileges','MemoryMax','MemorySwapMax',

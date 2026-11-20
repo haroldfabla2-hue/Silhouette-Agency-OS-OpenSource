@@ -10,8 +10,8 @@ CONFIG_ID='sha256:9b7d1917ba3e5d20c83a01e3345bb78430b5e6c99030098a944b64f1b90053
 MANIFEST_SHA='debf0c3eb2dab9fb902e6c65e5dbcc1cb27276f21e33053ae187de2d84790041'
 ENTRY_SHA='1910f6e4cd873fe4ef1d2fabfac03331642c16fdc7c03e38fc8af0be52ccfb9f'
 GUARD_SHA='50d21436e62b0ae62619b1396013298f4e1134ae2c293a207382978501e3f694'
-DERIVED_MANIFEST_SHA='458bca498467df8c624a04aa3979a3cd261e8ab7a30ab9e52647485109838a6b'
-DIAGNOSTIC_FILES={'entry.DIAGNOSTIC.INACTIVE.mjs': '5987d4fae5a63ca3edfd59fb12cb44f7955fdd1685f58106f52a2634d5256bdf', 'phase-observer.INACTIVE.mjs': '874651f333fa239012f2b2aa37903f48fa53159a5e2a0fab3f920081e40b53ed', 'diagnostic-source-table.json': '5735e6457e098a8be1fedcb5c097bc9869a3f2c1d64f82a2447190a388f4dbe5', 'diagnostic-projection.INACTIVE.py': '098caf2b980865b9c3daa6c88d8c60b2fba826f8bfe2d73a3acbc88354fa219b', 'diagnostic-targets.json': '85e13cb79d467b184ef16ec760a698cb30dcb29ca860b5424c90103095a1a9ff'}
+DERIVED_MANIFEST_SHA='6ac9fb23340463c6349d71c2de9d1043898938ff204a9efd3cf18d5311e04790'
+DIAGNOSTIC_FILES={'entry.DIAGNOSTIC.INACTIVE.mjs': '92b0d0032b572bc858258e5a6a2e92300b6ddfb22d65f7f5ece0a5c725d074a4', 'phase-observer.INACTIVE.mjs': '56c4dfbe2e5bf40a1f17493d6900814f5a7e37e82f5cbf206182109b362b9cf1', 'diagnostic-source-table.json': '87a1e7a5fb14f5fda03badf14af0e01b739b0fc2783a109dc4679f467e281af4', 'diagnostic-projection.INACTIVE.py': '3eaf4989a2df0156fff9538b285b2967d1cdd04c8cdeb6b248119b687cc9843c', 'diagnostic-targets.json': '85e13cb79d467b184ef16ec760a698cb30dcb29ca860b5424c90103095a1a9ff'}
 CONTEXT_SHA='9f2ca63ac485694eb25815be0206e4ba99ad6184a4116217b4807cbc9d2165ea'
 
 
@@ -159,6 +159,23 @@ def collect_diagnostic(tmp,mode,result,after_stop):
     return sample
 
 
+def select_raw_memory(snapshot):
+    need(isinstance(snapshot,dict) and isinstance(snapshot.get('working'),list),'RAW_MEMORY_SNAPSHOT_SHAPE')
+    selected=[n for n in snapshot['working'] if isinstance(n,dict) and isinstance(n.get('tags'),list) and
+              {'NARRATIVE','RAW_SYSTEM_EVENT','source:SYSTEM'}<=set(n['tags'])]
+    need(len(selected)==2,'RAW_MEMORY_EXACT_COUNT')
+    ordered=[]
+    for source,content,importance in [('CONSCIOUS','Public fixture accepted thought one','0.90'),('AGENCY','Public fixture accepted thought two','0.80')]:
+        matches=[n for n in selected if n.get('originalContent')==content]
+        need(len(matches)==1,'RAW_MEMORY_ORIGINAL_UNIQUE')
+        n=matches[0]
+        need(n.get('content')==content and n.get('tier')=='WORKING' and n.get('tags')==
+             ['NARRATIVE',source,'importance:'+importance,'source:SYSTEM','RAW_SYSTEM_EVENT'],'RAW_MEMORY_FIELDS')
+        need(isinstance(n.get('id'),str) and len(n['id'])>0,'RAW_MEMORY_ID')
+        ordered.append(n)
+    need(ordered[0]['id']!=ordered[1]['id'],'RAW_MEMORY_DISTINCT_IDS')
+    return ordered
+
 def real_phase(unit,root,work,tmp,log,mode,receipt,result):
     file=Path('/run/systemd/system')/(unit+'.service')
     need(not file.exists(),'OWN_UNIT_EXISTS')
@@ -195,6 +212,8 @@ def real_phase(unit,root,work,tmp,log,mode,receipt,result):
     need(len(raw)<=65536,'REAL_PHASE_LOG_COLLECTION_BOUND')
     lines=raw.decode().splitlines();checkpoints=[v[16:] for v in lines if v.startswith('NARRATIVE_PHASE ')]
     need(len(checkpoints)==1 and json.loads(checkpoints[0])=={'mode':mode,'originalWorkEqual':True,'preserved':2,'lateRefused':True},'REAL_PHASE_FUNCTIONAL_ORACLE')
+    raw_checks=[v[len('RAW_MEMORY_PHASE '):] for v in lines if v.startswith('RAW_MEMORY_PHASE ')]
+    need(len(raw_checks)==1 and json.loads(raw_checks[0])=={'mode':mode,'rawSystemEvents':2,'originalContentAndProvenance':True,'completeNodeIdentity':True},'RAW_MEMORY_FUNCTIONAL_ORACLE')
     # With ExitType=cgroup this active/exited state requires no process in the
     # unit, not only main PID exit. No stop/kill precedes this assertion.
     phase={'mode':mode,'naturalMainExit':True,'managerReportedWholeCgroupExited':True,'exitCode':0,
@@ -209,7 +228,7 @@ def run(*,archive,manifest,guard,derived_manifest,context_module,expected_contex
     """Review only. Context authorization and exact event remain separate."""
     result={'kind':'DIRECT_REAL_NARRATIVE_SYSTEMD','stage':'CONTEXT','result':'UNKNOWN','productAttempted':False,'forcedCleanup':False,
             'phases':[],'diagnosticSamples':[],'logCollection':{},'unitStates':[],'ownedUnits':[],'allSilhouetteValidated':False,
-            'pipeEOFObserved':False,'scope':'Narrative-only-not-full-app-or-raw-memory-durability'}
+            'pipeEOFObserved':False,'scope':'Narrative-raw-system-events-only-not-full-app-or-crash-durability'}
     receipt=Path(receipt);base=Path('/tmp')/('narrative-direct-'+secrets.token_hex(8));mounted=[]
     try:
         need(os.geteuid()==0,'ROOT_MANAGER_REQUIRED')
@@ -237,12 +256,21 @@ def run(*,archive,manifest,guard,derived_manifest,context_module,expected_contex
             'autonomy':{'enabled':False,'allowEvolution':False,'enableNarrative':False,'enableIntrospection':False},
             'scheduler':{'enabled':False},'llm':{'providers':{},'fallbackChain':[]},'brain':{'enabled':False}}
         (work/'silhouette.config.json').write_text(json.dumps(config));os.chown(work/'silhouette.config.json',1000,1000)
-        original=None
+        original=None;raw_original=None
         for mode in ('write','read'):
             unit='narrative-direct-'+secrets.token_hex(8)+'-'+mode
             result['stage']='WRITE' if mode=='write' else 'READ'
             result['productAttempted']=True;durable(receipt,result)
             real_phase(unit,root,work,tmp,tmp/(mode+'.log'),mode,receipt,result)
+            # Observe the stable product snapshot only after natural unit exit.
+            snapshot=(work/'data/memory_snapshot.json').read_bytes()
+            need(len(snapshot)<=1048576,'RAW_MEMORY_SNAPSHOT_BOUND')
+            selected=select_raw_memory(json.loads(snapshot))
+            expected_raw=json.loads((work/'raw-system-event-oracle.json').read_text())
+            need(selected==expected_raw,'RAW_MEMORY_STABLE_SNAPSHOT_MISMATCH')
+            raw_identity=(json.dumps(selected,sort_keys=True,separators=(',',':'))+'\n').encode()
+            if mode=='write':raw_original=raw_identity
+            else:need(raw_identity==raw_original,'RAW_MEMORY_RESTART_IDENTITY_MISMATCH')
             journal=(work/'data/wal/pending-narrations.json').read_bytes()
             need(not (work/'data/wal/.pending-narrations.owner').exists(),'PENDING_LOCK_REMAINS')
             need(len(journal)<=65536,'PUBLIC_JOURNAL_BOUND')
@@ -251,7 +279,9 @@ def run(*,archive,manifest,guard,derived_manifest,context_module,expected_contex
                 original=journal;need(len(json.loads(journal)['items'])==2,'WRITER_ITEMS_COUNT')
             else:need(json.loads(journal)==json.loads(original),'ORIGINAL_IDS_OR_FIELDS_CHANGED')
         result['stage']='TERMINAL_EVIDENCE'
-        result.update(result='PASS_DIRECTED_NARRATIVE_ONLY',sameOriginalIdsAndFields=True,
+        result.update(result='PASS_DIRECTED_RAW_SYSTEM_MEMORY_ONLY',sameOriginalIdsAndFields=True,
+            rawSystemEventCount=2,rawSystemMemoryVerified=True,rawMemoryWriterSha256=hashlib.sha256(raw_original).hexdigest(),
+            rawMemoryRecoveredSha256=hashlib.sha256(raw_identity).hexdigest(),
             journalSha256=hashlib.sha256(original).hexdigest(),recoveredSha256=hashlib.sha256(journal).hexdigest(),
             naturalTreeExitModel='SYSTEMD_EXITTYPE_CGROUP_NOT_DOCKER_PID1_CENSUS',providersOff=True)
     except BaseException as error:

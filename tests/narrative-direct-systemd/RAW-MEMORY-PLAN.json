@@ -1,0 +1,51 @@
+{
+  "completeNodeComparison": "Canonical JSON representation of every serializable field, recursive sorted object keys, arrays kept ordered; original nodes never mutated. Explicit undefined in RAM is omitted by JSON exactly as product persistence does.",
+  "existingNarrativeAssertionsRetained": true,
+  "kind": "DIRECTED_RAW_SYSTEM_EVENT_MEMORY_ORACLE_STATIC_PREPARATION",
+  "manualStoreSaveOrHydrateCalled": false,
+  "newDependencies": [],
+  "newReadinessWait": "read-only observation API polling 20ms up to2s, only to await constructor disk recovery, not repeated product trials",
+  "oracle": "two accepted public queue events, actual Continuum read-only API plus product disk snapshot before and after new process; compare complete unchanged nodes",
+  "productChanges": [],
+  "requiredParameterChanged": false,
+  "runtimeExecuted": false,
+  "sourceChecks": [
+    {
+      "sha256": "b23ef09b00d4b8795af7df63eb4505ee70a9df2c5900f8b825f19dc88010b5b3",
+      "source": "services/narrativeService.ts",
+      "url": "https://github.com/haroldfabla2-hue/Silhouette-Agency-OS-OpenSource/blob/28d50078d49cd087c3f164ae9e1f63e09d38364a/services/narrativeService.ts"
+    },
+    {
+      "sha256": "f8cf640559c2d6494b52f52558b13b0d884d3df575ae4a5811d12660b5494985",
+      "source": "services/continuumMemory.ts",
+      "url": "https://github.com/haroldfabla2-hue/Silhouette-Agency-OS-OpenSource/blob/28d50078d49cd087c3f164ae9e1f63e09d38364a/services/continuumMemory.ts"
+    },
+    {
+      "sha256": "a761b4ebc52c5adc95115ea7edb01facbb9c2510c8cf4d6e4722d3b1c904991e",
+      "source": "services/memory/provenance.ts",
+      "url": "https://github.com/haroldfabla2-hue/Silhouette-Agency-OS-OpenSource/blob/28d50078d49cd087c3f164ae9e1f63e09d38364a/services/memory/provenance.ts"
+    },
+    {
+      "sha256": "d70b08a1152333af830c8fa528420aef0aa66b1d0f4fc90391d8d05c20647e7a",
+      "source": "services/utils/atomicWrite.ts",
+      "url": "https://github.com/haroldfabla2-hue/Silhouette-Agency-OS-OpenSource/blob/28d50078d49cd087c3f164ae9e1f63e09d38364a/services/utils/atomicWrite.ts"
+    },
+    {
+      "sha256": "f7bf20958ff90d935afd1d38b6e0f9b241e207257fcfdb645c436c85fa8da4e2",
+      "source": "services/memorySchema.ts",
+      "url": "https://github.com/haroldfabla2-hue/Silhouette-Agency-OS-OpenSource/blob/28d50078d49cd087c3f164ae9e1f63e09d38364a/services/memorySchema.ts"
+    },
+    {
+      "sha256": "372fa3c67fd447f7b46c05f6cdadff76ab950915037f3912d49452a1e64d4983",
+      "source": "services/lancedbService.ts",
+      "url": "https://github.com/haroldfabla2-hue/Silhouette-Agency-OS-OpenSource/blob/28d50078d49cd087c3f164ae9e1f63e09d38364a/services/lancedbService.ts"
+    }
+  ],
+  "unproved": [
+    "powerloss/VM crash durability",
+    "fsync parent directory",
+    "entire memory corpus",
+    "Neo4j Redis providers or semantic embeddings",
+    "complete application shutdown/autonomy"
+  ]
+}

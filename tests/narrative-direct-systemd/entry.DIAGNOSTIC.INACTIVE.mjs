@@ -10,6 +10,65 @@ const fixture=[
  {source:'AGENCY',content:'Public fixture accepted thought two',importance:0.8,metadata:{fixture:2}}
 ];
 const observer=globalThis[Symbol.for('narrative.direct.observer')];
+
+// Oracle-only reads. Never restore the expected file into product memory, call
+// store/saveSnapshot/loadSnapshot, change required, or replace a product method.
+const rawTags=['NARRATIVE','RAW_SYSTEM_EVENT','source:SYSTEM'];
+function selectRaw(nodes){
+ assert.ok(Array.isArray(nodes));
+ const selected=nodes.filter(n=>Array.isArray(n.tags)&&rawTags.every(t=>n.tags.includes(t)));
+ assert.equal(selected.length,2,'exactly two raw system events required');
+ const sorted=fixture.map(item=>{
+  const matches=selected.filter(n=>n.originalContent===item.content);
+  assert.equal(matches.length,1,'each original raw event must occur exactly once');
+  const n=matches[0];assert.equal(n.content,item.content);assert.equal(n.tier,'WORKING');
+  assert.deepEqual(n.tags,['NARRATIVE',item.source,`importance:${item.importance.toFixed(2)}`,'source:SYSTEM','RAW_SYSTEM_EVENT']);
+  assert.equal(n.importance,0.5); // Continuum's real score, not presentation importance.
+  assert.equal(typeof n.id,'string');assert.ok(n.id.length>0);
+  assert.equal(typeof n.timestamp,'number');assert.ok(Number.isFinite(n.timestamp));
+  assert.equal(n.accessCount,1);assert.equal(n.lastAccess,n.timestamp);
+  return n;
+ });
+ assert.equal(new Set(sorted.map(n=>n.id)).size,2);return sorted;
+}
+function jsonCanonical(value){
+ // Observe exactly the full JSON-serializable representation used by product
+ // disk persistence, without modifying the original object or picking fields.
+ const encoded=JSON.parse(JSON.stringify(value));
+ function ordered(v){
+  if(Array.isArray(v))return v.map(ordered);
+  if(v!==null&&typeof v==='object')return Object.fromEntries(Object.keys(v).sort().map(k=>[k,ordered(v[k])]));
+  return v;
+ }
+ return JSON.stringify(ordered(encoded));
+}
+async function assertRawMemory(mode){
+ const {continuum}=await import('/app/services/continuumMemory.js');
+ let nodes;
+ if(mode==='write'){
+  nodes=selectRaw(await continuum.getRecentObservations(rawTags,10));
+  const persisted=selectRaw(JSON.parse(fs.readFileSync('/work/data/memory_snapshot.json','utf8')).working);
+  assert.equal(jsonCanonical(persisted),jsonCanonical(nodes),'RAM events must already be on product disk snapshot');
+  fs.writeFileSync('/work/raw-system-event-oracle.json',JSON.stringify(nodes)+'\n',{flag:'wx',mode:0o600});
+ }else{
+  const expected=JSON.parse(fs.readFileSync('/work/raw-system-event-oracle.json','utf8'));
+  selectRaw(expected);
+  // Constructor starts the real async disk load with no exposed ready promise.
+  // Poll only the read-only observation API, bounded to 2s. No manual hydrate.
+  const until=performance.now()+2000;
+  let observed=[];
+  do{
+   observed=await continuum.getRecentObservations(rawTags,10);
+   if(observed.length===2)break;
+   await new Promise(resolve=>setTimeout(resolve,20));
+  }while(performance.now()<until);
+  nodes=selectRaw(observed);
+  assert.equal(jsonCanonical(nodes),jsonCanonical(expected),'new process must recover unchanged IDs and complete raw JSON nodes');
+  assert.equal(jsonCanonical(selectRaw(JSON.parse(fs.readFileSync('/work/data/memory_snapshot.json','utf8')).working)),jsonCanonical(expected));
+ }
+ observer?.checkpoint(mode==='write'?'RAW_MEMORY_WRITE':'RAW_MEMORY_READ');
+}
+
 export async function runPhase(mode){
  assert.ok(mode==='write'||mode==='read');
  assert.equal(process.cwd(),'/work');
@@ -54,6 +113,7 @@ export async function runPhase(mode){
   assert.equal(new Set(journal.items.map(item=>item.id)).size,2);
   assert.deepEqual(journal.completed,[]);
   if(pending)assert.deepEqual(journal.items,pending);
+  await assertRawMemory(mode);
   await assert.rejects(narrative.enqueuePendingNarration({source:'AGENCY',content:'Public fixture too late',importance:0.9}));
   const again=await narrative.preserveAndStopBatchProcessor();
   assert.equal(again.error,null);assert.equal(again.pendingPreserved,2);
@@ -88,5 +148,6 @@ export async function runPhase(mode){
  if(cleanupFailures.length)throw new AggregateError(cleanupFailures,'REAL_LIFECYCLE_CLOSE_FAILED');
  // This receipt is an oracle checkpoint only. Parent must still observe natural
  // process exit and EOF. It must not treat this print as termination evidence.
+ process.stdout.write('RAW_MEMORY_PHASE '+JSON.stringify({mode,rawSystemEvents:2,originalContentAndProvenance:true,completeNodeIdentity:true})+'\n');
  process.stdout.write('NARRATIVE_PHASE '+JSON.stringify({mode,originalWorkEqual:true,preserved:2,lateRefused:true})+'\n');
 }
