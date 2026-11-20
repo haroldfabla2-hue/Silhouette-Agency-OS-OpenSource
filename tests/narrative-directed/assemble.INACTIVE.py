@@ -146,7 +146,7 @@ def assemble(*,repository,base_artifact,base_zip,compiler,node,source_directory,
         'reviewOnlyOmitted':review,'nodeRuntimeSha256':old['nodeSha256'],
         'compilerSha256':COMPILER_SHA,'compilerVersion':doc['compiler'],'packageLockSha256':LOCK_SHA,
         'sourceFiles':doc['files'],'sourceControls':{name:sha(S/name) for name in
-            ('entry.INACTIVE.mjs','supervisor.INACTIVE.cjs','emit-source.INACTIVE.cjs','assemble.INACTIVE.py','host-adapter.INACTIVE.py')},
+            ('entry.INACTIVE.mjs','supervisor.INACTIVE.cjs','emit-source.INACTIVE.cjs','assemble.INACTIVE.py','host-adapter.INACTIVE.py','vm-parent-derived.INACTIVE.py','export-selected.INACTIVE.py','verify-assembly.INACTIVE.py','local-snapshot-control.INACTIVE.py')},
         'instrumentFiles':{str(file.relative_to(R)):sha(file) for file in sorted((R/'scripts/containment').glob('p0-*.INACTIVE.py'))},
         'productEvaluated':False,'nativeBindingsLoaded':False,'dockerOrInfrastructureCalled':False,
         'imageLoadObserved':False,'runtimeLimitsValidated':False,'readiness':'PREPARATION_ONLY_REQUIRES_EXTERNAL_REVIEW'}

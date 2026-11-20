@@ -12,11 +12,17 @@ import os
 from pathlib import Path
 import re
 import selectors
+import socket
+import tomllib
+import shutil
+import struct
 import stat
 import subprocess
 import threading
 import time
 
+_docker_config=None
+_daemon_identity=None
 ENV={'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','LC_ALL':'C'}
 MEMORY=536870912
 TASKS=64
@@ -93,9 +99,9 @@ def traced(operation):
 
 
 def docker(*args,timeout=5):
-    action=args[0] if args[0] in ('create','inspect','rm','load') else 'OTHER'
+    action=args[0] if args[0] in ('create','inspect','rm','load','info','version') else 'OTHER'
     with host_step('DOCKER_'+action.upper()):
-        value=subprocess.run(['/usr/bin/docker',*args],env=ENV,stdin=subprocess.DEVNULL,
+        value=subprocess.run(docker_command(*args),env=ENV,stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout,check=False)
         need(value.returncode==0,'DOCKER_OPERATION_FAILED')
         need(len(value.stdout)<=262144 and len(value.stderr)<=65536,'DOCKER_REPLY_BOUND')
@@ -184,7 +190,8 @@ def load_reviewed_domain(repository):
     repository=Path(repository)
     for name,digest in frozen.items():
         need(hashlib.sha256((repository/name).read_bytes()).hexdigest()==digest,'REVIEWED_INSTRUMENT_BYTES_CHANGED')
-    source=repository/'scripts/containment/p0-retained-domain.INACTIVE.py'
+    source=Path(__file__).with_name('vm-parent-derived.INACTIVE.py')
+    need(hashlib.sha256(source.read_bytes()).hexdigest()=='49395f71e42e735608109ed71e74ee849119e2ed8a143ba305e402fc58d8bac0','PRODUCT_DERIVATION_PIN')
     spec=importlib.util.spec_from_file_location('directed_parent_support',source)
     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
     return module
@@ -217,7 +224,7 @@ def product_census(M,directory):
 def make_parent(M,ledger,checked,deadline):
     # Inherit the reviewed descriptor/manager checks and owned-only kill/stop.
     # This separate create method changes ONLY explicit product unit budgets.
-    bus=M.bus;put=M.put;manager_version=M.manager_version;shared_snapshot=M.shared_snapshot
+    bus=M.bus;put=M.put;manager_version=M.manager_version
     unit_state=M.unit_state;ident=M.ident;readat=M.readat;outside=M.outside
     ROOT=M.ROOT
     census=lambda fd:product_census(M,fd)
@@ -225,7 +232,7 @@ def make_parent(M,ledger,checked,deadline):
     class ProductParent(M.Domain):
         def create(self):
             need(manager_version(self.host_deadline) == self.pre['managerVersion'], 'MANAGER_CHANGED_BEFORE_CREATE')
-            need(shared_snapshot() == self.pre['shared'], 'SHARED_CHANGED_BEFORE_CREATE')
+            self.audit_shared('BEFORE_PARENT_CREATE', required=False)
             need(not self.path.exists() and unit_state(self.name,self.host_deadline).get('LoadState') == 'not-found',
                  'OWNED_UNIT_ALREADY_EXISTS')
             props = [('Description', 's', 'Directed Narrative product test'),
@@ -241,7 +248,7 @@ def make_parent(M,ledger,checked,deadline):
             args.append('0')
             self.create_issued = True
             put(self.ledger / 'parent-create.json', {'result': 'IN_PROGRESS', 'ownedUnit': self.name,
-                'sharedPrerequisitesVerified': True, 'allControllersAlreadyEnabled': True,
+                'sharedPrerequisitesVerified': True, 'allControllersAlreadyEnabled': False, 'normalManagerEnablingPermittedInDedicatedVM': True,
                 'systemdCallReturned': False, 'unitIdentityVerified': False})
             bus('StartTransientUnit', 'ssa(sv)a(sa(sv))', *args,deadline=self.host_deadline)
             until = min(self.host_deadline,time.monotonic() + 2)
@@ -266,7 +273,7 @@ def make_parent(M,ledger,checked,deadline):
             self.check()
             put(self.ledger / 'parent-create.json', {'result': 'OWNED_UNIT_IDENTITY_VERIFIED',
                 'ownedUnit': self.name, 'sharedPrerequisitesVerified': True,
-                'allControllersAlreadyEnabled': True, 'systemdCallReturned': True,
+                'allControllersAlreadyEnabled': False, 'normalManagerEnablingPermittedInDedicatedVM': True, 'systemdCallReturned': True,
                 'unitIdentityVerified': True, 'cgroupDeviceInode': self.anchor})
             try:
                 self.killfd = os.open('cgroup.kill', os.O_WRONLY | os.O_NOFOLLOW, dir_fd=self.fd)
@@ -278,7 +285,7 @@ def make_parent(M,ledger,checked,deadline):
             need(not initial['processes'] and not initial['threads'] and
                  initial['directories'] == [''] and self.populated() == 0, 'PARENT_NOT_INITIAL_EMPTY')
             need(outside(os.getpid(), self.relative), 'CONTROLLER_INSIDE_PARENT')
-            need(shared_snapshot() == self.pre['shared'], 'SHARED_CHANGED_AFTER_CREATE')
+            self.audit_shared('AFTER_PARENT_CREATE')
             put(self.ledger / 'parent.json', {'result': 'OWNED_ACTIVE_EMPTY',
                 'ownedUnit': self.name, 'invocationId': self.invocation,
                 'cgroupDeviceInode': self.anchor, 'limits': limits,
@@ -323,7 +330,160 @@ def validate_preparation(repository,preparation,docker_archive,expected_sha256):
     return doc
 
 
-def run_candidate(*,repository,preparation,docker_archive,expected_preparation_sha256,receipt):
+def docker_command(*args):
+    need(_docker_config is not None,'LOCAL_DOCKER_CONTEXT_NOT_VERIFIED')
+    return ['/usr/bin/docker','--config',_docker_config,'--host','unix:///run/docker.sock',*args]
+
+
+def local_socket_identity(path, expected_process):
+    path=Path(path)
+    st=path.stat(follow_symlinks=False)
+    need(stat.S_ISSOCK(st.st_mode) and st.st_uid==0,'LOCAL_DAEMON_SOCKET_REQUIRED')
+    with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as connection:
+        connection.settimeout(2);connection.connect(str(path))
+        pid,uid,gid=struct.unpack('3i',connection.getsockopt(socket.SOL_SOCKET,socket.SO_PEERCRED,12))
+    need(uid==0 and pid>=1,'LOCAL_ROOT_DAEMON_REQUIRED')
+    if pid==1:
+        # docker.socket is normally activated by systemd. Bind the inherited
+        # listening descriptor to the service MainPID, not the creator PID1.
+        service='docker.service' if expected_process=='dockerd' else 'containerd.service'
+        raw=subprocess.check_output(['/usr/bin/systemctl','show',service,'--property=MainPID','--value'],env=ENV,timeout=2)
+        need(raw.strip().isdigit(),'LOCAL_SERVICE_PID_SCHEMA');pid=int(raw)
+        need(pid>1,'LOCAL_SERVICE_NOT_RUNNING')
+        inodes=set()
+        for row in Path('/proc/net/unix').read_text().splitlines()[1:]:
+            fields=row.split()
+            if len(fields)==8 and fields[6].isdigit() and Path(fields[7]).resolve()==path.resolve():inodes.add(fields[6])
+        need(len(inodes)==1,'LOCAL_SOCKET_KERNEL_IDENTITY')
+        descriptors=list((Path('/proc')/str(pid)/'fd').iterdir())
+        need(len(descriptors)<=4096,'LOCAL_DAEMON_FD_BOUND')
+        found=False
+        for descriptor in descriptors:
+            try:target=os.readlink(descriptor)
+            except FileNotFoundError:continue
+            if target in {'socket:['+inode+']' for inode in inodes}:found=True
+        need(found,'LOCAL_SERVICE_SOCKET_BINDING')
+    proc=Path('/proc')/str(pid)
+    exe=Path(os.readlink(proc/'exe'))
+    need(exe.name==expected_process,'LOCAL_DAEMON_EXECUTABLE')
+    for kind in ('pid','mnt','cgroup','user'):
+        need(os.readlink(proc/'ns'/kind)==os.readlink('/proc/1/ns/'+kind)==
+             os.readlink('/proc/self/ns/'+kind),'DAEMON_HOST_NAMESPACE')
+    need(os.stat(proc/'root').st_ino==os.stat('/').st_ino and
+         os.stat(proc/'root').st_dev==os.stat('/').st_dev,'DAEMON_HOST_ROOT')
+    need(proc_stat(pid)>0,'DAEMON_PROCESS_IDENTITY')
+    return {'pid':pid,'starttime':proc_stat(pid),'binarySha256':hashlib.sha256(exe.read_bytes()).hexdigest(),
+            'socketDevice':st.st_dev,'socketInode':st.st_ino}
+
+
+def verify_local_daemons(result):
+    global _daemon_identity
+    dockerd=local_socket_identity('/run/docker.sock','dockerd')
+    cmd=(Path('/proc')/str(dockerd['pid'])/'cmdline').read_bytes().rstrip(b'\0').split(b'\0')
+    words=[v.decode() for v in cmd]
+    # No custom configuration or arbitrary runtime permitted in this derivation.
+    # Default config may exist, but only conventional local containerd/runc.
+    config=Path('/etc/docker/daemon.json')
+    settings=json.loads(config.read_text()) if config.exists() else {}
+    need(isinstance(settings,dict),'DAEMON_CONFIG_SCHEMA')
+    need(not settings.get('runtimes') and settings.get('default-runtime','runc')=='runc','CUSTOM_DAEMON_RUNTIME')
+    need(not any(v.startswith(('--config-file','--add-runtime','--default-runtime','--containerd-namespace','--containerd-plugins-namespace')) for v in words[1:]),'CUSTOM_DAEMON_CONFIGURATION')
+    containerd=settings.get('containerd','/run/containerd/containerd.sock')
+    for i,word in enumerate(words[1:],1):
+        if word=='--containerd':
+            need(i+1<len(words),'DAEMON_ARGUMENT_SCHEMA');containerd=words[i+1]
+        elif word.startswith('--containerd='):containerd=word.split('=',1)[1]
+    need(containerd in ('/run/containerd/containerd.sock','/var/run/containerd/containerd.sock'),'REMOTE_CONTAINERD_FORBIDDEN')
+    runtime=local_socket_identity('/run/containerd/containerd.sock','containerd')
+    # Reject remote/proxy runtimes and unread imports before any daemon mutation.
+    runtime_words=(Path('/proc')/str(runtime['pid'])/'cmdline').read_bytes().rstrip(b'\0').split(b'\0')
+    for i,word in enumerate(runtime_words[1:],1):
+        if word in (b'--config',b'-c'):
+            need(i+1<len(runtime_words) and runtime_words[i+1]==b'/etc/containerd/config.toml','CUSTOM_CONTAINERD_CONFIG_UNREVIEWED')
+        elif word.startswith((b'--config=',b'-c=')):
+            need(word.split(b'=',1)[1]==b'/etc/containerd/config.toml','CUSTOM_CONTAINERD_CONFIG_UNREVIEWED')
+    runtime_config=Path('/etc/containerd/config.toml')
+    settings2=tomllib.loads(runtime_config.read_text()) if runtime_config.exists() else {}
+    need(not settings2.get('imports') and not settings2.get('proxy_plugins'),'REMOTE_OR_IMPORTED_RUNTIME_CONFIG')
+    need(settings2.get('grpc',{}).get('address','/run/containerd/containerd.sock') in
+         ('/run/containerd/containerd.sock','/var/run/containerd/containerd.sock'),'REMOTE_CONTAINERD_FORBIDDEN')
+    for plugin in settings2.get('plugins',{}).values():
+        need(isinstance(plugin,dict),'CONTAINERD_PLUGIN_SCHEMA')
+        container=plugin.get('containerd',{})
+        runtime_configs=container.get('runtimes',plugin.get('runtimes',{}))
+        need(isinstance(runtime_configs,dict),'RUNTIME_CONFIG_SCHEMA')
+        for value in runtime_configs.values():
+            need(value.get('runtime_type','io.containerd.runc.v2')=='io.containerd.runc.v2' and
+                 not value.get('runtime_path') and not value.get('runtime_engine') and
+                 value.get('options',{}).get('BinaryName','runc') in ('runc','/usr/bin/runc'),
+                 'NONLOCAL_OR_CUSTOM_OCI_RUNTIME')
+    binaries={}
+    for name in ('runc','containerd-shim-runc-v2'):
+        binary=Path(shutil.which(name,path=ENV['PATH']) or '/UNAVAILABLE')
+        bst=binary.stat()
+        need(bst.st_uid==0 and not bst.st_mode&0o022 and binary.is_file(),'RUNTIME_BINARY_CUSTODY')
+        binaries[name]=hashlib.sha256(binary.read_bytes()).hexdigest()
+    runtime['configuredLocalRuntimeBinaryHashes']=binaries
+    runtime['configSha256']=hashlib.sha256(runtime_config.read_bytes() if runtime_config.exists() else b'').hexdigest()
+    dockerd['configSha256']=hashlib.sha256(config.read_bytes() if config.exists() else b'').hexdigest()
+    identity={'dockerd':dockerd,'containerd':runtime}
+    if _daemon_identity is not None:need(identity==_daemon_identity,'LOCAL_DAEMON_IDENTITY_CHANGED')
+    _daemon_identity=identity
+    result['localDaemonIdentity']=identity
+
+
+def verify_dedicated_vm(attestation,result,receipt):
+    import urllib.request
+    global _docker_config
+    need(isinstance(attestation,dict) and set(attestation)=={'runId','runAttempt','jobId','runnerName','runnerEnvironment','eventHead'},'HOSTED_ATTESTATION_SCHEMA')
+    need(attestation['runnerEnvironment']=='github-hosted' and attestation['runAttempt']==1,'STANDARD_HOSTED_JOB_REQUIRED')
+    for key in ('runId','jobId'):need(type(attestation[key]) is int and attestation[key]>0,'HOSTED_JOB_ID_SCHEMA')
+    need(re.fullmatch('[a-f0-9]{40}',attestation['eventHead']) is not None,'HOSTED_HEAD_SCHEMA')
+    head=subprocess.check_output(['git','rev-parse','HEAD'],env=ENV,text=True).strip()
+    need(head==attestation['eventHead'],'HOSTED_JOB_CHECKOUT_CHANGED')
+    api='https://api.github.com/repos/haroldfabla2-hue/Silhouette-Agency-OS-OpenSource'
+    def get(route):
+        request=urllib.request.Request(api+route,headers={'Accept':'application/vnd.github+json'})
+        with urllib.request.urlopen(request,timeout=5) as response:
+            raw=response.read(262145);need(len(raw)<=262144,'HOSTED_API_REPLY_BOUND')
+        return json.loads(raw)
+    run=get('/actions/runs/'+str(attestation['runId']))
+    job=get('/actions/jobs/'+str(attestation['jobId']))
+    need(run['head_sha']==head and run['run_attempt']==1 and run['status']=='in_progress' and
+         run['event']=='push' and run['head_branch']=='fix/shutdown-contracts-narrow-20261117' and
+         run['repository']['full_name']=='haroldfabla2-hue/Silhouette-Agency-OS-OpenSource','HOSTED_RUN_BINDING')
+    need(job['run_id']==run['id'] and job['run_attempt']==1 and job['status']=='in_progress' and
+         job['labels']==['ubuntu-24.04'] and job['runner_group_name']=='GitHub Actions' and
+         job['runner_name']==attestation['runnerName'] and job['runner_id']>0,'STANDARD_HOSTED_VM_BINDING')
+    need(Path('/sys/class/dmi/id/sys_vendor').read_text().strip()=='Microsoft Corporation' and
+         Path('/sys/class/dmi/id/product_name').read_text().strip()=='Virtual Machine','DEDICATED_VM_PLATFORM_UNPROVED')
+    need(Path('/proc/1/comm').read_text().strip()=='systemd','HOST_SYSTEMD_REQUIRED')
+    # Standard ubuntu-24.04, not ubuntu-slim or a self-hosted runner. This relies
+    # on GitHub's documented new-VM-per-job boundary, not a claim of hard attestation.
+    context={'kind':'STANDARD_GITHUB_HOSTED_VM','runId':run['id'],'jobId':job['id'],
+             'headSha256':hashlib.sha256(head.encode()).hexdigest(),
+             'providerBoundary':'NEW_VM_PER_STANDARD_HOSTED_JOB_NOT_SINGLE_CPU_SLIM'}
+    durable(str(receipt)+'.hosted-vm.json',context);result['dedicatedVm']=context
+    config=Path(receipt).with_name('directed-docker-'+secrets.token_hex(8))
+    config.mkdir(mode=0o700);_docker_config=str(config)
+    verify_local_daemons(result)
+    info=json.loads(docker('info','--format','{{json .}}'))
+    need(info['CgroupVersion']=='2' and info['CgroupDriver']=='systemd' and
+         info['DefaultRuntime']=='runc' and info['Name']==os.uname().nodename,'LOCAL_DOCKER_SYSTEMD_REQUIRED')
+    configured=info.get('Runtimes',{}).get('runc',{})
+    need(configured.get('path') in ('runc','/usr/bin/runc','io.containerd.runc.v2') and not configured.get('runtimeArgs'),'DOCKER_RUNTIME_BINDING_UNREVIEWED')
+    version=json.loads(docker('version','--format','{{json .}}'))
+    components=[]
+    for row in version['Server']['Components']:
+        if row['Name'] in ('Engine','containerd','runc','docker-init'):
+            need(re.fullmatch('[A-Za-z0-9.+_-]{1,80}',row['Version']) is not None,'RUNTIME_VERSION_SCHEMA')
+            components.append({'name':row['Name'],'version':row['Version']})
+    result['runtimeIdentity']={'components':components,'cgroupVersion':2,'driver':'systemd',
+                               'daemonIdentity':_daemon_identity,'daemonInfoIsNotRuntimeBinaryBinding':True}
+    durable(str(receipt)+'.runtime-identity.json',result['runtimeIdentity'])
+
+
+def run_candidate(*,repository,preparation,docker_archive,expected_preparation_sha256,receipt,hosted_job_attestation):
     """Not execution authority. Requires separate review and main decision."""
     global _journal
     _journal=HostJournal(str(receipt)+'.host-diagnostics.json')
@@ -340,12 +500,15 @@ def run_candidate(*,repository,preparation,docker_archive,expected_preparation_s
     result={'kind':'DIRECTED_REAL_NARRATIVE','result':'UNKNOWN','forcedCleanup':False,
             'imageConfigId':image_id,'closureSha256':closure_sha256,'profile':CREATE_PROFILE,
             'preparationSha256':expected_preparation_sha256,'productReleased':False}
-    cid=None;attach=None;directory=None;killfd=None;watcher=None;parent=None;M=None
+    cid=None;attach=None;directory=None;killfd=None;watcher=None;parent=None;M=None;ledger=None;image_load_issued=False
     output=b'';errors=b''
     finished=threading.Event();deadline_fired=threading.Event();watcher_error=threading.Event()
     deadline=time.monotonic()+TOTAL_SECONDS
     try:
+        with host_step('VERIFY_DEDICATED_HOSTED_VM'):
+            verify_dedicated_vm(hosted_job_attestation,result,receipt)
         with host_step('LOAD_FROZEN_SUPPORT'):M=load_reviewed_domain(repository)
+        image_load_issued=True
         with host_step('LOAD_PINNED_SCRATCH_IMAGE'):docker('load','--input',str(docker_archive),timeout=30)
         _journal.phase='ADMISSION'
         ledger=Path(receipt).parent/('silhouette-p0-'+str(os.getpid())+'-'+str(time.monotonic_ns()))
@@ -368,7 +531,7 @@ def run_candidate(*,repository,preparation,docker_archive,expected_preparation_s
         value=inspect_created(cid,image_id,node)
         need(value['HostConfig']['CgroupParent']==parent.name,'OWNED_PARENT_REQUEST')
         parent.cid=cid;parent.expected_scope='/docker-'+cid+'.scope'
-        attach=subprocess.Popen(['/usr/bin/docker','start','--attach','--interactive',cid],env=ENV,
+        attach=subprocess.Popen(docker_command('start','--attach','--interactive',cid),env=ENV,
             stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=True)
         until=min(deadline,time.monotonic()+8);pid=0
         while time.monotonic()<until:
@@ -380,6 +543,7 @@ def run_candidate(*,repository,preparation,docker_archive,expected_preparation_s
         membership=M.membership(pid)
         need(membership==parent.relative+parent.expected_scope,'LIVE_OWNED_PARENT')
         parent.manager_check(deadline)
+        parent.audit_shared('AFTER_RUNTIME_BEFORE_RUN')
         occupied=product_census(M,parent.fd)
         need(occupied['processes']==[pid] and occupied['directories']==['',parent.expected_scope] and parent.populated()==1,'INITIAL_PRODUCT_OCCUPANCY')
         result['occupiedBeforeRelease']=True
@@ -395,8 +559,12 @@ def run_candidate(*,repository,preparation,docker_archive,expected_preparation_s
         watcher=threading.Thread(target=watch,daemon=False);watcher.start()
         # Release only after checks and independent-of-daemon kill descriptor.
         _journal.phase='PRODUCT'
-        result['productReleased']=True
         with host_step('RELEASE_FIXED_NARRATIVE_BATCH'):
+            verify_local_daemons(result)
+            parent.audit_shared('IMMEDIATELY_BEFORE_RUN')
+            parent.check()
+            need({k:M.readat(parent.fd,k) for k in ('memory.max','memory.swap.max','pids.max','cpu.max')}=={'memory.max':str(MEMORY),'memory.swap.max':'0','pids.max':str(TASKS),'cpu.max':'100000 100000'},'PARENT_EFFECTIVE_LIMITS_BEFORE_RUN')
+            result['productReleased']=True
             attach.stdin.write(b'RUN\n');attach.stdin.close()
         output=b'';errors=b'';streams=selectors.DefaultSelector()
         streams.register(attach.stdout,selectors.EVENT_READ,'stdout');streams.register(attach.stderr,selectors.EVENT_READ,'stderr')
@@ -483,6 +651,16 @@ def run_candidate(*,repository,preparation,docker_archive,expected_preparation_s
                     result['failedParentRetained']=True
                 else:result['cleanupUnknown']=True
             except BaseException:result['cleanupUnknown']=True
+        if ledger is not None:
+            try:
+                initial=json.loads((Path(ledger)/'domain-preflight.json').read_text()).get('shared',{})
+                if 'controllers' in initial and 'enabled' in initial:
+                    result['initialControllers']=initial['controllers'];result['initialEnabled']=initial['enabled']
+            except (OSError,ValueError):pass
+        if parent is not None:
+            result['controllerSnapshots']=getattr(parent,'vm_snapshots',[])
+            result['initialControllers']=parent.pre['shared']['controllers']
+            result['initialEnabled']=parent.pre['shared']['enabled']
         finished.set()
         if watcher:watcher.join(3)
         if watcher and watcher.is_alive():result['cleanupUnknown']=True
@@ -493,7 +671,7 @@ def run_candidate(*,repository,preparation,docker_archive,expected_preparation_s
             if fd is not None:os.close(fd)
         result['deadlineFired']=deadline_fired.is_set();result['watchdogError']=watcher_error.is_set()
         result['deadlineScope']='CONTROLLER_LIVE_BEST_EFFORT_NOT_HARD_ADMISSION_BOUND'
-        result['scratchImageRetainedUntilVMTeardown']=True
+        result['scratchImageRetainedUntilVMTeardown']=image_load_issued
         durable(receipt,result)
     return result
 

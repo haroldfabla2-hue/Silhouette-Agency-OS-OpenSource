@@ -1,26 +1,15 @@
 {
-  "base": "393cb88058e317112195dab6c4df98c3e9f7e0ed",
+  "base": "2335963a3506c8372138ff2a9d7dd28175fdbbdc",
   "changedPaths": [
-    ".github/workflows/narrative-directed-once.yml",
-    "scripts/containment/docker-p0.INACTIVE.py",
-    "scripts/containment/p0-interface-contracts.INACTIVE.py",
-    "scripts/containment/p0-retained-domain.INACTIVE.py",
-    "scripts/containment/p0-rooted-paths.INACTIVE.py",
-    "services/narrativeService.ts",
+    ".github/workflows/narrative-directed-vm-once.yml",
     "tests/narrative-directed-activation/ACTIVATION.json",
-    "tests/narrative-directed-activation/REVIEWED-EMITTED.json",
     "tests/narrative-directed-activation/REVIEWED-PREPARATION.json",
-    "tests/narrative-directed-activation/TYPESCRIPT-LICENSE.txt",
-    "tests/narrative-directed-activation/export-selected.INACTIVE.py",
     "tests/narrative-directed-activation/prepare-reviewed.INACTIVE.py",
-    "tests/narrative-directed-activation/typescript-5.8.2.js.gz",
     "tests/narrative-directed/assemble.INACTIVE.py",
-    "tests/narrative-directed/emit-source.INACTIVE.cjs",
-    "tests/narrative-directed/entry.INACTIVE.mjs",
+    "tests/narrative-directed/export-selected.INACTIVE.py",
     "tests/narrative-directed/host-adapter.INACTIVE.py",
-    "tests/narrative-directed/supervisor.INACTIVE.cjs",
-    "tests/narrative-directed/verify-assembly.INACTIVE.py",
-    "tests/verifier-contracts/interface-abi.synthetic.py"
+    "tests/narrative-directed/local-snapshot-control.INACTIVE.py",
+    "tests/narrative-directed/vm-parent-derived.INACTIVE.py"
   ],
   "frozen": {
     "scripts/containment/docker-p0.INACTIVE.py": "94c1f8653e700741596a3216997c8f9a5db4766053c582986a81dd24ef5b1196",
@@ -29,18 +18,21 @@
     "scripts/containment/p0-rooted-paths.INACTIVE.py": "e42cad930926bfff52c719984c6db2fd819aab09811c6ab85954e1baa2e24ac0",
     "services/narrativeService.ts": "b23ef09b00d4b8795af7df63eb4505ee70a9df2c5900f8b825f19dc88010b5b3",
     "tests/narrative-directed-activation/REVIEWED-EMITTED.json": "8ec3d288e36eaeba71658a63548360a6881ed0342112897214e66c95a91d59f3",
-    "tests/narrative-directed-activation/REVIEWED-PREPARATION.json": "272cc04d6d807dc3dc60d19bdea9b898e5de458f7dab4bad708293ef38651c51",
+    "tests/narrative-directed-activation/REVIEWED-PREPARATION.json": "35b612152c374a2d37c9dc21832ada0c3952540ad78acf9d517b0366bcaf42d5",
     "tests/narrative-directed-activation/TYPESCRIPT-LICENSE.txt": "527adf9d4c760f7367c2aeffed6a89afba8ba40ea1b0efbc8f56496ad30ea9cf",
     "tests/narrative-directed-activation/export-selected.INACTIVE.py": "599cd22dfff8df55ee15006d776d19fd5e0d9051d9217bc3d2fd58efe1edd6d5",
-    "tests/narrative-directed-activation/prepare-reviewed.INACTIVE.py": "9fa16417dda88dcd0b0d437af71c7c292f8b509fba8bafd368c793cddb9d05f9",
+    "tests/narrative-directed-activation/prepare-reviewed.INACTIVE.py": "fa9c8a678388047f622881e551a277fa053d454e23dc5fcaba29a03ab2ef08be",
     "tests/narrative-directed-activation/typescript-5.8.2.js.gz": "7878b33d83ce19a156e8a0fc637d2a8c7d97728b2b6a6e82c7e88ea5f1e6cba2",
-    "tests/narrative-directed/assemble.INACTIVE.py": "83354497b65ae46af76198b7bfead29d58c4d5b49c847b711d288ef792d3cf6f",
+    "tests/narrative-directed/assemble.INACTIVE.py": "fdfc1cac879dffee8540cfa72f7d9fa826c1b031e80be77f7743417d7e129eac",
     "tests/narrative-directed/emit-source.INACTIVE.cjs": "a5f4e0d2ea7c0235d13f0ab6202e350e408e9ab48ed6cc1f867b18472e32ddf8",
     "tests/narrative-directed/entry.INACTIVE.mjs": "1910f6e4cd873fe4ef1d2fabfac03331642c16fdc7c03e38fc8af0be52ccfb9f",
-    "tests/narrative-directed/host-adapter.INACTIVE.py": "5afce3af82604321042094dc8b0ae06cb08cc7c8890c6c2a4f91c369d7c49359",
+    "tests/narrative-directed/export-selected.INACTIVE.py": "d0e5ba1b62ded9cbf3771307259601e28eb9b932cf38ab3df055ed816d0aaa44",
+    "tests/narrative-directed/host-adapter.INACTIVE.py": "cec2b2f7a1353809bda534d6842f9ecfc306c01a8f1295080b1b749b34e04a4f",
+    "tests/narrative-directed/local-snapshot-control.INACTIVE.py": "19b5c51847bbfea40f25c6c5c1e2182e951c843a29e79ad5c230dc1a3946f776",
     "tests/narrative-directed/supervisor.INACTIVE.cjs": "9562a760f8209dde53652484c95d6c1416d7dde019d981152d52453a4919a6df",
     "tests/narrative-directed/verify-assembly.INACTIVE.py": "9424f029e6deffd376364bd8756b548b725f0a7c6a53e18313a4d196cceefb9c",
+    "tests/narrative-directed/vm-parent-derived.INACTIVE.py": "49395f71e42e735608109ed71e74ee849119e2ed8a143ba305e402fc58d8bac0",
     "tests/verifier-contracts/interface-abi.synthetic.py": "32788c9440c491faf99932a440a632802beb8b23e225f6eda0e2aad473502283"
   },
-  "preparationSha256": "272cc04d6d807dc3dc60d19bdea9b898e5de458f7dab4bad708293ef38651c51"
+  "preparationSha256": "35b612152c374a2d37c9dc21832ada0c3952540ad78acf9d517b0366bcaf42d5"
 }
