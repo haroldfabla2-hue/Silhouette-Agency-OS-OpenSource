@@ -77,7 +77,7 @@ describe('PR-4d: BirthRateLimiter', () => {
 describe('PR-4d: orchestrator wiring (source audit)', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', '..', 'services', 'orchestrator.ts'), 'utf8');
     it('handleDynamicExpansion enforces contract, reuse, limits before createDynamicAgent', () => {
-        const blockStart = src.indexOf('private handleDynamicExpansion');
+        const blockStart = src.indexOf('private async handleDynamicExpansion');
         expect(blockStart).toBeGreaterThan(-1);
         const createIdx = src.indexOf('generateDynamicIds()', blockStart);
         expect(createIdx).toBeGreaterThan(blockStart);

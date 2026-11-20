@@ -40,17 +40,29 @@ describe('PR-3b: remediation hydrates specialists at point of use', () => {
         expect(src).not.toContain('Pre-hydrate Research and Dev');
     });
     it('qa-01 still hydrates for diagnosis', () => {
-        expect(src).toContain("orchestrator.hydrateAgent('qa-01');");
+        // Awaited strict hydration: fire-and-forget hydrateAgent is the
+        // rejected pattern here (unverified activation, unowned failure).
+        expect(src).toContain("await orchestrator.requireHydrated('qa-01');");
+        expect(src).not.toContain("orchestrator.hydrateAgent('qa-01');");
     });
     it('research-01 and dev-01 hydrate inside the needsResearch branch', () => {
         const branchStart = src.indexOf('if (needsResearch) {');
         const branch = src.slice(branchStart, branchStart + 900);
-        expect(branch.indexOf("orchestrator.hydrateAgent('research-01');")).toBeLessThan(branch.indexOf('consultResearchTeam('));
-        expect(branch.indexOf("orchestrator.hydrateAgent('dev-01');")).toBeLessThan(branch.indexOf('planSolution('));
+        const researchIdx = branch.indexOf("orchestrator.requireHydrated('research-01');");
+        const devIdx = branch.indexOf("orchestrator.requireHydrated('dev-01');");
+        // Presence is asserted explicitly: an absent call must fail, never
+        // pass vacuously via indexOf(-1) ordering.
+        expect(researchIdx).toBeGreaterThan(-1);
+        expect(devIdx).toBeGreaterThan(-1);
+        expect(researchIdx).toBeLessThan(branch.indexOf('consultResearchTeam('));
+        expect(devIdx).toBeLessThan(branch.indexOf('planSolution('));
     });
     it('hydration count: qa-01 once at entry, specialists only on demand', () => {
-        expect(src.split("orchestrator.hydrateAgent('qa-01')").length - 1).toBe(1);
-        expect(src.split("orchestrator.hydrateAgent('research-01')").length - 1).toBe(1);
-        expect(src.split("orchestrator.hydrateAgent('dev-01')").length - 1).toBe(1);
+        expect(src.split("orchestrator.requireHydrated('qa-01')").length - 1).toBe(1);
+        expect(src.split("orchestrator.requireHydrated('research-01')").length - 1).toBe(1);
+        expect(src.split("orchestrator.requireHydrated('dev-01')").length - 1).toBe(1);
+        expect(src.split("orchestrator.hydrateAgent('qa-01')").length - 1).toBe(0);
+        expect(src.split("orchestrator.hydrateAgent('research-01')").length - 1).toBe(0);
+        expect(src.split("orchestrator.hydrateAgent('dev-01')").length - 1).toBe(0);
     });
 });
