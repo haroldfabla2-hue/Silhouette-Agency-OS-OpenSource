@@ -326,3 +326,33 @@ jobs:
           path: daemon-capsule-review/
           retention-days: 2
           if-no-files-found: error
+
+  hydration-gates-capsule-preparation:
+    name: Prepare genuine hydration-gates capsule (no product execution)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+          cache: npm
+      - name: Existing locked dependencies on disposable runner
+        run: npm ci
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 'true'
+      - name: Install namespace tooling
+        run: sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends bubblewrap iproute2 util-linux libseccomp2
+      - name: Compile and audit exact finite capsule, no product evaluation
+        run: python3 tests/hydration-gates-capsule/prepare_capsule.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: actual-hydration-gates-capsule-review
+          path: |
+            hydration-gates-capsule-review/
+            tests/hydration-gates-capsule/EXPECTED-DIGESTS.json
+          retention-days: 2
+          if-no-files-found: error

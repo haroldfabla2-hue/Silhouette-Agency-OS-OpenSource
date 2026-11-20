@@ -1,0 +1,1 @@
+{"autonomy":{"enabled":false,"allowEvolution":false,"enableNarrative":false,"enableIntrospection":false},"memory":{"redis":{"host":"127.0.0.1","port":16379}}}
