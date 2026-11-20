@@ -20,6 +20,11 @@ export function ownedDeferred(task, ms) {
         setTimeout(() => { try { resolve(task()); } catch (error) { reject(error); } }, ms);
     }));
 }
+// Explicit resolved receipt when new work is refused after stopAdmission on an
+// unbound owner: the task is NOT invoked, and callers can distinguish refusal
+// from a completed task result. Bound admission still delegates to the desktop
+// session authority; an awaited undefined is never a non-start certificate.
+export const PRODUCER_RUN_NOT_STARTED = Object.freeze({ started: false, reason: 'PRODUCER_ADMISSION_STOPPED' });
 export function createProducerScope() {
     let accepting = true, failed = false;
     const intervals = new Set(), timeouts = new Set(), active = new Set();
@@ -32,7 +37,7 @@ export function createProducerScope() {
     };
     return Object.freeze({
         run(task) {
-            if (!accepting && !desktopWorkBound()) return Promise.reject(new Error('PRODUCER_ADMISSION_STOPPED'));
+            if (!accepting && !desktopWorkBound()) return Promise.resolve(PRODUCER_RUN_NOT_STARTED);
             let result;
             try { result = desktopWorkBound() ? desktopRun('producer-work', task) : task(); } catch (error) { failed = true; throw error; }
             const pending = Promise.resolve(result);
