@@ -7,6 +7,7 @@ BOOL={'productAttempted','forcedCleanup','allSilhouetteValidated','pipeEOFObserv
  'cleanupBeforeStopStateUnavailable','publicEvidenceCopyUnavailable'}
 NUM={'runId','jobId','exitCode','logBytes','totalBytes','copiedBytes','bytesCopied','collectionLimitBytes'}
 TEXT={'kind':{'DIRECT_REAL_NARRATIVE_SYSTEMD'},'result':{'UNKNOWN','PASS_DIRECTED_NARRATIVE_ONLY'},
+ 'stage':{'CONTEXT','HOST_MANAGER','PAYLOAD','TEMPORARY_WORK','WRITE','READ','TERMINAL_EVIDENCE'},
  'mode':{'write','read'},'scope':{'Narrative-only-not-full-app-or-raw-memory-durability'},
  'terminalModel':{'SYSTEMD_EXITTYPE_CGROUP_REMAIN_AFTER_EXIT'},
  'naturalTreeExitModel':{'SYSTEMD_EXITTYPE_CGROUP_NOT_DOCKER_PID1_CENSUS'},

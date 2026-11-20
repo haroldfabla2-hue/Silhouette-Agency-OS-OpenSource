@@ -1,0 +1,127 @@
+# INACTIVE REVIEW COPY, intended path only after a separate publication decision:
+# .github/workflows/narrative-direct-systemd-once.yml
+name: Direct systemd real Narrative, partial coverage only
+on:
+  push:
+    branches: [fix/shutdown-contracts-narrow-20261117]
+    paths: [.github/workflows/narrative-direct-systemd-once.yml]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: narrative-direct-systemd-pr226-once
+  cancel-in-progress: false
+jobs:
+  directed-narrative:
+    if: github.repository == 'haroldfabla2-hue/Silhouette-Agency-OS-OpenSource' && github.ref == 'refs/heads/fix/shutdown-contracts-narrow-20261117' && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+      - id: guard
+        name: Verify exact reviewed source transition before preparation
+        env:
+          EVENT_HEAD: ${{ github.sha }}
+        run: |
+          python3 -I -B -S - <<'PYGUARD'
+          import hashlib,json,os,pathlib,subprocess
+          def git(*a):return subprocess.check_output(['git',*a],text=True).strip()
+          root=pathlib.Path.cwd()
+          doc=json.loads((root/'tests/narrative-direct-systemd/ACTIVATION.json').read_text())
+          assert doc['base']=='6a48f335c94ee9e7376ada309b5961717fc08be6'
+          assert git('rev-parse','HEAD')==os.environ['EVENT_HEAD']
+          assert git('show','-s','--format=%P','HEAD')==doc['base']
+          assert set(git('diff','--name-only','HEAD^','HEAD').splitlines())==set(doc['changedPaths'])
+          for name,wanted in doc['frozen'].items():
+              p=root/name
+              assert p.is_file() and not p.is_symlink()
+              assert hashlib.sha256(p.read_bytes()).hexdigest()==wanted
+          prep=root/'tests/narrative-direct-systemd/PREPARATION.json'
+          assert hashlib.sha256(prep.read_bytes()).hexdigest()==doc['directPreparationSha256']
+          PYGUARD
+      - name: Preparation Node only, not product runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.5
+      - id: reconstruction
+        name: Reconstruct exact reviewed scratch archive without evaluating product
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: timeout --signal=TERM --kill-after=10s 240s python3 -I -B -S tests/narrative-directed-activation/prepare-reviewed.INACTIVE.py
+      - id: hosted-context
+        name: Authenticated read-only context and nonsecret sealed handoff
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_HEAD: ${{ github.sha }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+          CURRENT_RUN_ATTEMPT: ${{ github.run_attempt }}
+          CURRENT_RUNNER_NAME: ${{ runner.name }}
+          CURRENT_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          python3 -I -B -S - <<'PYCONTEXT'
+          import importlib.util,os,pathlib
+          source=pathlib.Path('tests/narrative-directed/context-snapshot.INACTIVE.py').resolve()
+          spec=importlib.util.spec_from_file_location('context_snapshot',source)
+          module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+          expected={'runId':int(os.environ['CURRENT_RUN_ID']),
+              'runAttempt':int(os.environ['CURRENT_RUN_ATTEMPT']),
+              'runnerName':os.environ['CURRENT_RUNNER_NAME'],
+              'runnerEnvironment':os.environ['CURRENT_RUNNER_ENVIRONMENT'],
+              'eventHead':os.environ['EVENT_HEAD']}
+          value=module.collect('/tmp/narrative-directed-hosted-job.json',expected)
+          with pathlib.Path(os.environ['GITHUB_OUTPUT']).open('a') as output:
+              output.write('snapshotSha256='+value['snapshotSha256']+'\n')
+              output.write('jobId='+str(value['jobId'])+'\n')
+          PYCONTEXT
+          unset GH_TOKEN
+          sudo -n env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C /usr/bin/chown root:root /tmp/narrative-directed-hosted-job.json
+          sudo -n env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C /usr/bin/chmod 0600 /tmp/narrative-directed-hosted-job.json
+      - id: batch
+        env:
+          EXPECTED_RUN_ID: ${{ github.run_id }}
+          EXPECTED_RUN_ATTEMPT: ${{ github.run_attempt }}
+          EXPECTED_JOB_ID: ${{ steps.hosted-context.outputs.jobId }}
+          EXPECTED_SNAPSHOT_SHA256: ${{ steps.hosted-context.outputs.snapshotSha256 }}
+          EXPECTED_RUNNER_NAME: ${{ runner.name }}
+          EXPECTED_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+          EXPECTED_HEAD: ${{ github.sha }}
+        name: One directed product batch, no automatic retry
+        if: steps.reconstruction.outcome == 'success' && steps.hosted-context.outcome == 'success'
+        run: |
+          timeout --signal=TERM --kill-after=15s 160s sudo -n env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C EXPECTED_RUN_ID="$EXPECTED_RUN_ID" EXPECTED_RUN_ATTEMPT="$EXPECTED_RUN_ATTEMPT" EXPECTED_JOB_ID="$EXPECTED_JOB_ID" EXPECTED_SNAPSHOT_SHA256="$EXPECTED_SNAPSHOT_SHA256" EXPECTED_RUNNER_NAME="$EXPECTED_RUNNER_NAME" EXPECTED_RUNNER_ENVIRONMENT="$EXPECTED_RUNNER_ENVIRONMENT" EXPECTED_HEAD="$EXPECTED_HEAD" /usr/bin/python3 -I -B -S - <<'PYRUN'
+          import importlib.util,pathlib,os
+          source=pathlib.Path('tests/narrative-direct-systemd/direct-services.INACTIVE.py').resolve()
+          spec=importlib.util.spec_from_file_location('directed_host',source)
+          module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+          base=pathlib.Path('tests/narrative-direct-systemd').resolve()
+          result=module.run(archive='/tmp/narrative-directed-preparation/assembled/directed-image.docker.tar',
+              manifest='/tmp/narrative-directed-preparation/assembled/DIRECTED-ROOTFS.json',
+              guard=base/'native-selection-guard.DIRECT-SYSTEMD.cjs',
+              derived_manifest=base/'DIRECT-SYSTEMD-ROOTFS.json',
+              context_module=pathlib.Path('tests/narrative-directed/context-snapshot.INACTIVE.py').resolve(),
+              receipt='/tmp/narrative-direct-result.json',
+              expected_context={'runId':int(os.environ['EXPECTED_RUN_ID']),
+                  'runAttempt':int(os.environ['EXPECTED_RUN_ATTEMPT']),
+                  'jobId':int(os.environ['EXPECTED_JOB_ID']),
+                  'snapshotSha256':os.environ['EXPECTED_SNAPSHOT_SHA256'],
+                  'runnerName':os.environ['EXPECTED_RUNNER_NAME'],
+                  'runnerEnvironment':os.environ['EXPECTED_RUNNER_ENVIRONMENT'],
+                  'eventHead':os.environ['EXPECTED_HEAD']})
+          raise SystemExit(0 if result.get('result')=='PASS_DIRECTED_NARRATIVE_ONLY' else 1)
+          PYRUN
+      - id: evidence
+        name: Export selected bounded technical evidence, never raw fixture logs
+        if: always() && steps.guard.outcome == 'success'
+        run: timeout --signal=TERM --kill-after=5s 30s sudo -n env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C /usr/bin/python3 -I -B -S tests/narrative-direct-systemd/export-selected.INACTIVE.py
+      - name: Preserve selected receipts for independent review
+        if: always() && steps.evidence.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: direct-narrative-systemd-partial-selected-evidence
+          path: /tmp/narrative-direct-selected/*.json
+          if-no-files-found: error
+          retention-days: 2

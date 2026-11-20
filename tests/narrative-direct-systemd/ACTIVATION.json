@@ -1,15 +1,13 @@
 {
-  "base": "4422a1e3ab9dd8cc411f51b8e2c61f82e05b7233",
+  "base": "6a48f335c94ee9e7376ada309b5961717fc08be6",
   "changedPaths": [
     ".github/workflows/narrative-direct-systemd-once.yml",
     "tests/narrative-direct-systemd/ACTIVATION.json",
-    "tests/narrative-direct-systemd/DIRECT-SYSTEMD-ROOTFS.json",
     "tests/narrative-direct-systemd/PREPARATION.json",
     "tests/narrative-direct-systemd/direct-services.INACTIVE.py",
-    "tests/narrative-direct-systemd/export-selected.INACTIVE.py",
-    "tests/narrative-direct-systemd/native-selection-guard.DIRECT-SYSTEMD.cjs"
+    "tests/narrative-direct-systemd/export-selected.INACTIVE.py"
   ],
-  "directPreparationSha256": "5842ccea8624a22eaabcb3fc23ab90bc703c627a59d6455676a12ca8c820841b",
+  "directPreparationSha256": "7b9f706c1065b6a92945c7b7e451807b4f1ec1a21c3292287dc438ea66d202fd",
   "frozen": {
     "scripts/containment/docker-p0.INACTIVE.py": "94c1f8653e700741596a3216997c8f9a5db4766053c582986a81dd24ef5b1196",
     "scripts/containment/p0-interface-contracts.INACTIVE.py": "daee3c04789a811d8f668f76edccad43d9fda27f166c8a9dd4e30da620f8ca89",
@@ -17,9 +15,9 @@
     "scripts/containment/p0-rooted-paths.INACTIVE.py": "e42cad930926bfff52c719984c6db2fd819aab09811c6ab85954e1baa2e24ac0",
     "services/narrativeService.ts": "b23ef09b00d4b8795af7df63eb4505ee70a9df2c5900f8b825f19dc88010b5b3",
     "tests/narrative-direct-systemd/DIRECT-SYSTEMD-ROOTFS.json": "dae488fb3fceafabfd3d3a2462b923a90eaa12a0e782c5559596a4077ef7a03d",
-    "tests/narrative-direct-systemd/PREPARATION.json": "5842ccea8624a22eaabcb3fc23ab90bc703c627a59d6455676a12ca8c820841b",
-    "tests/narrative-direct-systemd/direct-services.INACTIVE.py": "6651b1beb073a8d3e69d3ee9243e84c97f4c3ba657702a31e2c0148110d4c871",
-    "tests/narrative-direct-systemd/export-selected.INACTIVE.py": "779871174b8fcb38a485e633515c67cfc47b662607fdb251b79066b664779a7f",
+    "tests/narrative-direct-systemd/PREPARATION.json": "7b9f706c1065b6a92945c7b7e451807b4f1ec1a21c3292287dc438ea66d202fd",
+    "tests/narrative-direct-systemd/direct-services.INACTIVE.py": "c260f4210338a2ac8949c0a8318a4e219e89e2b61fe7c738c1dc8f15e92e77e0",
+    "tests/narrative-direct-systemd/export-selected.INACTIVE.py": "600eba78b3f16a2743403754e6ee7b7e165ba7e430183742267368455d1b8d9b",
     "tests/narrative-direct-systemd/native-selection-guard.DIRECT-SYSTEMD.cjs": "50d21436e62b0ae62619b1396013298f4e1134ae2c293a207382978501e3f694",
     "tests/narrative-directed-activation/REVIEWED-EMITTED.json": "8ec3d288e36eaeba71658a63548360a6881ed0342112897214e66c95a91d59f3",
     "tests/narrative-directed-activation/REVIEWED-PREPARATION.json": "d5619cb278845defa05975c3fdd83c633780456f8ed398ad5d24e6a111d15cce",

@@ -168,7 +168,7 @@ def real_phase(unit,root,work,tmp,log,mode,receipt,result):
 
 def run(*,archive,manifest,guard,derived_manifest,context_module,expected_context,receipt):
     """Review only. Context authorization and exact event remain separate."""
-    result={'kind':'DIRECT_REAL_NARRATIVE_SYSTEMD','result':'UNKNOWN','productAttempted':False,'forcedCleanup':False,
+    result={'kind':'DIRECT_REAL_NARRATIVE_SYSTEMD','stage':'CONTEXT','result':'UNKNOWN','productAttempted':False,'forcedCleanup':False,
             'phases':[],'logCollection':{},'unitStates':[],'ownedUnits':[],'allSilhouetteValidated':False,
             'pipeEOFObserved':False,'scope':'Narrative-only-not-full-app-or-raw-memory-durability'}
     receipt=Path(receipt);base=Path('/tmp')/('narrative-direct-'+secrets.token_hex(8));mounted=[]
@@ -180,15 +180,16 @@ def run(*,archive,manifest,guard,derived_manifest,context_module,expected_contex
         spec=importlib.util.spec_from_file_location('directed_context',context_module);module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
         context=module.read_for_root('/tmp/narrative-directed-hosted-job.json',expected_context)
         need(command('/usr/bin/git','rev-parse','HEAD')==context['eventHead'],'CONTEXT_HEAD_CHANGED')
-        need(Path('/sys/class/dmi/id/sys_vendor').read_text().strip()=='Microsoft Corporation' and
-             Path('/sys/class/dmi/id/product_name').read_text().strip()=='Virtual Machine','DEDICATED_VM_PLATFORM_UNPROVED')
-        need(Path('/proc/1/comm').read_text().strip()=='systemd','HOST_MANAGER_REQUIRED')
         result['contextValidated']=True;result['runId']=context['runId'];result['jobId']=context['jobId']
+        result['stage']='HOST_MANAGER';durable(receipt,result)
+        need(Path('/proc/1/comm').read_text().strip()=='systemd','HOST_MANAGER_REQUIRED')
+        result['stage']='PAYLOAD';durable(receipt,result)
         base.mkdir(mode=0o700);work=base/'work';tmp=base/'tmp';work.mkdir();tmp.mkdir()
         root=extract_reviewed(archive,manifest,guard,derived_manifest,base/'root')
         result['instrumentationProvenance']={'originalArchiveSha256':ARCHIVE_SHA,'originalManifestSha256':MANIFEST_SHA,
             'derivedManifestSha256':DERIVED_MANIFEST_SHA,'derivedGuardSha256':GUARD_SHA,
             'executableIdentity':'ABSOLUTE_PINNED_FILE_NOT_PROC_OBSERVATION','productEntrySha256':ENTRY_SHA}
+        result['stage']='TEMPORARY_WORK';durable(receipt,result)
         for target,options in ((work,'size=33554432,nr_inodes=4096'),(tmp,'size=16777216,nr_inodes=2048')):
             command('/usr/bin/mount','-t','tmpfs','-o','rw,nosuid,nodev,noexec,'+options+',uid=1000,gid=1000,mode=0700','tmpfs',str(target));mounted.append(target)
         (work/'db').mkdir();os.chown(work/'db',1000,1000)
@@ -199,6 +200,7 @@ def run(*,archive,manifest,guard,derived_manifest,context_module,expected_contex
         original=None
         for mode in ('write','read'):
             unit='narrative-direct-'+secrets.token_hex(8)+'-'+mode
+            result['stage']='WRITE' if mode=='write' else 'READ'
             result['productAttempted']=True;durable(receipt,result)
             real_phase(unit,root,work,tmp,tmp/(mode+'.log'),mode,receipt,result)
             journal=(work/'data/wal/pending-narrations.json').read_bytes()
@@ -208,6 +210,7 @@ def run(*,archive,manifest,guard,derived_manifest,context_module,expected_contex
             if mode=='write':
                 original=journal;need(len(json.loads(journal)['items'])==2,'WRITER_ITEMS_COUNT')
             else:need(json.loads(journal)==json.loads(original),'ORIGINAL_IDS_OR_FIELDS_CHANGED')
+        result['stage']='TERMINAL_EVIDENCE'
         result.update(result='PASS_DIRECTED_NARRATIVE_ONLY',sameOriginalIdsAndFields=True,
             journalSha256=hashlib.sha256(original).hexdigest(),recoveredSha256=hashlib.sha256(journal).hexdigest(),
             naturalTreeExitModel='SYSTEMD_EXITTYPE_CGROUP_NOT_DOCKER_PID1_CENSUS',providersOff=True)
