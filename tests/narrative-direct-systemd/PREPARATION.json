@@ -1,0 +1,17 @@
+{
+  "derivedRootfsManifestSha256": "dae488fb3fceafabfd3d3a2462b923a90eaa12a0e782c5559596a4077ef7a03d",
+  "instrumentationChangeOnly": "absolute-pinned-executable-identity-not-proc-observation",
+  "kind": "DIRECT_SYSTEMD_DERIVED_PREPARATION",
+  "originalArchiveIsNotDerivedRootIdentity": true,
+  "originalArchiveSha256": "119565c089bfc576ee9a96c5c785dba4eebdcdce9117c63ea3d3a41c4ab52e39",
+  "originalPreparationSha256": "d5619cb278845defa05975c3fdd83c633780456f8ed398ad5d24e6a111d15cce",
+  "originalRootfsManifestSha256": "debf0c3eb2dab9fb902e6c65e5dbcc1cb27276f21e33053ae187de2d84790041",
+  "productEvaluated": false,
+  "runtimeValidated": false,
+  "sourceControls": {
+    "DIRECT-SYSTEMD-ROOTFS.json": "dae488fb3fceafabfd3d3a2462b923a90eaa12a0e782c5559596a4077ef7a03d",
+    "direct-services.INACTIVE.py": "6651b1beb073a8d3e69d3ee9243e84c97f4c3ba657702a31e2c0148110d4c871",
+    "export-selected.INACTIVE.py": "779871174b8fcb38a485e633515c67cfc47b662607fdb251b79066b664779a7f",
+    "native-selection-guard.DIRECT-SYSTEMD.cjs": "50d21436e62b0ae62619b1396013298f4e1134ae2c293a207382978501e3f694"
+  }
+}
