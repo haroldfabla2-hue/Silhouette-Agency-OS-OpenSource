@@ -33,11 +33,11 @@ for(const row of rows){const source=fs.readFileSync(row.emitted,'utf8'),ast=ts.c
  }}ts.forEachChild(n,verify);}verify(ast);
 }
 const builtins=new Set(require('module').builtinModules.concat(require('module').builtinModules.map(m=>'node:'+m)));
-const bareRoots=new Set();
+const bareRoots=new Set();const bareUses=[];
 for(const row of rows){const source=fs.readFileSync(row.emitted,'utf8'),ast=ts.createSourceFile(row.emitted,source,ts.ScriptTarget.ES2022,true,ts.ScriptKind.JS);
- function bare(n){if(ts.isStringLiteral(n)&&!n.text.startsWith('.')){const par=n.parent;const isSpec=ts.isImportDeclaration(par)||ts.isExportDeclaration(par)||(ts.isCallExpression(par)&&(par.expression.kind===ts.SyntaxKind.ImportKeyword||(par.expression&&par.expression.text==='require')));if(isSpec&&!builtins.has(n.text))bareRoots.add(n.text.split('/').slice(0,n.text.startsWith('@')?2:1).join('/'));}
+ function bare(n){if(ts.isStringLiteral(n)&&!n.text.startsWith('.')){const par=n.parent;const isSpec=ts.isImportDeclaration(par)||ts.isExportDeclaration(par)||(ts.isCallExpression(par)&&(par.expression.kind===ts.SyntaxKind.ImportKeyword||(par.expression&&par.expression.text==='require')));if(isSpec&&!builtins.has(n.text)){const root=n.text.split('/').slice(0,n.text.startsWith('@')?2:1).join('/');bareRoots.add(root);const kind=(ts.isImportDeclaration(par)||ts.isExportDeclaration(par))?'static':(par.expression.kind===ts.SyntaxKind.ImportKeyword?'dynamic':'require');bareUses.push({from:row.source,specifier:n.text,root,kind});}}
  ts.forEachChild(n,bare);}bare(ast);}
-fs.writeFileSync('hydration-gates-capsule-review/EMITTED.json',JSON.stringify({node:process.version,nodeExecPath:process.execPath,nodeSha256:hash(fs.readFileSync(process.execPath)),compiler:ts.version,compilerSha256:hash(fs.readFileSync(tsPath)),packageLockSha256:hash(fs.readFileSync('package-lock.json')),module:'ESNext',productEvaluated:false,omittedDynamic,bareRoots:[...bareRoots].sort(),files:rows},null,2));
+fs.writeFileSync('hydration-gates-capsule-review/EMITTED.json',JSON.stringify({node:process.version,nodeExecPath:process.execPath,nodeSha256:hash(fs.readFileSync(process.execPath)),compiler:ts.version,compilerSha256:hash(fs.readFileSync(tsPath)),packageLockSha256:hash(fs.readFileSync('package-lock.json')),module:'ESNext',productEvaluated:false,omittedDynamic,bareRoots:[...bareRoots].sort(),bareUses,files:rows},null,2));
 '''
 subprocess.run([str(node),'-e',recipe],check=True)
 (A/'package.json').write_text('{"type":"module","private":true}')
@@ -58,6 +58,12 @@ def resolve(name,parent):
 seen=set();queue=[resolve(n,R) for n in C['npmRuntimeRoots']]
 try:queue.append(resolve('pino',R))
 except FileNotFoundError:pass # Existing actual logger fallback, not a test shim.
+# Roots the product itself tolerates absent (dynamic import with its own
+# try/catch): mounted when installed, recorded when not. Never fabricated.
+absentTolerated=[]
+for n in C.get('absentToleratedRoots',[]):
+ try:queue.append(resolve(n,R))
+ except FileNotFoundError:absentTolerated.append(n)
 while queue:
  pkg=queue.pop();pkg=pkg.resolve()
  if pkg in seen:continue
@@ -74,7 +80,22 @@ while queue:
   dst=A/p.relative_to(R);dst.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(p,dst)
 copiedNames={json.loads((pkg/'package.json').read_text()).get('name') for pkg in seen}
 emitted_doc=json.loads((O/'EMITTED.json').read_text())
-missing_roots=[r for r in emitted_doc['bareRoots'] if r not in copiedNames]
+# Absent-tolerated roots: the exception can never widen silently. The
+# exception list is exactly {'dockerode'}: the resolver-exemption set and the
+# guarded-use set must be that same single root, so no root is exempted
+# without its guard and no second exception can appear without editing this
+# assert. EVERY use of the root in the emitted closure must be the exact
+# specifier from the declared module with the declared kind, at the declared
+# count; a static import/export/require, a require() value use, a subpath
+# specifier, a new caller or a changed count fails preparation, whether or
+# not the package happens to be installed.
+assert set(C.get('absentToleratedRoots',[]))==set(C.get('absentToleratedUses',{}).keys())=={'dockerode'},'ABSENT_TOLERATED_SET_DRIFT'
+for n,decl in C.get('absentToleratedUses',{}).items():
+ actual=[u for u in emitted_doc['bareUses'] if u['root']==n]
+ bad=[u for u in actual if not (u['kind']==decl['kind'] and u['from']==decl['from'] and u['specifier']==n)]
+ assert not bad,'ABSENT_TOLERATED_UNAUTHORIZED_USE_'+n+'_'+json.dumps(bad)
+ assert len(actual)==decl['count'],'ABSENT_TOLERATED_USE_COUNT_'+n+'_expected'+str(decl['count'])+'_got'+str(len(actual))
+missing_roots=[r for r in emitted_doc['bareRoots'] if r not in copiedNames and r not in absentTolerated]
 assert not missing_roots,'BARE_ROOT_NOT_MOUNTED_'+','.join(sorted(missing_roots))
 for p in A.rglob('*'):
  if p.suffix in ['.js','.mjs','.cjs'] and 'node_modules' not in p.parts:subprocess.run([str(node),'--check',str(p)],check=True)
@@ -123,7 +144,7 @@ for p in O.rglob('*'):
   text=p.read_text(errors='strict')
   for pattern in [r'gh[pousr]_[A-Za-z0-9]{20,}',r'github_pat_[A-Za-z0-9_]{20,}',r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY',r'https?://[^\s/:]+:[^\s/@]+@']:
    assert not re.search(pattern,text),'ARTIFACT_CREDENTIAL_MARKER'
-audit={'copiedSuffixes':['.js','.cjs','.mjs','.json','.node','.lua'],'resourceCaveat':'package resources with other suffixes (wasm, data files, images) are NOT copied; execution may honestly fail on them. Never replace, shim or drop modules to force green; if a missing resource breaks a case, the capsule fails and the cause is reported.','audience':'existing public repository artifact, retained2days','source':'only explicit emitted source/npm locked package runtime/dpkg runtime/Python stdlib, not checkout entire tree','heuristicOnly':True,'noProductExecution':True,'sourceCommit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'npmPackages':[{'path':str(p.relative_to(R)),'packageJsonSha256':sha(p/'package.json'),'name':json.loads((p/'package.json').read_text()).get('name'),'version':json.loads((p/'package.json').read_text()).get('version')} for p in sorted(seen)],'files':[{'path':str(p.relative_to(O)),'sha256':sha(p),'bytes':p.stat().st_size} for p in sorted(O.rglob('*')) if p.is_file()]}
+audit={'copiedSuffixes':['.js','.cjs','.mjs','.json','.node','.lua'],'resourceCaveat':'package resources with other suffixes (wasm, data files, images) are NOT copied; execution may honestly fail on them. Never replace, shim or drop modules to force green; if a missing resource breaks a case, the capsule fails and the cause is reported.','absentToleratedRoots':absentTolerated,'absentToleratedUses':{n:[u for u in emitted_doc['bareUses'] if u['root']==n] for n in absentTolerated},'absentToleratedBasis':'declared in the contract; each is dynamically imported by the product behind its own try/catch and is absent from the installed tree (checked against package-lock); recorded, never shimmed','audience':'existing public repository artifact, retained2days','source':'only explicit emitted source/npm locked package runtime/dpkg runtime/Python stdlib, not checkout entire tree','heuristicOnly':True,'noProductExecution':True,'sourceCommit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'npmPackages':[{'path':str(p.relative_to(R)),'packageJsonSha256':sha(p/'package.json'),'name':json.loads((p/'package.json').read_text()).get('name'),'version':json.loads((p/'package.json').read_text()).get('version')} for p in sorted(seen)],'files':[{'path':str(p.relative_to(O)),'sha256':sha(p),'bytes':p.stat().st_size} for p in sorted(O.rglob('*')) if p.is_file()]}
 (O/'PUBLIC-ARTIFACT-AUDIT.json').write_text(json.dumps(audit,indent=2))
 digests={
  'allowlistSha256':sha(O/'ALLOWLIST.json'),
