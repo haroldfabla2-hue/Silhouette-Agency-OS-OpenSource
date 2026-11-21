@@ -1,7 +1,0 @@
-{
-  "services/daemon/daemonStateOwner.js": "1a7c6a52fdc74ea7be126d9ac7ce3aa66b81cde70e447c9172c3fb6780115963",
-  "services/daemon/serializedStateWriter.js": "828d288afd93693a47437a0ee18a5b3d9baabd4482a16101bb01e6eb6c0c54df",
-  "tests/daemon-state-writer/contracts.node.cjs": "e5cec8ec1037b5ec7652295df287eee8e5b212d355fbb47dc20874be948be7aa",
-  "package.json": "9c9bc137971629d3025d0c1c24f65c3d818fe744e9bfcc05781ccc0e5226cb4d",
-  "tsconfig.json": "3705c6f22432b3a01149328ba268cc739e44382c2ecd65a877456f71c54348af"
-}
