@@ -1,0 +1,9 @@
+{
+  "usr/local/bin/node": "ccacb2d6d87ba6d118b2bffc1ae33747a05cc5fc6b1f1ec4fc1d420b687e952d",
+  "usr/local/lib/node_modules/npm/bin/npm-cli.js": "8e5f6f3429f8cdbe693cdc29904e9d5a7b127a494bd15c804bd54c7403bfcbe7",
+  "usr/local/lib/node_modules/npm/package.json": "b5bd3f6aae88de512aaa0fa6feda155c971ad20040d03962443b5523b0393f4f",
+  "usr/bin/git": "00c84136d8294294580daa32f25b3e83ddb8341e9b5b70722e4c9a973ba5f749",
+  "usr/lib/git-core/git-remote-http": "d3a2047e6be7d10dbea2f8d5250c3c5b933b1122c230611c1f5e8b9084d07114",
+  "usr/bin/python3.11": "a83c0370d91532c96d4060a0e7c107d1f2889dad8a98e03395e86ef0373fd467",
+  "etc/ssl/certs/ca-certificates.crt": "a3413a37a8e09cc21b2c11c9ffb23d92d2fc9d1933c9e7617f5c4fba4f72d37d"
+}
