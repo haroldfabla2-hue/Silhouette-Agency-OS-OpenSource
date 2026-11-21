@@ -1,0 +1,137 @@
+--- isolated-v3/controller
++++ wiring-v1/controller
+@@ -2,7 +2,7 @@
+ No online download, service start, test import or execution on module import.
+ """
+ from pathlib import Path
+-import hashlib,importlib.util,json,os,re,secrets,shutil,stat,subprocess,tarfile,time
++import hashlib,importlib.util,json,os,re,secrets,shutil,stat,subprocess,tarfile,time,zipfile
+ HERE=Path(__file__).resolve().parent
+ BASE='cd0066be67748f5948515bf3d20e6edc36d7b7c0'
+ ARCHIVE_SHA='119565c089bfc576ee9a96c5c785dba4eebdcdce9117c63ea3d3a41c4ab52e39'
+@@ -59,16 +59,13 @@
+  finally:os.close(directory)
+ 
+ def make_root(archive,root,source):
+- need(Path(archive).is_file() and not Path(archive).is_symlink() and Path(archive).stat().st_size<=2147483648,'NATIVE_ARCHIVE_BOUND');need(sha(archive)==ARCHIVE_SHA,'NATIVE_ARCHIVE_PIN');rows=json.loads((HERE/'NATIVE-ROOTFS.json').read_text());wanted={r['target'].lstrip('/'):r for r in rows};need(len(wanted)==594,'NATIVE_COUNT');seen=set();root.mkdir(mode=0o755)
+- with tarfile.open(archive,'r:') as outer:
+-  table=json.load(outer.extractfile('manifest.json'));need(len(table)==1 and table[0]['Layers']==['layer.tar'],'NATIVE_LAYOUT')
+-  with outer.extractfile('layer.tar') as stream,tarfile.open(fileobj=stream,mode='r|') as layer:
+-   for row in layer:
+-    if row.name not in wanted:continue
+-    need(row.name not in seen and row.isfile(),'NATIVE_TYPE');seen.add(row.name);r=wanted[row.name]
+-    need(row.size==r['bytes'] and row.mode==r['mode'],'NATIVE_METADATA');p=root/row.name;p.parent.mkdir(parents=True,exist_ok=True)
+-    with layer.extractfile(row) as inp,p.open('xb') as out:shutil.copyfileobj(inp,out)
+-    need(sha(p)==r['sha256'],'NATIVE_HASH');p.chmod(r['mode'])
++ need(Path(archive).is_file() and not Path(archive).is_symlink() and Path(archive).stat().st_size==181155369 and sha(archive)=='a549abd2f6a03266566ee14df09ba93882ff94458bdc514bc015bb3e31ea13d4','NATIVE_ORIGINAL_ZIP_PIN');rows=json.loads((HERE/'NATIVE-ROOTFS.json').read_text());wanted={r['target'].lstrip('/'):r for r in rows};need(len(wanted)==594,'NATIVE_COUNT');seen=set();root.mkdir(mode=0o755)
++ with zipfile.ZipFile(archive) as saved:
++  names=saved.namelist();need(len(names)==len(set(names)) and len(names)<=7000,'NATIVE_ZIP_PATH_COUNT')
++  for name,row in wanted.items():
++   origin='hydration-gates-capsule-review/runtime/'+('opt/hostedtoolcache/node/22.18.0/x64/bin/node' if name=='usr/bin/node' else name);info=saved.getinfo(origin);need(info.file_size==row['bytes'] and not stat.S_ISLNK(info.external_attr>>16),'NATIVE_ZIP_METADATA');target=root/name;target.parent.mkdir(parents=True,exist_ok=True)
++   with saved.open(info) as inp,target.open('xb') as out:shutil.copyfileobj(inp,out)
++   need(sha(target)==row['sha256'],'NATIVE_ZIP_FILE_PIN');target.chmod(row['mode']);seen.add(name)
+  need(seen==set(wanted),'NATIVE_MISSING')
+  pins=json.loads((HERE/'TEST-SOURCE-PINS.json').read_text())
+  # Runtime has no repository tree/node_modules at all except these originals.
+@@ -86,27 +83,47 @@
+  result['terminal']=anchor.prove_empty(manager);result['cleanupSafe']=True
+  durable(receipt,result)
+  return result['terminal']
+-def run(archive,preparation_closeout,preparation_closeout_sha,expected_root,context_path,expected_context):
++def assemble_offline(archive,preparation_closeout,preparation_closeout_sha,expected_root,producer_root,producer_root_sha):
+  verify(expected_root);need(os.geteuid()==0,'ISOLATION_NEEDS_DISPOSABLE_ROOT')
+- context=module('context-snapshot.INACTIVE.py','runtime_context').read_for_root(context_path,expected_context)
++ context=json.loads(bounded(Path(preparation_closeout),1048576))['publicContext']
+  contracts=module('receipt-contract.INACTIVE.py','frozen_receipt_contract')
+- envelope_path=Path(preparation_closeout);need(sha(envelope_path)==preparation_closeout_sha,'PREPARATION_ENVELOPE_PIN');envelope=json.loads(bounded(envelope_path,65536));contracts.validate_envelope(envelope,context,expected_root)
++ envelope_path=Path(preparation_closeout);need(sha(envelope_path)==preparation_closeout_sha,'PREPARATION_ENVELOPE_PIN');envelope=json.loads(bounded(envelope_path,1048576));contracts.validate_envelope(envelope,context,producer_root_sha)
+  receipt_path=Path(envelope['preparationReceipt']);preparation_sha=envelope['preparationReceiptSha256'];need(sha(receipt_path)==preparation_sha,'PREPARATION_RECEIPT_PIN');prep=json.loads(bounded(receipt_path,32768));contracts.validate_types(prep,sha(HERE/'candidate/candidate.patch'))
+- # No producer of the required isolation contract exists yet. Do not enable
+- # runtime by constructing a plausible receipt for this inactive proposal.
+- raise RuntimeError('REVIEWED_ONLINE_PREPARATION_PRODUCER_NOT_AVAILABLE')
+- observer=module('anchored-cgroup.INACTIVE.py','fs_cgroup');source=receipt_path.parent/'source'
+- base=Path('/tmp')/('daemon-state-fs-'+secrets.token_hex(8));base.mkdir(mode=0o755);work=base/'work';tmp=base/'tmp';root=base/'root';work.mkdir();tmp.mkdir();receipt=base/'closeout.json';unit='daemon-state-fs-'+secrets.token_hex(8)+'.service';unitfile=Path('/run/systemd/system')/unit
++ producer_root=Path(producer_root);producer_manifest=producer_root/'SHA256.json';need(sha(producer_manifest)==producer_root_sha,'PRODUCER_ROOT_HANDOFF_PIN')
++ for rel,wanted in json.loads(producer_manifest.read_text()).items():
++  path=producer_root/rel;need(not Path(rel).is_absolute() and '..' not in Path(rel).parts and path.is_file() and not path.is_symlink() and sha(path)==wanted,'PRODUCER_HANDOFF_BYTES')
++ producer_contract=producer_root/'producer-contract.INACTIVE.py';spec=importlib.util.spec_from_file_location('sealed_producer_contract',producer_contract);pc=importlib.util.module_from_spec(spec);spec.loader.exec_module(pc)
++ producer_base=envelope_path.parent;closure_path=producer_base/'validation/PREPARATION-CLOSURE.json';need(sha(closure_path)==envelope['preparationClosureSha256'],'HANDOFF_CLOSURE_HASH');closure=json.loads(bounded(closure_path,32768));pc.validate(envelope,closure,producer_root_sha,prep)
++ for field,filename in (('ociInventorySha256','OCI-FINAL-LOGICAL-INVENTORY.json'),('modeOverlaySha256','MODE-OVERLAY.json'),('ownerOverlaySha256','OWNER-OVERLAY.json'),('sourceManifestSha256','PUBLIC-SOURCE-MANIFEST.json'),('toolchainPinsSha256','TOOLCHAIN-PINS.json')):need(closure.get(field)==sha(producer_root/filename),'HANDOFF_CLOSURE_EXACT_PIN')
++ need(closure.get('effectiveManifestSha256')==envelope.get('rootfs',{}).get('effectiveManifestSha256') and re.fullmatch('[a-f0-9]{64}',closure.get('effectiveManifestSha256','')),'HANDOFF_EFFECTIVE_OCI_BINDING')
++ need(closure.get('sourceArchiveSha256')=='dbb88bfb85a1111c7c8cf1c1c9359e55a2f4da1d66e9940ef0d62723632a5c2b','HANDOFF_SOURCE_ARCHIVE')
++ final_ledger=envelope.get('networkLedgerFinal',{});need(final_ledger.get('copiedAfterCleanupAttempt') is True and final_ledger.get('file')=='network-ledger.json','HANDOFF_LEDGER_NOT_FINAL');need(sha(producer_base/'selected/network-ledger.json')==final_ledger.get('sha256'),'HANDOFF_FINAL_LEDGER_HASH')
++ work_source=producer_base/'work';mounts=[line for line in Path('/proc/self/mountinfo').read_text().splitlines() if line.split()[4]==str(work_source)];need(len(mounts)==1 and 'ro' in mounts[0].split()[5].split(',') and mounts[0].split(' - ')[1].split()[0]=='tmpfs','HANDOFF_SOURCE_NOT_READONLY_TMPFS')
++ need(envelope.get('workRemountedReadOnly') is True,'HANDOFF_SOURCE_RO_RECEIPT')
++ need(envelope.get('cleanupSafe') is True and envelope.get('ownedNetworkRemoved') is True and envelope.get('ownedUnitRemoved') is True,'HANDOFF_PREPARATION_NOT_TERMINAL_CLEAN')
++ observer=module('anchored-cgroup.INACTIVE.py','fs_cgroup');source=work_source/'source'
++ for rel,wanted in json.loads((HERE/'TEST-SOURCE-PINS.json').read_text()).items():need(sha(source/rel)==wanted,'HANDOFF_ACTUAL_SOURCE_PINS')
++ base=Path('/tmp')/('daemon-state-fs-'+secrets.token_hex(8));base.mkdir(mode=0o700);work=base/'work';tmp=base/'tmp';root=base/'root';work.mkdir();tmp.mkdir();receipt=base/'closeout.json';unit='daemon-state-fs-'+secrets.token_hex(8)+'.service';unitfile=Path('/run/systemd/system')/unit
++ assembled_root=make_root(archive,root,source);value={'kind':'OFFLINE_PUBLIC_ROOT_DATA_ONLY','rootfs':assembled_root,'base':str(base),'producerReviewRootSha256':producer_root_sha,'preparationEnvelopeSha256':preparation_closeout_sha,'preparationEnvelope':str(envelope_path),'typesReceipt':str(receipt_path),'typesReceiptSha256':preparation_sha,'offlineReviewRootSha256':expected_root};durable(base/'assembly.json',value);return {'receipt':str(base/'assembly.json'),'sha256':sha(base/'assembly.json')}
++
++def run(offline_assembly,offline_assembly_sha,expected_root,context_path,expected_context):
++ verify(expected_root);need(os.geteuid()==0,'ISOLATION_NEEDS_DISPOSABLE_ROOT');assembly_path=Path(offline_assembly);need(sha(assembly_path)==offline_assembly_sha and assembly_path.stat().st_uid==0 and not assembly_path.stat().st_mode&0o077,'OFFLINE_ASSEMBLY_CUSTODY');assembled=json.loads(bounded(assembly_path,32768));need(assembled['offlineReviewRootSha256']==expected_root,'OFFLINE_ASSEMBLY_ROOT_BINDING');base=Path(assembled['base']);need(base==assembly_path.parent and re.fullmatch('/tmp/daemon-state-fs-[a-f0-9]{16}',str(base)) and base.stat().st_uid==0 and not base.stat().st_mode&0o077,'OFFLINE_ASSEMBLY_PATH');root=base/'root';work=base/'work';tmp=base/'tmp';receipt=base/'closeout.json';unit='daemon-state-fs-'+secrets.token_hex(8)+'.service';unitfile=Path('/run/systemd/system')/unit;receipt_path=Path(assembled['typesReceipt']);preparation_sha=assembled['typesReceiptSha256'];preparation_closeout_sha=assembled['preparationEnvelopeSha256'];producer_root_sha=assembled['producerReviewRootSha256'];context=module('context-snapshot.INACTIVE.py','runtime_context').read_for_root(context_path,expected_context);envelope=json.loads(bounded(Path(assembled['preparationEnvelope']),1048576));module('receipt-contract.INACTIVE.py','final_envelope_contract').validate_envelope(envelope,context,producer_root_sha);observer=module('anchored-cgroup.INACTIVE.py','fs_cgroup')
+  result={'kind':'FS_HELPER_OWNER_ONLY','state':'UNKNOWN','allShutdownValidated':False,'fullApplicationValidated':False,'daemonImported':False,'batchAttempted':False,'runtimeObserved':None,'productExecution':'UNVERIFIED','forcedCleanup':False,'cleanupUnknown':False,'evidenceUnknown':False,'reviewRootSha256':expected_root,'publicContext':context,'preparationReceiptSha256':preparation_sha};mounted=[];anchor=None;started=False;terminal=False;removed=False
++ result['ownedResourceLedger']={'unit':unit,'unitFile':str(unitfile),'unitWriteAttempted':False,'startAttempted':False,'mutations':[]}
+  durable(receipt,result)
++ def owned_command(*args,timeout=5):
++  entry={'argv':list(args),'state':'ATTEMPTED_RESULT_UNKNOWN'};result['ownedResourceLedger']['mutations'].append(entry);durable(receipt,result);value=command(*args,timeout=timeout);entry['state']='COMMAND_ACKNOWLEDGED';durable(receipt,result);return value
+  try:
+-  result['rootfs']=make_root(archive,root,source)
++  result['rootfs']=assembled['rootfs'];result['producerReviewRootSha256']=producer_root_sha;result['preparationEnvelopeSha256']=preparation_closeout_sha
++  for row in json.loads((HERE/'NATIVE-ROOTFS.json').read_text()):need(sha(root/row['target'].lstrip('/'))==row['sha256'],'OFFLINE_PRESPAWN_NATIVE_PIN')
++  for rel,wanted in json.loads((HERE/'TEST-SOURCE-PINS.json').read_text()).items():
++   if rel in ('package.json','services/daemon/serializedStateWriter.js','services/daemon/daemonStateOwner.js','tests/daemon-state-writer/contracts.node.cjs'):need(sha(root/'source'/rel)==wanted,'OFFLINE_PRESPAWN_SOURCE_PIN')
+   for p,options in ((work,'size=33554432,nr_inodes=4096'),(tmp,'size=16777216,nr_inodes=2048')):
+-   command('/usr/bin/mount','-t','tmpfs','-o','rw,nosuid,nodev,noexec,'+options+',uid=1000,gid=1000,mode=0700','tmpfs',str(p));mounted.append(p)
++   owned_command('/usr/bin/mount','-t','tmpfs','-o','rw,nosuid,nodev,noexec,'+options+',uid=1000,gid=1000,mode=0700','tmpfs',str(p));mounted.append(p)
+   text=(HERE/'fs-batch.service.INACTIVE').read_text()
+   for key,value in (('@ROOT@',root),('@WORK@',work),('@TMP@',tmp)):
+    need(re.fullmatch('/[A-Za-z0-9_./-]+',str(value)),'SERVICE_PATH');text=text.replace(key,str(value))
+-  need('@' not in text and not unitfile.exists(),'SERVICE_TEMPLATE');unitfile.write_text(text);unitfile.chmod(0o600);command('/usr/bin/systemctl','daemon-reload');result['batchAttempted']=True;durable(receipt,result);started=True;command('/usr/bin/systemctl','start','--no-block',unit)
++  module('context-snapshot.INACTIVE.py','final_offline_context').read_for_root(context_path,expected_context);need('@' not in text and not unitfile.exists(),'SERVICE_TEMPLATE');result['ownedResourceLedger'].update(unitWriteAttempted=True,unitSourceSha256=hashlib.sha256(text.encode()).hexdigest());durable(receipt,result);unitfile.write_text(text);unitfile.chmod(0o600);owned_command('/usr/bin/systemctl','daemon-reload');result['batchAttempted']=True;result['ownedResourceLedger']['startAttempted']=True;durable(receipt,result);started=True;owned_command('/usr/bin/systemctl','start','--no-block',unit)
+   until=time.monotonic()+8
+   while True:
+    need(time.monotonic()<until,'ADMISSION_TIMEOUT_NO_NODE');s=state(unit,until)
+@@ -115,7 +132,7 @@
+    time.sleep(.02)
+   ready=json.loads(bounded(work/'ready.json',1024));check_deadline(until);need(ready.get('stage')=='BEFORE_NODE' and str(ready.get('pid'))==s.get('MainPID') and re.fullmatch('[a-f0-9]{64}',ready.get('nonce','')),'ADMISSION_READY')
+   wanted={'Id':unit,'LoadState':'loaded','ActiveState':'active','SubState':'running','Type':'exec','ExitType':'cgroup','RemainAfterExit':'yes','User':'1000','Group':'1000','RootDirectory':str(root),'PrivateNetwork':'yes','PrivateDevices':'yes','NoNewPrivileges':'yes','CapabilityBoundingSet':'','AmbientCapabilities':'','ProtectSystem':'strict','ProtectHome':'yes','KillMode':'control-group','Restart':'no','RuntimeMaxUSec':'45s','TimeoutStopUSec':'2s','OOMPolicy':'kill','OOMScoreAdjust':'0','MemoryMax':'536870912','MemorySwapMax':'0','TasksMax':'64','CPUQuotaPerSecUSec':'1s','CPUQuotaPeriodUSec':'100ms','NRestarts':'0','ControlPID':'0'}
+-  need(all(s.get(k)==v for k,v in wanted.items()),'ADMISSION_MANAGER_CONTROLS');anchor=observer.Anchor(s.get('ControlGroup'),unit,s.get('InvocationID'),ready['pid']);result['admission']=anchor.record()
++  need(all(s.get(k)==v for k,v in wanted.items()),'ADMISSION_MANAGER_CONTROLS');anchor=observer.Anchor(s.get('ControlGroup'),unit,s.get('InvocationID'),ready['pid']);result['admission']=anchor.record();result['ownedResourceLedger']['acquiredUnitIdentity']={'unit':unit,'invocationId':s.get('InvocationID'),'controlGroup':s.get('ControlGroup'),'admission':result['admission']};durable(receipt,result)
+   again=state(unit,until);need(all(again.get(k)==s.get(k) for k in ('InvocationID','MainPID','ControlGroup','NRestarts','SubState')),'ADMISSION_IDENTITY_CHANGED');need(Path('/proc/'+str(ready['pid'])+'/oom_score_adj').read_text().strip()=='0','ADMISSION_OOM_EXEMPT')
+   durable(receipt,result);publish_permit(work,{'pid':ready['pid'],'nonce':ready['nonce']},anchor,until);until=time.monotonic()+45
+   while True:
+@@ -137,7 +154,7 @@
+   if started and not terminal:
+    result['forcedCleanup']=True
+    try:
+-    command('/usr/bin/systemctl','stop',unit,timeout=5);s=state(unit);result['cleanupManager']=s
++    need(anchor is not None,'NO_ACQUIRED_ANCHOR');current=state(unit);need(current.get('Id')==unit and current.get('InvocationID')==result['admission']['invocationId'] and current.get('NRestarts')=='0','CLEANUP_CUSTODY_CHANGED');need(sha(unitfile)==result['ownedResourceLedger']['unitSourceSha256'],'CLEANUP_UNIT_SOURCE_CHANGED');owned_command('/usr/bin/systemctl','stop',unit,timeout=5);s=state(unit);result['cleanupManager']=s
+     need(anchor is not None,'NO_ACQUIRED_ANCHOR');result['cleanupTerminal']=anchor.prove_empty(s);terminal=True
+    except BaseException:result['cleanupUnknown']=True
+   if terminal or not started:
+@@ -152,11 +169,15 @@
+     result['exports']=exports
+    except BaseException:result['evidenceUnknown']=True
+    try:
+-    if started:command('/usr/bin/systemctl','stop',unit,timeout=5)
+-    if unitfile.exists():unitfile.unlink();command('/usr/bin/systemctl','daemon-reload')
++    if started:
++     current=state(unit);need(current.get('Id')==unit and current.get('InvocationID')==result['admission']['invocationId'] and current.get('NRestarts')=='0','FINAL_CLEANUP_CUSTODY_CHANGED');owned_command('/usr/bin/systemctl','stop',unit,timeout=5)
++    if unitfile.exists():
++     need(sha(unitfile)==result['ownedResourceLedger']['unitSourceSha256'],'CLEANUP_UNIT_SOURCE_CHANGED');result['ownedResourceLedger']['unitUnlinkAttempted']=True;durable(receipt,result);unitfile.unlink();owned_command('/usr/bin/systemctl','daemon-reload')
+     removed=True
+-    for p in reversed(mounted):command('/usr/bin/umount',str(p))
++    for p in reversed(mounted):owned_command('/usr/bin/umount',str(p))
+    except BaseException:result['cleanupUnknown']=True
++  for entry in result['ownedResourceLedger']['mutations']:
++   if entry['state']!='COMMAND_ACKNOWLEDGED':result['cleanupUnknown']=True
+   if anchor:anchor.close()
+   if result['forcedCleanup'] or result['cleanupUnknown'] or result['evidenceUnknown']:result['state']='UNKNOWN'
+   result['ownedUnitRemoved']=removed;result['rootRetainedUntilDisposableVMTeardown']=True;durable(receipt,result)
+@@ -167,4 +188,4 @@
+ def prepare_online(*args,**kwargs):
+  raise RuntimeError('ONLINE_ISOLATION_TOOLCHAIN_SOURCE_PRODUCER_NOT_IMPLEMENTED')
+ 
+-if __name__=='__main__':raise SystemExit('INACTIVE: blocked preparation, no activation')
++if __name__=='__main__':raise SystemExit('INACTIVE: explicit reviewed launcher only')
