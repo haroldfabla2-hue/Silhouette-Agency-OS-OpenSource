@@ -1,0 +1,13 @@
+[
+  "real ESM import and concurrent snapshots resolve FIFO, exact last bytes",
+  "queued real failures do not disable later recovery or erase prior debt",
+  "real rename failure preserves anchor and pending bytes, next real save can recover",
+  "flush captures prefix before later accepted writes and never claims entire writer settled",
+  "actual final symlink replaced without changing pointed-to bytes",
+  "joined real state callback, full captured aggregate and readback settle debt without erasing history",
+  "new write invalidates in-flight recovery watermark, later explicit recovery may settle",
+  "reopen or state mutation invalidates old custody and previous settlement",
+  "durable prefix remains valid when a later real rename failure occurs",
+  "recovered prefix proof survives later accepted successful write, current debt does not",
+  "recovered prefix proof survives later real rename failure outside its watermark"
+]
