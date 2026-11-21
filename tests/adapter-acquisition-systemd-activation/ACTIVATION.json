@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "kind": "INACTIVE_EXACT_ONE_SHOT_ACTIVATION",
+  "base": "cd0066be67748f5948515bf3d20e6edc36d7b7c0",
+  "baseTree": "400b13d1ca7406c98e42c8d8c4975a4456bc1fb2",
+  "branch": "fix/shutdown-contracts-narrow-20261117",
+  "job": "directed-narrative",
+  "changedPaths": [
+    ".github/workflows/adapter-acquisition-systemd-once.yml",
+    "tests/adapter-acquisition-systemd-activation/payload.tar.gz",
+    "tests/adapter-acquisition-systemd-activation/launch.INACTIVE.py",
+    "tests/adapter-acquisition-systemd-activation/ACTIVATION.json"
+  ],
+  "frozen": {
+    "tests/adapter-acquisition-systemd-activation/payload.tar.gz": "afe16ecaee815e82f8e7cecf1413726e25e9da806f42527c59bde52cdaa61a74",
+    "tests/adapter-acquisition-systemd-activation/launch.INACTIVE.py": "0ceb2edcf44fe5d086dcc3b80e8d4321334c0e96fd59c0c8cd39fb7b720e5acc",
+    ".github/workflows/adapter-acquisition-systemd-once.yml": "cc8cf16db65e09a43d2d6a700bcb9069dc3f87e3b08b7afbb0cca862298f3213"
+  },
+  "payloadSha256": "afe16ecaee815e82f8e7cecf1413726e25e9da806f42527c59bde52cdaa61a74",
+  "payloadManifestSha256": "a0c377b2cadf9d5e10e4e9c86a62f3a02264fdcb009a768519e5dde9486adaac",
+  "publicationRequiresSeparateApproval": true,
+  "runAttempt": 1,
+  "automaticRetry": false,
+  "expectedPass": "PASS_ADAPTER_BOUNDARY_EIGHT_CASES_ONLY",
+  "fullApplicationValidated": false
+}
